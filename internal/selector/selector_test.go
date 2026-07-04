@@ -44,6 +44,7 @@ func TestKeysBounded(t *testing.T) {
 			got := selector.Keys(q)
 
 			require.False(t, got.Scan, "expression must be bounded, not a scan")
+			require.False(t, got.Streamable, "a bounded expression is never a stream")
 			require.Equal(t, tt.want, got.Keys)
 		})
 	}
@@ -51,24 +52,30 @@ func TestKeysBounded(t *testing.T) {
 
 func TestKeysScan(t *testing.T) {
 	tests := []struct {
-		name string
-		expr string
+		name       string
+		expr       string
+		streamable bool
 	}{
-		{"bare identity", "."},
-		{"root iteration", ".[]"},
-		{"recurse", ".."},
-		{"keys builtin", "keys"},
-		{"to_entries builtin", "to_entries"},
-		{"map builtin", "map(.x)"},
-		{"variable index", ".[$k]"},
-		{"computed index", ".[.a]"},
-		{"slice index", ".[1:2]"},
-		{"interpolated index", `.["\(.x)"]`},
-		{"variable reference", "$x"},
-		{"control flow", "if .a then .b end"},
-		{"scan wins over explicit key", "[ ., .a ]"},
-		{"unresolvable inside pipe left", ".[] | .name"},
-		{"unresolvable inside array", "[ .a, keys ]"},
+		{"root iteration", ".[]", true},
+		{"iterate then filter", ".[] | select(.x)", true},
+		{"iterate then index", ".[].name", true},
+		{"iterate then pipe chain", ".[] | .a | ascii_upcase", true},
+		{"optional iteration", ".[]?", true},
+		{"bare identity", ".", false},
+		{"recurse", "..", false},
+		{"keys builtin", "keys", false},
+		{"to_entries builtin", "to_entries", false},
+		{"map builtin", "map(.x)", false},
+		{"array collects iteration", "[ .[] ]", false},
+		{"iteration in a comma", ".[], .a", false},
+		{"variable index", ".[$k]", false},
+		{"computed index", ".[.a]", false},
+		{"slice index", ".[1:2]", false},
+		{"interpolated index", `.["\(.x)"]`, false},
+		{"variable reference", "$x", false},
+		{"control flow", "if .a then .b end", false},
+		{"scan wins over explicit key", "[ ., .a ]", false},
+		{"unresolvable inside array", "[ .a, keys ]", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -78,6 +85,7 @@ func TestKeysScan(t *testing.T) {
 			got := selector.Keys(q)
 
 			require.True(t, got.Scan, "expression must classify as a scan")
+			require.Equal(t, tt.streamable, got.Streamable, "streamable classification")
 			require.Empty(t, got.Keys)
 		})
 	}

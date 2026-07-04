@@ -17,10 +17,13 @@ import (
 // KeySet is the outcome of classification. Scan is true when the expression
 // needs the whole keyspace; then Keys is empty and the caller must scan.
 // Otherwise Keys holds the referenced keys in first-seen order with duplicates
-// removed.
+// removed. Streamable (meaningful only when Scan) is true when the expression is
+// rooted at `.[]`, so it processes each value independently and can run over the
+// keyspace in batches instead of materializing the whole dataset.
 type KeySet struct {
-	Scan bool
-	Keys []string
+	Scan       bool
+	Streamable bool
+	Keys       []string
 }
 
 // Keys walks q and classifies it. It never executes the expression; it only
@@ -32,9 +35,36 @@ func Keys(q *gojq.Query) KeySet {
 	e := &extractor{seen: map[string]struct{}{}}
 	e.visitQuery(q)
 	if e.scan {
-		return KeySet{Scan: true}
+		return KeySet{Scan: true, Streamable: streamable(q)}
 	}
 	return KeySet{Keys: e.keys}
+}
+
+// streamable reports whether q is rooted at `.[]` — its top-level structure is
+// value iteration over the root, optionally piped into a per-element residual
+// (`.[]`, `.[] | select(...)`, `.[].name`). Such a filter distributes over any
+// partition of the input, so it can be run batch by batch and its outputs
+// concatenated. A filter that instead collapses the collection into one value
+// (`.`, `keys`, `map(...)`, an aggregate, or a top-level comma) is not
+// streamable and must be materialized.
+func streamable(q *gojq.Query) bool {
+	// Follow the leftmost stage of the pipe chain: `a | b | c` nests as
+	// ((a | b) | c), so the first stage is the deepest Left.
+	for q.Op == gojq.OpPipe {
+		q = q.Left
+	}
+	if q.Term == nil {
+		// A non-pipe operator at the root (comma, arithmetic, …) does not
+		// distribute over the input.
+		return false
+	}
+	t := q.Term
+	// The leading `.[]`: an identity whose first suffix is iteration. Trailing
+	// suffixes (`.[].name`) stay per-element, so they remain streamable.
+	return t.Type == gojq.TermTypeIdentity &&
+		len(t.SuffixList) >= 1 &&
+		t.SuffixList[0].Iter &&
+		t.SuffixList[0].Index == nil
 }
 
 // extractor accumulates the referenced keys while walking the AST. Once scan is

@@ -2,6 +2,7 @@ package redis_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -100,12 +101,37 @@ func TestGetRejectsUnsupportedType(t *testing.T) {
 	require.ErrorContains(t, err, "unsupported redis type")
 }
 
-func TestScanAllReturnsSeededKeys(t *testing.T) {
+func TestScanBatchesYieldsSeededValues(t *testing.T) {
 	store := openIntegration(t)
 	seedKV(t, store)
 
-	keys, err := store.ScanAll(context.Background())
-
+	merged := map[string]any{}
+	batches := 0
+	err := store.ScanBatches(context.Background(), func(batch map[string]any) error {
+		batches++
+		for k, v := range batch {
+			merged[k] = v
+		}
+		return nil
+	})
 	require.NoError(t, err)
-	require.Subset(t, keys, seededKeys)
+
+	require.GreaterOrEqual(t, batches, 1, "at least one page was fed")
+	// Every seeded key is present, already normalized: spot-check one shape.
+	for _, k := range seededKeys {
+		require.Contains(t, merged, k)
+	}
+	require.Equal(t, map[string]any{"title": "Go", "year": "2015"}, merged["iq:test:hash"])
+}
+
+func TestScanBatchesStopsOnCallbackError(t *testing.T) {
+	store := openIntegration(t)
+	seedKV(t, store)
+
+	sentinel := errors.New("stop")
+	err := store.ScanBatches(context.Background(), func(map[string]any) error {
+		return sentinel
+	})
+
+	require.ErrorIs(t, err, sentinel)
 }

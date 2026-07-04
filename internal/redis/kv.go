@@ -230,19 +230,38 @@ func (r jsonReader) normalize() (any, error) {
 	return v, nil
 }
 
-// ScanAll returns every key in the store, walking the keyspace with a cursor so
-// the server is never blocked the way KEYS would block it. It is the one
-// unbounded read, reached only by a bare `.` selector, and is bounded by ctx.
-func (s *Store) ScanAll(ctx context.Context) ([]string, error) {
-	var keys []string
+// ScanBatches walks the keyspace with a cursor — never blocking the server the
+// way KEYS would — fetching the values of each page and handing them to fn as
+// {key: value}. A streaming caller keeps only one page in memory. SCAN may
+// return a key more than once if the keyspace is resized mid-scan, so a page may
+// repeat a key; the caller opts into that trade for bounded memory. The walk is
+// bounded by ctx and stops at the first error from fn or the store.
+func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
 	iter := s.client.Scan(ctx, 0, "*", scanCount).Iterator()
+	page := make([]string, 0, scanCount)
+	flush := func() error {
+		if len(page) == 0 {
+			return nil
+		}
+		batch, err := s.Get(ctx, page)
+		if err != nil {
+			return err
+		}
+		page = page[:0]
+		return fn(batch)
+	}
 	for iter.Next(ctx) {
-		keys = append(keys, iter.Val())
+		page = append(page, iter.Val())
+		if len(page) >= s.pageSize {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
 	}
 	if err := iter.Err(); err != nil {
-		return nil, fmt.Errorf("redis scan: %w", err)
+		return fmt.Errorf("redis scan: %w", err)
 	}
-	return keys, nil
+	return flush()
 }
 
 // dedupe returns keys with duplicates removed, preserving first-seen order so a

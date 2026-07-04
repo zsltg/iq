@@ -38,7 +38,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	})
 	if errors.Is(err, query.ErrScanNotAllowed) {
 		// Translate the core's flag-agnostic refusal into this CLI's opt-in.
-		return fmt.Errorf("%w; re-run with --unbounded to allow it", err)
+		return fmt.Errorf("%w; re-run with --unbounded, narrow it to specific keys, or use a .[]-rooted filter to stream", err)
 	}
 	return err
 }

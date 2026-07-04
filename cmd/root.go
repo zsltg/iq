@@ -38,10 +38,12 @@ func newRootCmd() *cobra.Command {
 		Short: "Query NoSQL databases with jq from the command line",
 		Long: "iq runs a jq filter against a NoSQL database. The filter's top-level paths\n" +
 			"name the keys to fetch, for example `iq '.greeting'`, `iq '.[\"book:1\"]'` for a\n" +
-			"key with a colon, or `iq '[ .a, .b ]'`. A filter that reads the whole dataset\n" +
-			"(`.`, `.[]`, `keys`, `map(...)`) is an unbounded scan and runs only with\n" +
-			"--unbounded. Always single-quote the filter so the shell does not expand its\n" +
-			"brackets, spaces, or pipes. Redis is the first supported backend.",
+			"key with a colon, or `iq '[ .a, .b ]'`. A `.[]`-rooted filter (`iq '.[] |\n" +
+			"select(.year)'`) streams over the whole keyspace in constant memory. A filter\n" +
+			"that collapses the dataset into one value (`.`, `keys`, `map(...)`) must load it\n" +
+			"all into memory and runs only with --unbounded. Always single-quote the filter\n" +
+			"so the shell does not expand its brackets, spaces, or pipes. Redis is the first\n" +
+			"supported backend.",
 		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -57,7 +59,7 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVarP(&cfg.url, "url", "u", defaultURL(), "database connection URL (redis://...); overrides IQ_REDIS_URL")
 	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "per-query timeout")
 	// --unbounded is local to the default jq action; the raw command never scans.
-	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that reads the whole keyspace (an unbounded scan)")
+	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
 	root.AddCommand(newRawCmd(cfg))
 	return root
 }

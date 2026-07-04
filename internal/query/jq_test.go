@@ -10,15 +10,17 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// fakeKV is a query.KVStore double. It records the keys Get received and whether
-// ScanAll was called, and returns canned values.
+// fakeKV is a query.KVStore double. It records the keys Get received and how it
+// was scanned, and feeds ScanBatches from a fixed keyspace in pages of batchSize.
 type fakeKV struct {
 	values     map[string]any
 	getErr     error
 	scanErr    error
-	scanKeys   []string
+	scanKeys   []string // the keyspace ScanBatches walks, in this order
+	batchSize  int      // page size; 0 means one page of everything
 	gotGetKeys []string
-	scanCalls  int
+	scanCalls  int // times ScanBatches was invoked
+	batchCount int // pages fed to fn
 }
 
 func (f *fakeKV) Get(_ context.Context, keys []string) (map[string]any, error) {
@@ -33,21 +35,36 @@ func (f *fakeKV) Get(_ context.Context, keys []string) (map[string]any, error) {
 	return out, nil
 }
 
-func (f *fakeKV) ScanAll(_ context.Context) ([]string, error) {
+func (f *fakeKV) ScanBatches(_ context.Context, fn func(map[string]any) error) error {
 	f.scanCalls++
 	if f.scanErr != nil {
-		return nil, f.scanErr
+		return f.scanErr
 	}
-	return f.scanKeys, nil
+	size := f.batchSize
+	if size <= 0 {
+		size = len(f.scanKeys)
+	}
+	for i := 0; i < len(f.scanKeys); i += size {
+		end := min(i+size, len(f.scanKeys))
+		batch := make(map[string]any, end-i)
+		for _, k := range f.scanKeys[i:end] {
+			batch[k] = f.values[k]
+		}
+		f.batchCount++
+		if err := fn(batch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (f *fakeKV) Close() error { return nil }
 
 // collect runs the engine and gathers every emitted value.
-func collect(t *testing.T, store query.KVStore, src string, allowScan bool) ([]any, error) {
+func collect(t *testing.T, store query.KVStore, src string, allowUnbounded bool) ([]any, error) {
 	t.Helper()
 	var got []any
-	err := query.NewJQEngine(store).Run(context.Background(), src, allowScan, func(v any) error {
+	err := query.NewJQEngine(store).Run(context.Background(), src, allowUnbounded, func(v any) error {
 		got = append(got, v)
 		return nil
 	})
@@ -65,41 +82,60 @@ func TestJQEngineFetchesReferencedKeys(t *testing.T) {
 	require.Zero(t, store.scanCalls, "a specific key must not trigger a scan")
 }
 
-func TestJQEngineScansWhenAllowed(t *testing.T) {
+func TestJQEngineStreamsInBatchesWithoutFlag(t *testing.T) {
+	// .[] is streamable, so it runs page by page with no --unbounded, emitting
+	// each value in scan order as its page arrives.
 	store := &fakeKV{
-		scanKeys: []string{"a", "b"},
-		values:   map[string]any{"a": "1", "b": "2"},
+		scanKeys:  []string{"b", "a"},
+		values:    map[string]any{"a": 1, "b": 2},
+		batchSize: 1,
 	}
 
-	got, err := collect(t, store, ".", true)
+	got, err := collect(t, store, ".[]", false)
 
 	require.NoError(t, err)
 	require.Equal(t, 1, store.scanCalls)
-	require.Equal(t, []any{map[string]any{"a": "1", "b": "2"}}, got)
-	require.ElementsMatch(t, []string{"a", "b"}, store.gotGetKeys)
+	require.Equal(t, 2, store.batchCount, "one page per key")
+	require.Equal(t, []any{2, 1}, got, "streamed in scan order, not key-sorted")
+	require.Nil(t, store.gotGetKeys, "streaming does not go through Get")
 }
 
-func TestJQEngineRefusesScanWithoutPermission(t *testing.T) {
-	store := &fakeKV{}
+func TestJQEngineRefusesHolisticScanWithoutFlag(t *testing.T) {
+	store := &fakeKV{scanKeys: []string{"a"}, values: map[string]any{"a": 1}}
 
-	_, err := collect(t, store, ".[]", false)
+	_, err := collect(t, store, "keys", false)
 
 	require.ErrorIs(t, err, query.ErrScanNotAllowed)
-	require.Nil(t, store.gotGetKeys, "a refused scan must not touch the store")
-	require.Zero(t, store.scanCalls)
+	require.Zero(t, store.scanCalls, "a refused scan must not touch the store")
 }
 
-func TestJQEngineStreamsMultipleValues(t *testing.T) {
-	store := &fakeKV{values: map[string]any{
-		"a": "x",
-		"b": "y",
-	}}
+func TestJQEngineMaterializesHolisticWithFlag(t *testing.T) {
+	store := &fakeKV{
+		scanKeys:  []string{"b", "a"},
+		values:    map[string]any{"a": 1, "b": 2},
+		batchSize: 1,
+	}
 
-	got, err := collect(t, store, ".a, .b", false)
+	got, err := collect(t, store, "keys", true)
 
 	require.NoError(t, err)
-	require.Equal(t, []any{"x", "y"}, got)
-	require.Equal(t, []string{"a", "b"}, store.gotGetKeys)
+	require.Equal(t, 1, store.scanCalls)
+	require.Equal(t, []any{[]any{"a", "b"}}, got, "keys over the merged keyspace, sorted")
+}
+
+func TestJQEngineStreamableMaterializesWithFlag(t *testing.T) {
+	// With --unbounded, a streamable filter is materialized instead of batched,
+	// so its output is key-sorted rather than in scan order.
+	store := &fakeKV{
+		scanKeys:  []string{"b", "a"},
+		values:    map[string]any{"a": 1, "b": 2},
+		batchSize: 1,
+	}
+
+	got, err := collect(t, store, ".[]", true)
+
+	require.NoError(t, err)
+	require.Equal(t, []any{1, 2}, got, "materialized run is key-sorted, not scan order")
 }
 
 func TestJQEngineRejectsEmptyExpression(t *testing.T) {
@@ -134,7 +170,7 @@ func TestJQEnginePropagatesStoreError(t *testing.T) {
 func TestJQEnginePropagatesScanError(t *testing.T) {
 	store := &fakeKV{scanErr: errors.New("scan boom")}
 
-	_, err := collect(t, store, ".", true)
+	_, err := collect(t, store, ".[]", false)
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "scan boom")

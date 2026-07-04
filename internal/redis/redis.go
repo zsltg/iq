@@ -23,6 +23,10 @@ func (noopLogger) Printf(_ context.Context, _ string, _ ...any) {}
 // Store is a query.Store backed by Redis.
 type Store struct {
 	client *goredis.Client
+	// pageSize bounds how many keys ScanBatches accumulates before fetching and
+	// handing off a page, so streaming memory stays O(pageSize). Defaults to
+	// scanCount; tests lower it to exercise multi-page behavior.
+	pageSize int
 }
 
 // Open connects to the Redis server named by a redis:// URL. It verifies the
@@ -43,7 +47,7 @@ func Open(ctx context.Context, url string) (*Store, error) {
 		_ = client.Close()
 		return nil, fmt.Errorf("connect redis: %w", err)
 	}
-	return &Store{client: client}, nil
+	return &Store{client: client, pageSize: scanCount}, nil
 }
 
 // Query forwards args to Redis as a single command and returns the raw result.

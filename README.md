@@ -37,21 +37,40 @@ Always wrap the filter in single quotes. jq syntax is full of characters the she
 otherwise expand or split — brackets (`[ ]`), whitespace, `|`, `*`, `$` — and bracket-quoting a
 colon key like `.["book:1"]` reads as a glob to zsh (`no matches found`) or bash unless quoted.
 
-### Bounded reads and scans
+### Bounded reads, streaming scans, and materialized scans
 
 `iq` fetches exactly the keys your filter names, so a normal query's cost is bounded by the keys
-you asked for, never by the size of the database. A filter that instead needs the whole dataset —
-a bare `.`, value iteration `.[]`, `keys`, `map(...)`, `..` — is an **unbounded scan**. Those are
-not refused, but they run only when you opt in with `--unbounded`:
+you asked for, never by the size of the database. A filter that needs the whole keyspace is a
+**scan**, and scans come in two kinds:
 
-```bash
-./iq '.[] | select(.year)'                # error: requires an unbounded full-keyspace scan
-./iq --unbounded 'keys'                    # list every key
-./iq --unbounded '.'                       # the whole dataset as one JSON object
-./iq --unbounded '[ .[] | objects | select((.year|tonumber) > 2015) | .title ]'   # discovery
-```
+- **Streaming** — a filter rooted at `.[]` (`.[]`, `.[] | select(...)`, `.[].title`) processes
+  each value independently, so `iq` walks the keyspace in pages and runs the filter page by page,
+  emitting as it goes. Memory stays constant and results appear progressively (interrupt with
+  Ctrl-C or bound with `--timeout`). These run **without a flag**:
 
-The flag names the cost property (an unbounded read), not any one store's mechanism, so it will
+  ```bash
+  ./iq '.[] | objects | select((.year|tonumber) > 2015) | .title'   # streamed discovery
+  ```
+
+- **Materialized** — a filter that collapses the collection into one value (`.`, `keys`, `length`,
+  `map(...)`, `group_by`, `sort_by`, aggregates) must load the whole dataset into memory. It runs
+  only with `--unbounded`:
+
+  ```bash
+  ./iq 'keys'                 # error: requires materializing the whole dataset
+  ./iq --unbounded 'keys'     # list every key
+  ./iq --unbounded '.'        # the whole dataset as one JSON object
+  ```
+
+`--unbounded` means "permit loading the whole dataset into memory." Passing it on a streaming
+filter is allowed too: it switches that filter from batched streaming to a single materialized
+pass, giving key-sorted output and a consistent snapshot instead of scan order.
+
+Streamed output is **best-effort**: values arrive in scan order (not key-sorted), and an element
+may repeat if the keyspace is resized mid-scan — the price of never holding more than one page.
+Use `--unbounded` when you need sorted, exactly-once output.
+
+The flag names the cost property (loading everything), not any one store's mechanism, so it will
 mean the same thing for future backends (a Cassandra full scan, a CouchDB `_all_docs`).
 
 ### Value encoding
@@ -106,19 +125,21 @@ The database is addressed with a standard Redis connection URL
 The query core is driver-agnostic and lives behind two ports a backend adapter implements:
 
 - `internal/selector` — pure static analysis. `Keys` walks a parsed jq AST and classifies the
-  filter: either a **bounded** set of named keys, or a **scan** (it needs the whole keyspace). It
+  filter: a **bounded** set of named keys, or a **scan** — and, for a scan, whether it is
+  **streamable** (`.[]`-rooted, distributes over the keyspace page by page) or holistic. It
   depends only on the jq library, never on a driver.
-- `internal/query` — the use cases. `JQEngine` parses the filter, asks `selector` to classify it,
-  refuses a scan unless the caller permits one, then fetches through the `KVStore` port (`Get` for
-  named keys, `ScanAll` for a scan), assembles the `{key: value}` object, and runs the filter
-  client-side, streaming each result. `Runner` is the raw-command use case behind the `Store` port.
+- `internal/query` — the use cases. `JQEngine` parses and classifies the filter, then routes:
+  bounded → `Get` the named keys; streamable scan → run the filter over each `ScanBatches` page and
+  emit; holistic scan → merge the pages and run once (only when the caller permits it). `Runner`
+  is the raw-command use case behind the `Store` port.
 - `internal/redis` — the Redis adapter. One `*Store` satisfies both ports: `Query` (raw) and
-  `Get`/`ScanAll` (jq), with the type-to-JSON normalization frozen as the encoding contract.
+  `Get`/`ScanBatches` (jq), with the type-to-JSON normalization frozen as the encoding contract.
 - `cmd` — the CLI adapter. The root command is the jq action; `raw` is the verbatim escape
   hatch. JSON and redis-cli formatting live here, keeping the core free of any output format.
 
-The filter runs entirely client-side over a materialized slice, so cost is `O(keys requested)`
-and the jq semantics are identical for any future backend behind `KVStore`. jq is provided by
+A bounded filter runs client-side over just the named keys, so its cost is `O(keys requested)`; a
+streamable scan runs in `O(page)` memory. The jq semantics are identical for any future backend
+behind `KVStore`. jq is provided by
 [gojq](https://github.com/itchyny/gojq) (pure Go, no cgo), which keeps `iq` a single static
 binary and exposes the AST the key selector walks.
 
