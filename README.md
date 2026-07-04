@@ -140,23 +140,28 @@ iq -u mongodb://localhost:27017/iq -c books --compile '.[] | select(.author == "
 ```
 
 `--compile` never changes results, only speed: the full jq always re-runs client-side over whatever
-comes back, so a pushed filter is only ever a conservative pre-filter. Pushed, combined with
-`and`/`or`:
+comes back, so a pushed filter is only ever a conservative pre-filter. What it can push:
 
-- **equality** — `.a == x`;
-- **ranges** — `>`, `>=`, `<`, `<=` against a number or string, translated to reproduce jq's
-  cross-type ordering (`null < bool < number < string < array < object`), so `.year > 2015` also
-  matches string/array/object fields and `.year < 2015` also matches null/bool/missing fields —
-  exactly as jq would, never fewer;
-- **regex** — `.name | test("^A")` (with `i`/`m`/`s` flags), but *only* for patterns using syntax
-  that jq's Oniguruma engine and MongoDB's PCRE interpret identically (literals, anchors, `.`,
-  quantifiers, alternation, groups, character classes, the ASCII `\d`/`\w`/`\s` shorthands). A
-  pattern using an engine-specific construct (lookaround, backreferences, `\p{…}`, POSIX classes,
-  possessive quantifiers) stays client-side, so the pushed set always equals jq's.
+| `select(...)` clause | Pushed | MongoDB translation | Notes |
+| --- | :---: | --- | --- |
+| `.a == x` | ✓ | `{a: x}` | number, string, bool, or null literal |
+| `.a == 1 or .a == 2` | ✓ | `{a: {$in: [1, 2]}}` | an `or` of equalities on one field |
+| `.a > n`, `>=`, `<`, `<=` | ✓ | native op + `$type` guards (an `$or`) | number/string literal; reproduces jq's cross-type order so the match is never a subset |
+| `.a \| test("re")` | ✓ | `{a: {$regex: "re", $options: "ims"}}` | portable patterns only (below); `i`/`m`/`s` flags |
+| `E1 and E2`, `E1 or E2` | ✓ | `$and` / `$or` of the above | an `and` may push only its pushable parts and drop the rest |
+| `.a != x` | — | — | jq and Mongo `$ne` differ on arrays/types |
+| `.a > true`, `.a < null` | — | — | a range against bool/null has no clean superset |
+| non-portable regex | — | — | engine-specific construct (below) |
+| anything else | — | — | runs client-side, as without `--compile` |
 
-An `or` of equalities on one field (`.a == 1 or .a == 2`) collapses to a single `$in`. Negation
-(`!=`), non-portable regex, and comparisons against a boolean or null stay client-side. On Redis,
-or for any filter with no pushable predicate, `--compile` is a harmless no-op.
+**Portable regex.** jq uses the Oniguruma engine, MongoDB uses PCRE. A pattern is pushed only when
+every construct it uses means the same in both: literals, anchors (`^` `$`), `.`, quantifiers
+(`* + ? {n,m}`), alternation (`|`), groups, character classes, and the ASCII `\d` `\w` `\s`
+shorthands (and their negations, `\b`, `\B`). A pattern using lookaround (`(?=…)`), backreferences
+(`\1`), unicode properties (`\p{…}`), POSIX classes (`[[:…:]]`), or possessive quantifiers is not
+portable and stays client-side, so the pushed set always equals jq's.
+
+On Redis, or for any filter with no pushable predicate, `--compile` is a harmless no-op.
 
 `iq raw` on MongoDB runs a single JSON command document with `runCommand` and prints the reply as
 JSON — the escape hatch for server-side queries, aggregation, and administration:
