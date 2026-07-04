@@ -49,6 +49,13 @@ type FilteredScanner interface {
 	ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error
 }
 
+// SourceOpener resolves a named source to a KVStore, so the in-filter
+// source(name; filter) function can read from sources other than the primary.
+// The CLI implements it over the source registry; the core stays driver-agnostic.
+type SourceOpener interface {
+	Open(ctx context.Context, name string) (KVStore, error)
+}
+
 // RunOptions carries the per-run policy flags. Unbounded permits materializing
 // the whole dataset in memory; Compile asks the engine to push a filter's
 // predicate to the store when it can.

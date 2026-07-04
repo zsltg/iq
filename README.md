@@ -254,6 +254,48 @@ result is held in memory before `--combine` runs — so keep a stage's output sm
 streams without it. Stages do not see each other's data, so a lookup whose keys depend on another
 source's rows is not expressible here — reduce both sources and join them in `--combine`.
 
+### Composing in one filter with `source()`
+
+When a lookup's keys depend on another source's rows — or you just want to compose several sources
+in one expression — call `source()` directly inside the filter:
+
+```bash
+# join users and orders in a single filter (no active source needed)
+iq 'INDEX(source("users"; ".[]"); .id) as $u
+    | source("orders"; ".[] | select(.total > 99)")
+    | {name: $u[.userId].name, total}'
+```
+
+`source("name"; "<jq>")` runs `<jq>` against source `name` (reduced, streamed, and `--compile`-pushed
+like any query) and **yields its results as a stream**; a one-argument `source("name")` yields the
+whole source. Both arguments are **strings**, so the sub-filter is quoted — inside the single-quoted
+outer filter that means double quotes, `source("orders"; ".[] | select(.x)")`. Because `source()`
+yields a stream, collect it before indexing: `INDEX(source(…); .id)` or `[source(…)]`, not
+`source(…) | INDEX(.id)`.
+
+A filter that calls `source()` runs over a **null input**: every read is an explicit `source()` call
+and there is no implicit primary source, so it needs no active source. Names resolve through the
+registry like `--src`, active-group namespacing included.
+
+**Correlated lookups re-run.** A `source()` opened inside a stream runs its sub-filter once per
+element (the connection is reused, but the sub-filter re-executes). Hoist a constant lookup into a
+binding — `INDEX(source("users"; ".[]"); .id) as $u | …` — and index `$u` per element instead.
+
+### Choosing `--from`/`--combine` vs `source()`
+
+Both reduce per source then combine; pick by what the query needs.
+
+| | `--from` / `--combine` | in-filter `source()` |
+| --- | --- | --- |
+| Shape | explicit flags: a stage per source, then one combine | a single jq filter |
+| Correlated reads (B keyed by A's rows) | ✗ stages are independent | ✓ nest `source()` |
+| Quoting | each stage is its own flag value | sub-filter is a quoted string inside the filter |
+| Memory | each reduced result held until combine | same, plus a correlated `source()` re-runs per row |
+
+Reach for `--from`/`--combine` for a straightforward join, union, or aggregate across a few sources;
+reach for `source()` when a read depends on another source's values, or to keep everything in one
+composable filter.
+
 ## Architecture
 
 The query core is driver-agnostic and lives behind two ports a backend adapter implements:
@@ -266,7 +308,9 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   bounded → `Get` the named keys; streamable scan → run the filter over each `ScanBatches` page and
   emit; holistic scan → merge the pages and run once (only when the caller permits it). `Runner`
   is the raw-command use case behind the `Store` port; `Combiner` runs a cross-source `--combine`
-  program over the reduced per-source results bound as variables (it holds no store).
+  program over the reduced per-source results bound as variables, and `CrossEngine` runs a
+  `source()`-driven filter over a null input — both reach other sources through the `SourceOpener`
+  port and hold no primary store.
 - `internal/redis`, `internal/mongo` — the adapters. Each has one `*Store` satisfying both ports:
   `Query` (raw) and `Get`/`ScanBatches` (jq), with a type-to-JSON normalization frozen as that
   backend's encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs). Redis maps
@@ -276,8 +320,9 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   driver-agnostic: the backend is inferred from a source's URL scheme, validated in `cmd`.
 - `cmd` — the CLI adapter and composition root. It resolves the selected source (`--src` or the
   active source) to a URL and collection, picks the adapter by URL scheme (`openStore`), runs the
-  jq action, the `raw` escape hatch, a source command (`add`/`ls`/`rm`/`src`/`group`), or a
-  cross-source query (`--from`/`--combine`, resolving each `--from` through the same registry), and
+  jq action (routing a `source()`-driven filter to the cross-source engine), the `raw` escape hatch,
+  a source command (`add`/`ls`/`rm`/`src`/`group`), or a `--from`/`--combine` cross-source query —
+  resolving every source name through the same registry — and
   formats output (JSON for jq; per-backend for raw — redis-cli style for Redis, JSON for Mongo),
   keeping the core free of any output format.
 
