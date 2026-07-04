@@ -48,6 +48,7 @@ The database is addressed with a standard Redis connection URL
 go build -o iq .          # build the binary
 go test -short ./...      # fast unit tests, no external services
 docker compose up -d --wait   # start a local Redis (redis:latest) on :6379
+bash scripts/seed.sh      # load example data into the running Redis
 go test ./...             # full suite, including Redis integration tests
 docker compose down       # stop the local Redis
 gofumpt -w . && goimports -w .   # format
