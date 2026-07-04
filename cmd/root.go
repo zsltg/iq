@@ -51,7 +51,17 @@ func newRootCmd() *cobra.Command {
 			"all into memory and runs only with --unbounded. Always single-quote the filter\n" +
 			"so the shell does not expand its brackets, spaces, or pipes. The backend is chosen\n" +
 			"by the URL scheme: redis:// (key = Redis key) or mongodb:// (key = document _id in\n" +
-			"the --collection).",
+			"the --collection).\n" +
+			"\n" +
+			"--compile pushes these select(...) clauses to MongoDB (results are unchanged; the\n" +
+			"full jq always re-runs, so a pushed filter is only a pre-filter):\n" +
+			"  .a == x                    equality (number, string, bool, null)\n" +
+			"  .a == 1 or .a == 2         same-field equality-or -> $in\n" +
+			"  .a >  >=  <  <=  n|\"s\"      ranges, preserving jq's cross-type ordering\n" +
+			"  .a | test(\"re\")            portable regex (i/m/s flags)\n" +
+			"  E1 and E2,  E1 or E2       combine the above\n" +
+			"Not pushed (run client-side): != , ranges vs bool/null, non-portable regex,\n" +
+			"everything else. On Redis, or with no pushable clause, --compile is a no-op.",
 		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
