@@ -11,3 +11,16 @@ services:
       interval: 2s
       timeout: 3s
       retries: 5
+
+  mongo:
+    image: mongo:latest
+    container_name: iq-mongo
+    ports:
+      - "27017:27017"
+    # Ephemeral test instance: no auth, data lives only in the container.
+    command: ["--quiet"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 2s
+      timeout: 5s
+      retries: 5

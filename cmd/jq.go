@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zsltg/iq/internal/query"
-	iqredis "github.com/zsltg/iq/internal/redis"
 )
 
 // runJQ is the default command's body: it opens the store, runs the jq filter
@@ -19,7 +18,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 	defer cancel()
 
-	store, err := iqredis.Open(ctx, cfg.url)
+	store, err := openStore(ctx, cfg)
 	if err != nil {
 		return err
 	}

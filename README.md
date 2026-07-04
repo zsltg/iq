@@ -1,8 +1,8 @@
 # iq
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
-databases. Redis is the first supported backend; the query core is driver-agnostic so further
-backends slot in behind the same port.
+databases. Redis and MongoDB are supported; the backend is chosen by the URL scheme, and the
+query core is driver-agnostic so further backends slot in behind the same port.
 
 The filter is both the transform and the key selector: its top-level paths name the keys to
 fetch, so the store only ever reads a bounded set of keys — never a full keyspace scan, unless
@@ -109,16 +109,46 @@ aggregate replies match redis-cli's classic flat output. Status replies such as 
 appear quoted, a limitation of the underlying client, which does not distinguish them from bulk
 strings.
 
+## MongoDB
+
+The backend is chosen by the URL scheme. Point `--url` at a `mongodb://` server and the same jq
+interface works against a collection, where **the collection is the keyspace: a document's `_id`
+is the key and the document is the value**. The database comes from the URI path; the collection
+from `--collection`/`-c`:
+
+```bash
+iq -u mongodb://localhost:27017/iq -c books '.["2"]'                 # fetch document _id "2"
+iq -u mongodb://localhost:27017/iq -c books '.[] | select(.year > 2015) | .title'   # streamed
+iq -u mongodb://localhost:27017/iq -c books --unbounded 'keys'       # every _id
+```
+
+Because Mongo values are natively typed, numeric comparisons like `.year > 2015` need no
+`tonumber` — unlike Redis, where everything is a string. Documents normalize to JSON with the
+same rules everywhere: an `ObjectID` becomes its hex string, a date becomes an RFC 3339 string,
+numbers stay numbers, nested documents and arrays are preserved. A missing `_id` reads as `null`.
+The `--unbounded` / streaming rules are identical to Redis (`.[]`-rooted filters stream a cursor
+in constant memory; `keys`/`.`/`map` materialize and require the flag).
+
+`iq raw` on MongoDB runs a single JSON command document with `runCommand` and prints the reply as
+JSON — the escape hatch for server-side queries, aggregation, and administration:
+
+```bash
+iq -u mongodb://localhost:27017/iq raw '{"find":"books","filter":{"year":{"$gt":2015}}}'
+iq -u mongodb://localhost:27017/iq raw '{"aggregate":"books","pipeline":[{"$group":{"_id":null,"avg":{"$avg":"$price"}}}],"cursor":{}}'
+```
+
 ### Connection
 
-The database is addressed with a standard Redis connection URL
-(`redis://[user:pass@]host:port[/db]`, `rediss://` for TLS), resolved in this order:
+The database is addressed with a connection URL whose scheme selects the backend —
+`redis://[user:pass@]host:port[/db]` (`rediss://` for TLS) or `mongodb://host:port/db`
+(`mongodb+srv://` too) — resolved in this order:
 
 1. the `--url` / `-u` flag
-2. the `IQ_REDIS_URL` environment variable
+2. the `IQ_URL` environment variable (or `IQ_REDIS_URL`, kept for back-compat)
 3. the default `redis://localhost:6379/0`
 
-`--timeout` (default `5s`) bounds each query.
+`--collection` / `-c` selects the MongoDB collection (ignored for Redis). `--timeout` (default
+`5s`) bounds each query.
 
 ## Architecture
 
@@ -132,10 +162,13 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   bounded → `Get` the named keys; streamable scan → run the filter over each `ScanBatches` page and
   emit; holistic scan → merge the pages and run once (only when the caller permits it). `Runner`
   is the raw-command use case behind the `Store` port.
-- `internal/redis` — the Redis adapter. One `*Store` satisfies both ports: `Query` (raw) and
-  `Get`/`ScanBatches` (jq), with the type-to-JSON normalization frozen as the encoding contract.
-- `cmd` — the CLI adapter. The root command is the jq action; `raw` is the verbatim escape
-  hatch. JSON and redis-cli formatting live here, keeping the core free of any output format.
+- `internal/redis`, `internal/mongo` — the adapters. Each has one `*Store` satisfying both ports:
+  `Query` (raw) and `Get`/`ScanBatches` (jq), with a type-to-JSON normalization frozen as that
+  backend's encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs). Redis maps
+  a key to a Redis key; Mongo maps a key to a document `_id` within `--collection`.
+- `cmd` — the CLI adapter and composition root. It picks the adapter by URL scheme (`openStore`),
+  runs the jq action or the `raw` escape hatch, and formats output (JSON for jq; per-backend for
+  raw — redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format.
 
 A bounded filter runs client-side over just the named keys, so its cost is `O(keys requested)`; a
 streamable scan runs in `O(page)` memory. The jq semantics are identical for any future backend
@@ -148,15 +181,16 @@ binary and exposes the AST the key selector walks.
 ```bash
 go build -o iq .          # build the binary
 go test -short ./...      # fast unit tests, no external services
-docker compose up -d --wait   # start a local Redis (redis:latest) on :6379
+docker compose up -d --wait   # start local Redis + MongoDB (:6379, :27017)
 bash scripts/seed.sh      # load example data into the running Redis
-go test ./...             # full suite, including Redis integration tests
-docker compose down       # stop the local Redis
+bash scripts/seed-mongo.sh    # load example documents into the running MongoDB
+go test ./...             # full suite, including Redis + MongoDB integration tests
+docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
 govulncheck ./...         # dependency vulnerability scan
-bash scripts/mutation-gate.sh   # mutation gate (run with Redis up; fails on any survivor/timeout)
+bash scripts/mutation-gate.sh   # mutation gate (run with services up; fails on any survivor/timeout)
 ```
 
-Integration tests skip under `go test -short`; the full `go test ./...` needs Redis up (via
-`docker compose up`) and connects to `IQ_REDIS_URL` or the local default.
+Integration tests skip under `go test -short`; the full `go test ./...` needs Redis and MongoDB
+up (via `docker compose up`) and connects to `IQ_REDIS_URL` / `IQ_MONGO_URL` or the local defaults.

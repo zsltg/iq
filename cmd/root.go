@@ -15,13 +15,19 @@ import (
 
 // config holds the connection settings shared by subcommands.
 type config struct {
-	url       string
-	timeout   time.Duration
-	unbounded bool
+	url        string
+	collection string
+	timeout    time.Duration
+	unbounded  bool
 }
 
-// defaultURL returns the connection URL from IQ_REDIS_URL, or a local default.
+// defaultURL returns the connection URL from IQ_URL, then IQ_REDIS_URL (kept for
+// back-compat), then a local Redis default. The scheme selects the backend, so
+// one variable serves every store.
 func defaultURL() string {
+	if url := os.Getenv("IQ_URL"); url != "" {
+		return url
+	}
 	if url := os.Getenv("IQ_REDIS_URL"); url != "" {
 		return url
 	}
@@ -42,8 +48,9 @@ func newRootCmd() *cobra.Command {
 			"select(.year)'`) streams over the whole keyspace in constant memory. A filter\n" +
 			"that collapses the dataset into one value (`.`, `keys`, `map(...)`) must load it\n" +
 			"all into memory and runs only with --unbounded. Always single-quote the filter\n" +
-			"so the shell does not expand its brackets, spaces, or pipes. Redis is the first\n" +
-			"supported backend.",
+			"so the shell does not expand its brackets, spaces, or pipes. The backend is chosen\n" +
+			"by the URL scheme: redis:// (key = Redis key) or mongodb:// (key = document _id in\n" +
+			"the --collection).",
 		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -56,7 +63,8 @@ func newRootCmd() *cobra.Command {
 			return runJQ(cmd, cfg, args[0])
 		},
 	}
-	root.PersistentFlags().StringVarP(&cfg.url, "url", "u", defaultURL(), "database connection URL (redis://...); overrides IQ_REDIS_URL")
+	root.PersistentFlags().StringVarP(&cfg.url, "url", "u", defaultURL(), "database connection URL (redis://... or mongodb://...); overrides IQ_URL")
+	root.PersistentFlags().StringVarP(&cfg.collection, "collection", "c", "", "MongoDB collection (the keyspace); ignored for Redis")
 	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "per-query timeout")
 	// --unbounded is local to the default jq action; the raw command never scans.
 	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
