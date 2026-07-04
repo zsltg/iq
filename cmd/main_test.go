@@ -1,0 +1,77 @@
+package cmd
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"net/url"
+	"os"
+	"testing"
+
+	"github.com/testcontainers/testcontainers-go"
+	tcmongo "github.com/testcontainers/testcontainers-go/modules/mongodb"
+	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
+)
+
+// TestMain provisions the Redis and MongoDB the cmd integration tests connect to:
+// ephemeral containers started once for the package, their URLs exported as
+// IQ_REDIS_URL / IQ_MONGO_URL so the tests' env fallbacks pick them up. flag.Parse
+// must run before testing.Short is read, and os.Exit skips deferred cleanup, so
+// the work lives in runTests where the defers fire before the process exits.
+func TestMain(m *testing.M) {
+	os.Exit(runTests(m))
+}
+
+func runTests(m *testing.M) int {
+	flag.Parse()
+	// Only stand up containers when integration tests will actually run and no
+	// external server was named; otherwise the env override or default stands in.
+	if !testing.Short() {
+		ctx := context.Background()
+		if os.Getenv("IQ_REDIS_URL") == "" {
+			container, err := tcredis.Run(ctx, "redis:latest")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "start redis container: %v\n", err)
+				return 1
+			}
+			defer func() { _ = testcontainers.TerminateContainer(container) }()
+			redisURL, err := container.ConnectionString(ctx)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "redis connection string: %v\n", err)
+				return 1
+			}
+			_ = os.Setenv("IQ_REDIS_URL", redisURL)
+		}
+		if os.Getenv("IQ_MONGO_URL") == "" {
+			container, err := tcmongo.Run(ctx, "mongo:latest")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "start mongodb container: %v\n", err)
+				return 1
+			}
+			defer func() { _ = testcontainers.TerminateContainer(container) }()
+			raw, err := container.ConnectionString(ctx)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "mongodb connection string: %v\n", err)
+				return 1
+			}
+			mongoURL, err := withMongoDatabase(raw, "iq_test")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "mongodb uri: %v\n", err)
+				return 1
+			}
+			_ = os.Setenv("IQ_MONGO_URL", mongoURL)
+		}
+	}
+	return m.Run()
+}
+
+// withMongoDatabase names the database in a mongodb URI; the query core requires
+// it in the path, but the container's connection string carries none.
+func withMongoDatabase(raw, db string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse mongodb uri: %w", err)
+	}
+	u.Path = "/" + db
+	return u.String(), nil
+}
