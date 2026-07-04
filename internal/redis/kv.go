@@ -1,0 +1,270 @@
+package redis
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+
+	goredis "github.com/redis/go-redis/v9"
+)
+
+// scanCount is the COUNT hint for each SCAN round; it bounds work per round-trip
+// without changing the result, which is the full keyspace.
+const scanCount = 100
+
+// Get fetches each key and returns it normalized to JSON-ready Go values, keyed
+// by key name. It reads the type of every key in one pipeline, then the value of
+// every key with its type-appropriate reader in a second pipeline, so the whole
+// batch costs two round-trips regardless of key count. A missing key maps to
+// nil. Keys are read once each; duplicates in the input collapse.
+func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
+	if len(keys) == 0 {
+		return map[string]any{}, nil
+	}
+	unique := dedupe(keys)
+
+	types, err := s.pipeTypes(ctx, unique)
+	if err != nil {
+		return nil, err
+	}
+	return s.pipeValues(ctx, unique, types)
+}
+
+// pipeTypes reads the Redis type of every key in a single pipeline.
+func (s *Store) pipeTypes(ctx context.Context, keys []string) ([]string, error) {
+	cmds := make([]*goredis.StatusCmd, len(keys))
+	_, err := s.client.Pipelined(ctx, func(p goredis.Pipeliner) error {
+		for i, k := range keys {
+			cmds[i] = p.Type(ctx, k)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("redis type: %w", err)
+	}
+	types := make([]string, len(keys))
+	for i, c := range cmds {
+		types[i] = c.Val()
+	}
+	return types, nil
+}
+
+// pipeValues reads each key with the reader its type dictates, in a single
+// pipeline, and normalizes each reply. An unsupported type fails fast rather
+// than guessing an encoding.
+func (s *Store) pipeValues(ctx context.Context, keys, types []string) (map[string]any, error) {
+	readers := make([]reader, len(keys))
+	_, err := s.client.Pipelined(ctx, func(p goredis.Pipeliner) error {
+		for i, k := range keys {
+			r, err := readerFor(ctx, p, k, types[i])
+			if err != nil {
+				return err
+			}
+			readers[i] = r
+		}
+		return nil
+	})
+	// A pipeline surfaces a per-command error (for example goredis.Nil) through
+	// Pipelined's return; the per-reader normalize below handles those, so only a
+	// transport error should abort here.
+	if err != nil && !errors.Is(err, goredis.Nil) {
+		return nil, fmt.Errorf("redis read: %w", err)
+	}
+
+	out := make(map[string]any, len(keys))
+	for i, k := range keys {
+		v, err := readers[i].normalize()
+		if err != nil {
+			return nil, fmt.Errorf("read key %q: %w", k, err)
+		}
+		out[k] = v
+	}
+	return out, nil
+}
+
+// reader normalizes one key's pipelined reply into a JSON-ready value.
+type reader interface {
+	normalize() (any, error)
+}
+
+// readerFor queues the read appropriate to a key's type and returns the reader
+// that will normalize the reply once the pipeline executes.
+func readerFor(ctx context.Context, p goredis.Pipeliner, key, typ string) (reader, error) {
+	switch typ {
+	case "none":
+		return missingReader{}, nil
+	case "string":
+		return stringReader{p.Get(ctx, key)}, nil
+	case "hash":
+		return hashReader{p.HGetAll(ctx, key)}, nil
+	case "list":
+		return listReader{p.LRange(ctx, key, 0, -1)}, nil
+	case "set":
+		return setReader{p.SMembers(ctx, key)}, nil
+	case "zset":
+		return zsetReader{p.ZRangeWithScores(ctx, key, 0, -1)}, nil
+	case "stream":
+		return streamReader{p.XRange(ctx, key, "-", "+")}, nil
+	case "ReJSON-RL":
+		return jsonReader{p.JSONGet(ctx, key)}, nil
+	default:
+		// Other module types (time series, bloom, and so on) have no frozen JSON
+		// encoding yet, so refuse rather than emit a lossy or ambiguous value.
+		return nil, fmt.Errorf("unsupported redis type %q for key %q", typ, key)
+	}
+}
+
+// missingReader normalizes an absent key to null.
+type missingReader struct{}
+
+func (missingReader) normalize() (any, error) { return nil, nil }
+
+// stringReader normalizes a string value. The raw string is preserved; numeric
+// strings are not coerced, so a jq filter decides whether to `tonumber`.
+type stringReader struct{ cmd *goredis.StringCmd }
+
+func (r stringReader) normalize() (any, error) {
+	v, err := r.cmd.Result()
+	if errors.Is(err, goredis.Nil) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+// hashReader normalizes a hash to an object of string fields.
+type hashReader struct{ cmd *goredis.MapStringStringCmd }
+
+func (r hashReader) normalize() (any, error) {
+	m, err := r.cmd.Result()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out, nil
+}
+
+// listReader normalizes a list to an array in list order.
+type listReader struct{ cmd *goredis.StringSliceCmd }
+
+func (r listReader) normalize() (any, error) {
+	vs, err := r.cmd.Result()
+	if err != nil {
+		return nil, err
+	}
+	return toAnySlice(vs), nil
+}
+
+// setReader normalizes a set to a lexically sorted array. A Redis set has no
+// order, so sorting makes the output deterministic and testable.
+type setReader struct{ cmd *goredis.StringSliceCmd }
+
+func (r setReader) normalize() (any, error) {
+	vs, err := r.cmd.Result()
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(vs)
+	return toAnySlice(vs), nil
+}
+
+// zsetReader normalizes a sorted set to an array of {member, score} objects in
+// score-ascending order, preserving rank — the frozen canonical encoding.
+type zsetReader struct{ cmd *goredis.ZSliceCmd }
+
+func (r zsetReader) normalize() (any, error) {
+	zs, err := r.cmd.Result()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, len(zs))
+	for i, z := range zs {
+		member, _ := z.Member.(string)
+		out[i] = map[string]any{"member": member, "score": z.Score}
+	}
+	return out, nil
+}
+
+// streamReader normalizes a stream to an array of {id, fields} objects in entry
+// order. Fields are an object, matching the hash encoding; go-redis already
+// returns an entry's fields as a map, so field order and any duplicate field
+// names are not available to preserve.
+type streamReader struct{ cmd *goredis.XMessageSliceCmd }
+
+func (r streamReader) normalize() (any, error) {
+	msgs, err := r.cmd.Result()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, len(msgs))
+	for i, m := range msgs {
+		fields := make(map[string]any, len(m.Values))
+		for k, v := range m.Values {
+			fields[k] = v
+		}
+		out[i] = map[string]any{"id": m.ID, "fields": fields}
+	}
+	return out, nil
+}
+
+// jsonReader normalizes a RedisJSON document by parsing its JSON.GET reply. The
+// stored value is already JSON, so it embeds directly with no shape decision.
+type jsonReader struct{ cmd *goredis.JSONCmd }
+
+func (r jsonReader) normalize() (any, error) {
+	s, err := r.cmd.Result()
+	if err != nil {
+		return nil, err
+	}
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return nil, fmt.Errorf("decode redis json: %w", err)
+	}
+	return v, nil
+}
+
+// ScanAll returns every key in the store, walking the keyspace with a cursor so
+// the server is never blocked the way KEYS would block it. It is the one
+// unbounded read, reached only by a bare `.` selector, and is bounded by ctx.
+func (s *Store) ScanAll(ctx context.Context) ([]string, error) {
+	var keys []string
+	iter := s.client.Scan(ctx, 0, "*", scanCount).Iterator()
+	for iter.Next(ctx) {
+		keys = append(keys, iter.Val())
+	}
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("redis scan: %w", err)
+	}
+	return keys, nil
+}
+
+// dedupe returns keys with duplicates removed, preserving first-seen order so a
+// key is read exactly once.
+func dedupe(keys []string) []string {
+	seen := make(map[string]struct{}, len(keys))
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	return out
+}
+
+// toAnySlice widens a string slice to []any so it marshals as a JSON array.
+func toAnySlice(vs []string) []any {
+	out := make([]any, len(vs))
+	for i, v := range vs {
+		out[i] = v
+	}
+	return out
+}

@@ -10,12 +10,15 @@ import (
 	iqredis "github.com/zsltg/iq/internal/redis"
 )
 
-// newQueryCmd builds the `iq query` subcommand.
-func newQueryCmd(cfg *config) *cobra.Command {
+// newRawCmd builds the `iq raw` subcommand: an escape hatch that forwards a
+// command verbatim to the database and prints the reply in redis-cli style. It
+// exists for the writes, administration, and seeding the jq read path does not
+// cover.
+func newRawCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
-		Use:   "query <command> [args...]",
-		Short: "Forward a query to the database and print the result",
-		Long:  "Forward a command to Redis, for example `iq query SET greeting hello` or `iq query GET greeting`.",
+		Use:   "raw <command> [args...]",
+		Short: "Forward a command to the database verbatim and print the reply",
+		Long:  "Forward a command to Redis verbatim, for example `iq raw SET greeting hello` or `iq raw GET greeting`.",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)

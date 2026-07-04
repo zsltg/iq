@@ -15,8 +15,9 @@ import (
 
 // config holds the connection settings shared by subcommands.
 type config struct {
-	url     string
-	timeout time.Duration
+	url       string
+	timeout   time.Duration
+	unbounded bool
 }
 
 // defaultURL returns the connection URL from IQ_REDIS_URL, or a local default.
@@ -27,19 +28,37 @@ func defaultURL() string {
 	return "redis://localhost:6379/0"
 }
 
-// newRootCmd builds the root command and its subcommands.
+// newRootCmd builds the root command and its subcommands. The default action is
+// the jq query: a bare `iq '<filter>'` runs the filter, whose top-level paths
+// name the keys to fetch. The `raw` subcommand forwards a command verbatim.
 func newRootCmd() *cobra.Command {
 	cfg := &config{}
 	root := &cobra.Command{
-		Use:           "iq",
-		Short:         "Query NoSQL databases from the command line",
-		Long:          "iq forwards queries to NoSQL databases. Redis is the first supported backend.",
+		Use:   "iq <jq-filter>",
+		Short: "Query NoSQL databases with jq from the command line",
+		Long: "iq runs a jq filter against a NoSQL database. The filter's top-level paths\n" +
+			"name the keys to fetch, for example `iq '.greeting'`, `iq '.[\"book:1\"]'` for a\n" +
+			"key with a colon, or `iq '[ .a, .b ]'`. A filter that reads the whole dataset\n" +
+			"(`.`, `.[]`, `keys`, `map(...)`) is an unbounded scan and runs only with\n" +
+			"--unbounded. Always single-quote the filter so the shell does not expand its\n" +
+			"brackets, spaces, or pipes. Redis is the first supported backend.",
+		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// A bare `iq` with no filter prints help rather than erroring, so the
+			// entry point is discoverable.
+			if len(args) == 0 {
+				return cmd.Help()
+			}
+			return runJQ(cmd, cfg, args[0])
+		},
 	}
 	root.PersistentFlags().StringVarP(&cfg.url, "url", "u", defaultURL(), "database connection URL (redis://...); overrides IQ_REDIS_URL")
 	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "per-query timeout")
-	root.AddCommand(newQueryCmd(cfg))
+	// --unbounded is local to the default jq action; the raw command never scans.
+	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that reads the whole keyspace (an unbounded scan)")
+	root.AddCommand(newRawCmd(cfg))
 	return root
 }
 
