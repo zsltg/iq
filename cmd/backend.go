@@ -30,9 +30,20 @@ func openStore(ctx context.Context, cfg *config) (store, error) {
 	case "mongodb", "mongodb+srv":
 		return iqmongo.Open(ctx, cfg.url, cfg.collection)
 	case "":
-		return nil, fmt.Errorf("missing url scheme in %q; expected redis:// or mongodb://", cfg.url)
+		return nil, fmt.Errorf("missing url scheme in %q; expected redis:// or mongodb://", redactURL(cfg.url))
 	default:
 		return nil, fmt.Errorf("unsupported url scheme %q; expected redis:// or mongodb://", schemeOf(cfg.url))
+	}
+}
+
+// supportedScheme reports whether url's scheme is one openStore can dispatch. It
+// is the single check `iq add` uses to reject a source the CLI cannot open.
+func supportedScheme(url string) bool {
+	switch schemeOf(url) {
+	case "redis", "rediss", "mongodb", "mongodb+srv":
+		return true
+	default:
+		return false
 	}
 }
 

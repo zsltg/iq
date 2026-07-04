@@ -24,6 +24,10 @@ func newRawCmd(cfg *config) *cobra.Command {
 			"command document run with runCommand: `iq raw '{\"find\":\"books\",\"filter\":{}}'`.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := resolveSource(cmd, cfg); err != nil {
+				return err
+			}
+
 			ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 			defer cancel()
 

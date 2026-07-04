@@ -15,6 +15,10 @@ import (
 // through the engine, and prints each produced value as JSON. Marshaling lives
 // here, in the CLI adapter, so the core stays free of any output format.
 func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
+	if err := resolveSource(cmd, cfg); err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 	defer cancel()
 

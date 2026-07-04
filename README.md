@@ -20,10 +20,47 @@ entirely client-side, so its semantics are identical for every backend.
 go build -o iq .
 ```
 
+## Sources
+
+`iq` connects only through **saved sources**: a named connection you register once, then select
+by name or as the default. Register one with `iq add`, then make it active:
+
+```bash
+iq add cache redis://localhost:6379/0                # register a Redis source
+iq add books mongodb://localhost:27017/iq -c books   # a Mongo source; -c names the collection
+iq src cache                                          # make "cache" the active source
+iq ls                                                 # list sources (the active one marked *)
+```
+
+Once a source is active, every query runs against it. Select a different source for a single
+command with `--src`/`-s`, without changing the active one:
+
+```bash
+iq --src books '.["2"]'      # run this one query against "books"
+```
+
+- `iq add <name> <url> [-c <collection>]` — register a source. The backend is inferred from the
+  URL scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`). `-c` stores a MongoDB
+  collection with the source.
+- `iq ls` — list saved sources; the active one is marked `*`. Passwords in URLs are redacted.
+- `iq src [<name>]` — show the active source, or set it.
+- `iq rm <name>` — remove a source.
+- `iq group [<name>] [--clear]` — show, set, or clear the active **group**.
+
+**Groups.** A `/` in a name groups sources (`prod/books`, `dev/books`). Set an active group with
+`iq group prod`, and an unqualified name resolves inside it — `iq src books` then selects
+`prod/books`, falling back to a top-level `books` if the group has none.
+
+Sources live in a TOML file at `<os user config dir>/iq/iq.toml` (e.g. `~/.config/iq/iq.toml`),
+written `0600` because a URL may carry a password. Override the path with `IQ_CONFIG`.
+
+> `iq add` shadows jq's built-in `add` filter at the top level. To sum with jq, write it inside a
+> larger expression, e.g. `iq '[ .a, .b ] | add'`.
+
 ## Usage
 
 The default action is a jq filter. Its top-level paths name the keys to fetch; the result is
-printed as JSON:
+printed as JSON (these run against the active source — see [Sources](#sources)):
 
 ```bash
 ./iq '.greeting'                          # fetch key "greeting"
@@ -111,15 +148,16 @@ strings.
 
 ## MongoDB
 
-The backend is chosen by the URL scheme. Point `--url` at a `mongodb://` server and the same jq
+The backend is chosen by the source's URL scheme. Register a `mongodb://` source and the same jq
 interface works against a collection, where **the collection is the keyspace: a document's `_id`
 is the key and the document is the value**. The database comes from the URI path; the collection
-from `--collection`/`-c`:
+from the source's `-c` (overridable per run with `--collection`/`-c`):
 
 ```bash
-iq -u mongodb://localhost:27017/iq -c books '.["2"]'                 # fetch document _id "2"
-iq -u mongodb://localhost:27017/iq -c books '.[] | select(.year > 2015) | .title'   # streamed
-iq -u mongodb://localhost:27017/iq -c books --unbounded 'keys'       # every _id
+iq add books mongodb://localhost:27017/iq -c books   # register once, then:
+iq --src books '.["2"]'                              # fetch document _id "2"
+iq --src books '.[] | select(.year > 2015) | .title' # streamed
+iq --src books --unbounded 'keys'                    # every _id
 ```
 
 Because Mongo values are natively typed, numeric comparisons like `.year > 2015` need no
@@ -136,7 +174,7 @@ By default a `.[] | select(...)` filter streams the whole collection and filters
 so the server does the filtering (and can use an index):
 
 ```bash
-iq -u mongodb://localhost:27017/iq -c books --compile '.[] | select(.author == "Robert C. Martin") | .title'
+iq --src books --compile '.[] | select(.author == "Robert C. Martin") | .title'
 ```
 
 `--compile` never changes results, only speed: the full jq always re-runs client-side over whatever
@@ -173,22 +211,22 @@ On Redis, or for any filter with no pushable predicate, `--compile` is a harmles
 JSON — the escape hatch for server-side queries, aggregation, and administration:
 
 ```bash
-iq -u mongodb://localhost:27017/iq raw '{"find":"books","filter":{"year":{"$gt":2015}}}'
-iq -u mongodb://localhost:27017/iq raw '{"aggregate":"books","pipeline":[{"$group":{"_id":null,"avg":{"$avg":"$price"}}}],"cursor":{}}'
+iq --src books raw '{"find":"books","filter":{"year":{"$gt":2015}}}'
+iq --src books raw '{"aggregate":"books","pipeline":[{"$group":{"_id":null,"avg":{"$avg":"$price"}}}],"cursor":{}}'
 ```
 
 ### Connection
 
-The database is addressed with a connection URL whose scheme selects the backend —
+The database is a saved [source](#sources) — a connection URL whose scheme selects the backend,
 `redis://[user:pass@]host:port[/db]` (`rediss://` for TLS) or `mongodb://host:port/db`
-(`mongodb+srv://` too) — resolved in this order:
+(`mongodb+srv://` too). A query resolves its source in this order:
 
-1. the `--url` / `-u` flag
-2. the `IQ_URL` environment variable (or `IQ_REDIS_URL`, kept for back-compat)
-3. the default `redis://localhost:6379/0`
+1. the `--src` / `-s` flag
+2. the active source (`iq src <name>`)
 
-`--collection` / `-c` selects the MongoDB collection (ignored for Redis). `--timeout` (default
-`5s`) bounds each query.
+With no source selected the command errors — there is no ambient URL or environment fallback.
+`--collection` / `-c` overrides the source's MongoDB collection for one run (ignored for Redis);
+`--timeout` (default `5s`) bounds each query.
 
 ## Architecture
 
@@ -206,9 +244,14 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   `Query` (raw) and `Get`/`ScanBatches` (jq), with a type-to-JSON normalization frozen as that
   backend's encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs). Redis maps
   a key to a Redis key; Mongo maps a key to a document `_id` within `--collection`.
-- `cmd` — the CLI adapter and composition root. It picks the adapter by URL scheme (`openStore`),
-  runs the jq action or the `raw` escape hatch, and formats output (JSON for jq; per-backend for
-  raw — redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format.
+- `internal/config` — the saved sources. A small TOML store (named connections keyed by handle,
+  plus the active source and group) the CLI reads to resolve a query's connection. It stays
+  driver-agnostic: the backend is inferred from a source's URL scheme, validated in `cmd`.
+- `cmd` — the CLI adapter and composition root. It resolves the selected source (`--src` or the
+  active source) to a URL and collection, picks the adapter by URL scheme (`openStore`), runs the
+  jq action, the `raw` escape hatch, or a source command (`add`/`ls`/`rm`/`src`/`group`), and
+  formats output (JSON for jq; per-backend for raw — redis-cli style for Redis, JSON for Mongo),
+  keeping the core free of any output format.
 
 A bounded filter runs client-side over just the named keys, so its cost is `O(keys requested)`; a
 streamable scan runs in `O(page)` memory. The jq semantics are identical for any future backend

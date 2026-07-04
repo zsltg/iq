@@ -1,5 +1,6 @@
 // Package cmd wires the CLI (Cobra) to the query core. Commands are humble
-// adapters: they parse flags, build a store, delegate to the core, and format.
+// adapters: they parse flags, resolve a saved source, build a store, delegate to
+// the core, and format.
 package cmd
 
 import (
@@ -13,8 +14,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// config holds the connection settings shared by subcommands.
+// config holds the per-invocation settings. url is not a flag: it is resolved
+// from the selected source (--src or the active source) before the store opens.
 type config struct {
+	src        string
 	url        string
 	collection string
 	timeout    time.Duration
@@ -22,22 +25,10 @@ type config struct {
 	compile    bool
 }
 
-// defaultURL returns the connection URL from IQ_URL, then IQ_REDIS_URL (kept for
-// back-compat), then a local Redis default. The scheme selects the backend, so
-// one variable serves every store.
-func defaultURL() string {
-	if url := os.Getenv("IQ_URL"); url != "" {
-		return url
-	}
-	if url := os.Getenv("IQ_REDIS_URL"); url != "" {
-		return url
-	}
-	return "redis://localhost:6379/0"
-}
-
 // newRootCmd builds the root command and its subcommands. The default action is
-// the jq query: a bare `iq '<filter>'` runs the filter, whose top-level paths
-// name the keys to fetch. The `raw` subcommand forwards a command verbatim.
+// the jq query: a bare `iq '<filter>'` runs the filter against the active source,
+// whose top-level paths name the keys to fetch. The `add`/`ls`/`rm`/`src`/`group`
+// subcommands manage saved sources; `raw` forwards a command verbatim.
 func newRootCmd() *cobra.Command {
 	cfg := &config{}
 	root := &cobra.Command{
@@ -49,9 +40,12 @@ func newRootCmd() *cobra.Command {
 			"select(.year)'`) streams over the whole keyspace in constant memory. A filter\n" +
 			"that collapses the dataset into one value (`.`, `keys`, `map(...)`) must load it\n" +
 			"all into memory and runs only with --unbounded. Always single-quote the filter\n" +
-			"so the shell does not expand its brackets, spaces, or pipes. The backend is chosen\n" +
-			"by the URL scheme: redis:// (key = Redis key) or mongodb:// (key = document _id in\n" +
-			"the --collection).\n" +
+			"so the shell does not expand its brackets, spaces, or pipes.\n" +
+			"\n" +
+			"The database is a saved source: register connections with `iq add <name> <url>`,\n" +
+			"choose a default with `iq src <name>`, and list them with `iq ls`. The backend is\n" +
+			"chosen by the source's URL scheme: redis:// (key = Redis key) or mongodb:// (key =\n" +
+			"document _id in the source's collection). Select a source for one run with --src.\n" +
 			"\n" +
 			"--compile pushes these select(...) clauses to MongoDB (results are unchanged; the\n" +
 			"full jq always re-runs, so a pushed filter is only a pre-filter):\n" +
@@ -62,8 +56,6 @@ func newRootCmd() *cobra.Command {
 			"  has(\"a\"),  .a | has(\"k\")   key presence -> $exists\n" +
 			"  .a | length == n           -> $size (with type guards)\n" +
 			"  .a | any(cond)             array element match -> $elemMatch\n" +
-			"  .a != v,  has(\"a\") | not    exact negation ($ne, $exists:false)\n" +
-			"  .a | any(.f == v) | not    no array element matches -> $not $elemMatch\n" +
 			"  E1 and E2,  E1 or E2       combine the above\n" +
 			"Not pushed (run client-side): != , ranges vs bool/null, non-portable regex,\n" +
 			"everything else. On Redis, or with no pushable clause, --compile is a no-op.",
@@ -79,13 +71,20 @@ func newRootCmd() *cobra.Command {
 			return runJQ(cmd, cfg, args[0])
 		},
 	}
-	root.PersistentFlags().StringVarP(&cfg.url, "url", "u", defaultURL(), "database connection URL (redis://... or mongodb://...); overrides IQ_URL")
-	root.PersistentFlags().StringVarP(&cfg.collection, "collection", "c", "", "MongoDB collection (the keyspace); ignored for Redis")
+	root.PersistentFlags().StringVarP(&cfg.src, "src", "s", "", "run against this saved source for one invocation (overrides the active source; see `iq src`)")
+	root.PersistentFlags().StringVarP(&cfg.collection, "collection", "c", "", "MongoDB collection, overriding the source's (ignored for Redis)")
 	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "per-query timeout")
 	// --unbounded and --compile are local to the default jq action.
 	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
 	root.Flags().BoolVar(&cfg.compile, "compile", false, "push a .[]|select(...) equality predicate to the store to pre-filter server-side (MongoDB; no-op elsewhere; results are unchanged)")
-	root.AddCommand(newRawCmd(cfg))
+	root.AddCommand(
+		newRawCmd(cfg),
+		newAddCmd(),
+		newLsCmd(),
+		newRmCmd(),
+		newSrcCmd(),
+		newGroupCmd(),
+	)
 	return root
 }
 

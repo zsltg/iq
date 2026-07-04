@@ -1,0 +1,279 @@
+// Package config persists the CLI's named connection sources and which source
+// and group are active, so a query need not repeat a connection URL. It stores
+// no secrets of its own, but a source URL may carry credentials, so the file is
+// written 0600. The backend is inferred from a source's URL scheme, so this
+// package stays driver-agnostic: it never imports a driver and never validates
+// which schemes are supported (that belongs to the CLI's composition root).
+package config
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/pelletier/go-toml/v2"
+)
+
+// EnvConfig is the environment variable that overrides the config file path.
+const EnvConfig = "IQ_CONFIG"
+
+// Validation errors, exported as sentinels so callers can match with errors.Is.
+var (
+	// ErrEmptyHandle is returned when a source name is blank.
+	ErrEmptyHandle = errors.New("empty source name")
+	// ErrBadHandle is returned when a source name uses illegal characters.
+	ErrBadHandle = errors.New("invalid source name")
+	// ErrDuplicate is returned when adding a source name that already exists.
+	ErrDuplicate = errors.New("source already exists")
+	// ErrEmptyURL is returned when a source is added with a blank URL.
+	ErrEmptyURL = errors.New("empty source url")
+	// ErrUnknownSource is returned when a named source does not exist.
+	ErrUnknownSource = errors.New("unknown source")
+	// ErrUnknownGroup is returned when a group has no sources.
+	ErrUnknownGroup = errors.New("unknown group")
+)
+
+// Source is a named connection target. The backend is inferred from the URL
+// scheme, so no driver field is stored. Collection applies to MongoDB only and
+// is empty otherwise.
+type Source struct {
+	URL        string `toml:"url"`
+	Collection string `toml:"collection,omitempty"`
+}
+
+// Config is the persisted CLI state: the named sources keyed by their full
+// handle, the active source, and the active group (each empty when unset).
+type Config struct {
+	Active  string            `toml:"active,omitempty"`
+	Group   string            `toml:"group,omitempty"`
+	Sources map[string]Source `toml:"sources,omitempty"`
+}
+
+// Handle pairs a source with its full name, for listing.
+type Handle struct {
+	Name   string
+	Source Source
+}
+
+// Path returns the config file path: $IQ_CONFIG when set, otherwise
+// <os.UserConfigDir>/iq/iq.toml.
+func Path() (string, error) {
+	if p := os.Getenv(EnvConfig); p != "" {
+		return p, nil
+	}
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("locate user config dir: %w", err)
+	}
+	return filepath.Join(dir, "iq", "iq.toml"), nil
+}
+
+// Load reads and parses the config file. A missing file yields an empty Config
+// with an initialized Sources map and no error, so first use needs no setup.
+func Load() (*Config, error) {
+	p, err := Path()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return &Config{Sources: map[string]Source{}}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read config %s: %w", p, err)
+	}
+	var c Config
+	if err := toml.Unmarshal(data, &c); err != nil {
+		return nil, fmt.Errorf("parse config %s: %w", p, err)
+	}
+	if c.Sources == nil {
+		c.Sources = map[string]Source{}
+	}
+	return &c, nil
+}
+
+// Save writes c to Path() atomically (a temp file in the same directory then a
+// rename) with 0600 permissions, creating the parent directory (0700) if needed.
+func (c *Config) Save() error {
+	p, err := Path()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(p)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	f, err := os.CreateTemp(dir, "iq-*.toml")
+	if err != nil {
+		return fmt.Errorf("create temp config: %w", err)
+	}
+	tmp := f.Name()
+	// Remove the temp file on any error path; a no-op once the rename succeeds.
+	defer func() { _ = os.Remove(tmp) }()
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("set config permissions: %w", err)
+	}
+	if err := toml.NewEncoder(f).Encode(c); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("encode config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close temp config: %w", err)
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		return fmt.Errorf("replace config: %w", err)
+	}
+	return nil
+}
+
+// Add registers a new source. It errors on a blank or malformed name, a name
+// that already exists, or a blank URL. Scheme support is validated by the
+// caller, which owns backend dispatch.
+func (c *Config) Add(handle, url, collection string) error {
+	h, err := validateHandle(handle)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(url) == "" {
+		return ErrEmptyURL
+	}
+	if _, ok := c.Sources[h]; ok {
+		return fmt.Errorf("%w: %q", ErrDuplicate, h)
+	}
+	if c.Sources == nil {
+		c.Sources = map[string]Source{}
+	}
+	c.Sources[h] = Source{URL: url, Collection: collection}
+	return nil
+}
+
+// Remove deletes the named source, clearing the active source if it pointed
+// there and the active group if that group no longer has any source. It errors
+// if the name is unknown.
+func (c *Config) Remove(handle string) error {
+	h := cleanHandle(handle)
+	if _, ok := c.Sources[h]; !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownSource, h)
+	}
+	delete(c.Sources, h)
+	if c.Active == h {
+		c.Active = ""
+	}
+	if c.Group != "" && !c.hasGroup(c.Group) {
+		c.Group = ""
+	}
+	return nil
+}
+
+// SetActive sets the active source, storing its resolved full handle. It errors
+// if the name resolves to no source.
+func (c *Config) SetActive(handle string) error {
+	_, full, ok := c.Resolve(handle)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownSource, cleanHandle(handle))
+	}
+	c.Active = full
+	return nil
+}
+
+// SetGroup sets the active group. An empty group clears it. It errors if the
+// group has no sources.
+func (c *Config) SetGroup(group string) error {
+	g, err := validateHandle(group)
+	if err != nil {
+		if errors.Is(err, ErrEmptyHandle) {
+			c.Group = ""
+			return nil
+		}
+		return err
+	}
+	if !c.hasGroup(g) {
+		return fmt.Errorf("%w: %q", ErrUnknownGroup, g)
+	}
+	c.Group = g
+	return nil
+}
+
+// Resolve looks up a source by name, applying active-group namespacing: a name
+// containing "/" is absolute; otherwise, when a group is active, "<group>/<name>"
+// is tried first and the bare name second. It returns the source, the full
+// handle it matched, and whether it was found.
+func (c *Config) Resolve(name string) (Source, string, bool) {
+	name = cleanHandle(name)
+	if name == "" {
+		return Source{}, "", false
+	}
+	if !strings.Contains(name, "/") && c.Group != "" {
+		full := c.Group + "/" + name
+		if s, ok := c.Sources[full]; ok {
+			return s, full, true
+		}
+	}
+	if s, ok := c.Sources[name]; ok {
+		return s, name, true
+	}
+	return Source{}, "", false
+}
+
+// List returns the sources sorted by full handle, for `iq ls`.
+func (c *Config) List() []Handle {
+	hs := make([]Handle, 0, len(c.Sources))
+	for name, s := range c.Sources {
+		hs = append(hs, Handle{Name: name, Source: s})
+	}
+	sort.Slice(hs, func(i, j int) bool { return hs[i].Name < hs[j].Name })
+	return hs
+}
+
+// hasGroup reports whether any source belongs to the given group.
+func (c *Config) hasGroup(group string) bool {
+	prefix := group + "/"
+	for h := range c.Sources {
+		if strings.HasPrefix(h, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// cleanHandle trims surrounding space and a single leading "@" (accepted for
+// sq muscle memory; handles are stored without it).
+func cleanHandle(h string) string {
+	return strings.TrimPrefix(strings.TrimSpace(h), "@")
+}
+
+// validateHandle cleans and checks a handle: non-empty, no leading, trailing, or
+// doubled "/", and only letters, digits, ".", "_", "-", "/". The "/" separates
+// group from name.
+func validateHandle(h string) (string, error) {
+	h = cleanHandle(h)
+	if h == "" {
+		return "", ErrEmptyHandle
+	}
+	if strings.HasPrefix(h, "/") || strings.HasSuffix(h, "/") || strings.Contains(h, "//") {
+		return "", fmt.Errorf("%w %q: misplaced '/'", ErrBadHandle, h)
+	}
+	for _, r := range h {
+		if !isHandleRune(r) {
+			return "", fmt.Errorf("%w %q: only letters, digits, '.', '_', '-', '/' allowed", ErrBadHandle, h)
+		}
+	}
+	return h, nil
+}
+
+// isHandleRune reports whether r is allowed in a handle.
+func isHandleRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return true
+	case r == '.', r == '_', r == '-', r == '/':
+		return true
+	default:
+		return false
+	}
+}
