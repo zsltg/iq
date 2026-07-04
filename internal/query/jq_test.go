@@ -189,8 +189,8 @@ func TestJQEngineCompileFallsBackWhenNotPushable(t *testing.T) {
 		values:   map[string]any{"1": map[string]any{"year": 2018}},
 	}}
 
-	// A negation does not compile, so the engine full-scans instead.
-	got, err := collectOpts(t, store, ".[] | select(.year != 2015)", query.RunOptions{Compile: true})
+	// A filter with no select has nothing to push, so the engine full-scans.
+	got, err := collectOpts(t, store, ".[]", query.RunOptions{Compile: true})
 
 	require.NoError(t, err)
 	require.Zero(t, store.filterCalls, "an uncompilable predicate is not pushed")

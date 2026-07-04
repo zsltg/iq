@@ -58,6 +58,15 @@ func pipeStages(q *gojq.Query) []*gojq.Query {
 	return []*gojq.Query{q}
 }
 
+// joinPipe rebuilds a pipe chain from stages, the inverse of pipeStages, so a
+// prefix of a flattened chain can be re-analysed on its own.
+func joinPipe(stages []*gojq.Query) *gojq.Query {
+	if len(stages) == 1 {
+		return stages[0]
+	}
+	return &gojq.Query{Op: gojq.OpPipe, Left: stages[0], Right: joinPipe(stages[1:])}
+}
+
 // selectArg returns the argument of a stage that is exactly a select(E) call.
 func selectArg(s *gojq.Query) (*gojq.Query, bool) {
 	if s.Op != 0 || s.Term == nil || len(s.Term.SuffixList) != 0 {
@@ -82,6 +91,11 @@ func extractPred(e *gojq.Query) (predicate.Node, bool) {
 	// A bare builtin fed the document itself, i.e. has("field").
 	if e.Op == 0 && e.Term != nil && e.Term.Func != nil && len(e.Term.SuffixList) == 0 {
 		return existsFrom(nil, e.Term.Func)
+	}
+	// A trailing `| not` negates everything before it (pipes flatten to stages,
+	// so `.a | any(x) | not` is `not` applied to `.a | any(x)`).
+	if stages := pipeStages(e); len(stages) >= 2 && isNot(stages[len(stages)-1]) {
+		return negate(joinPipe(stages[:len(stages)-1]))
 	}
 	switch e.Op {
 	case gojq.OpPipe:
@@ -108,6 +122,8 @@ func extractPred(e *gojq.Query) (predicate.Node, bool) {
 		return nil, false
 	case gojq.OpEq:
 		return eqAtom(e.Left, e.Right)
+	case gojq.OpNe:
+		return neAtom(e.Left, e.Right)
 	case gojq.OpGt:
 		return cmpAtom(predicate.Gt, e.Left, e.Right)
 	case gojq.OpGe:
@@ -251,6 +267,76 @@ func existsFrom(base []string, f *gojq.Func) (predicate.Node, bool) {
 	path = append(path, base...)
 	path = append(path, key)
 	return predicate.Exists{Path: path}, true
+}
+
+// neAtom builds a Ne from a `path != literal` comparison in either order.
+func neAtom(a, b *gojq.Query) (predicate.Node, bool) {
+	if path, ok := pathOf(a); ok {
+		if v, ok := literalOf(b); ok {
+			return predicate.Ne{Path: path, Value: v}, true
+		}
+	}
+	if path, ok := pathOf(b); ok {
+		if v, ok := literalOf(a); ok {
+			return predicate.Ne{Path: path, Value: v}, true
+		}
+	}
+	return nil, false
+}
+
+// isNot reports whether q is the bare not builtin.
+func isNot(q *gojq.Query) bool {
+	return q.Op == 0 && q.Term != nil && q.Term.Func != nil &&
+		q.Term.Func.Name == "not" && len(q.Term.Func.Args) == 0 && len(q.Term.SuffixList) == 0
+}
+
+// negate pushes `inner | not`. A negation cannot use the superset-and-re-run
+// safety net (negating a superset yields a subset), so it pushes only when inner
+// compiles to an exactly-representable predicate: equality, existence, or an
+// any() over an exact-equality condition.
+func negate(inner *gojq.Query) (predicate.Node, bool) {
+	p, ok := extractPred(inner)
+	if !ok {
+		return nil, false
+	}
+	switch t := p.(type) {
+	case predicate.Eq:
+		return predicate.Ne(t), true
+	case predicate.Exists:
+		return predicate.NotExists(t), true
+	case predicate.ElemMatch:
+		if isExactCond(t.Cond) {
+			return predicate.NoneMatch(t), true
+		}
+		return nil, false
+	default:
+		return nil, false
+	}
+}
+
+// isExactCond reports whether a predicate is an exact equality condition — an Eq,
+// or an And/Or of exact conditions — the only kind safe to negate.
+func isExactCond(n predicate.Node) bool {
+	switch t := n.(type) {
+	case predicate.Eq:
+		return true
+	case predicate.And:
+		return allExact(t)
+	case predicate.Or:
+		return allExact(t)
+	default:
+		return false
+	}
+}
+
+// allExact reports whether every node is an exact condition.
+func allExact(nodes []predicate.Node) bool {
+	for _, n := range nodes {
+		if !isExactCond(n) {
+			return false
+		}
+	}
+	return true
 }
 
 // lengthEq recognizes `length == n` (in either order) and returns n when it is a

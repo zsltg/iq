@@ -39,6 +39,20 @@ func toFilter(n predicate.Node) bson.M {
 			bson.M{path: bson.M{"$elemMatch": toFilter(t.Cond)}},
 			bson.M{path: bson.M{"$type": "object"}},
 		}}
+	case predicate.Ne:
+		// jq's != excludes only the scalar value; an array is never equal to a
+		// scalar in jq, so it must still match even though Mongo's $ne would
+		// exclude an array that contains the value.
+		p := strings.Join(t.Path, ".")
+		return bson.M{"$or": bson.A{
+			bson.M{p: bson.M{"$ne": t.Value}},
+			bson.M{p: bson.M{"$type": "array"}},
+		}}
+	case predicate.NotExists:
+		return bson.M{strings.Join(t.Path, "."): bson.M{"$exists": false}}
+	case predicate.NoneMatch:
+		// No array element satisfies the (exact) condition.
+		return bson.M{strings.Join(t.Path, "."): bson.M{"$not": bson.M{"$elemMatch": exactFilter(t.Cond)}}}
 	case predicate.And:
 		return bson.M{"$and": toFilters(t)}
 	case predicate.Or:
@@ -78,6 +92,37 @@ func sameFieldEqs(or predicate.Or) (string, bson.A, bool) {
 		values = append(values, eq.Value)
 	}
 	return path, values, true
+}
+
+// exactFilter renders an equality condition exactly (not as the array-containment
+// superset Eq uses), so it can be safely negated. `{field: value}` alone would
+// also match an array element containing value; the extra guard excludes arrays,
+// leaving exactly "field is the scalar value".
+func exactFilter(n predicate.Node) bson.M {
+	switch t := n.(type) {
+	case predicate.Eq:
+		p := strings.Join(t.Path, ".")
+		return bson.M{"$and": bson.A{
+			bson.M{p: t.Value},
+			bson.M{p: bson.M{"$not": bson.M{"$type": "array"}}},
+		}}
+	case predicate.And:
+		return bson.M{"$and": exactFilters(t)}
+	case predicate.Or:
+		return bson.M{"$or": exactFilters(t)}
+	default:
+		// Unreachable: NoneMatch is only built over exact conditions.
+		return bson.M{}
+	}
+}
+
+// exactFilters renders each child exactly, preserving order.
+func exactFilters(nodes []predicate.Node) bson.A {
+	out := make(bson.A, len(nodes))
+	for i, n := range nodes {
+		out[i] = exactFilter(n)
+	}
+	return out
 }
 
 // toFilters translates each child node, preserving order.

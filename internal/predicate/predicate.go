@@ -71,6 +71,27 @@ type Size struct {
 	N    int
 }
 
+// Ne matches documents whose field at Path is not the scalar Value — the exact
+// negation of Eq (jq's !=). Unlike Eq it must be exact, not a superset, because
+// re-running jq cannot recover a document a negation wrongly excluded.
+type Ne struct {
+	Path  []string
+	Value any
+}
+
+// NotExists matches documents lacking the field at Path (`has(...) | not`).
+type NotExists struct {
+	Path []string
+}
+
+// NoneMatch matches documents whose array at Path has no element satisfying Cond
+// (`.path | any(cond) | not`). Cond is an exact equality predicate (Eq, or And/Or
+// of Eq), so the negation does not silently drop documents.
+type NoneMatch struct {
+	Path []string
+	Cond Node
+}
+
 // ElemMatch matches documents whose array at Path has at least one element
 // satisfying Cond, the analogue of jq's `.path | any(cond)`. Cond is a predicate
 // over the element's own fields. Because jq's any also iterates an object's
@@ -92,5 +113,8 @@ func (Regex) node()     {}
 func (Exists) node()    {}
 func (Size) node()      {}
 func (ElemMatch) node() {}
+func (Ne) node()        {}
+func (NotExists) node() {}
+func (NoneMatch) node() {}
 func (And) node()       {}
 func (Or) node()        {}

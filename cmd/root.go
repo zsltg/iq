@@ -62,6 +62,8 @@ func newRootCmd() *cobra.Command {
 			"  has(\"a\"),  .a | has(\"k\")   key presence -> $exists\n" +
 			"  .a | length == n           -> $size (with type guards)\n" +
 			"  .a | any(cond)             array element match -> $elemMatch\n" +
+			"  .a != v,  has(\"a\") | not    exact negation ($ne, $exists:false)\n" +
+			"  .a | any(.f == v) | not    no array element matches -> $not $elemMatch\n" +
 			"  E1 and E2,  E1 or E2       combine the above\n" +
 			"Not pushed (run client-side): != , ranges vs bool/null, non-portable regex,\n" +
 			"everything else. On Redis, or with no pushable clause, --compile is a no-op.",

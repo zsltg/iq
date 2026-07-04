@@ -261,6 +261,57 @@ func TestCompileExistsAndSizeEquivalentToClientSide(t *testing.T) {
 	}
 }
 
+func TestCompileNegationEquivalentToClientSide(t *testing.T) {
+	store := openIntegration(t, "negation_docs")
+	seedDocs(t, store, []any{
+		bson.M{"_id": "eq", "f": "x", "opt": int32(1)},
+		bson.M{"_id": "other", "f": "y"},
+		bson.M{"_id": "arr", "f": bson.A{"x"}}, // array containing the value
+		bson.M{"_id": "nul", "f": nil},
+		bson.M{"_id": "obj", "f": bson.M{"a": int32(1)}},
+		bson.M{"_id": "miss"},
+	})
+
+	filters := []string{
+		`.[] | select(.f != "x") | ._id`,
+		".[] | select(.f != null) | ._id",
+		`.[] | select(has("opt") | not) | ._id`,
+	}
+	eng := query.NewJQEngine(store)
+	for _, f := range filters {
+		t.Run(f, func(t *testing.T) {
+			plain := runIDs(t, eng, f, query.RunOptions{})
+			pushed := runIDs(t, eng, f, query.RunOptions{Compile: true})
+			require.ElementsMatch(t, plain, pushed, "pushed negation must equal client-side")
+		})
+	}
+}
+
+func TestCompileNoneMatchEquivalentToClientSide(t *testing.T) {
+	store := openIntegration(t, "nonematch_docs")
+	seedDocs(t, store, []any{
+		bson.M{"_id": "hit", "items": bson.A{bson.M{"p": int32(6)}, bson.M{"p": int32(2)}}},
+		bson.M{"_id": "nohit", "items": bson.A{bson.M{"p": int32(2)}, bson.M{"p": int32(3)}}},
+		bson.M{"_id": "elem_arr", "items": bson.A{bson.M{"p": bson.A{int32(6)}}}}, // element p is an array
+		bson.M{"_id": "obj_hit", "items": bson.M{"x": bson.M{"p": int32(6)}}},
+		bson.M{"_id": "obj_nohit", "items": bson.M{"x": bson.M{"p": int32(2)}}},
+		bson.M{"_id": "empty", "items": bson.A{}},
+	})
+
+	filters := []string{
+		".[] | select(.items | any(.p == 6) | not) | ._id",
+	}
+	eng := query.NewJQEngine(store)
+	for _, f := range filters {
+		t.Run(f, func(t *testing.T) {
+			plain := runIDs(t, eng, f, query.RunOptions{})
+			pushed := runIDs(t, eng, f, query.RunOptions{Compile: true})
+			require.ElementsMatch(t, plain, pushed,
+				"pushed $not/$elemMatch must equal client-side, including the array-element and object edges")
+		})
+	}
+}
+
 func TestCompileElemMatchEquivalentToClientSide(t *testing.T) {
 	store := openIntegration(t, "elemmatch_docs")
 	// items is an array of objects for most docs, but an object for one — jq's any

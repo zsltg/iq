@@ -94,6 +94,27 @@ func TestToFilter(t *testing.T) {
 			}},
 		},
 		{
+			"inequality keeps arrays (they are never a scalar in jq)",
+			predicate.Ne{Path: []string{"status"}, Value: "x"},
+			bson.M{"$or": bson.A{
+				bson.M{"status": bson.M{"$ne": "x"}},
+				bson.M{"status": bson.M{"$type": "array"}},
+			}},
+		},
+		{
+			"not exists",
+			predicate.NotExists{Path: []string{"opt"}},
+			bson.M{"opt": bson.M{"$exists": false}},
+		},
+		{
+			"none match uses an exact element equality",
+			predicate.NoneMatch{Path: []string{"items"}, Cond: predicate.Eq{Path: []string{"p"}, Value: 6.0}},
+			bson.M{"items": bson.M{"$not": bson.M{"$elemMatch": bson.M{"$and": bson.A{
+				bson.M{"p": 6.0},
+				bson.M{"p": bson.M{"$not": bson.M{"$type": "array"}}},
+			}}}}},
+		},
+		{
 			"elemMatch also matches an object field",
 			predicate.ElemMatch{Path: []string{"items"}, Cond: predicate.Eq{Path: []string{"p"}, Value: 6.0}},
 			bson.M{"$or": bson.A{
