@@ -1,0 +1,13 @@
+services:
+  redis:
+    image: redis:latest
+    container_name: iq-redis
+    ports:
+      - "6379:6379"
+    # Ephemeral test instance: no persistence to disk.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 5

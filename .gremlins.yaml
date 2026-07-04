@@ -1,0 +1,4 @@
+# gremlins mutation testing config. See https://gremlins.dev.
+# Fail the run if any covered mutant survives (zero survivors on tested code).
+# Mutant coverage is left ungated: humble CLI wiring stays untested by design.
+threshold-efficacy: 100

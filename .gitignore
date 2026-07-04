@@ -1,0 +1,14 @@
+# Compiled binary.
+/iq
+/dist/
+
+# Test and coverage output.
+*.out
+coverage.*
+
+# Local env (the tracked template is .env.example).
+.env
+
+# OS and editor cruft.
+.DS_Store
+*~

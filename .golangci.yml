@@ -1,0 +1,14 @@
+version: "2"
+linters:
+  enable:
+    - godot
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      module-path: github.com/zsltg/iq
+    goimports:
+      local-prefixes:
+        - github.com/zsltg/iq
