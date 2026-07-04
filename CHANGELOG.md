@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.6.0 - 2026-07-05
+### Features
+- **output:** add --format/-o with json, jsonl, json-array, values, yaml (03188a7)
+- **source:** add inspect for native database introspection (60d785b)
+- **source:** add ping to check source reachability (3e37d51)
+- **source:** add ls --reveal for unredacted URLs (8becb3b)
+- **source:** add ls --verbose, --group, --json and group filter (7a5731d)
+- **source:** remove multiple sources and groups in one rm (6ea9705)
+- **source:** add mv to rename and move sources and groups (2cc6cca)
+- **source:** store credentials in the OS keyring (1e45e2e)
+
+### Bug Fixes
+- **release:** degrade changelog gen gracefully behind a published tag (8545b81)
+
+
 ## v0.5.0 - 2026-07-04
 ### Bug Fixes
 - **release:** ignore untracked files in the clean-tree guard (075a3a6)
