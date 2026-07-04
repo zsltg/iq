@@ -26,12 +26,13 @@ type config struct {
 	compile    bool
 	from       []string
 	combine    string
+	format     string
 }
 
 // newRootCmd builds the root command and its subcommands. The default action is
 // the jq query: a bare `iq '<filter>'` runs the filter against the active source,
 // whose top-level paths name the keys to fetch. The `add`/`ls`/`rm`/`src`/`group`
-// subcommands manage saved sources; `raw` forwards a command verbatim.
+// subcommands manage saved sources; `exec` forwards a command verbatim.
 func newRootCmd() *cobra.Command {
 	cfg := &config{}
 	root := &cobra.Command{
@@ -91,8 +92,9 @@ func newRootCmd() *cobra.Command {
 	root.Flags().BoolVar(&cfg.compile, "compile", false, "push a .[]|select(...) equality predicate to the store to pre-filter server-side (MongoDB; no-op elsewhere; results are unchanged)")
 	root.Flags().StringArrayVar(&cfg.from, "from", nil, "cross-source stage `name=<jq>`: reduce source name with <jq> and bind its results to $name (repeatable; needs --combine)")
 	root.Flags().StringVar(&cfg.combine, "combine", "", "final jq over the --from results (each bound to $name), run over a null input")
+	root.Flags().StringVarP(&cfg.format, "format", "o", "json", "output format: json (pretty stream), jsonl (compact, one per line), json-array (single [ ... ] doc), values (unquoted scalars), yaml")
 	root.AddCommand(
-		newRawCmd(cfg),
+		newExecCmd(cfg),
 		newAddCmd(),
 		newLsCmd(),
 		newRmCmd(),

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -33,6 +32,12 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 	if strings.TrimSpace(cfg.combine) == "" {
 		return errors.New("--from requires --combine to say how to combine the results")
 	}
+	// Validate the output format before any source work, so a bad --format fails
+	// fast rather than after opening and scanning every source.
+	fm, err := parseFormat(cfg.format)
+	if err != nil {
+		return err
+	}
 	cf, err := iqconfig.Load()
 	if err != nil {
 		return err
@@ -60,15 +65,8 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 		values = append(values, vals)
 	}
 
-	enc := json.NewEncoder(cmd.OutOrStdout())
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	return query.NewCombiner().Run(ctx, cfg.combine, names, values, func(v any) error {
-		if err := enc.Encode(v); err != nil {
-			return fmt.Errorf("encode result: %w", err)
-		}
-		return nil
-	})
+	f := newFormatter(fm, cmd.OutOrStdout())
+	return finish(f, query.NewCombiner().Run(ctx, cfg.combine, names, values, f.emit))
 }
 
 // planFrom parses and resolves the --from clauses into stages, rejecting a

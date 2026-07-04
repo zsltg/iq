@@ -82,7 +82,8 @@ written `0600` because a URL may carry a password. Override the path with `IQ_CO
 ## Usage
 
 The default action is a jq filter. Its top-level paths name the keys to fetch; the result is
-printed as JSON (these run against the active source — see [Sources](#sources)):
+printed as pretty JSON by default (see [Output formats](#output-formats) to change it; these run
+against the active source — see [Sources](#sources)):
 
 ```bash
 ./iq '.greeting'                          # fetch key "greeting"
@@ -95,6 +96,27 @@ printed as JSON (these run against the active source — see [Sources](#sources)
 Always wrap the filter in single quotes. jq syntax is full of characters the shell would
 otherwise expand or split — brackets (`[ ]`), whitespace, `|`, `*`, `$` — and bracket-quoting a
 colon key like `.["book:1"]` reads as a glob to zsh (`no matches found`) or bash unless quoted.
+
+### Output formats
+
+Results print as pretty JSON by default. `--format`/`-o` selects another rendering; it applies
+to the jq read path and to `--from`/`--combine`, not to `exec` (which prints the backend's
+native reply):
+
+| `-o` value | output |
+| --- | --- |
+| `json` (default) | pretty JSON, one value per result |
+| `jsonl` | compact JSON, one value per line (JSON Lines) |
+| `json-array` | every result wrapped in one `[ ... ]` document |
+| `values` | scalars unquoted, one per line; objects and arrays fall back to compact JSON |
+| `yaml` | YAML documents, separated by `---` |
+
+```bash
+./iq '.[].title' -o values     # bare titles, one per line, for shell substitution
+./iq '.[]' -o jsonl            # one compact document per line
+./iq '.[]' -o json-array       # a single JSON array of every result
+./iq '.[]' -o yaml             # YAML, easier to read for deeply nested documents
+```
 
 ### Bounded reads, streaming scans, and materialized scans
 
@@ -152,14 +174,14 @@ refused with a clear message.
 
 ### Raw commands
 
-`iq raw` forwards a command to the database verbatim and prints the reply in redis-cli style —
+`iq exec` forwards a command to the database verbatim and prints the reply in redis-cli style —
 the escape hatch for writes, administration, and seeding the jq read path does not cover:
 
 ```bash
-./iq raw SET greeting hello   # "OK"
-./iq raw GET greeting         # "hello"
-./iq raw INCR counter         # (integer) 1
-./iq raw GET missing          # (nil)
+./iq exec SET greeting hello   # "OK"
+./iq exec GET greeting         # "hello"
+./iq exec INCR counter         # (integer) 1
+./iq exec GET missing          # (nil)
 ```
 
 Its output mirrors redis-cli's cooked style: bulk strings quoted, integers as `(integer) N`, a
@@ -229,12 +251,12 @@ portable and stays client-side, so the pushed set always equals jq's.
 
 On Redis, or for any filter with no pushable predicate, `--compile` is a harmless no-op.
 
-`iq raw` on MongoDB runs a single JSON command document with `runCommand` and prints the reply as
+`iq exec` on MongoDB runs a single JSON command document with `runCommand` and prints the reply as
 JSON — the escape hatch for server-side queries, aggregation, and administration:
 
 ```bash
-iq --src books raw '{"find":"books","filter":{"year":{"$gt":2015}}}'
-iq --src books raw '{"aggregate":"books","pipeline":[{"$group":{"_id":null,"avg":{"$avg":"$price"}}}],"cursor":{}}'
+iq --src books exec '{"find":"books","filter":{"year":{"$gt":2015}}}'
+iq --src books exec '{"aggregate":"books","pipeline":[{"$group":{"_id":null,"avg":{"$avg":"$price"}}}],"cursor":{}}'
 ```
 
 ### Connection
@@ -329,12 +351,12 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
 - `internal/query` — the use cases. `JQEngine` parses and classifies the filter, then routes:
   bounded → `Get` the named keys; streamable scan → run the filter over each `ScanBatches` page and
   emit; holistic scan → merge the pages and run once (only when the caller permits it). `Runner`
-  is the raw-command use case behind the `Store` port; `Combiner` runs a cross-source `--combine`
+  is the native-command use case behind the `Store` port (surfaced as `iq exec`); `Combiner` runs a cross-source `--combine`
   program over the reduced per-source results bound as variables, and `CrossEngine` runs a
   `source()`-driven filter over a null input — both reach other sources through the `SourceOpener`
   port and hold no primary store.
 - `internal/redis`, `internal/mongo` — the adapters. Each has one `*Store` satisfying both ports:
-  `Query` (raw) and `Get`/`ScanBatches` (jq), with a type-to-JSON normalization frozen as that
+  `Query` (exec) and `Get`/`ScanBatches` (jq), with a type-to-JSON normalization frozen as that
   backend's encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs). Redis maps
   a key to a Redis key; Mongo maps a key to a document `_id` within `--collection`.
 - `internal/config` — the saved sources. A small TOML store (named connections keyed by handle,
@@ -342,11 +364,11 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   driver-agnostic: the backend is inferred from a source's URL scheme, validated in `cmd`.
 - `cmd` — the CLI adapter and composition root. It resolves the selected source (`--src` or the
   active source) to a URL and collection, picks the adapter by URL scheme (`openStore`), runs the
-  jq action (routing a `source()`-driven filter to the cross-source engine), the `raw` escape hatch,
+  jq action (routing a `source()`-driven filter to the cross-source engine), the `exec` escape hatch,
   a source command (`add`/`ls`/`rm`/`src`/`group`), or a `--from`/`--combine` cross-source query —
-  resolving every source name through the same registry — and
-  formats output (JSON for jq; per-backend for raw — redis-cli style for Redis, JSON for Mongo),
-  keeping the core free of any output format.
+  resolving every source name through the same registry — and formats output (a `--format`-selected
+  renderer for the jq path — json, jsonl, json-array, values, or yaml; per-backend for `exec` —
+  redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format.
 
 A bounded filter runs client-side over just the named keys, so its cost is `O(keys requested)`; a
 streamable scan runs in `O(page)` memory. The jq semantics are identical for any future backend

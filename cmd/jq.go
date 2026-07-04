@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -13,10 +12,11 @@ import (
 )
 
 // runJQ is the default command's body: it runs the jq filter through the engine
-// and prints each produced value as JSON. A filter that calls source() reads
-// entirely from named sources over a null input (cross-source, no primary
-// store); any other filter runs against the selected source. Marshaling lives
-// here, in the CLI adapter, so the core stays free of any output format.
+// and renders each produced value with the --format formatter. A filter that
+// calls source() reads entirely from named sources over a null input
+// (cross-source, no primary store); any other filter runs against the selected
+// source. Formatting lives here, in the CLI adapter, so the core stays free of
+// any output format.
 func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	cross, err := query.UsesSource(filter)
 	if err != nil {
@@ -26,16 +26,11 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 	defer cancel()
 
-	enc := json.NewEncoder(cmd.OutOrStdout())
-	enc.SetIndent("", "  ")
-	// Preserve <, >, and & verbatim; the output is a terminal, not HTML.
-	enc.SetEscapeHTML(false)
-	emit := func(v any) error {
-		if err := enc.Encode(v); err != nil {
-			return fmt.Errorf("encode result: %w", err)
-		}
-		return nil
+	fm, err := parseFormat(cfg.format)
+	if err != nil {
+		return err
 	}
+	f := newFormatter(fm, cmd.OutOrStdout())
 	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: cfg.compile}
 
 	if cross {
@@ -45,7 +40,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		}
 		opener := newSourceOpener(cf)
 		defer opener.closeAll()
-		return scanHint(query.NewCrossEngine(opener).Run(ctx, filter, opts, emit))
+		return finish(f, scanHint(query.NewCrossEngine(opener).Run(ctx, filter, opts, f.emit)))
 	}
 
 	if err := resolveSource(cmd, cfg); err != nil {
@@ -56,7 +51,16 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		return err
 	}
 	defer func() { _ = store.Close() }()
-	return scanHint(query.NewJQEngine(store).Run(ctx, filter, opts, emit))
+	return finish(f, scanHint(query.NewJQEngine(store).Run(ctx, filter, opts, f.emit)))
+}
+
+// finish returns the engine's run error if any; otherwise it flushes the
+// formatter, closing json-array and yaml documents that the last emit left open.
+func finish(f formatter, runErr error) error {
+	if runErr != nil {
+		return runErr
+	}
+	return f.flush()
 }
 
 // scanHint translates the core's flag-agnostic scan refusal into this CLI's

@@ -9,19 +9,19 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// newRawCmd builds the `iq raw` subcommand: an escape hatch that forwards a
+// newExecCmd builds the `iq exec` subcommand: an escape hatch that forwards a
 // command verbatim to the database and prints the reply. It exists for the
 // writes, administration, and server-side queries the jq read path does not
 // cover. What it accepts depends on the backend: for Redis a command and its
-// operands (`iq raw HGETALL book:2`); for MongoDB a single JSON command document
-// run with runCommand (`iq raw '{"find":"books","filter":{...}}'`).
-func newRawCmd(cfg *config) *cobra.Command {
+// operands (`iq exec HGETALL book:2`); for MongoDB a single JSON command document
+// run with runCommand (`iq exec '{"find":"books","filter":{...}}'`).
+func newExecCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
-		Use:   "raw <command> [args...]",
+		Use:   "exec <command> [args...]",
 		Short: "Forward a command to the database verbatim and print the reply",
 		Long: "Forward a command to the backend verbatim. For Redis, a command and operands:\n" +
-			"`iq raw SET greeting hello`, `iq raw HGETALL book:2`. For MongoDB, one JSON\n" +
-			"command document run with runCommand: `iq raw '{\"find\":\"books\",\"filter\":{}}'`.",
+			"`iq exec SET greeting hello`, `iq exec HGETALL book:2`. For MongoDB, one JSON\n" +
+			"command document run with runCommand: `iq exec '{\"find\":\"books\",\"filter\":{}}'`.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := resolveSource(cmd, cfg); err != nil {
