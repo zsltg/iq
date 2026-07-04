@@ -33,6 +33,11 @@ func Open(ctx context.Context, url string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse redis url: %w", err)
 	}
+	if opts.Protocol == 0 {
+		// Default to RESP2 so aggregate replies arrive as flat arrays and match
+		// redis-cli's classic output rather than RESP3 maps and doubles.
+		opts.Protocol = 2
+	}
 	client := goredis.NewClient(opts)
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()

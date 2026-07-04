@@ -13,7 +13,7 @@ Standard Go toolchain; README is the full catalogue once it exists.
 - Vet and lint: `go vet ./...`, `golangci-lint run`; fix every reported issue before committing, do not wait to be asked; the config enables `godot` (comments end with a period) and `unused`, among others.
 - Format, canonical and deterministic, run before lint and commit: `gofumpt -w .` (stricter gofmt superset) then `goimports -w .` for import grouping.
 - Vulnerabilities, before adding or upgrading a dependency: `govulncheck ./...`.
-- Mutation gate: `gremlins unleash` (install `go install github.com/go-gremlins/gremlins/cmd/gremlins@latest`); `.gremlins.yaml` gates efficacy at 100 (zero surviving mutants on covered code); run with the integration services up so adapters are covered.
+- Mutation gate: `scripts/mutation-gate.sh` (needs `gremlins`: `go install github.com/go-gremlins/gremlins/cmd/gremlins@latest`); it wraps gremlins to fail on any surviving or timed-out mutant because gremlins v0.6.0 reports but does not exit-code-enforce, running serially with a wide timeout; run with the integration services up so adapters are covered.
 ## Coding Conventions
 Boring, linear, readable code; day-to-day doctrine loads every session from clean-code.mini, a-philosophy-of-software-design.mini and clean-architecture.mini.
 - Compose OSS, reinvent last: standard library, then a maintained permissive library, then hand-roll only for a genuine determinism, footprint or license gap.
@@ -53,7 +53,7 @@ Always:
 - Trunk-based: `main` always buildable; short-lived branches, one atomic task each, prefixed `feat/`, `fix/`, `chore/`, `test/`; no unrelated changes bundled.
 - Isolate parallel work in a git worktree branched from `origin/main`; never switch branches in a shared checkout; merge to `main` fast-forward-only, never paper over a conflict.
 - Conventional Commits: `<type>(<scope>): <description>`, lowercase imperative; types feat, fix, docs, style, refactor, perf, test, build, ci, chore; agent-authored commits end with a `Co-Authored-By:` trailer.
-- Pre-merge: scoped tests, `go vet`, `golangci-lint run`, gofumpt and goimports clean, `gremlins unleash` green; 100% pass.
+- Pre-merge: scoped tests, `go vet`, `golangci-lint run`, gofumpt and goimports clean, `scripts/mutation-gate.sh` green; 100% pass.
 ## Guidelines
 Distilled book files live in `.agents/`, referenced below by name.
 Generic doctrine, always loaded:

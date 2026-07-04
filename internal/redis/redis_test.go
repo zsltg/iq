@@ -74,6 +74,23 @@ func TestStoreReturnsCommandError(t *testing.T) {
 	require.ErrorContains(t, err, "redis:")
 }
 
+func TestStoreUsesRESP2FlatReplies(t *testing.T) {
+	store := openIntegration(t)
+
+	_, err := store.Query(context.Background(), []string{"DEL", "iq:test:hash"})
+	require.NoError(t, err)
+	_, err = store.Query(context.Background(), []string{"HSET", "iq:test:hash", "f1", "v1", "f2", "v2"})
+	require.NoError(t, err)
+
+	got, err := store.Query(context.Background(), []string{"HGETALL", "iq:test:hash"})
+	require.NoError(t, err)
+
+	// RESP2 returns HGETALL as a flat array; RESP3 would return a map, so this
+	// pins the Protocol=2 default set in Open.
+	require.IsType(t, []any{}, got)
+	require.ElementsMatch(t, []any{"f1", "v1", "f2", "v2"}, got)
+}
+
 // openIntegration skips under -short, otherwise opens a Store against the test
 // Redis and registers its cleanup.
 func openIntegration(t *testing.T) *iqredis.Store {

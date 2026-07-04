@@ -19,10 +19,17 @@ go build -o iq .
 `iq query` forwards a command to the database and prints the result:
 
 ```bash
-./iq query SET greeting hello   # OK
-./iq query GET greeting         # hello
+./iq query SET greeting hello   # "OK"
+./iq query GET greeting         # "hello"
+./iq query INCR counter         # (integer) 1
 ./iq query GET missing          # (nil)
 ```
+
+Output mirrors redis-cli's cooked style: bulk strings quoted, integers as `(integer) N`, a
+missing value as `(nil)`, and arrays (lists, sets, `HGETALL`, sorted sets with `WITHSCORES`) as a
+numbered, indented list. The client uses RESP2 so aggregate replies match redis-cli's classic flat
+output. Status replies such as `OK` and `PONG` appear quoted, a limitation of the underlying client,
+which does not distinguish them from bulk strings.
 
 ### Connection
 
@@ -46,7 +53,7 @@ docker compose down       # stop the local Redis
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
 govulncheck ./...         # dependency vulnerability scan
-gremlins unleash          # mutation gate (run with Redis up; zero surviving mutants)
+bash scripts/mutation-gate.sh   # mutation gate (run with Redis up; fails on any survivor/timeout)
 ```
 
 Integration tests skip under `go test -short`; the full `go test ./...` needs Redis up (via

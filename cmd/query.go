@@ -31,7 +31,7 @@ func newQueryCmd(cfg *config) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), format(result)); err != nil {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), iqredis.FormatReply(result)); err != nil {
 				return err
 			}
 			return nil
@@ -41,18 +41,4 @@ func newQueryCmd(cfg *config) *cobra.Command {
 	// stop flag parsing at the first positional and forward the rest verbatim.
 	c.Flags().SetInterspersed(false)
 	return c
-}
-
-// format renders a query result for display, redis-cli style.
-func format(v any) string {
-	switch t := v.(type) {
-	case nil:
-		return "(nil)"
-	case []byte:
-		return string(t)
-	case string:
-		return t
-	default:
-		return fmt.Sprintf("%v", t)
-	}
 }
