@@ -25,11 +25,15 @@ func resolveSource(cmd *cobra.Command, cfg *config) error {
 	if name == "" {
 		return errors.New("no source selected; add one with `iq add <name> <url>` then select it with `iq src <name>`")
 	}
-	src, _, ok := cf.Resolve(name)
+	src, full, ok := cf.Resolve(name)
 	if !ok {
 		return fmt.Errorf("unknown source %q; run `iq ls`", name)
 	}
-	cfg.url = src.URL
+	u, err := effectiveURL(src, full)
+	if err != nil {
+		return err
+	}
+	cfg.url = u
 	if !cmd.Flags().Changed("collection") {
 		cfg.collection = src.Collection
 	}

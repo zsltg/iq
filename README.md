@@ -61,9 +61,11 @@ command with `--src`/`-s`, without changing the active one:
 iq --src books '.["2"]'      # run this one query against "books"
 ```
 
-- `iq add <name> <url> [-c <collection>]` — register a source. The backend is inferred from the
-  URL scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`). `-c` stores a MongoDB
-  collection with the source.
+- `iq add <name> <url> [-c <collection>] [--store keyring]` — register a source. The backend is
+  inferred from the URL scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`). `-c`
+  stores a MongoDB collection with the source. `--store keyring` moves the URL's password into
+  the OS keyring and strips it from the stored URL (default `--store inline` keeps it in the
+  config file).
 - `iq ls` — list saved sources; the active one is marked `*`. Passwords in URLs are redacted.
 - `iq src [<name>]` — show the active source, or set it.
 - `iq rm <name>` — remove a source.
@@ -74,7 +76,10 @@ iq --src books '.["2"]'      # run this one query against "books"
 `prod/books`, falling back to a top-level `books` if the group has none.
 
 Sources live in a TOML file at `<os user config dir>/iq/iq.toml` (e.g. `~/.config/iq/iq.toml`),
-written `0600` because a URL may carry a password. Override the path with `IQ_CONFIG`.
+written `0600` because a URL may carry a password. Override the path with `IQ_CONFIG`. A source
+added with `--store keyring` keeps no password in this file — it lives in the OS keyring (Secret
+Service on Linux, Keychain on macOS, Credential Manager on Windows) and is spliced back into the
+URL only when connecting.
 
 > `iq add` shadows jq's built-in `add` filter at the top level. To sum with jq, write it inside a
 > larger expression, e.g. `iq '[ .a, .b ] | add'`.
@@ -361,7 +366,11 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   a key to a Redis key; Mongo maps a key to a document `_id` within `--collection`.
 - `internal/config` — the saved sources. A small TOML store (named connections keyed by handle,
   plus the active source and group) the CLI reads to resolve a query's connection. It stays
-  driver-agnostic: the backend is inferred from a source's URL scheme, validated in `cmd`.
+  driver-agnostic: the backend is inferred from a source's URL scheme, validated in `cmd`. It
+  records only that a source is keyring-backed; the password itself never enters this store.
+- `internal/secret` — the credential port. A `Keyring` interface over the OS secret store, so a
+  keyring-backed source keeps its password out of the config file; `cmd` splices it back into the
+  URL at connect time.
 - `cmd` — the CLI adapter and composition root. It resolves the selected source (`--src` or the
   active source) to a URL and collection, picks the adapter by URL scheme (`openStore`), runs the
   jq action (routing a `source()`-driven filter to the cross-source engine), the `exec` escape hatch,

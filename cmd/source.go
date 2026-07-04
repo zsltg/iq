@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -17,28 +18,57 @@ import (
 // level; run the filter inside a larger expression (`[ .a, .b ] | add`) instead.
 func newAddCmd() *cobra.Command {
 	var collection string
+	var store string
 	c := &cobra.Command{
 		Use:   "add <name> <url>",
 		Short: "Register a named source (a connection URL, optionally a MongoDB collection)",
 		Long: "Register a named source. The backend is inferred from the URL scheme:\n" +
 			"redis:// (rediss://) or mongodb:// (mongodb+srv://). For MongoDB, -c names the\n" +
 			"collection stored with the source. Names may be grouped with '/' (`iq add\n" +
-			"prod/books mongodb://...`). Note: `iq add` is this command, which shadows jq's\n" +
-			"built-in `add` filter — write the filter as `[ .a, .b ] | add`.",
+			"prod/books mongodb://...`). With --store keyring the URL's password is moved to\n" +
+			"the OS keyring and stripped from the stored URL. Note: `iq add` is this command,\n" +
+			"which shadows jq's built-in `add` filter — write the filter as `[ .a, .b ] | add`.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, url := args[0], args[1]
-			if !supportedScheme(url) {
-				return fmt.Errorf("unsupported url scheme %q; expected redis:// or mongodb://", schemeOf(url))
+			name, rawURL := args[0], args[1]
+			if !supportedScheme(rawURL) {
+				return fmt.Errorf("unsupported url scheme %q; expected redis:// or mongodb://", schemeOf(rawURL))
+			}
+			useKeyring, err := parseStore(store)
+			if err != nil {
+				return err
+			}
+			storedURL := rawURL
+			password := ""
+			if useKeyring {
+				stripped, pw, ok, err := splitPassword(rawURL)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return errors.New("--store keyring: url has no password to store")
+				}
+				storedURL, password = stripped, pw
 			}
 			cf, err := iqconfig.Load()
 			if err != nil {
 				return err
 			}
-			if err := cf.Add(name, url, collection); err != nil {
+			if err := cf.Add(name, storedURL, collection); err != nil {
 				return err
 			}
+			if useKeyring {
+				if err := cf.UseKeyring(name); err != nil {
+					return err
+				}
+				if err := keyringStore.Set(iqconfig.CleanHandle(name), password); err != nil {
+					return err
+				}
+			}
 			if err := cf.Save(); err != nil {
+				if useKeyring {
+					_ = keyringStore.Delete(iqconfig.CleanHandle(name))
+				}
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added source %s\n", strings.TrimPrefix(name, "@"))
@@ -46,7 +76,21 @@ func newAddCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVarP(&collection, "collection", "c", "", "MongoDB collection stored with this source (ignored for Redis)")
+	c.Flags().StringVar(&store, "store", "inline", "where the url's password is kept: inline (in the config file) or keyring (the OS keyring)")
 	return c
+}
+
+// parseStore validates the --store value, returning whether the password should
+// go to the OS keyring. inline (the default) keeps it in the stored URL.
+func parseStore(store string) (keyring bool, err error) {
+	switch store {
+	case "inline":
+		return false, nil
+	case "keyring":
+		return true, nil
+	default:
+		return false, fmt.Errorf("unknown --store %q: want inline or keyring", store)
+	}
 }
 
 // newLsCmd builds `iq ls`: list saved sources with the active one marked. URLs
@@ -102,11 +146,19 @@ func newRmCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Capture the source under the exact key Remove deletes (it matches by
+			// cleaned handle, not group-resolved), so a keyring-backed one can have
+			// its stored credential cleaned up afterwards.
+			h := iqconfig.CleanHandle(args[0])
+			src, keyed := cf.Sources[h]
 			if err := cf.Remove(args[0]); err != nil {
 				return err
 			}
 			if err := cf.Save(); err != nil {
 				return err
+			}
+			if keyed && src.Keyring {
+				_ = keyringStore.Delete(h)
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "removed source %s\n", strings.TrimPrefix(args[0], "@"))
 			return err

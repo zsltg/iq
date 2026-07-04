@@ -54,7 +54,11 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 	names := make([]string, 0, len(stages))
 	values := make([]any, 0, len(stages))
 	for _, st := range stages {
-		vals, err := collectSource(ctx, &config{url: st.source.URL, collection: st.source.Collection}, st.filter, opts)
+		u, err := effectiveURL(st.source, st.handle)
+		if err != nil {
+			return fmt.Errorf("--from %q: %w", st.handle, err)
+		}
+		vals, err := collectSource(ctx, &config{url: u, collection: st.source.Collection}, st.filter, opts)
 		if err != nil {
 			if errors.Is(err, query.ErrScanNotAllowed) {
 				return fmt.Errorf("--from %q: %w; add --unbounded or use a .[]-rooted filter", st.handle, err)

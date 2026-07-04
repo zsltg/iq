@@ -119,6 +119,37 @@ func TestAddDuplicate(t *testing.T) {
 	require.ErrorIs(t, err, config.ErrDuplicate)
 }
 
+func TestUseKeyring(t *testing.T) {
+	t.Run("marks source keyring-backed", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("sec", "redis://u@h", ""))
+		require.NoError(t, c.UseKeyring("@sec"))
+		require.True(t, c.Sources["sec"].Keyring)
+	})
+
+	t.Run("unknown source", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.ErrorIs(t, c.UseKeyring("nope"), config.ErrUnknownSource)
+	})
+}
+
+func TestKeyringFieldRoundTrips(t *testing.T) {
+	tempConfig(t)
+	c := &config.Config{Sources: map[string]config.Source{}}
+	require.NoError(t, c.Add("sec", "redis://u@h", ""))
+	require.NoError(t, c.UseKeyring("sec"))
+	require.NoError(t, c.Save())
+
+	got, err := config.Load()
+	require.NoError(t, err)
+	require.True(t, got.Sources["sec"].Keyring)
+}
+
+func TestCleanHandle(t *testing.T) {
+	require.Equal(t, "books", config.CleanHandle("  @books "))
+	require.Equal(t, "prod/books", config.CleanHandle("prod/books"))
+}
+
 func TestRemove(t *testing.T) {
 	t.Run("unknown", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}

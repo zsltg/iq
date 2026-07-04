@@ -39,10 +39,13 @@ var (
 
 // Source is a named connection target. The backend is inferred from the URL
 // scheme, so no driver field is stored. Collection applies to MongoDB only and
-// is empty otherwise.
+// is empty otherwise. When Keyring is set the source's password lives in the OS
+// keyring rather than in URL, and the composition root splices it back in at
+// connect time.
 type Source struct {
 	URL        string `toml:"url"`
 	Collection string `toml:"collection,omitempty"`
+	Keyring    bool   `toml:"keyring,omitempty"`
 }
 
 // Config is the persisted CLI state: the named sources keyed by their full
@@ -152,6 +155,20 @@ func (c *Config) Add(handle, url, collection string) error {
 	return nil
 }
 
+// UseKeyring marks the named source as keyring-backed: its password lives in the
+// OS keyring, not the stored URL. It errors if the source is unknown. The caller
+// owns storing the password in the keyring; this only records the flag.
+func (c *Config) UseKeyring(handle string) error {
+	h := cleanHandle(handle)
+	s, ok := c.Sources[h]
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownSource, h)
+	}
+	s.Keyring = true
+	c.Sources[h] = s
+	return nil
+}
+
 // Remove deletes the named source, clearing the active source if it pointed
 // there and the active group if that group no longer has any source. It errors
 // if the name is unknown.
@@ -239,6 +256,13 @@ func (c *Config) hasGroup(group string) bool {
 		}
 	}
 	return false
+}
+
+// CleanHandle canonicalizes a handle the way stored keys are: trimming space and
+// a single leading "@". The composition root uses it to derive the keyring
+// account name that matches a source's stored key.
+func CleanHandle(h string) string {
+	return cleanHandle(h)
 }
 
 // cleanHandle trims surrounding space and a single leading "@" (accepted for
