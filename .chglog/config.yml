@@ -1,0 +1,37 @@
+# git-chglog config. Renders a committed CHANGELOG.md from Conventional Commits.
+# style is intentionally empty: the remote is a self-hosted forge, not github.com,
+# so no commit/issue hyperlinks are generated (they would 404).
+style: ""
+template: CHANGELOG.tpl.md
+info:
+  title: CHANGELOG
+  repository_url: ""
+options:
+  commits:
+    filters:
+      Type:
+        - feat
+        - fix
+        - perf
+        - refactor
+        - docs
+  commit_groups:
+    title_maps:
+      feat: Features
+      fix: Bug Fixes
+      perf: Performance
+      refactor: Refactoring
+      docs: Documentation
+    sort_by: Custom
+    title_order:
+      - Features
+      - Bug Fixes
+      - Performance
+      - Refactoring
+      - Documentation
+  header:
+    pattern: "^(\\w+)(?:\\(([^)]+)\\))?!?:\\s(.*)$"
+    pattern_maps:
+      - Type
+      - Scope
+      - Subject

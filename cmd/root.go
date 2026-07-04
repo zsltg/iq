@@ -35,8 +35,9 @@ type config struct {
 func newRootCmd() *cobra.Command {
 	cfg := &config{}
 	root := &cobra.Command{
-		Use:   "iq <jq-filter>",
-		Short: "Query NoSQL databases with jq from the command line",
+		Use:     "iq <jq-filter>",
+		Version: buildVersion(),
+		Short:   "Query NoSQL databases with jq from the command line",
 		Long: "iq runs a jq filter against a NoSQL database. The filter's top-level paths\n" +
 			"name the keys to fetch, for example `iq '.greeting'`, `iq '.[\"book:1\"]'` for a\n" +
 			"key with a colon, or `iq '[ .a, .b ]'`. A `.[]`-rooted filter (`iq '.[] |\n" +
@@ -97,6 +98,7 @@ func newRootCmd() *cobra.Command {
 		newRmCmd(),
 		newSrcCmd(),
 		newGroupCmd(),
+		newVersionCmd(),
 	)
 	return root
 }

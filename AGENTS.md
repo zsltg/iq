@@ -14,6 +14,7 @@ Standard Go toolchain; README is the full catalogue once it exists.
 - Format, canonical and deterministic, run before lint and commit: `gofumpt -w .` (stricter gofmt superset) then `goimports -w .` for import grouping.
 - Vulnerabilities, before adding or upgrading a dependency: `govulncheck ./...`.
 - Mutation gate: `scripts/mutation-gate.sh` (needs `gremlins`: `go install github.com/go-gremlins/gremlins/cmd/gremlins@latest`); it wraps gremlins to fail on any surviving or timed-out mutant because gremlins v0.6.0 reports but does not exit-code-enforce, running serially with a wide timeout; run with the integration services up so adapters are covered.
+- Release: `make release` (`scripts/release.sh`, needs `svu` and `git-chglog`: `make tools`); computes the next semver from Conventional Commits, regenerates `CHANGELOG.md`, commits, and tags on clean `main`; never pushes; preview with `bash scripts/release.sh --dry-run`; version metadata is embedded by `make build` via ldflags.
 ## Coding Conventions
 Boring, linear, readable code.
 - Compose OSS, reinvent last: standard library, then a maintained permissive library, then hand-roll only for a genuine determinism, footprint or license gap.

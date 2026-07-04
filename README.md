@@ -17,8 +17,30 @@ entirely client-side, so its semantics are identical for every backend.
 ## Build
 
 ```bash
-go build -o iq .
+go build -o iq .          # plain build
+make build                # build with version metadata embedded
 ```
+
+`make build` injects the version, commit, and build date via ldflags; a plain `go build` still
+reports a version recovered from Go's embedded build info. Check it with `iq version` or
+`iq --version`.
+
+## Releasing
+
+Versioning is driven by [Conventional Commits](https://www.conventionalcommits.org/): the release
+tooling reads the commit log, computes the next [semantic version](https://semver.org/), and
+regenerates `CHANGELOG.md`. It is all-Go and local — no CI service or GitHub required.
+
+```bash
+make tools                        # one-time: install svu + git-chglog into GOPATH/bin
+bash scripts/release.sh --dry-run # preview the next version and CHANGELOG.md diff, no changes
+make release                      # bump, regenerate CHANGELOG.md, commit, and tag
+git push --follow-tags            # publish the tag (release.sh never pushes for you)
+```
+
+`make release` must run on a clean `main`. `svu` picks the bump from the commit types since the
+last tag (`feat` → minor, `fix` → patch, a `!`/`BREAKING CHANGE` → major); with no tags yet the
+first release comes out as `v0.1.0`.
 
 ## Sources
 
@@ -336,6 +358,8 @@ binary and exposes the AST the key selector walks.
 
 ```bash
 go build -o iq .          # build the binary
+make build                # build with version metadata embedded
+iq version                # print version, commit, build date, and Go version
 go test -short ./...      # fast unit tests, no external services
 docker compose up -d --wait   # start local Redis + MongoDB (:6379, :27017)
 bash scripts/seed.sh      # load example data into the running Redis
@@ -346,6 +370,10 @@ gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
 govulncheck ./...         # dependency vulnerability scan
 bash scripts/mutation-gate.sh   # mutation gate (run with services up; fails on any survivor/timeout)
+make tools                # install release tools (svu, git-chglog) into GOPATH/bin
+make version              # print the version the next release would take
+bash scripts/release.sh --dry-run   # preview the next release without changing anything
+make release              # bump version, regenerate CHANGELOG.md, commit, and tag
 ```
 
 Integration tests skip under `go test -short`; the full `go test ./...` needs Redis and MongoDB
