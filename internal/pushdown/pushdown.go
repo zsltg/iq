@@ -193,9 +193,25 @@ func pipeAtom(pathQ, rhs *gojq.Query) (predicate.Node, bool) {
 		return regexFrom(path, rhs.Term.Func)
 	case "has":
 		return existsFrom(path, rhs.Term.Func)
+	case "any":
+		return elemMatchFrom(path, rhs.Term.Func)
 	default:
 		return nil, false
 	}
+}
+
+// elemMatchFrom builds an ElemMatch for `path | any(condition)`: the array at
+// path has an element satisfying condition. Only the one-argument any(condition)
+// is handled, and only when the element condition itself compiles.
+func elemMatchFrom(path []string, f *gojq.Func) (predicate.Node, bool) {
+	if len(f.Args) != 1 {
+		return nil, false
+	}
+	cond, ok := extractPred(f.Args[0])
+	if !ok {
+		return nil, false
+	}
+	return predicate.ElemMatch{Path: path, Cond: cond}, true
 }
 
 // regexFrom builds a Regex for `path | test(pattern[; flags])`. It is only pushed

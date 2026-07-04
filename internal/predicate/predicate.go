@@ -71,16 +71,26 @@ type Size struct {
 	N    int
 }
 
+// ElemMatch matches documents whose array at Path has at least one element
+// satisfying Cond, the analogue of jq's `.path | any(cond)`. Cond is a predicate
+// over the element's own fields. Because jq's any also iterates an object's
+// values, a backend must treat an object at Path as a possible match too.
+type ElemMatch struct {
+	Path []string
+	Cond Node
+}
+
 // And matches documents satisfying every child. An empty And matches everything.
 type And []Node
 
 // Or matches documents satisfying any child.
 type Or []Node
 
-func (Eq) node()     {}
-func (Cmp) node()    {}
-func (Regex) node()  {}
-func (Exists) node() {}
-func (Size) node()   {}
-func (And) node()    {}
-func (Or) node()     {}
+func (Eq) node()        {}
+func (Cmp) node()       {}
+func (Regex) node()     {}
+func (Exists) node()    {}
+func (Size) node()      {}
+func (ElemMatch) node() {}
+func (And) node()       {}
+func (Or) node()        {}

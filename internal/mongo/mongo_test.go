@@ -261,6 +261,35 @@ func TestCompileExistsAndSizeEquivalentToClientSide(t *testing.T) {
 	}
 }
 
+func TestCompileElemMatchEquivalentToClientSide(t *testing.T) {
+	store := openIntegration(t, "elemmatch_docs")
+	// items is an array of objects for most docs, but an object for one — jq's any
+	// iterates an object's values too, so the pushed filter must still match it.
+	seedDocs(t, store, []any{
+		bson.M{"_id": "arr_hit", "items": bson.A{bson.M{"p": int32(6), "q": int32(1)}, bson.M{"p": int32(2)}}},
+		bson.M{"_id": "arr_miss", "items": bson.A{bson.M{"p": int32(2)}, bson.M{"p": int32(3)}}},
+		bson.M{"_id": "arr_split", "items": bson.A{bson.M{"p": int32(6)}, bson.M{"q": int32(1)}}},
+		bson.M{"_id": "obj_hit", "items": bson.M{"x": bson.M{"p": int32(6), "q": int32(1)}}},
+		bson.M{"_id": "obj_miss", "items": bson.M{"x": bson.M{"p": int32(2)}}},
+		bson.M{"_id": "empty", "items": bson.A{}},
+	})
+
+	filters := []string{
+		".[] | select(.items | any(.p == 6)) | ._id",
+		".[] | select(.items | any(.p > 5)) | ._id",
+		".[] | select(.items | any(.p > 5 and .q == 1)) | ._id", // same element must satisfy both
+	}
+	eng := query.NewJQEngine(store)
+	for _, f := range filters {
+		t.Run(f, func(t *testing.T) {
+			plain := runIDs(t, eng, f, query.RunOptions{})
+			pushed := runIDs(t, eng, f, query.RunOptions{Compile: true})
+			require.ElementsMatch(t, plain, pushed,
+				"pushed $elemMatch must select the same documents as jq's any")
+		})
+	}
+}
+
 func TestCompileRegexEquivalentToClientSide(t *testing.T) {
 	store := openIntegration(t, "regex_docs")
 	// test() requires string input, so every doc's name is a string; the pushed

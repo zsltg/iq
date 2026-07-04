@@ -30,6 +30,15 @@ func toFilter(n predicate.Node) bson.M {
 		return bson.M{strings.Join(t.Path, "."): bson.M{"$exists": true}}
 	case predicate.Size:
 		return sizeFilter(t)
+	case predicate.ElemMatch:
+		path := strings.Join(t.Path, ".")
+		// $elemMatch matches an array element satisfying the condition. jq's any
+		// also iterates an object's values, so an object at the path is a possible
+		// match too; the client-side re-run confirms it.
+		return bson.M{"$or": bson.A{
+			bson.M{path: bson.M{"$elemMatch": toFilter(t.Cond)}},
+			bson.M{path: bson.M{"$type": "object"}},
+		}}
 	case predicate.And:
 		return bson.M{"$and": toFilters(t)}
 	case predicate.Or:

@@ -94,6 +94,14 @@ func TestToFilter(t *testing.T) {
 			}},
 		},
 		{
+			"elemMatch also matches an object field",
+			predicate.ElemMatch{Path: []string{"items"}, Cond: predicate.Eq{Path: []string{"p"}, Value: 6.0}},
+			bson.M{"$or": bson.A{
+				bson.M{"items": bson.M{"$elemMatch": bson.M{"p": 6.0}}},
+				bson.M{"items": bson.M{"$type": "object"}},
+			}},
+		},
+		{
 			"or on different fields stays $or",
 			predicate.Or{
 				predicate.Eq{Path: []string{"a"}, Value: 1.0},
