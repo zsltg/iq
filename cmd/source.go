@@ -95,14 +95,15 @@ func parseStore(store string) (keyring bool, err error) {
 // newLsCmd builds `iq ls [group]`: list saved sources (or, with -g, groups). URLs
 // are redacted so a stored password is never printed unless --reveal is set.
 func newLsCmd() *cobra.Command {
-	var verbose, groups, jsonOut bool
+	var verbose, groups, jsonOut, reveal bool
 	c := &cobra.Command{
 		Use:   "ls [group]",
 		Short: "List saved sources (the active one marked *), or groups with -g",
 		Long: "List saved sources, the active one marked with '*'. An optional [group] limits\n" +
 			"the listing to sources in that group. -v adds each source's driver; -g lists\n" +
 			"groups instead of sources; --json emits machine-readable output. Passwords are\n" +
-			"redacted unless --reveal is given.",
+			"redacted unless --reveal is given, which also splices a keyring-backed source's\n" +
+			"stored password back into its URL.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
@@ -117,12 +118,13 @@ func newLsCmd() *cobra.Command {
 			if len(args) == 1 {
 				filter = iqconfig.CleanHandle(args[0])
 			}
-			return listSources(out, cf, filter, verbose, jsonOut, false)
+			return listSources(out, cf, filter, verbose, jsonOut, reveal)
 		},
 	}
 	c.Flags().BoolVarP(&verbose, "verbose", "v", false, "show each source's driver alongside its location")
 	c.Flags().BoolVarP(&groups, "group", "g", false, "list groups instead of sources")
 	c.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
+	c.Flags().BoolVar(&reveal, "reveal", false, "print unredacted URLs, including keyring-backed passwords")
 	return c
 }
 

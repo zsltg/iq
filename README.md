@@ -68,7 +68,8 @@ iq --src books '.["2"]'      # run this one query against "books"
   config file).
 - `iq ls [group]` — list saved sources; the active one is marked `*`. Passwords in URLs are
   redacted. An optional `group` limits the listing to that group. `-v` adds each source's driver;
-  `-g` lists groups instead of sources; `--json` emits machine-readable output.
+  `-g` lists groups instead of sources; `--json` emits machine-readable output; `--reveal` prints
+  unredacted URLs, splicing a keyring-backed source's password back in.
 - `iq src [<name>]` — show the active source, or set it.
 - `iq rm <name>...` — remove one or more sources, or whole groups (a group name removes every
   source under it). Atomic: if any name is unknown, nothing is removed.

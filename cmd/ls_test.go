@@ -72,6 +72,20 @@ func TestLsJSON(t *testing.T) {
 	require.Equal(t, "books", byHandle["prod/books"].Collection)
 }
 
+func TestLsReveal(t *testing.T) {
+	seedLs(t)
+
+	redacted, err := runCmd(t, newLsCmd())
+	require.NoError(t, err)
+	require.NotContains(t, redacted, "secret")
+	require.Contains(t, redacted, "xxxxx")
+
+	revealed, err := runCmd(t, newLsCmd(), "--reveal")
+	require.NoError(t, err)
+	require.Contains(t, revealed, "redis://u:secret@h:6379/0")
+	require.NotContains(t, revealed, "xxxxx")
+}
+
 func TestLsGroupsJSON(t *testing.T) {
 	seedLs(t)
 	out, err := runCmd(t, newLsCmd(), "-g", "--json")

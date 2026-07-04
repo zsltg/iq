@@ -47,7 +47,7 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, jso
 			rows = append(rows, sourceRow{
 				Handle:     h.Name,
 				Driver:     schemeOf(h.Source.URL),
-				Location:   locationOf(h.Source.URL, reveal),
+				Location:   sourceLocation(h, reveal),
 				Collection: h.Source.Collection,
 				Keyring:    h.Source.Keyring,
 				Active:     h.Name == cf.Active,
@@ -82,10 +82,10 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, jso
 		var err error
 		if verbose {
 			_, err = fmt.Fprintf(w, "%s %s\t%s\t%s\t%s%s\n",
-				marker, h.Name, schemeOf(h.Source.URL), locationOf(h.Source.URL, reveal), coll, keyringTag(h.Source.Keyring))
+				marker, h.Name, schemeOf(h.Source.URL), sourceLocation(h, reveal), coll, keyringTag(h.Source.Keyring))
 		} else {
 			_, err = fmt.Fprintf(w, "%s %s\t%s\t%s\n",
-				marker, h.Name, locationOf(h.Source.URL, reveal), coll)
+				marker, h.Name, sourceLocation(h, reveal), coll)
 		}
 		if err != nil {
 			return err
@@ -128,13 +128,20 @@ func listGroups(out io.Writer, cf *iqconfig.Config, verbose, jsonOut bool) error
 	return w.Flush()
 }
 
-// locationOf returns the source URL for display: redacted by default so a stored
-// password never prints, or verbatim when reveal is set.
-func locationOf(rawURL string, reveal bool) string {
-	if reveal {
-		return rawURL
+// sourceLocation returns a source's URL for display: redacted by default so a
+// stored password never prints. When reveal is set it returns the full URL, and
+// for a keyring-backed source it splices the stored password back in; if that
+// lookup fails it falls back to the stored (password-less) URL rather than error.
+func sourceLocation(h iqconfig.Handle, reveal bool) string {
+	if !reveal {
+		return redactURL(h.Source.URL)
 	}
-	return redactURL(rawURL)
+	if h.Source.Keyring {
+		if u, err := effectiveURL(h.Source, h.Name); err == nil {
+			return u
+		}
+	}
+	return h.Source.URL
 }
 
 // keyringTag returns a trailing " [keyring]" marker for a keyring-backed source,

@@ -178,6 +178,25 @@ func TestMvMigratesKeyringEntry(t *testing.T) {
 	require.Equal(t, "secret", fk.m["prod/sec"])
 }
 
+func TestLsRevealKeyringSource(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("sec", "redis://u@h:6379/0", ""))
+	require.NoError(t, c.UseKeyring("sec"))
+	seedConfig(t, c)
+	fk := useFakeKeyring(t)
+	require.NoError(t, fk.Set("sec", "secret"))
+
+	// Default listing shows the stored (password-less) URL, not the secret.
+	plain, err := runCmd(t, newLsCmd())
+	require.NoError(t, err)
+	require.NotContains(t, plain, "secret")
+
+	// --reveal splices the keyring password back into the URL.
+	revealed, err := runCmd(t, newLsCmd(), "--reveal")
+	require.NoError(t, err)
+	require.Contains(t, revealed, "redis://u:secret@h:6379/0")
+}
+
 func TestRmDeletesKeyringEntry(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("sec", "redis://u@h:6379/0", ""))
