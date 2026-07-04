@@ -21,9 +21,10 @@ build:
 version:
 	@svu next
 
-# changelog regenerates CHANGELOG.md for the current tags (no bump).
+# changelog regenerates CHANGELOG.md in place (no bump, commit, or tag),
+# including any unreleased commits under the next version.
 changelog:
-	git-chglog -o CHANGELOG.md
+	bash scripts/release.sh --changelog-only
 
 # release bumps the version, regenerates the changelog, commits, and tags.
 release:
