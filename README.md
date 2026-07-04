@@ -228,6 +228,32 @@ With no source selected the command errors — there is no ambient URL or enviro
 `--collection` / `-c` overrides the source's MongoDB collection for one run (ignored for Redis);
 `--timeout` (default `5s`) bounds each query.
 
+## Cross-source queries
+
+`--from` and `--combine` run one query across several sources and stitch the results together.
+Each `--from name='<jq>'` reduces a source *at the source* — bounded reads, streaming scans, and
+`--compile` pushdown all still apply — and binds its result set to `$name`; `--combine '<jq>'` then
+runs over those variables. Nothing copies whole datasets: each source returns only what its jq keeps.
+
+```bash
+# join users with orders on a shared id, across two sources
+iq --from users='.[] | {id, name}' \
+   --from orders='.[] | select(.total > 99)' \
+   --combine '($users | INDEX(.id)) as $u | $orders[] | . + {name: $u[.userId].name}'
+```
+
+Each `--from` names a saved source (the same handles as `iq ls`, group-namespaced), so it resolves
+through the registry exactly like `--src`. The bound variable is the source name with `/`, `.`, or
+`-` replaced by `_`, so `prod/books` binds `$prod_books`. `--combine` is a plain jq program, so it
+can join, union (`$a + $b`), aggregate, or fan across any number of sources.
+
+**Reduce, then combine.** Each `--from` stage is evaluated independently and its (already reduced)
+result is held in memory before `--combine` runs — so keep a stage's output small with
+`select`/projection/aggregation. A stage that must materialize its whole source (`keys`, `.`,
+`map(...)`) still needs `--unbounded`, exactly like a single-source query; a `.[]`-rooted stage
+streams without it. Stages do not see each other's data, so a lookup whose keys depend on another
+source's rows is not expressible here — reduce both sources and join them in `--combine`.
+
 ## Architecture
 
 The query core is driver-agnostic and lives behind two ports a backend adapter implements:
@@ -239,7 +265,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
 - `internal/query` — the use cases. `JQEngine` parses and classifies the filter, then routes:
   bounded → `Get` the named keys; streamable scan → run the filter over each `ScanBatches` page and
   emit; holistic scan → merge the pages and run once (only when the caller permits it). `Runner`
-  is the raw-command use case behind the `Store` port.
+  is the raw-command use case behind the `Store` port; `Combiner` runs a cross-source `--combine`
+  program over the reduced per-source results bound as variables (it holds no store).
 - `internal/redis`, `internal/mongo` — the adapters. Each has one `*Store` satisfying both ports:
   `Query` (raw) and `Get`/`ScanBatches` (jq), with a type-to-JSON normalization frozen as that
   backend's encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs). Redis maps
@@ -249,7 +276,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   driver-agnostic: the backend is inferred from a source's URL scheme, validated in `cmd`.
 - `cmd` — the CLI adapter and composition root. It resolves the selected source (`--src` or the
   active source) to a URL and collection, picks the adapter by URL scheme (`openStore`), runs the
-  jq action, the `raw` escape hatch, or a source command (`add`/`ls`/`rm`/`src`/`group`), and
+  jq action, the `raw` escape hatch, a source command (`add`/`ls`/`rm`/`src`/`group`), or a
+  cross-source query (`--from`/`--combine`, resolving each `--from` through the same registry), and
   formats output (JSON for jq; per-backend for raw — redis-cli style for Redis, JSON for Mongo),
   keeping the core free of any output format.
 

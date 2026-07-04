@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -23,6 +24,8 @@ type config struct {
 	timeout    time.Duration
 	unbounded  bool
 	compile    bool
+	from       []string
+	combine    string
 }
 
 // newRootCmd builds the root command and its subcommands. The default action is
@@ -63,6 +66,14 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// A cross-source query (--from/--combine) reads several sources and
+			// combines them; a plain positional filter runs against one source.
+			if len(cfg.from) > 0 || cfg.combine != "" {
+				if len(args) > 0 {
+					return errors.New("cannot use a positional filter with --from/--combine; put the final program in --combine")
+				}
+				return runCombine(cmd, cfg)
+			}
 			// A bare `iq` with no filter prints help rather than erroring, so the
 			// entry point is discoverable.
 			if len(args) == 0 {
@@ -77,6 +88,8 @@ func newRootCmd() *cobra.Command {
 	// --unbounded and --compile are local to the default jq action.
 	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
 	root.Flags().BoolVar(&cfg.compile, "compile", false, "push a .[]|select(...) equality predicate to the store to pre-filter server-side (MongoDB; no-op elsewhere; results are unchanged)")
+	root.Flags().StringArrayVar(&cfg.from, "from", nil, "cross-source stage `name=<jq>`: reduce source name with <jq> and bind its results to $name (repeatable; needs --combine)")
+	root.Flags().StringVar(&cfg.combine, "combine", "", "final jq over the --from results (each bound to $name), run over a null input")
 	root.AddCommand(
 		newRawCmd(cfg),
 		newAddCmd(),
