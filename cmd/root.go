@@ -59,6 +59,8 @@ func newRootCmd() *cobra.Command {
 			"  .a == 1 or .a == 2         same-field equality-or -> $in\n" +
 			"  .a >  >=  <  <=  n|\"s\"      ranges, preserving jq's cross-type ordering\n" +
 			"  .a | test(\"re\")            portable regex (i/m/s flags)\n" +
+			"  has(\"a\"),  .a | has(\"k\")   key presence -> $exists\n" +
+			"  .a | length == n           -> $size (with type guards)\n" +
 			"  E1 and E2,  E1 or E2       combine the above\n" +
 			"Not pushed (run client-side): != , ranges vs bool/null, non-portable regex,\n" +
 			"everything else. On Redis, or with no pushable clause, --compile is a no-op.",

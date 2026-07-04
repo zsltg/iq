@@ -26,6 +26,10 @@ func toFilter(n predicate.Node) bson.M {
 			re["$options"] = t.Flags
 		}
 		return bson.M{strings.Join(t.Path, "."): re}
+	case predicate.Exists:
+		return bson.M{strings.Join(t.Path, "."): bson.M{"$exists": true}}
+	case predicate.Size:
+		return sizeFilter(t)
 	case predicate.And:
 		return bson.M{"$and": toFilters(t)}
 	case predicate.Or:
@@ -111,6 +115,30 @@ func cmpFilter(c predicate.Cmp) bson.M {
 		clauses = append(clauses, bson.M{path: bson.M{"$type": asA(jqTypes[:rank])}})
 		// A missing field is null in jq, so it is below any number or string.
 		clauses = append(clauses, bson.M{path: bson.M{"$exists": false}})
+	}
+	return bson.M{"$or": clauses}
+}
+
+// sizeFilter translates a jq `length == n` test. jq's length is polymorphic, so
+// $size (array element count) alone would be a subset — it would miss a string of
+// n characters, an object of n keys, or a number whose absolute value is n. The
+// filter therefore matches arrays of exactly n via $size and, conservatively,
+// every string/object/number (their length matches are stripped by the
+// client-side re-run). Length 0 additionally matches null and a missing field,
+// which jq reads as length 0.
+func sizeFilter(s predicate.Size) bson.M {
+	path := strings.Join(s.Path, ".")
+	types := bson.A{"string", "object", "number"}
+	clauses := bson.A{
+		bson.M{path: bson.M{"$size": s.N}},
+		bson.M{path: bson.M{"$type": types}},
+	}
+	if s.N == 0 {
+		clauses = append(
+			clauses,
+			bson.M{path: bson.M{"$type": "null"}},
+			bson.M{path: bson.M{"$exists": false}},
+		)
 	}
 	return bson.M{"$or": clauses}
 }

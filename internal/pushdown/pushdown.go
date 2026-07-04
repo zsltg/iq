@@ -74,14 +74,18 @@ func selectArg(s *gojq.Query) (*gojq.Query, bool) {
 // ok=false when it is not one we push. An and may drop an uncompilable conjunct
 // (widening); an or must compile every branch (dropping one would lose matches).
 func extractPred(e *gojq.Query) (predicate.Node, bool) {
-	// Unwrap a parenthesized sub-expression, which a regex clause needs when
+	// Unwrap a parenthesized sub-expression, which a piped clause needs when
 	// combined (`.a == 1 and (.name | test("x"))`).
 	if e.Op == 0 && e.Term != nil && e.Term.Type == gojq.TermTypeQuery && len(e.Term.SuffixList) == 0 {
 		return extractPred(e.Term.Query)
 	}
+	// A bare builtin fed the document itself, i.e. has("field").
+	if e.Op == 0 && e.Term != nil && e.Term.Func != nil && len(e.Term.SuffixList) == 0 {
+		return existsFrom(nil, e.Term.Func)
+	}
 	switch e.Op {
 	case gojq.OpPipe:
-		return regexAtom(e.Left, e.Right)
+		return pipeAtom(e.Left, e.Right)
 	case gojq.OpAnd:
 		l, lok := extractPred(e.Left)
 		r, rok := extractPred(e.Right)
@@ -165,20 +169,41 @@ func rangeLiteral(q *gojq.Query) (any, bool) {
 	}
 }
 
-// regexAtom builds a Regex from a `path | test(pattern[; flags])` expression. It
-// is only pushed when the pattern uses a subset of regex syntax that every engine
-// interprets identically (see portableRegex), so the push stays exactly
-// equivalent to jq's own Oniguruma engine.
-func regexAtom(pathQ, testQ *gojq.Query) (predicate.Node, bool) {
+// pipeAtom builds a predicate from a `path | builtin` expression: the value at
+// path piped into test(re) (regex), has(key) ($exists), or a length == n
+// comparison ($size). Anything else is not pushed.
+func pipeAtom(pathQ, rhs *gojq.Query) (predicate.Node, bool) {
 	path, ok := pathOf(pathQ)
 	if !ok {
 		return nil, false
 	}
-	if testQ.Op != 0 || testQ.Term == nil || len(testQ.Term.SuffixList) != 0 {
+	// .path | length == n
+	if rhs.Op == gojq.OpEq {
+		if n, ok := lengthEq(rhs.Left, rhs.Right); ok {
+			return predicate.Size{Path: path, N: n}, true
+		}
 		return nil, false
 	}
-	f := testQ.Term.Func
-	if f == nil || f.Name != "test" || len(f.Args) < 1 || len(f.Args) > 2 {
+	// .path | test(re) / has(key)
+	if rhs.Op != 0 || rhs.Term == nil || rhs.Term.Func == nil || len(rhs.Term.SuffixList) != 0 {
+		return nil, false
+	}
+	switch rhs.Term.Func.Name {
+	case "test":
+		return regexFrom(path, rhs.Term.Func)
+	case "has":
+		return existsFrom(path, rhs.Term.Func)
+	default:
+		return nil, false
+	}
+}
+
+// regexFrom builds a Regex for `path | test(pattern[; flags])`. It is only pushed
+// when the pattern uses a subset of regex syntax every engine interprets
+// identically (see portableRegex), so the push stays exactly equivalent to jq's
+// own Oniguruma engine.
+func regexFrom(path []string, f *gojq.Func) (predicate.Node, bool) {
+	if len(f.Args) < 1 || len(f.Args) > 2 {
 		return nil, false
 	}
 	pattern, ok := stringLit(f.Args[0])
@@ -193,6 +218,58 @@ func regexAtom(pathQ, testQ *gojq.Query) (predicate.Node, bool) {
 		}
 	}
 	return predicate.Regex{Path: path, Pattern: pattern, Flags: flags}, true
+}
+
+// existsFrom builds an Exists for has("key"): the field key exists under base
+// (empty base means the document root). A key containing a dot is not pushed, as
+// a backend joining the path with dots would read it as a nested path.
+func existsFrom(base []string, f *gojq.Func) (predicate.Node, bool) {
+	if f.Name != "has" || len(f.Args) != 1 {
+		return nil, false
+	}
+	key, ok := stringLit(f.Args[0])
+	if !ok || strings.Contains(key, ".") {
+		return nil, false
+	}
+	path := make([]string, 0, len(base)+1)
+	path = append(path, base...)
+	path = append(path, key)
+	return predicate.Exists{Path: path}, true
+}
+
+// lengthEq recognizes `length == n` (in either order) and returns n when it is a
+// non-negative integer.
+func lengthEq(a, b *gojq.Query) (int, bool) {
+	if isLength(a) {
+		return intLiteral(b)
+	}
+	if isLength(b) {
+		return intLiteral(a)
+	}
+	return 0, false
+}
+
+// isLength reports whether q is the bare length builtin.
+func isLength(q *gojq.Query) bool {
+	return q.Op == 0 && q.Term != nil && q.Term.Func != nil &&
+		q.Term.Func.Name == "length" && len(q.Term.Func.Args) == 0 && len(q.Term.SuffixList) == 0
+}
+
+// intLiteral returns a non-negative integer literal.
+func intLiteral(q *gojq.Query) (int, bool) {
+	v, ok := literalOf(q)
+	if !ok {
+		return 0, false
+	}
+	f, ok := v.(float64)
+	if !ok {
+		return 0, false
+	}
+	n := int(f)
+	if float64(n) != f || n < 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 // stringLit returns the value of a plain string literal.

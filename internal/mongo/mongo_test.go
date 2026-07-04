@@ -226,6 +226,41 @@ func TestCompileEquivalentToClientSide(t *testing.T) {
 	}
 }
 
+func TestCompileExistsAndSizeEquivalentToClientSide(t *testing.T) {
+	store := openIntegration(t, "sizeexists_docs")
+	// f takes every type jq length handles (array, string, object, number, null,
+	// and a missing field); opt is present on only one document.
+	seedDocs(t, store, []any{
+		bson.M{"_id": "a3", "f": bson.A{int32(1), int32(2), int32(3)}, "opt": int32(1)},
+		bson.M{"_id": "a2", "f": bson.A{int32(1), int32(2)}},
+		bson.M{"_id": "a0", "f": bson.A{}},
+		bson.M{"_id": "s3", "f": "abc"},
+		bson.M{"_id": "o3", "f": bson.M{"a": int32(1), "b": int32(2), "c": int32(3)}},
+		bson.M{"_id": "o1", "f": bson.M{"a": int32(1)}},
+		bson.M{"_id": "n3", "f": int32(3)},
+		bson.M{"_id": "n5", "f": int32(5)},
+		bson.M{"_id": "nul", "f": nil},
+		bson.M{"_id": "miss"},
+	})
+
+	filters := []string{
+		`.[] | select(has("opt")) | ._id`,
+		`.[] | select(has("f")) | ._id`,
+		".[] | select(.f | length == 3) | ._id",
+		".[] | select(.f | length == 0) | ._id",
+		`.[] | select((.f | length == 1) or has("opt")) | ._id`,
+	}
+	eng := query.NewJQEngine(store)
+	for _, f := range filters {
+		t.Run(f, func(t *testing.T) {
+			plain := runIDs(t, eng, f, query.RunOptions{})
+			pushed := runIDs(t, eng, f, query.RunOptions{Compile: true})
+			require.ElementsMatch(t, plain, pushed,
+				"pushed $exists/$size must select the same documents as jq")
+		})
+	}
+}
+
 func TestCompileRegexEquivalentToClientSide(t *testing.T) {
 	store := openIntegration(t, "regex_docs")
 	// test() requires string input, so every doc's name is a string; the pushed

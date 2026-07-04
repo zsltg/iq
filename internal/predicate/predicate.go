@@ -55,14 +55,32 @@ type Regex struct {
 	Flags   string
 }
 
+// Exists matches documents whose field at Path is present (regardless of value),
+// the analogue of jq's has(). It is exact: key presence means the same to jq and
+// to a store.
+type Exists struct {
+	Path []string
+}
+
+// Size matches documents whose field at Path has jq length N. jq's length is
+// polymorphic (array elements, string characters, object keys, |number|,
+// null→0), so a backend must not treat this as an array-only test; it is a
+// superset in the same spirit as Cmp.
+type Size struct {
+	Path []string
+	N    int
+}
+
 // And matches documents satisfying every child. An empty And matches everything.
 type And []Node
 
 // Or matches documents satisfying any child.
 type Or []Node
 
-func (Eq) node()    {}
-func (Cmp) node()   {}
-func (Regex) node() {}
-func (And) node()   {}
-func (Or) node()    {}
+func (Eq) node()     {}
+func (Cmp) node()    {}
+func (Regex) node()  {}
+func (Exists) node() {}
+func (Size) node()   {}
+func (And) node()    {}
+func (Or) node()     {}

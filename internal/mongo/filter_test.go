@@ -71,6 +71,29 @@ func TestToFilter(t *testing.T) {
 			bson.M{"name": bson.M{"$regex": "^a", "$options": "i"}},
 		},
 		{
+			"exists",
+			predicate.Exists{Path: []string{"meta", "isbn"}},
+			bson.M{"meta.isbn": bson.M{"$exists": true}},
+		},
+		{
+			"size of a positive length",
+			predicate.Size{Path: []string{"tags"}, N: 3},
+			bson.M{"$or": bson.A{
+				bson.M{"tags": bson.M{"$size": 3}},
+				bson.M{"tags": bson.M{"$type": bson.A{"string", "object", "number"}}},
+			}},
+		},
+		{
+			"size of zero also matches null and missing",
+			predicate.Size{Path: []string{"tags"}, N: 0},
+			bson.M{"$or": bson.A{
+				bson.M{"tags": bson.M{"$size": 0}},
+				bson.M{"tags": bson.M{"$type": bson.A{"string", "object", "number"}}},
+				bson.M{"tags": bson.M{"$type": "null"}},
+				bson.M{"tags": bson.M{"$exists": false}},
+			}},
+		},
+		{
 			"or on different fields stays $or",
 			predicate.Or{
 				predicate.Eq{Path: []string{"a"}, Value: 1.0},
