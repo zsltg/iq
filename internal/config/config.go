@@ -155,6 +155,97 @@ func (c *Config) Add(handle, url, collection string) error {
 	return nil
 }
 
+// Rename records a source key that Move relocated, so a caller can migrate any
+// external per-handle state such as a keyring credential.
+type Rename struct {
+	Old string
+	New string
+}
+
+// Move renames a source or a whole group. When old is a source, it is renamed to
+// the full handle new. When old is a group (a handle prefix with members), every
+// member is re-prefixed from old to new. A source with the same name as a group
+// is treated as the source. Move keeps the active source and group pointing at
+// their new handles, and clears the active group if it ends up empty. It errors
+// if old is unknown, new is malformed, or new collides with an existing source.
+// It returns the old→new handle pairs it moved.
+func (c *Config) Move(old, new string) ([]Rename, error) {
+	oldC := cleanHandle(old)
+	if oldC == "" {
+		return nil, ErrEmptyHandle
+	}
+	newC, err := validateHandle(new)
+	if err != nil {
+		return nil, err
+	}
+	if oldC == newC {
+		return nil, nil
+	}
+	if _, ok := c.Sources[oldC]; ok {
+		return c.moveSource(oldC, newC)
+	}
+	if c.hasGroup(oldC) {
+		return c.moveGroup(oldC, newC)
+	}
+	return nil, fmt.Errorf("%w: %q", ErrUnknownSource, oldC)
+}
+
+// moveSource renames a single source from oldC to newC, both already cleaned.
+func (c *Config) moveSource(oldC, newC string) ([]Rename, error) {
+	if _, exists := c.Sources[newC]; exists {
+		return nil, fmt.Errorf("%w: %q", ErrDuplicate, newC)
+	}
+	c.Sources[newC] = c.Sources[oldC]
+	delete(c.Sources, oldC)
+	if c.Active == oldC {
+		c.Active = newC
+	}
+	if c.Group != "" && !c.hasGroup(c.Group) {
+		c.Group = ""
+	}
+	return []Rename{{Old: oldC, New: newC}}, nil
+}
+
+// moveGroup re-prefixes every member of group oldC to newC, both already cleaned.
+func (c *Config) moveGroup(oldC, newC string) ([]Rename, error) {
+	oldPrefix := oldC + "/"
+	members := make([]string, 0)
+	member := make(map[string]bool)
+	for k := range c.Sources {
+		if strings.HasPrefix(k, oldPrefix) {
+			members = append(members, k)
+			member[k] = true
+		}
+	}
+	// Reject a target that already names a source outside the moved set.
+	for _, k := range members {
+		nk := newC + "/" + strings.TrimPrefix(k, oldPrefix)
+		if _, exists := c.Sources[nk]; exists && !member[nk] {
+			return nil, fmt.Errorf("%w: %q", ErrDuplicate, nk)
+		}
+	}
+	moved := make([]Rename, 0, len(members))
+	for _, k := range members {
+		nk := newC + "/" + strings.TrimPrefix(k, oldPrefix)
+		c.Sources[nk] = c.Sources[k]
+		delete(c.Sources, k)
+		if c.Active == k {
+			c.Active = nk
+		}
+		moved = append(moved, Rename{Old: k, New: nk})
+	}
+	switch {
+	case c.Group == oldC:
+		c.Group = newC
+	case strings.HasPrefix(c.Group, oldPrefix):
+		c.Group = newC + "/" + strings.TrimPrefix(c.Group, oldPrefix)
+	}
+	if c.Group != "" && !c.hasGroup(c.Group) {
+		c.Group = ""
+	}
+	return moved, nil
+}
+
 // UseKeyring marks the named source as keyring-backed: its password lives in the
 // OS keyring, not the stored URL. It errors if the source is unknown. The caller
 // owns storing the password in the keyring; this only records the flag.

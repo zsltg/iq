@@ -162,6 +162,22 @@ func TestAddStoreInvalid(t *testing.T) {
 	require.ErrorContains(t, err, "unknown --store")
 }
 
+func TestMvMigratesKeyringEntry(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("sec", "redis://u@h:6379/0", ""))
+	require.NoError(t, c.UseKeyring("sec"))
+	seedConfig(t, c)
+	fk := useFakeKeyring(t)
+	require.NoError(t, fk.Set("sec", "secret"))
+
+	_, err := runCmd(t, newMvCmd(), "sec", "prod/sec")
+	require.NoError(t, err)
+
+	_, oldExists := fk.m["sec"]
+	require.False(t, oldExists, "old keyring entry should be gone")
+	require.Equal(t, "secret", fk.m["prod/sec"])
+}
+
 func TestRmDeletesKeyringEntry(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("sec", "redis://u@h:6379/0", ""))

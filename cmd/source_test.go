@@ -130,6 +130,26 @@ func TestGroupCommand(t *testing.T) {
 	require.Contains(t, out, "cleared active group")
 }
 
+func TestMvCommand(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
+	require.NoError(t, c.SetActive("books"))
+	seedConfig(t, c)
+
+	out, err := runCmd(t, newMvCmd(), "books", "prod/library")
+	require.NoError(t, err)
+	require.Contains(t, out, "moved books to prod/library")
+
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	require.Contains(t, cf.Sources, "prod/library")
+	require.NotContains(t, cf.Sources, "books")
+	require.Equal(t, "prod/library", cf.Active)
+
+	_, err = runCmd(t, newMvCmd(), "nope", "other")
+	require.ErrorContains(t, err, "unknown source")
+}
+
 func TestRmCommand(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("cache", "redis://h", ""))

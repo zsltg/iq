@@ -166,6 +166,62 @@ func newRmCmd() *cobra.Command {
 	}
 }
 
+// newMvCmd builds `iq mv <old> <new>`: rename or move a source or a whole group.
+func newMvCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mv <old> <new>",
+		Short: "Rename or move a source or a whole group",
+		Long: "Rename a source to a new full handle, or move it into a group by giving the\n" +
+			"group-qualified target (`iq mv books prod/books`). When <old> names a group, every\n" +
+			"source under it is re-prefixed (`iq mv prod staging` renames prod/* to staging/*).\n" +
+			"The active source and group follow the move. A keyring-backed source's stored\n" +
+			"credential moves with it.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cf, err := iqconfig.Load()
+			if err != nil {
+				return err
+			}
+			moved, err := cf.Move(args[0], args[1])
+			if err != nil {
+				return err
+			}
+			if len(moved) == 0 {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "nothing to move")
+				return err
+			}
+			// Stage each keyring credential under its new handle (leaving the old
+			// entry in place) so a failed Save rolls back without data loss.
+			staged := make([]iqconfig.Rename, 0, len(moved))
+			for _, r := range moved {
+				if !cf.Sources[r.New].Keyring {
+					continue
+				}
+				pw, gErr := keyringStore.Get(r.Old)
+				if gErr != nil {
+					continue // no stored credential to migrate
+				}
+				if sErr := keyringStore.Set(r.New, pw); sErr != nil {
+					return sErr
+				}
+				staged = append(staged, r)
+			}
+			if err := cf.Save(); err != nil {
+				for _, r := range staged {
+					_ = keyringStore.Delete(r.New)
+				}
+				return err
+			}
+			for _, r := range staged {
+				_ = keyringStore.Delete(r.Old)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "moved %s to %s\n",
+				strings.TrimPrefix(args[0], "@"), strings.TrimPrefix(args[1], "@"))
+			return err
+		},
+	}
+}
+
 // newSrcCmd builds `iq src [name]`: show the active source, or set it.
 func newSrcCmd() *cobra.Command {
 	return &cobra.Command{
