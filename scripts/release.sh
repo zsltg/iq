@@ -31,15 +31,27 @@ cd "$(git rev-parse --show-toplevel)"
 current="$(svu current)"
 next="$(svu next)"
 
-# regen writes the changelog to $1. It only passes --next-tag when there is a
-# pending bump: git-chglog rejects a --next-tag that already exists as a tag, and
-# rejects a bare run when no tag exists yet, so this picks the form that works.
+# regen writes the changelog to $1. It generates into a temp file and moves it
+# into place only on success, so a git-chglog failure never truncates the target.
+# It passes --next-tag only for a genuinely new version: a pending bump whose tag
+# does not yet exist. git-chglog rejects a bare run when no tag exists yet, and
+# rejects a --next-tag that duplicates an existing tag (which happens when the
+# checkout sits behind a published tag, so svu's "next" equals that tag); this
+# picks the form that works and degrades to a plain run instead of erroring.
 regen() {
-  if [[ "$next" != "$current" ]]; then
-    git-chglog --next-tag "$next" -o "$1"
+  local out="$1" tmp rc=0
+  tmp="$(mktemp)"
+  if [[ "$next" != "$current" ]] && ! git rev-parse -q --verify "refs/tags/$next" >/dev/null; then
+    git-chglog --next-tag "$next" -o "$tmp" || rc=$?
   else
-    git-chglog -o "$1"
+    git-chglog -o "$tmp" || rc=$?
   fi
+  if [[ "$rc" -ne 0 ]]; then
+    rm -f "$tmp"
+    echo "release: git-chglog failed (exit $rc)" >&2
+    exit 1
+  fi
+  mv "$tmp" "$out"
 }
 
 if [[ "$MODE" == "changelog-only" ]]; then
