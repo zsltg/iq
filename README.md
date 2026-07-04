@@ -140,13 +140,23 @@ iq -u mongodb://localhost:27017/iq -c books --compile '.[] | select(.author == "
 ```
 
 `--compile` never changes results, only speed: the full jq always re-runs client-side over whatever
-comes back, so a pushed filter is only ever a conservative pre-filter. Equality (`.a == x`) and the
-range operators (`>`, `>=`, `<`, `<=`) against a number or string are pushed, combined with
-`and`/`or`. Ranges are translated to reproduce jq's cross-type ordering (`null < bool < number <
-string < array < object`), so `.year > 2015` also matches string/array/object fields and
-`.year < 2015` also matches null/bool/missing fields — exactly as jq would — never fewer. Negation
-(`!=`), regex, and comparisons against a boolean or null stay client-side. On Redis, or for any
-filter with no pushable predicate, `--compile` is a harmless no-op.
+comes back, so a pushed filter is only ever a conservative pre-filter. Pushed, combined with
+`and`/`or`:
+
+- **equality** — `.a == x`;
+- **ranges** — `>`, `>=`, `<`, `<=` against a number or string, translated to reproduce jq's
+  cross-type ordering (`null < bool < number < string < array < object`), so `.year > 2015` also
+  matches string/array/object fields and `.year < 2015` also matches null/bool/missing fields —
+  exactly as jq would, never fewer;
+- **regex** — `.name | test("^A")` (with `i`/`m`/`s` flags), but *only* for patterns using syntax
+  that jq's Oniguruma engine and MongoDB's PCRE interpret identically (literals, anchors, `.`,
+  quantifiers, alternation, groups, character classes, the ASCII `\d`/`\w`/`\s` shorthands). A
+  pattern using an engine-specific construct (lookaround, backreferences, `\p{…}`, POSIX classes,
+  possessive quantifiers) stays client-side, so the pushed set always equals jq's.
+
+An `or` of equalities on one field (`.a == 1 or .a == 2`) collapses to a single `$in`. Negation
+(`!=`), non-portable regex, and comparisons against a boolean or null stay client-side. On Redis,
+or for any filter with no pushable predicate, `--compile` is a harmless no-op.
 
 `iq raw` on MongoDB runs a single JSON command document with `runCommand` and prints the reply as
 JSON — the escape hatch for server-side queries, aggregation, and administration:

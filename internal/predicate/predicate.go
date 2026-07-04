@@ -45,13 +45,24 @@ type Cmp struct {
 	Value any
 }
 
+// Regex matches documents whose field at Path is a string the Pattern matches
+// (unanchored, like jq's test). Flags is a subset of "ims". Only patterns whose
+// meaning is identical across regex engines are ever put here, so a backend can
+// hand Pattern to its own engine without changing which documents match.
+type Regex struct {
+	Path    []string
+	Pattern string
+	Flags   string
+}
+
 // And matches documents satisfying every child. An empty And matches everything.
 type And []Node
 
 // Or matches documents satisfying any child.
 type Or []Node
 
-func (Eq) node()  {}
-func (Cmp) node() {}
-func (And) node() {}
-func (Or) node()  {}
+func (Eq) node()    {}
+func (Cmp) node()   {}
+func (Regex) node() {}
+func (And) node()   {}
+func (Or) node()    {}

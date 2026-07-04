@@ -61,12 +61,44 @@ func TestToFilter(t *testing.T) {
 			bson.M{"$and": bson.A{bson.M{"a": 1.0}, bson.M{"b": "x"}}},
 		},
 		{
-			"or",
+			"regex without flags",
+			predicate.Regex{Path: []string{"name"}, Pattern: "^A"},
+			bson.M{"name": bson.M{"$regex": "^A"}},
+		},
+		{
+			"regex with flags",
+			predicate.Regex{Path: []string{"name"}, Pattern: "^a", Flags: "i"},
+			bson.M{"name": bson.M{"$regex": "^a", "$options": "i"}},
+		},
+		{
+			"or on different fields stays $or",
 			predicate.Or{
 				predicate.Eq{Path: []string{"a"}, Value: 1.0},
 				predicate.Eq{Path: []string{"b"}, Value: 2.0},
 			},
 			bson.M{"$or": bson.A{bson.M{"a": 1.0}, bson.M{"b": 2.0}}},
+		},
+		{
+			"or of two equalities on one field collapses to $in",
+			predicate.Or{
+				predicate.Eq{Path: []string{"a"}, Value: 1.0},
+				predicate.Eq{Path: []string{"a"}, Value: 2.0},
+			},
+			bson.M{"a": bson.M{"$in": bson.A{1.0, 2.0}}},
+		},
+		{
+			"or mixing equality and range stays $or",
+			predicate.Or{
+				predicate.Eq{Path: []string{"a"}, Value: 1.0},
+				predicate.Cmp{Path: []string{"a"}, Op: predicate.Gt, Value: 5.0},
+			},
+			bson.M{"$or": bson.A{
+				bson.M{"a": 1.0},
+				bson.M{"$or": bson.A{
+					bson.M{"a": bson.M{"$gt": 5.0}},
+					bson.M{"a": bson.M{"$type": bson.A{"string", "array", "object"}}},
+				}},
+			}},
 		},
 	}
 	for _, tt := range tests {

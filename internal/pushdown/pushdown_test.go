@@ -55,6 +55,17 @@ func TestCompilePushable(t *testing.T) {
 		{"less or equal", ".[] | select(.year <= 2015)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Le, Value: 2015.0}},
 		{"string range", `.[] | select(.name > "m")`, predicate.Cmp{Path: []string{"name"}, Op: predicate.Gt, Value: "m"}},
 		{"literal on left flips operator", ".[] | select(2015 < .year)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Gt, Value: 2015.0}},
+		{"portable regex", `.[] | select(.name | test("^A"))`, predicate.Regex{Path: []string{"name"}, Pattern: "^A"}},
+		{"regex with safe flags", `.[] | select(.name | test("^a"; "i"))`, predicate.Regex{Path: []string{"name"}, Pattern: "^a", Flags: "i"}},
+		{"regex with shorthand class", `.[] | select(.code | test("^\\d+$"))`, predicate.Regex{Path: []string{"code"}, Pattern: `^\d+$`}},
+		{
+			"equality and parenthesized regex",
+			`.[] | select(.type == "book" and (.name | test("^A")))`,
+			predicate.And{
+				predicate.Eq{Path: []string{"type"}, Value: "book"},
+				predicate.Regex{Path: []string{"name"}, Pattern: "^A"},
+			},
+		},
 		{
 			"range and equality",
 			`.[] | select(.year > 2015 and .type == "book")`,
@@ -96,7 +107,12 @@ func TestCompileNotPushable(t *testing.T) {
 		expr string
 	}{
 		{"negation", ".[] | select(.a != 1)"},
-		{"regex", `.[] | select(.a | test("x"))`},
+		{"regex with lookahead", `.[] | select(.a | test("(?=x)"))`},
+		{"regex with backreference", `.[] | select(.a | test("(a)\\1"))`},
+		{"regex with unicode property", `.[] | select(.a | test("\\p{L}"))`},
+		{"regex with unsafe flag", `.[] | select(.a | test("x"; "g"))`},
+		{"regex pattern not a literal", `.[] | select(.a | test(.b))`},
+		{"test on a computed input", `.[] | select((.a + "z") | test("x"))`},
 		{"range against a bool literal", ".[] | select(.a > true)"},
 		{"range against a null literal", ".[] | select(.a > null)"},
 		{"and of two uncompilable", ".[] | select(.a != 1 and .b != 2)"},

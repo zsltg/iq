@@ -74,7 +74,14 @@ func selectArg(s *gojq.Query) (*gojq.Query, bool) {
 // ok=false when it is not one we push. An and may drop an uncompilable conjunct
 // (widening); an or must compile every branch (dropping one would lose matches).
 func extractPred(e *gojq.Query) (predicate.Node, bool) {
+	// Unwrap a parenthesized sub-expression, which a regex clause needs when
+	// combined (`.a == 1 and (.name | test("x"))`).
+	if e.Op == 0 && e.Term != nil && e.Term.Type == gojq.TermTypeQuery && len(e.Term.SuffixList) == 0 {
+		return extractPred(e.Term.Query)
+	}
 	switch e.Op {
+	case gojq.OpPipe:
+		return regexAtom(e.Left, e.Right)
 	case gojq.OpAnd:
 		l, lok := extractPred(e.Left)
 		r, rok := extractPred(e.Right)
@@ -156,6 +163,110 @@ func rangeLiteral(q *gojq.Query) (any, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// regexAtom builds a Regex from a `path | test(pattern[; flags])` expression. It
+// is only pushed when the pattern uses a subset of regex syntax that every engine
+// interprets identically (see portableRegex), so the push stays exactly
+// equivalent to jq's own Oniguruma engine.
+func regexAtom(pathQ, testQ *gojq.Query) (predicate.Node, bool) {
+	path, ok := pathOf(pathQ)
+	if !ok {
+		return nil, false
+	}
+	if testQ.Op != 0 || testQ.Term == nil || len(testQ.Term.SuffixList) != 0 {
+		return nil, false
+	}
+	f := testQ.Term.Func
+	if f == nil || f.Name != "test" || len(f.Args) < 1 || len(f.Args) > 2 {
+		return nil, false
+	}
+	pattern, ok := stringLit(f.Args[0])
+	if !ok || !portableRegex(pattern) {
+		return nil, false
+	}
+	flags := ""
+	if len(f.Args) == 2 {
+		flags, ok = stringLit(f.Args[1])
+		if !ok || !portableFlags(flags) {
+			return nil, false
+		}
+	}
+	return predicate.Regex{Path: path, Pattern: pattern, Flags: flags}, true
+}
+
+// stringLit returns the value of a plain string literal.
+func stringLit(q *gojq.Query) (string, bool) {
+	v, ok := literalOf(q)
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok
+}
+
+// portableFlags reports whether flags contains only options every engine (and
+// MongoDB) treats identically: case-insensitive, multiline, dotall.
+func portableFlags(flags string) bool {
+	for _, c := range flags {
+		if c != 'i' && c != 'm' && c != 's' {
+			return false
+		}
+	}
+	return true
+}
+
+// portableRegex reports whether a pattern uses only constructs that Oniguruma
+// (jq's engine) and PCRE (MongoDB's) interpret identically, so pushing it cannot
+// change which documents match. It is deliberately conservative: an unrecognized
+// construct means "not portable", leaving the filter to the client-side pass.
+// Rejected: group extensions `(?...)` (lookaround, named, inline flags, atomic),
+// POSIX classes `[[:...:]]`, possessive quantifiers, backreferences, unicode
+// property escapes, and any other engine-specific escape.
+func portableRegex(p string) bool {
+	i := 0
+	for i < len(p) {
+		switch c := p[i]; c {
+		case '\\':
+			// A backslash must be followed by a portable escape; the pair is
+			// consumed together. Explicit advancement (rather than a loop-post
+			// increment) keeps a bad index step a panic, not an infinite loop.
+			if i+1 >= len(p) || !portableEscape(p[i+1]) {
+				return false
+			}
+			i += 2
+			continue
+		case '(':
+			if i+1 < len(p) && p[i+1] == '?' {
+				return false
+			}
+		case '[':
+			if i+1 < len(p) && p[i+1] == '[' {
+				return false
+			}
+		case '*', '+', '?', '}':
+			if i+1 < len(p) && p[i+1] == '+' {
+				return false
+			}
+		}
+		i++
+	}
+	return true
+}
+
+// portableEscape reports whether a backslash escape is identical across engines.
+// The ASCII shorthand classes and word boundaries qualify; an escaped punctuation
+// character is a literal and qualifies; a digit (backreference) or any other
+// letter (engine-specific, e.g. \p, \h, \A) does not.
+func portableEscape(b byte) bool {
+	switch b {
+	case 'd', 'D', 'w', 'W', 's', 'S', 'b', 'B', 'n', 't', 'r', 'f', 'v':
+		return true
+	}
+	if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') {
+		return false
+	}
+	return true
 }
 
 // eqAtom builds an Eq from a `path == literal` comparison in either order.

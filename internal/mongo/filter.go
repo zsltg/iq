@@ -20,15 +20,51 @@ func toFilter(n predicate.Node) bson.M {
 		return bson.M{strings.Join(t.Path, "."): t.Value}
 	case predicate.Cmp:
 		return cmpFilter(t)
+	case predicate.Regex:
+		re := bson.M{"$regex": t.Pattern}
+		if t.Flags != "" {
+			re["$options"] = t.Flags
+		}
+		return bson.M{strings.Join(t.Path, "."): re}
 	case predicate.And:
 		return bson.M{"$and": toFilters(t)}
 	case predicate.Or:
+		// An or of equalities on one field is exactly a membership test, which
+		// Mongo expresses (and indexes) more directly as $in.
+		if path, values, ok := sameFieldEqs(t); ok {
+			return bson.M{path: bson.M{"$in": values}}
+		}
 		return bson.M{"$or": toFilters(t)}
 	default:
 		// An unknown node type would be a programming error in the compiler;
 		// fall back to matching everything so the client-side jq still runs.
 		return bson.M{}
 	}
+}
+
+// sameFieldEqs reports whether every branch of an or is an equality on the same
+// field, and if so returns that field's dotted path and the values, so the or can
+// collapse to a single $in.
+func sameFieldEqs(or predicate.Or) (string, bson.A, bool) {
+	if len(or) < 2 {
+		return "", nil, false
+	}
+	var path string
+	values := make(bson.A, 0, len(or))
+	for i, n := range or {
+		eq, ok := n.(predicate.Eq)
+		if !ok {
+			return "", nil, false
+		}
+		p := strings.Join(eq.Path, ".")
+		if i == 0 {
+			path = p
+		} else if p != path {
+			return "", nil, false
+		}
+		values = append(values, eq.Value)
+	}
+	return path, values, true
 }
 
 // toFilters translates each child node, preserving order.

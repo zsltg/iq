@@ -213,6 +213,7 @@ func TestCompileEquivalentToClientSide(t *testing.T) {
 		`.[] | select(.f == "aaa") | ._id`,
 		".[] | select(.f > 5 and .f < 50) | ._id",
 		`.[] | select(.f > 50 or .f == "aaa") | ._id`,
+		".[] | select(.f == 10 or .f == 100) | ._id", // same-field or -> $in
 	}
 	eng := query.NewJQEngine(store)
 	for _, f := range filters {
@@ -221,6 +222,37 @@ func TestCompileEquivalentToClientSide(t *testing.T) {
 			pushed := runIDs(t, eng, f, query.RunOptions{Compile: true})
 			require.ElementsMatch(t, plain, pushed,
 				"compiled result must equal the client-side result for every type")
+		})
+	}
+}
+
+func TestCompileRegexEquivalentToClientSide(t *testing.T) {
+	store := openIntegration(t, "regex_docs")
+	// test() requires string input, so every doc's name is a string; the pushed
+	// $regex must select exactly the same names as jq's own engine.
+	seedDocs(t, store, []any{
+		bson.M{"_id": "1", "name": "Alpha"},
+		bson.M{"_id": "2", "name": "alpha"},
+		bson.M{"_id": "3", "name": "Beta"},
+		bson.M{"_id": "4", "name": "A1"},
+		bson.M{"_id": "5", "name": "xA"},
+	})
+
+	filters := []string{
+		`.[] | select(.name | test("^A")) | ._id`,
+		`.[] | select(.name | test("^a"; "i")) | ._id`,
+		`.[] | select(.name | test("a")) | ._id`,
+		`.[] | select(.name | test("\\d")) | ._id`,
+		`.[] | select(.name | test("[AB]")) | ._id`,
+		`.[] | select((.name | test("^A")) or .name == "xA") | ._id`,
+	}
+	eng := query.NewJQEngine(store)
+	for _, f := range filters {
+		t.Run(f, func(t *testing.T) {
+			plain := runIDs(t, eng, f, query.RunOptions{})
+			pushed := runIDs(t, eng, f, query.RunOptions{Compile: true})
+			require.ElementsMatch(t, plain, pushed,
+				"pushed $regex must select the same documents as jq's engine")
 		})
 	}
 }
