@@ -102,6 +102,7 @@ func newRootCmd() *cobra.Command {
 		newSrcCmd(),
 		newGroupCmd(),
 		newPingCmd(cfg),
+		newInspectCmd(cfg),
 		newVersionCmd(),
 	)
 	return root

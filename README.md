@@ -79,6 +79,11 @@ iq --src books '.["2"]'      # run this one query against "books"
 - `iq ping [<name>...]` — check that sources are reachable, reporting each driver and round-trip
   time (or the error). No arguments pings the active source; a group name pings every member.
   Bounded by `--timeout`; exits non-zero if any source is unreachable.
+- `iq inspect [<section>...]` — show the active source's (or `--src`'s) native introspection. For
+  Redis, runs `INFO`, narrowed to the named sections (`iq inspect memory server`). For MongoDB,
+  runs diagnostic commands (`dbStats`, `serverStatus`, `listCollections`, `collStats`,
+  `buildInfo`, `hostInfo`); no arguments runs them all, positional arguments narrow. `--json` for
+  machine-readable output; bounded by `--timeout`.
 - `iq group [<name>] [--clear]` — show, set, or clear the active **group**.
 
 **Groups.** A `/` in a name groups sources (`prod/books`, `dev/books`). Set an active group with
@@ -384,7 +389,7 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
 - `cmd` — the CLI adapter and composition root. It resolves the selected source (`--src` or the
   active source) to a URL and collection, picks the adapter by URL scheme (`openStore`), runs the
   jq action (routing a `source()`-driven filter to the cross-source engine), the `exec` escape hatch,
-  a source command (`add`/`ls`/`rm`/`src`/`group`), or a `--from`/`--combine` cross-source query —
+  a source command (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`), or a `--from`/`--combine` cross-source query —
   resolving every source name through the same registry — and formats output (a `--format`-selected
   renderer for the jq path — json, jsonl, json-array, values, or yaml; per-backend for `exec` —
   redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format.
