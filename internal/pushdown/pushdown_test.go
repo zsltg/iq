@@ -1,0 +1,110 @@
+package pushdown_test
+
+import (
+	"testing"
+
+	"github.com/itchyny/gojq"
+	"github.com/stretchr/testify/require"
+
+	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/pushdown"
+)
+
+func TestCompilePushable(t *testing.T) {
+	tests := []struct {
+		name string
+		expr string
+		want predicate.Node
+	}{
+		{"single equality", ".[] | select(.a == 1)", predicate.Eq{Path: []string{"a"}, Value: 1.0}},
+		{"string equality", `.[] | select(.a == "x")`, predicate.Eq{Path: []string{"a"}, Value: "x"}},
+		{"literal on the left", ".[] | select(1 == .a)", predicate.Eq{Path: []string{"a"}, Value: 1.0}},
+		{"nested path", ".[] | select(.a.b == 1)", predicate.Eq{Path: []string{"a", "b"}, Value: 1.0}},
+		{"bracket path", `.[] | select(.["a"] == 1)`, predicate.Eq{Path: []string{"a"}, Value: 1.0}},
+		{"bool literal", ".[] | select(.a == true)", predicate.Eq{Path: []string{"a"}, Value: true}},
+		{"null literal", ".[] | select(.a == null)", predicate.Eq{Path: []string{"a"}, Value: nil}},
+		{
+			"and of equalities",
+			`.[] | select(.a == "x" and .b == 2)`,
+			predicate.And{
+				predicate.Eq{Path: []string{"a"}, Value: "x"},
+				predicate.Eq{Path: []string{"b"}, Value: 2.0},
+			},
+		},
+		{
+			"or of equalities",
+			".[] | select(.a == 1 or .b == 2)",
+			predicate.Or{
+				predicate.Eq{Path: []string{"a"}, Value: 1.0},
+				predicate.Eq{Path: []string{"b"}, Value: 2.0},
+			},
+		},
+		{
+			"partial and drops the range (left compiles)",
+			".[] | select(.a == 1 and .b > 2)",
+			predicate.Eq{Path: []string{"a"}, Value: 1.0},
+		},
+		{
+			"partial and drops the range (right compiles)",
+			".[] | select(.a > 2 and .b == 1)",
+			predicate.Eq{Path: []string{"b"}, Value: 1.0},
+		},
+		{
+			"two selects combine",
+			".[] | select(.a == 1) | select(.b == 2)",
+			predicate.And{
+				predicate.Eq{Path: []string{"a"}, Value: 1.0},
+				predicate.Eq{Path: []string{"b"}, Value: 2.0},
+			},
+		},
+		{
+			"select then projection",
+			".[] | select(.a == 1) | .title",
+			predicate.Eq{Path: []string{"a"}, Value: 1.0},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, err := gojq.Parse(tt.expr)
+			require.NoError(t, err)
+
+			got, ok := pushdown.Compile(q)
+
+			require.True(t, ok, "expression should push")
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCompileNotPushable(t *testing.T) {
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{"range only", ".[] | select(.a > 1)"},
+		{"negation", ".[] | select(.a != 1)"},
+		{"regex", `.[] | select(.a | test("x"))`},
+		{"and of two uncompilable", ".[] | select(.a > 1 and .b < 2)"},
+		{"or with uncompilable right", ".[] | select(.a == 1 or .b > 2)"},
+		{"or with uncompilable left", ".[] | select(.a > 1 or .b == 2)"},
+		{"dotted field name is unsafe", `.[] | select(.["a.b"] == 1)`},
+		{"truthy path", ".[] | select(.a)"},
+		{"computed rhs", ".[] | select(.a == .b)"},
+		{"no select", ".[] | .title"},
+		{"bare iteration", ".[]"},
+		{"not streamable (holistic)", "map(select(.a == 1))"},
+		{"not streamable (keys)", "keys"},
+		{"bounded, not a scan", `.["book:1"]`},
+		{"iterating path atom", ".[] | select(.a[] == 1)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, err := gojq.Parse(tt.expr)
+			require.NoError(t, err)
+
+			_, ok := pushdown.Compile(q)
+
+			require.False(t, ok, "expression should not push")
+		})
+	}
+}

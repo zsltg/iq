@@ -29,7 +29,8 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	// Preserve <, >, and & verbatim; the output is a terminal, not HTML.
 	enc.SetEscapeHTML(false)
 
-	err = query.NewJQEngine(store).Run(ctx, filter, cfg.unbounded, func(v any) error {
+	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: cfg.compile}
+	err = query.NewJQEngine(store).Run(ctx, filter, opts, func(v any) error {
 		if err := enc.Encode(v); err != nil {
 			return fmt.Errorf("encode result: %w", err)
 		}

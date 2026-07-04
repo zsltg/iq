@@ -7,6 +7,8 @@ import (
 
 	"github.com/itchyny/gojq"
 
+	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/pushdown"
 	"github.com/zsltg/iq/internal/selector"
 )
 
@@ -38,6 +40,23 @@ type KVStore interface {
 	Close() error
 }
 
+// FilteredScanner is an optional capability a KVStore may also implement: given a
+// pushed-down predicate, stream only the matching documents, letting the store
+// pre-filter server-side. The predicate is a conservative superset, so the engine
+// still re-runs the full filter over each page. A store that cannot push (Redis)
+// simply does not implement it, and the engine falls back to a full scan.
+type FilteredScanner interface {
+	ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error
+}
+
+// RunOptions carries the per-run policy flags. Unbounded permits materializing
+// the whole dataset in memory; Compile asks the engine to push a filter's
+// predicate to the store when it can.
+type RunOptions struct {
+	Unbounded bool
+	Compile   bool
+}
+
 // JQEngine runs a jq expression against a KVStore. The expression is both the
 // key selector and the transform: its root-level paths name the keys to fetch,
 // then the same expression runs client-side over the assembled {key: value}
@@ -55,15 +74,16 @@ func NewJQEngine(store KVStore) *JQEngine {
 // Run parses src, classifies the reads it needs, and runs it, calling emit once
 // per produced value. It routes three ways:
 //   - bounded (the filter names specific keys): fetch just those and run once.
-//   - streamable scan (`.[]`-rooted) without allowUnbounded: run the filter over
-//     each keyspace page and emit as it goes, so memory stays O(page).
-//   - otherwise (a holistic scan, or a streamable scan with allowUnbounded set):
+//   - streamable scan (`.[]`-rooted) without Unbounded: run the filter over each
+//     keyspace page and emit as it goes, so memory stays O(page). With Compile,
+//     a pushable predicate pre-filters the pages at the store.
+//   - otherwise (a holistic scan, or a streamable scan with Unbounded set):
 //     materialize the whole keyspace and run once. A holistic scan without
-//     allowUnbounded is refused with ErrScanNotAllowed before touching the store.
+//     Unbounded is refused with ErrScanNotAllowed before touching the store.
 //
 // Results stream to emit rather than being collected. A blank expression, a
 // parse failure, a store error, or a jq runtime error are returned with context.
-func (e *JQEngine) Run(ctx context.Context, src string, allowUnbounded bool, emit func(v any) error) error {
+func (e *JQEngine) Run(ctx context.Context, src string, opts RunOptions, emit func(v any) error) error {
 	if src == "" {
 		return ErrEmptyExpression
 	}
@@ -81,15 +101,32 @@ func (e *JQEngine) Run(ctx context.Context, src string, allowUnbounded bool, emi
 	switch {
 	case !keys.Scan:
 		return e.runBounded(ctx, code, keys.Keys, emit)
-	case keys.Streamable && !allowUnbounded:
-		return e.runStreaming(ctx, code, emit)
-	case !allowUnbounded:
+	case keys.Streamable && !opts.Unbounded:
+		return e.runStreaming(ctx, code, e.scanner(q, opts), emit)
+	case !opts.Unbounded:
 		// A holistic scan has no batched form; it must materialize, which the
 		// caller has not permitted.
 		return ErrScanNotAllowed
 	default:
 		return e.runMaterialized(ctx, code, emit)
 	}
+}
+
+// scanner picks how the streamable pages are produced. With Compile set, a
+// pushable predicate and a store that supports FilteredScanner let the store
+// pre-filter; otherwise it is a plain full scan. Either way the full filter
+// re-runs per page, so the choice only affects how much the store returns.
+func (e *JQEngine) scanner(q *gojq.Query, opts RunOptions) func(context.Context, func(map[string]any) error) error {
+	if opts.Compile {
+		if fs, ok := e.store.(FilteredScanner); ok {
+			if pred, ok := pushdown.Compile(q); ok {
+				return func(ctx context.Context, fn func(map[string]any) error) error {
+					return fs.ScanFiltered(ctx, pred, fn)
+				}
+			}
+		}
+	}
+	return e.store.ScanBatches
 }
 
 // runBounded fetches the named keys and runs the filter once over them.
@@ -101,12 +138,13 @@ func (e *JQEngine) runBounded(ctx context.Context, code *gojq.Code, names []stri
 	return runCode(ctx, code, root, emit)
 }
 
-// runStreaming runs the filter over each keyspace page and emits as it goes.
-// Because the filter is `.[]`-rooted it distributes over the pages, so the
+// runStreaming runs the filter over each page produced by scan and emits as it
+// goes. Because the filter is `.[]`-rooted it distributes over the pages, so the
 // concatenated per-page outputs equal a single run over the whole keyspace
-// (modulo order). Memory stays bounded to one page.
-func (e *JQEngine) runStreaming(ctx context.Context, code *gojq.Code, emit func(v any) error) error {
-	err := e.store.ScanBatches(ctx, func(batch map[string]any) error {
+// (modulo order). Running the full filter per page is also the re-apply that
+// keeps a pushed-down (superset) pre-filter correct. Memory stays O(page).
+func (e *JQEngine) runStreaming(ctx context.Context, code *gojq.Code, scan func(context.Context, func(map[string]any) error) error, emit func(v any) error) error {
+	err := scan(ctx, func(batch map[string]any) error {
 		return runCode(ctx, code, batch, emit)
 	})
 	if err != nil {

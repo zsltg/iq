@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 )
 
@@ -63,12 +64,38 @@ func (f *fakeKV) Close() error { return nil }
 // collect runs the engine and gathers every emitted value.
 func collect(t *testing.T, store query.KVStore, src string, allowUnbounded bool) ([]any, error) {
 	t.Helper()
+	return collectOpts(t, store, src, query.RunOptions{Unbounded: allowUnbounded})
+}
+
+// collectOpts runs the engine with explicit options and gathers every value.
+func collectOpts(t *testing.T, store query.KVStore, src string, opts query.RunOptions) ([]any, error) {
+	t.Helper()
 	var got []any
-	err := query.NewJQEngine(store).Run(context.Background(), src, allowUnbounded, func(v any) error {
+	err := query.NewJQEngine(store).Run(context.Background(), src, opts, func(v any) error {
 		got = append(got, v)
 		return nil
 	})
 	return got, err
+}
+
+// filterKV is a fakeKV that also implements FilteredScanner, recording the
+// predicate it was asked to push.
+type filterKV struct {
+	fakeKV
+	gotPred     predicate.Node
+	filterCalls int
+}
+
+func (f *filterKV) ScanFiltered(_ context.Context, pred predicate.Node, fn func(map[string]any) error) error {
+	f.filterCalls++
+	f.gotPred = pred
+	// Deliver the keyspace directly (a real store would pre-filter here); this
+	// stays distinct from ScanBatches so a test can tell which path ran.
+	batch := make(map[string]any, len(f.scanKeys))
+	for _, k := range f.scanKeys {
+		batch[k] = f.values[k]
+	}
+	return fn(batch)
 }
 
 func TestJQEngineFetchesReferencedKeys(t *testing.T) {
@@ -136,6 +163,53 @@ func TestJQEngineStreamableMaterializesWithFlag(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []any{1, 2}, got, "materialized run is key-sorted, not scan order")
+}
+
+func TestJQEngineCompilePushesPredicate(t *testing.T) {
+	store := &filterKV{fakeKV: fakeKV{
+		scanKeys: []string{"1", "2"},
+		values: map[string]any{
+			"1": map[string]any{"author": "K", "title": "A"},
+			"2": map[string]any{"author": "K", "title": "B"},
+		},
+	}}
+
+	got, err := collectOpts(t, store, `.[] | select(.author == "K") | .title`, query.RunOptions{Compile: true})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, store.filterCalls, "the predicate was pushed to the store")
+	require.Zero(t, store.scanCalls, "a pushed scan does not also do a full scan")
+	require.Equal(t, predicate.Eq{Path: []string{"author"}, Value: "K"}, store.gotPred)
+	require.Equal(t, []any{"A", "B"}, got)
+}
+
+func TestJQEngineCompileFallsBackWhenNotPushable(t *testing.T) {
+	store := &filterKV{fakeKV: fakeKV{
+		scanKeys: []string{"1"},
+		values:   map[string]any{"1": map[string]any{"year": 2018}},
+	}}
+
+	// A range predicate does not compile, so the engine full-scans instead.
+	got, err := collectOpts(t, store, ".[] | select(.year > 2015)", query.RunOptions{Compile: true})
+
+	require.NoError(t, err)
+	require.Zero(t, store.filterCalls, "an uncompilable predicate is not pushed")
+	require.Equal(t, 1, store.scanCalls, "it falls back to a full scan")
+	require.Equal(t, []any{map[string]any{"year": 2018}}, got)
+}
+
+func TestJQEngineCompileIgnoredWhenStoreCannotFilter(t *testing.T) {
+	// A plain fakeKV is not a FilteredScanner, so --compile is a no-op.
+	store := &fakeKV{
+		scanKeys: []string{"1"},
+		values:   map[string]any{"1": map[string]any{"author": "K"}},
+	}
+
+	got, err := collectOpts(t, store, `.[] | select(.author == "K")`, query.RunOptions{Compile: true})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, store.scanCalls, "falls back to the plain scan path")
+	require.Equal(t, []any{map[string]any{"author": "K"}}, got)
 }
 
 func TestJQEngineRejectsEmptyExpression(t *testing.T) {

@@ -19,6 +19,7 @@ type config struct {
 	collection string
 	timeout    time.Duration
 	unbounded  bool
+	compile    bool
 }
 
 // defaultURL returns the connection URL from IQ_URL, then IQ_REDIS_URL (kept for
@@ -66,8 +67,9 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVarP(&cfg.url, "url", "u", defaultURL(), "database connection URL (redis://... or mongodb://...); overrides IQ_URL")
 	root.PersistentFlags().StringVarP(&cfg.collection, "collection", "c", "", "MongoDB collection (the keyspace); ignored for Redis")
 	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "per-query timeout")
-	// --unbounded is local to the default jq action; the raw command never scans.
+	// --unbounded and --compile are local to the default jq action.
 	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
+	root.Flags().BoolVar(&cfg.compile, "compile", false, "push a .[]|select(...) equality predicate to the store to pre-filter server-side (MongoDB; no-op elsewhere; results are unchanged)")
 	root.AddCommand(newRawCmd(cfg))
 	return root
 }

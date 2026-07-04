@@ -11,6 +11,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/zsltg/iq/internal/predicate"
 )
 
 // scanBatch is the default page size for ScanBatches: how many documents to
@@ -111,11 +113,25 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 // {_id: document} as the cursor yields it. A streaming caller keeps only one
 // page in memory. Bounded by ctx; stops at the first error from fn or the driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
+	return s.scanWith(ctx, bson.M{}, fn)
+}
+
+// ScanFiltered streams only the documents matching pred, translating it to a
+// native Mongo query so the server does the filtering. pred is a conservative
+// superset (the caller re-runs the full jq), so returning extra documents is
+// safe and returning too few is not — which is why only equality is pushed.
+func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
+	return s.scanWith(ctx, toFilter(pred), fn)
+}
+
+// scanWith runs a filtered cursor and pages the results, the shared body of
+// ScanBatches and ScanFiltered.
+func (s *Store) scanWith(ctx context.Context, filter bson.M, fn func(batch map[string]any) error) error {
 	if s.collection == "" {
 		return errNoCollection
 	}
 	opts := options.Find().SetBatchSize(int32(s.pageSize))
-	cur, err := s.db.Collection(s.collection).Find(ctx, bson.M{}, opts)
+	cur, err := s.db.Collection(s.collection).Find(ctx, filter, opts)
 	if err != nil {
 		return fmt.Errorf("mongodb find: %w", err)
 	}

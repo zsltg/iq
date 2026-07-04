@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/zsltg/iq/internal/predicate"
 )
 
 // testURI returns the MongoDB URI for integration tests, defaulting to a local
@@ -154,6 +156,33 @@ func TestScanBatchesBoundsPageSize(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, []int{2, 2}, sizes, "two full pages, no empty trailing page")
+}
+
+func TestScanFilteredReturnsMatchingSubset(t *testing.T) {
+	store := openIntegration(t, "filtered_docs")
+	seedDocs(t, store, []any{
+		bson.M{"_id": "1", "author": "Kleppmann", "year": int32(2017)},
+		bson.M{"_id": "2", "author": "Ousterhout", "year": int32(2018)},
+		bson.M{"_id": "3", "author": "Kleppmann", "year": int32(2020)},
+	})
+
+	merged := map[string]any{}
+	err := store.ScanFiltered(
+		context.Background(),
+		predicate.Eq{Path: []string{"author"}, Value: "Kleppmann"},
+		func(batch map[string]any) error {
+			for k, v := range batch {
+				merged[k] = v
+			}
+			return nil
+		},
+	)
+	require.NoError(t, err)
+
+	require.Len(t, merged, 2, "only the matching documents come back")
+	require.Contains(t, merged, "1")
+	require.Contains(t, merged, "3")
+	require.NotContains(t, merged, "2", "a non-matching document is filtered server-side")
 }
 
 func TestRawRunCommand(t *testing.T) {

@@ -129,6 +129,23 @@ numbers stay numbers, nested documents and arrays are preserved. A missing `_id`
 The `--unbounded` / streaming rules are identical to Redis (`.[]`-rooted filters stream a cursor
 in constant memory; `keys`/`.`/`map` materialize and require the flag).
 
+### Server-side pre-filtering with `--compile`
+
+By default a `.[] | select(...)` filter streams the whole collection and filters client-side. With
+`--compile`, the `select` predicate's **equality** clauses are translated into a native Mongo query
+so the server does the filtering (and can use an index):
+
+```bash
+iq -u mongodb://localhost:27017/iq -c books --compile '.[] | select(.author == "Robert C. Martin") | .title'
+```
+
+`--compile` never changes results, only speed: the full jq always re-runs client-side over whatever
+comes back, so a pushed filter is only ever a conservative pre-filter. Only equality (`.a == x`,
+combined with `and`/`or`) is pushed — jq and Mongo agree on equality, whereas their range and
+negation semantics differ, so `>`, `<`, `!=`, and regex stay client-side (a `select(.year > 2015)`
+runs exactly as it would without the flag). On Redis, or for any filter with no pushable predicate,
+`--compile` is a harmless no-op.
+
 `iq raw` on MongoDB runs a single JSON command document with `runCommand` and prints the reply as
 JSON — the escape hatch for server-side queries, aggregation, and administration:
 
