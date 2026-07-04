@@ -76,6 +76,9 @@ iq --src books '.["2"]'      # run this one query against "books"
 - `iq mv <old> <new>` — rename a source, or move it into a group with a group-qualified target
   (`iq mv books prod/books`). When `<old>` is a group, every member is re-prefixed
   (`iq mv prod staging`). The active source and group follow the move.
+- `iq ping [<name>...]` — check that sources are reachable, reporting each driver and round-trip
+  time (or the error). No arguments pings the active source; a group name pings every member.
+  Bounded by `--timeout`; exits non-zero if any source is unreachable.
 - `iq group [<name>] [--clear]` — show, set, or clear the active **group**.
 
 **Groups.** A `/` in a name groups sources (`prod/books`, `dev/books`). Set an active group with
