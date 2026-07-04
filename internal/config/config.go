@@ -234,14 +234,14 @@ func (c *Config) moveGroup(oldC, newC string) ([]Rename, error) {
 		}
 		moved = append(moved, Rename{Old: k, New: nk})
 	}
+	// Re-point the active group at its new prefix. It cannot become empty here:
+	// every source in it was just re-prefixed, so the remapped group still has
+	// members (moveSource handles the emptying case).
 	switch {
 	case c.Group == oldC:
 		c.Group = newC
 	case strings.HasPrefix(c.Group, oldPrefix):
 		c.Group = newC + "/" + strings.TrimPrefix(c.Group, oldPrefix)
-	}
-	if c.Group != "" && !c.hasGroup(c.Group) {
-		c.Group = ""
 	}
 	return moved, nil
 }
@@ -314,11 +314,15 @@ func (c *Config) RemoveAll(names []string) ([]Removed, error) {
 	if len(unknown) > 0 {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownSource, strings.Join(unknown, ", "))
 	}
-	removed := make([]Removed, 0, len(set))
-	for h, s := range set {
-		removed = append(removed, Removed{Handle: h, Source: s})
+	handles := make([]string, 0, len(set))
+	for h := range set {
+		handles = append(handles, h)
 	}
-	sort.Slice(removed, func(i, j int) bool { return removed[i].Handle < removed[j].Handle })
+	sort.Strings(handles)
+	removed := make([]Removed, 0, len(handles))
+	for _, h := range handles {
+		removed = append(removed, Removed{Handle: h, Source: set[h]})
+	}
 	for _, r := range removed {
 		delete(c.Sources, r.Handle)
 		if c.Active == r.Handle {

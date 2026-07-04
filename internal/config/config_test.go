@@ -227,6 +227,29 @@ func TestMoveGroup(t *testing.T) {
 		require.Equal(t, "staging", c.Group)
 	})
 
+	t.Run("single active member follows the move", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("prod/only", "redis://h", ""))
+		require.NoError(t, c.SetActive("prod/only"))
+		require.NoError(t, c.SetGroup("prod"))
+
+		_, err := c.Move("prod", "staging")
+		require.NoError(t, err)
+		require.Equal(t, "staging/only", c.Active)
+		require.Equal(t, "staging", c.Group)
+	})
+
+	t.Run("nested subgroup re-prefixes and follows active group", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("prod/eu/books", "redis://h", ""))
+		require.NoError(t, c.SetGroup("prod/eu"))
+
+		_, err := c.Move("prod", "staging")
+		require.NoError(t, err)
+		require.Contains(t, c.Sources, "staging/eu/books")
+		require.Equal(t, "staging/eu", c.Group)
+	})
+
 	t.Run("duplicate target member", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
 		require.NoError(t, c.Add("prod/books", "redis://h", ""))
@@ -296,6 +319,26 @@ func TestRemoveAll(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, c.Active)
 		require.Empty(t, c.Group)
+	})
+
+	t.Run("clears active when the only removed source was active", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("only", "redis://h", ""))
+		require.NoError(t, c.SetActive("only"))
+		_, err := c.RemoveAll([]string{"only"})
+		require.NoError(t, err)
+		require.Empty(t, c.Active)
+	})
+
+	t.Run("removed sources come out sorted", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("b", "redis://h", ""))
+		require.NoError(t, c.Add("a", "redis://h", ""))
+		require.NoError(t, c.Add("c", "redis://h", ""))
+		removed, err := c.RemoveAll([]string{"c", "a", "b"})
+		require.NoError(t, err)
+		require.Equal(t, []string{"a", "b", "c"},
+			[]string{removed[0].Handle, removed[1].Handle, removed[2].Handle})
 	})
 }
 
