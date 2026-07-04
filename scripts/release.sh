@@ -70,8 +70,8 @@ if [[ "$branch" != "main" ]]; then
   echo "release: must run on main, on '$branch'" >&2
   exit 1
 fi
-if [[ -n "$(git status --porcelain)" ]]; then
-  echo "release: working tree not clean; commit or stash first" >&2
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+  echo "release: tracked changes present; commit or stash first" >&2
   exit 1
 fi
 
