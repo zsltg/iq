@@ -236,6 +236,69 @@ func TestMoveGroup(t *testing.T) {
 	})
 }
 
+func TestRemoveAll(t *testing.T) {
+	newCfg := func() *config.Config {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("cache", "redis://h", ""))
+		require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
+		require.NoError(t, c.Add("prod/cache", "redis://h", ""))
+		return c
+	}
+
+	t.Run("multiple sources", func(t *testing.T) {
+		c := newCfg()
+		removed, err := c.RemoveAll([]string{"cache", "prod/books"})
+		require.NoError(t, err)
+		require.Len(t, removed, 2)
+		require.NotContains(t, c.Sources, "cache")
+		require.NotContains(t, c.Sources, "prod/books")
+		require.Contains(t, c.Sources, "prod/cache")
+	})
+
+	t.Run("group removes all members", func(t *testing.T) {
+		c := newCfg()
+		removed, err := c.RemoveAll([]string{"prod"})
+		require.NoError(t, err)
+		require.Len(t, removed, 2)
+		require.Contains(t, c.Sources, "cache")
+		require.NotContains(t, c.Sources, "prod/books")
+		require.NotContains(t, c.Sources, "prod/cache")
+	})
+
+	t.Run("mixed source and group", func(t *testing.T) {
+		c := newCfg()
+		removed, err := c.RemoveAll([]string{"cache", "prod"})
+		require.NoError(t, err)
+		require.Len(t, removed, 3)
+		require.Empty(t, c.Sources)
+	})
+
+	t.Run("overlap de-duplicates", func(t *testing.T) {
+		c := newCfg()
+		removed, err := c.RemoveAll([]string{"prod", "prod/books"})
+		require.NoError(t, err)
+		require.Len(t, removed, 2)
+	})
+
+	t.Run("unknown among valid removes nothing", func(t *testing.T) {
+		c := newCfg()
+		_, err := c.RemoveAll([]string{"cache", "nope"})
+		require.ErrorIs(t, err, config.ErrUnknownSource)
+		require.ErrorContains(t, err, "nope")
+		require.Contains(t, c.Sources, "cache", "atomic: nothing removed on error")
+	})
+
+	t.Run("clears active and group", func(t *testing.T) {
+		c := newCfg()
+		require.NoError(t, c.SetActive("prod/cache"))
+		require.NoError(t, c.SetGroup("prod"))
+		_, err := c.RemoveAll([]string{"prod"})
+		require.NoError(t, err)
+		require.Empty(t, c.Active)
+		require.Empty(t, c.Group)
+	})
+}
+
 func TestCleanHandle(t *testing.T) {
 	require.Equal(t, "books", config.CleanHandle("  @books "))
 	require.Equal(t, "prod/books", config.CleanHandle("prod/books"))

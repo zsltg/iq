@@ -68,7 +68,8 @@ iq --src books '.["2"]'      # run this one query against "books"
   config file).
 - `iq ls` — list saved sources; the active one is marked `*`. Passwords in URLs are redacted.
 - `iq src [<name>]` — show the active source, or set it.
-- `iq rm <name>` — remove a source.
+- `iq rm <name>...` — remove one or more sources, or whole groups (a group name removes every
+  source under it). Atomic: if any name is unknown, nothing is removed.
 - `iq mv <old> <new>` — rename a source, or move it into a group with a group-qualified target
   (`iq mv books prod/books`). When `<old>` is a group, every member is re-prefixed
   (`iq mv prod staging`). The active source and group follow the move.

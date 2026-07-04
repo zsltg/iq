@@ -168,3 +168,34 @@ func TestRmCommand(t *testing.T) {
 	_, err = runCmd(t, newRmCmd(), "nope")
 	require.ErrorContains(t, err, "unknown source")
 }
+
+func TestRmMultipleAndGroup(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("cache", "redis://h", ""))
+	require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
+	require.NoError(t, c.Add("prod/cache", "redis://h", ""))
+	seedConfig(t, c)
+
+	out, err := runCmd(t, newRmCmd(), "cache", "prod")
+	require.NoError(t, err)
+	require.Contains(t, out, "removed source cache")
+	require.Contains(t, out, "removed source prod/books")
+	require.Contains(t, out, "removed source prod/cache")
+
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	require.Empty(t, cf.Sources)
+}
+
+func TestRmAtomicOnUnknown(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("cache", "redis://h", ""))
+	seedConfig(t, c)
+
+	_, err := runCmd(t, newRmCmd(), "cache", "nope")
+	require.ErrorContains(t, err, "unknown source")
+
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	require.Contains(t, cf.Sources, "cache", "nothing removed when a name is unknown")
+}

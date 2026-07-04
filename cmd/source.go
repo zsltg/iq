@@ -135,33 +135,38 @@ func newLsCmd() *cobra.Command {
 	}
 }
 
-// newRmCmd builds `iq rm <name>`: remove a saved source.
+// newRmCmd builds `iq rm <name>...`: remove one or more saved sources or groups.
 func newRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "rm <name>",
-		Short: "Remove a saved source",
-		Args:  cobra.ExactArgs(1),
+		Use:   "rm <name>...",
+		Short: "Remove one or more saved sources or groups",
+		Long: "Remove saved sources or whole groups. Each argument is a source handle or a\n" +
+			"group name (which removes every source under it). The removal is atomic: if any\n" +
+			"argument names neither a source nor a group, nothing is removed. A keyring-backed\n" +
+			"source's stored credential is deleted too.",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
 				return err
 			}
-			// Capture the source under the exact key Remove deletes (it matches by
-			// cleaned handle, not group-resolved), so a keyring-backed one can have
-			// its stored credential cleaned up afterwards.
-			h := iqconfig.CleanHandle(args[0])
-			src, keyed := cf.Sources[h]
-			if err := cf.Remove(args[0]); err != nil {
+			removed, err := cf.RemoveAll(args)
+			if err != nil {
 				return err
 			}
 			if err := cf.Save(); err != nil {
 				return err
 			}
-			if keyed && src.Keyring {
-				_ = keyringStore.Delete(h)
+			out := cmd.OutOrStdout()
+			for _, r := range removed {
+				if r.Source.Keyring {
+					_ = keyringStore.Delete(r.Handle)
+				}
+				if _, err := fmt.Fprintf(out, "removed source %s\n", r.Handle); err != nil {
+					return err
+				}
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "removed source %s\n", strings.TrimPrefix(args[0], "@"))
-			return err
+			return nil
 		},
 	}
 }

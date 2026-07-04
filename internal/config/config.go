@@ -278,6 +278,59 @@ func (c *Config) Remove(handle string) error {
 	return nil
 }
 
+// Removed records a source that RemoveAll deleted, so a caller can clean up
+// external per-handle state such as a keyring credential.
+type Removed struct {
+	Handle string
+	Source Source
+}
+
+// RemoveAll deletes every named source and group atomically: if any name is
+// neither a known source nor a non-empty group, nothing is removed and the error
+// names each unknown one. A group name removes all of its members. It returns
+// what it removed (sorted by handle, de-duplicated across overlapping names),
+// clearing the active source if removed and the active group if it ends up empty.
+func (c *Config) RemoveAll(names []string) ([]Removed, error) {
+	set := make(map[string]Source)
+	var unknown []string
+	for _, name := range names {
+		h := cleanHandle(name)
+		if s, ok := c.Sources[h]; ok {
+			set[h] = s
+			continue
+		}
+		prefix := h + "/"
+		found := false
+		for k, s := range c.Sources {
+			if strings.HasPrefix(k, prefix) {
+				set[k] = s
+				found = true
+			}
+		}
+		if !found {
+			unknown = append(unknown, h)
+		}
+	}
+	if len(unknown) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrUnknownSource, strings.Join(unknown, ", "))
+	}
+	removed := make([]Removed, 0, len(set))
+	for h, s := range set {
+		removed = append(removed, Removed{Handle: h, Source: s})
+	}
+	sort.Slice(removed, func(i, j int) bool { return removed[i].Handle < removed[j].Handle })
+	for _, r := range removed {
+		delete(c.Sources, r.Handle)
+		if c.Active == r.Handle {
+			c.Active = ""
+		}
+	}
+	if c.Group != "" && !c.hasGroup(c.Group) {
+		c.Group = ""
+	}
+	return removed, nil
+}
+
 // SetActive sets the active source, storing its resolved full handle. It errors
 // if the name resolves to no source.
 func (c *Config) SetActive(handle string) error {
