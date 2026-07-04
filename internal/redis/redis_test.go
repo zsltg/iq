@@ -11,10 +11,14 @@ import (
 	iqredis "github.com/zsltg/iq/internal/redis"
 )
 
-// testURL returns the Redis URL for integration tests.
+// testURL returns the Redis URL for integration tests: the IQ_REDIS_URL override
+// first, then the ephemeral container started in TestMain, then a local default.
 func testURL() string {
 	if url := os.Getenv("IQ_REDIS_URL"); url != "" {
 		return url
+	}
+	if sharedURL != "" {
+		return sharedURL
 	}
 	return "redis://localhost:6379/0"
 }

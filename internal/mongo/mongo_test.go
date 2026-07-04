@@ -13,11 +13,15 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// testURI returns the MongoDB URI for integration tests, defaulting to a local
-// server and the iq_test database (kept off any real data).
+// testURI returns the MongoDB URI for integration tests: the IQ_MONGO_URL override
+// first, then the ephemeral container started in TestMain, then a local default.
+// The iq_test database keeps the tests off any real data.
 func testURI() string {
 	if uri := os.Getenv("IQ_MONGO_URL"); uri != "" {
 		return uri
+	}
+	if sharedURI != "" {
+		return sharedURI
 	}
 	return "mongodb://localhost:27017/iq_test"
 }

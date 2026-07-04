@@ -12,7 +12,7 @@ entirely client-side, so its semantics are identical for every backend.
 ## Requirements
 
 - Go 1.25+
-- Docker (optional, for the local Redis used by integration tests)
+- Docker (for the integration tests, which start ephemeral Redis + MongoDB containers; not needed for `go test -short`)
 
 ## Build
 
@@ -383,20 +383,24 @@ go build -o iq .          # build the binary
 make build                # build with version metadata embedded
 iq version                # print version, commit, build date, and Go version
 go test -short ./...      # fast unit tests, no external services
-docker compose up -d --wait   # start local Redis + MongoDB (:6379, :27017)
+go test ./...             # full suite; starts ephemeral Redis + MongoDB via testcontainers-go
+docker compose up -d --wait   # optional: local Redis + MongoDB for manual exploration (:6379, :27017)
 bash scripts/seed.sh      # load example data into the running Redis
 bash scripts/seed-mongo.sh    # load example documents into the running MongoDB
-go test ./...             # full suite, including Redis + MongoDB integration tests
 docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
 govulncheck ./...         # dependency vulnerability scan
-bash scripts/mutation-gate.sh   # mutation gate (run with services up; fails on any survivor/timeout)
+bash scripts/mutation-gate.sh   # mutation gate (fails on any survivor/timeout); set IQ_*_URL to a pre-started stack
 make tools                # install release tools (svu, git-chglog) into GOPATH/bin
 make version              # print the version the next release would take
 bash scripts/release.sh --dry-run   # preview the next release without changing anything
 make release              # bump version, regenerate CHANGELOG.md, commit, and tag
 ```
 
-Integration tests skip under `go test -short`; the full `go test ./...` needs Redis and MongoDB
-up (via `docker compose up`) and connects to `IQ_REDIS_URL` / `IQ_MONGO_URL` or the local defaults.
+Integration tests skip under `go test -short`. The full `go test ./...` needs Docker: it starts
+an ephemeral Redis and MongoDB via
+[testcontainers-go](https://github.com/testcontainers/testcontainers-go) on random ports and
+tears them down afterwards — no manual `docker compose up`. Set `IQ_REDIS_URL` / `IQ_MONGO_URL`
+to point at an already-running server (for example the `docker compose` stack) to skip container
+startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn.
