@@ -1,11 +1,11 @@
 # AGENTS.md
-Telegraph style, every line binds. Root rules and policies only; per-book depth in the distilled guideline files listed under Guidelines. Load every session: clean-code.mini, a-philosophy-of-software-design.mini, clean-architecture.mini, the-pragmatic-programmer.mini. Read on demand when the work matches: designing-data-intensive-applications.mini, release-it.mini, refactoring.mini.
+Telegraph style, every line binds. Root rules and policies only; per-book depth in the distilled guideline files listed under Guidelines.
 ## Project
 A Go command-line tool that connects to NoSQL databases and runs queries. Single static binary; the CLI is a thin delivery mechanism over a driver-agnostic query core.
 ## Tech Stack
 Load-bearing shape only; no framework chosen yet, README carries specifics once they exist.
 - Language: Go, built to a single static binary.
-- CLI parsing, configuration, NoSQL drivers and output formatting: compose permissive OSS, reinvent last; every pick permissive-licensed, dependency-light, no telemetry or PII.
+- CLI parsing, configuration, NoSQL drivers, output formatting: libraries TBD; every pick permissive-licensed, dependency-light, no telemetry or PII.
 ## Commands
 Standard Go toolchain; README is the full catalogue once it exists.
 - Build: `go build ./...`.
@@ -15,7 +15,7 @@ Standard Go toolchain; README is the full catalogue once it exists.
 - Vulnerabilities, before adding or upgrading a dependency: `govulncheck ./...`.
 - Mutation gate: `scripts/mutation-gate.sh` (needs `gremlins`: `go install github.com/go-gremlins/gremlins/cmd/gremlins@latest`); it wraps gremlins to fail on any surviving or timed-out mutant because gremlins v0.6.0 reports but does not exit-code-enforce, running serially with a wide timeout; run with the integration services up so adapters are covered.
 ## Coding Conventions
-Boring, linear, readable code; day-to-day doctrine loads every session from clean-code.mini, a-philosophy-of-software-design.mini and clean-architecture.mini.
+Boring, linear, readable code.
 - Compose OSS, reinvent last: standard library, then a maintained permissive library, then hand-roll only for a genuine determinism, footprint or license gap.
 - Keep the query core driver-agnostic: domain and query logic never import a specific NoSQL driver or the CLI framework; drivers and the CLI are outer details behind ports wired at a composition root.
 - Cross boundaries with plain types: pass request and response structs across the core boundary, never a driver row, framework context or raw flag struct; adapters translate at the edge.
@@ -45,8 +45,10 @@ Never:
 - Build a query from unsanitized input, or log or print a credential, token or connection string.
 - Render a raw driver error, stack trace or database internal to the user; clear, safe messages only.
 - Hardcode or commit secrets; credentials come from environment or a secret store.
+
 Only when asked:
 - Commit or push; add or upgrade a dependency (trips supply-chain and licensing review); run a destructive database operation the command did not request.
+
 Always:
 - Validate untrusted input at the boundary and keep the query core independent of any specific driver.
 ## Source Control & Commits
@@ -56,12 +58,14 @@ Always:
 - Pre-merge: scoped tests, `go vet`, `golangci-lint run`, gofumpt and goimports clean, `scripts/mutation-gate.sh` green; 100% pass.
 ## Guidelines
 Distilled book files live in `.agents/`, referenced below by name.
+
 Generic doctrine, always loaded:
-- clean-code.mini: naming, functions, types, errors, test hygiene.
-- a-philosophy-of-software-design.mini: module shape, deep modules, complexity budget.
-- clean-architecture.mini: dependency direction, ports and adapters, driver-agnostic core.
-- the-pragmatic-programmer.mini: one source of truth, orthogonality, reversible choices, tracer bullets, automation.
+- [clean-code.mini](.agents/clean-code.mini.md): naming, functions, types, errors, test hygiene.
+- [a-philosophy-of-software-design.mini](.agents/a-philosophy-of-software-design.mini.md): module shape, deep modules, complexity budget.
+- [clean-architecture.mini](.agents/clean-architecture.mini.md): dependency direction, ports and adapters, driver-agnostic core.
+- [the-pragmatic-programmer.mini](.agents/the-pragmatic-programmer.mini.md): one source of truth, orthogonality, reversible choices, tracer bullets, automation.
+
 Specific doctrine, read on demand:
-- designing-data-intensive-applications.mini: writing the query, data-model or connection layer; NoSQL consistency, staleness, partitioning, schema evolution, idempotency.
-- release-it.mini: writing database or network calls; timeouts, bounded retries, result-set limits, validating responses, failing fast.
-- refactoring.mini: restructuring existing code without changing behaviour.
+- [designing-data-intensive-applications.mini](.agents/designing-data-intensive-applications.mini.md): writing the query, data-model or connection layer; NoSQL consistency, staleness, partitioning, schema evolution, idempotency.
+- [release-it.mini](.agents/release-it.mini.md): writing database or network calls; timeouts, bounded retries, result-set limits, validating responses, failing fast.
+- [refactoring.mini](.agents/refactoring.mini.md): restructuring existing code without changing behaviour.
