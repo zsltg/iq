@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -93,46 +92,38 @@ func parseStore(store string) (keyring bool, err error) {
 	}
 }
 
-// newLsCmd builds `iq ls`: list saved sources with the active one marked. URLs
-// are redacted so a stored password is never printed.
+// newLsCmd builds `iq ls [group]`: list saved sources (or, with -g, groups). URLs
+// are redacted so a stored password is never printed unless --reveal is set.
 func newLsCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "ls",
-		Short: "List saved sources (the active one marked with *)",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+	var verbose, groups, jsonOut bool
+	c := &cobra.Command{
+		Use:   "ls [group]",
+		Short: "List saved sources (the active one marked *), or groups with -g",
+		Long: "List saved sources, the active one marked with '*'. An optional [group] limits\n" +
+			"the listing to sources in that group. -v adds each source's driver; -g lists\n" +
+			"groups instead of sources; --json emits machine-readable output. Passwords are\n" +
+			"redacted unless --reveal is given.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			list := cf.List()
-			if len(list) == 0 {
-				_, err := fmt.Fprintln(out, "no sources; add one with `iq add <name> <url>`")
-				return err
+			if groups {
+				return listGroups(out, cf, verbose, jsonOut)
 			}
-			if cf.Group != "" {
-				if _, err := fmt.Fprintf(out, "active group: %s\n", cf.Group); err != nil {
-					return err
-				}
+			filter := ""
+			if len(args) == 1 {
+				filter = iqconfig.CleanHandle(args[0])
 			}
-			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-			for _, h := range list {
-				marker := " "
-				if h.Name == cf.Active {
-					marker = "*"
-				}
-				coll := ""
-				if h.Source.Collection != "" {
-					coll = "(" + h.Source.Collection + ")"
-				}
-				if _, err := fmt.Fprintf(w, "%s %s\t%s\t%s\n", marker, h.Name, redactURL(h.Source.URL), coll); err != nil {
-					return err
-				}
-			}
-			return w.Flush()
+			return listSources(out, cf, filter, verbose, jsonOut, false)
 		},
 	}
+	c.Flags().BoolVarP(&verbose, "verbose", "v", false, "show each source's driver alongside its location")
+	c.Flags().BoolVarP(&groups, "group", "g", false, "list groups instead of sources")
+	c.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
+	return c
 }
 
 // newRmCmd builds `iq rm <name>...`: remove one or more saved sources or groups.

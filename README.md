@@ -66,7 +66,9 @@ iq --src books '.["2"]'      # run this one query against "books"
   stores a MongoDB collection with the source. `--store keyring` moves the URL's password into
   the OS keyring and strips it from the stored URL (default `--store inline` keeps it in the
   config file).
-- `iq ls` — list saved sources; the active one is marked `*`. Passwords in URLs are redacted.
+- `iq ls [group]` — list saved sources; the active one is marked `*`. Passwords in URLs are
+  redacted. An optional `group` limits the listing to that group. `-v` adds each source's driver;
+  `-g` lists groups instead of sources; `--json` emits machine-readable output.
 - `iq src [<name>]` — show the active source, or set it.
 - `iq rm <name>...` — remove one or more sources, or whole groups (a group name removes every
   source under it). Atomic: if any name is unknown, nothing is removed.

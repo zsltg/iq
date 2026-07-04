@@ -299,6 +299,25 @@ func TestRemoveAll(t *testing.T) {
 	})
 }
 
+func TestGroups(t *testing.T) {
+	c := &config.Config{Sources: map[string]config.Source{}}
+	require.NoError(t, c.Add("top", "redis://h", ""))
+	require.NoError(t, c.Add("prod/books", "redis://h", ""))
+	require.NoError(t, c.Add("prod/eu/cache", "redis://h", ""))
+	require.NoError(t, c.Add("dev/cache", "redis://h", ""))
+
+	require.Equal(t, []string{"dev", "prod", "prod/eu"}, c.Groups())
+	require.Equal(t, 2, c.CountGroup("prod")) // prod/books, prod/eu/cache
+	require.Equal(t, 1, c.CountGroup("prod/eu"))
+	require.Equal(t, 0, c.CountGroup("nope"))
+}
+
+func TestGroupsEmpty(t *testing.T) {
+	c := &config.Config{Sources: map[string]config.Source{}}
+	require.NoError(t, c.Add("top", "redis://h", ""))
+	require.Empty(t, c.Groups())
+}
+
 func TestCleanHandle(t *testing.T) {
 	require.Equal(t, "books", config.CleanHandle("  @books "))
 	require.Equal(t, "prod/books", config.CleanHandle("prod/books"))

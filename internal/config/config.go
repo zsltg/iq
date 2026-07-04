@@ -391,6 +391,38 @@ func (c *Config) List() []Handle {
 	return hs
 }
 
+// Groups returns every distinct group, sorted: each ancestor path prefix of a
+// grouped source handle (so "a/b/c" contributes "a" and "a/b"). These are exactly
+// the names SetGroup accepts. A top-level source contributes no group.
+func (c *Config) Groups() []string {
+	seen := make(map[string]bool)
+	for h := range c.Sources {
+		parts := strings.Split(h, "/")
+		for i := 1; i < len(parts); i++ {
+			seen[strings.Join(parts[:i], "/")] = true
+		}
+	}
+	groups := make([]string, 0, len(seen))
+	for g := range seen {
+		groups = append(groups, g)
+	}
+	sort.Strings(groups)
+	return groups
+}
+
+// CountGroup returns how many sources belong to the given group (any source
+// whose handle is prefixed by "<group>/").
+func (c *Config) CountGroup(group string) int {
+	prefix := cleanHandle(group) + "/"
+	n := 0
+	for h := range c.Sources {
+		if strings.HasPrefix(h, prefix) {
+			n++
+		}
+	}
+	return n
+}
+
 // hasGroup reports whether any source belongs to the given group.
 func (c *Config) hasGroup(group string) bool {
 	prefix := group + "/"
