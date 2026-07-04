@@ -97,6 +97,62 @@ func extractPred(e *gojq.Query) (predicate.Node, bool) {
 		return nil, false
 	case gojq.OpEq:
 		return eqAtom(e.Left, e.Right)
+	case gojq.OpGt:
+		return cmpAtom(predicate.Gt, e.Left, e.Right)
+	case gojq.OpGe:
+		return cmpAtom(predicate.Ge, e.Left, e.Right)
+	case gojq.OpLt:
+		return cmpAtom(predicate.Lt, e.Left, e.Right)
+	case gojq.OpLe:
+		return cmpAtom(predicate.Le, e.Left, e.Right)
+	default:
+		return nil, false
+	}
+}
+
+// cmpAtom builds a Cmp from a `path OP literal` comparison. When the path is on
+// the right (`literal OP path`), the operator is flipped so Value stays on the
+// right. Only number and string literals are pushed — a range against a boolean
+// or null has no useful type-order superset.
+func cmpAtom(op predicate.Op, a, b *gojq.Query) (predicate.Node, bool) {
+	if path, ok := pathOf(a); ok {
+		if v, ok := rangeLiteral(b); ok {
+			return predicate.Cmp{Path: path, Op: op, Value: v}, true
+		}
+	}
+	if path, ok := pathOf(b); ok {
+		if v, ok := rangeLiteral(a); ok {
+			return predicate.Cmp{Path: path, Op: flip(op), Value: v}, true
+		}
+	}
+	return nil, false
+}
+
+// flip reverses a comparison operator so a `literal OP path` reads as `path OP' literal`.
+func flip(op predicate.Op) predicate.Op {
+	switch op {
+	case predicate.Gt:
+		return predicate.Lt
+	case predicate.Ge:
+		return predicate.Le
+	case predicate.Lt:
+		return predicate.Gt
+	default: // Le
+		return predicate.Ge
+	}
+}
+
+// rangeLiteral returns a comparable literal (number or string) or ok=false. A
+// boolean or null literal is not returned, because a range across those has no
+// clean type-order superset worth pushing.
+func rangeLiteral(q *gojq.Query) (any, bool) {
+	v, ok := literalOf(q)
+	if !ok {
+		return nil, false
+	}
+	switch v.(type) {
+	case float64, string:
+		return v, true
 	default:
 		return nil, false
 	}

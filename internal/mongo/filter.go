@@ -18,6 +18,8 @@ func toFilter(n predicate.Node) bson.M {
 		return bson.M{}
 	case predicate.Eq:
 		return bson.M{strings.Join(t.Path, "."): t.Value}
+	case predicate.Cmp:
+		return cmpFilter(t)
 	case predicate.And:
 		return bson.M{"$and": toFilters(t)}
 	case predicate.Or:
@@ -34,6 +36,63 @@ func toFilters(nodes []predicate.Node) bson.A {
 	out := make(bson.A, len(nodes))
 	for i, n := range nodes {
 		out[i] = toFilter(n)
+	}
+	return out
+}
+
+// jqTypes lists the BSON $type names in jq's total order, so index i is the type
+// jq ranks at position i (null lowest, object highest). "number" and "bool" are
+// the Mongo aliases covering every numeric / boolean BSON type.
+var jqTypes = []string{"null", "bool", "number", "string", "array", "object"}
+
+// mongoOp maps a range operator to its Mongo query operator.
+var mongoOp = map[predicate.Op]string{
+	predicate.Gt: "$gt",
+	predicate.Ge: "$gte",
+	predicate.Lt: "$lt",
+	predicate.Le: "$lte",
+}
+
+// cmpFilter translates a range comparison into a conservative superset that
+// reproduces jq's cross-type ordering. jq compares across types (null < bool <
+// number < string < array < object), so `field > value` also matches every value
+// whose type ranks strictly above the literal's, and `field < value` also matches
+// every type strictly below plus a missing field (jq reads a missing field as
+// null, the lowest value). The same-type bound uses the native operator; the
+// cross-type parts are added with $type. Extra matches are harmless because the
+// caller re-runs the full jq; missing one would be a bug, which is why the type
+// clauses are exhaustive.
+func cmpFilter(c predicate.Cmp) bson.M {
+	path := strings.Join(c.Path, ".")
+	clauses := bson.A{bson.M{path: bson.M{mongoOp[c.Op]: c.Value}}}
+
+	// The literal is always a number (rank 2) or string (rank 3), so the type
+	// lists below are always non-empty — no guard needed.
+	rank := valueRank(c.Value)
+	if c.Op == predicate.Gt || c.Op == predicate.Ge {
+		clauses = append(clauses, bson.M{path: bson.M{"$type": asA(jqTypes[rank+1:])}})
+	} else {
+		clauses = append(clauses, bson.M{path: bson.M{"$type": asA(jqTypes[:rank])}})
+		// A missing field is null in jq, so it is below any number or string.
+		clauses = append(clauses, bson.M{path: bson.M{"$exists": false}})
+	}
+	return bson.M{"$or": clauses}
+}
+
+// valueRank returns the jq type rank of a range literal: 2 for a number, 3 for a
+// string (the only two kinds the compiler emits).
+func valueRank(v any) int {
+	if _, ok := v.(string); ok {
+		return 3
+	}
+	return 2
+}
+
+// asA widens a string slice to a bson.A for a $type list.
+func asA(types []string) bson.A {
+	out := make(bson.A, len(types))
+	for i, t := range types {
+		out[i] = t
 	}
 	return out
 }

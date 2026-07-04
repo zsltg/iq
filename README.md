@@ -140,11 +140,13 @@ iq -u mongodb://localhost:27017/iq -c books --compile '.[] | select(.author == "
 ```
 
 `--compile` never changes results, only speed: the full jq always re-runs client-side over whatever
-comes back, so a pushed filter is only ever a conservative pre-filter. Only equality (`.a == x`,
-combined with `and`/`or`) is pushed — jq and Mongo agree on equality, whereas their range and
-negation semantics differ, so `>`, `<`, `!=`, and regex stay client-side (a `select(.year > 2015)`
-runs exactly as it would without the flag). On Redis, or for any filter with no pushable predicate,
-`--compile` is a harmless no-op.
+comes back, so a pushed filter is only ever a conservative pre-filter. Equality (`.a == x`) and the
+range operators (`>`, `>=`, `<`, `<=`) against a number or string are pushed, combined with
+`and`/`or`. Ranges are translated to reproduce jq's cross-type ordering (`null < bool < number <
+string < array < object`), so `.year > 2015` also matches string/array/object fields and
+`.year < 2015` also matches null/bool/missing fields — exactly as jq would — never fewer. Negation
+(`!=`), regex, and comparisons against a boolean or null stay client-side. On Redis, or for any
+filter with no pushable predicate, `--compile` is a harmless no-op.
 
 `iq raw` on MongoDB runs a single JSON command document with `runCommand` and prints the reply as
 JSON — the escape hatch for server-side queries, aggregation, and administration:

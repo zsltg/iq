@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/query"
 )
 
 // testURI returns the MongoDB URI for integration tests, defaulting to a local
@@ -183,6 +184,57 @@ func TestScanFilteredReturnsMatchingSubset(t *testing.T) {
 	require.Contains(t, merged, "1")
 	require.Contains(t, merged, "3")
 	require.NotContains(t, merged, "2", "a non-matching document is filtered server-side")
+}
+
+func TestCompileEquivalentToClientSide(t *testing.T) {
+	store := openIntegration(t, "range_docs")
+	// A document whose field f takes every jq type, plus a missing field, so a
+	// pushed filter that is ever a subset (missing one) diverges from client-side.
+	seedDocs(t, store, []any{
+		bson.M{"_id": "num_lo", "f": int32(10)},
+		bson.M{"_id": "num_hi", "f": int32(100)},
+		bson.M{"_id": "str_lo", "f": "aaa"},
+		bson.M{"_id": "str_hi", "f": "zzz"},
+		bson.M{"_id": "arr", "f": bson.A{int32(1)}},
+		bson.M{"_id": "obj", "f": bson.M{"x": int32(1)}},
+		bson.M{"_id": "nul", "f": nil},
+		bson.M{"_id": "tru", "f": true},
+		bson.M{"_id": "miss"},
+	})
+
+	filters := []string{
+		".[] | select(.f > 50) | ._id",
+		".[] | select(.f >= 100) | ._id",
+		".[] | select(.f < 50) | ._id",
+		".[] | select(.f <= 10) | ._id",
+		`.[] | select(.f > "mmm") | ._id`,
+		`.[] | select(.f < "mmm") | ._id`,
+		`.[] | select(.f == 100) | ._id`,
+		`.[] | select(.f == "aaa") | ._id`,
+		".[] | select(.f > 5 and .f < 50) | ._id",
+		`.[] | select(.f > 50 or .f == "aaa") | ._id`,
+	}
+	eng := query.NewJQEngine(store)
+	for _, f := range filters {
+		t.Run(f, func(t *testing.T) {
+			plain := runIDs(t, eng, f, query.RunOptions{})
+			pushed := runIDs(t, eng, f, query.RunOptions{Compile: true})
+			require.ElementsMatch(t, plain, pushed,
+				"compiled result must equal the client-side result for every type")
+		})
+	}
+}
+
+// runIDs runs a filter through the engine and returns the values it emits.
+func runIDs(t *testing.T, eng *query.JQEngine, src string, opts query.RunOptions) []any {
+	t.Helper()
+	var got []any
+	err := eng.Run(context.Background(), src, opts, func(v any) error {
+		got = append(got, v)
+		return nil
+	})
+	require.NoError(t, err)
+	return got
 }
 
 func TestRawRunCommand(t *testing.T) {
