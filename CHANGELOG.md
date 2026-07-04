@@ -5,6 +5,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## v0.1.0 - 2026-07-04
+### Bug Fixes
+- **release:** ignore untracked files in the clean-tree guard (075a3a6)
+- **release:** generate changelog before the first tag exists (d548482)
+
 ### Features
 - compile .[]|select equality predicates to MongoDB queries (--compile) (ddf62e5)
 - add MongoDB as a second backend behind the jq interface (c5c315f)
