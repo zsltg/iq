@@ -17,3 +17,14 @@ func TestRootTimeoutDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 5*time.Second, got)
 }
+
+func TestRootRegistersSourceCommands(t *testing.T) {
+	root := newRootCmd()
+	have := map[string]bool{}
+	for _, c := range root.Commands() {
+		have[c.Name()] = true
+	}
+	for _, name := range []string{"add", "ls", "rm", "mv", "src", "group", "ping", "inspect", "exec"} {
+		require.True(t, have[name], "root should register %q", name)
+	}
+}

@@ -86,6 +86,23 @@ func TestLsReveal(t *testing.T) {
 	require.NotContains(t, revealed, "xxxxx")
 }
 
+func TestLsGroupsMarksActiveAndListsAll(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("prod/a", "redis://h", ""))
+	require.NoError(t, c.Add("dev/b", "redis://h", ""))
+	require.NoError(t, c.SetGroup("prod"))
+	seedConfig(t, c)
+
+	out, err := runCmd(t, newLsCmd(), "-g")
+	require.NoError(t, err)
+	// Both groups are listed (a broken loop that stopped early would drop one).
+	require.Contains(t, out, "prod")
+	require.Contains(t, out, "dev")
+	// The active group is marked, and only it.
+	require.Contains(t, out, "* prod")
+	require.NotContains(t, out, "* dev")
+}
+
 func TestLsGroupsJSON(t *testing.T) {
 	seedLs(t)
 	out, err := runCmd(t, newLsCmd(), "-g", "--json")

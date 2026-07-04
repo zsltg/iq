@@ -89,6 +89,13 @@ func TestInspectMongoIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "dbStats")
 
+	// No args runs every subcommand; the text output must show them all, not stop
+	// after the first.
+	allText, err := runCmd(t, newInspectCmd(cfg))
+	require.NoError(t, err)
+	require.Contains(t, allText, "# dbStats")
+	require.Contains(t, allText, "# buildInfo")
+
 	all, err := runCmd(t, newInspectCmd(cfg), "--json")
 	require.NoError(t, err)
 	var byName map[string]any
