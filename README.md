@@ -368,6 +368,31 @@ composable filter.
 
 ## Architecture
 
+The core read path: a jq filter is classified by the **selector**, a scan is optionally **decomposed**
+into a native predicate, and each backend maps that predicate its own way — MongoDB pushes it
+server-side, Redis scans and filters client-side. Either way the full jq re-runs client-side, so the
+pushed predicate is only ever a conservative pre-filter and results are identical with or without it.
+
+```mermaid
+graph TD
+  F["jq filter (CLI)"] --> SEL["selector.Keys — static AST analysis"]
+  SEL -->|"bounded: named keys"| GET["KVStore.Get(keys)"]
+  SEL -->|"scan, streamable (.[]-rooted)"| CMP{"--compile and store is a FilteredScanner?"}
+  SEL -->|"holistic scan (keys, map, aggregates)"| MAT["materialize — requires --unbounded"]
+
+  CMP -->|yes| PD["pushdown.Compile → predicate.Node (decompose)"]
+  CMP -->|no| RS["KVStore.ScanBatches — full scan"]
+
+  PD --> MG["MongoDB: toFilter → native query (server-side pre-filter)"]
+  RS --> RD["Redis: no pushdown, client-side scan"]
+
+  GET --> JQ["run the full jq client-side, per batch (re-run — superset safety)"]
+  MAT --> JQ
+  MG --> JQ
+  RD --> JQ
+  JQ --> OUT["--format renderer → output"]
+```
+
 The query core is driver-agnostic and lives behind two ports a backend adapter implements:
 
 - `internal/selector` — pure static analysis. `Keys` walks a parsed jq AST and classifies the

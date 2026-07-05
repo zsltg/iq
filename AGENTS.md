@@ -38,6 +38,7 @@ Boring, linear, readable code.
 ## Docs stay current
 - README Common commands is the full catalogue; update it in the same change that adds or alters a developer-facing command, dependency or environment variable; environment variables also update `.env.example`.
 - A change to the system's shape (a new datastore target, a new delivery surface, a changed connection contract) updates the README Architecture section in the same change.
+- A change to the selector's classification, the pushdown-to-predicate mapping, a core port, an adapter, or a backend updates the README Architecture Mermaid diagram in the same change; keep the committed diagram in sync, never redraw it from scratch.
 ## Boundaries
 Never:
 - Hand-edit generated artifacts (`go generate` output, vendored code).
