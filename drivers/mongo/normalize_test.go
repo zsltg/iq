@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/zsltg/iq/internal/numfmt"
 )
 
 func TestNormalize(t *testing.T) {
@@ -15,38 +17,52 @@ func TestNormalize(t *testing.T) {
 
 	tests := []struct {
 		name string
+		mode numfmt.DecimalMode
 		in   any
 		want any
 	}{
-		{"nil", nil, nil},
-		{"bool", true, true},
-		{"string", "hi", "hi"},
-		{"float64", 1.5, 1.5},
-		{"int32 to int", int32(42), 42},
-		{"int64 to int", int64(2015), 2015},
-		{"objectid to hex", oid, "507f1f77bcf86cd799439011"},
-		{"datetime to rfc3339", bson.NewDateTimeFromTime(when), "2017-03-14T09:30:00Z"},
-		{"decimal to string", mustDecimal(t, "3.14"), "3.14"},
-		{"binary to base64", bson.Binary{Subtype: 0, Data: []byte("hi")}, "aGk="},
+		{name: "nil", in: nil, want: nil},
+		{name: "bool", in: true, want: true},
+		{name: "string", in: "hi", want: "hi"},
+		{name: "float64", in: 1.5, want: 1.5},
+		{name: "int32 to int", in: int32(42), want: 42},
+		{name: "int64 to int", in: int64(2015), want: 2015},
+		{name: "objectid to hex", in: oid, want: "507f1f77bcf86cd799439011"},
+		{name: "datetime to rfc3339", in: bson.NewDateTimeFromTime(when), want: "2017-03-14T09:30:00Z"},
+		{name: "decimal auto keeps exact string", mode: numfmt.DecimalAuto, in: mustDecimal(t, "3.14"), want: "3.14"},
+		{name: "decimal string keeps exact string", mode: numfmt.DecimalString, in: mustDecimal(t, "3.14"), want: "3.14"},
+		{name: "decimal number becomes a float", mode: numfmt.DecimalNumber, in: mustDecimal(t, "3.14"), want: 3.14},
+		{name: "negative decimal number becomes a float", mode: numfmt.DecimalNumber, in: mustDecimal(t, "-2.5"), want: -2.5},
+		{name: "high-precision decimal string is exact", mode: numfmt.DecimalString, in: mustDecimal(t, "1.0000000000000000001"), want: "1.0000000000000000001"},
+		{name: "high-precision decimal number is a float", mode: numfmt.DecimalNumber, in: mustDecimal(t, "1.0000000000000000001"), want: 1.0000000000000000001},
+		{name: "decimal NaN stays a string in number mode", mode: numfmt.DecimalNumber, in: mustDecimal(t, "NaN"), want: "NaN"},
+		{name: "binary to base64", in: bson.Binary{Subtype: 0, Data: []byte("hi")}, want: "aGk="},
 		{
-			"nested document",
-			bson.M{"title": "Go", "meta": bson.M{"year": int32(2015)}},
-			map[string]any{"title": "Go", "meta": map[string]any{"year": 2015}},
+			name: "nested document",
+			in:   bson.M{"title": "Go", "meta": bson.M{"year": int32(2015)}},
+			want: map[string]any{"title": "Go", "meta": map[string]any{"year": 2015}},
 		},
 		{
-			"ordered document D",
-			bson.D{{Key: "a", Value: int32(1)}, {Key: "b", Value: "x"}},
-			map[string]any{"a": 1, "b": "x"},
+			name: "ordered document D",
+			in:   bson.D{{Key: "a", Value: int32(1)}, {Key: "b", Value: "x"}},
+			want: map[string]any{"a": 1, "b": "x"},
 		},
 		{
-			"array of mixed",
-			bson.A{int32(1), "two", oid},
-			[]any{1, "two", "507f1f77bcf86cd799439011"},
+			name: "array of mixed",
+			in:   bson.A{int32(1), "two", oid},
+			want: []any{1, "two", "507f1f77bcf86cd799439011"},
+		},
+		{
+			name: "decimal inside a document follows the mode",
+			mode: numfmt.DecimalNumber,
+			in:   bson.M{"price": mustDecimal(t, "9.99")},
+			want: map[string]any{"price": 9.99},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, normalize(tt.in))
+			s := &Store{decimal: tt.mode}
+			require.Equal(t, tt.want, s.normalize(tt.in))
 		})
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 )
@@ -36,7 +37,7 @@ func openIntegration(t *testing.T, collection string) *Store {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	store, err := Open(ctx, testURI(), collection, nil)
+	store, err := Open(ctx, testURI(), collection, nil, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	return store
@@ -98,6 +99,38 @@ func TestGetByID(t *testing.T) {
 	}, got["b1"])
 	require.Equal(t, "Mongo", got[oid.Hex()].(map[string]any)["title"], "ObjectID key matched by hex")
 	require.Nil(t, got["missing"], "absent _id reads as null")
+}
+
+// TestGetDecimalMode reads a stored Decimal128 through Get under each decimal
+// mode, proving the flag threads from Open through normalization to the value the
+// filter sees.
+func TestGetDecimalMode(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping mongodb integration test in -short mode")
+	}
+	tests := []struct {
+		name string
+		mode numfmt.DecimalMode
+		want any
+	}{
+		{name: "auto keeps an exact string", mode: numfmt.DecimalAuto, want: "3.14"},
+		{name: "string keeps an exact string", mode: numfmt.DecimalString, want: "3.14"},
+		{name: "number becomes a float", mode: numfmt.DecimalNumber, want: 3.14},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			t.Cleanup(cancel)
+			store, err := Open(ctx, testURI(), "decimal_docs", nil, tt.mode)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = store.Close() })
+			seedDocs(t, store, []any{bson.M{"_id": "d1", "price": mustDecimal(t, "3.14")}})
+
+			got, err := store.Get(ctx, []string{"d1"})
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got["d1"].(map[string]any)["price"])
+		})
+	}
 }
 
 func TestGetEmptyKeysNoRoundTrip(t *testing.T) {

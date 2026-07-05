@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/zsltg/iq/internal/numfmt"
 )
 
 // TestRootTimeoutDefault pins the default --timeout. The default bounds every
@@ -27,6 +29,8 @@ func TestRootRejectsBadDiagnosticsFlags(t *testing.T) {
 		{"--log.level=loud", "ls"},
 		{"--log.format=xml", "ls"},
 		{"--debug.pprof=bogus", "ls"},
+		{"--format=csv"}, // no filter: PreRun must reject it before RunE reaches Help
+		{"--format.decimal=bogus", "ls"},
 	}
 	for _, args := range cases {
 		t.Run(args[0], func(t *testing.T) {
@@ -53,6 +57,32 @@ func TestRootVerboseShorthand(t *testing.T) {
 	require.NotNil(t, sh)
 	require.Equal(t, "verbose", sh.Name)
 	require.NotEmpty(t, root.Version)
+}
+
+// TestRootFormatShorthand pins -f to the unified --format selector.
+func TestRootFormatShorthand(t *testing.T) {
+	root, _ := newRootCmd()
+	sh := root.Flags().ShorthandLookup("f")
+	require.NotNil(t, sh)
+	require.Equal(t, "format", sh.Name)
+}
+
+// TestRootDecimalResolvesInPreRun pins the resolved decimal mode: PersistentPreRunE
+// parses --format.decimal into cfg.decimalMode before any store opens. version runs
+// PreRun without touching config or a backend, so it isolates the resolution.
+func TestRootDecimalResolvesInPreRun(t *testing.T) {
+	t.Run("defaults to auto", func(t *testing.T) {
+		root, cfg := newRootCmd()
+		_, err := runCmd(t, root, "version")
+		require.NoError(t, err)
+		require.Equal(t, numfmt.DecimalAuto, cfg.decimalMode)
+	})
+	t.Run("number flag resolves to DecimalNumber", func(t *testing.T) {
+		root, cfg := newRootCmd()
+		_, err := runCmd(t, root, "--format.decimal=number", "version")
+		require.NoError(t, err)
+		require.Equal(t, numfmt.DecimalNumber, cfg.decimalMode)
+	})
 }
 
 func TestRootRegistersSourceCommands(t *testing.T) {

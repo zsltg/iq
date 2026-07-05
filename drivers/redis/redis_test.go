@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	iqredis "github.com/zsltg/iq/drivers/redis"
+	"github.com/zsltg/iq/internal/numfmt"
 )
 
 // testRedisDB is the reserved database integration tests operate on. DB 0 is
@@ -43,7 +44,7 @@ func TestOpenRejectsBadURL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, err := iqredis.Open(ctx, "://not-a-url", nil)
+	_, err := iqredis.Open(ctx, "://not-a-url", nil, numfmt.DecimalAuto)
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "parse redis url")
@@ -54,7 +55,7 @@ func TestOpenFailsFastWhenUnreachable(t *testing.T) {
 	defer cancel()
 
 	// Port 1 has no listener, so the PING must fail fast.
-	_, err := iqredis.Open(ctx, "redis://localhost:1", nil)
+	_, err := iqredis.Open(ctx, "redis://localhost:1", nil, numfmt.DecimalAuto)
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "connect redis")
@@ -121,7 +122,7 @@ func openIntegration(t *testing.T) *iqredis.Store {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	store, err := iqredis.Open(ctx, testURL(), nil)
+	store, err := iqredis.Open(ctx, testURL(), nil, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	return store

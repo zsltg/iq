@@ -75,7 +75,7 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 		if err != nil {
 			return fmt.Errorf("--from %q: %w", st.handle, err)
 		}
-		vals, err := collectSource(ctx, &config{url: u, collection: st.source.Collection, trace: cfg.trace}, st.filter, opts)
+		vals, err := collectSource(ctx, &config{url: u, collection: st.source.Collection, trace: cfg.trace, decimalMode: cfg.decimalMode}, st.filter, opts)
 		if err != nil {
 			if errors.Is(err, query.ErrScanNotAllowed) {
 				return fmt.Errorf("--from %q: %w; add --unbounded or use a .[]-rooted filter", st.handle, err)

@@ -12,6 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/render"
 )
@@ -32,6 +33,7 @@ type Store struct {
 	db         *mongo.Database
 	collection string
 	pageSize   int
+	decimal    numfmt.DecimalMode
 }
 
 // Open connects to the MongoDB server named by a mongodb:// URI and verifies the
@@ -39,8 +41,9 @@ type Store struct {
 // database is taken from the URI path; collection is the jq keyspace (may be
 // empty for raw-only use). When trace is non-nil, each query command the driver
 // issues is logged to it (the CLI's --verbose trace); handshake and auth commands
-// are omitted, so no credential is written.
-func Open(ctx context.Context, uri, collection string, trace io.Writer) (*Store, error) {
+// are omitted, so no credential is written. dec chooses how Decimal128 values are
+// presented to the filter.
+func Open(ctx context.Context, uri, collection string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	dbName, err := databaseFromURI(uri)
 	if err != nil {
 		return nil, err
@@ -62,6 +65,7 @@ func Open(ctx context.Context, uri, collection string, trace io.Writer) (*Store,
 		db:         client.Database(dbName),
 		collection: collection,
 		pageSize:   scanBatch,
+		decimal:    dec,
 	}, nil
 }
 
@@ -102,7 +106,7 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		if err := cur.Decode(&doc); err != nil {
 			return nil, fmt.Errorf("mongodb decode: %w", err)
 		}
-		out[keyOf(doc["_id"])] = normalize(doc)
+		out[keyOf(doc["_id"])] = s.normalize(doc)
 	}
 	if err := cur.Err(); err != nil {
 		return nil, fmt.Errorf("mongodb cursor: %w", err)
@@ -150,7 +154,7 @@ func (s *Store) scanWith(ctx context.Context, filter bson.M, fn func(batch map[s
 		if err := cur.Decode(&doc); err != nil {
 			return fmt.Errorf("mongodb decode: %w", err)
 		}
-		page[keyOf(doc["_id"])] = normalize(doc)
+		page[keyOf(doc["_id"])] = s.normalize(doc)
 		if len(page) >= s.pageSize {
 			if err := fn(page); err != nil {
 				return err
@@ -182,7 +186,7 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if err := s.db.RunCommand(ctx, cmd).Decode(&res); err != nil {
 		return nil, fmt.Errorf("mongodb command: %w", err)
 	}
-	return normalize(res), nil
+	return s.normalize(res), nil
 }
 
 // FormatRaw renders a raw command reply as indented JSON, the natural form for a

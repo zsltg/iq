@@ -42,7 +42,7 @@ var drivers = []driver{
 		schemes: []string{"mongodb", "mongodb+srv"},
 		doc:     "https://www.mongodb.com/docs/",
 		open: func(ctx context.Context, cfg *config) (store, error) {
-			return iqmongo.Open(ctx, cfg.url, cfg.collection, cfg.trace)
+			return iqmongo.Open(ctx, cfg.url, cfg.collection, cfg.trace, cfg.decimalMode)
 		},
 		explainPlan: iqmongo.ExplainPlan,
 	},
@@ -52,7 +52,7 @@ var drivers = []driver{
 		schemes: []string{"redis", "rediss"},
 		doc:     "https://redis.io/docs/",
 		open: func(ctx context.Context, cfg *config) (store, error) {
-			return iqredis.Open(ctx, cfg.url, cfg.trace)
+			return iqredis.Open(ctx, cfg.url, cfg.trace, cfg.decimalMode)
 		},
 		explainPlan: iqredis.ExplainPlan,
 	},

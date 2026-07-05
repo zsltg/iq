@@ -7,17 +7,21 @@ package mongo
 import (
 	"encoding/base64"
 	"fmt"
+	"strconv"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/zsltg/iq/internal/numfmt"
 )
 
 // normalize converts a decoded BSON value into a JSON-ready Go value the jq
 // engine accepts: nil, bool, int, float64, string, []any, map[string]any. BSON's
 // richer types are rendered to their natural JSON form — an ObjectID to its hex
 // string, a date to RFC 3339 — so filters read naturally and the encoding is a
-// frozen contract, the MongoDB analogue of the Redis type normalization.
-func normalize(v any) any {
+// frozen contract, the MongoDB analogue of the Redis type normalization. A
+// Decimal128 follows the store's decimal mode: exact string, or a bare number.
+func (s *Store) normalize(v any) any {
 	switch t := v.(type) {
 	case nil, bool, string, float64:
 		return t
@@ -34,23 +38,23 @@ func normalize(v any) any {
 	case time.Time:
 		return t.UTC().Format(time.RFC3339Nano)
 	case bson.Decimal128:
-		return t.String()
+		return decimalValue(t, s.decimal)
 	case bson.Binary:
 		return base64.StdEncoding.EncodeToString(t.Data)
 	case bson.M:
-		return normalizeMap(t)
+		return s.normalizeMap(t)
 	case map[string]any:
-		return normalizeMap(t)
+		return s.normalizeMap(t)
 	case bson.D:
 		out := make(map[string]any, len(t))
 		for _, e := range t {
-			out[e.Key] = normalize(e.Value)
+			out[e.Key] = s.normalize(e.Value)
 		}
 		return out
 	case bson.A:
-		return normalizeSlice(t)
+		return s.normalizeSlice(t)
 	case []any:
-		return normalizeSlice(t)
+		return s.normalizeSlice(t)
 	default:
 		// A BSON type without a first-class JSON form (timestamp, regex, …) is
 		// rendered as its Go string form rather than dropped, so nothing is lost
@@ -59,20 +63,39 @@ func normalize(v any) any {
 	}
 }
 
+// decimalValue renders a BSON Decimal128 per the decimal mode. In auto and string
+// mode it keeps the exact decimal literal as a string; in number mode it parses
+// to a float64 (lossy beyond float64), except NaN and ±Infinity, which have no
+// JSON-number form and so stay strings rather than degrade to null.
+func decimalValue(d bson.Decimal128, mode numfmt.DecimalMode) any {
+	str := d.String()
+	if mode != numfmt.DecimalNumber {
+		return str
+	}
+	switch str {
+	case "NaN", "Infinity", "-Infinity":
+		return str
+	}
+	if f, err := strconv.ParseFloat(str, 64); err == nil {
+		return f
+	}
+	return str
+}
+
 // normalizeMap normalizes every value of a document, preserving keys.
-func normalizeMap(m map[string]any) map[string]any {
+func (s *Store) normalizeMap(m map[string]any) map[string]any {
 	out := make(map[string]any, len(m))
 	for k, v := range m {
-		out[k] = normalize(v)
+		out[k] = s.normalize(v)
 	}
 	return out
 }
 
 // normalizeSlice normalizes every element of an array, preserving order.
-func normalizeSlice(a []any) []any {
+func (s *Store) normalizeSlice(a []any) []any {
 	out := make([]any, len(a))
 	for i, v := range a {
-		out[i] = normalize(v)
+		out[i] = s.normalize(v)
 	}
 	return out
 }

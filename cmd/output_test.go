@@ -14,10 +14,11 @@ import (
 func TestSelectFormat(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		cfg     config
-		want    outputFormat
-		wantErr bool
+		name        string
+		cfg         config
+		want        outputFormat
+		wantErr     bool
+		errContains string
 	}{
 		{name: "none defaults to json", cfg: config{}, want: formatJSON},
 		{name: "json", cfg: config{json: true}, want: formatJSON},
@@ -25,7 +26,16 @@ func TestSelectFormat(t *testing.T) {
 		{name: "jsonl", cfg: config{jsonl: true}, want: formatJSONL},
 		{name: "yaml", cfg: config{yaml: true}, want: formatYAML},
 		{name: "raw selects the values rendering", cfg: config{raw: true}, want: formatValues},
-		{name: "two set is a conflict", cfg: config{json: true, yaml: true}, wantErr: true},
+		{name: "format json", cfg: config{format: "json"}, want: formatJSON},
+		{name: "format jsonl", cfg: config{format: "jsonl"}, want: formatJSONL},
+		{name: "format json-array", cfg: config{format: "json-array"}, want: formatJSONArray},
+		{name: "format yaml", cfg: config{format: "yaml"}, want: formatYAML},
+		{name: "format values", cfg: config{format: "values"}, want: formatValues},
+		{name: "format raw aliases values", cfg: config{format: "raw"}, want: formatValues},
+		{name: "format is case-insensitive and trimmed", cfg: config{format: " JSON "}, want: formatJSON},
+		{name: "invalid format value errors", cfg: config{format: "csv"}, wantErr: true, errContains: `invalid --format "csv"`},
+		{name: "two booleans is a conflict", cfg: config{json: true, yaml: true}, wantErr: true, errContains: "--format, --json, --json-array, --jsonl, --yaml, --raw"},
+		{name: "format with a boolean is a conflict", cfg: config{format: "json", jsonl: true}, wantErr: true, errContains: "--format, --json, --json-array, --jsonl, --yaml, --raw"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -33,12 +43,42 @@ func TestSelectFormat(t *testing.T) {
 			got, err := selectFormat(&tt.cfg)
 			if tt.wantErr {
 				require.Error(t, err)
-				// The message names every format flag so the user can recover.
-				require.Contains(t, err.Error(), "--json, --json-array, --jsonl, --yaml, --raw")
+				require.Contains(t, err.Error(), tt.errContains)
 				return
 			}
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestValidateFormat(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		in      string
+		wantErr bool
+	}{
+		{name: "empty is unset and allowed", in: ""},
+		{name: "whitespace is treated as unset", in: "   "},
+		{name: "json", in: "json"},
+		{name: "jsonl", in: "jsonl"},
+		{name: "json-array", in: "json-array"},
+		{name: "yaml", in: "yaml"},
+		{name: "values", in: "values"},
+		{name: "raw alias", in: "raw"},
+		{name: "case-insensitive and trimmed", in: " YAML "},
+		{name: "unknown value errors", in: "csv", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateFormat(tt.in)
+			if tt.wantErr {
+				require.ErrorContains(t, err, "invalid --format")
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }

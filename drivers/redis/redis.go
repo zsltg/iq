@@ -8,6 +8,8 @@ import (
 	"io"
 
 	goredis "github.com/redis/go-redis/v9"
+
+	"github.com/zsltg/iq/internal/numfmt"
 )
 
 func init() {
@@ -28,14 +30,18 @@ type Store struct {
 	// handing off a page, so streaming memory stays O(pageSize). Defaults to
 	// scanCount; tests lower it to exercise multi-page behavior.
 	pageSize int
+	// decimal chooses how a RedisJSON fractional number is presented to the
+	// filter: a float64 (auto/number) or its exact literal string.
+	decimal numfmt.DecimalMode
 }
 
 // Open connects to the Redis server named by a redis:// URL. It verifies the
 // connection with a PING so a bad URL or unreachable server fails fast at
 // startup rather than on the first query. When trace is non-nil, every subsequent
 // command is logged to it (the CLI's --verbose trace); the startup PING is not
-// traced, as the hook is attached only after it succeeds.
-func Open(ctx context.Context, url string, trace io.Writer) (*Store, error) {
+// traced, as the hook is attached only after it succeeds. dec chooses how
+// RedisJSON fractional numbers are presented to the filter.
+func Open(ctx context.Context, url string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	opts, err := goredis.ParseURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("parse redis url: %w", err)
@@ -53,7 +59,7 @@ func Open(ctx context.Context, url string, trace io.Writer) (*Store, error) {
 	if trace != nil {
 		client.AddHook(newTraceHook(trace))
 	}
-	return &Store{client: client, pageSize: scanCount}, nil
+	return &Store{client: client, pageSize: scanCount, decimal: dec}, nil
 }
 
 // Query forwards args to Redis as a single command and returns the raw result.

@@ -24,6 +24,37 @@ const (
 	formatYAML      outputFormat = "yaml"
 )
 
+// namedFormats maps the --format flag's value names to the rendering they select.
+// The names match the shorthand boolean flags, plus "raw" as an alias for
+// "values" (mirroring the --raw boolean, which selects formatValues).
+var namedFormats = map[string]outputFormat{
+	"json":       formatJSON,
+	"jsonl":      formatJSONL,
+	"json-array": formatJSONArray,
+	"yaml":       formatYAML,
+	"values":     formatValues,
+	"raw":        formatValues,
+}
+
+// namedFormat resolves a --format value to its rendering, case-insensitively and
+// trimming surrounding whitespace, reporting whether the name is known.
+func namedFormat(s string) (outputFormat, bool) {
+	f, ok := namedFormats[strings.ToLower(strings.TrimSpace(s))]
+	return f, ok
+}
+
+// validateFormat rejects an unknown --format value at PreRun (empty means unset),
+// mirroring the fail-fast posture of validateErrorFormat.
+func validateFormat(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	if _, ok := namedFormat(s); !ok {
+		return fmt.Errorf("invalid --format %q: want json, jsonl, json-array, yaml, values, or raw", s)
+	}
+	return nil
+}
+
 // selectFormat resolves the chosen rendering from the mutually exclusive
 // output-format flags, defaulting to pretty json when none is set (--raw selects
 // the values rendering, mirroring jq's --raw-output). Cobra marks the flags
@@ -32,6 +63,13 @@ const (
 // run paths validate before any store I/O.
 func selectFormat(cfg *config) (outputFormat, error) {
 	set := make([]outputFormat, 0, 1)
+	if cfg.format != "" {
+		f, ok := namedFormat(cfg.format)
+		if !ok {
+			return "", fmt.Errorf("invalid --format %q: want json, jsonl, json-array, yaml, values, or raw", cfg.format)
+		}
+		set = append(set, f)
+	}
 	if cfg.json {
 		set = append(set, formatJSON)
 	}
@@ -53,7 +91,7 @@ func selectFormat(cfg *config) (outputFormat, error) {
 	case 1:
 		return set[0], nil
 	default:
-		return "", fmt.Errorf("output format flags are mutually exclusive: set at most one of --json, --json-array, --jsonl, --yaml, --raw")
+		return "", fmt.Errorf("output format flags are mutually exclusive: set at most one of --format, --json, --json-array, --jsonl, --yaml, --raw")
 	}
 }
 

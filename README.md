@@ -154,6 +154,10 @@ flags are mutually exclusive and apply to the jq read path and to `--from`/`--co
 | `-r`, `--raw` | scalars unquoted, one per line; objects and arrays fall back to compact JSON |
 | `-y`, `--yaml` | YAML documents, separated by `---` |
 
+`-f`, `--format <name>` selects the same renderings by name — `json`, `jsonl`, `json-array`,
+`yaml`, `values` (with `raw` as an alias for `values`) — as an alternative to the shorthand
+flags above. It is mutually exclusive with them, so `-f json --jsonl` is rejected.
+
 `--compact` collapses the pretty renderings to single-line: `--json` becomes one compact
 value per line (equivalent to `--jsonl`) and `--json-array` becomes a single-line `[ ... ]`. It
 is a no-op for `--jsonl`, `--raw`, and `--yaml`, which are already condensed.
@@ -161,9 +165,35 @@ is a no-op for `--jsonl`, `--raw`, and `--yaml`, which are already condensed.
 ```bash
 ./iq '.[].title' --raw          # bare titles, one per line, for shell substitution
 ./iq '.[]' --jsonl              # one compact document per line
-./iq '.[]' --json-array         # a single JSON array of every result
+./iq '.[]' -f json-array        # a single JSON array of every result (same as --json-array)
 ./iq '.[]' -A --compact         # the same array on one line
 ./iq '.[]' --yaml               # YAML, easier to read for deeply nested documents
+```
+
+#### Decimal numbers
+
+`--format.decimal <auto|number|string>` chooses how a **non-integer decimal** from the backend
+is presented to the filter. Because the jq filter runs client-side over the fetched value, this
+choice is made at normalization time — it changes what the filter computes on, not just how the
+result prints (unlike `sq`, where jq is not involved).
+
+| value | behavior |
+| --- | --- |
+| `auto` (default) | each backend keeps its faithful form: MongoDB `Decimal128` is an exact string, a Redis fractional number is a `float64` |
+| `number` | decimals become bare numbers (`float64`); convenient for arithmetic but lossy beyond `float64` |
+| `string` | decimals become their exact literal as a string; precision-safe — use `tonumber` to compute |
+
+Integers are always exact regardless of the mode: they arrive as an `int`, or a big integer when
+they exceed 64 bits, so `.count + 1` stays exact rather than rounding through `float64`. Note
+that a backend may round before iq sees the value — RedisJSON, for example, stores an integer
+larger than 64 bits as a double, so it arrives already in scientific notation. A big integer
+renders as a bare number in the JSON formats but as a quoted string under `--yaml` (a `yaml.v3`
+limitation); exactness is kept in preference to YAML's numeric form.
+
+```bash
+./iq '.book.price' --format.decimal=string   # "19.99" — exact, precision-safe
+./iq '.book.price | tonumber * 1.2'          # compute on the exact decimal
+./iq '.[].price' --format.decimal=number     # bare numbers, ready for jq arithmetic
 ```
 
 ### Colored output
@@ -573,7 +603,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   `source()`-driven filter to the cross-source engine), the `exec` escape hatch, a source command
   (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`/`diff`/`driver`), or a `--from`/`--combine` cross-source query —
   resolving every source name through the same registry — and formats output (a format-flag-selected
-  renderer for the jq path — `--json`, `--jsonl`, `--json-array`, `--raw`, or `--yaml`; per-backend for `exec` —
+  renderer for the jq path — `--json`, `--jsonl`, `--json-array`, `--raw`, or `--yaml`, also selectable by
+  name with `--format`, and with `--format.decimal` governing how decimals normalize; per-backend for `exec` —
   redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format. The
   diagnostics surface (verbose output, file logging, error rendering, `--debug.pprof`) also lives
   here: it is set up once per invocation and emits from the CLI boundary, so the query core imports

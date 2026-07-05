@@ -32,7 +32,7 @@ func seedKV(t *testing.T, store *iqredis.Store) {
 		{"ZADD", "iq:test:zset", "320", "one", "540", "two", "710", "three"},
 		{"XADD", "iq:test:stream", "1-1", "sensor", "9", "temp", "18"},
 		{"XADD", "iq:test:stream", "2-1", "temp", "19"},
-		{"JSON.SET", "iq:test:json", "$", `{"a":1,"b":"x"}`},
+		{"JSON.SET", "iq:test:json", "$", `{"a":1,"b":"x","big":9007199254740993,"r":1.5}`},
 	}
 	for _, c := range cmds {
 		_, err := store.Query(ctx, c)
@@ -61,7 +61,12 @@ func TestGetNormalizesEveryType(t *testing.T) {
 		map[string]any{"id": "1-1", "fields": map[string]any{"sensor": "9", "temp": "18"}},
 		map[string]any{"id": "2-1", "fields": map[string]any{"temp": "19"}},
 	}, got["iq:test:stream"], "stream as ordered [{id, fields}] entries")
-	require.Equal(t, map[string]any{"a": float64(1), "b": "x"}, got["iq:test:json"], "RedisJSON parsed as JSON")
+	require.Equal(t, map[string]any{
+		"a":   1,
+		"b":   "x",
+		"big": 9007199254740993, // above 2^53: exact int, not a lossy float64
+		"r":   1.5,
+	}, got["iq:test:json"], "RedisJSON parsed with integer precision preserved")
 	require.Nil(t, got["iq:test:absent"], "missing key is null")
 }
 

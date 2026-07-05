@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/numfmt"
 )
 
 // config holds the per-invocation settings. url, source, and handle are not
@@ -36,17 +37,22 @@ type config struct {
 	dryRun     bool
 	from       []string
 	combine    string
+	format     string
 	json       bool
 	jsonArray  bool
 	jsonl      bool
 	yaml       bool
 	raw        bool
 	compact    bool
-	monochrome bool
-	forceColor bool
-	noProgress bool
-	reveal     bool
-	expand     bool
+	// decimal is the raw --format.decimal flag; decimalMode is it resolved once in
+	// PersistentPreRunE and passed as a plain type into the driver adapters.
+	decimal     string
+	decimalMode numfmt.DecimalMode
+	monochrome  bool
+	forceColor  bool
+	noProgress  bool
+	reveal      bool
+	expand      bool
 	// Diagnostics flags, adopted from sq: a global verbose stderr mode, a
 	// file-logging family, error-rendering controls, and a profiling mode.
 	verbose          bool
@@ -122,6 +128,14 @@ func newRootCmd() (*cobra.Command, *config) {
 			if err := validateErrorFormat(cfg.errorFormat); err != nil {
 				return err
 			}
+			if err := validateFormat(cfg.format); err != nil {
+				return err
+			}
+			mode, err := numfmt.ParseDecimalMode(cfg.decimal)
+			if err != nil {
+				return err
+			}
+			cfg.decimalMode = mode
 			logOpts, err := resolveLogOptions(cmd, cfg)
 			if err != nil {
 				return err
@@ -163,6 +177,10 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.PersistentFlags().BoolVarP(&cfg.monochrome, "monochrome", "M", false, "disable colored output (also honored via NO_COLOR); color is on by default only when writing to a terminal")
 	root.PersistentFlags().BoolVarP(&cfg.forceColor, "color", "C", false, "force colored output even when the destination is not a terminal (e.g. a pager)")
 	root.PersistentFlags().BoolVar(&cfg.noProgress, "no-progress", false, "disable the scan progress spinner (shown on stderr for long scans when it is a terminal)")
+	// --format.decimal is persistent so it reaches every store the drivers open; it
+	// is resolved to cfg.decimalMode in PersistentPreRunE and honored at
+	// normalization time, so it changes what the filter computes on, not just the print.
+	root.PersistentFlags().StringVar(&cfg.decimal, "format.decimal", "auto", "how to present a non-integer decimal to the filter: auto (Mongo Decimal128 exact string, Redis fractional number), number (bare, may lose precision), or string (exact, quoted; use tonumber)")
 	// Diagnostics flags (sq-compatible). -v is global; `iq ls` reuses it for its
 	// driver column. --log* also honor IQ_LOG/IQ_LOG_FILE/IQ_LOG_LEVEL/IQ_LOG_FORMAT.
 	root.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "print verbose diagnostics to stderr; for a query, the formatted plan and a live backend command trace (disables the progress spinner)")
@@ -187,7 +205,8 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.Flags().BoolVarP(&cfg.jsonl, "jsonl", "J", false, "output compact JSON, one value per line (JSON Lines)")
 	root.Flags().BoolVarP(&cfg.yaml, "yaml", "y", false, "output YAML documents, separated by ---")
 	root.Flags().BoolVarP(&cfg.raw, "raw", "r", false, "output scalars unquoted, one per line (objects and arrays fall back to compact JSON)")
-	root.MarkFlagsMutuallyExclusive("json", "json-array", "jsonl", "yaml", "raw")
+	root.Flags().StringVarP(&cfg.format, "format", "f", "", "select the output rendering by name: json (default), jsonl, json-array, yaml, values (alias: raw); an alternative to -j/-J/-A/-y/-r")
+	root.MarkFlagsMutuallyExclusive("format", "json", "json-array", "jsonl", "yaml", "raw")
 	root.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / json-array output to single-line (no-op for jsonl, values, yaml)")
 	root.AddCommand(
 		newExecCmd(cfg),

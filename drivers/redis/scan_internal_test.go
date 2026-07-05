@@ -3,11 +3,14 @@ package redis
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/zsltg/iq/internal/numfmt"
 )
 
 // TestScanBatchesBoundsPageSize checks the memory-bounding heart of ScanBatches:
@@ -28,7 +31,7 @@ func TestScanBatchesBoundsPageSize(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	store, err := Open(ctx, url, nil)
+	store, err := Open(ctx, url, nil, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	defer func() { _ = store.Close() }()
 
@@ -56,4 +59,59 @@ func TestScanBatchesBoundsPageSize(t *testing.T) {
 	require.Equal(t, n, total, "every key delivered once on a stable keyspace")
 	require.LessOrEqual(t, maxSize, store.pageSize, "no page exceeds pageSize")
 	require.Contains(t, sizes, store.pageSize, "a page flushes at exactly pageSize")
+}
+
+// bigInt builds a *big.Int from a decimal literal for the expected values below.
+func bigInt(t *testing.T, s string) *big.Int {
+	t.Helper()
+	v, ok := new(big.Int).SetString(s, 10)
+	require.True(t, ok)
+	return v
+}
+
+// TestDecodeJSONNumbers is the precision heart of the RedisJSON path: integers are
+// always exact (int or *big.Int, so gojq does exact arithmetic), while a
+// fractional number follows the decimal mode. It is a pure unit test — no server —
+// because jsonReader only wraps a JSON.GET reply that decodeJSON then parses.
+func TestDecodeJSONNumbers(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		json string
+		mode numfmt.DecimalMode
+		want any
+	}{
+		{name: "fractional auto is a float", json: `1.5`, mode: numfmt.DecimalAuto, want: 1.5},
+		{name: "fractional number is a float", json: `1.5`, mode: numfmt.DecimalNumber, want: 1.5},
+		{name: "fractional string is the exact literal", json: `1.5`, mode: numfmt.DecimalString, want: "1.5"},
+		{name: "negative fractional number is a float", json: `-2.5`, mode: numfmt.DecimalNumber, want: -2.5},
+		{name: "negative fractional string is exact", json: `-2.5`, mode: numfmt.DecimalString, want: "-2.5"},
+		{name: "high-precision string is exact", json: `0.12345678901234567890123`, mode: numfmt.DecimalString, want: "0.12345678901234567890123"},
+		{name: "exponent number is a float", json: `1e3`, mode: numfmt.DecimalNumber, want: 1000.0},
+		{name: "exponent string is the exact literal", json: `1e3`, mode: numfmt.DecimalString, want: "1e3"},
+		{name: "small integer is an int", json: `42`, mode: numfmt.DecimalAuto, want: 42},
+		{name: "integer above 2^53 stays exact in auto", json: `9007199254740993`, mode: numfmt.DecimalAuto, want: 9007199254740993},
+		{name: "integer above 2^53 stays exact in string mode", json: `9007199254740993`, mode: numfmt.DecimalString, want: 9007199254740993},
+		{name: "integer beyond int64 is a big int", json: `123456789012345678901234567890`, mode: numfmt.DecimalNumber, want: bigInt(t, "123456789012345678901234567890")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := decodeJSON(tt.json, tt.mode)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestConvertNumbersRecurses checks that number conversion reaches into nested
+// objects and arrays, not just the top-level value.
+func TestConvertNumbersRecurses(t *testing.T) {
+	t.Parallel()
+	got, err := decodeJSON(`{"n": 9007199254740993, "xs": [1.5, {"m": 2.5}]}`, numfmt.DecimalString)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{
+		"n":  9007199254740993,
+		"xs": []any{"1.5", map[string]any{"m": "2.5"}},
+	}, got)
 }
