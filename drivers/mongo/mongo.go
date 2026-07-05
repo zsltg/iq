@@ -106,7 +106,7 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		if err := cur.Decode(&doc); err != nil {
 			return nil, fmt.Errorf("mongodb decode: %w", err)
 		}
-		out[keyOf(doc["_id"])] = s.normalize(doc)
+		out[KeyOf(doc["_id"])] = s.normalize(doc)
 	}
 	if err := cur.Err(); err != nil {
 		return nil, fmt.Errorf("mongodb cursor: %w", err)
@@ -154,7 +154,7 @@ func (s *Store) scanWith(ctx context.Context, filter bson.M, fn func(batch map[s
 		if err := cur.Decode(&doc); err != nil {
 			return fmt.Errorf("mongodb decode: %w", err)
 		}
-		page[keyOf(doc["_id"])] = s.normalize(doc)
+		page[KeyOf(doc["_id"])] = s.normalize(doc)
 		if len(page) >= s.pageSize {
 			if err := fn(page); err != nil {
 				return err

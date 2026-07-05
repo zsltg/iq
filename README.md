@@ -389,9 +389,10 @@ registered backends — the same canonical names `iq ls -v`, `ping`, `inspect`, 
 
 ```bash
 $ iq driver ls
-DRIVER  DESCRIPTION             SCHEMES               VERSIONS  DOC
-mongo   MongoDB document store  mongodb, mongodb+srv  4.2+      https://www.mongodb.com/docs/
-redis   Redis key-value store   redis, rediss         7.0+      https://redis.io/docs/
+DRIVER  DESCRIPTION                                                     SCHEMES               VERSIONS  DOC
+mongo   MongoDB document store                                          mongodb, mongodb+srv  4.2+      https://www.mongodb.com/docs/
+redis   Redis key-value store                                           redis, rediss         7.0+      https://redis.io/docs/
+file    Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON)  file
 ```
 
 Add `--json` for machine-readable rows (see [Sources](#sources) for the full flag).
@@ -544,6 +545,40 @@ With no source selected the command errors — there is no ambient URL or enviro
 
 </details>
 
+<details>
+<summary><b>File dumps</b> — query a snapshot offline (read-only)</summary>
+
+A `file://` source reads a database dump straight from disk, so a snapshot is queried, inspected
+for shape, diffed, and restored with the same jq interface — **no running server**. It is
+read-only: a `file://` endpoint is never a copy *destination*, and `iq exec`/`iq inspect` (which
+need a live server) do not apply.
+
+```bash
+iq add file:///backups/prod.rdb -n snap      # register a dump like any source
+iq --src snap '.["session:42"]'              # bounded read of one key
+iq --src snap '.[] | select(.active)'        # streamed scan
+iq --src snap 'keys' --unbounded             # whole-dataset filters obey --unbounded
+iq data copy snap prod                       # restore the dump into a live source (both are handles)
+iq diff snap prod --data                     # diff a dump against a live source
+```
+
+The format is detected from the file's content (or forced with a `?format=` query, e.g.
+`file:///d.bin?format=bson`):
+
+| Format | Produced by | Notes |
+| --- | --- | --- |
+| Typed JSONL | `iq data copy <src> <file>` | iq's own dump; lossless round-trip |
+| Redis RDB | `redis-cli --rdb`, `SAVE` | values match a live scan; RDB ≤ v12 (Redis ≤ 7.2) |
+| Mongo BSON | `mongodump` | single `.bson` file |
+| Mongo Extended JSON | `mongoexport` | one document per line, or a `--jsonArray` array |
+
+The whole dump streams; a `file://` source never holds all values in memory (whole-dataset
+materialization is the core's, gated by `--unbounded`, exactly as for a live backend). **Restore
+fidelity** is the record round-trip: values and native types reconstruct, but TTLs, exact
+encodings, stream consumer groups, RDB module types, and Mongo indexes do not carry.
+
+</details>
+
 ## Cross-source queries
 
 `--from` and `--combine` run one query across several sources and stitch the results together.
@@ -618,19 +653,22 @@ composable filter.
 the read path, and the iq-native take on sq's `tbl copy`/`--insert`/`truncate`/`drop`. (`iq exec`
 remains the untyped escape hatch for anything the typed path does not cover.)
 
-`iq data copy <src> [dst]` is one command for all movement. Each endpoint is a saved source
-(`name[.coll]`) or a file path (`-` or an omitted `dst` is stdin/stdout); a file endpoint is a typed
-JSONL dump (`{"key":…,"type":…,"value":…}` per line), whose per-record type tag is what makes a
-Redis round-trip lossless. Existing keys are overwritten (upsert) unless `--no-overwrite`
-(insert-only), and `--replace` empties the destination first (with a confirmation, or `--force`).
+`iq data copy <src> [dst]` is one command for all movement. Each positional endpoint is a **saved
+source handle** (`name[.coll]`) — never a bare file path, so a handle is never confused with a
+like-named file. A dump file is a [`file://` source](#drivers) (register it with `iq add`); file
+output goes through `-o`, and stdio through `-`. A dump is typed JSONL
+(`{"key":…,"type":…,"value":…}` per line), whose per-record type tag is what makes a Redis
+round-trip lossless. Existing keys are overwritten (upsert) unless `--no-overwrite` (insert-only),
+and `--replace` empties the destination first (with a confirmation, or `--force`).
 
 ```bash
 iq data copy books books2                 # source → source, key/_id-preserving
-iq data copy books dump.jsonl             # source → file: a typed backup dump
-iq data copy dump.jsonl books2            # file → source: restore the dump
+iq data copy books -o dump.jsonl          # dump a source to a typed JSONL file (-o, not a positional)
+iq add file:///dump.jsonl -n snap         # a dump file is a source; then:
+iq data copy snap books2                  # restore the dump into a source
 iq data copy books                        # dump to stdout (dst omitted)
 iq data copy cache mongo_books            # cross-driver (Redis → Mongo); verify with `iq diff --data`
-iq data copy foreign.json books --key-field id   # import foreign JSON, keyed by its id field
+iq data copy - books --key-field id < foreign.json   # import foreign JSON piped on stdin
 ```
 
 `--filter '<jq>'` transforms each item during the copy — this is sq's `--insert`, done portably.
@@ -679,11 +717,13 @@ graph TD
 
   PD --> MG["MongoDB: toFilter → native query (server-side pre-filter)"]
   RS --> RD["Redis: no pushdown, client-side scan"]
+  RS --> FL["File dump: decode RDB/BSON/mongoexport/JSONL, client-side scan (read-only)"]
 
   GET --> JQ["run the full jq client-side, per batch (re-run — superset safety)"]
   MAT --> JQ
   MG --> JQ
   RD --> JQ
+  FL --> JQ
   JQ --> OUT["selected-format renderer → output"]
 
   RS -.->|"per page (RunOptions.OnPage)"| PROG["scan-progress spinner → stderr (CLI, off unless a terminal)"]
@@ -730,6 +770,14 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   file↔source, cross-driver included; a file endpoint is a typed JSONL dump), and `iq data
   clear`/`drop` drive the lifecycle ports. `iq exec` remains the untyped escape hatch for anything
   the typed path does not cover.
+- `drivers/file` — a read-only adapter over a local dump file. Its `*Store` satisfies the read ports
+  (`Get`/`ScanBatches`) and `TypedReader` (so a dump restores through `iq data copy`), detecting the
+  format from content (Redis RDB via `hdt3213/rdb`, mongodump BSON and mongoexport Extended JSON via
+  the Mongo driver, or iq's own typed JSONL) and decoding each item to the **same** JSON shape the
+  live adapter produces, so a query or restore is identical to the live backend. It implements no
+  writer, so a `file://` endpoint is never a copy destination, and `Query` returns a sentinel that
+  makes `exec`/`inspect` degrade cleanly. It streams; whole-dataset materialization stays the core's,
+  gated by `--unbounded`.
 - `drivers/redis`, `drivers/mongo` — the adapters. Each has one `*Store` satisfying the read ports
   (`Query` for exec, `Get`/`ScanBatches` for jq) and the write ports (`Put`/`Clear`/`TypedScan`,
   plus `Drop` for Mongo), with a type-to-JSON normalization frozen as that backend's encoding
@@ -786,8 +834,11 @@ iq version                # print version, commit, build date, and Go version
 iq config set format yaml # persist a default flag value (add --src <name> to scope it to a source)
 iq config ls -v           # list every persistable option: value, default, and help
 iq --config ./iq.toml ls  # run against an alternate config file (overrides IQ_CONFIG)
-iq data copy books books2 # copy a source to another (source↔source or file↔source; --filter to transform)
-iq data copy books dump.jsonl   # dump a source to a typed JSONL file (restore with the reverse copy)
+iq data copy books books2 # copy a source to another (handle → handle, cross-driver ok; --filter to transform)
+iq data copy books -o dump.jsonl   # dump a source to a typed JSONL file (restore by registering it as a file:// source)
+iq add file:///backups/prod.rdb -n snap   # register a dump file as a read-only source
+iq --src snap '.[] | select(.active)'     # query a Redis/Mongo dump offline (RDB, BSON, mongoexport, JSONL)
+iq data copy snap prod                    # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
 go test ./...             # full suite; starts ephemeral Redis + MongoDB via testcontainers-go

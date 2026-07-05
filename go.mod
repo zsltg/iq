@@ -5,6 +5,7 @@ go 1.25.1
 require (
 	github.com/fatih/color v1.19.0
 	github.com/goccy/go-yaml v1.19.2
+	github.com/hdt3213/rdb v1.3.2
 	github.com/itchyny/gojq v0.12.19
 	github.com/lmittmann/tint v1.1.3
 	github.com/mattn/go-isatty v0.0.22

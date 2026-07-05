@@ -63,10 +63,14 @@ func TestDriverRegistryInvariants(t *testing.T) {
 	for _, d := range drivers {
 		require.NotEmpty(t, d.name)
 		require.NotEmpty(t, d.desc)
-		require.NotEmpty(t, d.doc)
-		require.NotEmpty(t, d.versions)
 		require.NotEmpty(t, d.schemes)
 		require.NotNil(t, d.open)
+		if !d.readOnly {
+			// A connectable backend advertises upstream docs and a supported server
+			// version range; a read-only local driver (file://) has neither.
+			require.NotEmpty(t, d.doc)
+			require.NotEmpty(t, d.versions)
+		}
 		require.False(t, seenName[d.name], "duplicate driver name %q", d.name)
 		seenName[d.name] = true
 		for _, s := range d.schemes {
@@ -97,7 +101,7 @@ func TestDriverLsJSON(t *testing.T) {
 
 	var rows []driverRow
 	require.NoError(t, json.Unmarshal([]byte(out), &rows))
-	require.Len(t, rows, 2)
+	require.Len(t, rows, 3)
 
 	byName := map[string]driverRow{}
 	for _, r := range rows {

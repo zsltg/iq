@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	iqfile "github.com/zsltg/iq/drivers/file"
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqredis "github.com/zsltg/iq/drivers/redis"
 	"github.com/zsltg/iq/internal/predicate"
@@ -29,6 +30,11 @@ type driver struct {
 	// versions is the range of backend server versions the bundled client
 	// library supports, shown by `iq driver ls`.
 	versions string
+	// readOnly marks a local, connection-less backend (a dump file) that iq can
+	// only read: it has no write-side describers, is never a copy destination, and
+	// has no upstream server to suggest — so doc/versions may be empty for it and
+	// it is left out of the connection-scheme hint in error messages.
+	readOnly bool
 	open     func(ctx context.Context, cfg *config) (store, error)
 	// explainPlan describes, without connecting, the backend calls this driver
 	// would make for a classified query and pushed predicate — the data the query
@@ -73,6 +79,16 @@ var drivers = []driver{
 		explainWrite: iqredis.ExplainWrite,
 		explainClear: iqredis.ExplainClear,
 		explainDrop:  iqredis.ExplainDrop,
+	},
+	{
+		name:     "file",
+		desc:     "Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON)",
+		schemes:  []string{"file"},
+		readOnly: true,
+		open: func(_ context.Context, cfg *config) (store, error) {
+			return iqfile.Open(cfg.url, cfg.decimalMode)
+		},
+		explainPlan: iqfile.ExplainPlan,
 	},
 }
 
@@ -127,9 +143,14 @@ func driverNames() string {
 // ("expected mongodb:// or redis://"), so the message an unsupported URL yields
 // stays in sync with the drivers that actually exist.
 func expectedSchemes() string {
-	primaries := make([]string, len(drivers))
-	for i, d := range drivers {
-		primaries[i] = d.schemes[0] + "://"
+	// Only connectable backends are suggested for a bad connection URL; a local
+	// read-only driver (file://) is discoverable via `iq driver ls`, not here.
+	primaries := make([]string, 0, len(drivers))
+	for _, d := range drivers {
+		if d.readOnly {
+			continue
+		}
+		primaries = append(primaries, d.schemes[0]+"://")
 	}
 	switch len(primaries) {
 	case 1:

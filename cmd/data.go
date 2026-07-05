@@ -40,10 +40,10 @@ func newDataCmd(cfg *config) *cobra.Command {
 	df := &dataFlags{}
 	c := &cobra.Command{
 		Use:   "data",
-		Short: "Move data between sources and files, and manage containers",
+		Short: "Move data between sources, and manage containers",
 		Long: "Structured, driver-agnostic data movement and lifecycle. `copy` moves items\n" +
-			"between sources and files in any direction (a file destination is a typed JSONL\n" +
-			"dump; a file source restores it); `clear` empties a container; `drop` removes one.\n\n" +
+			"between sources (a `file://` source reads a dump; -o writes one); `clear` empties\n" +
+			"a container; `drop` removes one.\n\n" +
 			"--explain shows the plan without connecting; --dry-run reports the real effect\n" +
 			"without changing anything.",
 	}
@@ -68,10 +68,12 @@ type endpoint struct {
 	handle     string
 }
 
-// resolveEndpoint turns one positional (or an empty dst) into an endpoint. It
-// tries the source registry first — so a handle wins over a like-named file — then
-// falls back to treating the argument as a file path. An empty argument is only
-// valid for a destination, where it means stdout.
+// resolveEndpoint turns one positional (or an empty dst) into an endpoint. A
+// positional is always a saved source handle — never a bare file path, so a handle
+// can never be shadowed by, or confused with, a like-named file. A dump file is
+// used by registering it as a `file://` source; file output goes through -o and
+// stdio through "-". An empty argument is only valid for a destination, where it
+// means stdout.
 func resolveEndpoint(cf *iqconfig.Config, arg string, isDst bool) (endpoint, error) {
 	if arg == "" {
 		if !isDst {
@@ -85,7 +87,8 @@ func resolveEndpoint(cf *iqconfig.Config, arg string, isDst bool) (endpoint, err
 	name, coll, hasColl := splitSourceArg(cf, arg)
 	src, full, ok := cf.Resolve(name)
 	if !ok {
-		return endpoint{isFile: true, path: arg}, nil
+		return endpoint{}, fmt.Errorf("unknown source %q; register it with `iq add` "+
+			"(a dump file too, via a file:// url), write a file with -o, or use - for stdin/stdout", arg)
 	}
 	u, err := effectiveURL(src, full)
 	if err != nil {

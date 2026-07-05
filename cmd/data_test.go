@@ -45,7 +45,7 @@ func TestResolveEndpoint(t *testing.T) {
 		{name: "mongo source with stored collection", arg: "books", wantDriver: "mongo", wantColl: "books"},
 		{name: "mongo source with collection override", arg: "books.authors", wantDriver: "mongo", wantColl: "authors"},
 		{name: "redis rejects collection suffix", arg: "cache.foo", wantErr: "no collections"},
-		{name: "unknown name is a file", arg: "dump.jsonl", wantFile: true, wantPath: "dump.jsonl"},
+		{name: "unknown name is not a file path", arg: "dump.jsonl", wantErr: "unknown source"},
 		{name: "dash is stdin/stdout", arg: "-", wantFile: true, wantPath: "-"},
 		{name: "empty dst is stdout", arg: "", isDst: true, wantFile: true, wantPath: ""},
 		{name: "empty src is an error", arg: "", isDst: false, wantErr: "source is required"},
@@ -104,11 +104,16 @@ func TestRunDataCopyRejectsConflictingFlags(t *testing.T) {
 }
 
 func TestRunDataCopyRejectsFileToFile(t *testing.T) {
-	configEnv(t) // empty config: both args are unknown, so both resolve to files.
+	configEnv(t)
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
-	err := runDataCopy(cmd, &config{}, &dataFlags{}, &copyOptions{}, []string{"a.jsonl", "b.jsonl"})
+	// The only file endpoints are stdio ("-"/omitted), so stdin→stdout is the sole
+	// file-to-file case; an arbitrary name is now an unknown source, not a file.
+	err := runDataCopy(cmd, &config{}, &dataFlags{}, &copyOptions{}, []string{"-", "-"})
 	require.ErrorContains(t, err, "at least one endpoint must be a source")
+
+	err = runDataCopy(cmd, &config{}, &dataFlags{}, &copyOptions{}, []string{"nope"})
+	require.ErrorContains(t, err, "unknown source")
 }
 
 func TestConfirmDestructionForce(t *testing.T) {

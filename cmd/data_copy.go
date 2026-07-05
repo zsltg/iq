@@ -39,13 +39,14 @@ func newDataCopyCmd(cfg *config, df *dataFlags) *cobra.Command {
 	var opts copyOptions
 	c := &cobra.Command{
 		Use:   "copy <src> [dst]",
-		Short: "Copy items between sources and files, with an optional transform",
-		Long: "Copy items between saved sources and files in any direction. Each endpoint is a\n" +
-			"source (`name[.coll]`) or a file path (`-` or omitted dst is stdin/stdout).\n\n" +
-			"  source -> source   live, key-preserving copy (cross-driver allowed)\n" +
-			"  source -> file     typed JSONL dump (backup)\n" +
-			"  file   -> source   restore a dump, or import foreign JSON with --key-field\n" +
-			"  source -> (none)   dump to stdout\n\n" +
+		Short: "Copy items between sources, with an optional transform",
+		Long: "Copy items between saved sources. Each endpoint is a source handle (`name[.coll]`);\n" +
+			"a dump file is a `file://` source, registered with `iq add`. Write a file with -o,\n" +
+			"and read/write stdio with `-`.\n\n" +
+			"  src     -> dst      live, key-preserving copy (cross-driver allowed)\n" +
+			"  src     -> (none)   dump to stdout — add -o FILE for a typed JSONL dump on disk\n" +
+			"  file://.. -> dst    restore a dump (RDB/BSON/mongoexport/JSONL) into a live source\n" +
+			"  -       -> dst      import foreign JSON piped on stdin with --key-field\n\n" +
 			"--filter '<jq>' transforms each item; its output is written under the item's\n" +
 			"own key (1:1) or the key from --key/--key-field. Existing keys are overwritten\n" +
 			"(upsert) unless --no-overwrite; --replace empties the destination first.",

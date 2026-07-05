@@ -135,6 +135,12 @@ func verifySource(ctx context.Context, rawURL, collection string, timeout time.D
 		return redactErr(err, rawURL)
 	}
 	defer func() { _ = st.Close() }()
+	// A read-only local source (a dump file) has no server to round-trip a command
+	// against; opening it already parsed and validated the file, so that is the
+	// reachability check.
+	if d, ok := driverForScheme(schemeOf(rawURL)); ok && d.readOnly {
+		return nil
+	}
 	if _, err := st.Query(cctx, healthArgs(rawURL)); err != nil {
 		return redactErr(err, rawURL)
 	}

@@ -15,13 +15,15 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// normalize converts a decoded BSON value into a JSON-ready Go value the jq
+// Normalize converts a decoded BSON value into a JSON-ready Go value the jq
 // engine accepts: nil, bool, int, float64, string, []any, map[string]any. BSON's
 // richer types are rendered to their natural JSON form — an ObjectID to its hex
 // string, a date to RFC 3339 — so filters read naturally and the encoding is a
 // frozen contract, the MongoDB analogue of the Redis type normalization. A
-// Decimal128 follows the store's decimal mode: exact string, or a bare number.
-func (s *Store) normalize(v any) any {
+// Decimal128 follows dec: exact string, or a bare number. It is exported so a
+// dump reader (the file backend decoding mongodump BSON / mongoexport Extended
+// JSON) produces the exact same shape a live collection scan does.
+func Normalize(v any, dec numfmt.DecimalMode) any {
 	switch t := v.(type) {
 	case nil, bool, string, float64:
 		return t
@@ -38,29 +40,34 @@ func (s *Store) normalize(v any) any {
 	case time.Time:
 		return t.UTC().Format(time.RFC3339Nano)
 	case bson.Decimal128:
-		return decimalValue(t, s.decimal)
+		return decimalValue(t, dec)
 	case bson.Binary:
 		return base64.StdEncoding.EncodeToString(t.Data)
 	case bson.M:
-		return s.normalizeMap(t)
+		return normalizeMap(t, dec)
 	case map[string]any:
-		return s.normalizeMap(t)
+		return normalizeMap(t, dec)
 	case bson.D:
 		out := make(map[string]any, len(t))
 		for _, e := range t {
-			out[e.Key] = s.normalize(e.Value)
+			out[e.Key] = Normalize(e.Value, dec)
 		}
 		return out
 	case bson.A:
-		return s.normalizeSlice(t)
+		return normalizeSlice(t, dec)
 	case []any:
-		return s.normalizeSlice(t)
+		return normalizeSlice(t, dec)
 	default:
 		// A BSON type without a first-class JSON form (timestamp, regex, …) is
 		// rendered as its Go string form rather than dropped, so nothing is lost
 		// silently. Extend with a dedicated case when one needs a stable shape.
 		return fmt.Sprintf("%v", t)
 	}
+}
+
+// normalize adapts Normalize to the store's configured decimal mode.
+func (s *Store) normalize(v any) any {
+	return Normalize(v, s.decimal)
 }
 
 // decimalValue renders a BSON Decimal128 per the decimal mode. In auto and string
@@ -83,28 +90,29 @@ func decimalValue(d bson.Decimal128, mode numfmt.DecimalMode) any {
 }
 
 // normalizeMap normalizes every value of a document, preserving keys.
-func (s *Store) normalizeMap(m map[string]any) map[string]any {
+func normalizeMap(m map[string]any, dec numfmt.DecimalMode) map[string]any {
 	out := make(map[string]any, len(m))
 	for k, v := range m {
-		out[k] = s.normalize(v)
+		out[k] = Normalize(v, dec)
 	}
 	return out
 }
 
 // normalizeSlice normalizes every element of an array, preserving order.
-func (s *Store) normalizeSlice(a []any) []any {
+func normalizeSlice(a []any, dec numfmt.DecimalMode) []any {
 	out := make([]any, len(a))
 	for i, v := range a {
-		out[i] = s.normalize(v)
+		out[i] = Normalize(v, dec)
 	}
 	return out
 }
 
-// keyOf renders a document's _id to the string key the collection is keyed by,
+// KeyOf renders a document's _id to the string key the collection is keyed by,
 // the inverse of how idValues turns a key back into candidate _id matches. An
 // ObjectID becomes its hex string; a string _id is itself; other scalars use
-// their natural form.
-func keyOf(id any) string {
+// their natural form. Exported so a dump reader keys mongodump/mongoexport
+// documents exactly as a live collection scan does.
+func KeyOf(id any) string {
 	switch t := id.(type) {
 	case bson.ObjectID:
 		return t.Hex()

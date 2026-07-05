@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -63,10 +64,17 @@ func newInspectCmd(cfg *config) *cobra.Command {
 			defer func() { _ = st.Close() }()
 
 			out := cmd.OutOrStdout()
-			if driverName(cfg.url) == "redis" {
+			switch driverName(cfg.url) {
+			case "redis":
 				return inspectRedis(ctx, out, st, cfg, only, jsonOut, list)
+			case "file":
+				// inspect reports live server metadata; a dump file has none. Point
+				// the user at the operations that do work on a file source.
+				return errors.New("inspect reports live server metadata, which a file source has none; " +
+					"query it with a jq filter (`iq '.[]' --src <name>`) or compare it with `iq diff`")
+			default:
+				return inspectMongo(ctx, out, st, cfg, only, jsonOut, list)
 			}
-			return inspectMongo(ctx, out, st, cfg, only, jsonOut, list)
 		},
 	}
 	c.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
