@@ -13,37 +13,45 @@ import (
 )
 
 // mongoInspectCmds is the supported set of MongoDB diagnostic commands `inspect`
-// runs. With no positional argument it runs them all; positionals narrow to the
-// named ones.
+// runs. With no --only, it runs them all; --only narrows to the named ones.
 var mongoInspectCmds = []string{"dbStats", "serverStatus", "listCollections", "collStats", "buildInfo", "hostInfo"}
 
-// newInspectCmd builds `iq inspect [section...]`: show a source's native
-// server/database introspection. The source is the active one or --src; the
-// positional arguments narrow the output. Bounded by --timeout.
+// newInspectCmd builds `iq inspect [source]`: show a source's native
+// server/database introspection. The positional names the source (sq-style
+// `<source>.<collection>` addressing); with none it uses --src or the active
+// source. --only narrows the output. Bounded by --timeout.
 func newInspectCmd(cfg *config) *cobra.Command {
 	var (
 		jsonOut bool
 		list    bool
+		only    []string
 	)
 	long := "Show a source's native server/database introspection.\n\n" +
-		"MongoDB — runs diagnostic database commands; no arguments runs them all,\n" +
-		"positional arguments narrow to the named ones:\n" +
+		"The positional argument names the source, like `iq inspect prod`; with none it\n" +
+		"uses --src or the active source. MongoDB sources accept sq-style\n" +
+		"`<source>.<collection>` addressing (`iq inspect prod.books`) to pick the\n" +
+		"collection; --collection still overrides it, and Redis sources take no collection.\n\n" +
+		"MongoDB — runs diagnostic database commands; no --only runs them all,\n" +
+		"--only narrows to the named ones:\n" +
 		"  " + strings.Join(mongoInspectCmds, "  ") + "\n" +
 		"  (collStats needs a collection via -c or on the source)\n\n" +
-		"Redis — runs INFO; positional arguments narrow it to those sections\n" +
-		"(`iq inspect memory server`), and none runs the full INFO. Common sections:\n" +
+		"Redis — runs INFO; --only narrows it to those sections\n" +
+		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
 		"  server  clients  memory  persistence  stats  replication  cpu  keyspace\n\n" +
-		"Select the source with --src or the active source. Use --json for machine-readable\n" +
-		"output, or --list to print the subcommands/sections available for the active source.\n" +
-		"The location header is redacted by default: --reveal prints an inline password\n" +
-		"verbatim, --expand resolves a keyring-backed one."
+		"Use --json for machine-readable output, or --list to print the subcommands/sections\n" +
+		"available for the source. The location header is redacted by default: --reveal prints\n" +
+		"an inline password verbatim, --expand resolves a keyring-backed one."
 	c := &cobra.Command{
-		Use:   "inspect [section...]",
+		Use:   "inspect [source]",
 		Short: "Show a source's native server/database introspection",
 		Long:  long,
-		Args:  cobra.ArbitraryArgs,
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := resolveSource(cmd, cfg); err != nil {
+			arg := ""
+			if len(args) > 0 {
+				arg = args[0]
+			}
+			if err := resolveInspectSource(cmd, cfg, arg); err != nil {
 				return err
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
@@ -56,13 +64,14 @@ func newInspectCmd(cfg *config) *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			if strings.HasPrefix(schemeOf(cfg.url), "redis") {
-				return inspectRedis(ctx, out, st, cfg, args, jsonOut, list)
+				return inspectRedis(ctx, out, st, cfg, only, jsonOut, list)
 			}
-			return inspectMongo(ctx, out, st, cfg, args, jsonOut, list)
+			return inspectMongo(ctx, out, st, cfg, only, jsonOut, list)
 		},
 	}
 	c.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
-	c.Flags().BoolVar(&list, "list", false, "list the subcommands/sections available for the active source")
+	c.Flags().BoolVar(&list, "list", false, "list the subcommands/sections available for the source")
+	c.Flags().StringSliceVar(&only, "only", nil, "narrow to these sections (Redis) / subcommands (MongoDB)")
 	c.Flags().BoolVar(&cfg.reveal, "reveal", false, "print an inline-stored password verbatim in the location header instead of redacting it")
 	c.Flags().BoolVar(&cfg.expand, "expand", false, "resolve a keyring-backed password and inline it in the location header")
 	return c

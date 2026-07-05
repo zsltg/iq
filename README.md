@@ -80,14 +80,17 @@ iq --src books '.["2"]'      # run this one query against "books"
 - `iq ping [<name>...]` — check that sources are reachable, reporting each driver and round-trip
   time (or the error). No arguments pings the active source; a group name pings every member.
   Bounded by `--timeout`; exits non-zero if any source is unreachable.
-- `iq inspect [<section>...]` — show the active source's (or `--src`'s) native introspection. For
-  Redis, runs `INFO`, narrowed to the named sections (`iq inspect memory server`). For MongoDB,
-  runs diagnostic commands (`dbStats`, `serverStatus`, `listCollections`, `collStats`,
-  `buildInfo`, `hostInfo`); no arguments runs them all, positional arguments narrow. `--list`
-  prints the subcommands/sections available for the active source (Mongo's fixed set; Redis's
-  live INFO sections). `--json` for machine-readable output; bounded by `--timeout`. The location
-  header is redacted like `iq ls`: `--reveal` un-redacts an inline password, `--expand` resolves a
-  keyring-backed one.
+- `iq inspect [<source>[.<collection>]]` — show a source's native introspection. The positional
+  names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB
+  sources accept sq-style `<source>.<collection>` addressing (`iq inspect prod.books`) to pick the
+  collection; `--collection` still overrides it, and Redis sources take no collection. `--only`
+  narrows the output (repeatable or comma-separated): for Redis, `INFO` sections
+  (`iq inspect prod --only memory,server`); for MongoDB, the diagnostic commands (`dbStats`,
+  `serverStatus`, `listCollections`, `collStats`, `buildInfo`, `hostInfo`) — no `--only` runs them
+  all. `--list` prints the subcommands/sections available for the source (Mongo's fixed set;
+  Redis's live INFO sections). `--json` for machine-readable output; bounded by `--timeout`. The
+  location header is redacted like `iq ls`: `--reveal` un-redacts an inline password, `--expand`
+  resolves a keyring-backed one.
 - `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
   added / removed / changed, keyed by document `_id` (MongoDB) or key (Redis); it reads both
   keyspaces fully into memory, the deliberate cost of needing both key sets at once, and is allowed

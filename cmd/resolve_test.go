@@ -110,3 +110,97 @@ func TestResolveSource(t *testing.T) {
 		require.Equal(t, "books", cfg.collection)
 	})
 }
+
+func TestSplitSourceArg(t *testing.T) {
+	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{
+		"books":     {URL: "mongodb://h/db", Collection: "books"},
+		"a.b":       {URL: "mongodb://h/db"},
+		"cache":     {URL: "redis://h"},
+		"prod/blog": {URL: "mongodb://h/db"},
+	}}
+	tests := []struct {
+		name       string
+		arg        string
+		wantName   string
+		wantColl   string
+		wantHasCol bool
+	}{
+		{"empty falls through to caller", "", "", "", false},
+		{"plain known source", "books", "books", "", false},
+		{"source and collection split on last dot", "books.chapters", "books", "chapters", true},
+		{"dotted handle resolves whole", "a.b", "a.b", "", false},
+		{"at-prefixed splits, name keeps the at", "@books.chapters", "@books", "chapters", true},
+		{"unknown bare name passes through", "nope", "nope", "", false},
+		{"leading dot is not a split", ".x", ".x", "", false},
+		{"trailing dot is not a split", "x.", "x.", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, coll, has := splitSourceArg(cf, tt.arg)
+			require.Equal(t, tt.wantName, name)
+			require.Equal(t, tt.wantColl, coll)
+			require.Equal(t, tt.wantHasCol, has)
+		})
+	}
+}
+
+func TestResolveInspectSource(t *testing.T) {
+	t.Run("positional source overrides the active source", func(t *testing.T) {
+		c := newSeed()
+		require.NoError(t, c.Add("cache", "redis://h", ""))
+		require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
+		require.NoError(t, c.SetActive("cache"))
+		seedConfig(t, c)
+
+		cfg := &config{}
+		require.NoError(t, resolveInspectSource(resolveCmd(cfg), cfg, "books"))
+		require.Equal(t, "mongodb://h/db", cfg.url)
+		require.Equal(t, "books", cfg.collection)
+	})
+
+	t.Run("dot addressing overrides the source collection", func(t *testing.T) {
+		c := newSeed()
+		require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
+		require.NoError(t, c.SetActive("books"))
+		seedConfig(t, c)
+
+		cfg := &config{}
+		require.NoError(t, resolveInspectSource(resolveCmd(cfg), cfg, "books.chapters"))
+		require.Equal(t, "chapters", cfg.collection)
+	})
+
+	t.Run("explicit --collection wins over dot addressing", func(t *testing.T) {
+		c := newSeed()
+		require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
+		require.NoError(t, c.SetActive("books"))
+		seedConfig(t, c)
+
+		cfg := &config{}
+		cmd := resolveCmd(cfg)
+		require.NoError(t, cmd.Flags().Set("collection", "override"))
+		require.NoError(t, resolveInspectSource(cmd, cfg, "books.chapters"))
+		require.Equal(t, "override", cfg.collection)
+	})
+
+	t.Run("no source selected errors", func(t *testing.T) {
+		seedConfig(t, newSeed())
+		cfg := &config{}
+		require.ErrorContains(t, resolveInspectSource(resolveCmd(cfg), cfg, ""), "no source selected")
+	})
+
+	t.Run("unknown positional source errors", func(t *testing.T) {
+		seedConfig(t, newSeed())
+		cfg := &config{}
+		require.ErrorContains(t, resolveInspectSource(resolveCmd(cfg), cfg, "nope"), "unknown source")
+	})
+
+	t.Run("redis rejects a collection suffix", func(t *testing.T) {
+		c := newSeed()
+		require.NoError(t, c.Add("cache", "redis://h", ""))
+		require.NoError(t, c.SetActive("cache"))
+		seedConfig(t, c)
+
+		cfg := &config{}
+		require.ErrorContains(t, resolveInspectSource(resolveCmd(cfg), cfg, "cache.foo"), "no collections")
+	})
+}

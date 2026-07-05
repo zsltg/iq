@@ -126,11 +126,11 @@ func TestInspectRedisIntegration(t *testing.T) {
 
 	cfg := &config{timeout: 3 * time.Second}
 
-	out, err := runCmd(t, newInspectCmd(cfg), "server")
+	out, err := runCmd(t, newInspectCmd(cfg), "live", "--only", "server")
 	require.NoError(t, err)
 	require.Contains(t, out, "redis_version")
 
-	jsonOut, err := runCmd(t, newInspectCmd(cfg), "server", "--json")
+	jsonOut, err := runCmd(t, newInspectCmd(cfg), "live", "--only", "server", "--json")
 	require.NoError(t, err)
 	var sections map[string]map[string]string
 	require.NoError(t, json.Unmarshal([]byte(jsonOut), &sections))
@@ -159,14 +159,21 @@ func TestInspectMongoIntegration(t *testing.T) {
 	}
 	c := newSeed()
 	require.NoError(t, c.Add("live", url, "books"))
+	require.NoError(t, c.Add("nocoll", url, ""))
 	require.NoError(t, c.SetActive("live"))
 	seedConfig(t, c)
 
 	cfg := &config{timeout: 5 * time.Second}
 
-	out, err := runCmd(t, newInspectCmd(cfg), "dbStats")
+	out, err := runCmd(t, newInspectCmd(cfg), "live", "--only", "dbStats")
 	require.NoError(t, err)
 	require.Contains(t, out, "dbStats")
+
+	// `<source>.<collection>` addressing supplies the collection collStats needs,
+	// even for a source that stores none.
+	collText, err := runCmd(t, newInspectCmd(cfg), "nocoll.books", "--only", "collStats")
+	require.NoError(t, err)
+	require.Contains(t, collText, "collStats")
 
 	// No args runs every subcommand; the text output must show them all, not stop
 	// after the first.
