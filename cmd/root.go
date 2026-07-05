@@ -32,7 +32,11 @@ type config struct {
 	compile    bool
 	from       []string
 	combine    string
-	format     string
+	json       bool
+	jsonArray  bool
+	jsonl      bool
+	yaml       bool
+	raw        bool
 	compact    bool
 	monochrome bool
 	forceColor bool
@@ -117,7 +121,14 @@ func newRootCmd() *cobra.Command {
 	root.Flags().BoolVar(&cfg.compile, "compile", false, "push a .[]|select(...) equality predicate to the store to pre-filter server-side (MongoDB; no-op elsewhere; results are unchanged)")
 	root.Flags().StringArrayVar(&cfg.from, "from", nil, "cross-source stage `name=<jq>`: reduce source name with <jq> and bind its results to $name (repeatable; needs --combine)")
 	root.Flags().StringVar(&cfg.combine, "combine", "", "final jq over the --from results (each bound to $name), run over a null input")
-	root.Flags().StringVarP(&cfg.format, "format", "o", "json", "output format: json (pretty stream), jsonl (compact, one per line), json-array (single [ ... ] doc), values (unquoted scalars), yaml")
+	// One rendering per run: the format flags are mutually exclusive and default
+	// to pretty json when none is set.
+	root.Flags().BoolVarP(&cfg.json, "json", "j", false, "output pretty JSON, one value per result (the default rendering)")
+	root.Flags().BoolVarP(&cfg.jsonArray, "json-array", "A", false, "output every result wrapped in one [ ... ] JSON document")
+	root.Flags().BoolVarP(&cfg.jsonl, "jsonl", "J", false, "output compact JSON, one value per line (JSON Lines)")
+	root.Flags().BoolVarP(&cfg.yaml, "yaml", "y", false, "output YAML documents, separated by ---")
+	root.Flags().BoolVarP(&cfg.raw, "raw", "r", false, "output scalars unquoted, one per line (objects and arrays fall back to compact JSON)")
+	root.MarkFlagsMutuallyExclusive("json", "json-array", "jsonl", "yaml", "raw")
 	root.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / json-array output to single-line (no-op for jsonl, values, yaml)")
 	root.AddCommand(
 		newExecCmd(cfg),

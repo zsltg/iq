@@ -12,8 +12,8 @@ import (
 	"github.com/zsltg/iq/internal/render"
 )
 
-// outputFormat is the closed set of renderings the --format flag selects. A
-// closed type keeps an unknown format unrepresentable past parseFormat.
+// outputFormat is the closed set of renderings the output-format flags select.
+// A closed type keeps an unknown format unrepresentable past selectFormat.
 type outputFormat string
 
 const (
@@ -24,14 +24,36 @@ const (
 	formatYAML      outputFormat = "yaml"
 )
 
-// parseFormat validates the --format value at the boundary, returning a closed
-// outputFormat or an error naming every valid choice.
-func parseFormat(s string) (outputFormat, error) {
-	switch outputFormat(s) {
-	case formatJSON, formatJSONL, formatJSONArray, formatValues, formatYAML:
-		return outputFormat(s), nil
+// selectFormat resolves the chosen rendering from the mutually exclusive
+// output-format flags, defaulting to pretty json when none is set (--raw selects
+// the values rendering, mirroring jq's --raw-output). Cobra marks the flags
+// mutually exclusive, so at most one is set on the real CLI; the >1 guard keeps
+// the invariant enforced when a config is built directly (tests) and lets both
+// run paths validate before any store I/O.
+func selectFormat(cfg *config) (outputFormat, error) {
+	set := make([]outputFormat, 0, 1)
+	if cfg.json {
+		set = append(set, formatJSON)
+	}
+	if cfg.jsonArray {
+		set = append(set, formatJSONArray)
+	}
+	if cfg.jsonl {
+		set = append(set, formatJSONL)
+	}
+	if cfg.yaml {
+		set = append(set, formatYAML)
+	}
+	if cfg.raw {
+		set = append(set, formatValues)
+	}
+	switch len(set) {
+	case 0:
+		return formatJSON, nil
+	case 1:
+		return set[0], nil
 	default:
-		return "", fmt.Errorf("unknown output format %q: want one of json, jsonl, json-array, values, yaml", s)
+		return "", fmt.Errorf("output format flags are mutually exclusive: set at most one of --json, --json-array, --jsonl, --yaml, --raw")
 	}
 }
 

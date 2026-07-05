@@ -32,9 +32,9 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 	if strings.TrimSpace(cfg.combine) == "" {
 		return errors.New("--from requires --combine to say how to combine the results")
 	}
-	// Validate the output format before any source work, so a bad --format fails
-	// fast rather than after opening and scanning every source.
-	fm, err := parseFormat(cfg.format)
+	// Resolve the output format before any source work, so conflicting format
+	// flags fail fast rather than after opening and scanning every source.
+	fm, err := selectFormat(cfg)
 	if err != nil {
 		return err
 	}

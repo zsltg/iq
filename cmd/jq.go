@@ -12,7 +12,7 @@ import (
 )
 
 // runJQ is the default command's body: it runs the jq filter through the engine
-// and renders each produced value with the --format formatter. A filter that
+// and renders each produced value with the selected-format formatter. A filter that
 // calls source() reads entirely from named sources over a null input
 // (cross-source, no primary store); any other filter runs against the selected
 // source. Formatting lives here, in the CLI adapter, so the core stays free of
@@ -26,7 +26,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 	defer cancel()
 
-	fm, err := parseFormat(cfg.format)
+	fm, err := selectFormat(cfg)
 	if err != nil {
 		return err
 	}

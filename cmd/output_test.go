@@ -11,31 +11,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseFormat(t *testing.T) {
+func TestSelectFormat(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name    string
-		in      string
+		cfg     config
 		want    outputFormat
 		wantErr bool
 	}{
-		{name: "json", in: "json", want: formatJSON},
-		{name: "jsonl", in: "jsonl", want: formatJSONL},
-		{name: "json-array", in: "json-array", want: formatJSONArray},
-		{name: "values", in: "values", want: formatValues},
-		{name: "yaml", in: "yaml", want: formatYAML},
-		{name: "empty", in: "", wantErr: true},
-		{name: "unknown", in: "csv", wantErr: true},
-		{name: "case sensitive", in: "JSON", wantErr: true},
+		{name: "none defaults to json", cfg: config{}, want: formatJSON},
+		{name: "json", cfg: config{json: true}, want: formatJSON},
+		{name: "json-array", cfg: config{jsonArray: true}, want: formatJSONArray},
+		{name: "jsonl", cfg: config{jsonl: true}, want: formatJSONL},
+		{name: "yaml", cfg: config{yaml: true}, want: formatYAML},
+		{name: "raw selects the values rendering", cfg: config{raw: true}, want: formatValues},
+		{name: "two set is a conflict", cfg: config{json: true, yaml: true}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := parseFormat(tt.in)
+			got, err := selectFormat(&tt.cfg)
 			if tt.wantErr {
 				require.Error(t, err)
-				// The message names every valid format so the user can recover.
-				require.Contains(t, err.Error(), "json, jsonl, json-array, values, yaml")
+				// The message names every format flag so the user can recover.
+				require.Contains(t, err.Error(), "--json, --json-array, --jsonl, --yaml, --raw")
 				return
 			}
 			require.NoError(t, err)
@@ -227,24 +226,24 @@ func TestFinish(t *testing.T) {
 	})
 }
 
-func TestRunRejectsUnknownFormat(t *testing.T) {
+func TestRunRejectsConflictingFormat(t *testing.T) {
 	t.Parallel()
-	// Both run paths validate --format before touching a store, so a bad value is
-	// rejected without any source I/O.
+	// Both run paths resolve the format before touching a store, so conflicting
+	// format flags are rejected without any source I/O.
 	t.Run("runJQ", func(t *testing.T) {
 		t.Parallel()
 		cmd := &cobra.Command{}
 		cmd.SetContext(context.Background())
 		cmd.SetOut(&bytes.Buffer{})
-		err := runJQ(cmd, &config{format: "bogus", timeout: time.Second}, ".")
-		require.ErrorContains(t, err, "unknown output format")
+		err := runJQ(cmd, &config{json: true, raw: true, timeout: time.Second}, ".")
+		require.ErrorContains(t, err, "mutually exclusive")
 	})
 	t.Run("runCombine", func(t *testing.T) {
 		t.Parallel()
 		cmd := &cobra.Command{}
 		cmd.SetContext(context.Background())
 		cmd.SetOut(&bytes.Buffer{})
-		err := runCombine(cmd, &config{from: []string{"x=."}, combine: "$x", format: "bogus", timeout: time.Second})
-		require.ErrorContains(t, err, "unknown output format")
+		err := runCombine(cmd, &config{from: []string{"x=."}, combine: "$x", json: true, raw: true, timeout: time.Second})
+		require.ErrorContains(t, err, "mutually exclusive")
 	})
 }

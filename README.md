@@ -134,36 +134,36 @@ colon key like `.["book:1"]` reads as a glob to zsh (`no matches found`) or bash
 
 ### Output formats
 
-Results print as pretty JSON by default. `--format`/`-o` selects another rendering; it applies
-to the jq read path and to `--from`/`--combine`, not to `exec` (which prints the backend's
-native reply):
+Results print as pretty JSON by default. A single format flag selects another rendering; the
+flags are mutually exclusive and apply to the jq read path and to `--from`/`--combine`, not to
+`exec` (which prints the backend's native reply):
 
-| `-o` value | output |
+| flag | output |
 | --- | --- |
-| `json` (default) | pretty JSON, one value per result |
-| `jsonl` | compact JSON, one value per line (JSON Lines) |
-| `json-array` | every result wrapped in one `[ ... ]` document |
-| `values` | scalars unquoted, one per line; objects and arrays fall back to compact JSON |
-| `yaml` | YAML documents, separated by `---` |
+| `-j`, `--json` (default) | pretty JSON, one value per result |
+| `-J`, `--jsonl` | compact JSON, one value per line (JSON Lines) |
+| `-A`, `--json-array` | every result wrapped in one `[ ... ]` document |
+| `-r`, `--raw` | scalars unquoted, one per line; objects and arrays fall back to compact JSON |
+| `-y`, `--yaml` | YAML documents, separated by `---` |
 
-`--compact` collapses the pretty renderings to single-line: `json` becomes one compact
-value per line (equivalent to `jsonl`) and `json-array` becomes a single-line `[ ... ]`. It
-is a no-op for `jsonl`, `values`, and `yaml`, which are already condensed.
+`--compact` collapses the pretty renderings to single-line: `--json` becomes one compact
+value per line (equivalent to `--jsonl`) and `--json-array` becomes a single-line `[ ... ]`. It
+is a no-op for `--jsonl`, `--raw`, and `--yaml`, which are already condensed.
 
 ```bash
-./iq '.[].title' -o values         # bare titles, one per line, for shell substitution
-./iq '.[]' -o jsonl                # one compact document per line
-./iq '.[]' -o json-array           # a single JSON array of every result
-./iq '.[]' -o json-array --compact # the same array on one line
-./iq '.[]' -o yaml                 # YAML, easier to read for deeply nested documents
+./iq '.[].title' --raw          # bare titles, one per line, for shell substitution
+./iq '.[]' --jsonl              # one compact document per line
+./iq '.[]' --json-array         # a single JSON array of every result
+./iq '.[]' -A --compact         # the same array on one line
+./iq '.[]' --yaml               # YAML, easier to read for deeply nested documents
 ```
 
 ### Colored output
 
 Output is syntax-highlighted when `iq` writes to a terminal and left plain when it is piped or
-redirected, so captured output stays clean. The `json`, `jsonl`, `json-array`, and `yaml`
-renderings get syntax highlighting; the `values` rendering is always plain so it stays safe for
-shell capture. The human commands color their signal too: `ping` shows `ok`/`error` in
+redirected, so captured output stays clean. The `--json`, `--jsonl`, `--json-array`, and
+`--yaml` renderings get syntax highlighting; the `--raw` rendering is always plain so it stays
+safe for shell capture. The human commands color their signal too: `ping` shows `ok`/`error` in
 green/red, `diff` shows additions green, removals red, and changes yellow, and `ls`/`inspect`
 highlight the active source and section headers. The raw reply bodies from `exec` and `inspect`
 are colored in their native form — JSON syntax highlighting for MongoDB, and redis-cli-style
@@ -463,7 +463,7 @@ graph TD
   MAT --> JQ
   MG --> JQ
   RD --> JQ
-  JQ --> OUT["--format renderer → output"]
+  JQ --> OUT["selected-format renderer → output"]
 
   RS -.->|"per page (RunOptions.OnPage)"| PROG["scan-progress spinner → stderr (CLI, off unless a terminal)"]
   MAT -.->|"per page (RunOptions.OnPage)"| PROG
@@ -501,8 +501,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   active source) to a URL and collection, picks the adapter by URL scheme (`openStore`), runs the
   jq action (routing a `source()`-driven filter to the cross-source engine), the `exec` escape hatch,
   a source command (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`/`diff`), or a `--from`/`--combine` cross-source query —
-  resolving every source name through the same registry — and formats output (a `--format`-selected
-  renderer for the jq path — json, jsonl, json-array, values, or yaml; per-backend for `exec` —
+  resolving every source name through the same registry — and formats output (a format-flag-selected
+  renderer for the jq path — `--json`, `--jsonl`, `--json-array`, `--raw`, or `--yaml`; per-backend for `exec` —
   redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format.
 
 A bounded filter runs client-side over just the named keys, so its cost is `O(keys requested)`; a
