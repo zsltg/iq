@@ -30,7 +30,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	if err != nil {
 		return err
 	}
-	f := newFormatter(fm, cmd.OutOrStdout())
+	f := newFormatter(fm, cmd.OutOrStdout(), cfg.compact)
 	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: cfg.compile}
 
 	if cross {

@@ -132,11 +132,16 @@ native reply):
 | `values` | scalars unquoted, one per line; objects and arrays fall back to compact JSON |
 | `yaml` | YAML documents, separated by `---` |
 
+`--compact` collapses the pretty renderings to single-line: `json` becomes one compact
+value per line (equivalent to `jsonl`) and `json-array` becomes a single-line `[ ... ]`. It
+is a no-op for `jsonl`, `values`, and `yaml`, which are already condensed.
+
 ```bash
-./iq '.[].title' -o values     # bare titles, one per line, for shell substitution
-./iq '.[]' -o jsonl            # one compact document per line
-./iq '.[]' -o json-array       # a single JSON array of every result
-./iq '.[]' -o yaml             # YAML, easier to read for deeply nested documents
+./iq '.[].title' -o values         # bare titles, one per line, for shell substitution
+./iq '.[]' -o jsonl                # one compact document per line
+./iq '.[]' -o json-array           # a single JSON array of every result
+./iq '.[]' -o json-array --compact # the same array on one line
+./iq '.[]' -o yaml                 # YAML, easier to read for deeply nested documents
 ```
 
 ### Bounded reads, streaming scans, and materialized scans

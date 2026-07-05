@@ -27,6 +27,7 @@ type config struct {
 	from       []string
 	combine    string
 	format     string
+	compact    bool
 }
 
 // newRootCmd builds the root command and its subcommands. The default action is
@@ -93,6 +94,7 @@ func newRootCmd() *cobra.Command {
 	root.Flags().StringArrayVar(&cfg.from, "from", nil, "cross-source stage `name=<jq>`: reduce source name with <jq> and bind its results to $name (repeatable; needs --combine)")
 	root.Flags().StringVar(&cfg.combine, "combine", "", "final jq over the --from results (each bound to $name), run over a null input")
 	root.Flags().StringVarP(&cfg.format, "format", "o", "json", "output format: json (pretty stream), jsonl (compact, one per line), json-array (single [ ... ] doc), values (unquoted scalars), yaml")
+	root.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / json-array output to single-line (no-op for jsonl, values, yaml)")
 	root.AddCommand(
 		newExecCmd(cfg),
 		newAddCmd(),

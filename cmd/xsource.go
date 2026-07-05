@@ -69,7 +69,7 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 		values = append(values, vals)
 	}
 
-	f := newFormatter(fm, cmd.OutOrStdout())
+	f := newFormatter(fm, cmd.OutOrStdout(), cfg.compact)
 	return finish(f, query.NewCombiner().Run(ctx, cfg.combine, names, values, f.emit))
 }
 

@@ -42,19 +42,21 @@ type formatter interface {
 	flush() error
 }
 
-// newFormatter builds the formatter for f, writing to w.
-func newFormatter(f outputFormat, w io.Writer) formatter {
+// newFormatter builds the formatter for f, writing to w. When compact is set,
+// the pretty renderings (json, json-array) collapse to single-line output; the
+// already-condensed formats (jsonl, values, yaml) ignore it.
+func newFormatter(f outputFormat, w io.Writer, compact bool) formatter {
 	switch f {
 	case formatJSONL:
 		return &jsonFormatter{enc: newJSONEncoder(w, false)}
 	case formatJSONArray:
-		return &jsonArrayFormatter{w: w}
+		return &jsonArrayFormatter{w: w, compact: compact}
 	case formatValues:
 		return &valuesFormatter{w: w}
 	case formatYAML:
 		return &yamlFormatter{enc: yaml.NewEncoder(w)}
 	default: // formatJSON
-		return &jsonFormatter{enc: newJSONEncoder(w, true)}
+		return &jsonFormatter{enc: newJSONEncoder(w, !compact)}
 	}
 }
 
@@ -83,23 +85,27 @@ func (f *jsonFormatter) emit(v any) error {
 
 func (f *jsonFormatter) flush() error { return nil }
 
-// jsonArrayFormatter streams a single pretty JSON array wrapping every emitted
-// value. It writes incrementally, tracking whether an element has been written so
-// it can place separators; flush closes the array, emitting [] for an empty
-// result.
+// jsonArrayFormatter streams a single JSON array wrapping every emitted value,
+// pretty by default and single-line when compact is set. It writes incrementally,
+// tracking whether an element has been written so it can place separators; flush
+// closes the array, emitting [] for an empty result.
 type jsonArrayFormatter struct {
 	w       io.Writer
+	compact bool
 	started bool
 }
 
 func (f *jsonArrayFormatter) emit(v any) error {
-	elem, err := indentElem(v)
+	render, open, sep := indentElem, "[\n", ",\n"
+	if f.compact {
+		render, open, sep = compactElem, "[", ","
+	}
+	elem, err := render(v)
 	if err != nil {
 		return err
 	}
-	sep := ",\n"
 	if !f.started {
-		sep = "[\n"
+		sep = open
 		f.started = true
 	}
 	if _, err := io.WriteString(f.w, sep+elem); err != nil {
@@ -110,6 +116,9 @@ func (f *jsonArrayFormatter) emit(v any) error {
 
 func (f *jsonArrayFormatter) flush() error {
 	tail := "\n]\n"
+	if f.compact {
+		tail = "]\n"
+	}
 	if !f.started {
 		tail = "[]\n"
 	}
@@ -131,6 +140,19 @@ func indentElem(v any) (string, error) {
 		return "", fmt.Errorf("encode result: %w", err)
 	}
 	return "  " + strings.TrimRight(buf.String(), "\n"), nil
+}
+
+// compactElem renders v as a single-line JSON element for a compact array,
+// without HTML escaping and with the encoder's trailing newline trimmed. It is
+// the pretty-less twin of indentElem.
+func compactElem(v any) (string, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "", fmt.Errorf("encode result: %w", err)
+	}
+	return strings.TrimRight(buf.String(), "\n"), nil
 }
 
 // valuesFormatter prints jq scalars unquoted, one per line, for shell

@@ -44,12 +44,12 @@ func TestParseFormat(t *testing.T) {
 	}
 }
 
-// render runs the formatter for f over vals (emit each, then flush) and returns
-// everything written.
-func render(t *testing.T, f outputFormat, vals ...any) string {
+// render runs the formatter for f (compact toggling single-line output) over
+// vals (emit each, then flush) and returns everything written.
+func render(t *testing.T, f outputFormat, compact bool, vals ...any) string {
 	t.Helper()
 	var b bytes.Buffer
-	fm := newFormatter(f, &b)
+	fm := newFormatter(f, &b, compact)
 	for _, v := range vals {
 		require.NoError(t, fm.emit(v))
 	}
@@ -61,16 +61,24 @@ func TestFormatterOutput(t *testing.T) {
 	t.Parallel()
 	obj := map[string]any{"name": "alice", "year": 2020}
 	tests := []struct {
-		name string
-		fmt  outputFormat
-		vals []any
-		want string
+		name    string
+		fmt     outputFormat
+		compact bool
+		vals    []any
+		want    string
 	}{
 		{
 			name: "json is a pretty stream",
 			fmt:  formatJSON,
 			vals: []any{obj, "bob"},
 			want: "{\n  \"name\": \"alice\",\n  \"year\": 2020\n}\n\"bob\"\n",
+		},
+		{
+			name:    "json compact is one value per line",
+			fmt:     formatJSON,
+			compact: true,
+			vals:    []any{obj, "bob"},
+			want:    "{\"name\":\"alice\",\"year\":2020}\n\"bob\"\n",
 		},
 		{
 			name: "json keeps angle brackets verbatim",
@@ -101,6 +109,27 @@ func TestFormatterOutput(t *testing.T) {
 			fmt:  formatJSONArray,
 			vals: nil,
 			want: "[]\n",
+		},
+		{
+			name:    "json-array compact is a single line",
+			fmt:     formatJSONArray,
+			compact: true,
+			vals:    []any{obj, "bob"},
+			want:    "[{\"name\":\"alice\",\"year\":2020},\"bob\"]\n",
+		},
+		{
+			name:    "json-array compact of one value",
+			fmt:     formatJSONArray,
+			compact: true,
+			vals:    []any{"bob"},
+			want:    "[\"bob\"]\n",
+		},
+		{
+			name:    "json-array compact of nothing is empty",
+			fmt:     formatJSONArray,
+			compact: true,
+			vals:    nil,
+			want:    "[]\n",
 		},
 		{
 			name: "values prints a string unquoted",
@@ -138,11 +167,18 @@ func TestFormatterOutput(t *testing.T) {
 			vals: []any{obj, "bob"},
 			want: "name: alice\nyear: 2020\n---\nbob\n",
 		},
+		{
+			name:    "yaml ignores compact",
+			fmt:     formatYAML,
+			compact: true,
+			vals:    []any{obj, "bob"},
+			want:    "name: alice\nyear: 2020\n---\nbob\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.want, render(t, tt.fmt, tt.vals...))
+			require.Equal(t, tt.want, render(t, tt.fmt, tt.compact, tt.vals...))
 		})
 	}
 }
@@ -154,7 +190,7 @@ func TestFlushCompletesDocument(t *testing.T) {
 	t.Run("json-array is unterminated before flush", func(t *testing.T) {
 		t.Parallel()
 		var b bytes.Buffer
-		fm := newFormatter(formatJSONArray, &b)
+		fm := newFormatter(formatJSONArray, &b, false)
 		require.NoError(t, fm.emit("bob"))
 		require.NotContains(t, b.String(), "]")
 		require.NoError(t, fm.flush())
@@ -165,7 +201,7 @@ func TestFlushCompletesDocument(t *testing.T) {
 		// yaml.v3 writes each document on emit, so flush adds no bytes; it must
 		// still close the encoder without error to release it.
 		var b bytes.Buffer
-		fm := newFormatter(formatYAML, &b)
+		fm := newFormatter(formatYAML, &b, false)
 		require.NoError(t, fm.emit("bob"))
 		require.NoError(t, fm.flush())
 		require.Equal(t, "bob\n", b.String())
@@ -177,7 +213,7 @@ func TestFinish(t *testing.T) {
 	t.Run("returns the run error and skips flush", func(t *testing.T) {
 		t.Parallel()
 		var b bytes.Buffer
-		f := newFormatter(formatJSONArray, &b)
+		f := newFormatter(formatJSONArray, &b, false)
 		sentinel := errors.New("boom")
 		require.ErrorIs(t, finish(f, sentinel), sentinel)
 		require.Empty(t, b.String()) // flush skipped, so the array is never closed
@@ -185,7 +221,7 @@ func TestFinish(t *testing.T) {
 	t.Run("flushes when the run succeeded", func(t *testing.T) {
 		t.Parallel()
 		var b bytes.Buffer
-		f := newFormatter(formatJSONArray, &b)
+		f := newFormatter(formatJSONArray, &b, false)
 		require.NoError(t, finish(f, nil))
 		require.Equal(t, "[]\n", b.String()) // flush closed the empty array
 	})
