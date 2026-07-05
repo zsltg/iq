@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.7.0 - 2026-07-05
+### Features
+- **cmd:** add --compact output flag (ec67e92)
+- **source:** list inspect subcommands per driver (a95276a)
+
+
 ## v0.6.0 - 2026-07-05
 ### Features
 - **output:** add --format/-o with json, jsonl, json-array, values, yaml (03188a7)
