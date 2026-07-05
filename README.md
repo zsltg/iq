@@ -13,6 +13,10 @@ entirely client-side, so its semantics are identical for every backend.
 `<source>.<collection>` addressing along with many subcommands and flags — deliberately follows
 sq's so the tool feels familiar.
 
+> [!WARNING]
+> **Not production-ready.** `iq` has potential rough edges — don't rely on it for critical work
+> yet.
+
 ## Requirements
 
 - Go 1.25+
