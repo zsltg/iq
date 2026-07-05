@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -41,22 +40,18 @@ func newPingCmd(cfg *config) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+			rows := make([][]tableCell, 0, len(targets))
 			anyFail := false
 			for _, t := range targets {
 				driver := schemeOf(t.source.URL)
 				if d, perr := pingOne(cmd.Context(), t, cfg.timeout); perr != nil {
 					anyFail = true
-					if _, err := fmt.Fprintf(w, "%s\t%s\terror\t%s\n", t.handle, driver, oneLine(perr)); err != nil {
-						return err
-					}
+					rows = append(rows, []tableCell{cell(t.handle), cell(driver), coloredCell("error", pal.fail), cell(oneLine(perr))})
 				} else {
-					if _, err := fmt.Fprintf(w, "%s\t%s\tok\t%s\n", t.handle, driver, d.Round(time.Millisecond)); err != nil {
-						return err
-					}
+					rows = append(rows, []tableCell{cell(t.handle), cell(driver), coloredCell("ok", pal.ok), cell(d.Round(time.Millisecond).String())})
 				}
 			}
-			if err := w.Flush(); err != nil {
+			if err := renderTable(cmd.OutOrStdout(), rows); err != nil {
 				return err
 			}
 			if anyFail {

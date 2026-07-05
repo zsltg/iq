@@ -17,7 +17,7 @@ import (
 type store interface {
 	query.KVStore
 	query.Store
-	FormatRaw(v any) string
+	FormatRaw(v any, colored bool) string
 }
 
 // openStore connects to the backend named by cfg.url, dispatching on the URL

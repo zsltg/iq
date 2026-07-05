@@ -152,6 +152,32 @@ is a no-op for `jsonl`, `values`, and `yaml`, which are already condensed.
 ./iq '.[]' -o yaml                 # YAML, easier to read for deeply nested documents
 ```
 
+### Colored output
+
+Output is syntax-highlighted when `iq` writes to a terminal and left plain when it is piped or
+redirected, so captured output stays clean. The `json`, `jsonl`, `json-array`, and `yaml`
+renderings get syntax highlighting; the `values` rendering is always plain so it stays safe for
+shell capture. The human commands color their signal too: `ping` shows `ok`/`error` in
+green/red, `diff` shows additions green, removals red, and changes yellow, and `ls`/`inspect`
+highlight the active source and section headers. The raw reply bodies from `exec` and `inspect`
+are colored in their native form — JSON syntax highlighting for MongoDB, and redis-cli-style
+value tokens for Redis.
+
+Two global flags and the `NO_COLOR` convention control it:
+
+| control | effect |
+| --- | --- |
+| (default) | color on only when the destination is a terminal |
+| `-M`, `--monochrome` | force color off |
+| `-C`, `--color` | force color on, even into a pipe or pager |
+| `NO_COLOR` env (any value) | color off unless overridden by `-C` |
+
+```bash
+./iq '.[]'                # colored on a terminal, plain when piped
+./iq -M '.[]'             # never colored
+./iq -C '.[]' | less -R   # keep color through a pager
+```
+
 ### Bounded reads, streaming scans, and materialized scans
 
 `iq` fetches exactly the keys your filter names, so a normal query's cost is bounded by the keys

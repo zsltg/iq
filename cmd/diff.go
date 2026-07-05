@@ -318,7 +318,8 @@ func (r report) render(out io.Writer, left, right diffTarget, jsonOut bool) erro
 	if jsonOut {
 		return newJSONEncoder(out, true).Encode(r)
 	}
-	if _, err := fmt.Fprintf(out, "%s (%s)  →  %s (%s)\n\n", left.handle, left.scheme, right.handle, right.scheme); err != nil {
+	header := fmt.Sprintf("%s (%s)  →  %s (%s)", left.handle, left.scheme, right.handle, right.scheme)
+	if _, err := fmt.Fprintf(out, "%s\n\n", pal.header.Sprint(header)); err != nil {
 		return err
 	}
 	if r.dataRun {
@@ -341,13 +342,13 @@ func (r report) render(out io.Writer, left, right diffTarget, jsonOut bool) erro
 
 // renderItems writes a keyed data diff under a section heading.
 func renderItems(out io.Writer, title string, deltas []diff.ItemDelta) error {
-	if _, err := fmt.Fprintf(out, "# %s\n", title); err != nil {
+	if _, err := fmt.Fprintf(out, "%s\n", pal.header.Sprint("# "+title)); err != nil {
 		return err
 	}
 	for _, d := range deltas {
 		switch d.Op {
 		case diff.OpChange:
-			if _, err := fmt.Fprintf(out, "%s %s\n", d.Op.Symbol(), d.Key); err != nil {
+			if _, err := fmt.Fprintf(out, "%s %s\n", diffSymbol(d.Op), d.Key); err != nil {
 				return err
 			}
 			for _, ch := range d.Changes {
@@ -356,7 +357,7 @@ func renderItems(out io.Writer, title string, deltas []diff.ItemDelta) error {
 				}
 			}
 		default:
-			if _, err := fmt.Fprintf(out, "%s %s  %s\n", d.Op.Symbol(), d.Key, compact(sideValue(d.Op, d.Old, d.New))); err != nil {
+			if _, err := fmt.Fprintf(out, "%s %s  %s\n", diffSymbol(d.Op), d.Key, compact(sideValue(d.Op, d.Old, d.New))); err != nil {
 				return err
 			}
 		}
@@ -366,7 +367,7 @@ func renderItems(out io.Writer, title string, deltas []diff.ItemDelta) error {
 
 // renderChanges writes a tree diff (stats or schema) under a section heading.
 func renderChanges(out io.Writer, title string, changes []diff.Change) error {
-	if _, err := fmt.Fprintf(out, "# %s\n", title); err != nil {
+	if _, err := fmt.Fprintf(out, "%s\n", pal.header.Sprint("# "+title)); err != nil {
 		return err
 	}
 	for _, ch := range changes {
@@ -382,21 +383,25 @@ func renderChangeLine(out io.Writer, prefix string, ch diff.Change) error {
 	path := strings.Join(ch.Path, ".")
 	switch ch.Op {
 	case diff.OpChange:
-		_, err := fmt.Fprintf(out, "%s%s %s: %s → %s\n", prefix, ch.Op.Symbol(), path, compact(ch.Old), compact(ch.New))
+		_, err := fmt.Fprintf(out, "%s%s %s: %s → %s\n", prefix, diffSymbol(ch.Op), path, compact(ch.Old), compact(ch.New))
 		return err
 	default:
-		_, err := fmt.Fprintf(out, "%s%s %s  %s\n", prefix, ch.Op.Symbol(), path, compact(sideValue(ch.Op, ch.Old, ch.New)))
+		_, err := fmt.Fprintf(out, "%s%s %s  %s\n", prefix, diffSymbol(ch.Op), path, compact(sideValue(ch.Op, ch.Old, ch.New)))
 		return err
 	}
 }
 
-// writeSummary writes the footer counts for a section.
+// writeSummary writes the footer counts for a section, each count colored by its
+// operation.
 func writeSummary(out io.Writer, s diff.Summary) error {
 	if s.Empty() {
 		_, err := fmt.Fprint(out, "no differences\n\n")
 		return err
 	}
-	_, err := fmt.Fprintf(out, "%d added, %d removed, %d changed\n\n", s.Added, s.Removed, s.Changed)
+	_, err := fmt.Fprintf(out, "%s, %s, %s\n\n",
+		pal.add.Sprintf("%d added", s.Added),
+		pal.remove.Sprintf("%d removed", s.Removed),
+		pal.change.Sprintf("%d changed", s.Changed))
 	return err
 }
 

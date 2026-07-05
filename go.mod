@@ -3,7 +3,11 @@ module github.com/zsltg/iq
 go 1.25.1
 
 require (
+	github.com/fatih/color v1.19.0
+	github.com/goccy/go-yaml v1.19.2
 	github.com/itchyny/gojq v0.12.19
+	github.com/mattn/go-isatty v0.0.22
+	github.com/neilotoole/jsoncolor v0.9.1
 	github.com/pelletier/go-toml/v2 v2.4.2
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/spf13/cobra v1.10.2
@@ -44,6 +48,7 @@ require (
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mdelapenya/tlscert v0.2.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.2.0 // indirect
@@ -77,5 +82,6 @@ require (
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 )

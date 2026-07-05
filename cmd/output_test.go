@@ -46,7 +46,7 @@ func TestParseFormat(t *testing.T) {
 
 // render runs the formatter for f (compact toggling single-line output) over
 // vals (emit each, then flush) and returns everything written.
-func render(t *testing.T, f outputFormat, compact bool, vals ...any) string {
+func renderFormatter(t *testing.T, f outputFormat, compact bool, vals ...any) string {
 	t.Helper()
 	var b bytes.Buffer
 	fm := newFormatter(f, &b, compact)
@@ -178,7 +178,7 @@ func TestFormatterOutput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.want, render(t, tt.fmt, tt.compact, tt.vals...))
+			require.Equal(t, tt.want, renderFormatter(t, tt.fmt, tt.compact, tt.vals...))
 		})
 	}
 }

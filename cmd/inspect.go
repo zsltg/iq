@@ -170,7 +170,7 @@ func inspectMongo(ctx context.Context, out io.Writer, st store, cfg *config, sub
 		return err
 	}
 	for _, r := range results {
-		if _, err := fmt.Fprintf(out, "# %s\n%s\n\n", r.sub, st.FormatRaw(r.value)); err != nil {
+		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
 			return err
 		}
 	}
@@ -212,6 +212,7 @@ func writeInspectList(out io.Writer, names []string, jsonOut bool) error {
 
 // inspectHeader writes a one-line source header: driver and redacted location.
 func inspectHeader(out io.Writer, cfg *config) error {
-	_, err := fmt.Fprintf(out, "%s  %s\n\n", schemeOf(cfg.url), redactURL(cfg.url))
+	header := fmt.Sprintf("%s  %s", schemeOf(cfg.url), redactURL(cfg.url))
+	_, err := fmt.Fprintf(out, "%s\n\n", pal.header.Sprint(header))
 	return err
 }

@@ -267,8 +267,8 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 // FormatRaw renders a raw command reply in redis-cli's cooked style. It lets the
 // Redis store satisfy the CLI's backend interface alongside the MongoDB store,
 // which formats its raw replies as JSON instead.
-func (s *Store) FormatRaw(v any) string {
-	return FormatReply(v)
+func (s *Store) FormatRaw(v any, colored bool) string {
+	return FormatReply(v, colored)
 }
 
 // dedupe returns keys with duplicates removed, preserving first-seen order so a

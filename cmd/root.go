@@ -28,6 +28,8 @@ type config struct {
 	combine    string
 	format     string
 	compact    bool
+	monochrome bool
+	forceColor bool
 }
 
 // newRootCmd builds the root command and its subcommands. The default action is
@@ -68,6 +70,16 @@ func newRootCmd() *cobra.Command {
 		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// PersistentPreRunE runs for the root action and every subcommand (none
+		// override it), so the color decision is made once, at one place, for the
+		// whole invocation.
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if cfg.monochrome && cfg.forceColor {
+				return errors.New("cannot use --monochrome with --color")
+			}
+			resolveColor(cfg.monochrome, cfg.forceColor, cmd.OutOrStdout())
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A cross-source query (--from/--combine) reads several sources and
 			// combines them; a plain positional filter runs against one source.
@@ -88,6 +100,8 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVarP(&cfg.src, "src", "s", "", "run against this saved source for one invocation (overrides the active source; see `iq src`)")
 	root.PersistentFlags().StringVarP(&cfg.collection, "collection", "c", "", "MongoDB collection, overriding the source's (ignored for Redis)")
 	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "per-query timeout")
+	root.PersistentFlags().BoolVarP(&cfg.monochrome, "monochrome", "M", false, "disable colored output (also honored via NO_COLOR); color is on by default only when writing to a terminal")
+	root.PersistentFlags().BoolVarP(&cfg.forceColor, "color", "C", false, "force colored output even when the destination is not a terminal (e.g. a pager)")
 	// --unbounded and --compile are local to the default jq action.
 	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
 	root.Flags().BoolVar(&cfg.compile, "compile", false, "push a .[]|select(...) equality predicate to the store to pre-filter server-side (MongoDB; no-op elsewhere; results are unchanged)")

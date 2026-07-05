@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"text/tabwriter"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
@@ -69,29 +68,28 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, jso
 			return err
 		}
 	}
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	rows := make([][]tableCell, 0, len(list))
 	for _, h := range list {
 		marker := " "
-		if h.Name == cf.Active {
+		active := h.Name == cf.Active
+		if active {
 			marker = "*"
 		}
 		coll := ""
 		if h.Source.Collection != "" {
 			coll = "(" + h.Source.Collection + ")"
 		}
-		var err error
-		if verbose {
-			_, err = fmt.Fprintf(w, "%s %s\t%s\t%s\t%s%s\n",
-				marker, h.Name, schemeOf(h.Source.URL), sourceLocation(h, reveal), coll, keyringTag(h.Source.Keyring))
-		} else {
-			_, err = fmt.Fprintf(w, "%s %s\t%s\t%s\n",
-				marker, h.Name, sourceLocation(h, reveal), coll)
+		name := tableCell{text: marker + " " + h.Name}
+		if active {
+			name.c = pal.active
 		}
-		if err != nil {
-			return err
+		if verbose {
+			rows = append(rows, []tableCell{name, cell(schemeOf(h.Source.URL)), cell(sourceLocation(h, reveal)), cell(coll + keyringTag(h.Source.Keyring))})
+		} else {
+			rows = append(rows, []tableCell{name, cell(sourceLocation(h, reveal)), cell(coll)})
 		}
 	}
-	return w.Flush()
+	return renderTable(out, rows)
 }
 
 // listGroups renders the distinct groups. verbose adds a source count; json emits
@@ -109,23 +107,24 @@ func listGroups(out io.Writer, cf *iqconfig.Config, verbose, jsonOut bool) error
 		_, err := fmt.Fprintln(out, "no groups; group a source by naming it group/name")
 		return err
 	}
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	rows := make([][]tableCell, 0, len(groups))
 	for _, g := range groups {
 		marker := " "
-		if g == cf.Group {
+		active := g == cf.Group
+		if active {
 			marker = "*"
 		}
-		var err error
-		if verbose {
-			_, err = fmt.Fprintf(w, "%s %s\t%d sources\n", marker, g, cf.CountGroup(g))
-		} else {
-			_, err = fmt.Fprintf(w, "%s %s\n", marker, g)
+		name := tableCell{text: marker + " " + g}
+		if active {
+			name.c = pal.active
 		}
-		if err != nil {
-			return err
+		if verbose {
+			rows = append(rows, []tableCell{name, cell(fmt.Sprintf("%d sources", cf.CountGroup(g)))})
+		} else {
+			rows = append(rows, []tableCell{name})
 		}
 	}
-	return w.Flush()
+	return renderTable(out, rows)
 }
 
 // sourceLocation returns a source's URL for display: redacted by default so a

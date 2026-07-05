@@ -41,7 +41,7 @@ func newExecCmd(cfg *config) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), store.FormatRaw(result)); err != nil {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), store.FormatRaw(result, colorOn())); err != nil {
 				return err
 			}
 			return nil

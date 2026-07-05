@@ -2,7 +2,6 @@ package mongo
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -13,6 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/render"
 )
 
 // scanBatch is the default page size for ScanBatches: how many documents to
@@ -179,13 +179,13 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 }
 
 // FormatRaw renders a raw command reply as indented JSON, the natural form for a
-// document store.
-func (s *Store) FormatRaw(v any) string {
-	b, err := json.MarshalIndent(v, "", "  ")
+// document store, syntax-highlighted when colored is set.
+func (s *Store) FormatRaw(v any, colored bool) string {
+	out, err := render.JSON(v, colored)
 	if err != nil {
 		return fmt.Sprintf("%v", v)
 	}
-	return string(b)
+	return out
 }
 
 // Close disconnects the client.

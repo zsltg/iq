@@ -6,30 +6,49 @@ import (
 	"strings"
 )
 
+// ANSI SGR codes for redis-cli reply tokens, chosen to match the JSON palette:
+// strings green, integers magenta, nil dim.
+const (
+	colorString  = "32"
+	colorInteger = "35"
+	colorNil     = "90"
+)
+
 // FormatReply renders a query result in redis-cli's cooked style: bulk strings
 // quoted, integers as `(integer) N`, a nil reply as `(nil)`, and arrays as a
 // numbered, indented list. Status replies such as OK and PONG are shown quoted
-// because go-redis collapses RESP simple and bulk strings into one Go type.
-func FormatReply(v any) string {
+// because go-redis collapses RESP simple and bulk strings into one Go type. When
+// colored is set, value tokens are wrapped in ANSI color; the numbered-list
+// index stays plain, as it is structure rather than a value.
+func FormatReply(v any, colored bool) string {
 	switch t := v.(type) {
 	case nil:
-		return "(nil)"
+		return paint(colored, colorNil, "(nil)")
 	case int64:
-		return "(integer) " + strconv.FormatInt(t, 10)
+		return paint(colored, colorInteger, "(integer) "+strconv.FormatInt(t, 10))
 	case string:
-		return quote(t)
+		return paint(colored, colorString, quote(t))
 	case []byte:
-		return quote(string(t))
+		return paint(colored, colorString, quote(string(t)))
 	case []any:
-		return formatArray(t)
+		return formatArray(t, colored)
 	default:
 		return fmt.Sprintf("%v", t)
 	}
 }
 
+// paint wraps s in the given SGR code when colored is set, otherwise returns s
+// unchanged so the plain rendering is untouched.
+func paint(colored bool, code, s string) string {
+	if !colored {
+		return s
+	}
+	return "\x1b[" + code + "m" + s + "\x1b[0m"
+}
+
 // formatArray renders a reply array as a right-aligned, numbered list, indenting
 // any nested array under its index so the layout matches redis-cli.
-func formatArray(items []any) string {
+func formatArray(items []any, colored bool) string {
 	if len(items) == 0 {
 		return "(empty array)"
 	}
@@ -37,7 +56,7 @@ func formatArray(items []any) string {
 	lines := make([]string, len(items))
 	for i, item := range items {
 		prefix := fmt.Sprintf("%*d) ", width, i+1)
-		lines[i] = prefix + indent(FormatReply(item), len(prefix))
+		lines[i] = prefix + indent(FormatReply(item, colored), len(prefix))
 	}
 	return strings.Join(lines, "\n")
 }
