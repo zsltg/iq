@@ -29,7 +29,7 @@ type driver struct {
 	open    func(ctx context.Context, cfg *config) (store, error)
 	// explainPlan describes, without connecting, the backend calls this driver
 	// would make for a classified query and pushed predicate — the data the query
-	// plan (--dry-run/--verbose) shows.
+	// plan (--explain/--verbose) shows.
 	explainPlan func(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan
 }
 

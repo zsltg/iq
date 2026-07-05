@@ -17,7 +17,7 @@ import (
 // filter (with any nested source() sub-filters inlined) and, for a single-source
 // filter, the backend calls its store will make. The source must already be
 // resolved for the non-cross case, so the plan can name the driver without
-// connecting. It is shown by --dry-run (to stdout, no execution) and --verbose (to
+// connecting. It is shown by --explain (to stdout, no execution) and --verbose (to
 // stderr, before executing).
 func buildJQPlan(cfg *config, filter string, cross bool) (string, error) {
 	pretty, err := jqfmt.Format(filter, colorOn())

@@ -47,14 +47,14 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 		return err
 	}
 
-	// --dry-run prints the plan to stdout and stops before any connection; --verbose
+	// --explain prints the plan to stdout and stops before any connection; --verbose
 	// prints it to stderr and turns on the live command trace for the run below.
-	if cfg.dryRun || cfg.verbose {
+	if cfg.explain || cfg.verbose {
 		plan, err := buildCombinePlan(cfg, stages)
 		if err != nil {
 			return err
 		}
-		if cfg.dryRun {
+		if cfg.explain {
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), plan)
 			return nil
 		}

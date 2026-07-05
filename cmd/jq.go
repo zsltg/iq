@@ -34,14 +34,14 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		}
 	}
 
-	// --dry-run prints the plan to stdout and stops before any connection; --verbose
+	// --explain prints the plan to stdout and stops before any connection; --verbose
 	// prints it to stderr and turns on the live command trace for the run below.
-	if cfg.dryRun || cfg.verbose {
+	if cfg.explain || cfg.verbose {
 		plan, err := buildJQPlan(cfg, filter, cross)
 		if err != nil {
 			return err
 		}
-		if cfg.dryRun {
+		if cfg.explain {
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), plan)
 			return nil
 		}

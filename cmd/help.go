@@ -44,7 +44,7 @@ var rootFlagGroups = map[string]string{
 
 	"unbounded":  groupQuery,
 	"no-compile": groupQuery,
-	"dry-run":    groupQuery,
+	"explain":    groupQuery,
 	"from":       groupQuery,
 	"combine":    groupQuery,
 

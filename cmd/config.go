@@ -18,7 +18,7 @@ import (
 // defaults, keyed by the flag's own name so an option is a 1:1 alias for its
 // flag (same name, type, help, and validation — one source of truth). Excluded
 // on purpose: per-invocation targeting (src, collection, from, combine,
-// dry-run), display-only listing toggles (reveal, expand), diagnostics that only
+// explain), display-only listing toggles (reveal, expand), diagnostics that only
 // make sense live (debug.pprof), the config path itself, the -j/-J/-A/-y/-r
 // aliases (the canonical selector is format), and the query safety gates
 // (unbounded, no-compile) whose intent is one run, not a stored default.

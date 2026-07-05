@@ -70,6 +70,41 @@ func TestWriteAccessPlanUnknownSchemeIsSilent(t *testing.T) {
 	require.Empty(t, b.String())
 }
 
+func TestExplainFlagPrintsPlanAndStopsBeforeConnecting(t *testing.T) {
+	// --explain drives the plan through the real command and returns before any
+	// connection, so it works offline against an unreachable host. A short timeout
+	// guarantees that any path which instead falls through to execute fails fast
+	// rather than hanging.
+	t.Run("default jq action", func(t *testing.T) {
+		c := newSeed()
+		require.NoError(t, c.Add("orders", "mongodb://h/shop", ""))
+		seedConfig(t, c)
+
+		root, _ := newRootCmd()
+		out, err := runCmd(t, root, "--src", "orders", "--timeout", "200ms", "--explain",
+			".[] | select(.total > 99) | {id, total}")
+		require.NoError(t, err)
+		require.Contains(t, out, "query plan")
+		require.Contains(t, out, "source: orders (mongo)")
+		require.Contains(t, out, "mongo calls:")
+		require.Contains(t, out, `"$gt": 99`)
+	})
+
+	t.Run("cross-source combine action", func(t *testing.T) {
+		c := newSeed()
+		require.NoError(t, c.Add("orders", "mongodb://h/shop", ""))
+		seedConfig(t, c)
+
+		root, _ := newRootCmd()
+		out, err := runCmd(t, root, "--timeout", "200ms", "--explain",
+			"--from", "orders=.[] | select(.vip)", "--combine", "$orders | length")
+		require.NoError(t, err)
+		require.Contains(t, out, "cross-source combine")
+		require.Contains(t, out, "$orders  <-  orders (mongo)")
+		require.Contains(t, out, "| length")
+	})
+}
+
 func TestBuildCombinePlanPerStageAndFinal(t *testing.T) {
 	cfg := &config{
 		combine: "$orders + $cache | length",
