@@ -569,25 +569,25 @@ The tools it resembles fall into three groups, and none land in the same spot:
   but are language specs or tied to a specific engine, not a portable CLI.
 
 `sq` — the tool `iq`'s command surface is modelled on — belongs to the first group: it unifies
-relational databases and files, and never reaches NoSQL. That gap is where `iq` lives.
+relational databases and files, and never reaches NoSQL.
 
 Legend: ● primary, ◐ partial, — none. Model is the shape the query language speaks; footprint is
 what you run.
 
 | Tool | Query language | Relational | NoSQL | Files | Data model | Footprint |
 |---|---|:---:|:---:|:---:|---|---|
-| **`iq`** | **jq** | — | **●** | — | **document** | **single binary** |
-| `sq` | SLQ / SQL | ● | — | ● | tabular | single binary |
-| Trino / Presto | SQL | ● | ● | ● | tabular (◐ JSON) | server / engine |
-| Apache Drill | SQL | ● | ● | ● | schema-free (both) | server / engine |
-| OctoSQL | SQL | ● | ◐ | ● | tabular | single binary |
-| usql | native SQL | ● | ◐ | — | tabular | single binary (multiplexer) |
-| DuckDB | SQL | ◐ | — | ● | tabular | in-process / CLI |
-| dsq | SQL | — | — | ● | tabular | single binary |
-| PartiQL | PartiQL | ● | ● | ◐ | nested (both) | spec / embedded |
-| SQL++ / N1QL | SQL++ | ◐ | ● | — | document | DB engine |
-| JSONiq | JSONiq | — | ● | ● | document | library / engine |
-| GraphQL federation | GraphQL | ● | ● | — | typed graph (both) | server |
+| **iq** | **jq** | — | **●** | — | **document** | **single binary** |
+| [sq](https://sq.io) | SLQ / SQL | ● | — | ● | tabular | single binary |
+| [Trino](https://trino.io) / [Presto](https://prestodb.io) | SQL | ● | ● | ● | tabular (◐ JSON) | server / engine |
+| [Apache Drill](https://drill.apache.org) | SQL | ● | ● | ● | schema-free (both) | server / engine |
+| [OctoSQL](https://github.com/cube2222/octosql) | SQL | ● | ◐ | ● | tabular | single binary |
+| [usql](https://github.com/xo/usql) | native SQL | ● | ◐ | — | tabular | single binary (multiplexer) |
+| [DuckDB](https://duckdb.org) | SQL | ◐ | — | ● | tabular | in-process / CLI |
+| [dsq](https://github.com/multiprocessio/dsq) | SQL | — | — | ● | tabular | single binary |
+| [PartiQL](https://partiql.org) | PartiQL | ● | ● | ◐ | nested (both) | spec / embedded |
+| [SQL++](https://asterixdb.apache.org/docs/0.9.9/sqlpp/manual.html) / [N1QL](https://www.couchbase.com/products/n1ql/) | SQL++ | ◐ | ● | — | document | DB engine |
+| [JSONiq](https://www.jsoniq.org) | JSONiq | — | ● | ● | document | library / engine |
+| [GraphQL federation](https://graphql.org/learn/federation/) | GraphQL | ● | ● | — | typed graph (both) | server |
 
 Placement is by each tool's primary targets; several (Trino, Drill, OctoSQL, DuckDB) partially
 reach neighbouring columns via connectors or extensions. The takeaway is the NoSQL column: every
