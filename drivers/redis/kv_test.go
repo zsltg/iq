@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	iqredis "github.com/zsltg/iq/internal/backend/redis"
+	iqredis "github.com/zsltg/iq/drivers/redis"
 )
 
 // seededKeys are the iq:test:* keys seedKV creates, one per supported type.

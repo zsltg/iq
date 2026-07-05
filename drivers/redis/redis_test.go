@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	iqredis "github.com/zsltg/iq/internal/backend/redis"
+	iqredis "github.com/zsltg/iq/drivers/redis"
 )
 
 // testRedisDB is the reserved database integration tests operate on. DB 0 is

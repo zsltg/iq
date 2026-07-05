@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	iqmongo "github.com/zsltg/iq/internal/backend/mongo"
-	iqredis "github.com/zsltg/iq/internal/backend/redis"
 	"github.com/zsltg/iq/internal/query"
 )
 
@@ -21,30 +19,25 @@ type store interface {
 }
 
 // openStore connects to the backend named by cfg.url, dispatching on the URL
-// scheme. It is the composition root: the only place that knows which concrete
-// adapters exist.
+// scheme through the drivers registry — the single source of truth for which
+// concrete adapters exist.
 func openStore(ctx context.Context, cfg *config) (store, error) {
-	switch schemeOf(cfg.url) {
-	case "redis", "rediss":
-		return iqredis.Open(ctx, cfg.url)
-	case "mongodb", "mongodb+srv":
-		return iqmongo.Open(ctx, cfg.url, cfg.collection)
-	case "":
-		return nil, fmt.Errorf("missing url scheme in %q; expected redis:// or mongodb://", redactURL(cfg.url))
-	default:
-		return nil, fmt.Errorf("unsupported url scheme %q; expected redis:// or mongodb://", schemeOf(cfg.url))
+	scheme := schemeOf(cfg.url)
+	if scheme == "" {
+		return nil, fmt.Errorf("missing url scheme in %q; %s", redactURL(cfg.url), expectedSchemes())
 	}
+	d, ok := driverForScheme(scheme)
+	if !ok {
+		return nil, fmt.Errorf("unsupported url scheme %q; %s", scheme, expectedSchemes())
+	}
+	return d.open(ctx, cfg)
 }
 
 // supportedScheme reports whether url's scheme is one openStore can dispatch. It
 // is the single check `iq add` uses to reject a source the CLI cannot open.
 func supportedScheme(url string) bool {
-	switch schemeOf(url) {
-	case "redis", "rediss", "mongodb", "mongodb+srv":
-		return true
-	default:
-		return false
-	}
+	_, ok := driverForScheme(schemeOf(url))
+	return ok
 }
 
 // schemeOf returns the lowercased scheme of a connection URL — the text before

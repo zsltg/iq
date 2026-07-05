@@ -31,7 +31,7 @@ func newAddCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, rawURL := args[0], args[1]
 			if !supportedScheme(rawURL) {
-				return fmt.Errorf("unsupported url scheme %q; expected redis:// or mongodb://", schemeOf(rawURL))
+				return fmt.Errorf("unsupported url scheme %q; %s", schemeOf(rawURL), expectedSchemes())
 			}
 			useKeyring, err := parseStore(store)
 			if err != nil {

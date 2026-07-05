@@ -63,7 +63,7 @@ func newInspectCmd(cfg *config) *cobra.Command {
 			defer func() { _ = st.Close() }()
 
 			out := cmd.OutOrStdout()
-			if strings.HasPrefix(schemeOf(cfg.url), "redis") {
+			if driverName(cfg.url) == "redis" {
 				return inspectRedis(ctx, out, st, cfg, only, jsonOut, list)
 			}
 			return inspectMongo(ctx, out, st, cfg, only, jsonOut, list)
@@ -228,7 +228,7 @@ func writeInspectList(out io.Writer, names []string, jsonOut bool) error {
 // password) un-redacts it, rendered from the stored source like `iq ls`.
 func inspectHeader(out io.Writer, cfg *config) error {
 	loc := displayLocation(cfg.source, cfg.handle, cfg.reveal, cfg.expand)
-	header := fmt.Sprintf("%s  %s", schemeOf(cfg.source.URL), loc)
+	header := fmt.Sprintf("%s  %s", driverName(cfg.source.URL), loc)
 	_, err := fmt.Fprintf(out, "%s\n\n", pal.header.Sprint(header))
 	return err
 }

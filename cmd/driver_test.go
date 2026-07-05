@@ -1,0 +1,109 @@
+package cmd
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestDriverForScheme(t *testing.T) {
+	tests := []struct {
+		name     string
+		scheme   string
+		wantName string
+		wantOK   bool
+	}{
+		{"mongodb", "mongodb", "mongo", true},
+		{"mongodb srv", "mongodb+srv", "mongo", true},
+		{"redis", "redis", "redis", true},
+		{"redis tls", "rediss", "redis", true},
+		{"unknown", "cassandra", "", false},
+		{"empty", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d, ok := driverForScheme(tt.scheme)
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.wantName, d.name)
+		})
+	}
+}
+
+func TestDriverName(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"redis", "redis://h:6379/0", "redis"},
+		{"redis tls normalizes", "rediss://h:6379/0", "redis"},
+		{"mongodb normalizes", "mongodb://h/db", "mongo"},
+		{"mongodb srv normalizes", "mongodb+srv://h/db", "mongo"},
+		{"unknown falls back to scheme", "cassandra://h", "cassandra"},
+		{"schemeless is empty", "just-a-string", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, driverName(tt.url))
+		})
+	}
+}
+
+func TestExpectedSchemes(t *testing.T) {
+	require.Equal(t, "expected mongodb:// or redis://", expectedSchemes())
+}
+
+// TestDriverRegistryInvariants guards the single source of truth: every driver
+// is fully described, names are unique, and every registered scheme resolves
+// back to its own driver.
+func TestDriverRegistryInvariants(t *testing.T) {
+	seenName := map[string]bool{}
+	seenScheme := map[string]bool{}
+	for _, d := range drivers {
+		require.NotEmpty(t, d.name)
+		require.NotEmpty(t, d.desc)
+		require.NotEmpty(t, d.doc)
+		require.NotEmpty(t, d.schemes)
+		require.NotNil(t, d.open)
+		require.False(t, seenName[d.name], "duplicate driver name %q", d.name)
+		seenName[d.name] = true
+		for _, s := range d.schemes {
+			require.False(t, seenScheme[s], "scheme %q claimed by two drivers", s)
+			seenScheme[s] = true
+			got, ok := driverForScheme(s)
+			require.True(t, ok)
+			require.Equal(t, d.name, got.name)
+		}
+	}
+}
+
+func TestDriverLsTable(t *testing.T) {
+	out, err := runCmd(t, newDriverCmd(), "ls")
+	require.NoError(t, err)
+	for _, want := range []string{
+		"DRIVER", "DESCRIPTION", "SCHEMES", "DOC",
+		"mongo", "MongoDB document store", "mongodb, mongodb+srv", "https://www.mongodb.com/docs/",
+		"redis", "Redis key-value store", "redis, rediss", "https://redis.io/docs/",
+	} {
+		require.Contains(t, out, want)
+	}
+}
+
+func TestDriverLsJSON(t *testing.T) {
+	out, err := runCmd(t, newDriverCmd(), "ls", "--json")
+	require.NoError(t, err)
+
+	var rows []driverRow
+	require.NoError(t, json.Unmarshal([]byte(out), &rows))
+	require.Len(t, rows, 2)
+
+	byName := map[string]driverRow{}
+	for _, r := range rows {
+		byName[r.Driver] = r
+	}
+	require.Equal(t, []string{"mongodb", "mongodb+srv"}, byName["mongo"].Schemes)
+	require.Equal(t, "MongoDB document store", byName["mongo"].Description)
+	require.Equal(t, "https://redis.io/docs/", byName["redis"].Doc)
+	require.Equal(t, []string{"redis", "rediss"}, byName["redis"].Schemes)
+}

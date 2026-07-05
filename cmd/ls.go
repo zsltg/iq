@@ -46,7 +46,7 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 		for _, h := range list {
 			rows = append(rows, sourceRow{
 				Handle:     h.Name,
-				Driver:     schemeOf(h.Source.URL),
+				Driver:     driverName(h.Source.URL),
 				Location:   displayLocation(h.Source, h.Name, reveal, expand),
 				Collection: h.Source.Collection,
 				Keyring:    h.Source.Keyring,
@@ -85,7 +85,7 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 			name.c = pal.active
 		}
 		if verbose {
-			rows = append(rows, []tableCell{name, cell(schemeOf(h.Source.URL)), cell(displayLocation(h.Source, h.Name, reveal, expand)), cell(coll + keyringTag(h.Source.Keyring))})
+			rows = append(rows, []tableCell{name, cell(driverName(h.Source.URL)), cell(displayLocation(h.Source, h.Name, reveal, expand)), cell(coll + keyringTag(h.Source.Keyring))})
 		} else {
 			rows = append(rows, []tableCell{name, cell(displayLocation(h.Source, h.Name, reveal, expand)), cell(coll)})
 		}

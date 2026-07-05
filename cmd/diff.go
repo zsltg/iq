@@ -25,12 +25,12 @@ var errQuietExit = errors.New("differences found")
 var errStopSampling = errors.New("sample complete")
 
 // diffTarget is one side of a diff: the resolved handle, connection URL,
-// collection, and driver scheme.
+// collection, and canonical driver name.
 type diffTarget struct {
 	handle     string
 	url        string
 	collection string
-	scheme     string
+	driver     string
 }
 
 // newDiffCmd builds `iq diff <a> <b>`: compare two saved sources. --data (the
@@ -143,7 +143,7 @@ func resolveDiffTarget(cf *iqconfig.Config, name string) (diffTarget, error) {
 	if err != nil {
 		return diffTarget{}, fmt.Errorf("source %q: %w", full, err)
 	}
-	return diffTarget{handle: full, url: u, collection: src.Collection, scheme: schemeOf(u)}, nil
+	return diffTarget{handle: full, url: u, collection: src.Collection, driver: driverName(u)}, nil
 }
 
 // diffData reads both keyspaces fully and diffs them key by key.
@@ -186,8 +186,8 @@ func readAll(ctx context.Context, t diffTarget, onPage func(int)) (map[string]an
 // diffStats runs the same native introspection against both sources and diffs the
 // replies. Both sources must use the same driver.
 func diffStats(ctx context.Context, left, right diffTarget, sections []string) ([]diff.Change, error) {
-	if left.scheme != right.scheme {
-		return nil, fmt.Errorf("stats diff needs two sources of the same driver; %q is %s and %q is %s", left.handle, left.scheme, right.handle, right.scheme)
+	if left.driver != right.driver {
+		return nil, fmt.Errorf("stats diff needs two sources of the same driver; %q is %s and %q is %s", left.handle, left.driver, right.handle, right.driver)
 	}
 	a, err := collectInspect(ctx, left, sections)
 	if err != nil {
@@ -210,7 +210,7 @@ func collectInspect(ctx context.Context, t diffTarget, sections []string) (map[s
 	}
 	defer func() { _ = st.Close() }()
 
-	if strings.HasPrefix(t.scheme, "redis") {
+	if t.driver == "redis" {
 		res, err := query.NewRunner(st).Run(ctx, append([]string{"INFO"}, sections...))
 		if err != nil {
 			return nil, fmt.Errorf("inspect %q: %w", t.handle, redactErr(err, t.url))
@@ -258,8 +258,8 @@ func redisInfoTree(info string) map[string]any {
 // diffSchema samples each source, infers a field/type shape, and diffs the
 // shapes. Both sources must use the same driver.
 func diffSchema(ctx context.Context, left, right diffTarget, sample int) ([]diff.Change, error) {
-	if left.scheme != right.scheme {
-		return nil, fmt.Errorf("schema diff needs two sources of the same driver; %q is %s and %q is %s", left.handle, left.scheme, right.handle, right.scheme)
+	if left.driver != right.driver {
+		return nil, fmt.Errorf("schema diff needs two sources of the same driver; %q is %s and %q is %s", left.handle, left.driver, right.handle, right.driver)
 	}
 	a, err := sampleShape(ctx, left, sample)
 	if err != nil {
@@ -326,7 +326,7 @@ func (r report) render(out io.Writer, left, right diffTarget, jsonOut bool) erro
 	if jsonOut {
 		return newJSONEncoder(out, true).Encode(r)
 	}
-	header := fmt.Sprintf("%s (%s)  →  %s (%s)", left.handle, left.scheme, right.handle, right.scheme)
+	header := fmt.Sprintf("%s (%s)  →  %s (%s)", left.handle, left.driver, right.handle, right.driver)
 	if _, err := fmt.Fprintf(out, "%s\n\n", pal.header.Sprint(header)); err != nil {
 		return err
 	}

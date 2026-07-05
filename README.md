@@ -104,6 +104,10 @@ iq --src books '.["2"]'      # run this one query against "books"
   Layers combine; `--json` for a machine-readable delta; `--exit-code` exits non-zero when
   differences exist (otherwise always zero). Bounded by `--timeout`.
 - `iq group [<name>] [--clear]` — show, set, or clear the active **group**.
+- `iq driver ls` — list the backend drivers iq can dispatch to, each with its description, the URL
+  schemes that select it, and its upstream docs. `--json` for machine-readable output. The driver
+  name shown here is the same canonical name `iq ls -v`, `ping`, `inspect`, and `diff` report
+  (`redis` covers both `redis://` and `rediss://`; `mongo` covers `mongodb://` and `mongodb+srv://`).
 
 **Groups.** A `/` in a name groups sources (`prod/books`, `dev/books`). Set an active group with
 `iq group prod`, and an unqualified name resolves inside it — `iq src books` then selects
@@ -486,7 +490,7 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   program over the reduced per-source results bound as variables, and `CrossEngine` runs a
   `source()`-driven filter over a null input — both reach other sources through the `SourceOpener`
   port and hold no primary store.
-- `internal/backend/redis`, `internal/backend/mongo` — the adapters. Each has one `*Store` satisfying both ports:
+- `drivers/redis`, `drivers/mongo` — the adapters. Each has one `*Store` satisfying both ports:
   `Query` (exec) and `Get`/`ScanBatches` (jq), with a type-to-JSON normalization frozen as that
   backend's encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs). Redis maps
   a key to a Redis key; Mongo maps a key to a document `_id` within `--collection`.
@@ -501,10 +505,13 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
 - `internal/secret` — the credential port. A `Keyring` interface over the OS secret store, so a
   keyring-backed source keeps its password out of the config file; `cmd` splices it back into the
   URL at connect time.
-- `cmd` — the CLI adapter and composition root. It resolves the selected source (`--src` or the
-  active source) to a URL and collection, picks the adapter by URL scheme (`openStore`), runs the
-  jq action (routing a `source()`-driven filter to the cross-source engine), the `exec` escape hatch,
-  a source command (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`/`diff`), or a `--from`/`--combine` cross-source query —
+- `cmd` — the CLI adapter and composition root. It holds the driver registry (`cmd/driver.go`): one
+  self-describing entry per backend (name, description, schemes, docs, opener) that `openStore`,
+  `supportedScheme`, every driver label, and `iq driver ls` all derive from, so adding a backend is
+  one entry. It resolves the selected source (`--src` or the active source) to a URL and collection,
+  picks the adapter by URL scheme through that registry (`openStore`), runs the jq action (routing a
+  `source()`-driven filter to the cross-source engine), the `exec` escape hatch, a source command
+  (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`/`diff`/`driver`), or a `--from`/`--combine` cross-source query —
   resolving every source name through the same registry — and formats output (a format-flag-selected
   renderer for the jq path — `--json`, `--jsonl`, `--json-array`, `--raw`, or `--yaml`; per-backend for `exec` —
   redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format.

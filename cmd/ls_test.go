@@ -22,9 +22,9 @@ func TestLsVerbose(t *testing.T) {
 	seedLs(t)
 	out, err := runCmd(t, newLsCmd(&config{}), "-v")
 	require.NoError(t, err)
-	require.Contains(t, out, "redis")   // driver column
-	require.Contains(t, out, "mongodb") // driver column
-	require.Contains(t, out, "xxxxx")   // still redacted
+	require.Contains(t, out, "redis") // driver column (exact assertion in TestLsJSON)
+	require.Contains(t, out, "mongo") // driver column, normalized from the mongodb scheme
+	require.Contains(t, out, "xxxxx") // still redacted
 	require.NotContains(t, out, "secret")
 }
 
@@ -66,6 +66,7 @@ func TestLsJSON(t *testing.T) {
 		byHandle[r.Handle] = r
 	}
 	require.Equal(t, "redis", byHandle["cache"].Driver)
+	require.Equal(t, "mongo", byHandle["prod/books"].Driver) // canonical name, not the mongodb scheme
 	require.True(t, byHandle["cache"].Active)
 	require.Equal(t, "redis://u:xxxxx@h:6379/0", byHandle["cache"].Location)
 	require.NotContains(t, out, "secret")

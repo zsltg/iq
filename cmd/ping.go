@@ -43,7 +43,7 @@ func newPingCmd(cfg *config) *cobra.Command {
 			rows := make([][]tableCell, 0, len(targets))
 			anyFail := false
 			for _, t := range targets {
-				driver := schemeOf(t.source.URL)
+				driver := driverName(t.source.URL)
 				if d, perr := pingOne(cmd.Context(), t, cfg.timeout); perr != nil {
 					anyFail = true
 					rows = append(rows, []tableCell{cell(t.handle), cell(driver), coloredCell("error", pal.fail), cell(oneLine(perr))})
@@ -132,7 +132,7 @@ func pingOne(ctx context.Context, t pingTarget, timeout time.Duration) (time.Dur
 
 // healthArgs returns the cheapest round-trip command for the URL's backend.
 func healthArgs(rawURL string) []string {
-	if strings.HasPrefix(schemeOf(rawURL), "redis") {
+	if driverName(rawURL) == "redis" {
 		return []string{"PING"}
 	}
 	return []string{`{"ping":1}`}

@@ -36,8 +36,8 @@ func TestReportRenderHuman(t *testing.T) {
 		dataRun:   true,
 		schemaRun: true,
 	}
-	left := diffTarget{handle: "a", scheme: "redis"}
-	right := diffTarget{handle: "b", scheme: "redis"}
+	left := diffTarget{handle: "a", driver: "redis"}
+	right := diffTarget{handle: "b", driver: "redis"}
 	var buf bytes.Buffer
 	require.NoError(t, rep.render(&buf, left, right, false))
 	out := buf.String()
@@ -89,22 +89,22 @@ func TestResolveDiffTargetUnknown(t *testing.T) {
 
 	tgt, err := resolveDiffTarget(cf, "known")
 	require.NoError(t, err)
-	require.Equal(t, "redis", tgt.scheme)
+	require.Equal(t, "redis", tgt.driver)
 	require.Equal(t, "redis://h:6379/0", tgt.url)
 }
 
 func TestDiffStatsRejectsCrossDriver(t *testing.T) {
 	// The scheme check happens before any store is opened, so no connection is made.
 	_, err := diffStats(context.Background(),
-		diffTarget{handle: "a", scheme: "redis"},
-		diffTarget{handle: "b", scheme: "mongodb"}, nil)
+		diffTarget{handle: "a", driver: "redis"},
+		diffTarget{handle: "b", driver: "mongo"}, nil)
 	require.ErrorContains(t, err, "same driver")
 }
 
 func TestDiffSchemaRejectsCrossDriver(t *testing.T) {
 	_, err := diffSchema(context.Background(),
-		diffTarget{handle: "a", scheme: "mongodb"},
-		diffTarget{handle: "b", scheme: "redis"}, 100)
+		diffTarget{handle: "a", driver: "mongo"},
+		diffTarget{handle: "b", driver: "redis"}, 100)
 	require.ErrorContains(t, err, "same driver")
 }
 
