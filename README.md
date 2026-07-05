@@ -737,7 +737,7 @@ How `iq` relates to other query tools. Its niche is narrow: a single static bina
 NoSQL stores one jq-based query surface, the filter running client-side over normalized JSON so
 semantics are identical across backends.
 
-The tools it resembles fall into three groups, and none land in the same spot:
+The tools it resembles fall into three groups:
 
 - Multi-backend SQL (`sq`, Trino, Drill, OctoSQL, usql) unifies databases under one SQL-ish
   language, but targets relational stores; where it reaches NoSQL it runs as a server or engine.
