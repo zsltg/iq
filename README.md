@@ -538,4 +538,6 @@ an ephemeral Redis and MongoDB via
 [testcontainers-go](https://github.com/testcontainers/testcontainers-go) on random ports and
 tears them down afterwards — no manual `docker compose up`. Set `IQ_REDIS_URL` / `IQ_MONGO_URL`
 to point at an already-running server (for example the `docker compose` stack) to skip container
-startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn.
+startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
+a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded
+into DB 0 by `scripts/seed.sh` survives a test run.

@@ -13,15 +13,17 @@ import (
 // TestScanBatchesBoundsPageSize checks the memory-bounding heart of ScanBatches:
 // keys accumulate into a page and flush at exactly pageSize. It runs in the redis
 // package (not redis_test) so it can lower the unexported pageSize, and flushes
-// the keyspace first so the batch sizes are deterministic regardless of what
+// its own database first so the batch sizes are deterministic regardless of what
 // other tests left behind.
 func TestScanBatchesBoundsPageSize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping redis integration test in -short mode")
 	}
+	// TestMain pins IQ_REDIS_URL to a reserved database; the default matches it so
+	// a stray run never flushes DB 0, which developers seed for manual exploration.
 	url := os.Getenv("IQ_REDIS_URL")
 	if url == "" {
-		url = "redis://localhost:6379/0"
+		url = "redis://localhost:6379/15"
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -30,7 +32,7 @@ func TestScanBatchesBoundsPageSize(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = store.Close() }()
 
-	require.NoError(t, store.client.FlushAll(ctx).Err())
+	require.NoError(t, store.client.FlushDB(ctx).Err())
 	const n = 5
 	for i := 0; i < n; i++ {
 		require.NoError(t, store.client.Set(ctx, fmt.Sprintf("iq:test:page:%d", i), "v", 0).Err())

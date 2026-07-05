@@ -239,9 +239,9 @@ func TestDiffDataRedisIntegration(t *testing.T) {
 		t.Skip("integration: needs a reachable Redis")
 	}
 	base := redisBaseURL()
-	urlA, err := withRedisDB(base, 0)
+	urlA, err := withRedisDB(base, testRedisDB)
 	require.NoError(t, err)
-	urlB, err := withRedisDB(base, 1)
+	urlB, err := withRedisDB(base, testRedisDBAlt)
 	require.NoError(t, err)
 	seedRedis(t, urlA, map[string]string{"k1": "v1", "shared": "old"})
 	seedRedis(t, urlB, map[string]string{"k2": "v2", "shared": "new"})
@@ -264,9 +264,9 @@ func TestDiffExitCodeRedisIntegration(t *testing.T) {
 		t.Skip("integration: needs a reachable Redis")
 	}
 	base := redisBaseURL()
-	urlA, err := withRedisDB(base, 0)
+	urlA, err := withRedisDB(base, testRedisDB)
 	require.NoError(t, err)
-	urlB, err := withRedisDB(base, 1)
+	urlB, err := withRedisDB(base, testRedisDBAlt)
 	require.NoError(t, err)
 	seedRedis(t, urlA, map[string]string{"only": "here"})
 	seedRedis(t, urlB, map[string]string{"different": "value"})
@@ -327,7 +327,7 @@ func TestReadAllReportsPagesRedisIntegration(t *testing.T) {
 		t.Skip("integration: needs a reachable Redis")
 	}
 	base := redisBaseURL()
-	u, err := withRedisDB(base, 0)
+	u, err := withRedisDB(base, testRedisDB)
 	require.NoError(t, err)
 	kv := map[string]string{"k1": "v1", "k2": "v2", "k3": "v3"}
 	seedRedis(t, u, kv)
@@ -382,6 +382,14 @@ func decodeData(t *testing.T, out string) map[string]string {
 	}
 	return got
 }
+
+// Integration tests operate on reserved Redis databases so a run never flushes
+// DB 0, which developers seed (scripts/seed.sh) for manual exploration. diff
+// needs two sources, hence two reserved databases.
+const (
+	testRedisDB    = 15 // primary scratch database
+	testRedisDBAlt = 14 // second scratch database, for diffing two sources
+)
 
 func redisBaseURL() string {
 	if u := os.Getenv("IQ_REDIS_URL"); u != "" {

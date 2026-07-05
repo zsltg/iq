@@ -2,7 +2,10 @@ package redis_test
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -11,16 +14,29 @@ import (
 	iqredis "github.com/zsltg/iq/internal/backend/redis"
 )
 
-// testURL returns the Redis URL for integration tests: the IQ_REDIS_URL override
-// first, then the ephemeral container started in TestMain, then a local default.
+// testRedisDB is the reserved database integration tests operate on. DB 0 is
+// left to developers, who seed it (scripts/seed.sh) for manual exploration, so
+// a test run never flushes data out from under them.
+const testRedisDB = 15
+
+// testURL returns the Redis URL for integration tests: IQ_REDIS_URL, which
+// TestMain points at the reserved database on the ephemeral container or named
+// server, then a local default on the same database when tests are skipped.
 func testURL() string {
 	if url := os.Getenv("IQ_REDIS_URL"); url != "" {
 		return url
 	}
-	if sharedURL != "" {
-		return sharedURL
+	return "redis://localhost:6379/15"
+}
+
+// withRedisDB rewrites the database number in a redis URL's path.
+func withRedisDB(raw string, db int) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse redis url: %w", err)
 	}
-	return "redis://localhost:6379/0"
+	u.Path = "/" + strconv.Itoa(db)
+	return u.String(), nil
 }
 
 func TestOpenRejectsBadURL(t *testing.T) {
