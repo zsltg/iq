@@ -370,10 +370,24 @@ Under `-v`, the live trace shows the actual commands (`redis> TYPE …`, `mongo>
 credentials are never traced (Redis `AUTH` and the MongoDB auth handshake are redacted or skipped).
 `--dry-run` never opens a connection, so it works offline against any saved source.
 
-## Redis
+## Drivers
+
+`iq` picks the backend from a source's URL scheme, and the query core is driver-agnostic, so
+further backends slot in behind the same port. Each driver below documents its keyspace mapping,
+value encoding, predicate pushdown, and raw-command escape hatch. `iq driver ls` lists the
+registered backends — the same canonical names `iq ls -v`, `ping`, `inspect`, and `diff` report:
+
+```bash
+$ iq driver ls
+DRIVER  DESCRIPTION             SCHEMES               DOC
+mongo   MongoDB document store  mongodb, mongodb+srv  https://www.mongodb.com/docs/
+redis   Redis key-value store   redis, rediss         https://redis.io/docs/
+```
+
+Add `--json` for machine-readable rows (see [Sources](#sources) for the full flag).
 
 <details>
-<summary>Redis backend — value encoding and raw commands</summary>
+<summary><b>Redis</b> — value encoding and raw commands</summary>
 
 Register a `redis://` source and the same jq interface works against the Redis keyspace, where **a
 key maps directly to a Redis key and the value is whatever that key holds**. The database index
@@ -428,10 +442,8 @@ strings.
 
 </details>
 
-## MongoDB
-
 <details>
-<summary>MongoDB backend — collection keyspace, predicate pushdown, and connection</summary>
+<summary><b>MongoDB</b> — collection keyspace, predicate pushdown, and connection</summary>
 
 The backend is chosen by the source's URL scheme. Register a `mongodb://` source and the same jq
 interface works against a collection, where **the collection is the keyspace: a document's `_id`
