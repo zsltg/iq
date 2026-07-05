@@ -162,12 +162,18 @@ flags above. It is mutually exclusive with them, so `-f json --jsonl` is rejecte
 value per line (equivalent to `--jsonl`) and `--json-array` becomes a single-line `[ ... ]`. It
 is a no-op for `--jsonl`, `--raw`, and `--yaml`, which are already condensed.
 
+`-o`, `--output <file>` writes results to `<file>` instead of stdout, truncating an existing
+file. It is global — every command honours it (for example `iq inspect -o report.json`) — and is
+orthogonal to the format flags. Color is off for a file unless you force it with `-C`, and
+progress and errors still go to stderr.
+
 ```bash
 ./iq '.[].title' --raw          # bare titles, one per line, for shell substitution
 ./iq '.[]' --jsonl              # one compact document per line
 ./iq '.[]' -f json-array        # a single JSON array of every result (same as --json-array)
 ./iq '.[]' -A --compact         # the same array on one line
 ./iq '.[]' --yaml               # YAML, easier to read for deeply nested documents
+./iq '.[]' -A -o results.json   # write the results to a file instead of stdout
 ```
 
 #### Decimal numbers

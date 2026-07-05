@@ -53,6 +53,11 @@ type config struct {
 	noProgress  bool
 	reveal      bool
 	expand      bool
+	// output, when non-empty, redirects the command's stdout to this file (sq's
+	// -o); progress and errors still go to stderr. outClose closes that file in
+	// Execute's finalize and is nil when --output is unset.
+	output   string
+	outClose func() error
 	// Diagnostics flags, adopted from sq: a global verbose stderr mode, a
 	// file-logging family, error-rendering controls, and a profiling mode.
 	verbose          bool
@@ -125,6 +130,18 @@ func newRootCmd() (*cobra.Command, *config) {
 				return errors.New("cannot use --monochrome with --color")
 			}
 			resolveColor(cfg.monochrome, cfg.forceColor, cmd.OutOrStdout())
+			// --output redirects every command's stdout to a file. Resolve color
+			// again against the file so a regular file drops color (unless -C forces
+			// it), matching a pipe; Execute closes the file on every exit path.
+			if cfg.output != "" {
+				f, err := openOutputFile(cfg.output)
+				if err != nil {
+					return err
+				}
+				cmd.SetOut(f)
+				cfg.outClose = f.Close
+				resolveColor(cfg.monochrome, cfg.forceColor, f)
+			}
 			if err := validateErrorFormat(cfg.errorFormat); err != nil {
 				return err
 			}
@@ -177,6 +194,9 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.PersistentFlags().BoolVarP(&cfg.monochrome, "monochrome", "M", false, "disable colored output (also honored via NO_COLOR); color is on by default only when writing to a terminal")
 	root.PersistentFlags().BoolVarP(&cfg.forceColor, "color", "C", false, "force colored output even when the destination is not a terminal (e.g. a pager)")
 	root.PersistentFlags().BoolVar(&cfg.noProgress, "no-progress", false, "disable the scan progress spinner (shown on stderr for long scans when it is a terminal)")
+	// --output (sq's -o) is persistent so it redirects every command's stdout to a
+	// file; progress and errors stay on stderr, and color turns off for the file.
+	root.PersistentFlags().StringVarP(&cfg.output, "output", "o", "", "write output to <file> instead of stdout (color off unless -C; progress and errors still go to stderr)")
 	// --format.decimal is persistent so it reaches every store the drivers open; it
 	// is resolved to cfg.decimalMode in PersistentPreRunE and honored at
 	// normalization time, so it changes what the filter computes on, not just the print.
@@ -240,6 +260,18 @@ func validateErrorFormat(f string) error {
 	}
 }
 
+// openOutputFile opens the --output target for writing, truncating an existing
+// file (sq's -o is a fresh write, not an append). A missing parent directory is
+// an error; the flag does not create directories. The error is wrapped so it
+// anchors at the CLI, not deep in os.
+func openOutputFile(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("open output file %q: %w", path, err)
+	}
+	return f, nil
+}
+
 // Execute runs the CLI. It is the composition root: it builds a signal-aware
 // context, runs the root command, finalizes the diagnostics resources opened in
 // PersistentPreRunE (on both success and error paths), and maps any error to a
@@ -261,6 +293,11 @@ func Execute() {
 	}
 	if cfg.logClose != nil {
 		_ = cfg.logClose()
+	}
+	// Close the --output file after the command has returned; results are already
+	// on disk (os.File writes are unbuffered), so this just releases the fd.
+	if cfg.outClose != nil {
+		_ = cfg.outClose()
 	}
 	if err != nil {
 		// errQuietExit (diff --exit-code) signals a non-zero status with no

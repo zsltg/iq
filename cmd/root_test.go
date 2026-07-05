@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -83,6 +85,77 @@ func TestRootDecimalResolvesInPreRun(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, numfmt.DecimalNumber, cfg.decimalMode)
 	})
+}
+
+// TestOpenOutputFile pins the --output file helper: it creates and truncates the
+// target and wraps a failure so the message anchors at the CLI.
+func TestOpenOutputFile(t *testing.T) {
+	t.Run("creates and writes", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "out.txt")
+		f, err := openOutputFile(path)
+		require.NoError(t, err)
+		_, err = f.WriteString("hello")
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "hello", string(got))
+	})
+	t.Run("truncates an existing file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "out.txt")
+		require.NoError(t, os.WriteFile(path, []byte("AAAAAAAAAA"), 0o644))
+		f, err := openOutputFile(path)
+		require.NoError(t, err)
+		_, err = f.WriteString("B")
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "B", string(got))
+	})
+	t.Run("missing directory errors with context", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "nope", "out.txt")
+		_, err := openOutputFile(path)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "open output file")
+	})
+}
+
+// TestRootOutputRedirectsToFile pins that --output redirects a command's stdout
+// to the file (leaving the captured out/err buffer empty of the payload) and,
+// because a regular file is not a terminal, turns color off. version runs the
+// root PreRun without a backend, so it isolates the redirect.
+func TestRootOutputRedirectsToFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "out.txt")
+	root, _ := newRootCmd()
+	buf, err := runCmd(t, root, "--output", path, "version")
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(got), "iq "+buildVersion())
+	require.NotContains(t, buf, "iq "+buildVersion()) // payload went to the file, not stdout
+	require.False(t, colorOn())                       // color off for a file destination
+}
+
+// TestRootOutputColorForcedToFile pins that -C forces color even when --output
+// redirects to a (non-terminal) file, mirroring the pager behavior.
+func TestRootOutputColorForcedToFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "out.txt")
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "--color", "--output", path, "version")
+	require.NoError(t, err)
+	require.True(t, colorOn())
+}
+
+// TestRootOutputBadPathFailsFast pins that an unopenable --output target aborts
+// the invocation in PreRun with a wrapped, CLI-anchored error.
+func TestRootOutputBadPathFailsFast(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nope", "out.txt")
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "--output", path, "version")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "open output file")
 }
 
 func TestRootRegistersSourceCommands(t *testing.T) {

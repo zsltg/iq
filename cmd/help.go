@@ -55,6 +55,7 @@ var rootFlagGroups = map[string]string{
 	"format":         groupOutput,
 	"format.decimal": groupOutput,
 	"compact":        groupOutput,
+	"output":         groupOutput,
 
 	"monochrome":  groupDisplay,
 	"color":       groupDisplay,
