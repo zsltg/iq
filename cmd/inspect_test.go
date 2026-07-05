@@ -33,14 +33,45 @@ func TestIsMongoInspectCmd(t *testing.T) {
 func TestInspectMongoRejectsUnknown(t *testing.T) {
 	// Validation happens before any store access, so a nil store is never used.
 	var buf bytes.Buffer
-	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, []string{"dropDatabase"}, false)
+	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, []string{"dropDatabase"}, false, false)
 	require.ErrorContains(t, err, "unknown inspect subcommand")
 }
 
 func TestInspectMongoCollStatsNeedsCollection(t *testing.T) {
 	var buf bytes.Buffer
-	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, []string{"collStats"}, false)
+	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, []string{"collStats"}, false, false)
 	require.ErrorContains(t, err, "needs a collection")
+}
+
+func TestInspectMongoList(t *testing.T) {
+	// The list path prints the supported set and never touches the store, so a
+	// nil store proves it stays offline.
+	var buf bytes.Buffer
+	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, nil, false, true)
+	require.NoError(t, err)
+	for _, sub := range mongoInspectCmds {
+		require.Contains(t, buf.String(), sub)
+	}
+}
+
+func TestRedisInfoSections(t *testing.T) {
+	info := "# Server\r\nredis_version:7.2.0\r\n\r\n# Memory\r\nused_memory:12345\r\n"
+	require.Equal(t, []string{"Memory", "Server"}, redisInfoSections(info))
+}
+
+func TestWriteInspectList(t *testing.T) {
+	t.Run("plain is newline separated", func(t *testing.T) {
+		var buf bytes.Buffer
+		require.NoError(t, writeInspectList(&buf, []string{"a", "b"}, false))
+		require.Equal(t, "a\nb\n", buf.String())
+	})
+	t.Run("json is an array", func(t *testing.T) {
+		var buf bytes.Buffer
+		require.NoError(t, writeInspectList(&buf, []string{"a", "b"}, true))
+		var got []string
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
+		require.Equal(t, []string{"a", "b"}, got)
+	})
 }
 
 func TestInspectRedisIntegration(t *testing.T) {
@@ -68,6 +99,17 @@ func TestInspectRedisIntegration(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(jsonOut), &sections))
 	require.Contains(t, sections, "Server")
 	require.NotEmpty(t, sections["Server"]["redis_version"])
+
+	listOut, err := runCmd(t, newInspectCmd(cfg), "--list")
+	require.NoError(t, err)
+	require.Contains(t, listOut, "Server")
+	require.Contains(t, listOut, "Memory")
+
+	listJSON, err := runCmd(t, newInspectCmd(cfg), "--list", "--json")
+	require.NoError(t, err)
+	var names []string
+	require.NoError(t, json.Unmarshal([]byte(listJSON), &names))
+	require.Contains(t, names, "Server")
 }
 
 func TestInspectMongoIntegration(t *testing.T) {
@@ -102,4 +144,10 @@ func TestInspectMongoIntegration(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(all), &byName))
 	require.Contains(t, byName, "dbStats")
 	require.Contains(t, byName, "listCollections")
+
+	// --list runs through RunE (opening the store) and prints the supported set.
+	listOut, err := runCmd(t, newInspectCmd(cfg), "--list")
+	require.NoError(t, err)
+	require.Contains(t, listOut, "dbStats")
+	require.Contains(t, listOut, "buildInfo")
 }

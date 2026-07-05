@@ -82,8 +82,9 @@ iq --src books '.["2"]'      # run this one query against "books"
 - `iq inspect [<section>...]` — show the active source's (or `--src`'s) native introspection. For
   Redis, runs `INFO`, narrowed to the named sections (`iq inspect memory server`). For MongoDB,
   runs diagnostic commands (`dbStats`, `serverStatus`, `listCollections`, `collStats`,
-  `buildInfo`, `hostInfo`); no arguments runs them all, positional arguments narrow. `--json` for
-  machine-readable output; bounded by `--timeout`.
+  `buildInfo`, `hostInfo`); no arguments runs them all, positional arguments narrow. `--list`
+  prints the subcommands/sections available for the active source (Mongo's fixed set; Redis's
+  live INFO sections). `--json` for machine-readable output; bounded by `--timeout`.
 - `iq group [<name>] [--clear]` — show, set, or clear the active **group**.
 
 **Groups.** A `/` in a name groups sources (`prod/books`, `dev/books`). Set an active group with

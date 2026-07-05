@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -20,17 +21,25 @@ var mongoInspectCmds = []string{"dbStats", "serverStatus", "listCollections", "c
 // server/database introspection. The source is the active one or --src; the
 // positional arguments narrow the output. Bounded by --timeout.
 func newInspectCmd(cfg *config) *cobra.Command {
-	var jsonOut bool
+	var (
+		jsonOut bool
+		list    bool
+	)
+	long := "Show a source's native server/database introspection.\n\n" +
+		"MongoDB — runs diagnostic database commands; no arguments runs them all,\n" +
+		"positional arguments narrow to the named ones:\n" +
+		"  " + strings.Join(mongoInspectCmds, "  ") + "\n" +
+		"  (collStats needs a collection via -c or on the source)\n\n" +
+		"Redis — runs INFO; positional arguments narrow it to those sections\n" +
+		"(`iq inspect memory server`), and none runs the full INFO. Common sections:\n" +
+		"  server  clients  memory  persistence  stats  replication  cpu  keyspace\n\n" +
+		"Select the source with --src or the active source. Use --json for machine-readable\n" +
+		"output, or --list to print the subcommands/sections available for the active source."
 	c := &cobra.Command{
 		Use:   "inspect [section...]",
 		Short: "Show a source's native server/database introspection",
-		Long: "Report the source's native introspection. For Redis, run INFO; positional\n" +
-			"arguments narrow it to those sections (`iq inspect memory server`), and none runs\n" +
-			"the full INFO. For MongoDB, run diagnostic database commands (dbStats,\n" +
-			"serverStatus, listCollections, collStats, buildInfo, hostInfo); no arguments runs\n" +
-			"them all, positional arguments narrow to the named ones. Select the source with\n" +
-			"--src or the active source; use --json for machine-readable output.",
-		Args: cobra.ArbitraryArgs,
+		Long:  long,
+		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := resolveSource(cmd, cfg); err != nil {
 				return err
@@ -45,22 +54,27 @@ func newInspectCmd(cfg *config) *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			if strings.HasPrefix(schemeOf(cfg.url), "redis") {
-				return inspectRedis(ctx, out, st, cfg, args, jsonOut)
+				return inspectRedis(ctx, out, st, cfg, args, jsonOut, list)
 			}
-			return inspectMongo(ctx, out, st, cfg, args, jsonOut)
+			return inspectMongo(ctx, out, st, cfg, args, jsonOut, list)
 		},
 	}
 	c.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
+	c.Flags().BoolVar(&list, "list", false, "list the subcommands/sections available for the active source")
 	return c
 }
 
-// inspectRedis runs INFO (narrowed to the given sections) and renders it.
-func inspectRedis(ctx context.Context, out io.Writer, st store, cfg *config, sections []string, jsonOut bool) error {
+// inspectRedis runs INFO (narrowed to the given sections) and renders it. With
+// list, it prints the section names the reply exposes instead of the reply.
+func inspectRedis(ctx context.Context, out io.Writer, st store, cfg *config, sections []string, jsonOut, list bool) error {
 	res, err := query.NewRunner(st).Run(ctx, append([]string{"INFO"}, sections...))
 	if err != nil {
 		return redactErr(err, cfg.url)
 	}
 	info, _ := res.(string)
+	if list {
+		return writeInspectList(out, redisInfoSections(info), jsonOut)
+	}
 	if jsonOut {
 		return newJSONEncoder(out, true).Encode(parseRedisInfo(info))
 	}
@@ -69,6 +83,17 @@ func inspectRedis(ctx context.Context, out io.Writer, st store, cfg *config, sec
 	}
 	_, err = io.WriteString(out, info)
 	return err
+}
+
+// redisInfoSections returns the section names present in an INFO reply, sorted.
+func redisInfoSections(info string) []string {
+	parsed := parseRedisInfo(info)
+	names := make([]string, 0, len(parsed))
+	for name := range parsed {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // parseRedisInfo turns an INFO reply into section → key → value. Lines like
@@ -98,8 +123,12 @@ func parseRedisInfo(info string) map[string]map[string]string {
 }
 
 // inspectMongo runs the requested MongoDB diagnostic commands (all supported when
-// none are named) and renders each reply keyed by subcommand.
-func inspectMongo(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut bool) error {
+// none are named) and renders each reply keyed by subcommand. With list, it prints
+// the supported subcommand names instead, without touching the store.
+func inspectMongo(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, list bool) error {
+	if list {
+		return writeInspectList(out, mongoInspectCmds, jsonOut)
+	}
 	explicit := len(subs) > 0
 	which := subs
 	if !explicit {
@@ -165,6 +194,20 @@ func isMongoInspectCmd(sub string) bool {
 		}
 	}
 	return false
+}
+
+// writeInspectList renders the names --list emits: a JSON array with jsonOut, else
+// one name per line.
+func writeInspectList(out io.Writer, names []string, jsonOut bool) error {
+	if jsonOut {
+		return newJSONEncoder(out, true).Encode(names)
+	}
+	for _, name := range names {
+		if _, err := fmt.Fprintln(out, name); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // inspectHeader writes a one-line source header: driver and redacted location.
