@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	iqmongo "github.com/zsltg/iq/internal/mongo"
+	iqmongo "github.com/zsltg/iq/internal/backend/mongo"
+	iqredis "github.com/zsltg/iq/internal/backend/redis"
 	"github.com/zsltg/iq/internal/query"
-	iqredis "github.com/zsltg/iq/internal/redis"
 )
 
 // store is the backend a command talks to. One adapter satisfies both the jq

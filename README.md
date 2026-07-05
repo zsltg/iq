@@ -441,7 +441,7 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   program over the reduced per-source results bound as variables, and `CrossEngine` runs a
   `source()`-driven filter over a null input — both reach other sources through the `SourceOpener`
   port and hold no primary store.
-- `internal/redis`, `internal/mongo` — the adapters. Each has one `*Store` satisfying both ports:
+- `internal/backend/redis`, `internal/backend/mongo` — the adapters. Each has one `*Store` satisfying both ports:
   `Query` (exec) and `Get`/`ScanBatches` (jq), with a type-to-JSON normalization frozen as that
   backend's encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs). Redis maps
   a key to a Redis key; Mongo maps a key to a document `_id` within `--collection`.

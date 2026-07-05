@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	iqredis "github.com/zsltg/iq/internal/redis"
+	iqredis "github.com/zsltg/iq/internal/backend/redis"
 )
 
 func TestFormatReplyScalars(t *testing.T) {

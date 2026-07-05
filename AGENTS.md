@@ -13,13 +13,13 @@ Standard Go toolchain; README is the full catalogue once it exists.
 - Vet and lint: `go vet ./...`, `golangci-lint run`; fix every reported issue before committing, do not wait to be asked; the config enables `godot` (comments end with a period) and `unused`, among others.
 - Format, canonical and deterministic, run before lint and commit: `gofumpt -w .` (stricter gofmt superset) then `goimports -w .` for import grouping.
 - Vulnerabilities, before adding or upgrading a dependency: `govulncheck ./...`.
-- Mutation gate: `scripts/mutation-gate.sh` (needs `gremlins`: `go install github.com/go-gremlins/gremlins/cmd/gremlins@latest`); it wraps gremlins to fail on any surviving or timed-out mutant because gremlins v0.6.0 reports but does not exit-code-enforce, running serially with a wide timeout; run with the integration services up so adapters are covered.
+- Mutation gate: `scripts/mutation-gate.sh` (needs `gremlins`: `go install github.com/go-gremlins/gremlins/cmd/gremlins@latest`); it wraps gremlins to fail on any surviving or timed-out mutant because gremlins v0.6.0 reports but does not exit-code-enforce, running serially with a wide timeout; run with the integration services up so backend adapters are covered.
 - Release: `make release` (`scripts/release.sh`, needs `svu` and `git-chglog`: `make tools`); computes the next semver from Conventional Commits, regenerates `CHANGELOG.md`, commits, and tags on clean `main`; never pushes; preview with `bash scripts/release.sh --dry-run`; version metadata is embedded by `make build` via ldflags.
 ## Coding Conventions
 Boring, linear, readable code.
 - Compose OSS, reinvent last: standard library, then a maintained permissive library, then hand-roll only for a genuine determinism, footprint or license gap.
-- Keep the query core driver-agnostic: domain and query logic never import a specific NoSQL driver or the CLI framework; drivers and the CLI are outer details behind ports wired at a composition root.
-- Cross boundaries with plain types: pass request and response structs across the core boundary, never a driver row, framework context or raw flag struct; adapters translate at the edge.
+- Keep the query core driver-agnostic: domain and query logic never import a specific NoSQL driver or the CLI framework; backend adapters and the CLI are outer details behind ports wired at a composition root.
+- Cross boundaries with plain types: pass request and response structs across the core boundary, never a driver row, framework context or raw flag struct; backend adapters translate at the edge.
 - Fail fast on hostile input: validate at function entry and return immediately; treat args, config, connection strings, query fragments and database responses as untrusted.
 - Never build a query from unsanitized input: parameterize every query and filter; no string concatenation or templating of user input into a query.
 - Errors are values: wrap every error with context at the boundary it crosses so the message anchors at our caller not deep in an external library, via `fmt.Errorf("...: %w", err)`; handle at a boundary, never ignore a returned error, never leak internals to the user.
@@ -38,7 +38,7 @@ Boring, linear, readable code.
 ## Docs stay current
 - README Common commands is the full catalogue; update it in the same change that adds or alters a developer-facing command, dependency or environment variable; environment variables also update `.env.example`.
 - A change to the system's shape (a new datastore target, a new delivery surface, a changed connection contract) updates the README Architecture section in the same change.
-- A change to the selector's classification, the pushdown-to-predicate mapping, a core port, an adapter, or a backend updates the README Architecture Mermaid diagram in the same change; keep the committed diagram in sync, never redraw it from scratch.
+- A change to the selector's classification, the pushdown-to-predicate mapping, a core port, or a backend adapter updates the README Architecture Mermaid diagram in the same change; keep the committed diagram in sync, never redraw it from scratch.
 ## Boundaries
 Never:
 - Hand-edit generated artifacts (`go generate` output, vendored code).

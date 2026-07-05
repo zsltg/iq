@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	iqredis "github.com/zsltg/iq/internal/redis"
+	iqredis "github.com/zsltg/iq/internal/backend/redis"
 )
 
 // testURL returns the Redis URL for integration tests: the IQ_REDIS_URL override
