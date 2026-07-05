@@ -18,9 +18,12 @@ func seedLs(t *testing.T) {
 	seedConfig(t, c)
 }
 
+// TestLsVerbose exercises `iq ls -v` through the root tree: -v is now the global
+// --verbose (ls no longer owns a local -v), and the ls driver column reads it.
 func TestLsVerbose(t *testing.T) {
 	seedLs(t)
-	out, err := runCmd(t, newLsCmd(&config{}), "-v")
+	root, _ := newRootCmd()
+	out, err := runCmd(t, root, "ls", "-v")
 	require.NoError(t, err)
 	require.Contains(t, out, "redis") // driver column (exact assertion in TestLsJSON)
 	require.Contains(t, out, "mongo") // driver column, normalized from the mongodb scheme

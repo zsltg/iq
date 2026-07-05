@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -43,13 +45,30 @@ type config struct {
 	noProgress bool
 	reveal     bool
 	expand     bool
+	// Diagnostics flags, adopted from sq: a global verbose stderr mode, a
+	// file-logging family, error-rendering controls, and a profiling mode.
+	verbose          bool
+	logEnable        bool
+	logFile          string
+	logLevel         string
+	logFormat        string
+	errorFormat      string
+	errorStack       bool
+	errorTextVerbose bool
+	pprofMode        string
+	// Finalize handles resolved once in PersistentPreRunE and consumed by
+	// Execute after the command returns. logger is never nil (a discard logger
+	// when every sink is off); logClose and pprofStop are nil when unused.
+	logger    *slog.Logger
+	logClose  func() error
+	pprofStop func()
 }
 
 // newRootCmd builds the root command and its subcommands. The default action is
 // the jq query: a bare `iq '<filter>'` runs the filter against the active source,
 // whose top-level paths name the keys to fetch. The `add`/`ls`/`rm`/`src`/`group`
 // subcommands manage saved sources; `exec` forwards a command verbatim.
-func newRootCmd() *cobra.Command {
+func newRootCmd() (*cobra.Command, *config) {
 	cfg := &config{}
 	root := &cobra.Command{
 		Use:     "iq <jq-filter>",
@@ -84,13 +103,35 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// PersistentPreRunE runs for the root action and every subcommand (none
-		// override it), so the color decision is made once, at one place, for the
-		// whole invocation.
+		// override it), so the color decision and the diagnostics setup (logging,
+		// error format, profiling) are made once, in one place, for the whole
+		// invocation. All values are validated before any resource opens, so a bad
+		// flag fails fast; resources that do open are stored on cfg immediately so
+		// Execute's finalize closes them on every path.
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if cfg.monochrome && cfg.forceColor {
 				return errors.New("cannot use --monochrome with --color")
 			}
 			resolveColor(cfg.monochrome, cfg.forceColor, cmd.OutOrStdout())
+			if err := validateErrorFormat(cfg.errorFormat); err != nil {
+				return err
+			}
+			logOpts, err := resolveLogOptions(cmd, cfg)
+			if err != nil {
+				return err
+			}
+			logger, closeLog, err := logOpts.build(cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			cfg.logger = logger
+			cfg.logClose = closeLog
+			stop, err := startProfile(cfg.pprofMode, cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			cfg.pprofStop = stop
+			cfg.logger.Debug("iq start", "version", buildVersion(), "cmd", cmd.CommandPath())
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -116,6 +157,17 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().BoolVarP(&cfg.monochrome, "monochrome", "M", false, "disable colored output (also honored via NO_COLOR); color is on by default only when writing to a terminal")
 	root.PersistentFlags().BoolVarP(&cfg.forceColor, "color", "C", false, "force colored output even when the destination is not a terminal (e.g. a pager)")
 	root.PersistentFlags().BoolVar(&cfg.noProgress, "no-progress", false, "disable the scan progress spinner (shown on stderr for long scans when it is a terminal)")
+	// Diagnostics flags (sq-compatible). -v is global; `iq ls` reuses it for its
+	// driver column. --log* also honor IQ_LOG/IQ_LOG_FILE/IQ_LOG_LEVEL/IQ_LOG_FORMAT.
+	root.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "print verbose diagnostics to stderr")
+	root.PersistentFlags().BoolVar(&cfg.logEnable, "log", false, "enable logging to a file (also via IQ_LOG)")
+	root.PersistentFlags().StringVar(&cfg.logFile, "log.file", "", "log file path; empty disables logging (default <user cache dir>/iq/iq.log)")
+	root.PersistentFlags().StringVar(&cfg.logLevel, "log.level", "DEBUG", "log level: DEBUG, INFO, WARN, or ERROR")
+	root.PersistentFlags().StringVar(&cfg.logFormat, "log.format", "text", "log format: text or json")
+	root.PersistentFlags().StringVar(&cfg.errorFormat, "error.format", "text", "error output format: text or json")
+	root.PersistentFlags().BoolVar(&cfg.errorStack, "error.stack", false, "print the error cause chain to stderr (may include backend internals)")
+	root.PersistentFlags().BoolVar(&cfg.errorTextVerbose, "error.format.text.verbose", true, "for a jq syntax error in text format, show a caret span report")
+	root.PersistentFlags().StringVar(&cfg.pprofMode, "debug.pprof", "", "write a runtime profile of the whole run: cpu, mem, block, mutex, goroutine, thread, or trace")
 	// --unbounded and --compile are local to the default jq action.
 	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
 	root.Flags().BoolVar(&cfg.compile, "compile", false, "push a .[]|select(...) equality predicate to the store to pre-filter server-side (MongoDB; no-op elsewhere; results are unchanged)")
@@ -144,20 +196,47 @@ func newRootCmd() *cobra.Command {
 		newDriverCmd(),
 		newVersionCmd(),
 	)
-	return root
+	return root, cfg
+}
+
+// validateErrorFormat rejects an --error.format outside {text, json} at PreRun,
+// mirroring the fail-fast posture of the -M/-C check.
+func validateErrorFormat(f string) error {
+	switch strings.ToLower(strings.TrimSpace(f)) {
+	case "text", "json":
+		return nil
+	default:
+		return fmt.Errorf("invalid --error.format %q: want text or json", f)
+	}
 }
 
 // Execute runs the CLI. It is the composition root: it builds a signal-aware
-// context, runs the root command, and maps any error to a stderr line and a
-// non-zero exit code.
+// context, runs the root command, finalizes the diagnostics resources opened in
+// PersistentPreRunE (on both success and error paths), and maps any error to a
+// rendered stderr message and a non-zero exit code.
 func Execute() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := newRootCmd().ExecuteContext(ctx); err != nil {
-		// errQuietExit (diff --exit-code) signals a non-zero status with no message:
-		// the differences are the report, not an error.
+	root, cfg := newRootCmd()
+	err := root.ExecuteContext(ctx)
+	// Record the terminal error before the log file closes. cfg.logger is nil
+	// only when a flag-parse error aborted before PersistentPreRunE ran.
+	if err != nil && !errors.Is(err, errQuietExit) && cfg.logger != nil {
+		cfg.logger.Error("iq failed", "err", err)
+	}
+	// Finalize in a fixed order: stop/write the profile, then close the log file,
+	// then render the error. Each handle is nil when its resource never opened.
+	if cfg.pprofStop != nil {
+		cfg.pprofStop()
+	}
+	if cfg.logClose != nil {
+		_ = cfg.logClose()
+	}
+	if err != nil {
+		// errQuietExit (diff --exit-code) signals a non-zero status with no
+		// message: the differences are the report, not an error.
 		if !errors.Is(err, errQuietExit) {
-			_, _ = fmt.Fprintln(os.Stderr, "iq:", err)
+			renderError(os.Stderr, cfg, err)
 		}
 		os.Exit(1)
 	}

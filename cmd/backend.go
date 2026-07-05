@@ -18,10 +18,22 @@ type store interface {
 	FormatRaw(v any, colored bool) string
 }
 
-// openStore connects to the backend named by cfg.url, dispatching on the URL
+// openStore connects to the backend named by cfg.url, logging the attempt and
+// the outcome at the cmd boundary (the driver is safe; the URL is never logged).
+func openStore(ctx context.Context, cfg *config) (store, error) {
+	cfg.log().Debug("opening store", "driver", schemeOf(cfg.url))
+	st, err := dialStore(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	cfg.log().Info("store opened", "driver", schemeOf(cfg.url))
+	return st, nil
+}
+
+// dialStore connects to the backend named by cfg.url, dispatching on the URL
 // scheme through the drivers registry — the single source of truth for which
 // concrete adapters exist.
-func openStore(ctx context.Context, cfg *config) (store, error) {
+func dialStore(ctx context.Context, cfg *config) (store, error) {
 	scheme := schemeOf(cfg.url)
 	if scheme == "" {
 		return nil, fmt.Errorf("missing url scheme in %q; %s", redactURL(cfg.url), expectedSchemes())

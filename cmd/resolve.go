@@ -40,6 +40,9 @@ func resolveSource(cmd *cobra.Command, cfg *config) error {
 	if !cmd.Flags().Changed("collection") {
 		cfg.collection = src.Collection
 	}
+	// Log the resolved source with its location redacted — never the raw URL, so
+	// a stored credential cannot reach a log file.
+	cfg.log().Info("source resolved", "handle", cfg.handle, "driver", schemeOf(cfg.url), "location", redactURL(cfg.url))
 	return nil
 }
 

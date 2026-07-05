@@ -24,6 +24,9 @@ func newExecCmd(cfg *config) *cobra.Command {
 			"command document run with runCommand: `iq exec '{\"find\":\"books\",\"filter\":{}}'`.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Log only the command verb: Redis operands (SET greeting hello) may
+			// carry values, so they are never logged.
+			cfg.log().Info("exec forward", "verb", args[0])
 			if err := resolveSource(cmd, cfg); err != nil {
 				return err
 			}

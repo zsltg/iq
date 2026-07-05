@@ -234,6 +234,38 @@ keyspace is never silent. The spinner appears only after a short delay, so a fas
 flashes one, and only when stderr is a terminal: piped or redirected output is never touched, and
 result rows streamed to stdout are never garbled by it. Disable it with `--no-progress`.
 
+### Diagnostics & logging
+
+Global flags (adopted from [sq](https://github.com/neilotoole/sq)) control verbose output, file
+logging, error rendering, and profiling. They are cross-cutting concerns handled at the CLI
+boundary; query results are never changed by them.
+
+| flag | default | effect |
+| --- | --- | --- |
+| `-v`, `--verbose` | off | print diagnostics (source resolved, store opened, query complete with scan count and elapsed) to stderr |
+| `--log` | off | enable logging to a file (also via `IQ_LOG`) |
+| `--log.file` | `<user cache dir>/iq/iq.log` | log file path; an empty value disables logging |
+| `--log.level` | `DEBUG` | `DEBUG`, `INFO`, `WARN`, or `ERROR` |
+| `--log.format` | `text` | `text` or `json` |
+| `--error.format` | `text` | error output format: `text` or `json` |
+| `--error.stack` | off | append the wrapped error cause chain (may include backend internals; redacted) |
+| `--error.format.text.verbose` | on | for a jq syntax error in text format, draw a caret span under the offending token |
+| `--debug.pprof` | off | write a runtime profile of the whole run: `cpu`, `mem`, `block`, `mutex`, `goroutine`, `thread`, or `trace` |
+
+The `--log*` flags also read the environment when the flag is not set, precedence
+**flag > env > default**: `IQ_LOG`, `IQ_LOG_FILE`, `IQ_LOG_LEVEL`, `IQ_LOG_FORMAT`. `-v` writes a
+terse human stream to stderr (INFO and above); `--log` writes structured records to a file (down
+to the chosen level). A source location is always redacted before it is logged, so a stored
+credential never reaches a log file.
+
+```bash
+./iq -v '.[]'                                        # verbose diagnostics on stderr
+./iq --log --log.file=/tmp/iq.log --log.format=json '.[]'   # structured logs to a file
+IQ_LOG=true IQ_LOG_FILE=/tmp/iq.log ./iq '.[]'       # enable logging via the environment
+./iq --error.format=json '.bad |'                    # machine-readable errors
+./iq --debug.pprof=cpu '.[]' && go tool pprof cpu.pprof
+```
+
 ## Redis
 
 <details>
@@ -514,7 +546,10 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`/`diff`/`driver`), or a `--from`/`--combine` cross-source query —
   resolving every source name through the same registry — and formats output (a format-flag-selected
   renderer for the jq path — `--json`, `--jsonl`, `--json-array`, `--raw`, or `--yaml`; per-backend for `exec` —
-  redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format.
+  redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format. The
+  diagnostics surface (verbose output, file logging, error rendering, `--debug.pprof`) also lives
+  here: it is set up once per invocation and emits from the CLI boundary, so the query core imports
+  no logger and produces no diagnostics of its own.
 
 A bounded filter runs client-side over just the named keys, so its cost is `O(keys requested)`; a
 streamable scan runs in `O(page)` memory. The jq semantics are identical for any future backend

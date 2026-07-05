@@ -96,7 +96,7 @@ func parseStore(store string) (keyring bool, err error) {
 // are redacted so a stored password is never printed unless --reveal (inline
 // passwords) or --expand (keyring passwords) is set.
 func newLsCmd(cfg *config) *cobra.Command {
-	var verbose, groups, jsonOut bool
+	var groups, jsonOut bool
 	c := &cobra.Command{
 		Use:   "ls [group]",
 		Short: "List saved sources (the active one marked *), or groups with -g",
@@ -114,16 +114,17 @@ func newLsCmd(cfg *config) *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if groups {
-				return listGroups(out, cf, verbose, jsonOut)
+				return listGroups(out, cf, cfg.verbose, jsonOut)
 			}
 			filter := ""
 			if len(args) == 1 {
 				filter = iqconfig.CleanHandle(args[0])
 			}
-			return listSources(out, cf, filter, verbose, cfg.reveal, jsonOut, cfg.expand)
+			return listSources(out, cf, filter, cfg.verbose, cfg.reveal, jsonOut, cfg.expand)
 		},
 	}
-	c.Flags().BoolVarP(&verbose, "verbose", "v", false, "show each source's driver alongside its location")
+	// -v is the global --verbose (registered on the root); `iq ls -v` reuses it
+	// for the driver column, so no local -v is declared here.
 	c.Flags().BoolVarP(&groups, "group", "g", false, "list groups instead of sources")
 	c.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
 	c.Flags().BoolVar(&cfg.reveal, "reveal", false, "print inline-stored passwords verbatim instead of redacting them")

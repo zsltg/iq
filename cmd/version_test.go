@@ -105,5 +105,6 @@ func TestVersionCmd(t *testing.T) {
 }
 
 func TestRootCommandHasVersion(t *testing.T) {
-	require.NotEmpty(t, newRootCmd().Version)
+	root, _ := newRootCmd()
+	require.NotEmpty(t, root.Version)
 }

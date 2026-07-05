@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -20,7 +21,9 @@ import (
 func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	cross, err := query.UsesSource(filter)
 	if err != nil {
-		return err
+		// UsesSource parses the filter, so this is the first place a syntax error
+		// surfaces; enrich it so --error.format.text.verbose can draw the caret.
+		return asSyntaxError(filter, err)
 	}
 
 	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
@@ -36,7 +39,16 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	meter := newProgressMeter(cmd.ErrOrStderr(), cfg.noProgress)
 	defer meter.Stop()
 	f := newFormatter(fm, meter.wrapStdout(cmd.OutOrStdout()), cfg.compact)
-	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: cfg.compile, OnPage: meter.Tick}
+	// One OnPage closure drives both the spinner and the scanned-count log point,
+	// so the core stays UI-agnostic (it only ever calls a plain func).
+	var scanned int
+	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: cfg.compile, OnPage: func(n int) {
+		scanned += n
+		meter.Tick(n)
+	}}
+
+	cfg.log().Debug("query start", "cross", cross, "timeout", cfg.timeout)
+	start := time.Now()
 
 	if cross {
 		cf, err := iqconfig.Load()
@@ -45,7 +57,9 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		}
 		opener := newSourceOpener(cf)
 		defer opener.closeAll()
-		return finish(f, scanHint(query.NewCrossEngine(opener).Run(ctx, filter, opts, f.emit)))
+		runErr := query.NewCrossEngine(opener).Run(ctx, filter, opts, f.emit)
+		cfg.logQueryComplete(scanned, start)
+		return finish(f, scanHint(asSyntaxError(filter, runErr)))
 	}
 
 	if err := resolveSource(cmd, cfg); err != nil {
@@ -56,7 +70,15 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		return err
 	}
 	defer func() { _ = store.Close() }()
-	return finish(f, scanHint(query.NewJQEngine(store).Run(ctx, filter, opts, f.emit)))
+	runErr := query.NewJQEngine(store).Run(ctx, filter, opts, f.emit)
+	cfg.logQueryComplete(scanned, start)
+	return finish(f, scanHint(asSyntaxError(filter, runErr)))
+}
+
+// logQueryComplete records a finished query run with the number of items scanned
+// and the wall-clock elapsed, at INFO so -v surfaces it.
+func (cfg *config) logQueryComplete(scanned int, start time.Time) {
+	cfg.log().Info("query complete", "scanned", scanned, "elapsed", time.Since(start))
 }
 
 // finish returns the engine's run error if any; otherwise it flushes the
