@@ -552,3 +552,49 @@ to point at an already-running server (for example the `docker compose` stack) t
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
 a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded
 into DB 0 by `scripts/seed.sh` survives a test run.
+
+## Comparison
+
+How `iq` relates to other query tools. Its niche is narrow: a single static binary that gives
+NoSQL stores one jq-based query surface, the filter running client-side over normalized JSON so
+semantics are identical across backends.
+
+The tools it resembles fall into three groups, and none land in the same spot:
+
+- Multi-backend SQL (`sq`, Trino, Drill, OctoSQL, usql) unifies databases under one SQL-ish
+  language, but targets relational stores; where it reaches NoSQL it runs as a server or engine.
+- SQL over files (DuckDB, dsq, trdsql, and others) queries CSV/JSON/Parquet locally, not live
+  databases.
+- Relational + NoSQL languages (PartiQL, SQL++, JSONiq, GraphQL) span nested and tabular data,
+  but are language specs or tied to a specific engine, not a portable CLI.
+
+`sq` — the tool `iq`'s command surface is modelled on — belongs to the first group: it unifies
+relational databases and files, and never reaches NoSQL. That gap is where `iq` lives.
+
+Legend: ● primary, ◐ partial, — none. Model is the shape the query language speaks; footprint is
+what you run.
+
+| Tool | Query language | Relational | NoSQL | Files | Data model | Footprint |
+|---|---|:---:|:---:|:---:|---|---|
+| **`iq`** | **jq** | — | **●** | — | **document** | **single binary** |
+| `sq` | SLQ / SQL | ● | — | ● | tabular | single binary |
+| Trino / Presto | SQL | ● | ● | ● | tabular (◐ JSON) | server / engine |
+| Apache Drill | SQL | ● | ● | ● | schema-free (both) | server / engine |
+| OctoSQL | SQL | ● | ◐ | ● | tabular | single binary |
+| usql | native SQL | ● | ◐ | — | tabular | single binary (multiplexer) |
+| DuckDB | SQL | ◐ | — | ● | tabular | in-process / CLI |
+| dsq | SQL | — | — | ● | tabular | single binary |
+| PartiQL | PartiQL | ● | ● | ◐ | nested (both) | spec / embedded |
+| SQL++ / N1QL | SQL++ | ◐ | ● | — | document | DB engine |
+| JSONiq | JSONiq | — | ● | ● | document | library / engine |
+| GraphQL federation | GraphQL | ● | ● | — | typed graph (both) | server |
+
+Placement is by each tool's primary targets; several (Trino, Drill, OctoSQL, DuckDB) partially
+reach neighbouring columns via connectors or extensions. The takeaway is the NoSQL column: every
+other tool that reaches it is a server, an engine, or a language spec — `iq` is the only single
+binary there, speaking documents in their native shape rather than projecting them onto rows.
+
+## See also
+
+- [awesome-jq](https://github.com/jqlang/awesome-jq) — the curated list of jq tools, guides, and
+  resources. `iq` uses jq as its filter language, so most of what applies to jq carries over.
