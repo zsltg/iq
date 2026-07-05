@@ -83,6 +83,28 @@ func driverName(url string) string {
 	return scheme
 }
 
+// driverByName returns the driver with the given canonical name, dispatching
+// over the registry. It backs `iq add -d/--driver`, which names a driver rather
+// than a scheme.
+func driverByName(name string) (driver, bool) {
+	for _, d := range drivers {
+		if d.name == name {
+			return d, true
+		}
+	}
+	return driver{}, false
+}
+
+// driverNames renders the registry's driver names as a comma-separated list for
+// an error fragment, so the message stays in sync with the drivers that exist.
+func driverNames() string {
+	names := make([]string, len(drivers))
+	for i, d := range drivers {
+		names[i] = d.name
+	}
+	return strings.Join(names, ", ")
+}
+
 // expectedSchemes renders the registry's primary schemes as an error fragment
 // ("expected mongodb:// or redis://"), so the message an unsupported URL yields
 // stays in sync with the drivers that actually exist.

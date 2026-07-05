@@ -52,8 +52,8 @@ first release comes out as `v0.1.0`.
 by name or as the default. Register one with `iq add`, then make it active:
 
 ```bash
-iq add cache redis://localhost:6379/0                # register a Redis source
-iq add books mongodb://localhost:27017/iq -c books   # a Mongo source; -c names the collection
+iq add -n cache redis://localhost:6379/0             # register a Redis source as "cache"
+iq add mongodb://localhost:27017/books -c items -a   # a Mongo source; handle "books" derived from the db, made active
 iq src cache                                          # make "cache" the active source
 iq ls                                                 # list sources (the active one marked *)
 ```
@@ -65,11 +65,17 @@ command with `--src`/`-s`, without changing the active one:
 iq --src books '.["2"]'      # run this one query against "books"
 ```
 
-- `iq add <name> <url> [-c <collection>] [--store keyring]` — register a source. The backend is
-  inferred from the URL scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`). `-c`
-  stores a MongoDB collection with the source. `--store keyring` moves the URL's password into
-  the OS keyring and strips it from the stored URL (default `--store inline` keeps it in the
-  config file).
+- `iq add <url> [-n <handle>] [-c <collection>] [-a] [-p] [-d <driver>] [--skip-verify] [--store keyring]`
+  — register a source, mirroring `sq add`. The URL is the sole positional argument; the backend is
+  inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`). `-n`/`--handle`
+  names the source; when omitted a handle is derived from the URL (the MongoDB database name, else
+  the driver, disambiguated with a numeric suffix on collision). `-c` stores a MongoDB collection
+  with the source. `-a`/`--active` makes the new source active. `-p`/`--password` prompts for the
+  URL password (or reads it from stdin) instead of embedding it in the URL. `-d`/`--driver` asserts
+  the expected driver (`mongo`, `redis`) and errors if it disagrees with the scheme. The source is
+  pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
+  keyring` moves the URL's password into the OS keyring and strips it from the stored URL (default
+  `--store inline` keeps it in the config file).
 - `iq ls [group]` — list saved sources; the active one is marked `*`. Passwords in URLs are
   redacted. An optional `group` limits the listing to that group. `-v` adds each source's driver;
   `-g` lists groups instead of sources; `--json` emits machine-readable output. `--reveal` prints
@@ -394,7 +400,7 @@ key maps directly to a Redis key and the value is whatever that key holds**. The
 comes from the URL path (`/0`); every value is a string, so numeric comparisons need `tonumber`:
 
 ```bash
-iq add cache redis://localhost:6379/0                # register once, then:
+iq add -n cache redis://localhost:6379/0             # register once, then:
 iq --src cache '.greeting'                           # fetch key "greeting"
 iq --src cache '.[] | select((.year|tonumber) > 2015) | .title'  # streamed
 iq --src cache --unbounded 'keys'                    # every key
@@ -451,7 +457,7 @@ is the key and the document is the value**. The database comes from the URI path
 from the source's `-c` (overridable per run with `--collection`/`-c`):
 
 ```bash
-iq add books mongodb://localhost:27017/iq -c books   # register once, then:
+iq add -n books mongodb://localhost:27017/iq -c books # register once, then:
 iq --src books '.["2"]'                              # fetch document _id "2"
 iq --src books '.[] | select(.year > 2015) | .title' # streamed
 iq --src books --unbounded 'keys'                    # every _id

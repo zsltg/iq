@@ -245,7 +245,7 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / json-array output to single-line (no-op for jsonl, values, yaml)")
 	root.AddCommand(
 		newExecCmd(cfg),
-		newAddCmd(),
+		newAddCmd(cfg),
 		newLsCmd(cfg),
 		newRmCmd(),
 		newMvCmd(),

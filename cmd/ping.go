@@ -116,18 +116,29 @@ func pingOne(ctx context.Context, t pingTarget, timeout time.Duration) (time.Dur
 	if err != nil {
 		return 0, err
 	}
-	cctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	start := time.Now()
-	st, err := openStore(cctx, &config{url: u, collection: t.source.Collection})
-	if err != nil {
-		return 0, redactErr(err, u)
-	}
-	defer func() { _ = st.Close() }()
-	if _, err := st.Query(cctx, healthArgs(u)); err != nil {
-		return 0, redactErr(err, u)
+	if err := verifySource(ctx, u, t.source.Collection, timeout); err != nil {
+		return 0, err
 	}
 	return time.Since(start), nil
+}
+
+// verifySource opens rawURL and round-trips one cheap command, bounded by
+// timeout, returning nil when the backend is reachable. It backs both `iq ping`
+// and the post-add reachability check in `iq add`. Any error has the connection
+// URL redacted so a stored password never surfaces in a diagnostic message.
+func verifySource(ctx context.Context, rawURL, collection string, timeout time.Duration) error {
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	st, err := openStore(cctx, &config{url: rawURL, collection: collection})
+	if err != nil {
+		return redactErr(err, rawURL)
+	}
+	defer func() { _ = st.Close() }()
+	if _, err := st.Query(cctx, healthArgs(rawURL)); err != nil {
+		return redactErr(err, rawURL)
+	}
+	return nil
 }
 
 // healthArgs returns the cheapest round-trip command for the URL's backend.

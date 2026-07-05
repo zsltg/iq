@@ -130,7 +130,7 @@ func TestAddStoreKeyring(t *testing.T) {
 	seedConfig(t, newSeed())
 	fk := useFakeKeyring(t)
 
-	out, err := runCmd(t, newAddCmd(), "sec", "redis://u:secret@h:6379/0", "--store", "keyring")
+	out, err := runCmd(t, newAddCmd(&config{}), "-n", "sec", "redis://u:secret@h:6379/0", "--store", "keyring", "--skip-verify")
 	require.NoError(t, err)
 	require.Contains(t, out, "added source sec")
 
@@ -148,7 +148,7 @@ func TestAddStoreKeyringNoPassword(t *testing.T) {
 	seedConfig(t, newSeed())
 	useFakeKeyring(t)
 
-	_, err := runCmd(t, newAddCmd(), "sec", "redis://u@h:6379/0", "--store", "keyring")
+	_, err := runCmd(t, newAddCmd(&config{}), "-n", "sec", "redis://u@h:6379/0", "--store", "keyring", "--skip-verify")
 	require.ErrorContains(t, err, "no password")
 
 	cf, err := iqconfig.Load()
@@ -158,7 +158,7 @@ func TestAddStoreKeyringNoPassword(t *testing.T) {
 
 func TestAddStoreInvalid(t *testing.T) {
 	seedConfig(t, newSeed())
-	_, err := runCmd(t, newAddCmd(), "sec", "redis://u:p@h", "--store", "vault")
+	_, err := runCmd(t, newAddCmd(&config{}), "-n", "sec", "redis://u:p@h", "--store", "vault", "--skip-verify")
 	require.ErrorContains(t, err, "unknown --store")
 }
 

@@ -1,37 +1,78 @@
 package cmd
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
-// newAddCmd builds `iq add <name> <url>`: register a named source. The backend
-// is inferred from the URL scheme, so the scheme is validated here (the CLI owns
-// backend dispatch). Note `add` shadows jq's built-in `add` filter at the top
-// level; run the filter inside a larger expression (`[ .a, .b ] | add`) instead.
-func newAddCmd() *cobra.Command {
-	var collection string
-	var store string
+// newAddCmd builds `iq add <url>`: register a source from a connection URL,
+// mirroring `sq add`. The URL is the sole positional; -n/--handle names the
+// source, and when omitted a handle is derived from the URL. The backend is
+// inferred from the URL scheme, so the scheme is validated here (the CLI owns
+// backend dispatch). The source is pinged before it is saved unless
+// --skip-verify is set, so a failed add leaves no trace. Note `add` shadows jq's
+// built-in `add` filter at the top level; run the filter inside a larger
+// expression (`[ .a, .b ] | add`) instead.
+func newAddCmd(cfg *config) *cobra.Command {
+	var (
+		handle         string
+		collection     string
+		store          string
+		driverFlag     string
+		active         bool
+		passwordPrompt bool
+		skipVerify     bool
+	)
 	c := &cobra.Command{
-		Use:   "add <name> <url>",
-		Short: "Register a named source (a connection URL, optionally a MongoDB collection)",
-		Long: "Register a named source. The backend is inferred from the URL scheme:\n" +
-			"redis:// (rediss://) or mongodb:// (mongodb+srv://). For MongoDB, -c names the\n" +
-			"collection stored with the source. Names may be grouped with '/' (`iq add\n" +
-			"prod/books mongodb://...`). With --store keyring the URL's password is moved to\n" +
-			"the OS keyring and stripped from the stored URL. Note: `iq add` is this command,\n" +
-			"which shadows jq's built-in `add` filter — write the filter as `[ .a, .b ] | add`.",
-		Args: cobra.ExactArgs(2),
+		Use:   "add <url>",
+		Short: "Register a source from a connection URL (sq-style)",
+		Long: "Register a source from a connection URL, like `sq add`. The URL is the only\n" +
+			"positional argument; -n/--handle names the source, and when omitted a handle is\n" +
+			"derived from the URL (the MongoDB database name, else the driver). The backend is\n" +
+			"inferred from the URL scheme: redis:// (rediss://) or mongodb:// (mongodb+srv://);\n" +
+			"-d/--driver asserts the expected driver. For MongoDB, -c names the collection\n" +
+			"stored with the source. Handles may be grouped with '/' (`iq add -n prod/books\n" +
+			"mongodb://...`). -p prompts for the URL password (or reads it from stdin); with\n" +
+			"--store keyring the password is moved to the OS keyring and stripped from the\n" +
+			"stored URL. -a makes the new source active. The source is pinged before it is\n" +
+			"saved unless --skip-verify is set. Note: `iq add` is this command, which shadows\n" +
+			"jq's built-in `add` filter — write the filter as `[ .a, .b ] | add`.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, rawURL := args[0], args[1]
+			rawURL := args[0]
+			if driverFlag != "" {
+				if _, ok := driverByName(driverFlag); !ok {
+					return fmt.Errorf("unknown driver %q; known drivers: %s", driverFlag, driverNames())
+				}
+			}
 			if !supportedScheme(rawURL) {
 				return fmt.Errorf("unsupported url scheme %q; %s", schemeOf(rawURL), expectedSchemes())
+			}
+			if driverFlag != "" && driverName(rawURL) != driverFlag {
+				return fmt.Errorf("--driver %q does not match url scheme %q:// (driver %q)", driverFlag, schemeOf(rawURL), driverName(rawURL))
+			}
+			// A prompted password is spliced into the URL before storage, so the
+			// keyring/inline path below handles it uniformly.
+			if passwordPrompt {
+				pw, err := readPassword(cmd)
+				if err != nil {
+					return err
+				}
+				rawURL, err = injectPassword(rawURL, pw)
+				if err != nil {
+					return err
+				}
 			}
 			useKeyring, err := parseStore(store)
 			if err != nil {
@@ -53,8 +94,25 @@ func newAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			name := handle
+			if !cmd.Flags().Changed("handle") {
+				name = suggestHandle(cf, rawURL)
+			}
 			if err := cf.Add(name, storedURL, collection); err != nil {
 				return err
+			}
+			// Verify reachability before persisting so a failed add leaves no
+			// trace. rawURL still carries the password (stripped from storedURL for
+			// a keyring source), so it is what we dial.
+			if !skipVerify {
+				if err := verifySource(cmd.Context(), rawURL, collection, cfg.timeout); err != nil {
+					return fmt.Errorf("verify %s: %w (use --skip-verify to add it anyway)", strings.TrimPrefix(name, "@"), err)
+				}
+			}
+			if active {
+				if err := cf.SetActive(name); err != nil {
+					return err
+				}
 			}
 			if useKeyring {
 				if err := cf.UseKeyring(name); err != nil {
@@ -74,9 +132,98 @@ func newAddCmd() *cobra.Command {
 			return err
 		},
 	}
+	c.Flags().StringVarP(&handle, "handle", "n", "", "handle for the source; derived from the url when omitted")
 	c.Flags().StringVarP(&collection, "collection", "c", "", "MongoDB collection stored with this source (ignored for Redis)")
+	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis); must match the url scheme")
+	c.Flags().BoolVarP(&active, "active", "a", false, "make the new source the active source")
+	c.Flags().BoolVarP(&passwordPrompt, "password", "p", false, "prompt for the url password (or read it from stdin)")
+	c.Flags().BoolVar(&skipVerify, "skip-verify", false, "skip the post-add reachability check")
 	c.Flags().StringVar(&store, "store", "inline", "where the url's password is kept: inline (in the config file) or keyring (the OS keyring)")
 	return c
+}
+
+// suggestHandle derives a source handle from rawURL when -n is omitted, mirroring
+// sq: the MongoDB database name when the URL names one, otherwise the driver name
+// (redis, mongo). The candidate is sanitized to the handle alphabet and made
+// unique against existing sources by appending 2, 3, … on collision.
+func suggestHandle(cf *iqconfig.Config, rawURL string) string {
+	base := sanitizeHandle(handleBase(rawURL))
+	if base == "" {
+		base = "source"
+	}
+	name := base
+	for i := 2; ; i++ {
+		if _, exists := cf.Sources[iqconfig.CleanHandle(name)]; !exists {
+			return name
+		}
+		name = base + strconv.Itoa(i)
+	}
+}
+
+// handleBase picks the raw handle stem for a URL: the first path segment when it
+// is a non-numeric name (a MongoDB database), else the driver name. A multi-host
+// Mongo URI that net/url cannot parse falls back to the driver name too.
+func handleBase(rawURL string) string {
+	if u, err := url.Parse(rawURL); err == nil {
+		seg := strings.TrimLeft(u.Path, "/")
+		if i := strings.IndexByte(seg, '/'); i >= 0 {
+			seg = seg[:i]
+		}
+		if seg != "" && !isAllDigits(seg) {
+			return seg
+		}
+	}
+	return driverName(rawURL)
+}
+
+// isAllDigits reports whether s is non-empty and every rune is a decimal digit,
+// so a Redis "/0" database index is not mistaken for a handle stem.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// sanitizeHandle drops every rune outside the single-segment handle alphabet
+// (letters, digits, '.', '_', '-'), so a derived stem is a valid handle.
+func sanitizeHandle(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// readPassword obtains a password for -p: read a line from stdin when it is piped
+// (so scripts and tests can feed one in), otherwise prompt without echo on the
+// terminal. The prompt and trailing newline go to stderr so redirected stdout
+// stays clean.
+func readPassword(cmd *cobra.Command) (string, error) {
+	if f, ok := cmd.InOrStdin().(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		errOut := cmd.ErrOrStderr()
+		_, _ = fmt.Fprint(errOut, "Password: ")
+		b, err := term.ReadPassword(int(f.Fd()))
+		_, _ = fmt.Fprintln(errOut)
+		if err != nil {
+			return "", fmt.Errorf("read password: %w", err)
+		}
+		return string(b), nil
+	}
+	line, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("read password: %w", err)
+	}
+	return strings.TrimRight(line, "\r\n"), nil
 }
 
 // parseStore validates the --store value, returning whether the password should

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -65,7 +66,7 @@ func TestSupportedScheme(t *testing.T) {
 func TestAddCommand(t *testing.T) {
 	seedConfig(t, newSeed())
 
-	out, err := runCmd(t, newAddCmd(), "books", "mongodb://h/db", "-c", "books")
+	out, err := runCmd(t, newAddCmd(&config{}), "-n", "books", "mongodb://h/db", "-c", "books", "--skip-verify")
 	require.NoError(t, err)
 	require.Contains(t, out, "added source books")
 
@@ -75,8 +76,114 @@ func TestAddCommand(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "books", s.Collection)
 
-	_, err = runCmd(t, newAddCmd(), "bad", "postgres://h/db")
+	_, err = runCmd(t, newAddCmd(&config{}), "postgres://h/db", "--skip-verify")
 	require.ErrorContains(t, err, "unsupported url scheme")
+}
+
+func TestAddSuggestsHandle(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"mongo db name", "mongodb://h:27017/catalog", "catalog"},
+		{"mongo srv db name", "mongodb+srv://u:p@c.example.net/inventory", "inventory"},
+		{"mongo no db falls back to driver", "mongodb://h:27017", "mongo"},
+		{"redis numeric db falls back to driver", "redis://h:6379/0", "redis"},
+		{"redis no db falls back to driver", "rediss://h:6379", "redis"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seedConfig(t, newSeed())
+			out, err := runCmd(t, newAddCmd(&config{}), tt.url, "--skip-verify")
+			require.NoError(t, err)
+			require.Contains(t, out, "added source "+tt.want)
+			cf, err := iqconfig.Load()
+			require.NoError(t, err)
+			_, ok := cf.Sources[tt.want]
+			require.True(t, ok, "expected source %q", tt.want)
+		})
+	}
+}
+
+func TestSuggestHandle(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"mongo db name", "mongodb://h:27017/catalog", "catalog"},
+		{"nested db path takes first segment", "mongodb://h/catalog/extra", "catalog"},
+		{"drops chars outside the handle alphabet", "mongodb://h/foo%20bar!", "foobar"},
+		{"multi-host db name", "mongodb://h1,h2/inventory", "inventory"},
+		{"numeric db 0 falls back to driver", "redis://h:6379/0", "redis"},
+		{"numeric db 9 falls back to driver", "redis://h:6379/9", "redis"},
+		{"no path falls back to driver", "mongodb://h:27017", "mongo"},
+		{"unparseable url falls back to driver", "redis://%zz@h/0", "redis"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, suggestHandle(newSeed(), tt.url))
+		})
+	}
+}
+
+func TestSuggestHandleDisambiguatesAgainstExisting(t *testing.T) {
+	cf := newSeed()
+	require.NoError(t, cf.Add("catalog", "mongodb://h/catalog", ""))
+	require.NoError(t, cf.Add("catalog2", "mongodb://h/catalog", ""))
+	require.Equal(t, "catalog3", suggestHandle(cf, "mongodb://other/catalog"))
+}
+
+func TestAddSuggestedHandleDisambiguates(t *testing.T) {
+	seedConfig(t, newSeed())
+	_, err := runCmd(t, newAddCmd(&config{}), "mongodb://h/shop", "--skip-verify")
+	require.NoError(t, err)
+	out, err := runCmd(t, newAddCmd(&config{}), "mongodb://other/shop", "--skip-verify")
+	require.NoError(t, err)
+	require.Contains(t, out, "added source shop2")
+}
+
+func TestAddActiveMakesActive(t *testing.T) {
+	seedConfig(t, newSeed())
+	_, err := runCmd(t, newAddCmd(&config{}), "-n", "cache", "redis://h:6379/0", "-a", "--skip-verify")
+	require.NoError(t, err)
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	require.Equal(t, "cache", cf.Active)
+}
+
+func TestAddDriverMismatch(t *testing.T) {
+	seedConfig(t, newSeed())
+	_, err := runCmd(t, newAddCmd(&config{}), "-d", "mongo", "redis://h:6379/0", "--skip-verify")
+	require.ErrorContains(t, err, "does not match url scheme")
+
+	_, err = runCmd(t, newAddCmd(&config{}), "-d", "cassandra", "redis://h:6379/0", "--skip-verify")
+	require.ErrorContains(t, err, "unknown driver")
+}
+
+func TestAddPasswordPromptFromStdin(t *testing.T) {
+	tests := []struct {
+		name  string
+		stdin string
+	}{
+		{"trailing newline stripped", "s3cret\n"},
+		{"no trailing newline (EOF)", "s3cret"},
+		{"trailing crlf stripped", "s3cret\r\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seedConfig(t, newSeed())
+			c := newAddCmd(&config{})
+			c.SetIn(strings.NewReader(tt.stdin))
+			out, err := runCmd(t, c, "-n", "cache", "redis://u@h:6379/0", "-p", "--skip-verify")
+			require.NoError(t, err)
+			require.Contains(t, out, "added source cache")
+			cf, err := iqconfig.Load()
+			require.NoError(t, err)
+			require.Equal(t, "redis://u:s3cret@h:6379/0", cf.Sources["cache"].URL)
+		})
+	}
 }
 
 func TestLsMarksActiveAndRedacts(t *testing.T) {

@@ -24,7 +24,7 @@ func resolveSource(cmd *cobra.Command, cfg *config) error {
 		name = cf.Active
 	}
 	if name == "" {
-		return errors.New("no source selected; add one with `iq add <name> <url>` then select it with `iq src <name>`")
+		return errors.New("no source selected; add one with `iq add <url>` then select it with `iq src <name>`")
 	}
 	src, full, ok := cf.Resolve(name)
 	if !ok {
@@ -64,7 +64,7 @@ func resolveInspectSource(cmd *cobra.Command, cfg *config, arg string) error {
 		name = cf.Active
 	}
 	if name == "" {
-		return errors.New("no source selected; add one with `iq add <name> <url>` then select it with `iq src <name>`")
+		return errors.New("no source selected; add one with `iq add <url>` then select it with `iq src <name>`")
 	}
 	src, full, ok := cf.Resolve(name)
 	if !ok {
