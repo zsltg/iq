@@ -196,6 +196,10 @@ func TestDetectFormat(t *testing.T) {
 		{"mongoexport array", []byte(`  [{"_id":"a"}]`), FormatMongoexport},
 		{"bson binary", mustBSON(t, bson.M{"_id": "a"}), FormatBSON},
 		{"bson empty doc (min length)", mustBSON(t, bson.M{}), FormatBSON},
+		// A header whose length field is exactly the 16 MiB cap is still BSON-shaped;
+		// detection only peeks the header, so no full-size body is needed. This pins
+		// the upper `size <= maxDoc` boundary.
+		{"bson at max-length boundary", []byte{0x00, 0x00, 0x00, 0x01, 0x00}, FormatBSON},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
