@@ -87,7 +87,7 @@ func TestLsMarksActiveAndRedacts(t *testing.T) {
 	require.NoError(t, c.SetGroup("prod"))
 	seedConfig(t, c)
 
-	out, err := runCmd(t, newLsCmd())
+	out, err := runCmd(t, newLsCmd(&config{}))
 	require.NoError(t, err)
 	require.Contains(t, out, "active group: prod")
 	require.Contains(t, out, "* cache")

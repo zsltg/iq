@@ -34,6 +34,8 @@ func resolveSource(cmd *cobra.Command, cfg *config) error {
 		return err
 	}
 	cfg.url = u
+	cfg.source = src
+	cfg.handle = full
 	if !cmd.Flags().Changed("collection") {
 		cfg.collection = src.Collection
 	}

@@ -187,14 +187,26 @@ func TestLsRevealKeyringSource(t *testing.T) {
 	require.NoError(t, fk.Set("sec", "secret"))
 
 	// Default listing shows the stored (password-less) URL, not the secret.
-	plain, err := runCmd(t, newLsCmd())
+	plain, err := runCmd(t, newLsCmd(&config{}))
 	require.NoError(t, err)
 	require.NotContains(t, plain, "secret")
 
-	// --reveal splices the keyring password back into the URL.
-	revealed, err := runCmd(t, newLsCmd(), "--reveal")
+	// --reveal alone un-redacts inline passwords only; a keyring password is not
+	// resolved, so the secret still never appears.
+	revealed, err := runCmd(t, newLsCmd(&config{}), "--reveal")
 	require.NoError(t, err)
-	require.Contains(t, revealed, "redis://u:secret@h:6379/0")
+	require.NotContains(t, revealed, "secret")
+
+	// --expand resolves the keyring password but, without --reveal, redacts it.
+	expanded, err := runCmd(t, newLsCmd(&config{}), "--expand")
+	require.NoError(t, err)
+	require.NotContains(t, expanded, "secret")
+	require.Contains(t, expanded, "redis://u:xxxxx@h:6379/0")
+
+	// --reveal --expand resolves the keyring password and prints it verbatim.
+	both, err := runCmd(t, newLsCmd(&config{}), "--reveal", "--expand")
+	require.NoError(t, err)
+	require.Contains(t, both, "redis://u:secret@h:6379/0")
 }
 
 func TestRmDeletesKeyringEntry(t *testing.T) {

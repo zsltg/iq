@@ -9,7 +9,8 @@ import (
 )
 
 // sourceRow is the JSON shape of one source in `iq ls --json`. Location is
-// redacted unless --reveal is set, so a stored password never leaks by default.
+// redacted unless --reveal (inline passwords) or --expand (keyring passwords) is
+// set, so a stored password never leaks by default.
 type sourceRow struct {
 	Handle     string `json:"handle"`
 	Driver     string `json:"driver"`
@@ -26,9 +27,9 @@ type groupRow struct {
 }
 
 // listSources renders the sources, optionally limited to a group, marking the
-// active one. reveal prints unredacted URLs; verbose adds a driver column; json
-// emits machine-readable output.
-func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, jsonOut, reveal bool) error {
+// active one. reveal un-redacts inline passwords and expand resolves keyring
+// passwords; verbose adds a driver column; json emits machine-readable output.
+func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, reveal, jsonOut, expand bool) error {
 	list := cf.List()
 	if filter != "" {
 		kept := list[:0:0]
@@ -46,7 +47,7 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, jso
 			rows = append(rows, sourceRow{
 				Handle:     h.Name,
 				Driver:     schemeOf(h.Source.URL),
-				Location:   sourceLocation(h, reveal),
+				Location:   displayLocation(h.Source, h.Name, reveal, expand),
 				Collection: h.Source.Collection,
 				Keyring:    h.Source.Keyring,
 				Active:     h.Name == cf.Active,
@@ -84,9 +85,9 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, jso
 			name.c = pal.active
 		}
 		if verbose {
-			rows = append(rows, []tableCell{name, cell(schemeOf(h.Source.URL)), cell(sourceLocation(h, reveal)), cell(coll + keyringTag(h.Source.Keyring))})
+			rows = append(rows, []tableCell{name, cell(schemeOf(h.Source.URL)), cell(displayLocation(h.Source, h.Name, reveal, expand)), cell(coll + keyringTag(h.Source.Keyring))})
 		} else {
-			rows = append(rows, []tableCell{name, cell(sourceLocation(h, reveal)), cell(coll)})
+			rows = append(rows, []tableCell{name, cell(displayLocation(h.Source, h.Name, reveal, expand)), cell(coll)})
 		}
 	}
 	return renderTable(out, rows)
@@ -127,20 +128,23 @@ func listGroups(out io.Writer, cf *iqconfig.Config, verbose, jsonOut bool) error
 	return renderTable(out, rows)
 }
 
-// sourceLocation returns a source's URL for display: redacted by default so a
-// stored password never prints. When reveal is set it returns the full URL, and
-// for a keyring-backed source it splices the stored password back in; if that
-// lookup fails it falls back to the stored (password-less) URL rather than error.
-func sourceLocation(h iqconfig.Handle, reveal bool) string {
-	if !reveal {
-		return redactURL(h.Source.URL)
-	}
-	if h.Source.Keyring {
-		if u, err := effectiveURL(h.Source, h.Name); err == nil {
-			return u
+// displayLocation returns a source's URL for display, redacted by default so a
+// stored password never prints. expand resolves a keyring-backed password and
+// inlines it (on lookup failure it keeps the stored password-less URL rather than
+// error); reveal then prints the result verbatim, otherwise any password is
+// redacted to xxxxx. reveal thus un-redacts inline passwords, expand resolves
+// keyring ones, mirroring sq's --reveal/--expand split.
+func displayLocation(src iqconfig.Source, handle string, reveal, expand bool) string {
+	raw := src.URL
+	if expand && src.Keyring {
+		if u, err := effectiveURL(src, handle); err == nil {
+			raw = u
 		}
 	}
-	return h.Source.URL
+	if !reveal {
+		return redactURL(raw)
+	}
+	return raw
 }
 
 // keyringTag returns a trailing " [keyring]" marker for a keyring-backed source,

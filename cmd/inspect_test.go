@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
 func TestParseRedisInfo(t *testing.T) {
@@ -51,6 +53,41 @@ func TestInspectMongoList(t *testing.T) {
 	require.NoError(t, err)
 	for _, sub := range mongoInspectCmds {
 		require.Contains(t, buf.String(), sub)
+	}
+}
+
+func TestInspectHeader(t *testing.T) {
+	fk := useFakeKeyring(t)
+	require.NoError(t, fk.Set("sec", "secret"))
+
+	inline := iqconfig.Source{URL: "redis://u:secret@h:6379/0"}
+	keyring := iqconfig.Source{URL: "redis://u@h:6379/0", Keyring: true}
+
+	tests := []struct {
+		name         string
+		source       iqconfig.Source
+		handle       string
+		reveal       bool
+		expand       bool
+		wantContains string
+		wantAbsent   string
+	}{
+		{"inline redacted by default", inline, "cache", false, false, "redis://u:xxxxx@h:6379/0", "secret"},
+		{"inline reveal un-redacts", inline, "cache", true, false, "redis://u:secret@h:6379/0", "xxxxx"},
+		{"keyring hidden by default", keyring, "sec", false, false, "redis://u@h:6379/0", "secret"},
+		{"keyring reveal alone stays hidden", keyring, "sec", true, false, "redis://u@h:6379/0", "secret"},
+		{"keyring expand alone redacts", keyring, "sec", false, true, "redis://u:xxxxx@h:6379/0", "secret"},
+		{"keyring reveal and expand", keyring, "sec", true, true, "redis://u:secret@h:6379/0", "xxxxx"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			cfg := &config{source: tt.source, handle: tt.handle, reveal: tt.reveal, expand: tt.expand}
+			require.NoError(t, inspectHeader(&buf, cfg))
+			require.Contains(t, buf.String(), "redis  ") // driver from the source scheme
+			require.Contains(t, buf.String(), tt.wantContains)
+			require.NotContains(t, buf.String(), tt.wantAbsent)
+		})
 	}
 }
 

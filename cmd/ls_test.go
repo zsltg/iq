@@ -20,7 +20,7 @@ func seedLs(t *testing.T) {
 
 func TestLsVerbose(t *testing.T) {
 	seedLs(t)
-	out, err := runCmd(t, newLsCmd(), "-v")
+	out, err := runCmd(t, newLsCmd(&config{}), "-v")
 	require.NoError(t, err)
 	require.Contains(t, out, "redis")   // driver column
 	require.Contains(t, out, "mongodb") // driver column
@@ -30,7 +30,7 @@ func TestLsVerbose(t *testing.T) {
 
 func TestLsGroups(t *testing.T) {
 	seedLs(t)
-	out, err := runCmd(t, newLsCmd(), "-g")
+	out, err := runCmd(t, newLsCmd(&config{}), "-g")
 	require.NoError(t, err)
 	require.Contains(t, out, "prod")
 	require.NotContains(t, out, "cache") // groups, not sources
@@ -38,7 +38,7 @@ func TestLsGroups(t *testing.T) {
 
 func TestLsGroupFilter(t *testing.T) {
 	seedLs(t)
-	out, err := runCmd(t, newLsCmd(), "prod")
+	out, err := runCmd(t, newLsCmd(&config{}), "prod")
 	require.NoError(t, err)
 	require.Contains(t, out, "prod/books")
 	require.Contains(t, out, "prod/cache")
@@ -47,14 +47,14 @@ func TestLsGroupFilter(t *testing.T) {
 
 func TestLsGroupFilterEmpty(t *testing.T) {
 	seedLs(t)
-	out, err := runCmd(t, newLsCmd(), "dev")
+	out, err := runCmd(t, newLsCmd(&config{}), "dev")
 	require.NoError(t, err)
 	require.Contains(t, out, "no sources in group dev")
 }
 
 func TestLsJSON(t *testing.T) {
 	seedLs(t)
-	out, err := runCmd(t, newLsCmd(), "--json")
+	out, err := runCmd(t, newLsCmd(&config{}), "--json")
 	require.NoError(t, err)
 
 	var rows []sourceRow
@@ -75,15 +75,22 @@ func TestLsJSON(t *testing.T) {
 func TestLsReveal(t *testing.T) {
 	seedLs(t)
 
-	redacted, err := runCmd(t, newLsCmd())
+	redacted, err := runCmd(t, newLsCmd(&config{}))
 	require.NoError(t, err)
 	require.NotContains(t, redacted, "secret")
 	require.Contains(t, redacted, "xxxxx")
 
-	revealed, err := runCmd(t, newLsCmd(), "--reveal")
+	revealed, err := runCmd(t, newLsCmd(&config{}), "--reveal")
 	require.NoError(t, err)
 	require.Contains(t, revealed, "redis://u:secret@h:6379/0")
 	require.NotContains(t, revealed, "xxxxx")
+
+	// --expand alone is a no-op for an inline password: it resolves only
+	// keyring-backed secrets, so the inline one stays redacted.
+	expanded, err := runCmd(t, newLsCmd(&config{}), "--expand")
+	require.NoError(t, err)
+	require.NotContains(t, expanded, "secret")
+	require.Contains(t, expanded, "xxxxx")
 }
 
 func TestLsGroupsMarksActiveAndListsAll(t *testing.T) {
@@ -93,7 +100,7 @@ func TestLsGroupsMarksActiveAndListsAll(t *testing.T) {
 	require.NoError(t, c.SetGroup("prod"))
 	seedConfig(t, c)
 
-	out, err := runCmd(t, newLsCmd(), "-g")
+	out, err := runCmd(t, newLsCmd(&config{}), "-g")
 	require.NoError(t, err)
 	// Both groups are listed (a broken loop that stopped early would drop one).
 	require.Contains(t, out, "prod")
@@ -105,7 +112,7 @@ func TestLsGroupsMarksActiveAndListsAll(t *testing.T) {
 
 func TestLsGroupsJSON(t *testing.T) {
 	seedLs(t)
-	out, err := runCmd(t, newLsCmd(), "-g", "--json")
+	out, err := runCmd(t, newLsCmd(&config{}), "-g", "--json")
 	require.NoError(t, err)
 
 	var rows []groupRow

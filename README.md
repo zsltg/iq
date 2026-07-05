@@ -68,8 +68,9 @@ iq --src books '.["2"]'      # run this one query against "books"
   config file).
 - `iq ls [group]` — list saved sources; the active one is marked `*`. Passwords in URLs are
   redacted. An optional `group` limits the listing to that group. `-v` adds each source's driver;
-  `-g` lists groups instead of sources; `--json` emits machine-readable output; `--reveal` prints
-  unredacted URLs, splicing a keyring-backed source's password back in.
+  `-g` lists groups instead of sources; `--json` emits machine-readable output. `--reveal` prints
+  a password stored inline in the config verbatim, and `--expand` resolves a keyring-backed
+  source's stored password and inlines it — combine both to print a keyring password verbatim.
 - `iq src [<name>]` — show the active source, or set it.
 - `iq rm <name>...` — remove one or more sources, or whole groups (a group name removes every
   source under it). Atomic: if any name is unknown, nothing is removed.
@@ -84,7 +85,9 @@ iq --src books '.["2"]'      # run this one query against "books"
   runs diagnostic commands (`dbStats`, `serverStatus`, `listCollections`, `collStats`,
   `buildInfo`, `hostInfo`); no arguments runs them all, positional arguments narrow. `--list`
   prints the subcommands/sections available for the active source (Mongo's fixed set; Redis's
-  live INFO sections). `--json` for machine-readable output; bounded by `--timeout`.
+  live INFO sections). `--json` for machine-readable output; bounded by `--timeout`. The location
+  header is redacted like `iq ls`: `--reveal` un-redacts an inline password, `--expand` resolves a
+  keyring-backed one.
 - `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
   added / removed / changed, keyed by document `_id` (MongoDB) or key (Redis); it reads both
   keyspaces fully into memory, the deliberate cost of needing both key sets at once, and is allowed

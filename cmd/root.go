@@ -13,13 +13,19 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
-// config holds the per-invocation settings. url is not a flag: it is resolved
-// from the selected source (--src or the active source) before the store opens.
+// config holds the per-invocation settings. url, source, and handle are not
+// flags: they are resolved from the selected source (--src or the active source)
+// before the store opens. source and handle carry the stored source so a command
+// can render its location honouring --reveal/--expand.
 type config struct {
 	src        string
 	url        string
+	source     iqconfig.Source
+	handle     string
 	collection string
 	timeout    time.Duration
 	unbounded  bool
@@ -31,6 +37,8 @@ type config struct {
 	monochrome bool
 	forceColor bool
 	noProgress bool
+	reveal     bool
+	expand     bool
 }
 
 // newRootCmd builds the root command and its subcommands. The default action is
@@ -114,7 +122,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(
 		newExecCmd(cfg),
 		newAddCmd(),
-		newLsCmd(),
+		newLsCmd(cfg),
 		newRmCmd(),
 		newMvCmd(),
 		newSrcCmd(),

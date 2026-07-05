@@ -34,7 +34,9 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"(`iq inspect memory server`), and none runs the full INFO. Common sections:\n" +
 		"  server  clients  memory  persistence  stats  replication  cpu  keyspace\n\n" +
 		"Select the source with --src or the active source. Use --json for machine-readable\n" +
-		"output, or --list to print the subcommands/sections available for the active source."
+		"output, or --list to print the subcommands/sections available for the active source.\n" +
+		"The location header is redacted by default: --reveal prints an inline password\n" +
+		"verbatim, --expand resolves a keyring-backed one."
 	c := &cobra.Command{
 		Use:   "inspect [section...]",
 		Short: "Show a source's native server/database introspection",
@@ -61,6 +63,8 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	}
 	c.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
 	c.Flags().BoolVar(&list, "list", false, "list the subcommands/sections available for the active source")
+	c.Flags().BoolVar(&cfg.reveal, "reveal", false, "print an inline-stored password verbatim in the location header instead of redacting it")
+	c.Flags().BoolVar(&cfg.expand, "expand", false, "resolve a keyring-backed password and inline it in the location header")
 	return c
 }
 
@@ -210,9 +214,12 @@ func writeInspectList(out io.Writer, names []string, jsonOut bool) error {
 	return nil
 }
 
-// inspectHeader writes a one-line source header: driver and redacted location.
+// inspectHeader writes a one-line source header: driver and location. The
+// location is redacted unless --reveal (inline password) or --expand (keyring
+// password) un-redacts it, rendered from the stored source like `iq ls`.
 func inspectHeader(out io.Writer, cfg *config) error {
-	header := fmt.Sprintf("%s  %s", schemeOf(cfg.url), redactURL(cfg.url))
+	loc := displayLocation(cfg.source, cfg.handle, cfg.reveal, cfg.expand)
+	header := fmt.Sprintf("%s  %s", schemeOf(cfg.source.URL), loc)
 	_, err := fmt.Fprintf(out, "%s\n\n", pal.header.Sprint(header))
 	return err
 }
