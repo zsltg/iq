@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.8.0 - 2026-07-05
+### Features
+- **cmd:** add diff for comparing two sources (a3d4c49)
+
+### Documentation
+- **readme:** add collapsed Redis section, fold MongoDB section (ca6da68)
+- **readme:** add core-pipeline mermaid diagram and sync doctrine (c380f3c)
+
+
 ## v0.7.0 - 2026-07-05
 ### Features
 - **cmd:** add --compact output flag (ec67e92)
