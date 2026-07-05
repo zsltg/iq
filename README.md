@@ -9,6 +9,10 @@ fetch, so the store only ever reads a bounded set of keys — never a full keysp
 you ask for one explicitly. Fetched values are normalized to JSON and the filter then runs
 entirely client-side, so its semantics are identical for every backend.
 
+`iq` is inspired by [sq](https://github.com/neilotoole/sq): much of its command surface — the
+`<source>.<collection>` addressing along with many subcommands and flags — deliberately follows
+sq's so the tool feels familiar.
+
 ## Requirements
 
 - Go 1.25+

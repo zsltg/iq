@@ -59,15 +59,15 @@ Always:
 - Conventional Commits: `<type>(<scope>): <description>`, lowercase imperative; types feat, fix, docs, style, refactor, perf, test, build, ci, chore; agent-authored commits end with a `Co-Authored-By:` trailer.
 - Pre-merge: scoped tests, `go vet`, `golangci-lint run`, gofumpt and goimports clean, `scripts/mutation-gate.sh` green; 100% pass.
 ## Guidelines
-Distilled book files live in `.agents/`, referenced below by name.
+Distilled book files live in `.agents/books/`, referenced below by name; adapted from ciembor/agent-rules-books (MIT), see `.agents/books/LICENSE`.
 
 Generic doctrine, always loaded:
-- [clean-code.mini](.agents/clean-code.mini.md): naming, functions, types, errors, test hygiene.
-- [a-philosophy-of-software-design.mini](.agents/a-philosophy-of-software-design.mini.md): module shape, deep modules, complexity budget.
-- [clean-architecture.mini](.agents/clean-architecture.mini.md): dependency direction, ports and adapters, driver-agnostic core.
-- [the-pragmatic-programmer.mini](.agents/the-pragmatic-programmer.mini.md): one source of truth, orthogonality, reversible choices, tracer bullets, automation.
+- [clean-code.mini](.agents/books/clean-code.mini.md): naming, functions, types, errors, test hygiene.
+- [a-philosophy-of-software-design.mini](.agents/books/a-philosophy-of-software-design.mini.md): module shape, deep modules, complexity budget.
+- [clean-architecture.mini](.agents/books/clean-architecture.mini.md): dependency direction, ports and adapters, driver-agnostic core.
+- [the-pragmatic-programmer.mini](.agents/books/the-pragmatic-programmer.mini.md): one source of truth, orthogonality, reversible choices, tracer bullets, automation.
 
 Specific doctrine, read on demand:
-- [designing-data-intensive-applications.mini](.agents/designing-data-intensive-applications.mini.md): writing the query, data-model or connection layer; NoSQL consistency, staleness, partitioning, schema evolution, idempotency.
-- [release-it.mini](.agents/release-it.mini.md): writing database or network calls; timeouts, bounded retries, result-set limits, validating responses, failing fast.
-- [refactoring.mini](.agents/refactoring.mini.md): restructuring existing code without changing behaviour.
+- [designing-data-intensive-applications.mini](.agents/books/designing-data-intensive-applications.mini.md): writing the query, data-model or connection layer; NoSQL consistency, staleness, partitioning, schema evolution, idempotency.
+- [release-it.mini](.agents/books/release-it.mini.md): writing database or network calls; timeouts, bounded retries, result-set limits, validating responses, failing fast.
+- [refactoring.mini](.agents/books/refactoring.mini.md): restructuring existing code without changing behaviour.
