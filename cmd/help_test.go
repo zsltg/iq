@@ -167,3 +167,84 @@ func isSectionHeader(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	return strings.HasSuffix(trimmed, ":") && !strings.Contains(trimmed, " ")
 }
+
+// TestRootHelpGroupsCommands pins the grouped "Available Commands" rendering:
+// every group title appears, in the fixed order, and each title precedes its
+// member commands. Cobra renders group titles unindented (unlike the "  <Title>:"
+// flag section headers above), so this uses sectionBetween instead of sectionAfter.
+func TestRootHelpGroupsCommands(t *testing.T) {
+	root, _ := newRootCmd()
+
+	out, err := runCmd(t, root, "--help")
+	require.NoError(t, err)
+
+	wantOrder := []string{
+		"Sources:",
+		"Query & Data:",
+		"Configuration:",
+		"Info:",
+		"Additional Commands:",
+	}
+	prev := -1
+	for _, h := range wantOrder {
+		at := strings.Index(out, h)
+		require.NotEqualf(t, -1, at, "header %q missing from help", h)
+		require.Greaterf(t, at, prev, "header %q out of order", h)
+		prev = at
+	}
+
+	cases := []struct{ header, next, cmd string }{
+		{"Sources:", "Query & Data:", "add"},
+		{"Sources:", "Query & Data:", "ping"},
+		{"Query & Data:", "Configuration:", "exec"},
+		{"Query & Data:", "Configuration:", "diff"},
+		{"Configuration:", "Info:", "config"},
+		{"Info:", "Additional Commands:", "driver"},
+		{"Info:", "Additional Commands:", "version"},
+	}
+	for _, c := range cases {
+		t.Run(c.cmd, func(t *testing.T) {
+			section := sectionBetween(out, c.header, c.next)
+			require.Containsf(t, section, c.cmd, "%s not under %s", c.cmd, c.header)
+		})
+	}
+
+	// help/completion are Cobra's own, deliberately ungrouped.
+	additional := out[strings.Index(out, "Additional Commands:"):]
+	require.Contains(t, additional, "completion")
+	require.Contains(t, additional, "help")
+}
+
+// TestRootHelpEveryCommandGrouped is the coverage guard: every root subcommand
+// (bar Cobra's auto-added help/completion) carries a GroupID naming a real
+// group, so a future command added to root.AddCommand without a group fails
+// here instead of silently landing in "Additional Commands:".
+func TestRootHelpEveryCommandGrouped(t *testing.T) {
+	root, _ := newRootCmd()
+
+	realGroups := map[string]bool{
+		cmdGroupSources: true, cmdGroupQuery: true, cmdGroupConfig: true, cmdGroupInfo: true,
+	}
+	for _, sub := range root.Commands() {
+		if sub.Name() == "help" || sub.Name() == "completion" {
+			continue
+		}
+		require.NotEmptyf(t, sub.GroupID, "command %q has no group", sub.Name())
+		require.Truef(t, realGroups[sub.GroupID], "command %q in unknown group %q", sub.Name(), sub.GroupID)
+	}
+}
+
+// sectionBetween returns the slice of s between the end of from and the start
+// of to, i.e. the content of one command group's section.
+func sectionBetween(s, from, to string) string {
+	start := strings.Index(s, from)
+	if start == -1 {
+		return ""
+	}
+	start += len(from)
+	end := strings.Index(s[start:], to)
+	if end == -1 {
+		return s[start:]
+	}
+	return s[start : start+end]
+}

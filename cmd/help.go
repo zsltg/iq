@@ -166,3 +166,61 @@ func installGroupedHelp(root *cobra.Command) {
 	tmpl = strings.ReplaceAll(tmpl, ".InheritedFlags.FlagUsages", "groupedFlags .InheritedFlags")
 	root.SetUsageTemplate(tmpl)
 }
+
+// Command group IDs for the root's "Available Commands" section in --help.
+// Cobra (v1.4+) renders these as labeled sections natively once a command's
+// GroupID is set, so unlike the flag grouping above this needs no template
+// surgery: defaultUsageTemplate already branches on len(.Groups).
+const (
+	cmdGroupSources = "sources"
+	cmdGroupQuery   = "query"
+	cmdGroupConfig  = "config"
+	cmdGroupInfo    = "info"
+)
+
+// rootCommandGroupOrder fixes both the set of groups and their render order in
+// --help (Cobra renders groups in root.Groups() order, i.e. AddGroup call order).
+var rootCommandGroupOrder = []*cobra.Group{
+	{ID: cmdGroupSources, Title: "Sources:"},
+	{ID: cmdGroupQuery, Title: "Query & Data:"},
+	{ID: cmdGroupConfig, Title: "Configuration:"},
+	{ID: cmdGroupInfo, Title: "Info:"},
+}
+
+// rootCommandGroups maps each root subcommand's name to its help group. Every
+// command added in newRootCmd's root.AddCommand call appears here exactly once;
+// a command left out would silently land in Cobra's ungrouped "Additional
+// Commands:" section, which the coverage-guard test rejects. Cobra's own
+// auto-added help/completion commands are deliberately absent and fall through
+// to "Additional Commands:".
+var rootCommandGroups = map[string]string{
+	"add":   cmdGroupSources,
+	"ls":    cmdGroupSources,
+	"rm":    cmdGroupSources,
+	"mv":    cmdGroupSources,
+	"src":   cmdGroupSources,
+	"group": cmdGroupSources,
+	"ping":  cmdGroupSources,
+
+	"exec":    cmdGroupQuery,
+	"data":    cmdGroupQuery,
+	"diff":    cmdGroupQuery,
+	"inspect": cmdGroupQuery,
+
+	"config": cmdGroupConfig,
+
+	"driver":  cmdGroupInfo,
+	"version": cmdGroupInfo,
+}
+
+// installCommandGroups registers the root's command groups and assigns each
+// already-added subcommand its GroupID, so --help renders "Available Commands"
+// as labeled sections instead of one flat alphabetical list.
+func installCommandGroups(root *cobra.Command) {
+	root.AddGroup(rootCommandGroupOrder...)
+	for _, sub := range root.Commands() {
+		if id, ok := rootCommandGroups[sub.Name()]; ok {
+			sub.GroupID = id
+		}
+	}
+}

@@ -263,6 +263,9 @@ func newRootCmd() (*cobra.Command, *config) {
 	// Diagnostics) instead of one flat list. Presentation only: parsing and the
 	// mutual-exclusivity constraint above are untouched.
 	installGroupedHelp(root)
+	// Render --help's "Available Commands" in labeled sections (Sources/Query &
+	// Data/Configuration/Info) instead of one flat alphabetical list.
+	installCommandGroups(root)
 	return root, cfg
 }
 
