@@ -180,6 +180,26 @@ Use `--unbounded` when you need sorted, exactly-once output.
 The flag names the cost property (loading everything), not any one store's mechanism, so it will
 mean the same thing for future backends (a Cassandra full scan, a CouchDB `_all_docs`).
 
+## Redis
+
+<details>
+<summary>Redis backend — value encoding and raw commands</summary>
+
+Register a `redis://` source and the same jq interface works against the Redis keyspace, where **a
+key maps directly to a Redis key and the value is whatever that key holds**. The database index
+comes from the URL path (`/0`); every value is a string, so numeric comparisons need `tonumber`:
+
+```bash
+iq add cache redis://localhost:6379/0                # register once, then:
+iq --src cache '.greeting'                           # fetch key "greeting"
+iq --src cache '.[] | select((.year|tonumber) > 2015) | .title'  # streamed
+iq --src cache --unbounded 'keys'                    # every key
+```
+
+The `--unbounded` / streaming rules match every backend (`.[]`-rooted filters stream in constant
+memory; `keys`/`.`/`map` materialize and require the flag). `--compile` is a no-op on Redis, which
+has no server-side predicate pushdown; the full jq always runs client-side.
+
 ### Value encoding
 
 Each fetched Redis value is normalized to JSON by type:
@@ -216,7 +236,12 @@ aggregate replies match redis-cli's classic flat output. Status replies such as 
 appear quoted, a limitation of the underlying client, which does not distinguish them from bulk
 strings.
 
+</details>
+
 ## MongoDB
+
+<details>
+<summary>MongoDB backend — collection keyspace, <code>--compile</code> pushdown, and connection</summary>
 
 The backend is chosen by the source's URL scheme. Register a `mongodb://` source and the same jq
 interface works against a collection, where **the collection is the keyspace: a document's `_id`
@@ -297,6 +322,8 @@ The database is a saved [source](#sources) — a connection URL whose scheme sel
 With no source selected the command errors — there is no ambient URL or environment fallback.
 `--collection` / `-c` overrides the source's MongoDB collection for one run (ignored for Redis);
 `--timeout` (default `5s`) bounds each query.
+
+</details>
 
 ## Cross-source queries
 
