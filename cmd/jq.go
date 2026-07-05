@@ -26,6 +26,29 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		return asSyntaxError(filter, err)
 	}
 
+	// A single-source filter resolves its source up front (no connection), so both
+	// the query plan and the execution below name and dispatch the same driver.
+	if !cross {
+		if err := resolveSource(cmd, cfg); err != nil {
+			return err
+		}
+	}
+
+	// --dry-run prints the plan to stdout and stops before any connection; --verbose
+	// prints it to stderr and turns on the live command trace for the run below.
+	if cfg.dryRun || cfg.verbose {
+		plan, err := buildJQPlan(cfg, filter, cross)
+		if err != nil {
+			return err
+		}
+		if cfg.dryRun {
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), plan)
+			return nil
+		}
+		_, _ = fmt.Fprint(cmd.ErrOrStderr(), plan)
+		cfg.trace = cmd.ErrOrStderr()
+	}
+
 	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 	defer cancel()
 
@@ -35,8 +58,9 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	}
 	// The scan-progress spinner renders on stderr; wrapping stdout lets it hold
 	// its repaint while rows stream, so the two never collide. A nil meter (progress
-	// off, or stderr not a terminal) makes every call below a no-op.
-	meter := newProgressMeter(cmd.ErrOrStderr(), cfg.noProgress)
+	// off, or stderr not a terminal) makes every call below a no-op. --verbose
+	// disables it: the command trace shares stderr and is the progress signal.
+	meter := newProgressMeter(cmd.ErrOrStderr(), cfg.noProgress || cfg.verbose)
 	defer meter.Stop()
 	f := newFormatter(fm, meter.wrapStdout(cmd.OutOrStdout()), cfg.compact)
 	// One OnPage closure drives both the spinner and the scanned-count log point,
@@ -55,16 +79,13 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		if err != nil {
 			return err
 		}
-		opener := newSourceOpener(cf)
+		opener := newSourceOpener(cf, cfg.trace)
 		defer opener.closeAll()
 		runErr := query.NewCrossEngine(opener).Run(ctx, filter, opts, f.emit)
 		cfg.logQueryComplete(scanned, start)
 		return finish(f, scanHint(asSyntaxError(filter, runErr)))
 	}
 
-	if err := resolveSource(cmd, cfg); err != nil {
-		return err
-	}
 	store, err := openStore(ctx, cfg)
 	if err != nil {
 		return err

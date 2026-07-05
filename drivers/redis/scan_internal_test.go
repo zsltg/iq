@@ -28,7 +28,7 @@ func TestScanBatchesBoundsPageSize(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	store, err := Open(ctx, url)
+	store, err := Open(ctx, url, nil)
 	require.NoError(t, err)
 	defer func() { _ = store.Close() }()
 

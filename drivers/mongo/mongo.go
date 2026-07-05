@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 
@@ -36,13 +37,19 @@ type Store struct {
 // Open connects to the MongoDB server named by a mongodb:// URI and verifies the
 // connection with a ping so a bad URI or unreachable server fails fast. The
 // database is taken from the URI path; collection is the jq keyspace (may be
-// empty for raw-only use).
-func Open(ctx context.Context, uri, collection string) (*Store, error) {
+// empty for raw-only use). When trace is non-nil, each query command the driver
+// issues is logged to it (the CLI's --verbose trace); handshake and auth commands
+// are omitted, so no credential is written.
+func Open(ctx context.Context, uri, collection string, trace io.Writer) (*Store, error) {
 	dbName, err := databaseFromURI(uri)
 	if err != nil {
 		return nil, err
 	}
-	client, err := mongo.Connect(options.Client().ApplyURI(uri))
+	clientOpts := options.Client().ApplyURI(uri)
+	if trace != nil {
+		clientOpts.SetMonitor(newCommandMonitor(trace))
+	}
+	client, err := mongo.Connect(clientOpts)
 	if err != nil {
 		return nil, fmt.Errorf("connect mongodb: %w", err)
 	}

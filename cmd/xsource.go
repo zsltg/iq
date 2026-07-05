@@ -47,6 +47,21 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 		return err
 	}
 
+	// --dry-run prints the plan to stdout and stops before any connection; --verbose
+	// prints it to stderr and turns on the live command trace for the run below.
+	if cfg.dryRun || cfg.verbose {
+		plan, err := buildCombinePlan(cfg, stages)
+		if err != nil {
+			return err
+		}
+		if cfg.dryRun {
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), plan)
+			return nil
+		}
+		_, _ = fmt.Fprint(cmd.ErrOrStderr(), plan)
+		cfg.trace = cmd.ErrOrStderr()
+	}
+
 	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 	defer cancel()
 
@@ -60,7 +75,7 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 		if err != nil {
 			return fmt.Errorf("--from %q: %w", st.handle, err)
 		}
-		vals, err := collectSource(ctx, &config{url: u, collection: st.source.Collection}, st.filter, opts)
+		vals, err := collectSource(ctx, &config{url: u, collection: st.source.Collection, trace: cfg.trace}, st.filter, opts)
 		if err != nil {
 			if errors.Is(err, query.ErrScanNotAllowed) {
 				return fmt.Errorf("--from %q: %w; add --unbounded or use a .[]-rooted filter", st.handle, err)

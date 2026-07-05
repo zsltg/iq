@@ -43,7 +43,7 @@ func TestOpenRejectsBadURL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, err := iqredis.Open(ctx, "://not-a-url")
+	_, err := iqredis.Open(ctx, "://not-a-url", nil)
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "parse redis url")
@@ -54,7 +54,7 @@ func TestOpenFailsFastWhenUnreachable(t *testing.T) {
 	defer cancel()
 
 	// Port 1 has no listener, so the PING must fail fast.
-	_, err := iqredis.Open(ctx, "redis://localhost:1")
+	_, err := iqredis.Open(ctx, "redis://localhost:1", nil)
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "connect redis")
@@ -121,7 +121,7 @@ func openIntegration(t *testing.T) *iqredis.Store {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	store, err := iqredis.Open(ctx, testURL())
+	store, err := iqredis.Open(ctx, testURL(), nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	return store

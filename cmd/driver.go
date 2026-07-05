@@ -9,6 +9,9 @@ import (
 
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqredis "github.com/zsltg/iq/drivers/redis"
+	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/query"
+	"github.com/zsltg/iq/internal/selector"
 )
 
 // driver describes one backend iq can talk to: a stable name, a human
@@ -24,6 +27,10 @@ type driver struct {
 	schemes []string
 	doc     string
 	open    func(ctx context.Context, cfg *config) (store, error)
+	// explainPlan describes, without connecting, the backend calls this driver
+	// would make for a classified query and pushed predicate — the data the query
+	// plan (--dry-run/--verbose) shows.
+	explainPlan func(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan
 }
 
 // drivers is the registry of every backend the CLI can dispatch to. Order is the
@@ -35,8 +42,9 @@ var drivers = []driver{
 		schemes: []string{"mongodb", "mongodb+srv"},
 		doc:     "https://www.mongodb.com/docs/",
 		open: func(ctx context.Context, cfg *config) (store, error) {
-			return iqmongo.Open(ctx, cfg.url, cfg.collection)
+			return iqmongo.Open(ctx, cfg.url, cfg.collection, cfg.trace)
 		},
+		explainPlan: iqmongo.ExplainPlan,
 	},
 	{
 		name:    "redis",
@@ -44,8 +52,9 @@ var drivers = []driver{
 		schemes: []string{"redis", "rediss"},
 		doc:     "https://redis.io/docs/",
 		open: func(ctx context.Context, cfg *config) (store, error) {
-			return iqredis.Open(ctx, cfg.url)
+			return iqredis.Open(ctx, cfg.url, cfg.trace)
 		},
+		explainPlan: iqredis.ExplainPlan,
 	},
 }
 

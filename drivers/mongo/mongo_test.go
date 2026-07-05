@@ -36,7 +36,7 @@ func openIntegration(t *testing.T, collection string) *Store {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	store, err := Open(ctx, testURI(), collection)
+	store, err := Open(ctx, testURI(), collection, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	return store

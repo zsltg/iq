@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -32,6 +33,7 @@ type config struct {
 	timeout    time.Duration
 	unbounded  bool
 	noCompile  bool
+	dryRun     bool
 	from       []string
 	combine    string
 	json       bool
@@ -62,6 +64,9 @@ type config struct {
 	logger    *slog.Logger
 	logClose  func() error
 	pprofStop func()
+	// trace, when non-nil, is where a driver writes its live command trace (set
+	// to stderr for the duration of a --verbose run); nil disables tracing.
+	trace io.Writer
 }
 
 // newRootCmd builds the root command and its subcommands. The default action is
@@ -160,7 +165,7 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.PersistentFlags().BoolVar(&cfg.noProgress, "no-progress", false, "disable the scan progress spinner (shown on stderr for long scans when it is a terminal)")
 	// Diagnostics flags (sq-compatible). -v is global; `iq ls` reuses it for its
 	// driver column. --log* also honor IQ_LOG/IQ_LOG_FILE/IQ_LOG_LEVEL/IQ_LOG_FORMAT.
-	root.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "print verbose diagnostics to stderr")
+	root.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "print verbose diagnostics to stderr; for a query, the formatted plan and a live backend command trace (disables the progress spinner)")
 	root.PersistentFlags().BoolVar(&cfg.logEnable, "log", false, "enable logging to a file (also via IQ_LOG)")
 	root.PersistentFlags().StringVar(&cfg.logFile, "log.file", "", "log file path; empty disables logging (default <user cache dir>/iq/iq.log)")
 	root.PersistentFlags().StringVar(&cfg.logLevel, "log.level", "DEBUG", "log level: DEBUG, INFO, WARN, or ERROR")
@@ -172,6 +177,7 @@ func newRootCmd() (*cobra.Command, *config) {
 	// --unbounded and --no-compile are local to the default jq action.
 	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
 	root.Flags().BoolVar(&cfg.noCompile, "no-compile", false, "disable server-side predicate pushdown; run the full .[]|select(...) filter client-side (pushdown is on by default for MongoDB, already a no-op on Redis; results are unchanged either way)")
+	root.Flags().BoolVar(&cfg.dryRun, "dry-run", false, "print the formatted query plan (pretty jq, nested filters, and the backend calls) and exit without connecting or executing")
 	root.Flags().StringArrayVar(&cfg.from, "from", nil, "cross-source stage `name=<jq>`: reduce source name with <jq> and bind its results to $name (repeatable; needs --combine)")
 	root.Flags().StringVar(&cfg.combine, "combine", "", "final jq over the --from results (each bound to $name), run over a null input")
 	// One rendering per run: the format flags are mutually exclusive and default

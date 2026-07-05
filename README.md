@@ -242,7 +242,7 @@ boundary; query results are never changed by them.
 
 | flag | default | effect |
 | --- | --- | --- |
-| `-v`, `--verbose` | off | print diagnostics (source resolved, store opened, query complete with scan count and elapsed) to stderr |
+| `-v`, `--verbose` | off | print diagnostics (source resolved, store opened, query complete with scan count and elapsed) to stderr, plus the [query plan](#query-plan---dry-run--v) and a live backend command trace (disables the progress spinner) |
 | `--log` | off | enable logging to a file (also via `IQ_LOG`) |
 | `--log.file` | `<user cache dir>/iq/iq.log` | log file path; an empty value disables logging |
 | `--log.level` | `DEBUG` | `DEBUG`, `INFO`, `WARN`, or `ERROR` |
@@ -265,6 +265,32 @@ IQ_LOG=true IQ_LOG_FILE=/tmp/iq.log ./iq '.[]'       # enable logging via the en
 ./iq --error.format=json '.bad |'                    # machine-readable errors
 ./iq --debug.pprof=cpu '.[]' && go tool pprof cpu.pprof
 ```
+
+### Query plan (`--dry-run`, `-v`)
+
+`--dry-run` prints a formatted **query plan** and exits without connecting or executing;
+`-v`/`--verbose` prints the same plan to stderr, then runs, tracing each backend command. The plan
+shows three things, syntax-highlighted when the destination is a terminal:
+
+- the jq filter, pretty-printed with real line breaks (nested `source("name"; "<jq>")` sub-filters
+  and every `--from`/`--combine` fragment are formatted too);
+- the backend **access plan** — the concrete calls each source will make, derived from the filter's
+  route (bounded keys, streaming scan, or materialize): MongoDB `find(<filter>)` (the pushed-down
+  filter, on by default, or `{}` under `--no-compile`) or `find` by `_id`; Redis `SCAN 0 MATCH *
+  COUNT n` plus per-key `TYPE`/typed reads, or pipelined typed reads for bounded keys;
+- for MongoDB, the compiled server-side filter as JSON — exactly what the store pre-filters with
+  (empty under `--no-compile`).
+
+```bash
+./iq --src orders --dry-run '.[] | select(.total > 99) | {id, total}'
+./iq --src cache --dry-run '.[] | select(.active)'   # Redis SCAN + typed reads
+./iq --src orders -v '.[] | select(.total > 99)'     # plan + live `mongo> find(...)` trace
+./iq -v '.[]' 2>/dev/null                            # trace on stderr; stdout stays pure data
+```
+
+Under `-v`, the live trace shows the actual commands (`redis> TYPE …`, `mongo> find …`) as they run;
+credentials are never traced (Redis `AUTH` and the MongoDB auth handshake are redacted or skipped).
+`--dry-run` never opens a connection, so it works offline against any saved source.
 
 ## Redis
 

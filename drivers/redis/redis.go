@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	goredis "github.com/redis/go-redis/v9"
 )
@@ -31,8 +32,10 @@ type Store struct {
 
 // Open connects to the Redis server named by a redis:// URL. It verifies the
 // connection with a PING so a bad URL or unreachable server fails fast at
-// startup rather than on the first query.
-func Open(ctx context.Context, url string) (*Store, error) {
+// startup rather than on the first query. When trace is non-nil, every subsequent
+// command is logged to it (the CLI's --verbose trace); the startup PING is not
+// traced, as the hook is attached only after it succeeds.
+func Open(ctx context.Context, url string, trace io.Writer) (*Store, error) {
 	opts, err := goredis.ParseURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("parse redis url: %w", err)
@@ -46,6 +49,9 @@ func Open(ctx context.Context, url string) (*Store, error) {
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
 		return nil, fmt.Errorf("connect redis: %w", err)
+	}
+	if trace != nil {
+		client.AddHook(newTraceHook(trace))
 	}
 	return &Store{client: client, pageSize: scanCount}, nil
 }
