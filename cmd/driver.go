@@ -26,7 +26,10 @@ type driver struct {
 	desc    string
 	schemes []string
 	doc     string
-	open    func(ctx context.Context, cfg *config) (store, error)
+	// versions is the range of backend server versions the bundled client
+	// library supports, shown by `iq driver ls`.
+	versions string
+	open     func(ctx context.Context, cfg *config) (store, error)
 	// explainPlan describes, without connecting, the backend calls this driver
 	// would make for a classified query and pushed predicate — the data the query
 	// plan (--explain/--verbose) shows.
@@ -37,20 +40,22 @@ type driver struct {
 // listing order of `iq driver ls` and the enumeration order of expectedSchemes.
 var drivers = []driver{
 	{
-		name:    "mongo",
-		desc:    "MongoDB document store",
-		schemes: []string{"mongodb", "mongodb+srv"},
-		doc:     "https://www.mongodb.com/docs/",
+		name:     "mongo",
+		desc:     "MongoDB document store",
+		schemes:  []string{"mongodb", "mongodb+srv"},
+		doc:      "https://www.mongodb.com/docs/",
+		versions: "4.2+",
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqmongo.Open(ctx, cfg.url, cfg.collection, cfg.trace, cfg.decimalMode)
 		},
 		explainPlan: iqmongo.ExplainPlan,
 	},
 	{
-		name:    "redis",
-		desc:    "Redis key-value store",
-		schemes: []string{"redis", "rediss"},
-		doc:     "https://redis.io/docs/",
+		name:     "redis",
+		desc:     "Redis key-value store",
+		schemes:  []string{"redis", "rediss"},
+		doc:      "https://redis.io/docs/",
+		versions: "7.0+",
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqredis.Open(ctx, cfg.url, cfg.trace, cfg.decimalMode)
 		},
@@ -128,6 +133,7 @@ type driverRow struct {
 	Driver      string   `json:"driver"`
 	Description string   `json:"description"`
 	Schemes     []string `json:"schemes"`
+	Versions    string   `json:"versions"`
 	Doc         string   `json:"doc"`
 }
 
@@ -150,8 +156,9 @@ func newDriverLsCmd() *cobra.Command {
 		Use:   "ls",
 		Short: "List the backend drivers iq can dispatch to",
 		Long: "List the backend drivers iq can dispatch to. Each row shows the driver's stable\n" +
-			"name (as `iq ls` reports it), a description, the URL schemes that select it, and a\n" +
-			"link to its upstream documentation. --json emits machine-readable output.",
+			"name (as `iq ls` reports it), a description, the URL schemes that select it, the\n" +
+			"backend server versions the bundled client library supports, and a link to its\n" +
+			"upstream documentation. --json emits machine-readable output.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return listDrivers(cmd.OutOrStdout(), jsonOut)
@@ -171,6 +178,7 @@ func listDrivers(out io.Writer, jsonOut bool) error {
 				Driver:      d.name,
 				Description: d.desc,
 				Schemes:     d.schemes,
+				Versions:    d.versions,
 				Doc:         d.doc,
 			})
 		}
@@ -180,6 +188,7 @@ func listDrivers(out io.Writer, jsonOut bool) error {
 		coloredCell("DRIVER", pal.header),
 		coloredCell("DESCRIPTION", pal.header),
 		coloredCell("SCHEMES", pal.header),
+		coloredCell("VERSIONS", pal.header),
 		coloredCell("DOC", pal.header),
 	}}
 	for _, d := range drivers {
@@ -187,6 +196,7 @@ func listDrivers(out io.Writer, jsonOut bool) error {
 			cell(d.name),
 			cell(d.desc),
 			cell(strings.Join(d.schemes, ", ")),
+			cell(d.versions),
 			cell(d.doc),
 		})
 	}

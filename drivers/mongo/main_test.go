@@ -31,7 +31,7 @@ func runTests(m *testing.M) int {
 	// stands in.
 	if !testing.Short() && os.Getenv("IQ_MONGO_URL") == "" {
 		ctx := context.Background()
-		container, err := tcmongo.Run(ctx, "mongo:latest")
+		container, err := tcmongo.Run(ctx, "mongo:8")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "start mongodb container: %v\n", err)
 			return 1

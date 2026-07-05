@@ -1,6 +1,6 @@
 services:
   redis:
-    image: redis:latest
+    image: redis:8
     container_name: iq-redis
     ports:
       - "6379:6379"
@@ -13,7 +13,7 @@ services:
       retries: 5
 
   mongo:
-    image: mongo:latest
+    image: mongo:8
     container_name: iq-mongo
     ports:
       - "27017:27017"

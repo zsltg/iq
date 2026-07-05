@@ -64,6 +64,7 @@ func TestDriverRegistryInvariants(t *testing.T) {
 		require.NotEmpty(t, d.name)
 		require.NotEmpty(t, d.desc)
 		require.NotEmpty(t, d.doc)
+		require.NotEmpty(t, d.versions)
 		require.NotEmpty(t, d.schemes)
 		require.NotNil(t, d.open)
 		require.False(t, seenName[d.name], "duplicate driver name %q", d.name)
@@ -82,9 +83,9 @@ func TestDriverLsTable(t *testing.T) {
 	out, err := runCmd(t, newDriverCmd(), "ls")
 	require.NoError(t, err)
 	for _, want := range []string{
-		"DRIVER", "DESCRIPTION", "SCHEMES", "DOC",
-		"mongo", "MongoDB document store", "mongodb, mongodb+srv", "https://www.mongodb.com/docs/",
-		"redis", "Redis key-value store", "redis, rediss", "https://redis.io/docs/",
+		"DRIVER", "DESCRIPTION", "SCHEMES", "VERSIONS", "DOC",
+		"mongo", "MongoDB document store", "mongodb, mongodb+srv", "4.2+", "https://www.mongodb.com/docs/",
+		"redis", "Redis key-value store", "redis, rediss", "7.0+", "https://redis.io/docs/",
 	} {
 		require.Contains(t, out, want)
 	}
@@ -104,6 +105,8 @@ func TestDriverLsJSON(t *testing.T) {
 	}
 	require.Equal(t, []string{"mongodb", "mongodb+srv"}, byName["mongo"].Schemes)
 	require.Equal(t, "MongoDB document store", byName["mongo"].Description)
+	require.Equal(t, "4.2+", byName["mongo"].Versions)
 	require.Equal(t, "https://redis.io/docs/", byName["redis"].Doc)
 	require.Equal(t, []string{"redis", "rediss"}, byName["redis"].Schemes)
+	require.Equal(t, "7.0+", byName["redis"].Versions)
 }

@@ -29,7 +29,7 @@ func runTests(m *testing.M) int {
 	if !testing.Short() {
 		ctx := context.Background()
 		if os.Getenv("IQ_REDIS_URL") == "" {
-			container, err := tcredis.Run(ctx, "redis:latest")
+			container, err := tcredis.Run(ctx, "redis:8")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "start redis container: %v\n", err)
 				return 1
@@ -43,7 +43,7 @@ func runTests(m *testing.M) int {
 			_ = os.Setenv("IQ_REDIS_URL", redisURL)
 		}
 		if os.Getenv("IQ_MONGO_URL") == "" {
-			container, err := tcmongo.Run(ctx, "mongo:latest")
+			container, err := tcmongo.Run(ctx, "mongo:8")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "start mongodb container: %v\n", err)
 				return 1

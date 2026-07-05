@@ -25,7 +25,7 @@ func runTests(m *testing.M) int {
 		// Use the named external server, else stand up an ephemeral container.
 		url := os.Getenv("IQ_REDIS_URL")
 		if url == "" {
-			container, err := tcredis.Run(ctx, "redis:latest")
+			container, err := tcredis.Run(ctx, "redis:8")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "start redis container: %v\n", err)
 				return 1

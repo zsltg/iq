@@ -389,12 +389,18 @@ registered backends — the same canonical names `iq ls -v`, `ping`, `inspect`, 
 
 ```bash
 $ iq driver ls
-DRIVER  DESCRIPTION             SCHEMES               DOC
-mongo   MongoDB document store  mongodb, mongodb+srv  https://www.mongodb.com/docs/
-redis   Redis key-value store   redis, rediss         https://redis.io/docs/
+DRIVER  DESCRIPTION             SCHEMES               VERSIONS  DOC
+mongo   MongoDB document store  mongodb, mongodb+srv  4.2+      https://www.mongodb.com/docs/
+redis   Redis key-value store   redis, rediss         7.0+      https://redis.io/docs/
 ```
 
 Add `--json` for machine-readable rows (see [Sources](#sources) for the full flag).
+
+> [!NOTE]
+> `VERSIONS` is the range of backend server versions the bundled client library supports —
+> [`go-redis` v9](https://github.com/redis/go-redis) for Redis, the
+> [MongoDB Go driver v2](https://www.mongodb.com/docs/drivers/go/current/) for MongoDB — not a
+> matrix `iq` tests against. The integration tests are pinned to `redis:8` and `mongo:8`.
 
 <details>
 <summary><b>Redis</b> — value encoding and raw commands</summary>
