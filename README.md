@@ -572,7 +572,7 @@ docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
 govulncheck ./...         # dependency vulnerability scan
-bash scripts/mutation-gate.sh   # mutation gate (fails on any survivor/timeout); set IQ_*_URL to a pre-started stack
+bash scripts/mutation-gate.sh   # mutation gate, scoped to the branch diff vs main (fails on any survivor/timeout); set IQ_*_URL to a pre-started stack
 make tools                # install release tools (svu, git-chglog) into GOPATH/bin
 make version              # print the version the next release would take
 bash scripts/release.sh --dry-run   # preview the next release without changing anything
@@ -587,6 +587,10 @@ to point at an already-running server (for example the `docker compose` stack) t
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
 a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded
 into DB 0 by `scripts/seed.sh` survives a test run.
+
+The mutation gate scopes to the current branch's diff against `main` by default, so it only
+mutates the lines a change touched. Override the base ref with `IQ_MUTATION_BASE` (set it empty
+for a full-module scan) or pass a package path (e.g. `bash scripts/mutation-gate.sh ./cmd`).
 
 ## Comparison
 
