@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.10.0 - 2026-07-05
+### Features
+- **cli:** default MongoDB pushdown on, replace --compile with --no-compile (fcc38e3)
+- **cli:** group --help flags into logical sections (5a72dfa)
+- **cmd:** add sq-style verbose, logging, error, and pprof flags (0f68c5c)
+- **cmd:** replace --format/-o with per-format boolean flags (289176f)
+- **cmd:** make inspect take a source positional, move narrowing to --only (fdb0f35)
+- **driver:** add driver registry and `iq driver ls` command (25a6c3f)
+
+### Documentation
+- **readme:** link comparison tools, drop backticks from iq/sq (ca88124)
+- **readme:** add tool comparison and awesome-jq reference (335e05a)
+
+
 ## v0.9.0 - 2026-07-05
 ### Features
 - **cmd:** add --reveal and --expand flags to ls and inspect (1fc7305)
