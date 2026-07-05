@@ -85,6 +85,14 @@ iq --src books '.["2"]'      # run this one query against "books"
   `buildInfo`, `hostInfo`); no arguments runs them all, positional arguments narrow. `--list`
   prints the subcommands/sections available for the active source (Mongo's fixed set; Redis's
   live INFO sections). `--json` for machine-readable output; bounded by `--timeout`.
+- `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
+  added / removed / changed, keyed by document `_id` (MongoDB) or key (Redis); it reads both
+  keyspaces fully into memory, the deliberate cost of needing both key sets at once, and is allowed
+  across drivers (a power tool for verifying a migration, not a schema comparison — the match is
+  only as meaningful as the keys lining up). `--stats` diffs native introspection trees and
+  `--schema` diffs an inferred, sampled field/type shape (`--sample`); both require the same driver.
+  Layers combine; `--json` for a machine-readable delta; `--exit-code` exits non-zero when
+  differences exist (otherwise always zero). Bounded by `--timeout`.
 - `iq group [<name>] [--clear]` — show, set, or clear the active **group**.
 
 **Groups.** A `/` in a name groups sources (`prod/books`, `dev/books`). Set an active group with
@@ -437,6 +445,10 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   `Query` (exec) and `Get`/`ScanBatches` (jq), with a type-to-JSON normalization frozen as that
   backend's encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs). Redis maps
   a key to a Redis key; Mongo maps a key to a document `_id` within `--collection`.
+- `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
+  produces. `Tree` diffs two values, `Keyed` aligns two keyed item sets, and `Infer` reduces a set
+  to a sampled field/type shape that feeds back through `Tree`. It holds no I/O: `iq diff` reads
+  each side through the ports and hands the materialized values here.
 - `internal/config` — the saved sources. A small TOML store (named connections keyed by handle,
   plus the active source and group) the CLI reads to resolve a query's connection. It stays
   driver-agnostic: the backend is inferred from a source's URL scheme, validated in `cmd`. It
@@ -447,7 +459,7 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
 - `cmd` — the CLI adapter and composition root. It resolves the selected source (`--src` or the
   active source) to a URL and collection, picks the adapter by URL scheme (`openStore`), runs the
   jq action (routing a `source()`-driven filter to the cross-source engine), the `exec` escape hatch,
-  a source command (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`), or a `--from`/`--combine` cross-source query —
+  a source command (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`/`diff`), or a `--from`/`--combine` cross-source query —
   resolving every source name through the same registry — and formats output (a `--format`-selected
   renderer for the jq path — json, jsonl, json-array, values, or yaml; per-backend for `exec` —
   redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format.

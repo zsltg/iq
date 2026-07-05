@@ -105,6 +105,7 @@ func newRootCmd() *cobra.Command {
 		newGroupCmd(),
 		newPingCmd(cfg),
 		newInspectCmd(cfg),
+		newDiffCmd(cfg),
 		newVersionCmd(),
 	)
 	return root
@@ -117,7 +118,11 @@ func Execute() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := newRootCmd().ExecuteContext(ctx); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "iq:", err)
+		// errQuietExit (diff --exit-code) signals a non-zero status with no message:
+		// the differences are the report, not an error.
+		if !errors.Is(err, errQuietExit) {
+			_, _ = fmt.Fprintln(os.Stderr, "iq:", err)
+		}
 		os.Exit(1)
 	}
 }
