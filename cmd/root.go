@@ -27,6 +27,7 @@ import (
 // can render its location honouring --reveal/--expand.
 type config struct {
 	src        string
+	configPath string
 	url        string
 	source     iqconfig.Source
 	handle     string
@@ -126,6 +127,19 @@ func newRootCmd() (*cobra.Command, *config) {
 		// flag fails fast; resources that do open are stored on cfg immediately so
 		// Execute's finalize closes them on every path.
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			// An explicit --config redirects the config path for the whole run by
+			// setting IQ_CONFIG, the single mechanism every Load/Save already honors
+			// (and a child editor inherits it). Precedence: flag > env > default.
+			if cfg.configPath != "" {
+				if err := os.Setenv(iqconfig.EnvConfig, cfg.configPath); err != nil {
+					return fmt.Errorf("apply --config: %w", err)
+				}
+			}
+			// Merge stored option defaults into the flags before anything reads them,
+			// so a saved default (base or per-source) fills any flag left unset.
+			if err := applyStoredOptions(cmd, cfg); err != nil {
+				return err
+			}
 			if cfg.monochrome && cfg.forceColor {
 				return errors.New("cannot use --monochrome with --color")
 			}
@@ -189,6 +203,7 @@ func newRootCmd() (*cobra.Command, *config) {
 		},
 	}
 	root.PersistentFlags().StringVarP(&cfg.src, "src", "s", "", "run against this saved source for one invocation (overrides the active source; see `iq src`)")
+	root.PersistentFlags().StringVar(&cfg.configPath, "config", "", "path to the config file (overrides $IQ_CONFIG; default <user config dir>/iq/iq.toml)")
 	root.PersistentFlags().StringVarP(&cfg.collection, "collection", "c", "", "MongoDB collection, overriding the source's (ignored for Redis)")
 	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "per-query timeout")
 	root.PersistentFlags().BoolVarP(&cfg.monochrome, "monochrome", "M", false, "disable colored output (also honored via NO_COLOR); color is on by default only when writing to a terminal")
@@ -236,6 +251,7 @@ func newRootCmd() (*cobra.Command, *config) {
 		newMvCmd(),
 		newSrcCmd(),
 		newGroupCmd(),
+		newConfigCmd(cfg),
 		newPingCmd(cfg),
 		newInspectCmd(cfg),
 		newDiffCmd(cfg),

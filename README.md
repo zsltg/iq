@@ -114,13 +114,48 @@ iq --src books '.["2"]'      # run this one query against "books"
 `prod/books`, falling back to a top-level `books` if the group has none.
 
 Sources live in a TOML file at `<os user config dir>/iq/iq.toml` (e.g. `~/.config/iq/iq.toml`),
-written `0600` because a URL may carry a password. Override the path with `IQ_CONFIG`. A source
-added with `--store keyring` keeps no password in this file — it lives in the OS keyring (Secret
-Service on Linux, Keychain on macOS, Credential Manager on Windows) and is spliced back into the
-URL only when connecting.
+written `0600` because a URL may carry a password. Override the path with `IQ_CONFIG`, or per run
+with the global `--config <path>` flag (which wins over `IQ_CONFIG`). A source added with
+`--store keyring` keeps no password in this file — it lives in the OS keyring (Secret Service on
+Linux, Keychain on macOS, Credential Manager on Windows) and is spliced back into the URL only
+when connecting.
 
 > `iq add` shadows jq's built-in `add` filter at the top level. To sum with jq, write it inside a
 > larger expression, e.g. `iq '[ .a, .b ] | add'`.
+
+### Stored options (`iq config`)
+
+The same file also holds **stored option defaults**: persist a flag's value once so you need not
+retype it. Set an option globally, or scope it to one source with `--src`. At query time the
+precedence is **explicit flag > per-source option > base option > built-in default**, so a saved
+default fills any flag you leave unset, and an explicit flag on the command line always wins.
+
+```bash
+iq config set format yaml                 # every query defaults to YAML output
+iq config set --src prod timeout 30s      # 30s timeout only when querying "prod"
+iq config get --src prod format           # effective value for "prod" (source > base > default)
+iq config ls -v                           # every persistable option: value, default, and help
+iq '.[]'                                  # renders YAML (the stored default)
+iq -f json '.[]'                          # explicit flag overrides the stored default
+```
+
+- `iq config location` — print the resolved config file path.
+- `iq config get [--src <name>] <option>` — print an option's effective value at that scope.
+- `iq config set [--src <name>] <option> <value>` — validate and store a value (base, or per
+  source). The value is checked exactly as the flag would check it, so an invalid value is refused.
+- `iq config unset [--src <name>] <option>` — remove a stored value.
+- `iq config ls [--src <name>]` — list the options set at that scope; `-v` lists every persistable
+  option with its effective value, built-in default, and help.
+- `iq config edit` — open the config file in `$IQ_EDITOR` (then `$VISUAL`, `$EDITOR`, else `vi`).
+- `iq config view [--reveal] [--expand]` — dump the whole config as TOML, source URLs redacted
+  like `iq ls`.
+
+Persistable options are the flags whose default you would reasonably persist — output (`format`,
+`format.decimal`, `compact`), `timeout`, display (`monochrome`, `color`, `no-progress`), and the
+diagnostics family (`verbose`, `log*`, `error*`). Per-invocation flags (`--src`, `--collection`,
+`--from`/`--combine`, `--dry-run`, `--unbounded`, `--no-compile`, `--reveal`/`--expand`,
+`--debug.pprof`) are not storable. A `--from`/`--combine` query has no single source, so it uses
+the base options only, never a per-source override.
 
 ## Usage
 
@@ -603,10 +638,12 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   produces. `Tree` diffs two values, `Keyed` aligns two keyed item sets, and `Infer` reduces a set
   to a sampled field/type shape that feeds back through `Tree`. It holds no I/O: `iq diff` reads
   each side through the ports and hands the materialized values here.
-- `internal/config` — the saved sources. A small TOML store (named connections keyed by handle,
-  plus the active source and group) the CLI reads to resolve a query's connection. It stays
-  driver-agnostic: the backend is inferred from a source's URL scheme, validated in `cmd`. It
-  records only that a source is keyring-backed; the password itself never enters this store.
+- `internal/config` — the saved sources and stored options. A small TOML store (named connections
+  keyed by handle, plus the active source and group, plus a base **options** table and a per-source
+  one) the CLI reads to resolve a query's connection and its default flags. It stays driver-agnostic
+  and dumb: the backend is inferred from a source's URL scheme and the persistable-option allowlist
+  and value validation both live in `cmd`, not here. It records only that a source is keyring-backed;
+  the password itself never enters this store.
 - `internal/secret` — the credential port. A `Keyring` interface over the OS secret store, so a
   keyring-backed source keeps its password out of the config file; `cmd` splices it back into the
   URL at connect time.
@@ -615,15 +652,18 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   `supportedScheme`, every driver label, and `iq driver ls` all derive from, so adding a backend is
   one entry. It resolves the selected source (`--src` or the active source) to a URL and collection,
   picks the adapter by URL scheme through that registry (`openStore`), runs the jq action (routing a
-  `source()`-driven filter to the cross-source engine), the `exec` escape hatch, a source command
-  (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`/`diff`/`driver`), or a `--from`/`--combine` cross-source query —
+  `source()`-driven filter to the cross-source engine), the `exec` escape hatch, a source or config command
+  (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`/`diff`/`driver`/`config`), or a `--from`/`--combine` cross-source query —
   resolving every source name through the same registry — and formats output (a format-flag-selected
   renderer for the jq path — `--json`, `--jsonl`, `--json-array`, `--raw`, or `--yaml`, also selectable by
   name with `--format`, and with `--format.decimal` governing how decimals normalize; per-backend for `exec` —
   redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format. The
   diagnostics surface (verbose output, file logging, error rendering, `--debug.pprof`) also lives
   here: it is set up once per invocation and emits from the CLI boundary, so the query core imports
-  no logger and produces no diagnostics of its own.
+  no logger and produces no diagnostics of its own. Before any of that, one pre-run step merges the
+  stored option defaults into the flags — an unset flag falls back to the selected source's option,
+  then the base option, then its built-in default — so persisted defaults reach the whole run
+  (`iq config` manages the store; `--config` redirects the file).
 
 A bounded filter runs client-side over just the named keys, so its cost is `O(keys requested)`; a
 streamable scan runs in `O(page)` memory. The jq semantics are identical for any future backend
@@ -637,6 +677,9 @@ binary and exposes the AST the key selector walks.
 go build -o iq .          # build the binary
 make build                # build with version metadata embedded
 iq version                # print version, commit, build date, and Go version
+iq config set format yaml # persist a default flag value (add --src <name> to scope it to a source)
+iq config ls -v           # list every persistable option: value, default, and help
+iq --config ./iq.toml ls  # run against an alternate config file (overrides IQ_CONFIG)
 go test -short ./...      # fast unit tests, no external services
 go test ./...             # full suite; starts ephemeral Redis + MongoDB via testcontainers-go
 docker compose up -d --wait   # optional: local Redis + MongoDB for manual exploration (:6379, :27017)

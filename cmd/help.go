@@ -38,6 +38,7 @@ var flagGroupOrder = []string{
 // out would silently land in groupOther, which the coverage-guard test rejects.
 var rootFlagGroups = map[string]string{
 	"src":        groupSource,
+	"config":     groupSource,
 	"collection": groupSource,
 	"timeout":    groupSource,
 

@@ -35,6 +35,8 @@ var (
 	ErrUnknownSource = errors.New("unknown source")
 	// ErrUnknownGroup is returned when a group has no sources.
 	ErrUnknownGroup = errors.New("unknown group")
+	// ErrEmptyOption is returned when an option key is blank.
+	ErrEmptyOption = errors.New("empty option name")
 )
 
 // Source is a named connection target. The backend is inferred from the URL
@@ -46,13 +48,20 @@ type Source struct {
 	URL        string `toml:"url"`
 	Collection string `toml:"collection,omitempty"`
 	Keyring    bool   `toml:"keyring,omitempty"`
+	// Options are this source's stored flag defaults, keyed by flag name and held
+	// as the flag's canonical string form. They override the base Options for a
+	// query that targets this source. The config package never validates a key or
+	// value: the CLI owns the persistable-option allowlist and parsing.
+	Options map[string]string `toml:"options,omitempty"`
 }
 
 // Config is the persisted CLI state: the named sources keyed by their full
-// handle, the active source, and the active group (each empty when unset).
+// handle, the active source, the active group (each empty when unset), and the
+// base options — stored flag defaults that apply when no source overrides them.
 type Config struct {
 	Active  string            `toml:"active,omitempty"`
 	Group   string            `toml:"group,omitempty"`
+	Options map[string]string `toml:"options,omitempty"`
 	Sources map[string]Source `toml:"sources,omitempty"`
 }
 
