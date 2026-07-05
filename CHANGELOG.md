@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.9.0 - 2026-07-05
+### Features
+- **cmd:** add --reveal and --expand flags to ls and inspect (1fc7305)
+- **cmd:** colorize output on a terminal (9114870)
+- **progress:** add scan progress spinner for unbounded queries (2428de0)
+
+### Refactoring
+- **backend:** move mongo and redis adapters under internal/backend (3f4ac31)
+
+
 ## v0.8.0 - 2026-07-05
 ### Features
 - **cmd:** add diff for comparing two sources (a3d4c49)
