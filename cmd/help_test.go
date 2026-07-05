@@ -38,7 +38,7 @@ func TestRootHelpGroupsFlags(t *testing.T) {
 	// A flag lands under its own section, not merely somewhere in the output.
 	cases := []struct{ header, flag string }{
 		{"  Source:", "--src"},
-		{"  Query:", "--compile"},
+		{"  Query:", "--no-compile"},
 		{"  Output:", "--json-array"},
 		{"  Display:", "--no-progress"},
 		{"  Diagnostics:", "--debug.pprof"},

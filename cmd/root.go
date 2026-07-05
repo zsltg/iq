@@ -31,7 +31,7 @@ type config struct {
 	collection string
 	timeout    time.Duration
 	unbounded  bool
-	compile    bool
+	noCompile  bool
 	from       []string
 	combine    string
 	json       bool
@@ -87,8 +87,9 @@ func newRootCmd() (*cobra.Command, *config) {
 			"chosen by the source's URL scheme: redis:// (key = Redis key) or mongodb:// (key =\n" +
 			"document _id in the source's collection). Select a source for one run with --src.\n" +
 			"\n" +
-			"--compile pushes these select(...) clauses to MongoDB (results are unchanged; the\n" +
-			"full jq always re-runs, so a pushed filter is only a pre-filter):\n" +
+			"iq pushes these select(...) clauses to MongoDB by default (results are unchanged;\n" +
+			"the full jq always re-runs, so a pushed filter is only a pre-filter); pass\n" +
+			"--no-compile to force the whole filter client-side:\n" +
 			"  .a == x                    equality (number, string, bool, null)\n" +
 			"  .a == 1 or .a == 2         same-field equality-or -> $in\n" +
 			"  .a >  >=  <  <=  n|\"s\"      ranges, preserving jq's cross-type ordering\n" +
@@ -98,7 +99,7 @@ func newRootCmd() (*cobra.Command, *config) {
 			"  .a | any(cond)             array element match -> $elemMatch\n" +
 			"  E1 and E2,  E1 or E2       combine the above\n" +
 			"Not pushed (run client-side): != , ranges vs bool/null, non-portable regex,\n" +
-			"everything else. On Redis, or with no pushable clause, --compile is a no-op.",
+			"everything else. On Redis, or with no pushable clause, pushdown is a no-op.",
 		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -168,9 +169,9 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.PersistentFlags().BoolVar(&cfg.errorStack, "error.stack", false, "print the error cause chain to stderr (may include backend internals)")
 	root.PersistentFlags().BoolVar(&cfg.errorTextVerbose, "error.format.text.verbose", true, "for a jq syntax error in text format, show a caret span report")
 	root.PersistentFlags().StringVar(&cfg.pprofMode, "debug.pprof", "", "write a runtime profile of the whole run: cpu, mem, block, mutex, goroutine, thread, or trace")
-	// --unbounded and --compile are local to the default jq action.
+	// --unbounded and --no-compile are local to the default jq action.
 	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
-	root.Flags().BoolVar(&cfg.compile, "compile", false, "push a .[]|select(...) equality predicate to the store to pre-filter server-side (MongoDB; no-op elsewhere; results are unchanged)")
+	root.Flags().BoolVar(&cfg.noCompile, "no-compile", false, "disable server-side predicate pushdown; run the full .[]|select(...) filter client-side (pushdown is on by default for MongoDB, already a no-op on Redis; results are unchanged either way)")
 	root.Flags().StringArrayVar(&cfg.from, "from", nil, "cross-source stage `name=<jq>`: reduce source name with <jq> and bind its results to $name (repeatable; needs --combine)")
 	root.Flags().StringVar(&cfg.combine, "combine", "", "final jq over the --from results (each bound to $name), run over a null input")
 	// One rendering per run: the format flags are mutually exclusive and default

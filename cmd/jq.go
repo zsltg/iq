@@ -42,7 +42,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	// One OnPage closure drives both the spinner and the scanned-count log point,
 	// so the core stays UI-agnostic (it only ever calls a plain func).
 	var scanned int
-	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: cfg.compile, OnPage: func(n int) {
+	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: !cfg.noCompile, OnPage: func(n int) {
 		scanned += n
 		meter.Tick(n)
 	}}

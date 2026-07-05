@@ -283,8 +283,8 @@ iq --src cache --unbounded 'keys'                    # every key
 ```
 
 The `--unbounded` / streaming rules match every backend (`.[]`-rooted filters stream in constant
-memory; `keys`/`.`/`map` materialize and require the flag). `--compile` is a no-op on Redis, which
-has no server-side predicate pushdown; the full jq always runs client-side.
+memory; `keys`/`.`/`map` materialize and require the flag). Predicate pushdown is a no-op on Redis,
+which has no server-side filtering; the full jq always runs client-side.
 
 ### Value encoding
 
@@ -327,7 +327,7 @@ strings.
 ## MongoDB
 
 <details>
-<summary>MongoDB backend — collection keyspace, <code>--compile</code> pushdown, and connection</summary>
+<summary>MongoDB backend — collection keyspace, predicate pushdown, and connection</summary>
 
 The backend is chosen by the source's URL scheme. Register a `mongodb://` source and the same jq
 interface works against a collection, where **the collection is the keyspace: a document's `_id`
@@ -348,18 +348,19 @@ numbers stay numbers, nested documents and arrays are preserved. A missing `_id`
 The `--unbounded` / streaming rules are identical to Redis (`.[]`-rooted filters stream a cursor
 in constant memory; `keys`/`.`/`map` materialize and require the flag).
 
-### Server-side pre-filtering with `--compile`
+### Server-side pre-filtering (predicate pushdown)
 
-By default a `.[] | select(...)` filter streams the whole collection and filters client-side. With
-`--compile`, the `select` predicate's **equality** clauses are translated into a native Mongo query
-so the server does the filtering (and can use an index):
+By default a `.[] | select(...)` filter's **equality** clauses are translated into a native Mongo
+query so the server does the filtering (and can use an index) before the documents ever reach iq:
 
 ```bash
-iq --src books --compile '.[] | select(.author == "Robert C. Martin") | .title'
+iq --src books '.[] | select(.author == "Robert C. Martin") | .title'   # pushed down
+iq --src books --no-compile '.[] | select(.author == "Robert C. Martin") | .title'  # forced client-side
 ```
 
-`--compile` never changes results, only speed: the full jq always re-runs client-side over whatever
-comes back, so a pushed filter is only ever a conservative pre-filter. What it can push:
+Pushdown never changes results, only speed: the full jq always re-runs client-side over whatever
+comes back, so a pushed filter is only ever a conservative pre-filter. Pass `--no-compile` to skip
+it and stream the whole collection, filtering entirely client-side. What it can push:
 
 | `select(...)` clause | Pushed | MongoDB translation | Notes |
 | --- | :---: | --- | --- |
@@ -377,7 +378,7 @@ comes back, so a pushed filter is only ever a conservative pre-filter. What it c
 | negated range/regex/`size` | — | — | their filters are supersets, and a negated superset is a subset (unrecoverable) |
 | `.a > true`, `.a < null` | — | — | a range against bool/null has no clean superset |
 | non-portable regex | — | — | engine-specific construct (below) |
-| anything else | — | — | runs client-side, as without `--compile` |
+| anything else | — | — | runs client-side, as under `--no-compile` |
 
 **Portable regex.** jq uses the Oniguruma engine, MongoDB uses PCRE. A pattern is pushed only when
 every construct it uses means the same in both: literals, anchors (`^` `$`), `.`, quantifiers
@@ -386,7 +387,7 @@ shorthands (and their negations, `\b`, `\B`). A pattern using lookaround (`(?=�
 (`\1`), unicode properties (`\p{…}`), POSIX classes (`[[:…:]]`), or possessive quantifiers is not
 portable and stays client-side, so the pushed set always equals jq's.
 
-On Redis, or for any filter with no pushable predicate, `--compile` is a harmless no-op.
+On Redis, or for any filter with no pushable predicate, pushdown is a harmless no-op.
 
 `iq exec` on MongoDB runs a single JSON command document with `runCommand` and prints the reply as
 JSON — the escape hatch for server-side queries, aggregation, and administration:
@@ -415,7 +416,7 @@ With no source selected the command errors — there is no ambient URL or enviro
 
 `--from` and `--combine` run one query across several sources and stitch the results together.
 Each `--from name='<jq>'` reduces a source *at the source* — bounded reads, streaming scans, and
-`--compile` pushdown all still apply — and binds its result set to `$name`; `--combine '<jq>'` then
+predicate pushdown all still apply — and binds its result set to `$name`; `--combine '<jq>'` then
 runs over those variables. Nothing copies whole datasets: each source returns only what its jq keeps.
 
 ```bash
@@ -449,7 +450,7 @@ iq 'INDEX(source("users"; ".[]"); .id) as $u
     | {name: $u[.userId].name, total}'
 ```
 
-`source("name"; "<jq>")` runs `<jq>` against source `name` (reduced, streamed, and `--compile`-pushed
+`source("name"; "<jq>")` runs `<jq>` against source `name` (reduced, streamed, and pushed down
 like any query) and **yields its results as a stream**; a one-argument `source("name")` yields the
 whole source. Both arguments are **strings**, so the sub-filter is quoted — inside the single-quoted
 outer filter that means double quotes, `source("orders"; ".[] | select(.x)")`. Because `source()`
@@ -490,7 +491,7 @@ pushed predicate is only ever a conservative pre-filter and results are identica
 graph TD
   F["jq filter (CLI)"] --> SEL["selector.Keys — static AST analysis"]
   SEL -->|"bounded: named keys"| GET["KVStore.Get(keys)"]
-  SEL -->|"scan, streamable (.[]-rooted)"| CMP{"--compile and store is a FilteredScanner?"}
+  SEL -->|"scan, streamable (.[]-rooted)"| CMP{"pushdown on (default) and store is a FilteredScanner?"}
   SEL -->|"holistic scan (keys, map, aggregates)"| MAT["materialize — requires --unbounded"]
 
   CMP -->|yes| PD["pushdown.Compile → predicate.Node (decompose)"]

@@ -41,10 +41,10 @@ var rootFlagGroups = map[string]string{
 	"collection": groupSource,
 	"timeout":    groupSource,
 
-	"unbounded": groupQuery,
-	"compile":   groupQuery,
-	"from":      groupQuery,
-	"combine":   groupQuery,
+	"unbounded":  groupQuery,
+	"no-compile": groupQuery,
+	"from":       groupQuery,
+	"combine":    groupQuery,
 
 	"json":       groupOutput,
 	"json-array": groupOutput,

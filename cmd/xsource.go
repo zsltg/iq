@@ -51,7 +51,7 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 	defer cancel()
 
 	cfg.log().Info("combine start", "stages", len(stages))
-	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: cfg.compile}
+	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: !cfg.noCompile}
 	names := make([]string, 0, len(stages))
 	values := make([]any, 0, len(stages))
 	for _, st := range stages {
