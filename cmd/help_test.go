@@ -1,0 +1,169 @@
+package cmd
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/spf13/pflag"
+	"github.com/stretchr/testify/require"
+)
+
+// TestRootHelpGroupsFlags pins the grouped --help rendering: every section
+// header appears, in the fixed order, and each header precedes its member flags.
+func TestRootHelpGroupsFlags(t *testing.T) {
+	root, _ := newRootCmd()
+
+	out, err := runCmd(t, root, "--help")
+	require.NoError(t, err)
+
+	// Section headers appear in flagGroupOrder, all after the "Flags:" block
+	// opener.
+	wantOrder := []string{
+		"Flags:",
+		"  Source:",
+		"  Query:",
+		"  Output:",
+		"  Display:",
+		"  Diagnostics:",
+		"  Options:",
+	}
+	prev := -1
+	for _, h := range wantOrder {
+		at := strings.Index(out, h)
+		require.NotEqualf(t, -1, at, "header %q missing from help", h)
+		require.Greaterf(t, at, prev, "header %q out of order", h)
+		prev = at
+	}
+
+	// A flag lands under its own section, not merely somewhere in the output.
+	cases := []struct{ header, flag string }{
+		{"  Source:", "--src"},
+		{"  Query:", "--compile"},
+		{"  Output:", "--json-array"},
+		{"  Display:", "--no-progress"},
+		{"  Diagnostics:", "--debug.pprof"},
+	}
+	for _, c := range cases {
+		t.Run(c.flag, func(t *testing.T) {
+			section := sectionAfter(out, c.header)
+			require.Containsf(t, section, c.flag, "%s not under %s", c.flag, c.header)
+		})
+	}
+}
+
+// TestRootHelpEveryFlagGrouped is the coverage guard: every root flag (bar the
+// auto-added help/version) carries a group annotation naming a real section, so
+// a future flag added without a group fails here instead of silently landing in
+// "Options".
+func TestRootHelpEveryFlagGrouped(t *testing.T) {
+	root, _ := newRootCmd()
+
+	realGroups := map[string]bool{
+		groupSource: true, groupQuery: true, groupOutput: true,
+		groupDisplay: true, groupDiagnostics: true,
+	}
+	check := func(f *pflag.Flag) {
+		if f.Name == "help" || f.Name == "version" {
+			return
+		}
+		vals := f.Annotations[flagGroupKey]
+		require.Lenf(t, vals, 1, "flag --%s has no group annotation", f.Name)
+		require.Truef(t, realGroups[vals[0]], "flag --%s in unknown group %q", f.Name, vals[0])
+	}
+	root.PersistentFlags().VisitAll(check)
+	root.Flags().VisitAll(check)
+}
+
+// TestSubcommandHelpGroupsGlobalFlags pins that a subcommand groups its inherited
+// (global) flags while its own local flags stay a flat list.
+func TestSubcommandHelpGroupsGlobalFlags(t *testing.T) {
+	root, _ := newRootCmd()
+
+	out, err := runCmd(t, root, "diff", "--help")
+	require.NoError(t, err)
+
+	global := out[strings.Index(out, "Global Flags:"):]
+	require.Contains(t, global, "  Source:")
+	require.Contains(t, global, "  Diagnostics:")
+	require.Contains(t, global, "--timeout")
+
+	// diff's own flags render under the flat "Flags:" block, above Global Flags.
+	local := out[strings.Index(out, "Flags:"):strings.Index(out, "Global Flags:")]
+	require.Contains(t, local, "--data")
+	require.NotContains(t, local, "  Source:")
+}
+
+// TestGroupedFlagUsages exercises the template func directly: an annotated set
+// renders sections in order; an unannotated set is byte-identical to pflag's
+// default so subcommand-local flags are untouched.
+func TestGroupedFlagUsages(t *testing.T) {
+	t.Run("annotated set is grouped", func(t *testing.T) {
+		fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
+		fs.String("src", "", "source")
+		fs.Bool("json", false, "json out")
+		fs.Bool("loose", false, "no group") // unannotated -> Options
+		require.NoError(t, fs.SetAnnotation("src", flagGroupKey, []string{groupSource}))
+		require.NoError(t, fs.SetAnnotation("json", flagGroupKey, []string{groupOutput}))
+
+		got := groupedFlagUsages(fs)
+
+		srcAt := strings.Index(got, "  Source:")
+		outAt := strings.Index(got, "  Output:")
+		optAt := strings.Index(got, "  Options:")
+		require.NotEqual(t, -1, srcAt)
+		require.Less(t, srcAt, outAt)
+		require.Less(t, outAt, optAt)
+		require.Contains(t, sectionAfter(got, "  Source:"), "--src")
+		require.Contains(t, sectionAfter(got, "  Options:"), "--loose")
+
+		// The first section starts flush (no leading blank line) and consecutive
+		// sections are separated by exactly one blank line — pins the b.Len() > 0
+		// separator guard.
+		require.True(t, strings.HasPrefix(got, "  Source:"), "unexpected leading blank line: %q", got)
+		require.Contains(t, got, "\n\n  Output:")
+		require.Contains(t, got, "\n\n  Options:")
+	})
+
+	t.Run("unannotated set is unchanged", func(t *testing.T) {
+		fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
+		fs.Bool("data", false, "diff data")
+		fs.Int("sample", 1000, "sample size")
+
+		require.Equal(t, fs.FlagUsages(), groupedFlagUsages(fs))
+	})
+}
+
+// sectionAfter returns the slice of s starting just past header and ending at the
+// next two-space-indented section header (or end of string), i.e. the flag lines
+// that belong to that section.
+func sectionAfter(s, header string) string {
+	start := strings.Index(s, header)
+	if start == -1 {
+		return ""
+	}
+	start += len(header)
+	rest := s[start:]
+	// The next section starts at a blank line followed by "  <Title>:"; scan
+	// line by line for the next header at the same indent.
+	lines := strings.Split(rest, "\n")
+	var b strings.Builder
+	for i, line := range lines {
+		if i > 0 && isSectionHeader(line) {
+			break
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// isSectionHeader reports whether line is a "  <Title>:" group header (two-space
+// indent, single word, trailing colon), distinguishing it from a "    --flag"
+// entry indented four spaces.
+func isSectionHeader(line string) bool {
+	if !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "   ") {
+		return false
+	}
+	trimmed := strings.TrimSpace(line)
+	return strings.HasSuffix(trimmed, ":") && !strings.Contains(trimmed, " ")
+}

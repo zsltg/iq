@@ -196,6 +196,10 @@ func newRootCmd() (*cobra.Command, *config) {
 		newDriverCmd(),
 		newVersionCmd(),
 	)
+	// Render --help flags in labeled sections (Source/Query/Output/Display/
+	// Diagnostics) instead of one flat list. Presentation only: parsing and the
+	// mutual-exclusivity constraint above are untouched.
+	installGroupedHelp(root)
 	return root, cfg
 }
 
