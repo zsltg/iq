@@ -612,6 +612,54 @@ Reach for `--from`/`--combine` for a straightforward join, union, or aggregate a
 reach for `source()` when a read depends on another source's values, or to keep everything in one
 composable filter.
 
+## Moving data (`iq data`)
+
+`iq data` is structured, driver-agnostic data movement and lifecycle — the write-side counterpart to
+the read path, and the iq-native take on sq's `tbl copy`/`--insert`/`truncate`/`drop`. (`iq exec`
+remains the untyped escape hatch for anything the typed path does not cover.)
+
+`iq data copy <src> [dst]` is one command for all movement. Each endpoint is a saved source
+(`name[.coll]`) or a file path (`-` or an omitted `dst` is stdin/stdout); a file endpoint is a typed
+JSONL dump (`{"key":…,"type":…,"value":…}` per line), whose per-record type tag is what makes a
+Redis round-trip lossless. Existing keys are overwritten (upsert) unless `--no-overwrite`
+(insert-only), and `--replace` empties the destination first (with a confirmation, or `--force`).
+
+```bash
+iq data copy books books2                 # source → source, key/_id-preserving
+iq data copy books dump.jsonl             # source → file: a typed backup dump
+iq data copy dump.jsonl books2            # file → source: restore the dump
+iq data copy books                        # dump to stdout (dst omitted)
+iq data copy cache mongo_books            # cross-driver (Redis → Mongo); verify with `iq diff --data`
+iq data copy foreign.json books --key-field id   # import foreign JSON, keyed by its id field
+```
+
+`--filter '<jq>'` transforms each item during the copy — this is sq's `--insert`, done portably.
+The item's key is threaded past the filter and paired with the output, so a reshaped value still
+lands under its own key (Redis gets a real key, Mongo an `_id`):
+
+```bash
+iq data copy books recent --filter 'select(.year > 2000)'   # copy only matching items
+iq data copy books kv --filter '{t: .title}' --key '.t'     # reshape + re-key
+```
+
+A filter that emits more than one value per item needs `--key`/`--key-field` to key each output;
+otherwise the copy fails fast rather than guess.
+
+`iq data clear <target>…` empties a container (Mongo `deleteMany({})`, Redis `FLUSHDB`); `iq data
+drop <target>…` removes one (Mongo drops the collection). Redis has no droppable container — a DB
+index only empties — so `drop` is rejected for a Redis target with a pointer to `clear`. Both are
+distinct from `iq rm`, which only *unregisters* a saved source; these destroy stored data, and prompt
+for confirmation unless `--force`.
+
+Every `iq data` subcommand takes `--explain` (describe the plan without connecting or changing
+anything) and `--dry-run` (report the real effect — actual counts — while changing nothing).
+
+```bash
+iq data copy books books2 --explain     # static read + write plan, no connection
+iq data clear books --dry-run           # "would clear books.books (~1240 item(s))"
+iq data drop cache --explain            # reports the Redis drop as unsupported
+```
+
 ## Architecture
 
 The core read path: a jq filter is classified by the **selector**, a scan is optionally **decomposed**
@@ -643,6 +691,18 @@ graph TD
   RS -.->|"unfiltered: cheap total (RunOptions.OnEstimate)"| EST["Estimator (opt): Mongo estimatedDocumentCount"]
   MAT -.-> EST
   EST -.->|"~N est"| PROG
+
+  CP["iq data copy (CLI)"] --> SRC{"source or file?"}
+  SRC -->|source| TS["TypedReader.TypedScan — {key,type,value} batches"]
+  SRC -->|file| DEC["JSONL decode (typed dump or foreign)"]
+  TS --> TX["optional --filter transform + re-key (source key / --key)"]
+  DEC --> TX
+  TX --> DST{"source or file?"}
+  DST -->|source| PUT["Putter.Put — upsert / insert-only"]
+  DST -->|file| ENC["JSONL encode → typed dump"]
+  PUT --> MW["Mongo: bulkWrite replaceOne-upsert / insertMany"]
+  PUT --> RW["Redis: pipelined type-aware SET/HSET/RPUSH/… (DEL-then-write to replace)"]
+  LF["iq data clear / drop (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop — capability-gated (Redis has no Dropper)"]
 ```
 
 The query core is driver-agnostic and lives behind two ports a backend adapter implements:
@@ -658,10 +718,26 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   program over the reduced per-source results bound as variables, and `CrossEngine` runs a
   `source()`-driven filter over a null input — both reach other sources through the `SourceOpener`
   port and hold no primary store.
-- `drivers/redis`, `drivers/mongo` — the adapters. Each has one `*Store` satisfying both ports:
-  `Query` (exec) and `Get`/`ScanBatches` (jq), with a type-to-JSON normalization frozen as that
-  backend's encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs). Redis maps
-  a key to a Redis key; Mongo maps a key to a document `_id` within `--collection`.
+- The **write path** mirrors the read path through optional capability ports in `internal/query`,
+  the same idiom as `FilteredScanner`/`Estimator`: `Putter` (write a batch of typed records),
+  `TypedReader` (`TypedScan`, read `{key, type, value}` batches so a copy preserves each item's
+  native type), `Clearer` (empty a container), and `Dropper` (remove one). A backend implements
+  only the capabilities its model supports, and a command type-asserts and rejects cleanly when one
+  is absent — so a new backend never edits the commands, and Redis, whose DB index cannot be
+  removed, simply omits `Dropper`. `Copier` streams `TypedScan → optional --filter transform →
+  Put` in bounded pages; the type tag is what makes a Redis round-trip lossless, since a hash and a
+  document both normalize to a JSON object. `iq data copy` drives this (source↔source and
+  file↔source, cross-driver included; a file endpoint is a typed JSONL dump), and `iq data
+  clear`/`drop` drive the lifecycle ports. `iq exec` remains the untyped escape hatch for anything
+  the typed path does not cover.
+- `drivers/redis`, `drivers/mongo` — the adapters. Each has one `*Store` satisfying the read ports
+  (`Query` for exec, `Get`/`ScanBatches` for jq) and the write ports (`Put`/`Clear`/`TypedScan`,
+  plus `Drop` for Mongo), with a type-to-JSON normalization frozen as that backend's encoding
+  contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs) and its inverse for writes
+  (Mongo `bulkWrite`; Redis pipelined `SET`/`HSET`/`RPUSH`/`SADD`/`ZADD`/`XADD`/`JSON.SET` by
+  type). Redis maps a key to a Redis key; Mongo maps a key to a document `_id` within
+  `--collection`. Each also contributes pure, connection-free `--explain` describers
+  (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
 - `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
   produces. `Tree` diffs two values, `Keyed` aligns two keyed item sets, and `Infer` reduces a set
   to a sampled field/type shape that feeds back through `Tree`. It holds no I/O: `iq diff` reads
@@ -676,11 +752,13 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   keyring-backed source keeps its password out of the config file; `cmd` splices it back into the
   URL at connect time.
 - `cmd` — the CLI adapter and composition root. It holds the driver registry (`cmd/driver.go`): one
-  self-describing entry per backend (name, description, schemes, docs, opener) that `openStore`,
-  `supportedScheme`, every driver label, and `iq driver ls` all derive from, so adding a backend is
+  self-describing entry per backend (name, description, schemes, docs, opener, and the connection-free
+  `--explain` describers) that `openStore`, `supportedScheme`, every driver label, and `iq driver ls`
+  all derive from, so adding a backend is
   one entry. It resolves the selected source (`--src` or the active source) to a URL and collection,
   picks the adapter by URL scheme through that registry (`openStore`), runs the jq action (routing a
-  `source()`-driven filter to the cross-source engine), the `exec` escape hatch, a source or config command
+  `source()`-driven filter to the cross-source engine), the `exec` escape hatch, the `data`
+  movement/lifecycle group (`copy`/`clear`/`drop`), a source or config command
   (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`/`diff`/`driver`/`config`), or a `--from`/`--combine` cross-source query —
   resolving every source name through the same registry — and formats output (a format-flag-selected
   renderer for the jq path — `--json`, `--jsonl`, `--json-array`, `--raw`, or `--yaml`, also selectable by
@@ -708,6 +786,9 @@ iq version                # print version, commit, build date, and Go version
 iq config set format yaml # persist a default flag value (add --src <name> to scope it to a source)
 iq config ls -v           # list every persistable option: value, default, and help
 iq --config ./iq.toml ls  # run against an alternate config file (overrides IQ_CONFIG)
+iq data copy books books2 # copy a source to another (source↔source or file↔source; --filter to transform)
+iq data copy books dump.jsonl   # dump a source to a typed JSONL file (restore with the reverse copy)
+iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
 go test ./...             # full suite; starts ephemeral Redis + MongoDB via testcontainers-go
 docker compose up -d --wait   # optional: local Redis + MongoDB for manual exploration (:6379, :27017)

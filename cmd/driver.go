@@ -34,6 +34,13 @@ type driver struct {
 	// would make for a classified query and pushed predicate — the data the query
 	// plan (--explain/--verbose) shows.
 	explainPlan func(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan
+	// explainWrite, explainClear, and explainDrop are the write-side counterparts:
+	// each describes an `iq data` operation without connecting, so `--explain`
+	// stays connection-free. explainDrop's bool reports whether the backend can
+	// drop its container at all (false for Redis, whose DB index is not removable).
+	explainWrite func(mode query.WriteMode) query.AccessPlan
+	explainClear func() query.AccessPlan
+	explainDrop  func() (query.AccessPlan, bool)
 }
 
 // drivers is the registry of every backend the CLI can dispatch to. Order is the
@@ -48,7 +55,10 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqmongo.Open(ctx, cfg.url, cfg.collection, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan: iqmongo.ExplainPlan,
+		explainPlan:  iqmongo.ExplainPlan,
+		explainWrite: iqmongo.ExplainWrite,
+		explainClear: iqmongo.ExplainClear,
+		explainDrop:  iqmongo.ExplainDrop,
 	},
 	{
 		name:     "redis",
@@ -59,7 +69,10 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqredis.Open(ctx, cfg.url, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan: iqredis.ExplainPlan,
+		explainPlan:  iqredis.ExplainPlan,
+		explainWrite: iqredis.ExplainWrite,
+		explainClear: iqredis.ExplainClear,
+		explainDrop:  iqredis.ExplainDrop,
 	},
 }
 

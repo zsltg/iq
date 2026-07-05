@@ -28,3 +28,27 @@ func ExplainPlan(keys selector.KeySet, _ predicate.Node, _ bool) query.AccessPla
 		"no server-side filter — every key is read and filtered client-side",
 	}}
 }
+
+// ExplainWrite describes, without connecting, the write a copy into this keyspace
+// would make: a pipelined, type-aware reconstruction of each key. Upsert DEL's an
+// aggregate before rewriting it (so it is replaced, not appended); InsertOnly
+// writes only absent keys.
+func ExplainWrite(mode query.WriteMode) query.AccessPlan {
+	op := "pipeline per key: DEL then SET / HSET / RPUSH / SADD / ZADD / XADD / JSON.SET by type (replace)"
+	if mode == query.InsertOnly {
+		op = "pipeline EXISTS then, for absent keys only, SET / HSET / RPUSH / SADD / ZADD / XADD / JSON.SET by type"
+	}
+	return query.AccessPlan{Ops: []string{op}}
+}
+
+// ExplainClear describes the `iq data clear` op for a Redis keyspace.
+func ExplainClear() query.AccessPlan {
+	return query.AccessPlan{Ops: []string{"FLUSHDB: empty the logical database, which itself persists"}}
+}
+
+// ExplainDrop reports that `iq data drop` is unsupported for Redis: a DB index is
+// a fixed container that can be emptied (clear) but not removed. The false return
+// is what the command surfaces, matching the absent Dropper capability at runtime.
+func ExplainDrop() (query.AccessPlan, bool) {
+	return query.AccessPlan{Ops: []string{"unsupported: a redis DB index cannot be removed; use `iq data clear` to empty it"}}, false
+}

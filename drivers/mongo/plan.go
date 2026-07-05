@@ -33,3 +33,25 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	}
 	return query.AccessPlan{Ops: []string{desc, mode}, Filter: filter}
 }
+
+// ExplainWrite describes, without connecting, the write a copy into this collection
+// would make: an unordered bulk replace-upsert by _id, or an unordered insert that
+// skips existing _ids.
+func ExplainWrite(mode query.WriteMode) query.AccessPlan {
+	op := fmt.Sprintf("bulkWrite: replaceOne upsert by _id, batches of %d", scanBatch)
+	if mode == query.InsertOnly {
+		op = fmt.Sprintf("insertMany (unordered): insert new _ids, skip existing, batches of %d", scanBatch)
+	}
+	return query.AccessPlan{Ops: []string{op}}
+}
+
+// ExplainClear describes the `iq data clear` op for a collection.
+func ExplainClear() query.AccessPlan {
+	return query.AccessPlan{Ops: []string{"deleteMany({}): empty the collection, keep its indexes"}}
+}
+
+// ExplainDrop describes the `iq data drop` op for a collection and reports it
+// supported — a MongoDB collection is a removable container.
+func ExplainDrop() (query.AccessPlan, bool) {
+	return query.AccessPlan{Ops: []string{"drop(): remove the collection and its indexes"}}, true
+}
