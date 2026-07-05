@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.11.0 - 2026-07-05
+### Features
+- **cmd:** add --dry-run query plan and verbose backend command trace (392d427)
+
+
 ## v0.10.0 - 2026-07-05
 ### Features
 - **cli:** default MongoDB pushdown on, replace --compile with --no-compile (fcc38e3)
