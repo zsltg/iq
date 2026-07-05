@@ -76,6 +76,49 @@ func TestProgressMeterSpinnerNeverCompletes(t *testing.T) {
 	require.Equal(t, int64(1_000_000), m.bar.Current(), "the bar tracks the scanned count")
 }
 
+// TestProgressMeterLabel pins the spinner's trailing text: the running count
+// alone when the backend gave no estimate, and "(~N est)" appended when it did.
+func TestProgressMeterLabel(t *testing.T) {
+	m := newMeter(&bytes.Buffer{}, time.Hour)
+	defer m.Stop()
+
+	m.Tick(3)
+	require.Equal(t, "3 scanned", m.label(), "no estimate: count only")
+
+	m.SetEstimate(50)
+	require.Equal(t, "3 scanned (~50 est)", m.label(), "an estimate is shown as an approximate total")
+}
+
+// TestProgressMeterSetEstimate asserts a non-positive estimate is ignored: it
+// neither sets a total from nothing nor clears one already set, so the boundary
+// of the n<=0 guard is pinned exactly. A nil meter is safe.
+func TestProgressMeterSetEstimate(t *testing.T) {
+	t.Run("non-positive estimate is ignored", func(t *testing.T) {
+		m := newMeter(&bytes.Buffer{}, time.Hour)
+		defer m.Stop()
+
+		m.SetEstimate(0)
+		m.SetEstimate(-5)
+		m.Tick(2)
+		require.Equal(t, "2 scanned", m.label(), "a zero or negative estimate leaves the count bare")
+	})
+
+	t.Run("zero never clears an estimate already set", func(t *testing.T) {
+		m := newMeter(&bytes.Buffer{}, time.Hour)
+		defer m.Stop()
+
+		m.SetEstimate(50)
+		m.SetEstimate(0) // exactly the guard boundary: must not overwrite 50
+		m.Tick(2)
+		require.Equal(t, "2 scanned (~50 est)", m.label(), "a zero estimate must not wipe a real total")
+	})
+
+	t.Run("nil meter is safe", func(t *testing.T) {
+		var m *progressMeter
+		require.NotPanics(t, func() { m.SetEstimate(10) }, "SetEstimate on a nil meter is a no-op")
+	})
+}
+
 // TestMeterWriterPassThrough asserts the stdout wrapper writes bytes unchanged
 // (its only side effect is timestamping the write for the quiet window).
 func TestMeterWriterPassThrough(t *testing.T) {

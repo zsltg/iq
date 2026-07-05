@@ -49,6 +49,18 @@ type FilteredScanner interface {
 	ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error
 }
 
+// Estimator is an optional capability a KVStore may implement: a cheap,
+// approximate count of the items a full unfiltered scan will walk, so a CLI
+// adapter can show the running scan count against a rough total. It must be
+// cheap — a metadata read, not a scan or a second query pass — so a store that
+// can only answer by scanning does not implement it. The count is a hint: it may
+// be stale and drift as the keyspace changes mid-scan, and it is meaningful only
+// for an unfiltered scan (the engine requests it only then), never a pushed-down
+// filtered scan whose walked set is smaller than the whole keyspace.
+type Estimator interface {
+	EstimateCount(ctx context.Context) (int64, error)
+}
+
 // SourceOpener resolves a named source to a KVStore, so the in-filter
 // source(name; filter) function can read from sources other than the primary.
 // The CLI implements it over the source registry; the core stays driver-agnostic.
@@ -65,6 +77,12 @@ type RunOptions struct {
 	Unbounded bool
 	Compile   bool
 	OnPage    func(n int)
+	// OnEstimate, when non-nil, is called at most once before an unfiltered scan
+	// starts with a cheap approximate item count, when the store is an Estimator.
+	// It is a best-effort hint for a progress display: it never fires for a
+	// bounded read or a pushed-down filtered scan, and a store that cannot
+	// estimate cheaply leaves it uncalled. The core stays UI-agnostic.
+	OnEstimate func(n int64)
 }
 
 // JQEngine runs a jq expression against a KVStore. The expression is both the
@@ -112,31 +130,61 @@ func (e *JQEngine) Run(ctx context.Context, src string, opts RunOptions, emit fu
 	case !keys.Scan:
 		return e.runBounded(ctx, code, keys.Keys, emit)
 	case keys.Streamable && !opts.Unbounded:
-		return e.runStreaming(ctx, code, e.scanner(q, opts), opts.OnPage, emit)
+		scan, pushed := e.scanner(q, opts)
+		// A pushed-down filter walks a subset of the keyspace, so a whole-keyspace
+		// estimate would overshoot; only an unfiltered scan gets a total.
+		if !pushed {
+			e.estimate(ctx, opts.OnEstimate)
+		}
+		return e.runStreaming(ctx, code, scan, opts.OnPage, emit)
 	case !opts.Unbounded:
 		// A holistic scan has no batched form; it must materialize, which the
 		// caller has not permitted.
 		return ErrScanNotAllowed
 	default:
+		// The materialized path always scans the whole keyspace unfiltered.
+		e.estimate(ctx, opts.OnEstimate)
 		return e.runMaterialized(ctx, code, opts.OnPage, emit)
 	}
 }
 
-// scanner picks how the streamable pages are produced. With Compile set, a
-// pushable predicate and a store that supports FilteredScanner let the store
-// pre-filter; otherwise it is a plain full scan. Either way the full filter
-// re-runs per page, so the choice only affects how much the store returns.
-func (e *JQEngine) scanner(q *gojq.Query, opts RunOptions) func(context.Context, func(map[string]any) error) error {
+// scanner picks how the streamable pages are produced and reports whether it
+// pushed a filter down. With Compile set, a pushable predicate and a store that
+// supports FilteredScanner let the store pre-filter (returns true); otherwise it
+// is a plain full scan (returns false). Either way the full filter re-runs per
+// page, so the choice only affects how much the store returns; the bool also
+// tells Run whether a whole-keyspace estimate is a valid total for the scan.
+func (e *JQEngine) scanner(q *gojq.Query, opts RunOptions) (func(context.Context, func(map[string]any) error) error, bool) {
 	if opts.Compile {
 		if fs, ok := e.store.(FilteredScanner); ok {
 			if pred, ok := pushdown.Compile(q); ok {
 				return func(ctx context.Context, fn func(map[string]any) error) error {
 					return fs.ScanFiltered(ctx, pred, fn)
-				}
+				}, true
 			}
 		}
 	}
-	return e.store.ScanBatches
+	return e.store.ScanBatches, false
+}
+
+// estimate invokes onEstimate with a cheap approximate item count before a scan,
+// when the store is an Estimator and onEstimate is set. It is best-effort: a
+// store that is not an Estimator, a nil callback, or a failed estimate all leave
+// the caller with no total rather than an error — a progress hint must never
+// break the query it describes, so the estimate error is deliberately dropped.
+func (e *JQEngine) estimate(ctx context.Context, onEstimate func(int64)) {
+	if onEstimate == nil {
+		return
+	}
+	est, ok := e.store.(Estimator)
+	if !ok {
+		return
+	}
+	n, err := est.EstimateCount(ctx)
+	if err != nil {
+		return
+	}
+	onEstimate(n)
 }
 
 // runBounded fetches the named keys and runs the filter once over them.

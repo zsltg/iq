@@ -258,11 +258,17 @@ Use `--unbounded` when you need sorted, exactly-once output.
 The flag names the cost property (loading everything), not any one store's mechanism, so it will
 mean the same thing for future backends (a Cassandra full scan, a CouchDB `_all_docs`).
 
-A scan has no upfront total (Redis `SCAN`, Mongo cursor), so while one runs `iq` shows an animated
-spinner with a running `N scanned` count on **stderr** — a sparse `.[] | select(...)` over a large
-keyspace is never silent. The spinner appears only after a short delay, so a fast query never
-flashes one, and only when stderr is a terminal: piped or redirected output is never touched, and
-result rows streamed to stdout are never garbled by it. Disable it with `--no-progress`.
+A scan has no reliable upfront total (Redis `SCAN`, Mongo cursor), so while one runs `iq` shows an
+animated spinner with a running `N scanned` count on **stderr** — a sparse `.[] | select(...)` over
+a large keyspace is never silent. When a backend can supply a cheap approximate total (MongoDB's
+`estimatedDocumentCount` for an unfiltered whole-collection scan), the count is shown against it as
+`N scanned (~M est)`; the tilde marks it a hint — it comes from cached metadata and drifts under
+concurrent writes, so the scan may exceed it and it never becomes a percentage bar. No total is
+shown for a pushed-down filtered scan (it walks a subset), for Redis (no cheap count for a
+`MATCH`), or for a cross-source scan (a per-source estimate would mislead the aggregate). The
+spinner appears only after a short delay, so a fast query never flashes one, and only when stderr
+is a terminal: piped or redirected output is never touched, and result rows streamed to stdout are
+never garbled by it. Disable it with `--no-progress`.
 
 ### Diagnostics & logging
 
@@ -565,6 +571,9 @@ graph TD
 
   RS -.->|"per page (RunOptions.OnPage)"| PROG["scan-progress spinner → stderr (CLI, off unless a terminal)"]
   MAT -.->|"per page (RunOptions.OnPage)"| PROG
+  RS -.->|"unfiltered: cheap total (RunOptions.OnEstimate)"| EST["Estimator (opt): Mongo estimatedDocumentCount"]
+  MAT -.-> EST
+  EST -.->|"~N est"| PROG
 ```
 
 The query core is driver-agnostic and lives behind two ports a backend adapter implements:

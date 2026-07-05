@@ -91,6 +91,11 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		return err
 	}
 	defer func() { _ = store.Close() }()
+	// Only the single-source scan gets a total: it walks one keyspace, so a
+	// backend's cheap estimate is a valid denominator for the spinner. The
+	// cross-source path aggregates several scans, where a per-source estimate
+	// would mislead, so it is left off there.
+	opts.OnEstimate = meter.SetEstimate
 	runErr := query.NewJQEngine(store).Run(ctx, filter, opts, f.emit)
 	cfg.logQueryComplete(scanned, start)
 	return finish(f, scanHint(asSyntaxError(filter, runErr)))

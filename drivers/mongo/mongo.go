@@ -171,6 +171,23 @@ func (s *Store) scanWith(ctx context.Context, filter bson.M, fn func(batch map[s
 	return nil
 }
 
+// EstimateCount returns a cheap, approximate count of the collection's documents
+// from the server's cached metadata (estimatedDocumentCount), so a full scan can
+// show a rough total without a second pass over the data. It is meaningful only
+// for an unfiltered whole-collection scan — the engine requests it only then —
+// and may be stale under concurrent writes, so the caller treats it as a hint.
+// A missing collection is the same error the scan paths return.
+func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
+	if s.collection == "" {
+		return 0, errNoCollection
+	}
+	n, err := s.db.Collection(s.collection).EstimatedDocumentCount(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("mongodb estimated count: %w", err)
+	}
+	return n, nil
+}
+
 // Query runs a raw database command. args must be a single JSON command document
 // (for example `{"find":"books","filter":{...}}`); it is decoded order-preserving
 // so the command name stays first, run with RunCommand, and the reply normalized.

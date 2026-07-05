@@ -174,6 +174,28 @@ func TestScanBatchesYieldsAllDocs(t *testing.T) {
 	require.Equal(t, map[string]any{"_id": "2", "n": 2}, merged["2"])
 }
 
+func TestEstimateCountReturnsCollectionSize(t *testing.T) {
+	store := openIntegration(t, "estimate_docs")
+	seedDocs(t, store, []any{
+		bson.M{"_id": "1", "n": int32(1)},
+		bson.M{"_id": "2", "n": int32(2)},
+		bson.M{"_id": "3", "n": int32(3)},
+	})
+
+	n, err := store.EstimateCount(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, int64(3), n, "the estimate reflects the seeded collection size")
+}
+
+func TestEstimateCountWithoutCollectionFails(t *testing.T) {
+	store := openIntegration(t, "")
+
+	_, err := store.EstimateCount(context.Background())
+
+	require.ErrorIs(t, err, errNoCollection)
+}
+
 func TestScanBatchesBoundsPageSize(t *testing.T) {
 	store := openIntegration(t, "page_docs")
 	// Four documents at pageSize 2 means two full pages and an empty final page:

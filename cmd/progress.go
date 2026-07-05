@@ -50,8 +50,9 @@ type progressMeter struct {
 	bar   *mpb.Bar
 	shown bool
 
-	scanned atomic.Int64 // total items scanned so far
-	lastOut atomic.Int64 // UnixNano of the last stdout write, for the quiet window
+	scanned  atomic.Int64 // total items scanned so far
+	estimate atomic.Int64 // backend's cheap approximate total, 0 when unknown
+	lastOut  atomic.Int64 // UnixNano of the last stdout write, for the quiet window
 
 	stop chan struct{}
 	wg   sync.WaitGroup
@@ -151,7 +152,7 @@ func (m *progressMeter) Tick(n int) {
 			mpb.BarFillerTrim(),
 			mpb.PrependDecorators(decor.Name("scanning ")),
 			mpb.AppendDecorators(decor.Any(func(decor.Statistics) string {
-				return fmt.Sprintf("%d scanned", m.scanned.Load())
+				return m.label()
 			})),
 		)
 		m.shown = true
@@ -161,6 +162,29 @@ func (m *progressMeter) Tick(n int) {
 	// Advance the bar's current. With an indeterminate (negative) total it never
 	// completes, so it keeps spinning; the count is displayed by the decorator.
 	bar.SetCurrent(total)
+}
+
+// SetEstimate records a cheap, approximate total the backend supplied before the
+// scan, rendered next to the running count as "(~N est)". It is a hint only: the
+// estimate may be stale and the actual scan can exceed it, so it never drives a
+// percentage or completes the spinner. A zero or negative value is ignored,
+// leaving the label the bare count and never clearing a total already set. It is
+// the RunOptions.OnEstimate callback, invoked at most once per run. Nil-safe.
+func (m *progressMeter) SetEstimate(n int64) {
+	if m == nil || n <= 0 {
+		return
+	}
+	m.estimate.Store(n)
+}
+
+// label is the spinner's trailing text: the running scanned count, plus the
+// backend's approximate total as "(~N est)" when one was supplied.
+func (m *progressMeter) label() string {
+	scanned := m.scanned.Load()
+	if est := m.estimate.Load(); est > 0 {
+		return fmt.Sprintf("%d scanned (~%d est)", scanned, est)
+	}
+	return fmt.Sprintf("%d scanned", scanned)
 }
 
 // spinnerIndeterminate is the mpb total for an unbounded spinner: a negative
