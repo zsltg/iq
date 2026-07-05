@@ -317,6 +317,55 @@ func TestDiffDataAndSchemaMongoIntegration(t *testing.T) {
 	require.Contains(t, schemaText, ".email")
 }
 
+// TestReadAllReportsPagesRedisIntegration pins readAll's onPage contract: a
+// non-nil callback receives one tick per scanned page whose sizes sum to the
+// keyspace, and a nil callback is simply skipped. Without the non-nil case the
+// `if onPage != nil` guard reads as dead (a mutant dropping the tick survives);
+// the nil case guards against the inverse mutant that would call through nil.
+func TestReadAllReportsPagesRedisIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: needs a reachable Redis")
+	}
+	base := redisBaseURL()
+	u, err := withRedisDB(base, 0)
+	require.NoError(t, err)
+	kv := map[string]string{"k1": "v1", "k2": "v2", "k3": "v3"}
+	seedRedis(t, u, kv)
+	tgt := diffTarget{handle: "a", url: u}
+
+	tests := []struct {
+		name    string
+		withCB  bool
+		wantSum int
+	}{
+		{name: "non-nil onPage ticks per page", withCB: true, wantSum: len(kv)},
+		{name: "nil onPage is skipped", withCB: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var pages []int
+			var onPage func(int)
+			if tt.withCB {
+				onPage = func(n int) { pages = append(pages, n) }
+			}
+			got, err := readAll(ctx, tgt, onPage)
+			require.NoError(t, err)
+			require.Len(t, got, len(kv))
+			if !tt.withCB {
+				return
+			}
+			require.NotEmpty(t, pages)
+			sum := 0
+			for _, n := range pages {
+				sum += n
+			}
+			require.Equal(t, tt.wantSum, sum)
+		})
+	}
+}
+
 // decodeData parses --json diff output into key -> op name for the data layer.
 func decodeData(t *testing.T, out string) map[string]string {
 	t.Helper()
