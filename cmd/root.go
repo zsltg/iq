@@ -30,6 +30,7 @@ type config struct {
 	compact    bool
 	monochrome bool
 	forceColor bool
+	noProgress bool
 }
 
 // newRootCmd builds the root command and its subcommands. The default action is
@@ -102,6 +103,7 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "per-query timeout")
 	root.PersistentFlags().BoolVarP(&cfg.monochrome, "monochrome", "M", false, "disable colored output (also honored via NO_COLOR); color is on by default only when writing to a terminal")
 	root.PersistentFlags().BoolVarP(&cfg.forceColor, "color", "C", false, "force colored output even when the destination is not a terminal (e.g. a pager)")
+	root.PersistentFlags().BoolVar(&cfg.noProgress, "no-progress", false, "disable the scan progress spinner (shown on stderr for long scans when it is a terminal)")
 	// --unbounded and --compile are local to the default jq action.
 	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
 	root.Flags().BoolVar(&cfg.compile, "compile", false, "push a .[]|select(...) equality predicate to the store to pre-filter server-side (MongoDB; no-op elsewhere; results are unchanged)")

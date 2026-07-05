@@ -87,7 +87,12 @@ func newDiffCmd(cfg *config) *cobra.Command {
 
 			rep := report{dataRun: dataMode, statsRun: statsMode, schemaRun: schemaMode}
 			if dataMode {
-				d, err := diffData(ctx, left, right)
+				// --data reads both keyspaces fully with no output until the
+				// report renders, so a spinner fits cleanly. Stop it before the
+				// error check and before render, so the line clears either way.
+				meter := newProgressMeter(cmd.ErrOrStderr(), cfg.noProgress)
+				d, err := diffData(ctx, left, right, meter.Tick)
+				meter.Stop()
 				if err != nil {
 					return err
 				}
@@ -142,12 +147,12 @@ func resolveDiffTarget(cf *iqconfig.Config, name string) (diffTarget, error) {
 }
 
 // diffData reads both keyspaces fully and diffs them key by key.
-func diffData(ctx context.Context, left, right diffTarget) ([]diff.ItemDelta, error) {
-	a, err := readAll(ctx, left)
+func diffData(ctx context.Context, left, right diffTarget, onPage func(int)) ([]diff.ItemDelta, error) {
+	a, err := readAll(ctx, left, onPage)
 	if err != nil {
 		return nil, err
 	}
-	b, err := readAll(ctx, right)
+	b, err := readAll(ctx, right, onPage)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +161,7 @@ func diffData(ctx context.Context, left, right diffTarget) ([]diff.ItemDelta, er
 
 // readAll materializes a source's whole keyspace as key -> value. A key repeated
 // across scan pages (the store's weak scan guarantee) simply overwrites.
-func readAll(ctx context.Context, t diffTarget) (map[string]any, error) {
+func readAll(ctx context.Context, t diffTarget, onPage func(int)) (map[string]any, error) {
 	st, err := openStore(ctx, &config{url: t.url, collection: t.collection})
 	if err != nil {
 		return nil, redactErr(err, t.url)
@@ -164,6 +169,9 @@ func readAll(ctx context.Context, t diffTarget) (map[string]any, error) {
 	defer func() { _ = st.Close() }()
 	all := map[string]any{}
 	err = st.ScanBatches(ctx, func(batch map[string]any) error {
+		if onPage != nil {
+			onPage(len(batch))
+		}
 		for k, v := range batch {
 			all[k] = v
 		}

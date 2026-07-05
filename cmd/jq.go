@@ -30,8 +30,13 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	if err != nil {
 		return err
 	}
-	f := newFormatter(fm, cmd.OutOrStdout(), cfg.compact)
-	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: cfg.compile}
+	// The scan-progress spinner renders on stderr; wrapping stdout lets it hold
+	// its repaint while rows stream, so the two never collide. A nil meter (progress
+	// off, or stderr not a terminal) makes every call below a no-op.
+	meter := newProgressMeter(cmd.ErrOrStderr(), cfg.noProgress)
+	defer meter.Stop()
+	f := newFormatter(fm, meter.wrapStdout(cmd.OutOrStdout()), cfg.compact)
+	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: cfg.compile, OnPage: meter.Tick}
 
 	if cross {
 		cf, err := iqconfig.Load()

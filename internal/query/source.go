@@ -89,6 +89,9 @@ func sourceFunc(ctx context.Context, opts RunOptions, opener SourceOpener) func(
 			return gojq.NewIter[any](fmt.Errorf("source %q: %w", name, err))
 		}
 		var out []any
+		// opts flows through unchanged, so a RunOptions.OnPage progress hook set
+		// by the CLI ticks for each source's scan too (counts aggregate across
+		// sources, which is the intended cross-source scan total).
 		if err := NewJQEngine(store).Run(ctx, filter, opts, func(v any) error {
 			out = append(out, v)
 			return nil

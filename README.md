@@ -214,6 +214,12 @@ Use `--unbounded` when you need sorted, exactly-once output.
 The flag names the cost property (loading everything), not any one store's mechanism, so it will
 mean the same thing for future backends (a Cassandra full scan, a CouchDB `_all_docs`).
 
+A scan has no upfront total (Redis `SCAN`, Mongo cursor), so while one runs `iq` shows an animated
+spinner with a running `N scanned` count on **stderr** — a sparse `.[] | select(...)` over a large
+keyspace is never silent. The spinner appears only after a short delay, so a fast query never
+flashes one, and only when stderr is a terminal: piped or redirected output is never touched, and
+result rows streamed to stdout are never garbled by it. Disable it with `--no-progress`.
+
 ## Redis
 
 <details>
@@ -452,6 +458,9 @@ graph TD
   MG --> JQ
   RD --> JQ
   JQ --> OUT["--format renderer → output"]
+
+  RS -.->|"per page (RunOptions.OnPage)"| PROG["scan-progress spinner → stderr (CLI, off unless a terminal)"]
+  MAT -.->|"per page (RunOptions.OnPage)"| PROG
 ```
 
 The query core is driver-agnostic and lives behind two ports a backend adapter implements:

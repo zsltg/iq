@@ -58,10 +58,13 @@ type SourceOpener interface {
 
 // RunOptions carries the per-run policy flags. Unbounded permits materializing
 // the whole dataset in memory; Compile asks the engine to push a filter's
-// predicate to the store when it can.
+// predicate to the store when it can. OnPage, when non-nil, is called once per
+// scanned page with the page's item count, so a CLI adapter can report scan
+// progress; the core stays UI-agnostic (it only ever calls a plain func).
 type RunOptions struct {
 	Unbounded bool
 	Compile   bool
+	OnPage    func(n int)
 }
 
 // JQEngine runs a jq expression against a KVStore. The expression is both the
@@ -109,13 +112,13 @@ func (e *JQEngine) Run(ctx context.Context, src string, opts RunOptions, emit fu
 	case !keys.Scan:
 		return e.runBounded(ctx, code, keys.Keys, emit)
 	case keys.Streamable && !opts.Unbounded:
-		return e.runStreaming(ctx, code, e.scanner(q, opts), emit)
+		return e.runStreaming(ctx, code, e.scanner(q, opts), opts.OnPage, emit)
 	case !opts.Unbounded:
 		// A holistic scan has no batched form; it must materialize, which the
 		// caller has not permitted.
 		return ErrScanNotAllowed
 	default:
-		return e.runMaterialized(ctx, code, emit)
+		return e.runMaterialized(ctx, code, opts.OnPage, emit)
 	}
 }
 
@@ -150,8 +153,11 @@ func (e *JQEngine) runBounded(ctx context.Context, code *gojq.Code, names []stri
 // concatenated per-page outputs equal a single run over the whole keyspace
 // (modulo order). Running the full filter per page is also the re-apply that
 // keeps a pushed-down (superset) pre-filter correct. Memory stays O(page).
-func (e *JQEngine) runStreaming(ctx context.Context, code *gojq.Code, scan func(context.Context, func(map[string]any) error) error, emit func(v any) error) error {
+func (e *JQEngine) runStreaming(ctx context.Context, code *gojq.Code, scan func(context.Context, func(map[string]any) error) error, onPage func(int), emit func(v any) error) error {
 	err := scan(ctx, func(batch map[string]any) error {
+		if onPage != nil {
+			onPage(len(batch))
+		}
 		return runCode(ctx, code, batch, emit)
 	})
 	if err != nil {
@@ -163,9 +169,12 @@ func (e *JQEngine) runStreaming(ctx context.Context, code *gojq.Code, scan func(
 // runMaterialized assembles the whole keyspace into one object and runs the
 // filter over it once. It is the path for holistic filters and for a streamable
 // filter the caller chose to run unbounded (for key-sorted, single-pass output).
-func (e *JQEngine) runMaterialized(ctx context.Context, code *gojq.Code, emit func(v any) error) error {
+func (e *JQEngine) runMaterialized(ctx context.Context, code *gojq.Code, onPage func(int), emit func(v any) error) error {
 	root := map[string]any{}
 	err := e.store.ScanBatches(ctx, func(batch map[string]any) error {
+		if onPage != nil {
+			onPage(len(batch))
+		}
 		for k, v := range batch {
 			root[k] = v
 		}
