@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lmittmann/tint"
 	"github.com/spf13/cobra"
 )
 
@@ -27,9 +28,11 @@ const (
 // logOptions is the resolved, validated logging configuration for one
 // invocation: the verbose stderr sink and the file sink are independent, each
 // with its own level, so a DEBUG record can reach the file while the INFO stderr
-// sink skips it. file is empty when file logging is off.
+// sink skips it. file is empty when file logging is off. color tints the verbose
+// stderr sink (never the file sink) when stderr is a color-eligible terminal.
 type logOptions struct {
 	verbose bool
+	color   bool
 	enable  bool
 	file    string
 	level   slog.Level
@@ -41,6 +44,11 @@ type logOptions struct {
 // before any file is opened. It never opens a file itself.
 func resolveLogOptions(cmd *cobra.Command, cfg *config) (logOptions, error) {
 	o := logOptions{verbose: cfg.verbose}
+
+	// The verbose sink writes to stderr, so its color eligibility is decided
+	// against stderr's own TTY-ness, independent of resolveColor's stdout-based
+	// global mode (the two writers can differ). -M/-C/NO_COLOR still apply.
+	o.color = wantColor(cfg.monochrome, cfg.forceColor, cmd.ErrOrStderr())
 
 	o.enable = cfg.logEnable
 	if !cmd.Flags().Changed("log") {
@@ -100,13 +108,14 @@ func (o logOptions) fileActive() bool { return o.enable && o.file != "" }
 // build assembles the invocation logger and, when file logging is on, opens the
 // log file and returns its Close as the second result. The logger is never nil:
 // with no sink it discards, so every log point is a cheap no-op. The verbose
-// sink writes to stderr at INFO; the file sink honors the resolved level and
-// format.
+// sink writes to stderr at INFO, tinted when o.color is set; the file sink
+// honors the resolved level and format and is never tinted.
 func (o logOptions) build(stderr io.Writer) (*slog.Logger, func() error, error) {
 	var handlers []slog.Handler
 	if o.verbose {
-		handlers = append(handlers, slog.NewTextHandler(stderr, &slog.HandlerOptions{
+		handlers = append(handlers, tint.NewHandler(stderr, &tint.Options{
 			Level:       slog.LevelInfo,
+			NoColor:     !o.color,
 			ReplaceAttr: dropTimeAttr,
 		}))
 	}

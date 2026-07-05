@@ -106,6 +106,9 @@ func resolveWith(t *testing.T, args []string, env map[string]string) (logOptions
 		t.Setenv(k, v)
 	}
 	root, cfg := newRootCmd()
+	// Pin stderr to a non-terminal writer so the color decision is deterministic
+	// regardless of whether the test binary's stderr is attached to a terminal.
+	root.SetErr(io.Discard)
 	require.NoError(t, root.ParseFlags(args))
 	return resolveLogOptions(root, cfg)
 }
@@ -127,6 +130,7 @@ func TestResolveLogOptions(t *testing.T) {
 		wantActive bool
 		wantLevel  slog.Level
 		wantFormat string
+		wantColor  bool
 	}{
 		{
 			name:       "defaults: disabled, default path, debug/text",
@@ -178,6 +182,18 @@ func TestResolveLogOptions(t *testing.T) {
 			wantLevel: slog.LevelError, wantFormat: "json",
 		},
 		{
+			name:      "--color forces the verbose sink tinted",
+			args:      []string{"--color"},
+			wantColor: true,
+			wantFile:  defaultLogFile(), wantLevel: slog.LevelDebug, wantFormat: "text",
+		},
+		{
+			name:      "--monochrome keeps the verbose sink plain",
+			args:      []string{"--monochrome"},
+			wantColor: false,
+			wantFile:  defaultLogFile(), wantLevel: slog.LevelDebug, wantFormat: "text",
+		},
+		{
 			name:    "invalid IQ_LOG boolean errors",
 			env:     map[string]string{envLog: "maybe"},
 			wantErr: true,
@@ -206,24 +222,44 @@ func TestResolveLogOptions(t *testing.T) {
 			require.Equal(t, tt.wantActive, o.fileActive())
 			require.Equal(t, tt.wantLevel, o.level)
 			require.Equal(t, tt.wantFormat, o.format)
+			require.Equal(t, tt.wantColor, o.color)
 		})
 	}
 }
 
 // TestBuildVerboseOnly checks the verbose sink: INFO reaches stderr, DEBUG does
-// not, no file is opened (nil closer), and the timestamp is stripped.
+// not, no file is opened (nil closer), the timestamp is stripped, and the color
+// flag drives whether the line carries ANSI escapes.
 func TestBuildVerboseOnly(t *testing.T) {
-	var stderr bytes.Buffer
-	logger, closer, err := logOptions{verbose: true}.build(&stderr)
-	require.NoError(t, err)
-	require.Nil(t, closer)
+	const esc = "\x1b[" // ANSI CSI introducer emitted by tint when tinting.
+	tests := []struct {
+		name      string
+		color     bool
+		wantEscHi bool
+	}{
+		{name: "color off stays plain", color: false, wantEscHi: false},
+		{name: "color on tints the line", color: true, wantEscHi: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			logger, closer, err := logOptions{verbose: true, color: tt.color}.build(&stderr)
+			require.NoError(t, err)
+			require.Nil(t, closer)
 
-	logger.Debug("d")
-	require.Empty(t, stderr.String())
+			logger.Debug("d")
+			require.Empty(t, stderr.String())
 
-	logger.Info("i")
-	require.Contains(t, stderr.String(), "i")
-	require.NotContains(t, stderr.String(), "time=")
+			logger.Info("i")
+			require.Contains(t, stderr.String(), "i")
+			require.NotContains(t, stderr.String(), "time=")
+			if tt.wantEscHi {
+				require.Contains(t, stderr.String(), esc)
+			} else {
+				require.NotContains(t, stderr.String(), esc)
+			}
+		})
+	}
 }
 
 // TestBuildFileSink checks the file sink honors level and format, writes 0600,

@@ -254,9 +254,10 @@ boundary; query results are never changed by them.
 
 The `--log*` flags also read the environment when the flag is not set, precedence
 **flag > env > default**: `IQ_LOG`, `IQ_LOG_FILE`, `IQ_LOG_LEVEL`, `IQ_LOG_FORMAT`. `-v` writes a
-terse human stream to stderr (INFO and above); `--log` writes structured records to a file (down
-to the chosen level). A source location is always redacted before it is logged, so a stored
-credential never reaches a log file.
+terse human stream to stderr (INFO and above), tinted when stderr is a terminal and following the
+same `-M`/`-C`/`NO_COLOR` decision as [colored output](#colored-output); `--log` writes structured
+records to a file (down to the chosen level, always plain — never tinted). A source location is
+always redacted before it is logged, so a stored credential never reaches a log file.
 
 ```bash
 ./iq -v '.[]'                                        # verbose diagnostics on stderr
