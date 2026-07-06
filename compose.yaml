@@ -1,3 +1,8 @@
+# One fixed project name for every worktree: container names (iq-*) and host ports already
+# serialize integration runs to a single stack, so per-worktree project names only pile up
+# throwaway `<name>_default` networks that exhaust Docker's address pool. Pin it to one stack.
+name: iq
+
 services:
   redis:
     image: redis:8
@@ -85,3 +90,13 @@ services:
       interval: 2s
       timeout: 5s
       retries: 15
+
+networks:
+  # Pin the bridge to a subnet outside the LAN (192.168.0.0/16), the VM NAT (10.0.2.0/24), and
+  # Docker's default pool (172.16.0.0/12), so an auto-assigned subnet can never mask a LAN host
+  # (for example the git origin on the LAN). Services are reached via published localhost
+  # ports, so the subnet is otherwise invisible.
+  default:
+    ipam:
+      config:
+        - subnet: 10.100.0.0/24

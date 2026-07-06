@@ -1314,6 +1314,9 @@ needs a fixed-hostname cluster (testcontainers' random ports would break the reg
 advertised name), so its integration tests run only when `IQ_HBASE_URL` points at a running cluster
 (`docker compose up -d --wait hbase`); without it they skip. The compose HBase service uses host
 networking so a host-side client reaches the region server, and takes ~1–2 minutes to become ready.
+The compose stack runs under a fixed project name (`iq`) on a pinned `10.100.0.0/24` bridge, so
+`docker compose` behaves the same from any worktree and the auto-assigned bridge subnet can't
+collide with a LAN host.
 
 The mutation gate scopes to the current branch's diff against `main` by default, so it only
 mutates the lines a change touched. Override the base ref with `IQ_MUTATION_BASE` (set it empty
