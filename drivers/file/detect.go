@@ -29,6 +29,11 @@ const (
 	FormatBSON
 	// FormatRDB is a Redis RDB snapshot.
 	FormatRDB
+	// FormatDynamoDBJSON is DynamoDB's typed attribute-value JSON: a native S3
+	// export (NDJSON, one {"Item":{…}} per line) or `aws dynamodb scan` output (a
+	// {"Items":[…]} object). Not content-sniffable (it shares the leading '{' with
+	// mongoexport), so it needs an explicit ?format=/--from-format.
+	FormatDynamoDBJSON
 )
 
 // String returns the format's canonical name — the primary synonym ParseFormat
@@ -46,6 +51,8 @@ func (f Format) String() string {
 		return "bson"
 	case FormatRDB:
 		return "rdb"
+	case FormatDynamoDBJSON:
+		return "dynamodb-json"
 	default:
 		return "unknown"
 	}
@@ -66,8 +73,10 @@ func ParseFormat(s string) (Format, error) {
 		return FormatBSON, nil
 	case "rdb", "redis":
 		return FormatRDB, nil
+	case "dynamodb-json", "ddb-json", "dynamodb", "ddb":
+		return FormatDynamoDBJSON, nil
 	default:
-		return FormatUnknown, fmt.Errorf("unknown dump format %q: want jsonl, json, yaml, mongoexport, bson, or rdb", s)
+		return FormatUnknown, fmt.Errorf("unknown dump format %q: want jsonl, json, yaml, mongoexport, bson, rdb, or dynamodb-json", s)
 	}
 }
 

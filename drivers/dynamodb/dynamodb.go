@@ -58,9 +58,11 @@ const maxUnprocessed = 8
 // selected. It is a sentinel so the CLI can surface a clear hint.
 var errNoTable = errors.New("dynamodb: no table selected; address it as handle.table or set ?table= in the source url")
 
-// keyAttr is one primary-key attribute: its name and its DynamoDB scalar type
-// (S, N, or B), used to encode and decode the string key.
-type keyAttr struct {
+// KeyAttr is one primary-key attribute: its name and its DynamoDB scalar type
+// (S, N, or B), used to encode and decode the string key. It is exported (built live
+// from DescribeTable, or offline from a ?keys= hint via ParseKeySchema) so a dump
+// reader keys an item exactly as a live scan does.
+type KeyAttr struct {
 	name string
 	typ  types.ScalarAttributeType
 }
@@ -87,7 +89,7 @@ type Store struct {
 	client   ddbAPI
 	region   string
 	table    string
-	keys     []keyAttr // primary key in schema order: partition key, then sort key
+	keys     []KeyAttr // primary key in schema order: partition key, then sort key
 	pageSize int
 	decimal  numfmt.DecimalMode
 }
@@ -209,10 +211,10 @@ func (s *Store) loadKeySchema(ctx context.Context) error {
 	for _, ad := range out.Table.AttributeDefinitions {
 		attrType[aws.ToString(ad.AttributeName)] = ad.AttributeType
 	}
-	var hash *keyAttr
-	var sort *keyAttr
+	var hash *KeyAttr
+	var sort *KeyAttr
 	for _, ks := range out.Table.KeySchema {
-		ka := keyAttr{name: aws.ToString(ks.AttributeName), typ: attrType[aws.ToString(ks.AttributeName)]}
+		ka := KeyAttr{name: aws.ToString(ks.AttributeName), typ: attrType[aws.ToString(ks.AttributeName)]}
 		switch ks.KeyType {
 		case types.KeyTypeHash:
 			h := ka
@@ -225,7 +227,7 @@ func (s *Store) loadKeySchema(ctx context.Context) error {
 	if hash == nil {
 		return fmt.Errorf("dynamodb: table %q has no partition key", s.table)
 	}
-	s.keys = []keyAttr{*hash}
+	s.keys = []KeyAttr{*hash}
 	if sort != nil {
 		s.keys = append(s.keys, *sort)
 	}

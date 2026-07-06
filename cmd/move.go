@@ -103,7 +103,7 @@ func stdinRecordSource(r io.Reader, cfg *config) (query.RecordSource, error) {
 		}
 		format = f
 	}
-	return iqfile.RecordSourceFor(r, format, cfg.decimalMode)
+	return iqfile.RecordSourceFor(r, format, cfg.decimalMode, iqfile.Hints{})
 }
 
 // runInsert copies the source records into the --insert destination through a

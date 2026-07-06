@@ -9,7 +9,9 @@
 package file
 
 import (
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,7 +45,18 @@ type Store struct {
 	data   []byte // when non-nil, the dump is this in-memory buffer (stdin), not path.
 	format Format
 	dec    numfmt.DecimalMode
+	hints  Hints       // schema hints (?types=/?keys=) a native dump omits; empty for self-describing formats.
 	cache  CacheConfig // decode-cache policy; zero value disables caching.
+}
+
+// Hints carries the schema metadata a native dump does not itself record but a reader
+// needs to reproduce the live shape: the ?types= column-type map and the ?keys= key
+// schema from a file:// URL. Both are the raw query values; each format's reader parses
+// what it needs and ignores the rest. Self-describing formats (JSONL, RDB, BSON,
+// mongoexport) leave them empty.
+type Hints struct {
+	Types string
+	Keys  string
 }
 
 // Open resolves a file:// URL to a read-only dump Store. The URL path is the dump
@@ -52,7 +65,7 @@ type Store struct {
 // zero CacheConfig disables caching, so a caller that wires none keeps the
 // always-decode behavior.
 func Open(rawURL string, dec numfmt.DecimalMode, cache CacheConfig) (*Store, error) {
-	path, forced, err := parseFileURL(rawURL)
+	path, forced, hints, err := parseFileURL(rawURL)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +76,7 @@ func Open(rawURL string, dec numfmt.DecimalMode, cache CacheConfig) (*Store, err
 			return nil, err
 		}
 	}
-	return &Store{path: path, format: format, dec: dec, cache: cache}, nil
+	return &Store{path: path, format: format, dec: dec, hints: hints, cache: cache}, nil
 }
 
 // OpenReader builds a read-only Store over an in-memory dump buffer — used for
@@ -85,7 +98,7 @@ func OpenReader(data []byte, format Format, dec numfmt.DecimalMode) (*Store, err
 // Open resolves and the decode cache records in its header — so a caller can map
 // a saved file source to its cache entry (iq cache clear @src).
 func DumpPath(rawURL string) (string, error) {
-	path, _, err := parseFileURL(rawURL)
+	path, _, _, err := parseFileURL(rawURL)
 	return path, err
 }
 
@@ -93,7 +106,7 @@ func DumpPath(rawURL string) (string, error) {
 // ?format= wins, otherwise the content is sniffed from the file. Exported so a
 // caller (iq ls -v) can name a file source's format without building a Store.
 func DetectFormat(rawURL string) (Format, error) {
-	path, forced, err := parseFileURL(rawURL)
+	path, forced, _, err := parseFileURL(rawURL)
 	if err != nil {
 		return FormatUnknown, err
 	}
@@ -103,15 +116,16 @@ func DetectFormat(rawURL string) (Format, error) {
 	return detectFormat(path)
 }
 
-// parseFileURL splits a file:// URL into its path and an optional forced format
-// from the ?format= query. It rejects a non-file scheme and an empty path.
-func parseFileURL(raw string) (path string, format Format, err error) {
+// parseFileURL splits a file:// URL into its path, an optional forced format from the
+// ?format= query, and the ?types=/?keys= schema hints a native dump reader may need. It
+// rejects a non-file scheme and an empty path.
+func parseFileURL(raw string) (path string, format Format, hints Hints, err error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", FormatUnknown, fmt.Errorf("parse file url: %w", err)
+		return "", FormatUnknown, Hints{}, fmt.Errorf("parse file url: %w", err)
 	}
 	if u.Scheme != "file" {
-		return "", FormatUnknown, fmt.Errorf("not a file url: %q", raw)
+		return "", FormatUnknown, Hints{}, fmt.Errorf("not a file url: %q", raw)
 	}
 	path = u.Path
 	if path == "" {
@@ -123,15 +137,17 @@ func parseFileURL(raw string) (path string, format Format, err error) {
 		path = u.Host + path
 	}
 	if path == "" {
-		return "", FormatUnknown, errors.New("file url has no path")
+		return "", FormatUnknown, Hints{}, errors.New("file url has no path")
 	}
-	if f := u.Query().Get("format"); f != "" {
+	q := u.Query()
+	if f := q.Get("format"); f != "" {
 		format, err = ParseFormat(f)
 		if err != nil {
-			return "", FormatUnknown, err
+			return "", FormatUnknown, Hints{}, err
 		}
 	}
-	return path, format, nil
+	hints = Hints{Types: q.Get("types"), Keys: q.Get("keys")}
+	return path, format, hints, nil
 }
 
 // records is the cache-aware decode entry point every read path shares. When a
@@ -160,11 +176,37 @@ func (s *Store) recordsDirect(ctx context.Context, fn func(batch []query.Record)
 		return err
 	}
 	defer func() { _ = closeR() }()
-	src, err := RecordSourceFor(r, s.format, s.dec)
+	dr, err := maybeGunzip(r)
+	if err != nil {
+		return err
+	}
+	src, err := RecordSourceFor(dr, s.format, s.dec, s.hints)
 	if err != nil {
 		return err
 	}
 	return src(ctx, fn)
+}
+
+// maybeGunzip transparently unwraps a gzip stream so a compressed dump (a DynamoDB S3
+// export ships gzipped NDJSON) decodes like a plain one. It peeks the two-byte gzip
+// magic without consuming it; a non-gzip stream passes through untouched.
+func maybeGunzip(r io.Reader) (io.Reader, error) {
+	br := bufio.NewReader(r)
+	magic, err := br.Peek(2)
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return br, nil // too short to be gzip; let the decoder report an empty/short dump.
+		}
+		return nil, fmt.Errorf("read dump head: %w", err)
+	}
+	if magic[0] != 0x1f || magic[1] != 0x8b {
+		return br, nil
+	}
+	gz, err := gzip.NewReader(br)
+	if err != nil {
+		return nil, fmt.Errorf("open gzip dump: %w", err)
+	}
+	return gz, nil
 }
 
 // reader yields a fresh reader over the dump: a bytes.Reader over the buffered
@@ -183,7 +225,7 @@ func (s *Store) reader() (io.Reader, func() error, error) {
 // RecordSourceFor returns the RecordSource that decodes r for a given format. It is
 // the one decoder-dispatch shared by the file:// store, the buffered stdin store,
 // and the cmd move importer, so every reader honors the same format set.
-func RecordSourceFor(r io.Reader, format Format, dec numfmt.DecimalMode) (query.RecordSource, error) {
+func RecordSourceFor(r io.Reader, format Format, dec numfmt.DecimalMode, hints Hints) (query.RecordSource, error) {
 	switch format {
 	case FormatJSONL:
 		return query.JSONSource(r, pageSize, false), nil
@@ -195,6 +237,8 @@ func RecordSourceFor(r io.Reader, format Format, dec numfmt.DecimalMode) (query.
 		return bsonSource(r, pageSize, dec), nil
 	case FormatMongoexport:
 		return extJSONSource(r, pageSize, dec), nil
+	case FormatDynamoDBJSON:
+		return dynamoSource(r, pageSize, dec, hints)
 	default:
 		return nil, errors.New("unknown dump format")
 	}

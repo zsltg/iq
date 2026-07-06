@@ -83,7 +83,7 @@ func TestIsIntLiteral(t *testing.T) {
 }
 
 func TestKeyRoundTripSingle(t *testing.T) {
-	s := &Store{keys: []keyAttr{{name: "id", typ: types.ScalarAttributeTypeN}}}
+	s := &Store{keys: []KeyAttr{{name: "id", typ: types.ScalarAttributeTypeN}}}
 	item := map[string]types.AttributeValue{
 		"id":    &types.AttributeValueMemberN{Value: "42"},
 		"title": &types.AttributeValueMemberS{Value: "Go"},
@@ -97,7 +97,7 @@ func TestKeyRoundTripSingle(t *testing.T) {
 }
 
 func TestKeyRoundTripComposite(t *testing.T) {
-	s := &Store{keys: []keyAttr{
+	s := &Store{keys: []KeyAttr{
 		{name: "pk", typ: types.ScalarAttributeTypeS},
 		{name: "sk", typ: types.ScalarAttributeTypeN},
 	}}
@@ -118,11 +118,11 @@ func TestKeyRoundTripComposite(t *testing.T) {
 }
 
 func TestDecodeKeyErrors(t *testing.T) {
-	single := &Store{keys: []keyAttr{{name: "id", typ: types.ScalarAttributeTypeN}}}
+	single := &Store{keys: []KeyAttr{{name: "id", typ: types.ScalarAttributeTypeN}}}
 	_, err := single.decodeKey("not-a-number")
 	require.ErrorContains(t, err, "is not a number")
 
-	composite := &Store{keys: []keyAttr{
+	composite := &Store{keys: []KeyAttr{
 		{name: "pk", typ: types.ScalarAttributeTypeS},
 		{name: "sk", typ: types.ScalarAttributeTypeS},
 	}}
@@ -138,22 +138,22 @@ func TestDecodeKeyErrors(t *testing.T) {
 }
 
 func TestKeyAV(t *testing.T) {
-	sv, err := keyAV(keyAttr{name: "k", typ: types.ScalarAttributeTypeS}, "hello")
+	sv, err := keyAV(KeyAttr{name: "k", typ: types.ScalarAttributeTypeS}, "hello")
 	require.NoError(t, err)
 	require.Equal(t, &types.AttributeValueMemberS{Value: "hello"}, sv)
 
-	nv, err := keyAV(keyAttr{name: "k", typ: types.ScalarAttributeTypeN}, "3.5")
+	nv, err := keyAV(KeyAttr{name: "k", typ: types.ScalarAttributeTypeN}, "3.5")
 	require.NoError(t, err)
 	require.Equal(t, &types.AttributeValueMemberN{Value: "3.5"}, nv)
 
-	_, err = keyAV(keyAttr{name: "k", typ: types.ScalarAttributeTypeN}, "abc")
+	_, err = keyAV(KeyAttr{name: "k", typ: types.ScalarAttributeTypeN}, "abc")
 	require.ErrorContains(t, err, "is not a number")
 
-	bv, err := keyAV(keyAttr{name: "k", typ: types.ScalarAttributeTypeB}, "aGV5")
+	bv, err := keyAV(KeyAttr{name: "k", typ: types.ScalarAttributeTypeB}, "aGV5")
 	require.NoError(t, err)
 	require.Equal(t, &types.AttributeValueMemberB{Value: []byte("hey")}, bv)
 
-	_, err = keyAV(keyAttr{name: "k", typ: types.ScalarAttributeTypeB}, "!!!not-base64")
+	_, err = keyAV(KeyAttr{name: "k", typ: types.ScalarAttributeTypeB}, "!!!not-base64")
 	require.ErrorContains(t, err, "is not base64")
 }
 
@@ -184,7 +184,7 @@ func TestToAttributeValue(t *testing.T) {
 }
 
 func TestToItem(t *testing.T) {
-	s := &Store{keys: []keyAttr{{name: "id", typ: types.ScalarAttributeTypeN}}}
+	s := &Store{keys: []KeyAttr{{name: "id", typ: types.ScalarAttributeTypeN}}}
 
 	// Key from the record key overrides the value object's key attribute.
 	item, err := s.toItem(recordValue{key: "42", value: map[string]any{"id": 999, "title": "Go"}})

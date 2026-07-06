@@ -162,12 +162,12 @@ func TestFormatOverride(t *testing.T) {
 }
 
 func TestParseFileURLErrors(t *testing.T) {
-	_, _, err := parseFileURL("redis://h/0")
+	_, _, _, err := parseFileURL("redis://h/0")
 	require.ErrorContains(t, err, "not a file url")
-	_, f, err := parseFileURL("file:///a/b.rdb?format=rdb")
+	_, f, _, err := parseFileURL("file:///a/b.rdb?format=rdb")
 	require.NoError(t, err)
 	require.Equal(t, FormatRDB, f)
-	_, _, err = parseFileURL("file:///a?format=bogus")
+	_, _, _, err = parseFileURL("file:///a?format=bogus")
 	require.ErrorContains(t, err, "unknown dump format")
 }
 
@@ -287,19 +287,19 @@ func TestFormatRaw(t *testing.T) {
 }
 
 func TestParseFileURLVariants(t *testing.T) {
-	p, _, err := parseFileURL("file:///abs/x.rdb")
+	p, _, _, err := parseFileURL("file:///abs/x.rdb")
 	require.NoError(t, err)
 	require.Equal(t, "/abs/x.rdb", p)
 
-	p, _, err = parseFileURL("file://localhost/abs/y")
+	p, _, _, err = parseFileURL("file://localhost/abs/y")
 	require.NoError(t, err)
 	require.Equal(t, "/abs/y", p) // a localhost host is ignored, not folded into the path.
 
-	p, _, err = parseFileURL("file://seg/rest")
+	p, _, _, err = parseFileURL("file://seg/rest")
 	require.NoError(t, err)
 	require.Equal(t, "seg/rest", p) // a non-localhost host folds back into the path.
 
-	_, _, err = parseFileURL("file://")
+	_, _, _, err = parseFileURL("file://")
 	require.ErrorContains(t, err, "no path")
 }
 

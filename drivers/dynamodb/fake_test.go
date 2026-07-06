@@ -104,7 +104,7 @@ func fakeStore(t *testing.T, fake *fakeDDB) *Store {
 	return &Store{
 		client:   fake,
 		table:    "t",
-		keys:     []keyAttr{{name: "id", typ: types.ScalarAttributeTypeN}},
+		keys:     []KeyAttr{{name: "id", typ: types.ScalarAttributeTypeN}},
 		pageSize: scanBatch,
 	}
 }
@@ -123,7 +123,7 @@ func TestLoadKeySchema(t *testing.T) {
 		}}
 		s := &Store{client: fake, table: "t"}
 		require.NoError(t, s.loadKeySchema(context.Background()))
-		require.Equal(t, []keyAttr{{name: "id", typ: types.ScalarAttributeTypeN}}, s.keys)
+		require.Equal(t, []KeyAttr{{name: "id", typ: types.ScalarAttributeTypeN}}, s.keys)
 	})
 
 	t.Run("composite orders partition then sort", func(t *testing.T) {
@@ -142,7 +142,7 @@ func TestLoadKeySchema(t *testing.T) {
 		}}
 		s := &Store{client: fake, table: "t"}
 		require.NoError(t, s.loadKeySchema(context.Background()))
-		require.Equal(t, []keyAttr{
+		require.Equal(t, []KeyAttr{
 			{name: "pk", typ: types.ScalarAttributeTypeS},
 			{name: "sk", typ: types.ScalarAttributeTypeN},
 		}, s.keys)
@@ -370,7 +370,7 @@ func TestClearBackoffHonorsContextCancel(t *testing.T) {
 	prev := backoffUnit
 	backoffUnit = 50 * time.Millisecond
 	t.Cleanup(func() { backoffUnit = prev })
-	s := &Store{client: fake, table: "t", keys: []keyAttr{{name: "id", typ: types.ScalarAttributeTypeN}}, pageSize: scanBatch}
+	s := &Store{client: fake, table: "t", keys: []KeyAttr{{name: "id", typ: types.ScalarAttributeTypeN}}, pageSize: scanBatch}
 	err := s.Clear(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 }
@@ -484,7 +484,7 @@ func TestFormatRawFallback(t *testing.T) {
 }
 
 func TestKeyProjectionComposite(t *testing.T) {
-	s := &Store{keys: []keyAttr{
+	s := &Store{keys: []KeyAttr{
 		{name: "pk", typ: types.ScalarAttributeTypeS},
 		{name: "sk", typ: types.ScalarAttributeTypeN},
 	}}

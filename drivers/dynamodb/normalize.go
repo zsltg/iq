@@ -117,17 +117,24 @@ func isIntLiteral(s string) bool {
 	return true
 }
 
-// keyOf renders an item's full primary key to the string key the table is keyed by. A
+// keyOf renders an item's full primary key to the string key the table is keyed by,
+// delegating to KeyOf so the live scan and an offline dump reader share one contract.
+func (s *Store) keyOf(item map[string]types.AttributeValue) string {
+	return KeyOf(s.keys, item)
+}
+
+// KeyOf renders an item's full primary key to the string key the table is keyed by. A
 // partition-key-only table becomes that attribute's bare canonical string (the
 // DynamoDB analogue of Mongo's _id); a table with a sort key becomes a compact JSON
 // array of the two key attributes in schema order, so identity is reversible by
-// decodeKey. It is the inverse of decodeKey and the frozen key contract.
-func (s *Store) keyOf(item map[string]types.AttributeValue) string {
-	if len(s.keys) == 1 {
-		return keyString(item[s.keys[0].name])
+// decodeKey. It is the inverse of decodeKey and the frozen key contract, exported so a
+// dump reader keys an item exactly as a live scan does.
+func KeyOf(keys []KeyAttr, item map[string]types.AttributeValue) string {
+	if len(keys) == 1 {
+		return keyString(item[keys[0].name])
 	}
-	parts := make([]string, len(s.keys))
-	for i, k := range s.keys {
+	parts := make([]string, len(keys))
+	for i, k := range keys {
 		parts[i] = keyString(item[k.name])
 	}
 	b, err := json.Marshal(parts)
@@ -194,7 +201,7 @@ func (s *Store) decodeKey(key string) (map[string]types.AttributeValue, error) {
 // the key attribute's scalar type. It is the typed reverse of keyString; a component
 // that is not a valid number or base64 blob for its column type is an error, so a bad
 // key fails fast rather than binding a wrong value.
-func keyAV(k keyAttr, s string) (types.AttributeValue, error) {
+func keyAV(k KeyAttr, s string) (types.AttributeValue, error) {
 	switch k.typ {
 	case types.ScalarAttributeTypeN:
 		if !isNumberLiteral(s) {

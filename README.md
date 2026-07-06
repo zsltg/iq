@@ -441,7 +441,7 @@ dynamodb   Amazon DynamoDB key-value and document store                    dynam
 hbase      Apache HBase wide-column store                                  hbase                 1.0+           https://hbase.apache.org/book.html
 couchdb    Apache CouchDB document store                                   couchdb, couchdbs     2.x, 3.x       https://docs.couchdb.org/
 redis      Redis key-value store                                           redis, rediss         7.0+           https://redis.io/docs/
-file       Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON)  file
+file       Local dump file, read-only (JSONL, RDB, Mongo BSON/JSON, DynamoDB JSON)  file
 ```
 
 Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sources) for the full flag).
@@ -947,7 +947,8 @@ iq diff snap prod --data                     # diff a dump against a live source
 ```
 
 The format is detected from the file's content (or forced with a `?format=` query, e.g.
-`file:///d.bin?format=bson`):
+`file:///d.bin?format=bson`). A gzipped dump is unwrapped transparently; a gzipped dump must
+pass `?format=` since its content is not sniffable through the compression.
 
 | Format | Produced by | Notes |
 | --- | --- | --- |
@@ -955,6 +956,7 @@ The format is detected from the file's content (or forced with a `?format=` quer
 | Redis RDB | `redis-cli --rdb`, `SAVE` | values match a live scan; RDB ≤ v12 (Redis ≤ 7.2) |
 | Mongo BSON | `mongodump` | single `.bson` file |
 | Mongo Extended JSON | `mongoexport` | one document per line, or a `--jsonArray` array |
+| DynamoDB JSON | S3 `export-table-to-point-in-time`, `aws dynamodb scan` | needs `?format=dynamodb-json` and a `?keys=pk[:S][,sk[:N]]` key schema (a dump carries items but not the table's key schema); export files are gzipped NDJSON |
 
 The whole dump streams; a `file://` source never holds all values in memory (whole-dataset
 materialization is the core's, gated by `--unbounded`, exactly as for a live backend). **Restore
@@ -1176,8 +1178,9 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
 - `drivers/file` — a read-only adapter over a local dump file (or a buffered piped stdin). Its
   `*Store` satisfies the read ports (`Get`/`ScanBatches`) and `TypedReader` (so a dump restores
   through `--insert` and a piped dump is queryable), detecting the
-  format from content (Redis RDB via `hdt3213/rdb`, mongodump BSON and mongoexport Extended JSON via
-  the Mongo driver, or iq's own typed JSONL) and decoding each item to the **same** JSON shape the
+  format from content or a `?format=` hint (Redis RDB via `hdt3213/rdb`, mongodump BSON and
+  mongoexport Extended JSON via the Mongo driver, DynamoDB export/scan JSON via the DynamoDB driver,
+  or iq's own typed JSONL; gzip is unwrapped transparently) and decoding each item to the **same** JSON shape the
   live adapter produces, so a query or restore is identical to the live backend. It implements no
   writer, so a `file://` endpoint is never a copy destination, and `Query` returns a sentinel that
   makes `exec`/`inspect` degrade cleanly. It streams; whole-dataset materialization stays the core's,
@@ -1278,7 +1281,7 @@ iq --config ./iq.toml ls  # run against an alternate config file (overrides IQ_C
 iq --src books --insert books2 # copy a source into another (handle → handle, cross-driver ok; jq filter transforms each item)
 iq --src cache --typed -o dump.jsonl   # dump a source to a re-importable typed JSONL file (Redis-lossless)
 iq add file:///backups/prod.rdb -n snap   # register a dump file as a read-only source
-iq --src snap '.[] | select(.active)'     # query a Redis/Mongo dump offline (RDB, BSON, mongoexport, JSONL)
+iq --src snap '.[] | select(.active)'     # query a dump offline (RDB, BSON, mongoexport, DynamoDB JSON, JSONL)
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
