@@ -10,6 +10,7 @@ import (
 	iqcassandra "github.com/zsltg/iq/drivers/cassandra"
 	iqdynamodb "github.com/zsltg/iq/drivers/dynamodb"
 	iqfile "github.com/zsltg/iq/drivers/file"
+	iqhbase "github.com/zsltg/iq/drivers/hbase"
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqredis "github.com/zsltg/iq/drivers/redis"
 	"github.com/zsltg/iq/internal/predicate"
@@ -108,6 +109,22 @@ var drivers = []driver{
 		explainWrite: iqdynamodb.ExplainWrite,
 		explainClear: iqdynamodb.ExplainClear,
 		explainDrop:  iqdynamodb.ExplainDrop,
+	},
+	{
+		name:           "hbase",
+		desc:           "Apache HBase wide-column store",
+		schemes:        []string{"hbase"},
+		doc:            "https://hbase.apache.org/book.html",
+		versions:       "1.0+",
+		addressable:    true,
+		verifiesOnOpen: true,
+		open: func(ctx context.Context, cfg *config) (store, error) {
+			return iqhbase.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
+		},
+		explainPlan:  iqhbase.ExplainPlan,
+		explainWrite: iqhbase.ExplainWrite,
+		explainClear: iqhbase.ExplainClear,
+		explainDrop:  iqhbase.ExplainDrop,
 	},
 	{
 		name:     "redis",

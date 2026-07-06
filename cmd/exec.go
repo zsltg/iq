@@ -22,7 +22,9 @@ func newExecCmd(cfg *config) *cobra.Command {
 		Long: "Forward a command to the backend verbatim. For Redis, a command and operands:\n" +
 			"`iq exec SET greeting hello`, `iq exec HGETALL book:2`. For MongoDB, one JSON\n" +
 			"command document run with runCommand: `iq exec '{\"find\":\"books\",\"filter\":{}}'`.\n" +
-			"For Cassandra, a CQL statement: `iq exec 'SELECT * FROM books LIMIT 10'`.",
+			"For Cassandra, a CQL statement: `iq exec 'SELECT * FROM books LIMIT 10'`. HBase has\n" +
+			"no query language, so it takes a shell-style verb naming its own table: get, scan,\n" +
+			"count (reads), put, delete (writes): `iq exec get books 42`, `iq exec scan books 10`.",
 		Example: "  # Redis: a command and its operands.\n" +
 			"  $ iq exec SET greeting hello\n" +
 			"  $ iq exec HGETALL user:2\n" +
@@ -31,7 +33,11 @@ func newExecCmd(cfg *config) *cobra.Command {
 			"  $ iq exec '{\"find\":\"orders\",\"filter\":{}}' --src shop\n" +
 			"\n" +
 			"  # Cassandra: a CQL statement (keyspace-scoped; no table needed).\n" +
-			"  $ iq exec 'SELECT release_version FROM system.local' --src cluster",
+			"  $ iq exec 'SELECT release_version FROM system.local' --src cluster\n" +
+			"\n" +
+			"  # HBase: a verb naming its own table (get/scan/count/put/delete).\n" +
+			"  $ iq exec get books 42 --src cluster\n" +
+			"  $ iq exec put books 42 cf:title Dune --src cluster",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Log only the command verb: Redis operands (SET greeting hello) may

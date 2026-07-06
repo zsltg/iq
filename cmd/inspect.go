@@ -30,8 +30,8 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	)
 	long := "Show a source's native server/database introspection.\n\n" +
 		"The positional argument names the source, like `iq inspect prod`; with none it\n" +
-		"uses --src or the active source. MongoDB, Cassandra, and DynamoDB sources accept\n" +
-		"sq-style `<source>.<collection>` / `<source>.<table>` addressing (`iq inspect\n" +
+		"uses --src or the active source. MongoDB, Cassandra, DynamoDB, and HBase sources\n" +
+		"accept sq-style `<source>.<collection>` / `<source>.<table>` addressing (`iq inspect\n" +
 		"prod.books`) to pick the collection/table, overriding the source URL's\n" +
 		"?collection=/?table= default; Redis sources take no collection.\n\n" +
 		"MongoDB — runs diagnostic database commands; no --only runs them all,\n" +
@@ -47,6 +47,9 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"  " + strings.Join(dynamoInspectCmds, "  ") + "\n" +
 		"  (table needs a table: address it as source.table or set ?table= on the\n" +
 		"  source url)\n\n" +
+		"HBase — runs introspection reads; no --only runs them all, --only narrows:\n" +
+		"  " + strings.Join(hbaseInspectCmds, "  ") + "\n" +
+		"  (tables lists the source namespace's tables)\n\n" +
 		"Redis — runs INFO; --only narrows it to those sections\n" +
 		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
 		"  server  clients  memory  persistence  stats  replication  cpu  keyspace\n\n" +
@@ -86,6 +89,8 @@ func newInspectCmd(cfg *config) *cobra.Command {
 				return inspectCassandra(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "dynamodb":
 				return inspectDynamo(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+			case "hbase":
+				return inspectHBase(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "file":
 				// inspect reports live server metadata; a dump file has none. Point
 				// the user at the operations that do work on a file source.
@@ -394,6 +399,71 @@ func inspectDynamo(ctx context.Context, out io.Writer, st store, cfg *config, su
 				continue // a source with no table selected skips "table" in the run-all case
 			}
 		}
+		if err != nil {
+			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
+		}
+		results = append(results, result{sub: sub, value: res})
+	}
+
+	if jsonOut || yamlOut {
+		byName := make(map[string]any, len(results))
+		for _, r := range results {
+			byName[r.sub] = r.value
+		}
+		return writeStructured(out, byName, yamlOut)
+	}
+	if err := inspectHeader(out, cfg); err != nil {
+		return err
+	}
+	for _, r := range results {
+		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// hbaseInspectCmds is the supported set of HBase introspection reads inspect runs.
+// HBase exposes no per-table column-family descriptor through the client RPC, so the
+// set is table listing only.
+var hbaseInspectCmds = []string{"tables"}
+
+// hbaseInspector is the introspection capability inspectHBase needs from the store.
+// HBase introspection is an admin RPC (ListTableNames), not a query-language
+// statement, so like DynamoDB it is a driver method the CLI calls directly rather than
+// a statement routed through Query.
+type hbaseInspector interface {
+	InspectTables(ctx context.Context) (any, error)
+}
+
+// inspectHBase runs the HBase introspection reads (currently just "tables", which
+// lists the source namespace's tables) and renders each reply keyed by subcommand.
+// With list, it prints the supported names without touching the store.
+func inspectHBase(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
+	if list {
+		return writeInspectList(out, hbaseInspectCmds, jsonOut, yamlOut)
+	}
+	hi, ok := st.(hbaseInspector)
+	if !ok {
+		return errors.New("inspect is not supported for this source")
+	}
+	which := subs
+	if len(which) == 0 {
+		which = hbaseInspectCmds
+	}
+	for _, sub := range which {
+		if sub != "tables" {
+			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(hbaseInspectCmds, ", "))
+		}
+	}
+
+	type result struct {
+		sub   string
+		value any
+	}
+	results := make([]result, 0, len(which))
+	for _, sub := range which {
+		res, err := hi.InspectTables(ctx)
 		if err != nil {
 			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
 		}

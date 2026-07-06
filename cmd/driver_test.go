@@ -20,6 +20,7 @@ func TestDriverForScheme(t *testing.T) {
 		{"redis tls", "rediss", "redis", true},
 		{"cassandra", "cassandra", "cassandra", true},
 		{"dynamodb", "dynamodb", "dynamodb", true},
+		{"hbase", "hbase", "hbase", true},
 		{"unknown", "couchbase", "", false},
 		{"empty", "", "", false},
 	}
@@ -44,6 +45,7 @@ func TestDriverName(t *testing.T) {
 		{"mongodb srv normalizes", "mongodb+srv://h/db", "mongo"},
 		{"cassandra normalizes", "cassandra://h/ks", "cassandra"},
 		{"dynamodb normalizes", "dynamodb://us-east-1/?table=t", "dynamodb"},
+		{"hbase normalizes", "hbase://h:2181/?table=t", "hbase"},
 		{"unknown falls back to scheme", "couchbase://h", "couchbase"},
 		{"schemeless is empty", "just-a-string", ""},
 	}
@@ -55,7 +57,7 @@ func TestDriverName(t *testing.T) {
 }
 
 func TestExpectedSchemes(t *testing.T) {
-	require.Equal(t, "expected one of mongodb://, cassandra://, dynamodb://, redis://", expectedSchemes())
+	require.Equal(t, "expected one of mongodb://, cassandra://, dynamodb://, hbase://, redis://", expectedSchemes())
 }
 
 // TestDriverRegistryInvariants guards the single source of truth: every driver
@@ -96,6 +98,7 @@ func TestDriverLsTable(t *testing.T) {
 		"redis", "Redis key-value store", "redis, rediss", "7.0+", "https://redis.io/docs/",
 		"cassandra", "Apache Cassandra wide-column store", "3.11+", "https://cassandra.apache.org/doc/",
 		"dynamodb", "Amazon DynamoDB key-value and document store", "AWS (managed)", "https://docs.aws.amazon.com/dynamodb/",
+		"hbase", "Apache HBase wide-column store", "1.0+", "https://hbase.apache.org/book.html",
 	} {
 		require.Contains(t, out, want)
 	}
@@ -107,7 +110,7 @@ func TestDriverLsJSON(t *testing.T) {
 
 	var rows []driverRow
 	require.NoError(t, json.Unmarshal([]byte(out), &rows))
-	require.Len(t, rows, 5)
+	require.Len(t, rows, 6)
 
 	byName := map[string]driverRow{}
 	for _, r := range rows {
@@ -126,4 +129,8 @@ func TestDriverLsJSON(t *testing.T) {
 	require.Equal(t, "Amazon DynamoDB key-value and document store", byName["dynamodb"].Description)
 	require.Equal(t, "AWS (managed)", byName["dynamodb"].Versions)
 	require.Equal(t, "https://docs.aws.amazon.com/dynamodb/", byName["dynamodb"].Doc)
+	require.Equal(t, []string{"hbase"}, byName["hbase"].Schemes)
+	require.Equal(t, "Apache HBase wide-column store", byName["hbase"].Description)
+	require.Equal(t, "1.0+", byName["hbase"].Versions)
+	require.Equal(t, "https://hbase.apache.org/book.html", byName["hbase"].Doc)
 }

@@ -1,8 +1,9 @@
 # iq
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
-databases. Redis, MongoDB, Apache Cassandra, and Amazon DynamoDB are supported; the backend is chosen by the URL
-scheme, and the query core is driver-agnostic so further backends slot in behind the same port.
+databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, and Apache HBase are supported; the
+backend is chosen by the URL scheme, and the query core is driver-agnostic so further backends slot
+in behind the same port.
 
 The filter is both the transform and the key selector: its top-level paths name the keys to
 fetch, so the store only ever reads a bounded set of keys — never a full keyspace scan, unless
@@ -20,7 +21,7 @@ sq's so the tool feels familiar.
 ## Requirements
 
 - Go 1.25+
-- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local containers; not needed for `go test -short`)
+- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
 
 ## Build
 
@@ -59,6 +60,7 @@ by name or as the default. Register one with `iq add`, then make it active:
 iq add -n cache redis://localhost:6379/0                    # register a Redis source as "cache"
 iq add -a 'mongodb://localhost:27017/books?collection=items' # a Mongo source; handle "books" from the db, made active
 iq add -n orders 'cassandra://localhost:9042/shop?table=orders' # a Cassandra source
+iq add -n books 'hbase://localhost:2181/?table=iq_books'     # an HBase source (host = ZooKeeper quorum)
 iq src cache                                                 # make "cache" the active source
 iq ls                                                        # list sources: handle driver url (active marked *); -v adds format + options
 ```
@@ -75,18 +77,20 @@ iq --src books.authors '.[]'     # the same connection, a different collection
 - `iq add <url> [-n <handle>] [-a] [-p] [-d <driver>] [--skip-verify] [--store keyring]`
   — register a source, mirroring `sq add`. The URL is the sole positional argument; the backend is
   inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`, `cassandra://`,
-  `dynamodb://`).
+  `dynamodb://`, `hbase://`).
   `-n`/`--handle` names the source; when omitted a handle is derived from the URL (the MongoDB
   database or Cassandra keyspace name, else the driver, disambiguated with a numeric suffix on
   collision). A MongoDB default collection rides in the URL as `?collection=`
   (`mongodb://host/db?collection=items`), a Cassandra default table as `?table=`
   (`cassandra://host/keyspace?table=orders`), a DynamoDB default table as `?table=`
   (`dynamodb://us-east-1/?table=orders`, the region as the host; credentials come from the AWS
-  default chain, never the URL), the driver's own connection option — like a `file://`
+  default chain, never the URL), an HBase default table as `?table=`
+  (`hbase://host:2181/?table=books`, the host as the ZooKeeper quorum; cell encodings optionally
+  declared with `?types=cf:age=long`), the driver's own connection option — like a `file://`
   source's `?format=`; a query addresses another collection/table with a dotted
   `handle.collection` / `handle.table`. `-a`/`--active` makes the new source active. `-p`/`--password`
   prompts for the URL password (or reads it from stdin) instead of embedding it in the URL.
-  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`) and errors if it
+  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`) and errors if it
   disagrees with the scheme. The source is
   pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
   keyring` moves the URL's password into the OS keyring and strips it from the stored URL (default
@@ -110,7 +114,7 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   Bounded by `--timeout`; exits non-zero if any source is unreachable.
 - `iq inspect [<source>[.<collection>]]` — show a source's native introspection. The positional
   names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB,
-  Cassandra, and DynamoDB sources accept sq-style `<source>.<collection>` / `<source>.<table>`
+  Cassandra, DynamoDB, and HBase sources accept sq-style `<source>.<collection>` / `<source>.<table>`
   addressing (`iq inspect prod.books`) to pick the collection/table, overriding the source URL's
   `?collection=`/`?table=` default; Redis sources take no collection.
   `--only`
@@ -118,9 +122,9 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   (`iq inspect prod --only memory,server`); for MongoDB, the diagnostic commands (`dbStats`,
   `serverStatus`, `listCollections`, `collStats`, `buildInfo`, `hostInfo`); for Cassandra, the
   system-schema reads (`local`, `tables`, `columns`); for DynamoDB, the metadata reads (`tables`,
-  `table`) — no `--only` runs them
-  all. `--list` prints the subcommands/sections available for the source (Mongo's, Cassandra's, and
-  DynamoDB's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
+  `table`); for HBase, the table listing (`tables`) — no `--only` runs them
+  all. `--list` prints the subcommands/sections available for the source (Mongo's, Cassandra's,
+  DynamoDB's, and HBase's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
   by `--timeout`. The location header is redacted like `iq ls`: `--reveal` un-redacts an inline
   password, `--expand` resolves a keyring-backed one.
 - `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
@@ -429,6 +433,7 @@ DRIVER     DESCRIPTION                                                     SCHEM
 mongo      MongoDB document store                                          mongodb, mongodb+srv  4.2+           https://www.mongodb.com/docs/
 cassandra  Apache Cassandra wide-column store                              cassandra             3.11+          https://cassandra.apache.org/doc/
 dynamodb   Amazon DynamoDB key-value and document store                    dynamodb              AWS (managed)  https://docs.aws.amazon.com/dynamodb/
+hbase      Apache HBase wide-column store                                  hbase                 1.0+           https://hbase.apache.org/book.html
 redis      Redis key-value store                                           redis, rediss         7.0+           https://redis.io/docs/
 file       Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON)  file
 ```
@@ -440,10 +445,12 @@ Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sou
 > [`go-redis` v9](https://github.com/redis/go-redis) for Redis, the
 > [MongoDB Go driver v2](https://www.mongodb.com/docs/drivers/go/current/) for MongoDB, the
 > [Apache Cassandra gocql driver v2](https://github.com/apache/cassandra-gocql-driver) for
-> Cassandra, and the [AWS SDK for Go v2](https://github.com/aws/aws-sdk-go-v2) for DynamoDB
-> (`AWS (managed)` — a managed service with no server version) — not a matrix `iq` tests against.
-> The integration tests are pinned to `redis:8`, `mongo:8`, `cassandra:5`, and
-> `amazon/dynamodb-local:2.5.2`.
+> Cassandra, the [AWS SDK for Go v2](https://github.com/aws/aws-sdk-go-v2) for DynamoDB
+> (`AWS (managed)` — a managed service with no server version), and
+> [gohbase](https://github.com/tsuna/gohbase) (native protobuf RPC, no Thrift gateway) for HBase —
+> not a matrix `iq` tests against.
+> The integration tests are pinned to `redis:8`, `mongo:8`, `cassandra:5`,
+> `amazon/dynamodb-local:2.5.2`, and `harisekhon/hbase:2.1`.
 
 <details>
 <summary><b>Redis</b> — value encoding and raw commands</summary>
@@ -771,6 +778,90 @@ key schema, item count, size, billing mode, and index names); `--only` narrows t
 </details>
 
 <details>
+<summary><b>Apache HBase</b> — table keyspace, row-key mapping, cell encoding, and shell-verb raw path</summary>
+
+Register an `hbase://` source and the same jq interface works against a table, where **the table is
+the keyspace: a row key is the key and the row is the value**. The URL host is the ZooKeeper quorum
+(comma-separated hosts, default port `2181`); the table rides in the URL's `?table=` (a
+`namespace:table`, overridable per run with a dotted `handle.table`). The ZooKeeper znode parent
+defaults to `/hbase`, overridable with `?znode=`:
+
+```bash
+iq add -n books 'hbase://localhost:2181/?table=iq_books' # register once, then:
+iq --src books '.["1"]'                                  # fetch the row whose key is "1"
+iq --src books '.[] | select(.cf.author == "Herbert")'   # streamed; nested family.qualifier
+iq --src books --unbounded 'keys'                        # every row key
+iq add -n zk 'hbase://z1,z2,z3:2181/?table=ns:events&znode=/hbase-unsecure' # quorum + namespace
+```
+
+A row is a **nested object**: `{family: {qualifier: value}}`, so a cell is addressed as
+`.cf.title` in jq. The row key is the map key, not a field of the row.
+
+### Value encoding
+
+HBase stores **no types** — every cell is raw bytes — so a value is presented **honestly** by
+default and **exactly** when you declare its encoding:
+
+| Column | Read as | Written from |
+| --- | --- | --- |
+| undeclared (default) | valid UTF-8 → the string verbatim; otherwise a base64 string | a string → its UTF-8 bytes |
+| `?types=cf:q=text` | the string verbatim | a string → its UTF-8 bytes |
+| `?types=cf:q=bytes` | a base64 string | a base64 string → raw bytes (lossless for binary) |
+| `?types=cf:q=int` / `long` | a number (4- / 8-byte big-endian, the HBase `Bytes` layout) | a whole number → those bytes |
+| `?types=cf:q=double` | a number (8-byte IEEE-754) | a number → those bytes |
+| `?types=cf:q=bool` | `true` / `false` (1 byte) | a bool → one byte |
+
+The driver **never guesses** a numeric type from bytes (an 8-byte string is indistinguishable from a
+`long`); it either *knows* (you declared it) or is *honest* (text, else base64). Declared columns
+round-trip losslessly in both directions. An undeclared column read back as base64 (non-UTF-8 bytes)
+does **not** round-trip through a write — declare it `bytes` for that. The row key is likewise
+text-or-base64 unless `?rowkeytype=` declares it (`&rowkeytype=long`).
+
+```bash
+# declare the numeric columns so they read as numbers and .year > 2015 needs no tonumber:
+iq add -n books 'hbase://localhost:2181/?table=iq_books&types=cf:year=long,cf:price=double'
+iq --src books '.[] | select(.cf.year > 2015) | .cf.title'
+```
+
+### Server-side pre-filtering (predicate pushdown)
+
+By default a `.[] | select(...)` filter's **column-equality** clauses are translated into an HBase
+server-side filter (`SingleColumnValueFilter`, combined with `MustPassAll` for an `and`) so the
+region servers filter before rows reach iq. The equality literal is encoded through the column's
+declared type, so the comparison matches the stored bytes:
+
+| `select(...)` clause | Pushed | HBase filter | Notes |
+| --- | :---: | --- | --- |
+| `.cf.q == x` | ✓ | `SingleColumnValueFilter(cf, q, =, x)` | a two-segment `family.qualifier` path; the literal must encode to the column's declared type (undeclared → string) |
+| `E1 and E2` | ✓ | `FilterList(MustPassAll, …)` | drops any conjunct it cannot push (widening) |
+| `.cf.q \| has`, ranges, regex, `length`, `!=`, `or` | — | — | run client-side; existence and `or` are not pushed because HBase has no clean superset-safe filter for them, and ranges cannot reproduce jq's cross-type ordering |
+
+A row-key point read (`.["1"]`) is a direct `Get`, not a scan. Pushdown never changes results, only
+speed: the full jq always re-runs client-side, so a pushed filter is a conservative pre-filter. Pass
+`--no-compile` to stream the whole table and filter entirely client-side; the cost is shown in
+`--explain`.
+
+### Raw commands
+
+HBase has **no query language**, so `iq exec` is a small, safe verb set mapped straight onto RPC —
+never a built query string, so it is injection-safe. Each verb names its own table. Reads: `get`,
+`scan`, `count`; writes: `put`, `delete` (values encoded through the same declared-type contract):
+
+```bash
+iq --src books exec get iq_books 1              # one row as JSON, or null
+iq --src books exec scan iq_books 10            # up to 10 rows as {rowkey: row}
+iq --src books exec count iq_books              # row count (a key-only scan)
+iq --src books exec put iq_books 5 cf:title Dune  # write one cell
+iq --src books exec delete iq_books 5           # delete the whole row (or `delete iq_books 5 cf:title` for one cell)
+```
+
+Structured writes go through `iq data` (`put`/`clear`/`drop`) with write modes, stats, and
+`--explain`; the raw `put`/`delete` verbs are the lower-level escape hatch, mirroring the other
+drivers' raw paths. `iq inspect` lists the source namespace's tables (`tables`).
+
+</details>
+
+<details>
 <summary><b>File dumps</b> — query a snapshot offline (read-only)</summary>
 
 A `file://` source reads a database dump straight from disk, so a snapshot is queried, inspected
@@ -946,8 +1037,9 @@ iq data drop cache --explain               # reports the Redis drop as unsupport
 The core read path: a jq filter is classified by the **selector**, a scan is optionally **decomposed**
 into a native predicate, and each backend maps that predicate its own way — MongoDB pushes it
 server-side, Cassandra pushes equality as a CQL `WHERE` (with `ALLOW FILTERING` when it is not the
-partition key), DynamoDB pushes equality and existence as a `Scan` `FilterExpression`, Redis scans
-and filters client-side. Either way the full jq re-runs client-side, so
+partition key), DynamoDB pushes equality and existence as a `Scan` `FilterExpression`, HBase pushes
+column equality as a `SingleColumnValueFilter`, Redis scans and filters client-side. Either way the
+full jq re-runs client-side, so
 the pushed predicate is only ever a conservative pre-filter and results are identical with or without it.
 
 Query / read path:
@@ -1024,28 +1116,37 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   CBOR under `<user cache dir>/iq/dumps`): a full scan of a large dump tees its normalized records
   to disk, and later scans read them back instead of re-decoding — transparent to the ports, so the
   data-flow above is unchanged, and never authoritative (a miss just re-decodes).
-- `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb` — the adapters. Each has
-  one `*Store`
+- `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb`, `drivers/hbase` — the
+  adapters. Each has one `*Store`
   satisfying the read ports
   (`Query` for exec, `Get`/`ScanBatches` for jq) and the write ports (`Put`/`Clear`/`TypedScan`,
-  plus `Drop` for Mongo, Cassandra, and DynamoDB), with a type-to-JSON normalization frozen as that
-  backend's
+  plus `Drop` for Mongo, Cassandra, DynamoDB, and HBase), with a type-to-JSON normalization frozen as
+  that backend's
   encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs; CQL types → uuid-string,
-  RFC 3339, base64 blob, collections; DynamoDB `S`/`N`/`B`/`BOOL`/`M`/`L`/sets) and its inverse for
+  RFC 3339, base64 blob, collections; DynamoDB `S`/`N`/`B`/`BOOL`/`M`/`L`/sets; HBase raw cell bytes →
+  honest UTF-8-or-base64, or an exact `Bytes`-layout value for a `?types=`-declared column) and its
+  inverse for
   writes
   (Mongo `bulkWrite`; Redis pipelined `SET`/`HSET`/`RPUSH`/`SADD`/`ZADD`/`XADD`/`JSON.SET` by
   type; Cassandra parameterized `INSERT`, `TRUNCATE`, `DROP TABLE`; DynamoDB `PutItem`, `Scan` +
-  `BatchWriteItem` delete-all, `DeleteTable`). Redis maps a key to a Redis key;
+  `BatchWriteItem` delete-all, `DeleteTable`; HBase `Put` / `CheckAndPut` insert-only, a key-only
+  `Scan` + per-row `Delete` for clear, and `DisableTable` + `DeleteTable` for drop). Redis maps a key
+  to a Redis key;
   Mongo maps a key to a document `_id` within the collection it owns from the URL's `?collection=`
   (or a dotted `handle.collection` override); Cassandra maps a key to a row's full primary key within
   the table from the URL's `?table=` (or a `handle.table` override), reading the table schema once at
   connect to encode and reverse it; DynamoDB maps a key to an item's partition (and optional sort) key
   within the table from the URL's `?table=` (region as the host, credentials from the AWS default
-  chain), reading the key schema once at connect. Cassandra pushes equality/`IN` as a CQL `WHERE`
+  chain), reading the key schema once at connect; HBase maps a key to a row key and the row to a
+  nested `{family: {qualifier: value}}` object, with the ZooKeeper quorum as the host and the
+  `namespace:table` from the URL's `?table=` (or a `handle.table` override). Cassandra pushes
+  equality/`IN` as a CQL `WHERE`
   (`FilteredScanner`) but has no cheap count, so it omits `Estimator` like Redis; DynamoDB pushes
   equality/existence as a `Scan` `FilterExpression` (`FilteredScanner`) and answers `Estimator` from
-  its table metadata. DynamoDB's connectionless client verifies reachability at open (a bounded
-  `ListTables` probe), so `ping`/`add` need no second round-trip. Each
+  its table metadata; HBase pushes column equality as a `SingleColumnValueFilter` (`FilteredScanner`)
+  and omits `Estimator` like Redis. DynamoDB's connectionless client verifies reachability at open (a
+  bounded `ListTables` probe), and HBase's likewise (a bounded `ClusterStatus` probe, since gohbase
+  connects lazily), so `ping`/`add` need no second round-trip. Each
   also contributes pure, connection-free `--explain` describers
   (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
 - `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
@@ -1104,12 +1205,13 @@ iq --src snap '.[] | select(.active)'     # query a Redis/Mongo dump offline (RD
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
-go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local via testcontainers-go
-docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local for manual exploration (:6379, :27017, :9042, :8000)
+go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local via testcontainers-go (HBase needs IQ_HBASE_URL)
+docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase for manual exploration (:6379, :27017, :9042, :8000, :2181)
 bash scripts/seed-redis.sh    # load example data into the running Redis
 bash scripts/seed-mongo.sh    # load example documents into the running MongoDB
 bash scripts/seed-cassandra.sh    # load example rows into the running Cassandra
 bash scripts/seed-dynamodb.sh    # load example items into the running DynamoDB Local
+bash scripts/seed-hbase.sh    # load example rows into the running HBase
 docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
@@ -1129,7 +1231,11 @@ ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_
 to point at an already-running server (for example the `docker compose` stack) to skip container
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
 a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded
-into DB 0 by `scripts/seed-redis.sh` survives a test run.
+into DB 0 by `scripts/seed-redis.sh` survives a test run. **HBase is the exception**: its native RPC
+needs a fixed-hostname cluster (testcontainers' random ports would break the region server's
+advertised name), so its integration tests run only when `IQ_HBASE_URL` points at a running cluster
+(`docker compose up -d --wait hbase`); without it they skip. The compose HBase service uses host
+networking so a host-side client reaches the region server, and takes ~1–2 minutes to become ready.
 
 The mutation gate scopes to the current branch's diff against `main` by default, so it only
 mutates the lines a change touched. Override the base ref with `IQ_MUTATION_BASE` (set it empty

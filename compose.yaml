@@ -49,3 +49,22 @@ services:
     # No healthcheck: the image ships no shell HTTP client, and DynamoDB Local is
     # serving within a second of start. scripts/seed-dynamodb.sh does its own
     # reachability check with the AWS CLI before seeding.
+
+  hbase:
+    image: harisekhon/hbase:2.1
+    container_name: iq-hbase
+    # Native HBase RPC hands the client the region server's *advertised* hostname, so
+    # the client must reach the server by that name. Host networking makes ZooKeeper,
+    # the master, and the region server all reachable on localhost under the hostname
+    # the host already resolves — the simplest reliable setup for a host-side gohbase
+    # client (random published ports would break the name the region server hands back).
+    # It binds ZooKeeper 2181 and the HBase ports (16000/16010/16020/16030) on the host.
+    # Ephemeral single-node instance; data lives only in the container.
+    network_mode: host
+    # HBase on a JVM is slow to become ready, so the healthcheck retries generously.
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'status' | hbase shell -n 2>/dev/null | grep -q 'active master'"]
+      interval: 5s
+      timeout: 20s
+      retries: 30
+      start_period: 90s
