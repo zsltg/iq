@@ -1,7 +1,7 @@
 # iq
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
-databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, Apache HBase, and Apache CouchDB are supported; the
+databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, Apache HBase, Apache CouchDB, and Neo4j are supported; the
 backend is chosen by the URL scheme, and the query core is driver-agnostic so further backends slot
 in behind the same port.
 
@@ -21,7 +21,7 @@ sq's so the tool feels familiar.
 ## Requirements
 
 - Go 1.26+
-- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
+- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
 
 ## Build
 
@@ -62,6 +62,7 @@ iq add -a 'mongodb://localhost:27017/books?collection=items' # a Mongo source; h
 iq add -n orders 'cassandra://localhost:9042/shop?table=orders' # a Cassandra source
 iq add -n books 'hbase://localhost:2181/?table=iq_books'     # an HBase source (host = ZooKeeper quorum)
 iq add -n docs 'couchdb://admin:pass@localhost:5984/?database=iq' # a CouchDB source (host = server)
+iq add -n graph 'neo4j://neo4j:pass@localhost:7687/?label=Person&key=id' # a Neo4j source (label = keyspace)
 iq src cache                                                 # make "cache" the active source
 iq ls                                                        # list sources: handle driver url (active marked *); -v adds format + options
 ```
@@ -78,7 +79,8 @@ iq --src books.authors '.[]'     # the same connection, a different collection
 - `iq add <url> [-n <handle>] [-a] [-p] [-d <driver>] [--skip-verify] [--store keyring]`
   — register a source, mirroring `sq add`. The URL is the sole positional argument; the backend is
   inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`, `cassandra://`,
-  `dynamodb://`, `hbase://`, `couchdb://`, `couchdbs://`).
+  `dynamodb://`, `hbase://`, `couchdb://`, `couchdbs://`, `neo4j://`, `neo4j+s://`, `neo4j+ssc://`,
+  `bolt://`, `bolt+s://`, `bolt+ssc://`).
   `-n`/`--handle` names the source; when omitted a handle is derived from the URL (the MongoDB
   database or Cassandra keyspace name, else the driver, disambiguated with a numeric suffix on
   collision). A MongoDB default collection rides in the URL as `?collection=`
@@ -88,12 +90,14 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   default chain, never the URL), an HBase default table as `?table=`
   (`hbase://host:2181/?table=books`, the host as the ZooKeeper quorum; cell encodings optionally
   declared with `?types=cf:age=long`), a CouchDB default database as `?database=`
-  (`couchdb://host:5984/?database=books`, the host as the server), the driver's own connection
-  option — like a `file://`
-  source's `?format=`; a query addresses another collection/table/database with a dotted
-  `handle.collection` / `handle.table` / `handle.database`. `-a`/`--active` makes the new source active. `-p`/`--password`
+  (`couchdb://host:5984/?database=books`, the host as the server), a Neo4j default node label as
+  `?label=` (`neo4j://host:7687/?label=Person&key=id`, the host as the bolt server; the node key is
+  the `?key=` property, else the elementId; the database is `?database=`, default `neo4j`), the
+  driver's own connection option — like a `file://`
+  source's `?format=`; a query addresses another collection/table/database/label with a dotted
+  `handle.collection` / `handle.table` / `handle.database` / `handle.label`. `-a`/`--active` makes the new source active. `-p`/`--password`
   prompts for the URL password (or reads it from stdin) instead of embedding it in the URL.
-  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`, `couchdb`) and errors if it
+  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`, `couchdb`, `neo4j`) and errors if it
   disagrees with the scheme. The source is
   pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
   keyring` moves the URL's password into the OS keyring and strips it from the stored URL (default
@@ -117,19 +121,20 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   Bounded by `--timeout`; exits non-zero if any source is unreachable.
 - `iq inspect [<source>[.<collection>]]` — show a source's native introspection. The positional
   names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB,
-  Cassandra, DynamoDB, HBase, and CouchDB sources accept sq-style `<source>.<collection>` /
-  `<source>.<table>` / `<source>.<database>`
-  addressing (`iq inspect prod.books`) to pick the collection/table/database, overriding the source URL's
-  `?collection=`/`?table=`/`?database=` default; Redis sources take no collection.
+  Cassandra, DynamoDB, HBase, CouchDB, and Neo4j sources accept sq-style `<source>.<collection>` /
+  `<source>.<table>` / `<source>.<database>` / `<source>.<label>`
+  addressing (`iq inspect prod.books`) to pick the collection/table/database/label, overriding the source URL's
+  `?collection=`/`?table=`/`?database=`/`?label=` default; Redis sources take no collection.
   `--only`
   narrows the output (repeatable or comma-separated): for Redis, `INFO` sections
   (`iq inspect prod --only memory,server`); for MongoDB, the diagnostic commands (`dbStats`,
   `serverStatus`, `listCollections`, `collStats`, `buildInfo`, `hostInfo`); for Cassandra, the
   system-schema reads (`local`, `tables`, `columns`); for DynamoDB, the metadata reads (`tables`,
   `table`); for HBase, the table listing (`tables`); for CouchDB, the introspection reads (`server`,
-  `databases`, `dbinfo`, `indexes`) — no `--only` runs them
+  `databases`, `dbinfo`, `indexes`); for Neo4j, the metadata procedures (`server`, `databases`,
+  `labels`, `reltypes`, `constraints`) — no `--only` runs them
   all. `--list` prints the subcommands/sections available for the source (Mongo's, Cassandra's,
-  DynamoDB's, and HBase's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
+  DynamoDB's, HBase's, and Neo4j's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
   by `--timeout`. The location header is redacted like `iq ls`: `--reveal` un-redacts an inline
   password, `--expand` resolves a keyring-backed one.
 - `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
@@ -434,13 +439,14 @@ registered backends — the same canonical names `iq ls -v`, `ping`, `inspect`, 
 
 ```bash
 $ iq driver ls
-DRIVER     DESCRIPTION                                                     SCHEMES               VERSIONS       DOC
-mongo      MongoDB document store                                          mongodb, mongodb+srv  4.2+           https://www.mongodb.com/docs/
-cassandra  Apache Cassandra wide-column store                              cassandra             3.11+          https://cassandra.apache.org/doc/
-dynamodb   Amazon DynamoDB key-value and document store                    dynamodb              AWS (managed)  https://docs.aws.amazon.com/dynamodb/
-hbase      Apache HBase wide-column store                                  hbase                 1.0+           https://hbase.apache.org/book.html
-couchdb    Apache CouchDB document store                                   couchdb, couchdbs     2.x, 3.x       https://docs.couchdb.org/
-redis      Redis key-value store                                           redis, rediss         7.0+           https://redis.io/docs/
+DRIVER     DESCRIPTION                                                     SCHEMES                                            VERSIONS       DOC
+mongo      MongoDB document store                                          mongodb, mongodb+srv                               4.2+           https://www.mongodb.com/docs/
+cassandra  Apache Cassandra wide-column store                              cassandra                                          3.11+          https://cassandra.apache.org/doc/
+dynamodb   Amazon DynamoDB key-value and document store                    dynamodb                                           AWS (managed)  https://docs.aws.amazon.com/dynamodb/
+hbase      Apache HBase wide-column store                                  hbase                                              1.0+           https://hbase.apache.org/book.html
+couchdb    Apache CouchDB document store                                   couchdb, couchdbs                                  2.x, 3.x       https://docs.couchdb.org/
+neo4j      Neo4j property graph store                                      neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc  5.x            https://neo4j.com/docs/
+redis      Redis key-value store                                           redis, rediss                                      7.0+           https://redis.io/docs/
 file       Local dump file, read-only (JSONL, RDB, Mongo BSON/JSON, DynamoDB JSON, Cassandra CSV)  file
 ```
 
@@ -454,10 +460,11 @@ Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sou
 > Cassandra, the [AWS SDK for Go v2](https://github.com/aws/aws-sdk-go-v2) for DynamoDB
 > (`AWS (managed)` — a managed service with no server version),
 > [gohbase](https://github.com/tsuna/gohbase) (native protobuf RPC, no Thrift gateway) for HBase,
-> and [`kivik` v4](https://github.com/go-kivik/kivik) for CouchDB —
+> [`kivik` v4](https://github.com/go-kivik/kivik) for CouchDB,
+> and the [Neo4j Go driver v5](https://github.com/neo4j/neo4j-go-driver) for Neo4j —
 > not a matrix `iq` tests against.
 > The integration tests are pinned to `redis:8`, `mongo:8`, `cassandra:5`,
-> `amazon/dynamodb-local:2.5.2`, `harisekhon/hbase:2.1`, and `couchdb:3`.
+> `amazon/dynamodb-local:2.5.2`, `harisekhon/hbase:2.1`, `couchdb:3`, and `neo4j:5`.
 
 <details>
 <summary><b>Redis</b> — value encoding and raw commands</summary>
@@ -930,6 +937,85 @@ and `indexes` (its Mango indexes); `--only` narrows to those subcommands.
 </details>
 
 <details>
+<summary><b>Neo4j</b> — node-label keyspace, key mapping, Cypher pushdown, and raw Cypher</summary>
+
+Register a `neo4j://` source and the same jq interface works against a node label, where **the node
+label is the keyspace: a node's key is the key and the node is the value**. Neo4j has no single
+keyspace, so a label is the addressable collection (like a Mongo collection or a Cassandra table):
+the host is the bolt server, the label rides in the URL's `?label=` (overridable per run with a
+dotted `handle.label`), and the database — Neo4j is multi-database — is `?database=` (default
+`neo4j`). Use `neo4j+s://` (or `bolt://` for a single instance, `+s`/`+ssc` for TLS). **Credentials
+travel in the URL userinfo** (bolt basic auth), so `--store keyring` moves the password to the OS
+keyring exactly as for the other backends.
+
+**The key is the elementId by default, or a property you name with `?key=`.** `elementId(n)` is
+always present and unique but opaque and not stable across database reloads, so a `?key=` property
+(a stable, human-meaningful id) reads better; the value carries `_id` (the elementId) and `_labels`
+alongside the node's properties, so identity survives whichever key you choose.
+
+```bash
+iq add -n graph 'neo4j://neo4j:password@localhost:7687/?label=Person&key=id'  # register once, then:
+iq --src graph '.["1"]'                                # fetch the Person whose id is 1
+iq --src graph '.[] | select(.age > 40) | .name'       # streamed
+iq --src graph --unbounded 'keys'                       # every key in the label
+iq --src graph.Book '.[]'                               # query a different label on the same database
+```
+
+Neo4j values map to JSON directly: integers keep exact precision, bytes become base64, and temporal
+and spatial values become their canonical ISO strings and `{x,y,srid}` objects. A scan pages the
+label with keyset pagination ordered by `elementId(n)`. Because a `?key=` property is not guaranteed unique
+(unlike a primary key), a scan falls back to a node's elementId whenever the key would collide
+within a page, so no node is ever silently dropped; a bounded `.["v"]` lookup that matches more than
+one node is an error rather than an arbitrary pick.
+
+### Server-side pre-filtering (predicate pushdown)
+
+By default a `.[] | select(...)` filter's **equality** and **existence** clauses are translated into
+a Cypher `WHERE` clause (using dynamic `n[$prop]` access, so the property name is a parameter, never
+string-built) so the server filters before nodes reach iq:
+
+| `select(...)` clause | Pushed | Cypher | Notes |
+| --- | :---: | --- | --- |
+| `.a == x` | ✓ | `n[$p] = $v` | equality; a `null` literal becomes `n[$p] IS NULL` (a missing property) |
+| `.a \| has` / `has("a")` | ✓ | `n[$p] IS NOT NULL` | key presence, exact |
+| `has("a") \| not` | ✓ | `n[$p] IS NULL` | key absence, exact |
+| `E1 and E2` | ✓ | `(… AND …)` | drops any conjunct it cannot push (widening) |
+| `E1 or E2` | ✓ | `(… OR …)` | pushed only when **every** branch is pushable |
+| `.a > x` / `.a <= x`, `!=`, `length`, regex, `any`, nested paths | — | — | run client-side: Cypher compares mismatched types as null rather than by jq's cross-type ordering, and a nested path has no flat Neo4j property, so pushing these could wrongly exclude a node jq would keep |
+
+Pushdown never changes results, only speed: the full jq always re-runs client-side, so a pushed
+filter is a conservative pre-filter; `--explain` shows the `WHERE` clause, and `--no-compile`
+streams the whole label and filters entirely client-side.
+
+### Writing
+
+A copy into a Neo4j label upserts each node with `MERGE (n:Label {key}) SET n += props`, so a re-run
+converges. **Writing needs a `?key=` property** (a MERGE key must be stable, and the elementId is
+server-assigned) **and a uniqueness constraint on it** (`CREATE CONSTRAINT ... REQUIRE n.<key> IS
+UNIQUE`) — without the constraint a MERGE could match and overwrite several nodes at once, so the
+write is refused up front rather than fanning out. `iq data clear` detach-deletes every node in the
+label (and the relationships they hold); a label is not a droppable container, so `iq data drop` is
+unsupported. Writes set node properties only — relationships are a follow-up.
+
+### Raw commands
+
+`iq exec` runs raw, parameterized [Cypher](https://neo4j.com/docs/cypher-manual/current/): the first
+argument is the statement and an optional second argument is a JSON object of parameters (passed as
+parameters, never string-built into the statement). It prints the result rows as JSON:
+
+```bash
+iq --src graph exec 'MATCH (n:Person) WHERE n.age > $min RETURN n.name, n.age' '{"min": 40}'
+iq --src graph exec 'MATCH (n) RETURN count(n) AS nodes'
+```
+
+`iq inspect` reads deployment and schema metadata — `server` (components and version), `databases`
+(the deployment's databases), `labels` (the addressable node labels), `reltypes` (relationship
+types), and `constraints` (which shows the uniqueness constraint a `?key=` write needs); `--only`
+narrows to those subcommands.
+
+</details>
+
+<details>
 <summary><b>File dumps</b> — query a snapshot offline (read-only)</summary>
 
 A `file://` source reads a database dump straight from disk, so a snapshot is queried, inspected
@@ -1110,7 +1196,8 @@ into a native predicate, and each backend maps that predicate its own way — Mo
 server-side, Cassandra pushes equality as a CQL `WHERE` (with `ALLOW FILTERING` when it is not the
 partition key), DynamoDB pushes equality and existence as a `Scan` `FilterExpression`, HBase pushes
 column equality as a `SingleColumnValueFilter`, CouchDB pushes equality, ranges, and existence as a
-Mango `_find` selector, Redis scans and filters client-side. Either way the
+Mango `_find` selector, Neo4j pushes equality and existence as a Cypher `WHERE` clause, Redis scans
+and filters client-side. Either way the
 full jq re-runs client-side, so
 the pushed predicate is only ever a conservative pre-filter and results are identical with or without it.
 
@@ -1190,7 +1277,7 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   CBOR under `<user cache dir>/iq/dumps`): a full scan of a large dump tees its normalized records
   to disk, and later scans read them back instead of re-decoding — transparent to the ports, so the
   data-flow above is unchanged, and never authoritative (a miss just re-decodes).
-- `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb`, `drivers/hbase`, `drivers/couchdb` — the
+- `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb`, `drivers/hbase`, `drivers/couchdb`, `drivers/neo4j` — the
   adapters. Each has one `*Store`
   satisfying the read ports
   (`Query` for exec, `Get`/`ScanBatches` for jq) and the write ports (`Put`/`Clear`/`TypedScan`,
@@ -1199,7 +1286,9 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs; CQL types → uuid-string,
   RFC 3339, base64 blob, collections; DynamoDB `S`/`N`/`B`/`BOOL`/`M`/`L`/sets; HBase raw cell bytes →
   honest UTF-8-or-base64, or an exact `Bytes`-layout value for a `?types=`-declared column; CouchDB
-  documents are already JSON, decoded with exact-integer precision, `_id`/`_rev` kept) and its
+  documents are already JSON, decoded with exact-integer precision, `_id`/`_rev` kept; Neo4j node
+  properties with exact integers, base64 bytes, and ISO temporal/spatial strings, `_id`/`_labels`
+  kept) and its
   inverse for
   writes
   (Mongo `bulkWrite`; Redis pipelined `SET`/`HSET`/`RPUSH`/`SADD`/`ZADD`/`XADD`/`JSON.SET` by
@@ -1207,7 +1296,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   `BatchWriteItem` delete-all, `DeleteTable`; HBase `Put` / `CheckAndPut` insert-only, a key-only
   `Scan` + per-row `Delete` for clear, and `DisableTable` + `DeleteTable` for drop; CouchDB
   `_bulk_docs` upsert/insert reading current `_rev`s first, `_bulk_docs {_deleted:true}` clear,
-  `DELETE /{db}` drop). Redis maps a key
+  `DELETE /{db}` drop; Neo4j `UNWIND … MERGE (n:Label {key}) SET n += props` upsert/insert-only,
+  paged `MATCH … DETACH DELETE` clear, no drop). Redis maps a key
   to a Redis key;
   Mongo maps a key to a document `_id` within the collection it owns from the URL's `?collection=`
   (or a dotted `handle.collection` override); Cassandra maps a key to a row's full primary key within
@@ -1218,17 +1308,22 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   nested `{family: {qualifier: value}}` object, with the ZooKeeper quorum as the host and the
   `namespace:table` from the URL's `?table=` (or a `handle.table` override); CouchDB maps a key to a
   document `_id` within the database it owns from the URL's `?database=` (host as the server, or a
-  dotted `handle.database` override). Cassandra pushes
+  dotted `handle.database` override); Neo4j maps a key to a node — the `?key=` property's value or
+  the elementId — within the label it owns from the URL's `?label=` (bolt host as the server, or a
+  dotted `handle.label` override) inside the `?database=` (default `neo4j`). Cassandra pushes
   equality/`IN` as a CQL `WHERE`
   (`FilteredScanner`) but has no cheap count, so it omits `Estimator` like Redis; DynamoDB pushes
   equality/existence as a `Scan` `FilterExpression` (`FilteredScanner`) and answers `Estimator` from
   its table metadata; HBase pushes column equality as a `SingleColumnValueFilter` (`FilteredScanner`)
   and omits `Estimator` like Redis; CouchDB pushes equality, ranges, and existence as a Mango `_find`
   selector (`FilteredScanner`, falling back to a plain `_all_docs` scan for the exact-negation and
-  polymorphic operators) and answers `Estimator` from its `doc_count`. DynamoDB's connectionless
+  polymorphic operators) and answers `Estimator` from its `doc_count`; Neo4j pushes equality and
+  existence as a Cypher `WHERE` clause (`FilteredScanner`, falling back to a plain label scan for
+  ranges — Cypher's cross-type comparison is not jq's — and the other operators) and answers
+  `Estimator` from the label's count store. DynamoDB's connectionless
   client verifies reachability at open (a
   bounded `ListTables` probe), HBase's likewise (a bounded `ClusterStatus` probe, since gohbase
-  connects lazily), and CouchDB pings at open, so `ping`/`add` need no second round-trip. Each
+  connects lazily), CouchDB pings at open, and Neo4j verifies connectivity at open, so `ping`/`add` need no second round-trip. Each
   also contributes pure, connection-free `--explain` describers
   (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
 - `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
@@ -1287,14 +1382,15 @@ iq --src snap '.[] | select(.active)'     # query a dump offline (RDB, BSON, mon
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
-go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB via testcontainers-go (HBase needs IQ_HBASE_URL)
-docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984)
+go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j via testcontainers-go (HBase needs IQ_HBASE_URL)
+docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB + Neo4j for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984, :7687)
 bash scripts/seed-redis.sh    # load example data into the running Redis
 bash scripts/seed-mongo.sh    # load example documents into the running MongoDB
 bash scripts/seed-cassandra.sh    # load example rows into the running Cassandra
 bash scripts/seed-dynamodb.sh    # load example items into the running DynamoDB Local
 bash scripts/seed-hbase.sh    # load example rows into the running HBase
 bash scripts/seed-couchdb.sh    # load example documents into the running CouchDB
+bash scripts/seed-neo4j.sh    # load an example graph into the running Neo4j
 docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
@@ -1307,10 +1403,10 @@ make release              # bump version, regenerate CHANGELOG.md, commit, and t
 ```
 
 Integration tests skip under `go test -short`. The full `go test ./...` needs Docker: it starts
-an ephemeral Redis, MongoDB, Cassandra, DynamoDB Local, and CouchDB via
+an ephemeral Redis, MongoDB, Cassandra, DynamoDB Local, CouchDB, and Neo4j via
 [testcontainers-go](https://github.com/testcontainers/testcontainers-go) on random ports and
 tears them down afterwards — no manual `docker compose up` (Cassandra takes ~1 minute to become
-ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL` / `IQ_COUCHDB_URL`
+ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL` / `IQ_COUCHDB_URL` / `IQ_NEO4J_URL`
 to point at an already-running server (for example the `docker compose` stack) to skip container
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
 a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded

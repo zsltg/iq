@@ -18,6 +18,7 @@ require (
 	github.com/lmittmann/tint v1.1.3
 	github.com/mattn/go-isatty v0.0.22
 	github.com/neilotoole/jsoncolor v0.9.1
+	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
 	github.com/pelletier/go-toml/v2 v2.4.2
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/spf13/cobra v1.10.2

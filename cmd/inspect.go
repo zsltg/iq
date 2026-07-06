@@ -30,11 +30,11 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	)
 	long := "Show a source's native server/database introspection.\n\n" +
 		"The positional argument names the source, like `iq inspect prod`; with none it\n" +
-		"uses --src or the active source. MongoDB, Cassandra, DynamoDB, HBase, and CouchDB\n" +
-		"sources accept sq-style `<source>.<collection>` / `<source>.<table>` /\n" +
-		"`<source>.<database>` addressing (`iq inspect prod.books`) to pick the\n" +
-		"collection/table/database, overriding the source URL's ?collection=/?table=/\n" +
-		"?database= default; Redis sources take no collection.\n\n" +
+		"uses --src or the active source. MongoDB, Cassandra, DynamoDB, HBase, CouchDB, and\n" +
+		"Neo4j sources accept sq-style `<source>.<collection>` / `<source>.<table>` /\n" +
+		"`<source>.<database>` / `<source>.<label>` addressing (`iq inspect prod.books`) to\n" +
+		"pick the collection/table/database/label, overriding the source URL's\n" +
+		"?collection=/?table=/?database=/?label= default; Redis sources take no collection.\n\n" +
 		"MongoDB — runs diagnostic database commands; no --only runs them all,\n" +
 		"--only narrows to the named ones:\n" +
 		"  " + strings.Join(mongoInspectCmds, "  ") + "\n" +
@@ -55,6 +55,9 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"  " + strings.Join(couchInspectCmds, "  ") + "\n" +
 		"  (dbinfo and indexes need a database: address it as source.database or set\n" +
 		"  ?database= on the source url)\n\n" +
+		"Neo4j — runs metadata procedures; no --only runs them all, --only narrows:\n" +
+		"  " + strings.Join(neo4jInspectCmds, "  ") + "\n" +
+		"  (all are database-level; labels lists the addressable collections)\n\n" +
 		"Redis — runs INFO; --only narrows it to those sections\n" +
 		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
 		"  server  clients  memory  persistence  stats  replication  cpu  keyspace\n\n" +
@@ -98,6 +101,8 @@ func newInspectCmd(cfg *config) *cobra.Command {
 				return inspectHBase(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "couchdb":
 				return inspectCouch(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+			case "neo4j":
+				return inspectNeo4j(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "file":
 				// inspect reports live server metadata; a dump file has none. Point
 				// the user at the operations that do work on a file source.
@@ -587,6 +592,101 @@ func inspectCouch(ctx context.Context, out io.Writer, st store, cfg *config, sub
 // isCouchInspectCmd reports whether sub is a supported CouchDB inspect subcommand.
 func isCouchInspectCmd(sub string) bool {
 	for _, c := range couchInspectCmds {
+		if c == sub {
+			return true
+		}
+	}
+	return false
+}
+
+// neo4jInspectCmds is the supported set of Neo4j introspection reads `inspect` runs.
+// All are database-level metadata procedures, so none needs a label selected. With
+// no --only it runs them all; --only narrows.
+var neo4jInspectCmds = []string{"server", "databases", "labels", "reltypes", "constraints"}
+
+// neo4jInspector is the introspection capability inspectNeo4j needs from the store.
+// Neo4j's introspection is metadata procedures (dbms.components, db.labels,
+// db.relationshipTypes, SHOW DATABASES, SHOW CONSTRAINTS), which the driver runs
+// itself rather than routing an arbitrary statement through the raw Query path.
+type neo4jInspector interface {
+	InspectServer(ctx context.Context) (any, error)
+	InspectDatabases(ctx context.Context) (any, error)
+	InspectLabels(ctx context.Context) (any, error)
+	InspectRelationshipTypes(ctx context.Context) (any, error)
+	InspectConstraints(ctx context.Context) (any, error)
+}
+
+// inspectNeo4j runs the requested Neo4j introspection reads (all supported when none
+// are named) and renders each reply keyed by subcommand. Every read is database-level,
+// so none is skipped for a missing label. With list, it prints the supported names
+// without touching the store.
+func inspectNeo4j(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
+	if list {
+		return writeInspectList(out, neo4jInspectCmds, jsonOut, yamlOut)
+	}
+	ni, ok := st.(neo4jInspector)
+	if !ok {
+		return errors.New("inspect is not supported for this source")
+	}
+	which := subs
+	if len(which) == 0 {
+		which = neo4jInspectCmds
+	}
+	for _, sub := range which {
+		if !isNeo4jInspectCmd(sub) {
+			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(neo4jInspectCmds, ", "))
+		}
+	}
+
+	type result struct {
+		sub   string
+		value any
+	}
+	results := make([]result, 0, len(which))
+	for _, sub := range which {
+		var (
+			res any
+			err error
+		)
+		switch sub {
+		case "server":
+			res, err = ni.InspectServer(ctx)
+		case "databases":
+			res, err = ni.InspectDatabases(ctx)
+		case "labels":
+			res, err = ni.InspectLabels(ctx)
+		case "reltypes":
+			res, err = ni.InspectRelationshipTypes(ctx)
+		case "constraints":
+			res, err = ni.InspectConstraints(ctx)
+		}
+		if err != nil {
+			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
+		}
+		results = append(results, result{sub: sub, value: res})
+	}
+
+	if jsonOut || yamlOut {
+		byName := make(map[string]any, len(results))
+		for _, r := range results {
+			byName[r.sub] = r.value
+		}
+		return writeStructured(out, byName, yamlOut)
+	}
+	if err := inspectHeader(out, cfg); err != nil {
+		return err
+	}
+	for _, r := range results {
+		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// isNeo4jInspectCmd reports whether sub is a supported Neo4j inspect subcommand.
+func isNeo4jInspectCmd(sub string) bool {
+	for _, c := range neo4jInspectCmds {
 		if c == sub {
 			return true
 		}

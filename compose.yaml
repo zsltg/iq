@@ -91,6 +91,24 @@ services:
       timeout: 5s
       retries: 15
 
+  neo4j:
+    image: neo4j:5
+    container_name: iq-neo4j
+    ports:
+      - "7687:7687"
+      - "7474:7474"
+    # Ephemeral single-node test instance; data lives only in the container. The
+    # admin password is set here so cypher-shell and the driver can authenticate.
+    environment:
+      NEO4J_AUTH: neo4j/password
+    # Neo4j on a JVM is slow to become ready, so the healthcheck retries generously.
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p password 'RETURN 1' || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 30s
+
 networks:
   # Pin the bridge to a subnet outside the LAN (192.168.0.0/16), the VM NAT (10.0.2.0/24), and
   # Docker's default pool (172.16.0.0/12), so an auto-assigned subnet can never mask a LAN host

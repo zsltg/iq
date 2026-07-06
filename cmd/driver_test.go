@@ -57,7 +57,7 @@ func TestDriverName(t *testing.T) {
 }
 
 func TestExpectedSchemes(t *testing.T) {
-	require.Equal(t, "expected one of mongodb://, cassandra://, dynamodb://, hbase://, couchdb://, redis://", expectedSchemes())
+	require.Equal(t, "expected one of mongodb://, cassandra://, dynamodb://, hbase://, couchdb://, neo4j://, redis://", expectedSchemes())
 }
 
 // TestDriverRegistryInvariants guards the single source of truth: every driver
@@ -100,6 +100,7 @@ func TestDriverLsTable(t *testing.T) {
 		"dynamodb", "Amazon DynamoDB key-value and document store", "AWS (managed)", "https://docs.aws.amazon.com/dynamodb/",
 		"hbase", "Apache HBase wide-column store", "1.0+", "https://hbase.apache.org/book.html",
 		"couchdb", "Apache CouchDB document store", "couchdb, couchdbs", "2.x, 3.x", "https://docs.couchdb.org/",
+		"neo4j", "Neo4j property graph store", "neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc", "5.x", "https://neo4j.com/docs/",
 	} {
 		require.Contains(t, out, want)
 	}
@@ -111,7 +112,7 @@ func TestDriverLsJSON(t *testing.T) {
 
 	var rows []driverRow
 	require.NoError(t, json.Unmarshal([]byte(out), &rows))
-	require.Len(t, rows, 7)
+	require.Len(t, rows, 8)
 
 	byName := map[string]driverRow{}
 	for _, r := range rows {

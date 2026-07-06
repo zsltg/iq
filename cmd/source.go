@@ -152,7 +152,7 @@ func newAddCmd(cfg *config) *cobra.Command {
 		},
 	}
 	c.Flags().StringVarP(&handle, "handle", "n", "", "handle for the source; derived from the url when omitted")
-	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb); must match the url scheme")
+	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb, neo4j); must match the url scheme")
 	c.Flags().BoolVarP(&active, "active", "a", false, "make the new source the active source")
 	c.Flags().BoolVarP(&passwordPrompt, "password", "p", false, "prompt for the url password (or read it from stdin)")
 	c.Flags().BoolVar(&skipVerify, "skip-verify", false, "skip the post-add reachability check")

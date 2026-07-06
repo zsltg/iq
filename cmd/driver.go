@@ -13,6 +13,7 @@ import (
 	iqfile "github.com/zsltg/iq/drivers/file"
 	iqhbase "github.com/zsltg/iq/drivers/hbase"
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
+	iqneo4j "github.com/zsltg/iq/drivers/neo4j"
 	iqredis "github.com/zsltg/iq/drivers/redis"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
@@ -142,6 +143,22 @@ var drivers = []driver{
 		explainWrite: iqcouchdb.ExplainWrite,
 		explainClear: iqcouchdb.ExplainClear,
 		explainDrop:  iqcouchdb.ExplainDrop,
+	},
+	{
+		name:           "neo4j",
+		desc:           "Neo4j property graph store",
+		schemes:        []string{"neo4j", "neo4j+s", "neo4j+ssc", "bolt", "bolt+s", "bolt+ssc"},
+		doc:            "https://neo4j.com/docs/",
+		versions:       "5.x",
+		addressable:    true,
+		verifiesOnOpen: true,
+		open: func(ctx context.Context, cfg *config) (store, error) {
+			return iqneo4j.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
+		},
+		explainPlan:  iqneo4j.ExplainPlan,
+		explainWrite: iqneo4j.ExplainWrite,
+		explainClear: iqneo4j.ExplainClear,
+		explainDrop:  iqneo4j.ExplainDrop,
 	},
 	{
 		name:     "redis",
