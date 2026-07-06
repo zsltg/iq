@@ -141,9 +141,9 @@ func verifySource(ctx context.Context, rawURL string, timeout time.Duration) err
 	}
 	defer func() { _ = st.Close() }()
 	// A read-only local source (a dump file) has no server to round-trip a command
-	// against; opening it already parsed and validated the file, so that is the
-	// reachability check.
-	if d, ok := driverForScheme(schemeOf(rawURL)); ok && d.readOnly {
+	// against, and a verifiesOnOpen backend (DynamoDB) already round-tripped a
+	// reachability probe at open — for both, opening it is the reachability check.
+	if d, ok := driverForScheme(schemeOf(rawURL)); ok && (d.readOnly || d.verifiesOnOpen) {
 		return nil
 	}
 	if _, err := st.Query(cctx, healthArgs(rawURL)); err != nil {

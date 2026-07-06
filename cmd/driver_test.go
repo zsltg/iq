@@ -19,7 +19,8 @@ func TestDriverForScheme(t *testing.T) {
 		{"redis", "redis", "redis", true},
 		{"redis tls", "rediss", "redis", true},
 		{"cassandra", "cassandra", "cassandra", true},
-		{"unknown", "dynamodb", "", false},
+		{"dynamodb", "dynamodb", "dynamodb", true},
+		{"unknown", "couchbase", "", false},
 		{"empty", "", "", false},
 	}
 	for _, tt := range tests {
@@ -42,7 +43,8 @@ func TestDriverName(t *testing.T) {
 		{"mongodb normalizes", "mongodb://h/db", "mongo"},
 		{"mongodb srv normalizes", "mongodb+srv://h/db", "mongo"},
 		{"cassandra normalizes", "cassandra://h/ks", "cassandra"},
-		{"unknown falls back to scheme", "dynamodb://h", "dynamodb"},
+		{"dynamodb normalizes", "dynamodb://us-east-1/?table=t", "dynamodb"},
+		{"unknown falls back to scheme", "couchbase://h", "couchbase"},
 		{"schemeless is empty", "just-a-string", ""},
 	}
 	for _, tt := range tests {
@@ -53,7 +55,7 @@ func TestDriverName(t *testing.T) {
 }
 
 func TestExpectedSchemes(t *testing.T) {
-	require.Equal(t, "expected one of mongodb://, cassandra://, redis://", expectedSchemes())
+	require.Equal(t, "expected one of mongodb://, cassandra://, dynamodb://, redis://", expectedSchemes())
 }
 
 // TestDriverRegistryInvariants guards the single source of truth: every driver
@@ -93,6 +95,7 @@ func TestDriverLsTable(t *testing.T) {
 		"mongo", "MongoDB document store", "mongodb, mongodb+srv", "4.2+", "https://www.mongodb.com/docs/",
 		"redis", "Redis key-value store", "redis, rediss", "7.0+", "https://redis.io/docs/",
 		"cassandra", "Apache Cassandra wide-column store", "3.11+", "https://cassandra.apache.org/doc/",
+		"dynamodb", "Amazon DynamoDB key-value and document store", "AWS (managed)", "https://docs.aws.amazon.com/dynamodb/",
 	} {
 		require.Contains(t, out, want)
 	}
@@ -104,7 +107,7 @@ func TestDriverLsJSON(t *testing.T) {
 
 	var rows []driverRow
 	require.NoError(t, json.Unmarshal([]byte(out), &rows))
-	require.Len(t, rows, 4)
+	require.Len(t, rows, 5)
 
 	byName := map[string]driverRow{}
 	for _, r := range rows {
@@ -119,4 +122,8 @@ func TestDriverLsJSON(t *testing.T) {
 	require.Equal(t, []string{"cassandra"}, byName["cassandra"].Schemes)
 	require.Equal(t, "Apache Cassandra wide-column store", byName["cassandra"].Description)
 	require.Equal(t, "https://cassandra.apache.org/doc/", byName["cassandra"].Doc)
+	require.Equal(t, []string{"dynamodb"}, byName["dynamodb"].Schemes)
+	require.Equal(t, "Amazon DynamoDB key-value and document store", byName["dynamodb"].Description)
+	require.Equal(t, "AWS (managed)", byName["dynamodb"].Versions)
+	require.Equal(t, "https://docs.aws.amazon.com/dynamodb/", byName["dynamodb"].Doc)
 }

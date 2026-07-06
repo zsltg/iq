@@ -1,7 +1,7 @@
 # iq
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
-databases. Redis, MongoDB, and Apache Cassandra are supported; the backend is chosen by the URL
+databases. Redis, MongoDB, Apache Cassandra, and Amazon DynamoDB are supported; the backend is chosen by the URL
 scheme, and the query core is driver-agnostic so further backends slot in behind the same port.
 
 The filter is both the transform and the key selector: its top-level paths name the keys to
@@ -20,7 +20,7 @@ sq's so the tool feels familiar.
 ## Requirements
 
 - Go 1.25+
-- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra containers; not needed for `go test -short`)
+- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local containers; not needed for `go test -short`)
 
 ## Build
 
@@ -74,16 +74,19 @@ iq --src books.authors '.[]'     # the same connection, a different collection
 
 - `iq add <url> [-n <handle>] [-a] [-p] [-d <driver>] [--skip-verify] [--store keyring]`
   — register a source, mirroring `sq add`. The URL is the sole positional argument; the backend is
-  inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`, `cassandra://`).
+  inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`, `cassandra://`,
+  `dynamodb://`).
   `-n`/`--handle` names the source; when omitted a handle is derived from the URL (the MongoDB
   database or Cassandra keyspace name, else the driver, disambiguated with a numeric suffix on
   collision). A MongoDB default collection rides in the URL as `?collection=`
   (`mongodb://host/db?collection=items`), a Cassandra default table as `?table=`
-  (`cassandra://host/keyspace?table=orders`), the driver's own connection option — like a `file://`
+  (`cassandra://host/keyspace?table=orders`), a DynamoDB default table as `?table=`
+  (`dynamodb://us-east-1/?table=orders`, the region as the host; credentials come from the AWS
+  default chain, never the URL), the driver's own connection option — like a `file://`
   source's `?format=`; a query addresses another collection/table with a dotted
   `handle.collection` / `handle.table`. `-a`/`--active` makes the new source active. `-p`/`--password`
   prompts for the URL password (or reads it from stdin) instead of embedding it in the URL.
-  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`) and errors if it
+  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`) and errors if it
   disagrees with the scheme. The source is
   pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
   keyring` moves the URL's password into the OS keyring and strips it from the stored URL (default
@@ -104,17 +107,18 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   time (or the error). No arguments pings the active source; a group name pings every member.
   Bounded by `--timeout`; exits non-zero if any source is unreachable.
 - `iq inspect [<source>[.<collection>]]` — show a source's native introspection. The positional
-  names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB and
-  Cassandra sources accept sq-style `<source>.<collection>` / `<source>.<table>` addressing
-  (`iq inspect prod.books`) to pick the collection/table, overriding the source URL's
+  names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB,
+  Cassandra, and DynamoDB sources accept sq-style `<source>.<collection>` / `<source>.<table>`
+  addressing (`iq inspect prod.books`) to pick the collection/table, overriding the source URL's
   `?collection=`/`?table=` default; Redis sources take no collection.
   `--only`
   narrows the output (repeatable or comma-separated): for Redis, `INFO` sections
   (`iq inspect prod --only memory,server`); for MongoDB, the diagnostic commands (`dbStats`,
   `serverStatus`, `listCollections`, `collStats`, `buildInfo`, `hostInfo`); for Cassandra, the
-  system-schema reads (`local`, `tables`, `columns`) — no `--only` runs them
-  all. `--list` prints the subcommands/sections available for the source (Mongo's and Cassandra's
-  fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
+  system-schema reads (`local`, `tables`, `columns`); for DynamoDB, the metadata reads (`tables`,
+  `table`) — no `--only` runs them
+  all. `--list` prints the subcommands/sections available for the source (Mongo's, Cassandra's, and
+  DynamoDB's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
   by `--timeout`. The location header is redacted like `iq ls`: `--reveal` un-redacts an inline
   password, `--expand` resolves a keyring-backed one.
 - `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
@@ -419,10 +423,11 @@ registered backends — the same canonical names `iq ls -v`, `ping`, `inspect`, 
 
 ```bash
 $ iq driver ls
-DRIVER     DESCRIPTION                                                     SCHEMES               VERSIONS  DOC
-mongo      MongoDB document store                                          mongodb, mongodb+srv  4.2+      https://www.mongodb.com/docs/
-cassandra  Apache Cassandra wide-column store                              cassandra             3.11+     https://cassandra.apache.org/doc/
-redis      Redis key-value store                                           redis, rediss         7.0+      https://redis.io/docs/
+DRIVER     DESCRIPTION                                                     SCHEMES               VERSIONS       DOC
+mongo      MongoDB document store                                          mongodb, mongodb+srv  4.2+           https://www.mongodb.com/docs/
+cassandra  Apache Cassandra wide-column store                              cassandra             3.11+          https://cassandra.apache.org/doc/
+dynamodb   Amazon DynamoDB key-value and document store                    dynamodb              AWS (managed)  https://docs.aws.amazon.com/dynamodb/
+redis      Redis key-value store                                           redis, rediss         7.0+           https://redis.io/docs/
 file       Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON)  file
 ```
 
@@ -433,8 +438,10 @@ Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sou
 > [`go-redis` v9](https://github.com/redis/go-redis) for Redis, the
 > [MongoDB Go driver v2](https://www.mongodb.com/docs/drivers/go/current/) for MongoDB, the
 > [Apache Cassandra gocql driver v2](https://github.com/apache/cassandra-gocql-driver) for
-> Cassandra — not a matrix `iq` tests against. The integration tests are pinned to `redis:8`,
-> `mongo:8`, and `cassandra:5`.
+> Cassandra, and the [AWS SDK for Go v2](https://github.com/aws/aws-sdk-go-v2) for DynamoDB
+> (`AWS (managed)` — a managed service with no server version) — not a matrix `iq` tests against.
+> The integration tests are pinned to `redis:8`, `mongo:8`, `cassandra:5`, and
+> `amazon/dynamodb-local:2.5.2`.
 
 <details>
 <summary><b>Redis</b> — value encoding and raw commands</summary>
@@ -667,6 +674,101 @@ and `columns` (a table's columns); `--only` narrows to those subcommands.
 </details>
 
 <details>
+<summary><b>Amazon DynamoDB</b> — table keyspace, primary-key mapping, predicate pushdown, and PartiQL</summary>
+
+Register a `dynamodb://` source and the same jq interface works against a table, where **the table
+is the keyspace: an item's primary key is the key and the item is the value**. The region is the URL
+host; the table rides in the URL's `?table=` (overridable per run with a dotted `handle.table`). An
+optional `?endpoint=` points at DynamoDB Local. **Credentials never travel in the URL** — the AWS
+default credential chain (environment, `~/.aws`, IAM role) resolves them, so no secret touches the
+config or keyring:
+
+```bash
+iq add -n books 'dynamodb://us-east-1/?table=books'  # register once (creds from the AWS chain), then:
+iq --src books '.["2"]'                               # fetch the item whose partition key is 2
+iq --src books '.[] | select(.year > 2015) | .title' # streamed
+iq --src books --unbounded 'keys'                     # every primary key
+# DynamoDB Local: point at the endpoint; the driver supplies dummy credentials.
+iq add -n local 'dynamodb://us-east-1/?table=books&endpoint=http://localhost:8000'
+```
+
+DynamoDB attributes are natively typed, so `.year > 2015` needs no `tonumber`. The `--unbounded` /
+streaming rules are identical to every backend. The table's key schema is read once at connect time,
+so the driver knows the partition and (optional) sort key and their types.
+
+### Key encoding
+
+An item's key is its **full primary key** — the partition key, then the sort key when the table has
+one. A partition-key-only table renders the key as its bare value (`42`, a string — like a Mongo
+`_id`); a table with a sort key renders a compact JSON array in schema order:
+
+```bash
+iq --src sales '.["US"]'                # partition-key-only, bare
+iq --src sales '.["[\"US\",1]"]'        # composite key (partition "US", sort 1) as a JSON array
+```
+
+The array elements are the key attributes' string forms and are coerced back through the key schema
+on lookup, so a numeric (`N`) or binary (`B`) key round-trips faithfully.
+
+### Value encoding
+
+Each attribute value is normalized to JSON by DynamoDB type:
+
+| DynamoDB type | JSON shape |
+| --- | --- |
+| `S` (string) | the string verbatim |
+| `N` (number) | integer as a number (exact string when it overflows int64); decimal as an exact string (or a number under `--format.decimal number`) |
+| `BOOL` | `true` / `false` |
+| `B` (binary) | base64 string |
+| `NULL` | `null` |
+| `M` (map) | object |
+| `L` (list) | array |
+| `SS`, `NS`, `BS` (sets) | array (of strings / numbers / base64 strings) |
+| missing attribute | omitted (reads as `null` in jq) |
+
+Note the set types (`SS`/`NS`/`BS`) normalize to a plain array, so a copy **back** into DynamoDB
+writes them as a list (`L`), not a set; and a number presented as a string (auto/string decimal
+mode) writes back as a string (`S`). Use `--format.decimal number` for a numeric round-trip.
+
+### Server-side pre-filtering (predicate pushdown)
+
+By default a `.[] | select(...)` filter's **equality** and **existence** clauses are translated into
+a DynamoDB `Scan` `FilterExpression` so the service filters before items reach iq. Every attribute is
+referenced through a `#name` placeholder, so a reserved word (`name`, `status`, `size`, `year`, …) is
+always safe:
+
+| `select(...)` clause | Pushed | FilterExpression | Notes |
+| --- | :---: | --- | --- |
+| `.a == x` | ✓ | `#a = :v` | a single top-level attribute; string, number, or boolean literal |
+| `.a \| has` / `has("a")` | ✓ | `attribute_exists(#a)` | key presence, exact |
+| `has("a") \| not` | ✓ | `attribute_not_exists(#a)` | key absence, exact |
+| `E1 and E2` | ✓ | `AND` of the pushable parts | drops any conjunct it cannot push (widening) |
+| `E1 or E2` | ✓ | `OR` of the parts | pushed only when **every** branch is pushable |
+| ranges, regex, `length`, `!=`, nested paths | — | — | run client-side; ranges are skipped because jq orders a string above every number, which a typed DynamoDB comparison cannot reproduce |
+
+A `Scan` reads the whole table (there is no `WHERE` on a primary-key membership like a relational
+store); the `FilterExpression` only avoids shipping non-matching items over the wire — the cost is
+shown in `--explain`. Pushdown never changes results, only speed: the full jq always re-runs
+client-side, so a pushed filter is a conservative pre-filter. Pass `--no-compile` to stream the whole
+table and filter entirely client-side.
+
+### Raw commands
+
+`iq exec` runs a [PartiQL](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.html)
+statement verbatim and prints the items as JSON — the escape hatch for server-side queries and
+writes the jq read path does not cover:
+
+```bash
+iq --src books exec 'SELECT * FROM "books" WHERE id = 2'
+iq --src books exec 'SELECT title FROM "books" WHERE "year" > 2015'
+```
+
+`iq inspect` reads table metadata — `tables` (the region's tables) and `table` (the selected table's
+key schema, item count, size, billing mode, and index names); `--only` narrows to those subcommands.
+
+</details>
+
+<details>
 <summary><b>File dumps</b> — query a snapshot offline (read-only)</summary>
 
 A `file://` source reads a database dump straight from disk, so a snapshot is queried, inspected
@@ -842,7 +944,8 @@ iq data drop cache --explain               # reports the Redis drop as unsupport
 The core read path: a jq filter is classified by the **selector**, a scan is optionally **decomposed**
 into a native predicate, and each backend maps that predicate its own way — MongoDB pushes it
 server-side, Cassandra pushes equality as a CQL `WHERE` (with `ALLOW FILTERING` when it is not the
-partition key), Redis scans and filters client-side. Either way the full jq re-runs client-side, so
+partition key), DynamoDB pushes equality and existence as a `Scan` `FilterExpression`, Redis scans
+and filters client-side. Either way the full jq re-runs client-side, so
 the pushed predicate is only ever a conservative pre-filter and results are identical with or without it.
 
 Query / read path:
@@ -919,19 +1022,28 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   CBOR under `<user cache dir>/iq/dumps`): a full scan of a large dump tees its normalized records
   to disk, and later scans read them back instead of re-decoding — transparent to the ports, so the
   data-flow above is unchanged, and never authoritative (a miss just re-decodes).
-- `drivers/redis`, `drivers/mongo`, `drivers/cassandra` — the adapters. Each has one `*Store`
+- `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb` — the adapters. Each has
+  one `*Store`
   satisfying the read ports
   (`Query` for exec, `Get`/`ScanBatches` for jq) and the write ports (`Put`/`Clear`/`TypedScan`,
-  plus `Drop` for Mongo and Cassandra), with a type-to-JSON normalization frozen as that backend's
+  plus `Drop` for Mongo, Cassandra, and DynamoDB), with a type-to-JSON normalization frozen as that
+  backend's
   encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs; CQL types → uuid-string,
-  RFC 3339, base64 blob, collections) and its inverse for writes
+  RFC 3339, base64 blob, collections; DynamoDB `S`/`N`/`B`/`BOOL`/`M`/`L`/sets) and its inverse for
+  writes
   (Mongo `bulkWrite`; Redis pipelined `SET`/`HSET`/`RPUSH`/`SADD`/`ZADD`/`XADD`/`JSON.SET` by
-  type; Cassandra parameterized `INSERT`, `TRUNCATE`, `DROP TABLE`). Redis maps a key to a Redis key;
+  type; Cassandra parameterized `INSERT`, `TRUNCATE`, `DROP TABLE`; DynamoDB `PutItem`, `Scan` +
+  `BatchWriteItem` delete-all, `DeleteTable`). Redis maps a key to a Redis key;
   Mongo maps a key to a document `_id` within the collection it owns from the URL's `?collection=`
   (or a dotted `handle.collection` override); Cassandra maps a key to a row's full primary key within
   the table from the URL's `?table=` (or a `handle.table` override), reading the table schema once at
-  connect to encode and reverse it. Cassandra pushes equality/`IN` as a CQL `WHERE` (`FilteredScanner`)
-  but has no cheap count, so it omits `Estimator` like Redis. Each
+  connect to encode and reverse it; DynamoDB maps a key to an item's partition (and optional sort) key
+  within the table from the URL's `?table=` (region as the host, credentials from the AWS default
+  chain), reading the key schema once at connect. Cassandra pushes equality/`IN` as a CQL `WHERE`
+  (`FilteredScanner`) but has no cheap count, so it omits `Estimator` like Redis; DynamoDB pushes
+  equality/existence as a `Scan` `FilterExpression` (`FilteredScanner`) and answers `Estimator` from
+  its table metadata. DynamoDB's connectionless client verifies reachability at open (a bounded
+  `ListTables` probe), so `ping`/`add` need no second round-trip. Each
   also contributes pure, connection-free `--explain` describers
   (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
 - `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
@@ -990,11 +1102,12 @@ iq --src snap '.[] | select(.active)'     # query a Redis/Mongo dump offline (RD
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
-go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra via testcontainers-go
-docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra for manual exploration (:6379, :27017, :9042)
+go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local via testcontainers-go
+docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local for manual exploration (:6379, :27017, :9042, :8000)
 bash scripts/seed-redis.sh    # load example data into the running Redis
 bash scripts/seed-mongo.sh    # load example documents into the running MongoDB
 bash scripts/seed-cassandra.sh    # load example rows into the running Cassandra
+bash scripts/seed-dynamodb.sh    # load example items into the running DynamoDB Local
 docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
@@ -1007,10 +1120,10 @@ make release              # bump version, regenerate CHANGELOG.md, commit, and t
 ```
 
 Integration tests skip under `go test -short`. The full `go test ./...` needs Docker: it starts
-an ephemeral Redis, MongoDB, and Cassandra via
+an ephemeral Redis, MongoDB, Cassandra, and DynamoDB Local via
 [testcontainers-go](https://github.com/testcontainers/testcontainers-go) on random ports and
 tears them down afterwards — no manual `docker compose up` (Cassandra takes ~1 minute to become
-ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL`
+ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL`
 to point at an already-running server (for example the `docker compose` stack) to skip container
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
 a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded

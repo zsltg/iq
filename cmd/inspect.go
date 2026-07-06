@@ -30,10 +30,10 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	)
 	long := "Show a source's native server/database introspection.\n\n" +
 		"The positional argument names the source, like `iq inspect prod`; with none it\n" +
-		"uses --src or the active source. MongoDB and Cassandra sources accept sq-style\n" +
-		"`<source>.<collection>` / `<source>.<table>` addressing (`iq inspect prod.books`)\n" +
-		"to pick the collection/table, overriding the source URL's ?collection=/?table=\n" +
-		"default; Redis sources take no collection.\n\n" +
+		"uses --src or the active source. MongoDB, Cassandra, and DynamoDB sources accept\n" +
+		"sq-style `<source>.<collection>` / `<source>.<table>` addressing (`iq inspect\n" +
+		"prod.books`) to pick the collection/table, overriding the source URL's\n" +
+		"?collection=/?table= default; Redis sources take no collection.\n\n" +
 		"MongoDB — runs diagnostic database commands; no --only runs them all,\n" +
 		"--only narrows to the named ones:\n" +
 		"  " + strings.Join(mongoInspectCmds, "  ") + "\n" +
@@ -42,6 +42,10 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"Cassandra — runs system-table reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(cassandraInspectCmds, "  ") + "\n" +
 		"  (columns needs a table: address it as source.table or set ?table= on the\n" +
+		"  source url)\n\n" +
+		"DynamoDB — runs introspection reads; no --only runs them all, --only narrows:\n" +
+		"  " + strings.Join(dynamoInspectCmds, "  ") + "\n" +
+		"  (table needs a table: address it as source.table or set ?table= on the\n" +
 		"  source url)\n\n" +
 		"Redis — runs INFO; --only narrows it to those sections\n" +
 		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
@@ -80,6 +84,8 @@ func newInspectCmd(cfg *config) *cobra.Command {
 				return inspectRedis(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "cassandra":
 				return inspectCassandra(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+			case "dynamodb":
+				return inspectDynamo(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "file":
 				// inspect reports live server metadata; a dump file has none. Point
 				// the user at the operations that do work on a file source.
@@ -331,6 +337,85 @@ func isCassandraInspectCmd(sub string) bool {
 // quote so an interpolated keyspace or table name cannot break out of the literal.
 func cqlString(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// dynamoInspectCmds is the supported set of DynamoDB introspection reads inspect runs.
+// With no --only it runs them all; --only narrows to the named ones.
+var dynamoInspectCmds = []string{"tables", "table"}
+
+// dynamoInspector is the introspection capability inspectDynamo needs from the store.
+// DynamoDB's introspection is API calls (ListTables, DescribeTable), not a PartiQL
+// statement, so unlike Cassandra it is a driver method the CLI calls directly rather
+// than a statement routed through the raw Query path.
+type dynamoInspector interface {
+	InspectTables(ctx context.Context) (any, error)
+	InspectTable(ctx context.Context) (any, error)
+}
+
+// inspectDynamo runs the requested DynamoDB introspection reads (all supported when
+// none are named) and renders each reply keyed by subcommand. "tables" lists the
+// region's tables; "table" describes the selected table's schema and size. With list,
+// it prints the supported names without touching the store.
+func inspectDynamo(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
+	if list {
+		return writeInspectList(out, dynamoInspectCmds, jsonOut, yamlOut)
+	}
+	di, ok := st.(dynamoInspector)
+	if !ok {
+		return errors.New("inspect is not supported for this source")
+	}
+	explicit := len(subs) > 0
+	which := subs
+	if !explicit {
+		which = dynamoInspectCmds
+	}
+	for _, sub := range which {
+		if sub != "tables" && sub != "table" {
+			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(dynamoInspectCmds, ", "))
+		}
+	}
+
+	type result struct {
+		sub   string
+		value any
+	}
+	results := make([]result, 0, len(which))
+	for _, sub := range which {
+		var (
+			res any
+			err error
+		)
+		switch sub {
+		case "tables":
+			res, err = di.InspectTables(ctx)
+		case "table":
+			res, err = di.InspectTable(ctx)
+			if err != nil && !explicit {
+				continue // a source with no table selected skips "table" in the run-all case
+			}
+		}
+		if err != nil {
+			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
+		}
+		results = append(results, result{sub: sub, value: res})
+	}
+
+	if jsonOut || yamlOut {
+		byName := make(map[string]any, len(results))
+		for _, r := range results {
+			byName[r.sub] = r.value
+		}
+		return writeStructured(out, byName, yamlOut)
+	}
+	if err := inspectHeader(out, cfg); err != nil {
+		return err
+	}
+	for _, r := range results {
+		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // writeInspectList renders the names --list emits: a JSON or YAML array with

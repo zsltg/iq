@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	iqcassandra "github.com/zsltg/iq/drivers/cassandra"
+	iqdynamodb "github.com/zsltg/iq/drivers/dynamodb"
 	iqfile "github.com/zsltg/iq/drivers/file"
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqredis "github.com/zsltg/iq/drivers/redis"
@@ -40,7 +41,12 @@ type driver struct {
 	// (handle.address) naming a sub-container — MongoDB's collection. A
 	// non-addressable backend (Redis, file) rejects an address at resolve time.
 	addressable bool
-	open        func(ctx context.Context, cfg *config) (store, error)
+	// verifiesOnOpen marks a backend whose open already round-trips to the server
+	// (DynamoDB's connectionless client issues a reachability probe at open), so the
+	// post-open health check in `iq ping`/`iq add` needs no second round-trip — like
+	// a read-only source, opening it is the reachability check.
+	verifiesOnOpen bool
+	open           func(ctx context.Context, cfg *config) (store, error)
 	// explainPlan describes, without connecting, the backend calls this driver
 	// would make for a classified query and pushed predicate — the data the query
 	// plan (--explain/--verbose) shows.
@@ -86,6 +92,22 @@ var drivers = []driver{
 		explainWrite: iqcassandra.ExplainWrite,
 		explainClear: iqcassandra.ExplainClear,
 		explainDrop:  iqcassandra.ExplainDrop,
+	},
+	{
+		name:           "dynamodb",
+		desc:           "Amazon DynamoDB key-value and document store",
+		schemes:        []string{"dynamodb"},
+		doc:            "https://docs.aws.amazon.com/dynamodb/",
+		versions:       "AWS (managed)",
+		addressable:    true,
+		verifiesOnOpen: true,
+		open: func(ctx context.Context, cfg *config) (store, error) {
+			return iqdynamodb.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
+		},
+		explainPlan:  iqdynamodb.ExplainPlan,
+		explainWrite: iqdynamodb.ExplainWrite,
+		explainClear: iqdynamodb.ExplainClear,
+		explainDrop:  iqdynamodb.ExplainDrop,
 	},
 	{
 		name:     "redis",

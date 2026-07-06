@@ -165,7 +165,7 @@ func TestAddDriverMismatch(t *testing.T) {
 	_, err := runCmd(t, newAddCmd(&config{}), "-d", "mongo", "redis://h:6379/0", "--skip-verify")
 	require.ErrorContains(t, err, "does not match url scheme")
 
-	_, err = runCmd(t, newAddCmd(&config{}), "-d", "dynamodb", "redis://h:6379/0", "--skip-verify")
+	_, err = runCmd(t, newAddCmd(&config{}), "-d", "couchbase", "redis://h:6379/0", "--skip-verify")
 	require.ErrorContains(t, err, "unknown driver")
 }
 

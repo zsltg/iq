@@ -38,3 +38,14 @@ services:
       timeout: 10s
       retries: 24
       start_period: 60s
+
+  dynamodb:
+    image: amazon/dynamodb-local:2.5.2
+    container_name: iq-dynamodb
+    ports:
+      - "8000:8000"
+    # Ephemeral in-memory instance: no data persisted to disk.
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory"]
+    # No healthcheck: the image ships no shell HTTP client, and DynamoDB Local is
+    # serving within a second of start. scripts/seed-dynamodb.sh does its own
+    # reachability check with the AWS CLI before seeding.
