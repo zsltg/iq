@@ -1,5 +1,5 @@
 # Clean Architecture — mini
-Robert C. Martin. Structural doctrine, always loaded: dependency direction, ports and adapters, a driver-agnostic core. Strongest fit here — swappable NoSQL drivers and a thin CLI behind a stable query core.
+Robert C. Martin.
 - Do not let details become the architecture; business policy stays independent, dependencies point inward, volatile mechanisms stay replaceable.
 - Source dependencies point inward toward higher-level policy; the query core must not import a NoSQL driver, CLI framework, config reader or output formatter.
 - Put enterprise rules in domain entities; put application orchestration in focused use cases, one action each.

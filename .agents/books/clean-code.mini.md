@@ -1,5 +1,5 @@
 # Clean Code — mini
-Robert C. Martin. Code-level doctrine, always loaded: naming, functions, types, errors, tests. Sibling depth in a-philosophy-of-software-design.mini (module shape) and refactoring.mini (safe restructuring).
+Robert C. Martin.
 - Working code is not clean code; treat cleanliness as part of delivery and leave touched code cleaner within scope.
 - Write for local reasoning: a reader follows the path without reconstructing hidden state or wide jumps.
 - Precise names, one term per concept; rename when vocabulary hides intent or forces a compensating comment; ban vague `data`, `handle`, `process`, `manager`.

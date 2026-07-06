@@ -1,5 +1,5 @@
 # Release It! — mini
-Michael T. Nygard. Read on demand when writing database or outbound calls. Client-side stability subset: inbound-service patterns — bulkheads, load shedding, health checks, deploys — are out of scope for a CLI.
+Michael T. Nygard.
 - A passing happy path is not readiness; design the failure semantics, limits and diagnosis surface before production defines them for you.
 - Assume every dependency, connection and query can fail slowly, partially or for a long time; code for production mess, do not merely tolerate it by accident.
 - Put an explicit, intentional timeout on every outbound call and wait; never rely on a driver default, never allow an infinite wait.

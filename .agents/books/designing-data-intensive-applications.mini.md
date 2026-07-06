@@ -1,5 +1,5 @@
 # Designing Data-Intensive Applications — mini
-Martin Kleppmann. Read on demand when writing the query, data-model or connection layer. Client-relevant subset only: this tool is a database client, not the store — storage-engine internals, consensus and stream processors are out of scope.
+Martin Kleppmann.
 - Make trade-offs explicit at every call: source of truth, consistency expected, staleness tolerated, retry behaviour, duplicate or reordered results, partial failure.
 - Treat crashes, partial writes, duplicate delivery, timeouts and stale reads as normal inputs, not exceptions; distinguish accepted, applied and durable success.
 - Describe the workload concretely — request rate, data volume, access pattern, latency, percentiles — before choosing a query shape or index assumption.

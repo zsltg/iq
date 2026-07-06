@@ -55,7 +55,7 @@ Always:
 - Validate untrusted input at the boundary and keep the query core independent of any specific driver.
 ## Source Control & Commits
 - Trunk-based: `main` always buildable; short-lived branches, one atomic task each, prefixed `feat/`, `fix/`, `chore/`, `test/`; no unrelated changes bundled.
-- Isolate parallel work in a git worktree branched from `origin/main`; never switch branches in a shared checkout; merge to `main` fast-forward-only, never paper over a conflict.
+- Never work on `main` unless explicitly asked; start every task in its own git worktree branched from `origin/main`; never switch branches in a shared checkout; merge to `main` fast-forward-only, never paper over a conflict.
 - Conventional Commits: `<type>(<scope>): <description>`, lowercase imperative; types feat, fix, docs, style, refactor, perf, test, build, ci, chore; agent-authored commits end with a `Co-Authored-By:` trailer.
 - Pre-merge: scoped tests, `go vet`, `golangci-lint run`, gofumpt and goimports clean, `scripts/mutation-gate.sh` green; 100% pass.
 ## Guidelines

@@ -1,5 +1,5 @@
 # Refactoring — mini
-Martin Fowler. Read on demand when restructuring existing code without changing behaviour. Pairs with clean-code.mini (smells) and a-philosophy-of-software-design.mini (target shape).
+Martin Fowler.
 - Refactoring is behaviour-preserving design work in small steps; never disguise a feature, migration or redesign as cleanup.
 - Work in small, reversible, buildable, testable steps; split a patch too large to reason about locally.
 - Establish a safety net first: characterization tests for unclear behaviour; never delete a failing test to finish cleanup.

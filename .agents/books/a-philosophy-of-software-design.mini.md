@@ -1,5 +1,5 @@
 # A Philosophy of Software Design — mini
-John Ousterhout. Design-judgment doctrine, always loaded: module shape, deep-vs-shallow, the complexity budget. Complements clean-code.mini, which owns naming and functions.
+John Ousterhout.
 - Complexity is anything making code hard to understand or change; its causes are dependencies and obscurity, its symptoms change amplification, high cognitive load and unknown unknowns.
 - Reduced complexity is the primary success metric; a first working patch is not done if it worsens future changeability.
 - Complexity is incremental; hold zero tolerance for each new "just this once" increment.

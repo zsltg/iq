@@ -1,5 +1,5 @@
 # The Pragmatic Programmer — mini
-Andrew Hunt and David Thomas. General operating style, always loaded: accountable delivery, adaptability, fast feedback, code that stays easy to change.
+Andrew Hunt and David Thomas.
 - Be pragmatic not dogmatic; choose the practice, quality level and stopping point that improves real outcomes.
 - Own the result; surface tradeoffs, risks and uncertainty instead of blaming tools, defaults or schedule.
 - Think beyond the local edit; a quick fix that multiplies future maintenance is a bad bargain; leave touched code better where cheap.
