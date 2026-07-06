@@ -55,8 +55,9 @@ type Store struct {
 // what it needs and ignores the rest. Self-describing formats (JSONL, RDB, BSON,
 // mongoexport) leave them empty.
 type Hints struct {
-	Types string
-	Keys  string
+	Types   string
+	Keys    string
+	Columns string // explicit column names for a headerless dump (Cassandra COPY without HEADER).
 }
 
 // Open resolves a file:// URL to a read-only dump Store. The URL path is the dump
@@ -146,7 +147,7 @@ func parseFileURL(raw string) (path string, format Format, hints Hints, err erro
 			return "", FormatUnknown, Hints{}, err
 		}
 	}
-	hints = Hints{Types: q.Get("types"), Keys: q.Get("keys")}
+	hints = Hints{Types: q.Get("types"), Keys: q.Get("keys"), Columns: q.Get("columns")}
 	return path, format, hints, nil
 }
 
@@ -239,6 +240,8 @@ func RecordSourceFor(r io.Reader, format Format, dec numfmt.DecimalMode, hints H
 		return extJSONSource(r, pageSize, dec), nil
 	case FormatDynamoDBJSON:
 		return dynamoSource(r, pageSize, dec, hints)
+	case FormatCassandraCSV:
+		return cassandraCSVSource(r, pageSize, dec, hints)
 	default:
 		return nil, errors.New("unknown dump format")
 	}

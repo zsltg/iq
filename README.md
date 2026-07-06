@@ -441,7 +441,7 @@ dynamodb   Amazon DynamoDB key-value and document store                    dynam
 hbase      Apache HBase wide-column store                                  hbase                 1.0+           https://hbase.apache.org/book.html
 couchdb    Apache CouchDB document store                                   couchdb, couchdbs     2.x, 3.x       https://docs.couchdb.org/
 redis      Redis key-value store                                           redis, rediss         7.0+           https://redis.io/docs/
-file       Local dump file, read-only (JSONL, RDB, Mongo BSON/JSON, DynamoDB JSON)  file
+file       Local dump file, read-only (JSONL, RDB, Mongo BSON/JSON, DynamoDB JSON, Cassandra CSV)  file
 ```
 
 Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sources) for the full flag).
@@ -957,6 +957,7 @@ pass `?format=` since its content is not sniffable through the compression.
 | Mongo BSON | `mongodump` | single `.bson` file |
 | Mongo Extended JSON | `mongoexport` | one document per line, or a `--jsonArray` array |
 | DynamoDB JSON | S3 `export-table-to-point-in-time`, `aws dynamodb scan` | needs `?format=dynamodb-json` and a `?keys=pk[:S][,sk[:N]]` key schema (a dump carries items but not the table's key schema); export files are gzipped NDJSON |
+| Cassandra CSV | `cqlsh COPY … TO 'f.csv'` | needs `?format=cassandra-csv`, `?keys=col1[,col2]` naming the primary-key columns, and `?types=col=cqltype,…` for the non-text columns (COPY writes every value as text); column names come from a `WITH HEADER=TRUE` row, else `?columns=`; scalar columns only |
 
 The whole dump streams; a `file://` source never holds all values in memory (whole-dataset
 materialization is the core's, gated by `--unbounded`, exactly as for a live backend). **Restore
@@ -1180,7 +1181,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   through `--insert` and a piped dump is queryable), detecting the
   format from content or a `?format=` hint (Redis RDB via `hdt3213/rdb`, mongodump BSON and
   mongoexport Extended JSON via the Mongo driver, DynamoDB export/scan JSON via the DynamoDB driver,
-  or iq's own typed JSONL; gzip is unwrapped transparently) and decoding each item to the **same** JSON shape the
+  cqlsh COPY CSV via the Cassandra driver, or iq's own typed JSONL; gzip is unwrapped transparently)
+  and decoding each item to the **same** JSON shape the
   live adapter produces, so a query or restore is identical to the live backend. It implements no
   writer, so a `file://` endpoint is never a copy destination, and `Query` returns a sentinel that
   makes `exec`/`inspect` degrade cleanly. It streams; whole-dataset materialization stays the core's,
@@ -1281,7 +1283,7 @@ iq --config ./iq.toml ls  # run against an alternate config file (overrides IQ_C
 iq --src books --insert books2 # copy a source into another (handle → handle, cross-driver ok; jq filter transforms each item)
 iq --src cache --typed -o dump.jsonl   # dump a source to a re-importable typed JSONL file (Redis-lossless)
 iq add file:///backups/prod.rdb -n snap   # register a dump file as a read-only source
-iq --src snap '.[] | select(.active)'     # query a dump offline (RDB, BSON, mongoexport, DynamoDB JSON, JSONL)
+iq --src snap '.[] | select(.active)'     # query a dump offline (RDB, BSON, mongoexport, DynamoDB JSON, Cassandra CSV, JSONL)
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services

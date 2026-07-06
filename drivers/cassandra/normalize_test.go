@@ -243,7 +243,7 @@ func TestBindKeyValue(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := bindKeyValue(nativeType(tt.typ), tt.in)
+			got, err := bindKeyValue(tt.typ, tt.in)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				return

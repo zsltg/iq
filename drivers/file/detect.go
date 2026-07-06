@@ -34,6 +34,10 @@ const (
 	// {"Items":[…]} object). Not content-sniffable (it shares the leading '{' with
 	// mongoexport), so it needs an explicit ?format=/--from-format.
 	FormatDynamoDBJSON
+	// FormatCassandraCSV is cqlsh `COPY … TO` CSV output. Not content-sniffable
+	// (arbitrary CSV), so it needs an explicit ?format=/--from-format plus a
+	// ?keys= key schema and optional ?types= column types.
+	FormatCassandraCSV
 )
 
 // String returns the format's canonical name — the primary synonym ParseFormat
@@ -53,6 +57,8 @@ func (f Format) String() string {
 		return "rdb"
 	case FormatDynamoDBJSON:
 		return "dynamodb-json"
+	case FormatCassandraCSV:
+		return "cassandra-csv"
 	default:
 		return "unknown"
 	}
@@ -75,8 +81,10 @@ func ParseFormat(s string) (Format, error) {
 		return FormatRDB, nil
 	case "dynamodb-json", "ddb-json", "dynamodb", "ddb":
 		return FormatDynamoDBJSON, nil
+	case "cassandra-csv", "cql-csv", "cassandra", "cql":
+		return FormatCassandraCSV, nil
 	default:
-		return FormatUnknown, fmt.Errorf("unknown dump format %q: want jsonl, json, yaml, mongoexport, bson, rdb, or dynamodb-json", s)
+		return FormatUnknown, fmt.Errorf("unknown dump format %q: want jsonl, json, yaml, mongoexport, bson, rdb, dynamodb-json, or cassandra-csv", s)
 	}
 }
 

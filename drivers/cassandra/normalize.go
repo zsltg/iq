@@ -125,12 +125,26 @@ func decimalValue(d *inf.Dec, mode numfmt.DecimalMode) any {
 // decodeKey and the frozen key contract.
 func KeyOf(meta *gocql.TableMetadata, row map[string]any) string {
 	cols := primaryKeyColumns(meta)
-	if len(cols) == 1 {
-		return keyString(row[cols[0].Name])
-	}
-	parts := make([]string, len(cols))
+	names := make([]string, len(cols))
 	for i, c := range cols {
-		parts[i] = keyString(row[c.Name])
+		names[i] = c.Name
+	}
+	return KeyOfColumns(names, row)
+}
+
+// KeyOfColumns renders a row's primary key from the ordered names of its key columns
+// (partition keys first, then clustering columns), the schema-free form of KeyOf. It is
+// exported so an offline dump reader, which learns the key columns from a ?keys= hint
+// rather than table metadata, produces the exact same key a live scan does. A
+// single-column key is that column's bare canonical string; a composite key is a
+// compact JSON array in schema order, reversible by decodeKey.
+func KeyOfColumns(keyCols []string, row map[string]any) string {
+	if len(keyCols) == 1 {
+		return keyString(row[keyCols[0]])
+	}
+	parts := make([]string, len(keyCols))
+	for i, name := range keyCols {
+		parts[i] = keyString(row[name])
 	}
 	b, err := json.Marshal(parts)
 	if err != nil {
@@ -200,7 +214,7 @@ func decodeKey(meta *gocql.TableMetadata, key string) ([]any, error) {
 		return nil, fmt.Errorf("cassandra: table %q has no primary key", meta.Name)
 	}
 	if len(cols) == 1 {
-		v, err := bindKeyValue(cols[0].Type, key)
+		v, err := bindKeyValue(cols[0].Type.Type(), key)
 		if err != nil {
 			return nil, err
 		}
@@ -215,7 +229,7 @@ func decodeKey(meta *gocql.TableMetadata, key string) ([]any, error) {
 	}
 	out := make([]any, len(cols))
 	for i, c := range cols {
-		v, err := bindKeyValue(c.Type, parts[i])
+		v, err := bindKeyValue(c.Type.Type(), parts[i])
 		if err != nil {
 			return nil, err
 		}
@@ -226,9 +240,11 @@ func decodeKey(meta *gocql.TableMetadata, key string) ([]any, error) {
 
 // bindKeyValue parses a primary-key string component into the Go value gocql binds
 // for the column's CQL type. It is the typed reverse of keyString; an unparseable
-// component is an error so a bad key fails fast rather than binding a wrong value.
-func bindKeyValue(t gocql.TypeInfo, s string) (any, error) {
-	switch t.Type() {
+// component is an error so a bad key fails fast rather than binding a wrong value. It
+// takes the CQL type id (not a full TypeInfo) so an offline dump reader, which has only
+// a type name from a ?types= hint, can drive it — see BindString.
+func bindKeyValue(t gocql.Type, s string) (any, error) {
+	switch t {
 	case gocql.TypeText, gocql.TypeVarchar, gocql.TypeAscii:
 		return s, nil
 	case gocql.TypeInt, gocql.TypeSmallInt, gocql.TypeTinyInt:
