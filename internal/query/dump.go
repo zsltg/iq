@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // dumpRecord is the on-disk envelope for one item in a typed JSONL dump. The type
@@ -146,4 +149,141 @@ func convertNumbers(v any) any {
 	default:
 		return t
 	}
+}
+
+// JSONSource streams typed {key,type,value} records (or, in plain mode, whole
+// values) from a JSON reader that is either concatenated objects (JSON Lines) or a
+// single top-level array — the array-tolerant counterpart of JSONLSource, so a
+// --typed dump written as --jsonl or --json-array both re-import. Integers stay
+// exact.
+func JSONSource(r io.Reader, pageSize int, plain bool) RecordSource {
+	if pageSize <= 0 {
+		pageSize = 100
+	}
+	return func(ctx context.Context, fn func(batch []Record) error) error {
+		br := bufio.NewReader(r)
+		array, err := startsJSONArray(br)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("read json: %w", err)
+		}
+		dec := json.NewDecoder(br)
+		if array {
+			if _, err := dec.Token(); err != nil { // consume '['
+				return fmt.Errorf("read json array: %w", err)
+			}
+		}
+		page := make([]Record, 0, pageSize)
+		for {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if array && !dec.More() {
+				break
+			}
+			var raw json.RawMessage
+			if err := dec.Decode(&raw); err != nil {
+				if !array && errors.Is(err, io.EOF) {
+					break
+				}
+				return fmt.Errorf("decode json record: %w", err)
+			}
+			rec, err := decodeLine(string(raw), plain)
+			if err != nil {
+				return err
+			}
+			page = append(page, rec)
+			if len(page) >= pageSize {
+				if err := fn(page); err != nil {
+					return err
+				}
+				page = page[:0]
+			}
+		}
+		if len(page) > 0 {
+			return fn(page)
+		}
+		return nil
+	}
+}
+
+// startsJSONArray reports whether the first non-whitespace byte is '[' (a top-level
+// array), without consuming any value bytes.
+func startsJSONArray(br *bufio.Reader) (bool, error) {
+	for {
+		b, err := br.Peek(1)
+		if err != nil {
+			return false, err
+		}
+		switch b[0] {
+		case ' ', '\t', '\r', '\n':
+			if _, err := br.Discard(1); err != nil {
+				return false, err
+			}
+		case '[':
+			return true, nil
+		default:
+			return false, nil
+		}
+	}
+}
+
+// YAMLSource streams typed {key,type,value} records (or, in plain mode, whole
+// values) from a multi-document YAML reader, so a --typed --yaml dump re-imports.
+func YAMLSource(r io.Reader, pageSize int, plain bool) RecordSource {
+	if pageSize <= 0 {
+		pageSize = 100
+	}
+	return func(ctx context.Context, fn func(batch []Record) error) error {
+		dec := yaml.NewDecoder(r)
+		page := make([]Record, 0, pageSize)
+		for {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			var v any
+			err := dec.Decode(&v)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				return fmt.Errorf("decode yaml record: %w", err)
+			}
+			rec, err := recordFromDecoded(v, plain)
+			if err != nil {
+				return err
+			}
+			page = append(page, rec)
+			if len(page) >= pageSize {
+				if err := fn(page); err != nil {
+					return err
+				}
+				page = page[:0]
+			}
+		}
+		if len(page) > 0 {
+			return fn(page)
+		}
+		return nil
+	}
+}
+
+// recordFromDecoded turns an already-decoded value (a YAML document) into a Record:
+// in plain mode the whole value; in typed mode a {key,type,value} map envelope.
+func recordFromDecoded(v any, plain bool) (Record, error) {
+	if plain {
+		return Record{Value: convertNumbers(v)}, nil
+	}
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return Record{}, fmt.Errorf("expected a {key,type,value} record, got %T", v)
+	}
+	key, _ := obj["key"].(string)
+	if key == "" {
+		return Record{}, fmt.Errorf("record has no key")
+	}
+	typ, _ := obj["type"].(string)
+	return Record{Key: key, Type: typ, Value: convertNumbers(obj["value"])}, nil
 }

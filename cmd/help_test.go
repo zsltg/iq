@@ -59,7 +59,7 @@ func TestRootHelpEveryFlagGrouped(t *testing.T) {
 	root, _ := newRootCmd()
 
 	realGroups := map[string]bool{
-		groupSource: true, groupQuery: true, groupOutput: true,
+		groupSource: true, groupQuery: true, groupOutput: true, groupWrite: true,
 		groupDisplay: true, groupDiagnostics: true,
 	}
 	check := func(f *pflag.Flag) {

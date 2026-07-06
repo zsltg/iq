@@ -10,6 +10,10 @@ import (
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
+// errNoSource is returned when no source is selected (no --src and no active
+// source). The query path checks for it to fall back to piped stdin as a source.
+var errNoSource = errors.New("no source selected")
+
 // resolveSource fills cfg.url and cfg.collection from the selected source before
 // the store opens. Precedence: the --src flag, then the active source; with
 // neither it errors — there is no URL or environment fallback. An explicit
@@ -24,7 +28,7 @@ func resolveSource(cmd *cobra.Command, cfg *config) error {
 		name = cf.Active
 	}
 	if name == "" {
-		return errors.New("no source selected; add one with `iq add <url>` then select it with `iq src <name>`")
+		return fmt.Errorf("%w; add one with `iq add <url>` then select it with `iq src <name>`", errNoSource)
 	}
 	src, full, ok := cf.Resolve(name)
 	if !ok {
@@ -64,7 +68,7 @@ func resolveInspectSource(cmd *cobra.Command, cfg *config, arg string) error {
 		name = cf.Active
 	}
 	if name == "" {
-		return errors.New("no source selected; add one with `iq add <url>` then select it with `iq src <name>`")
+		return fmt.Errorf("%w; add one with `iq add <url>` then select it with `iq src <name>`", errNoSource)
 	}
 	src, full, ok := cf.Resolve(name)
 	if !ok {

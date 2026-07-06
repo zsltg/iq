@@ -558,7 +558,7 @@ iq add file:///backups/prod.rdb -n snap      # register a dump like any source
 iq --src snap '.["session:42"]'              # bounded read of one key
 iq --src snap '.[] | select(.active)'        # streamed scan
 iq --src snap 'keys' --unbounded             # whole-dataset filters obey --unbounded
-iq data copy snap prod                       # restore the dump into a live source (both are handles)
+iq --src snap --insert prod                  # restore the dump into a live source
 iq diff snap prod --data                     # diff a dump against a live source
 ```
 
@@ -567,7 +567,7 @@ The format is detected from the file's content (or forced with a `?format=` quer
 
 | Format | Produced by | Notes |
 | --- | --- | --- |
-| Typed JSONL | `iq data copy <src> <file>` | iq's own dump; lossless round-trip |
+| Typed JSONL | `iq --src <s> --typed -o <file>` | iq's own dump; lossless round-trip |
 | Redis RDB | `redis-cli --rdb`, `SAVE` | values match a live scan; RDB ≤ v12 (Redis ≤ 7.2) |
 | Mongo BSON | `mongodump` | single `.bson` file |
 | Mongo Extended JSON | `mongoexport` | one document per line, or a `--jsonArray` array |
@@ -647,55 +647,51 @@ Reach for `--from`/`--combine` for a straightforward join, union, or aggregate a
 reach for `source()` when a read depends on another source's values, or to keep everything in one
 composable filter.
 
-## Moving data (`iq data`)
+## Moving data (`--insert`, `--typed`)
 
-`iq data` is structured, driver-agnostic data movement and lifecycle — the write-side counterpart to
-the read path, and the iq-native take on sq's `tbl copy`/`--insert`/`truncate`/`drop`. (`iq exec`
+Data movement lives on the query command, sq-style: the jq filter is the transform, `--insert` names a
+destination, and piped stdin is an implicit source — there is no separate copy command. (`iq exec`
 remains the untyped escape hatch for anything the typed path does not cover.)
 
-`iq data copy <src> [dst]` is one command for all movement. Each positional endpoint is a **saved
-source handle** (`name[.coll]`) — never a bare file path, so a handle is never confused with a
-like-named file. A dump file is a [`file://` source](#drivers) (register it with `iq add`); file
-output goes through `-o`, and stdio through `-`. A dump is typed JSONL
-(`{"key":…,"type":…,"value":…}` per line), whose per-record type tag is what makes a Redis
-round-trip lossless. Existing keys are overwritten (upsert) unless `--no-overwrite` (insert-only),
-and `--replace` empties the destination first (with a confirmation, or `--force`).
+- **`--insert <handle>`** — write each item into a destination source: copy, restore, import, or a
+  cross-driver migration. This is sq's `--insert`.
+- **`--typed`** — emit iq's typed `{"key":…,"type":…,"value":…}` records — a re-importable dump. Only
+  **Redis** needs it: a Redis key and its type (hash/list/set/zset/string) live outside the value, so a
+  plain value stream loses them. A **Mongo** document self-describes (its `_id` is a field), so plain
+  `iq '.[]' --jsonl` is already a restorable backup, exactly as in sq.
+
+With `--insert`/`--typed` the filter transforms **each item** (its key is preserved), so you do **not**
+write `.[]` — iteration over the source is implicit. Existing keys are overwritten (upsert) unless
+`--no-overwrite`; `--replace` empties the destination first (with confirmation, or `--force`).
 
 ```bash
-iq data copy books books2                 # source → source, key/_id-preserving
-iq data copy books -o dump.jsonl          # dump a source to a typed JSONL file (-o, not a positional)
-iq add file:///dump.jsonl -n snap         # a dump file is a source; then:
-iq data copy snap books2                  # restore the dump into a source
-iq data copy books                        # dump to stdout (dst omitted)
-iq data copy cache mongo_books            # cross-driver (Redis → Mongo); verify with `iq diff --data`
-iq data copy - books --key-field id < foreign.json   # import foreign JSON piped on stdin
+iq --src books --insert books2                        # source → source, key/_id-preserving
+iq --src cache --insert docs                          # cross-driver (Redis → Mongo)
+iq --src cache --typed -o dump.jsonl                  # back up Redis losslessly (typed dump)
+iq --src books --jsonl -o dump.jsonl                  # back up Mongo with plain output (self-describing)
+iq add file:///dump.jsonl -n snap                     # a dump file is a source; then restore it:
+iq --src snap --insert cache                          # restore the dump into a live source
+cat dump.jsonl | iq '.[]'                             # query a piped dump (implicit stdin)
+cat foreign.json | iq --insert books --key-field id   # import foreign JSON from stdin, keyed by id
+iq '{t: .title}' --src books --insert kv --key '.t'   # reshape + re-key while copying
 ```
 
-`--filter '<jq>'` transforms each item during the copy — this is sq's `--insert`, done portably.
-The item's key is threaded past the filter and paired with the output, so a reshaped value still
-lands under its own key (Redis gets a real key, Mongo an `_id`):
-
-```bash
-iq data copy books recent --filter 'select(.year > 2000)'   # copy only matching items
-iq data copy books kv --filter '{t: .title}' --key '.t'     # reshape + re-key
-```
-
-A filter that emits more than one value per item needs `--key`/`--key-field` to key each output;
-otherwise the copy fails fast rather than guess.
+`--typed` serializes the records in the chosen format — `--jsonl` (default), `--json-array`, or
+`--yaml` — and **all three re-import** through a `file://` source or a piped `--insert`. YAML is not
+content-sniffable, so reading it back needs an explicit hint (`file:///dump.yaml?format=yaml`, or
+`--from-format yaml` for a piped restore); JSONL and JSON auto-detect. `--dry-run` reports the effect
+without writing; `--explain` prints the move plan without connecting.
 
 `iq data clear <target>…` empties a container (Mongo `deleteMany({})`, Redis `FLUSHDB`); `iq data
 drop <target>…` removes one (Mongo drops the collection). Redis has no droppable container — a DB
 index only empties — so `drop` is rejected for a Redis target with a pointer to `clear`. Both are
 distinct from `iq rm`, which only *unregisters* a saved source; these destroy stored data, and prompt
-for confirmation unless `--force`.
-
-Every `iq data` subcommand takes `--explain` (describe the plan without connecting or changing
-anything) and `--dry-run` (report the real effect — actual counts — while changing nothing).
+for confirmation unless `--force`. Both take `--explain` (plan without connecting) and `--dry-run`.
 
 ```bash
-iq data copy books books2 --explain     # static read + write plan, no connection
-iq data clear books --dry-run           # "would clear books.books (~1240 item(s))"
-iq data drop cache --explain            # reports the Redis drop as unsupported
+iq --src books --insert books2 --explain   # move plan, no connection
+iq data clear books --dry-run              # "would clear books.books (~1240 item(s))"
+iq data drop cache --explain               # reports the Redis drop as unsupported
 ```
 
 ## Architecture
@@ -732,14 +728,11 @@ graph TD
   MAT -.-> EST
   EST -.->|"~N est"| PROG
 
-  CP["iq data copy (CLI)"] --> SRC{"source or file?"}
-  SRC -->|source| TS["TypedReader.TypedScan — {key,type,value} batches"]
-  SRC -->|file| DEC["JSONL decode (typed dump or foreign)"]
-  TS --> TX["optional --filter transform + re-key (source key / --key)"]
-  DEC --> TX
-  TX --> DST{"source or file?"}
-  DST -->|source| PUT["Putter.Put — upsert / insert-only"]
-  DST -->|file| ENC["JSONL encode → typed dump"]
+  MV["iq --insert / --typed (CLI)"] --> MSRC["source: --src / file:// / piped stdin — TypedReader.TypedScan"]
+  MSRC --> TX["optional per-item jq transform + re-key (source key / --key)"]
+  TX --> DST{"--insert or --typed?"}
+  DST -->|--insert| PUT["Putter.Put — upsert / insert-only (--replace clears first)"]
+  DST -->|--typed| ENC["emit {key,type,value} via formatter → jsonl / json-array / yaml dump"]
   PUT --> MW["Mongo: bulkWrite replaceOne-upsert / insertMany"]
   PUT --> RW["Redis: pipelined type-aware SET/HSET/RPUSH/… (DEL-then-write to replace)"]
   LF["iq data clear / drop (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop — capability-gated (Redis has no Dropper)"]
@@ -766,12 +759,14 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   is absent — so a new backend never edits the commands, and Redis, whose DB index cannot be
   removed, simply omits `Dropper`. `Copier` streams `TypedScan → optional --filter transform →
   Put` in bounded pages; the type tag is what makes a Redis round-trip lossless, since a hash and a
-  document both normalize to a JSON object. `iq data copy` drives this (source↔source and
-  file↔source, cross-driver included; a file endpoint is a typed JSONL dump), and `iq data
-  clear`/`drop` drive the lifecycle ports. `iq exec` remains the untyped escape hatch for anything
-  the typed path does not cover.
-- `drivers/file` — a read-only adapter over a local dump file. Its `*Store` satisfies the read ports
-  (`Get`/`ScanBatches`) and `TypedReader` (so a dump restores through `iq data copy`), detecting the
+  document both normalize to a JSON object. The default command's `--insert` (write items into a
+  source) and `--typed` (emit a re-importable `{key,type,value}` dump) drive this — sq-style, with
+  the jq filter as the transform, a source/`file://`/piped-stdin read side, and cross-driver
+  included — while `iq data clear`/`drop` drive the lifecycle ports. `iq exec` remains the untyped
+  escape hatch for anything the typed path does not cover.
+- `drivers/file` — a read-only adapter over a local dump file (or a buffered piped stdin). Its
+  `*Store` satisfies the read ports (`Get`/`ScanBatches`) and `TypedReader` (so a dump restores
+  through `--insert` and a piped dump is queryable), detecting the
   format from content (Redis RDB via `hdt3213/rdb`, mongodump BSON and mongoexport Extended JSON via
   the Mongo driver, or iq's own typed JSONL) and decoding each item to the **same** JSON shape the
   live adapter produces, so a query or restore is identical to the live backend. It implements no
@@ -834,11 +829,11 @@ iq version                # print version, commit, build date, and Go version
 iq config set format yaml # persist a default flag value (add --src <name> to scope it to a source)
 iq config ls -v           # list every persistable option: value, default, and help
 iq --config ./iq.toml ls  # run against an alternate config file (overrides IQ_CONFIG)
-iq data copy books books2 # copy a source to another (handle → handle, cross-driver ok; --filter to transform)
-iq data copy books -o dump.jsonl   # dump a source to a typed JSONL file (restore by registering it as a file:// source)
+iq --src books --insert books2 # copy a source into another (handle → handle, cross-driver ok; jq filter transforms each item)
+iq --src cache --typed -o dump.jsonl   # dump a source to a re-importable typed JSONL file (Redis-lossless)
 iq add file:///backups/prod.rdb -n snap   # register a dump file as a read-only source
 iq --src snap '.[] | select(.active)'     # query a Redis/Mongo dump offline (RDB, BSON, mongoexport, JSONL)
-iq data copy snap prod                    # restore a dump into a live source (both registered with iq add)
+iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
 go test ./...             # full suite; starts ephemeral Redis + MongoDB via testcontainers-go

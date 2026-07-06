@@ -17,8 +17,11 @@ type Format int
 const (
 	// FormatUnknown means detection has not run (or a ?format= was absent).
 	FormatUnknown Format = iota
-	// FormatJSONL is iq's own typed dump: one {key,type,value} object per line.
+	// FormatJSONL is iq's own typed dump: {key,type,value} records as JSON Lines or a
+	// single JSON array (both decode through query.JSONSource).
 	FormatJSONL
+	// FormatYAML is iq's typed dump as YAML documents of {key,type,value}.
+	FormatYAML
 	// FormatMongoexport is mongoexport output: Extended JSON, one document per line
 	// or a single JSON array.
 	FormatMongoexport
@@ -28,31 +31,34 @@ const (
 	FormatRDB
 )
 
-// parseFormat maps a ?format= value (or copy --from-format value) to a Format,
-// accepting the synonyms a user is likely to reach for.
-func parseFormat(s string) (Format, error) {
+// ParseFormat maps a ?format= / --from-format value to a Format, accepting the
+// synonyms a user is likely to reach for. Exported so the cmd move importer shares
+// the same names as a file:// URL's ?format=.
+func ParseFormat(s string) (Format, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "jsonl", "typed-jsonl", "typed":
+	case "jsonl", "json", "typed-jsonl", "typed":
 		return FormatJSONL, nil
-	case "mongoexport", "extjson", "ejson", "json":
+	case "yaml", "yml":
+		return FormatYAML, nil
+	case "mongoexport", "extjson", "ejson":
 		return FormatMongoexport, nil
 	case "bson", "mongodump":
 		return FormatBSON, nil
 	case "rdb", "redis":
 		return FormatRDB, nil
 	default:
-		return FormatUnknown, fmt.Errorf("unknown dump format %q: want rdb, bson, mongoexport, or jsonl", s)
+		return FormatUnknown, fmt.Errorf("unknown dump format %q: want jsonl, json, yaml, mongoexport, bson, or rdb", s)
 	}
 }
 
 // rdbMagic is the five-byte signature every RDB file opens with.
 var rdbMagic = []byte("REDIS")
 
-// detectFormat sniffs a dump file's format from its leading bytes, falling back to
-// the extension for the ambiguous JSON-text family. Detection is reliable for the
-// binary formats (RDB has a magic signature; BSON a length-framed structure); the
-// JSON-text formats are disambiguated by the first record's shape, and an
-// ambiguous case can always be forced with ?format=.
+// detectFormat sniffs a dump file's format from its leading bytes plus its
+// extension. Detection is reliable for the binary formats (RDB has a magic
+// signature; BSON a length-framed structure) and disambiguates the JSON-text family
+// by the first record's shape; YAML is not content-sniffable, so it relies on a
+// .yaml/.yml extension (or ?format=/--from-format). Any case can be forced.
 func detectFormat(path string) (Format, error) {
 	f, err := os.Open(path) //nolint:gosec // user-supplied dump file, by design.
 	if err != nil {
@@ -60,43 +66,52 @@ func detectFormat(path string) (Format, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	br := bufio.NewReader(f)
-	head, err := br.Peek(512)
+	head, err := bufio.NewReader(f).Peek(512)
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
 		return FormatUnknown, fmt.Errorf("read dump head %q: %w", path, err)
 	}
-	if len(head) == 0 {
-		return FormatUnknown, fmt.Errorf("dump %q is empty", path)
-	}
+	return classify(head, path)
+}
 
+// detectBytes sniffs the format of an in-memory dump buffer (piped stdin). It has no
+// filename, so it cannot fall back to an extension — YAML needs an explicit hint.
+func detectBytes(data []byte) (Format, error) {
+	head := data
+	if len(head) > 512 {
+		head = head[:512]
+	}
+	return classify(head, "")
+}
+
+// classify maps a dump's leading bytes (and optional filename) to a Format.
+func classify(head []byte, name string) (Format, error) {
+	if len(head) == 0 {
+		return FormatUnknown, errors.New("dump is empty")
+	}
 	if bytes.HasPrefix(head, rdbMagic) {
 		return FormatRDB, nil
 	}
-
+	lname := strings.ToLower(name)
+	if strings.HasSuffix(lname, ".yaml") || strings.HasSuffix(lname, ".yml") {
+		return FormatYAML, nil
+	}
 	trimmed := bytes.TrimLeft(head, " \t\r\n")
 	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
 		return detectJSONFamily(trimmed), nil
 	}
-
-	// Not RDB and not JSON text: assume mongodump BSON (a length-framed binary
-	// document stream). The extension confirms the common case.
-	if strings.HasSuffix(strings.ToLower(path), ".bson") || looksLikeBSON(head) {
+	if strings.HasSuffix(lname, ".bson") || looksLikeBSON(head) {
 		return FormatBSON, nil
 	}
-	return FormatUnknown, fmt.Errorf("cannot detect dump format for %q; pass ?format=rdb|bson|mongoexport|jsonl", path)
+	return FormatUnknown, errors.New("cannot detect dump format; pass ?format= or --from-format (jsonl, json, yaml, mongoexport, bson, rdb)")
 }
 
-// detectJSONFamily distinguishes iq typed JSONL from mongoexport Extended JSON by
-// the first object's shape: a {key,value} envelope is iq's own dump; anything else
-// (a document, with or without $-prefixed Extended-JSON markers) is mongoexport.
+// detectJSONFamily distinguishes iq's typed dump from mongoexport by the first
+// object's shape — a {key,…,value} envelope is iq's typed dump, anything else a
+// mongo document. It handles both a top-level object and the first element of a
+// JSON array (mongoexport --jsonArray, or a --typed --json-array dump).
 func detectJSONFamily(trimmed []byte) Format {
-	if trimmed[0] == '[' {
-		return FormatMongoexport // a JSON array is mongoexport --jsonArray.
-	}
-	// Decode just the first object's keys.
-	dec := json.NewDecoder(bytes.NewReader(trimmed))
-	var obj map[string]json.RawMessage
-	if err := dec.Decode(&obj); err != nil {
+	obj, ok := firstJSONObject(trimmed)
+	if !ok {
 		return FormatMongoexport // undecidable head; let the decoder report a real error.
 	}
 	_, hasKey := obj["key"]
@@ -105,6 +120,21 @@ func detectJSONFamily(trimmed []byte) Format {
 		return FormatJSONL
 	}
 	return FormatMongoexport
+}
+
+// firstJSONObject decodes the first object in head — the whole head when it starts
+// with '{', or the first element when it starts with a '[' array — and returns its
+// top-level keys.
+func firstJSONObject(head []byte) (map[string]json.RawMessage, bool) {
+	h := bytes.TrimLeft(head, " \t\r\n")
+	if len(h) > 0 && h[0] == '[' {
+		h = bytes.TrimLeft(h[1:], " \t\r\n") // step past '[' to the first element.
+	}
+	var obj map[string]json.RawMessage
+	if err := json.NewDecoder(bytes.NewReader(h)).Decode(&obj); err != nil {
+		return nil, false
+	}
+	return obj, true
 }
 
 // looksLikeBSON reports whether head plausibly begins a BSON document: a 4-byte

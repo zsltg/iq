@@ -4,13 +4,38 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	iqfile "github.com/zsltg/iq/drivers/file"
 	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/query"
 )
+
+// openJQStore opens the store the jq engine reads: the buffered piped-stdin dump
+// when no source was selected (sq-style), otherwise the resolved backend.
+func openJQStore(cmd *cobra.Command, ctx context.Context, cfg *config) (store, error) {
+	if !cfg.stdin {
+		return openStore(ctx, cfg)
+	}
+	data, err := io.ReadAll(cmd.InOrStdin())
+	if err != nil {
+		return nil, fmt.Errorf("read stdin: %w", err)
+	}
+	format := iqfile.FormatUnknown
+	if cfg.fromFormat != "" {
+		if format, err = iqfile.ParseFormat(cfg.fromFormat); err != nil {
+			return nil, err
+		}
+	}
+	st, err := iqfile.OpenReader(data, format, cfg.decimalMode)
+	if err != nil {
+		return nil, err
+	}
+	return st, nil
+}
 
 // runJQ is the default command's body: it runs the jq filter through the engine
 // and renders each produced value with the selected-format formatter. A filter that
@@ -27,16 +52,27 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	}
 
 	// A single-source filter resolves its source up front (no connection), so both
-	// the query plan and the execution below name and dispatch the same driver.
+	// the query plan and the execution below name and dispatch the same driver. When
+	// no source is selected and stdin is piped, the query reads that stdin (sq-style).
 	if !cross {
 		if err := resolveSource(cmd, cfg); err != nil {
-			return err
+			if !errors.Is(err, errNoSource) || stdinIsTerminal() {
+				return err
+			}
+			cfg.stdin = true
 		}
 	}
 
 	// --explain prints the plan to stdout and stops before any connection; --verbose
 	// prints it to stderr and turns on the live command trace for the run below.
-	if cfg.explain || cfg.verbose {
+	if (cfg.explain || cfg.verbose) && cfg.stdin {
+		plan := planHeader("query plan") + "\n  decode stdin dump\n  scan client-side\n"
+		if cfg.explain {
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), plan)
+			return nil
+		}
+		_, _ = fmt.Fprint(cmd.ErrOrStderr(), plan)
+	} else if cfg.explain || cfg.verbose {
 		plan, err := buildJQPlan(cfg, filter, cross)
 		if err != nil {
 			return err
@@ -86,7 +122,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		return finish(f, scanHint(asSyntaxError(filter, runErr)))
 	}
 
-	store, err := openStore(ctx, cfg)
+	store, err := openJQStore(cmd, ctx, cfg)
 	if err != nil {
 		return err
 	}

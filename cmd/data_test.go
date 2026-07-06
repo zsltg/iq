@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
-	"github.com/zsltg/iq/internal/query"
 )
 
 func TestDataFlagsValidate(t *testing.T) {
@@ -76,44 +75,25 @@ func TestEndpointLabel(t *testing.T) {
 	require.Equal(t, "stdout/stdin", endpoint{isFile: true, path: ""}.label())
 }
 
-func TestRenderCopyPlanSourceToFile(t *testing.T) {
-	src := endpoint{url: "redis://h:6379/0", driver: "redis", handle: "cache"}
-	dst := endpoint{isFile: true, path: "dump.jsonl"}
-	out := renderCopyPlan(src, dst, query.Upsert)
-	require.Contains(t, out, "copy plan")
-	require.Contains(t, out, "SCAN") // redis read describer
-	require.Contains(t, out, "encode typed JSONL")
-}
-
-func TestRenderCopyPlanFileToSource(t *testing.T) {
-	src := endpoint{isFile: true, path: "dump.jsonl"}
-	dst := endpoint{url: "mongodb://h/db", driver: "mongo", handle: "books", collection: "books"}
-	out := renderCopyPlan(src, dst, query.Upsert)
-	require.Contains(t, out, "decode typed JSONL")
-	require.Contains(t, out, "bulkWrite") // mongo write describer
-}
-
-func TestRunDataCopyRejectsConflictingFlags(t *testing.T) {
+func TestRunMoveRejectsConflictingFlags(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
-	err := runDataCopy(cmd, &config{}, &dataFlags{explain: true, dryRun: true}, &copyOptions{}, []string{"a", "b"})
+	// Flag validation happens before any connection, so these fail fast.
+	err := runMove(cmd, &config{insert: "dst", noOverwrite: true, replace: true}, "")
 	require.ErrorContains(t, err, "mutually exclusive")
 
-	err = runDataCopy(cmd, &config{}, &dataFlags{}, &copyOptions{noOverwrite: true, replace: true}, []string{"a", "b"})
-	require.ErrorContains(t, err, "mutually exclusive")
+	err = runMove(cmd, &config{typed: true, replace: true}, "")
+	require.ErrorContains(t, err, "apply to --insert, not --typed")
 }
 
-func TestRunDataCopyRejectsFileToFile(t *testing.T) {
-	configEnv(t)
+func TestRenderMoveExplainTyped(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
-	// The only file endpoints are stdio ("-"/omitted), so stdin→stdout is the sole
-	// file-to-file case; an arbitrary name is now an unknown source, not a file.
-	err := runDataCopy(cmd, &config{}, &dataFlags{}, &copyOptions{}, []string{"-", "-"})
-	require.ErrorContains(t, err, "at least one endpoint must be a source")
-
-	err = runDataCopy(cmd, &config{}, &dataFlags{}, &copyOptions{}, []string{"nope"})
-	require.ErrorContains(t, err, "unknown source")
+	var out strings.Builder
+	cmd.SetOut(&out)
+	require.NoError(t, runMove(cmd, &config{typed: true, explain: true, src: "cache"}, ""))
+	require.Contains(t, out.String(), "move plan")
+	require.Contains(t, out.String(), "typed dump")
 }
 
 func TestConfirmDestructionForce(t *testing.T) {

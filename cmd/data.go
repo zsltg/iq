@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
-	"github.com/zsltg/iq/internal/query"
 )
 
 // dataFlags holds the two previews shared by every `iq data` subcommand as parent
@@ -32,25 +30,24 @@ func (f *dataFlags) validate() error {
 	return nil
 }
 
-// newDataCmd builds the `iq data` command group: structured data movement (copy)
-// and container lifecycle (clear, drop). It is the iq-native counterpart to sq's
-// `tbl` group, named for the backend-neutral thing every store holds rather than a
-// SQL table. The group owns the shared --explain/--dry-run previews.
+// newDataCmd builds the `iq data` command group: container lifecycle (clear, drop).
+// Data movement lives on the default command as --insert/--typed (sq-style), so this
+// group is now just the lifecycle verbs. It owns the shared --explain/--dry-run
+// previews.
 func newDataCmd(cfg *config) *cobra.Command {
 	df := &dataFlags{}
 	c := &cobra.Command{
 		Use:   "data",
-		Short: "Move data between sources, and manage containers",
-		Long: "Structured, driver-agnostic data movement and lifecycle. `copy` moves items\n" +
-			"between sources (a `file://` source reads a dump; -o writes one); `clear` empties\n" +
-			"a container; `drop` removes one.\n\n" +
+		Short: "Manage a source's container (clear, drop)",
+		Long: "Container lifecycle for a source: `clear` empties a container; `drop` removes\n" +
+			"one. (Data movement is on the query command: `iq --src <s> --insert <dst>` to\n" +
+			"copy/restore, `iq --src <s> --typed` to dump.)\n\n" +
 			"--explain shows the plan without connecting; --dry-run reports the real effect\n" +
 			"without changing anything.",
 	}
 	c.PersistentFlags().BoolVar(&df.explain, "explain", false, "describe the plan without connecting or changing anything")
 	c.PersistentFlags().BoolVar(&df.dryRun, "dry-run", false, "report the real effect without changing anything")
 	c.AddCommand(
-		newDataCopyCmd(cfg, df),
 		newDataClearCmd(cfg, df),
 		newDataDropCmd(cfg, df),
 	)
@@ -121,22 +118,8 @@ func (e endpoint) label() string {
 	}
 }
 
-// jsonlPutter is the destination for a file/stdout endpoint: it encodes each batch
-// as typed JSONL. The write mode is irrelevant — a stream sink always writes — so a
-// file destination rejects the write-mode flags at the command layer.
-type jsonlPutter struct {
-	w io.Writer
-}
-
-func (p jsonlPutter) Put(_ context.Context, batch []query.Record, _ query.WriteMode) (query.WriteStat, error) {
-	if err := query.WriteJSONL(p.w, batch); err != nil {
-		return query.WriteStat{}, err
-	}
-	return query.WriteStat{Written: len(batch)}, nil
-}
-
-// openFileInput opens a file endpoint for reading: stdin for "-"/"" else the named
-// file. The returned closer is a no-op for stdin.
+// openFileInput opens a source for reading: stdin for "-"/"" else the named file.
+// The returned closer is a no-op for stdin. It backs the piped-stdin move source.
 func openFileInput(cmd *cobra.Command, path string) (io.Reader, func() error, error) {
 	if path == "" || path == "-" {
 		return cmd.InOrStdin(), func() error { return nil }, nil
@@ -144,19 +127,6 @@ func openFileInput(cmd *cobra.Command, path string) (io.Reader, func() error, er
 	f, err := os.Open(path) //nolint:gosec // the path is a user-supplied input file, by design.
 	if err != nil {
 		return nil, nil, fmt.Errorf("open %q: %w", path, err)
-	}
-	return f, f.Close, nil
-}
-
-// openFileOutput opens a file endpoint for writing: stdout for "-"/"" else a
-// truncated named file. The returned closer is a no-op for stdout.
-func openFileOutput(cmd *cobra.Command, path string) (io.Writer, func() error, error) {
-	if path == "" || path == "-" {
-		return cmd.OutOrStdout(), func() error { return nil }, nil
-	}
-	f, err := os.Create(path) //nolint:gosec // the path is a user-supplied output file, by design.
-	if err != nil {
-		return nil, nil, fmt.Errorf("create %q: %w", path, err)
 	}
 	return f, f.Close, nil
 }
@@ -181,10 +151,11 @@ func confirmDestruction(cmd *cobra.Command, action string, force bool) error {
 	return nil
 }
 
-// stdinIsTerminal reports whether stdin is an interactive terminal, so a
-// confirmation prompt only appears where a human can answer it. It avoids a
-// terminal dependency by checking the character-device bit of stdin's mode.
-func stdinIsTerminal() bool {
+// stdinIsTerminal reports whether stdin is an interactive terminal (not a pipe), so
+// a confirmation prompt only appears where a human can answer it, and a piped stdin
+// can be used as an implicit source. It checks the character-device bit of stdin's
+// mode. It is a package var so a test can force pipe/terminal mode deterministically.
+var stdinIsTerminal = func() bool {
 	info, err := os.Stdin.Stat()
 	if err != nil {
 		return false

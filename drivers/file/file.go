@@ -9,6 +9,7 @@
 package file
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -39,13 +40,14 @@ var errStopScan = errors.New("file: stop scan")
 // Store is a read-only view over a dump file.
 type Store struct {
 	path   string
+	data   []byte // when non-nil, the dump is this in-memory buffer (stdin), not path.
 	format Format
 	dec    numfmt.DecimalMode
 }
 
 // Open resolves a file:// URL to a read-only dump Store. The URL path is the dump
-// file; an optional ?format= (rdb|bson|mongoexport|jsonl) overrides content
-// detection for the ambiguous JSON-text formats.
+// file; an optional ?format= (rdb|bson|mongoexport|jsonl|yaml) overrides content
+// detection for the ambiguous text formats.
 func Open(rawURL string, dec numfmt.DecimalMode) (*Store, error) {
 	path, forced, err := parseFileURL(rawURL)
 	if err != nil {
@@ -59,6 +61,21 @@ func Open(rawURL string, dec numfmt.DecimalMode) (*Store, error) {
 		}
 	}
 	return &Store{path: path, format: format, dec: dec}, nil
+}
+
+// OpenReader builds a read-only Store over an in-memory dump buffer — used for
+// piped stdin, which is not seekable, so it is read once into data and re-scanned
+// from a bytes.Reader per operation. The format is content-sniffed from the buffer
+// unless forced.
+func OpenReader(data []byte, format Format, dec numfmt.DecimalMode) (*Store, error) {
+	if format == FormatUnknown {
+		var err error
+		format, err = detectBytes(data)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &Store{data: data, format: format, dec: dec}, nil
 }
 
 // parseFileURL splits a file:// URL into its path and an optional forced format
@@ -84,7 +101,7 @@ func parseFileURL(raw string) (path string, format Format, err error) {
 		return "", FormatUnknown, errors.New("file url has no path")
 	}
 	if f := u.Query().Get("format"); f != "" {
-		format, err = parseFormat(f)
+		format, err = ParseFormat(f)
 		if err != nil {
 			return "", FormatUnknown, err
 		}
@@ -92,35 +109,52 @@ func parseFileURL(raw string) (path string, format Format, err error) {
 	return path, format, nil
 }
 
-// records is the single decode entry point: it opens the dump, builds the source
-// for its format, and drives it. Every read path (TypedScan, ScanBatches, Get)
-// flows through here, so the file is reopened and streamed per operation.
+// records is the single decode entry point: it opens the dump (a file, reopened
+// per operation, or the in-memory stdin buffer), builds the source for its format,
+// and drives it. Every read path (TypedScan, ScanBatches, Get) flows through here.
 func (s *Store) records(ctx context.Context, fn func(batch []query.Record) error) error {
-	f, err := os.Open(s.path) //nolint:gosec // the path is a user-supplied dump file, by design.
+	r, closeR, err := s.reader()
 	if err != nil {
-		return fmt.Errorf("open dump %q: %w", s.path, err)
+		return err
 	}
-	defer func() { _ = f.Close() }()
-	src, err := s.source(f)
+	defer func() { _ = closeR() }()
+	src, err := RecordSourceFor(r, s.format, s.dec)
 	if err != nil {
 		return err
 	}
 	return src(ctx, fn)
 }
 
-// source returns the RecordSource that decodes r for the store's format.
-func (s *Store) source(r io.Reader) (query.RecordSource, error) {
-	switch s.format {
+// reader yields a fresh reader over the dump: a bytes.Reader over the buffered
+// stdin, or a freshly reopened file (so scans and Get each re-read from the start).
+func (s *Store) reader() (io.Reader, func() error, error) {
+	if s.data != nil {
+		return bytes.NewReader(s.data), func() error { return nil }, nil
+	}
+	f, err := os.Open(s.path) //nolint:gosec // the path is a user-supplied dump file, by design.
+	if err != nil {
+		return nil, nil, fmt.Errorf("open dump %q: %w", s.path, err)
+	}
+	return f, f.Close, nil
+}
+
+// RecordSourceFor returns the RecordSource that decodes r for a given format. It is
+// the one decoder-dispatch shared by the file:// store, the buffered stdin store,
+// and the cmd move importer, so every reader honors the same format set.
+func RecordSourceFor(r io.Reader, format Format, dec numfmt.DecimalMode) (query.RecordSource, error) {
+	switch format {
 	case FormatJSONL:
-		return query.JSONLSource(r, pageSize, false), nil
+		return query.JSONSource(r, pageSize, false), nil
+	case FormatYAML:
+		return query.YAMLSource(r, pageSize, false), nil
 	case FormatRDB:
 		return rdbSource(r, pageSize), nil
 	case FormatBSON:
-		return bsonSource(r, pageSize, s.dec), nil
+		return bsonSource(r, pageSize, dec), nil
 	case FormatMongoexport:
-		return extJSONSource(r, pageSize, s.dec), nil
+		return extJSONSource(r, pageSize, dec), nil
 	default:
-		return nil, fmt.Errorf("unknown dump format for %q", s.path)
+		return nil, errors.New("unknown dump format")
 	}
 }
 

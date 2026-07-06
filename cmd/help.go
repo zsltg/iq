@@ -18,6 +18,7 @@ const (
 	groupSource      = "Source"
 	groupQuery       = "Query"
 	groupOutput      = "Output"
+	groupWrite       = "Write"
 	groupDisplay     = "Display"
 	groupDiagnostics = "Diagnostics"
 	groupOther       = "Options"
@@ -28,6 +29,7 @@ var flagGroupOrder = []string{
 	groupSource,
 	groupQuery,
 	groupOutput,
+	groupWrite,
 	groupDisplay,
 	groupDiagnostics,
 	groupOther,
@@ -57,6 +59,18 @@ var rootFlagGroups = map[string]string{
 	"format.decimal": groupOutput,
 	"compact":        groupOutput,
 	"output":         groupOutput,
+
+	"insert":       groupWrite,
+	"typed":        groupWrite,
+	"key":          groupWrite,
+	"key-field":    groupWrite,
+	"key-prefix":   groupWrite,
+	"type":         groupWrite,
+	"no-overwrite": groupWrite,
+	"replace":      groupWrite,
+	"force":        groupWrite,
+	"dry-run":      groupWrite,
+	"from-format":  groupWrite,
 
 	"monochrome":  groupDisplay,
 	"color":       groupDisplay,

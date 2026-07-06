@@ -144,3 +144,37 @@ func drainSourceErr(src query.RecordSource) ([]query.Record, error) {
 	})
 	return got, err
 }
+
+func TestJSONSourceArray(t *testing.T) {
+	src := query.JSONSource(strings.NewReader(`[{"key":"a","type":"string","value":"x"},{"key":"b","type":"hash","value":{"f":"v"}}]`), 10, false)
+	recs := drainSource(t, src)
+	require.Len(t, recs, 2)
+	require.Equal(t, query.Record{Key: "a", Type: "string", Value: "x"}, recs[0])
+	require.Equal(t, "hash", recs[1].Type)
+	require.Equal(t, map[string]any{"f": "v"}, recs[1].Value)
+}
+
+func TestJSONSourceConcatenated(t *testing.T) {
+	src := query.JSONSource(strings.NewReader("{\"key\":\"a\",\"type\":\"string\",\"value\":1}\n{\"key\":\"b\",\"type\":\"string\",\"value\":2}\n"), 10, false)
+	recs := drainSource(t, src)
+	require.Len(t, recs, 2)
+	require.Equal(t, 1, recs[0].Value)
+	require.Equal(t, "b", recs[1].Key)
+}
+
+func TestJSONSourcePlainArray(t *testing.T) {
+	src := query.JSONSource(strings.NewReader("[10, 20, 30]"), 10, true)
+	recs := drainSource(t, src)
+	require.Len(t, recs, 3)
+	require.Equal(t, 20, recs[1].Value)
+	require.Empty(t, recs[1].Key)
+}
+
+func TestYAMLSourceRoundTrip(t *testing.T) {
+	y := "key: a\ntype: string\nvalue: hi\n---\nkey: b\ntype: hash\nvalue:\n  f: v\n"
+	src := query.YAMLSource(strings.NewReader(y), 10, false)
+	recs := drainSource(t, src)
+	require.Len(t, recs, 2)
+	require.Equal(t, query.Record{Key: "a", Type: "string", Value: "hi"}, recs[0])
+	require.Equal(t, map[string]any{"f": "v"}, recs[1].Value)
+}

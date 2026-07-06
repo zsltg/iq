@@ -45,6 +45,24 @@ type config struct {
 	yaml       bool
 	raw        bool
 	compact    bool
+	// Write/movement flags (runMove): --insert names a destination source handle;
+	// --typed emits {key,type,value} records instead of the jq value stream. The rest
+	// mirror the retired `iq data copy`: key derivation, write mode, dry-run, and the
+	// import-side --from-format hint (needed for YAML, which is not content-sniffable).
+	insert      string
+	typed       bool
+	moveKey     string
+	keyField    string
+	keyPrefix   string
+	moveType    string
+	noOverwrite bool
+	replace     bool
+	force       bool
+	dryRun      bool
+	fromFormat  string
+	// stdin marks that the source is piped stdin (no --src, stdin not a terminal),
+	// buffered once and served through the drivers/file decoders.
+	stdin bool
 	// decimal is the raw --format.decimal flag; decimalMode is it resolved once in
 	// PersistentPreRunE and passed as a plain type into the driver adapters.
 	decimal     string
@@ -194,6 +212,17 @@ func newRootCmd() (*cobra.Command, *config) {
 				}
 				return runCombine(cmd, cfg)
 			}
+			// --insert/--typed turn the command into a data move: the source's items
+			// are transformed by the optional positional filter and written to a
+			// destination source (--insert) or emitted as a typed dump (--typed). A
+			// move needs no filter, so it runs even with no positional.
+			if cfg.insert != "" || cfg.typed {
+				filter := ""
+				if len(args) > 0 {
+					filter = args[0]
+				}
+				return runMove(cmd, cfg, filter)
+			}
 			// A bare `iq` with no filter prints help rather than erroring, so the
 			// entry point is discoverable.
 			if len(args) == 0 {
@@ -243,6 +272,21 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.Flags().StringVarP(&cfg.format, "format", "f", "", "select the output rendering by name: json (default), jsonl, json-array, yaml, values (alias: raw); an alternative to -j/-J/-A/-y/-r")
 	root.MarkFlagsMutuallyExclusive("format", "json", "json-array", "jsonl", "yaml", "raw")
 	root.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / json-array output to single-line (no-op for jsonl, values, yaml)")
+	// Write/movement flags for the default action: --insert redirects results into a
+	// destination source (sq's --insert); --typed emits {key,type,value} records — a
+	// re-importable dump. The rest mirror the retired `iq data copy`.
+	root.Flags().StringVar(&cfg.insert, "insert", "", "write each item into this destination `source` (copy/restore/import) instead of rendering")
+	root.Flags().BoolVar(&cfg.typed, "typed", false, "emit typed {key,type,value} records — a re-importable dump (needed for Redis; Mongo's plain output already restores)")
+	root.Flags().StringVar(&cfg.moveKey, "key", "", "jq expression yielding each written item's key (--insert/--typed)")
+	root.Flags().StringVar(&cfg.keyField, "key-field", "", "object field to take the key from, for foreign JSON input (--insert)")
+	root.Flags().StringVar(&cfg.keyPrefix, "key-prefix", "", "string prepended to every written key (--insert/--typed)")
+	root.Flags().StringVar(&cfg.moveType, "type", "", "native type stamped on a reshaped value, e.g. hash, list, json (--insert/--typed)")
+	root.Flags().BoolVar(&cfg.noOverwrite, "no-overwrite", false, "insert only; skip keys that already exist (--insert)")
+	root.Flags().BoolVar(&cfg.replace, "replace", false, "empty the destination before writing, with confirmation (--insert)")
+	root.Flags().BoolVar(&cfg.force, "force", false, "skip the confirmation prompt for --replace")
+	root.Flags().BoolVar(&cfg.dryRun, "dry-run", false, "report the effect of --insert without writing anything")
+	root.Flags().StringVar(&cfg.fromFormat, "from-format", "", "format of a piped-stdin source when it cannot be sniffed: jsonl, json, yaml, rdb, bson, mongoexport")
+	root.MarkFlagsMutuallyExclusive("insert", "typed")
 	root.AddCommand(
 		newExecCmd(cfg),
 		newDataCmd(cfg),

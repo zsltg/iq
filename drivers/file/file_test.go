@@ -418,3 +418,40 @@ func TestStreamTiebreakBySequence(t *testing.T) {
 	require.Equal(t, "5-1", got[0].(map[string]any)["id"])
 	require.Equal(t, "5-2", got[1].(map[string]any)["id"])
 }
+
+func TestDetectTypedArrayVsMongoArray(t *testing.T) {
+	// An array of {key,type,value} records is iq's typed dump, not mongoexport docs.
+	typed := writeDump(t, "typed.json", []byte(`[{"key":"a","type":"string","value":"x"}]`), "")
+	st, err := Open(typed, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	require.Equal(t, FormatJSONL, st.format)
+
+	// An array of documents (no key/value envelope) is mongoexport.
+	docs := writeDump(t, "docs.json", []byte(`[{"_id":"a","n":1}]`), "")
+	st2, err := Open(docs, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	require.Equal(t, FormatMongoexport, st2.format)
+}
+
+func TestYAMLFileByExtensionAndRoundTrip(t *testing.T) {
+	body := "key: a\ntype: string\nvalue: hi\n---\nkey: b\ntype: set\nvalue:\n    - x\n    - y\n"
+	// Detected as YAML by the .yaml extension (YAML is not content-sniffable).
+	st, err := Open(writeDump(t, "d.yaml", []byte(body), ""), numfmt.DecimalAuto)
+	require.NoError(t, err)
+	require.Equal(t, FormatYAML, st.format)
+	recs := collect(t, st)
+	require.Equal(t, query.Record{Key: "a", Type: "string", Value: "hi"}, recs["a"])
+	require.Equal(t, "set", recs["b"].Type)
+}
+
+func TestOpenReaderBufferedStdin(t *testing.T) {
+	// A buffered (stdin-like) typed JSONL dump serves the store port and re-scans.
+	data := []byte("{\"key\":\"a\",\"type\":\"string\",\"value\":\"hi\"}\n{\"key\":\"b\",\"type\":\"string\",\"value\":\"yo\"}\n")
+	st, err := OpenReader(data, FormatUnknown, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	require.Equal(t, FormatJSONL, st.format)
+	got, err := st.Get(context.Background(), []string{"b"})
+	require.NoError(t, err)
+	require.Equal(t, "yo", got["b"])
+	require.Len(t, collect(t, st), 2) // a second scan re-reads the buffer
+}
