@@ -11,7 +11,7 @@ import (
 func newSourceConfig(t *testing.T) *config.Config {
 	t.Helper()
 	c := &config.Config{Sources: map[string]config.Source{}}
-	require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
+	require.NoError(t, c.Add("prod/books", "mongodb://h/db?collection=books"))
 	return c
 }
 
@@ -115,7 +115,7 @@ func TestOptionsRoundTrip(t *testing.T) {
 	tempConfig(t)
 
 	c := &config.Config{Sources: map[string]config.Source{}}
-	require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
+	require.NoError(t, c.Add("prod/books", "mongodb://h/db?collection=books"))
 	require.NoError(t, c.SetOption("", "format", "yaml"))
 	require.NoError(t, c.SetOption("prod/books", "timeout", "30s"))
 	require.NoError(t, c.Save())

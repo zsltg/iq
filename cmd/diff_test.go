@@ -89,7 +89,7 @@ func TestReportRenderJSON(t *testing.T) {
 
 func TestResolveDiffTargetUnknown(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("known", "redis://h:6379/0", ""))
+	require.NoError(t, c.Add("known", "redis://h:6379/0"))
 	seedConfig(t, c)
 	cf, err := iqconfig.Load()
 	require.NoError(t, err)
@@ -257,8 +257,8 @@ func TestDiffDataRedisIntegration(t *testing.T) {
 	seedRedis(t, urlB, map[string]string{"k2": "v2", "shared": "new"})
 
 	c := newSeed()
-	require.NoError(t, c.Add("a", urlA, ""))
-	require.NoError(t, c.Add("b", urlB, ""))
+	require.NoError(t, c.Add("a", urlA))
+	require.NoError(t, c.Add("b", urlB))
 	seedConfig(t, c)
 
 	cfg := &config{timeout: 5 * time.Second}
@@ -284,8 +284,8 @@ func TestDiffExitCodeRedisIntegration(t *testing.T) {
 	seedRedis(t, urlB, map[string]string{"different": "value"})
 
 	c := newSeed()
-	require.NoError(t, c.Add("a", urlA, ""))
-	require.NoError(t, c.Add("b", urlB, ""))
+	require.NoError(t, c.Add("a", urlA))
+	require.NoError(t, c.Add("b", urlB))
 	seedConfig(t, c)
 
 	cfg := &config{timeout: 5 * time.Second}
@@ -309,8 +309,8 @@ func TestDiffDataAndSchemaMongoIntegration(t *testing.T) {
 	seedMongo(t, base, "cb", []string{`{"_id":"2","name":"y"}`, `{"_id":"3","name":"c","email":"e@x"}`})
 
 	c := newSeed()
-	require.NoError(t, c.Add("a", base, "ca"))
-	require.NoError(t, c.Add("b", base, "cb"))
+	require.NoError(t, c.Add("a", base+"?collection=ca"))
+	require.NoError(t, c.Add("b", base+"?collection=cb"))
 	seedConfig(t, c)
 
 	cfg := &config{timeout: 8 * time.Second}
@@ -445,7 +445,7 @@ func seedRedis(t *testing.T, u string, kv map[string]string) {
 func seedMongo(t *testing.T, u, coll string, docs []string) {
 	t.Helper()
 	ctx := context.Background()
-	st, err := openStore(ctx, &config{url: u, collection: coll})
+	st, err := openStore(ctx, &config{url: u, address: coll})
 	require.NoError(t, err)
 	defer func() { _ = st.Close() }()
 	r := query.NewRunner(st)

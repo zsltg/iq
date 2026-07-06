@@ -30,6 +30,9 @@ func newPingCmd(cfg *config) *cobra.Command {
 			"active source is pinged; otherwise each argument is a source handle or a group\n" +
 			"(pinging every member). Each check is bounded by --timeout. Exits non-zero if any\n" +
 			"source is unreachable.",
+		Example: "  $ iq ping            # the active source\n" +
+			"  $ iq ping cache shop # specific sources\n" +
+			"  $ iq ping prod       # a whole group",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
@@ -117,7 +120,7 @@ func pingOne(ctx context.Context, t pingTarget, timeout time.Duration) (time.Dur
 		return 0, err
 	}
 	start := time.Now()
-	if err := verifySource(ctx, u, t.source.Collection, timeout); err != nil {
+	if err := verifySource(ctx, u, timeout); err != nil {
 		return 0, err
 	}
 	return time.Since(start), nil
@@ -125,12 +128,14 @@ func pingOne(ctx context.Context, t pingTarget, timeout time.Duration) (time.Dur
 
 // verifySource opens rawURL and round-trips one cheap command, bounded by
 // timeout, returning nil when the backend is reachable. It backs both `iq ping`
-// and the post-add reachability check in `iq add`. Any error has the connection
-// URL redacted so a stored password never surfaces in a diagnostic message.
-func verifySource(ctx context.Context, rawURL, collection string, timeout time.Duration) error {
+// and the post-add reachability check in `iq add`. The check is
+// connection-level, so it needs no collection (the URL carries any default). Any
+// error has the connection URL redacted so a stored password never surfaces in a
+// diagnostic message.
+func verifySource(ctx context.Context, rawURL string, timeout time.Duration) error {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	st, err := openStore(cctx, &config{url: rawURL, collection: collection})
+	st, err := openStore(cctx, &config{url: rawURL})
 	if err != nil {
 		return redactErr(err, rawURL)
 	}

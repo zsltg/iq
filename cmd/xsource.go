@@ -13,11 +13,13 @@ import (
 )
 
 // fromStage is one resolved --from clause: a source and the jq that reduces it,
-// bound to a variable for the combine step.
+// bound to a variable for the combine step. address is the dotted override on the
+// source spec (shop.orders), "" when absent.
 type fromStage struct {
 	varName string
 	handle  string
 	source  iqconfig.Source
+	address string
 	filter  string
 }
 
@@ -75,7 +77,7 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 		if err != nil {
 			return fmt.Errorf("--from %q: %w", st.handle, err)
 		}
-		vals, err := collectSource(ctx, &config{url: u, collection: st.source.Collection, trace: cfg.trace, decimalMode: cfg.decimalMode}, st.filter, opts)
+		vals, err := collectSource(ctx, &config{url: u, address: st.address, trace: cfg.trace, decimalMode: cfg.decimalMode}, st.filter, opts)
 		if err != nil {
 			if errors.Is(err, query.ErrScanNotAllowed) {
 				return fmt.Errorf("--from %q: %w; add --unbounded or use a .[]-rooted filter", st.handle, err)
@@ -106,16 +108,20 @@ func planFrom(cf *iqconfig.Config, specs []string) ([]fromStage, error) {
 		if strings.TrimSpace(filter) == "" {
 			return nil, fmt.Errorf("invalid --from %q: empty filter", spec)
 		}
-		src, handle, found := cf.Resolve(name)
+		base, addr, _ := splitSourceArg(cf, name)
+		src, handle, found := cf.Resolve(base)
 		if !found {
-			return nil, fmt.Errorf("unknown source %q in --from; run `iq ls`", name)
+			return nil, fmt.Errorf("unknown source %q in --from; run `iq ls`", base)
+		}
+		if err := addressUnsupported(src.URL, addr); err != nil {
+			return nil, fmt.Errorf("--from %q: %w", name, err)
 		}
 		v := varName(name)
 		if prev, dup := bound[v]; dup {
 			return nil, fmt.Errorf("--from %q and %q both bind $%s; rename one", prev, name, v)
 		}
 		bound[v] = name
-		stages = append(stages, fromStage{varName: v, handle: handle, source: src, filter: filter})
+		stages = append(stages, fromStage{varName: v, handle: handle, source: src, address: addr, filter: filter})
 	}
 	return stages, nil
 }

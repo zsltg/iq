@@ -467,3 +467,26 @@ func TestRawRejectsMultipleArgs(t *testing.T) {
 
 	require.ErrorContains(t, err, "one JSON command document")
 }
+
+func TestSplitCollection(t *testing.T) {
+	tests := []struct {
+		name      string
+		uri       string
+		wantClean string
+		wantColl  string
+	}{
+		{"no query", "mongodb://h/db", "mongodb://h/db", ""},
+		{"collection only", "mongodb://h/db?collection=orders", "mongodb://h/db", "orders"},
+		{"collection among options", "mongodb://h/db?retryWrites=true&collection=orders", "mongodb://h/db?retryWrites=true", "orders"},
+		{"multi-host", "mongodb://h1,h2/db?collection=orders", "mongodb://h1,h2/db", "orders"},
+		{"empty collection value ignored", "mongodb://h/db?collection=", "mongodb://h/db?collection=", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clean, coll := SplitCollection(tt.uri)
+			require.Equal(t, tt.wantClean, clean)
+			require.Equal(t, tt.wantColl, coll)
+			require.Equal(t, tt.wantColl, CollectionFromURI(tt.uri))
+		})
+	}
+}

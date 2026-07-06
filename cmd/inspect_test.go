@@ -129,7 +129,7 @@ func TestInspectRedisIntegration(t *testing.T) {
 		url = "redis://localhost:6379/0"
 	}
 	c := newSeed()
-	require.NoError(t, c.Add("live", url, ""))
+	require.NoError(t, c.Add("live", url))
 	require.NoError(t, c.SetActive("live"))
 	seedConfig(t, c)
 
@@ -167,8 +167,8 @@ func TestInspectMongoIntegration(t *testing.T) {
 		url = "mongodb://localhost:27017/iq"
 	}
 	c := newSeed()
-	require.NoError(t, c.Add("live", url, "books"))
-	require.NoError(t, c.Add("nocoll", url, ""))
+	require.NoError(t, c.Add("live", url+"?collection=books"))
+	require.NoError(t, c.Add("nocoll", url))
 	require.NoError(t, c.SetActive("live"))
 	seedConfig(t, c)
 

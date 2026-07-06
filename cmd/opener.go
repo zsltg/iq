@@ -38,20 +38,31 @@ func newSourceOpener(cf *iqconfig.Config, trace io.Writer, decimal numfmt.Decima
 }
 
 // Open resolves name through the registry (applying active-group namespacing)
-// and opens its store, reusing a store already opened for the same handle.
+// and opens its store, reusing a store already opened for the same handle and
+// address. A dotted name (source("shop.orders")) resolves the base handle and
+// passes the address to the driver; the cache key includes the address so
+// source("shop.orders") and source("shop.users") do not alias one connection.
 func (o *sourceOpener) Open(ctx context.Context, name string) (query.KVStore, error) {
-	src, handle, ok := o.cf.Resolve(name)
+	base, addr, _ := splitSourceArg(o.cf, name)
+	src, handle, ok := o.cf.Resolve(base)
 	if !ok {
-		return nil, fmt.Errorf("unknown source %q; run `iq ls`", name)
+		return nil, fmt.Errorf("unknown source %q; run `iq ls`", base)
 	}
-	if st, ok := o.cache[handle]; ok {
+	if err := addressUnsupported(src.URL, addr); err != nil {
+		return nil, err
+	}
+	key := handle
+	if addr != "" {
+		key = handle + "\x00" + addr
+	}
+	if st, ok := o.cache[key]; ok {
 		return st, nil
 	}
-	st, err := openStore(ctx, &config{url: src.URL, collection: src.Collection, trace: o.trace, decimalMode: o.decimal, noCache: o.noCache, noCacheIndex: o.noCacheIndex})
+	st, err := openStore(ctx, &config{url: src.URL, address: addr, trace: o.trace, decimalMode: o.decimal, noCache: o.noCache, noCacheIndex: o.noCacheIndex})
 	if err != nil {
 		return nil, err
 	}
-	o.cache[handle] = st
+	o.cache[key] = st
 	return st, nil
 }
 

@@ -77,7 +77,7 @@ func TestExplainFlagPrintsPlanAndStopsBeforeConnecting(t *testing.T) {
 	// rather than hanging.
 	t.Run("default jq action", func(t *testing.T) {
 		c := newSeed()
-		require.NoError(t, c.Add("orders", "mongodb://h/shop", ""))
+		require.NoError(t, c.Add("orders", "mongodb://h/shop"))
 		seedConfig(t, c)
 
 		root, _ := newRootCmd()
@@ -92,7 +92,7 @@ func TestExplainFlagPrintsPlanAndStopsBeforeConnecting(t *testing.T) {
 
 	t.Run("cross-source combine action", func(t *testing.T) {
 		c := newSeed()
-		require.NoError(t, c.Add("orders", "mongodb://h/shop", ""))
+		require.NoError(t, c.Add("orders", "mongodb://h/shop"))
 		seedConfig(t, c)
 
 		root, _ := newRootCmd()

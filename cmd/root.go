@@ -31,20 +31,24 @@ type config struct {
 	url        string
 	source     iqconfig.Source
 	handle     string
-	collection string
-	timeout    time.Duration
-	unbounded  bool
-	noCompile  bool
-	explain    bool
-	from       []string
-	combine    string
-	format     string
-	json       bool
-	jsonArray  bool
-	jsonl      bool
-	yaml       bool
-	raw        bool
-	compact    bool
+	// address is the opaque dotted suffix on a source reference (shop.orders ->
+	// address "orders"), "" when absent. The core never interprets it; the driver
+	// does (MongoDB treats it as a collection). It overrides the source URL's own
+	// default (mongo's ?collection=).
+	address   string
+	timeout   time.Duration
+	unbounded bool
+	noCompile bool
+	explain   bool
+	from      []string
+	combine   string
+	format    string
+	json      bool
+	jsonArray bool
+	jsonl     bool
+	yaml      bool
+	raw       bool
+	compact   bool
 	// Write/movement flags (runMove): --insert names a destination source handle;
 	// --typed emits {key,type,value} records instead of the jq value stream. The rest
 	// mirror the retired `iq data copy`: key derivation, write mode, dry-run, and the
@@ -111,32 +115,53 @@ func newRootCmd() (*cobra.Command, *config) {
 		Use:     "iq <jq-filter>",
 		Version: buildVersion(),
 		Short:   "Query NoSQL databases with jq from the command line",
-		Long: "iq runs a jq filter against a NoSQL database. The filter's top-level paths\n" +
-			"name the keys to fetch, for example `iq '.greeting'`, `iq '.[\"book:1\"]'` for a\n" +
-			"key with a colon, or `iq '[ .a, .b ]'`. A `.[]`-rooted filter (`iq '.[] |\n" +
-			"select(.year)'`) streams over the whole keyspace in constant memory. A filter\n" +
-			"that collapses the dataset into one value (`.`, `keys`, `map(...)`) must load it\n" +
-			"all into memory and runs only with --unbounded. Always single-quote the filter\n" +
-			"so the shell does not expand its brackets, spaces, or pipes.\n" +
+		Long: "iq runs a jq filter against a NoSQL database.\n" +
 			"\n" +
-			"The database is a saved source: register connections with `iq add <name> <url>`,\n" +
-			"choose a default with `iq src <name>`, and list them with `iq ls`. The backend is\n" +
-			"chosen by the source's URL scheme: redis:// (key = Redis key) or mongodb:// (key =\n" +
-			"document _id in the source's collection). Select a source for one run with --src.\n" +
+			"  $ iq '.[] | select(.total > 99) | .id' --src shop.orders\n" +
 			"\n" +
-			"iq pushes these select(...) clauses to MongoDB by default (results are unchanged;\n" +
-			"the full jq always re-runs, so a pushed filter is only a pre-filter); pass\n" +
-			"--no-compile to force the whole filter client-side:\n" +
-			"  .a == x                    equality (number, string, bool, null)\n" +
-			"  .a == 1 or .a == 2         same-field equality-or -> $in\n" +
-			"  .a >  >=  <  <=  n|\"s\"      ranges, preserving jq's cross-type ordering\n" +
-			"  .a | test(\"re\")            portable regex (i/m/s flags)\n" +
-			"  has(\"a\"),  .a | has(\"k\")   key presence -> $exists\n" +
-			"  .a | length == n           -> $size (with type guards)\n" +
-			"  .a | any(cond)             array element match -> $elemMatch\n" +
-			"  E1 and E2,  E1 or E2       combine the above\n" +
-			"Not pushed (run client-side): != , ranges vs bool/null, non-portable regex,\n" +
-			"everything else. On Redis, or with no pushable clause, pushdown is a no-op.",
+			"The filter's top-level paths name the keys to fetch — `iq '.greeting'`, or\n" +
+			"`iq '.[\"user:1\"]'` for a key with a colon. A `.[]`-rooted filter streams the\n" +
+			"whole keyspace in constant memory; a filter that collapses the dataset into one\n" +
+			"value (`.`, `keys`, `map(...)`) needs --unbounded. Always single-quote the\n" +
+			"filter so the shell leaves its brackets, spaces, and pipes alone.\n" +
+			"\n" +
+			"A database is a saved source, chosen by URL scheme — redis:// or mongodb://.\n" +
+			"Register with `iq add`, pick a default with `iq src`, list with `iq ls`. Address\n" +
+			"a MongoDB collection as handle.collection (e.g. --src shop.orders), or set a\n" +
+			"default in the source URL (...?collection=orders) and drop the suffix.\n" +
+			"\n" +
+			"select(...) clauses are pushed to the backend automatically, results unchanged;\n" +
+			"run `iq --explain` to see the plan. The README carries the full reference.",
+		Example: "  # Register a Redis source (active) and a Mongo source whose password is kept safe.\n" +
+			"  # The Mongo URL sets a default collection with ?collection=orders.\n" +
+			"  $ iq add -a -n cache redis://localhost:6379/0\n" +
+			"  $ iq add -p --store keyring 'mongodb://user@localhost:27017/shop?collection=orders'\n" +
+			"\n" +
+			"  # List saved sources (the active one marked *); check reachability; inspect metadata.\n" +
+			"  $ iq ls\n" +
+			"  $ iq ping\n" +
+			"  $ iq inspect shop.orders\n" +
+			"\n" +
+			"  # Fetch one key from the active Redis source.\n" +
+			"  $ iq '.greeting'\n" +
+			"\n" +
+			"  # Query a Mongo collection — select(...) pushes to the backend.\n" +
+			"  $ iq '.[] | select(.total > 99) | .id' --src shop.orders\n" +
+			"\n" +
+			"  # The URL's ?collection= default lets you drop the suffix.\n" +
+			"  $ iq '.[]' --src shop\n" +
+			"\n" +
+			"  # Output as JSON Lines, or one JSON array written to a file.\n" +
+			"  $ iq '.[]' --src shop.orders --jsonl\n" +
+			"  $ iq '.[]' --src shop.orders -A -o results.json\n" +
+			"\n" +
+			"  # Join two collections of one source on a shared id (each --from names its source).\n" +
+			"  $ iq --from shop.orders='.[] | {id, total}' \\\n" +
+			"       --from shop.users='.[] | {id, name}' \\\n" +
+			"       --combine '($shop_users | INDEX(.id)) as $u | $shop_orders[] | . + {name: $u[.id].name}'\n" +
+			"\n" +
+			"  # Query a piped dump file (implicit stdin).\n" +
+			"  $ cat dump.jsonl | iq '.[]'",
 		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -235,7 +260,6 @@ func newRootCmd() (*cobra.Command, *config) {
 	}
 	root.PersistentFlags().StringVarP(&cfg.src, "src", "s", "", "run against this saved source for one invocation (overrides the active source; see `iq src`)")
 	root.PersistentFlags().StringVar(&cfg.configPath, "config", "", "path to the config file (overrides $IQ_CONFIG; default <user config dir>/iq/iq.toml)")
-	root.PersistentFlags().StringVarP(&cfg.collection, "collection", "c", "", "MongoDB collection, overriding the source's (ignored for Redis)")
 	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "per-query timeout")
 	root.PersistentFlags().BoolVarP(&cfg.monochrome, "monochrome", "M", false, "disable colored output (also honored via NO_COLOR); color is on by default only when writing to a terminal")
 	root.PersistentFlags().BoolVarP(&cfg.forceColor, "color", "C", false, "force colored output even when the destination is not a terminal (e.g. a pager)")

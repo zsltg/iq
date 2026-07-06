@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/diff"
 	"github.com/zsltg/iq/internal/query"
@@ -24,13 +25,22 @@ var errQuietExit = errors.New("differences found")
 // a control signal, never surfaced.
 var errStopSampling = errors.New("sample complete")
 
-// diffTarget is one side of a diff: the resolved handle, connection URL,
-// collection, and canonical driver name.
+// diffTarget is one side of a diff: the resolved handle, connection URL, dotted
+// address override (may be ""), and canonical driver name.
 type diffTarget struct {
-	handle     string
-	url        string
-	collection string
-	driver     string
+	handle  string
+	url     string
+	address string
+	driver  string
+}
+
+// collection returns the effective MongoDB collection for this target: the dotted
+// address override when set, else the URL's ?collection= default.
+func (t diffTarget) collection() string {
+	if t.address != "" {
+		return t.address
+	}
+	return iqmongo.CollectionFromURI(t.url)
 }
 
 // newDiffCmd builds `iq diff <a> <b>`: compare two saved sources. --data (the
@@ -64,7 +74,14 @@ func newDiffCmd(cfg *config) *cobra.Command {
 		Use:   "diff <a> <b>",
 		Short: "Compare two sources by data, stats, or inferred schema",
 		Long:  long,
-		Args:  cobra.ExactArgs(2),
+		Example: "  # Item-level diff (the default layer) of two collections in one source.\n" +
+			"  $ iq diff shop.orders shop.users\n" +
+			"\n" +
+			"  # Across environments; compare shapes or native stats.\n" +
+			"  $ iq diff prod/shop staging/shop --schema\n" +
+			"  $ iq diff prod/shop staging/shop --stats\n" +
+			"  $ iq diff prod/shop staging/shop -j",
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -136,15 +153,19 @@ func newDiffCmd(cfg *config) *cobra.Command {
 // resolveDiffTarget resolves a source handle to a connection target, splicing in
 // a keyring secret when the source uses one.
 func resolveDiffTarget(cf *iqconfig.Config, name string) (diffTarget, error) {
-	src, full, ok := cf.Resolve(name)
+	base, addr, _ := splitSourceArg(cf, name)
+	src, full, ok := cf.Resolve(base)
 	if !ok {
-		return diffTarget{}, fmt.Errorf("unknown source %q; run `iq ls`", name)
+		return diffTarget{}, fmt.Errorf("unknown source %q; run `iq ls`", base)
 	}
 	u, err := effectiveURL(src, full)
 	if err != nil {
 		return diffTarget{}, fmt.Errorf("source %q: %w", full, err)
 	}
-	return diffTarget{handle: full, url: u, collection: src.Collection, driver: driverName(u)}, nil
+	if err := addressUnsupported(u, addr); err != nil {
+		return diffTarget{}, err
+	}
+	return diffTarget{handle: full, url: u, address: addr, driver: driverName(u)}, nil
 }
 
 // diffData reads both keyspaces fully and diffs them key by key.
@@ -163,7 +184,7 @@ func diffData(ctx context.Context, left, right diffTarget, onPage func(int)) ([]
 // readAll materializes a source's whole keyspace as key -> value. A key repeated
 // across scan pages (the store's weak scan guarantee) simply overwrites.
 func readAll(ctx context.Context, t diffTarget, onPage func(int)) (map[string]any, error) {
-	st, err := openStore(ctx, &config{url: t.url, collection: t.collection})
+	st, err := openStore(ctx, &config{url: t.url, address: t.address})
 	if err != nil {
 		return nil, redactErr(err, t.url)
 	}
@@ -205,7 +226,7 @@ func diffStats(ctx context.Context, left, right diffTarget, sections []string) (
 // replies as one tree: Mongo keys each diagnostic reply by subcommand; Redis
 // parses INFO into section -> key -> value.
 func collectInspect(ctx context.Context, t diffTarget, sections []string) (map[string]any, error) {
-	st, err := openStore(ctx, &config{url: t.url, collection: t.collection})
+	st, err := openStore(ctx, &config{url: t.url, address: t.address})
 	if err != nil {
 		return nil, redactErr(err, t.url)
 	}
@@ -229,10 +250,10 @@ func collectInspect(ctx context.Context, t diffTarget, sections []string) (map[s
 		if !isMongoInspectCmd(sub) {
 			return nil, fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(mongoInspectCmds, ", "))
 		}
-		if sub == "collStats" && t.collection == "" {
+		if sub == "collStats" && t.collection() == "" {
 			continue // needs a collection; skip in the same spirit as `inspect`
 		}
-		res, err := query.NewRunner(st).Run(ctx, []string{mongoInspectDoc(sub, t.collection)})
+		res, err := query.NewRunner(st).Run(ctx, []string{mongoInspectDoc(sub, t.collection())})
 		if err != nil {
 			return nil, fmt.Errorf("inspect %q %s: %w", t.handle, sub, redactErr(err, t.url))
 		}
@@ -276,7 +297,7 @@ func diffSchema(ctx context.Context, left, right diffTarget, sample int) ([]diff
 // sampleShape reads up to sample items from a source and infers its shape. A
 // sample of zero reads the whole keyspace.
 func sampleShape(ctx context.Context, t diffTarget, sample int) (map[string]any, error) {
-	st, err := openStore(ctx, &config{url: t.url, collection: t.collection})
+	st, err := openStore(ctx, &config{url: t.url, address: t.address})
 	if err != nil {
 		return nil, redactErr(err, t.url)
 	}

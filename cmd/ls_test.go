@@ -11,9 +11,9 @@ import (
 func seedLs(t *testing.T) {
 	t.Helper()
 	c := newSeed()
-	require.NoError(t, c.Add("cache", "redis://u:secret@h:6379/0", ""))
-	require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
-	require.NoError(t, c.Add("prod/cache", "redis://h", ""))
+	require.NoError(t, c.Add("cache", "redis://u:secret@h:6379/0"))
+	require.NoError(t, c.Add("prod/books", "mongodb://h/db?collection=books"))
+	require.NoError(t, c.Add("prod/cache", "redis://h"))
 	require.NoError(t, c.SetActive("cache"))
 	seedConfig(t, c)
 }
@@ -120,8 +120,8 @@ func TestLsReveal(t *testing.T) {
 
 func TestLsGroupsMarksActiveAndListsAll(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("prod/a", "redis://h", ""))
-	require.NoError(t, c.Add("dev/b", "redis://h", ""))
+	require.NoError(t, c.Add("prod/a", "redis://h"))
+	require.NoError(t, c.Add("dev/b", "redis://h"))
 	require.NoError(t, c.SetGroup("prod"))
 	seedConfig(t, c)
 

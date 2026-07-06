@@ -32,8 +32,9 @@ func TestVarName(t *testing.T) {
 
 func TestPlanFrom(t *testing.T) {
 	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
-	require.NoError(t, cf.Add("users", "redis://h", ""))
-	require.NoError(t, cf.Add("prod/books", "mongodb://h/db", "books"))
+	require.NoError(t, cf.Add("users", "redis://h"))
+	require.NoError(t, cf.Add("shop", "mongodb://h/db?collection=orders"))
+	require.NoError(t, cf.Add("prod/books", "mongodb://h/db?collection=books"))
 
 	t.Run("resolves a stage", func(t *testing.T) {
 		stages, err := planFrom(cf, []string{"users=.a"})
@@ -57,6 +58,20 @@ func TestPlanFrom(t *testing.T) {
 		stages, err := planFrom(cf, []string{"users=.[] | select(.a == 1)"})
 		require.NoError(t, err)
 		require.Equal(t, ".[] | select(.a == 1)", stages[0].filter)
+	})
+
+	t.Run("dotted spec sets the address and binds the dotted var", func(t *testing.T) {
+		stages, err := planFrom(cf, []string{"shop.customers=.[]"})
+		require.NoError(t, err)
+		require.Len(t, stages, 1)
+		require.Equal(t, "shop", stages[0].handle)
+		require.Equal(t, "customers", stages[0].address)
+		require.Equal(t, "shop_customers", stages[0].varName)
+	})
+
+	t.Run("redis rejects a dotted spec", func(t *testing.T) {
+		_, err := planFrom(cf, []string{"users.foo=.[]"})
+		require.ErrorContains(t, err, "no collections")
 	})
 
 	errTests := []struct {

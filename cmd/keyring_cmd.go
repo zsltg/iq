@@ -35,6 +35,11 @@ func newConfigKeyringCmd(cfg *config) *cobra.Command {
 			"inline password into the keyring; `prune` deletes stale entries. The keyring\n" +
 			"library cannot enumerate entries, so these commands reason only about handles the\n" +
 			"config knows — a secret whose source was deleted is undetectable here.",
+		Example: "  $ iq config keyring ls              # keyring-backed sources & secret presence\n" +
+			"  $ iq config keyring migrate shop    # move an inline password into the keyring\n" +
+			"  $ iq config keyring get shop --reveal # read a secret\n" +
+			"  $ iq config keyring set shop        # write/update a secret\n" +
+			"  $ iq config keyring rm shop         # delete a secret",
 	}
 	c.AddCommand(
 		newConfigKeyringLsCmd(),
@@ -52,9 +57,10 @@ func newConfigKeyringCmd(cfg *config) *cobra.Command {
 func newConfigKeyringLsCmd() *cobra.Command {
 	var jsonOut, yamlOut bool
 	c := &cobra.Command{
-		Use:   "ls",
-		Short: "List keyring-backed sources and whether each secret is present",
-		Args:  cobra.NoArgs,
+		Use:     "ls",
+		Short:   "List keyring-backed sources and whether each secret is present",
+		Example: "  $ iq config keyring ls",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -108,9 +114,10 @@ func keyringStatusCell(status string) tableCell {
 // keyring-backed source's secret, redacted unless --reveal is set.
 func newConfigKeyringGetCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
-		Use:   "get <handle>",
-		Short: "Print a keyring-backed source's secret (redacted unless --reveal)",
-		Args:  cobra.ExactArgs(1),
+		Use:     "get <handle>",
+		Short:   "Print a keyring-backed source's secret (redacted unless --reveal)",
+		Example: "  $ iq config keyring get shop --reveal",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -145,9 +152,10 @@ func newConfigKeyringGetCmd(cfg *config) *cobra.Command {
 // marked keyring-backed so the new secret takes effect.
 func newConfigKeyringSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set <handle> [value]",
-		Short: "Write or update a source's keyring secret",
-		Args:  cobra.RangeArgs(1, 2),
+		Use:     "set <handle> [value]",
+		Short:   "Write or update a source's keyring secret",
+		Example: "  $ iq config keyring set shop",
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -202,9 +210,10 @@ func newConfigKeyringSetCmd() *cobra.Command {
 // the source is never left pointing at a secret that no longer exists.
 func newConfigKeyringRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "rm <handle>",
-		Short: "Delete a source's keyring secret (leaving the source without a credential)",
-		Args:  cobra.ExactArgs(1),
+		Use:     "rm <handle>",
+		Short:   "Delete a source's keyring secret (leaving the source without a credential)",
+		Example: "  $ iq config keyring rm shop",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -242,7 +251,9 @@ func newConfigKeyringMigrateCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "migrate [handle]",
 		Short: "Move an inline password into the keyring (--all for every inline source)",
-		Args:  cobra.MaximumNArgs(1),
+		Example: "  $ iq config keyring migrate shop # one source\n" +
+			"  $ iq config keyring migrate --all # every inline source",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all == (len(args) == 1) {
 				return errors.New("give a source handle or --all, not both or neither")
@@ -357,9 +368,10 @@ func migrateRollback(done []keyringStaged) {
 func newConfigKeyringPruneCmd() *cobra.Command {
 	var dryRun bool
 	c := &cobra.Command{
-		Use:   "prune",
-		Short: "Delete stale keyring entries for non-keyring sources",
-		Args:  cobra.NoArgs,
+		Use:     "prune",
+		Short:   "Delete stale keyring entries for non-keyring sources",
+		Example: "  $ iq config keyring prune",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {

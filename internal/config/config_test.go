@@ -45,12 +45,48 @@ func TestLoadMissing(t *testing.T) {
 	require.Empty(t, c.Group)
 }
 
+func TestLoadMigratesLegacyCollection(t *testing.T) {
+	t.Run("folds the field into the url query", func(t *testing.T) {
+		p := tempConfig(t)
+		raw := "[sources.books]\n" +
+			"url = \"mongodb://h/db\"\n" +
+			"collection = \"orders\"\n"
+		require.NoError(t, os.WriteFile(p, []byte(raw), 0o600))
+
+		c, err := config.Load()
+		require.NoError(t, err)
+		got := c.Sources["books"]
+		require.Equal(t, "mongodb://h/db?collection=orders", got.URL)
+		require.Empty(t, got.Collection)
+
+		// The migration persists: a subsequent Save drops the legacy field.
+		require.NoError(t, c.Save())
+		data, err := os.ReadFile(p)
+		require.NoError(t, err)
+		require.NotContains(t, string(data), "collection = ")
+		require.Contains(t, string(data), "collection=orders")
+	})
+
+	t.Run("leaves a url that already carries a collection", func(t *testing.T) {
+		p := tempConfig(t)
+		raw := "[sources.books]\n" +
+			"url = \"mongodb://h/db?collection=already\"\n" +
+			"collection = \"orders\"\n"
+		require.NoError(t, os.WriteFile(p, []byte(raw), 0o600))
+
+		c, err := config.Load()
+		require.NoError(t, err)
+		require.Equal(t, "mongodb://h/db?collection=already", c.Sources["books"].URL)
+		require.Empty(t, c.Sources["books"].Collection)
+	})
+}
+
 func TestSaveLoadRoundTrip(t *testing.T) {
 	path := tempConfig(t)
 
 	c := &config.Config{Sources: map[string]config.Source{}}
-	require.NoError(t, c.Add("cache", "redis://u:p@localhost:6379/0", ""))
-	require.NoError(t, c.Add("prod/books", "mongodb://localhost:27017/app", "books"))
+	require.NoError(t, c.Add("cache", "redis://u:p@localhost:6379/0"))
+	require.NoError(t, c.Add("prod/books", "mongodb://localhost:27017/app?collection=books"))
 	require.NoError(t, c.SetActive("cache"))
 	require.NoError(t, c.SetGroup("prod"))
 	require.NoError(t, c.Save())
@@ -73,7 +109,7 @@ func TestSaveCreatesDir(t *testing.T) {
 	t.Setenv(config.EnvConfig, nested)
 
 	c := &config.Config{Sources: map[string]config.Source{}}
-	require.NoError(t, c.Add("cache", "redis://localhost:6379/0", ""))
+	require.NoError(t, c.Add("cache", "redis://localhost:6379/0"))
 	require.NoError(t, c.Save())
 
 	_, err := os.Stat(nested)
@@ -100,7 +136,7 @@ func TestAdd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &config.Config{Sources: map[string]config.Source{}}
-			err := c.Add(tt.handle, tt.url, "")
+			err := c.Add(tt.handle, tt.url)
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
 				return
@@ -114,15 +150,15 @@ func TestAdd(t *testing.T) {
 
 func TestAddDuplicate(t *testing.T) {
 	c := &config.Config{Sources: map[string]config.Source{}}
-	require.NoError(t, c.Add("books", "redis://h", ""))
-	err := c.Add("books", "redis://other", "")
+	require.NoError(t, c.Add("books", "redis://h"))
+	err := c.Add("books", "redis://other")
 	require.ErrorIs(t, err, config.ErrDuplicate)
 }
 
 func TestUseKeyring(t *testing.T) {
 	t.Run("marks source keyring-backed", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("sec", "redis://u@h", ""))
+		require.NoError(t, c.Add("sec", "redis://u@h"))
 		require.NoError(t, c.UseKeyring("@sec"))
 		require.True(t, c.Sources["sec"].Keyring)
 	})
@@ -136,7 +172,7 @@ func TestUseKeyring(t *testing.T) {
 func TestClearKeyring(t *testing.T) {
 	t.Run("clears the keyring flag", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("sec", "redis://u@h", ""))
+		require.NoError(t, c.Add("sec", "redis://u@h"))
 		require.NoError(t, c.UseKeyring("sec"))
 		require.NoError(t, c.ClearKeyring("@sec"))
 		require.False(t, c.Sources["sec"].Keyring)
@@ -151,18 +187,17 @@ func TestClearKeyring(t *testing.T) {
 func TestSetSourceURL(t *testing.T) {
 	t.Run("replaces the url, keeping other fields", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("sec", "redis://u:p@h", "coll"))
+		require.NoError(t, c.Add("sec", "redis://u:p@h"))
 		require.NoError(t, c.UseKeyring("sec"))
 		require.NoError(t, c.SetSourceURL("@sec", "redis://u@h"))
 		got := c.Sources["sec"]
 		require.Equal(t, "redis://u@h", got.URL)
-		require.Equal(t, "coll", got.Collection)
 		require.True(t, got.Keyring)
 	})
 
 	t.Run("blank url", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("sec", "redis://u@h", ""))
+		require.NoError(t, c.Add("sec", "redis://u@h"))
 		require.ErrorIs(t, c.SetSourceURL("sec", "  "), config.ErrEmptyURL)
 	})
 
@@ -175,7 +210,7 @@ func TestSetSourceURL(t *testing.T) {
 func TestKeyringFieldRoundTrips(t *testing.T) {
 	tempConfig(t)
 	c := &config.Config{Sources: map[string]config.Source{}}
-	require.NoError(t, c.Add("sec", "redis://u@h", ""))
+	require.NoError(t, c.Add("sec", "redis://u@h"))
 	require.NoError(t, c.UseKeyring("sec"))
 	require.NoError(t, c.Save())
 
@@ -187,20 +222,20 @@ func TestKeyringFieldRoundTrips(t *testing.T) {
 func TestMoveSource(t *testing.T) {
 	t.Run("rename keeps data and follows active", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
+		require.NoError(t, c.Add("books", "mongodb://h/db?collection=books"))
 		require.NoError(t, c.SetActive("books"))
 
 		moved, err := c.Move("books", "library")
 		require.NoError(t, err)
 		require.Equal(t, []config.Rename{{Old: "books", New: "library"}}, moved)
 		require.NotContains(t, c.Sources, "books")
-		require.Equal(t, "books", c.Sources["library"].Collection)
+		require.Equal(t, "mongodb://h/db?collection=books", c.Sources["library"].URL)
 		require.Equal(t, "library", c.Active)
 	})
 
 	t.Run("move into group", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("books", "redis://h", ""))
+		require.NoError(t, c.Add("books", "redis://h"))
 
 		_, err := c.Move("books", "prod/books")
 		require.NoError(t, err)
@@ -209,7 +244,7 @@ func TestMoveSource(t *testing.T) {
 
 	t.Run("moving last member clears active group", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("prod/books", "redis://h", ""))
+		require.NoError(t, c.Add("prod/books", "redis://h"))
 		require.NoError(t, c.SetGroup("prod"))
 
 		_, err := c.Move("prod/books", "books")
@@ -225,22 +260,22 @@ func TestMoveSource(t *testing.T) {
 
 	t.Run("duplicate target", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("a", "redis://h", ""))
-		require.NoError(t, c.Add("b", "redis://h", ""))
+		require.NoError(t, c.Add("a", "redis://h"))
+		require.NoError(t, c.Add("b", "redis://h"))
 		_, err := c.Move("a", "b")
 		require.ErrorIs(t, err, config.ErrDuplicate)
 	})
 
 	t.Run("malformed target", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("a", "redis://h", ""))
+		require.NoError(t, c.Add("a", "redis://h"))
 		_, err := c.Move("a", "bad/")
 		require.ErrorIs(t, err, config.ErrBadHandle)
 	})
 
 	t.Run("same handle is a no-op", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("a", "redis://h", ""))
+		require.NoError(t, c.Add("a", "redis://h"))
 		moved, err := c.Move("a", "a")
 		require.NoError(t, err)
 		require.Empty(t, moved)
@@ -251,8 +286,8 @@ func TestMoveSource(t *testing.T) {
 func TestMoveGroup(t *testing.T) {
 	t.Run("rewrites every member and follows active", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
-		require.NoError(t, c.Add("prod/cache", "redis://h", ""))
+		require.NoError(t, c.Add("prod/books", "mongodb://h/db?collection=books"))
+		require.NoError(t, c.Add("prod/cache", "redis://h"))
 		require.NoError(t, c.SetActive("prod/cache"))
 		require.NoError(t, c.SetGroup("prod"))
 
@@ -268,7 +303,7 @@ func TestMoveGroup(t *testing.T) {
 
 	t.Run("single active member follows the move", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("prod/only", "redis://h", ""))
+		require.NoError(t, c.Add("prod/only", "redis://h"))
 		require.NoError(t, c.SetActive("prod/only"))
 		require.NoError(t, c.SetGroup("prod"))
 
@@ -280,7 +315,7 @@ func TestMoveGroup(t *testing.T) {
 
 	t.Run("nested subgroup re-prefixes and follows active group", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("prod/eu/books", "redis://h", ""))
+		require.NoError(t, c.Add("prod/eu/books", "redis://h"))
 		require.NoError(t, c.SetGroup("prod/eu"))
 
 		_, err := c.Move("prod", "staging")
@@ -291,8 +326,8 @@ func TestMoveGroup(t *testing.T) {
 
 	t.Run("duplicate target member", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("prod/books", "redis://h", ""))
-		require.NoError(t, c.Add("staging/books", "redis://h", ""))
+		require.NoError(t, c.Add("prod/books", "redis://h"))
+		require.NoError(t, c.Add("staging/books", "redis://h"))
 		_, err := c.Move("prod", "staging")
 		require.ErrorIs(t, err, config.ErrDuplicate)
 	})
@@ -301,9 +336,9 @@ func TestMoveGroup(t *testing.T) {
 func TestRemoveAll(t *testing.T) {
 	newCfg := func() *config.Config {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("cache", "redis://h", ""))
-		require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
-		require.NoError(t, c.Add("prod/cache", "redis://h", ""))
+		require.NoError(t, c.Add("cache", "redis://h"))
+		require.NoError(t, c.Add("prod/books", "mongodb://h/db?collection=books"))
+		require.NoError(t, c.Add("prod/cache", "redis://h"))
 		return c
 	}
 
@@ -362,7 +397,7 @@ func TestRemoveAll(t *testing.T) {
 
 	t.Run("clears active when the only removed source was active", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("only", "redis://h", ""))
+		require.NoError(t, c.Add("only", "redis://h"))
 		require.NoError(t, c.SetActive("only"))
 		_, err := c.RemoveAll([]string{"only"})
 		require.NoError(t, err)
@@ -371,9 +406,9 @@ func TestRemoveAll(t *testing.T) {
 
 	t.Run("removed sources come out sorted", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("b", "redis://h", ""))
-		require.NoError(t, c.Add("a", "redis://h", ""))
-		require.NoError(t, c.Add("c", "redis://h", ""))
+		require.NoError(t, c.Add("b", "redis://h"))
+		require.NoError(t, c.Add("a", "redis://h"))
+		require.NoError(t, c.Add("c", "redis://h"))
 		removed, err := c.RemoveAll([]string{"c", "a", "b"})
 		require.NoError(t, err)
 		require.Equal(t, []string{"a", "b", "c"},
@@ -383,10 +418,10 @@ func TestRemoveAll(t *testing.T) {
 
 func TestGroups(t *testing.T) {
 	c := &config.Config{Sources: map[string]config.Source{}}
-	require.NoError(t, c.Add("top", "redis://h", ""))
-	require.NoError(t, c.Add("prod/books", "redis://h", ""))
-	require.NoError(t, c.Add("prod/eu/cache", "redis://h", ""))
-	require.NoError(t, c.Add("dev/cache", "redis://h", ""))
+	require.NoError(t, c.Add("top", "redis://h"))
+	require.NoError(t, c.Add("prod/books", "redis://h"))
+	require.NoError(t, c.Add("prod/eu/cache", "redis://h"))
+	require.NoError(t, c.Add("dev/cache", "redis://h"))
 
 	require.Equal(t, []string{"dev", "prod", "prod/eu"}, c.Groups())
 	require.Equal(t, 2, c.CountGroup("prod")) // prod/books, prod/eu/cache
@@ -396,7 +431,7 @@ func TestGroups(t *testing.T) {
 
 func TestGroupsEmpty(t *testing.T) {
 	c := &config.Config{Sources: map[string]config.Source{}}
-	require.NoError(t, c.Add("top", "redis://h", ""))
+	require.NoError(t, c.Add("top", "redis://h"))
 	require.Empty(t, c.Groups())
 }
 
@@ -413,7 +448,7 @@ func TestRemove(t *testing.T) {
 
 	t.Run("clears dangling active", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("books", "redis://h", ""))
+		require.NoError(t, c.Add("books", "redis://h"))
 		require.NoError(t, c.SetActive("books"))
 		require.NoError(t, c.Remove("books"))
 		require.Empty(t, c.Active)
@@ -421,7 +456,7 @@ func TestRemove(t *testing.T) {
 
 	t.Run("clears dangling group", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("prod/books", "redis://h", ""))
+		require.NoError(t, c.Add("prod/books", "redis://h"))
 		require.NoError(t, c.SetGroup("prod"))
 		require.NoError(t, c.Remove("prod/books"))
 		require.Empty(t, c.Group)
@@ -436,7 +471,7 @@ func TestSetActive(t *testing.T) {
 
 	t.Run("stores full handle via group", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("prod/db", "redis://h", ""))
+		require.NoError(t, c.Add("prod/db", "redis://h"))
 		require.NoError(t, c.SetGroup("prod"))
 		require.NoError(t, c.SetActive("db"))
 		require.Equal(t, "prod/db", c.Active)
@@ -445,7 +480,7 @@ func TestSetActive(t *testing.T) {
 
 func TestSetGroup(t *testing.T) {
 	c := &config.Config{Sources: map[string]config.Source{}}
-	require.NoError(t, c.Add("prod/db", "redis://h", ""))
+	require.NoError(t, c.Add("prod/db", "redis://h"))
 
 	require.ErrorIs(t, c.SetGroup("dev"), config.ErrUnknownGroup)
 
@@ -458,16 +493,16 @@ func TestSetGroup(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	c := &config.Config{Sources: map[string]config.Source{}}
-	require.NoError(t, c.Add("cache", "redis://top", ""))
-	require.NoError(t, c.Add("prod/cache", "redis://prod", ""))
-	require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
-	require.NoError(t, c.Add("widgets", "redis://widgets", "")) // top-level only
+	require.NoError(t, c.Add("cache", "redis://top"))
+	require.NoError(t, c.Add("prod/cache", "redis://prod"))
+	require.NoError(t, c.Add("prod/books", "mongodb://h/db?collection=books"))
+	require.NoError(t, c.Add("widgets", "redis://widgets")) // top-level only
 
 	t.Run("absolute handle", func(t *testing.T) {
 		s, full, ok := c.Resolve("prod/books")
 		require.True(t, ok)
 		require.Equal(t, "prod/books", full)
-		require.Equal(t, "books", s.Collection)
+		require.Equal(t, "mongodb://h/db?collection=books", s.URL)
 	})
 
 	t.Run("active group prefers group member", func(t *testing.T) {

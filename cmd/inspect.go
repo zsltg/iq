@@ -32,11 +32,13 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"The positional argument names the source, like `iq inspect prod`; with none it\n" +
 		"uses --src or the active source. MongoDB sources accept sq-style\n" +
 		"`<source>.<collection>` addressing (`iq inspect prod.books`) to pick the\n" +
-		"collection; --collection still overrides it, and Redis sources take no collection.\n\n" +
+		"collection, overriding the source URL's ?collection= default; Redis sources take\n" +
+		"no collection.\n\n" +
 		"MongoDB — runs diagnostic database commands; no --only runs them all,\n" +
 		"--only narrows to the named ones:\n" +
 		"  " + strings.Join(mongoInspectCmds, "  ") + "\n" +
-		"  (collStats needs a collection via -c or on the source)\n\n" +
+		"  (collStats needs a collection: address it as source.collection or set\n" +
+		"  ?collection= on the source url)\n\n" +
 		"Redis — runs INFO; --only narrows it to those sections\n" +
 		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
 		"  server  clients  memory  persistence  stats  replication  cpu  keyspace\n\n" +
@@ -47,13 +49,17 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		Use:   "inspect [source]",
 		Short: "Show a source's native server/database introspection",
 		Long:  long,
-		Args:  cobra.MaximumNArgs(1),
+		Example: "  $ iq inspect                     # active source, database-level\n" +
+			"  $ iq inspect shop                # a named source, database-level\n" +
+			"  $ iq inspect shop.orders -j      # one collection (sq-style handle.collection)\n" +
+			"  $ iq inspect shop --only dbStats,serverStatus # narrow db-level sections",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			arg := ""
 			if len(args) > 0 {
 				arg = args[0]
 			}
-			if err := resolveInspectSource(cmd, cfg, arg); err != nil {
+			if err := resolveInspectSource(cfg, arg); err != nil {
 				return err
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
@@ -168,15 +174,16 @@ func inspectMongo(ctx context.Context, out io.Writer, st store, cfg *config, sub
 		sub   string
 		value any
 	}
+	coll := mongoCollection(cfg)
 	results := make([]result, 0, len(which))
 	for _, sub := range which {
-		if sub == "collStats" && cfg.collection == "" {
+		if sub == "collStats" && coll == "" {
 			if explicit {
-				return fmt.Errorf("collStats needs a collection; set one with -c or on the source")
+				return fmt.Errorf("collStats needs a collection; address it as handle.collection or set ?collection= on the source url")
 			}
 			continue // skip in the run-all case
 		}
-		res, err := query.NewRunner(st).Run(ctx, []string{mongoInspectDoc(sub, cfg.collection)})
+		res, err := query.NewRunner(st).Run(ctx, []string{mongoInspectDoc(sub, coll)})
 		if err != nil {
 			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
 		}

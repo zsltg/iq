@@ -35,7 +35,11 @@ type driver struct {
 	// has no upstream server to suggest — so doc/versions may be empty for it and
 	// it is left out of the connection-scheme hint in error messages.
 	readOnly bool
-	open     func(ctx context.Context, cfg *config) (store, error)
+	// addressable marks a backend whose sources take a dotted address suffix
+	// (handle.address) naming a sub-container — MongoDB's collection. A
+	// non-addressable backend (Redis, file) rejects an address at resolve time.
+	addressable bool
+	open        func(ctx context.Context, cfg *config) (store, error)
 	// explainPlan describes, without connecting, the backend calls this driver
 	// would make for a classified query and pushed predicate — the data the query
 	// plan (--explain/--verbose) shows.
@@ -53,13 +57,14 @@ type driver struct {
 // listing order of `iq driver ls` and the enumeration order of expectedSchemes.
 var drivers = []driver{
 	{
-		name:     "mongo",
-		desc:     "MongoDB document store",
-		schemes:  []string{"mongodb", "mongodb+srv"},
-		doc:      "https://www.mongodb.com/docs/",
-		versions: "4.2+",
+		name:        "mongo",
+		desc:        "MongoDB document store",
+		schemes:     []string{"mongodb", "mongodb+srv"},
+		doc:         "https://www.mongodb.com/docs/",
+		versions:    "4.2+",
+		addressable: true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
-			return iqmongo.Open(ctx, cfg.url, cfg.collection, cfg.trace, cfg.decimalMode)
+			return iqmongo.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
 		explainPlan:  iqmongo.ExplainPlan,
 		explainWrite: iqmongo.ExplainWrite,
@@ -175,8 +180,9 @@ type driverRow struct {
 // subcommand lists the drivers iq can dispatch to, mirroring sq's `driver ls`.
 func newDriverCmd() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "driver",
-		Short: "Inspect the backends iq can talk to",
+		Use:     "driver",
+		Short:   "Inspect the backends iq can talk to",
+		Example: "  $ iq driver ls # list the backend drivers iq can dispatch to",
 	}
 	c.AddCommand(newDriverLsCmd())
 	return c
@@ -193,7 +199,8 @@ func newDriverLsCmd() *cobra.Command {
 			"name (as `iq ls` reports it), a description, the URL schemes that select it, the\n" +
 			"backend server versions the bundled client library supports, and a link to its\n" +
 			"upstream documentation. -j/--json or -y/--yaml emit machine-readable output.",
-		Args: cobra.NoArgs,
+		Example: "  $ iq driver ls",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return listDrivers(cmd.OutOrStdout(), jsonOut, yamlOut)
 		},

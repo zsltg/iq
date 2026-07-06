@@ -22,7 +22,7 @@ func TestKeyringStatusCell(t *testing.T) {
 // (when pw is non-empty) stores its secret in the fake keyring.
 func seedKeyringSource(t *testing.T, c *iqconfig.Config, fk *fakeKeyring, handle, url string, keyring bool, pw string) {
 	t.Helper()
-	require.NoError(t, c.Add(handle, url, ""))
+	require.NoError(t, c.Add(handle, url))
 	if keyring {
 		require.NoError(t, c.UseKeyring(handle))
 	}

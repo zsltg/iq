@@ -23,7 +23,7 @@ func configEnv(t *testing.T) string {
 func seedSource(t *testing.T, handle string) {
 	t.Helper()
 	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
-	require.NoError(t, cf.Add(handle, "mongodb://h/db", "books"))
+	require.NoError(t, cf.Add(handle, "mongodb://h/db?collection=books"))
 	require.NoError(t, cf.Save())
 }
 
@@ -172,7 +172,7 @@ func TestConfigLs(t *testing.T) {
 func TestConfigView(t *testing.T) {
 	configEnv(t)
 	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
-	require.NoError(t, cf.Add("cache", "redis://u:secret@h:6379/0", ""))
+	require.NoError(t, cf.Add("cache", "redis://u:secret@h:6379/0"))
 	require.NoError(t, cf.SetOption("", "format", "yaml"))
 	require.NoError(t, cf.Save())
 
@@ -244,7 +244,7 @@ func TestApplyStoredOptions(t *testing.T) {
 	t.Run("per-source option beats base", func(t *testing.T) {
 		configEnv(t)
 		cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
-		require.NoError(t, cf.Add("prod", "mongodb://h/db", "books"))
+		require.NoError(t, cf.Add("prod", "mongodb://h/db?collection=books"))
 		require.NoError(t, cf.SetOption("", "format", "yaml"))
 		require.NoError(t, cf.SetOption("prod", "format", "jsonl"))
 		require.NoError(t, cf.Save())
@@ -258,7 +258,7 @@ func TestApplyStoredOptions(t *testing.T) {
 	t.Run("per-source persistent option (log.level) is applied", func(t *testing.T) {
 		configEnv(t)
 		cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
-		require.NoError(t, cf.Add("prod", "mongodb://h/db", "books"))
+		require.NoError(t, cf.Add("prod", "mongodb://h/db?collection=books"))
 		require.NoError(t, cf.SetOption("prod", "log.level", "WARN"))
 		require.NoError(t, cf.Save())
 

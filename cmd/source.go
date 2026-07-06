@@ -27,7 +27,6 @@ import (
 func newAddCmd(cfg *config) *cobra.Command {
 	var (
 		handle         string
-		collection     string
 		store          string
 		driverFlag     string
 		active         bool
@@ -41,13 +40,22 @@ func newAddCmd(cfg *config) *cobra.Command {
 			"positional argument; -n/--handle names the source, and when omitted a handle is\n" +
 			"derived from the URL (the MongoDB database name, else the driver). The backend is\n" +
 			"inferred from the URL scheme: redis:// (rediss://) or mongodb:// (mongodb+srv://);\n" +
-			"-d/--driver asserts the expected driver. For MongoDB, -c names the collection\n" +
-			"stored with the source. Handles may be grouped with '/' (`iq add -n prod/books\n" +
+			"-d/--driver asserts the expected driver. For MongoDB, a default collection rides\n" +
+			"in the URL as ?collection= (`mongodb://host/db?collection=orders`). Handles may be\n" +
+			"grouped with '/' (`iq add -n prod/books\n" +
 			"mongodb://...`). -p prompts for the URL password (or reads it from stdin); with\n" +
 			"--store keyring the password is moved to the OS keyring and stripped from the\n" +
 			"stored URL. -a makes the new source active. The source is pinged before it is\n" +
 			"saved unless --skip-verify is set. Note: `iq add` is this command, which shadows\n" +
 			"jq's built-in `add` filter — write the filter as `[ .a, .b ] | add`.",
+		Example: "  # Register a Redis source named \"cache\".\n" +
+			"  $ iq add -n cache redis://localhost:6379/0\n" +
+			"\n" +
+			"  # Register a Mongo source; ?collection= sets its default collection.\n" +
+			"  $ iq add 'mongodb://localhost:27017/shop?collection=orders'\n" +
+			"\n" +
+			"  # A source needing auth, made active: prompt for the password, keep it in the keyring.\n" +
+			"  $ iq add -a -p --store keyring 'mongodb://user@localhost:27017/shop?collection=orders'",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rawURL := args[0]
@@ -61,6 +69,9 @@ func newAddCmd(cfg *config) *cobra.Command {
 			}
 			if driverFlag != "" && driverName(rawURL) != driverFlag {
 				return fmt.Errorf("--driver %q does not match url scheme %q:// (driver %q)", driverFlag, schemeOf(rawURL), driverName(rawURL))
+			}
+			if err := urlAddressUnsupported(rawURL); err != nil {
+				return err
 			}
 			// A prompted password is spliced into the URL before storage, so the
 			// keyring/inline path below handles it uniformly.
@@ -98,14 +109,14 @@ func newAddCmd(cfg *config) *cobra.Command {
 			if !cmd.Flags().Changed("handle") {
 				name = suggestHandle(cf, rawURL)
 			}
-			if err := cf.Add(name, storedURL, collection); err != nil {
+			if err := cf.Add(name, storedURL); err != nil {
 				return err
 			}
 			// Verify reachability before persisting so a failed add leaves no
 			// trace. rawURL still carries the password (stripped from storedURL for
 			// a keyring source), so it is what we dial.
 			if !skipVerify {
-				if err := verifySource(cmd.Context(), rawURL, collection, cfg.timeout); err != nil {
+				if err := verifySource(cmd.Context(), rawURL, cfg.timeout); err != nil {
 					return fmt.Errorf("verify %s: %w (use --skip-verify to add it anyway)", strings.TrimPrefix(name, "@"), err)
 				}
 			}
@@ -133,7 +144,6 @@ func newAddCmd(cfg *config) *cobra.Command {
 		},
 	}
 	c.Flags().StringVarP(&handle, "handle", "n", "", "handle for the source; derived from the url when omitted")
-	c.Flags().StringVarP(&collection, "collection", "c", "", "MongoDB collection stored with this source (ignored for Redis)")
 	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis); must match the url scheme")
 	c.Flags().BoolVarP(&active, "active", "a", false, "make the new source the active source")
 	c.Flags().BoolVarP(&passwordPrompt, "password", "p", false, "prompt for the url password (or read it from stdin)")
@@ -253,6 +263,11 @@ func newLsCmd(cfg *config) *cobra.Command {
 			"Passwords are redacted by default: --reveal prints a password stored inline in\n" +
 			"the config verbatim, and --expand resolves a keyring-backed source's stored\n" +
 			"password and inlines it (combine both to print a keyring password verbatim).",
+		Example: "  $ iq ls               # list saved sources (active marked *)\n" +
+			"  $ iq ls -v            # add the driver column\n" +
+			"  $ iq ls -g            # list groups instead of sources\n" +
+			"  $ iq ls -j            # machine-readable JSON\n" +
+			"  $ iq ls prod --reveal # one group, inline passwords shown",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
@@ -290,6 +305,9 @@ func newRmCmd() *cobra.Command {
 			"group name (which removes every source under it). The removal is atomic: if any\n" +
 			"argument names neither a source nor a group, nothing is removed. A keyring-backed\n" +
 			"source's stored credential is deleted too.",
+		Example: "  $ iq rm cache               # remove one source\n" +
+			"  $ iq rm cache shop prod/old # several at once\n" +
+			"  $ iq rm prod                # a whole group",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
@@ -327,6 +345,9 @@ func newMvCmd() *cobra.Command {
 			"source under it is re-prefixed (`iq mv prod staging` renames prod/* to staging/*).\n" +
 			"The active source and group follow the move. A keyring-backed source's stored\n" +
 			"credential moves with it.",
+		Example: "  $ iq mv shop catalog   # rename a source\n" +
+			"  $ iq mv shop prod/shop # move into a group\n" +
+			"  $ iq mv prod staging   # rename a whole group (prod/* -> staging/*)",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
@@ -378,7 +399,9 @@ func newSrcCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "src [name]",
 		Short: "Show or set the active source",
-		Args:  cobra.MaximumNArgs(1),
+		Example: "  $ iq src      # show the active source\n" +
+			"  $ iq src shop # set it",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -413,7 +436,10 @@ func newGroupCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "group [name]",
 		Short: "Show, set, or clear the active group",
-		Args:  cobra.MaximumNArgs(1),
+		Example: "  $ iq group         # show the active group\n" +
+			"  $ iq group prod    # set it (handles resolve within it)\n" +
+			"  $ iq group --clear # back to top-level handles",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {

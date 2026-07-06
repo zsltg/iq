@@ -18,7 +18,7 @@ func seedFileSource(t *testing.T, jsonl string) {
 	path := filepath.Join(t.TempDir(), "dump.jsonl")
 	require.NoError(t, os.WriteFile(path, []byte(jsonl), 0o600))
 	c := newSeed()
-	require.NoError(t, c.Add("snap", "file://"+path, ""))
+	require.NoError(t, c.Add("snap", "file://"+path))
 	seedConfig(t, c)
 }
 
@@ -87,8 +87,8 @@ func TestMoveInsertRoundTripRedisIntegration(t *testing.T) {
 	seedRedis(t, srcURL, map[string]string{"k1": "v1", "k2": "v2"})
 
 	c := newSeed()
-	require.NoError(t, c.Add("src", srcURL, ""))
-	require.NoError(t, c.Add("dst", dstURL, ""))
+	require.NoError(t, c.Add("src", srcURL))
+	require.NoError(t, c.Add("dst", dstURL))
 	seedConfig(t, c)
 
 	root, _ := newRootCmd()

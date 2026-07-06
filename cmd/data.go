@@ -44,6 +44,9 @@ func newDataCmd(cfg *config) *cobra.Command {
 			"copy/restore, `iq --src <s> --typed` to dump.)\n\n" +
 			"--explain shows the plan without connecting; --dry-run reports the real effect\n" +
 			"without changing anything.",
+		Example: "  # Empty a source's container but keep it; or remove it entirely (Mongo).\n" +
+			"  $ iq data clear cache\n" +
+			"  $ iq data drop shop.orders",
 	}
 	c.PersistentFlags().BoolVar(&df.explain, "explain", false, "describe the plan without connecting or changing anything")
 	c.PersistentFlags().BoolVar(&df.dryRun, "dry-run", false, "report the real effect without changing anything")
@@ -57,12 +60,12 @@ func newDataCmd(cfg *config) *cobra.Command {
 // endpoint is one side of a copy: either a registered source (a connectable
 // keyspace) or a file path (a typed JSONL dump, "-" or "" meaning stdin/stdout).
 type endpoint struct {
-	isFile     bool
-	path       string // for a file endpoint; "" or "-" is stdin (source) / stdout (dest)
-	url        string
-	collection string
-	driver     string
-	handle     string
+	isFile  bool
+	path    string // for a file endpoint; "" or "-" is stdin (source) / stdout (dest)
+	url     string
+	address string // dotted address override (a MongoDB collection); "" when absent
+	driver  string
+	handle  string
 }
 
 // resolveEndpoint turns one positional (or an empty dst) into an endpoint. A
@@ -81,7 +84,7 @@ func resolveEndpoint(cf *iqconfig.Config, arg string, isDst bool) (endpoint, err
 	if arg == "-" {
 		return endpoint{isFile: true, path: "-"}, nil
 	}
-	name, coll, hasColl := splitSourceArg(cf, arg)
+	name, coll, _ := splitSourceArg(cf, arg)
 	src, full, ok := cf.Resolve(name)
 	if !ok {
 		return endpoint{}, fmt.Errorf("unknown source %q; register it with `iq add` "+
@@ -91,22 +94,18 @@ func resolveEndpoint(cf *iqconfig.Config, arg string, isDst bool) (endpoint, err
 	if err != nil {
 		return endpoint{}, fmt.Errorf("source %q: %w", full, err)
 	}
-	collection := src.Collection
-	if hasColl {
-		if strings.HasPrefix(schemeOf(u), "redis") {
-			return endpoint{}, fmt.Errorf("redis sources have no collections; drop the %q suffix", coll)
-		}
-		collection = coll
+	if err := addressUnsupported(u, coll); err != nil {
+		return endpoint{}, err
 	}
-	return endpoint{url: u, collection: collection, driver: driverName(u), handle: full}, nil
+	return endpoint{url: u, address: coll, driver: driverName(u), handle: full}, nil
 }
 
 // label names an endpoint for a message: its handle (with collection) for a
 // source, or a friendly file label for a file endpoint.
 func (e endpoint) label() string {
 	if !e.isFile {
-		if e.collection != "" {
-			return fmt.Sprintf("%s.%s", e.handle, e.collection)
+		if e.address != "" {
+			return fmt.Sprintf("%s.%s", e.handle, e.address)
 		}
 		return e.handle
 	}

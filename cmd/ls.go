@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
@@ -49,7 +50,7 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 				Handle:     h.Name,
 				Driver:     driverName(h.Source.URL),
 				Location:   displayLocation(h.Source, h.Name, reveal, expand),
-				Collection: h.Source.Collection,
+				Collection: iqmongo.CollectionFromURI(h.Source.URL),
 				Keyring:    h.Source.Keyring,
 				Active:     h.Name == cf.Active,
 			})
@@ -78,8 +79,8 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 			marker = "*"
 		}
 		coll := ""
-		if h.Source.Collection != "" {
-			coll = "(" + h.Source.Collection + ")"
+		if c := iqmongo.CollectionFromURI(h.Source.URL); c != "" {
+			coll = "(" + c + ")"
 		}
 		name := tableCell{text: marker + " " + h.Name}
 		if active {

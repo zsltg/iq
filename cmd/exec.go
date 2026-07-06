@@ -22,12 +22,18 @@ func newExecCmd(cfg *config) *cobra.Command {
 		Long: "Forward a command to the backend verbatim. For Redis, a command and operands:\n" +
 			"`iq exec SET greeting hello`, `iq exec HGETALL book:2`. For MongoDB, one JSON\n" +
 			"command document run with runCommand: `iq exec '{\"find\":\"books\",\"filter\":{}}'`.",
+		Example: "  # Redis: a command and its operands.\n" +
+			"  $ iq exec SET greeting hello\n" +
+			"  $ iq exec HGETALL user:2\n" +
+			"\n" +
+			"  # MongoDB: one runCommand document (database-scoped; no collection needed).\n" +
+			"  $ iq exec '{\"find\":\"orders\",\"filter\":{}}' --src shop",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Log only the command verb: Redis operands (SET greeting hello) may
 			// carry values, so they are never logged.
 			cfg.log().Info("exec forward", "verb", args[0])
-			if err := resolveSource(cmd, cfg); err != nil {
+			if err := resolveSource(cfg); err != nil {
 				return err
 			}
 

@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/spf13/cobra"
-
+	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
@@ -14,11 +13,12 @@ import (
 // source). The query path checks for it to fall back to piped stdin as a source.
 var errNoSource = errors.New("no source selected")
 
-// resolveSource fills cfg.url and cfg.collection from the selected source before
-// the store opens. Precedence: the --src flag, then the active source; with
-// neither it errors — there is no URL or environment fallback. An explicit
-// --collection overrides the source's collection. openStore stays unchanged.
-func resolveSource(cmd *cobra.Command, cfg *config) error {
+// resolveSource fills cfg.url and cfg.address from the selected source before the
+// store opens. Precedence: the --src flag, then the active source; with neither
+// it errors — there is no URL or environment fallback. The name may carry a
+// dotted address (--src shop.orders), passed opaquely to the driver; the source's
+// own default lives in its URL. openStore stays unchanged.
+func resolveSource(cfg *config) error {
 	cf, err := iqconfig.Load()
 	if err != nil {
 		return err
@@ -30,37 +30,65 @@ func resolveSource(cmd *cobra.Command, cfg *config) error {
 	if name == "" {
 		return fmt.Errorf("%w; add one with `iq add <url>` then select it with `iq src <name>`", errNoSource)
 	}
-	src, full, ok := cf.Resolve(name)
+	base, addr, _ := splitSourceArg(cf, name)
+	src, full, ok := cf.Resolve(base)
 	if !ok {
-		return fmt.Errorf("unknown source %q; run `iq ls`", name)
+		return fmt.Errorf("unknown source %q; run `iq ls`", base)
 	}
 	u, err := effectiveURL(src, full)
 	if err != nil {
 		return err
 	}
+	if err := addressUnsupported(u, addr); err != nil {
+		return err
+	}
 	cfg.url = u
 	cfg.source = src
 	cfg.handle = full
-	if !cmd.Flags().Changed("collection") {
-		cfg.collection = src.Collection
-	}
+	cfg.address = addr
 	// Log the resolved source with its location redacted — never the raw URL, so
 	// a stored credential cannot reach a log file.
 	cfg.log().Info("source resolved", "handle", cfg.handle, "driver", schemeOf(cfg.url), "location", redactURL(cfg.url))
 	return nil
 }
 
+// addressUnsupported rejects a dotted address for a source whose driver takes
+// none (only MongoDB is addressable). It centralizes the guard every resolve
+// site shares. An empty address is always fine.
+func addressUnsupported(rawURL, addr string) error {
+	if addr == "" {
+		return nil
+	}
+	if d, ok := driverForScheme(schemeOf(rawURL)); ok && d.addressable {
+		return nil
+	}
+	return fmt.Errorf("%s sources have no collections; drop the %q suffix", driverName(rawURL), addr)
+}
+
+// urlAddressUnsupported rejects a source URL that carries a driver-owned address
+// param (MongoDB's ?collection=) on a backend that takes none (Redis, file). It
+// guards `iq add` so a mistaken default fails fast rather than at connect time.
+func urlAddressUnsupported(rawURL string) error {
+	c := iqmongo.CollectionFromURI(rawURL)
+	if c == "" {
+		return nil
+	}
+	if d, ok := driverForScheme(schemeOf(rawURL)); ok && d.addressable {
+		return nil
+	}
+	return fmt.Errorf("%s sources have no collections; drop the ?collection= from the url", driverName(rawURL))
+}
+
 // resolveInspectSource fills cfg from the source named by the inspect positional,
-// or --src, or the active source (in that precedence). The positional accepts
-// sq-style `<source>.<collection>` addressing; the collection there overrides the
-// source's stored one for MongoDB, but is rejected for Redis, which has no
-// collections. An explicit --collection flag still wins over both.
-func resolveInspectSource(cmd *cobra.Command, cfg *config, arg string) error {
+// or --src, or the active source (in that precedence). The chosen name accepts
+// sq-style `<source>.<collection>` addressing; the address overrides the source's
+// URL default for MongoDB, but is rejected for a backend that takes none (Redis).
+func resolveInspectSource(cfg *config, arg string) error {
 	cf, err := iqconfig.Load()
 	if err != nil {
 		return err
 	}
-	name, coll, hasColl := splitSourceArg(cf, arg)
+	name := arg
 	if name == "" {
 		name = cfg.src
 	}
@@ -70,29 +98,33 @@ func resolveInspectSource(cmd *cobra.Command, cfg *config, arg string) error {
 	if name == "" {
 		return fmt.Errorf("%w; add one with `iq add <url>` then select it with `iq src <name>`", errNoSource)
 	}
-	src, full, ok := cf.Resolve(name)
+	base, addr, _ := splitSourceArg(cf, name)
+	src, full, ok := cf.Resolve(base)
 	if !ok {
-		return fmt.Errorf("unknown source %q; run `iq ls`", name)
+		return fmt.Errorf("unknown source %q; run `iq ls`", base)
 	}
 	u, err := effectiveURL(src, full)
 	if err != nil {
 		return err
 	}
-	if hasColl && strings.HasPrefix(schemeOf(u), "redis") {
-		return fmt.Errorf("redis sources have no collections; drop the %q suffix", coll)
+	if err := addressUnsupported(u, addr); err != nil {
+		return err
 	}
 	cfg.url = u
 	cfg.source = src
 	cfg.handle = full
-	switch {
-	case cmd.Flags().Changed("collection"):
-		// An explicit --collection flag wins; leave cfg.collection as it set it.
-	case hasColl:
-		cfg.collection = coll
-	default:
-		cfg.collection = src.Collection
-	}
+	cfg.address = addr
 	return nil
+}
+
+// mongoCollection returns the effective MongoDB collection for a resolved source:
+// the dotted address override when set, else the URL's ?collection= default. Only
+// the Mongo-aware inspect path calls it.
+func mongoCollection(cfg *config) string {
+	if cfg.address != "" {
+		return cfg.address
+	}
+	return iqmongo.CollectionFromURI(cfg.url)
 }
 
 // splitSourceArg parses an inspect positional into a source name and an optional

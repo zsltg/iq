@@ -39,10 +39,9 @@ var flagGroupOrder = []string{
 // and local flag registered in newRootCmd appears here exactly once; a flag left
 // out would silently land in groupOther, which the coverage-guard test rejects.
 var rootFlagGroups = map[string]string{
-	"src":        groupSource,
-	"config":     groupSource,
-	"collection": groupSource,
-	"timeout":    groupSource,
+	"src":     groupSource,
+	"config":  groupSource,
+	"timeout": groupSource,
 
 	"unbounded":      groupQuery,
 	"no-compile":     groupQuery,

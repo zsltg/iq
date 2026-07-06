@@ -23,7 +23,7 @@ const scanBatch = 100
 
 // errNoCollection is returned when a collection-scoped operation runs without a
 // collection selected. It is a sentinel so the CLI can surface a clear hint.
-var errNoCollection = errors.New("mongodb: no collection selected; pass --collection")
+var errNoCollection = errors.New("mongodb: no collection selected; address it as handle.collection or set ?collection= in the source url")
 
 // Store adapts one MongoDB database to the query ports. The jq path is scoped to
 // a single collection (the keyspace); the raw path runs database commands and
@@ -36,14 +36,54 @@ type Store struct {
 	decimal    numfmt.DecimalMode
 }
 
+// collectionParam is the URL query key a mongodb:// source uses to carry its
+// default collection, e.g. mongodb://host/db?collection=orders. It mirrors the
+// file driver's ?format=: a per-source option stored in the location string, so
+// the CLI core stays free of any collection vocabulary.
+const collectionParam = "collection"
+
+// SplitCollection separates a mongodb:// URI's ?collection= default from the
+// connection URI. It returns the URI with the param removed — safe to hand the
+// driver, which rejects unknown URI options — and the collection it carried (""
+// when absent). A URI that does not parse is returned unchanged with no
+// collection, leaving the parse error to surface at connect time.
+func SplitCollection(uri string) (clean, collection string) {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri, ""
+	}
+	q := u.Query()
+	collection = q.Get(collectionParam)
+	if collection == "" {
+		return uri, ""
+	}
+	q.Del(collectionParam)
+	u.RawQuery = q.Encode()
+	return u.String(), collection
+}
+
+// CollectionFromURI returns the ?collection= default a mongodb:// URI carries, or
+// "" if none. The CLI uses it to display and reason about a source's default
+// collection without duplicating the query-string parsing.
+func CollectionFromURI(uri string) string {
+	_, c := SplitCollection(uri)
+	return c
+}
+
 // Open connects to the MongoDB server named by a mongodb:// URI and verifies the
 // connection with a ping so a bad URI or unreachable server fails fast. The
-// database is taken from the URI path; collection is the jq keyspace (may be
-// empty for raw-only use). When trace is non-nil, each query command the driver
+// database is taken from the URI path. The collection (the jq keyspace, may be
+// empty for raw-only use) is the address override when non-empty, else the URI's
+// ?collection= default. When trace is non-nil, each query command the driver
 // issues is logged to it (the CLI's --verbose trace); handshake and auth commands
 // are omitted, so no credential is written. dec chooses how Decimal128 values are
 // presented to the filter.
-func Open(ctx context.Context, uri, collection string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
+func Open(ctx context.Context, uri, address string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
+	uri, def := SplitCollection(uri)
+	collection := address
+	if collection == "" {
+		collection = def
+	}
 	dbName, err := databaseFromURI(uri)
 	if err != nil {
 		return nil, err

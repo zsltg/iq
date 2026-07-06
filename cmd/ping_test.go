@@ -13,9 +13,9 @@ import (
 func TestPingTargets(t *testing.T) {
 	seed := func() *iqconfig.Config {
 		c := newSeed()
-		require.NoError(t, c.Add("cache", "redis://h", ""))
-		require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
-		require.NoError(t, c.Add("prod/cache", "redis://h", ""))
+		require.NoError(t, c.Add("cache", "redis://h"))
+		require.NoError(t, c.Add("prod/books", "mongodb://h/db?collection=books"))
+		require.NoError(t, c.Add("prod/cache", "redis://h"))
 		return c
 	}
 
@@ -53,7 +53,7 @@ func TestPingTargets(t *testing.T) {
 
 func TestPingUnreachable(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("dead", "redis://127.0.0.1:1", ""))
+	require.NoError(t, c.Add("dead", "redis://127.0.0.1:1"))
 	seedConfig(t, c)
 
 	cfg := &config{timeout: 2 * time.Second}
@@ -72,7 +72,7 @@ func TestPingIntegration(t *testing.T) {
 		url = "redis://localhost:6379/0"
 	}
 	c := newSeed()
-	require.NoError(t, c.Add("live", url, ""))
+	require.NoError(t, c.Add("live", url))
 	require.NoError(t, c.SetActive("live"))
 	seedConfig(t, c)
 

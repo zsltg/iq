@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
+	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
@@ -66,7 +67,7 @@ func TestSupportedScheme(t *testing.T) {
 func TestAddCommand(t *testing.T) {
 	seedConfig(t, newSeed())
 
-	out, err := runCmd(t, newAddCmd(&config{}), "-n", "books", "mongodb://h/db", "-c", "books", "--skip-verify")
+	out, err := runCmd(t, newAddCmd(&config{}), "-n", "books", "mongodb://h/db?collection=books", "--skip-verify")
 	require.NoError(t, err)
 	require.Contains(t, out, "added source books")
 
@@ -74,10 +75,16 @@ func TestAddCommand(t *testing.T) {
 	require.NoError(t, err)
 	s, ok := cf.Sources["books"]
 	require.True(t, ok)
-	require.Equal(t, "books", s.Collection)
+	// The default collection rides in the URL now, not a separate field.
+	require.Equal(t, "books", iqmongo.CollectionFromURI(s.URL))
+	require.Empty(t, s.Collection)
 
 	_, err = runCmd(t, newAddCmd(&config{}), "postgres://h/db", "--skip-verify")
 	require.ErrorContains(t, err, "unsupported url scheme")
+
+	// A driver-owned collection param is rejected for a backend that has none.
+	_, err = runCmd(t, newAddCmd(&config{}), "redis://h?collection=x", "--skip-verify")
+	require.ErrorContains(t, err, "no collections")
 }
 
 func TestAddSuggestsHandle(t *testing.T) {
@@ -130,8 +137,8 @@ func TestSuggestHandle(t *testing.T) {
 
 func TestSuggestHandleDisambiguatesAgainstExisting(t *testing.T) {
 	cf := newSeed()
-	require.NoError(t, cf.Add("catalog", "mongodb://h/catalog", ""))
-	require.NoError(t, cf.Add("catalog2", "mongodb://h/catalog", ""))
+	require.NoError(t, cf.Add("catalog", "mongodb://h/catalog"))
+	require.NoError(t, cf.Add("catalog2", "mongodb://h/catalog"))
 	require.Equal(t, "catalog3", suggestHandle(cf, "mongodb://other/catalog"))
 }
 
@@ -188,8 +195,8 @@ func TestAddPasswordPromptFromStdin(t *testing.T) {
 
 func TestLsMarksActiveAndRedacts(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("cache", "redis://u:secret@h:6379/0", ""))
-	require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
+	require.NoError(t, c.Add("cache", "redis://u:secret@h:6379/0"))
+	require.NoError(t, c.Add("prod/books", "mongodb://h/db?collection=books"))
 	require.NoError(t, c.SetActive("cache"))
 	require.NoError(t, c.SetGroup("prod"))
 	seedConfig(t, c)
@@ -205,7 +212,7 @@ func TestLsMarksActiveAndRedacts(t *testing.T) {
 
 func TestSrcCommand(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("cache", "redis://h", ""))
+	require.NoError(t, c.Add("cache", "redis://h"))
 	seedConfig(t, c)
 
 	out, err := runCmd(t, newSrcCmd(), "cache")
@@ -222,7 +229,7 @@ func TestSrcCommand(t *testing.T) {
 
 func TestGroupCommand(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("prod/db", "redis://h", ""))
+	require.NoError(t, c.Add("prod/db", "redis://h"))
 	seedConfig(t, c)
 
 	out, err := runCmd(t, newGroupCmd(), "prod")
@@ -239,7 +246,7 @@ func TestGroupCommand(t *testing.T) {
 
 func TestMvCommand(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
+	require.NoError(t, c.Add("books", "mongodb://h/db?collection=books"))
 	require.NoError(t, c.SetActive("books"))
 	seedConfig(t, c)
 
@@ -259,7 +266,7 @@ func TestMvCommand(t *testing.T) {
 
 func TestRmCommand(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("cache", "redis://h", ""))
+	require.NoError(t, c.Add("cache", "redis://h"))
 	require.NoError(t, c.SetActive("cache"))
 	seedConfig(t, c)
 
@@ -278,9 +285,9 @@ func TestRmCommand(t *testing.T) {
 
 func TestRmMultipleAndGroup(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("cache", "redis://h", ""))
-	require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
-	require.NoError(t, c.Add("prod/cache", "redis://h", ""))
+	require.NoError(t, c.Add("cache", "redis://h"))
+	require.NoError(t, c.Add("prod/books", "mongodb://h/db?collection=books"))
+	require.NoError(t, c.Add("prod/cache", "redis://h"))
 	seedConfig(t, c)
 
 	out, err := runCmd(t, newRmCmd(), "cache", "prod")
@@ -296,7 +303,7 @@ func TestRmMultipleAndGroup(t *testing.T) {
 
 func TestRmAtomicOnUnknown(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("cache", "redis://h", ""))
+	require.NoError(t, c.Add("cache", "redis://h"))
 	seedConfig(t, c)
 
 	_, err := runCmd(t, newRmCmd(), "cache", "nope")

@@ -164,7 +164,7 @@ func TestAddStoreInvalid(t *testing.T) {
 
 func TestMvMigratesKeyringEntry(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("sec", "redis://u@h:6379/0", ""))
+	require.NoError(t, c.Add("sec", "redis://u@h:6379/0"))
 	require.NoError(t, c.UseKeyring("sec"))
 	seedConfig(t, c)
 	fk := useFakeKeyring(t)
@@ -180,7 +180,7 @@ func TestMvMigratesKeyringEntry(t *testing.T) {
 
 func TestLsRevealKeyringSource(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("sec", "redis://u@h:6379/0", ""))
+	require.NoError(t, c.Add("sec", "redis://u@h:6379/0"))
 	require.NoError(t, c.UseKeyring("sec"))
 	seedConfig(t, c)
 	fk := useFakeKeyring(t)
@@ -211,7 +211,7 @@ func TestLsRevealKeyringSource(t *testing.T) {
 
 func TestRmDeletesKeyringEntry(t *testing.T) {
 	c := newSeed()
-	require.NoError(t, c.Add("sec", "redis://u@h:6379/0", ""))
+	require.NoError(t, c.Add("sec", "redis://u@h:6379/0"))
 	require.NoError(t, c.UseKeyring("sec"))
 	seedConfig(t, c)
 	fk := useFakeKeyring(t)

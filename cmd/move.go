@@ -73,7 +73,7 @@ func openMoveSource(cmd *cobra.Command, ctx context.Context, cfg *config) (query
 		}
 		return src, closeIn, "stdin", nil
 	}
-	if err := resolveSource(cmd, cfg); err != nil {
+	if err := resolveSource(cfg); err != nil {
 		return nil, nil, "", err
 	}
 	st, err := openStore(ctx, cfg)
@@ -125,7 +125,7 @@ func runInsert(cmd *cobra.Command, ctx context.Context, cfg *config, recSrc quer
 		mode = query.InsertOnly
 	}
 
-	st, err := openStore(ctx, &config{url: dst.url, collection: dst.collection})
+	st, err := openStore(ctx, &config{url: dst.url, address: dst.address})
 	if err != nil {
 		return redactErr(err, dst.url)
 	}

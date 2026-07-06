@@ -23,8 +23,8 @@ func TestDataFlagsValidate(t *testing.T) {
 func dataTestConfig(t *testing.T) *iqconfig.Config {
 	t.Helper()
 	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
-	require.NoError(t, cf.Add("cache", "redis://h:6379/0", ""))
-	require.NoError(t, cf.Add("books", "mongodb://h/db", "books"))
+	require.NoError(t, cf.Add("cache", "redis://h:6379/0"))
+	require.NoError(t, cf.Add("books", "mongodb://h/db?collection=books"))
 	return cf
 }
 
@@ -41,7 +41,7 @@ func TestResolveEndpoint(t *testing.T) {
 		wantErr    string
 	}{
 		{name: "redis source", arg: "cache", wantDriver: "redis"},
-		{name: "mongo source with stored collection", arg: "books", wantDriver: "mongo", wantColl: "books"},
+		{name: "mongo source uses url default (no override)", arg: "books", wantDriver: "mongo", wantColl: ""},
 		{name: "mongo source with collection override", arg: "books.authors", wantDriver: "mongo", wantColl: "authors"},
 		{name: "redis rejects collection suffix", arg: "cache.foo", wantErr: "no collections"},
 		{name: "unknown name is not a file path", arg: "dump.jsonl", wantErr: "unknown source"},
@@ -63,13 +63,13 @@ func TestResolveEndpoint(t *testing.T) {
 				return
 			}
 			require.Equal(t, tt.wantDriver, ep.driver)
-			require.Equal(t, tt.wantColl, ep.collection)
+			require.Equal(t, tt.wantColl, ep.address)
 		})
 	}
 }
 
 func TestEndpointLabel(t *testing.T) {
-	require.Equal(t, "books.authors", endpoint{handle: "books", collection: "authors"}.label())
+	require.Equal(t, "books.authors", endpoint{handle: "books", address: "authors"}.label())
 	require.Equal(t, "cache", endpoint{handle: "cache"}.label())
 	require.Equal(t, "dump.jsonl", endpoint{isFile: true, path: "dump.jsonl"}.label())
 	require.Equal(t, "stdout/stdin", endpoint{isFile: true, path: ""}.label())

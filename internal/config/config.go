@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -40,12 +41,15 @@ var (
 )
 
 // Source is a named connection target. The backend is inferred from the URL
-// scheme, so no driver field is stored. Collection applies to MongoDB only and
-// is empty otherwise. When Keyring is set the source's password lives in the OS
-// keyring rather than in URL, and the composition root splices it back in at
-// connect time.
+// scheme, so no driver field is stored. A driver-specific default (e.g. a
+// MongoDB collection) rides in the URL as a query param the driver owns. When
+// Keyring is set the source's password lives in the OS keyring rather than in
+// URL, and the composition root splices it back in at connect time.
 type Source struct {
-	URL        string `toml:"url"`
+	URL string `toml:"url"`
+	// Collection is deprecated: it is folded into the URL as ?collection= on load
+	// and never written back. It remains only so a config file written before
+	// drivers owned their URL params still parses and migrates cleanly.
 	Collection string `toml:"collection,omitempty"`
 	Keyring    bool   `toml:"keyring,omitempty"`
 	// Options are this source's stored flag defaults, keyed by flag name and held
@@ -105,7 +109,40 @@ func Load() (*Config, error) {
 	if c.Sources == nil {
 		c.Sources = map[string]Source{}
 	}
+	c.migrateCollections()
 	return &c, nil
+}
+
+// migrateCollections folds a legacy per-source `collection` field into the URL as
+// ?collection=, the driver-owned form, then clears the field so nothing else
+// reads it and the next Save drops it (omitempty). It is a one-time compat shim
+// for config files written before drivers owned their URL params.
+func (c *Config) migrateCollections() {
+	for h, s := range c.Sources {
+		if s.Collection == "" {
+			continue
+		}
+		s.URL = appendCollection(s.URL, s.Collection)
+		s.Collection = ""
+		c.Sources[h] = s
+	}
+}
+
+// appendCollection returns rawURL with ?collection=collection added, unless it
+// already carries a collection param or does not parse (left as-is; a connect
+// later surfaces any malformed URL).
+func appendCollection(rawURL, collection string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	q := u.Query()
+	if q.Get("collection") != "" {
+		return rawURL
+	}
+	q.Set("collection", collection)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // Save writes c to Path() atomically (a temp file in the same directory then a
@@ -145,13 +182,14 @@ func (c *Config) Save() error {
 
 // Add registers a new source. It errors on a blank or malformed name, a name
 // that already exists, or a blank URL. Scheme support is validated by the
-// caller, which owns backend dispatch.
-func (c *Config) Add(handle, url, collection string) error {
+// caller, which owns backend dispatch. A driver-specific default (a MongoDB
+// collection) rides in the URL, so it is not a separate argument.
+func (c *Config) Add(handle, rawURL string) error {
 	h, err := validateHandle(handle)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(url) == "" {
+	if strings.TrimSpace(rawURL) == "" {
 		return ErrEmptyURL
 	}
 	if _, ok := c.Sources[h]; ok {
@@ -160,7 +198,7 @@ func (c *Config) Add(handle, url, collection string) error {
 	if c.Sources == nil {
 		c.Sources = map[string]Source{}
 	}
-	c.Sources[h] = Source{URL: url, Collection: collection}
+	c.Sources[h] = Source{URL: rawURL}
 	return nil
 }
 
@@ -285,9 +323,9 @@ func (c *Config) ClearKeyring(handle string) error {
 }
 
 // SetSourceURL replaces the stored connection URL of the named source, keeping
-// its collection, keyring flag, and options. It errors if the source is unknown
-// or url is blank. Callers use it when migrating an inline password into the
-// keyring, rewriting the source to its password-less form.
+// its keyring flag and options. It errors if the source is unknown or url is
+// blank. Callers use it when migrating an inline password into the keyring,
+// rewriting the source to its password-less form.
 func (c *Config) SetSourceURL(handle, url string) error {
 	h := cleanHandle(handle)
 	s, ok := c.Sources[h]

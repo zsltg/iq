@@ -96,6 +96,11 @@ func newConfigCmd(cfg *config) *cobra.Command {
 			"yaml`). A stored default is overridden per query by an explicit flag, and a source\n" +
 			"option is overridden only by an explicit flag; the base option applies to every\n" +
 			"other source. `location` prints the file path, `edit` opens it, `view` dumps it.",
+		Example: "  $ iq config set format yaml            # persist a base default\n" +
+			"  $ iq config set --src shop format json # scope a default to one source\n" +
+			"  $ iq config ls                         # list stored defaults\n" +
+			"  $ iq config view                       # print the whole config\n" +
+			"  $ iq config location                   # print the config file path",
 		Args: cobra.NoArgs,
 	}
 	c.AddCommand(
@@ -114,9 +119,10 @@ func newConfigCmd(cfg *config) *cobra.Command {
 // file path (honoring --config and $IQ_CONFIG).
 func newConfigLocationCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "location",
-		Short: "Print the config file path",
-		Args:  cobra.NoArgs,
+		Use:     "location",
+		Short:   "Print the config file path",
+		Example: "  $ iq config location",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := iqconfig.Path()
 			if err != nil {
@@ -134,9 +140,10 @@ func newConfigLocationCmd() *cobra.Command {
 // then the default).
 func newConfigGetCmd(cfg *config) *cobra.Command {
 	return &cobra.Command{
-		Use:   "get <option>",
-		Short: "Print an option's effective value",
-		Args:  cobra.ExactArgs(1),
+		Use:     "get <option>",
+		Short:   "Print an option's effective value",
+		Example: "  $ iq config get format",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
 			if !isPersistableOption(key) {
@@ -170,7 +177,10 @@ func newConfigSetCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "set [--delete] <option> [<value>]",
 		Short: "Store an option's value, or remove it with -D (base, or per-source with --src)",
-		Args:  cobra.RangeArgs(1, 2),
+		Example: "  $ iq config set format yaml           # store a base default\n" +
+			"  $ iq config set --src shop timeout 30s # a per-source default\n" +
+			"  $ iq config set -D format              # remove a stored default",
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if del {
 				return runConfigDelete(cmd, cfg, args)
@@ -245,7 +255,10 @@ func newConfigLsCmd(cfg *config) *cobra.Command {
 	return &cobra.Command{
 		Use:   "ls",
 		Short: "List stored options (all with -v), base or per-source",
-		Args:  cobra.NoArgs,
+		Example: "  $ iq config ls          # stored options (base)\n" +
+			"  $ iq config ls -v       # every settable option\n" +
+			"  $ iq config ls --src shop # a source's stored options",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -300,9 +313,10 @@ func listAllOptions(out io.Writer, cf *iqconfig.Config, handle string) error {
 // editor. The file is created empty first if missing so the editor has a target.
 func newConfigEditCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "edit",
-		Short: "Open the config file in your editor",
-		Args:  cobra.NoArgs,
+		Use:     "edit",
+		Short:   "Open the config file in your editor",
+		Example: "  $ iq config edit",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := iqconfig.Path()
 			if err != nil {
@@ -335,9 +349,10 @@ func newConfigEditCmd() *cobra.Command {
 // source URLs redacted (--reveal/--expand unredact, as for `iq ls`).
 func newConfigViewCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
-		Use:   "view",
-		Short: "Print the whole config as TOML, URLs redacted",
-		Args:  cobra.NoArgs,
+		Use:     "view",
+		Short:   "Print the whole config as TOML, URLs redacted",
+		Example: "  $ iq config view",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {

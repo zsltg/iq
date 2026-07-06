@@ -56,6 +56,8 @@ func newDataClearCmd(cfg *config, df *dataFlags) *cobra.Command {
 		Long: "Empty a collection/keyspace, keeping the container. MongoDB: deleteMany({}).\n" +
 			"Redis: FLUSHDB. Distinct from `iq rm`, which only unregisters a saved source —\n" +
 			"clear destroys the stored data.",
+		Example: "  $ iq data clear cache             # empty a Redis source (FLUSHDB)\n" +
+			"  $ iq data clear shop.orders shop.users # empty two Mongo collections",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLifecycle(cmd, cfg, df, force, args, clearOp)
@@ -78,6 +80,8 @@ func newDataDropCmd(cfg *config, df *dataFlags) *cobra.Command {
 			"Redis has no droppable container (a DB index only empties), so drop is rejected\n" +
 			"for a Redis target — use `iq data clear`. Distinct from `iq rm`, which only\n" +
 			"unregisters a saved source; drop destroys the stored data.",
+		Example: "  $ iq data drop shop.orders             # drop one Mongo collection\n" +
+			"  $ iq data drop shop.orders shop.users  # drop several",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLifecycle(cmd, cfg, df, force, args, dropOp)
@@ -128,7 +132,7 @@ func runLifecycle(cmd *cobra.Command, cfg *config, df *dataFlags, force bool, ar
 // applyLifecycle opens the target, checks the capability, then reports (--dry-run)
 // or performs the op after confirmation.
 func applyLifecycle(cmd *cobra.Command, ctx context.Context, op lifecycleOp, t endpoint, dry, force bool) error {
-	st, err := openStore(ctx, &config{url: t.url, collection: t.collection})
+	st, err := openStore(ctx, &config{url: t.url, address: t.address})
 	if err != nil {
 		return redactErr(err, t.url)
 	}

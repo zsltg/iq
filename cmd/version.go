@@ -61,9 +61,10 @@ func vcsRevision(info *debug.BuildInfo) string {
 // commit, build date, and Go toolchain version.
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
-		Short: "Print version, commit, build date, and Go version",
-		Args:  cobra.NoArgs,
+		Use:     "version",
+		Short:   "Print version, commit, build date, and Go version",
+		Example: "  $ iq version",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, err := fmt.Fprintf(cmd.OutOrStdout(),
 				"iq %s\n  commit: %s\n  built:  %s\n  go:     %s\n",

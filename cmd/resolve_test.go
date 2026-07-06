@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
@@ -17,103 +16,93 @@ func seedConfig(t *testing.T, c *iqconfig.Config) {
 	require.NoError(t, c.Save())
 }
 
-// resolveCmd builds a command carrying the --src and --collection flags that
-// resolveSource reads, bound to cfg.
-func resolveCmd(cfg *config) *cobra.Command {
-	c := &cobra.Command{Use: "iq", RunE: func(*cobra.Command, []string) error { return nil }}
-	c.Flags().StringVarP(&cfg.src, "src", "s", "", "")
-	c.Flags().StringVarP(&cfg.collection, "collection", "c", "", "")
-	return c
-}
-
 func newSeed() *iqconfig.Config {
 	return &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
 }
 
 func TestResolveSource(t *testing.T) {
-	t.Run("--src selects source and its collection", func(t *testing.T) {
+	t.Run("--src selects a source; its default collection stays in the url", func(t *testing.T) {
 		c := newSeed()
-		require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
+		require.NoError(t, c.Add("books", "mongodb://h/db?collection=books"))
 		seedConfig(t, c)
 
-		cfg := &config{}
-		cmd := resolveCmd(cfg)
-		cfg.src = "books"
-		require.NoError(t, resolveSource(cmd, cfg))
-		require.Equal(t, "mongodb://h/db", cfg.url)
-		require.Equal(t, "books", cfg.collection)
+		cfg := &config{src: "books"}
+		require.NoError(t, resolveSource(cfg))
+		require.Equal(t, "mongodb://h/db?collection=books", cfg.url)
+		require.Empty(t, cfg.address)
+		require.Equal(t, "books", mongoCollection(cfg))
+	})
+
+	t.Run("dotted --src sets the address override", func(t *testing.T) {
+		c := newSeed()
+		require.NoError(t, c.Add("books", "mongodb://h/db?collection=books"))
+		seedConfig(t, c)
+
+		cfg := &config{src: "books.chapters"}
+		require.NoError(t, resolveSource(cfg))
+		require.Equal(t, "chapters", cfg.address)
+		require.Equal(t, "chapters", mongoCollection(cfg))
 	})
 
 	t.Run("active source used without --src", func(t *testing.T) {
 		c := newSeed()
-		require.NoError(t, c.Add("cache", "redis://h", ""))
+		require.NoError(t, c.Add("cache", "redis://h"))
 		require.NoError(t, c.SetActive("cache"))
 		seedConfig(t, c)
 
 		cfg := &config{}
-		require.NoError(t, resolveSource(resolveCmd(cfg), cfg))
+		require.NoError(t, resolveSource(cfg))
 		require.Equal(t, "redis://h", cfg.url)
 	})
 
 	t.Run("--src overrides the active source", func(t *testing.T) {
 		c := newSeed()
-		require.NoError(t, c.Add("cache", "redis://h", ""))
-		require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
+		require.NoError(t, c.Add("cache", "redis://h"))
+		require.NoError(t, c.Add("books", "mongodb://h/db?collection=books"))
 		require.NoError(t, c.SetActive("cache"))
 		seedConfig(t, c)
 
-		cfg := &config{}
-		cmd := resolveCmd(cfg)
-		cfg.src = "books"
-		require.NoError(t, resolveSource(cmd, cfg))
-		require.Equal(t, "mongodb://h/db", cfg.url)
+		cfg := &config{src: "books"}
+		require.NoError(t, resolveSource(cfg))
+		require.Equal(t, "mongodb://h/db?collection=books", cfg.url)
 	})
 
 	t.Run("unknown --src errors", func(t *testing.T) {
 		seedConfig(t, newSeed())
-		cfg := &config{}
-		cmd := resolveCmd(cfg)
-		cfg.src = "nope"
-		require.ErrorContains(t, resolveSource(cmd, cfg), "unknown source")
+		cfg := &config{src: "nope"}
+		require.ErrorContains(t, resolveSource(cfg), "unknown source")
 	})
 
 	t.Run("no source selected errors", func(t *testing.T) {
 		seedConfig(t, newSeed())
-		cfg := &config{}
-		require.ErrorContains(t, resolveSource(resolveCmd(cfg), cfg), "no source selected")
+		require.ErrorContains(t, resolveSource(&config{}), "no source selected")
 	})
 
-	t.Run("--collection overrides the source collection", func(t *testing.T) {
+	t.Run("redis rejects a dotted address", func(t *testing.T) {
 		c := newSeed()
-		require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
-		require.NoError(t, c.SetActive("books"))
+		require.NoError(t, c.Add("cache", "redis://h"))
 		seedConfig(t, c)
 
-		cfg := &config{}
-		cmd := resolveCmd(cfg)
-		require.NoError(t, cmd.Flags().Set("collection", "override"))
-		require.NoError(t, resolveSource(cmd, cfg))
-		require.Equal(t, "override", cfg.collection)
+		cfg := &config{src: "cache.foo"}
+		require.ErrorContains(t, resolveSource(cfg), "no collections")
 	})
 
 	t.Run("active group namespaces a bare --src name", func(t *testing.T) {
 		c := newSeed()
-		require.NoError(t, c.Add("prod/books", "mongodb://h/db", "books"))
+		require.NoError(t, c.Add("prod/books", "mongodb://h/db?collection=books"))
 		require.NoError(t, c.SetGroup("prod"))
 		seedConfig(t, c)
 
-		cfg := &config{}
-		cmd := resolveCmd(cfg)
-		cfg.src = "books"
-		require.NoError(t, resolveSource(cmd, cfg))
-		require.Equal(t, "mongodb://h/db", cfg.url)
-		require.Equal(t, "books", cfg.collection)
+		cfg := &config{src: "books"}
+		require.NoError(t, resolveSource(cfg))
+		require.Equal(t, "mongodb://h/db?collection=books", cfg.url)
+		require.Equal(t, "books", mongoCollection(cfg))
 	})
 }
 
 func TestSplitSourceArg(t *testing.T) {
 	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{
-		"books":     {URL: "mongodb://h/db", Collection: "books"},
+		"books":     {URL: "mongodb://h/db?collection=books"},
 		"a.b":       {URL: "mongodb://h/db"},
 		"cache":     {URL: "redis://h"},
 		"prod/blog": {URL: "mongodb://h/db"},
@@ -147,60 +136,46 @@ func TestSplitSourceArg(t *testing.T) {
 func TestResolveInspectSource(t *testing.T) {
 	t.Run("positional source overrides the active source", func(t *testing.T) {
 		c := newSeed()
-		require.NoError(t, c.Add("cache", "redis://h", ""))
-		require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
+		require.NoError(t, c.Add("cache", "redis://h"))
+		require.NoError(t, c.Add("books", "mongodb://h/db?collection=books"))
 		require.NoError(t, c.SetActive("cache"))
 		seedConfig(t, c)
 
 		cfg := &config{}
-		require.NoError(t, resolveInspectSource(resolveCmd(cfg), cfg, "books"))
-		require.Equal(t, "mongodb://h/db", cfg.url)
-		require.Equal(t, "books", cfg.collection)
+		require.NoError(t, resolveInspectSource(cfg, "books"))
+		require.Equal(t, "mongodb://h/db?collection=books", cfg.url)
+		require.Empty(t, cfg.address)
+		require.Equal(t, "books", mongoCollection(cfg))
 	})
 
-	t.Run("dot addressing overrides the source collection", func(t *testing.T) {
+	t.Run("dot addressing overrides the url default collection", func(t *testing.T) {
 		c := newSeed()
-		require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
+		require.NoError(t, c.Add("books", "mongodb://h/db?collection=books"))
 		require.NoError(t, c.SetActive("books"))
 		seedConfig(t, c)
 
 		cfg := &config{}
-		require.NoError(t, resolveInspectSource(resolveCmd(cfg), cfg, "books.chapters"))
-		require.Equal(t, "chapters", cfg.collection)
-	})
-
-	t.Run("explicit --collection wins over dot addressing", func(t *testing.T) {
-		c := newSeed()
-		require.NoError(t, c.Add("books", "mongodb://h/db", "books"))
-		require.NoError(t, c.SetActive("books"))
-		seedConfig(t, c)
-
-		cfg := &config{}
-		cmd := resolveCmd(cfg)
-		require.NoError(t, cmd.Flags().Set("collection", "override"))
-		require.NoError(t, resolveInspectSource(cmd, cfg, "books.chapters"))
-		require.Equal(t, "override", cfg.collection)
+		require.NoError(t, resolveInspectSource(cfg, "books.chapters"))
+		require.Equal(t, "chapters", cfg.address)
+		require.Equal(t, "chapters", mongoCollection(cfg))
 	})
 
 	t.Run("no source selected errors", func(t *testing.T) {
 		seedConfig(t, newSeed())
-		cfg := &config{}
-		require.ErrorContains(t, resolveInspectSource(resolveCmd(cfg), cfg, ""), "no source selected")
+		require.ErrorContains(t, resolveInspectSource(&config{}, ""), "no source selected")
 	})
 
 	t.Run("unknown positional source errors", func(t *testing.T) {
 		seedConfig(t, newSeed())
-		cfg := &config{}
-		require.ErrorContains(t, resolveInspectSource(resolveCmd(cfg), cfg, "nope"), "unknown source")
+		require.ErrorContains(t, resolveInspectSource(&config{}, "nope"), "unknown source")
 	})
 
 	t.Run("redis rejects a collection suffix", func(t *testing.T) {
 		c := newSeed()
-		require.NoError(t, c.Add("cache", "redis://h", ""))
+		require.NoError(t, c.Add("cache", "redis://h"))
 		require.NoError(t, c.SetActive("cache"))
 		seedConfig(t, c)
 
-		cfg := &config{}
-		require.ErrorContains(t, resolveInspectSource(resolveCmd(cfg), cfg, "cache.foo"), "no collections")
+		require.ErrorContains(t, resolveInspectSource(&config{}, "cache.foo"), "no collections")
 	})
 }

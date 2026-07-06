@@ -55,7 +55,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	// the query plan and the execution below name and dispatch the same driver. When
 	// no source is selected and stdin is piped, the query reads that stdin (sq-style).
 	if !cross {
-		if err := resolveSource(cmd, cfg); err != nil {
+		if err := resolveSource(cfg); err != nil {
 			if !errors.Is(err, errNoSource) || stdinIsTerminal() {
 				return err
 			}

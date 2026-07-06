@@ -56,25 +56,29 @@ first release comes out as `v0.1.0`.
 by name or as the default. Register one with `iq add`, then make it active:
 
 ```bash
-iq add -n cache redis://localhost:6379/0             # register a Redis source as "cache"
-iq add mongodb://localhost:27017/books -c items -a   # a Mongo source; handle "books" derived from the db, made active
-iq src cache                                          # make "cache" the active source
-iq ls                                                 # list sources (the active one marked *)
+iq add -n cache redis://localhost:6379/0                    # register a Redis source as "cache"
+iq add -a 'mongodb://localhost:27017/books?collection=items' # a Mongo source; handle "books" from the db, made active
+iq src cache                                                 # make "cache" the active source
+iq ls                                                        # list sources (the active one marked *)
 ```
 
 Once a source is active, every query runs against it. Select a different source for a single
-command with `--src`/`-s`, without changing the active one:
+command with `--src`/`-s`, without changing the active one; address a MongoDB collection with a
+dotted `handle.collection` suffix:
 
 ```bash
-iq --src books '.["2"]'      # run this one query against "books"
+iq --src books '.["2"]'          # run this one query against "books" (its default collection)
+iq --src books.authors '.[]'     # the same connection, a different collection
 ```
 
-- `iq add <url> [-n <handle>] [-c <collection>] [-a] [-p] [-d <driver>] [--skip-verify] [--store keyring]`
+- `iq add <url> [-n <handle>] [-a] [-p] [-d <driver>] [--skip-verify] [--store keyring]`
   — register a source, mirroring `sq add`. The URL is the sole positional argument; the backend is
   inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`). `-n`/`--handle`
   names the source; when omitted a handle is derived from the URL (the MongoDB database name, else
-  the driver, disambiguated with a numeric suffix on collision). `-c` stores a MongoDB collection
-  with the source. `-a`/`--active` makes the new source active. `-p`/`--password` prompts for the
+  the driver, disambiguated with a numeric suffix on collision). A MongoDB default collection rides
+  in the URL as `?collection=` (`mongodb://host/db?collection=items`), the driver's own connection
+  option — like a `file://` source's `?format=`; a query addresses another collection with a dotted
+  `handle.collection`. `-a`/`--active` makes the new source active. `-p`/`--password` prompts for the
   URL password (or reads it from stdin) instead of embedding it in the URL. `-d`/`--driver` asserts
   the expected driver (`mongo`, `redis`) and errors if it disagrees with the scheme. The source is
   pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
@@ -98,7 +102,8 @@ iq --src books '.["2"]'      # run this one query against "books"
 - `iq inspect [<source>[.<collection>]]` — show a source's native introspection. The positional
   names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB
   sources accept sq-style `<source>.<collection>` addressing (`iq inspect prod.books`) to pick the
-  collection; `--collection` still overrides it, and Redis sources take no collection. `--only`
+  collection, overriding the source URL's `?collection=` default; Redis sources take no collection.
+  `--only`
   narrows the output (repeatable or comma-separated): for Redis, `INFO` sections
   (`iq inspect prod --only memory,server`); for MongoDB, the diagnostic commands (`dbStats`,
   `serverStatus`, `listCollections`, `collStats`, `buildInfo`, `hostInfo`) — no `--only` runs them
@@ -176,7 +181,7 @@ iq -f json '.[]'                          # explicit flag overrides the stored d
 
 Persistable options are the flags whose default you would reasonably persist — output (`format`,
 `format.decimal`, `compact`), `timeout`, display (`monochrome`, `color`, `no-progress`), and the
-diagnostics family (`verbose`, `log*`, `error*`). Per-invocation flags (`--src`, `--collection`,
+diagnostics family (`verbose`, `log*`, `error*`). Per-invocation flags (`--src`,
 `--from`/`--combine`, `--explain`, `--unbounded`, `--no-compile`, `--reveal`/`--expand`,
 `--debug.pprof`) are not storable. A `--from`/`--combine` query has no single source, so it uses
 the base options only, never a per-source override.
@@ -484,10 +489,11 @@ strings.
 The backend is chosen by the source's URL scheme. Register a `mongodb://` source and the same jq
 interface works against a collection, where **the collection is the keyspace: a document's `_id`
 is the key and the document is the value**. The database comes from the URI path; the collection
-from the source's `-c` (overridable per run with `--collection`/`-c`):
+from the URL's `?collection=` (the driver's own connection option, overridable per run with a dotted
+`handle.collection`):
 
 ```bash
-iq add -n books mongodb://localhost:27017/iq -c books # register once, then:
+iq add -n books 'mongodb://localhost:27017/iq?collection=books' # register once, then:
 iq --src books '.["2"]'                              # fetch document _id "2"
 iq --src books '.[] | select(.year > 2015) | .title' # streamed
 iq --src books --unbounded 'keys'                    # every _id
@@ -559,8 +565,9 @@ The database is a saved [source](#sources) — a connection URL whose scheme sel
 2. the active source (`iq src <name>`)
 
 With no source selected the command errors — there is no ambient URL or environment fallback.
-`--collection` / `-c` overrides the source's MongoDB collection for one run (ignored for Redis);
-`--timeout` (default `5s`) bounds each query.
+A dotted `--src handle.collection` (or `handle.collection` positional, for `inspect`/`data`/`diff`)
+overrides the source URL's MongoDB `?collection=` default for one run (rejected for Redis, which has
+no collections); `--timeout` (default `5s`) bounds each query.
 
 </details>
 
@@ -821,8 +828,9 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   plus `Drop` for Mongo), with a type-to-JSON normalization frozen as that backend's encoding
   contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs) and its inverse for writes
   (Mongo `bulkWrite`; Redis pipelined `SET`/`HSET`/`RPUSH`/`SADD`/`ZADD`/`XADD`/`JSON.SET` by
-  type). Redis maps a key to a Redis key; Mongo maps a key to a document `_id` within
-  `--collection`. Each also contributes pure, connection-free `--explain` describers
+  type). Redis maps a key to a Redis key; Mongo maps a key to a document `_id` within the
+  collection it owns from the URL's `?collection=` (or a dotted `handle.collection` override). Each
+  also contributes pure, connection-free `--explain` describers
   (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
 - `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
   produces. `Tree` diffs two values, `Keyed` aligns two keyed item sets, and `Infer` reduces a set
@@ -841,7 +849,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   self-describing entry per backend (name, description, schemes, docs, opener, and the connection-free
   `--explain` describers) that `openStore`, `supportedScheme`, every driver label, and `iq driver ls`
   all derive from, so adding a backend is
-  one entry. It resolves the selected source (`--src` or the active source) to a URL and collection,
+  one entry. It resolves the selected source (`--src` or the active source) to a URL and an opaque
+  address (the dotted `handle.collection` suffix, which the driver interprets),
   picks the adapter by URL scheme through that registry (`openStore`), runs the jq action (routing a
   `source()`-driven filter to the cross-source engine), the `exec` escape hatch, the `data`
   movement/lifecycle group (`copy`/`clear`/`drop`), a source or config command
