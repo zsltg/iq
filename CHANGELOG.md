@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.15.0 - 2026-07-06
+### Features
+- **cli:** address collections as handle.collection; drivers own url params (0eb74c7)
+
+
 ## v0.14.0 - 2026-07-06
 ### Features
 - **file:** cache decoded file:// dumps with a per-page key index (ecee043)
