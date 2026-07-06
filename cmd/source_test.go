@@ -207,7 +207,7 @@ func TestLsMarksActiveAndRedacts(t *testing.T) {
 	require.Contains(t, out, "* cache")
 	require.NotContains(t, out, "secret")
 	require.Contains(t, out, "xxxxx")
-	require.Contains(t, out, "(books)")
+	require.Contains(t, out, "collection=books") // the collection shows in the URL, not as a duplicate tag
 }
 
 func TestSrcCommand(t *testing.T) {

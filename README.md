@@ -91,8 +91,8 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
   keyring` moves the URL's password into the OS keyring and strips it from the stored URL (default
   `--store inline` keeps it in the config file).
-- `iq ls [group]` — list saved sources as `handle  driver  location` (a MongoDB collection rides
-  inline as `(name)`); the active one is marked `*`. Passwords in URLs are
+- `iq ls [group]` — list saved sources as `handle  driver  location`; the active one is marked
+  `*`. Passwords in URLs are
   redacted. An optional `group` limits the listing to that group. `-v` adds a header row plus a
   `FORMAT` column (a file source's detected dump format) and an `OPTIONS` column (the source's
   stored option defaults); `-g` lists groups instead of sources; `-j`/`--json` or `-y`/`--yaml`

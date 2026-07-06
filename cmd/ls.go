@@ -106,10 +106,9 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 		}
 		name := coloredCell(marker+" "+h.Name, nameColor)
 
+		// The default collection already rides in the shown URL as ?collection=,
+		// so it is not repeated as a separate tag here.
 		loc := displayLocation(h.Source, h.Name, reveal, expand)
-		if c := iqmongo.CollectionFromURI(h.Source.URL); c != "" {
-			loc += " (" + c + ")"
-		}
 		driver := driverName(h.Source.URL)
 		if !verbose {
 			rows = append(rows, []tableCell{name, coloredCell(driver, pal.faint), coloredCell(loc, pal.location)})

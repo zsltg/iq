@@ -180,8 +180,9 @@ func TestLsGroupFilter(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "prod/books")
 	require.Contains(t, out, "prod/cache")
-	require.Contains(t, out, "(books)")    // the collection rides inline in the default view
-	require.NotContains(t, out, "* cache") // top-level cache excluded
+	require.Contains(t, out, "collection=books") // the collection shows once, in the URL
+	require.NotContains(t, out, "(books)")       // not repeated as a separate tag
+	require.NotContains(t, out, "* cache")       // top-level cache excluded
 }
 
 func TestLsGroupFilterEmpty(t *testing.T) {
