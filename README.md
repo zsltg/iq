@@ -20,7 +20,7 @@ sq's so the tool feels familiar.
 
 ## Requirements
 
-- Go 1.25+
+- Go 1.26+
 - Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
 
 ## Build
