@@ -269,6 +269,39 @@ func (c *Config) UseKeyring(handle string) error {
 	return nil
 }
 
+// ClearKeyring marks the named source as no longer keyring-backed, so a
+// subsequent connect reads the stored URL as-is. It errors if the source is
+// unknown. The caller owns deleting the password from the keyring; this only
+// clears the flag.
+func (c *Config) ClearKeyring(handle string) error {
+	h := cleanHandle(handle)
+	s, ok := c.Sources[h]
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownSource, h)
+	}
+	s.Keyring = false
+	c.Sources[h] = s
+	return nil
+}
+
+// SetSourceURL replaces the stored connection URL of the named source, keeping
+// its collection, keyring flag, and options. It errors if the source is unknown
+// or url is blank. Callers use it when migrating an inline password into the
+// keyring, rewriting the source to its password-less form.
+func (c *Config) SetSourceURL(handle, url string) error {
+	h := cleanHandle(handle)
+	s, ok := c.Sources[h]
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownSource, h)
+	}
+	if strings.TrimSpace(url) == "" {
+		return ErrEmptyURL
+	}
+	s.URL = url
+	c.Sources[h] = s
+	return nil
+}
+
 // Remove deletes the named source, clearing the active source if it pointed
 // there and the active group if that group no longer has any source. It errors
 // if the name is unknown.

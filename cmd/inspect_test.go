@@ -13,6 +13,15 @@ import (
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
+func TestInspectFileSourceErrors(t *testing.T) {
+	// A file source has no live server metadata to introspect; inspect points the
+	// user at query/diff instead of connecting.
+	seedFileSource(t, moveDump)
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "--src", "snap", "inspect")
+	require.ErrorContains(t, err, "live server metadata")
+}
+
 func TestParseRedisInfo(t *testing.T) {
 	info := "# Server\r\nredis_version:7.2.0\r\nos:Linux\r\n\r\n# Memory\r\nused_memory:12345\r\n"
 	got := parseRedisInfo(info)
@@ -35,13 +44,13 @@ func TestIsMongoInspectCmd(t *testing.T) {
 func TestInspectMongoRejectsUnknown(t *testing.T) {
 	// Validation happens before any store access, so a nil store is never used.
 	var buf bytes.Buffer
-	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, []string{"dropDatabase"}, false, false)
+	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, []string{"dropDatabase"}, false, false, false)
 	require.ErrorContains(t, err, "unknown inspect subcommand")
 }
 
 func TestInspectMongoCollStatsNeedsCollection(t *testing.T) {
 	var buf bytes.Buffer
-	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, []string{"collStats"}, false, false)
+	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, []string{"collStats"}, false, false, false)
 	require.ErrorContains(t, err, "needs a collection")
 }
 
@@ -49,7 +58,7 @@ func TestInspectMongoList(t *testing.T) {
 	// The list path prints the supported set and never touches the store, so a
 	// nil store proves it stays offline.
 	var buf bytes.Buffer
-	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, nil, false, true)
+	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, nil, false, false, true)
 	require.NoError(t, err)
 	for _, sub := range mongoInspectCmds {
 		require.Contains(t, buf.String(), sub)
@@ -99,12 +108,12 @@ func TestRedisInfoSections(t *testing.T) {
 func TestWriteInspectList(t *testing.T) {
 	t.Run("plain is newline separated", func(t *testing.T) {
 		var buf bytes.Buffer
-		require.NoError(t, writeInspectList(&buf, []string{"a", "b"}, false))
+		require.NoError(t, writeInspectList(&buf, []string{"a", "b"}, false, false))
 		require.Equal(t, "a\nb\n", buf.String())
 	})
 	t.Run("json is an array", func(t *testing.T) {
 		var buf bytes.Buffer
-		require.NoError(t, writeInspectList(&buf, []string{"a", "b"}, true))
+		require.NoError(t, writeInspectList(&buf, []string{"a", "b"}, true, false))
 		var got []string
 		require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
 		require.Equal(t, []string{"a", "b"}, got)

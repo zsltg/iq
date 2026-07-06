@@ -265,13 +265,13 @@ func newRootCmd() (*cobra.Command, *config) {
 	// One rendering per run: the format flags are mutually exclusive and default
 	// to pretty json when none is set.
 	root.Flags().BoolVarP(&cfg.json, "json", "j", false, "output pretty JSON, one value per result (the default rendering)")
-	root.Flags().BoolVarP(&cfg.jsonArray, "json-array", "A", false, "output every result wrapped in one [ ... ] JSON document")
+	root.Flags().BoolVarP(&cfg.jsonArray, "jsona", "A", false, "output every result wrapped in one [ ... ] JSON document (iq's --jsona wraps the whole stream; sq's emits per-row value-arrays)")
 	root.Flags().BoolVarP(&cfg.jsonl, "jsonl", "J", false, "output compact JSON, one value per line (JSON Lines)")
 	root.Flags().BoolVarP(&cfg.yaml, "yaml", "y", false, "output YAML documents, separated by ---")
 	root.Flags().BoolVarP(&cfg.raw, "raw", "r", false, "output scalars unquoted, one per line (objects and arrays fall back to compact JSON)")
-	root.Flags().StringVarP(&cfg.format, "format", "f", "", "select the output rendering by name: json (default), jsonl, json-array, yaml, values (alias: raw); an alternative to -j/-J/-A/-y/-r")
-	root.MarkFlagsMutuallyExclusive("format", "json", "json-array", "jsonl", "yaml", "raw")
-	root.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / json-array output to single-line (no-op for jsonl, values, yaml)")
+	root.Flags().StringVarP(&cfg.format, "format", "f", "", "select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw); an alternative to -j/-J/-A/-y/-r")
+	root.MarkFlagsMutuallyExclusive("format", "json", "jsona", "jsonl", "yaml", "raw")
+	root.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / jsona output to single-line (no-op for jsonl, values, yaml)")
 	// Write/movement flags for the default action: --insert redirects results into a
 	// destination source (sq's --insert); --typed emits {key,type,value} records — a
 	// re-importable dump. The rest mirror the retired `iq data copy`.

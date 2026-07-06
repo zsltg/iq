@@ -133,6 +133,45 @@ func TestUseKeyring(t *testing.T) {
 	})
 }
 
+func TestClearKeyring(t *testing.T) {
+	t.Run("clears the keyring flag", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("sec", "redis://u@h", ""))
+		require.NoError(t, c.UseKeyring("sec"))
+		require.NoError(t, c.ClearKeyring("@sec"))
+		require.False(t, c.Sources["sec"].Keyring)
+	})
+
+	t.Run("unknown source", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.ErrorIs(t, c.ClearKeyring("nope"), config.ErrUnknownSource)
+	})
+}
+
+func TestSetSourceURL(t *testing.T) {
+	t.Run("replaces the url, keeping other fields", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("sec", "redis://u:p@h", "coll"))
+		require.NoError(t, c.UseKeyring("sec"))
+		require.NoError(t, c.SetSourceURL("@sec", "redis://u@h"))
+		got := c.Sources["sec"]
+		require.Equal(t, "redis://u@h", got.URL)
+		require.Equal(t, "coll", got.Collection)
+		require.True(t, got.Keyring)
+	})
+
+	t.Run("blank url", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("sec", "redis://u@h", ""))
+		require.ErrorIs(t, c.SetSourceURL("sec", "  "), config.ErrEmptyURL)
+	})
+
+	t.Run("unknown source", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.ErrorIs(t, c.SetSourceURL("nope", "redis://h"), config.ErrUnknownSource)
+	})
+}
+
 func TestKeyringFieldRoundTrips(t *testing.T) {
 	tempConfig(t)
 	c := &config.Config{Sources: map[string]config.Source{}}

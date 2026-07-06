@@ -185,27 +185,29 @@ func newDriverCmd() *cobra.Command {
 // newDriverLsCmd builds `iq driver ls`: list the registered backend drivers, each
 // with its description, the URL schemes that select it, and its upstream docs.
 func newDriverLsCmd() *cobra.Command {
-	var jsonOut bool
+	var jsonOut, yamlOut bool
 	c := &cobra.Command{
 		Use:   "ls",
 		Short: "List the backend drivers iq can dispatch to",
 		Long: "List the backend drivers iq can dispatch to. Each row shows the driver's stable\n" +
 			"name (as `iq ls` reports it), a description, the URL schemes that select it, the\n" +
 			"backend server versions the bundled client library supports, and a link to its\n" +
-			"upstream documentation. --json emits machine-readable output.",
+			"upstream documentation. -j/--json or -y/--yaml emit machine-readable output.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return listDrivers(cmd.OutOrStdout(), jsonOut)
+			return listDrivers(cmd.OutOrStdout(), jsonOut, yamlOut)
 		},
 	}
-	c.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
+	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
+	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit machine-readable YAML")
+	c.MarkFlagsMutuallyExclusive("json", "yaml")
 	return c
 }
 
 // listDrivers renders the driver registry as an aligned table (with a header
-// row) or, with json set, as machine-readable output.
-func listDrivers(out io.Writer, jsonOut bool) error {
-	if jsonOut {
+// row) or, with jsonOut/yamlOut set, as machine-readable output.
+func listDrivers(out io.Writer, jsonOut, yamlOut bool) error {
+	if jsonOut || yamlOut {
 		rows := make([]driverRow, 0, len(drivers))
 		for _, d := range drivers {
 			rows = append(rows, driverRow{
@@ -216,7 +218,7 @@ func listDrivers(out io.Writer, jsonOut bool) error {
 				Doc:         d.doc,
 			})
 		}
-		return newJSONEncoder(out, true).Encode(rows)
+		return writeStructured(out, rows, yamlOut)
 	}
 	rows := [][]tableCell{{
 		coloredCell("DRIVER", pal.header),

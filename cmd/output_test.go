@@ -22,20 +22,20 @@ func TestSelectFormat(t *testing.T) {
 	}{
 		{name: "none defaults to json", cfg: config{}, want: formatJSON},
 		{name: "json", cfg: config{json: true}, want: formatJSON},
-		{name: "json-array", cfg: config{jsonArray: true}, want: formatJSONArray},
+		{name: "jsona", cfg: config{jsonArray: true}, want: formatJSONArray},
 		{name: "jsonl", cfg: config{jsonl: true}, want: formatJSONL},
 		{name: "yaml", cfg: config{yaml: true}, want: formatYAML},
 		{name: "raw selects the values rendering", cfg: config{raw: true}, want: formatValues},
 		{name: "format json", cfg: config{format: "json"}, want: formatJSON},
 		{name: "format jsonl", cfg: config{format: "jsonl"}, want: formatJSONL},
-		{name: "format json-array", cfg: config{format: "json-array"}, want: formatJSONArray},
+		{name: "format jsona", cfg: config{format: "jsona"}, want: formatJSONArray},
 		{name: "format yaml", cfg: config{format: "yaml"}, want: formatYAML},
 		{name: "format values", cfg: config{format: "values"}, want: formatValues},
 		{name: "format raw aliases values", cfg: config{format: "raw"}, want: formatValues},
 		{name: "format is case-insensitive and trimmed", cfg: config{format: " JSON "}, want: formatJSON},
 		{name: "invalid format value errors", cfg: config{format: "csv"}, wantErr: true, errContains: `invalid --format "csv"`},
-		{name: "two booleans is a conflict", cfg: config{json: true, yaml: true}, wantErr: true, errContains: "--format, --json, --json-array, --jsonl, --yaml, --raw"},
-		{name: "format with a boolean is a conflict", cfg: config{format: "json", jsonl: true}, wantErr: true, errContains: "--format, --json, --json-array, --jsonl, --yaml, --raw"},
+		{name: "two booleans is a conflict", cfg: config{json: true, yaml: true}, wantErr: true, errContains: "--format, --json, --jsona, --jsonl, --yaml, --raw"},
+		{name: "format with a boolean is a conflict", cfg: config{format: "json", jsonl: true}, wantErr: true, errContains: "--format, --json, --jsona, --jsonl, --yaml, --raw"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestValidateFormat(t *testing.T) {
 		{name: "whitespace is treated as unset", in: "   "},
 		{name: "json", in: "json"},
 		{name: "jsonl", in: "jsonl"},
-		{name: "json-array", in: "json-array"},
+		{name: "jsona", in: "jsona"},
 		{name: "yaml", in: "yaml"},
 		{name: "values", in: "values"},
 		{name: "raw alias", in: "raw"},
@@ -132,39 +132,39 @@ func TestFormatterOutput(t *testing.T) {
 			want: "{\"name\":\"alice\",\"year\":2020}\n\"bob\"\n",
 		},
 		{
-			name: "json-array wraps values in one document",
+			name: "jsona wraps values in one document",
 			fmt:  formatJSONArray,
 			vals: []any{obj, "bob"},
 			want: "[\n  {\n    \"name\": \"alice\",\n    \"year\": 2020\n  },\n  \"bob\"\n]\n",
 		},
 		{
-			name: "json-array of one value",
+			name: "jsona of one value",
 			fmt:  formatJSONArray,
 			vals: []any{"bob"},
 			want: "[\n  \"bob\"\n]\n",
 		},
 		{
-			name: "json-array of nothing is empty",
+			name: "jsona of nothing is empty",
 			fmt:  formatJSONArray,
 			vals: nil,
 			want: "[]\n",
 		},
 		{
-			name:    "json-array compact is a single line",
+			name:    "jsona compact is a single line",
 			fmt:     formatJSONArray,
 			compact: true,
 			vals:    []any{obj, "bob"},
 			want:    "[{\"name\":\"alice\",\"year\":2020},\"bob\"]\n",
 		},
 		{
-			name:    "json-array compact of one value",
+			name:    "jsona compact of one value",
 			fmt:     formatJSONArray,
 			compact: true,
 			vals:    []any{"bob"},
 			want:    "[\"bob\"]\n",
 		},
 		{
-			name:    "json-array compact of nothing is empty",
+			name:    "jsona compact of nothing is empty",
 			fmt:     formatJSONArray,
 			compact: true,
 			vals:    nil,
@@ -224,9 +224,9 @@ func TestFormatterOutput(t *testing.T) {
 
 func TestFlushCompletesDocument(t *testing.T) {
 	t.Parallel()
-	// Without flush, json-array and yaml leave the document unterminated; flush is
+	// Without flush, jsona and yaml leave the document unterminated; flush is
 	// what closes them, so callers must run it after the engine finishes.
-	t.Run("json-array is unterminated before flush", func(t *testing.T) {
+	t.Run("jsona is unterminated before flush", func(t *testing.T) {
 		t.Parallel()
 		var b bytes.Buffer
 		fm := newFormatter(formatJSONArray, &b, false)
@@ -264,6 +264,14 @@ func TestFinish(t *testing.T) {
 		require.NoError(t, finish(f, nil))
 		require.Equal(t, "[]\n", b.String()) // flush closed the empty array
 	})
+}
+
+func TestWriteStructuredPropagatesWriteError(t *testing.T) {
+	t.Parallel()
+	// A failing writer must surface the encoder error on both the YAML and JSON
+	// paths, rather than being swallowed.
+	require.Error(t, writeStructured(&errAfter{0}, map[string]any{"a": 1}, true))
+	require.Error(t, writeStructured(&errAfter{0}, map[string]any{"a": 1}, false))
 }
 
 func TestRunRejectsConflictingFormat(t *testing.T) {

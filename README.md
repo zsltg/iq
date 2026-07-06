@@ -82,7 +82,8 @@ iq --src books '.["2"]'      # run this one query against "books"
   `--store inline` keeps it in the config file).
 - `iq ls [group]` — list saved sources; the active one is marked `*`. Passwords in URLs are
   redacted. An optional `group` limits the listing to that group. `-v` adds each source's driver;
-  `-g` lists groups instead of sources; `--json` emits machine-readable output. `--reveal` prints
+  `-g` lists groups instead of sources; `-j`/`--json` or `-y`/`--yaml` emit machine-readable
+  output. `--reveal` prints
   a password stored inline in the config verbatim, and `--expand` resolves a keyring-backed
   source's stored password and inlines it — combine both to print a keyring password verbatim.
 - `iq src [<name>]` — show the active source, or set it.
@@ -102,20 +103,22 @@ iq --src books '.["2"]'      # run this one query against "books"
   (`iq inspect prod --only memory,server`); for MongoDB, the diagnostic commands (`dbStats`,
   `serverStatus`, `listCollections`, `collStats`, `buildInfo`, `hostInfo`) — no `--only` runs them
   all. `--list` prints the subcommands/sections available for the source (Mongo's fixed set;
-  Redis's live INFO sections). `--json` for machine-readable output; bounded by `--timeout`. The
-  location header is redacted like `iq ls`: `--reveal` un-redacts an inline password, `--expand`
-  resolves a keyring-backed one.
+  Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
+  by `--timeout`. The location header is redacted like `iq ls`: `--reveal` un-redacts an inline
+  password, `--expand` resolves a keyring-backed one.
 - `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
   added / removed / changed, keyed by document `_id` (MongoDB) or key (Redis); it reads both
   keyspaces fully into memory, the deliberate cost of needing both key sets at once, and is allowed
   across drivers (a power tool for verifying a migration, not a schema comparison — the match is
   only as meaningful as the keys lining up). `--stats` diffs native introspection trees and
   `--schema` diffs an inferred, sampled field/type shape (`--sample`); both require the same driver.
-  Layers combine; `--json` for a machine-readable delta; `--exit-code` exits non-zero when
-  differences exist (otherwise always zero). Bounded by `--timeout`.
+  Layers combine; `-j`/`--json` or `-y`/`--yaml` for a machine-readable delta. `diff` exits
+  non-zero when the sources differ and zero when they match (diff(1)-style), so scripts can branch
+  on the exit status. Bounded by `--timeout`.
 - `iq group [<name>] [--clear]` — show, set, or clear the active **group**.
 - `iq driver ls` — list the backend drivers iq can dispatch to, each with its description, the URL
-  schemes that select it, and its upstream docs. `--json` for machine-readable output. The driver
+  schemes that select it, and its upstream docs. `-j`/`--json` or `-y`/`--yaml` for machine-readable
+  output. The driver
   name shown here is the same canonical name `iq ls -v`, `ping`, `inspect`, and `diff` report
   (`redis` covers both `redis://` and `rediss://`; `mongo` covers `mongodb://` and `mongodb+srv://`).
 
@@ -153,12 +156,23 @@ iq -f json '.[]'                          # explicit flag overrides the stored d
 - `iq config get [--src <name>] <option>` — print an option's effective value at that scope.
 - `iq config set [--src <name>] <option> <value>` — validate and store a value (base, or per
   source). The value is checked exactly as the flag would check it, so an invalid value is refused.
-- `iq config unset [--src <name>] <option>` — remove a stored value.
+  `iq config set -D/--delete [--src <name>] <option>` removes a stored value instead.
 - `iq config ls [--src <name>]` — list the options set at that scope; `-v` lists every persistable
   option with its effective value, built-in default, and help.
 - `iq config edit` — open the config file in `$IQ_EDITOR` (then `$VISUAL`, `$EDITOR`, else `vi`).
 - `iq config view [--reveal] [--expand]` — dump the whole config as TOML, source URLs redacted
   like `iq ls`.
+- `iq config keyring` — manage the OS-keyring secrets that back `--store keyring` sources:
+  - `ls` — list keyring-backed sources, each marked `present` or `missing` (`-j`/`-y` for
+    machine-readable output).
+  - `get <handle>` — print a source's secret, redacted unless `--reveal`.
+  - `set <handle> [value]` — write or update a secret (reads stdin/prompt when the value is
+    omitted). A source with an inline password is left untouched — use `migrate` for it.
+  - `rm <handle>` — delete a source's secret and mark it inline again.
+  - `migrate [<handle>] [--all] [--dry-run]` — move an inline password into the keyring, rewriting
+    the stored URL to its password-less form.
+  - `prune [--dry-run]` — delete stale entries left for non-keyring sources. The keyring cannot be
+    enumerated, so entries whose source was deleted are undetectable and are not pruned.
 
 Persistable options are the flags whose default you would reasonably persist — output (`format`,
 `format.decimal`, `compact`), `timeout`, display (`monochrome`, `color`, `no-progress`), and the
@@ -195,16 +209,21 @@ flags are mutually exclusive and apply to the jq read path and to `--from`/`--co
 | --- | --- |
 | `-j`, `--json` (default) | pretty JSON, one value per result |
 | `-J`, `--jsonl` | compact JSON, one value per line (JSON Lines) |
-| `-A`, `--json-array` | every result wrapped in one `[ ... ]` document |
+| `-A`, `--jsona` | every result wrapped in one `[ ... ]` document |
 | `-r`, `--raw` | scalars unquoted, one per line; objects and arrays fall back to compact JSON |
 | `-y`, `--yaml` | YAML documents, separated by `---` |
 
-`-f`, `--format <name>` selects the same renderings by name — `json`, `jsonl`, `json-array`,
+`-f`, `--format <name>` selects the same renderings by name — `json`, `jsonl`, `jsona`,
 `yaml`, `values` (with `raw` as an alias for `values`) — as an alternative to the shorthand
 flags above. It is mutually exclusive with them, so `-f json --jsonl` is rejected.
 
+> **`--jsona` differs from sq's.** iq's `--jsona` wraps the whole result stream in one array
+> (like `jq -s`); it is the analogue of sq's plain `--json`. sq's `--jsona` instead emits one
+> JSON array *per row* with the keys dropped — a columnar projection that a heterogeneous jq
+> value stream has no honest analogue for, so iq keeps the sq flag name but its own behaviour.
+
 `--compact` collapses the pretty renderings to single-line: `--json` becomes one compact
-value per line (equivalent to `--jsonl`) and `--json-array` becomes a single-line `[ ... ]`. It
+value per line (equivalent to `--jsonl`) and `--jsona` becomes a single-line `[ ... ]`. It
 is a no-op for `--jsonl`, `--raw`, and `--yaml`, which are already condensed.
 
 `-o`, `--output <file>` writes results to `<file>` instead of stdout, truncating an existing
@@ -215,7 +234,7 @@ progress and errors still go to stderr.
 ```bash
 ./iq '.[].title' --raw          # bare titles, one per line, for shell substitution
 ./iq '.[]' --jsonl              # one compact document per line
-./iq '.[]' -f json-array        # a single JSON array of every result (same as --json-array)
+./iq '.[]' -f jsona             # a single JSON array of every result (same as --jsona)
 ./iq '.[]' -A --compact         # the same array on one line
 ./iq '.[]' --yaml               # YAML, easier to read for deeply nested documents
 ./iq '.[]' -A -o results.json   # write the results to a file instead of stdout
@@ -250,7 +269,7 @@ limitation); exactness is kept in preference to YAML's numeric form.
 ### Colored output
 
 Output is syntax-highlighted when `iq` writes to a terminal and left plain when it is piped or
-redirected, so captured output stays clean. The `--json`, `--jsonl`, `--json-array`, and
+redirected, so captured output stays clean. The `--json`, `--jsonl`, `--jsona`, and
 `--yaml` renderings get syntax highlighting; the `--raw` rendering is always plain so it stays
 safe for shell capture. The human commands color their signal too: `ping` shows `ok`/`error` in
 green/red, `diff` shows additions green, removals red, and changes yellow, and `ls`/`inspect`
@@ -395,7 +414,7 @@ redis   Redis key-value store                                           redis, r
 file    Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON)  file
 ```
 
-Add `--json` for machine-readable rows (see [Sources](#sources) for the full flag).
+Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sources) for the full flag).
 
 > [!NOTE]
 > `VERSIONS` is the range of backend server versions the bundled client library supports —
@@ -676,7 +695,7 @@ cat foreign.json | iq --insert books --key-field id   # import foreign JSON from
 iq '{t: .title}' --src books --insert kv --key '.t'   # reshape + re-key while copying
 ```
 
-`--typed` serializes the records in the chosen format — `--jsonl` (default), `--json-array`, or
+`--typed` serializes the records in the chosen format — `--jsonl` (default), `--jsona`, or
 `--yaml` — and **all three re-import** through a `file://` source or a piped `--insert`. YAML is not
 content-sniffable, so reading it back needs an explicit hint (`file:///dump.yaml?format=yaml`, or
 `--from-format yaml` for a piped restore); JSONL and JSON auto-detect. `--dry-run` reports the effect
@@ -732,7 +751,7 @@ graph TD
   MSRC --> TX["per-item jq transform + re-key"]
   TX --> DST{"--insert or --typed?"}
   DST -->|--insert| PUT["Putter.Put (upsert / insert-only)"]
-  DST -->|--typed| ENC["emit {key,type,value} → jsonl / json-array / yaml"]
+  DST -->|--typed| ENC["emit {key,type,value} → jsonl / jsona / yaml"]
   PUT --> BW["backend adapter:<br/>type-aware native writes"]
   LF["iq data clear / drop (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop (capability-gated)"]
 ```
@@ -803,7 +822,7 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   movement/lifecycle group (`copy`/`clear`/`drop`), a source or config command
   (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`/`diff`/`driver`/`config`), or a `--from`/`--combine` cross-source query —
   resolving every source name through the same registry — and formats output (a format-flag-selected
-  renderer for the jq path — `--json`, `--jsonl`, `--json-array`, `--raw`, or `--yaml`, also selectable by
+  renderer for the jq path — `--json`, `--jsonl`, `--jsona`, `--raw`, or `--yaml`, also selectable by
   name with `--format`, and with `--format.decimal` governing how decimals normalize; per-backend for `exec` —
   redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format. The
   diagnostics surface (verbose output, file logging, error rendering, `--debug.pprof`) also lives

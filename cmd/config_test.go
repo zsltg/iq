@@ -120,21 +120,34 @@ func TestConfigSetRejects(t *testing.T) {
 	}
 }
 
-func TestConfigUnset(t *testing.T) {
+func TestConfigSetDelete(t *testing.T) {
 	configEnv(t)
 	root, _ := newRootCmd()
 	_, err := runCmd(t, root, "config", "set", "compact", "true")
 	require.NoError(t, err)
 
 	root2, _ := newRootCmd()
-	out, err := runCmd(t, root2, "config", "unset", "compact")
+	out, err := runCmd(t, root2, "config", "set", "-D", "compact")
 	require.NoError(t, err)
 	require.Contains(t, out, "unset compact")
 
 	root3, _ := newRootCmd()
-	out, err = runCmd(t, root3, "config", "unset", "compact")
+	out, err = runCmd(t, root3, "config", "set", "--delete", "compact")
 	require.NoError(t, err)
 	require.Contains(t, out, "was not set")
+}
+
+func TestConfigSetArgErrors(t *testing.T) {
+	configEnv(t)
+	// A plain set needs a value; -D takes an option only. (The retired `unset`
+	// subcommand is gone — deletion is `set -D`.)
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "config", "set", "compact")
+	require.ErrorContains(t, err, "set takes <option> <value>")
+
+	root2, _ := newRootCmd()
+	_, err = runCmd(t, root2, "config", "set", "-D", "compact", "true")
+	require.ErrorContains(t, err, "no value")
 }
 
 func TestConfigLs(t *testing.T) {

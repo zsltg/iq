@@ -31,7 +31,7 @@ func TestTypedDumpFormatsFromFileSource(t *testing.T) {
 	cases := []struct{ name, flag, want string }{
 		{"jsonl default", "", `{"key":"a","type":"string","value":"hi"}`},
 		{"jsonl", "--jsonl", `{"key":"b","type":"hash","value":{"f":"v"}}`},
-		{"json-array", "--json-array", `"key": "a"`},
+		{"jsona", "--jsona", `"key": "a"`},
 		{"yaml", "--yaml", "key: a"},
 	}
 	for _, c := range cases {

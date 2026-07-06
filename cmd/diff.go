@@ -15,9 +15,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// errQuietExit signals a non-zero exit with no stderr line: `diff --exit-code`
-// returns it when differences exist, so scripts can branch on the exit status
-// without the report being mistaken for an error. Execute recognizes it.
+// errQuietExit signals a non-zero exit with no stderr line: `diff` returns it
+// whenever differences exist (diff(1)-style), so scripts can branch on the exit
+// status without the report being mistaken for an error. Execute recognizes it.
 var errQuietExit = errors.New("differences found")
 
 // errStopSampling stops a ScanBatches walk once the schema sample is full. It is
@@ -39,7 +39,7 @@ type diffTarget struct {
 func newDiffCmd(cfg *config) *cobra.Command {
 	var (
 		dataMode, statsMode, schemaMode bool
-		jsonOut, exitCode               bool
+		jsonOut, yamlOut                bool
 		sections                        []string
 		sample                          int
 	)
@@ -57,9 +57,9 @@ func newDiffCmd(cfg *config) *cobra.Command {
 		"  --schema  diff an inferred field->type shape sampled from each source. Same\n" +
 		"            driver only. The shape is sampled (--sample) and inferred, never\n" +
 		"            declared, so a wider sample yields a truer shape.\n\n" +
-		"Use --json for a machine-readable delta, or --exit-code to exit non-zero when\n" +
-		"differences exist (for scripts); by default diff exits zero whether or not the\n" +
-		"sources differ."
+		"Use -j/--json or -y/--yaml for a machine-readable delta. diff exits non-zero when\n" +
+		"the sources differ and zero when they match (diff(1)-style), so scripts can branch\n" +
+		"on the exit status."
 	c := &cobra.Command{
 		Use:   "diff <a> <b>",
 		Short: "Compare two sources by data, stats, or inferred schema",
@@ -113,10 +113,10 @@ func newDiffCmd(cfg *config) *cobra.Command {
 				rep.Schema = s
 			}
 
-			if err := rep.render(cmd.OutOrStdout(), left, right, jsonOut); err != nil {
+			if err := rep.render(cmd.OutOrStdout(), left, right, jsonOut, yamlOut); err != nil {
 				return err
 			}
-			if exitCode && !rep.empty() {
+			if !rep.empty() {
 				return errQuietExit
 			}
 			return nil
@@ -127,8 +127,9 @@ func newDiffCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVar(&schemaMode, "schema", false, "diff an inferred field/type shape (same driver only)")
 	c.Flags().StringArrayVar(&sections, "section", nil, "introspection section(s) for --stats (repeatable; default: the source's full set)")
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled per side for --schema (0 = all)")
-	c.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
-	c.Flags().BoolVar(&exitCode, "exit-code", false, "exit non-zero when differences exist (otherwise always zero)")
+	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
+	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit machine-readable YAML")
+	c.MarkFlagsMutuallyExclusive("json", "yaml")
 	return c
 }
 
@@ -321,10 +322,10 @@ func (r report) empty() bool {
 	return len(r.Data) == 0 && len(r.Stats) == 0 && len(r.Schema) == 0
 }
 
-// render writes the report as JSON or as a human diff.
-func (r report) render(out io.Writer, left, right diffTarget, jsonOut bool) error {
-	if jsonOut {
-		return newJSONEncoder(out, true).Encode(r)
+// render writes the report as JSON, YAML, or a human diff.
+func (r report) render(out io.Writer, left, right diffTarget, jsonOut, yamlOut bool) error {
+	if jsonOut || yamlOut {
+		return writeStructured(out, r, yamlOut)
 	}
 	header := fmt.Sprintf("%s (%s)  →  %s (%s)", left.handle, left.driver, right.handle, right.driver)
 	if _, err := fmt.Fprintf(out, "%s\n\n", pal.header.Sprint(header)); err != nil {

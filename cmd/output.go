@@ -19,7 +19,7 @@ type outputFormat string
 const (
 	formatJSON      outputFormat = "json"
 	formatJSONL     outputFormat = "jsonl"
-	formatJSONArray outputFormat = "json-array"
+	formatJSONArray outputFormat = "jsona"
 	formatValues    outputFormat = "values"
 	formatYAML      outputFormat = "yaml"
 )
@@ -28,12 +28,12 @@ const (
 // The names match the shorthand boolean flags, plus "raw" as an alias for
 // "values" (mirroring the --raw boolean, which selects formatValues).
 var namedFormats = map[string]outputFormat{
-	"json":       formatJSON,
-	"jsonl":      formatJSONL,
-	"json-array": formatJSONArray,
-	"yaml":       formatYAML,
-	"values":     formatValues,
-	"raw":        formatValues,
+	"json":   formatJSON,
+	"jsonl":  formatJSONL,
+	"jsona":  formatJSONArray,
+	"yaml":   formatYAML,
+	"values": formatValues,
+	"raw":    formatValues,
 }
 
 // namedFormat resolves a --format value to its rendering, case-insensitively and
@@ -50,7 +50,7 @@ func validateFormat(s string) error {
 		return nil
 	}
 	if _, ok := namedFormat(s); !ok {
-		return fmt.Errorf("invalid --format %q: want json, jsonl, json-array, yaml, values, or raw", s)
+		return fmt.Errorf("invalid --format %q: want json, jsonl, jsona, yaml, values, or raw", s)
 	}
 	return nil
 }
@@ -66,7 +66,7 @@ func selectFormat(cfg *config) (outputFormat, error) {
 	if cfg.format != "" {
 		f, ok := namedFormat(cfg.format)
 		if !ok {
-			return "", fmt.Errorf("invalid --format %q: want json, jsonl, json-array, yaml, values, or raw", cfg.format)
+			return "", fmt.Errorf("invalid --format %q: want json, jsonl, jsona, yaml, values, or raw", cfg.format)
 		}
 		set = append(set, f)
 	}
@@ -91,12 +91,12 @@ func selectFormat(cfg *config) (outputFormat, error) {
 	case 1:
 		return set[0], nil
 	default:
-		return "", fmt.Errorf("output format flags are mutually exclusive: set at most one of --format, --json, --json-array, --jsonl, --yaml, --raw")
+		return "", fmt.Errorf("output format flags are mutually exclusive: set at most one of --format, --json, --jsona, --jsonl, --yaml, --raw")
 	}
 }
 
 // formatter renders each value the query engine emits and, on flush, completes
-// the output. Most formatters stream and flush is a no-op; json-array closes its
+// the output. Most formatters stream and flush is a no-op; jsona closes its
 // bracket and yaml closes its encoder, so callers must flush once the engine has
 // finished.
 type formatter interface {
@@ -105,7 +105,7 @@ type formatter interface {
 }
 
 // newFormatter builds the formatter for f, writing to w. When compact is set,
-// the pretty renderings (json, json-array) collapse to single-line output; the
+// the pretty renderings (json, jsona) collapse to single-line output; the
 // already-condensed formats (jsonl, values, yaml) ignore it.
 func newFormatter(f outputFormat, w io.Writer, compact bool) formatter {
 	switch f {
@@ -136,6 +136,20 @@ func newJSONEncoder(w io.Writer, pretty bool) render.Encoder {
 		indent = "  "
 	}
 	return render.NewJSONEncoder(w, "", indent, colorOn())
+}
+
+// writeStructured renders a single value as pretty JSON (the default) or as YAML
+// when yamlOut is set, for the info commands (ls, inspect, diff, driver ls,
+// config keyring ls). It reuses the query path's encoders so color and formatting
+// stay consistent; callers invoke it only in structured mode (-j or -y), which
+// Cobra marks mutually exclusive.
+func writeStructured(w io.Writer, v any, yamlOut bool) error {
+	format := formatJSON
+	if yamlOut {
+		format = formatYAML
+	}
+	f := newFormatter(format, w, false)
+	return finish(f, f.emit(v))
 }
 
 // jsonFormatter streams one JSON value per Encode call: pretty for json, compact

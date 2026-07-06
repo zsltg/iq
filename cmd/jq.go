@@ -144,7 +144,7 @@ func (cfg *config) logQueryComplete(scanned int, start time.Time) {
 }
 
 // finish returns the engine's run error if any; otherwise it flushes the
-// formatter, closing json-array and yaml documents that the last emit left open.
+// formatter, closing jsona and yaml documents that the last emit left open.
 func finish(f formatter, runErr error) error {
 	if runErr != nil {
 		return runErr

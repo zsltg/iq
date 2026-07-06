@@ -11,12 +11,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/diff"
 	"github.com/zsltg/iq/internal/query"
 )
+
+// quietDiff builds a diff command that suppresses cobra's error/usage printing,
+// as the real Execute() does for errQuietExit, so a differing-source run leaves
+// only the rendered delta in the captured buffer for decoding.
+func quietDiff(cfg *config) *cobra.Command {
+	dc := newDiffCmd(cfg)
+	dc.SilenceErrors, dc.SilenceUsage = true, true
+	return dc
+}
 
 func TestReportEmpty(t *testing.T) {
 	require.True(t, report{}.empty())
@@ -39,7 +49,7 @@ func TestReportRenderHuman(t *testing.T) {
 	left := diffTarget{handle: "a", driver: "redis"}
 	right := diffTarget{handle: "b", driver: "redis"}
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, left, right, false))
+	require.NoError(t, rep.render(&buf, left, right, false, false))
 	out := buf.String()
 
 	require.Contains(t, out, "a (redis)  →  b (redis)")
@@ -56,7 +66,7 @@ func TestReportRenderHuman(t *testing.T) {
 func TestReportRenderNoDifferences(t *testing.T) {
 	rep := report{Data: []diff.ItemDelta{}, dataRun: true}
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, diffTarget{handle: "a"}, diffTarget{handle: "b"}, false))
+	require.NoError(t, rep.render(&buf, diffTarget{handle: "a"}, diffTarget{handle: "b"}, false, false))
 	require.Contains(t, buf.String(), "no differences")
 }
 
@@ -66,7 +76,7 @@ func TestReportRenderJSON(t *testing.T) {
 		dataRun: true,
 	}
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, diffTarget{handle: "a"}, diffTarget{handle: "b"}, true))
+	require.NoError(t, rep.render(&buf, diffTarget{handle: "a"}, diffTarget{handle: "b"}, true, false))
 
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
@@ -218,19 +228,19 @@ func TestRenderPropagatesWriteErrors(t *testing.T) {
 	})
 	t.Run("render header", func(t *testing.T) {
 		rep := report{dataRun: true}
-		require.Error(t, rep.render(&errAfter{0}, diffTarget{}, diffTarget{}, false))
+		require.Error(t, rep.render(&errAfter{0}, diffTarget{}, diffTarget{}, false, false))
 	})
 	t.Run("render data section", func(t *testing.T) {
 		rep := report{Data: []diff.ItemDelta{item}, dataRun: true}
-		require.Error(t, rep.render(&errAfter{1}, diffTarget{}, diffTarget{}, false))
+		require.Error(t, rep.render(&errAfter{1}, diffTarget{}, diffTarget{}, false, false))
 	})
 	t.Run("render stats section", func(t *testing.T) {
 		rep := report{Stats: []diff.Change{change}, statsRun: true}
-		require.Error(t, rep.render(&errAfter{1}, diffTarget{}, diffTarget{}, false))
+		require.Error(t, rep.render(&errAfter{1}, diffTarget{}, diffTarget{}, false, false))
 	})
 	t.Run("render schema section", func(t *testing.T) {
 		rep := report{Schema: []diff.Change{change}, schemaRun: true}
-		require.Error(t, rep.render(&errAfter{1}, diffTarget{}, diffTarget{}, false))
+		require.Error(t, rep.render(&errAfter{1}, diffTarget{}, diffTarget{}, false, false))
 	})
 }
 
@@ -252,8 +262,10 @@ func TestDiffDataRedisIntegration(t *testing.T) {
 	seedConfig(t, c)
 
 	cfg := &config{timeout: 5 * time.Second}
-	out, err := runCmd(t, newDiffCmd(cfg), "a", "b", "--json")
-	require.NoError(t, err)
+	out, err := runCmd(t, quietDiff(cfg), "a", "b", "--json")
+	// The sources differ, so diff writes the delta and returns the quiet-exit
+	// sentinel (diff(1)-style non-zero exit).
+	require.ErrorIs(t, err, errQuietExit)
 
 	deltas := decodeData(t, out)
 	require.Equal(t, map[string]string{"k1": "remove", "k2": "add", "shared": "change"}, deltas)
@@ -278,17 +290,14 @@ func TestDiffExitCodeRedisIntegration(t *testing.T) {
 
 	cfg := &config{timeout: 5 * time.Second}
 
-	// a vs a: identical, so --exit-code stays zero.
-	_, err = runCmd(t, newDiffCmd(cfg), "a", "a", "--exit-code")
+	// a vs a: identical, so diff exits zero.
+	_, err = runCmd(t, newDiffCmd(cfg), "a", "a")
 	require.NoError(t, err)
 
-	// a vs b: differ, so --exit-code returns the quiet-exit sentinel.
-	_, err = runCmd(t, newDiffCmd(cfg), "a", "b", "--exit-code")
-	require.ErrorIs(t, err, errQuietExit)
-
-	// Without --exit-code, differences still exit zero.
+	// a vs b: differ, so diff returns the quiet-exit sentinel (non-zero exit),
+	// diff(1)-style, with no flag needed.
 	_, err = runCmd(t, newDiffCmd(cfg), "a", "b")
-	require.NoError(t, err)
+	require.ErrorIs(t, err, errQuietExit)
 }
 
 func TestDiffDataAndSchemaMongoIntegration(t *testing.T) {
@@ -306,13 +315,14 @@ func TestDiffDataAndSchemaMongoIntegration(t *testing.T) {
 
 	cfg := &config{timeout: 8 * time.Second}
 
-	data, err := runCmd(t, newDiffCmd(cfg), "a", "b", "--json")
-	require.NoError(t, err)
+	data, err := runCmd(t, quietDiff(cfg), "a", "b", "--json")
+	// Differing sources exit non-zero (diff(1)-style) while still writing the delta.
+	require.ErrorIs(t, err, errQuietExit)
 	require.Equal(t, map[string]string{"1": "remove", "2": "change", "3": "add"}, decodeData(t, data))
 
 	// Schema diff: cb has an email field ca lacks.
-	schemaText, err := runCmd(t, newDiffCmd(cfg), "a", "b", "--schema")
-	require.NoError(t, err)
+	schemaText, err := runCmd(t, quietDiff(cfg), "a", "b", "--schema")
+	require.ErrorIs(t, err, errQuietExit)
 	require.Contains(t, schemaText, "# schema")
 	require.Contains(t, schemaText, ".email")
 }

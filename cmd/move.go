@@ -206,7 +206,7 @@ func selectTypedFormat(cfg *config) (outputFormat, error) {
 		return "", err
 	}
 	if fm == formatValues {
-		return "", errors.New("--typed cannot use --raw/--values; choose --jsonl (default), --json-array, or --yaml")
+		return "", errors.New("--typed cannot use --raw/--values; choose --jsonl (default), --jsona, or --yaml")
 	}
 	return fm, nil
 }

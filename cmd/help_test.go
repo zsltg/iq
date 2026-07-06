@@ -39,7 +39,7 @@ func TestRootHelpGroupsFlags(t *testing.T) {
 	cases := []struct{ header, flag string }{
 		{"  Source:", "--src"},
 		{"  Query:", "--no-compile"},
-		{"  Output:", "--json-array"},
+		{"  Output:", "--jsona"},
 		{"  Display:", "--no-progress"},
 		{"  Diagnostics:", "--debug.pprof"},
 	}

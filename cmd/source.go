@@ -243,16 +243,16 @@ func parseStore(store string) (keyring bool, err error) {
 // are redacted so a stored password is never printed unless --reveal (inline
 // passwords) or --expand (keyring passwords) is set.
 func newLsCmd(cfg *config) *cobra.Command {
-	var groups, jsonOut bool
+	var groups, jsonOut, yamlOut bool
 	c := &cobra.Command{
 		Use:   "ls [group]",
 		Short: "List saved sources (the active one marked *), or groups with -g",
 		Long: "List saved sources, the active one marked with '*'. An optional [group] limits\n" +
 			"the listing to sources in that group. -v adds each source's driver; -g lists\n" +
-			"groups instead of sources; --json emits machine-readable output. Passwords are\n" +
-			"redacted by default: --reveal prints a password stored inline in the config\n" +
-			"verbatim, and --expand resolves a keyring-backed source's stored password and\n" +
-			"inlines it (combine both to print a keyring password verbatim).",
+			"groups instead of sources; -j/--json or -y/--yaml emit machine-readable output.\n" +
+			"Passwords are redacted by default: --reveal prints a password stored inline in\n" +
+			"the config verbatim, and --expand resolves a keyring-backed source's stored\n" +
+			"password and inlines it (combine both to print a keyring password verbatim).",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
@@ -261,19 +261,21 @@ func newLsCmd(cfg *config) *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if groups {
-				return listGroups(out, cf, cfg.verbose, jsonOut)
+				return listGroups(out, cf, cfg.verbose, jsonOut, yamlOut)
 			}
 			filter := ""
 			if len(args) == 1 {
 				filter = iqconfig.CleanHandle(args[0])
 			}
-			return listSources(out, cf, filter, cfg.verbose, cfg.reveal, jsonOut, cfg.expand)
+			return listSources(out, cf, filter, cfg.verbose, cfg.reveal, jsonOut, yamlOut, cfg.expand)
 		},
 	}
 	// -v is the global --verbose (registered on the root); `iq ls -v` reuses it
 	// for the driver column, so no local -v is declared here.
 	c.Flags().BoolVarP(&groups, "group", "g", false, "list groups instead of sources")
-	c.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
+	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
+	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit machine-readable YAML")
+	c.MarkFlagsMutuallyExclusive("json", "yaml")
 	c.Flags().BoolVar(&cfg.reveal, "reveal", false, "print inline-stored passwords verbatim instead of redacting them")
 	c.Flags().BoolVar(&cfg.expand, "expand", false, "resolve keyring-backed passwords and inline them into printed URLs")
 	return c

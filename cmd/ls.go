@@ -28,8 +28,9 @@ type groupRow struct {
 
 // listSources renders the sources, optionally limited to a group, marking the
 // active one. reveal un-redacts inline passwords and expand resolves keyring
-// passwords; verbose adds a driver column; json emits machine-readable output.
-func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, reveal, jsonOut, expand bool) error {
+// passwords; verbose adds a driver column; jsonOut/yamlOut emit machine-readable
+// output.
+func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, reveal, jsonOut, yamlOut, expand bool) error {
 	list := cf.List()
 	if filter != "" {
 		kept := list[:0:0]
@@ -41,7 +42,7 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 		list = kept
 	}
 
-	if jsonOut {
+	if jsonOut || yamlOut {
 		rows := make([]sourceRow, 0, len(list))
 		for _, h := range list {
 			rows = append(rows, sourceRow{
@@ -53,7 +54,7 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 				Active:     h.Name == cf.Active,
 			})
 		}
-		return newJSONEncoder(out, true).Encode(rows)
+		return writeStructured(out, rows, yamlOut)
 	}
 
 	if len(list) == 0 {
@@ -93,16 +94,16 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 	return renderTable(out, rows)
 }
 
-// listGroups renders the distinct groups. verbose adds a source count; json emits
-// machine-readable output.
-func listGroups(out io.Writer, cf *iqconfig.Config, verbose, jsonOut bool) error {
+// listGroups renders the distinct groups. verbose adds a source count;
+// jsonOut/yamlOut emit machine-readable output.
+func listGroups(out io.Writer, cf *iqconfig.Config, verbose, jsonOut, yamlOut bool) error {
 	groups := cf.Groups()
-	if jsonOut {
+	if jsonOut || yamlOut {
 		rows := make([]groupRow, 0, len(groups))
 		for _, g := range groups {
 			rows = append(rows, groupRow{Group: g, Sources: cf.CountGroup(g)})
 		}
-		return newJSONEncoder(out, true).Encode(rows)
+		return writeStructured(out, rows, yamlOut)
 	}
 	if len(groups) == 0 {
 		_, err := fmt.Fprintln(out, "no groups; group a source by naming it group/name")

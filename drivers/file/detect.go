@@ -108,7 +108,7 @@ func classify(head []byte, name string) (Format, error) {
 // detectJSONFamily distinguishes iq's typed dump from mongoexport by the first
 // object's shape — a {key,…,value} envelope is iq's typed dump, anything else a
 // mongo document. It handles both a top-level object and the first element of a
-// JSON array (mongoexport --jsonArray, or a --typed --json-array dump).
+// JSON array (mongoexport --jsonArray, or a --typed --jsona dump).
 func detectJSONFamily(trimmed []byte) Format {
 	obj, ok := firstJSONObject(trimmed)
 	if !ok {

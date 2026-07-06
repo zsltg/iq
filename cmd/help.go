@@ -51,7 +51,7 @@ var rootFlagGroups = map[string]string{
 	"combine":    groupQuery,
 
 	"json":           groupOutput,
-	"json-array":     groupOutput,
+	"jsona":          groupOutput,
 	"jsonl":          groupOutput,
 	"yaml":           groupOutput,
 	"raw":            groupOutput,

@@ -24,6 +24,7 @@ var mongoInspectCmds = []string{"dbStats", "serverStatus", "listCollections", "c
 func newInspectCmd(cfg *config) *cobra.Command {
 	var (
 		jsonOut bool
+		yamlOut bool
 		list    bool
 		only    []string
 	)
@@ -39,9 +40,9 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"Redis — runs INFO; --only narrows it to those sections\n" +
 		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
 		"  server  clients  memory  persistence  stats  replication  cpu  keyspace\n\n" +
-		"Use --json for machine-readable output, or --list to print the subcommands/sections\n" +
-		"available for the source. The location header is redacted by default: --reveal prints\n" +
-		"an inline password verbatim, --expand resolves a keyring-backed one."
+		"Use -j/--json or -y/--yaml for machine-readable output, or --list to print the\n" +
+		"subcommands/sections available for the source. The location header is redacted by\n" +
+		"default: --reveal prints an inline password verbatim, --expand resolves a keyring-backed one."
 	c := &cobra.Command{
 		Use:   "inspect [source]",
 		Short: "Show a source's native server/database introspection",
@@ -66,18 +67,20 @@ func newInspectCmd(cfg *config) *cobra.Command {
 			out := cmd.OutOrStdout()
 			switch driverName(cfg.url) {
 			case "redis":
-				return inspectRedis(ctx, out, st, cfg, only, jsonOut, list)
+				return inspectRedis(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "file":
 				// inspect reports live server metadata; a dump file has none. Point
 				// the user at the operations that do work on a file source.
 				return errors.New("inspect reports live server metadata, which a file source has none; " +
 					"query it with a jq filter (`iq '.[]' --src <name>`) or compare it with `iq diff`")
 			default:
-				return inspectMongo(ctx, out, st, cfg, only, jsonOut, list)
+				return inspectMongo(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			}
 		},
 	}
-	c.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
+	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
+	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit machine-readable YAML")
+	c.MarkFlagsMutuallyExclusive("json", "yaml")
 	c.Flags().BoolVar(&list, "list", false, "list the subcommands/sections available for the source")
 	c.Flags().StringSliceVar(&only, "only", nil, "narrow to these sections (Redis) / subcommands (MongoDB)")
 	c.Flags().BoolVar(&cfg.reveal, "reveal", false, "print an inline-stored password verbatim in the location header instead of redacting it")
@@ -87,17 +90,17 @@ func newInspectCmd(cfg *config) *cobra.Command {
 
 // inspectRedis runs INFO (narrowed to the given sections) and renders it. With
 // list, it prints the section names the reply exposes instead of the reply.
-func inspectRedis(ctx context.Context, out io.Writer, st store, cfg *config, sections []string, jsonOut, list bool) error {
+func inspectRedis(ctx context.Context, out io.Writer, st store, cfg *config, sections []string, jsonOut, yamlOut, list bool) error {
 	res, err := query.NewRunner(st).Run(ctx, append([]string{"INFO"}, sections...))
 	if err != nil {
 		return redactErr(err, cfg.url)
 	}
 	info, _ := res.(string)
 	if list {
-		return writeInspectList(out, redisInfoSections(info), jsonOut)
+		return writeInspectList(out, redisInfoSections(info), jsonOut, yamlOut)
 	}
-	if jsonOut {
-		return newJSONEncoder(out, true).Encode(parseRedisInfo(info))
+	if jsonOut || yamlOut {
+		return writeStructured(out, parseRedisInfo(info), yamlOut)
 	}
 	if err := inspectHeader(out, cfg); err != nil {
 		return err
@@ -146,9 +149,9 @@ func parseRedisInfo(info string) map[string]map[string]string {
 // inspectMongo runs the requested MongoDB diagnostic commands (all supported when
 // none are named) and renders each reply keyed by subcommand. With list, it prints
 // the supported subcommand names instead, without touching the store.
-func inspectMongo(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, list bool) error {
+func inspectMongo(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
 	if list {
-		return writeInspectList(out, mongoInspectCmds, jsonOut)
+		return writeInspectList(out, mongoInspectCmds, jsonOut, yamlOut)
 	}
 	explicit := len(subs) > 0
 	which := subs
@@ -180,12 +183,12 @@ func inspectMongo(ctx context.Context, out io.Writer, st store, cfg *config, sub
 		results = append(results, result{sub: sub, value: res})
 	}
 
-	if jsonOut {
+	if jsonOut || yamlOut {
 		byName := make(map[string]any, len(results))
 		for _, r := range results {
 			byName[r.sub] = r.value
 		}
-		return newJSONEncoder(out, true).Encode(byName)
+		return writeStructured(out, byName, yamlOut)
 	}
 	if err := inspectHeader(out, cfg); err != nil {
 		return err
@@ -217,11 +220,11 @@ func isMongoInspectCmd(sub string) bool {
 	return false
 }
 
-// writeInspectList renders the names --list emits: a JSON array with jsonOut, else
-// one name per line.
-func writeInspectList(out io.Writer, names []string, jsonOut bool) error {
-	if jsonOut {
-		return newJSONEncoder(out, true).Encode(names)
+// writeInspectList renders the names --list emits: a JSON or YAML array with
+// jsonOut/yamlOut, else one name per line.
+func writeInspectList(out io.Writer, names []string, jsonOut, yamlOut bool) error {
+	if jsonOut || yamlOut {
+		return writeStructured(out, names, yamlOut)
 	}
 	for _, name := range names {
 		if _, err := fmt.Fprintln(out, name); err != nil {

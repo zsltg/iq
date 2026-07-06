@@ -81,31 +81,31 @@ func applyStoredOptions(cmd *cobra.Command, cfg *config) error {
 	return nil
 }
 
-// newConfigCmd builds `iq config`: inspect and edit the config file, and get,
-// set, or unset the stored option defaults. With --src an option is scoped to
-// one source, overriding the base for a query against it; without --src it is a
-// base default. The precedence at query time is explicit flag > source option >
-// base option > built-in default.
+// newConfigCmd builds `iq config`: inspect and edit the config file, and get or
+// set (or remove, with `set -D`) the stored option defaults. With --src an option
+// is scoped to one source, overriding the base for a query against it; without
+// --src it is a base default. The precedence at query time is explicit flag >
+// source option > base option > built-in default.
 func newConfigCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "config",
 		Short: "Show the config file and manage stored option defaults",
-		Long: "Inspect the config file and manage stored option defaults. `set`/`unset` a\n" +
-			"persistable flag by name to persist its value so you need not retype it; scope\n" +
-			"it to one source with --src (`iq config set --src @prod format yaml`). A stored\n" +
-			"default is overridden per query by an explicit flag, and a source option is\n" +
-			"overridden only by an explicit flag; the base option applies to every other\n" +
-			"source. `location` prints the file path, `edit` opens it, `view` dumps it.",
+		Long: "Inspect the config file and manage stored option defaults. `set` a persistable\n" +
+			"flag by name to persist its value so you need not retype it (remove it again with\n" +
+			"`set -D`); scope it to one source with --src (`iq config set --src @prod format\n" +
+			"yaml`). A stored default is overridden per query by an explicit flag, and a source\n" +
+			"option is overridden only by an explicit flag; the base option applies to every\n" +
+			"other source. `location` prints the file path, `edit` opens it, `view` dumps it.",
 		Args: cobra.NoArgs,
 	}
 	c.AddCommand(
 		newConfigLocationCmd(),
 		newConfigGetCmd(cfg),
 		newConfigSetCmd(cfg),
-		newConfigUnsetCmd(cfg),
 		newConfigLsCmd(cfg),
 		newConfigEditCmd(),
 		newConfigViewCmd(cfg),
+		newConfigKeyringCmd(cfg),
 	)
 	return c
 }
@@ -162,69 +162,80 @@ func newConfigGetCmd(cfg *config) *cobra.Command {
 	}
 }
 
-// newConfigSetCmd builds `iq config set [--src @x] <key> <value>`: validate and
-// store an option's value, base or per-source.
+// newConfigSetCmd builds `iq config set [--src @x] <option> <value>`: validate
+// and store an option's value, base or per-source. With -D/--delete it instead
+// removes the stored option (folding in what was a separate `unset` command).
 func newConfigSetCmd(cfg *config) *cobra.Command {
-	return &cobra.Command{
-		Use:   "set <option> <value>",
-		Short: "Store an option's value (base, or per-source with --src)",
-		Args:  cobra.ExactArgs(2),
+	var del bool
+	c := &cobra.Command{
+		Use:   "set [--delete] <option> [<value>]",
+		Short: "Store an option's value, or remove it with -D (base, or per-source with --src)",
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			key, value := args[0], args[1]
-			canonical, err := canonicalOptionValue(key, value)
-			if err != nil {
-				return err
+			if del {
+				return runConfigDelete(cmd, cfg, args)
 			}
-			cf, err := iqconfig.Load()
-			if err != nil {
-				return err
-			}
-			handle := iqconfig.CleanHandle(cfg.src)
-			if err := cf.SetOption(handle, key, canonical); err != nil {
-				return err
-			}
-			if err := cf.Save(); err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "set %s%s = %s\n", scopePrefix(handle), key, canonical)
-			return err
+			return runConfigSet(cmd, cfg, args)
 		},
 	}
+	c.Flags().BoolVarP(&del, "delete", "D", false, "remove the stored option instead of setting it (takes <option> only, no value)")
+	return c
 }
 
-// newConfigUnsetCmd builds `iq config unset [--src @x] <key>`: remove a stored
-// option, base or per-source.
-func newConfigUnsetCmd(cfg *config) *cobra.Command {
-	return &cobra.Command{
-		Use:   "unset <option>",
-		Short: "Remove a stored option (base, or per-source with --src)",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			key := args[0]
-			if !isPersistableOption(key) {
-				return unknownOptionErr(key)
-			}
-			cf, err := iqconfig.Load()
-			if err != nil {
-				return err
-			}
-			handle := iqconfig.CleanHandle(cfg.src)
-			existed, err := cf.UnsetOption(handle, key)
-			if err != nil {
-				return err
-			}
-			out := cmd.OutOrStdout()
-			if !existed {
-				_, err = fmt.Fprintf(out, "%s%s was not set\n", scopePrefix(handle), key)
-				return err
-			}
-			if err := cf.Save(); err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(out, "unset %s%s\n", scopePrefix(handle), key)
-			return err
-		},
+// runConfigSet validates and stores <option> <value> at the base or --src scope.
+func runConfigSet(cmd *cobra.Command, cfg *config, args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("set takes <option> <value>; use -D/--delete to remove an option")
 	}
+	key, value := args[0], args[1]
+	canonical, err := canonicalOptionValue(key, value)
+	if err != nil {
+		return err
+	}
+	cf, err := iqconfig.Load()
+	if err != nil {
+		return err
+	}
+	handle := iqconfig.CleanHandle(cfg.src)
+	if err := cf.SetOption(handle, key, canonical); err != nil {
+		return err
+	}
+	if err := cf.Save(); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "set %s%s = %s\n", scopePrefix(handle), key, canonical)
+	return err
+}
+
+// runConfigDelete removes the stored <option> at the base or --src scope, the
+// -D/--delete path of `config set`.
+func runConfigDelete(cmd *cobra.Command, cfg *config, args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("--delete takes <option> only, no value")
+	}
+	key := args[0]
+	if !isPersistableOption(key) {
+		return unknownOptionErr(key)
+	}
+	cf, err := iqconfig.Load()
+	if err != nil {
+		return err
+	}
+	handle := iqconfig.CleanHandle(cfg.src)
+	existed, err := cf.UnsetOption(handle, key)
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if !existed {
+		_, err = fmt.Fprintf(out, "%s%s was not set\n", scopePrefix(handle), key)
+		return err
+	}
+	if err := cf.Save(); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "unset %s%s\n", scopePrefix(handle), key)
+	return err
 }
 
 // newConfigLsCmd builds `iq config ls [--src @x]`: list the options set at that

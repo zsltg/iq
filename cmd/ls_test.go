@@ -76,6 +76,27 @@ func TestLsJSON(t *testing.T) {
 	require.Equal(t, "books", byHandle["prod/books"].Collection)
 }
 
+func TestLsJSONYAMLFlags(t *testing.T) {
+	seedLs(t)
+
+	// -j is the short for --json.
+	shortJSON, err := runCmd(t, newLsCmd(&config{}), "-j")
+	require.NoError(t, err)
+	var rows []sourceRow
+	require.NoError(t, json.Unmarshal([]byte(shortJSON), &rows))
+	require.Len(t, rows, 3)
+
+	// -y / --yaml emits YAML instead.
+	yamlOut, err := runCmd(t, newLsCmd(&config{}), "-y")
+	require.NoError(t, err)
+	require.Contains(t, yamlOut, "handle: cache")
+	require.Contains(t, yamlOut, "driver: redis")
+
+	// The two structured formats are mutually exclusive.
+	_, err = runCmd(t, newLsCmd(&config{}), "-j", "-y")
+	require.Error(t, err)
+}
+
 func TestLsReveal(t *testing.T) {
 	seedLs(t)
 

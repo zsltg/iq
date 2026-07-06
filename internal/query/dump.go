@@ -154,7 +154,7 @@ func convertNumbers(v any) any {
 // JSONSource streams typed {key,type,value} records (or, in plain mode, whole
 // values) from a JSON reader that is either concatenated objects (JSON Lines) or a
 // single top-level array — the array-tolerant counterpart of JSONLSource, so a
-// --typed dump written as --jsonl or --json-array both re-import. Integers stay
+// --typed dump written as --jsonl or --jsona both re-import. Integers stay
 // exact.
 func JSONSource(r io.Reader, pageSize int, plain bool) RecordSource {
 	if pageSize <= 0 {
