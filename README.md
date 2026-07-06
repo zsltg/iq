@@ -705,43 +705,35 @@ Query / read path:
 
 ```mermaid
 graph TD
-  F["jq filter (CLI)"] --> SEL["selector.Keys (AST analysis)"]
+  F["jq filter (CLI)"] --> SEL["selector.Keys<br/>(AST analysis)"]
   SEL -->|bounded| GET["KVStore.Get(keys)"]
-  SEL -->|"streamable scan"| CMP{"FilteredScanner? (pushdown on)"}
-  SEL -->|"holistic scan"| MAT["materialize (--unbounded)"]
+  SEL -->|"streamable scan"| CMP{"FilteredScanner?<br/>(pushdown on)"}
+  SEL -->|"holistic scan"| MAT["materialize<br/>(--unbounded)"]
 
-  CMP -->|yes| PD["pushdown.Compile → predicate.Node"]
-  CMP -->|no| RS["KVStore.ScanBatches (full scan)"]
+  CMP -->|yes| PD["pushdown.Compile → predicate.Node<br/>(adapter pre-filters server-side)"]
+  CMP -->|no| RS["KVStore.ScanBatches<br/>(full scan, no pushdown)"]
 
-  PD --> MG["Mongo: native query (server-side)"]
-  RS --> RD["Redis: client-side scan"]
-  RS --> FL["File dump: decode + client-side scan (read-only)"]
-
-  GET --> JQ["run full jq client-side, per batch"]
+  GET --> JQ["run full jq<br/>client-side, per batch"]
   MAT --> JQ
-  MG --> JQ
-  RD --> JQ
-  FL --> JQ
-  JQ --> OUT["format renderer → output"]
-
-  RS -.->|"per page (OnPage)"| PROG["progress spinner → stderr (CLI)"]
-  MAT -.->|"per page (OnPage)"| PROG
-  RS -.->|"unfiltered (OnEstimate)"| EST["Estimator (opt): Mongo count"]
-  MAT -.-> EST
-  EST -.->|"~N est"| PROG
+  PD --> JQ
+  RS --> JQ
+  JQ --> OUT["format renderer<br/>→ output"]
 ```
+
+A scan emits per-page progress (`RunOptions.OnPage`) to a stderr spinner — CLI only, off unless
+attached to a terminal — and an unfiltered scan can fetch a cheap up-front total
+(`RunOptions.OnEstimate`, Mongo's `estimatedDocumentCount`) so progress reads as ~N.
 
 Data movement & lifecycle / write path:
 
 ```mermaid
 graph TD
-  MV["iq --insert / --typed (CLI)"] --> MSRC["source (--src / file:// / stdin) → TypedScan"]
+  MV["iq --insert / --typed (CLI)"] --> MSRC["source: --src (live or file:// dump) / stdin → TypedScan"]
   MSRC --> TX["per-item jq transform + re-key"]
   TX --> DST{"--insert or --typed?"}
   DST -->|--insert| PUT["Putter.Put (upsert / insert-only)"]
   DST -->|--typed| ENC["emit {key,type,value} → jsonl / json-array / yaml"]
-  PUT --> MW["Mongo: bulkWrite / insertMany"]
-  PUT --> RW["Redis: pipelined SET/HSET/RPUSH/…"]
+  PUT --> BW["backend adapter:<br/>type-aware native writes"]
   LF["iq data clear / drop (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop (capability-gated)"]
 ```
 
