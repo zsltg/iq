@@ -17,7 +17,7 @@ var seededKeys = []string{
 }
 
 // seedKV loads a fixed set of iq:test:* keys spanning every supported type, so
-// Get's normalization can be asserted without depending on scripts/seed.sh. It
+// Get's normalization can be asserted without depending on scripts/seed-redis.sh. It
 // removes the keys when the test finishes: a stream or a leftover key would
 // otherwise surface in a later `iq '.'` scan.
 func seedKV(t *testing.T, store *iqredis.Store) {

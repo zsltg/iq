@@ -992,7 +992,7 @@ iq data clear books       # empty a container (drop removes it; both prompt unle
 go test -short ./...      # fast unit tests, no external services
 go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra via testcontainers-go
 docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra for manual exploration (:6379, :27017, :9042)
-bash scripts/seed.sh      # load example data into the running Redis
+bash scripts/seed-redis.sh    # load example data into the running Redis
 bash scripts/seed-mongo.sh    # load example documents into the running MongoDB
 bash scripts/seed-cassandra.sh    # load example rows into the running Cassandra
 docker compose down       # stop the local services
@@ -1014,7 +1014,7 @@ ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL`
 to point at an already-running server (for example the `docker compose` stack) to skip container
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
 a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded
-into DB 0 by `scripts/seed.sh` survives a test run.
+into DB 0 by `scripts/seed-redis.sh` survives a test run.
 
 The mutation gate scopes to the current branch's diff against `main` by default, so it only
 mutates the lines a change touched. Override the base ref with `IQ_MUTATION_BASE` (set it empty

@@ -12,7 +12,7 @@
 #   docker compose up -d --wait
 #   export IQ_REDIS_URL=redis://localhost:6379/0 IQ_MONGO_URL=mongodb://localhost:27017/iq_test
 # The Redis integration tests pin themselves to reserved databases (14 and 15),
-# so a shared stack seeded on DB 0 by scripts/seed.sh keeps its data through the run.
+# so a shared stack seeded on DB 0 by scripts/seed-redis.sh keeps its data through the run.
 set -uo pipefail
 
 # Scope to the branch diff unless the caller supplied their own --diff or cleared

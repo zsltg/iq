@@ -394,7 +394,7 @@ func decodeData(t *testing.T, out string) map[string]string {
 }
 
 // Integration tests operate on reserved Redis databases so a run never flushes
-// DB 0, which developers seed (scripts/seed.sh) for manual exploration. diff
+// DB 0, which developers seed (scripts/seed-redis.sh) for manual exploration. diff
 // needs two sources, hence two reserved databases.
 const (
 	testRedisDB    = 15 // primary scratch database

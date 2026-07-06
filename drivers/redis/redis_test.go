@@ -16,7 +16,7 @@ import (
 )
 
 // testRedisDB is the reserved database integration tests operate on. DB 0 is
-// left to developers, who seed it (scripts/seed.sh) for manual exploration, so
+// left to developers, who seed it (scripts/seed-redis.sh) for manual exploration, so
 // a test run never flushes data out from under them.
 const testRedisDB = 15
 
