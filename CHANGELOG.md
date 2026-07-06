@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.14.0 - 2026-07-06
+### Features
+- **file:** cache decoded file:// dumps with a per-page key index (ecee043)
+
+
+## v0.13.0 - 2026-07-06
+### Features
+- **cli:** align command/flag surface with sq (14a685a)
+
+### Documentation
+- **readme:** compact architecture diagrams and make them backend-agnostic (9d5f7dc)
+
+
 ## v0.12.0 - 2026-07-06
 ### Documentation
 - **readme:** mark file:// in comparison table, split architecture diagram (69ec928)
