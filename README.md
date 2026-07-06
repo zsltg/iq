@@ -701,41 +701,48 @@ into a native predicate, and each backend maps that predicate its own way — Mo
 server-side, Redis scans and filters client-side. Either way the full jq re-runs client-side, so the
 pushed predicate is only ever a conservative pre-filter and results are identical with or without it.
 
+Query / read path:
+
 ```mermaid
 graph TD
-  F["jq filter (CLI)"] --> SEL["selector.Keys — static AST analysis"]
-  SEL -->|"bounded: named keys"| GET["KVStore.Get(keys)"]
-  SEL -->|"scan, streamable (.[]-rooted)"| CMP{"pushdown on (default) and store is a FilteredScanner?"}
-  SEL -->|"holistic scan (keys, map, aggregates)"| MAT["materialize — requires --unbounded"]
+  F["jq filter (CLI)"] --> SEL["selector.Keys (AST analysis)"]
+  SEL -->|bounded| GET["KVStore.Get(keys)"]
+  SEL -->|"streamable scan"| CMP{"FilteredScanner? (pushdown on)"}
+  SEL -->|"holistic scan"| MAT["materialize (--unbounded)"]
 
-  CMP -->|yes| PD["pushdown.Compile → predicate.Node (decompose)"]
-  CMP -->|no| RS["KVStore.ScanBatches — full scan"]
+  CMP -->|yes| PD["pushdown.Compile → predicate.Node"]
+  CMP -->|no| RS["KVStore.ScanBatches (full scan)"]
 
-  PD --> MG["MongoDB: toFilter → native query (server-side pre-filter)"]
-  RS --> RD["Redis: no pushdown, client-side scan"]
-  RS --> FL["File dump: decode RDB/BSON/mongoexport/JSONL, client-side scan (read-only)"]
+  PD --> MG["Mongo: native query (server-side)"]
+  RS --> RD["Redis: client-side scan"]
+  RS --> FL["File dump: decode + client-side scan (read-only)"]
 
-  GET --> JQ["run the full jq client-side, per batch (re-run — superset safety)"]
+  GET --> JQ["run full jq client-side, per batch"]
   MAT --> JQ
   MG --> JQ
   RD --> JQ
   FL --> JQ
-  JQ --> OUT["selected-format renderer → output"]
+  JQ --> OUT["format renderer → output"]
 
-  RS -.->|"per page (RunOptions.OnPage)"| PROG["scan-progress spinner → stderr (CLI, off unless a terminal)"]
-  MAT -.->|"per page (RunOptions.OnPage)"| PROG
-  RS -.->|"unfiltered: cheap total (RunOptions.OnEstimate)"| EST["Estimator (opt): Mongo estimatedDocumentCount"]
+  RS -.->|"per page (OnPage)"| PROG["progress spinner → stderr (CLI)"]
+  MAT -.->|"per page (OnPage)"| PROG
+  RS -.->|"unfiltered (OnEstimate)"| EST["Estimator (opt): Mongo count"]
   MAT -.-> EST
   EST -.->|"~N est"| PROG
+```
 
-  MV["iq --insert / --typed (CLI)"] --> MSRC["source: --src / file:// / piped stdin — TypedReader.TypedScan"]
-  MSRC --> TX["optional per-item jq transform + re-key (source key / --key)"]
+Data movement & lifecycle / write path:
+
+```mermaid
+graph TD
+  MV["iq --insert / --typed (CLI)"] --> MSRC["source (--src / file:// / stdin) → TypedScan"]
+  MSRC --> TX["per-item jq transform + re-key"]
   TX --> DST{"--insert or --typed?"}
-  DST -->|--insert| PUT["Putter.Put — upsert / insert-only (--replace clears first)"]
-  DST -->|--typed| ENC["emit {key,type,value} via formatter → jsonl / json-array / yaml dump"]
-  PUT --> MW["Mongo: bulkWrite replaceOne-upsert / insertMany"]
-  PUT --> RW["Redis: pipelined type-aware SET/HSET/RPUSH/… (DEL-then-write to replace)"]
-  LF["iq data clear / drop (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop — capability-gated (Redis has no Dropper)"]
+  DST -->|--insert| PUT["Putter.Put (upsert / insert-only)"]
+  DST -->|--typed| ENC["emit {key,type,value} → jsonl / json-array / yaml"]
+  PUT --> MW["Mongo: bulkWrite / insertMany"]
+  PUT --> RW["Redis: pipelined SET/HSET/RPUSH/…"]
+  LF["iq data clear / drop (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop (capability-gated)"]
 ```
 
 The query core is driver-agnostic and lives behind two ports a backend adapter implements:
@@ -899,7 +906,8 @@ what you run.
 
 | Tool | Query language | Relational | NoSQL | Files | Data model | Footprint |
 |---|---|:---:|:---:|:---:|---|---|
-| **iq** | **jq** | — | **●** | — | **document** | **single binary** |
+| **iq** | **jq** | — | **●** | **◐** | **document** | **single binary** |
+| [sq](https://sq.io) | SLQ / SQL | ● | — | ● | tabular | single binary |
 | [Apache Calcite](https://calcite.apache.org) | SQL | ● | ◐ | ◐ | relational (via adapters) | library / embedded |
 | [Apache Drill](https://drill.apache.org) | SQL | ● | ● | ● | schema-free (both) | server / engine |
 | [DBeaver](https://dbeaver.io) | native per-backend | ● | ◐ | ◐ | client-side, per backend | desktop app (JVM) |
@@ -914,13 +922,14 @@ what you run.
 | [MindsDB](https://mindsdb.com) | SQL | ● | ● | ◐ | virtual relational | server |
 | [OctoSQL](https://github.com/cube2222/octosql) | SQL | ● | ◐ | ● | tabular | single binary |
 | [PartiQL](https://partiql.org) | PartiQL | ● | ● | ◐ | nested (both) | spec / embedded |
-| [sq](https://sq.io) | SLQ / SQL | ● | — | ● | tabular | single binary |
 | [SQL++](https://asterixdb.apache.org/docs/0.9.9/sqlpp/manual.html) / [N1QL](https://www.couchbase.com/products/n1ql/) | SQL++ | ◐ | ● | — | document | DB engine |
 | [Trino](https://trino.io) / [Presto](https://prestodb.io) | SQL | ● | ● | ● | tabular (◐ JSON) | server / engine |
 | [usql](https://github.com/xo/usql) | native SQL | ● | ◐ | — | tabular | single binary (multiplexer) |
 
 Placement is by each tool's primary targets; several (Trino, Drill, OctoSQL, DuckDB, Calcite)
-partially reach neighbouring columns via connectors, adapters, or extensions. The takeaway is the
+partially reach neighbouring columns via connectors, adapters, or extensions, and `iq` reaches
+Files the same way — a read-only `file://` source over database dumps, not arbitrary files. The
+takeaway is the
 NoSQL column paired with footprint: `iq` is the only tool pairing a unified query language across
 NoSQL backends with a single lightweight binary. Data virtualization platforms (Denodo, Dremio,
 MindsDB) get the unified language but need a server. Universal clients (DBeaver, DBX, LazySQL)
