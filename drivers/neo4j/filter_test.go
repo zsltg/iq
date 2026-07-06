@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/predicate"
 )
@@ -86,7 +87,7 @@ func TestTranslatePushdown(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &cypherBuilder{params: map[string]any{}}
+			b := &cypherBuilder{params: map[string]any{}, variable: "n"}
 			where, narrow := b.translate(tt.node)
 			assert.Equal(t, tt.wantNarrow, narrow)
 			if !tt.wantNarrow {
@@ -94,6 +95,23 @@ func TestTranslatePushdown(t *testing.T) {
 			}
 			assert.Equal(t, tt.wantWhere, where)
 			assert.Equal(t, tt.wantParams, b.params)
+		})
+	}
+}
+
+func TestTranslatePushdownRelationshipVariable(t *testing.T) {
+	b := &cypherBuilder{params: map[string]any{}, variable: "r"}
+	where, narrow := b.translate(predicate.Eq{Path: []string{"since"}, Value: 2019.0})
+	require.True(t, narrow)
+	assert.Equal(t, "r[$f0] = $f1", where)
+}
+
+func TestTranslatePushdownSkipsRelationshipEnvelopeKeys(t *testing.T) {
+	for _, key := range []string{"_type", "_start", "_end"} {
+		t.Run(key, func(t *testing.T) {
+			b := &cypherBuilder{params: map[string]any{}, variable: "r"}
+			_, narrow := b.translate(predicate.Eq{Path: []string{key}, Value: "x"})
+			assert.False(t, narrow, "the computed %s envelope key is not a pushable property", key)
 		})
 	}
 }

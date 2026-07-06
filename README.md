@@ -92,10 +92,12 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   declared with `?types=cf:age=long`), a CouchDB default database as `?database=`
   (`couchdb://host:5984/?database=books`, the host as the server), a Neo4j default node label as
   `?label=` (`neo4j://host:7687/?label=Person&key=id`, the host as the bolt server; the node key is
-  the `?key=` property, else the elementId; the database is `?database=`, default `neo4j`), the
+  the `?key=` property, else the elementId; the database is `?database=`, default `neo4j`) or a
+  relationship type as `?rel=` (`neo4j://host:7687/?rel=WROTE`, read-only), the
   driver's own connection option — like a `file://`
   source's `?format=`; a query addresses another collection/table/database/label with a dotted
-  `handle.collection` / `handle.table` / `handle.database` / `handle.label`. `-a`/`--active` makes the new source active. `-p`/`--password`
+  `handle.collection` / `handle.table` / `handle.database` / `handle.label` (Neo4j also `handle.:TYPE`
+  for a relationship type). `-a`/`--active` makes the new source active. `-p`/`--password`
   prompts for the URL password (or reads it from stdin) instead of embedding it in the URL.
   `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`, `couchdb`, `neo4j`) and errors if it
   disagrees with the scheme. The source is
@@ -937,7 +939,7 @@ and `indexes` (its Mango indexes); `--only` narrows to those subcommands.
 </details>
 
 <details>
-<summary><b>Neo4j</b> — node-label keyspace, key mapping, Cypher pushdown, and raw Cypher</summary>
+<summary><b>Neo4j</b> — node-label and relationship-type keyspaces, key mapping, Cypher pushdown, and raw Cypher</summary>
 
 Register a `neo4j://` source and the same jq interface works against a node label, where **the node
 label is the keyspace: a node's key is the key and the node is the value**. Neo4j has no single
@@ -967,6 +969,27 @@ label with keyset pagination ordered by `elementId(n)`. Because a `?key=` proper
 (unlike a primary key), a scan falls back to a node's elementId whenever the key would collide
 within a page, so no node is ever silently dropped; a bounded `.["v"]` lookup that matches more than
 one node is an error rather than an arbitrary pick.
+
+### Relationship collections
+
+A **relationship type** is an addressable collection too, so you can query a graph's edges the same
+way. Name it with `?rel=KNOWS` on the source, or address one per run with the `:` marker
+(`handle.:KNOWS`) — a leading colon can never be a valid label, so it unambiguously selects a
+relationship type. A source names either a label or a relationship type, not both.
+
+```bash
+iq add -n edges 'neo4j://neo4j:password@localhost:7687/?rel=WROTE'  # a relationship-type source
+iq --src edges '.[] | select(.year > 2015)'   # stream WROTE edges, filtered (pushdown on the edge)
+iq --src graph.:WROTE '.[]'                    # or address the type per run from any source
+```
+
+Each relationship's value is its properties plus a self-describing envelope: `_type` (the type),
+`_id` (its elementId), and `_start` / `_end` (the endpoint node elementIds). The scan, key, count,
+and `select(...)` pushdown rules are identical to nodes (the predicate is pushed onto the edge
+variable). **Relationship collections are read-only for now**: creating an edge needs endpoint
+resolution — which nodes to connect and by which key — which is a further follow-up, so a copy or
+`iq data` write into a relationship source is refused with a clear message. Write nodes with
+`?label=`.
 
 ### Server-side pre-filtering (predicate pushdown)
 
@@ -1310,7 +1333,9 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   document `_id` within the database it owns from the URL's `?database=` (host as the server, or a
   dotted `handle.database` override); Neo4j maps a key to a node — the `?key=` property's value or
   the elementId — within the label it owns from the URL's `?label=` (bolt host as the server, or a
-  dotted `handle.label` override) inside the `?database=` (default `neo4j`). Cassandra pushes
+  dotted `handle.label` override) inside the `?database=` (default `neo4j`), or to a relationship
+  within a `?rel=` type (or a `handle.:TYPE` override), read-only, whose value carries the endpoint
+  elementIds. Cassandra pushes
   equality/`IN` as a CQL `WHERE`
   (`FilteredScanner`) but has no cheap count, so it omits `Estimator` like Redis; DynamoDB pushes
   equality/existence as a `Scan` `FilterExpression` (`FilteredScanner`) and answers `Estimator` from

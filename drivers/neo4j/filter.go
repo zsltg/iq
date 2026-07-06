@@ -16,10 +16,10 @@ import (
 // match — the scan falls back to a plain label walk, which is both correct and
 // cheaper than a match-everything filter.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
-	if s.target.label == "" {
+	if s.target.name == "" {
 		return errNoLabel
 	}
-	b := &cypherBuilder{params: map[string]any{}}
+	b := &cypherBuilder{params: map[string]any{}, variable: s.target.variable()}
 	where, narrowing := b.translate(pred)
 	if !narrowing {
 		return s.ScanBatches(ctx, fn)
@@ -28,10 +28,13 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 }
 
 // cypherBuilder accumulates the parameters for a translated predicate, naming them
-// f0, f1, … so they never collide with the scan's own skip/limit/key parameters.
+// f0, f1, … so they never collide with the scan's own after/limit/key parameters.
+// variable is the entity the WHERE clause is over (n for a node, r for a
+// relationship).
 type cypherBuilder struct {
-	n      int
-	params map[string]any
+	n        int
+	params   map[string]any
+	variable string
 }
 
 // param binds v to a fresh f-name and returns the $-reference for the statement.
@@ -61,19 +64,19 @@ func (b *cypherBuilder) translate(n predicate.Node) (string, bool) {
 		if t.Value == nil {
 			// jq reads a missing field as null and `== null` is true for it; a Neo4j
 			// property is absent rather than explicitly null, so IS NULL matches exactly.
-			return fmt.Sprintf("n[%s] IS NULL", prop), true
+			return fmt.Sprintf("%s[%s] IS NULL", b.variable, prop), true
 		}
-		return fmt.Sprintf("n[%s] = %s", prop, b.param(t.Value)), true
+		return fmt.Sprintf("%s[%s] = %s", b.variable, prop, b.param(t.Value)), true
 	case predicate.Exists:
 		if !pushablePath(t.Path) {
 			return "", false
 		}
-		return fmt.Sprintf("n[%s] IS NOT NULL", b.param(t.Path[0])), true
+		return fmt.Sprintf("%s[%s] IS NOT NULL", b.variable, b.param(t.Path[0])), true
 	case predicate.NotExists:
 		if !pushablePath(t.Path) {
 			return "", false
 		}
-		return fmt.Sprintf("n[%s] IS NULL", b.param(t.Path[0])), true
+		return fmt.Sprintf("%s[%s] IS NULL", b.variable, b.param(t.Path[0])), true
 	case predicate.And:
 		return b.andClause(t)
 	case predicate.Or:
@@ -117,12 +120,16 @@ func (b *cypherBuilder) orClause(or predicate.Or) (string, bool) {
 	return "(" + strings.Join(parts, " OR ") + ")", true
 }
 
-// pushablePath reports whether a predicate path names a single node property that
+// pushablePath reports whether a predicate path names a single stored property that
 // can be pushed. Neo4j properties are flat, so a nested path (.author.name) has no
-// property to match; the reserved _id/_labels are computed, not stored, so they are
-// not pushable either.
+// property to match; the reserved envelope keys (_id/_labels/_type/_start/_end) are
+// computed, not stored, so they are not pushable either.
 func pushablePath(path []string) bool {
-	return len(path) == 1 && path[0] != fieldID && path[0] != fieldLabels
+	if len(path) != 1 {
+		return false
+	}
+	_, isReserved := reserved[path[0]]
+	return !isReserved
 }
 
 // compile-time assertion that Store satisfies the optional filtered-scan capability.

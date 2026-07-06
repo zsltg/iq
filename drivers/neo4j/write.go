@@ -15,6 +15,12 @@ import (
 // stable property key to reconcile a record against an existing node.
 var errWriteNeedsKey = errors.New("neo4j: writing needs a key property; set ?key= in the source url so nodes upsert on a stable key")
 
+// errRelWriteUnsupported marks the deferred relationship-write path. Reading and
+// copying relationships out works; creating them needs endpoint resolution (which
+// nodes to connect, by which key) that is a further follow-up, so a write into a
+// relationship collection is refused rather than half-done.
+var errRelWriteUnsupported = errors.New("neo4j: writing relationships is not yet supported; a relationship source (?rel= / handle.:TYPE) is read-only — write nodes with ?label=")
+
 // reserved is the set of value keys iq injects that are not real node properties, so
 // a write strips them before MERGE — writing _id back would try to set a property
 // named _id from the read envelope.
@@ -30,7 +36,10 @@ var reserved = map[string]struct{}{
 // silently fanning out.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	var stat query.WriteStat
-	if s.target.label == "" {
+	if s.target.kind == relTarget {
+		return stat, errRelWriteUnsupported
+	}
+	if s.target.name == "" {
 		return stat, errNoLabel
 	}
 	if s.target.key == "" {
@@ -38,7 +47,7 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 	}
 	if !s.keyBackedByConstraint {
 		return stat, fmt.Errorf("neo4j: %s.%s has no uniqueness constraint; create one (CREATE CONSTRAINT ... FOR (n:%s) REQUIRE n.%s IS UNIQUE) before writing so an upsert cannot fan out across duplicate nodes",
-			s.target.label, s.target.key, s.target.label, s.target.key)
+			s.target.name, s.target.key, s.target.name, s.target.key)
 	}
 	if len(batch) == 0 {
 		return stat, nil
@@ -56,7 +65,7 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 	sess := s.session(ctx, neo4j.AccessModeWrite)
 	defer func() { _ = sess.Close(ctx) }()
 
-	merge := "UNWIND $rows AS row MERGE (n:`" + s.target.label + "` {`" + s.target.key + "`: row.k}) "
+	merge := "UNWIND $rows AS row MERGE (n:`" + s.target.name + "` {`" + s.target.key + "`: row.k}) "
 	cypher := merge + "SET n += row.props"
 	if mode == query.InsertOnly {
 		cypher = merge + "ON CREATE SET n += row.props"
@@ -110,13 +119,16 @@ func recordProps(rec query.Record, key string) (map[string]any, any, error) {
 // large label does not run as one unbounded transaction. The label itself is not a
 // removable object, so this is the closest operation to a drop.
 func (s *Store) Clear(ctx context.Context) error {
-	if s.target.label == "" {
+	if s.target.kind == relTarget {
+		return errRelWriteUnsupported
+	}
+	if s.target.name == "" {
 		return errNoLabel
 	}
 	sess := s.session(ctx, neo4j.AccessModeWrite)
 	defer func() { _ = sess.Close(ctx) }()
 
-	cypher := "MATCH (n:`" + s.target.label + "`) WITH n LIMIT $limit DETACH DELETE n"
+	cypher := "MATCH (n:`" + s.target.name + "`) WITH n LIMIT $limit DETACH DELETE n"
 	for {
 		res, err := s.run(ctx, sess, cypher, map[string]any{"limit": scanBatch})
 		if err != nil {
@@ -136,10 +148,11 @@ func (s *Store) Clear(ctx context.Context) error {
 // "node", so a copy reconstructs each node. It reuses ScanBatches, so the key and
 // value are exactly what the read path produces.
 func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) error) error {
+	typ := s.target.noun() // "node" or "relationship"
 	return s.ScanBatches(ctx, func(page map[string]any) error {
 		recs := make([]query.Record, 0, len(page))
 		for k, v := range page {
-			recs = append(recs, query.Record{Key: k, Type: "node", Value: v})
+			recs = append(recs, query.Record{Key: k, Type: typ, Value: v})
 		}
 		return fn(recs)
 	})

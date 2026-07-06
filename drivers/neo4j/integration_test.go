@@ -241,6 +241,89 @@ func TestIntegrationClearPagesLargeLabel(t *testing.T) {
 	assert.Equal(t, int64(0), c)
 }
 
+// openRelStore opens a relationship-type source (?rel=TYPE) for a test.
+func openRelStore(t *testing.T, ctx context.Context, relType, key string) *Store {
+	t.Helper()
+	u := testURL() + "?rel=" + relType
+	if key != "" {
+		u += "&key=" + key
+	}
+	st, err := Open(ctx, u, "", nil, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	return st
+}
+
+func TestIntegrationRelationships(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	exec(t, ctx, admin, "MATCH (n:ItRelNode) DETACH DELETE n")
+	exec(t, ctx, admin, `CREATE (a:ItRelNode {id:'a'}), (b:ItRelNode {id:'b'}), (c:ItRelNode {id:'c'}),
+		(a)-[:IT_KNOWS {since: 2019}]->(b),
+		(a)-[:IT_KNOWS {since: 2021}]->(c)`)
+
+	st := openRelStore(t, ctx, "IT_KNOWS", "")
+
+	t.Run("scan yields the relationship envelope", func(t *testing.T) {
+		seen := map[string]any{}
+		require.NoError(t, st.ScanBatches(ctx, func(p map[string]any) error {
+			for k, v := range p {
+				seen[k] = v
+			}
+			return nil
+		}))
+		require.Len(t, seen, 2)
+		for _, v := range seen {
+			rel := v.(map[string]any)
+			assert.Equal(t, "IT_KNOWS", rel["_type"])
+			assert.NotEmpty(t, rel["_start"])
+			assert.NotEmpty(t, rel["_end"])
+			assert.Contains(t, rel, "since")
+		}
+	})
+
+	t.Run("count", func(t *testing.T) {
+		c, err := st.EstimateCount(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), c)
+	})
+
+	t.Run("filtered scan pushes a property equality on r", func(t *testing.T) {
+		seen := 0
+		require.NoError(t, st.ScanFiltered(ctx, predicate.Eq{Path: []string{"since"}, Value: 2019.0}, func(p map[string]any) error {
+			seen += len(p)
+			return nil
+		}))
+		assert.Equal(t, 1, seen)
+	})
+
+	t.Run("get by elementId and typed scan", func(t *testing.T) {
+		var eid string
+		var recs []query.Record
+		require.NoError(t, st.TypedScan(ctx, func(batch []query.Record) error {
+			recs = append(recs, batch...)
+			return nil
+		}))
+		require.Len(t, recs, 2)
+		for _, r := range recs {
+			assert.Equal(t, "relationship", r.Type)
+			eid = r.Key
+		}
+		got, err := st.Get(ctx, []string{eid})
+		require.NoError(t, err)
+		assert.Equal(t, "IT_KNOWS", got[eid].(map[string]any)["_type"])
+	})
+
+	t.Run("colon-marker address resolves the same relationship type", func(t *testing.T) {
+		marked, err := Open(ctx, testURL(), ":IT_KNOWS", nil, numfmt.DecimalAuto)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = marked.Close() })
+		c, err := marked.EstimateCount(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), c)
+	})
+}
+
 func TestIntegrationInspect(t *testing.T) {
 	ctx := integrationOrSkip(t)
 	admin := openStore(t, ctx, "", "")

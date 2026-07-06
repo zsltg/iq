@@ -24,7 +24,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	var filter map[string]any
 	desc := "MATCH (n:<label>): full-label scan (every node read, filtered client-side)"
 	if pred != nil {
-		b := &cypherBuilder{params: map[string]any{}}
+		b := &cypherBuilder{params: map[string]any{}, variable: "n"}
 		if where, narrowing := b.translate(pred); narrowing {
 			filter = map[string]any{"where": where}
 			desc = "MATCH (n:<label>) WHERE <predicate>: server-side pre-filter, then the full jq re-runs client-side"

@@ -37,30 +37,106 @@ var errNoLabel = errors.New("neo4j: no label selected; address it as handle.Labe
 // namespace for the relationship follow-up.
 var identifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// targetKind distinguishes the graph entity a collection addresses. v1 only ever
-// produces nodeTarget; relTarget is reserved for the relationship-type follow-up so
-// its parse branch and Cypher builders slot in without disturbing the node path.
+// targetKind distinguishes the graph entity a collection addresses: a node label or
+// a relationship type. Every Cypher path is built from a target rather than an
+// inlined MATCH, so the two entities share one read path.
 type targetKind int
 
-const nodeTarget targetKind = iota
+const (
+	nodeTarget targetKind = iota
+	relTarget
+)
 
-// target is the resolved collection: which entity, its label (or, later, type), and
-// the property whose value is the key ("" means the elementId is the key). Every
-// Cypher path is built from a target rather than an inlined MATCH, so the follow-up
-// adds a relTarget branch in one place.
+// relMarker prefixes a dotted address to select a relationship type instead of a
+// node label (handle.:KNOWS). A leading ':' can never be a valid label (the
+// identifier rule rejects it), so the marker is unambiguous and back-compatible: a
+// node source could never have used it.
+const relMarker = ":"
+
+// target is the resolved collection: which entity, its name (a node label or a
+// relationship type), and the property whose value is the key ("" means the
+// elementId is the key).
 type target struct {
-	kind  targetKind
-	label string
-	key   string
+	kind targetKind
+	name string
+	key  string
 }
 
-// match renders the target's MATCH clause. A label-less target (a bounded Get by
-// elementId) matches any node; otherwise the validated label is backtick-quoted.
+// resolveTarget decides the collection a source addresses from its dotted address
+// override and its URL query. A ':'-prefixed address (handle.:KNOWS) or a ?rel=
+// selects a relationship type; a plain address or ?label= selects a node label. A
+// source cannot set both ?label= and ?rel=. The chosen name and the ?key= property
+// are validated as bare identifiers so they are injection-safe when interpolated.
+func resolveTarget(address string, q url.Values) (target, error) {
+	if q.Get("label") != "" && q.Get("rel") != "" {
+		return target{}, errors.New("neo4j url sets both ?label= and ?rel=; a source addresses either a node label or a relationship type, not both")
+	}
+	key := q.Get("key")
+	if key != "" && !identifier.MatchString(key) {
+		return target{}, fmt.Errorf("neo4j key property %q must be a bare identifier", key)
+	}
+
+	// The dotted address override, when present, wins and decides the kind.
+	if address != "" {
+		if rel, ok := strings.CutPrefix(address, relMarker); ok {
+			return newTarget(relTarget, rel, key)
+		}
+		return newTarget(nodeTarget, address, key)
+	}
+	if rel := q.Get("rel"); rel != "" {
+		return newTarget(relTarget, rel, key)
+	}
+	return newTarget(nodeTarget, q.Get("label"), key)
+}
+
+// newTarget validates the entity name (a non-empty name must be a bare identifier,
+// since it is interpolated into a MATCH — labels and types cannot be parameters) and
+// builds the target.
+func newTarget(kind targetKind, name, key string) (target, error) {
+	if kind == relTarget && name == "" {
+		return target{}, errors.New("neo4j relationship type is empty; name it as handle.:TYPE or ?rel=TYPE")
+	}
+	if name != "" && !identifier.MatchString(name) {
+		noun := "label"
+		if kind == relTarget {
+			noun = "relationship type"
+		}
+		return target{}, fmt.Errorf("neo4j %s %q must be a bare identifier (letters, digits, underscore; no leading digit)", noun, name)
+	}
+	return target{kind: kind, name: name, key: key}, nil
+}
+
+// variable is the Cypher variable the target's MATCH binds — n for a node, r for a
+// relationship — which every clause references so the read path is entity-agnostic.
+func (t target) variable() string {
+	if t.kind == relTarget {
+		return "r"
+	}
+	return "n"
+}
+
+// noun names the entity for user-facing messages.
+func (t target) noun() string {
+	if t.kind == relTarget {
+		return "relationship"
+	}
+	return "node"
+}
+
+// match renders the target's MATCH clause, binding n (node) or r (relationship). A
+// nameless node target (a bounded Get by elementId) matches any node; a named target
+// is scoped to its backtick-quoted label or relationship type.
 func (t target) match() string {
-	if t.label == "" {
+	if t.kind == relTarget {
+		if t.name == "" {
+			return "MATCH ()-[r]->()"
+		}
+		return "MATCH ()-[r:`" + t.name + "`]->()"
+	}
+	if t.name == "" {
 		return "MATCH (n)"
 	}
-	return "MATCH (n:`" + t.label + "`)"
+	return "MATCH (n:`" + t.name + "`)"
 }
 
 // Store adapts one Neo4j database and node label to the query ports. The jq and
@@ -158,23 +234,16 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	if database == "" {
 		database = defaultDatabase
 	}
-	label := address
-	if label == "" {
-		label = q.Get("label")
-	}
-	if label != "" && !identifier.MatchString(label) {
-		return connConfig{}, fmt.Errorf("neo4j label %q must be a bare identifier (letters, digits, underscore; no leading digit)", label)
-	}
-	key := q.Get("key")
-	if key != "" && !identifier.MatchString(key) {
-		return connConfig{}, fmt.Errorf("neo4j key property %q must be a bare identifier", key)
+	tgt, err := resolveTarget(address, q)
+	if err != nil {
+		return connConfig{}, err
 	}
 
 	dsn := url.URL{Scheme: u.Scheme, Host: u.Host}
 	cc := connConfig{
 		dsn:      dsn.String(),
 		database: database,
-		target:   target{kind: nodeTarget, label: label, key: key},
+		target:   tgt,
 	}
 	if u.User != nil {
 		cc.hasAuth = true
@@ -218,13 +287,14 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	sess := s.session(ctx, neo4j.AccessModeRead)
 	defer func() { _ = sess.Close(ctx) }()
 
+	v := s.target.variable()
 	params := map[string]any{"ids": keys}
 	var cypher string
 	if s.target.key == "" {
-		cypher = s.target.match() + " WHERE elementId(n) IN $ids RETURN elementId(n) AS k, n"
+		cypher = s.target.match() + " WHERE elementId(" + v + ") IN $ids RETURN elementId(" + v + ") AS k, " + v
 	} else {
 		params["key"] = s.target.key
-		cypher = s.target.match() + " WHERE toString(n[$key]) IN $ids RETURN toString(n[$key]) AS k, n"
+		cypher = s.target.match() + " WHERE toString(" + v + "[$key]) IN $ids RETURN toString(" + v + "[$key]) AS k, " + v
 	}
 	res, err := s.run(ctx, sess, cypher, params)
 	if err != nil {
@@ -233,14 +303,14 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	for res.Next(ctx) {
 		rec := res.Record()
 		k, _ := rec.Values[0].(string)
-		node, ok := rec.Values[1].(neo4j.Node)
-		if !ok {
+		ent := rec.Values[1]
+		if ent == nil {
 			continue
 		}
 		if _, dup := out[k]; dup && s.target.key != "" {
-			return nil, fmt.Errorf("neo4j: key %q matches more than one node; %s.%s is not unique", k, s.target.label, s.target.key)
+			return nil, fmt.Errorf("neo4j: key %q matches more than one %s; %s.%s is not unique", k, s.target.noun(), s.target.name, s.target.key)
 		}
-		out[k] = s.normalizeNode(node)
+		out[k] = s.normalizeValue(ent)
 	}
 	if err := res.Err(); err != nil {
 		return nil, fmt.Errorf("neo4j get: %w", err)
@@ -269,31 +339,32 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 // predicate). filterParams use f-prefixed names so they never collide with the
 // skip/limit/key parameters this method owns.
 func (s *Store) pagedScan(ctx context.Context, where string, filterParams map[string]any, fn func(batch map[string]any) error) error {
-	if s.target.label == "" {
+	if s.target.name == "" {
 		return errNoLabel
 	}
 	sess := s.session(ctx, neo4j.AccessModeRead)
 	defer func() { _ = sess.Close(ctx) }()
 
-	keyExpr := "elementId(n)"
+	v := s.target.variable()
+	keyExpr := "elementId(" + v + ")"
 	// Keyset pagination: each page fetches the next elementIds after the last one
-	// seen, ORDER BY elementId(n). This holds one page in memory, is stable under
+	// seen, ORDER BY elementId. This holds one page in memory, is stable under
 	// concurrent writes (unlike SKIP, which can repeat or skip), and needs no page
 	// offset arithmetic — the cursor is the last elementId, an empty string first
 	// (below every elementId).
 	params := map[string]any{"limit": scanBatch, "after": ""}
 	if s.target.key != "" {
 		params["key"] = s.target.key
-		keyExpr = "CASE WHEN n[$key] IS NULL THEN elementId(n) ELSE toString(n[$key]) END"
+		keyExpr = "CASE WHEN " + v + "[$key] IS NULL THEN elementId(" + v + ") ELSE toString(" + v + "[$key]) END"
 	}
-	for k, v := range filterParams {
-		params[k] = v
+	for k, val := range filterParams {
+		params[k] = val
 	}
-	cond := "elementId(n) > $after"
+	cond := "elementId(" + v + ") > $after"
 	if where != "" {
 		cond += " AND (" + where + ")"
 	}
-	cypher := s.target.match() + " WHERE " + cond + " RETURN " + keyExpr + " AS k, elementId(n) AS eid, n ORDER BY eid LIMIT $limit"
+	cypher := s.target.match() + " WHERE " + cond + " RETURN " + keyExpr + " AS k, elementId(" + v + ") AS eid, " + v + " ORDER BY eid LIMIT $limit"
 
 	for {
 		res, err := s.run(ctx, sess, cypher, params)
@@ -308,15 +379,15 @@ func (s *Store) pagedScan(ctx context.Context, where string, filterParams map[st
 			rec := res.Record()
 			k, _ := rec.Values[0].(string)
 			eid, _ := rec.Values[1].(string)
-			node, ok := rec.Values[2].(neo4j.Node)
-			if !ok {
+			ent := rec.Values[2]
+			if ent == nil {
 				continue
 			}
 			lastEid = eid
 			if _, dup := page[k]; dup {
 				k = eid // avoid silent in-page loss on a non-unique key.
 			}
-			page[k] = s.normalizeNode(node)
+			page[k] = s.normalizeValue(ent)
 		}
 		if err := res.Err(); err != nil {
 			return fmt.Errorf("neo4j scan: %w", err)
@@ -338,13 +409,14 @@ func (s *Store) pagedScan(ctx context.Context, where string, filterParams map[st
 // scanning. It may be stale under concurrent writes, so the caller treats it as a
 // hint. A missing label is the same error the scan path returns.
 func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
-	if s.target.label == "" {
+	if s.target.name == "" {
 		return 0, errNoLabel
 	}
 	sess := s.session(ctx, neo4j.AccessModeRead)
 	defer func() { _ = sess.Close(ctx) }()
 
-	res, err := s.run(ctx, sess, s.target.match()+" RETURN count(n) AS c", nil)
+	v := s.target.variable()
+	res, err := s.run(ctx, sess, s.target.match()+" RETURN count("+v+") AS c", nil)
 	if err != nil {
 		return 0, err
 	}
@@ -413,7 +485,7 @@ func (s *Store) keyConstraintExists(ctx context.Context) (bool, error) {
 		if !uniquenessConstraint(typ) {
 			continue
 		}
-		if anyContains(rec.Values[0], s.target.label) && anyIsSingleton(rec.Values[1], s.target.key) {
+		if anyContains(rec.Values[0], s.target.name) && anyIsSingleton(rec.Values[1], s.target.key) {
 			return true, nil
 		}
 	}

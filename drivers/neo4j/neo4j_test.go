@@ -108,15 +108,85 @@ func TestParseURL(t *testing.T) {
 			assert.Equal(t, tt.wantAuth, cc.hasAuth)
 			assert.Equal(t, tt.wantUser, cc.user)
 			assert.Equal(t, tt.wantPass, cc.pass)
-			assert.Equal(t, tt.wantLbl, cc.target.label)
+			assert.Equal(t, tt.wantLbl, cc.target.name)
 			assert.Equal(t, tt.wantKey, cc.target.key)
 		})
 	}
 }
 
+func TestParseURLRelTarget(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		address  string
+		wantKind targetKind
+		wantName string
+		wantErr  string
+	}{
+		{
+			name:     "?rel= selects a relationship type",
+			url:      "neo4j://localhost:7687/?rel=KNOWS",
+			wantKind: relTarget,
+			wantName: "KNOWS",
+		},
+		{
+			name:     "colon-prefixed address selects a relationship type",
+			url:      "neo4j://localhost:7687/?label=Person",
+			address:  ":WROTE",
+			wantKind: relTarget,
+			wantName: "WROTE",
+		},
+		{
+			name:     "plain address stays a node label",
+			url:      "neo4j://localhost:7687/",
+			address:  "Movie",
+			wantKind: nodeTarget,
+			wantName: "Movie",
+		},
+		{
+			name:    "both ?label= and ?rel= is an error",
+			url:     "neo4j://localhost:7687/?label=Person&rel=KNOWS",
+			wantErr: "both ?label= and ?rel=",
+		},
+		{
+			name:    "empty relationship type is an error",
+			url:     "neo4j://localhost:7687/?label=Person",
+			address: ":",
+			wantErr: "relationship type is empty",
+		},
+		{
+			name:    "relationship type must be an identifier",
+			url:     "neo4j://localhost:7687/?rel=a-b",
+			wantErr: "relationship type",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cc, err := parseURL(tt.url, tt.address)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantKind, cc.target.kind)
+			assert.Equal(t, tt.wantName, cc.target.name)
+		})
+	}
+}
+
+func TestRelationshipWritesDeferred(t *testing.T) {
+	s := &Store{target: target{kind: relTarget, name: "KNOWS"}}
+	_, err := s.Put(context.Background(), []query.Record{{Key: "1", Value: map[string]any{}}}, query.Upsert)
+	require.ErrorIs(t, err, errRelWriteUnsupported)
+	require.ErrorIs(t, s.Clear(context.Background()), errRelWriteUnsupported)
+}
+
 func TestTargetMatch(t *testing.T) {
 	assert.Equal(t, "MATCH (n)", target{}.match())
-	assert.Equal(t, "MATCH (n:`Person`)", target{label: "Person"}.match())
+	assert.Equal(t, "MATCH (n:`Person`)", target{name: "Person"}.match())
+	assert.Equal(t, "MATCH ()-[r:`KNOWS`]->()", target{kind: relTarget, name: "KNOWS"}.match())
+	assert.Equal(t, "n", target{name: "Person"}.variable())
+	assert.Equal(t, "r", target{kind: relTarget, name: "KNOWS"}.variable())
 }
 
 func TestNormalizeValue(t *testing.T) {

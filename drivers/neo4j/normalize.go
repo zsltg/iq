@@ -12,9 +12,12 @@
 // applies unchanged and the --verbose trace logs only the Cypher statement, never
 // its parameters.
 //
-// Relationship-type collections are a deliberate follow-up: v1 routes every Cypher
-// path through an internal target and reserves the _type/_start/_end value keys, so
-// relationships slot in without a registry, scheme, or Open-signature change.
+// A relationship type is an addressable collection too (?rel=KNOWS, or handle.:KNOWS
+// with the ':' marker): a scan streams relationships of that type as {props, _type,
+// _start, _end} where _start/_end are the endpoint elementIds. Relationship
+// collections are read-only for now — creating an edge needs endpoint resolution
+// (which nodes to connect, by which key), a further follow-up — so a write into one
+// is refused rather than half-done.
 package neo4j
 
 import (
