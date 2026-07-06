@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.17.0 - 2026-07-06
+### Features
+- **dynamodb:** add Amazon DynamoDB driver (b4dbe47)
+
+
 ## v0.16.0 - 2026-07-06
 ### Features
 - **cassandra:** add Apache Cassandra driver (da86027)
