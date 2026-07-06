@@ -89,6 +89,20 @@ func DumpPath(rawURL string) (string, error) {
 	return path, err
 }
 
+// DetectFormat reports the dump format a file:// URL resolves to: an explicit
+// ?format= wins, otherwise the content is sniffed from the file. Exported so a
+// caller (iq ls -v) can name a file source's format without building a Store.
+func DetectFormat(rawURL string) (Format, error) {
+	path, forced, err := parseFileURL(rawURL)
+	if err != nil {
+		return FormatUnknown, err
+	}
+	if forced != FormatUnknown {
+		return forced, nil
+	}
+	return detectFormat(path)
+}
+
 // parseFileURL splits a file:// URL into its path and an optional forced format
 // from the ?format= query. It rejects a non-file scheme and an empty path.
 func parseFileURL(raw string) (path string, format Format, err error) {

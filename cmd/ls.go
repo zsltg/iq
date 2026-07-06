@@ -5,20 +5,25 @@ import (
 	"io"
 	"strings"
 
+	iqfile "github.com/zsltg/iq/drivers/file"
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
 // sourceRow is the JSON shape of one source in `iq ls --json`. Location is
 // redacted unless --reveal (inline passwords) or --expand (keyring passwords) is
-// set, so a stored password never leaks by default.
+// set, so a stored password never leaks by default. Format and Options are the
+// verbose-only detail: Format is a file source's detected dump format, Options
+// its stored per-source flag defaults.
 type sourceRow struct {
-	Handle     string `json:"handle"`
-	Driver     string `json:"driver"`
-	Location   string `json:"location"`
-	Collection string `json:"collection,omitempty"`
-	Keyring    bool   `json:"keyring,omitempty"`
-	Active     bool   `json:"active,omitempty"`
+	Handle     string            `json:"handle"`
+	Driver     string            `json:"driver"`
+	Location   string            `json:"location"`
+	Collection string            `json:"collection,omitempty"`
+	Keyring    bool              `json:"keyring,omitempty"`
+	Active     bool              `json:"active,omitempty"`
+	Format     string            `json:"format,omitempty"`
+	Options    map[string]string `json:"options,omitempty"`
 }
 
 // groupRow is the JSON shape of one group in `iq ls -g --json`.
@@ -46,14 +51,24 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 	if jsonOut || yamlOut {
 		rows := make([]sourceRow, 0, len(list))
 		for _, h := range list {
-			rows = append(rows, sourceRow{
+			driver := driverName(h.Source.URL)
+			row := sourceRow{
 				Handle:     h.Name,
-				Driver:     driverName(h.Source.URL),
+				Driver:     driver,
 				Location:   displayLocation(h.Source, h.Name, reveal, expand),
 				Collection: iqmongo.CollectionFromURI(h.Source.URL),
 				Keyring:    h.Source.Keyring,
 				Active:     h.Name == cf.Active,
-			})
+			}
+			if verbose {
+				row.Options = h.Source.Options
+				if driver == "file" {
+					if f, err := iqfile.DetectFormat(h.Source.URL); err == nil {
+						row.Format = f.String()
+					}
+				}
+			}
+			rows = append(rows, row)
 		}
 		return writeStructured(out, rows, yamlOut)
 	}
@@ -71,28 +86,91 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 			return err
 		}
 	}
-	rows := make([][]tableCell, 0, len(list))
+	rows := make([][]tableCell, 0, len(list)+1)
+	if verbose {
+		rows = append(rows, []tableCell{
+			coloredCell("HANDLE", pal.header),
+			coloredCell("DRIVER", pal.header),
+			coloredCell("LOCATION", pal.header),
+			coloredCell("FORMAT", pal.header),
+			coloredCell("OPTIONS", pal.header),
+		})
+	}
 	for _, h := range list {
-		marker := " "
 		active := h.Name == cf.Active
+		marker := " "
+		nameColor := pal.handle
 		if active {
 			marker = "*"
+			nameColor = pal.active
 		}
-		coll := ""
+		name := coloredCell(marker+" "+h.Name, nameColor)
+
+		loc := displayLocation(h.Source, h.Name, reveal, expand)
 		if c := iqmongo.CollectionFromURI(h.Source.URL); c != "" {
-			coll = "(" + c + ")"
+			loc += " (" + c + ")"
 		}
-		name := tableCell{text: marker + " " + h.Name}
-		if active {
-			name.c = pal.active
+		driver := driverName(h.Source.URL)
+		if !verbose {
+			rows = append(rows, []tableCell{name, coloredCell(driver, pal.faint), coloredCell(loc, pal.location)})
+			continue
 		}
-		if verbose {
-			rows = append(rows, []tableCell{name, cell(driverName(h.Source.URL)), cell(displayLocation(h.Source, h.Name, reveal, expand)), cell(coll + keyringTag(h.Source.Keyring))})
-		} else {
-			rows = append(rows, []tableCell{name, cell(displayLocation(h.Source, h.Name, reveal, expand)), cell(coll)})
-		}
+		loc += keyringTag(h.Source.Keyring)
+		rows = append(rows, []tableCell{
+			name,
+			coloredCell(driver, pal.faint),
+			coloredCell(loc, pal.location),
+			formatCell(driver, h.Source.URL),
+			optionsCell(h.Source.Options),
+		})
 	}
 	return renderTable(out, rows)
+}
+
+// formatCell renders a source's FORMAT column for `iq ls -v`: a file source's
+// detected dump format, an em dash for a non-file source, or a faint "?" when a
+// file's format cannot be detected (a moved or unreadable dump), so one bad
+// source never fails the whole listing.
+func formatCell(driver, url string) tableCell {
+	if driver != "file" {
+		return coloredCell("—", pal.faint)
+	}
+	f, err := iqfile.DetectFormat(url)
+	if err != nil {
+		return coloredCell("?", pal.faint)
+	}
+	return coloredCell(f.String(), pal.change)
+}
+
+// optionsCell renders a source's OPTIONS column, faint, or an uncolored empty
+// cell when the source stores none (so color mode emits no stray escapes for it).
+func optionsCell(opts map[string]string) tableCell {
+	s := renderSourceOptions(opts)
+	if s == "" {
+		return cell("")
+	}
+	return coloredCell(s, pal.faint)
+}
+
+// renderSourceOptions renders a source's stored options as space-joined key=value
+// pairs in persistableOptions order (the order `iq config ls` uses), or "" when
+// the source has none.
+func renderSourceOptions(opts map[string]string) string {
+	if len(opts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, k := range persistableOptions {
+		v, ok := opts[k]
+		if !ok {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(k + "=" + v)
+	}
+	return b.String()
 }
 
 // listGroups renders the distinct groups. verbose adds a source count;

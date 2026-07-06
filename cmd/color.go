@@ -19,13 +19,16 @@ import (
 // the global color.NoColor at render time, so one package-level palette renders
 // plain or colored according to the mode resolved for the current invocation.
 type palette struct {
-	ok     *color.Color
-	fail   *color.Color
-	add    *color.Color
-	remove *color.Color
-	change *color.Color
-	header *color.Color
-	active *color.Color
+	ok       *color.Color
+	fail     *color.Color
+	add      *color.Color
+	remove   *color.Color
+	change   *color.Color
+	header   *color.Color
+	active   *color.Color
+	handle   *color.Color
+	location *color.Color
+	faint    *color.Color
 }
 
 // pal is the shared palette. Colors are stateless: they read color.NoColor when
@@ -38,7 +41,13 @@ var pal = palette{
 	remove: color.New(color.FgRed),
 	change: color.New(color.FgYellow),
 	header: color.New(color.FgCyan, color.Bold),
-	active: color.New(color.Bold),
+	// active, handle, location, and faint mirror sq's source-list scheme: the
+	// active handle green-bold, other handles blue, locations green, and secondary
+	// detail (driver, options) faint.
+	active:   color.New(color.FgGreen, color.Bold),
+	handle:   color.New(color.FgBlue),
+	location: color.New(color.FgGreen),
+	faint:    color.New(color.Faint),
 }
 
 // resolveColor sets the global color mode for the invocation, honoring the

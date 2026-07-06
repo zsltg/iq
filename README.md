@@ -60,7 +60,7 @@ iq add -n cache redis://localhost:6379/0                    # register a Redis s
 iq add -a 'mongodb://localhost:27017/books?collection=items' # a Mongo source; handle "books" from the db, made active
 iq add -n orders 'cassandra://localhost:9042/shop?table=orders' # a Cassandra source
 iq src cache                                                 # make "cache" the active source
-iq ls                                                        # list sources (the active one marked *)
+iq ls                                                        # list sources: handle driver url (active marked *); -v adds format + options
 ```
 
 Once a source is active, every query runs against it. Select a different source for a single
@@ -91,10 +91,12 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
   keyring` moves the URL's password into the OS keyring and strips it from the stored URL (default
   `--store inline` keeps it in the config file).
-- `iq ls [group]` — list saved sources; the active one is marked `*`. Passwords in URLs are
-  redacted. An optional `group` limits the listing to that group. `-v` adds each source's driver;
-  `-g` lists groups instead of sources; `-j`/`--json` or `-y`/`--yaml` emit machine-readable
-  output. `--reveal` prints
+- `iq ls [group]` — list saved sources as `handle  driver  location` (a MongoDB collection rides
+  inline as `(name)`); the active one is marked `*`. Passwords in URLs are
+  redacted. An optional `group` limits the listing to that group. `-v` adds a header row plus a
+  `FORMAT` column (a file source's detected dump format) and an `OPTIONS` column (the source's
+  stored option defaults); `-g` lists groups instead of sources; `-j`/`--json` or `-y`/`--yaml`
+  emit machine-readable output. `--reveal` prints
   a password stored inline in the config verbatim, and `--expand` resolves a keyring-backed
   source's stored password and inlines it — combine both to print a keyring password verbatim.
 - `iq src [<name>]` — show the active source, or set it.

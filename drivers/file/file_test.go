@@ -230,6 +230,55 @@ func TestDetectFormat(t *testing.T) {
 	})
 }
 
+func TestFormatString(t *testing.T) {
+	cases := []struct {
+		f    Format
+		want string
+	}{
+		{FormatJSONL, "jsonl"},
+		{FormatYAML, "yaml"},
+		{FormatMongoexport, "mongoexport"},
+		{FormatBSON, "bson"},
+		{FormatRDB, "rdb"},
+		{FormatUnknown, "unknown"},
+	}
+	for _, c := range cases {
+		t.Run(c.want, func(t *testing.T) {
+			require.Equal(t, c.want, c.f.String())
+			if c.f == FormatUnknown {
+				return
+			}
+			// A named format round-trips: its String is a synonym ParseFormat accepts.
+			got, err := ParseFormat(c.want)
+			require.NoError(t, err)
+			require.Equal(t, c.f, got)
+		})
+	}
+}
+
+func TestDetectFormatURL(t *testing.T) {
+	t.Run("sniffs content", func(t *testing.T) {
+		f, err := DetectFormat(writeDump(t, "snap.rdb", buildRDB(t), ""))
+		require.NoError(t, err)
+		require.Equal(t, FormatRDB, f)
+	})
+	t.Run("forced format wins without sniffing", func(t *testing.T) {
+		// A typed-jsonl body forced to yaml is returned as yaml, unread.
+		u := writeDump(t, "amb", []byte(`{"key":"a","value":1}`+"\n"), "format=yaml")
+		f, err := DetectFormat(u)
+		require.NoError(t, err)
+		require.Equal(t, FormatYAML, f)
+	})
+	t.Run("missing file errors", func(t *testing.T) {
+		_, err := DetectFormat("file:///no/such/dump.rdb")
+		require.Error(t, err)
+	})
+	t.Run("non-file url errors", func(t *testing.T) {
+		_, err := DetectFormat("redis://h/0")
+		require.ErrorContains(t, err, "not a file url")
+	})
+}
+
 func TestFormatRaw(t *testing.T) {
 	st := &Store{}
 	require.Equal(t, `{"a":1}`, st.FormatRaw(map[string]any{"a": 1}, false))

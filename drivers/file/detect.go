@@ -31,6 +31,26 @@ const (
 	FormatRDB
 )
 
+// String returns the format's canonical name — the primary synonym ParseFormat
+// accepts — so a detected format round-trips through a ?format= / --from-format
+// value and reads the same in `iq ls -v`.
+func (f Format) String() string {
+	switch f {
+	case FormatJSONL:
+		return "jsonl"
+	case FormatYAML:
+		return "yaml"
+	case FormatMongoexport:
+		return "mongoexport"
+	case FormatBSON:
+		return "bson"
+	case FormatRDB:
+		return "rdb"
+	default:
+		return "unknown"
+	}
+}
+
 // ParseFormat maps a ?format= / --from-format value to a Format, accepting the
 // synonyms a user is likely to reach for. Exported so the cmd move importer shares
 // the same names as a file:// URL's ?format=.
