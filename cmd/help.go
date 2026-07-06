@@ -44,11 +44,13 @@ var rootFlagGroups = map[string]string{
 	"collection": groupSource,
 	"timeout":    groupSource,
 
-	"unbounded":  groupQuery,
-	"no-compile": groupQuery,
-	"explain":    groupQuery,
-	"from":       groupQuery,
-	"combine":    groupQuery,
+	"unbounded":      groupQuery,
+	"no-compile":     groupQuery,
+	"no-cache":       groupQuery,
+	"no-cache-index": groupQuery,
+	"explain":        groupQuery,
+	"from":           groupQuery,
+	"combine":        groupQuery,
 
 	"json":           groupOutput,
 	"jsona":          groupOutput,
@@ -222,6 +224,7 @@ var rootCommandGroups = map[string]string{
 	"inspect": cmdGroupQuery,
 
 	"config": cmdGroupConfig,
+	"cache":  cmdGroupConfig,
 
 	"driver":  cmdGroupInfo,
 	"version": cmdGroupInfo,

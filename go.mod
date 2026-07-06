@@ -4,6 +4,7 @@ go 1.25.1
 
 require (
 	github.com/fatih/color v1.19.0
+	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/goccy/go-yaml v1.19.2
 	github.com/hdt3213/rdb v1.3.2
 	github.com/itchyny/gojq v0.12.19
@@ -76,6 +77,7 @@ require (
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect

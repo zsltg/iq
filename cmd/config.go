@@ -25,7 +25,7 @@ import (
 var persistableOptions = []string{
 	"format", "format.decimal", "compact",
 	"timeout",
-	"monochrome", "color", "no-progress",
+	"monochrome", "color", "no-progress", "no-cache", "no-cache-index",
 	"verbose", "log", "log.file", "log.level", "log.format",
 	"error.format", "error.stack", "error.format.text.verbose",
 }

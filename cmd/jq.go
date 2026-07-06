@@ -115,7 +115,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		if err != nil {
 			return err
 		}
-		opener := newSourceOpener(cf, cfg.trace, cfg.decimalMode)
+		opener := newSourceOpener(cf, cfg.trace, cfg.decimalMode, cfg.noCache, cfg.noCacheIndex)
 		defer opener.closeAll()
 		runErr := query.NewCrossEngine(opener).Run(ctx, filter, opts, f.emit)
 		cfg.logQueryComplete(scanned, start)

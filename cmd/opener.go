@@ -23,13 +23,18 @@ type sourceOpener struct {
 	// decimal is threaded into each opened source so --format.decimal applies to
 	// every cross-source backend uniformly.
 	decimal numfmt.DecimalMode
+	// noCache and noCacheIndex are threaded into each opened file:// source so
+	// --no-cache and --no-cache-index apply uniformly across a cross-source query.
+	noCache      bool
+	noCacheIndex bool
 }
 
 // newSourceOpener returns an opener backed by the source registry cf; trace (may
-// be nil) is passed to each opened source for the --verbose command trace, and
-// decimal for --format.decimal.
-func newSourceOpener(cf *iqconfig.Config, trace io.Writer, decimal numfmt.DecimalMode) *sourceOpener {
-	return &sourceOpener{cf: cf, cache: map[string]store{}, trace: trace, decimal: decimal}
+// be nil) is passed to each opened source for the --verbose command trace,
+// decimal for --format.decimal, and the cache flags to bypass or unindex the
+// file:// decode cache.
+func newSourceOpener(cf *iqconfig.Config, trace io.Writer, decimal numfmt.DecimalMode, noCache, noCacheIndex bool) *sourceOpener {
+	return &sourceOpener{cf: cf, cache: map[string]store{}, trace: trace, decimal: decimal, noCache: noCache, noCacheIndex: noCacheIndex}
 }
 
 // Open resolves name through the registry (applying active-group namespacing)
@@ -42,7 +47,7 @@ func (o *sourceOpener) Open(ctx context.Context, name string) (query.KVStore, er
 	if st, ok := o.cache[handle]; ok {
 		return st, nil
 	}
-	st, err := openStore(ctx, &config{url: src.URL, collection: src.Collection, trace: o.trace, decimalMode: o.decimal})
+	st, err := openStore(ctx, &config{url: src.URL, collection: src.Collection, trace: o.trace, decimalMode: o.decimal, noCache: o.noCache, noCacheIndex: o.noCacheIndex})
 	if err != nil {
 		return nil, err
 	}

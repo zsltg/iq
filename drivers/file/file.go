@@ -43,12 +43,15 @@ type Store struct {
 	data   []byte // when non-nil, the dump is this in-memory buffer (stdin), not path.
 	format Format
 	dec    numfmt.DecimalMode
+	cache  CacheConfig // decode-cache policy; zero value disables caching.
 }
 
 // Open resolves a file:// URL to a read-only dump Store. The URL path is the dump
 // file; an optional ?format= (rdb|bson|mongoexport|jsonl|yaml) overrides content
-// detection for the ambiguous text formats.
-func Open(rawURL string, dec numfmt.DecimalMode) (*Store, error) {
+// detection for the ambiguous text formats. cache is the decode-cache policy; a
+// zero CacheConfig disables caching, so a caller that wires none keeps the
+// always-decode behavior.
+func Open(rawURL string, dec numfmt.DecimalMode, cache CacheConfig) (*Store, error) {
 	path, forced, err := parseFileURL(rawURL)
 	if err != nil {
 		return nil, err
@@ -60,7 +63,7 @@ func Open(rawURL string, dec numfmt.DecimalMode) (*Store, error) {
 			return nil, err
 		}
 	}
-	return &Store{path: path, format: format, dec: dec}, nil
+	return &Store{path: path, format: format, dec: dec, cache: cache}, nil
 }
 
 // OpenReader builds a read-only Store over an in-memory dump buffer — used for
@@ -76,6 +79,14 @@ func OpenReader(data []byte, format Format, dec numfmt.DecimalMode) (*Store, err
 		}
 	}
 	return &Store{data: data, format: format, dec: dec}, nil
+}
+
+// DumpPath returns the filesystem path a file:// URL refers to — the same path
+// Open resolves and the decode cache records in its header — so a caller can map
+// a saved file source to its cache entry (iq cache clear @src).
+func DumpPath(rawURL string) (string, error) {
+	path, _, err := parseFileURL(rawURL)
+	return path, err
 }
 
 // parseFileURL splits a file:// URL into its path and an optional forced format
@@ -109,10 +120,27 @@ func parseFileURL(raw string) (path string, format Format, err error) {
 	return path, format, nil
 }
 
-// records is the single decode entry point: it opens the dump (a file, reopened
-// per operation, or the in-memory stdin buffer), builds the source for its format,
-// and drives it. Every read path (TypedScan, ScanBatches, Get) flows through here.
-func (s *Store) records(ctx context.Context, fn func(batch []query.Record) error) error {
+// records is the cache-aware decode entry point every read path shares. When a
+// fresh decode cache exists it streams that; otherwise it decodes the original
+// dump, and when populate is set and the dump is cacheable, tees the decode into
+// a new cache installed only on a complete pass. populate is false for Get, whose
+// early stop would persist a partial dump — so only a full scan populates.
+func (s *Store) records(ctx context.Context, populate bool, fn func(batch []query.Record) error) error {
+	if src, ok := s.cacheSource(); ok {
+		return src(ctx, fn)
+	}
+	if populate {
+		if m, ok := s.cacheable(); ok {
+			return s.populate(ctx, m, fn)
+		}
+	}
+	return s.recordsDirect(ctx, fn)
+}
+
+// recordsDirect decodes the dump straight from its bytes, with no cache: it opens
+// the dump (a file, reopened per operation, or the in-memory stdin buffer),
+// builds the source for its format, and drives it.
+func (s *Store) recordsDirect(ctx context.Context, fn func(batch []query.Record) error) error {
 	r, closeR, err := s.reader()
 	if err != nil {
 		return err
@@ -161,13 +189,13 @@ func RecordSourceFor(r io.Reader, format Format, dec numfmt.DecimalMode) (query.
 // TypedScan streams the dump as typed records, so a copy from a file reconstructs
 // each item's native structure.
 func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) error) error {
-	return s.records(ctx, fn)
+	return s.records(ctx, true, fn)
 }
 
 // ScanBatches streams the dump as {key: value} pages, dropping the type tag for
 // the jq read path.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
-	return s.records(ctx, func(recs []query.Record) error {
+	return s.records(ctx, true, func(recs []query.Record) error {
 		batch := make(map[string]any, len(recs))
 		for _, r := range recs {
 			batch[r.Key] = r.Value
@@ -183,6 +211,11 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	if len(keys) == 0 {
 		return map[string]any{}, nil
 	}
+	// A fresh indexed cache resolves the keys by decoding only candidate pages; on
+	// any miss it reports false and the streaming path below runs unchanged.
+	if out, ok := s.cacheGet(ctx, keys); ok {
+		return out, nil
+	}
 	want := make(map[string]struct{}, len(keys))
 	out := make(map[string]any, len(keys))
 	for _, k := range keys {
@@ -190,7 +223,7 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		out[k] = nil
 	}
 	found := make(map[string]bool, len(keys))
-	err := s.records(ctx, func(recs []query.Record) error {
+	err := s.records(ctx, false, func(recs []query.Record) error {
 		for _, r := range recs {
 			if _, ok := want[r.Key]; !ok {
 				continue

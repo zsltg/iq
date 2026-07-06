@@ -62,7 +62,7 @@ func buildRDB(t *testing.T) []byte {
 
 func TestRDBSourceParity(t *testing.T) {
 	u := writeDump(t, "dump.rdb", buildRDB(t), "")
-	st, err := Open(u, numfmt.DecimalAuto)
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, FormatRDB, st.format)
 
@@ -102,7 +102,7 @@ func TestBSONSource(t *testing.T) {
 	d2, err := bson.Marshal(bson.M{"_id": "k2", "arr": bson.A{int32(1), int32(2)}})
 	require.NoError(t, err)
 	u := writeDump(t, "dump.bson", append(d1, d2...), "")
-	st, err := Open(u, numfmt.DecimalAuto)
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, FormatBSON, st.format)
 
@@ -117,7 +117,7 @@ func TestExtJSONSource(t *testing.T) {
 {"_id":{"$oid":"507f1f77bcf86cd799439011"},"name":"b"}
 `
 	u := writeDump(t, "export.json", []byte(lines), "")
-	st, err := Open(u, numfmt.DecimalAuto)
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, FormatMongoexport, st.format)
 
@@ -131,7 +131,7 @@ func TestJSONLSourceTyped(t *testing.T) {
 {"key":"b","type":"hash","value":{"f":"v"}}
 `
 	u := writeDump(t, "iq.jsonl", []byte(lines), "")
-	st, err := Open(u, numfmt.DecimalAuto)
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, FormatJSONL, st.format)
 
@@ -142,7 +142,7 @@ func TestJSONLSourceTyped(t *testing.T) {
 
 func TestGetAndMissing(t *testing.T) {
 	u := writeDump(t, "dump.rdb", buildRDB(t), "")
-	st, err := Open(u, numfmt.DecimalAuto)
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 
 	got, err := st.Get(context.Background(), []string{"s", "absent"})
@@ -156,7 +156,7 @@ func TestFormatOverride(t *testing.T) {
 	// A typed-jsonl body forced to be read as mongoexport still parses (each line is
 	// a valid object); the override wins over detection.
 	u := writeDump(t, "ambiguous", []byte(`{"_id":"x","v":1}`+"\n"), "format=mongoexport")
-	st, err := Open(u, numfmt.DecimalAuto)
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, FormatMongoexport, st.format)
 }
@@ -268,7 +268,7 @@ func TestExplainPlan(t *testing.T) {
 
 func TestGetMultipleAndEarlyStop(t *testing.T) {
 	u := writeDump(t, "dump.rdb", buildRDB(t), "")
-	st, err := Open(u, numfmt.DecimalAuto)
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 
 	// All requested keys present: the scan stops as soon as both are found.
@@ -308,7 +308,7 @@ func TestPagingRDB(t *testing.T) {
 		require.NoError(t, enc.WriteStringObject(fmt.Sprintf("k%d", i), []byte("v")))
 	}
 	require.NoError(t, enc.WriteEnd())
-	st, err := Open(writeDump(t, "big.rdb", buf.Bytes(), ""), numfmt.DecimalAuto)
+	st, err := Open(writeDump(t, "big.rdb", buf.Bytes(), ""), numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, []int{pageSize, bigCount - pageSize}, pageSizes(t, st))
 }
@@ -318,7 +318,7 @@ func TestPagingBSON(t *testing.T) {
 	for i := 0; i < bigCount; i++ {
 		data = append(data, mustBSON(t, bson.M{"_id": fmt.Sprintf("k%d", i)})...)
 	}
-	st, err := Open(writeDump(t, "big.bson", data, ""), numfmt.DecimalAuto)
+	st, err := Open(writeDump(t, "big.bson", data, ""), numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, []int{pageSize, bigCount - pageSize}, pageSizes(t, st))
 }
@@ -328,7 +328,7 @@ func TestPagingExtJSON(t *testing.T) {
 	for i := 0; i < bigCount; i++ {
 		fmt.Fprintf(&b, "{\"_id\":\"k%d\",\"i\":%d}\n", i, i)
 	}
-	st, err := Open(writeDump(t, "big.json", []byte(b.String()), "format=mongoexport"), numfmt.DecimalAuto)
+	st, err := Open(writeDump(t, "big.json", []byte(b.String()), "format=mongoexport"), numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, []int{pageSize, bigCount - pageSize}, pageSizes(t, st))
 }
@@ -344,7 +344,7 @@ func TestPagingExactMultipleRDB(t *testing.T) {
 		require.NoError(t, enc.WriteStringObject(fmt.Sprintf("k%d", i), []byte("v")))
 	}
 	require.NoError(t, enc.WriteEnd())
-	st, err := Open(writeDump(t, "exact.rdb", buf.Bytes(), ""), numfmt.DecimalAuto)
+	st, err := Open(writeDump(t, "exact.rdb", buf.Bytes(), ""), numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, []int{pageSize}, pageSizes(t, st))
 }
@@ -354,7 +354,7 @@ func TestPagingExactMultipleBSON(t *testing.T) {
 	for i := 0; i < pageSize; i++ {
 		data = append(data, mustBSON(t, bson.M{"_id": fmt.Sprintf("k%d", i)})...)
 	}
-	st, err := Open(writeDump(t, "exact.bson", data, ""), numfmt.DecimalAuto)
+	st, err := Open(writeDump(t, "exact.bson", data, ""), numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, []int{pageSize}, pageSizes(t, st))
 }
@@ -363,7 +363,7 @@ func TestBSONEmptyDocValid(t *testing.T) {
 	// A minimal 5-byte empty document is valid (length == 5, the boundary), so it
 	// must parse to one record rather than be rejected as too short.
 	u := writeDump(t, "empty.bson", mustBSON(t, bson.M{}), "format=bson")
-	st, err := Open(u, numfmt.DecimalAuto)
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Len(t, collect(t, st), 1)
 }
@@ -371,7 +371,7 @@ func TestBSONEmptyDocValid(t *testing.T) {
 func TestExtJSONArray(t *testing.T) {
 	// Leading whitespace exercises the whitespace-skip before the '['.
 	u := writeDump(t, "arr.json", []byte("  \n[{\"_id\":\"a\",\"v\":1},{\"_id\":\"b\",\"v\":2}]"), "format=mongoexport")
-	st, err := Open(u, numfmt.DecimalAuto)
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	recs := collect(t, st)
 	require.Len(t, recs, 2)
@@ -382,7 +382,7 @@ func TestBSONInvalidLength(t *testing.T) {
 	// A framed length of 4 is one below the empty-document minimum (5) — the
 	// boundary case — and is a hard error, not a silent skip.
 	u := writeDump(t, "bad.bson", []byte{0x04, 0x00, 0x00, 0x00}, "format=bson")
-	st, err := Open(u, numfmt.DecimalAuto)
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	err = st.TypedScan(context.Background(), func([]query.Record) error { return nil })
 	require.ErrorContains(t, err, "invalid bson document length")
@@ -396,7 +396,7 @@ func TestZSetTiebreakByMember(t *testing.T) {
 	// Equal scores: order must fall back to the member, so "a" precedes "b".
 	require.NoError(t, enc.WriteZSetObject("z", []*model.ZSetEntry{{Member: "b", Score: 1}, {Member: "a", Score: 1}}))
 	require.NoError(t, enc.WriteEnd())
-	st, err := Open(writeDump(t, "z.rdb", buf.Bytes(), ""), numfmt.DecimalAuto)
+	st, err := Open(writeDump(t, "z.rdb", buf.Bytes(), ""), numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, []any{
 		map[string]any{"member": "a", "score": float64(1)},
@@ -422,13 +422,13 @@ func TestStreamTiebreakBySequence(t *testing.T) {
 func TestDetectTypedArrayVsMongoArray(t *testing.T) {
 	// An array of {key,type,value} records is iq's typed dump, not mongoexport docs.
 	typed := writeDump(t, "typed.json", []byte(`[{"key":"a","type":"string","value":"x"}]`), "")
-	st, err := Open(typed, numfmt.DecimalAuto)
+	st, err := Open(typed, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, FormatJSONL, st.format)
 
 	// An array of documents (no key/value envelope) is mongoexport.
 	docs := writeDump(t, "docs.json", []byte(`[{"_id":"a","n":1}]`), "")
-	st2, err := Open(docs, numfmt.DecimalAuto)
+	st2, err := Open(docs, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, FormatMongoexport, st2.format)
 }
@@ -436,7 +436,7 @@ func TestDetectTypedArrayVsMongoArray(t *testing.T) {
 func TestYAMLFileByExtensionAndRoundTrip(t *testing.T) {
 	body := "key: a\ntype: string\nvalue: hi\n---\nkey: b\ntype: set\nvalue:\n    - x\n    - y\n"
 	// Detected as YAML by the .yaml extension (YAML is not content-sniffable).
-	st, err := Open(writeDump(t, "d.yaml", []byte(body), ""), numfmt.DecimalAuto)
+	st, err := Open(writeDump(t, "d.yaml", []byte(body), ""), numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, FormatYAML, st.format)
 	recs := collect(t, st)

@@ -86,7 +86,7 @@ var drivers = []driver{
 		schemes:  []string{"file"},
 		readOnly: true,
 		open: func(_ context.Context, cfg *config) (store, error) {
-			return iqfile.Open(cfg.url, cfg.decimalMode)
+			return iqfile.Open(cfg.url, cfg.decimalMode, cfg.fileCacheConfig())
 		},
 		explainPlan: iqfile.ExplainPlan,
 	},

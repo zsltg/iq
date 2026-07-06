@@ -596,6 +596,28 @@ materialization is the core's, gated by `--unbounded`, exactly as for a live bac
 fidelity** is the record round-trip: values and native types reconstruct, but TTLs, exact
 encodings, stream consumer groups, RDB module types, and Mongo indexes do not carry.
 
+**Decode cache.** Re-querying the same large dump re-parses it every time, so iq caches the
+decoded, normalized records of a scanned dump above 4 MiB and reads them back on later queries,
+skipping the RDB/BSON/JSON decode (a warm scan of an 8 MiB dump runs several times faster). The
+cache lives under `<user cache dir>/iq/dumps`, keys on the dump's path, size, and mtime — so
+editing the dump invalidates it automatically — and is transparent: a stale or absent cache just
+means a full decode, never a wrong or failed query. Only full scans populate it (a bounded
+key read does not), and stdin is never cached.
+
+Alongside the records, a scan writes a **per-page key index** (a Bloom filter per page), so a
+later bounded read (`iq --src snap '.["id"]'`) decodes only the pages that may hold a wanted key
+instead of streaming the whole cache — a point lookup or a missing-key check stays fast even on a
+huge dump. The index is on by default and distribution-agnostic (it hashes keys, so random
+ids/UUIDs are fine). Skip it with `--no-cache-index` (the flat cache is still written; a bounded
+read just streams it) when a very large keyspace makes the index build memory unwelcome.
+
+Manage the cache with `iq cache`, bypass it for one run with `--no-cache`, or set a default with
+`iq config set no-cache true` / `iq config set no-cache-index true`.
+
+- `iq cache location` — print the cache directory path.
+- `iq cache stat [-j/--json | -y/--yaml]` — list cached dumps with their sizes.
+- `iq cache clear [<source>|<path>]` — remove all cached dumps, or just one source's/path's.
+
 </details>
 
 ## Cross-source queries
@@ -790,7 +812,10 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   live adapter produces, so a query or restore is identical to the live backend. It implements no
   writer, so a `file://` endpoint is never a copy destination, and `Query` returns a sentinel that
   makes `exec`/`inspect` degrade cleanly. It streams; whole-dataset materialization stays the core's,
-  gated by `--unbounded`.
+  gated by `--unbounded`. Behind the read ports it keeps an optional **decode cache** (`iq cache`,
+  CBOR under `<user cache dir>/iq/dumps`): a full scan of a large dump tees its normalized records
+  to disk, and later scans read them back instead of re-decoding — transparent to the ports, so the
+  data-flow above is unchanged, and never authoritative (a miss just re-decodes).
 - `drivers/redis`, `drivers/mongo` — the adapters. Each has one `*Store` satisfying the read ports
   (`Query` for exec, `Get`/`ScanBatches` for jq) and the write ports (`Put`/`Clear`/`TypedScan`,
   plus `Drop` for Mongo), with a type-to-JSON normalization frozen as that backend's encoding

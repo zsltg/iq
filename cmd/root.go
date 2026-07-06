@@ -65,13 +65,15 @@ type config struct {
 	stdin bool
 	// decimal is the raw --format.decimal flag; decimalMode is it resolved once in
 	// PersistentPreRunE and passed as a plain type into the driver adapters.
-	decimal     string
-	decimalMode numfmt.DecimalMode
-	monochrome  bool
-	forceColor  bool
-	noProgress  bool
-	reveal      bool
-	expand      bool
+	decimal      string
+	decimalMode  numfmt.DecimalMode
+	monochrome   bool
+	forceColor   bool
+	noProgress   bool
+	noCache      bool
+	noCacheIndex bool
+	reveal       bool
+	expand       bool
 	// output, when non-empty, redirects the command's stdout to this file (sq's
 	// -o); progress and errors still go to stderr. outClose closes that file in
 	// Execute's finalize and is nil when --output is unset.
@@ -238,6 +240,13 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.PersistentFlags().BoolVarP(&cfg.monochrome, "monochrome", "M", false, "disable colored output (also honored via NO_COLOR); color is on by default only when writing to a terminal")
 	root.PersistentFlags().BoolVarP(&cfg.forceColor, "color", "C", false, "force colored output even when the destination is not a terminal (e.g. a pager)")
 	root.PersistentFlags().BoolVar(&cfg.noProgress, "no-progress", false, "disable the scan progress spinner (shown on stderr for long scans when it is a terminal)")
+	// --no-cache bypasses the file:// dump decode cache for one run; it is
+	// persistable (`iq config set no-cache true`) to turn caching off by default.
+	root.PersistentFlags().BoolVar(&cfg.noCache, "no-cache", false, "disable the file:// dump decode cache (on by default for local dump files above 4 MiB; a cached decode skips re-parsing the dump on later queries)")
+	// --no-cache-index keeps the flat decode cache but skips its per-page Bloom
+	// index — the escape hatch for a very large keyspace where the index build
+	// memory is unwelcome; persistable via `iq config set no-cache-index true`.
+	root.PersistentFlags().BoolVar(&cfg.noCacheIndex, "no-cache-index", false, "skip the file:// cache's per-page key index (still caches the decode; a bounded key read streams the whole cache instead of decoding only candidate pages)")
 	// --output (sq's -o) is persistent so it redirects every command's stdout to a
 	// file; progress and errors stay on stderr, and color turns off for the file.
 	root.PersistentFlags().StringVarP(&cfg.output, "output", "o", "", "write output to <file> instead of stdout (color off unless -C; progress and errors still go to stderr)")
@@ -297,6 +306,7 @@ func newRootCmd() (*cobra.Command, *config) {
 		newSrcCmd(),
 		newGroupCmd(),
 		newConfigCmd(cfg),
+		newCacheCmd(),
 		newPingCmd(cfg),
 		newInspectCmd(cfg),
 		newDiffCmd(cfg),
