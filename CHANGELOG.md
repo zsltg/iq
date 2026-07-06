@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.19.0 - 2026-07-06
+### Features
+- **couchdb:** add Apache CouchDB driver (6b593a0)
+- **file:** read Cassandra native dumps (6e41bda)
+- **file:** read DynamoDB native dumps (9c4e4b5)
+
+### Documentation
+- trim redundant book intros, tighten worktree rule (b4afe5f)
+
+
 ## v0.18.0 - 2026-07-06
 ### Features
 - **cmd:** show handle/driver/url in iq ls with sq-style color (81252b1)
