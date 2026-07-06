@@ -38,10 +38,12 @@ func newAddCmd(cfg *config) *cobra.Command {
 		Short: "Register a source from a connection URL (sq-style)",
 		Long: "Register a source from a connection URL, like `sq add`. The URL is the only\n" +
 			"positional argument; -n/--handle names the source, and when omitted a handle is\n" +
-			"derived from the URL (the MongoDB database name, else the driver). The backend is\n" +
-			"inferred from the URL scheme: redis:// (rediss://) or mongodb:// (mongodb+srv://);\n" +
-			"-d/--driver asserts the expected driver. For MongoDB, a default collection rides\n" +
-			"in the URL as ?collection= (`mongodb://host/db?collection=orders`). Handles may be\n" +
+			"derived from the URL (the MongoDB database or Cassandra keyspace name, else the\n" +
+			"driver). The backend is inferred from the URL scheme: redis:// (rediss://),\n" +
+			"mongodb:// (mongodb+srv://), or cassandra://; -d/--driver asserts the expected\n" +
+			"driver. For MongoDB, a default collection rides in the URL as ?collection=\n" +
+			"(`mongodb://host/db?collection=orders`); for Cassandra, a default table rides as\n" +
+			"?table= (`cassandra://host/keyspace?table=orders`). Handles may be\n" +
 			"grouped with '/' (`iq add -n prod/books\n" +
 			"mongodb://...`). -p prompts for the URL password (or reads it from stdin); with\n" +
 			"--store keyring the password is moved to the OS keyring and stripped from the\n" +
@@ -144,7 +146,7 @@ func newAddCmd(cfg *config) *cobra.Command {
 		},
 	}
 	c.Flags().StringVarP(&handle, "handle", "n", "", "handle for the source; derived from the url when omitted")
-	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis); must match the url scheme")
+	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis, cassandra); must match the url scheme")
 	c.Flags().BoolVarP(&active, "active", "a", false, "make the new source the active source")
 	c.Flags().BoolVarP(&passwordPrompt, "password", "p", false, "prompt for the url password (or read it from stdin)")
 	c.Flags().BoolVar(&skipVerify, "skip-verify", false, "skip the post-add reachability check")

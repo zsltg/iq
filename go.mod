@@ -3,6 +3,7 @@ module github.com/zsltg/iq
 go 1.25.1
 
 require (
+	github.com/apache/cassandra-gocql-driver/v2 v2.1.2
 	github.com/fatih/color v1.19.0
 	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/goccy/go-yaml v1.19.2
@@ -23,6 +24,7 @@ require (
 	github.com/zalando/go-keyring v0.2.8
 	go.mongodb.org/mongo-driver/v2 v2.7.0
 	golang.org/x/term v0.43.0
+	gopkg.in/inf.v0 v0.9.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -75,6 +77,7 @@ require (
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.5 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
+	github.com/testcontainers/testcontainers-go/modules/cassandra v0.43.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
@@ -93,4 +96,5 @@ require (
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
+	software.sslmate.com/src/go-pkcs12 v0.6.0 // indirect
 )

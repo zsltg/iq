@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	iqcassandra "github.com/zsltg/iq/drivers/cassandra"
 	iqfile "github.com/zsltg/iq/drivers/file"
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqredis "github.com/zsltg/iq/drivers/redis"
@@ -70,6 +71,21 @@ var drivers = []driver{
 		explainWrite: iqmongo.ExplainWrite,
 		explainClear: iqmongo.ExplainClear,
 		explainDrop:  iqmongo.ExplainDrop,
+	},
+	{
+		name:        "cassandra",
+		desc:        "Apache Cassandra wide-column store",
+		schemes:     []string{"cassandra"},
+		doc:         "https://cassandra.apache.org/doc/",
+		versions:    "3.11+",
+		addressable: true,
+		open: func(ctx context.Context, cfg *config) (store, error) {
+			return iqcassandra.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
+		},
+		explainPlan:  iqcassandra.ExplainPlan,
+		explainWrite: iqcassandra.ExplainWrite,
+		explainClear: iqcassandra.ExplainClear,
+		explainDrop:  iqcassandra.ExplainDrop,
 	},
 	{
 		name:     "redis",

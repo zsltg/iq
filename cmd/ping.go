@@ -154,10 +154,14 @@ func verifySource(ctx context.Context, rawURL string, timeout time.Duration) err
 
 // healthArgs returns the cheapest round-trip command for the URL's backend.
 func healthArgs(rawURL string) []string {
-	if driverName(rawURL) == "redis" {
+	switch driverName(rawURL) {
+	case "redis":
 		return []string{"PING"}
+	case "cassandra":
+		return []string{"SELECT release_version FROM system.local"}
+	default:
+		return []string{`{"ping":1}`}
 	}
-	return []string{`{"ping":1}`}
 }
 
 // redactErr returns err with any occurrence of the raw connection URL replaced by

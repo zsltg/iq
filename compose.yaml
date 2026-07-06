@@ -24,3 +24,17 @@ services:
       interval: 2s
       timeout: 5s
       retries: 5
+
+  cassandra:
+    image: cassandra:5
+    container_name: iq-cassandra
+    ports:
+      - "9042:9042"
+    # Ephemeral single-node test instance; data lives only in the container.
+    # Cassandra is slow to become ready, so the healthcheck retries generously.
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 60s

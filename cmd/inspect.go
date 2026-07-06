@@ -30,15 +30,19 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	)
 	long := "Show a source's native server/database introspection.\n\n" +
 		"The positional argument names the source, like `iq inspect prod`; with none it\n" +
-		"uses --src or the active source. MongoDB sources accept sq-style\n" +
-		"`<source>.<collection>` addressing (`iq inspect prod.books`) to pick the\n" +
-		"collection, overriding the source URL's ?collection= default; Redis sources take\n" +
-		"no collection.\n\n" +
+		"uses --src or the active source. MongoDB and Cassandra sources accept sq-style\n" +
+		"`<source>.<collection>` / `<source>.<table>` addressing (`iq inspect prod.books`)\n" +
+		"to pick the collection/table, overriding the source URL's ?collection=/?table=\n" +
+		"default; Redis sources take no collection.\n\n" +
 		"MongoDB — runs diagnostic database commands; no --only runs them all,\n" +
 		"--only narrows to the named ones:\n" +
 		"  " + strings.Join(mongoInspectCmds, "  ") + "\n" +
 		"  (collStats needs a collection: address it as source.collection or set\n" +
 		"  ?collection= on the source url)\n\n" +
+		"Cassandra — runs system-table reads; no --only runs them all, --only narrows:\n" +
+		"  " + strings.Join(cassandraInspectCmds, "  ") + "\n" +
+		"  (columns needs a table: address it as source.table or set ?table= on the\n" +
+		"  source url)\n\n" +
 		"Redis — runs INFO; --only narrows it to those sections\n" +
 		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
 		"  server  clients  memory  persistence  stats  replication  cpu  keyspace\n\n" +
@@ -74,6 +78,8 @@ func newInspectCmd(cfg *config) *cobra.Command {
 			switch driverName(cfg.url) {
 			case "redis":
 				return inspectRedis(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+			case "cassandra":
+				return inspectCassandra(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "file":
 				// inspect reports live server metadata; a dump file has none. Point
 				// the user at the operations that do work on a file source.
@@ -225,6 +231,106 @@ func isMongoInspectCmd(sub string) bool {
 		}
 	}
 	return false
+}
+
+// cassandraInspectCmds is the supported set of Cassandra system-table reads inspect
+// runs. With no --only it runs them all; --only narrows to the named ones.
+var cassandraInspectCmds = []string{"local", "tables", "columns"}
+
+// inspectCassandra runs the requested Cassandra system-table reads (all supported
+// when none are named) and renders each reply keyed by subcommand. "local" shows the
+// coordinator's cluster and version row; "tables" lists the keyspace's tables;
+// "columns" describes the selected table's columns. With list, it prints the
+// supported names without touching the store.
+func inspectCassandra(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
+	if list {
+		return writeInspectList(out, cassandraInspectCmds, jsonOut, yamlOut)
+	}
+	explicit := len(subs) > 0
+	which := subs
+	if !explicit {
+		which = cassandraInspectCmds
+	}
+	for _, sub := range which {
+		if !isCassandraInspectCmd(sub) {
+			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(cassandraInspectCmds, ", "))
+		}
+	}
+
+	keyspace, table := cassandraTarget(cfg)
+	type result struct {
+		sub   string
+		value any
+	}
+	results := make([]result, 0, len(which))
+	for _, sub := range which {
+		stmt, ok := cassandraInspectStmt(sub, keyspace, table)
+		if !ok {
+			if explicit {
+				return fmt.Errorf("columns needs a table; address it as handle.table or set ?table= on the source url")
+			}
+			continue // skip in the run-all case
+		}
+		res, err := query.NewRunner(st).Run(ctx, []string{stmt})
+		if err != nil {
+			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
+		}
+		results = append(results, result{sub: sub, value: res})
+	}
+
+	if jsonOut || yamlOut {
+		byName := make(map[string]any, len(results))
+		for _, r := range results {
+			byName[r.sub] = r.value
+		}
+		return writeStructured(out, byName, yamlOut)
+	}
+	if err := inspectHeader(out, cfg); err != nil {
+		return err
+	}
+	for _, r := range results {
+		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cassandraInspectStmt builds the CQL for a Cassandra diagnostic subcommand, keyed
+// off the system schema. columns needs a table and reports false when none is
+// selected. The keyspace and table are interpolated as quoted string literals, so
+// the statement is injection-safe.
+func cassandraInspectStmt(sub, keyspace, table string) (string, bool) {
+	switch sub {
+	case "local":
+		return "SELECT cluster_name, release_version, cql_version FROM system.local", true
+	case "tables":
+		return fmt.Sprintf("SELECT table_name FROM system_schema.tables WHERE keyspace_name = %s", cqlString(keyspace)), true
+	case "columns":
+		if table == "" {
+			return "", false
+		}
+		return fmt.Sprintf("SELECT column_name, kind, type FROM system_schema.columns WHERE keyspace_name = %s AND table_name = %s",
+			cqlString(keyspace), cqlString(table)), true
+	default:
+		return "", false
+	}
+}
+
+// isCassandraInspectCmd reports whether sub is a supported diagnostic read.
+func isCassandraInspectCmd(sub string) bool {
+	for _, c := range cassandraInspectCmds {
+		if c == sub {
+			return true
+		}
+	}
+	return false
+}
+
+// cqlString renders s as a single-quoted CQL string literal, doubling an embedded
+// quote so an interpolated keyspace or table name cannot break out of the literal.
+func cqlString(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 // writeInspectList renders the names --list emits: a JSON or YAML array with

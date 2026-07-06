@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	iqcassandra "github.com/zsltg/iq/drivers/cassandra"
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
@@ -125,6 +126,18 @@ func mongoCollection(cfg *config) string {
 		return cfg.address
 	}
 	return iqmongo.CollectionFromURI(cfg.url)
+}
+
+// cassandraTarget returns the effective Cassandra keyspace and table for a resolved
+// source: the keyspace from the URL path and the table from the dotted address
+// override or the URL's ?table= default. Only the Cassandra-aware inspect path calls
+// it; a parse error yields empty strings, leaving the store open to surface it.
+func cassandraTarget(cfg *config) (keyspace, table string) {
+	ks, tbl, err := iqcassandra.Target(cfg.url, cfg.address)
+	if err != nil {
+		return "", ""
+	}
+	return ks, tbl
 }
 
 // splitSourceArg parses an inspect positional into a source name and an optional

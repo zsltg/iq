@@ -1,8 +1,8 @@
 # iq
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
-databases. Redis and MongoDB are supported; the backend is chosen by the URL scheme, and the
-query core is driver-agnostic so further backends slot in behind the same port.
+databases. Redis, MongoDB, and Apache Cassandra are supported; the backend is chosen by the URL
+scheme, and the query core is driver-agnostic so further backends slot in behind the same port.
 
 The filter is both the transform and the key selector: its top-level paths name the keys to
 fetch, so the store only ever reads a bounded set of keys — never a full keyspace scan, unless
@@ -20,7 +20,7 @@ sq's so the tool feels familiar.
 ## Requirements
 
 - Go 1.25+
-- Docker (for the integration tests, which start ephemeral Redis + MongoDB containers; not needed for `go test -short`)
+- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra containers; not needed for `go test -short`)
 
 ## Build
 
@@ -58,13 +58,14 @@ by name or as the default. Register one with `iq add`, then make it active:
 ```bash
 iq add -n cache redis://localhost:6379/0                    # register a Redis source as "cache"
 iq add -a 'mongodb://localhost:27017/books?collection=items' # a Mongo source; handle "books" from the db, made active
+iq add -n orders 'cassandra://localhost:9042/shop?table=orders' # a Cassandra source
 iq src cache                                                 # make "cache" the active source
 iq ls                                                        # list sources (the active one marked *)
 ```
 
 Once a source is active, every query runs against it. Select a different source for a single
-command with `--src`/`-s`, without changing the active one; address a MongoDB collection with a
-dotted `handle.collection` suffix:
+command with `--src`/`-s`, without changing the active one; address a MongoDB collection or a
+Cassandra table with a dotted `handle.collection` / `handle.table` suffix:
 
 ```bash
 iq --src books '.["2"]'          # run this one query against "books" (its default collection)
@@ -73,14 +74,17 @@ iq --src books.authors '.[]'     # the same connection, a different collection
 
 - `iq add <url> [-n <handle>] [-a] [-p] [-d <driver>] [--skip-verify] [--store keyring]`
   — register a source, mirroring `sq add`. The URL is the sole positional argument; the backend is
-  inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`). `-n`/`--handle`
-  names the source; when omitted a handle is derived from the URL (the MongoDB database name, else
-  the driver, disambiguated with a numeric suffix on collision). A MongoDB default collection rides
-  in the URL as `?collection=` (`mongodb://host/db?collection=items`), the driver's own connection
-  option — like a `file://` source's `?format=`; a query addresses another collection with a dotted
-  `handle.collection`. `-a`/`--active` makes the new source active. `-p`/`--password` prompts for the
-  URL password (or reads it from stdin) instead of embedding it in the URL. `-d`/`--driver` asserts
-  the expected driver (`mongo`, `redis`) and errors if it disagrees with the scheme. The source is
+  inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`, `cassandra://`).
+  `-n`/`--handle` names the source; when omitted a handle is derived from the URL (the MongoDB
+  database or Cassandra keyspace name, else the driver, disambiguated with a numeric suffix on
+  collision). A MongoDB default collection rides in the URL as `?collection=`
+  (`mongodb://host/db?collection=items`), a Cassandra default table as `?table=`
+  (`cassandra://host/keyspace?table=orders`), the driver's own connection option — like a `file://`
+  source's `?format=`; a query addresses another collection/table with a dotted
+  `handle.collection` / `handle.table`. `-a`/`--active` makes the new source active. `-p`/`--password`
+  prompts for the URL password (or reads it from stdin) instead of embedding it in the URL.
+  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`) and errors if it
+  disagrees with the scheme. The source is
   pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
   keyring` moves the URL's password into the OS keyring and strips it from the stored URL (default
   `--store inline` keeps it in the config file).
@@ -100,15 +104,17 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   time (or the error). No arguments pings the active source; a group name pings every member.
   Bounded by `--timeout`; exits non-zero if any source is unreachable.
 - `iq inspect [<source>[.<collection>]]` — show a source's native introspection. The positional
-  names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB
-  sources accept sq-style `<source>.<collection>` addressing (`iq inspect prod.books`) to pick the
-  collection, overriding the source URL's `?collection=` default; Redis sources take no collection.
+  names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB and
+  Cassandra sources accept sq-style `<source>.<collection>` / `<source>.<table>` addressing
+  (`iq inspect prod.books`) to pick the collection/table, overriding the source URL's
+  `?collection=`/`?table=` default; Redis sources take no collection.
   `--only`
   narrows the output (repeatable or comma-separated): for Redis, `INFO` sections
   (`iq inspect prod --only memory,server`); for MongoDB, the diagnostic commands (`dbStats`,
-  `serverStatus`, `listCollections`, `collStats`, `buildInfo`, `hostInfo`) — no `--only` runs them
-  all. `--list` prints the subcommands/sections available for the source (Mongo's fixed set;
-  Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
+  `serverStatus`, `listCollections`, `collStats`, `buildInfo`, `hostInfo`); for Cassandra, the
+  system-schema reads (`local`, `tables`, `columns`) — no `--only` runs them
+  all. `--list` prints the subcommands/sections available for the source (Mongo's and Cassandra's
+  fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
   by `--timeout`. The location header is redacted like `iq ls`: `--reveal` un-redacts an inline
   password, `--expand` resolves a keyring-backed one.
 - `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
@@ -413,10 +419,11 @@ registered backends — the same canonical names `iq ls -v`, `ping`, `inspect`, 
 
 ```bash
 $ iq driver ls
-DRIVER  DESCRIPTION                                                     SCHEMES               VERSIONS  DOC
-mongo   MongoDB document store                                          mongodb, mongodb+srv  4.2+      https://www.mongodb.com/docs/
-redis   Redis key-value store                                           redis, rediss         7.0+      https://redis.io/docs/
-file    Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON)  file
+DRIVER     DESCRIPTION                                                     SCHEMES               VERSIONS  DOC
+mongo      MongoDB document store                                          mongodb, mongodb+srv  4.2+      https://www.mongodb.com/docs/
+cassandra  Apache Cassandra wide-column store                              cassandra             3.11+     https://cassandra.apache.org/doc/
+redis      Redis key-value store                                           redis, rediss         7.0+      https://redis.io/docs/
+file       Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON)  file
 ```
 
 Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sources) for the full flag).
@@ -424,8 +431,10 @@ Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sou
 > [!NOTE]
 > `VERSIONS` is the range of backend server versions the bundled client library supports —
 > [`go-redis` v9](https://github.com/redis/go-redis) for Redis, the
-> [MongoDB Go driver v2](https://www.mongodb.com/docs/drivers/go/current/) for MongoDB — not a
-> matrix `iq` tests against. The integration tests are pinned to `redis:8` and `mongo:8`.
+> [MongoDB Go driver v2](https://www.mongodb.com/docs/drivers/go/current/) for MongoDB, the
+> [Apache Cassandra gocql driver v2](https://github.com/apache/cassandra-gocql-driver) for
+> Cassandra — not a matrix `iq` tests against. The integration tests are pinned to `redis:8`,
+> `mongo:8`, and `cassandra:5`.
 
 <details>
 <summary><b>Redis</b> — value encoding and raw commands</summary>
@@ -568,6 +577,92 @@ With no source selected the command errors — there is no ambient URL or enviro
 A dotted `--src handle.collection` (or `handle.collection` positional, for `inspect`/`data`/`diff`)
 overrides the source URL's MongoDB `?collection=` default for one run (rejected for Redis, which has
 no collections); `--timeout` (default `5s`) bounds each query.
+
+</details>
+
+<details>
+<summary><b>Apache Cassandra</b> — table keyspace, primary-key mapping, predicate pushdown, and CQL</summary>
+
+Register a `cassandra://` source and the same jq interface works against a table, where **the table
+is the keyspace: a row's primary key is the key and the row is the value**. The keyspace comes from
+the URL path; the table from the URL's `?table=` (overridable per run with a dotted `handle.table`);
+multiple contact points are comma-separated:
+
+```bash
+iq add -n books 'cassandra://localhost:9042/iq?table=books' # register once, then:
+iq --src books '.["2"]'                              # fetch the row whose primary key is 2
+iq --src books '.[] | select(.year > 2015) | .title' # streamed
+iq --src books --unbounded 'keys'                    # every primary key
+iq add -n cl 'cassandra://user:pass@n1,n2:9042/app?table=orders' # auth + multiple hosts
+```
+
+Like MongoDB, Cassandra columns are natively typed, so `.year > 2015` needs no `tonumber`. The
+`--unbounded` / streaming rules are identical to every backend. The table's schema is read once at
+connect time, so the driver knows the primary-key columns and their types.
+
+### Key encoding
+
+A row's key is its **full primary key** — the partition-key columns followed by the clustering
+columns. A single-column primary key renders as its bare value (`42`, a uuid, a text value — like a
+Mongo `_id`); a composite primary key renders as a compact JSON array in schema order:
+
+```bash
+iq --src sales '.["US"]'                # single-column key, bare
+iq --src sales '.["[\"US\",1]"]'        # composite key ((country), id) as a JSON array
+```
+
+The array elements are the columns' string forms and are coerced back through the schema on lookup,
+so a `bigint`/`varint` key round-trips without precision loss.
+
+### Value encoding
+
+Each column value is normalized to JSON by CQL type:
+
+| CQL type | JSON shape |
+| --- | --- |
+| `text`, `varchar`, `ascii` | the string verbatim |
+| `int`, `bigint`, `smallint`, `tinyint`, `counter` | number |
+| `varint` | number when it fits, else its exact decimal string |
+| `float`, `double` | number |
+| `decimal` | exact string (or a number under `--format.decimal number`) |
+| `boolean` | `true` / `false` |
+| `uuid`, `timeuuid` | canonical string |
+| `timestamp` | RFC 3339 string |
+| `blob` | base64 string |
+| `inet` | address string |
+| `list`, `set` | array (a set is returned sorted) |
+| `map` | object (non-text keys stringified) |
+| missing / null cell | omitted (reads as `null` in jq) |
+
+### Server-side pre-filtering (predicate pushdown)
+
+By default a `.[] | select(...)` filter's **equality** clauses are translated into a CQL `WHERE` so
+the cluster filters before rows reach iq. Only equality and same-column membership are pushed:
+
+| `select(...)` clause | Pushed | CQL translation | Notes |
+| --- | :---: | --- | --- |
+| `.a == x` | ✓ | `a = ?` | a single top-level column that exists in the table |
+| `.a == 1 or .a == 2` | ✓ | `a IN (?, ?)` | an `or` of equalities on one column |
+| `E1 and E2` | ✓ | `AND` of the pushable parts | drops any conjunct it cannot push (widening) |
+| ranges, regex, `has`, `length`, negations, nested paths | — | — | run client-side; ranges are skipped because jq treats a missing field as the lowest value, which CQL cannot reproduce |
+
+A pushed `WHERE` that does not resolve to the full partition key runs with `ALLOW FILTERING`, so the
+coordinator does the scan — an opt-in cost (it is shown in `--explain`). Pushdown never changes
+results, only speed: the full jq always re-runs client-side, so a pushed filter is a conservative
+pre-filter. Pass `--no-compile` to stream the whole table and filter entirely client-side.
+
+### Raw commands
+
+`iq exec` runs a CQL statement verbatim and prints the rows as JSON — the escape hatch for
+server-side queries, DDL, and administration the jq read path does not cover:
+
+```bash
+iq --src books exec 'SELECT release_version FROM system.local'
+iq --src books exec "SELECT title FROM books WHERE year > 2015 ALLOW FILTERING"
+```
+
+`iq inspect` reads the system schema — `local` (cluster/version), `tables` (the keyspace's tables),
+and `columns` (a table's columns); `--only` narrows to those subcommands.
 
 </details>
 
@@ -746,8 +841,9 @@ iq data drop cache --explain               # reports the Redis drop as unsupport
 
 The core read path: a jq filter is classified by the **selector**, a scan is optionally **decomposed**
 into a native predicate, and each backend maps that predicate its own way — MongoDB pushes it
-server-side, Redis scans and filters client-side. Either way the full jq re-runs client-side, so the
-pushed predicate is only ever a conservative pre-filter and results are identical with or without it.
+server-side, Cassandra pushes equality as a CQL `WHERE` (with `ALLOW FILTERING` when it is not the
+partition key), Redis scans and filters client-side. Either way the full jq re-runs client-side, so
+the pushed predicate is only ever a conservative pre-filter and results are identical with or without it.
 
 Query / read path:
 
@@ -823,13 +919,19 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   CBOR under `<user cache dir>/iq/dumps`): a full scan of a large dump tees its normalized records
   to disk, and later scans read them back instead of re-decoding — transparent to the ports, so the
   data-flow above is unchanged, and never authoritative (a miss just re-decodes).
-- `drivers/redis`, `drivers/mongo` — the adapters. Each has one `*Store` satisfying the read ports
+- `drivers/redis`, `drivers/mongo`, `drivers/cassandra` — the adapters. Each has one `*Store`
+  satisfying the read ports
   (`Query` for exec, `Get`/`ScanBatches` for jq) and the write ports (`Put`/`Clear`/`TypedScan`,
-  plus `Drop` for Mongo), with a type-to-JSON normalization frozen as that backend's encoding
-  contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs) and its inverse for writes
+  plus `Drop` for Mongo and Cassandra), with a type-to-JSON normalization frozen as that backend's
+  encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs; CQL types → uuid-string,
+  RFC 3339, base64 blob, collections) and its inverse for writes
   (Mongo `bulkWrite`; Redis pipelined `SET`/`HSET`/`RPUSH`/`SADD`/`ZADD`/`XADD`/`JSON.SET` by
-  type). Redis maps a key to a Redis key; Mongo maps a key to a document `_id` within the
-  collection it owns from the URL's `?collection=` (or a dotted `handle.collection` override). Each
+  type; Cassandra parameterized `INSERT`, `TRUNCATE`, `DROP TABLE`). Redis maps a key to a Redis key;
+  Mongo maps a key to a document `_id` within the collection it owns from the URL's `?collection=`
+  (or a dotted `handle.collection` override); Cassandra maps a key to a row's full primary key within
+  the table from the URL's `?table=` (or a `handle.table` override), reading the table schema once at
+  connect to encode and reverse it. Cassandra pushes equality/`IN` as a CQL `WHERE` (`FilteredScanner`)
+  but has no cheap count, so it omits `Estimator` like Redis. Each
   also contributes pure, connection-free `--explain` describers
   (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
 - `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
@@ -888,10 +990,11 @@ iq --src snap '.[] | select(.active)'     # query a Redis/Mongo dump offline (RD
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
-go test ./...             # full suite; starts ephemeral Redis + MongoDB via testcontainers-go
-docker compose up -d --wait   # optional: local Redis + MongoDB for manual exploration (:6379, :27017)
+go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra via testcontainers-go
+docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra for manual exploration (:6379, :27017, :9042)
 bash scripts/seed.sh      # load example data into the running Redis
 bash scripts/seed-mongo.sh    # load example documents into the running MongoDB
+bash scripts/seed-cassandra.sh    # load example rows into the running Cassandra
 docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
@@ -904,9 +1007,10 @@ make release              # bump version, regenerate CHANGELOG.md, commit, and t
 ```
 
 Integration tests skip under `go test -short`. The full `go test ./...` needs Docker: it starts
-an ephemeral Redis and MongoDB via
+an ephemeral Redis, MongoDB, and Cassandra via
 [testcontainers-go](https://github.com/testcontainers/testcontainers-go) on random ports and
-tears them down afterwards — no manual `docker compose up`. Set `IQ_REDIS_URL` / `IQ_MONGO_URL`
+tears them down afterwards — no manual `docker compose up` (Cassandra takes ~1 minute to become
+ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL`
 to point at an already-running server (for example the `docker compose` stack) to skip container
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
 a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded

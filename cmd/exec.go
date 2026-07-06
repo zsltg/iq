@@ -21,13 +21,17 @@ func newExecCmd(cfg *config) *cobra.Command {
 		Short: "Forward a command to the database verbatim and print the reply",
 		Long: "Forward a command to the backend verbatim. For Redis, a command and operands:\n" +
 			"`iq exec SET greeting hello`, `iq exec HGETALL book:2`. For MongoDB, one JSON\n" +
-			"command document run with runCommand: `iq exec '{\"find\":\"books\",\"filter\":{}}'`.",
+			"command document run with runCommand: `iq exec '{\"find\":\"books\",\"filter\":{}}'`.\n" +
+			"For Cassandra, a CQL statement: `iq exec 'SELECT * FROM books LIMIT 10'`.",
 		Example: "  # Redis: a command and its operands.\n" +
 			"  $ iq exec SET greeting hello\n" +
 			"  $ iq exec HGETALL user:2\n" +
 			"\n" +
 			"  # MongoDB: one runCommand document (database-scoped; no collection needed).\n" +
-			"  $ iq exec '{\"find\":\"orders\",\"filter\":{}}' --src shop",
+			"  $ iq exec '{\"find\":\"orders\",\"filter\":{}}' --src shop\n" +
+			"\n" +
+			"  # Cassandra: a CQL statement (keyspace-scoped; no table needed).\n" +
+			"  $ iq exec 'SELECT release_version FROM system.local' --src cluster",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Log only the command verb: Redis operands (SET greeting hello) may

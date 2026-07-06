@@ -18,7 +18,8 @@ func TestDriverForScheme(t *testing.T) {
 		{"mongodb srv", "mongodb+srv", "mongo", true},
 		{"redis", "redis", "redis", true},
 		{"redis tls", "rediss", "redis", true},
-		{"unknown", "cassandra", "", false},
+		{"cassandra", "cassandra", "cassandra", true},
+		{"unknown", "dynamodb", "", false},
 		{"empty", "", "", false},
 	}
 	for _, tt := range tests {
@@ -40,7 +41,8 @@ func TestDriverName(t *testing.T) {
 		{"redis tls normalizes", "rediss://h:6379/0", "redis"},
 		{"mongodb normalizes", "mongodb://h/db", "mongo"},
 		{"mongodb srv normalizes", "mongodb+srv://h/db", "mongo"},
-		{"unknown falls back to scheme", "cassandra://h", "cassandra"},
+		{"cassandra normalizes", "cassandra://h/ks", "cassandra"},
+		{"unknown falls back to scheme", "dynamodb://h", "dynamodb"},
 		{"schemeless is empty", "just-a-string", ""},
 	}
 	for _, tt := range tests {
@@ -51,7 +53,7 @@ func TestDriverName(t *testing.T) {
 }
 
 func TestExpectedSchemes(t *testing.T) {
-	require.Equal(t, "expected mongodb:// or redis://", expectedSchemes())
+	require.Equal(t, "expected one of mongodb://, cassandra://, redis://", expectedSchemes())
 }
 
 // TestDriverRegistryInvariants guards the single source of truth: every driver
@@ -90,6 +92,7 @@ func TestDriverLsTable(t *testing.T) {
 		"DRIVER", "DESCRIPTION", "SCHEMES", "VERSIONS", "DOC",
 		"mongo", "MongoDB document store", "mongodb, mongodb+srv", "4.2+", "https://www.mongodb.com/docs/",
 		"redis", "Redis key-value store", "redis, rediss", "7.0+", "https://redis.io/docs/",
+		"cassandra", "Apache Cassandra wide-column store", "3.11+", "https://cassandra.apache.org/doc/",
 	} {
 		require.Contains(t, out, want)
 	}
@@ -101,7 +104,7 @@ func TestDriverLsJSON(t *testing.T) {
 
 	var rows []driverRow
 	require.NoError(t, json.Unmarshal([]byte(out), &rows))
-	require.Len(t, rows, 3)
+	require.Len(t, rows, 4)
 
 	byName := map[string]driverRow{}
 	for _, r := range rows {
@@ -113,4 +116,7 @@ func TestDriverLsJSON(t *testing.T) {
 	require.Equal(t, "https://redis.io/docs/", byName["redis"].Doc)
 	require.Equal(t, []string{"redis", "rediss"}, byName["redis"].Schemes)
 	require.Equal(t, "7.0+", byName["redis"].Versions)
+	require.Equal(t, []string{"cassandra"}, byName["cassandra"].Schemes)
+	require.Equal(t, "Apache Cassandra wide-column store", byName["cassandra"].Description)
+	require.Equal(t, "https://cassandra.apache.org/doc/", byName["cassandra"].Doc)
 }
