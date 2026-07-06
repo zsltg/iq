@@ -37,7 +37,7 @@ func cassandraCSVSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hin
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
 		cr := csv.NewReader(r)
 		cr.ReuseRecord = true
-		cr.FieldsPerRecord = 0 // lock the field count to the first row read.
+		cr.FieldsPerRecord = -1 // don't enforce a width here; recordForCSVRow validates against the header.
 		if header == nil {
 			h, err := cr.Read()
 			if errors.Is(err, io.EOF) {

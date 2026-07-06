@@ -3,6 +3,7 @@ package file
 import (
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -74,6 +75,28 @@ func TestDynamoUnknownShape(t *testing.T) {
 	require.NoError(t, err)
 	err = st.TypedScan(t.Context(), func([]query.Record) error { return nil })
 	require.ErrorContains(t, err, "neither")
+}
+
+func TestPagingDynamo(t *testing.T) {
+	var buf bytes.Buffer
+	for i := 0; i < bigCount; i++ {
+		fmt.Fprintf(&buf, `{"Item":{"pk":{"S":"k%d"}}}`+"\n", i)
+	}
+	u := writeDump(t, "big.json", buf.Bytes(), "format=dynamodb-json&keys=pk")
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	require.Equal(t, []int{pageSize, bigCount - pageSize}, pageSizes(t, st))
+}
+
+func TestPagingExactMultipleDynamo(t *testing.T) {
+	var buf bytes.Buffer
+	for i := 0; i < pageSize; i++ {
+		fmt.Fprintf(&buf, `{"Item":{"pk":{"S":"k%d"}}}`+"\n", i)
+	}
+	u := writeDump(t, "exact.json", buf.Bytes(), "format=dynamodb-json&keys=pk")
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	require.Equal(t, []int{pageSize}, pageSizes(t, st))
 }
 
 func TestDynamoFormatString(t *testing.T) {

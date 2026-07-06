@@ -1,6 +1,8 @@
 package file
 
 import (
+	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -76,6 +78,42 @@ func TestCassandraCSVBadType(t *testing.T) {
 	require.NoError(t, err)
 	err = st.TypedScan(t.Context(), func([]query.Record) error { return nil })
 	require.ErrorContains(t, err, "not an integer")
+}
+
+func TestCassandraCSVFieldCountMismatch(t *testing.T) {
+	// A ragged row (fewer fields than the header) is a clear error, not a silent
+	// short row; recordForCSVRow validates each row's width against the header.
+	u := writeDump(t, "c.csv", []byte("id,name,age\na,b\n"), "format=cassandra-csv&keys=id")
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	err = st.TypedScan(t.Context(), func([]query.Record) error { return nil })
+	require.ErrorContains(t, err, "field(s), header has")
+}
+
+func TestPagingCassandra(t *testing.T) {
+	var buf bytes.Buffer
+	buf.WriteString("id\n")
+	for i := 0; i < bigCount; i++ {
+		fmt.Fprintf(&buf, "k%d\n", i)
+	}
+	u := writeDump(t, "big.csv", buf.Bytes(), "format=cassandra-csv&keys=id")
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	require.Equal(t, []int{pageSize, bigCount - pageSize}, pageSizes(t, st))
+}
+
+func TestPagingExactMultipleCassandra(t *testing.T) {
+	// Exactly one page of rows: the trailing partial-page flush must not fire, so a
+	// perfect multiple yields a single page with no empty tail.
+	var buf bytes.Buffer
+	buf.WriteString("id\n")
+	for i := 0; i < pageSize; i++ {
+		fmt.Fprintf(&buf, "k%d\n", i)
+	}
+	u := writeDump(t, "exact.csv", buf.Bytes(), "format=cassandra-csv&keys=id")
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	require.Equal(t, []int{pageSize}, pageSizes(t, st))
 }
 
 func TestCassandraFormatString(t *testing.T) {
