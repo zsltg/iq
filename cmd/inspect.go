@@ -30,10 +30,11 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	)
 	long := "Show a source's native server/database introspection.\n\n" +
 		"The positional argument names the source, like `iq inspect prod`; with none it\n" +
-		"uses --src or the active source. MongoDB, Cassandra, DynamoDB, and HBase sources\n" +
-		"accept sq-style `<source>.<collection>` / `<source>.<table>` addressing (`iq inspect\n" +
-		"prod.books`) to pick the collection/table, overriding the source URL's\n" +
-		"?collection=/?table= default; Redis sources take no collection.\n\n" +
+		"uses --src or the active source. MongoDB, Cassandra, DynamoDB, HBase, and CouchDB\n" +
+		"sources accept sq-style `<source>.<collection>` / `<source>.<table>` /\n" +
+		"`<source>.<database>` addressing (`iq inspect prod.books`) to pick the\n" +
+		"collection/table/database, overriding the source URL's ?collection=/?table=/\n" +
+		"?database= default; Redis sources take no collection.\n\n" +
 		"MongoDB — runs diagnostic database commands; no --only runs them all,\n" +
 		"--only narrows to the named ones:\n" +
 		"  " + strings.Join(mongoInspectCmds, "  ") + "\n" +
@@ -50,6 +51,10 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"HBase — runs introspection reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(hbaseInspectCmds, "  ") + "\n" +
 		"  (tables lists the source namespace's tables)\n\n" +
+		"CouchDB — runs introspection reads; no --only runs them all, --only narrows:\n" +
+		"  " + strings.Join(couchInspectCmds, "  ") + "\n" +
+		"  (dbinfo and indexes need a database: address it as source.database or set\n" +
+		"  ?database= on the source url)\n\n" +
 		"Redis — runs INFO; --only narrows it to those sections\n" +
 		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
 		"  server  clients  memory  persistence  stats  replication  cpu  keyspace\n\n" +
@@ -91,6 +96,8 @@ func newInspectCmd(cfg *config) *cobra.Command {
 				return inspectDynamo(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "hbase":
 				return inspectHBase(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+			case "couchdb":
+				return inspectCouch(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "file":
 				// inspect reports live server metadata; a dump file has none. Point
 				// the user at the operations that do work on a file source.
@@ -486,6 +493,105 @@ func inspectHBase(ctx context.Context, out io.Writer, st store, cfg *config, sub
 		}
 	}
 	return nil
+}
+
+// couchInspectCmds is the supported set of CouchDB introspection reads `inspect`
+// runs. "server" and "databases" are server-level; "dbinfo" and "indexes" need a
+// database selected. With no --only it runs them all; --only narrows.
+var couchInspectCmds = []string{"server", "databases", "dbinfo", "indexes"}
+
+// couchInspector is the introspection capability inspectCouch needs from the store.
+// CouchDB's introspection is HTTP API reads (GET /, GET /_all_dbs, GET /{db}, GET
+// /{db}/_index), not a Mango query, so it is a driver method the CLI calls directly
+// rather than a statement routed through the raw Query path.
+type couchInspector interface {
+	InspectServer(ctx context.Context) (any, error)
+	InspectDatabases(ctx context.Context) (any, error)
+	InspectDBInfo(ctx context.Context) (any, error)
+	InspectIndexes(ctx context.Context) (any, error)
+}
+
+// inspectCouch runs the requested CouchDB introspection reads (all supported when
+// none are named) and renders each reply keyed by subcommand. "dbinfo" and "indexes"
+// need a database selected and are skipped in the run-all case when none is. With
+// list, it prints the supported names without touching the store.
+func inspectCouch(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
+	if list {
+		return writeInspectList(out, couchInspectCmds, jsonOut, yamlOut)
+	}
+	ci, ok := st.(couchInspector)
+	if !ok {
+		return errors.New("inspect is not supported for this source")
+	}
+	explicit := len(subs) > 0
+	which := subs
+	if !explicit {
+		which = couchInspectCmds
+	}
+	for _, sub := range which {
+		if !isCouchInspectCmd(sub) {
+			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(couchInspectCmds, ", "))
+		}
+	}
+
+	type result struct {
+		sub   string
+		value any
+	}
+	results := make([]result, 0, len(which))
+	for _, sub := range which {
+		var (
+			res any
+			err error
+		)
+		switch sub {
+		case "server":
+			res, err = ci.InspectServer(ctx)
+		case "databases":
+			res, err = ci.InspectDatabases(ctx)
+		case "dbinfo":
+			res, err = ci.InspectDBInfo(ctx)
+			if err != nil && !explicit {
+				continue // a source with no database selected skips "dbinfo" in run-all
+			}
+		case "indexes":
+			res, err = ci.InspectIndexes(ctx)
+			if err != nil && !explicit {
+				continue // likewise "indexes"
+			}
+		}
+		if err != nil {
+			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
+		}
+		results = append(results, result{sub: sub, value: res})
+	}
+
+	if jsonOut || yamlOut {
+		byName := make(map[string]any, len(results))
+		for _, r := range results {
+			byName[r.sub] = r.value
+		}
+		return writeStructured(out, byName, yamlOut)
+	}
+	if err := inspectHeader(out, cfg); err != nil {
+		return err
+	}
+	for _, r := range results {
+		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// isCouchInspectCmd reports whether sub is a supported CouchDB inspect subcommand.
+func isCouchInspectCmd(sub string) bool {
+	for _, c := range couchInspectCmds {
+		if c == sub {
+			return true
+		}
+	}
+	return false
 }
 
 // writeInspectList renders the names --list emits: a JSON or YAML array with

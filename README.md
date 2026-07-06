@@ -1,7 +1,7 @@
 # iq
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
-databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, and Apache HBase are supported; the
+databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, Apache HBase, and Apache CouchDB are supported; the
 backend is chosen by the URL scheme, and the query core is driver-agnostic so further backends slot
 in behind the same port.
 
@@ -21,7 +21,7 @@ sq's so the tool feels familiar.
 ## Requirements
 
 - Go 1.25+
-- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
+- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
 
 ## Build
 
@@ -61,6 +61,7 @@ iq add -n cache redis://localhost:6379/0                    # register a Redis s
 iq add -a 'mongodb://localhost:27017/books?collection=items' # a Mongo source; handle "books" from the db, made active
 iq add -n orders 'cassandra://localhost:9042/shop?table=orders' # a Cassandra source
 iq add -n books 'hbase://localhost:2181/?table=iq_books'     # an HBase source (host = ZooKeeper quorum)
+iq add -n docs 'couchdb://admin:pass@localhost:5984/?database=iq' # a CouchDB source (host = server)
 iq src cache                                                 # make "cache" the active source
 iq ls                                                        # list sources: handle driver url (active marked *); -v adds format + options
 ```
@@ -77,7 +78,7 @@ iq --src books.authors '.[]'     # the same connection, a different collection
 - `iq add <url> [-n <handle>] [-a] [-p] [-d <driver>] [--skip-verify] [--store keyring]`
   — register a source, mirroring `sq add`. The URL is the sole positional argument; the backend is
   inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`, `cassandra://`,
-  `dynamodb://`, `hbase://`).
+  `dynamodb://`, `hbase://`, `couchdb://`, `couchdbs://`).
   `-n`/`--handle` names the source; when omitted a handle is derived from the URL (the MongoDB
   database or Cassandra keyspace name, else the driver, disambiguated with a numeric suffix on
   collision). A MongoDB default collection rides in the URL as `?collection=`
@@ -86,11 +87,13 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   (`dynamodb://us-east-1/?table=orders`, the region as the host; credentials come from the AWS
   default chain, never the URL), an HBase default table as `?table=`
   (`hbase://host:2181/?table=books`, the host as the ZooKeeper quorum; cell encodings optionally
-  declared with `?types=cf:age=long`), the driver's own connection option — like a `file://`
-  source's `?format=`; a query addresses another collection/table with a dotted
-  `handle.collection` / `handle.table`. `-a`/`--active` makes the new source active. `-p`/`--password`
+  declared with `?types=cf:age=long`), a CouchDB default database as `?database=`
+  (`couchdb://host:5984/?database=books`, the host as the server), the driver's own connection
+  option — like a `file://`
+  source's `?format=`; a query addresses another collection/table/database with a dotted
+  `handle.collection` / `handle.table` / `handle.database`. `-a`/`--active` makes the new source active. `-p`/`--password`
   prompts for the URL password (or reads it from stdin) instead of embedding it in the URL.
-  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`) and errors if it
+  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`, `couchdb`) and errors if it
   disagrees with the scheme. The source is
   pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
   keyring` moves the URL's password into the OS keyring and strips it from the stored URL (default
@@ -114,15 +117,17 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   Bounded by `--timeout`; exits non-zero if any source is unreachable.
 - `iq inspect [<source>[.<collection>]]` — show a source's native introspection. The positional
   names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB,
-  Cassandra, DynamoDB, and HBase sources accept sq-style `<source>.<collection>` / `<source>.<table>`
-  addressing (`iq inspect prod.books`) to pick the collection/table, overriding the source URL's
-  `?collection=`/`?table=` default; Redis sources take no collection.
+  Cassandra, DynamoDB, HBase, and CouchDB sources accept sq-style `<source>.<collection>` /
+  `<source>.<table>` / `<source>.<database>`
+  addressing (`iq inspect prod.books`) to pick the collection/table/database, overriding the source URL's
+  `?collection=`/`?table=`/`?database=` default; Redis sources take no collection.
   `--only`
   narrows the output (repeatable or comma-separated): for Redis, `INFO` sections
   (`iq inspect prod --only memory,server`); for MongoDB, the diagnostic commands (`dbStats`,
   `serverStatus`, `listCollections`, `collStats`, `buildInfo`, `hostInfo`); for Cassandra, the
   system-schema reads (`local`, `tables`, `columns`); for DynamoDB, the metadata reads (`tables`,
-  `table`); for HBase, the table listing (`tables`) — no `--only` runs them
+  `table`); for HBase, the table listing (`tables`); for CouchDB, the introspection reads (`server`,
+  `databases`, `dbinfo`, `indexes`) — no `--only` runs them
   all. `--list` prints the subcommands/sections available for the source (Mongo's, Cassandra's,
   DynamoDB's, and HBase's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
   by `--timeout`. The location header is redacted like `iq ls`: `--reveal` un-redacts an inline
@@ -434,6 +439,7 @@ mongo      MongoDB document store                                          mongo
 cassandra  Apache Cassandra wide-column store                              cassandra             3.11+          https://cassandra.apache.org/doc/
 dynamodb   Amazon DynamoDB key-value and document store                    dynamodb              AWS (managed)  https://docs.aws.amazon.com/dynamodb/
 hbase      Apache HBase wide-column store                                  hbase                 1.0+           https://hbase.apache.org/book.html
+couchdb    Apache CouchDB document store                                   couchdb, couchdbs     2.x, 3.x       https://docs.couchdb.org/
 redis      Redis key-value store                                           redis, rediss         7.0+           https://redis.io/docs/
 file       Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON)  file
 ```
@@ -446,11 +452,12 @@ Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sou
 > [MongoDB Go driver v2](https://www.mongodb.com/docs/drivers/go/current/) for MongoDB, the
 > [Apache Cassandra gocql driver v2](https://github.com/apache/cassandra-gocql-driver) for
 > Cassandra, the [AWS SDK for Go v2](https://github.com/aws/aws-sdk-go-v2) for DynamoDB
-> (`AWS (managed)` — a managed service with no server version), and
-> [gohbase](https://github.com/tsuna/gohbase) (native protobuf RPC, no Thrift gateway) for HBase —
+> (`AWS (managed)` — a managed service with no server version),
+> [gohbase](https://github.com/tsuna/gohbase) (native protobuf RPC, no Thrift gateway) for HBase,
+> and [`kivik` v4](https://github.com/go-kivik/kivik) for CouchDB —
 > not a matrix `iq` tests against.
 > The integration tests are pinned to `redis:8`, `mongo:8`, `cassandra:5`,
-> `amazon/dynamodb-local:2.5.2`, and `harisekhon/hbase:2.1`.
+> `amazon/dynamodb-local:2.5.2`, `harisekhon/hbase:2.1`, and `couchdb:3`.
 
 <details>
 <summary><b>Redis</b> — value encoding and raw commands</summary>
@@ -862,6 +869,67 @@ drivers' raw paths. `iq inspect` lists the source namespace's tables (`tables`).
 </details>
 
 <details>
+<summary><b>Apache CouchDB</b> — database keyspace, _id mapping, Mango pushdown, and raw _find</summary>
+
+Register a `couchdb://` source and the same jq interface works against a database, where **the
+database is the keyspace: a document's `_id` is the key and the document is the value**. The host is
+the CouchDB server; the database rides in the URL's `?database=` (overridable per run with a dotted
+`handle.database`, since one server hosts many databases). Use `couchdbs://` for TLS. **Credentials
+travel in the URL userinfo** (HTTP basic auth), so `--store keyring` moves the password to the OS
+keyring exactly as for the other backends:
+
+```bash
+iq add -n books 'couchdb://admin:password@localhost:5984/?database=iq'  # register once, then:
+iq --src books '.["2"]'                                # fetch the document whose _id is 2
+iq --src books '.[] | select(.year > 2015) | .title'  # streamed
+iq --src books --unbounded 'keys'                      # every _id
+iq --src books.other '.[]'                             # query a different database on the same server
+```
+
+CouchDB documents are JSON, so values need no type coercion. Integers keep exact precision (large
+ones never collapse to a float); `_id` and `_rev` are kept in the document. Design documents
+(`_design/…`) are database metadata and are skipped by scans. The `--unbounded` / streaming rules are
+identical to every backend.
+
+### Server-side pre-filtering (predicate pushdown)
+
+By default a `.[] | select(...)` filter's **equality**, **range**, and **existence** clauses are
+translated into a Mango `_find` selector so the server filters before documents reach iq:
+
+| `select(...)` clause | Pushed | Mango selector | Notes |
+| --- | :---: | --- | --- |
+| `.a == x` | ✓ | `{"a": x}` | equality; a `null` literal also matches an absent field |
+| `.a > x` / `.a <= x` | ✓ | `{"$or": [{"a": {"$gt": x}}, …]}` | range, widened with `$type` clauses so jq's cross-type ordering (null < bool < number < string < array < object, matching CouchDB collation) is reproduced |
+| `.a \| has` / `has("a")` | ✓ | `{"a": {"$exists": true}}` | key presence, exact |
+| `has("a") \| not` | ✓ | `{"a": {"$exists": false}}` | key absence, exact |
+| `E1 and E2` | ✓ | `{"$and": […]}` | drops any conjunct it cannot push (widening) |
+| `E1 or E2` | ✓ | `{"$or": […]}` | pushed only when **every** branch is pushable |
+| `!=`, `length`, regex, `any`, nested-array tests | — | — | run client-side: a plain `_all_docs` scan is used, because Mango's semantics for these could wrongly exclude a document jq would keep |
+
+Pushdown never changes results, only speed: the full jq always re-runs client-side, so a pushed
+filter is a conservative pre-filter; `--explain` shows the selector, and `--no-compile` streams the
+whole database and filters entirely client-side. A pushed `_find` uses whatever Mango index fits
+(create one in CouchDB for large databases); without one CouchDB warns and falls back to its built-in
+index.
+
+### Raw commands
+
+`iq exec` runs a raw [Mango `_find`](https://docs.couchdb.org/en/stable/api/database/find.html): the
+argument is a JSON `_find` request (`{"selector":{…},"limit":…}`) or a bare selector (wrapped as
+`{"selector":…}`), and it prints the matching documents with the paging bookmark:
+
+```bash
+iq --src books exec '{"selector": {"year": {"$gt": 2015}}, "limit": 10}'
+iq --src books exec '{"author": "Martin Kleppmann"}'   # bare selector
+```
+
+`iq inspect` reads server and database metadata — `server` (version and vendor), `databases` (the
+server's databases), `dbinfo` (the selected database's document count, sizes, and update sequence),
+and `indexes` (its Mango indexes); `--only` narrows to those subcommands.
+
+</details>
+
+<details>
 <summary><b>File dumps</b> — query a snapshot offline (read-only)</summary>
 
 A `file://` source reads a database dump straight from disk, so a snapshot is queried, inspected
@@ -1038,7 +1106,8 @@ The core read path: a jq filter is classified by the **selector**, a scan is opt
 into a native predicate, and each backend maps that predicate its own way — MongoDB pushes it
 server-side, Cassandra pushes equality as a CQL `WHERE` (with `ALLOW FILTERING` when it is not the
 partition key), DynamoDB pushes equality and existence as a `Scan` `FilterExpression`, HBase pushes
-column equality as a `SingleColumnValueFilter`, Redis scans and filters client-side. Either way the
+column equality as a `SingleColumnValueFilter`, CouchDB pushes equality, ranges, and existence as a
+Mango `_find` selector, Redis scans and filters client-side. Either way the
 full jq re-runs client-side, so
 the pushed predicate is only ever a conservative pre-filter and results are identical with or without it.
 
@@ -1116,21 +1185,24 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   CBOR under `<user cache dir>/iq/dumps`): a full scan of a large dump tees its normalized records
   to disk, and later scans read them back instead of re-decoding — transparent to the ports, so the
   data-flow above is unchanged, and never authoritative (a miss just re-decodes).
-- `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb`, `drivers/hbase` — the
+- `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb`, `drivers/hbase`, `drivers/couchdb` — the
   adapters. Each has one `*Store`
   satisfying the read ports
   (`Query` for exec, `Get`/`ScanBatches` for jq) and the write ports (`Put`/`Clear`/`TypedScan`,
-  plus `Drop` for Mongo, Cassandra, DynamoDB, and HBase), with a type-to-JSON normalization frozen as
+  plus `Drop` for Mongo, Cassandra, DynamoDB, HBase, and CouchDB), with a type-to-JSON normalization frozen as
   that backend's
   encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs; CQL types → uuid-string,
   RFC 3339, base64 blob, collections; DynamoDB `S`/`N`/`B`/`BOOL`/`M`/`L`/sets; HBase raw cell bytes →
-  honest UTF-8-or-base64, or an exact `Bytes`-layout value for a `?types=`-declared column) and its
+  honest UTF-8-or-base64, or an exact `Bytes`-layout value for a `?types=`-declared column; CouchDB
+  documents are already JSON, decoded with exact-integer precision, `_id`/`_rev` kept) and its
   inverse for
   writes
   (Mongo `bulkWrite`; Redis pipelined `SET`/`HSET`/`RPUSH`/`SADD`/`ZADD`/`XADD`/`JSON.SET` by
   type; Cassandra parameterized `INSERT`, `TRUNCATE`, `DROP TABLE`; DynamoDB `PutItem`, `Scan` +
   `BatchWriteItem` delete-all, `DeleteTable`; HBase `Put` / `CheckAndPut` insert-only, a key-only
-  `Scan` + per-row `Delete` for clear, and `DisableTable` + `DeleteTable` for drop). Redis maps a key
+  `Scan` + per-row `Delete` for clear, and `DisableTable` + `DeleteTable` for drop; CouchDB
+  `_bulk_docs` upsert/insert reading current `_rev`s first, `_bulk_docs {_deleted:true}` clear,
+  `DELETE /{db}` drop). Redis maps a key
   to a Redis key;
   Mongo maps a key to a document `_id` within the collection it owns from the URL's `?collection=`
   (or a dotted `handle.collection` override); Cassandra maps a key to a row's full primary key within
@@ -1139,14 +1211,19 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   within the table from the URL's `?table=` (region as the host, credentials from the AWS default
   chain), reading the key schema once at connect; HBase maps a key to a row key and the row to a
   nested `{family: {qualifier: value}}` object, with the ZooKeeper quorum as the host and the
-  `namespace:table` from the URL's `?table=` (or a `handle.table` override). Cassandra pushes
+  `namespace:table` from the URL's `?table=` (or a `handle.table` override); CouchDB maps a key to a
+  document `_id` within the database it owns from the URL's `?database=` (host as the server, or a
+  dotted `handle.database` override). Cassandra pushes
   equality/`IN` as a CQL `WHERE`
   (`FilteredScanner`) but has no cheap count, so it omits `Estimator` like Redis; DynamoDB pushes
   equality/existence as a `Scan` `FilterExpression` (`FilteredScanner`) and answers `Estimator` from
   its table metadata; HBase pushes column equality as a `SingleColumnValueFilter` (`FilteredScanner`)
-  and omits `Estimator` like Redis. DynamoDB's connectionless client verifies reachability at open (a
-  bounded `ListTables` probe), and HBase's likewise (a bounded `ClusterStatus` probe, since gohbase
-  connects lazily), so `ping`/`add` need no second round-trip. Each
+  and omits `Estimator` like Redis; CouchDB pushes equality, ranges, and existence as a Mango `_find`
+  selector (`FilteredScanner`, falling back to a plain `_all_docs` scan for the exact-negation and
+  polymorphic operators) and answers `Estimator` from its `doc_count`. DynamoDB's connectionless
+  client verifies reachability at open (a
+  bounded `ListTables` probe), HBase's likewise (a bounded `ClusterStatus` probe, since gohbase
+  connects lazily), and CouchDB pings at open, so `ping`/`add` need no second round-trip. Each
   also contributes pure, connection-free `--explain` describers
   (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
 - `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
@@ -1205,13 +1282,14 @@ iq --src snap '.[] | select(.active)'     # query a Redis/Mongo dump offline (RD
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
-go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local via testcontainers-go (HBase needs IQ_HBASE_URL)
-docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase for manual exploration (:6379, :27017, :9042, :8000, :2181)
+go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB via testcontainers-go (HBase needs IQ_HBASE_URL)
+docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984)
 bash scripts/seed-redis.sh    # load example data into the running Redis
 bash scripts/seed-mongo.sh    # load example documents into the running MongoDB
 bash scripts/seed-cassandra.sh    # load example rows into the running Cassandra
 bash scripts/seed-dynamodb.sh    # load example items into the running DynamoDB Local
 bash scripts/seed-hbase.sh    # load example rows into the running HBase
+bash scripts/seed-couchdb.sh    # load example documents into the running CouchDB
 docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
@@ -1224,10 +1302,10 @@ make release              # bump version, regenerate CHANGELOG.md, commit, and t
 ```
 
 Integration tests skip under `go test -short`. The full `go test ./...` needs Docker: it starts
-an ephemeral Redis, MongoDB, Cassandra, and DynamoDB Local via
+an ephemeral Redis, MongoDB, Cassandra, DynamoDB Local, and CouchDB via
 [testcontainers-go](https://github.com/testcontainers/testcontainers-go) on random ports and
 tears them down afterwards — no manual `docker compose up` (Cassandra takes ~1 minute to become
-ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL`
+ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL` / `IQ_COUCHDB_URL`
 to point at an already-running server (for example the `docker compose` stack) to skip container
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
 a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded

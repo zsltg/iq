@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	iqcassandra "github.com/zsltg/iq/drivers/cassandra"
+	iqcouchdb "github.com/zsltg/iq/drivers/couchdb"
 	iqdynamodb "github.com/zsltg/iq/drivers/dynamodb"
 	iqfile "github.com/zsltg/iq/drivers/file"
 	iqhbase "github.com/zsltg/iq/drivers/hbase"
@@ -125,6 +126,22 @@ var drivers = []driver{
 		explainWrite: iqhbase.ExplainWrite,
 		explainClear: iqhbase.ExplainClear,
 		explainDrop:  iqhbase.ExplainDrop,
+	},
+	{
+		name:           "couchdb",
+		desc:           "Apache CouchDB document store",
+		schemes:        []string{"couchdb", "couchdbs"},
+		doc:            "https://docs.couchdb.org/",
+		versions:       "2.x, 3.x",
+		addressable:    true,
+		verifiesOnOpen: true,
+		open: func(ctx context.Context, cfg *config) (store, error) {
+			return iqcouchdb.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
+		},
+		explainPlan:  iqcouchdb.ExplainPlan,
+		explainWrite: iqcouchdb.ExplainWrite,
+		explainClear: iqcouchdb.ExplainClear,
+		explainDrop:  iqcouchdb.ExplainDrop,
 	},
 	{
 		name:     "redis",

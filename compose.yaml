@@ -68,3 +68,20 @@ services:
       timeout: 20s
       retries: 30
       start_period: 90s
+
+  couchdb:
+    image: couchdb:3
+    container_name: iq-couchdb
+    ports:
+      - "5984:5984"
+    # Ephemeral single-node test instance; the admin credentials configure single
+    # node mode and data lives only in the container.
+    environment:
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: password
+    healthcheck:
+      # /_up is CouchDB's public readiness endpoint; the image ships curl.
+      test: ["CMD", "curl", "-fsS", "http://localhost:5984/_up"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
