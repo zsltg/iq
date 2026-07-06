@@ -4,6 +4,31 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.12.0 - 2026-07-06
+### Documentation
+- **readme:** mark file:// in comparison table, split architecture diagram (69ec928)
+- **readme:** add more tools to the comparison table (362eee6)
+- **readme:** trim redundant phrase from comparison intro (c8c7e69)
+- **readme:** add beta / not-production-ready warning (381b73f)
+- **readme:** group Redis and MongoDB under a collapsible Drivers section (2327650)
+
+### Features
+- **cli:** replace `iq data copy` with sq-style --insert/--typed movement (cd6a706)
+- **cli:** group top-level commands in --help (62dbb9e)
+- **cli:** show supported backend versions in `iq driver ls` (7c7ed4a)
+- **cli:** reshape `iq add` to match `sq add` (3b00e94)
+- **cli:** add unified --format selector and --format.decimal control (7d76d75)
+- **cmd:** add -o/--output flag to write output to a file (18a070c)
+- **cmd:** tint verbose log lines like sq (f884240)
+- **config:** add config command and --config flag with per-source option defaults (e185ba2)
+- **data:** add iq data movement and lifecycle commands (46c8f0d)
+- **file:** add read-only file:// source for querying database dumps (0be43a3)
+- **progress:** show a cheap backend estimate beside the scanned count (7975075)
+
+### Refactoring
+- **cli:** rename --dry-run to --explain (75480b2)
+
+
 ## v0.11.0 - 2026-07-05
 ### Features
 - **cmd:** add --dry-run query plan and verbose backend command trace (392d427)
