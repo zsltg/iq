@@ -86,12 +86,12 @@ func decodeCell(t colType, b []byte) any {
 		if len(b) != 4 {
 			return decodeAuto(b)
 		}
-		return int(int32(binary.BigEndian.Uint32(b)))
+		return int(int32(binary.BigEndian.Uint32(b))) //nolint:gosec // G115: decodes a stored 4-byte int column, deliberate 2's-complement.
 	case ctLong:
 		if len(b) != 8 {
 			return decodeAuto(b)
 		}
-		return int(int64(binary.BigEndian.Uint64(b)))
+		return int(int64(binary.BigEndian.Uint64(b))) //nolint:gosec // G115: decodes a stored 8-byte long column, deliberate reinterpretation.
 	case ctDouble:
 		if len(b) != 8 {
 			return decodeAuto(b)
@@ -144,8 +144,11 @@ func encodeCell(t colType, v any) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		if n < math.MinInt32 || n > math.MaxInt32 {
+			return nil, fmt.Errorf("hbase: value %d out of range for a 4-byte int column", n)
+		}
 		b := make([]byte, 4)
-		binary.BigEndian.PutUint32(b, uint32(int32(n)))
+		binary.BigEndian.PutUint32(b, uint32(int32(n))) //nolint:gosec // G115: 2's-complement encoding of the bounds-checked int32 above.
 		return b, nil
 	case ctLong:
 		n, err := toInt64(v)
@@ -153,7 +156,7 @@ func encodeCell(t colType, v any) ([]byte, error) {
 			return nil, err
 		}
 		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, uint64(n))
+		binary.BigEndian.PutUint64(b, uint64(n)) //nolint:gosec // G115: encodes an int64 as 8 bytes; the read path reverses it exactly.
 		return b, nil
 	case ctDouble:
 		f, err := toFloat64(v)

@@ -2,6 +2,7 @@ package hbase
 
 import (
 	"encoding/base64"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -54,6 +55,8 @@ func TestDecodeCellTypedRoundTrip(t *testing.T) {
 		{"bytes", ctBytes, base64.StdEncoding.EncodeToString([]byte{0x01, 0x02, 0x03})},
 		{"int", ctInt, 42},
 		{"int negative", ctInt, -7},
+		{"int max", ctInt, math.MaxInt32},
+		{"int min", ctInt, math.MinInt32},
 		{"long", ctLong, 9000000000},
 		{"double", ctDouble, 3.5},
 		{"bool true", ctBool, true},
@@ -86,6 +89,8 @@ func TestEncodeCellRejectsBadShapes(t *testing.T) {
 		{"text wants string", ctText, true},
 		{"bytes wants base64", ctBytes, "not base64!!"},
 		{"int wants number", ctInt, "abc"},
+		{"int just over int32", ctInt, int64(math.MaxInt32) + 1},
+		{"int just under int32", ctInt, int64(math.MinInt32) - 1},
 		{"long wants whole", ctLong, 1.5},
 		{"double wants number", ctDouble, "xyz"},
 		{"bool wants bool", ctBool, "true"},
