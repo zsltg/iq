@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.22.0 - 2026-07-07
+### Features
+- **driver:** show the copy-pasteable ?format=<name> in driver ls -v (ee12060)
+- **driver:** compact the file dump-format catalogue behind driver ls -v (9f9263e)
+
+
 ## v0.21.1 - 2026-07-07
 ### Bug Fixes
 - **deps:** patch known advisories in golang.org/x/net and go-pkcs12 (02bed04)
