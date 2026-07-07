@@ -409,24 +409,28 @@ func listDrivers(out io.Writer, verbose, jsonOut, yamlOut bool) error {
 }
 
 // writeDriverFormats appends a driver's dump-format catalogue under `iq driver ls -v`:
-// a caption then an aligned FORMAT/marker/SOURCE block, rendered as its own table so
-// the main grid's column widths are untouched. A driver without formats writes nothing.
+// a caption teaching the URL shape, then an aligned name/source block rendered as its
+// own table so the main grid's column widths are untouched. A content-detected format
+// shows a bare name (usable as file:///<path>); one that must be forced shows the full
+// ?format=<name> to paste onto file:///<path>?format=<name>. Nothing for a driver
+// without formats.
 func writeDriverFormats(out io.Writer, d driver) error {
 	if len(d.formats) == 0 {
 		return nil
 	}
-	if _, err := fmt.Fprintf(out, "\n%s dump formats (auto-detected unless ?format= shown):\n", d.name); err != nil {
+	if _, err := fmt.Fprintf(out, "\n%s dump formats — a bare name auto-detects "+
+		"(file:///<file_path>), the ?format= form must be passed "+
+		"(file:///<file_path>?format=<source_format>):\n", d.name); err != nil {
 		return err
 	}
 	rows := make([][]tableCell, 0, len(d.formats))
 	for _, fi := range d.formats {
-		mark := ""
+		name := fi.Name()
 		if !fi.Auto {
-			mark = "?format="
+			name = "?format=" + name
 		}
 		rows = append(rows, []tableCell{
-			coloredCell("  "+fi.Name(), pal.change),
-			coloredCell(mark, pal.faint),
+			coloredCell("  "+name, pal.change),
 			coloredCell(fi.Source, pal.faint),
 		})
 	}

@@ -466,15 +466,15 @@ file           Local dump file, read-only                      file
 # -v appends the file driver's readable dump formats:
 $ iq driver ls -v
 … (driver rows as above) …
-file dump formats (auto-detected unless ?format= shown):
-  jsonl                    iq typed JSON Lines / array
-  yaml                     iq typed YAML
-  mongoexport              mongoexport Extended JSON
-  bson                     mongodump BSON
-  rdb                      Redis RDB snapshot
-  dynamodb-json  ?format=  DynamoDB S3 export / scan JSON
-  cassandra-csv  ?format=  cqlsh COPY TO CSV
-  neo4j-json     ?format=  Neo4j APOC JSON export
+file dump formats — a bare name auto-detects (file:///<file_path>), the ?format= form must be passed (file:///<file_path>?format=<source_format>):
+  jsonl                  iq typed JSON Lines / array
+  yaml                   iq typed YAML
+  mongoexport            mongoexport Extended JSON
+  bson                   mongodump BSON
+  rdb                    Redis RDB snapshot
+  ?format=dynamodb-json  DynamoDB S3 export / scan JSON
+  ?format=cassandra-csv  cqlsh COPY TO CSV
+  ?format=neo4j-json     Neo4j APOC JSON export
 ```
 
 Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sources) for the full flag).

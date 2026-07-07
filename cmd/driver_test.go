@@ -157,10 +157,14 @@ func TestDriverLsVerbose(t *testing.T) {
 	out, err := runCmd(t, newDriverCmd(&config{verbose: true}), "ls")
 	require.NoError(t, err)
 	require.Contains(t, out, "file dump formats")
-	// An auto-detected format carries no marker; a forced one advertises ?format=.
+	// The caption teaches both URL shapes.
+	require.Contains(t, out, "file:///<file_path>")
+	require.Contains(t, out, "file:///<file_path>?format=<source_format>")
+	// An auto-detected format shows a bare name; a forced one shows the full,
+	// copy-pasteable ?format=<name>.
 	require.NotContains(t, lineWith(t, out, "jsonl"), "?format=")
 	require.NotContains(t, lineWith(t, out, "yaml"), "?format=") // YAML now content-detects
-	require.Contains(t, lineWith(t, out, "cassandra-csv"), "?format=")
+	require.Contains(t, lineWith(t, out, "cassandra-csv"), "?format=cassandra-csv")
 	require.Contains(t, lineWith(t, out, "cassandra-csv"), "cqlsh COPY TO CSV")
 
 	// The default (non-verbose) listing stays a clean one-row-per-driver overview.
