@@ -38,6 +38,12 @@ const (
 	// (arbitrary CSV), so it needs an explicit ?format=/--from-format plus a
 	// ?keys= key schema and optional ?types= column types.
 	FormatCassandraCSV
+	// FormatNeo4jJSON is APOC's JSON export (apoc.export.json.*): JSON Lines (default)
+	// or a single JSON array of {"type":"node",…}/{"type":"relationship",…} objects.
+	// Not content-sniffable (it shares the leading '{'/'[' with mongoexport and carries
+	// no {key,value} envelope), so it needs an explicit ?format=/--from-format plus a
+	// ?label=<Label> or ?rel=<Type> keyspace selector.
+	FormatNeo4jJSON
 )
 
 // String returns the format's canonical name — the primary synonym ParseFormat
@@ -59,6 +65,8 @@ func (f Format) String() string {
 		return "dynamodb-json"
 	case FormatCassandraCSV:
 		return "cassandra-csv"
+	case FormatNeo4jJSON:
+		return "neo4j-json"
 	default:
 		return "unknown"
 	}
@@ -83,8 +91,10 @@ func ParseFormat(s string) (Format, error) {
 		return FormatDynamoDBJSON, nil
 	case "cassandra-csv", "cql-csv", "cassandra", "cql":
 		return FormatCassandraCSV, nil
+	case "neo4j-json", "neo4j", "apoc-json", "apoc":
+		return FormatNeo4jJSON, nil
 	default:
-		return FormatUnknown, fmt.Errorf("unknown dump format %q: want jsonl, json, yaml, mongoexport, bson, rdb, dynamodb-json, or cassandra-csv", s)
+		return FormatUnknown, fmt.Errorf("unknown dump format %q: want jsonl, json, yaml, mongoexport, bson, rdb, dynamodb-json, cassandra-csv, or neo4j-json", s)
 	}
 }
 

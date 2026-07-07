@@ -449,7 +449,7 @@ hbase      Apache HBase wide-column store                                  hbase
 couchdb    Apache CouchDB document store                                   couchdb, couchdbs                                  2.x, 3.x       https://docs.couchdb.org/
 neo4j      Neo4j property graph store                                      neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc  5.x            https://neo4j.com/docs/
 redis      Redis key-value store                                           redis, rediss                                      7.0+           https://redis.io/docs/
-file       Local dump file, read-only (JSONL, RDB, Mongo BSON/JSON, DynamoDB JSON, Cassandra CSV)  file
+file       Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON, DynamoDB/Cassandra/Neo4j-APOC JSON)  file
 ```
 
 Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sources) for the full flag).
@@ -1067,6 +1067,7 @@ pass `?format=` since its content is not sniffable through the compression.
 | Mongo Extended JSON | `mongoexport` | one document per line, or a `--jsonArray` array |
 | DynamoDB JSON | S3 `export-table-to-point-in-time`, `aws dynamodb scan` | needs `?format=dynamodb-json` and a `?keys=pk[:S][,sk[:N]]` key schema (a dump carries items but not the table's key schema); export files are gzipped NDJSON |
 | Cassandra CSV | `cqlsh COPY … TO 'f.csv'` | needs `?format=cassandra-csv`, `?keys=col1[,col2]` naming the primary-key columns, and `?types=col=cqltype,…` for the non-text columns (COPY writes every value as text); column names come from a `WITH HEADER=TRUE` row, else `?columns=`; scalar columns only |
+| Neo4j APOC JSON | `CALL apoc.export.json.all('g.json',{})` | needs `?format=neo4j` and a keyspace selector — `?label=<Label>` for its nodes or `?rel=<Type>` for its relationships (a dump holds the whole graph); JSON Lines or `ARRAY_JSON`; same `_id`/`_labels`/`_type`/`_start`/`_end` envelope as the live driver, `?key=<prop>` to key by a property; `_id` is APOC's numeric export id, not the live elementId; the binary `neo4j-admin database dump` and APOC's `useTypes`/`JSON_ID_AS_KEYS` variants are not supported |
 
 The whole dump streams; a `file://` source never holds all values in memory (whole-dataset
 materialization is the core's, gated by `--unbounded`, exactly as for a live backend). **Restore
@@ -1291,7 +1292,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   through `--insert` and a piped dump is queryable), detecting the
   format from content or a `?format=` hint (Redis RDB via `hdt3213/rdb`, mongodump BSON and
   mongoexport Extended JSON via the Mongo driver, DynamoDB export/scan JSON via the DynamoDB driver,
-  cqlsh COPY CSV via the Cassandra driver, or iq's own typed JSONL; gzip is unwrapped transparently)
+  cqlsh COPY CSV via the Cassandra driver, APOC JSON export reusing the Neo4j envelope, or iq's own
+  typed JSONL; gzip is unwrapped transparently)
   and decoding each item to the **same** JSON shape the
   live adapter produces, so a query or restore is identical to the live backend. It implements no
   writer, so a `file://` endpoint is never a copy destination, and `Query` returns a sentinel that
@@ -1403,7 +1405,7 @@ iq --config ./iq.toml ls  # run against an alternate config file (overrides IQ_C
 iq --src books --insert books2 # copy a source into another (handle → handle, cross-driver ok; jq filter transforms each item)
 iq --src cache --typed -o dump.jsonl   # dump a source to a re-importable typed JSONL file (Redis-lossless)
 iq add file:///backups/prod.rdb -n snap   # register a dump file as a read-only source
-iq --src snap '.[] | select(.active)'     # query a dump offline (RDB, BSON, mongoexport, DynamoDB JSON, Cassandra CSV, JSONL)
+iq --src snap '.[] | select(.active)'     # query a dump offline (RDB, BSON, mongoexport, DynamoDB JSON, Cassandra CSV, Neo4j APOC JSON, JSONL)
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services

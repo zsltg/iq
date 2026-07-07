@@ -228,8 +228,8 @@ func TestNormalizeNode(t *testing.T) {
 	got := s.normalizeNode(node)
 	assert.Equal(t, "Ada", got["name"])
 	assert.Equal(t, 36, got["age"])
-	assert.Equal(t, "4:abc:1", got[fieldID])
-	assert.Equal(t, []any{"Person"}, got[fieldLabels])
+	assert.Equal(t, "4:abc:1", got["_id"])
+	assert.Equal(t, []any{"Person"}, got["_labels"])
 }
 
 func TestNormalizeRelationship(t *testing.T) {
@@ -246,13 +246,13 @@ func TestNormalizeRelationship(t *testing.T) {
 	assert.Equal(t, "KNOWS", got["_type"])
 	assert.Equal(t, "4:a:1", got["_start"])
 	assert.Equal(t, "4:b:2", got["_end"])
-	assert.Equal(t, "5:rel:1", got[fieldID])
+	assert.Equal(t, "5:rel:1", got["_id"])
 }
 
 func TestRecordProps(t *testing.T) {
 	t.Run("strips reserved and derives key from value", func(t *testing.T) {
 		rec := query.Record{Key: "ignored", Value: map[string]any{
-			"id": "7", "name": "Ada", fieldID: "4:x:1", fieldLabels: []any{"Person"},
+			"id": "7", "name": "Ada", "_id": "4:x:1", "_labels": []any{"Person"},
 		}}
 		props, keyVal, err := recordProps(rec, "id")
 		require.NoError(t, err)

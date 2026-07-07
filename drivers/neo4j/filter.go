@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/zsltg/iq/internal/neo4jenvelope"
 	"github.com/zsltg/iq/internal/predicate"
 )
 
@@ -128,8 +129,7 @@ func pushablePath(path []string) bool {
 	if len(path) != 1 {
 		return false
 	}
-	_, isReserved := reserved[path[0]]
-	return !isReserved
+	return !neo4jenvelope.IsReserved(path[0])
 }
 
 // compile-time assertion that Store satisfies the optional filtered-scan capability.

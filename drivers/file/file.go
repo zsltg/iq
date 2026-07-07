@@ -58,6 +58,9 @@ type Hints struct {
 	Types   string
 	Keys    string
 	Columns string // explicit column names for a headerless dump (Cassandra COPY without HEADER).
+	Label   string // Neo4j: the node label whose nodes a scan exposes (?label=).
+	Rel     string // Neo4j: the relationship type whose relationships a scan exposes (?rel=).
+	Key     string // Neo4j: the node/relationship property to key records by (?key=); default is the export id.
 }
 
 // Open resolves a file:// URL to a read-only dump Store. The URL path is the dump
@@ -147,7 +150,14 @@ func parseFileURL(raw string) (path string, format Format, hints Hints, err erro
 			return "", FormatUnknown, Hints{}, err
 		}
 	}
-	hints = Hints{Types: q.Get("types"), Keys: q.Get("keys"), Columns: q.Get("columns")}
+	hints = Hints{
+		Types:   q.Get("types"),
+		Keys:    q.Get("keys"),
+		Columns: q.Get("columns"),
+		Label:   q.Get("label"),
+		Rel:     q.Get("rel"),
+		Key:     q.Get("key"),
+	}
 	return path, format, hints, nil
 }
 
@@ -242,6 +252,8 @@ func RecordSourceFor(r io.Reader, format Format, dec numfmt.DecimalMode, hints H
 		return dynamoSource(r, pageSize, dec, hints)
 	case FormatCassandraCSV:
 		return cassandraCSVSource(r, pageSize, dec, hints)
+	case FormatNeo4jJSON:
+		return neo4jSource(r, pageSize, dec, hints)
 	default:
 		return nil, errors.New("unknown dump format")
 	}

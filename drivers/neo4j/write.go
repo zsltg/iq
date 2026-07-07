@@ -7,6 +7,7 @@ import (
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 
+	"github.com/zsltg/iq/internal/neo4jenvelope"
 	"github.com/zsltg/iq/internal/query"
 )
 
@@ -20,13 +21,6 @@ var errWriteNeedsKey = errors.New("neo4j: writing needs a key property; set ?key
 // nodes to connect, by which key) that is a further follow-up, so a write into a
 // relationship collection is refused rather than half-done.
 var errRelWriteUnsupported = errors.New("neo4j: writing relationships is not yet supported; a relationship source (?rel= / handle.:TYPE) is read-only — write nodes with ?label=")
-
-// reserved is the set of value keys iq injects that are not real node properties, so
-// a write strips them before MERGE — writing _id back would try to set a property
-// named _id from the read envelope.
-var reserved = map[string]struct{}{
-	fieldID: {}, fieldLabels: {}, "_type": {}, "_start": {}, "_end": {},
-}
 
 // Put upserts a batch of nodes, MERGE-ing each on the key property so a re-run
 // converges. Upsert sets every matched node's properties; InsertOnly sets only newly
@@ -101,7 +95,7 @@ func recordProps(rec query.Record, key string) (map[string]any, any, error) {
 	}
 	props := make(map[string]any, len(obj))
 	for k, v := range obj {
-		if _, skip := reserved[k]; skip {
+		if neo4jenvelope.IsReserved(k) {
 			continue
 		}
 		props[k] = v

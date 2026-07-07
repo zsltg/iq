@@ -176,7 +176,7 @@ var drivers = []driver{
 	},
 	{
 		name:     "file",
-		desc:     "Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON)",
+		desc:     "Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON, DynamoDB/Cassandra/Neo4j-APOC JSON)",
 		schemes:  []string{"file"},
 		readOnly: true,
 		open: func(_ context.Context, cfg *config) (store, error) {

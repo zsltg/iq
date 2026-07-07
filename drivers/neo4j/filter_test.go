@@ -76,7 +76,7 @@ func TestTranslatePushdown(t *testing.T) {
 		},
 		{
 			name:       "reserved key does not narrow",
-			node:       predicate.Eq{Path: []string{fieldID}, Value: "4:x:1"},
+			node:       predicate.Eq{Path: []string{"_id"}, Value: "4:x:1"},
 			wantNarrow: false,
 		},
 		{

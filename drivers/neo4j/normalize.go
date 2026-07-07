@@ -29,17 +29,15 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/dbtype"
 
+	"github.com/zsltg/iq/internal/neo4jenvelope"
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// reserved names iq injects into a node value alongside its properties. _id and
-// _labels carry a node's identity so a ?key= source still exposes the elementId and
-// labels; _type/_start/_end are reserved (never emitted for a node) for the
-// relationship follow-up. A same-named property is overwritten by the reserved key.
-const (
-	fieldID     = "_id"
-	fieldLabels = "_labels"
-)
+// The reserved envelope keys iq injects alongside a value's real properties live in
+// internal/neo4jenvelope, shared with the offline APOC-JSON reader so both agree on
+// the exact keys. _id and _labels carry a node's identity so a ?key= source still
+// exposes the elementId and labels; _type/_start/_end carry a relationship's type
+// and endpoints. A same-named property is overwritten by the reserved key.
 
 // normalizeNode renders a graph node as a JSON-ready map: its properties, each
 // value converted by normalizeValue, plus _id (the elementId) and _labels.
@@ -48,8 +46,8 @@ func (s *Store) normalizeNode(node neo4j.Node) map[string]any {
 	for k, v := range node.Props {
 		out[k] = s.normalizeValue(v)
 	}
-	out[fieldID] = node.ElementId
-	out[fieldLabels] = labelsToAny(node.Labels)
+	out[neo4jenvelope.FieldID] = node.ElementId
+	out[neo4jenvelope.FieldLabels] = labelsToAny(node.Labels)
 	return out
 }
 
@@ -61,10 +59,10 @@ func (s *Store) normalizeRelationship(rel neo4j.Relationship) map[string]any {
 	for k, v := range rel.Props {
 		out[k] = s.normalizeValue(v)
 	}
-	out[fieldID] = rel.ElementId
-	out["_type"] = rel.Type
-	out["_start"] = rel.StartElementId
-	out["_end"] = rel.EndElementId
+	out[neo4jenvelope.FieldID] = rel.ElementId
+	out[neo4jenvelope.FieldType] = rel.Type
+	out[neo4jenvelope.FieldStart] = rel.StartElementId
+	out[neo4jenvelope.FieldEnd] = rel.EndElementId
 	return out
 }
 
