@@ -58,7 +58,11 @@ func applyStoredOptions(cmd *cobra.Command, cfg *config) error {
 	}
 	var srcOpts map[string]string
 	if selected != "" {
-		if s, _, ok := cf.Resolve(selected); ok {
+		// Strip a dotted collection suffix (--src shop.orders) before resolving,
+		// as every other resolve site does; otherwise the per-source options of a
+		// collection-addressed source are silently skipped.
+		base, _, _ := splitSourceArg(cf, selected)
+		if s, _, ok := cf.Resolve(base); ok {
 			srcOpts = s.Options
 		}
 	}

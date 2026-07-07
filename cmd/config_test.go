@@ -255,6 +255,20 @@ func TestApplyStoredOptions(t *testing.T) {
 		require.Equal(t, "jsonl", cfg.format)
 	})
 
+	t.Run("per-source option applies to a collection-addressed src", func(t *testing.T) {
+		configEnv(t)
+		cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
+		require.NoError(t, cf.Add("prod", "mongodb://h/db?collection=books"))
+		require.NoError(t, cf.SetOption("", "format", "yaml"))
+		require.NoError(t, cf.SetOption("prod", "format", "jsonl"))
+		require.NoError(t, cf.Save())
+
+		root, cfg := newRootCmd()
+		cfg.src = "prod.authors"
+		require.NoError(t, applyStoredOptions(root, cfg))
+		require.Equal(t, "jsonl", cfg.format)
+	})
+
 	t.Run("per-source persistent option (log.level) is applied", func(t *testing.T) {
 		configEnv(t)
 		cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
