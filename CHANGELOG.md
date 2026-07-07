@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.20.0 - 2026-07-07
+### Features
+- **file:** read Neo4j APOC JSON export offline (5b175a2)
+- **neo4j:** read relationship-type collections (bc3c1e0)
+- **neo4j:** add Neo4j property-graph driver (c07bc39)
+
+
 ## v0.19.0 - 2026-07-06
 ### Features
 - **couchdb:** add Apache CouchDB driver (6b593a0)
