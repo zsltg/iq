@@ -3,7 +3,6 @@ package neo4j
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/predicate"
@@ -89,12 +88,12 @@ func TestTranslatePushdown(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			b := &cypherBuilder{params: map[string]any{}, variable: "n"}
 			where, narrow := b.translate(tt.node)
-			assert.Equal(t, tt.wantNarrow, narrow)
+			require.Equal(t, tt.wantNarrow, narrow)
 			if !tt.wantNarrow {
 				return
 			}
-			assert.Equal(t, tt.wantWhere, where)
-			assert.Equal(t, tt.wantParams, b.params)
+			require.Equal(t, tt.wantWhere, where)
+			require.Equal(t, tt.wantParams, b.params)
 		})
 	}
 }
@@ -103,7 +102,7 @@ func TestTranslatePushdownRelationshipVariable(t *testing.T) {
 	b := &cypherBuilder{params: map[string]any{}, variable: "r"}
 	where, narrow := b.translate(predicate.Eq{Path: []string{"since"}, Value: 2019.0})
 	require.True(t, narrow)
-	assert.Equal(t, "r[$f0] = $f1", where)
+	require.Equal(t, "r[$f0] = $f1", where)
 }
 
 func TestTranslatePushdownSkipsRelationshipEnvelopeKeys(t *testing.T) {
@@ -111,7 +110,7 @@ func TestTranslatePushdownSkipsRelationshipEnvelopeKeys(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			b := &cypherBuilder{params: map[string]any{}, variable: "r"}
 			_, narrow := b.translate(predicate.Eq{Path: []string{key}, Value: "x"})
-			assert.False(t, narrow, "the computed %s envelope key is not a pushable property", key)
+			require.False(t, narrow, "the computed %s envelope key is not a pushable property", key)
 		})
 	}
 }

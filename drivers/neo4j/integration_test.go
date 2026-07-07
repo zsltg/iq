@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -61,9 +60,9 @@ func TestIntegrationGetScanCountFilter(t *testing.T) {
 		got, err := st.Get(ctx, []string{"1", "3", "missing"})
 		require.NoError(t, err)
 		require.NotNil(t, got["1"])
-		assert.Equal(t, "Go", got["1"].(map[string]any)["title"])
-		assert.Equal(t, 2018, got["3"].(map[string]any)["year"])
-		assert.Nil(t, got["missing"])
+		require.Equal(t, "Go", got["1"].(map[string]any)["title"])
+		require.Equal(t, 2018, got["3"].(map[string]any)["year"])
+		require.Nil(t, got["missing"])
 	})
 
 	t.Run("scan all", func(t *testing.T) {
@@ -74,14 +73,14 @@ func TestIntegrationGetScanCountFilter(t *testing.T) {
 			}
 			return nil
 		}))
-		assert.Len(t, seen, 3)
-		assert.Contains(t, seen, "2")
+		require.Len(t, seen, 3)
+		require.Contains(t, seen, "2")
 	})
 
 	t.Run("estimate count", func(t *testing.T) {
 		c, err := st.EstimateCount(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, int64(3), c)
+		require.Equal(t, int64(3), c)
 	})
 
 	t.Run("filtered scan pushes equality", func(t *testing.T) {
@@ -92,8 +91,8 @@ func TestIntegrationGetScanCountFilter(t *testing.T) {
 			}
 			return nil
 		}))
-		assert.Contains(t, seen, "2")
-		assert.NotContains(t, seen, "1")
+		require.Contains(t, seen, "2")
+		require.NotContains(t, seen, "1")
 	})
 
 	t.Run("filtered scan falls back for a range", func(t *testing.T) {
@@ -105,7 +104,7 @@ func TestIntegrationGetScanCountFilter(t *testing.T) {
 			return nil
 		}))
 		// The range does not push, so the full label is scanned (correct superset).
-		assert.Len(t, seen, 3)
+		require.Len(t, seen, 3)
 	})
 }
 
@@ -130,12 +129,12 @@ func TestIntegrationScanPaging(t *testing.T) {
 		}
 		return nil
 	}))
-	assert.Len(t, seen, 200)
-	assert.Equal(t, 2, pages, "200 nodes should stream in exactly two pages of 100, no trailing empty page")
+	require.Len(t, seen, 200)
+	require.Equal(t, 2, pages, "200 nodes should stream in exactly two pages of 100, no trailing empty page")
 
 	c, err := st.EstimateCount(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(200), c)
+	require.Equal(t, int64(200), c)
 }
 
 func TestIntegrationGetByElementID(t *testing.T) {
@@ -157,7 +156,7 @@ func TestIntegrationGetByElementID(t *testing.T) {
 	got, err := st.Get(ctx, []string{eid})
 	require.NoError(t, err)
 	require.NotNil(t, got[eid])
-	assert.Equal(t, "solo", got[eid].(map[string]any)["name"])
+	require.Equal(t, "solo", got[eid].(map[string]any)["name"])
 }
 
 func TestIntegrationWriteRoundTrip(t *testing.T) {
@@ -173,8 +172,8 @@ func TestIntegrationWriteRoundTrip(t *testing.T) {
 		{Key: "2", Value: map[string]any{"id": "2", "name": "Grace"}},
 	}, query.Upsert)
 	require.NoError(t, err)
-	assert.Equal(t, 2, stat.Written)
-	assert.Equal(t, 0, stat.Overwritten)
+	require.Equal(t, 2, stat.Written)
+	require.Equal(t, 0, stat.Overwritten)
 
 	// A mixed Upsert batch: one existing key (1) and one new (3). created=1, so
 	// Written=1 and Overwritten = len-created = 1 — a mutant using len+created (=3)
@@ -184,13 +183,13 @@ func TestIntegrationWriteRoundTrip(t *testing.T) {
 		{Key: "3", Value: map[string]any{"id": "3", "name": "Edsger"}},
 	}, query.Upsert)
 	require.NoError(t, err)
-	assert.Equal(t, 1, stat.Written)
-	assert.Equal(t, 1, stat.Overwritten)
+	require.Equal(t, 1, stat.Written)
+	require.Equal(t, 1, stat.Overwritten)
 
 	// The Upsert overwrote node 1's name.
 	got, err := st.Get(ctx, []string{"1"})
 	require.NoError(t, err)
-	assert.Equal(t, "Ada L.", got["1"].(map[string]any)["name"])
+	require.Equal(t, "Ada L.", got["1"].(map[string]any)["name"])
 
 	// TypedScan reads them back tagged "node".
 	var recs []query.Record
@@ -198,9 +197,9 @@ func TestIntegrationWriteRoundTrip(t *testing.T) {
 		recs = append(recs, batch...)
 		return nil
 	}))
-	assert.Len(t, recs, 3)
+	require.Len(t, recs, 3)
 	for _, r := range recs {
-		assert.Equal(t, "node", r.Type)
+		require.Equal(t, "node", r.Type)
 	}
 
 	// A mixed InsertOnly batch: one existing (1) and one new (4). created=1, so
@@ -210,11 +209,11 @@ func TestIntegrationWriteRoundTrip(t *testing.T) {
 		{Key: "4", Value: map[string]any{"id": "4", "name": "Barbara"}},
 	}, query.InsertOnly)
 	require.NoError(t, err)
-	assert.Equal(t, 1, stat.Written)
-	assert.Equal(t, 1, stat.Skipped)
+	require.Equal(t, 1, stat.Written)
+	require.Equal(t, 1, stat.Skipped)
 	got, err = st.Get(ctx, []string{"1"})
 	require.NoError(t, err)
-	assert.Equal(t, "Ada L.", got["1"].(map[string]any)["name"], "InsertOnly must not overwrite an existing node")
+	require.Equal(t, "Ada L.", got["1"].(map[string]any)["name"], "InsertOnly must not overwrite an existing node")
 
 	// A raw statement error is surfaced, not swallowed.
 	_, err = st.Query(ctx, []string{"THIS IS NOT CYPHER @@@"})
@@ -223,7 +222,7 @@ func TestIntegrationWriteRoundTrip(t *testing.T) {
 	require.NoError(t, st.Clear(ctx))
 	c, err := st.EstimateCount(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), c)
+	require.Equal(t, int64(0), c)
 }
 
 func TestIntegrationClearPagesLargeLabel(t *testing.T) {
@@ -238,7 +237,7 @@ func TestIntegrationClearPagesLargeLabel(t *testing.T) {
 	require.NoError(t, st.Clear(ctx))
 	c, err := st.EstimateCount(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), c)
+	require.Equal(t, int64(0), c)
 }
 
 // openRelStore opens a relationship-type source (?rel=TYPE) for a test.
@@ -275,17 +274,17 @@ func TestIntegrationRelationships(t *testing.T) {
 		require.Len(t, seen, 2)
 		for _, v := range seen {
 			rel := v.(map[string]any)
-			assert.Equal(t, "IT_KNOWS", rel["_type"])
-			assert.NotEmpty(t, rel["_start"])
-			assert.NotEmpty(t, rel["_end"])
-			assert.Contains(t, rel, "since")
+			require.Equal(t, "IT_KNOWS", rel["_type"])
+			require.NotEmpty(t, rel["_start"])
+			require.NotEmpty(t, rel["_end"])
+			require.Contains(t, rel, "since")
 		}
 	})
 
 	t.Run("count", func(t *testing.T) {
 		c, err := st.EstimateCount(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, int64(2), c)
+		require.Equal(t, int64(2), c)
 	})
 
 	t.Run("filtered scan pushes a property equality on r", func(t *testing.T) {
@@ -294,7 +293,7 @@ func TestIntegrationRelationships(t *testing.T) {
 			seen += len(p)
 			return nil
 		}))
-		assert.Equal(t, 1, seen)
+		require.Equal(t, 1, seen)
 	})
 
 	t.Run("get by elementId and typed scan", func(t *testing.T) {
@@ -306,12 +305,12 @@ func TestIntegrationRelationships(t *testing.T) {
 		}))
 		require.Len(t, recs, 2)
 		for _, r := range recs {
-			assert.Equal(t, "relationship", r.Type)
+			require.Equal(t, "relationship", r.Type)
 			eid = r.Key
 		}
 		got, err := st.Get(ctx, []string{eid})
 		require.NoError(t, err)
-		assert.Equal(t, "IT_KNOWS", got[eid].(map[string]any)["_type"])
+		require.Equal(t, "IT_KNOWS", got[eid].(map[string]any)["_type"])
 	})
 
 	t.Run("colon-marker address resolves the same relationship type", func(t *testing.T) {
@@ -320,7 +319,7 @@ func TestIntegrationRelationships(t *testing.T) {
 		t.Cleanup(func() { _ = marked.Close() })
 		c, err := marked.EstimateCount(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, int64(2), c)
+		require.Equal(t, int64(2), c)
 	})
 }
 
@@ -335,23 +334,23 @@ func TestIntegrationInspect(t *testing.T) {
 
 	server, err := st.InspectServer(ctx)
 	require.NoError(t, err)
-	assert.NotEmpty(t, server)
+	require.NotEmpty(t, server)
 
 	dbs, err := st.InspectDatabases(ctx)
 	require.NoError(t, err)
-	assert.Contains(t, dbs, "neo4j")
+	require.Contains(t, dbs, "neo4j")
 
 	labels, err := st.InspectLabels(ctx)
 	require.NoError(t, err)
-	assert.Contains(t, labels, "ItInspect")
+	require.Contains(t, labels, "ItInspect")
 
 	reltypes, err := st.InspectRelationshipTypes(ctx)
 	require.NoError(t, err)
-	assert.Contains(t, reltypes, "IT_LINKS")
+	require.Contains(t, reltypes, "IT_LINKS")
 
 	constraints, err := st.InspectConstraints(ctx)
 	require.NoError(t, err)
-	assert.NotEmpty(t, constraints)
+	require.NotEmpty(t, constraints)
 }
 
 func TestIntegrationKeyIntegrity(t *testing.T) {
@@ -385,7 +384,7 @@ func TestIntegrationKeyIntegrity(t *testing.T) {
 			return nil
 		}))
 		require.Len(t, seen, 2)
-		assert.Contains(t, seen, "has-key")
+		require.Contains(t, seen, "has-key")
 		// The keyless node is keyed by its elementId, which contains ':'.
 		var fellBack bool
 		for k := range seen {
@@ -393,6 +392,6 @@ func TestIntegrationKeyIntegrity(t *testing.T) {
 				fellBack = strings.Contains(k, ":")
 			}
 		}
-		assert.True(t, fellBack, "keyless node should be keyed by its elementId")
+		require.True(t, fellBack, "keyless node should be keyed by its elementId")
 	})
 }

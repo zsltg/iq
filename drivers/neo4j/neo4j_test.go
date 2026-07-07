@@ -8,7 +8,6 @@ import (
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/dbtype"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -103,13 +102,13 @@ func TestParseURL(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantDSN, cc.dsn)
-			assert.Equal(t, tt.wantDB, cc.database)
-			assert.Equal(t, tt.wantAuth, cc.hasAuth)
-			assert.Equal(t, tt.wantUser, cc.user)
-			assert.Equal(t, tt.wantPass, cc.pass)
-			assert.Equal(t, tt.wantLbl, cc.target.name)
-			assert.Equal(t, tt.wantKey, cc.target.key)
+			require.Equal(t, tt.wantDSN, cc.dsn)
+			require.Equal(t, tt.wantDB, cc.database)
+			require.Equal(t, tt.wantAuth, cc.hasAuth)
+			require.Equal(t, tt.wantUser, cc.user)
+			require.Equal(t, tt.wantPass, cc.pass)
+			require.Equal(t, tt.wantLbl, cc.target.name)
+			require.Equal(t, tt.wantKey, cc.target.key)
 		})
 	}
 }
@@ -168,8 +167,8 @@ func TestParseURLRelTarget(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantKind, cc.target.kind)
-			assert.Equal(t, tt.wantName, cc.target.name)
+			require.Equal(t, tt.wantKind, cc.target.kind)
+			require.Equal(t, tt.wantName, cc.target.name)
 		})
 	}
 }
@@ -182,11 +181,11 @@ func TestRelationshipWritesDeferred(t *testing.T) {
 }
 
 func TestTargetMatch(t *testing.T) {
-	assert.Equal(t, "MATCH (n)", target{}.match())
-	assert.Equal(t, "MATCH (n:`Person`)", target{name: "Person"}.match())
-	assert.Equal(t, "MATCH ()-[r:`KNOWS`]->()", target{kind: relTarget, name: "KNOWS"}.match())
-	assert.Equal(t, "n", target{name: "Person"}.variable())
-	assert.Equal(t, "r", target{kind: relTarget, name: "KNOWS"}.variable())
+	require.Equal(t, "MATCH (n)", target{}.match())
+	require.Equal(t, "MATCH (n:`Person`)", target{name: "Person"}.match())
+	require.Equal(t, "MATCH ()-[r:`KNOWS`]->()", target{kind: relTarget, name: "KNOWS"}.match())
+	require.Equal(t, "n", target{name: "Person"}.variable())
+	require.Equal(t, "r", target{kind: relTarget, name: "KNOWS"}.variable())
 }
 
 func TestNormalizeValue(t *testing.T) {
@@ -213,7 +212,7 @@ func TestNormalizeValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Store{decimal: tt.mode}
-			assert.Equal(t, tt.want, s.normalizeValue(tt.in))
+			require.Equal(t, tt.want, s.normalizeValue(tt.in))
 		})
 	}
 }
@@ -226,10 +225,10 @@ func TestNormalizeNode(t *testing.T) {
 		Props:     map[string]any{"name": "Ada", "age": int64(36)},
 	}
 	got := s.normalizeNode(node)
-	assert.Equal(t, "Ada", got["name"])
-	assert.Equal(t, 36, got["age"])
-	assert.Equal(t, "4:abc:1", got["_id"])
-	assert.Equal(t, []any{"Person"}, got["_labels"])
+	require.Equal(t, "Ada", got["name"])
+	require.Equal(t, 36, got["age"])
+	require.Equal(t, "4:abc:1", got["_id"])
+	require.Equal(t, []any{"Person"}, got["_labels"])
 }
 
 func TestNormalizeRelationship(t *testing.T) {
@@ -242,11 +241,11 @@ func TestNormalizeRelationship(t *testing.T) {
 		Props:          map[string]any{"since": int64(2019)},
 	}
 	got := s.normalizeRelationship(rel)
-	assert.Equal(t, 2019, got["since"])
-	assert.Equal(t, "KNOWS", got["_type"])
-	assert.Equal(t, "4:a:1", got["_start"])
-	assert.Equal(t, "4:b:2", got["_end"])
-	assert.Equal(t, "5:rel:1", got["_id"])
+	require.Equal(t, 2019, got["since"])
+	require.Equal(t, "KNOWS", got["_type"])
+	require.Equal(t, "4:a:1", got["_start"])
+	require.Equal(t, "4:b:2", got["_end"])
+	require.Equal(t, "5:rel:1", got["_id"])
 }
 
 func TestRecordProps(t *testing.T) {
@@ -256,15 +255,15 @@ func TestRecordProps(t *testing.T) {
 		}}
 		props, keyVal, err := recordProps(rec, "id")
 		require.NoError(t, err)
-		assert.Equal(t, "7", keyVal)
-		assert.Equal(t, map[string]any{"id": "7", "name": "Ada"}, props)
+		require.Equal(t, "7", keyVal)
+		require.Equal(t, map[string]any{"id": "7", "name": "Ada"}, props)
 	})
 	t.Run("falls back to record key when property absent", func(t *testing.T) {
 		rec := query.Record{Key: "42", Value: map[string]any{"name": "Ada"}}
 		props, keyVal, err := recordProps(rec, "id")
 		require.NoError(t, err)
-		assert.Equal(t, "42", keyVal)
-		assert.Equal(t, "42", props["id"])
+		require.Equal(t, "42", keyVal)
+		require.Equal(t, "42", props["id"])
 	})
 	t.Run("non-object value errors", func(t *testing.T) {
 		_, _, err := recordProps(query.Record{Key: "1", Value: "scalar"}, "id")
@@ -295,42 +294,42 @@ func TestQueryArgValidation(t *testing.T) {
 func TestFormatRaw(t *testing.T) {
 	s := &Store{}
 	out := s.FormatRaw([]any{map[string]any{"n": 6}}, false)
-	assert.Contains(t, out, "\"n\"")
-	assert.Contains(t, out, "6")
+	require.Contains(t, out, "\"n\"")
+	require.Contains(t, out, "6")
 
 	// A value encoding/json cannot marshal falls back to a plain rendering rather
 	// than returning an error string the user cannot read.
 	fallback := s.FormatRaw(make(chan int), false)
-	assert.NotEmpty(t, fallback)
+	require.NotEmpty(t, fallback)
 }
 
 func TestExplainWriteModes(t *testing.T) {
 	up := ExplainWrite(query.Upsert)
 	require.Len(t, up.Ops, 1)
-	assert.Contains(t, up.Ops[0], "replace-upsert")
+	require.Contains(t, up.Ops[0], "replace-upsert")
 
 	ins := ExplainWrite(query.InsertOnly)
 	require.Len(t, ins.Ops, 1)
-	assert.Contains(t, ins.Ops[0], "skip existing")
-	assert.NotEqual(t, up.Ops[0], ins.Ops[0])
+	require.Contains(t, ins.Ops[0], "skip existing")
+	require.NotEqual(t, up.Ops[0], ins.Ops[0])
 }
 
 func TestExplainClear(t *testing.T) {
 	plan := ExplainClear()
 	require.Len(t, plan.Ops, 1)
-	assert.Contains(t, plan.Ops[0], "DETACH DELETE")
+	require.Contains(t, plan.Ops[0], "DETACH DELETE")
 }
 
 func TestExplainPlanPushesPredicate(t *testing.T) {
 	plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, predicate.Eq{Path: []string{"name"}, Value: "Ada"}, false)
 	require.NotNil(t, plan.Filter)
-	assert.Equal(t, "n[$f0] = $f1", plan.Filter["where"])
-	assert.Contains(t, plan.Ops[0], "server-side pre-filter")
+	require.Equal(t, "n[$f0] = $f1", plan.Filter["where"])
+	require.Contains(t, plan.Ops[0], "server-side pre-filter")
 }
 
 func TestExplainPlanMaterializesWhenUnbounded(t *testing.T) {
 	plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, true)
-	assert.Contains(t, plan.Ops[1], "materialized")
+	require.Contains(t, plan.Ops[1], "materialized")
 }
 
 func TestUniquenessConstraint(t *testing.T) {
@@ -346,22 +345,22 @@ func TestUniquenessConstraint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.typ, func(t *testing.T) {
-			assert.Equal(t, tt.want, uniquenessConstraint(tt.typ))
+			require.Equal(t, tt.want, uniquenessConstraint(tt.typ))
 		})
 	}
 }
 
 func TestExplainDropUnsupported(t *testing.T) {
 	_, ok := ExplainDrop()
-	assert.False(t, ok)
+	require.False(t, ok)
 }
 
 func TestExplainPlanBoundedVsScan(t *testing.T) {
 	bounded := ExplainPlan(selector.KeySet{Scan: false, Keys: []string{"1", "2"}}, nil, false)
 	require.Len(t, bounded.Ops, 1)
-	assert.Contains(t, bounded.Ops[0], "fetch 2 requested key")
+	require.Contains(t, bounded.Ops[0], "fetch 2 requested key")
 
 	scan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false)
-	assert.Contains(t, scan.Ops[0], "full-label scan")
-	assert.Nil(t, scan.Filter)
+	require.Contains(t, scan.Ops[0], "full-label scan")
+	require.Nil(t, scan.Filter)
 }
