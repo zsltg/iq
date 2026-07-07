@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.21.1 - 2026-07-07
+### Bug Fixes
+- **deps:** patch known advisories in golang.org/x/net and go-pkcs12 (02bed04)
+- **hbase:** reject int values outside int32 range on write (856a5e6)
+
+
 ## v0.21.0 - 2026-07-07
 ### Features
 - **elasticsearch:** add Elasticsearch driver (410b1c3)
