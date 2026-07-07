@@ -291,11 +291,11 @@ func isNot(q *gojq.Query) bool {
 }
 
 // negate pushes `inner | not`. A negation cannot use the superset-and-re-run
-// safety net (negating a superset yields a subset), so it pushes only when inner
-// compiles to an exactly-representable predicate: equality, existence, or an
-// any() over an exact-equality condition.
+// safety net (negating a superset yields a subset that silently drops matching
+// documents), so it extracts inner through extractExact — which never widens —
+// and pushes only equality, existence, or an any() over an exact condition.
 func negate(inner *gojq.Query) (predicate.Node, bool) {
-	p, ok := extractPred(inner)
+	p, ok := extractExact(inner)
 	if !ok {
 		return nil, false
 	}
@@ -305,38 +305,79 @@ func negate(inner *gojq.Query) (predicate.Node, bool) {
 	case predicate.Exists:
 		return predicate.NotExists(t), true
 	case predicate.ElemMatch:
-		if isExactCond(t.Cond) {
-			return predicate.NoneMatch(t), true
-		}
-		return nil, false
+		return predicate.NoneMatch(t), true
 	default:
 		return nil, false
 	}
 }
 
-// isExactCond reports whether a predicate is an exact equality condition — an Eq,
-// or an And/Or of exact conditions — the only kind safe to negate.
-func isExactCond(n predicate.Node) bool {
-	switch t := n.(type) {
-	case predicate.Eq:
-		return true
-	case predicate.And:
-		return allExact(t)
-	case predicate.Or:
-		return allExact(t)
+// extractExact builds a predicate that represents e *exactly*, never a widened
+// superset, or ok=false when no such predicate exists. It is the negation-safe
+// counterpart to extractPred: extractPred may drop an uncompilable conjunct of an
+// `and` (safe positively, because the client re-runs jq), but negating that
+// widened result yields a subset that drops matching documents. Only positive
+// equality, existence, an any() over an exact condition, and an and/or of those
+// are exact; a range, regex, !=, size, or a widened `and` is not.
+func extractExact(e *gojq.Query) (predicate.Node, bool) {
+	// Unwrap a parenthesized sub-expression, matching extractPred.
+	if e.Op == 0 && e.Term != nil && e.Term.Type == gojq.TermTypeQuery && len(e.Term.SuffixList) == 0 {
+		return extractExact(e.Term.Query)
+	}
+	// A bare has("field") fed the document itself.
+	if e.Op == 0 && e.Term != nil && e.Term.Func != nil && len(e.Term.SuffixList) == 0 {
+		return existsFrom(nil, e.Term.Func)
+	}
+	switch e.Op {
+	case gojq.OpPipe:
+		return exactPipe(e.Left, e.Right)
+	case gojq.OpAnd:
+		l, lok := extractExact(e.Left)
+		r, rok := extractExact(e.Right)
+		if lok && rok {
+			return flattenAnd(l, r), true
+		}
+		return nil, false
+	case gojq.OpOr:
+		l, lok := extractExact(e.Left)
+		r, rok := extractExact(e.Right)
+		if lok && rok {
+			return flattenOr(l, r), true
+		}
+		return nil, false
+	case gojq.OpEq:
+		return eqAtom(e.Left, e.Right)
 	default:
-		return false
+		return nil, false
 	}
 }
 
-// allExact reports whether every node is an exact condition.
-func allExact(nodes []predicate.Node) bool {
-	for _, n := range nodes {
-		if !isExactCond(n) {
-			return false
-		}
+// exactPipe extracts the exact predicate of a `path | builtin` expression, the
+// only pipe forms that stay exact under negation: has(key) existence, or an
+// any(cond) whose element condition is itself exact.
+func exactPipe(pathQ, rhs *gojq.Query) (predicate.Node, bool) {
+	path, ok := pathOf(pathQ)
+	if !ok {
+		return nil, false
 	}
-	return true
+	if rhs.Op != 0 || rhs.Term == nil || rhs.Term.Func == nil || len(rhs.Term.SuffixList) != 0 {
+		return nil, false
+	}
+	f := rhs.Term.Func
+	switch f.Name {
+	case "has":
+		return existsFrom(path, f)
+	case "any":
+		if len(f.Args) != 1 {
+			return nil, false
+		}
+		cond, ok := extractExact(f.Args[0])
+		if !ok {
+			return nil, false
+		}
+		return predicate.ElemMatch{Path: path, Cond: cond}, true
+	default:
+		return nil, false
+	}
 }
 
 // lengthEq recognizes `length == n` (in either order) and returns n when it is a
