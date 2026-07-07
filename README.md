@@ -1,7 +1,8 @@
 # iq
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
-databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, Apache HBase, Apache CouchDB, and Neo4j are supported; the
+databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, Apache HBase, Apache CouchDB, Neo4j, and
+Elasticsearch are supported; the
 backend is chosen by the URL scheme, and the query core is driver-agnostic so further backends slot
 in behind the same port.
 
@@ -21,7 +22,7 @@ sq's so the tool feels familiar.
 ## Requirements
 
 - Go 1.26+
-- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
+- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j + Elasticsearch containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
 
 ## Build
 
@@ -63,6 +64,7 @@ iq add -n orders 'cassandra://localhost:9042/shop?table=orders' # a Cassandra so
 iq add -n books 'hbase://localhost:2181/?table=iq_books'     # an HBase source (host = ZooKeeper quorum)
 iq add -n docs 'couchdb://admin:pass@localhost:5984/?database=iq' # a CouchDB source (host = server)
 iq add -n graph 'neo4j://neo4j:pass@localhost:7687/?label=Person&key=id' # a Neo4j source (label = keyspace)
+iq add -n docs 'elasticsearch://localhost:9200/?index=books' # an Elasticsearch source (index = keyspace)
 iq src cache                                                 # make "cache" the active source
 iq ls                                                        # list sources: handle driver url (active marked *); -v adds format + options
 ```
@@ -80,7 +82,7 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   — register a source, mirroring `sq add`. The URL is the sole positional argument; the backend is
   inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`, `cassandra://`,
   `dynamodb://`, `hbase://`, `couchdb://`, `couchdbs://`, `neo4j://`, `neo4j+s://`, `neo4j+ssc://`,
-  `bolt://`, `bolt+s://`, `bolt+ssc://`).
+  `bolt://`, `bolt+s://`, `bolt+ssc://`, `elasticsearch://`, `elasticsearch+s://`).
   `-n`/`--handle` names the source; when omitted a handle is derived from the URL (the MongoDB
   database or Cassandra keyspace name, else the driver, disambiguated with a numeric suffix on
   collision). A MongoDB default collection rides in the URL as `?collection=`
@@ -93,13 +95,15 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   (`couchdb://host:5984/?database=books`, the host as the server), a Neo4j default node label as
   `?label=` (`neo4j://host:7687/?label=Person&key=id`, the host as the bolt server; the node key is
   the `?key=` property, else the elementId; the database is `?database=`, default `neo4j`) or a
-  relationship type as `?rel=` (`neo4j://host:7687/?rel=WROTE`, read-only), the
+  relationship type as `?rel=` (`neo4j://host:7687/?rel=WROTE`, read-only), an Elasticsearch default
+  index as `?index=` (`elasticsearch://host:9200/?index=books`, the host as the server;
+  `elasticsearch+s://` for TLS; credentials, when set, ride in the URL userinfo as HTTP basic auth), the
   driver's own connection option — like a `file://`
-  source's `?format=`; a query addresses another collection/table/database/label with a dotted
-  `handle.collection` / `handle.table` / `handle.database` / `handle.label` (Neo4j also `handle.:TYPE`
+  source's `?format=`; a query addresses another collection/table/database/label/index with a dotted
+  `handle.collection` / `handle.table` / `handle.database` / `handle.label` / `handle.index` (Neo4j also `handle.:TYPE`
   for a relationship type). `-a`/`--active` makes the new source active. `-p`/`--password`
   prompts for the URL password (or reads it from stdin) instead of embedding it in the URL.
-  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`, `couchdb`, `neo4j`) and errors if it
+  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`, `couchdb`, `neo4j`, `elasticsearch`) and errors if it
   disagrees with the scheme. The source is
   pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
   keyring` moves the URL's password into the OS keyring and strips it from the stored URL (default
@@ -123,10 +127,10 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   Bounded by `--timeout`; exits non-zero if any source is unreachable.
 - `iq inspect [<source>[.<collection>]]` — show a source's native introspection. The positional
   names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB,
-  Cassandra, DynamoDB, HBase, CouchDB, and Neo4j sources accept sq-style `<source>.<collection>` /
-  `<source>.<table>` / `<source>.<database>` / `<source>.<label>`
-  addressing (`iq inspect prod.books`) to pick the collection/table/database/label, overriding the source URL's
-  `?collection=`/`?table=`/`?database=`/`?label=` default; Redis sources take no collection.
+  Cassandra, DynamoDB, HBase, CouchDB, Neo4j, and Elasticsearch sources accept sq-style `<source>.<collection>` /
+  `<source>.<table>` / `<source>.<database>` / `<source>.<label>` / `<source>.<index>`
+  addressing (`iq inspect prod.books`) to pick the collection/table/database/label/index, overriding the source URL's
+  `?collection=`/`?table=`/`?database=`/`?label=`/`?index=` default; Redis sources take no collection.
   `--only`
   narrows the output (repeatable or comma-separated): for Redis, `INFO` sections
   (`iq inspect prod --only memory,server`); for MongoDB, the diagnostic commands (`dbStats`,
@@ -134,9 +138,10 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   system-schema reads (`local`, `tables`, `columns`); for DynamoDB, the metadata reads (`tables`,
   `table`); for HBase, the table listing (`tables`); for CouchDB, the introspection reads (`server`,
   `databases`, `dbinfo`, `indexes`); for Neo4j, the metadata procedures (`server`, `databases`,
-  `labels`, `reltypes`, `constraints`) — no `--only` runs them
+  `labels`, `reltypes`, `constraints`); for Elasticsearch, the metadata reads (`server`, `indices`,
+  `mapping`, `aliases`) — no `--only` runs them
   all. `--list` prints the subcommands/sections available for the source (Mongo's, Cassandra's,
-  DynamoDB's, HBase's, and Neo4j's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
+  DynamoDB's, HBase's, Neo4j's, and Elasticsearch's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
   by `--timeout`. The location header is redacted like `iq ls`: `--reveal` un-redacts an inline
   password, `--expand` resolves a keyring-backed one.
 - `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
@@ -441,15 +446,16 @@ registered backends — the same canonical names `iq ls -v`, `ping`, `inspect`, 
 
 ```bash
 $ iq driver ls
-DRIVER     DESCRIPTION                                                     SCHEMES                                            VERSIONS       DOC
-mongo      MongoDB document store                                          mongodb, mongodb+srv                               4.2+           https://www.mongodb.com/docs/
-cassandra  Apache Cassandra wide-column store                              cassandra                                          3.11+          https://cassandra.apache.org/doc/
-dynamodb   Amazon DynamoDB key-value and document store                    dynamodb                                           AWS (managed)  https://docs.aws.amazon.com/dynamodb/
-hbase      Apache HBase wide-column store                                  hbase                                              1.0+           https://hbase.apache.org/book.html
-couchdb    Apache CouchDB document store                                   couchdb, couchdbs                                  2.x, 3.x       https://docs.couchdb.org/
-neo4j      Neo4j property graph store                                      neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc  5.x            https://neo4j.com/docs/
-redis      Redis key-value store                                           redis, rediss                                      7.0+           https://redis.io/docs/
-file       Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON, DynamoDB/Cassandra/Neo4j-APOC JSON)  file
+DRIVER         DESCRIPTION                                                     SCHEMES                                            VERSIONS       DOC
+mongo          MongoDB document store                                          mongodb, mongodb+srv                               4.2+           https://www.mongodb.com/docs/
+cassandra      Apache Cassandra wide-column store                              cassandra                                          3.11+          https://cassandra.apache.org/doc/
+dynamodb       Amazon DynamoDB key-value and document store                    dynamodb                                           AWS (managed)  https://docs.aws.amazon.com/dynamodb/
+hbase          Apache HBase wide-column store                                  hbase                                              1.0+           https://hbase.apache.org/book.html
+couchdb        Apache CouchDB document store                                   couchdb, couchdbs                                  2.x, 3.x       https://docs.couchdb.org/
+neo4j          Neo4j property graph store                                      neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc  5.x            https://neo4j.com/docs/
+elasticsearch  Elasticsearch search engine and document store                  elasticsearch, elasticsearch+s                     8.x            https://www.elastic.co/docs/
+redis          Redis key-value store                                           redis, rediss                                      7.0+           https://redis.io/docs/
+file           Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON, DynamoDB/Cassandra/Neo4j-APOC JSON)  file
 ```
 
 Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sources) for the full flag).
@@ -463,10 +469,14 @@ Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sou
 > (`AWS (managed)` — a managed service with no server version),
 > [gohbase](https://github.com/tsuna/gohbase) (native protobuf RPC, no Thrift gateway) for HBase,
 > [`kivik` v4](https://github.com/go-kivik/kivik) for CouchDB,
-> and the [Neo4j Go driver v5](https://github.com/neo4j/neo4j-go-driver) for Neo4j —
+> the [Neo4j Go driver v5](https://github.com/neo4j/neo4j-go-driver) for Neo4j,
+> and the [go-elasticsearch v8](https://github.com/elastic/go-elasticsearch) client for
+> Elasticsearch (OpenSearch is untested but likely works — its REST surface is largely
+> shared) —
 > not a matrix `iq` tests against.
 > The integration tests are pinned to `redis:8`, `mongo:8`, `cassandra:5`,
-> `amazon/dynamodb-local:2.5.2`, `harisekhon/hbase:2.1`, `couchdb:3`, and `neo4j:5`.
+> `amazon/dynamodb-local:2.5.2`, `harisekhon/hbase:2.1`, `couchdb:3`, `neo4j:5`, and
+> `docker.elastic.co/elasticsearch/elasticsearch:8.17.4`.
 
 <details>
 <summary><b>Redis</b> — value encoding and raw commands</summary>
@@ -1039,6 +1049,74 @@ narrows to those subcommands.
 </details>
 
 <details>
+<summary><b>Elasticsearch</b> — index keyspace, _id mapping, Query-DSL pushdown, and raw _search</summary>
+
+Register an `elasticsearch://` source and the same jq interface works against an index, where **the
+index is the keyspace: a document's `_id` is the key and its `_source` is the value**. The host is
+the Elasticsearch server; the index rides in the URL's `?index=` (overridable per run with a dotted
+`handle.index`, since one server hosts many indices). Use `elasticsearch+s://` for TLS. **Credentials,
+when the cluster needs them, travel in the URL userinfo** (HTTP basic auth), so `--store keyring`
+moves the password to the OS keyring exactly as for the other backends:
+
+```bash
+iq add -n books 'elasticsearch://localhost:9200/?index=books'  # register once, then:
+iq --src books '.["2"]'                                # fetch the document whose _id is 2
+iq --src books '.[] | select(.year > 2015) | .title'  # streamed
+iq --src books --unbounded 'keys'                      # every _id
+iq --src books.authors '.[]'                           # query a different index on the same server
+```
+
+Elasticsearch documents are JSON, so values need no type coercion; integers keep exact precision
+(large ones never collapse to a float). Each document's `_id` (Elasticsearch metadata, stored
+outside `_source`) is injected into the value as `_id`, so a plain `.[]` stream is self-describing
+and restorable — like a Mongo document, `--typed` is not needed for a lossless backup. The
+`--unbounded` / streaming rules are identical to every backend; a scan pages the index with a
+point-in-time and `search_after` (keyset pagination, sorted by `_shard_doc`), so it never re-reads
+from an offset.
+
+### Server-side pre-filtering (predicate pushdown)
+
+By default a `.[] | select(...)` filter's **equality** and **existence** clauses are translated into
+an Elasticsearch `bool` query so the cluster filters before documents reach iq. The index mapping is
+read once at connect, so an equality is pushed only onto a field whose type matches it exactly —
+never onto analyzed `text`, where a term could wrongly exclude a match:
+
+| `select(...)` clause | Pushed | Elasticsearch query | Notes |
+| --- | :---: | --- | --- |
+| `.a == x` | ✓ | `{"term": {"a": x}}` | a single top-level field mapped `keyword`/numeric/`boolean`/`ip` (or a `text` field's `.keyword` sub-field); the literal's type must match the field |
+| `.a \| has` / `has("a")` | ✓ | `{"exists": {"field": "a"}}` | key presence, exact |
+| `has("a") \| not` | ✓ | `{"bool": {"must_not": {"exists": …}}}` | key absence, exact |
+| `E1 and E2` | ✓ | `{"bool": {"must": […]}}` | drops any conjunct it cannot push (widening) |
+| `E1 or E2` | ✓ | `{"bool": {"should": […], "minimum_should_match": 1}}` | pushed only when **every** branch is pushable |
+| `.a == null`, ranges, `!=`, `length`, regex, `any`, nested paths | — | — | run client-side: a range excludes a missing field and orders types unlike jq's cross-type ordering, `== null` matches absent-or-null (no single term does), and an analyzed-text or unmapped field has no exact term |
+
+Pushdown never changes results, only speed: the full jq always re-runs client-side, so a pushed
+filter is a conservative pre-filter; `--explain` shows the query, and `--no-compile` streams the
+whole index and filters entirely client-side.
+
+### Raw commands
+
+`iq exec` runs a raw [`_search`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html):
+the argument is a JSON search body (`{"query":{…},"size":…,"aggs":…}`) or a bare query object
+(`{"match":{"title":"dune"}}`, wrapped as `{"query":…}`), and it prints the whole reply — hits,
+aggregations, and all — as JSON:
+
+```bash
+iq --src books exec '{"query": {"range": {"year": {"gt": 2015}}}}'
+iq --src books exec '{"match": {"author": "Kleppmann"}}'   # bare query, wrapped
+```
+
+`iq inspect` reads server and index metadata — `server` (node, cluster, and version), `indices` (the
+server's indices), `mapping` (the selected index's field mapping, which shows what a term pushdown
+can use), and `aliases` (the server's aliases); `--only` narrows to those subcommands.
+
+> **OpenSearch** is untested but likely works, since its REST surface is largely shared with
+> Elasticsearch; a few areas diverge (the point-in-time API, some `_cat` and security defaults), so
+> it is not yet a documented target.
+
+</details>
+
+<details>
 <summary><b>File dumps</b> — query a snapshot offline (read-only)</summary>
 
 A `file://` source reads a database dump straight from disk, so a snapshot is queried, inspected
@@ -1230,7 +1308,8 @@ into a native predicate, and each backend maps that predicate its own way — Mo
 server-side, Cassandra pushes equality as a CQL `WHERE` (with `ALLOW FILTERING` when it is not the
 partition key), DynamoDB pushes equality and existence as a `Scan` `FilterExpression`, HBase pushes
 column equality as a `SingleColumnValueFilter`, CouchDB pushes equality, ranges, and existence as a
-Mango `_find` selector, Neo4j pushes equality and existence as a Cypher `WHERE` clause, Redis scans
+Mango `_find` selector, Neo4j pushes equality and existence as a Cypher `WHERE` clause, Elasticsearch
+pushes equality and existence as a `bool` query, Redis scans
 and filters client-side. Either way the
 full jq re-runs client-side, so
 the pushed predicate is only ever a conservative pre-filter and results are identical with or without it.
@@ -1312,18 +1391,19 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   CBOR under `<user cache dir>/iq/dumps`): a full scan of a large dump tees its normalized records
   to disk, and later scans read them back instead of re-decoding — transparent to the ports, so the
   data-flow above is unchanged, and never authoritative (a miss just re-decodes).
-- `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb`, `drivers/hbase`, `drivers/couchdb`, `drivers/neo4j` — the
+- `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb`, `drivers/hbase`, `drivers/couchdb`, `drivers/neo4j`, `drivers/elasticsearch` — the
   adapters. Each has one `*Store`
   satisfying the read ports
   (`Query` for exec, `Get`/`ScanBatches` for jq) and the write ports (`Put`/`Clear`/`TypedScan`,
-  plus `Drop` for Mongo, Cassandra, DynamoDB, HBase, and CouchDB), with a type-to-JSON normalization frozen as
+  plus `Drop` for Mongo, Cassandra, DynamoDB, HBase, CouchDB, and Elasticsearch), with a type-to-JSON normalization frozen as
   that backend's
   encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs; CQL types → uuid-string,
   RFC 3339, base64 blob, collections; DynamoDB `S`/`N`/`B`/`BOOL`/`M`/`L`/sets; HBase raw cell bytes →
   honest UTF-8-or-base64, or an exact `Bytes`-layout value for a `?types=`-declared column; CouchDB
   documents are already JSON, decoded with exact-integer precision, `_id`/`_rev` kept; Neo4j node
   properties with exact integers, base64 bytes, and ISO temporal/spatial strings, `_id`/`_labels`
-  kept) and its
+  kept; Elasticsearch `_source` documents are already JSON, decoded with exact-integer precision, the
+  hit `_id` injected) and its
   inverse for
   writes
   (Mongo `bulkWrite`; Redis pipelined `SET`/`HSET`/`RPUSH`/`SADD`/`ZADD`/`XADD`/`JSON.SET` by
@@ -1332,7 +1412,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   `Scan` + per-row `Delete` for clear, and `DisableTable` + `DeleteTable` for drop; CouchDB
   `_bulk_docs` upsert/insert reading current `_rev`s first, `_bulk_docs {_deleted:true}` clear,
   `DELETE /{db}` drop; Neo4j `UNWIND … MERGE (n:Label {key}) SET n += props` upsert/insert-only,
-  paged `MATCH … DETACH DELETE` clear, no drop). Redis maps a key
+  paged `MATCH … DETACH DELETE` clear, no drop; Elasticsearch refreshing `_bulk` index/create by
+  `_id`, `_delete_by_query {match_all}` clear, `DELETE /{index}` drop). Redis maps a key
   to a Redis key;
   Mongo maps a key to a document `_id` within the collection it owns from the URL's `?collection=`
   (or a dotted `handle.collection` override); Cassandra maps a key to a row's full primary key within
@@ -1347,7 +1428,9 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   the elementId — within the label it owns from the URL's `?label=` (bolt host as the server, or a
   dotted `handle.label` override) inside the `?database=` (default `neo4j`), or to a relationship
   within a `?rel=` type (or a `handle.:TYPE` override), read-only, whose value carries the endpoint
-  elementIds. Cassandra pushes
+  elementIds; Elasticsearch maps a key to a document `_id` within the index it owns from the URL's
+  `?index=` (host as the server, or a dotted `handle.index` override), reading the index mapping once
+  at connect so a term is pushed only onto an exactly-matchable field. Cassandra pushes
   equality/`IN` as a CQL `WHERE`
   (`FilteredScanner`) but has no cheap count, so it omits `Estimator` like Redis; DynamoDB pushes
   equality/existence as a `Scan` `FilterExpression` (`FilteredScanner`) and answers `Estimator` from
@@ -1357,10 +1440,13 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   polymorphic operators) and answers `Estimator` from its `doc_count`; Neo4j pushes equality and
   existence as a Cypher `WHERE` clause (`FilteredScanner`, falling back to a plain label scan for
   ranges — Cypher's cross-type comparison is not jq's — and the other operators) and answers
-  `Estimator` from the label's count store. DynamoDB's connectionless
+  `Estimator` from the label's count store; Elasticsearch pushes equality and existence as a `bool`
+  query (`FilteredScanner`, falling back to a plain point-in-time scan for ranges and the other
+  operators) and answers `Estimator` from `_count`. DynamoDB's connectionless
   client verifies reachability at open (a
   bounded `ListTables` probe), HBase's likewise (a bounded `ClusterStatus` probe, since gohbase
-  connects lazily), CouchDB pings at open, and Neo4j verifies connectivity at open, so `ping`/`add` need no second round-trip. Each
+  connects lazily), CouchDB pings at open, Neo4j verifies connectivity at open, and Elasticsearch
+  probes with an info request at open, so `ping`/`add` need no second round-trip. Each
   also contributes pure, connection-free `--explain` describers
   (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
 - `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
@@ -1419,8 +1505,8 @@ iq --src snap '.[] | select(.active)'     # query a dump offline (RDB, BSON, mon
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
-go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j via testcontainers-go (HBase needs IQ_HBASE_URL)
-docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB + Neo4j for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984, :7687)
+go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j + Elasticsearch via testcontainers-go (HBase needs IQ_HBASE_URL)
+docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB + Neo4j + Elasticsearch for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984, :7687, :9200)
 bash scripts/seed-redis.sh    # load example data into the running Redis
 bash scripts/seed-mongo.sh    # load example documents into the running MongoDB
 bash scripts/seed-cassandra.sh    # load example rows into the running Cassandra
@@ -1428,6 +1514,7 @@ bash scripts/seed-dynamodb.sh    # load example items into the running DynamoDB 
 bash scripts/seed-hbase.sh    # load example rows into the running HBase
 bash scripts/seed-couchdb.sh    # load example documents into the running CouchDB
 bash scripts/seed-neo4j.sh    # load an example graph into the running Neo4j
+bash scripts/seed-elasticsearch.sh    # load example documents into the running Elasticsearch
 docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
@@ -1440,10 +1527,10 @@ make release              # bump version, regenerate CHANGELOG.md, commit, and t
 ```
 
 Integration tests skip under `go test -short`. The full `go test ./...` needs Docker: it starts
-an ephemeral Redis, MongoDB, Cassandra, DynamoDB Local, CouchDB, and Neo4j via
+an ephemeral Redis, MongoDB, Cassandra, DynamoDB Local, CouchDB, Neo4j, and Elasticsearch via
 [testcontainers-go](https://github.com/testcontainers/testcontainers-go) on random ports and
 tears them down afterwards — no manual `docker compose up` (Cassandra takes ~1 minute to become
-ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL` / `IQ_COUCHDB_URL` / `IQ_NEO4J_URL`
+ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL` / `IQ_COUCHDB_URL` / `IQ_NEO4J_URL` / `IQ_ELASTICSEARCH_URL`
 to point at an already-running server (for example the `docker compose` stack) to skip container
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
 a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded

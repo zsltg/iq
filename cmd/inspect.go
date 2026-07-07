@@ -58,6 +58,10 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"Neo4j — runs metadata procedures; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(neo4jInspectCmds, "  ") + "\n" +
 		"  (all are database-level; labels lists the addressable collections)\n\n" +
+		"Elasticsearch — runs metadata reads; no --only runs them all, --only narrows:\n" +
+		"  " + strings.Join(elasticInspectCmds, "  ") + "\n" +
+		"  (mapping needs an index: address it as source.index or set ?index= on the\n" +
+		"  source url)\n\n" +
 		"Redis — runs INFO; --only narrows it to those sections\n" +
 		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
 		"  server  clients  memory  persistence  stats  replication  cpu  keyspace\n\n" +
@@ -103,6 +107,8 @@ func newInspectCmd(cfg *config) *cobra.Command {
 				return inspectCouch(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "neo4j":
 				return inspectNeo4j(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+			case "elasticsearch":
+				return inspectElastic(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "file":
 				// inspect reports live server metadata; a dump file has none. Point
 				// the user at the operations that do work on a file source.
@@ -592,6 +598,102 @@ func inspectCouch(ctx context.Context, out io.Writer, st store, cfg *config, sub
 // isCouchInspectCmd reports whether sub is a supported CouchDB inspect subcommand.
 func isCouchInspectCmd(sub string) bool {
 	for _, c := range couchInspectCmds {
+		if c == sub {
+			return true
+		}
+	}
+	return false
+}
+
+// elasticInspectCmds is the supported set of Elasticsearch introspection reads
+// `inspect` runs. "server", "indices", and "aliases" are server-level; "mapping"
+// needs an index selected. With no --only it runs them all; --only narrows.
+var elasticInspectCmds = []string{"server", "indices", "mapping", "aliases"}
+
+// elasticInspector is the introspection capability inspectElastic needs from the
+// store. Elasticsearch's introspection is HTTP API reads (GET /, GET /_cat/indices,
+// GET /{index}/_mapping, GET /_cat/aliases), not a search, so it is a driver method
+// the CLI calls directly rather than a query routed through the raw Query path.
+type elasticInspector interface {
+	InspectServer(ctx context.Context) (any, error)
+	InspectIndices(ctx context.Context) (any, error)
+	InspectMapping(ctx context.Context) (any, error)
+	InspectAliases(ctx context.Context) (any, error)
+}
+
+// inspectElastic runs the requested Elasticsearch introspection reads (all supported
+// when none are named) and renders each reply keyed by subcommand. "mapping" needs an
+// index selected and is skipped in the run-all case when none is. With list, it
+// prints the supported names without touching the store.
+func inspectElastic(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
+	if list {
+		return writeInspectList(out, elasticInspectCmds, jsonOut, yamlOut)
+	}
+	ei, ok := st.(elasticInspector)
+	if !ok {
+		return errors.New("inspect is not supported for this source")
+	}
+	explicit := len(subs) > 0
+	which := subs
+	if !explicit {
+		which = elasticInspectCmds
+	}
+	for _, sub := range which {
+		if !isElasticInspectCmd(sub) {
+			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(elasticInspectCmds, ", "))
+		}
+	}
+
+	type result struct {
+		sub   string
+		value any
+	}
+	results := make([]result, 0, len(which))
+	for _, sub := range which {
+		var (
+			res any
+			err error
+		)
+		switch sub {
+		case "server":
+			res, err = ei.InspectServer(ctx)
+		case "indices":
+			res, err = ei.InspectIndices(ctx)
+		case "mapping":
+			res, err = ei.InspectMapping(ctx)
+			if err != nil && !explicit {
+				continue // a source with no index selected skips "mapping" in run-all
+			}
+		case "aliases":
+			res, err = ei.InspectAliases(ctx)
+		}
+		if err != nil {
+			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
+		}
+		results = append(results, result{sub: sub, value: res})
+	}
+
+	if jsonOut || yamlOut {
+		byName := make(map[string]any, len(results))
+		for _, r := range results {
+			byName[r.sub] = r.value
+		}
+		return writeStructured(out, byName, yamlOut)
+	}
+	if err := inspectHeader(out, cfg); err != nil {
+		return err
+	}
+	for _, r := range results {
+		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// isElasticInspectCmd reports whether sub is a supported Elasticsearch inspect subcommand.
+func isElasticInspectCmd(sub string) bool {
+	for _, c := range elasticInspectCmds {
 		if c == sub {
 			return true
 		}

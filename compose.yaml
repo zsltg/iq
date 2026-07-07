@@ -109,6 +109,26 @@ services:
       retries: 24
       start_period: 30s
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.4
+    container_name: iq-elasticsearch
+    ports:
+      - "9200:9200"
+    # Ephemeral single-node test instance; data lives only in the container. Security
+    # is disabled so a host-side client connects over plain HTTP with no credentials,
+    # and the JVM heap is capped so the container is light to run locally.
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    # Elasticsearch on a JVM is slow to become ready, so the healthcheck retries generously.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
 networks:
   # Pin the bridge to a subnet outside the LAN (192.168.0.0/16), the VM NAT (10.0.2.0/24), and
   # Docker's default pool (172.16.0.0/12), so an auto-assigned subnet can never mask a LAN host

@@ -10,6 +10,7 @@ import (
 	iqcassandra "github.com/zsltg/iq/drivers/cassandra"
 	iqcouchdb "github.com/zsltg/iq/drivers/couchdb"
 	iqdynamodb "github.com/zsltg/iq/drivers/dynamodb"
+	iqelasticsearch "github.com/zsltg/iq/drivers/elasticsearch"
 	iqfile "github.com/zsltg/iq/drivers/file"
 	iqhbase "github.com/zsltg/iq/drivers/hbase"
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
@@ -159,6 +160,22 @@ var drivers = []driver{
 		explainWrite: iqneo4j.ExplainWrite,
 		explainClear: iqneo4j.ExplainClear,
 		explainDrop:  iqneo4j.ExplainDrop,
+	},
+	{
+		name:           "elasticsearch",
+		desc:           "Elasticsearch search engine and document store",
+		schemes:        []string{"elasticsearch", "elasticsearch+s"},
+		doc:            "https://www.elastic.co/docs/",
+		versions:       "8.x",
+		addressable:    true,
+		verifiesOnOpen: true,
+		open: func(ctx context.Context, cfg *config) (store, error) {
+			return iqelasticsearch.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
+		},
+		explainPlan:  iqelasticsearch.ExplainPlan,
+		explainWrite: iqelasticsearch.ExplainWrite,
+		explainClear: iqelasticsearch.ExplainClear,
+		explainDrop:  iqelasticsearch.ExplainDrop,
 	},
 	{
 		name:     "redis",

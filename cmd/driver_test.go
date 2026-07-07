@@ -57,7 +57,7 @@ func TestDriverName(t *testing.T) {
 }
 
 func TestExpectedSchemes(t *testing.T) {
-	require.Equal(t, "expected one of mongodb://, cassandra://, dynamodb://, hbase://, couchdb://, neo4j://, redis://", expectedSchemes())
+	require.Equal(t, "expected one of mongodb://, cassandra://, dynamodb://, hbase://, couchdb://, neo4j://, elasticsearch://, redis://", expectedSchemes())
 }
 
 // TestDriverRegistryInvariants guards the single source of truth: every driver
@@ -101,6 +101,7 @@ func TestDriverLsTable(t *testing.T) {
 		"hbase", "Apache HBase wide-column store", "1.0+", "https://hbase.apache.org/book.html",
 		"couchdb", "Apache CouchDB document store", "couchdb, couchdbs", "2.x, 3.x", "https://docs.couchdb.org/",
 		"neo4j", "Neo4j property graph store", "neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc", "5.x", "https://neo4j.com/docs/",
+		"elasticsearch", "Elasticsearch search engine and document store", "elasticsearch, elasticsearch+s", "8.x", "https://www.elastic.co/docs/",
 	} {
 		require.Contains(t, out, want)
 	}
@@ -112,7 +113,7 @@ func TestDriverLsJSON(t *testing.T) {
 
 	var rows []driverRow
 	require.NoError(t, json.Unmarshal([]byte(out), &rows))
-	require.Len(t, rows, 8)
+	require.Len(t, rows, 9)
 
 	byName := map[string]driverRow{}
 	for _, r := range rows {
@@ -139,4 +140,8 @@ func TestDriverLsJSON(t *testing.T) {
 	require.Equal(t, "Apache CouchDB document store", byName["couchdb"].Description)
 	require.Equal(t, "2.x, 3.x", byName["couchdb"].Versions)
 	require.Equal(t, "https://docs.couchdb.org/", byName["couchdb"].Doc)
+	require.Equal(t, []string{"elasticsearch", "elasticsearch+s"}, byName["elasticsearch"].Schemes)
+	require.Equal(t, "Elasticsearch search engine and document store", byName["elasticsearch"].Description)
+	require.Equal(t, "8.x", byName["elasticsearch"].Versions)
+	require.Equal(t, "https://www.elastic.co/docs/", byName["elasticsearch"].Doc)
 }
