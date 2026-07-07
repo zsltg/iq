@@ -129,6 +129,36 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	return c
 }
 
+// inspectResult pairs a subcommand/section name with its rendered reply, the
+// unit every driver's inspector collects before rendering.
+type inspectResult struct {
+	sub   string
+	value any
+}
+
+// renderInspectResults emits collected inspect results: a name→value map under
+// -j/-y, else the redacted location header followed by each reply in the store's
+// native form. It is the shared tail of every non-Redis inspector, so a new
+// backend's inspector only assembles its results and calls this.
+func renderInspectResults(out io.Writer, st store, cfg *config, results []inspectResult, jsonOut, yamlOut bool) error {
+	if jsonOut || yamlOut {
+		byName := make(map[string]any, len(results))
+		for _, r := range results {
+			byName[r.sub] = r.value
+		}
+		return writeStructured(out, byName, yamlOut)
+	}
+	if err := inspectHeader(out, cfg); err != nil {
+		return err
+	}
+	for _, r := range results {
+		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // inspectRedis runs INFO (narrowed to the given sections) and renders it. With
 // list, it prints the section names the reply exposes instead of the reply.
 func inspectRedis(ctx context.Context, out io.Writer, st store, cfg *config, sections []string, jsonOut, yamlOut, list bool) error {
@@ -205,12 +235,8 @@ func inspectMongo(ctx context.Context, out io.Writer, st store, cfg *config, sub
 		}
 	}
 
-	type result struct {
-		sub   string
-		value any
-	}
 	coll := mongoCollection(cfg)
-	results := make([]result, 0, len(which))
+	results := make([]inspectResult, 0, len(which))
 	for _, sub := range which {
 		if sub == "collStats" && coll == "" {
 			if explicit {
@@ -222,25 +248,10 @@ func inspectMongo(ctx context.Context, out io.Writer, st store, cfg *config, sub
 		if err != nil {
 			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
 		}
-		results = append(results, result{sub: sub, value: res})
+		results = append(results, inspectResult{sub: sub, value: res})
 	}
 
-	if jsonOut || yamlOut {
-		byName := make(map[string]any, len(results))
-		for _, r := range results {
-			byName[r.sub] = r.value
-		}
-		return writeStructured(out, byName, yamlOut)
-	}
-	if err := inspectHeader(out, cfg); err != nil {
-		return err
-	}
-	for _, r := range results {
-		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
-			return err
-		}
-	}
-	return nil
+	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
 }
 
 // mongoInspectDoc builds the JSON command document for a MongoDB diagnostic
@@ -287,11 +298,7 @@ func inspectCassandra(ctx context.Context, out io.Writer, st store, cfg *config,
 	}
 
 	keyspace, table := cassandraTarget(cfg)
-	type result struct {
-		sub   string
-		value any
-	}
-	results := make([]result, 0, len(which))
+	results := make([]inspectResult, 0, len(which))
 	for _, sub := range which {
 		stmt, ok := cassandraInspectStmt(sub, keyspace, table)
 		if !ok {
@@ -304,25 +311,10 @@ func inspectCassandra(ctx context.Context, out io.Writer, st store, cfg *config,
 		if err != nil {
 			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
 		}
-		results = append(results, result{sub: sub, value: res})
+		results = append(results, inspectResult{sub: sub, value: res})
 	}
 
-	if jsonOut || yamlOut {
-		byName := make(map[string]any, len(results))
-		for _, r := range results {
-			byName[r.sub] = r.value
-		}
-		return writeStructured(out, byName, yamlOut)
-	}
-	if err := inspectHeader(out, cfg); err != nil {
-		return err
-	}
-	for _, r := range results {
-		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
-			return err
-		}
-	}
-	return nil
+	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
 }
 
 // cassandraInspectStmt builds the CQL for a Cassandra diagnostic subcommand, keyed
@@ -398,11 +390,7 @@ func inspectDynamo(ctx context.Context, out io.Writer, st store, cfg *config, su
 		}
 	}
 
-	type result struct {
-		sub   string
-		value any
-	}
-	results := make([]result, 0, len(which))
+	results := make([]inspectResult, 0, len(which))
 	for _, sub := range which {
 		var (
 			res any
@@ -420,25 +408,10 @@ func inspectDynamo(ctx context.Context, out io.Writer, st store, cfg *config, su
 		if err != nil {
 			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
 		}
-		results = append(results, result{sub: sub, value: res})
+		results = append(results, inspectResult{sub: sub, value: res})
 	}
 
-	if jsonOut || yamlOut {
-		byName := make(map[string]any, len(results))
-		for _, r := range results {
-			byName[r.sub] = r.value
-		}
-		return writeStructured(out, byName, yamlOut)
-	}
-	if err := inspectHeader(out, cfg); err != nil {
-		return err
-	}
-	for _, r := range results {
-		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
-			return err
-		}
-	}
-	return nil
+	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
 }
 
 // hbaseInspectCmds is the supported set of HBase introspection reads inspect runs.
@@ -475,35 +448,16 @@ func inspectHBase(ctx context.Context, out io.Writer, st store, cfg *config, sub
 		}
 	}
 
-	type result struct {
-		sub   string
-		value any
-	}
-	results := make([]result, 0, len(which))
+	results := make([]inspectResult, 0, len(which))
 	for _, sub := range which {
 		res, err := hi.InspectTables(ctx)
 		if err != nil {
 			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
 		}
-		results = append(results, result{sub: sub, value: res})
+		results = append(results, inspectResult{sub: sub, value: res})
 	}
 
-	if jsonOut || yamlOut {
-		byName := make(map[string]any, len(results))
-		for _, r := range results {
-			byName[r.sub] = r.value
-		}
-		return writeStructured(out, byName, yamlOut)
-	}
-	if err := inspectHeader(out, cfg); err != nil {
-		return err
-	}
-	for _, r := range results {
-		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
-			return err
-		}
-	}
-	return nil
+	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
 }
 
 // couchInspectCmds is the supported set of CouchDB introspection reads `inspect`
@@ -545,11 +499,7 @@ func inspectCouch(ctx context.Context, out io.Writer, st store, cfg *config, sub
 		}
 	}
 
-	type result struct {
-		sub   string
-		value any
-	}
-	results := make([]result, 0, len(which))
+	results := make([]inspectResult, 0, len(which))
 	for _, sub := range which {
 		var (
 			res any
@@ -574,25 +524,10 @@ func inspectCouch(ctx context.Context, out io.Writer, st store, cfg *config, sub
 		if err != nil {
 			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
 		}
-		results = append(results, result{sub: sub, value: res})
+		results = append(results, inspectResult{sub: sub, value: res})
 	}
 
-	if jsonOut || yamlOut {
-		byName := make(map[string]any, len(results))
-		for _, r := range results {
-			byName[r.sub] = r.value
-		}
-		return writeStructured(out, byName, yamlOut)
-	}
-	if err := inspectHeader(out, cfg); err != nil {
-		return err
-	}
-	for _, r := range results {
-		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
-			return err
-		}
-	}
-	return nil
+	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
 }
 
 // isCouchInspectCmd reports whether sub is a supported CouchDB inspect subcommand.
@@ -644,11 +579,7 @@ func inspectElastic(ctx context.Context, out io.Writer, st store, cfg *config, s
 		}
 	}
 
-	type result struct {
-		sub   string
-		value any
-	}
-	results := make([]result, 0, len(which))
+	results := make([]inspectResult, 0, len(which))
 	for _, sub := range which {
 		var (
 			res any
@@ -670,25 +601,10 @@ func inspectElastic(ctx context.Context, out io.Writer, st store, cfg *config, s
 		if err != nil {
 			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
 		}
-		results = append(results, result{sub: sub, value: res})
+		results = append(results, inspectResult{sub: sub, value: res})
 	}
 
-	if jsonOut || yamlOut {
-		byName := make(map[string]any, len(results))
-		for _, r := range results {
-			byName[r.sub] = r.value
-		}
-		return writeStructured(out, byName, yamlOut)
-	}
-	if err := inspectHeader(out, cfg); err != nil {
-		return err
-	}
-	for _, r := range results {
-		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
-			return err
-		}
-	}
-	return nil
+	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
 }
 
 // isElasticInspectCmd reports whether sub is a supported Elasticsearch inspect subcommand.
@@ -740,11 +656,7 @@ func inspectNeo4j(ctx context.Context, out io.Writer, st store, cfg *config, sub
 		}
 	}
 
-	type result struct {
-		sub   string
-		value any
-	}
-	results := make([]result, 0, len(which))
+	results := make([]inspectResult, 0, len(which))
 	for _, sub := range which {
 		var (
 			res any
@@ -765,25 +677,10 @@ func inspectNeo4j(ctx context.Context, out io.Writer, st store, cfg *config, sub
 		if err != nil {
 			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
 		}
-		results = append(results, result{sub: sub, value: res})
+		results = append(results, inspectResult{sub: sub, value: res})
 	}
 
-	if jsonOut || yamlOut {
-		byName := make(map[string]any, len(results))
-		for _, r := range results {
-			byName[r.sub] = r.value
-		}
-		return writeStructured(out, byName, yamlOut)
-	}
-	if err := inspectHeader(out, cfg); err != nil {
-		return err
-	}
-	for _, r := range results {
-		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
-			return err
-		}
-	}
-	return nil
+	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
 }
 
 // isNeo4jInspectCmd reports whether sub is a supported Neo4j inspect subcommand.
