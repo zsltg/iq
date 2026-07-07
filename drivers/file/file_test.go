@@ -200,6 +200,10 @@ func TestDetectFormat(t *testing.T) {
 		// detection only peeks the header, so no full-size body is needed. This pins
 		// the upper `size <= maxDoc` boundary.
 		{"bson at max-length boundary", []byte{0x00, 0x00, 0x00, 0x01, 0x00}, FormatBSON},
+		// iq's typed YAML is block-style text with a {key,…,value} envelope, so it is
+		// content-sniffable without a .yaml extension; the document marker is optional.
+		{"typed yaml envelope", []byte("key: a\ntype: string\nvalue: hi\n"), FormatYAML},
+		{"typed yaml with document marker", []byte("---\nkey: a\ntype: string\nvalue: hi\n"), FormatYAML},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -225,6 +229,13 @@ func TestDetectFormat(t *testing.T) {
 	t.Run("whitespace only is undetectable", func(t *testing.T) {
 		p := filepath.Join(t.TempDir(), "ws")
 		require.NoError(t, os.WriteFile(p, []byte("   \n\t  "), 0o600))
+		_, err := detectFormat(p)
+		require.ErrorContains(t, err, "cannot detect")
+	})
+	t.Run("yaml mapping without the key+value envelope is undetectable", func(t *testing.T) {
+		// A plain YAML mapping is not an iq dump; only the {key,…,value} envelope is.
+		p := filepath.Join(t.TempDir(), "cfg")
+		require.NoError(t, os.WriteFile(p, []byte("foo: bar\nbaz: qux\n"), 0o600))
 		_, err := detectFormat(p)
 		require.ErrorContains(t, err, "cannot detect")
 	})
@@ -484,13 +495,45 @@ func TestDetectTypedArrayVsMongoArray(t *testing.T) {
 
 func TestYAMLFileByExtensionAndRoundTrip(t *testing.T) {
 	body := "key: a\ntype: string\nvalue: hi\n---\nkey: b\ntype: set\nvalue:\n    - x\n    - y\n"
-	// Detected as YAML by the .yaml extension (YAML is not content-sniffable).
+	// A .yaml extension forces YAML, covering a dump whose first record overflows the
+	// content-sniff window; content detection is exercised separately below.
 	st, err := Open(writeDump(t, "d.yaml", []byte(body), ""), numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, FormatYAML, st.format)
 	recs := collect(t, st)
 	require.Equal(t, query.Record{Key: "a", Type: "string", Value: "hi"}, recs["a"])
 	require.Equal(t, "set", recs["b"].Type)
+}
+
+func TestYAMLContentDetectedWithoutExtension(t *testing.T) {
+	// iq is YAML's only producer, so a typed dump is recognized by its {key,type,value}
+	// envelope even without a .yaml/.yml name — and still decodes end to end.
+	body := "key: a\ntype: string\nvalue: hi\n---\nkey: b\ntype: string\nvalue: yo\n"
+	st, err := Open(writeDump(t, "dump.dat", []byte(body), ""), numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	require.Equal(t, FormatYAML, st.format)
+	recs := collect(t, st)
+	require.Equal(t, "hi", recs["a"].Value)
+	require.Equal(t, "yo", recs["b"].Value)
+}
+
+func TestSupportedFormatsCatalogue(t *testing.T) {
+	seen := map[Format]bool{}
+	for _, fi := range SupportedFormats() {
+		require.False(t, seen[fi.Format], "duplicate catalogue entry %q", fi.Name())
+		seen[fi.Format] = true
+		require.NotEqual(t, "unknown", fi.Name())
+		require.NotEmpty(t, fi.Source)
+		got, err := ParseFormat(fi.Name())
+		require.NoError(t, err)
+		require.Equal(t, fi.Format, got, "catalogue name %q must round-trip through ParseFormat", fi.Name())
+	}
+	// Every decodable format is catalogued, so a newly added reader cannot be silently
+	// omitted from `iq driver ls -v`. The loop walks the contiguous Format constants
+	// until String() falls through to "unknown".
+	for f := FormatJSONL; f.String() != "unknown"; f++ {
+		require.True(t, seen[f], "format %q missing from SupportedFormats()", f)
+	}
 }
 
 func TestOpenReaderBufferedStdin(t *testing.T) {

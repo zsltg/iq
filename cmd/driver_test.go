@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -90,7 +91,7 @@ func TestDriverRegistryInvariants(t *testing.T) {
 }
 
 func TestDriverLsTable(t *testing.T) {
-	out, err := runCmd(t, newDriverCmd(), "ls")
+	out, err := runCmd(t, newDriverCmd(&config{}), "ls")
 	require.NoError(t, err)
 	for _, want := range []string{
 		"DRIVER", "DESCRIPTION", "SCHEMES", "VERSIONS", "DOC",
@@ -109,7 +110,7 @@ func TestDriverLsTable(t *testing.T) {
 }
 
 func TestDriverLsJSON(t *testing.T) {
-	out, err := runCmd(t, newDriverCmd(), "ls", "--json")
+	out, err := runCmd(t, newDriverCmd(&config{}), "ls", "--json")
 	require.NoError(t, err)
 
 	var rows []driverRow
@@ -149,4 +150,56 @@ func TestDriverLsJSON(t *testing.T) {
 	require.Equal(t, "OpenSearch search engine and document store", byName["opensearch"].Description)
 	require.Equal(t, "2.x, 3.x", byName["opensearch"].Versions)
 	require.Equal(t, "https://opensearch.org/docs/", byName["opensearch"].Doc)
+	require.Empty(t, byName["file"].Formats, "the dump-format catalogue is verbose-only")
+}
+
+func TestDriverLsVerbose(t *testing.T) {
+	out, err := runCmd(t, newDriverCmd(&config{verbose: true}), "ls")
+	require.NoError(t, err)
+	require.Contains(t, out, "file dump formats")
+	// An auto-detected format carries no marker; a forced one advertises ?format=.
+	require.NotContains(t, lineWith(t, out, "jsonl"), "?format=")
+	require.NotContains(t, lineWith(t, out, "yaml"), "?format=") // YAML now content-detects
+	require.Contains(t, lineWith(t, out, "cassandra-csv"), "?format=")
+	require.Contains(t, lineWith(t, out, "cassandra-csv"), "cqlsh COPY TO CSV")
+
+	// The default (non-verbose) listing stays a clean one-row-per-driver overview.
+	plain, err := runCmd(t, newDriverCmd(&config{}), "ls")
+	require.NoError(t, err)
+	require.NotContains(t, plain, "file dump formats")
+	require.NotContains(t, plain, "?format=")
+}
+
+func TestDriverLsVerboseJSON(t *testing.T) {
+	out, err := runCmd(t, newDriverCmd(&config{verbose: true}), "ls", "--json")
+	require.NoError(t, err)
+	var rows []driverRow
+	require.NoError(t, json.Unmarshal([]byte(out), &rows))
+	byName := map[string]driverRow{}
+	for _, r := range rows {
+		byName[r.Driver] = r
+	}
+	// Only the read-only file driver advertises formats; a live backend has none.
+	require.Empty(t, byName["redis"].Formats)
+	byFmt := map[string]driverFormatRow{}
+	for _, f := range byName["file"].Formats {
+		byFmt[f.Name] = f
+	}
+	require.Len(t, byFmt, 8)
+	require.True(t, byFmt["jsonl"].Auto)
+	require.True(t, byFmt["yaml"].Auto)
+	require.False(t, byFmt["cassandra-csv"].Auto)
+	require.Equal(t, "cqlsh COPY TO CSV", byFmt["cassandra-csv"].Source)
+}
+
+// lineWith returns the single output line containing sub, failing the test if none does.
+func lineWith(t *testing.T, out, sub string) string {
+	t.Helper()
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.Contains(ln, sub) {
+			return ln
+		}
+	}
+	t.Fatalf("no line contains %q in:\n%s", sub, out)
+	return ""
 }

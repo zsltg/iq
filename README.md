@@ -159,8 +159,9 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   on the exit status. Bounded by `--timeout`.
 - `iq group [<name>] [--clear]` — show, set, or clear the active **group**.
 - `iq driver ls` — list the backend drivers iq can dispatch to, each with its description, the URL
-  schemes that select it, and its upstream docs. `-j`/`--json` or `-y`/`--yaml` for machine-readable
-  output. The driver
+  schemes that select it, and its upstream docs. `-v` appends the file driver's readable dump
+  formats and which of them auto-detect versus need `?format=`. `-j`/`--json` or `-y`/`--yaml` for
+  machine-readable output. The driver
   name shown here is the same canonical name `iq ls -v`, `ping`, `inspect`, and `diff` report
   (`redis` covers both `redis://` and `rediss://`; `mongo` covers `mongodb://` and `mongodb+srv://`).
 
@@ -450,17 +451,30 @@ registered backends — the same canonical names `iq ls -v`, `ping`, `inspect`, 
 
 ```bash
 $ iq driver ls
-DRIVER         DESCRIPTION                                                     SCHEMES                                            VERSIONS       DOC
-mongo          MongoDB document store                                          mongodb, mongodb+srv                               4.2+           https://www.mongodb.com/docs/
-cassandra      Apache Cassandra wide-column store                              cassandra                                          3.11+          https://cassandra.apache.org/doc/
-dynamodb       Amazon DynamoDB key-value and document store                    dynamodb                                           AWS (managed)  https://docs.aws.amazon.com/dynamodb/
-hbase          Apache HBase wide-column store                                  hbase                                              1.0+           https://hbase.apache.org/book.html
-couchdb        Apache CouchDB document store                                   couchdb, couchdbs                                  2.x, 3.x       https://docs.couchdb.org/
-neo4j          Neo4j property graph store                                      neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc  5.x            https://neo4j.com/docs/
-elasticsearch  Elasticsearch search engine and document store                  elasticsearch, elasticsearch+s                     8.x            https://www.elastic.co/docs/
-opensearch     OpenSearch search engine and document store                     opensearch, opensearch+s                           2.x, 3.x       https://opensearch.org/docs/
-redis          Redis key-value store                                           redis, rediss                                      7.0+           https://redis.io/docs/
-file           Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON, DynamoDB/Cassandra/Neo4j-APOC JSON)  file
+DRIVER         DESCRIPTION                                     SCHEMES                                            VERSIONS       DOC
+mongo          MongoDB document store                          mongodb, mongodb+srv                               4.2+           https://www.mongodb.com/docs/
+cassandra      Apache Cassandra wide-column store              cassandra                                          3.11+          https://cassandra.apache.org/doc/
+dynamodb       Amazon DynamoDB key-value and document store    dynamodb                                           AWS (managed)  https://docs.aws.amazon.com/dynamodb/
+hbase          Apache HBase wide-column store                  hbase                                              1.0+           https://hbase.apache.org/book.html
+couchdb        Apache CouchDB document store                   couchdb, couchdbs                                  2.x, 3.x       https://docs.couchdb.org/
+neo4j          Neo4j property graph store                      neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc  5.x            https://neo4j.com/docs/
+elasticsearch  Elasticsearch search engine and document store  elasticsearch, elasticsearch+s                     8.x            https://www.elastic.co/docs/
+opensearch     OpenSearch search engine and document store     opensearch, opensearch+s                           2.x, 3.x       https://opensearch.org/docs/
+redis          Redis key-value store                           redis, rediss                                      7.0+           https://redis.io/docs/
+file           Local dump file, read-only                      file
+
+# -v appends the file driver's readable dump formats:
+$ iq driver ls -v
+… (driver rows as above) …
+file dump formats (auto-detected unless ?format= shown):
+  jsonl                    iq typed JSON Lines / array
+  yaml                     iq typed YAML
+  mongoexport              mongoexport Extended JSON
+  bson                     mongodump BSON
+  rdb                      Redis RDB snapshot
+  dynamodb-json  ?format=  DynamoDB S3 export / scan JSON
+  cassandra-csv  ?format=  cqlsh COPY TO CSV
+  neo4j-json     ?format=  Neo4j APOC JSON export
 ```
 
 Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sources) for the full flag).
@@ -1300,10 +1314,11 @@ iq '{t: .title}' --src books --insert kv --key '.t'   # reshape + re-key while c
 ```
 
 `--typed` serializes the records in the chosen format — `--jsonl` (default), `--jsona`, or
-`--yaml` — and **all three re-import** through a `file://` source or a piped `--insert`. YAML is not
-content-sniffable, so reading it back needs an explicit hint (`file:///dump.yaml?format=yaml`, or
-`--from-format yaml` for a piped restore); JSONL and JSON auto-detect. `--dry-run` reports the effect
-without writing; `--explain` prints the move plan without connecting.
+`--yaml` — and **all three re-import** through a `file://` source or a piped `--insert`,
+auto-detected from content by their typed `{key,…,value}` envelope. A huge first record can defeat
+the content sniff, so a `.yaml`/`.yml` name or an explicit `?format=` / `--from-format` remains
+available as an override. `--dry-run` reports the effect without writing; `--explain` prints the move
+plan without connecting.
 
 `iq data clear <target>…` empties a container (Mongo `deleteMany({})`, Redis `FLUSHDB`); `iq data
 drop <target>…` removes one (Mongo drops the collection). Redis has no droppable container — a DB

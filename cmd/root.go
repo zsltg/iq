@@ -334,7 +334,7 @@ func newRootCmd() (*cobra.Command, *config) {
 		newPingCmd(cfg),
 		newInspectCmd(cfg),
 		newDiffCmd(cfg),
-		newDriverCmd(),
+		newDriverCmd(cfg),
 		newVersionCmd(),
 	)
 	// Render --help flags in labeled sections (Source/Query/Output/Display/

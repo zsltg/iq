@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Format identifies how a dump file is decoded.
@@ -98,14 +100,45 @@ func ParseFormat(s string) (Format, error) {
 	}
 }
 
+// FormatInfo describes one dump format a file:// source can read, for `iq driver ls
+// -v`: the format, whether content detection recognizes it (else it must be forced
+// with ?format=/--from-format), and the tool or shape that produces it.
+type FormatInfo struct {
+	Format Format
+	Auto   bool
+	Source string
+}
+
+// Name is the format's canonical ?format= value.
+func (fi FormatInfo) Name() string { return fi.Format.String() }
+
+// SupportedFormats lists the dump formats a file:// source can read, in detection
+// order. It is the single source of truth behind `iq driver ls -v`, so a new reader
+// is advertised by adding one entry here. Auto tracks classify(): a format that
+// cannot be content-sniffed (it shares a lead byte with another, or is schemaless)
+// advertises ?format= instead.
+func SupportedFormats() []FormatInfo {
+	return []FormatInfo{
+		{FormatJSONL, true, "iq typed JSON Lines / array"},
+		{FormatYAML, true, "iq typed YAML"},
+		{FormatMongoexport, true, "mongoexport Extended JSON"},
+		{FormatBSON, true, "mongodump BSON"},
+		{FormatRDB, true, "Redis RDB snapshot"},
+		{FormatDynamoDBJSON, false, "DynamoDB S3 export / scan JSON"},
+		{FormatCassandraCSV, false, "cqlsh COPY TO CSV"},
+		{FormatNeo4jJSON, false, "Neo4j APOC JSON export"},
+	}
+}
+
 // rdbMagic is the five-byte signature every RDB file opens with.
 var rdbMagic = []byte("REDIS")
 
 // detectFormat sniffs a dump file's format from its leading bytes plus its
 // extension. Detection is reliable for the binary formats (RDB has a magic
-// signature; BSON a length-framed structure) and disambiguates the JSON-text family
-// by the first record's shape; YAML is not content-sniffable, so it relies on a
-// .yaml/.yml extension (or ?format=/--from-format). Any case can be forced.
+// signature; BSON a length-framed structure) and disambiguates the JSON-text and
+// YAML families by the first record's shape — iq's typed dumps carry a
+// {key,…,value} envelope. A .yaml/.yml extension still forces YAML for a dump whose
+// first record overflows the sniff window; any case can be forced with ?format=.
 func detectFormat(path string) (Format, error) {
 	f, err := os.Open(path) //nolint:gosec // user-supplied dump file, by design.
 	if err != nil {
@@ -121,7 +154,8 @@ func detectFormat(path string) (Format, error) {
 }
 
 // detectBytes sniffs the format of an in-memory dump buffer (piped stdin). It has no
-// filename, so it cannot fall back to an extension — YAML needs an explicit hint.
+// filename, so it cannot fall back to a .yaml/.yml extension; a typed YAML dump is
+// recognized by its {key,…,value} envelope instead.
 func detectBytes(data []byte) (Format, error) {
 	head := data
 	if len(head) > 512 {
@@ -148,6 +182,16 @@ func classify(head []byte, name string) (Format, error) {
 	}
 	if strings.HasSuffix(lname, ".bson") || looksLikeBSON(head) {
 		return FormatBSON, nil
+	}
+	// iq's typed YAML is block-style text (no leading '{'/'[' to route it into the
+	// JSON family) and iq is its only producer, so — as for JSONL — a first document
+	// carrying the {key,…,value} envelope identifies it.
+	if obj, ok := firstYAMLObject(trimmed); ok {
+		_, hasKey := obj["key"]
+		_, hasValue := obj["value"]
+		if hasKey && hasValue {
+			return FormatYAML, nil
+		}
 	}
 	return FormatUnknown, errors.New("cannot detect dump format; pass ?format= or --from-format (jsonl, json, yaml, mongoexport, bson, rdb)")
 }
@@ -182,6 +226,18 @@ func firstJSONObject(head []byte) (map[string]json.RawMessage, bool) {
 		return nil, false
 	}
 	return obj, true
+}
+
+// firstYAMLObject decodes the first document of head as a YAML mapping, so classify
+// can recognize iq's typed {key,type,value} YAML dump by the same key+value envelope
+// it uses for JSONL. A head truncated mid-document, or a first document that is not a
+// mapping, yields no object and is left for a .yaml/.yml extension or explicit ?format=.
+func firstYAMLObject(head []byte) (map[string]any, bool) {
+	var obj map[string]any
+	if err := yaml.NewDecoder(bytes.NewReader(head)).Decode(&obj); err != nil {
+		return nil, false
+	}
+	return obj, obj != nil
 }
 
 // looksLikeBSON reports whether head plausibly begins a BSON document: a 4-byte

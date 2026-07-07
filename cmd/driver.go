@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 
@@ -41,6 +42,10 @@ type driver struct {
 	// has no upstream server to suggest — so doc/versions may be empty for it and
 	// it is left out of the connection-scheme hint in error messages.
 	readOnly bool
+	// formats is the dump-format catalogue a read-only file driver advertises under
+	// `iq driver ls -v`; it keeps the summary description short while the format
+	// detail stays discoverable. Empty for a live backend, which reads one wire format.
+	formats []iqfile.FormatInfo
 	// addressable marks a backend whose sources take a dotted address suffix
 	// (handle.address) naming a sub-container — MongoDB's collection. A
 	// non-addressable backend (Redis, file) rejects an address at resolve time.
@@ -211,9 +216,10 @@ var drivers = []driver{
 	},
 	{
 		name:     "file",
-		desc:     "Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON, DynamoDB/Cassandra/Neo4j-APOC JSON)",
+		desc:     "Local dump file, read-only",
 		schemes:  []string{"file"},
 		readOnly: true,
+		formats:  iqfile.SupportedFormats(),
 		open: func(_ context.Context, cfg *config) (store, error) {
 			return iqfile.Open(cfg.url, cfg.decimalMode, cfg.fileCacheConfig())
 		},
@@ -291,30 +297,43 @@ func expectedSchemes() string {
 	}
 }
 
-// driverRow is the JSON shape of one driver in `iq driver ls --json`.
+// driverRow is the JSON shape of one driver in `iq driver ls --json`. Formats is the
+// verbose-only dump-format catalogue, present (with -v) only for a read-only file
+// driver and omitted otherwise.
 type driverRow struct {
-	Driver      string   `json:"driver"`
-	Description string   `json:"description"`
-	Schemes     []string `json:"schemes"`
-	Versions    string   `json:"versions"`
-	Doc         string   `json:"doc"`
+	Driver      string            `json:"driver"`
+	Description string            `json:"description"`
+	Schemes     []string          `json:"schemes"`
+	Versions    string            `json:"versions"`
+	Doc         string            `json:"doc"`
+	Formats     []driverFormatRow `json:"formats,omitempty"`
+}
+
+// driverFormatRow is the JSON shape of one dump format under `iq driver ls -v --json`.
+// Auto reports whether content detection recognizes it; when false it must be forced
+// with ?format=/--from-format.
+type driverFormatRow struct {
+	Name   string `json:"name"`
+	Auto   bool   `json:"auto"`
+	Source string `json:"source"`
 }
 
 // newDriverCmd builds `iq driver`: the backend-registry command group. Its `ls`
 // subcommand lists the drivers iq can dispatch to, mirroring sq's `driver ls`.
-func newDriverCmd() *cobra.Command {
+func newDriverCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
 		Use:     "driver",
 		Short:   "Inspect the backends iq can talk to",
 		Example: "  $ iq driver ls # list the backend drivers iq can dispatch to",
 	}
-	c.AddCommand(newDriverLsCmd())
+	c.AddCommand(newDriverLsCmd(cfg))
 	return c
 }
 
 // newDriverLsCmd builds `iq driver ls`: list the registered backend drivers, each
-// with its description, the URL schemes that select it, and its upstream docs.
-func newDriverLsCmd() *cobra.Command {
+// with its description, the URL schemes that select it, and its upstream docs. The
+// global -v/--verbose appends the read-only file driver's dump-format catalogue.
+func newDriverLsCmd(cfg *config) *cobra.Command {
 	var jsonOut, yamlOut bool
 	c := &cobra.Command{
 		Use:   "ls",
@@ -322,11 +341,13 @@ func newDriverLsCmd() *cobra.Command {
 		Long: "List the backend drivers iq can dispatch to. Each row shows the driver's stable\n" +
 			"name (as `iq ls` reports it), a description, the URL schemes that select it, the\n" +
 			"backend server versions the bundled client library supports, and a link to its\n" +
-			"upstream documentation. -j/--json or -y/--yaml emit machine-readable output.",
-		Example: "  $ iq driver ls",
-		Args:    cobra.NoArgs,
+			"upstream documentation. -v appends the file driver's readable dump formats (which\n" +
+			"auto-detect, which need ?format=). -j/--json or -y/--yaml emit machine-readable output.",
+		Example: "  $ iq driver ls    # list the backend drivers\n" +
+			"  $ iq driver ls -v # also list the file driver's dump formats",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return listDrivers(cmd.OutOrStdout(), jsonOut, yamlOut)
+			return listDrivers(cmd.OutOrStdout(), cfg.verbose, jsonOut, yamlOut)
 		},
 	}
 	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
@@ -335,19 +356,26 @@ func newDriverLsCmd() *cobra.Command {
 	return c
 }
 
-// listDrivers renders the driver registry as an aligned table (with a header
-// row) or, with jsonOut/yamlOut set, as machine-readable output.
-func listDrivers(out io.Writer, jsonOut, yamlOut bool) error {
+// listDrivers renders the driver registry as an aligned table (with a header row) or,
+// with jsonOut/yamlOut set, as machine-readable output. verbose appends each
+// format-bearing driver's dump-format catalogue (the file driver's readers).
+func listDrivers(out io.Writer, verbose, jsonOut, yamlOut bool) error {
 	if jsonOut || yamlOut {
 		rows := make([]driverRow, 0, len(drivers))
 		for _, d := range drivers {
-			rows = append(rows, driverRow{
+			row := driverRow{
 				Driver:      d.name,
 				Description: d.desc,
 				Schemes:     d.schemes,
 				Versions:    d.versions,
 				Doc:         d.doc,
-			})
+			}
+			if verbose {
+				for _, fi := range d.formats {
+					row.Formats = append(row.Formats, driverFormatRow{Name: fi.Name(), Auto: fi.Auto, Source: fi.Source})
+				}
+			}
+			rows = append(rows, row)
 		}
 		return writeStructured(out, rows, yamlOut)
 	}
@@ -365,6 +393,41 @@ func listDrivers(out io.Writer, jsonOut, yamlOut bool) error {
 			cell(strings.Join(d.schemes, ", ")),
 			cell(d.versions),
 			cell(d.doc),
+		})
+	}
+	if err := renderTable(out, rows); err != nil {
+		return err
+	}
+	if verbose {
+		for _, d := range drivers {
+			if err := writeDriverFormats(out, d); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// writeDriverFormats appends a driver's dump-format catalogue under `iq driver ls -v`:
+// a caption then an aligned FORMAT/marker/SOURCE block, rendered as its own table so
+// the main grid's column widths are untouched. A driver without formats writes nothing.
+func writeDriverFormats(out io.Writer, d driver) error {
+	if len(d.formats) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintf(out, "\n%s dump formats (auto-detected unless ?format= shown):\n", d.name); err != nil {
+		return err
+	}
+	rows := make([][]tableCell, 0, len(d.formats))
+	for _, fi := range d.formats {
+		mark := ""
+		if !fi.Auto {
+			mark = "?format="
+		}
+		rows = append(rows, []tableCell{
+			coloredCell("  "+fi.Name(), pal.change),
+			coloredCell(mark, pal.faint),
+			coloredCell(fi.Source, pal.faint),
 		})
 	}
 	return renderTable(out, rows)
