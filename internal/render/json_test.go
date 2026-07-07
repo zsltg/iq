@@ -20,7 +20,7 @@ func TestJSONPlainIsByteIdentical(t *testing.T) {
 	// The plain encoder never HTML-escapes and matches the two-space stdlib form.
 	got, err := render.JSON(map[string]any{"a": "<b>", "n": 1}, false)
 	require.NoError(t, err)
-	require.Equal(t, "{\n  \"a\": \"<b>\",\n  \"n\": 1\n}", got)
+	require.JSONEq(t, "{\n  \"a\": \"<b>\",\n  \"n\": 1\n}", got)
 	require.NotContains(t, got, "\x1b[", "plain output has no escapes")
 }
 

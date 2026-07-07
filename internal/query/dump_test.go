@@ -43,7 +43,7 @@ func TestJSONLSourcePaging(t *testing.T) {
 func TestJSONLSourceDecodesFloat(t *testing.T) {
 	got := drainSource(t, query.JSONLSource(strings.NewReader(`{"key":"k","type":"string","value":3.5}`), 10, false))
 	require.Len(t, got, 1)
-	require.Equal(t, 3.5, got[0].Value)
+	require.Equal(t, 3.5, got[0].Value) //nolint:testifylint // exact float+type intended: JSONL decodes 3.5 to float64.
 }
 
 func TestJSONLSourceLineNumberInError(t *testing.T) {

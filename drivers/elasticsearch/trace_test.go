@@ -19,7 +19,7 @@ func TestTraceTransport(t *testing.T) {
 	// A nil next transport must fall back to http.DefaultTransport, so the request
 	// still reaches the server and the method+path line is logged.
 	rt := &traceTransport{w: &buf, prefix: "es"}
-	req, err := http.NewRequest(http.MethodGet, srv.URL+"/books/_search", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+"/books/_search", nil)
 	require.NoError(t, err)
 
 	resp, err := rt.RoundTrip(req)

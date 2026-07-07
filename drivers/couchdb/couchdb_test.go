@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -205,5 +204,5 @@ func TestOpenBadServerFailsFast(t *testing.T) {
 	ctx := skipShort(t)
 	_, err := Open(ctx, "couchdb://127.0.0.1:1/", "iq", nil, numfmt.DecimalAuto)
 	require.Error(t, err)
-	require.True(t, strings.Contains(err.Error(), "connect couchdb"))
+	require.Contains(t, err.Error(), "connect couchdb")
 }

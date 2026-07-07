@@ -237,7 +237,7 @@ func (s *Store) pageScan(req *hrpc.Scan, fn func(batch map[string]any) error) er
 	page := make(map[string]any, s.pageSize)
 	for {
 		res, err := scanner.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -336,7 +336,7 @@ func (s *Store) execScan(ctx context.Context, args []string) (any, error) {
 	scanner := s.client.Scan(req)
 	for {
 		res, err := scanner.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -369,7 +369,7 @@ func (s *Store) execCount(ctx context.Context, args []string) (any, error) {
 	scanner := s.client.Scan(req)
 	for {
 		res, err := scanner.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

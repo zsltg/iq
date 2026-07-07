@@ -432,7 +432,7 @@ func TestListAndRemoveCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
 	require.Equal(t, p1, entries[0].DumpPath) // sorted by dump path.
-	require.Greater(t, entries[0].CacheSize, int64(0))
+	require.Positive(t, entries[0].CacheSize)
 
 	n, err := RemoveCache(dir, p1)
 	require.NoError(t, err)

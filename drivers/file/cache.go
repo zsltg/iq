@@ -160,7 +160,7 @@ func (s *Store) cacheSource() (query.RecordSource, bool) {
 // cacheFresh reports whether path is a cache file whose header still matches the
 // dump identity, format, and decimal mode. It opens and reads only the header.
 func (s *Store) cacheFresh(path string, m cacheMeta) bool {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: opens the user's dump cache file, by design.
 	if err != nil {
 		return false
 	}
@@ -179,7 +179,7 @@ func (s *Store) cacheFresh(path string, m cacheMeta) bool {
 // error, returns it wrapped — by the time records stream, the caller is committed
 // to the cache, so a mid-stream corruption is a real error, not a silent miss.
 func (s *Store) readCache(ctx context.Context, path string, m cacheMeta, fn func(batch []query.Record) error) error {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: opens the user's dump cache file, by design.
 	if err != nil {
 		return fmt.Errorf("open cache %q: %w", path, err)
 	}
@@ -339,7 +339,7 @@ func (w *cacheWriter) commit() bool {
 		return false
 	}
 	var trailer [trailerLen]byte
-	binary.LittleEndian.PutUint64(trailer[:], uint64(indexOffset))
+	binary.LittleEndian.PutUint64(trailer[:], uint64(indexOffset)) //nolint:gosec // G115: index offset is a non-negative file position.
 	if _, err := w.Write(trailer[:]); err != nil {
 		return false
 	}
@@ -423,7 +423,7 @@ func readTrailer(r io.ReaderAt, size int64) (int64, error) {
 	if _, err := r.ReadAt(trailer[:], size-trailerLen); err != nil {
 		return 0, fmt.Errorf("read trailer: %w", err)
 	}
-	off := int64(binary.LittleEndian.Uint64(trailer[:]))
+	off := int64(binary.LittleEndian.Uint64(trailer[:])) //nolint:gosec // G115: reinterpret stored offset; bounds-checked against size below.
 	if off < 0 || off > size-trailerLen {
 		return 0, fmt.Errorf("index offset %d out of range for size %d", off, size)
 	}
@@ -622,7 +622,7 @@ func RemoveCache(dir, dumpPath string) (int, error) {
 // headerOf reads a cache file's header, reporting false for any file that is not
 // a readable, current-version iq cache.
 func headerOf(path string) (cacheHeader, bool) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: opens the user's dump cache file, by design.
 	if err != nil {
 		return cacheHeader{}, false
 	}

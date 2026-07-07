@@ -99,7 +99,7 @@ func (c esFlavor) openPIT(ctx context.Context, index string) (string, error) {
 	var pr struct {
 		ID string `json:"id"`
 	}
-	res, perr := c.es.Perform(req)
+	res, perr := c.es.Perform(req) //nolint:bodyclose // decodeInto closes res.Body.
 	if err := decodeInto(res, perr, c.label(), "open point-in-time", &pr); err != nil {
 		return "", err
 	}
@@ -115,7 +115,7 @@ func (c esFlavor) closePIT(ctx context.Context, pitID string) {
 	body, _ := json.Marshal(map[string]string{"id": pitID})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodDelete, "/_pit", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	res, err := c.es.Perform(req)
+	res, err := c.es.Perform(req) //nolint:bodyclose // decodeInto closes res.Body.
 	_ = decodeInto(res, err, c.label(), "close point-in-time", nil)
 }
 
@@ -142,7 +142,7 @@ func (c osFlavor) openPIT(ctx context.Context, index string) (string, error) {
 	var pr struct {
 		PitID string `json:"pit_id"`
 	}
-	res, perr := c.os.Perform(req)
+	res, perr := c.os.Perform(req) //nolint:bodyclose // decodeInto closes res.Body.
 	if err := decodeInto(res, perr, c.label(), "open point-in-time", &pr); err != nil {
 		return "", err
 	}
@@ -158,14 +158,14 @@ func (c osFlavor) closePIT(ctx context.Context, pitID string) {
 	body, _ := json.Marshal(map[string]any{"pit_id": []string{pitID}})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodDelete, "/_search/point_in_time", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	res, err := c.os.Perform(req)
+	res, err := c.os.Perform(req) //nolint:bodyclose // decodeInto closes res.Body.
 	_ = decodeInto(res, err, c.label(), "close point-in-time", nil)
 }
 
 // request builds one JSON request against a relative path and performs it, decoding
 // the reply into out (nil discards the body). op names the operation for errors.
 func (s *Store) request(ctx context.Context, op, method, path string, body []byte, out any) error {
-	res, err := s.do(ctx, method, path, "application/json", body)
+	res, err := s.do(ctx, method, path, "application/json", body) //nolint:bodyclose // finish closes res.Body.
 	return s.finish(res, err, op, out)
 }
 

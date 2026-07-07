@@ -95,7 +95,7 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(p)
+	data, err := os.ReadFile(p) //nolint:gosec // G304: reads the user's config file at a resolved path, by design.
 	if errors.Is(err, fs.ErrNotExist) {
 		return &Config{Sources: map[string]Source{}}, nil
 	}

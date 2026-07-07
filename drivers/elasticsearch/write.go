@@ -45,7 +45,7 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 	var br struct {
 		Items []map[string]bulkItem `json:"items"`
 	}
-	res, err := s.do(ctx, http.MethodPost, "/"+s.index+"/_bulk?refresh=true", "application/x-ndjson", buf.Bytes())
+	res, err := s.do(ctx, http.MethodPost, "/"+s.index+"/_bulk?refresh=true", "application/x-ndjson", buf.Bytes()) //nolint:bodyclose // finish closes res.Body.
 	if err := s.finish(res, err, "bulk write", &br); err != nil {
 		return query.WriteStat{}, err
 	}

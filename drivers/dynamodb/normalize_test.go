@@ -70,7 +70,7 @@ func TestNumberValue(t *testing.T) {
 	require.Equal(t, 10, numberValue("10", numfmt.DecimalNumber)) // integers stay int in every mode
 	require.Equal(t, "1.5", numberValue("1.5", numfmt.DecimalAuto))
 	require.Equal(t, "1.5", numberValue("1.5", numfmt.DecimalString))
-	require.Equal(t, 1.5, numberValue("1.5", numfmt.DecimalNumber))
+	require.Equal(t, 1.5, numberValue("1.5", numfmt.DecimalNumber)) //nolint:testifylint // exact float+type intended: DecimalNumber must yield the float64 1.5.
 }
 
 func TestIsIntLiteral(t *testing.T) {

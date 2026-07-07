@@ -335,7 +335,7 @@ func newConfigEditCmd() *cobra.Command {
 			}
 			editor, args := resolveEditor()
 			args = append(args, p)
-			ed := exec.CommandContext(cmd.Context(), editor, args...)
+			ed := exec.CommandContext(cmd.Context(), editor, args...) //nolint:gosec // G204: launches the user's configured $EDITOR, by design.
 			ed.Stdin, ed.Stdout, ed.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
 			if err := ed.Run(); err != nil {
 				return fmt.Errorf("run editor %q: %w", editor, err)

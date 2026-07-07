@@ -180,7 +180,7 @@ func TestCopierPassesKeylessRecordToPutter(t *testing.T) {
 	stat, err := c.Copy(context.Background(), recordsSource([]query.Record{{Value: 1}}, 10), false)
 	require.NoError(t, err)
 	require.Equal(t, 1, stat.Written)
-	require.Equal(t, "", dst.batches[0][0].Key)
+	require.Empty(t, dst.batches[0][0].Key)
 }
 
 func TestCopierDefaultPageSize(t *testing.T) {

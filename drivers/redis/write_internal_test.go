@@ -140,7 +140,7 @@ func TestResolveType(t *testing.T) {
 func TestAsFloat(t *testing.T) {
 	f, err := asFloat(2)
 	require.NoError(t, err)
-	require.Equal(t, 2.0, f)
+	require.Equal(t, 2.0, f) //nolint:testifylint // exact equality intended: asFloat(2) must be exactly 2.0.
 	_, err = asFloat("nope")
 	require.Error(t, err)
 }

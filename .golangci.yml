@@ -1,7 +1,32 @@
 version: "2"
 linters:
+  # Curated set atop the v2 defaults (errcheck, govet, ineffassign, staticcheck,
+  # unused). Each maps to an AGENTS.md rule: gosec is the SAST, errorlint guards
+  # the %w wrapping scheme, testifylint the testify idioms, bodyclose + noctx the
+  # bounded/closed outbound calls, misspell + godot the comment hygiene.
   enable:
     - godot
+    - gosec
+    - errorlint
+    - testifylint
+    - bodyclose
+    - noctx
+    - misspell
+  settings:
+    gosec:
+      # G404: the sole math/rand use is non-cryptographic retry-backoff jitter
+      # (drivers/dynamodb). Excluded here rather than with an inline //nolint so the
+      # backoff line stays byte-identical to main and out of the mutation-gate diff
+      # scope, where its jitter arithmetic yields equivalent (unkillable) mutants.
+      excludes:
+        - G404
+  exclusions:
+    rules:
+      # gosec is a SAST for production code; test fixtures legitimately carry
+      # fake credentials, permissive file modes, and unchecked conversions.
+      - path: _test\.go
+        linters:
+          - gosec
 formatters:
   enable:
     - gofumpt

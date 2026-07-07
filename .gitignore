@@ -2,9 +2,9 @@
 /iq
 /dist/
 
-# Test and coverage output.
+# Test and coverage output (coverage.* anchored to root so scripts/coverage.sh is tracked).
 *.out
-coverage.*
+/coverage.*
 
 # Local env (the tracked template is .env.example).
 .env

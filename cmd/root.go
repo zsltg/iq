@@ -363,7 +363,7 @@ func validateErrorFormat(f string) error {
 // an error; the flag does not create directories. The error is wrapped so it
 // anchors at the CLI, not deep in os.
 func openOutputFile(path string) (*os.File, error) {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644) //nolint:gosec // G302: the --output file uses conventional 0644; the user names the path.
 	if err != nil {
 		return nil, fmt.Errorf("open output file %q: %w", path, err)
 	}

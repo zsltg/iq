@@ -181,7 +181,7 @@ func (s *Store) scanWith(ctx context.Context, filter bson.M, fn func(batch map[s
 	if s.collection == "" {
 		return errNoCollection
 	}
-	opts := options.Find().SetBatchSize(int32(s.pageSize))
+	opts := options.Find().SetBatchSize(int32(s.pageSize)) //nolint:gosec // G115: pageSize is the small compile-time scanBatch constant.
 	cur, err := s.db.Collection(s.collection).Find(ctx, filter, opts)
 	if err != nil {
 		return fmt.Errorf("mongodb find: %w", err)

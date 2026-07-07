@@ -10,10 +10,15 @@ Load-bearing shape only; no framework chosen yet, README carries specifics once 
 Standard Go toolchain; README is the full catalogue once it exists.
 - Build: `go build ./...`.
 - Test, scoped to your diff by default: `go test ./<pkg>/...`; full run `go test ./...`; skip container-backed integration tests with `go test -short ./...`; 100% pass.
-- Vet and lint: `go vet ./...`, `golangci-lint run`; fix every reported issue before committing, do not wait to be asked; the config enables `godot` (comments end with a period) and `unused`, among others.
+- Vet and lint: `go vet ./...`, `golangci-lint run`; fix every reported issue before committing, do not wait to be asked; atop the v2 defaults (`staticcheck`, `unused`, among others) the config enables `godot` (comments end with a period), `gosec` (the Go SAST, excluded from `_test.go` fixtures), `errorlint`, `testifylint`, `bodyclose`, `noctx`, and `misspell`.
 - Format, canonical and deterministic, run before lint and commit: `gofumpt -w .` (stricter gofmt superset) then `goimports -w .` for import grouping.
-- Vulnerabilities, before adding or upgrading a dependency: `govulncheck ./...`.
-- Mutation gate: `scripts/mutation-gate.sh` (needs `gremlins`: `go install github.com/go-gremlins/gremlins/cmd/gremlins@latest`); it wraps gremlins to fail on any surviving or timed-out mutant because gremlins v0.6.0 reports but does not exit-code-enforce, running serially with a wide timeout; by default scopes to the branch diff against `main` (`gremlins --diff`) so a change is gated only on lines it touched — override the base with `IQ_MUTATION_BASE` (empty for a full scan) or widen with a package-path argument; run with the integration services up so backend adapters are covered.
+- Vulnerabilities and supply chain: `govulncheck ./...` before adding or upgrading a dependency; the full sweep `make security` (`scripts/security.sh`) adds `osv-scanner`, `gitleaks` secret-scanning over the tree and history, and an `syft` SBOM written to `dist/`; needs the network.
+- Mutation gate: `scripts/mutation-gate.sh` (needs `gremlins`: `go install github.com/go-gremlins/gremlins/cmd/gremlins@latest`); it wraps gremlins to fail on any surviving or timed-out mutant because gremlins v0.6.0 reports but does not exit-code-enforce, running serially with a wide timeout; by default scopes to the branch diff against `main` via the merge-base (`gremlins --diff`), so it works from a linked worktree and tolerates a drifted local `main`; a change is gated only on lines it touched — override the base with `IQ_MUTATION_BASE` (empty for a full scan) or pass a package path for a full scan of that package (gremlins can't combine a path with `--diff`, it finds zero mutants); `IQ_MUTATION_DRYRUN=1` previews the scope; run with the integration services up so backend adapters are covered.
+- Aggregate gate: `make check` (`scripts/check.sh`) is the fast offline gate — format, `go vet`, `go build ./...`, lint, dead code, and `go test -short` with a coverage report; `make ci` runs check, cover, and security together.
+- Coverage: `make cover` (`scripts/coverage.sh`) runs the full suite and fails below the floor (`IQ_COVER_MIN`, default 80); `IQ_COVER_SHORT=1` for a report-only run; needs the integration services up, since `-short` understates the drivers.
+- End-to-end: `make e2e` builds the binary and drives it black-box through `os/exec` (package `e2e`, skips under `-short`).
+- Dead code: `deadcode -test ./...` (whole-program), wired into `make check`.
+- Toolchain: `make tools-dev` installs the quality and security tools (gremlins, deadcode, govulncheck, osv-scanner, gitleaks, syft) into GOPATH/bin.
 - Release: `make release` (`scripts/release.sh`, needs `svu` and `git-chglog`: `make tools`); computes the next semver from Conventional Commits, regenerates `CHANGELOG.md`, commits, and tags on clean `main`; never pushes; preview with `bash scripts/release.sh --dry-run`; version metadata is embedded by `make build` via ldflags.
 ## Coding Conventions
 Boring, linear, readable code.
@@ -26,7 +31,7 @@ Boring, linear, readable code.
 - Wrap stdlib and third-party errors at the point they enter our code; package-level sentinels stay `errors.New` for `errors.Is`/`errors.As` and get wrapped with context where they are returned; when call-site stack traces become worth it, adopt a tracing error library (e.g. github.com/cockroachdb/errors) rather than scattering stackless errors.
 - Bound every outbound call: pass a context with an explicit timeout or deadline, never an infinite wait; bound retries with backoff and jitter; retry only idempotent operations, never validation or permanent failures.
 - Stream large results: paginate or stream result sets rather than loading whole into memory; do not hold a connection across a slow call; release every resource on success and failure paths.
-- No dead code: delete unused files, exports and dependencies; `go vet`, `staticcheck` and `deadcode` catch what review misses, run before merge.
+- No dead code: delete unused files, exports and dependencies; `go vet`, `staticcheck` and `deadcode` catch what review misses — `deadcode` runs in `make check`.
 - Make impossible states unrepresentable: closed types over sentinel strings or parallel nullable fields; one source of truth per fact.
 - Tests table-driven and flat: one behaviour per case, a `t.Run` subtest per row, arrange-act-assert, no factories or shared mutable fixtures; keep functions pure and isolatable.
 - Prefer testify assertions with `require` (fails fast, the default) over `assert` (continues); use `assert` only to report several independent failures in one run.
@@ -34,7 +39,7 @@ Boring, linear, readable code.
 - Simplest mechanism that fits: no plugin frameworks, code generation or heavy patterns unless asked.
 - Resolve uncertainty deliberately: costly to reverse and unclear, ask; cheap, proceed on the most reasonable reading and record the assumption; unsure it works, run a small experiment and report.
 - Push back when it matters: surface real risks and deviations, skip style nits.
-- Definition of Done: scoped tests, `go vet`, `golangci-lint` clean, gofumpt and goimports clean, mutation gate green (zero surviving mutants on covered code), edge cases, updated docs, honest closeout of what was skipped, assumed or left.
+- Definition of Done: scoped tests, `make check` clean (format, vet, build, lint, dead code), coverage floor met (`make cover`), security sweep clean (`make security`), `make e2e` passing, mutation gate green (zero surviving mutants on covered code), edge cases, updated docs, honest closeout of what was skipped, assumed or left.
 ## Docs stay current
 - README Common commands is the full catalogue; update it in the same change that adds or alters a developer-facing command, dependency or environment variable; environment variables also update `.env.example`.
 - A change to the system's shape (a new datastore target, a new delivery surface, a changed connection contract) updates the README Architecture section in the same change.
@@ -57,7 +62,7 @@ Always:
 - Trunk-based: `main` always buildable; short-lived branches, one atomic task each, prefixed `feat/`, `fix/`, `chore/`, `test/`; no unrelated changes bundled.
 - Never work on `main` unless explicitly asked; start every task in its own git worktree branched from `origin/main`; never switch branches in a shared checkout; merge to `main` fast-forward-only, never paper over a conflict.
 - Conventional Commits: `<type>(<scope>): <description>`, lowercase imperative; types feat, fix, docs, style, refactor, perf, test, build, ci, chore; agent-authored commits end with a `Co-Authored-By:` trailer.
-- Pre-merge: scoped tests, `go vet`, `golangci-lint run`, gofumpt and goimports clean, `scripts/mutation-gate.sh` green; 100% pass.
+- Pre-merge: `make check` clean, `make cover` above floor, `make security` clean, `make e2e` passing, `scripts/mutation-gate.sh` green; 100% pass.
 ## Guidelines
 Distilled book files live in `.agents/books/`, referenced below by name; adapted from ciembor/agent-rules-books (MIT), see `.agents/books/LICENSE`.
 

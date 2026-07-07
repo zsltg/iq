@@ -32,7 +32,7 @@ func TestParseRedisInfo(t *testing.T) {
 
 func TestMongoInspectDoc(t *testing.T) {
 	require.Equal(t, `{"dbStats":1}`, mongoInspectDoc("dbStats", ""))
-	require.Equal(t, `{"collStats":"books"}`, mongoInspectDoc("collStats", "books"))
+	require.JSONEq(t, `{"collStats":"books"}`, mongoInspectDoc("collStats", "books"))
 }
 
 func TestIsMongoInspectCmd(t *testing.T) {

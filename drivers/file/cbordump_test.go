@@ -110,9 +110,9 @@ func TestNarrowInts(t *testing.T) {
 	require.Equal(t, map[string]any{"a": int(1), "b": []any{int(2)}},
 		narrowInts(map[string]any{"a": uint64(1), "b": []any{int64(2)}}))
 	// A uint64 beyond int degrades to float64 rather than wrapping negative.
-	require.Equal(t, float64(math.MaxUint64), narrowInts(uint64(math.MaxUint64)))
+	require.Equal(t, float64(math.MaxUint64), narrowInts(uint64(math.MaxUint64))) //nolint:testifylint // exact float intended: a uint64 past int must degrade to this float64.
 	// Non-integers pass through untouched.
 	require.Equal(t, "s", narrowInts("s"))
-	require.Equal(t, float64(1.5), narrowInts(float64(1.5)))
+	require.Equal(t, float64(1.5), narrowInts(float64(1.5))) //nolint:testifylint // exact float+type intended: a non-integer passes through untouched.
 	require.Nil(t, narrowInts(nil))
 }

@@ -31,7 +31,7 @@ func newBloom(n int) []byte {
 // bloomAdd records key in filter. filter must be non-empty; its bit length is
 // len(filter)*8, so add and test agree by reading that length back off the bytes.
 func bloomAdd(filter []byte, key string) {
-	m := uint32(len(filter) * 8)
+	m := uint32(len(filter) * 8) //nolint:gosec // G115: a page's bloom filter is a few KB, so len*8 fits uint32.
 	h1, h2 := bloomHashes(key)
 	for i := uint32(0); i < bloomHashCount; i++ {
 		pos := (h1 + i*h2) % m
@@ -47,7 +47,7 @@ func bloomHas(filter []byte, key string) bool {
 	if len(filter) == 0 {
 		return false
 	}
-	m := uint32(len(filter) * 8)
+	m := uint32(len(filter) * 8) //nolint:gosec // G115: a page's bloom filter is a few KB, so len*8 fits uint32.
 	h1, h2 := bloomHashes(key)
 	for i := uint32(0); i < bloomHashCount; i++ {
 		pos := (h1 + i*h2) % m
@@ -71,7 +71,7 @@ func bloomHashes(key string) (uint32, uint32) {
 		h ^= uint64(key[i])
 		h *= prime64
 	}
-	h1 := uint32(h)
+	h1 := uint32(h) //nolint:gosec // G115: deliberate low-32-bit split of a 64-bit hash (Kirsch-Mitzenmacher).
 	h2 := uint32(h >> 32)
 	if h2 == 0 {
 		h2 = 1

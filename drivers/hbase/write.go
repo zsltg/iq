@@ -2,6 +2,7 @@ package hbase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -136,7 +137,7 @@ func (s *Store) Clear(ctx context.Context) error {
 	scanner := s.client.Scan(req)
 	for {
 		res, err := scanner.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

@@ -468,11 +468,11 @@ func TestInspectTableIncludesIndexes(t *testing.T) {
 
 func TestTableOf(t *testing.T) {
 	require.Equal(t, "books", tableOf(&awsdynamodb.ScanInput{TableName: aws.String("books")}))
-	require.Equal(t, "", tableOf(&awsdynamodb.ScanInput{}))       // nil TableName pointer
-	require.Equal(t, "", tableOf(&awsdynamodb.ListTablesInput{})) // no TableName field
-	require.Equal(t, "", tableOf((*awsdynamodb.ScanInput)(nil)))  // nil pointer
-	require.Equal(t, "", tableOf("not-a-struct"))                 // non-struct
-	require.Equal(t, "", tableOf(42))                             // non-pointer, non-struct
+	require.Empty(t, tableOf(&awsdynamodb.ScanInput{}))       // nil TableName pointer
+	require.Empty(t, tableOf(&awsdynamodb.ListTablesInput{})) // no TableName field
+	require.Empty(t, tableOf((*awsdynamodb.ScanInput)(nil)))  // nil pointer
+	require.Empty(t, tableOf("not-a-struct"))                 // non-struct
+	require.Empty(t, tableOf(42))                             // non-pointer, non-struct
 }
 
 func TestFormatRawFallback(t *testing.T) {
