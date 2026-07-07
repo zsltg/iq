@@ -47,22 +47,3 @@ func TestFormatRaw(t *testing.T) {
 	require.Contains(t, out, `"a"`)
 	require.Contains(t, out, "1")
 }
-
-func TestConvertNumber(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		mode numfmt.DecimalMode
-		want any
-	}{
-		{name: "small int", in: "5", mode: numfmt.DecimalAuto, want: 5},
-		{name: "fractional auto is float", in: "19.99", mode: numfmt.DecimalAuto, want: 19.99},
-		{name: "fractional string mode is exact literal", in: "19.99", mode: numfmt.DecimalString, want: "19.99"},
-		{name: "exponent auto is float", in: "1e3", mode: numfmt.DecimalAuto, want: 1000.0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, convertNumber(json.Number(tt.in), tt.mode))
-		})
-	}
-}

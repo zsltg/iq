@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"sort"
 	"strings"
 
@@ -246,52 +245,7 @@ func decodeJSON(s string, mode numfmt.DecimalMode) (any, error) {
 	if err := dec.Decode(&v); err != nil {
 		return nil, fmt.Errorf("decode redis json: %w", err)
 	}
-	return convertNumbers(v, mode), nil
-}
-
-// convertNumbers walks a decoded document, converting every json.Number to its
-// precision-aware Go form and leaving other values untouched, recursing into
-// objects and arrays.
-func convertNumbers(v any, mode numfmt.DecimalMode) any {
-	switch t := v.(type) {
-	case json.Number:
-		return convertNumber(t, mode)
-	case map[string]any:
-		for k, e := range t {
-			t[k] = convertNumbers(e, mode)
-		}
-		return t
-	case []any:
-		for i, e := range t {
-			t[i] = convertNumbers(e, mode)
-		}
-		return t
-	default:
-		return t
-	}
-}
-
-// convertNumber resolves one JSON number token. An integer (no '.', 'e', or 'E')
-// is always exact: an int when it fits, else a *big.Int — gojq does exact
-// arithmetic on both, so integers are never lossy regardless of the mode. A
-// fractional number is a float64 in auto and number mode, or its exact literal
-// string in string mode.
-func convertNumber(n json.Number, mode numfmt.DecimalMode) any {
-	s := n.String()
-	if !strings.ContainsAny(s, ".eE") {
-		if i, err := n.Int64(); err == nil && int64(int(i)) == i {
-			return int(i)
-		}
-		if bi, ok := new(big.Int).SetString(s, 10); ok {
-			return bi
-		}
-		return s
-	}
-	if mode == numfmt.DecimalString {
-		return s
-	}
-	f, _ := n.Float64()
-	return f
+	return numfmt.ConvertNumbers(v, mode), nil
 }
 
 // ScanBatches walks the keyspace with a cursor — never blocking the server the

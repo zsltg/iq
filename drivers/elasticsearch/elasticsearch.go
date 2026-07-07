@@ -363,7 +363,7 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if err := dec.Decode(&reply); err != nil {
 		return nil, fmt.Errorf("%s search: decode response: %w", s.client.label(), err)
 	}
-	return convertNumbers(reply, s.decimal), nil
+	return numfmt.ConvertNumbers(reply, s.decimal), nil
 }
 
 // FormatRaw renders a raw _search reply as indented JSON, the natural form for a
