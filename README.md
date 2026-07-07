@@ -1575,7 +1575,8 @@ make cover                # full suite + coverage floor (IQ_COVER_MIN, default 8
 make security             # supply-chain + secrets sweep (govulncheck, osv-scanner, gitleaks) + SBOMs to dist/
 make sbom                 # write SPDX + CycloneDX SBOMs of the module to dist/
 make e2e                  # black-box smoke tests that build and drive the iq binary
-make ci                   # full pre-merge gate: check + cover + security (needs Docker + network)
+make mutation             # mutation gate over the branch diff vs main (part of make ci)
+make ci                   # full pre-merge gate: check + cover + security + mutation (needs Docker + network)
 make tools                # install release tools (svu, git-chglog) into GOPATH/bin
 make tools-dev            # install the quality/security toolchain (gremlins, deadcode, govulncheck, osv-scanner, gitleaks, syft)
 make version              # print the version the next release would take
@@ -1614,9 +1615,11 @@ offline pre-commit gate (format, `go vet`, `go build`, `golangci-lint`, dead cod
 container-backed suite and enforces a coverage floor (`IQ_COVER_MIN`, default 80;
 `IQ_COVER_SHORT=1` for a fast report-only run). `make security` sweeps dependencies and secrets
 (`govulncheck`, `osv-scanner`, `gitleaks`) and writes SBOMs to `dist/`; gosec runs as the Go SAST
-inside `golangci-lint run`. `bash scripts/mutation-gate.sh` is the mutation gate. `make ci` runs
-check, cover, and security together — the pre-merge gate, mutation aside. Install the toolchain
-once with `make tools-dev`.
+inside `golangci-lint run`. `bash scripts/mutation-gate.sh` (also `make mutation`) is the mutation
+gate. `make ci` runs check, cover, security, and the mutation gate together — the full pre-merge
+gate. Because gremlins reruns the suite per mutant, `make ci` is the slowest target; start a shared
+stack (`docker compose up -d --wait`) first so the containers are reused. Install the toolchain once
+with `make tools-dev`.
 
 ## Comparison
 

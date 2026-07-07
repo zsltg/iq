@@ -14,28 +14,39 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 profile=coverage.out
 min="${IQ_COVER_MIN-80}"
 
+# -coverpkg=./... instruments every package for every test binary, so coverage is
+# credited across package boundaries and a package with no _test.go of its own
+# still counts toward the denominator (rather than being silently excluded). This
+# makes the floor measure the whole module, not each package against its own tests.
 if [[ "${IQ_COVER_SHORT-}" == "1" ]]; then
   echo "coverage: -short (report only; understates container-backed drivers)"
-  go test -short -covermode=atomic -coverprofile="$profile" ./... || exit 1
+  go test -short -covermode=atomic -coverpkg=./... -coverprofile="$profile" ./... || exit 1
   gate=0
 else
   echo "coverage: full suite (ephemeral containers unless IQ_*_URL is set)"
-  go test -covermode=atomic -coverprofile="$profile" ./... || exit 1
+  go test -covermode=atomic -coverpkg=./... -coverprofile="$profile" ./... || exit 1
   gate=1
 fi
 
 # Per-package statement coverage, computed from the profile so the suite runs once.
-# Profile lines are "path:start.col,end.col numStatements executionCount".
+# Profile lines are "path:start.col,end.col numStatements executionCount". Under
+# -coverpkg every block appears once per instrumenting test binary, so dedupe by
+# block, marking it covered if any binary executed it, before aggregating per
+# package — otherwise duplicate lines inflate the denominators.
 echo
 echo "== per-package =="
 awk '
   NR > 1 {
-    path = $1; sub(/:[0-9]+\.[0-9]+,[0-9]+\.[0-9]+$/, "", path)
-    pkg = path; sub(/\/[^/]+$/, "", pkg); sub("github.com/zsltg/iq/", "", pkg)
-    total[pkg] += $2
-    if ($3 + 0 > 0) covered[pkg] += $2
+    nstmt[$1] = $2
+    if ($3 + 0 > 0) hit[$1] = 1
   }
   END {
+    for (b in nstmt) {
+      path = b; sub(/:[0-9]+\.[0-9]+,[0-9]+\.[0-9]+$/, "", path)
+      pkg = path; sub(/\/[^/]+$/, "", pkg); sub("github.com/zsltg/iq/", "", pkg)
+      total[pkg] += nstmt[b]
+      if (b in hit) covered[pkg] += nstmt[b]
+    }
     for (p in total) printf "%6.1f%%  %s\n", (total[p] ? 100 * covered[p] / total[p] : 0), p
   }
 ' "$profile" | sort -n

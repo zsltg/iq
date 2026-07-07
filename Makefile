@@ -11,7 +11,7 @@ LDFLAGS := -X github.com/zsltg/iq/cmd.version=$(VERSION) \
            -X github.com/zsltg/iq/cmd.commit=$(COMMIT) \
            -X github.com/zsltg/iq/cmd.date=$(DATE)
 
-.PHONY: build version changelog release tools tools-dev check cover security sbom e2e ci
+.PHONY: build version changelog release tools tools-dev check cover security sbom e2e mutation ci
 
 # build compiles the binary with version metadata embedded.
 build:
@@ -71,10 +71,19 @@ sbom:
 e2e:
 	go test ./e2e/
 
-# ci is the full pre-merge gate: fast checks, then the covered full suite (which
-# includes e2e), then the security sweep. Needs Docker and network. The mutation
-# gate (scripts/mutation-gate.sh) is a separate, slower step.
+# mutation runs the mutation gate over the branch diff against main (override with
+# IQ_MUTATION_BASE; empty for a full-module scan, or pass a package path for a full
+# scan of it). Zero survivors and zero timeouts required. Needs gremlins
+# (make tools-dev) and the integration services up (Docker, or IQ_*_URL).
+mutation:
+	bash scripts/mutation-gate.sh
+
+# ci is the full pre-merge gate: fast checks, the covered full suite (which
+# includes e2e), the security sweep, then the mutation gate over the branch diff.
+# Needs Docker and network. gremlins reruns the suite per mutant, so this is the
+# slowest target — start a shared stack (docker compose up -d --wait) first.
 ci:
 	$(MAKE) check
 	$(MAKE) cover
 	$(MAKE) security
+	$(MAKE) mutation
