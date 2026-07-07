@@ -165,12 +165,39 @@ func causeChain(err error) []string {
 }
 
 // urlLike matches a scheme://... substring so redactMessage can scrub a
-// connection URL embedded in a wrapped driver error before it is printed.
+// connection URL embedded in a wrapped driver error before it is printed. The
+// stop set excludes whitespace and quotes; trailing prose punctuation the class
+// still admits (a URL inside parentheses or before a comma) is split off in
+// redactMessage before parsing.
 var urlLike = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"']+`)
 
+// trailingPunct is the prose punctuation a URL match may pick up when it is
+// embedded in a sentence; redactMessage trims it before url.Parse.
+const trailingPunct = ".,;:!?)]}>"
+
 // redactMessage redacts any connection-URL substring in msg, so --error.stack
-// (which can surface a raw driver error) never prints a credential. It is
-// defense in depth on top of the boundary redaction already applied to logs.
+// and --error.format json (which surface the whole wrapped cause chain, raw leaf
+// driver errors included) never print a credential.
+//
+// This is the top-level backstop of a two-layer scheme. The first layer,
+// redactErr, replaces the exact URL iq dialed wherever a driver echoes it, at
+// each command boundary; this layer catches any scheme://… URL by shape, even
+// one iq did not itself construct. The only secret iq handles is the connection
+// password, which always rides in the URL userinfo (scheme://user:pass@host) —
+// the keyring form is spliced back into that same shape before connecting — so
+// url.Redacted, which masks the userinfo password, covers the entire secret
+// surface. A parse failure is redacted to a placeholder rather than passed
+// through, so the fallback is always safe (it over-redacts, never leaks).
+// Query parameters are deliberately left intact: they carry no secret today
+// (neo4j's ?key= is a property name, not a credential), so a source that ever
+// puts a secret outside the userinfo must extend redactURL rather than rely here.
 func redactMessage(msg string) string {
-	return urlLike.ReplaceAllStringFunc(msg, redactURL)
+	return urlLike.ReplaceAllStringFunc(msg, func(m string) string {
+		// Split off trailing prose punctuation so url.Parse sees a clean URL and
+		// masks its password, instead of failing on the stray byte and collapsing
+		// the whole span to "(unparseable url)". The password is masked either way;
+		// this only keeps the surrounding message readable.
+		u := strings.TrimRight(m, trailingPunct)
+		return redactURL(u) + m[len(u):]
+	})
 }

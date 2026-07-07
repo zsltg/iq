@@ -87,6 +87,47 @@ func TestRenderErrorRedactsCredentials(t *testing.T) {
 	require.Contains(t, out, "xxxxx")
 }
 
+func TestRedactMessage(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			"bare url masks the password",
+			"dial redis://user:hunter2@host:6379 failed",
+			"dial redis://user:xxxxx@host:6379 failed",
+		},
+		{
+			"trailing comma is kept, password still masked",
+			"contacted redis://user:hunter2@host:6379, giving up",
+			"contacted redis://user:xxxxx@host:6379, giving up",
+		},
+		{
+			"url in parentheses redacts cleanly",
+			"error at (mongodb://user:hunter2@host:27017/db).",
+			"error at (mongodb://user:xxxxx@host:27017/db).",
+		},
+		{
+			"query params are preserved, password masked",
+			"neo4j://neo4j:hunter2@host:7687/?key=id&label=Person timed out",
+			"neo4j://neo4j:xxxxx@host:7687/?key=id&label=Person timed out",
+		},
+		{
+			"a message with no url is unchanged",
+			"authentication failed for user admin",
+			"authentication failed for user admin",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := redactMessage(tt.in)
+			require.Equal(t, tt.want, got)
+			require.NotContains(t, got, "hunter2")
+		})
+	}
+}
+
 func TestAsSyntaxError(t *testing.T) {
 	t.Run("enriches a parse error", func(t *testing.T) {
 		err := asSyntaxError("a |", parseErr(t, "a |"))
