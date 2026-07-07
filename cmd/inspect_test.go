@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +22,45 @@ func TestInspectFileSourceErrors(t *testing.T) {
 	root, _ := newRootCmd()
 	_, err := runCmd(t, root, "--src", "snap", "inspect")
 	require.ErrorContains(t, err, "live server metadata")
+}
+
+// fakeInspectStore is a minimal store for exercising renderInspectResults without
+// a backend: the helper only calls FormatRaw, so the read/write ports are inert.
+type fakeInspectStore struct{}
+
+func (fakeInspectStore) Get(context.Context, []string) (map[string]any, error) { return nil, nil }
+
+func (fakeInspectStore) ScanBatches(context.Context, func(map[string]any) error) error { return nil }
+
+func (fakeInspectStore) Query(context.Context, []string) (any, error) { return nil, nil }
+func (fakeInspectStore) Close() error                                 { return nil }
+func (fakeInspectStore) FormatRaw(v any, _ bool) string               { return fmt.Sprintf("<%v>", v) }
+
+func TestRenderInspectResults(t *testing.T) {
+	results := []inspectResult{{sub: "alpha", value: "A"}, {sub: "beta", value: "B"}}
+	src := iqconfig.Source{URL: "redis://localhost:6379/0"}
+
+	t.Run("text writes a header then each result in order", func(t *testing.T) {
+		var buf bytes.Buffer
+		cfg := &config{source: src, handle: "cache"}
+		require.NoError(t, renderInspectResults(&buf, fakeInspectStore{}, cfg, results, false, false))
+		out := buf.String()
+		require.Contains(t, out, "# alpha")
+		require.Contains(t, out, "<A>")
+		require.Contains(t, out, "# beta")
+		require.Contains(t, out, "<B>")
+		require.Less(t, strings.Index(out, "# alpha"), strings.Index(out, "# beta"))
+	})
+
+	t.Run("yaml emits a name-keyed structure without the header", func(t *testing.T) {
+		var buf bytes.Buffer
+		cfg := &config{source: src, handle: "cache"}
+		require.NoError(t, renderInspectResults(&buf, fakeInspectStore{}, cfg, results, false, true))
+		out := buf.String()
+		require.Contains(t, out, "alpha")
+		require.Contains(t, out, "beta")
+		require.NotContains(t, out, "# alpha") // the text header is not written in structured output
+	})
 }
 
 func TestParseRedisInfo(t *testing.T) {
