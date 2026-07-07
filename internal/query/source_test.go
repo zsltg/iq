@@ -42,6 +42,12 @@ func TestUsesSource(t *testing.T) {
 		{`.foo | source("b")`, true},
 		{`.foo | .bar`, false},
 		{`keys`, false},
+		// A user-defined source is the user's own function, not the cross-source
+		// builtin, so it is not routed to the cross engine.
+		{`def source: .x; source`, false},
+		// An unknown non-source function is not cross-source; the primary path
+		// surfaces its compile error unchanged.
+		{`.foo | nope("x")`, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.filter, func(t *testing.T) {

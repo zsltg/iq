@@ -3,24 +3,35 @@ package query
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/itchyny/gojq"
 )
 
 // UsesSource reports whether filter calls the in-filter source() function. Such
 // a filter reads entirely through named sources and runs over a null input, so
-// the caller routes it to a CrossEngine instead of opening a primary store. It
-// asks gojq's compiler, which flags source() as an undefined function when it is
-// not provided; a filter that does not parse returns the parse error.
+// the caller routes it to a CrossEngine instead of opening a primary store.
+//
+// It decides by compiling twice rather than matching gojq's error text: a filter
+// that compiles as-is cannot reference source() (unbound here), so it is not
+// cross-source; one that fails as-is but compiles once source() is bound does. A
+// compile failure from any other cause (an unknown function, bad arity) is left
+// to the primary path to surface unchanged, exactly as before — only a parse
+// error is returned here.
 func UsesSource(filter string) (bool, error) {
 	q, err := gojq.Parse(filter)
 	if err != nil {
 		return false, fmt.Errorf("parse expression: %w", err)
 	}
-	_, err = gojq.Compile(q)
-	return err != nil && strings.Contains(err.Error(), "not defined: source/"), nil
+	if _, err := gojq.Compile(q); err == nil {
+		return false, nil
+	}
+	_, err = gojq.Compile(q, gojq.WithIterFunction("source", 1, 2, probeSource))
+	return err == nil, nil
 }
+
+// probeSource is a stub source() binding used only to test-compile a filter in
+// UsesSource; it is never run, so it yields nothing.
+func probeSource(any, []any) gojq.Iter { return gojq.NewIter[any]() }
 
 // CrossEngine runs a jq filter whose data comes entirely from source(name;
 // filter) calls, over a null input — there is no primary store. It is the engine
