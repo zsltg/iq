@@ -224,6 +224,12 @@ diagnostics family (`verbose`, `log*`, `error*`). Per-invocation flags (`--src`,
 `--debug.pprof`) are not storable. A `--from`/`--combine` query has no single source, so it uses
 the base options only, never a per-source override.
 
+> The `log*` options are the one place a stored default and the environment overlap: a stored
+> `log*` value fills an unset flag, but an `IQ_LOG*` environment variable still wins over it (the
+> `flag > env > default` chain for logging applies before a stored default is treated as "set").
+> An explicit `--log*` flag beats both. No other option reads the environment, so this interaction
+> is unique to the logging family.
+
 ## Usage
 
 The default action is a jq filter. Its top-level paths name the keys to fetch; the result is
@@ -1260,6 +1266,13 @@ whole source. Both arguments are **strings**, so the sub-filter is quoted — in
 outer filter that means double quotes, `source("orders"; ".[] | select(.x)")`. Because `source()`
 yields a stream, collect it before indexing: `INDEX(source(…); .id)` or `[source(…)]`, not
 `source(…) | INDEX(.id)`.
+
+> **Memory.** Binding `source()` to a jq value materializes that call's whole result set in memory
+> (jq indexing needs a concrete array), even though the read itself streams. Push the reduction into
+> the sub-filter — `source("orders"; ".[] | select(.total > 99)")`, not
+> `source("orders"; ".[]")` filtered outside — so only the rows you need are held. A bare
+> `source("big")` over a large source buys no streaming benefit; prefer `--from`/`--combine` when
+> each side is large and independent.
 
 A filter that calls `source()` runs over a **null input**: every read is an explicit `source()` call
 and there is no implicit primary source, so it needs no active source. Names resolve through the
