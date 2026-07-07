@@ -1074,6 +1074,16 @@ materialization is the core's, gated by `--unbounded`, exactly as for a live bac
 fidelity** is the record round-trip: values and native types reconstruct, but TTLs, exact
 encodings, stream consumer groups, RDB module types, and Mongo indexes do not carry.
 
+**Neo4j record ids.** A dump's `_id` — and a relationship's `_start`/`_end` — is APOC's numeric
+export id, not the live driver's `elementId`, because APOC's default export does not write
+elementIds. Within one dump the ids are self-consistent: a relationship's `_start`/`_end` reference
+the same ids its nodes carry as `_id`, so `?rel=` endpoints resolve against the default-keyed
+`?label=` nodes exactly as they do live. Two things the numeric id cannot do, both by nature — it
+does not match the `_id` of the same node read from the live source (different id schemes), and it
+is not stable across re-exports (Neo4j reuses a deleted node's id, the reason `id()` is deprecated
+in favor of `elementId()`). For an identifier that is stable and identical across a live source and
+its dump, key on a business property with `?key=<prop>`: it reads the same value everywhere.
+
 **Decode cache.** Re-querying the same large dump re-parses it every time, so iq caches the
 decoded, normalized records of a scanned dump above 4 MiB and reads them back on later queries,
 skipping the RDB/BSON/JSON decode (a warm scan of an 8 MiB dump runs several times faster). The
