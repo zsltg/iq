@@ -178,6 +178,24 @@ var drivers = []driver{
 		explainDrop:  iqelasticsearch.ExplainDrop,
 	},
 	{
+		name:           "opensearch",
+		desc:           "OpenSearch search engine and document store",
+		schemes:        []string{"opensearch", "opensearch+s"},
+		doc:            "https://opensearch.org/docs/",
+		versions:       "2.x, 3.x",
+		addressable:    true,
+		verifiesOnOpen: true,
+		// OpenSearch shares the Elasticsearch driver; the source scheme selects the
+		// opensearch-go client behind the same query ports.
+		open: func(ctx context.Context, cfg *config) (store, error) {
+			return iqelasticsearch.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
+		},
+		explainPlan:  iqelasticsearch.ExplainPlan,
+		explainWrite: iqelasticsearch.ExplainWrite,
+		explainClear: iqelasticsearch.ExplainClear,
+		explainDrop:  iqelasticsearch.ExplainDrop,
+	},
+	{
 		name:     "redis",
 		desc:     "Redis key-value store",
 		schemes:  []string{"redis", "rediss"},

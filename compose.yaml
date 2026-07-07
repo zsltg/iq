@@ -129,6 +129,27 @@ services:
       retries: 30
       start_period: 60s
 
+  opensearch:
+    image: opensearchproject/opensearch:2.17.1
+    container_name: iq-opensearch
+    ports:
+      - "9201:9200"
+    # Ephemeral single-node test instance; data lives only in the container. The
+    # security plugin is disabled so a host-side client connects over plain HTTP with
+    # no credentials, and the JVM heap is capped so the container is light to run
+    # locally. Published on 9201 so it does not collide with Elasticsearch on 9200.
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    # OpenSearch on a JVM is slow to become ready, so the healthcheck retries generously.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
 networks:
   # Pin the bridge to a subnet outside the LAN (192.168.0.0/16), the VM NAT (10.0.2.0/24), and
   # Docker's default pool (172.16.0.0/12), so an auto-assigned subnet can never mask a LAN host

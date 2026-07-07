@@ -3,11 +3,12 @@ package elasticsearch
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 )
 
-// InspectServer returns the Elasticsearch node's identity and version — its node and
-// cluster names, the distribution version, and the Lucene version — the analogue of a
-// buildInfo probe. It needs no index.
+// InspectServer returns the node's identity and version — its node and cluster names,
+// the distribution version, and the Lucene version — the analogue of a buildInfo
+// probe. It needs no index.
 func (s *Store) InspectServer(ctx context.Context) (any, error) {
 	var info struct {
 		Name        string `json:"name"`
@@ -18,8 +19,7 @@ func (s *Store) InspectServer(ctx context.Context) (any, error) {
 		} `json:"version"`
 		Tagline string `json:"tagline"`
 	}
-	res, err := s.es.Info(s.es.Info.WithContext(ctx))
-	if err := finish(res, err, "server info", &info); err != nil {
+	if err := s.request(ctx, "server info", http.MethodGet, "/", nil, &info); err != nil {
 		return nil, err
 	}
 	return map[string]any{
@@ -35,11 +35,7 @@ func (s *Store) InspectServer(ctx context.Context) (any, error) {
 // table as JSON), the analogue of listing a keyspace's tables. It needs no index.
 func (s *Store) InspectIndices(ctx context.Context) (any, error) {
 	var rows []map[string]any
-	res, err := s.es.Cat.Indices(
-		s.es.Cat.Indices.WithFormat("json"),
-		s.es.Cat.Indices.WithContext(ctx),
-	)
-	if err := finish(res, err, "list indices", &rows); err != nil {
+	if err := s.request(ctx, "list indices", http.MethodGet, "/_cat/indices?format=json", nil, &rows); err != nil {
 		return nil, err
 	}
 	indices := make([]any, len(rows))
@@ -56,11 +52,7 @@ func (s *Store) InspectMapping(ctx context.Context) (any, error) {
 		return nil, errNoIndex
 	}
 	var raw map[string]json.RawMessage
-	res, err := s.es.Indices.GetMapping(
-		s.es.Indices.GetMapping.WithIndex(s.index),
-		s.es.Indices.GetMapping.WithContext(ctx),
-	)
-	if err := finish(res, err, "get mapping", &raw); err != nil {
+	if err := s.request(ctx, "get mapping", http.MethodGet, "/"+s.index+"/_mapping", nil, &raw); err != nil {
 		return nil, err
 	}
 	out := make(map[string]any, len(raw))
@@ -78,11 +70,7 @@ func (s *Store) InspectMapping(ctx context.Context) (any, error) {
 // user can see which aliases route to which indices. It needs no index.
 func (s *Store) InspectAliases(ctx context.Context) (any, error) {
 	var rows []map[string]any
-	res, err := s.es.Cat.Aliases(
-		s.es.Cat.Aliases.WithFormat("json"),
-		s.es.Cat.Aliases.WithContext(ctx),
-	)
-	if err := finish(res, err, "list aliases", &rows); err != nil {
+	if err := s.request(ctx, "list aliases", http.MethodGet, "/_cat/aliases?format=json", nil, &rows); err != nil {
 		return nil, err
 	}
 	aliases := make([]any, len(rows))

@@ -58,7 +58,7 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"Neo4j — runs metadata procedures; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(neo4jInspectCmds, "  ") + "\n" +
 		"  (all are database-level; labels lists the addressable collections)\n\n" +
-		"Elasticsearch — runs metadata reads; no --only runs them all, --only narrows:\n" +
+		"Elasticsearch / OpenSearch — runs metadata reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(elasticInspectCmds, "  ") + "\n" +
 		"  (mapping needs an index: address it as source.index or set ?index= on the\n" +
 		"  source url)\n\n" +
@@ -107,7 +107,7 @@ func newInspectCmd(cfg *config) *cobra.Command {
 				return inspectCouch(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "neo4j":
 				return inspectNeo4j(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
-			case "elasticsearch":
+			case "elasticsearch", "opensearch":
 				return inspectElastic(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "file":
 				// inspect reports live server metadata; a dump file has none. Point

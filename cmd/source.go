@@ -41,8 +41,9 @@ func newAddCmd(cfg *config) *cobra.Command {
 			"derived from the URL (the MongoDB database or Cassandra keyspace name, else the\n" +
 			"driver). The backend is inferred from the URL scheme: redis:// (rediss://),\n" +
 			"mongodb:// (mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb://\n" +
-			"(couchdbs://), neo4j:// (neo4j+s://, bolt://), or elasticsearch://\n" +
-			"(elasticsearch+s://); -d/--driver asserts the expected driver. For MongoDB, a default\n" +
+			"(couchdbs://), neo4j:// (neo4j+s://, bolt://), elasticsearch://\n" +
+			"(elasticsearch+s://), or opensearch:// (opensearch+s://); -d/--driver asserts the\n" +
+			"expected driver. For MongoDB, a default\n" +
 			"collection rides in the URL as ?collection= (`mongodb://host/db?collection=orders`);\n" +
 			"for Cassandra, a default table rides as ?table= (`cassandra://host/keyspace?table=orders`);\n" +
 			"for DynamoDB, the region\n" +
@@ -52,8 +53,9 @@ func newAddCmd(cfg *config) *cobra.Command {
 			"encodings declared with ?types=cf:age=long); for CouchDB, the host is the server and a\n" +
 			"default database rides as ?database= (`couchdb://host:5984/?database=orders`); for\n" +
 			"Neo4j, the host is the bolt server and a default node label rides as ?label= (or a\n" +
-			"relationship type as ?rel=); for Elasticsearch, a default index rides as ?index=\n" +
-			"(`elasticsearch://host:9200/?index=books`). Handles may be\n" +
+			"relationship type as ?rel=); for Elasticsearch and OpenSearch, a default index rides as\n" +
+			"?index= (`elasticsearch://host:9200/?index=books`, `opensearch://host:9200/?index=books`).\n" +
+			"Handles may be\n" +
 			"grouped with '/' (`iq add -n prod/books\n" +
 			"mongodb://...`). -p prompts for the URL password (or reads it from stdin); with\n" +
 			"--store keyring the password is moved to the OS keyring and stripped from the\n" +
@@ -156,7 +158,7 @@ func newAddCmd(cfg *config) *cobra.Command {
 		},
 	}
 	c.Flags().StringVarP(&handle, "handle", "n", "", "handle for the source; derived from the url when omitted")
-	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb, neo4j, elasticsearch); must match the url scheme")
+	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb, neo4j, elasticsearch, opensearch); must match the url scheme")
 	c.Flags().BoolVarP(&active, "active", "a", false, "make the new source the active source")
 	c.Flags().BoolVarP(&passwordPrompt, "password", "p", false, "prompt for the url password (or read it from stdin)")
 	c.Flags().BoolVar(&skipVerify, "skip-verify", false, "skip the post-add reachability check")

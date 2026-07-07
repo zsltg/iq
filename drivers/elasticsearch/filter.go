@@ -3,6 +3,7 @@ package elasticsearch
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 
 	"github.com/zsltg/iq/internal/predicate"
@@ -74,11 +75,7 @@ type indexMapping struct {
 // type makes an equality pushable as a term query.
 func (s *Store) readExactFields(ctx context.Context) (map[string]exactField, error) {
 	var raw map[string]indexMapping
-	res, err := s.es.Indices.GetMapping(
-		s.es.Indices.GetMapping.WithIndex(s.index),
-		s.es.Indices.GetMapping.WithContext(ctx),
-	)
-	if err := finish(res, err, "get mapping", &raw); err != nil {
+	if err := s.request(ctx, "get mapping", http.MethodGet, "/"+s.index+"/_mapping", nil, &raw); err != nil {
 		return nil, err
 	}
 	return exactFieldsFrom(raw), nil

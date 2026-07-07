@@ -1,8 +1,8 @@
 # iq
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
-databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, Apache HBase, Apache CouchDB, Neo4j, and
-Elasticsearch are supported; the
+databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, Apache HBase, Apache CouchDB, Neo4j,
+Elasticsearch, and OpenSearch are supported; the
 backend is chosen by the URL scheme, and the query core is driver-agnostic so further backends slot
 in behind the same port.
 
@@ -22,7 +22,7 @@ sq's so the tool feels familiar.
 ## Requirements
 
 - Go 1.26+
-- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j + Elasticsearch containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
+- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j + Elasticsearch + OpenSearch containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
 
 ## Build
 
@@ -65,6 +65,7 @@ iq add -n books 'hbase://localhost:2181/?table=iq_books'     # an HBase source (
 iq add -n docs 'couchdb://admin:pass@localhost:5984/?database=iq' # a CouchDB source (host = server)
 iq add -n graph 'neo4j://neo4j:pass@localhost:7687/?label=Person&key=id' # a Neo4j source (label = keyspace)
 iq add -n docs 'elasticsearch://localhost:9200/?index=books' # an Elasticsearch source (index = keyspace)
+iq add -n logs 'opensearch://localhost:9201/?index=books'   # an OpenSearch source (same driver)
 iq src cache                                                 # make "cache" the active source
 iq ls                                                        # list sources: handle driver url (active marked *); -v adds format + options
 ```
@@ -82,7 +83,8 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   — register a source, mirroring `sq add`. The URL is the sole positional argument; the backend is
   inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`, `cassandra://`,
   `dynamodb://`, `hbase://`, `couchdb://`, `couchdbs://`, `neo4j://`, `neo4j+s://`, `neo4j+ssc://`,
-  `bolt://`, `bolt+s://`, `bolt+ssc://`, `elasticsearch://`, `elasticsearch+s://`).
+  `bolt://`, `bolt+s://`, `bolt+ssc://`, `elasticsearch://`, `elasticsearch+s://`, `opensearch://`,
+  `opensearch+s://`).
   `-n`/`--handle` names the source; when omitted a handle is derived from the URL (the MongoDB
   database or Cassandra keyspace name, else the driver, disambiguated with a numeric suffix on
   collision). A MongoDB default collection rides in the URL as `?collection=`
@@ -95,15 +97,17 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   (`couchdb://host:5984/?database=books`, the host as the server), a Neo4j default node label as
   `?label=` (`neo4j://host:7687/?label=Person&key=id`, the host as the bolt server; the node key is
   the `?key=` property, else the elementId; the database is `?database=`, default `neo4j`) or a
-  relationship type as `?rel=` (`neo4j://host:7687/?rel=WROTE`, read-only), an Elasticsearch default
-  index as `?index=` (`elasticsearch://host:9200/?index=books`, the host as the server;
-  `elasticsearch+s://` for TLS; credentials, when set, ride in the URL userinfo as HTTP basic auth), the
+  relationship type as `?rel=` (`neo4j://host:7687/?rel=WROTE`, read-only), an Elasticsearch or
+  OpenSearch default
+  index as `?index=` (`elasticsearch://host:9200/?index=books`, `opensearch://host:9201/?index=books`,
+  the host as the server;
+  `elasticsearch+s://` / `opensearch+s://` for TLS; credentials, when set, ride in the URL userinfo as HTTP basic auth), the
   driver's own connection option — like a `file://`
   source's `?format=`; a query addresses another collection/table/database/label/index with a dotted
   `handle.collection` / `handle.table` / `handle.database` / `handle.label` / `handle.index` (Neo4j also `handle.:TYPE`
   for a relationship type). `-a`/`--active` makes the new source active. `-p`/`--password`
   prompts for the URL password (or reads it from stdin) instead of embedding it in the URL.
-  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`, `couchdb`, `neo4j`, `elasticsearch`) and errors if it
+  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`, `couchdb`, `neo4j`, `elasticsearch`, `opensearch`) and errors if it
   disagrees with the scheme. The source is
   pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
   keyring` moves the URL's password into the OS keyring and strips it from the stored URL (default
@@ -127,7 +131,7 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   Bounded by `--timeout`; exits non-zero if any source is unreachable.
 - `iq inspect [<source>[.<collection>]]` — show a source's native introspection. The positional
   names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB,
-  Cassandra, DynamoDB, HBase, CouchDB, Neo4j, and Elasticsearch sources accept sq-style `<source>.<collection>` /
+  Cassandra, DynamoDB, HBase, CouchDB, Neo4j, Elasticsearch, and OpenSearch sources accept sq-style `<source>.<collection>` /
   `<source>.<table>` / `<source>.<database>` / `<source>.<label>` / `<source>.<index>`
   addressing (`iq inspect prod.books`) to pick the collection/table/database/label/index, overriding the source URL's
   `?collection=`/`?table=`/`?database=`/`?label=`/`?index=` default; Redis sources take no collection.
@@ -138,10 +142,10 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   system-schema reads (`local`, `tables`, `columns`); for DynamoDB, the metadata reads (`tables`,
   `table`); for HBase, the table listing (`tables`); for CouchDB, the introspection reads (`server`,
   `databases`, `dbinfo`, `indexes`); for Neo4j, the metadata procedures (`server`, `databases`,
-  `labels`, `reltypes`, `constraints`); for Elasticsearch, the metadata reads (`server`, `indices`,
-  `mapping`, `aliases`) — no `--only` runs them
+  `labels`, `reltypes`, `constraints`); for Elasticsearch and OpenSearch, the metadata reads
+  (`server`, `indices`, `mapping`, `aliases`) — no `--only` runs them
   all. `--list` prints the subcommands/sections available for the source (Mongo's, Cassandra's,
-  DynamoDB's, HBase's, Neo4j's, and Elasticsearch's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
+  DynamoDB's, HBase's, Neo4j's, Elasticsearch's, and OpenSearch's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
   by `--timeout`. The location header is redacted like `iq ls`: `--reveal` un-redacts an inline
   password, `--expand` resolves a keyring-backed one.
 - `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
@@ -454,6 +458,7 @@ hbase          Apache HBase wide-column store                                  h
 couchdb        Apache CouchDB document store                                   couchdb, couchdbs                                  2.x, 3.x       https://docs.couchdb.org/
 neo4j          Neo4j property graph store                                      neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc  5.x            https://neo4j.com/docs/
 elasticsearch  Elasticsearch search engine and document store                  elasticsearch, elasticsearch+s                     8.x            https://www.elastic.co/docs/
+opensearch     OpenSearch search engine and document store                     opensearch, opensearch+s                           2.x, 3.x       https://opensearch.org/docs/
 redis          Redis key-value store                                           redis, rediss                                      7.0+           https://redis.io/docs/
 file           Local dump file, read-only (JSONL, Redis RDB, Mongo BSON/JSON, DynamoDB/Cassandra/Neo4j-APOC JSON)  file
 ```
@@ -470,13 +475,16 @@ Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sou
 > [gohbase](https://github.com/tsuna/gohbase) (native protobuf RPC, no Thrift gateway) for HBase,
 > [`kivik` v4](https://github.com/go-kivik/kivik) for CouchDB,
 > the [Neo4j Go driver v5](https://github.com/neo4j/neo4j-go-driver) for Neo4j,
-> and the [go-elasticsearch v8](https://github.com/elastic/go-elasticsearch) client for
-> Elasticsearch (OpenSearch is untested but likely works — its REST surface is largely
-> shared) —
+> the [go-elasticsearch v8](https://github.com/elastic/go-elasticsearch) client for
+> Elasticsearch,
+> and the [opensearch-go v4](https://github.com/opensearch-project/opensearch-go) client for
+> OpenSearch (a fork of go-elasticsearch without the product check that refuses non-Elasticsearch
+> servers) —
 > not a matrix `iq` tests against.
 > The integration tests are pinned to `redis:8`, `mongo:8`, `cassandra:5`,
-> `amazon/dynamodb-local:2.5.2`, `harisekhon/hbase:2.1`, `couchdb:3`, `neo4j:5`, and
-> `docker.elastic.co/elasticsearch/elasticsearch:8.17.4`.
+> `amazon/dynamodb-local:2.5.2`, `harisekhon/hbase:2.1`, `couchdb:3`, `neo4j:5`,
+> `docker.elastic.co/elasticsearch/elasticsearch:8.17.4`, and
+> `opensearchproject/opensearch:2.17.1`.
 
 <details>
 <summary><b>Redis</b> — value encoding and raw commands</summary>
@@ -1049,14 +1057,18 @@ narrows to those subcommands.
 </details>
 
 <details>
-<summary><b>Elasticsearch</b> — index keyspace, _id mapping, Query-DSL pushdown, and raw _search</summary>
+<summary><b>Elasticsearch & OpenSearch</b> — index keyspace, _id mapping, Query-DSL pushdown, and raw _search</summary>
 
-Register an `elasticsearch://` source and the same jq interface works against an index, where **the
+Register an `elasticsearch://` (or `opensearch://`) source and the same jq interface works against an
+index, where **the
 index is the keyspace: a document's `_id` is the key and its `_source` is the value**. The host is
-the Elasticsearch server; the index rides in the URL's `?index=` (overridable per run with a dotted
-`handle.index`, since one server hosts many indices). Use `elasticsearch+s://` for TLS. **Credentials,
+the server; the index rides in the URL's `?index=` (overridable per run with a dotted
+`handle.index`, since one server hosts many indices). Use `elasticsearch+s://` / `opensearch+s://` for
+TLS. **Credentials,
 when the cluster needs them, travel in the URL userinfo** (HTTP basic auth), so `--store keyring`
-moves the password to the OS keyring exactly as for the other backends:
+moves the password to the OS keyring exactly as for the other backends. **OpenSearch is the same
+driver** behind the scheme — everything below applies to both; the only differences are internal (its
+point-in-time endpoint and, since it predates Elasticsearch's `_shard_doc`, an `_id` keyset sort):
 
 ```bash
 iq add -n books 'elasticsearch://localhost:9200/?index=books'  # register once, then:
@@ -1064,6 +1076,7 @@ iq --src books '.["2"]'                                # fetch the document whos
 iq --src books '.[] | select(.year > 2015) | .title'  # streamed
 iq --src books --unbounded 'keys'                      # every _id
 iq --src books.authors '.[]'                           # query a different index on the same server
+iq add -n logs 'opensearch://localhost:9201/?index=books'      # an OpenSearch source, identical surface
 ```
 
 Elasticsearch documents are JSON, so values need no type coercion; integers keep exact precision
@@ -1110,9 +1123,12 @@ iq --src books exec '{"match": {"author": "Kleppmann"}}'   # bare query, wrapped
 server's indices), `mapping` (the selected index's field mapping, which shows what a term pushdown
 can use), and `aliases` (the server's aliases); `--only` narrows to those subcommands.
 
-> **OpenSearch** is untested but likely works, since its REST surface is largely shared with
-> Elasticsearch; a few areas diverge (the point-in-time API, some `_cat` and security defaults), so
-> it is not yet a documented target.
+> **OpenSearch** is a supported, integration-tested target on the same driver: register an
+> `opensearch://` source and everything above works identically. It uses the
+> [opensearch-go](https://github.com/opensearch-project/opensearch-go) client (Elasticsearch's own
+> client refuses to talk to non-Elasticsearch servers), OpenSearch's `_search/point_in_time` endpoint,
+> and — since OpenSearch forked before Elasticsearch's `_shard_doc` sort — an `_id` keyset sort for
+> scans. All of that is internal; the jq surface, pushdown, writes, `exec`, and `inspect` are the same.
 
 </details>
 
@@ -1309,7 +1325,7 @@ server-side, Cassandra pushes equality as a CQL `WHERE` (with `ALLOW FILTERING` 
 partition key), DynamoDB pushes equality and existence as a `Scan` `FilterExpression`, HBase pushes
 column equality as a `SingleColumnValueFilter`, CouchDB pushes equality, ranges, and existence as a
 Mango `_find` selector, Neo4j pushes equality and existence as a Cypher `WHERE` clause, Elasticsearch
-pushes equality and existence as a `bool` query, Redis scans
+and OpenSearch push equality and existence as a `bool` query, Redis scans
 and filters client-side. Either way the
 full jq re-runs client-side, so
 the pushed predicate is only ever a conservative pre-filter and results are identical with or without it.
@@ -1442,11 +1458,16 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   ranges — Cypher's cross-type comparison is not jq's — and the other operators) and answers
   `Estimator` from the label's count store; Elasticsearch pushes equality and existence as a `bool`
   query (`FilteredScanner`, falling back to a plain point-in-time scan for ranges and the other
-  operators) and answers `Estimator` from `_count`. DynamoDB's connectionless
+  operators) and answers `Estimator` from `_count`. An `opensearch://` source is the **same
+  `drivers/elasticsearch` adapter** behind a small transport port (`esClient`): the URL scheme picks
+  the [opensearch-go](https://github.com/opensearch-project/opensearch-go) client (Elasticsearch's
+  own client refuses non-Elasticsearch servers) and its `_search/point_in_time` endpoint and `_id`
+  keyset sort; the keyspace model, normalization, pushdown, writes, `exec`, and `inspect` are all
+  shared. DynamoDB's connectionless
   client verifies reachability at open (a
   bounded `ListTables` probe), HBase's likewise (a bounded `ClusterStatus` probe, since gohbase
   connects lazily), CouchDB pings at open, Neo4j verifies connectivity at open, and Elasticsearch
-  probes with an info request at open, so `ping`/`add` need no second round-trip. Each
+  and OpenSearch probe with an info request at open, so `ping`/`add` need no second round-trip. Each
   also contributes pure, connection-free `--explain` describers
   (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
 - `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
@@ -1505,8 +1526,8 @@ iq --src snap '.[] | select(.active)'     # query a dump offline (RDB, BSON, mon
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
-go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j + Elasticsearch via testcontainers-go (HBase needs IQ_HBASE_URL)
-docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB + Neo4j + Elasticsearch for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984, :7687, :9200)
+go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j + Elasticsearch + OpenSearch via testcontainers-go (HBase needs IQ_HBASE_URL)
+docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB + Neo4j + Elasticsearch + OpenSearch for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984, :7687, :9200, :9201)
 bash scripts/seed-redis.sh    # load example data into the running Redis
 bash scripts/seed-mongo.sh    # load example documents into the running MongoDB
 bash scripts/seed-cassandra.sh    # load example rows into the running Cassandra
@@ -1515,6 +1536,7 @@ bash scripts/seed-hbase.sh    # load example rows into the running HBase
 bash scripts/seed-couchdb.sh    # load example documents into the running CouchDB
 bash scripts/seed-neo4j.sh    # load an example graph into the running Neo4j
 bash scripts/seed-elasticsearch.sh    # load example documents into the running Elasticsearch
+bash scripts/seed-opensearch.sh    # load example documents into the running OpenSearch (:9201)
 docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
@@ -1527,10 +1549,10 @@ make release              # bump version, regenerate CHANGELOG.md, commit, and t
 ```
 
 Integration tests skip under `go test -short`. The full `go test ./...` needs Docker: it starts
-an ephemeral Redis, MongoDB, Cassandra, DynamoDB Local, CouchDB, Neo4j, and Elasticsearch via
+an ephemeral Redis, MongoDB, Cassandra, DynamoDB Local, CouchDB, Neo4j, Elasticsearch, and OpenSearch via
 [testcontainers-go](https://github.com/testcontainers/testcontainers-go) on random ports and
 tears them down afterwards — no manual `docker compose up` (Cassandra takes ~1 minute to become
-ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL` / `IQ_COUCHDB_URL` / `IQ_NEO4J_URL` / `IQ_ELASTICSEARCH_URL`
+ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL` / `IQ_COUCHDB_URL` / `IQ_NEO4J_URL` / `IQ_ELASTICSEARCH_URL` / `IQ_OPENSEARCH_URL`
 to point at an already-running server (for example the `docker compose` stack) to skip container
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
 a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded

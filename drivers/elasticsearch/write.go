@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/zsltg/iq/internal/query"
 )
@@ -44,13 +45,8 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 	var br struct {
 		Items []map[string]bulkItem `json:"items"`
 	}
-	res, err := s.es.Bulk(
-		bytes.NewReader(buf.Bytes()),
-		s.es.Bulk.WithIndex(s.index),
-		s.es.Bulk.WithRefresh("true"),
-		s.es.Bulk.WithContext(ctx),
-	)
-	if err := finish(res, err, "bulk write", &br); err != nil {
+	res, err := s.do(ctx, http.MethodPost, "/"+s.index+"/_bulk?refresh=true", "application/x-ndjson", buf.Bytes())
+	if err := s.finish(res, err, "bulk write", &br); err != nil {
 		return query.WriteStat{}, err
 	}
 	return tallyBulk(br.Items)
@@ -130,17 +126,11 @@ func (s *Store) Clear(ctx context.Context) error {
 	if s.index == "" {
 		return errNoIndex
 	}
-	body, err := jsonReader(map[string]any{"query": map[string]any{"match_all": map[string]any{}}})
+	body, err := json.Marshal(map[string]any{"query": map[string]any{"match_all": map[string]any{}}})
 	if err != nil {
-		return err
+		return fmt.Errorf("encode delete by query: %w", err)
 	}
-	res, err := s.es.DeleteByQuery(
-		[]string{s.index},
-		body,
-		s.es.DeleteByQuery.WithRefresh(true),
-		s.es.DeleteByQuery.WithContext(ctx),
-	)
-	return finish(res, err, "delete by query", nil)
+	return s.request(ctx, "delete by query", http.MethodPost, "/"+s.index+"/_delete_by_query?refresh=true", body, nil)
 }
 
 // Drop removes the index entirely — documents, mapping, and settings (the `iq data
@@ -150,8 +140,7 @@ func (s *Store) Drop(ctx context.Context) error {
 	if s.index == "" {
 		return errNoIndex
 	}
-	res, err := s.es.Indices.Delete([]string{s.index}, s.es.Indices.Delete.WithContext(ctx))
-	return finish(res, err, "delete index", nil)
+	return s.request(ctx, "delete index", http.MethodDelete, "/"+s.index, nil, nil)
 }
 
 // TypedScan streams the whole index as typed records, reusing the ScanBatches walk.

@@ -16,16 +16,22 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// esImage is the pinned Elasticsearch image the integration tests run against, a
-// generic container (there is no dedicated testcontainers module in use, and a
-// generic one adds no new module dependency).
-const esImage = "docker.elastic.co/elasticsearch/elasticsearch:8.17.4"
+// esImage and osImage are the pinned Elasticsearch and OpenSearch images the
+// integration tests run against, generic containers (there is no dedicated
+// testcontainers module in use, and a generic one adds no new module dependency).
+const (
+	esImage = "docker.elastic.co/elasticsearch/elasticsearch:8.17.4"
+	osImage = "opensearchproject/opensearch:2.17.1"
+)
 
-// sharedURL is the base elasticsearch:// server URL (no index) the integration tests
-// connect to: an ephemeral Elasticsearch container started once for the whole
-// package. It stays empty when integration tests are skipped (-short) or an external
-// server is supplied (IQ_ELASTICSEARCH_URL).
-var sharedURL string
+// sharedURL and sharedOSURL are the base server URLs (no index) the integration tests
+// connect to: ephemeral Elasticsearch and OpenSearch containers started once for the
+// whole package. They stay empty when integration tests are skipped (-short) or an
+// external server is supplied (IQ_ELASTICSEARCH_URL / IQ_OPENSEARCH_URL).
+var (
+	sharedURL   string
+	sharedOSURL string
+)
 
 func TestMain(m *testing.M) {
 	os.Exit(runTests(m))
@@ -36,43 +42,75 @@ func runTests(m *testing.M) int {
 	if testing.Short() {
 		return m.Run()
 	}
-	base := os.Getenv("IQ_ELASTICSEARCH_URL")
-	if base == "" {
-		ctx := context.Background()
-		container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-			ContainerRequest: testcontainers.ContainerRequest{
-				Image:        esImage,
-				ExposedPorts: []string{"9200/tcp"},
-				Env: map[string]string{
-					"discovery.type":         "single-node",
-					"xpack.security.enabled": "false",
-					"ES_JAVA_OPTS":           "-Xms512m -Xmx512m",
-				},
-				WaitingFor: wait.ForHTTP("/_cluster/health").
-					WithPort("9200/tcp").
-					WithStartupTimeout(180 * time.Second),
-			},
-			Started: true,
+	// Elasticsearch backend: an external server (IQ_ELASTICSEARCH_URL) or an ephemeral
+	// container. Security is disabled so the client connects over plain HTTP.
+	esBase := os.Getenv("IQ_ELASTICSEARCH_URL")
+	if esBase == "" {
+		url, terminate, err := startContainer(esImage, "elasticsearch", map[string]string{
+			"discovery.type":         "single-node",
+			"xpack.security.enabled": "false",
+			"ES_JAVA_OPTS":           "-Xms512m -Xmx512m",
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "start elasticsearch container: %v\n", err)
 			return 1
 		}
-		defer func() { _ = testcontainers.TerminateContainer(container) }()
-		host, err := container.Host(ctx)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "elasticsearch container host: %v\n", err)
-			return 1
-		}
-		port, err := container.MappedPort(ctx, "9200")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "elasticsearch container port: %v\n", err)
-			return 1
-		}
-		base = fmt.Sprintf("elasticsearch://%s:%s/", host, port.Port())
+		defer terminate()
+		esBase = url
 	}
-	sharedURL = base
+	sharedURL = esBase
+
+	// OpenSearch backend: likewise, with the security plugin disabled.
+	osBase := os.Getenv("IQ_OPENSEARCH_URL")
+	if osBase == "" {
+		url, terminate, err := startContainer(osImage, "opensearch", map[string]string{
+			"discovery.type":          "single-node",
+			"DISABLE_SECURITY_PLUGIN": "true",
+			"OPENSEARCH_JAVA_OPTS":    "-Xms512m -Xmx512m",
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "start opensearch container: %v\n", err)
+			return 1
+		}
+		defer terminate()
+		osBase = url
+	}
+	sharedOSURL = osBase
+
 	return m.Run()
+}
+
+// startContainer starts an Elasticsearch- or OpenSearch-compatible container that
+// exposes 9200 and answers /_cluster/health, and returns the base URL (with the given
+// scheme) plus a terminate func.
+func startContainer(image, scheme string, env map[string]string) (string, func(), error) {
+	ctx := context.Background()
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        image,
+			ExposedPorts: []string{"9200/tcp"},
+			Env:          env,
+			WaitingFor: wait.ForHTTP("/_cluster/health").
+				WithPort("9200/tcp").
+				WithStartupTimeout(180 * time.Second),
+		},
+		Started: true,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	terminate := func() { _ = testcontainers.TerminateContainer(container) }
+	host, err := container.Host(ctx)
+	if err != nil {
+		terminate()
+		return "", nil, err
+	}
+	port, err := container.MappedPort(ctx, "9200")
+	if err != nil {
+		terminate()
+		return "", nil, err
+	}
+	return fmt.Sprintf("%s://%s:%s/", scheme, host, port.Port()), terminate, nil
 }
 
 // testURL returns the base elasticsearch:// server URL for integration tests: the
@@ -88,29 +126,46 @@ func testURL() string {
 	return "elasticsearch://localhost:9200/"
 }
 
+// osURL returns the base opensearch:// server URL for integration tests: the
+// IQ_OPENSEARCH_URL override first, then the ephemeral container from TestMain. It is
+// empty when no OpenSearch backend is available, so a test can skip cleanly.
+func osURL() string {
+	if u := os.Getenv("IQ_OPENSEARCH_URL"); u != "" {
+		return u
+	}
+	return sharedOSURL
+}
+
 // skipShort skips an integration test under -short and returns a bounded context.
 func skipShort(t *testing.T) context.Context {
 	t.Helper()
 	if testing.Short() {
-		t.Skip("skipping elasticsearch integration test in -short mode")
+		t.Skip("skipping search integration test in -short mode")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
 	return ctx
 }
 
-// seedIndex creates a fresh index named after the test, indexes the supplied
-// documents (each a map keyed by its "_id"), registers a drop on cleanup, and returns
-// an index-scoped Store opened after the seed so it reads the populated mapping. It
-// skips under -short. Passing no documents yields an empty index.
+// seedIndex seeds an index on the Elasticsearch backend (the default for the shared
+// suite). It is seedIndexOn against testURL().
 func seedIndex(t *testing.T, docs ...map[string]any) *Store {
+	t.Helper()
+	return seedIndexOn(t, testURL(), docs...)
+}
+
+// seedIndexOn creates a fresh index named after the test on the server at baseURL,
+// indexes the supplied documents (each a map keyed by its "_id"), registers a drop on
+// cleanup, and returns an index-scoped Store opened after the seed so it reads the
+// populated mapping. It skips under -short. Passing no documents yields an empty index.
+func seedIndexOn(t *testing.T, baseURL string, docs ...map[string]any) *Store {
 	t.Helper()
 	ctx := skipShort(t)
 	name := indexName(t)
 
 	// An admin store seeds and drops the index; it is opened before the index exists,
 	// so it carries no mapping (which only the store under test needs).
-	admin, err := Open(ctx, testURL(), name, nil, numfmt.DecimalAuto)
+	admin, err := Open(ctx, baseURL, name, nil, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
 
@@ -129,7 +184,7 @@ func seedIndex(t *testing.T, docs ...map[string]any) *Store {
 
 	// The store under test opens after the seed, so its one-time mapping read sees the
 	// dynamically mapped fields the seed created (text+keyword, long, boolean).
-	st, err := Open(ctx, testURL(), name, nil, numfmt.DecimalAuto)
+	st, err := Open(ctx, baseURL, name, nil, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	return st

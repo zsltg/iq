@@ -9,26 +9,43 @@ import (
 
 func TestParseURL(t *testing.T) {
 	tests := []struct {
-		name     string
-		rawURL   string
-		address  string
-		wantAddr string
-		wantUser string
-		wantPass string
-		wantIdx  string
-		wantErr  string
+		name       string
+		rawURL     string
+		address    string
+		wantFlavor flavor
+		wantAddr   string
+		wantUser   string
+		wantPass   string
+		wantIdx    string
+		wantErr    string
 	}{
 		{
-			name:     "host and index query",
-			rawURL:   "elasticsearch://localhost:9200/?index=books",
-			wantAddr: "http://localhost:9200",
-			wantIdx:  "books",
+			name:       "host and index query",
+			rawURL:     "elasticsearch://localhost:9200/?index=books",
+			wantFlavor: flavorES,
+			wantAddr:   "http://localhost:9200",
+			wantIdx:    "books",
 		},
 		{
-			name:     "tls scheme maps to https",
-			rawURL:   "elasticsearch+s://es.example:9200/?index=books",
-			wantAddr: "https://es.example:9200",
-			wantIdx:  "books",
+			name:       "tls scheme maps to https",
+			rawURL:     "elasticsearch+s://es.example:9200/?index=books",
+			wantFlavor: flavorES,
+			wantAddr:   "https://es.example:9200",
+			wantIdx:    "books",
+		},
+		{
+			name:       "opensearch scheme selects the opensearch flavor",
+			rawURL:     "opensearch://localhost:9200/?index=books",
+			wantFlavor: flavorOS,
+			wantAddr:   "http://localhost:9200",
+			wantIdx:    "books",
+		},
+		{
+			name:       "opensearch tls scheme maps to https",
+			rawURL:     "opensearch+s://os.example:9200/?index=books",
+			wantFlavor: flavorOS,
+			wantAddr:   "https://os.example:9200",
+			wantIdx:    "books",
 		},
 		{
 			name:     "userinfo becomes basic auth",
@@ -60,7 +77,7 @@ func TestParseURL(t *testing.T) {
 		{
 			name:    "wrong scheme",
 			rawURL:  "http://localhost:9200/?index=books",
-			wantErr: "must use elasticsearch:// or elasticsearch+s://",
+			wantErr: "must use elasticsearch://",
 		},
 		{
 			name:    "missing host",
@@ -81,6 +98,7 @@ func TestParseURL(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
+			require.Equal(t, tt.wantFlavor, cc.flavor)
 			require.Equal(t, tt.wantAddr, cc.addr)
 			require.Equal(t, tt.wantUser, cc.username)
 			require.Equal(t, tt.wantPass, cc.password)

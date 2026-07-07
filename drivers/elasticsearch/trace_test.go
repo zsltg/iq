@@ -18,7 +18,7 @@ func TestTraceTransport(t *testing.T) {
 	var buf bytes.Buffer
 	// A nil next transport must fall back to http.DefaultTransport, so the request
 	// still reaches the server and the method+path line is logged.
-	rt := &traceTransport{w: &buf}
+	rt := &traceTransport{w: &buf, prefix: "es"}
 	req, err := http.NewRequest(http.MethodGet, srv.URL+"/books/_search", nil)
 	require.NoError(t, err)
 
