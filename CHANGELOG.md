@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.21.0 - 2026-07-07
+### Features
+- **elasticsearch:** add Elasticsearch driver (410b1c3)
+- **opensearch:** add OpenSearch as a shared driver flavor (643857f)
+
+### Documentation
+- **readme:** note the Neo4j dump id vs live elementId difference (0225a8b)
+
+
 ## v0.20.0 - 2026-07-07
 ### Features
 - **file:** read Neo4j APOC JSON export offline (5b175a2)
