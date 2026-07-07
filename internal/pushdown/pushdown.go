@@ -260,7 +260,7 @@ func existsFrom(base []string, f *gojq.Func) (predicate.Node, bool) {
 		return nil, false
 	}
 	key, ok := stringLit(f.Args[0])
-	if !ok || strings.Contains(key, ".") {
+	if !ok || !safeField(key) {
 		return nil, false
 	}
 	path := make([]string, 0, len(base)+1)
@@ -530,15 +530,23 @@ func pathOf(q *gojq.Query) ([]string, bool) {
 		}
 		path = append(path, name)
 	}
-	// A component containing a dot cannot be pushed: a backend that joins the
-	// path with dots (Mongo) would read it as a nested path and query the wrong
-	// field. Leave such a field to the client-side pass.
 	for _, c := range path {
-		if strings.Contains(c, ".") {
+		if !safeField(c) {
 			return nil, false
 		}
 	}
 	return path, true
+}
+
+// safeField reports whether a field name is safe to push as a backend path
+// component. A name containing a dot is rejected because a backend that joins the
+// path with dots (Mongo) would read it as a nested path and query the wrong
+// field. A name beginning with '$' is rejected because it would land in operator
+// position in a document-query backend — Mongo's `$where`/`$expr`, a CouchDB
+// Mango selector key — turning an unsanitized field name into a server-side
+// operator; the field is left to the client-side pass instead.
+func safeField(name string) bool {
+	return !strings.Contains(name, ".") && !strings.HasPrefix(name, "$")
 }
 
 // indexName returns the literal field name of an index (`.foo`, `."a.b"`,
