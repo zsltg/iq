@@ -33,7 +33,11 @@ const (
 
 // WriteStat reports the outcome of a batch of writes. It is accumulated across a
 // whole copy and rendered to the user, so a non-atomic multi-key write is honest
-// about what it did rather than pretending all-or-nothing.
+// about what it did rather than pretending all-or-nothing. Where a backend cannot
+// report an overwrite natively, Overwritten is counted from a key pre-read taken
+// before the batch: it is accounting only — it never changes which records are
+// written — and, not being atomic with the writes, can skew by one under a
+// concurrent write to the same key.
 type WriteStat struct {
 	Written     int
 	Overwritten int

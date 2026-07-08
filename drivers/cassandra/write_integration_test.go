@@ -19,16 +19,39 @@ func TestPutUpsertIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, query.WriteStat{Written: 2}, stat)
 
-	// A re-upsert of an existing key overwrites; Cassandra counts it as Written.
+	// A mixed re-upsert: key 1 exists (Overwritten), key 3 is new (Written), and a
+	// keyless record carries its key in the value and cannot be pre-read (Written).
 	stat, err = st.Put(context.Background(), []query.Record{
 		{Key: "1", Value: map[string]any{"id": 1, "title": "A2"}},
+		{Key: "3", Value: map[string]any{"id": 3, "title": "C"}},
+		{Value: map[string]any{"id": 4, "title": "D"}},
 	}, query.Upsert)
 	require.NoError(t, err)
-	require.Equal(t, query.WriteStat{Written: 1}, stat)
+	require.Equal(t, query.WriteStat{Written: 2, Overwritten: 1}, stat)
 
 	got, err := st.Get(context.Background(), []string{"1"})
 	require.NoError(t, err)
 	require.Equal(t, "A2", got["1"].(map[string]any)["title"])
+}
+
+func TestPutUpsertCountsCompositeOverwrite(t *testing.T) {
+	st := seedTable(t, "events",
+		"CREATE TABLE events (day text, id int, note text, PRIMARY KEY (day, id))")
+
+	stat, err := st.Put(context.Background(), []query.Record{
+		{Key: `["mon","1"]`, Value: map[string]any{"day": "mon", "id": 1, "note": "a"}},
+		{Key: `["mon","2"]`, Value: map[string]any{"day": "mon", "id": 2, "note": "b"}},
+	}, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{Written: 2}, stat)
+
+	// One composite key exists (Overwritten via a per-key point pre-read), one is new.
+	stat, err = st.Put(context.Background(), []query.Record{
+		{Key: `["mon","1"]`, Value: map[string]any{"day": "mon", "id": 1, "note": "a2"}},
+		{Key: `["tue","1"]`, Value: map[string]any{"day": "tue", "id": 1, "note": "c"}},
+	}, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{Written: 1, Overwritten: 1}, stat)
 }
 
 func TestPutInsertOnlySkipsExisting(t *testing.T) {

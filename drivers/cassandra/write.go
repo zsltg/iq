@@ -14,11 +14,21 @@ import (
 // already exists as a skip. Every value is bound as a parameter — never string-built
 // — and coerced to its column's type; a value that cannot be represented, an unknown
 // column, or a record missing a primary-key column is a returned error, never a
-// silent drop. Cassandra cannot cheaply tell an insert from an overwrite, so an
-// upsert counts every written row as Written, never Overwritten.
+// silent drop. Cassandra's INSERT cannot tell an insert from an overwrite, so an
+// upsert pre-reads which keys already exist and counts those as Overwritten.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if s.meta == nil {
 		return query.WriteStat{}, errNoTable
+	}
+	// An upsert pre-reads which keys already have a row so it can report an
+	// overwrite; see existingKeys for the accounting-only, non-atomic caveat.
+	var existing map[string]bool
+	if mode == query.Upsert {
+		var err error
+		existing, err = s.existingKeys(ctx, batch)
+		if err != nil {
+			return query.WriteStat{}, err
+		}
 	}
 	var stat query.WriteStat
 	for _, r := range batch {
@@ -49,9 +59,42 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 		if err := s.session.Query(cql, vals...).ExecContext(ctx); err != nil {
 			return query.WriteStat{}, fmt.Errorf("cassandra insert: %w", err)
 		}
-		stat.Written++
+		// A keyless record has no key to pre-read, so existing never holds it and it
+		// counts as Written (the couchdb precedent).
+		if existing[r.Key] {
+			stat.Overwritten++
+		} else {
+			stat.Written++
+		}
 	}
 	return stat, nil
+}
+
+// existingKeys returns which of a batch's non-empty keys already have a row, so an
+// upsert can report them as Overwritten. It reuses Get — one WHERE ... IN for a
+// single-column key, one point query per composite key — reading the rows only to
+// learn which keys are present. The read is accounting only: it never changes what
+// Put writes, and it is not atomic with the writes that follow, so a concurrent
+// insert between the two can skew the count by one. The rows written are always
+// correct.
+func (s *Store) existingKeys(ctx context.Context, batch []query.Record) (map[string]bool, error) {
+	keys := make([]string, 0, len(batch))
+	for _, r := range batch {
+		if r.Key != "" {
+			keys = append(keys, r.Key)
+		}
+	}
+	rows, err := s.Get(ctx, keys)
+	if err != nil {
+		return nil, err
+	}
+	found := make(map[string]bool, len(rows))
+	for k, v := range rows {
+		if v != nil {
+			found[k] = true
+		}
+	}
+	return found, nil
 }
 
 // columnsFor builds the column names and bound values to INSERT for a record. The
