@@ -55,9 +55,10 @@ Cross-driver conventions every backend adapter and driver plan doc follows. Tele
 ## Exec families
 - Native-language backends: `iq exec` passes the query verbatim (plus an optional JSON params argument); no dialect wrapping.
 - Single-JSON-document backends keep that document as the exec payload.
-- Bare-verb backends: KV-shaped ship `get|scan|count|put|delete` plus at most one read-only whitelisted admin verb (aerospike `info`, firestore `collections`); expression-shaped ship `query|search|count|delete`.
+- Routed-native-expression backends — native query text but no top-level statement language (milvus expressions, qdrant filter JSON) — ship `query|search|count|delete`: one routing verb per API family, every payload native syntax; iq invents the routing word only, never an expression grammar.
 - Raw-protocol backends (redis family, memcached) pass the wire command through.
-- Exec may write; each driver documents that it does; per-key delete rides in exec as the raw escape hatch, and continues to after the typed Deleter port (`iq data delete`) lands alongside it.
+- No textual query language → no exec surface: `Query` returns a clear "exec is not supported" error pointing at the structured commands; invented verb vocabularies (get/scan/put words mapped onto RPCs) are barred. Shipped hbase and the aerospike/firestore/etcd plans predate this rule; retrofit is a tracked follow-up.
+- Exec may write where a native form expresses it; each driver documents that it does; per-key delete rides in exec as the raw escape hatch where exec exists, and the typed Deleter port (`iq data delete`) covers it alongside.
 ## Safety
 - Every outbound call is context-bounded with an explicit timeout; no infinite waits.
 - No retry loop in driver code unless the operation is idempotent and the loop is bounded with backoff and jitter (dynamodb precedent); never retry validation or permanent failures.
