@@ -2,6 +2,7 @@ package dynamodb
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"testing"
 	"time"
@@ -552,6 +553,38 @@ func TestPutUpsertCountsOverwritesFromKeyOnlyPreRead(t *testing.T) {
 	require.Equal(t, map[string]string{"#k0": "id"}, gotNames)
 	require.Equal(t, 1, fake.batchGetCalls)
 	require.Equal(t, 2, fake.putCalls)
+}
+
+func TestPutUpsertPreReadExactChunkBoundary(t *testing.T) {
+	// Exactly batchGetMax keys must pre-read in exactly one BatchGetItem call — an
+	// off-by-one on the chunk boundary would add a second, empty request.
+	fake := &fakeDDB{batchGetFn: func(in *awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
+		ka := in.RequestItems["t"]
+		require.NotEmpty(t, ka.Keys) // never a spurious empty pre-read
+		return &awsdynamodb.BatchGetItemOutput{
+			Responses: map[string][]map[string]types.AttributeValue{"t": append([]map[string]types.AttributeValue{}, ka.Keys...)},
+		}, nil
+	}}
+	s := fakeStore(t, fake)
+	batch := make([]query.Record, 0, batchGetMax)
+	for i := 1; i <= batchGetMax; i++ {
+		batch = append(batch, query.Record{Key: strconv.Itoa(i), Value: map[string]any{"id": i}})
+	}
+	stat, err := s.Put(context.Background(), batch, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, 1, fake.batchGetCalls)
+	require.Equal(t, query.WriteStat{Overwritten: batchGetMax}, stat) // all pre-existed
+}
+
+func TestPutUpsertPreReadError(t *testing.T) {
+	fake := &fakeDDB{batchGetFn: func(*awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
+		return nil, errors.New("throttled")
+	}}
+	s := fakeStore(t, fake)
+	_, err := s.Put(context.Background(),
+		[]query.Record{{Key: "1", Value: map[string]any{"id": 1}}}, query.Upsert)
+	require.ErrorContains(t, err, "dynamodb batch get")
+	require.Zero(t, fake.putCalls) // a failed pre-read aborts before any write
 }
 
 func TestPutUpsertDeduplicatesPreReadKeys(t *testing.T) {
