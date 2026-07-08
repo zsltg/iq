@@ -242,8 +242,33 @@ func TestPutUpsert(t *testing.T) {
 	}
 	stat, err := st.Put(context.Background(), batch, query.Upsert)
 	require.NoError(t, err)
+	// Neither row existed, so the pre-read counts both as fresh writes.
 	require.Equal(t, query.WriteStat{Written: 2}, stat)
 	require.Equal(t, []byte("Dune"), fc.rows["1"]["cf"]["title"])
+}
+
+func TestPutUpsertCountsOverwrites(t *testing.T) {
+	fc := newFakeClient()
+	fc.seed("1", cell("cf", "title", "Old"))
+	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
+	batch := []query.Record{
+		{Key: "1", Value: map[string]any{"cf": map[string]any{"title": "New"}}},   // exists → overwrite
+		{Key: "2", Value: map[string]any{"cf": map[string]any{"title": "Fresh"}}}, // new → write
+	}
+	stat, err := st.Put(context.Background(), batch, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{Written: 1, Overwritten: 1}, stat)
+	require.Equal(t, []byte("New"), fc.rows["1"]["cf"]["title"]) // the write still lands
+}
+
+func TestPutUpsertPreReadError(t *testing.T) {
+	fc := newFakeClient()
+	fc.getErr = errors.New("region down")
+	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
+	_, err := st.Put(context.Background(),
+		[]query.Record{{Key: "1", Value: map[string]any{"cf": map[string]any{"title": "Dune"}}}}, query.Upsert)
+	require.ErrorContains(t, err, "hbase exists")
+	require.Zero(t, fc.putCalls) // a failed pre-read aborts before any write
 }
 
 func TestPutInsertOnlySkipsExisting(t *testing.T) {

@@ -54,6 +54,15 @@ func TestIntegrationPutGetScan(t *testing.T) {
 		return nil
 	}))
 	require.Len(t, seen, 2)
+
+	// Re-putting key 1 alongside a new key 3: the existence pre-read counts one
+	// overwrite and one fresh write against a live region server.
+	stat, err = st.Put(ctx, []query.Record{
+		{Key: "1", Value: row(map[string]map[string]any{"cf": {"title": "Dune (rev)"}})},
+		{Key: "3", Value: row(map[string]map[string]any{"cf": {"title": "Ringworld"}})},
+	}, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{Written: 1, Overwritten: 1}, stat)
 }
 
 func TestIntegrationScanFiltered(t *testing.T) {

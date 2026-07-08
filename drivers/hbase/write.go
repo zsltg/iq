@@ -22,8 +22,9 @@ import (
 // written; document your rows carry a stable first column for exact insert-only
 // semantics. Every value is encoded through its column's declared type; a value that
 // cannot be represented, or a record whose value is not a row object, is a returned
-// error, never a silent drop. HBase cannot cheaply distinguish an insert from an
-// overwrite on Upsert, so an upsert counts every written row as Written.
+// error, never a silent drop. A plain Put reply cannot tell an insert from an
+// overwrite, so an upsert pre-reads each row's existence to report Overwritten; see
+// rowExists for the accounting-only, non-atomic caveat.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if s.table == "" {
 		return query.WriteStat{}, errNoTable
@@ -38,12 +39,12 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 		if err != nil {
 			return query.WriteStat{}, err
 		}
-		s.traceOp("put %s", s.table)
-		req, err := hrpc.NewPut(ctx, []byte(s.table), rk, values)
-		if err != nil {
-			return query.WriteStat{}, fmt.Errorf("hbase put: %w", err)
-		}
 		if mode == query.InsertOnly {
+			s.traceOp("put %s", s.table)
+			req, err := hrpc.NewPut(ctx, []byte(s.table), rk, values)
+			if err != nil {
+				return query.WriteStat{}, fmt.Errorf("hbase put: %w", err)
+			}
 			applied, err := s.client.CheckAndPut(req, guardFamily, guardQualifier, nil)
 			if err != nil {
 				return query.WriteStat{}, fmt.Errorf("hbase check-and-put: %w", err)
@@ -55,12 +56,52 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 			}
 			continue
 		}
+		// Upsert: pre-read whether the row exists so a plain Put can be counted as an
+		// overwrite, then write it.
+		existed, err := s.rowExists(ctx, rk)
+		if err != nil {
+			return query.WriteStat{}, err
+		}
+		s.traceOp("put %s", s.table)
+		req, err := hrpc.NewPut(ctx, []byte(s.table), rk, values)
+		if err != nil {
+			return query.WriteStat{}, fmt.Errorf("hbase put: %w", err)
+		}
 		if _, err := s.client.Put(req); err != nil {
 			return query.WriteStat{}, fmt.Errorf("hbase put: %w", err)
 		}
-		stat.Written++
+		if existed {
+			stat.Overwritten++
+		} else {
+			stat.Written++
+		}
 	}
 	return stat, nil
+}
+
+// rowExists reports whether a row already has any cell, the existence check an upsert
+// makes to count an overwrite. It issues an existence-only Get, so the region server
+// answers whether the row exists without shipping any cell. It resolves the reply's
+// Exists flag when the server sets it, falling back to the presence of cells otherwise
+// (the in-memory test client returns cells, not the flag). The check is accounting
+// only: it never changes what Put writes, and it is not atomic with the write that
+// follows, so a concurrent insert between the two can skew the count by one. The row
+// written is always correct.
+func (s *Store) rowExists(ctx context.Context, rk []byte) (bool, error) {
+	s.traceOp("exists %s", s.table)
+	req, err := hrpc.NewGet(ctx, []byte(s.table), rk)
+	if err != nil {
+		return false, fmt.Errorf("hbase exists: %w", err)
+	}
+	req.ExistsOnly()
+	res, err := s.client.Get(req)
+	if err != nil {
+		return false, fmt.Errorf("hbase exists: %w", err)
+	}
+	if res.Exists != nil {
+		return *res.Exists, nil
+	}
+	return len(res.Cells) > 0, nil
 }
 
 // columnsFor builds the family→qualifier→value map to Put for a record, plus the
