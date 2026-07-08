@@ -1360,9 +1360,14 @@ With `--insert`/`--typed` the filter transforms **each item** (its key is preser
 write `.[]` — iteration over the source is implicit. Existing keys are overwritten (upsert) unless
 `--no-overwrite`; `--replace` empties the destination first (with confirmation, or `--force`).
 
+A document store (Mongo, CouchDB, Elasticsearch) stores each value exactly as given and so requires it
+be a JSON object: a bare scalar — a Redis string value, say — is **rejected** with a hint rather than
+silently wrapped as `{"value": …}`, so a successful copy round-trips exactly. Shape it explicitly first,
+e.g. `--filter 'if type == "object" then . else {value: .} end'`.
+
 ```bash
 iq --src books --insert books2                        # source → source, key/_id-preserving
-iq --src cache --insert docs                          # cross-driver (Redis → Mongo)
+iq --src cache --insert docs                          # cross-driver (Redis → Mongo); object values only
 iq --src cache --typed -o dump.jsonl                  # back up Redis losslessly (typed dump)
 iq --src books --jsonl -o dump.jsonl                  # back up Mongo with plain output (self-describing)
 iq add file:///dump.jsonl -n snap                     # a dump file is a source; then restore it:

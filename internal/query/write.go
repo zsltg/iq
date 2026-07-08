@@ -2,7 +2,20 @@ package query
 
 import (
 	"context"
+	"fmt"
 )
+
+// NonObjectValueError is the uniform error a keyed document store returns when a
+// record's value is not a JSON object. Wrapping a scalar as {value: ...} would break
+// the round-trip — a "42" copied from Redis would come back as {"value":"42"} — so the
+// store rejects it and points the user at an explicit transform. driver names the
+// backend; key is the record key the value arrived under.
+func NonObjectValueError(driver, key string) error {
+	return fmt.Errorf(
+		`%s: value for key %q is not a JSON object; transform explicitly, e.g. --filter 'if type == "object" then . else {value: .} end'`,
+		driver, key,
+	)
+}
 
 // Record is one typed item crossing the write boundary. Type is a driver-neutral
 // discriminator: "" (or "document") for a schemaless store such as MongoDB; the

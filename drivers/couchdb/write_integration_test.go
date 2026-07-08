@@ -50,21 +50,30 @@ func TestPutInsertOnlySkipsConflicts(t *testing.T) {
 	require.Equal(t, "orig", got["1"].(map[string]any)["title"], "an existing key is not clobbered")
 }
 
-func TestPutKeylessAndScalar(t *testing.T) {
+func TestPutKeylessMintsIDButRejectsScalar(t *testing.T) {
 	st := seedDB(t)
 	ctx := skipShort(t)
 
+	// A keyless object still mints its own _id and is written.
 	stat, err := st.Put(ctx, []query.Record{
 		{Key: "", Value: map[string]any{"title": "minted-id"}},
-		{Key: "k", Value: "bare-scalar"},
 	}, query.Upsert)
 	require.NoError(t, err)
-	require.Equal(t, 2, stat.Written)
+	require.Equal(t, 1, stat.Written)
 
-	// The scalar value is wrapped so it is a valid document.
-	got, err := st.Get(ctx, []string{"k"})
+	// A scalar value is rejected rather than wrapped as {value: ...}, so a copy
+	// round-trips exactly. Documents are built before the bulk call, so a good record
+	// batched ahead of the scalar is not written either — the whole batch fails first.
+	_, err = st.Put(ctx, []query.Record{
+		{Key: "good", Value: map[string]any{"title": "ok"}},
+		{Key: "k", Value: "bare-scalar"},
+	}, query.Upsert)
+	require.ErrorContains(t, err, "is not a JSON object")
+
+	got, err := st.Get(ctx, []string{"good", "k"})
 	require.NoError(t, err)
-	require.Equal(t, "bare-scalar", got["k"].(map[string]any)["value"])
+	require.Nil(t, got["k"], "the rejected scalar was never written")
+	require.Nil(t, got["good"], "the batch failed before any document was written")
 }
 
 func TestPutStripsIdentityFields(t *testing.T) {

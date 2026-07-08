@@ -34,10 +34,14 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 		if r.Key != "" {
 			meta["_id"] = r.Key
 		}
+		body, err := documentBody(r)
+		if err != nil {
+			return query.WriteStat{}, err
+		}
 		if err := writeBulkLine(&buf, map[string]any{action: meta}); err != nil {
 			return query.WriteStat{}, err
 		}
-		if err := writeBulkLine(&buf, documentBody(r)); err != nil {
+		if err := writeBulkLine(&buf, body); err != nil {
 			return query.WriteStat{}, err
 		}
 	}
@@ -100,23 +104,24 @@ func writeBulkLine(buf *bytes.Buffer, v any) error {
 	return nil
 }
 
-// documentBody builds the JSON document to write for a record: the value when it is
-// an object, else a {value: ...} wrapper, with the injected _id stripped so identity
-// is carried by the record key, not the value (Elasticsearch reserves _id as a
-// metadata field and rejects it inside _source).
-func documentBody(r query.Record) map[string]any {
-	doc := map[string]any{}
-	if obj, ok := r.Value.(map[string]any); ok {
-		for k, v := range obj {
-			if k == "_id" {
-				continue // identity comes from the record key.
-			}
-			doc[k] = v
-		}
-		return doc
+// documentBody builds the JSON document to write for a record, with the injected _id
+// stripped so identity is carried by the record key, not the value (Elasticsearch
+// reserves _id as a metadata field and rejects it inside _source). The value must be a
+// JSON object: a scalar is rejected rather than wrapped as {value: ...}, so a successful
+// Put round-trips exactly.
+func documentBody(r query.Record) (map[string]any, error) {
+	obj, ok := r.Value.(map[string]any)
+	if !ok {
+		return nil, query.NonObjectValueError("elasticsearch", r.Key)
 	}
-	doc["value"] = r.Value
-	return doc
+	doc := map[string]any{}
+	for k, v := range obj {
+		if k == "_id" {
+			continue // identity comes from the record key.
+		}
+		doc[k] = v
+	}
+	return doc, nil
 }
 
 // Clear empties the index, keeping it and its mapping/settings (the `iq data clear`

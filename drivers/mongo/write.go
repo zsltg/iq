@@ -20,8 +20,8 @@ const duplicateKeyCode = 11000
 // Put writes a batch of records into the collection, keyed by _id. Upsert replaces
 // an existing document and inserts a new one; InsertOnly inserts new documents and
 // skips (counts) those whose _id already exists. Every value is marshalled through
-// bson — never string-built — and a non-object value is wrapped as {_id, value} so
-// it is a valid document.
+// bson — never string-built — and a value that is not a JSON object is a returned
+// error, so a scalar is never silently wrapped and a copy round-trips exactly.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if s.collection == "" {
 		return query.WriteStat{}, errNoCollection
@@ -97,21 +97,22 @@ func insertOnly(ctx context.Context, coll *mongo.Collection, batch []query.Recor
 	return query.WriteStat{Written: len(batch) - skipped, Skipped: skipped}, nil
 }
 
-// documentFor builds the BSON document to write for a record: the value when it is
-// an object, else a {value: ...} wrapper, with _id set from the key so identity is
-// carried by the key, not the value. A 24-hex key restores an ObjectID _id. A
-// keyless record (foreign JSON with no key field) lets MongoDB mint the _id.
+// documentFor builds the BSON document to write for a record, with _id set from the
+// key so identity is carried by the key, not the value. A 24-hex key restores an
+// ObjectID _id; a keyless record (foreign JSON with no key field) lets MongoDB mint the
+// _id. The value must be a JSON object: a scalar is rejected rather than wrapped as
+// {value: ...}, so a successful Put round-trips exactly.
 func documentFor(r query.Record) (bson.M, error) {
+	obj, ok := r.Value.(map[string]any)
+	if !ok {
+		return nil, query.NonObjectValueError("mongodb", r.Key)
+	}
 	doc := bson.M{}
-	if obj, ok := r.Value.(map[string]any); ok {
-		for k, v := range obj {
-			if k == "_id" {
-				continue // identity comes from the record key, replacing any read _id.
-			}
-			doc[k] = bsonValue(v)
+	for k, v := range obj {
+		if k == "_id" {
+			continue // identity comes from the record key, replacing any read _id.
 		}
-	} else {
-		doc["value"] = bsonValue(r.Value)
+		doc[k] = bsonValue(v)
 	}
 	if r.Key != "" {
 		doc["_id"] = idValue(r.Key)

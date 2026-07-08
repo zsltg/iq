@@ -38,3 +38,27 @@ func TestTallyBulk(t *testing.T) {
 		require.ErrorContains(t, err, "bad field")
 	})
 }
+
+func TestDocumentBody(t *testing.T) {
+	t.Run("object value keeps its fields", func(t *testing.T) {
+		doc, err := documentBody(query.Record{Key: "1", Value: map[string]any{"title": "Dune"}})
+		require.NoError(t, err)
+		require.Equal(t, map[string]any{"title": "Dune"}, doc)
+	})
+
+	t.Run("injected _id is stripped from the source", func(t *testing.T) {
+		doc, err := documentBody(query.Record{Key: "1", Value: map[string]any{"_id": "1", "title": "Dune"}})
+		require.NoError(t, err)
+		require.Equal(t, map[string]any{"title": "Dune"}, doc)
+	})
+
+	t.Run("scalar value is rejected, not wrapped", func(t *testing.T) {
+		_, err := documentBody(query.Record{Key: "k", Value: "bare-scalar"})
+		require.ErrorContains(t, err, "is not a JSON object")
+	})
+
+	t.Run("keyless scalar is rejected too", func(t *testing.T) {
+		_, err := documentBody(query.Record{Value: 42})
+		require.ErrorContains(t, err, "is not a JSON object")
+	})
+}

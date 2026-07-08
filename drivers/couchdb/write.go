@@ -43,7 +43,10 @@ func (s *Store) upsert(ctx context.Context, batch []query.Record) (query.WriteSt
 
 	docs := make([]any, len(batch))
 	for i, r := range batch {
-		doc := documentBody(r)
+		doc, err := documentBody(r)
+		if err != nil {
+			return query.WriteStat{}, err
+		}
 		if r.Key != "" {
 			doc["_id"] = r.Key
 			if rev, ok := revs[r.Key]; ok {
@@ -77,7 +80,10 @@ func (s *Store) upsert(ctx context.Context, batch []query.Record) (query.WriteSt
 func (s *Store) insertOnly(ctx context.Context, batch []query.Record) (query.WriteStat, error) {
 	docs := make([]any, len(batch))
 	for i, r := range batch {
-		doc := documentBody(r)
+		doc, err := documentBody(r)
+		if err != nil {
+			return query.WriteStat{}, err
+		}
 		if r.Key != "" {
 			doc["_id"] = r.Key
 		}
@@ -150,22 +156,23 @@ func rowRev(rows *kivik.ResultSet) string {
 	return v.Rev
 }
 
-// documentBody builds the JSON document to write for a record: the value when it is
-// an object, else a {value: ...} wrapper, with any read-in _id/_rev stripped so
-// identity is carried by the record key, not the value.
-func documentBody(r query.Record) map[string]any {
-	doc := map[string]any{}
-	if obj, ok := r.Value.(map[string]any); ok {
-		for k, v := range obj {
-			if k == "_id" || k == "_rev" {
-				continue // identity comes from the record key; the rev is set by the upsert.
-			}
-			doc[k] = v
-		}
-		return doc
+// documentBody builds the JSON document to write for a record, with any read-in
+// _id/_rev stripped so identity is carried by the record key, not the value. The value
+// must be a JSON object: a scalar is rejected rather than wrapped as {value: ...}, so a
+// successful Put round-trips exactly.
+func documentBody(r query.Record) (map[string]any, error) {
+	obj, ok := r.Value.(map[string]any)
+	if !ok {
+		return nil, query.NonObjectValueError("couchdb", r.Key)
 	}
-	doc["value"] = r.Value
-	return doc
+	doc := map[string]any{}
+	for k, v := range obj {
+		if k == "_id" || k == "_rev" {
+			continue // identity comes from the record key; the rev is set by the upsert.
+		}
+		doc[k] = v
+	}
+	return doc, nil
 }
 
 // Clear empties the database, keeping it and its design documents (the `iq data
