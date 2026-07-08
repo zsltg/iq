@@ -506,6 +506,34 @@ Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sou
 > `docker.elastic.co/elasticsearch/elasticsearch:8.17.4`, and
 > `opensearchproject/opensearch:2.17.1`.
 
+### What every driver guarantees
+
+The per-driver blocks below differ in encoding and pushdown detail, but every backend honors the
+same contract:
+
+- **One URL, native nouns.** The URL scheme picks the driver; the keyspace rides in the URL as the
+  backend's own noun (`?collection=`, `?table=`, `?database=`, `?label=`/`?rel=`, `?index=`), and a
+  query overrides it per run with the dotted `handle.<keyspace>` suffix (see [Sources](#sources)).
+- **One jq surface.** A bounded filter fetches exactly the named keys — a missing key reads as
+  `null`, never an error; a `.[]`-rooted filter streams the keyspace in bounded pages; a holistic
+  filter materializes only behind `--unbounded` (see
+  [Bounded reads, streaming scans, and materialized scans](#bounded-reads-streaming-scans-and-materialized-scans)).
+- **Pushdown never changes results.** A pushed predicate is only ever a conservative server-side
+  pre-filter; the full jq always re-runs client-side, so output is identical with or without it, and
+  [`--explain`](#query-plan---explain--v) shows exactly what was pushed.
+- **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, and drop are opt-in
+  ports: a backend implements what its model supports, and a command against a missing capability
+  fails with a clear message instead of emulating it (Redis, whose DB index cannot be removed,
+  simply has no `drop`).
+- **Values round-trip.** Every value normalizes to JSON under a frozen per-backend encoding
+  contract, and a `--typed` dump restores through `--insert` losslessly (see
+  [Moving data](#moving-data---insert---typed)).
+- **Bounded and redacted.** Every backend call is bounded by `--timeout`, and a URL's password is
+  redacted from every listing, log line, and error.
+- **A native escape hatch.** `iq exec` speaks the backend's own language — verbatim where one exists
+  (Redis commands, Mongo command documents, CQL, PartiQL, Cypher, Mango, the Elasticsearch DSL), a small
+  fixed verb set where none does (HBase) — see each driver's Raw commands section.
+
 <details>
 <summary><b>Redis</b> — value encoding and raw commands</summary>
 
@@ -1379,7 +1407,9 @@ graph TD
 
 A scan emits per-page progress (`RunOptions.OnPage`) to a stderr spinner — CLI only, off unless
 attached to a terminal — and an unfiltered scan can fetch a cheap up-front total
-(`RunOptions.OnEstimate`, Mongo's `estimatedDocumentCount`) so progress reads as ~N.
+(`RunOptions.OnEstimate`, answered from backend metadata where the backend keeps one — a collection
+estimate like Mongo's `estimatedDocumentCount`, table metadata, an index count) so progress reads
+as ~N.
 
 Data movement & lifecycle / write path:
 

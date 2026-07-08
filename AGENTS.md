@@ -41,7 +41,7 @@ Boring, linear, readable code.
 - Push back when it matters: surface real risks and deviations, skip style nits.
 - Definition of Done: scoped tests, `make check` clean (format, vet, build, lint, dead code), coverage floor met (`make cover`), security sweep clean (`make security`), `make e2e` passing, mutation gate green (zero surviving mutants on covered code), edge cases, updated docs, honest closeout of what was skipped, assumed or left.
 ## Adding a driver
-The port is trivially thin (`Store.Query`); the cost is around the adapter, and the gates below enforce it. Gate every candidate datastore — especially an enterprise or cloud-managed one — on all four before writing adapter code; a No on any one is a stop, not a workaround.
+The port is trivially thin (`Store.Query`); the cost is around the adapter, and the gates below enforce it. Gate every candidate datastore — especially an enterprise or cloud-managed one — on all four before writing adapter code; a No on any one is a stop, not a workaround. A datastore that passes gets its adapter and plan doc designed against [driver-contract](.agents/driver-contract.md); its registry — option spellings, host ports, exec families — binds.
 - Hermetic test image: a freely-runnable local image or emulator that `testcontainers` can drive, no EULA-gated pull, no live cloud account, no CI credentials; without it the coverage floor and the mutation gate cannot go green on the driver's covered code, so it fails the Definition of Done. DynamoDB Local passes; DataStax/Couchbase/Oracle Enterprise images and the flaky Cosmos emulator do not — target the open-source edition, which shares the driver.
 - Permissive, telemetry-free SDK: the Go driver is permissive-licensed and emits no telemetry or usage metrics by default; a proprietary or non-permissive driver is a hard stop, and every new SDK widens the `govulncheck`/`osv-scanner`/SBOM surface.
 - Auth fits the connection contract: authentication reduces to config the composition root injects, with no native dependency (Kerberos/GSSAPI) and no live-account requirement; token refresh and rotation obey the secret rules — never log a credential, release every resource, bound every outbound call.
@@ -49,7 +49,7 @@ The port is trivially thin (`Store.Query`); the cost is around the adapter, and 
 ## Docs stay current
 - README Common commands is the full catalogue; update it in the same change that adds or alters a developer-facing command, dependency or environment variable; environment variables also update `.env.example`.
 - A change to the system's shape (a new datastore target, a new delivery surface, a changed connection contract) updates the README Architecture section in the same change.
-- A change to the selector's classification, the pushdown-to-predicate mapping, a core port, or a backend adapter updates the README Architecture Mermaid diagram in the same change; keep the committed diagram in sync, never redraw it from scratch.
+- A change to the selector's classification, the pushdown-to-predicate mapping, or a core port updates the README Architecture Mermaid diagram in the same change; the diagrams are port-level, so a backend-adapter change updates the Architecture prose and the driver table instead, never the diagram; keep the committed diagram in sync, never redraw it from scratch.
 ## Boundaries
 Never:
 - Hand-edit generated artifacts (`go generate` output, vendored code).
@@ -82,3 +82,4 @@ Specific doctrine, read on demand:
 - [designing-data-intensive-applications.mini](.agents/books/designing-data-intensive-applications.mini.md): writing the query, data-model or connection layer; NoSQL consistency, staleness, partitioning, schema evolution, idempotency.
 - [release-it.mini](.agents/books/release-it.mini.md): writing database or network calls; timeouts, bounded retries, result-set limits, validating responses, failing fast.
 - [refactoring.mini](.agents/books/refactoring.mini.md): restructuring existing code without changing behaviour.
+- [driver-contract](.agents/driver-contract.md): designing or changing a backend adapter or its plan doc; URL and option registry, key and value shape, reads, pushdown, writes, admin ports, exec families, safety, test infra, host-port table.
