@@ -88,6 +88,7 @@ Cross-driver conventions every backend adapter and driver plan doc follows. Tele
 | hbase | host network | shipped; binds 2181 + 16000/16010/16020/16030 |
 | aerospike | 3000 | |
 | arangodb | 8529 | |
+| bigtable | 8086 | emulator's native default |
 | couchbase | 8091-8096, 11210 | |
 | dgraph | 9080 gRPC, 8180:8080 health | remapped; 8080 goes to firestore |
 | dragonfly | 6381:6379 | |
