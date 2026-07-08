@@ -8,7 +8,7 @@
 // default — valid UTF-8 as text, else base64 — and a caller who knows a column's
 // encoding declares it in the URL (?types=cf:q=long) for an exact, reversible
 // mapping via the standard HBase Bytes layout. The row key is likewise text-or-base64
-// unless ?rowkeytype= declares it.
+// unless ?keytype= declares it.
 //
 // HBase has no query language, so the raw path (iq exec) is a small, safe verb set —
 // get, scan, count, put, delete — mapped straight onto RPC, never a built query

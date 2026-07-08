@@ -904,7 +904,7 @@ The driver **never guesses** a numeric type from bytes (an 8-byte string is indi
 `long`); it either *knows* (you declared it) or is *honest* (text, else base64). Declared columns
 round-trip losslessly in both directions. An undeclared column read back as base64 (non-UTF-8 bytes)
 does **not** round-trip through a write — declare it `bytes` for that. The row key is likewise
-text-or-base64 unless `?rowkeytype=` declares it (`&rowkeytype=long`).
+text-or-base64 unless `?keytype=` declares it (`&keytype=long`).
 
 ```bash
 # declare the numeric columns so they read as numbers and .year > 2015 needs no tonumber:

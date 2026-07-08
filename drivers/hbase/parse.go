@@ -76,7 +76,7 @@ func parseURL(rawURL, address string) (connConfig, error) {
 		return connConfig{}, err
 	}
 	rowkeyType := ctAuto
-	if rk := q.Get("rowkeytype"); rk != "" {
+	if rk := q.Get("keytype"); rk != "" {
 		rowkeyType, err = parseColType(rk)
 		if err != nil {
 			return connConfig{}, err

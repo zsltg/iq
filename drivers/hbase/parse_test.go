@@ -29,13 +29,21 @@ func TestParseURL(t *testing.T) {
 		require.Equal(t, "orders", cc.table)
 	})
 
-	t.Run("znode and types and rowkeytype", func(t *testing.T) {
-		cc, err := parseURL("hbase://zk/?table=t&znode=/hbase-unsecure&types=cf:age=long,cf:p=double&rowkeytype=long", "")
+	t.Run("znode and types and keytype", func(t *testing.T) {
+		cc, err := parseURL("hbase://zk/?table=t&znode=/hbase-unsecure&types=cf:age=long,cf:p=double&keytype=long", "")
 		require.NoError(t, err)
 		require.Equal(t, "/hbase-unsecure", cc.znode)
 		require.Equal(t, ctLong, cc.types[cellKey("cf", "age")])
 		require.Equal(t, ctDouble, cc.types[cellKey("cf", "p")])
 		require.Equal(t, ctLong, cc.rowkeyType)
+	})
+
+	t.Run("legacy rowkeytype is inert, not the key type", func(t *testing.T) {
+		// The param was renamed to keytype; the old spelling is now an unknown param,
+		// ignored like any other, so the row key stays the text-or-base64 default.
+		cc, err := parseURL("hbase://zk/?table=t&rowkeytype=long", "")
+		require.NoError(t, err)
+		require.Equal(t, ctAuto, cc.rowkeyType)
 	})
 
 	t.Run("namespace qualified table is allowed", func(t *testing.T) {
@@ -53,7 +61,7 @@ func TestParseURL(t *testing.T) {
 		{"no host", "hbase:///?table=t", ""},
 		{"table with slash", "hbase://zk/?table=a/b", ""},
 		{"bad type", "hbase://zk/?table=t&types=cf:a=blorp", ""},
-		{"bad rowkeytype", "hbase://zk/?table=t&rowkeytype=blorp", ""},
+		{"bad keytype", "hbase://zk/?table=t&keytype=blorp", ""},
 		{"malformed types entry", "hbase://zk/?table=t&types=noequals", ""},
 		{"types column not family:qualifier", "hbase://zk/?table=t&types=col=long", ""},
 	}
