@@ -282,6 +282,19 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 	return flush()
 }
 
+// EstimateCount answers the Estimator port with DBSIZE — the number of keys in
+// the selected database. ScanBatches walks the same database with MATCH *, so
+// DBSIZE is exactly that unfiltered-scan universe, and it is O(1) server-side
+// metadata rather than a scan, which is what the port requires. It stays a hint:
+// a concurrent write moves it, so the running scan may exceed it.
+func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
+	n, err := s.client.DBSize(ctx).Result()
+	if err != nil {
+		return 0, fmt.Errorf("redis dbsize: %w", err)
+	}
+	return n, nil
+}
+
 // FormatRaw renders a raw command reply in redis-cli's cooked style. It lets the
 // Redis store satisfy the CLI's backend interface alongside the MongoDB store,
 // which formats its raw replies as JSON instead.

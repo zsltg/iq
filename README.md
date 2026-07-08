@@ -380,11 +380,12 @@ mean the same thing for future backends (a Cassandra full scan, a CouchDB `_all_
 A scan has no reliable upfront total (Redis `SCAN`, Mongo cursor), so while one runs `iq` shows an
 animated spinner with a running `N scanned` count on **stderr** — a sparse `.[] | select(...)` over
 a large keyspace is never silent. When a backend can supply a cheap approximate total (MongoDB's
-`estimatedDocumentCount` for an unfiltered whole-collection scan), the count is shown against it as
+`estimatedDocumentCount` for an unfiltered whole-collection scan, Redis's `DBSIZE` for its
+whole-keyspace `MATCH *` scan), the count is shown against it as
 `N scanned (~M est)`; the tilde marks it a hint — it comes from cached metadata and drifts under
 concurrent writes, so the scan may exceed it and it never becomes a percentage bar. No total is
-shown for a pushed-down filtered scan (it walks a subset), for Redis (no cheap count for a
-`MATCH`), or for a cross-source scan (a per-source estimate would mislead the aggregate). The
+shown for a pushed-down filtered scan (it walks a subset) or for a cross-source scan (a per-source
+estimate would mislead the aggregate). The
 spinner appears only after a short delay, so a fast query never flashes one, and only when stderr
 is a terminal: piped or redirected output is never touched, and result rows streamed to stdout are
 never garbled by it. Disable it with `--no-progress`.
@@ -1512,10 +1513,10 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   `?index=` (host as the server, or a dotted `handle.index` override), reading the index mapping once
   at connect so a term is pushed only onto an exactly-matchable field. Cassandra pushes
   equality/`IN` as a CQL `WHERE`
-  (`FilteredScanner`) but has no cheap count, so it omits `Estimator` like Redis; DynamoDB pushes
+  (`FilteredScanner`) but has no cheap count, so it omits `Estimator`; DynamoDB pushes
   equality/existence as a `Scan` `FilterExpression` (`FilteredScanner`) and answers `Estimator` from
   its table metadata; HBase pushes column equality as a `SingleColumnValueFilter` (`FilteredScanner`)
-  and omits `Estimator` like Redis; CouchDB pushes equality, ranges, and existence as a Mango `_find`
+  but has no cheap count, so it omits `Estimator`; CouchDB pushes equality, ranges, and existence as a Mango `_find`
   selector (`FilteredScanner`, falling back to a plain `_all_docs` scan for the exact-negation and
   polymorphic operators) and answers `Estimator` from its `doc_count`; Neo4j pushes equality and
   existence as a Cypher `WHERE` clause (`FilteredScanner`, falling back to a plain label scan for
