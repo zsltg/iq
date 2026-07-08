@@ -96,6 +96,53 @@ func TestScanFilteredPushesRange(t *testing.T) {
 	require.Equal(t, []string{"2", "3"}, sortedKeys(got))
 }
 
+func TestScanFilteredPushesRegex(t *testing.T) {
+	st := seedDB(
+		t,
+		map[string]any{"_id": "1", "name": "Ångström"}, // non-ASCII subject containing "str"
+		map[string]any{"_id": "2", "name": "kelvin"},   // lowercase
+		map[string]any{"_id": "3", "name": "Kelvin"},   // ASCII K
+		map[string]any{"_id": "4", "name": "meter"},    // no match
+		map[string]any{"_id": "5", "name": 42},         // non-string: is_binary guard skips it
+		map[string]any{"_id": "6", "name": "Kelvin"},   // Kelvin sign (U+212A), not ASCII K
+	)
+	ctx := skipShort(t)
+
+	// An ASCII, byte-safe pattern matches the same bytes CouchDB's byte-mode $regex
+	// sees, even over a non-ASCII subject: "Ångström" contains the bytes "str".
+	got := collect(t, func(fn func(map[string]any) error) error {
+		return st.ScanFiltered(ctx, predicate.Regex{Path: []string{"name"}, Pattern: "str"}, fn)
+	})
+	require.Equal(t, []string{"1"}, sortedKeys(got))
+
+	// Case-sensitive ^K matches ASCII "Kelvin" only: not lowercase "kelvin", not the
+	// Kelvin sign (a different rune), and not the number field (is_binary skips it),
+	// exactly as jq's test would — the i flag is never pushed.
+	got = collect(t, func(fn func(map[string]any) error) error {
+		return st.ScanFiltered(ctx, predicate.Regex{Path: []string{"name"}, Pattern: "^K"}, fn)
+	})
+	require.Equal(t, []string{"3"}, sortedKeys(got))
+}
+
+func TestScanFilteredPushesSize(t *testing.T) {
+	st := seedDB(
+		t,
+		map[string]any{"_id": "1", "tags": []any{"a", "b"}},                // array length 2 — a true match
+		map[string]any{"_id": "2", "tags": []any{"a"}},                     // array length 1 — never matched
+		map[string]any{"_id": "3", "tags": "xyz"},                          // string — in the superset, not a true match
+		map[string]any{"_id": "4", "tags": map[string]any{"a": 1, "b": 2}}, // object — in the superset
+	)
+	ctx := skipShort(t)
+
+	// jq length is polymorphic, so the push is a $size-plus-$type superset: the
+	// length-2 array, plus every string/object/number regardless of length. It must
+	// never miss the array (doc 1); the client re-run narrows the rest.
+	got := collect(t, func(fn func(map[string]any) error) error {
+		return st.ScanFiltered(ctx, predicate.Size{Path: []string{"tags"}, N: 2}, fn)
+	})
+	require.Equal(t, []string{"1", "3", "4"}, sortedKeys(got))
+}
+
 func TestScanFilteredFallsBackForNonPushable(t *testing.T) {
 	st := seedDB(t, booksDocs()...)
 	ctx := skipShort(t)

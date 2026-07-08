@@ -103,9 +103,11 @@ var mangoOp = map[predicate.Op]string{
 // return is whether the selector actually narrows the scan: false means the node
 // (or an unsafe part of it) could not be pushed without risking wrongly excluding a
 // jq match, so the caller must fall back to a full scan rather than trust the
-// selector. Only pure-superset, over-inclusion-safe nodes are pushed; the exact
-// negations (!=, NoneMatch) and the polymorphic length/regex/any tests, whose Mango
-// semantics could exclude a document jq would keep, deliberately do not narrow.
+// selector. Only pure-superset, over-inclusion-safe nodes are pushed: equality,
+// ranges, existence, a byte-safe regex, and a polymorphic length as a
+// $size-plus-$type superset. The exact negations (!=, NoneMatch), an array any
+// (ElemMatch), and a regex outside the byte-safe subset, whose Mango semantics
+// could exclude a document jq would keep, deliberately do not narrow.
 func toSelector(n predicate.Node) (map[string]any, bool) {
 	switch t := n.(type) {
 	case predicate.Eq:
@@ -118,14 +120,98 @@ func toSelector(n predicate.Node) (map[string]any, bool) {
 		// Exact: a missing field is exactly what jq's `has | not` tests, and Mango's
 		// $exists:false matches precisely the absent field.
 		return map[string]any{field(t.Path): map[string]any{"$exists": false}}, true
+	case predicate.Regex:
+		return regexSelector(t)
+	case predicate.Size:
+		return sizeSelector(t)
 	case predicate.And:
 		return andSelector(t)
 	case predicate.Or:
 		return orSelector(t)
 	default:
-		// Ne, NoneMatch, Size, Regex, ElemMatch, and any unknown node: do not narrow.
+		// Ne, NoneMatch, ElemMatch, and any unknown node: do not narrow.
 		return nil, false
 	}
+}
+
+// regexSelector pushes a portable regex as a Mango $regex, but only for the
+// subset CouchDB's byte-mode Erlang re interprets like gojq's RE2. CouchDB runs
+// $regex over the raw UTF-8 bytes with no unicode option, guarded by is_binary (a
+// non-string field silently does not match, exactly as jq's test over a
+// non-string is false), so an ASCII, byte-safe pattern selects the same strings
+// in both engines. The i flag is declined — byte-mode caseless folds only ASCII,
+// so it could drop a non-ASCII string jq keeps — and the m (dotall) flag needs no
+// handling: a byte-safe pattern has no unescaped dot, so dotall is vacuous.
+func regexSelector(r predicate.Regex) (map[string]any, bool) {
+	if strings.ContainsRune(r.Flags, 'i') || !byteSafeRegex(r.Pattern) {
+		return nil, false
+	}
+	return map[string]any{field(r.Path): map[string]any{"$regex": r.Pattern}}, true
+}
+
+// byteSafeRegex reports whether a portable regex is also safe for CouchDB's
+// byte-mode $regex. The core portableRegex gate already admits only cross-engine
+// constructs, but CouchDB's Erlang re runs over raw bytes without the unicode
+// option, so anything meaning "one character" or "not this class" diverges on
+// multi-byte UTF-8. This gate is stricter: it rejects a non-ASCII byte (a
+// multi-byte rune the byte engine splits), an unescaped dot (matches one byte,
+// not one rune), a negated class [^…] or the negated shorthands \D \W \S (their
+// byte complement includes UTF-8 continuation bytes RE2 would not match), and a
+// trailing backslash. A pattern that survives matches byte-for-byte in both.
+func byteSafeRegex(p string) bool {
+	escaped := false
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		if c >= 0x80 {
+			return false
+		}
+		if escaped {
+			// c is the character after a backslash. A negated shorthand class is
+			// unsafe over bytes; anything else is a literal, so it is fine.
+			if c == 'D' || c == 'W' || c == 'S' {
+				return false
+			}
+			escaped = false
+			continue
+		}
+		if c == '.' {
+			return false
+		}
+		if c == '[' && i+1 < len(p) && p[i+1] == '^' {
+			return false
+		}
+		if c == '\\' {
+			escaped = true
+		}
+	}
+	// A trailing backslash leaves escaped set: it has no escaped character, so it
+	// is a dangling metacharacter we cannot trust byte-for-byte.
+	return !escaped
+}
+
+// sizeSelector mirrors the Mongo size push. jq length is polymorphic (array,
+// string, object, number), so an exact array $size alone would drop a string,
+// object, or number whose length matches. It pushes a superset — arrays of
+// exactly N via $size, plus every string/object/number as a separate $type
+// clause (Mango's $type takes one string, unlike Mongo's list) — and the client
+// re-run strips the non-array matches. Length 0 also matches null and a missing
+// field, which jq reads as length 0.
+func sizeSelector(s predicate.Size) (map[string]any, bool) {
+	path := field(s.Path)
+	clauses := []any{
+		map[string]any{path: map[string]any{"$size": s.N}},
+		map[string]any{path: map[string]any{"$type": "string"}},
+		map[string]any{path: map[string]any{"$type": "object"}},
+		map[string]any{path: map[string]any{"$type": "number"}},
+	}
+	if s.N == 0 {
+		clauses = append(
+			clauses,
+			map[string]any{path: map[string]any{"$type": "null"}},
+			map[string]any{path: map[string]any{"$exists": false}},
+		)
+	}
+	return map[string]any{"$or": clauses}, true
 }
 
 // eqSelector builds a field-equality selector. A nil value must also match an

@@ -975,18 +975,29 @@ identical to every backend.
 
 ### Server-side pre-filtering (predicate pushdown)
 
-By default a `.[] | select(...)` filter's **equality**, **range**, and **existence** clauses are
+By default a `.[] | select(...)` filter's **equality**, **range**, **existence**, byte-safe
+**regex**, and **length** clauses are
 translated into a Mango `_find` selector so the server filters before documents reach iq:
 
 | `select(...)` clause | Pushed | Mango selector | Notes |
 | --- | :---: | --- | --- |
 | `.a == x` | ✓ | `{"a": x}` | equality; a `null` literal also matches an absent field |
 | `.a > x` / `.a <= x` | ✓ | `{"$or": [{"a": {"$gt": x}}, …]}` | range, widened with `$type` clauses so jq's cross-type ordering (null < bool < number < string < array < object, matching CouchDB collation) is reproduced |
+| `.a \| test("re")` | ✓ | `{"a": {"$regex": "re"}}` | byte-safe ASCII patterns only (below); a case-insensitive or non-ASCII-safe pattern runs client-side |
 | `.a \| has` / `has("a")` | ✓ | `{"a": {"$exists": true}}` | key presence, exact |
 | `has("a") \| not` | ✓ | `{"a": {"$exists": false}}` | key absence, exact |
+| `.a \| length == n` | ✓ | `{"$or": [{"a": {"$size": n}}, {"a": {"$type": …}}, …]}` | jq `length` is polymorphic (array/string/object/number), so the array `$size` is widened with per-type `$type` clauses to a superset; `n == 0` also matches null and a missing field |
 | `E1 and E2` | ✓ | `{"$and": […]}` | drops any conjunct it cannot push (widening) |
 | `E1 or E2` | ✓ | `{"$or": […]}` | pushed only when **every** branch is pushable |
-| `!=`, `length`, regex, `any`, nested-array tests | — | — | run client-side: a plain `_all_docs` scan is used, because Mango's semantics for these could wrongly exclude a document jq would keep |
+| `!=`, `any`, nested-array tests, a case-insensitive or non-byte-safe regex | — | — | run client-side: a plain `_all_docs` scan is used, because Mango's semantics for these could wrongly exclude a document jq would keep |
+
+**Byte-safe regex.** CouchDB's Mango `$regex` runs its Erlang engine over the document's raw UTF-8
+bytes with no unicode option, and skips a non-string field (an `is_binary` guard, exactly as jq's
+`test` over a non-string is false). A pattern is pushed only when it means the same byte-for-byte as
+gojq's RE2: pure-ASCII literals, anchors, quantifiers, groups, positive classes, and the `\d \w \s`
+shorthands. An unescaped `.`, a negated class (`[^…]`, `\D`, `\W`, `\S`), any non-ASCII byte, or the
+`i` flag is declined and runs client-side, because over multi-byte text a byte engine and a rune
+engine would diverge. The subject string may be any Unicode — only the pattern is constrained.
 
 Pushdown never changes results, only speed: the full jq always re-runs client-side, so a pushed
 filter is a conservative pre-filter; `--explain` shows the selector, and `--no-compile` streams the
@@ -1386,7 +1397,8 @@ The core read path: a jq filter is classified by the **selector**, a scan is opt
 into a native predicate, and each backend maps that predicate its own way — MongoDB pushes it
 server-side, Cassandra pushes equality as a CQL `WHERE` (with `ALLOW FILTERING` when it is not the
 partition key), DynamoDB pushes equality and existence as a `Scan` `FilterExpression`, HBase pushes
-column equality as a `SingleColumnValueFilter`, CouchDB pushes equality, ranges, and existence as a
+column equality as a `SingleColumnValueFilter`, CouchDB pushes equality, ranges, existence, a
+byte-safe regex, and length as a
 Mango `_find` selector, Neo4j pushes equality and existence as a Cypher `WHERE` clause, Elasticsearch
 and OpenSearch push equality and existence as a `bool` query, Redis scans
 and filters client-side. Either way the
@@ -1516,9 +1528,10 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   (`FilteredScanner`) but has no cheap count, so it omits `Estimator`; DynamoDB pushes
   equality/existence as a `Scan` `FilterExpression` (`FilteredScanner`) and answers `Estimator` from
   its table metadata; HBase pushes column equality as a `SingleColumnValueFilter` (`FilteredScanner`)
-  but has no cheap count, so it omits `Estimator`; CouchDB pushes equality, ranges, and existence as a Mango `_find`
-  selector (`FilteredScanner`, falling back to a plain `_all_docs` scan for the exact-negation and
-  polymorphic operators) and answers `Estimator` from its `doc_count`; Neo4j pushes equality and
+  but has no cheap count, so it omits `Estimator`; CouchDB pushes equality, ranges, existence, a
+  byte-safe regex, and a polymorphic length as a Mango `_find`
+  selector (`FilteredScanner`, falling back to a plain `_all_docs` scan for the exact-negation
+  operators and a case-insensitive or non-byte-safe regex) and answers `Estimator` from its `doc_count`; Neo4j pushes equality and
   existence as a Cypher `WHERE` clause (`FilteredScanner`, falling back to a plain label scan for
   ranges — Cypher's cross-type comparison is not jq's — and the other operators) and answers
   `Estimator` from the label's count store; Elasticsearch pushes equality and existence as a `bool`
