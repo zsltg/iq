@@ -632,7 +632,7 @@ it and stream the whole collection, filtering entirely client-side. What it can 
 | `.a == x` | ✓ | `{a: x}` | number, string, bool, or null literal |
 | `.a == 1 or .a == 2` | ✓ | `{a: {$in: [1, 2]}}` | an `or` of equalities on one field |
 | `.a > n`, `>=`, `<`, `<=` | ✓ | native op + `$type` guards (an `$or`) | number/string literal; reproduces jq's cross-type order so the match is never a subset |
-| `.a \| test("re")` | ✓ | `{a: {$regex: "re", $options: "ims"}}` | portable patterns only (below); `i`/`m`/`s` flags |
+| `.a \| test("re")` | ✓ | `{a: {$regex: "re", $options: "is"}}` | portable patterns only (below); jq's `i` and `m` flags, with jq's `m` (dot-matches-newline) mapped to PCRE's `s` |
 | `has("a")`, `.a \| has("k")` | ✓ | `{a: {$exists: true}}` | exact — key presence, like jq's `has()` |
 | `.a \| length == n` | ✓ | `{$size: n}` + `$type` guards (an `$or`) | jq `length` is polymorphic (array/string/object/number), so guards keep it a superset |
 | `.a \| any(cond)` | ✓ | `{a: {$elemMatch: cond}}` (an `$or` with an object guard) | an array element satisfying a pushable element predicate; `cond` may combine the rows above |
@@ -645,12 +645,18 @@ it and stream the whole collection, filtering entirely client-side. What it can 
 | non-portable regex | — | — | engine-specific construct (below) |
 | anything else | — | — | runs client-side, as under `--no-compile` |
 
-**Portable regex.** jq uses the Oniguruma engine, MongoDB uses PCRE. A pattern is pushed only when
-every construct it uses means the same in both: literals, anchors (`^` `$`), `.`, quantifiers
-(`* + ? {n,m}`), alternation (`|`), groups, character classes, and the ASCII `\d` `\w` `\s`
-shorthands (and their negations, `\b`, `\B`). A pattern using lookaround (`(?=…)`), backreferences
-(`\1`), unicode properties (`\p{…}`), POSIX classes (`[[:…:]]`), or possessive quantifiers is not
-portable and stays client-side, so the pushed set always equals jq's.
+**Portable regex.** iq's jq is [gojq](https://github.com/itchyny/gojq), which compiles a `test()`
+pattern with Go's RE2; MongoDB uses PCRE. A pattern is pushed only when every construct it uses
+means the same — or a superset — in both: literals, anchors (`^` `$`), `.`, quantifiers
+(`* + ? {n,m}`), alternation (`|`), groups, character classes, the ASCII `\d` `\w` `\s` `\D` `\W`
+shorthands, and word boundaries (`\b`, `\B`). `\S` is the one shorthand held back: RE2's `\s` omits
+the vertical tab that PCRE's `\s` matches, so RE2's `\S` matches a vertical tab PCRE's does not, and
+pushing it would drop a document jq keeps (`\s` diverges the other way — a superset the client-side
+re-run corrects). Flags follow the same rule: gojq accepts only `i`, `m`, `g`, and iq pushes `i`
+(case-insensitive) and `m` — which in jq means "`.` matches newline" (dotall) and so maps to PCRE's
+`s`, not PCRE's `m`. A pattern using lookaround (`(?=…)`), backreferences (`\1`), unicode properties
+(`\p{…}`), POSIX classes (`[[:…:]]`), or possessive quantifiers is not portable and stays
+client-side, so the pushed set always equals jq's.
 
 On Redis, or for any filter with no pushable predicate, pushdown is a harmless no-op.
 

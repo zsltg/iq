@@ -71,6 +71,18 @@ func TestToFilter(t *testing.T) {
 			bson.M{"name": bson.M{"$regex": "^a", "$options": "i"}},
 		},
 		{
+			// jq's m is dotall, which is PCRE's s (not PCRE's m); the translation
+			// keeps . matching a newline server-side, so the push stays a superset.
+			"regex with dotall m flag maps to option s",
+			predicate.Regex{Path: []string{"name"}, Pattern: "a.c", Flags: "m"},
+			bson.M{"name": bson.M{"$regex": "a.c", "$options": "s"}},
+		},
+		{
+			"regex with combined im flags maps to is",
+			predicate.Regex{Path: []string{"name"}, Pattern: "a.c", Flags: "im"},
+			bson.M{"name": bson.M{"$regex": "a.c", "$options": "is"}},
+		},
+		{
 			"exists",
 			predicate.Exists{Path: []string{"meta", "isbn"}},
 			bson.M{"meta.isbn": bson.M{"$exists": true}},

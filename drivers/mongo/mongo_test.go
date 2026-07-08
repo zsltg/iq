@@ -410,6 +410,9 @@ func TestCompileRegexEquivalentToClientSide(t *testing.T) {
 		bson.M{"_id": "3", "name": "Beta"},
 		bson.M{"_id": "4", "name": "A1"},
 		bson.M{"_id": "5", "name": "xA"},
+		bson.M{"_id": "6", "name": "a\nc"}, // newline: only . under dotall matches it
+		bson.M{"_id": "7", "name": "x\vy"}, // vertical tab: in PCRE's \s, not RE2's
+		bson.M{"_id": "8", "name": "x y"},  // space: \s in every engine
 	})
 
 	filters := []string{
@@ -419,6 +422,13 @@ func TestCompileRegexEquivalentToClientSide(t *testing.T) {
 		`.[] | select(.name | test("\\d")) | ._id`,
 		`.[] | select(.name | test("[AB]")) | ._id`,
 		`.[] | select((.name | test("^A")) or .name == "xA") | ._id`,
+		// jq's m flag is dotall, so "a.c" matches "a\nc"; the pushed $regex must use
+		// PCRE's s option, not m, or it drops _id 6 and diverges (the narrowing bug).
+		`.[] | select(.name | test("a.c"; "m")) | ._id`,
+		// \s is a superset in PCRE (matches the vertical tab in _id 7 that RE2 does
+		// not); the pushed pre-filter over-matches, and the client re-run corrects it
+		// to jq's result — _id 8 only.
+		`.[] | select(.name | test("x\\sy")) | ._id`,
 	}
 	eng := query.NewJQEngine(store)
 	for _, f := range filters {

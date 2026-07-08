@@ -46,9 +46,12 @@ type Cmp struct {
 }
 
 // Regex matches documents whose field at Path is a string the Pattern matches
-// (unanchored, like jq's test). Flags is a subset of "ims". Only patterns whose
-// meaning is identical across regex engines are ever put here, so a backend can
-// hand Pattern to its own engine without changing which documents match.
+// (unanchored, like jq's test). Flags is a subset of "im" carrying jq's meaning:
+// i is case-insensitive and m is "dot matches newline" (dotall) — jq's m is not
+// PCRE's line-anchor multiline. Only patterns whose meaning is identical, or a
+// superset, across regex engines are ever put here; a backend hands Pattern to
+// its own engine and translates Flags to that engine's spelling (e.g. jq m ->
+// PCRE s), so which documents match never narrows against jq.
 type Regex struct {
 	Path    []string
 	Pattern string

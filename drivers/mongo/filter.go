@@ -22,8 +22,8 @@ func toFilter(n predicate.Node) bson.M {
 		return cmpFilter(t)
 	case predicate.Regex:
 		re := bson.M{"$regex": t.Pattern}
-		if t.Flags != "" {
-			re["$options"] = t.Flags
+		if opts := mongoOptions(t.Flags); opts != "" {
+			re["$options"] = opts
 		}
 		return bson.M{strings.Join(t.Path, "."): re}
 	case predicate.Exists:
@@ -67,6 +67,24 @@ func toFilter(n predicate.Node) bson.M {
 		// fall back to matching everything so the client-side jq still runs.
 		return bson.M{}
 	}
+}
+
+// mongoOptions translates a neutral Regex's jq flags into MongoDB's $options
+// (PCRE) spelling. jq's i (case-insensitive) is PCRE's i; jq's m ("dot matches
+// newline", i.e. dotall) is PCRE's s — not PCRE's m, which is line-anchor
+// multiline and would leave . not matching a newline, narrowing the match against
+// jq. Only i and m ever reach here (the pushdown gate admits no other flag).
+func mongoOptions(flags string) string {
+	var b strings.Builder
+	for _, f := range flags {
+		switch f {
+		case 'i':
+			b.WriteByte('i')
+		case 'm':
+			b.WriteByte('s')
+		}
+	}
+	return b.String()
 }
 
 // sameFieldEqs reports whether every branch of an or is an equality on the same

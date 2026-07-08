@@ -425,11 +425,16 @@ func stringLit(q *gojq.Query) (string, bool) {
 	return s, ok
 }
 
-// portableFlags reports whether flags contains only options every engine (and
-// MongoDB) treats identically: case-insensitive, multiline, dotall.
+// portableFlags reports whether flags are ones jq accepts and a backend can
+// translate exactly. gojq accepts only i, m, g; of those we push i
+// (case-insensitive) and m (jq's "dot matches newline", i.e. dotall), each
+// backend mapping them to its own engine's spelling (see the mongo translator's
+// mongoOptions). g only affects how many matches the test family collects, never
+// test()'s boolean, so it is left to the client. s is not a jq flag at all (gojq
+// rejects it at runtime), so it is never portable.
 func portableFlags(flags string) bool {
 	for _, c := range flags {
-		if c != 'i' && c != 'm' && c != 's' {
+		if c != 'i' && c != 'm' {
 			return false
 		}
 	}
@@ -474,13 +479,18 @@ func portableRegex(p string) bool {
 	return true
 }
 
-// portableEscape reports whether a backslash escape is identical across engines.
-// The ASCII shorthand classes and word boundaries qualify; an escaped punctuation
-// character is a literal and qualifies; a digit (backreference) or any other
-// letter (engine-specific, e.g. \p, \h, \A) does not.
+// portableEscape reports whether a backslash escape means the same, or a
+// superset, across engines — pushing it must never drop a document jq keeps. The
+// ASCII shorthand classes and word boundaries qualify, with one exception: \S is
+// not portable. Go's RE2 \s omits the vertical tab (U+000B) that PCRE's \s
+// includes, so RE2's \S matches a vertical tab PCRE's \S does not — pushing \S to
+// a PCRE backend would narrow the match. \s diverges the other way (the pushed
+// set is a superset), which the client-side re-run corrects, so it stays. An
+// escaped punctuation character is a literal and qualifies; a digit
+// (backreference) or any other letter (engine-specific, e.g. \p, \h, \A) does not.
 func portableEscape(b byte) bool {
 	switch b {
-	case 'd', 'D', 'w', 'W', 's', 'S', 'b', 'B', 'n', 't', 'r', 'f', 'v':
+	case 'd', 'D', 'w', 'W', 's', 'b', 'B', 'n', 't', 'r', 'f', 'v':
 		return true
 	}
 	if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') {

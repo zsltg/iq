@@ -93,7 +93,9 @@ func TestCompilePushable(t *testing.T) {
 		},
 		{"portable regex", `.[] | select(.name | test("^A"))`, predicate.Regex{Path: []string{"name"}, Pattern: "^A"}},
 		{"regex with safe flags", `.[] | select(.name | test("^a"; "i"))`, predicate.Regex{Path: []string{"name"}, Pattern: "^a", Flags: "i"}},
+		{"regex with dotall m flag", `.[] | select(.name | test("a.c"; "m"))`, predicate.Regex{Path: []string{"name"}, Pattern: "a.c", Flags: "m"}},
 		{"regex with shorthand class", `.[] | select(.code | test("^\\d+$"))`, predicate.Regex{Path: []string{"code"}, Pattern: `^\d+$`}},
+		{"regex with widening s class", `.[] | select(.a | test("x\\sy"))`, predicate.Regex{Path: []string{"a"}, Pattern: `x\sy`}},
 		{
 			"equality and parenthesized regex",
 			`.[] | select(.type == "book" and (.name | test("^A")))`,
@@ -146,6 +148,8 @@ func TestCompileNotPushable(t *testing.T) {
 		{"regex with backreference", `.[] | select(.a | test("(a)\\1"))`},
 		{"regex with unicode property", `.[] | select(.a | test("\\p{L}"))`},
 		{"regex with unsafe flag", `.[] | select(.a | test("x"; "g"))`},
+		{"regex with s flag rejected by gojq", `.[] | select(.a | test("x"; "s"))`},
+		{"regex with narrowing S class", `.[] | select(.a | test("\\S"))`},
 		{"regex pattern not a literal", `.[] | select(.a | test(.b))`},
 		{"test on a computed input", `.[] | select((.a + "z") | test("x"))`},
 		{"negated range is not exact", ".[] | select(.a > 5 | not)"},
