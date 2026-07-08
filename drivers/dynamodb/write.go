@@ -17,20 +17,34 @@ import (
 // PutItem with a condition that the partition key not already exist and counts a record
 // whose key exists as a skip. Every value is marshaled to a typed attribute — never
 // string-built — and a record missing a key attribute or carrying an unrepresentable
-// value is a returned error, never a silent drop. DynamoDB cannot cheaply tell an
-// insert from an overwrite, so an upsert counts every written item as Written, never
-// Overwritten.
+// value is a returned error, never a silent drop. Every item is built before any is
+// written, so an unrepresentable record fails the whole batch before it mutates the
+// table rather than partway through. DynamoDB cannot tell an insert from an overwrite in
+// the PutItem reply, so an upsert pre-reads which keys already exist to report Overwritten;
+// see existingKeys for the accounting-only, non-atomic caveat.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if len(s.keys) == 0 {
 		return query.WriteStat{}, errNoTable
 	}
-	var stat query.WriteStat
-	for _, r := range batch {
+	items := make([]map[string]types.AttributeValue, len(batch))
+	for i, r := range batch {
 		item, err := s.toItem(recordValue{key: r.Key, value: r.Value})
 		if err != nil {
 			return query.WriteStat{}, err
 		}
-		in := &dynamodb.PutItemInput{TableName: &s.table, Item: item}
+		items[i] = item
+	}
+	var existing map[string]bool
+	if mode == query.Upsert {
+		var err error
+		existing, err = s.existingKeys(ctx, batch)
+		if err != nil {
+			return query.WriteStat{}, err
+		}
+	}
+	var stat query.WriteStat
+	for i, r := range batch {
+		in := &dynamodb.PutItemInput{TableName: &s.table, Item: items[i]}
 		if mode == query.InsertOnly {
 			// Skip a key that already exists: the partition key must not be present.
 			// Aliased through #pk so a reserved partition-key name is still safe.
@@ -45,9 +59,58 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 			}
 			return query.WriteStat{}, fmt.Errorf("dynamodb put: %w", err)
 		}
-		stat.Written++
+		if existing[r.Key] {
+			stat.Overwritten++
+		} else {
+			stat.Written++
+		}
 	}
 	return stat, nil
+}
+
+// existingKeys returns which of a batch's keys already have an item, so an upsert can
+// report them as Overwritten. It reads with a key-only projected BatchGetItem — the same
+// drain loop as Get, but the response carries only key attributes, never values — over the
+// distinct keys of the batch. The read is accounting only: it never changes what Put
+// writes, and it is not atomic with the writes that follow, so a concurrent insert between
+// the two can skew the count by one. The items written are always correct.
+func (s *Store) existingKeys(ctx context.Context, batch []query.Record) (map[string]bool, error) {
+	proj, names := s.keyProjection()
+	seen := make(map[string]bool, len(batch))
+	keys := make([]string, 0, len(batch))
+	for _, r := range batch {
+		// A keyless record has no key to pre-read; DynamoDB requires one, so toItem has
+		// already rejected it. Deduplicate: BatchGetItem rejects a request with duplicate
+		// keys, and a repeated key is present-or-absent exactly once regardless.
+		if r.Key == "" || seen[r.Key] {
+			continue
+		}
+		seen[r.Key] = true
+		keys = append(keys, r.Key)
+	}
+	existing := make(map[string]bool, len(keys))
+	for start := 0; start < len(keys); start += batchGetMax {
+		end := min(start+batchGetMax, len(keys))
+		reqKeys := make([]map[string]types.AttributeValue, 0, batchGetMax)
+		for _, k := range keys[start:end] {
+			av, err := s.decodeKey(k)
+			if err != nil {
+				return nil, err
+			}
+			reqKeys = append(reqKeys, av)
+		}
+		pending := map[string]types.KeysAndAttributes{s.table: {
+			Keys:                     reqKeys,
+			ProjectionExpression:     aws.String(proj),
+			ExpressionAttributeNames: names,
+		}}
+		if err := s.drainBatchGet(ctx, pending, func(item map[string]types.AttributeValue) {
+			existing[s.keyOf(item)] = true
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return existing, nil
 }
 
 // Clear empties the table, keeping its schema (the `iq data clear` semantics), by

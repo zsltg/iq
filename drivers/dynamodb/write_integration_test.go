@@ -27,15 +27,24 @@ func TestPutUpsert(t *testing.T) {
 	require.Equal(t, "Clean Code", got["4"].(map[string]any)["title"])
 	require.Equal(t, 4, got["4"].(map[string]any)["id"]) // key attribute reconstructed from the record key
 
-	// Overwrite the same key.
-	_, err = st.Put(ctx, []query.Record{{
+	// Overwrite the same key: the upsert pre-read reports it as Overwritten, not Written.
+	stat, err = st.Put(ctx, []query.Record{{
 		Key:   "4",
 		Value: map[string]any{"title": "Clean Code (2nd)", "year": 2008},
 	}}, query.Upsert)
 	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{Overwritten: 1}, stat)
 	got, err = st.Get(ctx, []string{"4"})
 	require.NoError(t, err)
 	require.Equal(t, "Clean Code (2nd)", got["4"].(map[string]any)["title"])
+
+	// A mixed batch splits the count: key 4 already exists (Overwritten), key 6 is new (Written).
+	stat, err = st.Put(ctx, []query.Record{
+		{Key: "4", Value: map[string]any{"title": "Clean Code (3rd)", "year": 2009}},
+		{Key: "6", Value: map[string]any{"title": "SICP", "year": 1985}},
+	}, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{Written: 1, Overwritten: 1}, stat)
 }
 
 func TestPutInsertOnly(t *testing.T) {

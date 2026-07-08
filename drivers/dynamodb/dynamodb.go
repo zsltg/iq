@@ -257,27 +257,10 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 			reqKeys = append(reqKeys, av)
 		}
 		pending := map[string]types.KeysAndAttributes{s.table: {Keys: reqKeys}}
-		// Drain the batch, retrying the throttled leftovers (UnprocessedKeys) with
-		// bounded backoff between attempts. The range bounds the retries, so it can
-		// never loop forever.
-		for attempt := range maxUnprocessed {
-			resp, err := s.client.BatchGetItem(ctx, &dynamodb.BatchGetItemInput{RequestItems: pending})
-			if err != nil {
-				return nil, fmt.Errorf("dynamodb batch get: %w", err)
-			}
-			for _, item := range resp.Responses[s.table] {
-				out[s.keyOf(item)] = s.normalizeItem(item)
-			}
-			pending = resp.UnprocessedKeys
-			if len(pending) == 0 {
-				break
-			}
-			if err := backoff(ctx, attempt); err != nil {
-				return nil, err
-			}
-		}
-		if len(pending) > 0 {
-			return nil, fmt.Errorf("dynamodb batch get: %d attempt(s) left items unprocessed", maxUnprocessed)
+		if err := s.drainBatchGet(ctx, pending, func(item map[string]types.AttributeValue) {
+			out[s.keyOf(item)] = s.normalizeItem(item)
+		}); err != nil {
+			return nil, err
 		}
 	}
 	// A requested key with no item reads as null, matching the KV contract.
@@ -287,6 +270,31 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		}
 	}
 	return out, nil
+}
+
+// drainBatchGet issues BatchGetItem against pending and drains the throttled
+// leftovers (UnprocessedKeys) with bounded backoff, calling onItem for every item
+// returned across all attempts. The retry count is bounded, so it can never loop
+// forever. Get and the upsert key pre-read share it, differing only in the request's
+// projection and what they do with each returned item.
+func (s *Store) drainBatchGet(ctx context.Context, pending map[string]types.KeysAndAttributes, onItem func(item map[string]types.AttributeValue)) error {
+	for attempt := range maxUnprocessed {
+		resp, err := s.client.BatchGetItem(ctx, &dynamodb.BatchGetItemInput{RequestItems: pending})
+		if err != nil {
+			return fmt.Errorf("dynamodb batch get: %w", err)
+		}
+		for _, item := range resp.Responses[s.table] {
+			onItem(item)
+		}
+		pending = resp.UnprocessedKeys
+		if len(pending) == 0 {
+			return nil
+		}
+		if err := backoff(ctx, attempt); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("dynamodb batch get: %d attempt(s) left items unprocessed", maxUnprocessed)
 }
 
 // ScanBatches streams the whole table, handing the caller each page of {key: item}

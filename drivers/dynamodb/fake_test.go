@@ -525,6 +525,52 @@ func TestPutInsertOnlySkipsExisting(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, stat.Skipped)
 	require.Equal(t, 0, stat.Written)
+	require.Zero(t, fake.batchGetCalls) // insert-only never pre-reads
+}
+
+func TestPutUpsertCountsOverwritesFromKeyOnlyPreRead(t *testing.T) {
+	var gotProj string
+	var gotNames map[string]string
+	fake := &fakeDDB{batchGetFn: func(in *awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
+		ka := in.RequestItems["t"]
+		gotProj = aws.ToString(ka.ProjectionExpression)
+		gotNames = ka.ExpressionAttributeNames
+		// Key 1 already exists; key 2 does not.
+		return &awsdynamodb.BatchGetItemOutput{
+			Responses: map[string][]map[string]types.AttributeValue{"t": {idItem(1)}},
+		}, nil
+	}}
+	s := fakeStore(t, fake)
+	stat, err := s.Put(context.Background(), []query.Record{
+		{Key: "1", Value: map[string]any{"id": 1, "title": "A"}},
+		{Key: "2", Value: map[string]any{"id": 2, "title": "B"}},
+	}, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{Written: 1, Overwritten: 1}, stat)
+	// The pre-read projected to the key attribute only, so it never fetched values.
+	require.Equal(t, "#k0", gotProj)
+	require.Equal(t, map[string]string{"#k0": "id"}, gotNames)
+	require.Equal(t, 1, fake.batchGetCalls)
+	require.Equal(t, 2, fake.putCalls)
+}
+
+func TestPutUpsertDeduplicatesPreReadKeys(t *testing.T) {
+	fake := &fakeDDB{batchGetFn: func(in *awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
+		// BatchGetItem rejects duplicate keys, so the pre-read must send key 1 once.
+		require.Len(t, in.RequestItems["t"].Keys, 1)
+		return &awsdynamodb.BatchGetItemOutput{
+			Responses: map[string][]map[string]types.AttributeValue{"t": {idItem(1)}},
+		}, nil
+	}}
+	s := fakeStore(t, fake)
+	stat, err := s.Put(context.Background(), []query.Record{
+		{Key: "1", Value: map[string]any{"id": 1, "title": "A"}},
+		{Key: "1", Value: map[string]any{"id": 1, "title": "B"}},
+	}, query.Upsert)
+	require.NoError(t, err)
+	// Both writes land on the existing key, so both count as overwrites.
+	require.Equal(t, query.WriteStat{Overwritten: 2}, stat)
+	require.Equal(t, 1, fake.batchGetCalls)
 }
 
 func TestDropDeletesTable(t *testing.T) {
