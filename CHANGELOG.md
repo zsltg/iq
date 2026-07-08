@@ -4,6 +4,34 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.23.0 - 2026-07-08
+### Features
+- **cassandra:** count upsert overwrites via a batch key pre-read (f44b5a7)
+- **couchdb:** push portable $regex and $size Mango selectors (7520b64)
+- **drivers:** reject non-object put values instead of wrapping (4cd9102)
+- **dynamodb:** count upsert overwrites via a key-only batch pre-read (6788824)
+- **hbase:** rename the ?rowkeytype= url param to ?keytype= (7c9e85d)
+- **hbase:** count upsert overwrites via existence-only point gets (94811a2)
+- **redis:** answer Estimator with DBSIZE for scan progress totals (ff5a431)
+
+### Bug Fixes
+- **cli:** apply per-source stored options to a collection-addressed --src (4bcd6a8)
+- **cmd:** keep prose intact when redacting a URL in an error message (2333002)
+- **pushdown:** match pushed regex flags and escapes to gojq semantics (0d6a1f0)
+- **pushdown:** reject $-prefixed field names before they reach a query (50fdc19)
+- **pushdown:** reject widened negation to stop dropping matching rows (97090a1)
+
+### Documentation
+- codify the cross-driver contract and align AGENTS.md and README (88d8ed0)
+- add driver-adoption gate to AGENTS.md (a82037e)
+- note the log-option/env precedence and source() buffering (2b79283)
+
+### Refactoring
+- **cmd:** extract the shared inspect render tail (3738f2e)
+- **numfmt:** hoist JSON number conversion out of three drivers (8a718d6)
+- **query:** detect source() by compiling, not matching gojq error text (51102c5)
+
+
 ## v0.22.0 - 2026-07-07
 ### Features
 - **driver:** show the copy-pasteable ?format=<name> in driver ls -v (ee12060)
