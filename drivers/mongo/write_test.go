@@ -90,6 +90,12 @@ func TestExplainClearDrop(t *testing.T) {
 	require.Contains(t, plan.Ops[0], "drop()")
 }
 
+func TestExplainDelete(t *testing.T) {
+	plan, ok := ExplainDelete()
+	require.True(t, ok)
+	require.Contains(t, plan.Ops[0], "deleteMany")
+}
+
 func mustOID(t *testing.T, hex string) bson.ObjectID {
 	t.Helper()
 	oid, err := bson.ObjectIDFromHex(hex)

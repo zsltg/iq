@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"slices"
 	"strconv"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -307,6 +308,23 @@ func (s *Store) Clear(ctx context.Context) error {
 		return fmt.Errorf("redis flushdb: %w", err)
 	}
 	return nil
+}
+
+// Delete removes the named keys with DEL, chunked to pageSize so a large list is
+// bounded per round-trip. The DEL reply is the count of keys that actually existed,
+// so Deleted is exact and Missing is the remainder — no pre-read needed. Each key is
+// passed discretely as a command argument, never concatenated.
+func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
+	var stat query.DeleteStat
+	for chunk := range slices.Chunk(keys, s.pageSize) {
+		n, err := s.client.Del(ctx, chunk...).Result()
+		if err != nil {
+			return query.DeleteStat{}, fmt.Errorf("redis del: %w", err)
+		}
+		stat.Deleted += int(n)
+		stat.Missing += len(chunk) - int(n)
+	}
+	return stat, nil
 }
 
 // TypedScan streams the whole keyspace as typed records, so a copy reconstructs

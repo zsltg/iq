@@ -52,3 +52,9 @@ func ExplainClear() query.AccessPlan {
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"unsupported: a redis DB index cannot be removed; use `iq data clear` to empty it"}}, false
 }
+
+// ExplainDelete describes the `iq data delete` op for a Redis keyspace: a chunked
+// DEL whose reply gives the exact deleted count.
+func ExplainDelete() (query.AccessPlan, bool) {
+	return query.AccessPlan{Ops: []string{"DEL key...: remove the named keys (reply counts those that existed; the rest were already absent)"}}, true
+}

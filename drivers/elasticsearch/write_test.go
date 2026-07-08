@@ -39,6 +39,37 @@ func TestTallyBulk(t *testing.T) {
 	})
 }
 
+func TestTallyBulkDelete(t *testing.T) {
+	t.Run("deleted counts, not_found is missing", func(t *testing.T) {
+		items := []map[string]bulkItem{
+			{"delete": {Result: "deleted", Status: 200}},
+			{"delete": {Result: "not_found", Status: 404}},
+			{"delete": {Result: "deleted", Status: 200}},
+		}
+		stat, err := tallyBulkDelete(items)
+		require.NoError(t, err)
+		require.Equal(t, query.DeleteStat{Deleted: 2, Missing: 1}, stat)
+	})
+
+	t.Run("an errored item fails the batch", func(t *testing.T) {
+		items := []map[string]bulkItem{
+			{"delete": {Status: 403, Error: &bulkError{Type: "cluster_block_exception", Reason: "read-only"}}},
+		}
+		_, err := tallyBulkDelete(items)
+		require.ErrorContains(t, err, "cluster_block_exception")
+		require.ErrorContains(t, err, "read-only")
+	})
+
+	t.Run("an unexpected result fails the batch", func(t *testing.T) {
+		items := []map[string]bulkItem{
+			{"delete": {Result: "noop", Status: 200}},
+		}
+		_, err := tallyBulkDelete(items)
+		require.ErrorContains(t, err, "unexpected result")
+		require.ErrorContains(t, err, "noop")
+	})
+}
+
 func TestDocumentBody(t *testing.T) {
 	t.Run("object value keeps its fields", func(t *testing.T) {
 		doc, err := documentBody(query.Record{Key: "1", Value: map[string]any{"title": "Dune"}})

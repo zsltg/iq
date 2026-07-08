@@ -138,6 +138,70 @@ func (s *Store) Clear(ctx context.Context) error {
 	}
 }
 
+// Delete removes the named nodes, addressed exactly as Get addresses them: by
+// elementId (the default) or by the ?key= property. It resolves each key to its
+// matching node(s) first — refusing, like Get, a ?key= that matches more than one
+// node, so a non-unique property key never over-deletes — then DETACH DELETEs the
+// matched nodes by elementId (DETACH removes their relationships too). A key that
+// matches no node is Missing, never an error, so a re-run is idempotent. Deleted and
+// Missing are exact from the resolution; keys ride as bound parameters.
+func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
+	if s.target.kind == relTarget {
+		return query.DeleteStat{}, errRelWriteUnsupported
+	}
+	if s.target.name == "" {
+		return query.DeleteStat{}, errNoLabel
+	}
+	if len(keys) == 0 {
+		return query.DeleteStat{}, nil
+	}
+	sess := s.session(ctx, neo4j.AccessModeWrite)
+	defer func() { _ = sess.Close(ctx) }()
+
+	v := s.target.variable()
+	params := map[string]any{"ids": keys}
+	var matchExpr string
+	if s.target.key == "" {
+		matchExpr = "elementId(" + v + ")"
+	} else {
+		params["key"] = s.target.key
+		matchExpr = "toString(" + v + "[$key])"
+	}
+	resolve := s.target.match() + " WHERE " + matchExpr + " IN $ids RETURN " + matchExpr + " AS k, elementId(" + v + ") AS eid"
+	res, err := s.run(ctx, sess, resolve, params)
+	if err != nil {
+		return query.DeleteStat{}, err
+	}
+	matched := make(map[string]struct{}, len(keys))
+	eids := make([]string, 0, len(keys))
+	for res.Next(ctx) {
+		rec := res.Record()
+		k, _ := rec.Values[0].(string)
+		eid, _ := rec.Values[1].(string)
+		if _, dup := matched[k]; dup && s.target.key != "" {
+			return query.DeleteStat{}, fmt.Errorf("neo4j: key %q matches more than one %s; %s.%s is not unique", k, s.target.noun(), s.target.name, s.target.key)
+		}
+		matched[k] = struct{}{}
+		eids = append(eids, eid)
+	}
+	if err := res.Err(); err != nil {
+		return query.DeleteStat{}, fmt.Errorf("neo4j delete resolve: %w", err)
+	}
+
+	// DETACH DELETE with an empty $eids matches nothing, so it runs unconditionally:
+	// a guard on len(eids) would only be an equivalent mutant boundary, never a
+	// behaviour change (the resolve above already recorded matched vs missing).
+	del := s.target.match() + " WHERE elementId(" + v + ") IN $eids DETACH DELETE " + v
+	dr, err := s.run(ctx, sess, del, map[string]any{"eids": eids})
+	if err != nil {
+		return query.DeleteStat{}, err
+	}
+	if _, err := dr.Consume(ctx); err != nil {
+		return query.DeleteStat{}, fmt.Errorf("neo4j delete: %w", err)
+	}
+	return query.DeleteStat{Deleted: len(matched), Missing: len(keys) - len(matched)}, nil
+}
+
 // TypedScan walks the label and hands the caller each page as records tagged
 // "node", so a copy reconstructs each node. It reuses ScanBatches, so the key and
 // value are exactly what the read path produces.
@@ -156,5 +220,6 @@ func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) err
 var (
 	_ query.Putter      = (*Store)(nil)
 	_ query.Clearer     = (*Store)(nil)
+	_ query.Deleter     = (*Store)(nil)
 	_ query.TypedReader = (*Store)(nil)
 )

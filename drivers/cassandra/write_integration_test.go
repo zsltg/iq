@@ -160,3 +160,52 @@ func TestTypedScanRoundTripIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, want, got)
 }
+
+func TestDeleteIntegration(t *testing.T) {
+	st := seedTable(t, "books", "CREATE TABLE books (id int PRIMARY KEY, title text)")
+
+	_, err := st.Put(context.Background(), []query.Record{
+		{Key: "1", Value: map[string]any{"id": 1, "title": "Hobbit"}},
+		{Key: "2", Value: map[string]any{"id": 2, "title": "Dune"}},
+		{Key: "3", Value: map[string]any{"id": 3, "title": "Neuromancer"}},
+	}, query.Upsert)
+	require.NoError(t, err)
+
+	// A mixed delete: keys 1 and 2 exist (Deleted), key 9 was never written (Missing).
+	// The DELETE runs for every requested key regardless, so Deleted+Missing==len(keys).
+	stat, err := st.Delete(context.Background(), []string{"1", "2", "9"})
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Deleted: 2, Missing: 1}, stat)
+
+	got, err := st.Get(context.Background(), []string{"1", "2", "3"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{
+		"1": nil,
+		"2": nil,
+		"3": map[string]any{"id": 3, "title": "Neuromancer"},
+	}, got, "the deleted rows are gone, the un-named row survives")
+}
+
+func TestDeleteCompositeKeyIntegration(t *testing.T) {
+	st := seedTable(t, "sales",
+		"CREATE TABLE sales (country text, id int, amount int, PRIMARY KEY (country, id))")
+
+	_, err := st.Put(context.Background(), []query.Record{
+		{Key: `["US","1"]`, Value: map[string]any{"country": "US", "id": 1, "amount": 100}},
+	}, query.Upsert)
+	require.NoError(t, err)
+
+	// A composite key is deleted by its JSON-array spelling: it exists, so Deleted==1.
+	stat, err := st.Delete(context.Background(), []string{`["US","1"]`})
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Deleted: 1}, stat)
+
+	got, err := st.Get(context.Background(), []string{`["US","1"]`})
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{`["US","1"]`: nil}, got, "the composite row is gone")
+
+	// An absent composite key counts as Missing, never an error (delete is idempotent).
+	stat, err = st.Delete(context.Background(), []string{`["US","9"]`})
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Missing: 1}, stat)
+}

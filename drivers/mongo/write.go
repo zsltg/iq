@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -182,6 +183,32 @@ func (s *Store) Drop(ctx context.Context) error {
 		return fmt.Errorf("mongodb drop: %w", err)
 	}
 	return nil
+}
+
+// Delete removes the named keys with deleteMany({_id: {$in: ids}}), chunked to
+// pageSize so a large list is bounded per round-trip. Each key is mapped through
+// idValue (24-hex restores an ObjectID). DeletedCount is exact, so Deleted is the
+// removed count and Missing the remainder; keys are deduped by the caller, so the
+// count maps one-to-one. The ids ride as a bound bson value, never concatenated.
+func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
+	if s.collection == "" {
+		return query.DeleteStat{}, errNoCollection
+	}
+	coll := s.db.Collection(s.collection)
+	var stat query.DeleteStat
+	for chunk := range slices.Chunk(keys, s.pageSize) {
+		ids := make(bson.A, len(chunk))
+		for i, k := range chunk {
+			ids[i] = idValue(k)
+		}
+		res, err := coll.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": ids}})
+		if err != nil {
+			return query.DeleteStat{}, fmt.Errorf("mongodb delete: %w", err)
+		}
+		stat.Deleted += int(res.DeletedCount)
+		stat.Missing += len(chunk) - int(res.DeletedCount)
+	}
+	return stat, nil
 }
 
 // TypedScan streams the whole collection as typed records, reusing the ScanBatches

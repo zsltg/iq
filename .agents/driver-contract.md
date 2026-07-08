@@ -49,13 +49,15 @@ Cross-driver conventions every backend adapter and driver plan doc follows. Tele
 - Estimator exists iff the backend answers without a row scan: O(1) metadata or an index-backed server-side count; staleness and overcount are tolerated and documented (the firestore COUNT ruling is the precedent).
 - No cheap answer, no port: couchbase, influx, dgraph, surreal and janusgraph omit Estimator; redis, valkey, dragonfly and memcached carry one (DBSIZE, curr_items).
 - Dropper exists iff the container is removable by the backend; a redis logical DB is not.
+- Deleter exists iff the backend removes a record by its canonical key; a backend with no stable per-key identity (influx point, file dump) omits it and `iq data delete` reports it unsupported.
+- Deleter accounting mirrors Writes: exact where the backend signals absence (redis DEL, mongo DeletedCount, es deleted/not_found), a bounded key pre-read where it does not (cassandra, dynamodb, hbase); a missing key is Missing, never an error.
 - Exec `count` verb is exact, Estimator is a hint; the two coexist and neither substitutes for the other.
 ## Exec families
 - Native-language backends: `iq exec` passes the query verbatim (plus an optional JSON params argument); no dialect wrapping.
 - Single-JSON-document backends keep that document as the exec payload.
 - Bare-verb backends: KV-shaped ship `get|scan|count|put|delete` plus at most one read-only whitelisted admin verb (aerospike `info`, firestore `collections`); expression-shaped ship `query|search|count|delete`.
 - Raw-protocol backends (redis family, memcached) pass the wire command through.
-- Exec may write; each driver documents that it does; per-key delete rides in exec until the Deleter port lands.
+- Exec may write; each driver documents that it does; per-key delete rides in exec as the raw escape hatch, and continues to after the typed Deleter port (`iq data delete`) lands alongside it.
 ## Safety
 - Every outbound call is context-bounded with an explicit timeout; no infinite waits.
 - No retry loop in driver code unless the operation is idempotent and the loop is bounded with backoff and jitter (dynamodb precedent); never retry validation or permanent failures.

@@ -75,7 +75,6 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 // writes, and it is not atomic with the writes that follow, so a concurrent insert between
 // the two can skew the count by one. The items written are always correct.
 func (s *Store) existingKeys(ctx context.Context, batch []query.Record) (map[string]bool, error) {
-	proj, names := s.keyProjection()
 	seen := make(map[string]bool, len(batch))
 	keys := make([]string, 0, len(batch))
 	for _, r := range batch {
@@ -88,6 +87,16 @@ func (s *Store) existingKeys(ctx context.Context, batch []query.Record) (map[str
 		seen[r.Key] = true
 		keys = append(keys, r.Key)
 	}
+	return s.existingKeySet(ctx, keys)
+}
+
+// existingKeySet returns which of the given distinct keys already have an item,
+// reading with the same key-only projected BatchGetItem drain as existingKeys. It is
+// the accounting pre-read shared by Put's overwrite count and Delete's
+// present-vs-absent count; the same non-atomic caveat applies. Callers pass keys
+// already deduped.
+func (s *Store) existingKeySet(ctx context.Context, keys []string) (map[string]bool, error) {
+	proj, names := s.keyProjection()
 	existing := make(map[string]bool, len(keys))
 	for start := 0; start < len(keys); start += batchGetMax {
 		end := min(start+batchGetMax, len(keys))
@@ -205,6 +214,43 @@ func (s *Store) keyAttrs(item map[string]types.AttributeValue) map[string]types.
 		}
 	}
 	return key
+}
+
+// Delete removes the named keys by decoding each to its key attributes (a single
+// hash key is the bare string, a hash+sort key a JSON array) and reusing deleteItems
+// — BatchWriteItem in batches of 25 with bounded UnprocessedItems retry. The decoded
+// key maps are themselves the key-only items deleteItems needs. BatchWriteItem is
+// silent on whether an item existed, so a pre-read (existingKeySet, accounting only)
+// supplies the present-vs-absent split; the delete requests run regardless, so it is
+// idempotent. Keys ride as bound attribute values, never string-built.
+func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
+	if len(s.keys) == 0 {
+		return query.DeleteStat{}, errNoTable
+	}
+	existing, err := s.existingKeySet(ctx, keys)
+	if err != nil {
+		return query.DeleteStat{}, err
+	}
+	items := make([]map[string]types.AttributeValue, 0, len(keys))
+	for _, k := range keys {
+		av, err := s.decodeKey(k)
+		if err != nil {
+			return query.DeleteStat{}, err
+		}
+		items = append(items, av)
+	}
+	if err := s.deleteItems(ctx, items); err != nil {
+		return query.DeleteStat{}, err
+	}
+	var stat query.DeleteStat
+	for _, k := range keys {
+		if existing[k] {
+			stat.Deleted++
+		} else {
+			stat.Missing++
+		}
+	}
+	return stat, nil
 }
 
 // Drop removes the table entirely — its items and schema (the `iq data drop`

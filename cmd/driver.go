@@ -60,13 +60,16 @@ type driver struct {
 	// would make for a classified query and pushed predicate — the data the query
 	// plan (--explain/--verbose) shows.
 	explainPlan func(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan
-	// explainWrite, explainClear, and explainDrop are the write-side counterparts:
-	// each describes an `iq data` operation without connecting, so `--explain`
-	// stays connection-free. explainDrop's bool reports whether the backend can
-	// drop its container at all (false for Redis, whose DB index is not removable).
-	explainWrite func(mode query.WriteMode) query.AccessPlan
-	explainClear func() query.AccessPlan
-	explainDrop  func() (query.AccessPlan, bool)
+	// explainWrite, explainClear, explainDrop, and explainDelete are the write-side
+	// counterparts: each describes an `iq data` operation without connecting, so
+	// `--explain` stays connection-free. explainDrop's and explainDelete's bool
+	// reports whether the backend supports the operation at all (drop is false for
+	// Redis, whose DB index is not removable; delete is nil for a backend with no
+	// per-key identity, such as the read-only file driver).
+	explainWrite  func(mode query.WriteMode) query.AccessPlan
+	explainClear  func() query.AccessPlan
+	explainDrop   func() (query.AccessPlan, bool)
+	explainDelete func() (query.AccessPlan, bool)
 }
 
 // drivers is the registry of every backend the CLI can dispatch to. Order is the
@@ -82,10 +85,11 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqmongo.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:  iqmongo.ExplainPlan,
-		explainWrite: iqmongo.ExplainWrite,
-		explainClear: iqmongo.ExplainClear,
-		explainDrop:  iqmongo.ExplainDrop,
+		explainPlan:   iqmongo.ExplainPlan,
+		explainWrite:  iqmongo.ExplainWrite,
+		explainClear:  iqmongo.ExplainClear,
+		explainDrop:   iqmongo.ExplainDrop,
+		explainDelete: iqmongo.ExplainDelete,
 	},
 	{
 		name:        "cassandra",
@@ -97,10 +101,11 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcassandra.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:  iqcassandra.ExplainPlan,
-		explainWrite: iqcassandra.ExplainWrite,
-		explainClear: iqcassandra.ExplainClear,
-		explainDrop:  iqcassandra.ExplainDrop,
+		explainPlan:   iqcassandra.ExplainPlan,
+		explainWrite:  iqcassandra.ExplainWrite,
+		explainClear:  iqcassandra.ExplainClear,
+		explainDrop:   iqcassandra.ExplainDrop,
+		explainDelete: iqcassandra.ExplainDelete,
 	},
 	{
 		name:           "dynamodb",
@@ -113,10 +118,11 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqdynamodb.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:  iqdynamodb.ExplainPlan,
-		explainWrite: iqdynamodb.ExplainWrite,
-		explainClear: iqdynamodb.ExplainClear,
-		explainDrop:  iqdynamodb.ExplainDrop,
+		explainPlan:   iqdynamodb.ExplainPlan,
+		explainWrite:  iqdynamodb.ExplainWrite,
+		explainClear:  iqdynamodb.ExplainClear,
+		explainDrop:   iqdynamodb.ExplainDrop,
+		explainDelete: iqdynamodb.ExplainDelete,
 	},
 	{
 		name:           "hbase",
@@ -129,10 +135,11 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqhbase.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:  iqhbase.ExplainPlan,
-		explainWrite: iqhbase.ExplainWrite,
-		explainClear: iqhbase.ExplainClear,
-		explainDrop:  iqhbase.ExplainDrop,
+		explainPlan:   iqhbase.ExplainPlan,
+		explainWrite:  iqhbase.ExplainWrite,
+		explainClear:  iqhbase.ExplainClear,
+		explainDrop:   iqhbase.ExplainDrop,
+		explainDelete: iqhbase.ExplainDelete,
 	},
 	{
 		name:           "couchdb",
@@ -145,10 +152,11 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcouchdb.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:  iqcouchdb.ExplainPlan,
-		explainWrite: iqcouchdb.ExplainWrite,
-		explainClear: iqcouchdb.ExplainClear,
-		explainDrop:  iqcouchdb.ExplainDrop,
+		explainPlan:   iqcouchdb.ExplainPlan,
+		explainWrite:  iqcouchdb.ExplainWrite,
+		explainClear:  iqcouchdb.ExplainClear,
+		explainDrop:   iqcouchdb.ExplainDrop,
+		explainDelete: iqcouchdb.ExplainDelete,
 	},
 	{
 		name:           "neo4j",
@@ -161,10 +169,11 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqneo4j.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:  iqneo4j.ExplainPlan,
-		explainWrite: iqneo4j.ExplainWrite,
-		explainClear: iqneo4j.ExplainClear,
-		explainDrop:  iqneo4j.ExplainDrop,
+		explainPlan:   iqneo4j.ExplainPlan,
+		explainWrite:  iqneo4j.ExplainWrite,
+		explainClear:  iqneo4j.ExplainClear,
+		explainDrop:   iqneo4j.ExplainDrop,
+		explainDelete: iqneo4j.ExplainDelete,
 	},
 	{
 		name:           "elasticsearch",
@@ -177,10 +186,11 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqelasticsearch.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:  iqelasticsearch.ExplainPlan,
-		explainWrite: iqelasticsearch.ExplainWrite,
-		explainClear: iqelasticsearch.ExplainClear,
-		explainDrop:  iqelasticsearch.ExplainDrop,
+		explainPlan:   iqelasticsearch.ExplainPlan,
+		explainWrite:  iqelasticsearch.ExplainWrite,
+		explainClear:  iqelasticsearch.ExplainClear,
+		explainDrop:   iqelasticsearch.ExplainDrop,
+		explainDelete: iqelasticsearch.ExplainDelete,
 	},
 	{
 		name:           "opensearch",
@@ -195,10 +205,11 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqelasticsearch.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:  iqelasticsearch.ExplainPlan,
-		explainWrite: iqelasticsearch.ExplainWrite,
-		explainClear: iqelasticsearch.ExplainClear,
-		explainDrop:  iqelasticsearch.ExplainDrop,
+		explainPlan:   iqelasticsearch.ExplainPlan,
+		explainWrite:  iqelasticsearch.ExplainWrite,
+		explainClear:  iqelasticsearch.ExplainClear,
+		explainDrop:   iqelasticsearch.ExplainDrop,
+		explainDelete: iqelasticsearch.ExplainDelete,
 	},
 	{
 		name:     "redis",
@@ -209,10 +220,11 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqredis.Open(ctx, cfg.url, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:  iqredis.ExplainPlan,
-		explainWrite: iqredis.ExplainWrite,
-		explainClear: iqredis.ExplainClear,
-		explainDrop:  iqredis.ExplainDrop,
+		explainPlan:   iqredis.ExplainPlan,
+		explainWrite:  iqredis.ExplainWrite,
+		explainClear:  iqredis.ExplainClear,
+		explainDrop:   iqredis.ExplainDrop,
+		explainDelete: iqredis.ExplainDelete,
 	},
 	{
 		name:     "file",

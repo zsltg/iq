@@ -3,6 +3,7 @@ package neo4j
 import (
 	"context"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -318,6 +319,19 @@ func TestExplainClear(t *testing.T) {
 	plan := ExplainClear()
 	require.Len(t, plan.Ops, 1)
 	require.Contains(t, plan.Ops[0], "DETACH DELETE")
+}
+
+func TestExplainDelete(t *testing.T) {
+	plan, ok := ExplainDelete()
+	require.True(t, ok)
+	require.NotEmpty(t, plan.Ops)
+	var mentionsDetachDelete bool
+	for _, op := range plan.Ops {
+		if strings.Contains(op, "DETACH DELETE") {
+			mentionsDetachDelete = true
+		}
+	}
+	require.True(t, mentionsDetachDelete, "delete plan should mention DETACH DELETE")
 }
 
 func TestExplainPlanPushesPredicate(t *testing.T) {

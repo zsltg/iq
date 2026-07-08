@@ -56,3 +56,10 @@ func TestExplainDrop(t *testing.T) {
 	require.True(t, ok)
 	require.Contains(t, p.Ops[0], "DeleteTable")
 }
+
+func TestExplainDelete(t *testing.T) {
+	p, ok := ExplainDelete()
+	require.True(t, ok)
+	require.Contains(t, p.Ops[0], "BatchGetItem") // the present-vs-absent pre-read
+	require.Contains(t, p.Ops[1], "BatchWriteItem")
+}

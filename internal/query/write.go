@@ -90,6 +90,29 @@ type Dropper interface {
 	Drop(ctx context.Context) error
 }
 
+// Deleter removes a named set of keys from the container, keeping the container
+// (the `iq data delete` command). A backend whose model has no per-key delete (an
+// InfluxDB point has no stable row identity) simply does not implement it, and the
+// command reports the operation unsupported — the Dropper idiom.
+type Deleter interface {
+	// Delete removes each key in keys, returning how many were removed and how
+	// many were already absent. A missing key is not an error (delete is
+	// idempotent, so a re-run converges). It never removes a key not named, and
+	// is bounded by ctx. On success Deleted + Missing == len(keys).
+	Delete(ctx context.Context, keys []string) (DeleteStat, error)
+}
+
+// DeleteStat reports the outcome of a delete batch, honest about non-atomicity the
+// way WriteStat is: Deleted keys that existed and were removed, Missing keys that
+// were already absent. Where a backend cannot distinguish the two without a pre-read
+// (DynamoDB BatchWriteItem is silent on absence), the driver takes a bounded key
+// pre-read whose count is accounting only — it never changes which keys are removed,
+// and, not being atomic with the delete, can skew by one under a concurrent write.
+type DeleteStat struct {
+	Deleted int
+	Missing int
+}
+
 // TypedReader lets a copy read each item with its native type preserved, so a
 // round-trip reconstructs the exact structure. MongoDB's is trivial (every item
 // is a document); Redis carries the TYPE it already reads per key.

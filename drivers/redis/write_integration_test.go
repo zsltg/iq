@@ -108,6 +108,39 @@ func TestPutRejectsUnencodableJSONIntegration(t *testing.T) {
 	require.ErrorContains(t, err, "json")
 }
 
+func TestDeleteIntegration(t *testing.T) {
+	store := openIntegration(t)
+	ctx := context.Background()
+	freshKeys(t, store, "d1", "d2", "d3", "keep")
+
+	_, err := store.Put(ctx, []query.Record{
+		{Key: "d1", Type: "string", Value: "a"},
+		{Key: "d2", Type: "string", Value: "b"},
+		{Key: "keep", Type: "string", Value: "survivor"},
+	}, query.Upsert)
+	require.NoError(t, err)
+
+	// Delete a mix: two present (d1, d2) and one already absent (d3). The DEL reply
+	// gives an exact split.
+	stat, err := store.Delete(ctx, []string{"d1", "d2", "d3"})
+	require.NoError(t, err)
+	require.Equal(t, 2, stat.Deleted)
+	require.Equal(t, 1, stat.Missing)
+
+	got, err := store.Get(ctx, []string{"d1", "d2", "keep"})
+	require.NoError(t, err)
+	require.Nil(t, got["d1"], "deleted key must be gone")
+	require.Nil(t, got["d2"], "deleted key must be gone")
+	require.Equal(t, "survivor", got["keep"], "a key not named must be untouched")
+}
+
+func TestDeleteEmptyIsNoOpIntegration(t *testing.T) {
+	store := openIntegration(t)
+	stat, err := store.Delete(context.Background(), nil)
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{}, stat)
+}
+
 func TestTypedScanIntegration(t *testing.T) {
 	store := openIntegration(t)
 	ctx := context.Background()

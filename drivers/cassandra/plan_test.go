@@ -74,3 +74,12 @@ func TestExplainClearDrop(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, []string{"DROP TABLE: remove the table and its data"}, plan.Ops)
 }
+
+func TestExplainDelete(t *testing.T) {
+	plan, ok := ExplainDelete()
+	require.True(t, ok)
+	require.Equal(t, []string{
+		"pre-read the keys (accounting only, for present-vs-absent)",
+		"DELETE FROM <table> WHERE <pk> = ? per key: remove the named rows",
+	}, plan.Ops)
+}

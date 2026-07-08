@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/go-kivik/kivik/v4"
@@ -118,6 +119,14 @@ func (s *Store) currentRevs(ctx context.Context, batch []query.Record) (map[stri
 			keys = append(keys, r.Key)
 		}
 	}
+	return s.currentRevsForKeys(ctx, keys)
+}
+
+// currentRevsForKeys reads the current _rev of every given key that has a live
+// document, via one _all_docs request. A key with no live document is simply absent
+// from the result. It is shared by Put's upsert (which supplies the rev) and Delete
+// (which needs the rev to write a tombstone, and treats an absent key as Missing).
+func (s *Store) currentRevsForKeys(ctx context.Context, keys []string) (map[string]string, error) {
 	revs := make(map[string]string, len(keys))
 	if len(keys) == 0 {
 		return revs, nil
@@ -242,6 +251,46 @@ func (s *Store) Drop(ctx context.Context) error {
 		return fmt.Errorf("couchdb destroy db: %w", err)
 	}
 	return nil
+}
+
+// Delete removes the named keys by writing a {_id, _rev, _deleted:true} tombstone for
+// each key that has a live document, bulk-deleted in batches of pageSize (the same
+// _bulk_docs primitive Clear uses). A key with no live document is never sent and
+// counts as Missing — no fetch, no error — so a re-run is idempotent. Deleted counts
+// the tombstones CouchDB accepted; a per-document failure (a stale-rev conflict under
+// a concurrent write) is a returned error, not a silent miscount.
+func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
+	if s.db == "" {
+		return query.DeleteStat{}, errNoDatabase
+	}
+	revs, err := s.currentRevsForKeys(ctx, keys)
+	if err != nil {
+		return query.DeleteStat{}, err
+	}
+	var stat query.DeleteStat
+	docs := make([]any, 0, len(keys))
+	for _, k := range keys {
+		rev, ok := revs[k]
+		if !ok {
+			stat.Missing++
+			continue
+		}
+		docs = append(docs, map[string]any{"_id": k, "_rev": rev, "_deleted": true})
+	}
+	db := s.client.DB(s.db)
+	for chunk := range slices.Chunk(docs, s.pageSize) {
+		results, err := db.BulkDocs(ctx, chunk)
+		if err != nil {
+			return query.DeleteStat{}, fmt.Errorf("couchdb bulk delete: %w", err)
+		}
+		for _, r := range results {
+			if r.Error != nil {
+				return query.DeleteStat{}, fmt.Errorf("couchdb delete %q: %w", r.ID, r.Error)
+			}
+			stat.Deleted++
+		}
+	}
+	return stat, nil
 }
 
 // TypedScan streams the whole database as typed records, reusing the ScanBatches

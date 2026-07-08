@@ -62,3 +62,11 @@ func TestExplainClearAndDrop(t *testing.T) {
 	require.True(t, ok)
 	require.Contains(t, strings.ToUpper(plan.Ops[0]), "DELETE")
 }
+
+func TestExplainDelete(t *testing.T) {
+	plan, ok := ExplainDelete()
+	require.True(t, ok)
+	ops := strings.Join(plan.Ops, " ")
+	require.Contains(t, ops, "_bulk_docs", "the delete goes through _bulk_docs")
+	require.Contains(t, ops, "_rev", "the current _rev is read first")
+}

@@ -55,3 +55,9 @@ func ExplainClear() query.AccessPlan {
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"drop(): remove the collection and its indexes"}}, true
 }
+
+// ExplainDelete describes the `iq data delete` op for a collection: a chunked
+// deleteMany over the named _ids, whose DeletedCount is exact.
+func ExplainDelete() (query.AccessPlan, bool) {
+	return query.AccessPlan{Ops: []string{fmt.Sprintf("deleteMany({_id: {$in: [...]}}), batches of %d: remove the named keys (deletedCount is exact)", scanBatch)}}, true
+}

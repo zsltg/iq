@@ -94,6 +94,41 @@ func TestClearAndDropIntegration(t *testing.T) {
 	require.NoError(t, store.Drop(ctx))
 }
 
+func TestDeleteIntegration(t *testing.T) {
+	store := openIntegration(t, "delete_docs")
+	seedDocs(t, store, nil)
+	ctx := context.Background()
+
+	_, err := store.Put(ctx, []query.Record{
+		{Key: "d1", Value: map[string]any{"n": 1}},
+		{Key: "d2", Value: map[string]any{"n": 2}},
+		{Key: "keep", Value: map[string]any{"n": 3}},
+	}, query.Upsert)
+	require.NoError(t, err)
+
+	// Two present keys delete, one absent key is missing; the counts sum to the
+	// request size because DeletedCount is exact.
+	stat, err := store.Delete(ctx, []string{"d1", "d2", "absent"})
+	require.NoError(t, err)
+	require.Equal(t, 2, stat.Deleted)
+	require.Equal(t, 1, stat.Missing)
+
+	got, err := store.Get(ctx, []string{"d1", "d2", "keep"})
+	require.NoError(t, err)
+	require.Nil(t, got["d1"], "deleted key reads as null")
+	require.Nil(t, got["d2"], "deleted key reads as null")
+	require.Equal(t, map[string]any{"_id": "keep", "n": 3}, got["keep"], "untouched key survives")
+}
+
+func TestDeleteEmptyIsNoOpIntegration(t *testing.T) {
+	store := openIntegration(t, "delete_empty")
+
+	stat, err := store.Delete(context.Background(), nil)
+
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{}, stat, "an empty delete is a zero-stat no-op")
+}
+
 func TestTypedScanRoundTripIntegration(t *testing.T) {
 	store := openIntegration(t, "typed_scan")
 	seedDocs(t, store, nil)

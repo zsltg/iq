@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/query"
@@ -72,6 +74,61 @@ func TestPutInsertOnly(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, stat.Written)
 	require.Equal(t, 0, stat.Skipped)
+}
+
+func TestDeleteIntegration(t *testing.T) {
+	st := seedBooks(t)
+	ctx := context.Background()
+
+	// A mixed batch: keys 1 and 3 exist, key 999 never did. BatchWriteItem is silent on
+	// absence, so the pre-read supplies the split: two Deleted, one Missing.
+	stat, err := st.Delete(ctx, []string{"1", "999", "3"})
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Deleted: 2, Missing: 1}, stat)
+
+	// The deleted keys are gone; the untouched key survives.
+	got, err := st.Get(ctx, []string{"1", "2", "3"})
+	require.NoError(t, err)
+	require.Nil(t, got["1"])
+	require.Nil(t, got["3"])
+	require.Equal(t, "Designing Data-Intensive Applications", got["2"].(map[string]any)["title"])
+
+	// Delete is idempotent: re-deleting an already-absent key is Missing, not an error.
+	stat, err = st.Delete(ctx, []string{"1"})
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Missing: 1}, stat)
+}
+
+func TestDeleteCompositeKeyIntegration(t *testing.T) {
+	ks := []types.KeySchemaElement{
+		{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
+		{AttributeName: aws.String("sk"), KeyType: types.KeyTypeRange},
+	}
+	attrs := []types.AttributeDefinition{
+		{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
+		{AttributeName: aws.String("sk"), AttributeType: types.ScalarAttributeTypeN},
+	}
+	item := map[string]types.AttributeValue{
+		"pk":   &types.AttributeValueMemberS{Value: "user#1"},
+		"sk":   &types.AttributeValueMemberN{Value: "7"},
+		"note": &types.AttributeValueMemberS{Value: "hello"},
+	}
+	st := seedTable(t, "events", ks, attrs, item)
+	ctx := context.Background()
+
+	// A hash+sort key is addressed by its JSON-array spelling; the existing one deletes.
+	stat, err := st.Delete(ctx, []string{`["user#1","7"]`})
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Deleted: 1}, stat)
+
+	got, err := st.Get(ctx, []string{`["user#1","7"]`})
+	require.NoError(t, err)
+	require.Nil(t, got[`["user#1","7"]`])
+
+	// An absent composite key is Missing, not Deleted.
+	stat, err = st.Delete(ctx, []string{`["user#1","8"]`})
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Missing: 1}, stat)
 }
 
 func TestClear(t *testing.T) {

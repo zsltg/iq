@@ -147,6 +147,35 @@ func TestIntegrationClearAndDrop(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestDeleteIntegration(t *testing.T) {
+	url := integrationOrSkip(t)
+	const table = "iq_it_delete"
+	createTable(t, url, table, "cf")
+	st := openIntegration(t, url, table, "")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	_, err := st.Put(ctx, []query.Record{
+		{Key: "1", Value: row(map[string]map[string]any{"cf": {"title": "Dune"}})},
+		{Key: "2", Value: row(map[string]map[string]any{"cf": {"title": "Hyperion"}})},
+		{Key: "3", Value: row(map[string]map[string]any{"cf": {"title": "Ringworld"}})},
+	}, query.Upsert)
+	require.NoError(t, err)
+
+	// Delete a mix: 1 and 2 exist, "absent" never did. Del is silent on absence, so
+	// the pre-read supplies the split; 3 is left untouched.
+	stat, err := st.Delete(ctx, []string{"1", "absent", "2"})
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Deleted: 2, Missing: 1}, stat)
+
+	got, err := st.Get(ctx, []string{"1", "2", "3"})
+	require.NoError(t, err)
+	require.Nil(t, got["1"])
+	require.Nil(t, got["2"])
+	require.Equal(t, "Ringworld", got["3"].(map[string]any)["cf"].(map[string]any)["title"])
+}
+
 func TestIntegrationDeclaredLongRoundTrip(t *testing.T) {
 	url := integrationOrSkip(t)
 	const table = "iq_it_typed"

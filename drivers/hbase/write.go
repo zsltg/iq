@@ -218,6 +218,42 @@ func (s *Store) Drop(ctx context.Context) error {
 	return nil
 }
 
+// Delete removes the named rows whole (the typed counterpart of the raw `exec delete`
+// verb), one hrpc.NewDel per key with nil values so every cell of the row goes. Each
+// key is encoded through encodeRowKey for the configured row-key type. Del is silent
+// on whether a row existed, so an existence-only pre-read (rowExists, accounting only)
+// supplies the present-vs-absent split; the Del runs regardless, so it is idempotent.
+func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
+	if s.table == "" {
+		return query.DeleteStat{}, errNoTable
+	}
+	var stat query.DeleteStat
+	for _, key := range keys {
+		rk, err := encodeRowKey(s.rowkeyType, key)
+		if err != nil {
+			return query.DeleteStat{}, err
+		}
+		existed, err := s.rowExists(ctx, rk)
+		if err != nil {
+			return query.DeleteStat{}, err
+		}
+		s.traceOp("delete %s", s.table)
+		del, err := hrpc.NewDel(ctx, []byte(s.table), rk, nil)
+		if err != nil {
+			return query.DeleteStat{}, fmt.Errorf("hbase delete: %w", err)
+		}
+		if _, err := s.client.Delete(del); err != nil {
+			return query.DeleteStat{}, fmt.Errorf("hbase delete: %w", err)
+		}
+		if existed {
+			stat.Deleted++
+		} else {
+			stat.Missing++
+		}
+	}
+	return stat, nil
+}
+
 // TypedScan streams the whole table as typed records, reusing the ScanBatches pager.
 // Every item is a row, so the type tag is "row"; the key is the row key and the value
 // is the nested row object.

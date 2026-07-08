@@ -225,6 +225,98 @@ func TestIntegrationWriteRoundTrip(t *testing.T) {
 	require.Equal(t, int64(0), c)
 }
 
+func TestDeleteIntegration(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	exec(t, ctx, admin, "CREATE CONSTRAINT itDelete_id IF NOT EXISTS FOR (d:ItDelete) REQUIRE d.id IS UNIQUE")
+	exec(t, ctx, admin, "MATCH (d:ItDelete) DETACH DELETE d")
+
+	st := openStore(t, ctx, "ItDelete", "id")
+
+	stat, err := st.Put(ctx, []query.Record{
+		{Key: "1", Value: map[string]any{"id": "1", "name": "Ada"}},
+		{Key: "2", Value: map[string]any{"id": "2", "name": "Grace"}},
+		{Key: "3", Value: map[string]any{"id": "3", "name": "Edsger"}},
+	}, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, 3, stat.Written)
+
+	// Delete a mix of existing (1, 3) and absent (missing) keys. Deleted counts the
+	// distinct matched keys (2), Missing the rest (1), and the two always sum to the
+	// request size — a mutant swapping either would break the exact assertions.
+	del, err := st.Delete(ctx, []string{"1", "3", "missing"})
+	require.NoError(t, err)
+	require.Equal(t, 2, del.Deleted)
+	require.Equal(t, 1, del.Missing)
+	require.Equal(t, len([]string{"1", "3", "missing"}), del.Deleted+del.Missing)
+
+	// The deleted nodes are gone; the untouched node survives.
+	got, err := st.Get(ctx, []string{"1", "2", "3"})
+	require.NoError(t, err)
+	require.Nil(t, got["1"])
+	require.Nil(t, got["3"])
+	require.NotNil(t, got["2"])
+	require.Equal(t, "Grace", got["2"].(map[string]any)["name"])
+
+	// Re-deleting the same keys is idempotent: everything is now Missing, no error.
+	del, err = st.Delete(ctx, []string{"1", "3"})
+	require.NoError(t, err)
+	require.Equal(t, 0, del.Deleted)
+	require.Equal(t, 2, del.Missing)
+}
+
+// TestDeleteIntegrationKeyless deletes by elementId on a label with no ?key=, the
+// path that matches and reports by elementId rather than a property.
+func TestDeleteIntegrationKeyless(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	exec(t, ctx, admin, "MATCH (d:ItDeleteEid) DETACH DELETE d")
+	exec(t, ctx, admin, "CREATE (:ItDeleteEid {name:'a'}), (:ItDeleteEid {name:'b'})")
+
+	st := openStore(t, ctx, "ItDeleteEid", "") // keyless: matched and deleted by elementId
+
+	// A keyless store keys each node by its elementId; collect both via a scan.
+	var eids []string
+	require.NoError(t, st.ScanBatches(ctx, func(p map[string]any) error {
+		for k := range p {
+			eids = append(eids, k)
+		}
+		return nil
+	}))
+	require.Len(t, eids, 2)
+
+	// Delete one real elementId plus one that never existed: Deleted 1, Missing 1.
+	del, err := st.Delete(ctx, []string{eids[0], "no-such-element-id"})
+	require.NoError(t, err)
+	require.Equal(t, 1, del.Deleted)
+	require.Equal(t, 1, del.Missing)
+
+	// The named node is gone; the other survives.
+	got, err := st.Get(ctx, []string{eids[0], eids[1]})
+	require.NoError(t, err)
+	require.Nil(t, got[eids[0]])
+	require.NotNil(t, got[eids[1]])
+}
+
+func TestDeleteRefusesNonUniqueKey(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	// A label with no uniqueness constraint carrying two nodes that share the ?key=
+	// property value: Delete must resolve the key to more than one node and refuse,
+	// rather than over-delete both, exactly as the bounded Get lookup does.
+	exec(t, ctx, admin, "MATCH (n:ItDelDup) DETACH DELETE n")
+	exec(t, ctx, admin, "CREATE (:ItDelDup {id:'dup', v:1}), (:ItDelDup {id:'dup', v:2})")
+
+	st := openStore(t, ctx, "ItDelDup", "id")
+	_, err := st.Delete(ctx, []string{"dup"})
+	require.ErrorContains(t, err, "matches more than one")
+
+	// The refusal left both nodes in place.
+	c, err := st.EstimateCount(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), c)
+}
+
 func TestIntegrationClearPagesLargeLabel(t *testing.T) {
 	ctx := integrationOrSkip(t)
 	admin := openStore(t, ctx, "", "")

@@ -92,6 +92,39 @@ func TestPutStripsIdentityFields(t *testing.T) {
 	require.Equal(t, "1", got["1"].(map[string]any)["_id"])
 }
 
+func TestDeleteIntegration(t *testing.T) {
+	st := seedDB(t)
+	ctx := skipShort(t)
+
+	_, err := st.Put(ctx, []query.Record{
+		{Key: "d1", Value: map[string]any{"title": "one"}},
+		{Key: "d2", Value: map[string]any{"title": "two"}},
+		{Key: "keep", Value: map[string]any{"title": "survives"}},
+	}, query.Upsert)
+	require.NoError(t, err)
+
+	// Two live keys are tombstoned; the absent key is counted Missing, not errored.
+	stat, err := st.Delete(ctx, []string{"d1", "d2", "absent"})
+	require.NoError(t, err)
+	require.Equal(t, 2, stat.Deleted)
+	require.Equal(t, 1, stat.Missing)
+
+	got, err := st.Get(ctx, []string{"d1", "d2", "keep"})
+	require.NoError(t, err)
+	require.Nil(t, got["d1"], "the tombstoned document reads as null")
+	require.Nil(t, got["d2"], "the tombstoned document reads as null")
+	require.Equal(t, "survives", got["keep"].(map[string]any)["title"], "an untouched document survives")
+}
+
+func TestDeleteEmptyIsNoOpIntegration(t *testing.T) {
+	st := seedDB(t)
+	ctx := skipShort(t)
+
+	stat, err := st.Delete(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{}, stat, "an empty delete touches nothing")
+}
+
 func TestClearKeepsDesignDocs(t *testing.T) {
 	docs := append(booksDocs(), map[string]any{"_id": "_design/idx", "language": "query"})
 	st := seedDB(t, docs...)

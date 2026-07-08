@@ -95,3 +95,10 @@ func TestExplainClearDrop(t *testing.T) {
 	require.True(t, ok)
 	require.Contains(t, drop.Ops[0], "DELETE /{index}")
 }
+
+func TestExplainDelete(t *testing.T) {
+	del, ok := ExplainDelete()
+	require.True(t, ok)
+	require.Contains(t, del.Ops[0], "_bulk")
+	require.Contains(t, del.Ops[0], "delete")
+}

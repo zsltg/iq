@@ -55,3 +55,12 @@ func ExplainClear() query.AccessPlan {
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"DROP TABLE: remove the table and its data"}}, true
 }
+
+// ExplainDelete describes the `iq data delete` op for a table: a per-key DELETE by
+// primary key, with a pre-read for the present-vs-absent count (CQL is silent on it).
+func ExplainDelete() (query.AccessPlan, bool) {
+	return query.AccessPlan{Ops: []string{
+		"pre-read the keys (accounting only, for present-vs-absent)",
+		"DELETE FROM <table> WHERE <pk> = ? per key: remove the named rows",
+	}}, true
+}

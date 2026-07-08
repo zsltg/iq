@@ -25,3 +25,10 @@ func TestExplainPlan(t *testing.T) {
 		require.Contains(t, got.Ops, "no server-side filter — every key is read and filtered client-side")
 	})
 }
+
+func TestExplainDelete(t *testing.T) {
+	got, ok := ExplainDelete()
+	require.True(t, ok)
+	require.Len(t, got.Ops, 1)
+	require.Contains(t, got.Ops[0], "DEL key...")
+}

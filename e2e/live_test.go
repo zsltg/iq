@@ -98,6 +98,19 @@ func TestLiveRedisRoundTrip(t *testing.T) {
 	require.Zerof(t, code, "exec TYPE failed: %s", stderr)
 	require.Contains(t, out, "hash")
 
+	// data delete removes named keys; the report is honest about a key already absent,
+	// and no prompt is needed since the key list is the confirmation.
+	_, stderr, code = run(t, env, "data", "delete", "rlive", "iq_e2e:greeting", "iq_e2e:absent")
+	require.Zerof(t, code, "delete failed: %s", stderr)
+	require.Contains(t, stderr, "deleted 1 key(s), 1 already absent")
+	// The deleted key now reads null; the untouched key still resolves.
+	out, stderr, code = run(t, env, "--src", "rlive", `.["iq_e2e:greeting"]`)
+	require.Zerof(t, code, "get after delete failed: %s", stderr)
+	require.Contains(t, out, "null")
+	out, stderr, code = run(t, env, "--src", "rlive", "exec", "TYPE", "iq_e2e:book")
+	require.Zerof(t, code, "exec TYPE after delete failed: %s", stderr)
+	require.Contains(t, out, "hash")
+
 	// Clear empties the DB; DBSIZE proves nothing is left.
 	mustRun(t, env, "data", "clear", "rlive", "--force")
 	out, stderr, code = run(t, env, "--src", "rlive", "exec", "DBSIZE")
@@ -144,6 +157,18 @@ func TestLiveMongoRoundTrip(t *testing.T) {
 	out, stderr, code = run(t, env, "--src", "mlive", "exec", countCmd)
 	require.Zerof(t, code, "exec count failed: %s", stderr)
 	require.Contains(t, out, `"n": 2`)
+
+	// data delete removes one document by _id; a key already absent is reported, not an
+	// error, and the surviving document still reads back.
+	_, stderr, code = run(t, env, "data", "delete", "mlive", "1", "absent")
+	require.Zerof(t, code, "delete failed: %s", stderr)
+	require.Contains(t, stderr, "deleted 1 key(s), 1 already absent")
+	out, stderr, code = run(t, env, "--src", "mlive", `.["1"]`)
+	require.Zerof(t, code, "get after delete failed: %s", stderr)
+	require.Contains(t, out, "null")
+	out, stderr, code = run(t, env, "--src", "mlive", `.["2"]`)
+	require.Zerof(t, code, "get survivor after delete failed: %s", stderr)
+	require.Contains(t, out, "Hyperion")
 
 	// Clear empties the collection; the count drops to zero.
 	mustRun(t, env, "data", "clear", "mlive", "--force")

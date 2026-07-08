@@ -58,3 +58,12 @@ func ExplainClear() query.AccessPlan {
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"DELETE /{db}: remove the database and everything in it"}}, true
 }
+
+// ExplainDelete describes the `iq data delete` op for a database: fetch each key's
+// _rev, then a _bulk_docs tombstone for the keys that have a live document.
+func ExplainDelete() (query.AccessPlan, bool) {
+	return query.AccessPlan{Ops: []string{
+		"_all_docs?keys=[...]: read each key's current _rev (a key with no document is Missing)",
+		"_bulk_docs [{_id,_rev,_deleted:true}]: tombstone the named documents",
+	}}, true
+}

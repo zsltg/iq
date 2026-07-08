@@ -30,29 +30,33 @@ func (f *dataFlags) validate() error {
 	return nil
 }
 
-// newDataCmd builds the `iq data` command group: container lifecycle (clear, drop).
-// Data movement lives on the default command as --insert/--typed (sq-style), so this
-// group is now just the lifecycle verbs. It owns the shared --explain/--dry-run
-// previews.
+// newDataCmd builds the `iq data` command group: container lifecycle (clear, drop)
+// and per-key delete (delete). Data movement lives on the default command as
+// --insert/--typed (sq-style), so this group is the lifecycle and delete verbs. It
+// owns the shared --explain/--dry-run previews.
 func newDataCmd(cfg *config) *cobra.Command {
 	df := &dataFlags{}
 	c := &cobra.Command{
 		Use:   "data",
-		Short: "Manage a source's container (clear, drop)",
+		Short: "Manage a source's container (clear, drop, delete)",
 		Long: "Container lifecycle for a source: `clear` empties a container; `drop` removes\n" +
-			"one. (Data movement is on the query command: `iq --src <s> --insert <dst>` to\n" +
-			"copy/restore, `iq --src <s> --typed` to dump.)\n\n" +
+			"one; `delete` removes a named set of keys, keeping the container. (Data movement\n" +
+			"is on the query command: `iq --src <s> --insert <dst>` to copy/restore, `iq\n" +
+			"--src <s> --typed` to dump.)\n\n" +
 			"--explain shows the plan without connecting; --dry-run reports the real effect\n" +
 			"without changing anything.",
 		Example: "  # Empty a source's container but keep it; or remove it entirely (Mongo).\n" +
 			"  $ iq data clear cache\n" +
-			"  $ iq data drop shop.orders",
+			"  $ iq data drop shop.orders\n" +
+			"  # Remove specific keys, keeping the container.\n" +
+			"  $ iq data delete cache book:1 book:2",
 	}
 	c.PersistentFlags().BoolVar(&df.explain, "explain", false, "describe the plan without connecting or changing anything")
 	c.PersistentFlags().BoolVar(&df.dryRun, "dry-run", false, "report the real effect without changing anything")
 	c.AddCommand(
 		newDataClearCmd(cfg, df),
 		newDataDropCmd(cfg, df),
+		newDataDeleteCmd(cfg, df),
 	)
 	return c
 }

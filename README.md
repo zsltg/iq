@@ -522,10 +522,10 @@ same contract:
 - **Pushdown never changes results.** A pushed predicate is only ever a conservative server-side
   pre-filter; the full jq always re-runs client-side, so output is identical with or without it, and
   [`--explain`](#query-plan---explain--v) shows exactly what was pushed.
-- **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, and drop are opt-in
-  ports: a backend implements what its model supports, and a command against a missing capability
-  fails with a clear message instead of emulating it (Redis, whose DB index cannot be removed,
-  simply has no `drop`).
+- **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, drop, and per-key
+  delete are opt-in ports: a backend implements what its model supports, and a command against a
+  missing capability fails with a clear message instead of emulating it (Redis, whose DB index cannot
+  be removed, simply has no `drop`; the read-only file dump has no per-key `delete`).
 - **Values round-trip.** Every value normalizes to JSON under a frozen per-backend encoding
   contract, and a `--typed` dump restores through `--insert` losslessly (see
   [Moving data](#moving-data---insert---typed)).
@@ -944,9 +944,11 @@ iq --src books exec put iq_books 5 cf:title Dune  # write one cell
 iq --src books exec delete iq_books 5           # delete the whole row (or `delete iq_books 5 cf:title` for one cell)
 ```
 
-Structured writes go through `iq data` (`put`/`clear`/`drop`) with write modes, stats, and
-`--explain`; the raw `put`/`delete` verbs are the lower-level escape hatch, mirroring the other
-drivers' raw paths. `iq inspect` lists the source namespace's tables (`tables`).
+Structured writes go through `iq data` (`clear`/`drop`/`delete`, plus `--insert`) with write modes,
+stats, and `--explain`; `iq data delete <table> <rowkey>…` is the typed, capability-gated per-key
+delete that formalizes the raw `delete` verb below. The raw `put`/`delete` verbs remain the
+lower-level escape hatch (a single cell, a column), mirroring the other drivers' raw paths. `iq
+inspect` lists the source namespace's tables (`tables`).
 
 </details>
 
@@ -1390,10 +1392,20 @@ index only empties — so `drop` is rejected for a Redis target with a pointer t
 distinct from `iq rm`, which only *unregisters* a saved source; these destroy stored data, and prompt
 for confirmation unless `--force`. Both take `--explain` (plan without connecting) and `--dry-run`.
 
+`iq data delete <target> <key>…` removes a named set of keys, keeping the container — the typed,
+capability-gated, explainable counterpart of the raw per-key `exec delete`. Each key uses the same
+spelling as a Get: a bare string (`book:1`), or a JSON array for a composite key (`["shop",42]`). A
+key already absent is not an error (delete is idempotent), and the report is honest about it:
+`deleted N key(s), M already absent`. Unlike `clear`/`drop` it does **not** prompt — the explicit key
+list you typed is the confirmation; use `--dry-run` to preview. A backend with no per-key identity
+(the read-only file dump) rejects it, like Redis rejects `drop`. It also takes `--explain`.
+
 ```bash
 iq --src books --insert books2 --explain   # move plan, no connection
 iq data clear books --dry-run              # "would clear books.books (~1240 item(s))"
 iq data drop cache --explain               # reports the Redis drop as unsupported
+iq data delete cache book:1 book:2         # "deleted 2 key(s), 0 already absent"
+iq data delete shop.orders '["eu",42]'     # a composite-key row, by its JSON-array spelling
 ```
 
 ## Architecture
@@ -1445,7 +1457,7 @@ graph TD
   DST -->|--insert| PUT["Putter.Put (upsert / insert-only)"]
   DST -->|--typed| ENC["emit {key,type,value} → jsonl / jsona / yaml"]
   PUT --> BW["backend adapter:<br/>type-aware native writes"]
-  LF["iq data clear / drop (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop (capability-gated)"]
+  LF["iq data clear / drop / delete (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop / Deleter.Delete (capability-gated)"]
 ```
 
 The query core is driver-agnostic and lives behind two ports a backend adapter implements:
@@ -1464,10 +1476,11 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
 - The **write path** mirrors the read path through optional capability ports in `internal/query`,
   the same idiom as `FilteredScanner`/`Estimator`: `Putter` (write a batch of typed records),
   `TypedReader` (`TypedScan`, read `{key, type, value}` batches so a copy preserves each item's
-  native type), `Clearer` (empty a container), and `Dropper` (remove one). A backend implements
+  native type), `Clearer` (empty a container), `Dropper` (remove one), and `Deleter` (remove a
+  named set of keys by canonical key). A backend implements
   only the capabilities its model supports, and a command type-asserts and rejects cleanly when one
   is absent — so a new backend never edits the commands, and Redis, whose DB index cannot be
-  removed, simply omits `Dropper`. `Copier` streams `TypedScan → optional --filter transform →
+  removed, simply omits `Dropper`, while a keyless store like InfluxDB omits `Deleter`. `Copier` streams `TypedScan → optional --filter transform →
   Put` in bounded pages; the type tag is what makes a Redis round-trip lossless, since a hash and a
   document both normalize to a JSON object. The default command's `--insert` (write items into a
   source) and `--typed` (emit a re-importable `{key,type,value}` dump) drive this — sq-style, with
@@ -1493,7 +1506,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   adapters. Each has one `*Store`
   satisfying the read ports
   (`Query` for exec, `Get`/`ScanBatches` for jq) and the write ports (`Put`/`Clear`/`TypedScan`,
-  plus `Drop` for Mongo, Cassandra, DynamoDB, HBase, CouchDB, and Elasticsearch), with a type-to-JSON normalization frozen as
+  plus `Drop` for Mongo, Cassandra, DynamoDB, HBase, CouchDB, and Elasticsearch, and `Delete`
+  for every live backend — all but the read-only file dump), with a type-to-JSON normalization frozen as
   that backend's
   encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs; CQL types → uuid-string,
   RFC 3339, base64 blob, collections; DynamoDB `S`/`N`/`B`/`BOOL`/`M`/`L`/sets; HBase raw cell bytes →
@@ -1504,14 +1518,21 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   hit `_id` injected) and its
   inverse for
   writes
-  (Mongo `bulkWrite`; Redis pipelined `SET`/`HSET`/`RPUSH`/`SADD`/`ZADD`/`XADD`/`JSON.SET` by
-  type; Cassandra parameterized `INSERT`, `TRUNCATE`, `DROP TABLE`; DynamoDB `PutItem`, `Scan` +
-  `BatchWriteItem` delete-all, `DeleteTable`; HBase `Put` / `CheckAndPut` insert-only, a key-only
-  `Scan` + per-row `Delete` for clear, and `DisableTable` + `DeleteTable` for drop; CouchDB
-  `_bulk_docs` upsert/insert reading current `_rev`s first, `_bulk_docs {_deleted:true}` clear,
-  `DELETE /{db}` drop; Neo4j `UNWIND … MERGE (n:Label {key}) SET n += props` upsert/insert-only,
-  paged `MATCH … DETACH DELETE` clear, no drop; Elasticsearch refreshing `_bulk` index/create by
-  `_id`, `_delete_by_query {match_all}` clear, `DELETE /{index}` drop). Redis maps a key
+  (Mongo `bulkWrite`, chunked `deleteMany({_id:{$in}})` per-key delete; Redis pipelined
+  `SET`/`HSET`/`RPUSH`/`SADD`/`ZADD`/`XADD`/`JSON.SET` by
+  type, chunked `DEL` per-key delete; Cassandra parameterized `INSERT`, `TRUNCATE`, `DROP TABLE`,
+  per-key `DELETE … WHERE pk = ?` (pre-read for the present/absent count); DynamoDB `PutItem`, `Scan` +
+  `BatchWriteItem` delete-all, `DeleteTable`, per-key `BatchWriteItem` delete (pre-read for the count);
+  HBase `Put` / `CheckAndPut` insert-only, a key-only
+  `Scan` + per-row `Delete` for clear, per-key whole-row `Delete` (exists-only pre-read), and
+  `DisableTable` + `DeleteTable` for drop; CouchDB
+  `_bulk_docs` upsert/insert reading current `_rev`s first, `_bulk_docs {_deleted:true}` clear and
+  per-key delete, `DELETE /{db}` drop; Neo4j `UNWIND … MERGE (n:Label {key}) SET n += props`
+  upsert/insert-only,
+  paged `MATCH … DETACH DELETE` clear, per-key resolve + `DETACH DELETE` delete, no drop;
+  Elasticsearch refreshing `_bulk` index/create by
+  `_id`, `_delete_by_query {match_all}` clear, `_bulk {delete:{_id}}` per-key delete, `DELETE /{index}`
+  drop). Redis maps a key
   to a Redis key;
   Mongo maps a key to a document `_id` within the collection it owns from the URL's `?collection=`
   (or a dotted `handle.collection` override); Cassandra maps a key to a row's full primary key within

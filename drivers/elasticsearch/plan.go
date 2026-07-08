@@ -108,3 +108,9 @@ func ExplainClear() query.AccessPlan {
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"DELETE /{index}: remove the index and everything in it"}}, true
 }
+
+// ExplainDelete describes the `iq data delete` op for an index: a _bulk of delete
+// actions by _id, whose per-item result ("deleted"/"not_found") is exact.
+func ExplainDelete() (query.AccessPlan, bool) {
+	return query.AccessPlan{Ops: []string{"_bulk {delete:{_id}} (refresh): remove the named documents (per-item deleted vs not_found is exact)"}}, true
+}

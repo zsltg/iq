@@ -60,3 +60,12 @@ func ExplainClear() query.AccessPlan {
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{}, false
 }
+
+// ExplainDelete describes the `iq data delete` op for a label: resolve each key to
+// its node (by elementId or the ?key= property), then DETACH DELETE the matches.
+func ExplainDelete() (query.AccessPlan, bool) {
+	return query.AccessPlan{Ops: []string{
+		"MATCH (n:<label>) WHERE elementId(n) IN $ids (or n.<key> IN $ids): resolve the keys to nodes",
+		"MATCH ... WHERE elementId(n) IN $eids DETACH DELETE n: remove the matched nodes and their relationships",
+	}}, true
+}

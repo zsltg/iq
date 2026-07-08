@@ -190,6 +190,28 @@ func TestDrop(t *testing.T) {
 	require.Error(t, err) // the index no longer exists.
 }
 
+func TestDelete(t *testing.T) {
+	st := seedIndex(
+		t,
+		map[string]any{"_id": "d1", "title": "Dune"},
+		map[string]any{"_id": "d2", "title": "Neuromancer"},
+		map[string]any{"_id": "keep", "title": "Chapterhouse"},
+	)
+	ctx := skipShort(t)
+
+	// Delete two present ids and one absent id: the absent one is Missing, not an error,
+	// and Deleted+Missing covers every requested key.
+	stat, err := st.Delete(ctx, []string{"d1", "d2", "absent"})
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Deleted: 2, Missing: 1}, stat)
+
+	got, err := st.Get(ctx, []string{"d1", "d2", "keep"})
+	require.NoError(t, err)
+	require.Nil(t, got["d1"])
+	require.Nil(t, got["d2"])
+	require.Equal(t, "Chapterhouse", got["keep"].(map[string]any)["title"])
+}
+
 func TestTypedScan(t *testing.T) {
 	st := seedIndex(t, books()...)
 	ctx := skipShort(t)

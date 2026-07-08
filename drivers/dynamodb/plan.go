@@ -58,3 +58,13 @@ func ExplainClear() query.AccessPlan {
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"DeleteTable: remove the table and its data"}}, true
 }
+
+// ExplainDelete describes the `iq data delete` op for a table: BatchWriteItem
+// delete by key, with a pre-read for the present-vs-absent count (BatchWriteItem is
+// silent on it).
+func ExplainDelete() (query.AccessPlan, bool) {
+	return query.AccessPlan{Ops: []string{
+		"BatchGetItem pre-read the keys (accounting only, for present-vs-absent)",
+		"BatchWriteItem DeleteRequest, batches of 25: remove the named keys by primary key",
+	}}, true
+}

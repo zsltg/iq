@@ -112,6 +112,26 @@ func TestOpenSearchWriteClearDrop(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestOpenSearchDelete(t *testing.T) {
+	st := seedIndexOn(
+		t, requireOpenSearch(t),
+		map[string]any{"_id": "d1", "title": "Dune"},
+		map[string]any{"_id": "d2", "title": "Neuromancer"},
+		map[string]any{"_id": "keep", "title": "Chapterhouse"},
+	)
+	ctx := skipShort(t)
+
+	stat, err := st.Delete(ctx, []string{"d1", "d2", "absent"})
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Deleted: 2, Missing: 1}, stat)
+
+	got, err := st.Get(ctx, []string{"d1", "d2", "keep"})
+	require.NoError(t, err)
+	require.Nil(t, got["d1"])
+	require.Nil(t, got["d2"])
+	require.Equal(t, "Chapterhouse", got["keep"].(map[string]any)["title"])
+}
+
 func TestOpenSearchQueryRaw(t *testing.T) {
 	st := seedIndexOn(t, requireOpenSearch(t), books()...)
 	ctx := skipShort(t)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/zsltg/iq/internal/query"
 )
@@ -148,6 +149,64 @@ func (s *Store) Drop(ctx context.Context) error {
 	return s.request(ctx, "delete index", http.MethodDelete, "/"+s.index, nil, nil)
 }
 
+// Delete removes the named keys with a _bulk of {"delete":{"_id":k}} actions that
+// refreshes so the removal is immediately visible, chunked to pageSize so a large
+// list is bounded per request. Each item's result is exact — "deleted" for a document
+// that existed, "not_found" for one already absent (not an error) — so Deleted and
+// Missing come straight from the response. Each _id rides as a marshalled JSON field,
+// never string-built.
+func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
+	if s.index == "" {
+		return query.DeleteStat{}, errNoIndex
+	}
+	var stat query.DeleteStat
+	for batch := range slices.Chunk(keys, s.pageSize) {
+		var buf bytes.Buffer
+		for _, k := range batch {
+			if err := writeBulkLine(&buf, map[string]any{"delete": map[string]any{"_id": k}}); err != nil {
+				return query.DeleteStat{}, err
+			}
+		}
+		var br struct {
+			Items []map[string]bulkItem `json:"items"`
+		}
+		res, err := s.do(ctx, http.MethodPost, "/"+s.index+"/_bulk?refresh=true", "application/x-ndjson", buf.Bytes()) //nolint:bodyclose // finish closes res.Body.
+		if err := s.finish(res, err, "bulk delete", &br); err != nil {
+			return query.DeleteStat{}, err
+		}
+		chunk, err := tallyBulkDelete(br.Items)
+		if err != nil {
+			return query.DeleteStat{}, err
+		}
+		stat.Deleted += chunk.Deleted
+		stat.Missing += chunk.Missing
+	}
+	return stat, nil
+}
+
+// tallyBulkDelete reduces a _bulk delete response's per-item outcomes to a delete
+// stat: a "deleted" result is a document that existed and was removed, a "not_found"
+// one that was already absent (Missing, not an error), and any actual error fails the
+// batch. Each item map carries exactly one action, so the inner loop runs once.
+func tallyBulkDelete(items []map[string]bulkItem) (query.DeleteStat, error) {
+	var stat query.DeleteStat
+	for _, item := range items {
+		for _, r := range item {
+			switch {
+			case r.Result == "deleted":
+				stat.Deleted++
+			case r.Result == "not_found":
+				stat.Missing++
+			case r.Error != nil:
+				return query.DeleteStat{}, fmt.Errorf("elasticsearch bulk delete: %s: %s", r.Error.Type, r.Error.Reason)
+			default:
+				return query.DeleteStat{}, fmt.Errorf("elasticsearch bulk delete: unexpected result %q (status %d)", r.Result, r.Status)
+			}
+		}
+	}
+	return stat, nil
+}
+
 // TypedScan streams the whole index as typed records, reusing the ScanBatches walk.
 // Every item is a document, so the type tag is "document"; the key is the _id and the
 // value is the normalized document.
@@ -166,5 +225,6 @@ var (
 	_ query.Putter      = (*Store)(nil)
 	_ query.Clearer     = (*Store)(nil)
 	_ query.Dropper     = (*Store)(nil)
+	_ query.Deleter     = (*Store)(nil)
 	_ query.TypedReader = (*Store)(nil)
 )

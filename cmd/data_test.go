@@ -101,3 +101,52 @@ func TestConfirmDestructionForce(t *testing.T) {
 	cmd.SetIn(strings.NewReader(""))
 	require.NoError(t, confirmDestruction(cmd, "clear books", true))
 }
+
+func TestDedupeKeys(t *testing.T) {
+	t.Run("drops repeats preserving first-seen order", func(t *testing.T) {
+		got, err := dedupeKeys([]string{"b", "a", "b", "c", "a"})
+		require.NoError(t, err)
+		require.Equal(t, []string{"b", "a", "c"}, got)
+	})
+	t.Run("rejects an empty key", func(t *testing.T) {
+		_, err := dedupeKeys([]string{"a", "", "b"})
+		require.ErrorContains(t, err, "empty key")
+	})
+	t.Run("passes a single key through", func(t *testing.T) {
+		got, err := dedupeKeys([]string{"only"})
+		require.NoError(t, err)
+		require.Equal(t, []string{"only"}, got)
+	})
+}
+
+func TestRunDataDeleteRejectsFile(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	// "-" resolves to a stdin file endpoint before any connection; delete needs a source.
+	err := runDataDelete(cmd, &config{}, &dataFlags{}, "-", []string{"k"})
+	require.ErrorContains(t, err, "not a file")
+}
+
+func TestRunDataDeleteRejectsConflictingFlags(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	err := runDataDelete(cmd, &config{}, &dataFlags{explain: true, dryRun: true}, "cache", []string{"k"})
+	require.ErrorContains(t, err, "mutually exclusive")
+}
+
+func TestRunDataDeleteRejectsEmptyKey(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	err := runDataDelete(cmd, &config{}, &dataFlags{}, "cache", []string{""})
+	require.ErrorContains(t, err, "empty key")
+}
+
+func TestRenderDeleteExplain(t *testing.T) {
+	cmd := &cobra.Command{}
+	var out strings.Builder
+	cmd.SetOut(&out)
+	printLifecyclePlan(cmd, deleteOp, endpoint{url: "redis://h:6379/0", handle: "cache", driver: "redis"})
+	require.Contains(t, out.String(), "delete plan")
+	require.Contains(t, out.String(), "cache")
+	require.Contains(t, out.String(), "DEL key...")
+}
