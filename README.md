@@ -1629,7 +1629,7 @@ make check                # fast offline gate: format, vet, build, lint, dead co
 make cover                # full suite + coverage floor (IQ_COVER_MIN, default 80); IQ_COVER_SHORT=1 for a fast report-only run
 make security             # supply-chain + secrets sweep (govulncheck, osv-scanner, gitleaks) + SBOMs to dist/
 make sbom                 # write SPDX + CycloneDX SBOMs of the module to dist/
-make e2e                  # black-box smoke tests that build and drive the iq binary
+make e2e                  # black-box smoke tests that build and drive the iq binary (+ live Redis/Mongo round-trips when IQ_REDIS_URL/IQ_MONGO_URL are set)
 make mutation             # mutation gate over the branch diff vs main (part of make ci)
 make ci                   # full pre-merge gate: check + cover + security + mutation (needs Docker + network)
 make tools                # install release tools (svu, git-chglog) into GOPATH/bin
@@ -1646,8 +1646,12 @@ tears them down afterwards — no manual `docker compose up` (Cassandra takes ~1
 ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL` / `IQ_COUCHDB_URL` / `IQ_NEO4J_URL` / `IQ_ELASTICSEARCH_URL` / `IQ_OPENSEARCH_URL`
 to point at an already-running server (for example the `docker compose` stack) to skip container
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
-a shared Redis the integration tests operate on reserved databases (14 and 15), so data seeded
-into DB 0 by `scripts/seed-redis.sh` survives a test run. **HBase is the exception**: its native RPC
+a shared Redis the suites operate on reserved databases so no run flushes another's data — 15 and 14
+are the `cmd` integration scratch pair, 13 is the Redis driver's private DB, and 12 is the black-box
+e2e round-trip's — so data seeded into DB 0 by `scripts/seed-redis.sh` survives a test run. The live
+e2e flows (`e2e/live_test.go`) drive the built binary against a real backend and run only when
+`IQ_REDIS_URL` / `IQ_MONGO_URL` are set, with no localhost fallback, so the offline suite never needs
+a server. **HBase is the exception**: its native RPC
 needs a fixed-hostname cluster (testcontainers' random ports would break the region server's
 advertised name), so its integration tests run only when `IQ_HBASE_URL` points at a running cluster
 (`docker compose up -d --wait hbase`); without it they skip. The compose HBase service uses host

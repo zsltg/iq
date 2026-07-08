@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -60,8 +61,25 @@ func skipShort(t *testing.T) {
 // the process exit code (0 on success).
 func run(t *testing.T, env []string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
-	cmd := exec.CommandContext(t.Context(), iqBin, args...)
+	return runIn(t, "", env, args...)
+}
+
+// runIn is run with stdin fed from a string, for the piped-source path.
+func runIn(t *testing.T, stdin string, env []string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	return runCtx(t, t.Context(), stdin, env, args...)
+}
+
+// runCtx runs the binary under an explicit context. Body steps pass t.Context(); a
+// t.Cleanup step must pass context.Background(), since t.Context() is already canceled
+// by the time cleanups run.
+func runCtx(t *testing.T, ctx context.Context, stdin string, env []string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	cmd := exec.CommandContext(ctx, iqBin, args...)
 	cmd.Env = append(os.Environ(), env...)
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
@@ -74,6 +92,15 @@ func run(t *testing.T, env []string, args ...string) (stdout, stderr string, cod
 		code = ee.ExitCode()
 	}
 	return out.String(), errb.String(), code
+}
+
+// mustRun runs the binary and fails the test if it exits non-zero, for setup steps
+// whose arguments carry no secret (never a raw URL) so echoing them is safe.
+func mustRun(t *testing.T, env []string, args ...string) string {
+	t.Helper()
+	out, stderr, code := run(t, env, args...)
+	require.Zerof(t, code, "iq %v failed: %s", args, stderr)
+	return out
 }
 
 func TestVersionReportsMetadata(t *testing.T) {
