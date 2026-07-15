@@ -91,6 +91,28 @@ services:
       timeout: 5s
       retries: 15
 
+  couchbase:
+    image: couchbase:community-7.6.2
+    container_name: iq-couchbase
+    ports:
+      # 8091-8096 are the cluster/management + service REST ports; 11210 is the KV
+      # (memcached) protocol port the SDK connects on.
+      - "8091-8096:8091-8096"
+      - "11210:11210"
+    # The stock image starts unprovisioned; scripts/seed-couchbase.sh runs the one-time
+    # idempotent cluster-init, bucket, index, and sample docs. The healthcheck only
+    # asserts the management port answers, so `--wait` returns once the server is up.
+    healthcheck:
+      # Assert the management port answers, not that the request authorizes: after the
+      # seed script's cluster-init, /pools returns 401 without credentials, which is
+      # still the server answering — so drop -f (which fails on any 4xx) and just
+      # confirm the HTTP endpoint responds. A connection refusal still exits non-zero.
+      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "http://localhost:8091/pools"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
   neo4j:
     image: neo4j:5
     container_name: iq-neo4j

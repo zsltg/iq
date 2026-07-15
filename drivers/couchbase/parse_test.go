@@ -1,0 +1,155 @@
+package couchbase
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestParseURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		rawURL      string
+		address     string
+		wantConnStr string
+		wantUser    string
+		wantPass    string
+		wantBucket  string
+		wantScope   string
+		wantColl    string
+	}{
+		{
+			name:        "bucket only defaults to default collection",
+			rawURL:      "couchbase://user:pass@localhost/?bucket=iq",
+			wantConnStr: "couchbase://localhost",
+			wantUser:    "user",
+			wantPass:    "pass",
+			wantBucket:  "iq",
+			wantScope:   "_default",
+			wantColl:    "_default",
+		},
+		{
+			name:        "collection param, default scope",
+			rawURL:      "couchbase://u:p@localhost/?bucket=iq&collection=orders",
+			wantConnStr: "couchbase://localhost",
+			wantUser:    "u",
+			wantPass:    "p",
+			wantBucket:  "iq",
+			wantScope:   "_default",
+			wantColl:    "orders",
+		},
+		{
+			name:        "scope.collection param",
+			rawURL:      "couchbase://u:p@localhost/?bucket=iq&collection=sales.orders",
+			wantConnStr: "couchbase://localhost",
+			wantUser:    "u",
+			wantPass:    "p",
+			wantBucket:  "iq",
+			wantScope:   "sales",
+			wantColl:    "orders",
+		},
+		{
+			name:        "dotted address overrides collection param",
+			rawURL:      "couchbase://u:p@localhost/?bucket=iq&collection=orders",
+			address:     "archive",
+			wantConnStr: "couchbase://localhost",
+			wantUser:    "u",
+			wantPass:    "p",
+			wantBucket:  "iq",
+			wantScope:   "_default",
+			wantColl:    "archive",
+		},
+		{
+			name:        "dotted address with scope",
+			rawURL:      "couchbase://u:p@localhost/?bucket=iq",
+			address:     "sales.orders",
+			wantConnStr: "couchbase://localhost",
+			wantUser:    "u",
+			wantPass:    "p",
+			wantBucket:  "iq",
+			wantScope:   "sales",
+			wantColl:    "orders",
+		},
+		{
+			name:        "tls scheme preserved",
+			rawURL:      "couchbases://u:p@localhost/?bucket=iq",
+			wantConnStr: "couchbases://localhost",
+			wantUser:    "u",
+			wantPass:    "p",
+			wantBucket:  "iq",
+			wantScope:   "_default",
+			wantColl:    "_default",
+		},
+		{
+			name:        "extra query kept as connstr option, iq params stripped",
+			rawURL:      "couchbase://u:p@localhost/?bucket=iq&kv_timeout=10s",
+			wantConnStr: "couchbase://localhost?kv_timeout=10s",
+			wantUser:    "u",
+			wantPass:    "p",
+			wantBucket:  "iq",
+			wantScope:   "_default",
+			wantColl:    "_default",
+		},
+		{
+			name:        "no bucket is allowed (raw/inspect only)",
+			rawURL:      "couchbase://u:p@localhost/",
+			wantConnStr: "couchbase://localhost",
+			wantUser:    "u",
+			wantPass:    "p",
+			wantBucket:  "",
+			wantScope:   "_default",
+			wantColl:    "_default",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cc, err := parseURL(tt.rawURL, tt.address)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantConnStr, cc.connStr)
+			require.Equal(t, tt.wantUser, cc.username)
+			require.Equal(t, tt.wantPass, cc.password)
+			require.Equal(t, tt.wantBucket, cc.bucket)
+			require.Equal(t, tt.wantScope, cc.scope)
+			require.Equal(t, tt.wantColl, cc.coll)
+		})
+	}
+}
+
+func TestParseURLErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		address string
+	}{
+		{name: "wrong scheme", rawURL: "mongodb://localhost/?bucket=iq"},
+		{name: "no host", rawURL: "couchbase:///?bucket=iq"},
+		{name: "too many collection segments", rawURL: "couchbase://localhost/?bucket=iq&collection=a.b.c"},
+		{name: "hostile bucket backtick", rawURL: "couchbase://localhost/?bucket=iq`drop"},
+		{name: "hostile collection space", rawURL: "couchbase://localhost/?bucket=iq&collection=a b"},
+		{name: "hostile scope quote", rawURL: "couchbase://localhost/?bucket=iq", address: "a'b.c"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseURL(tt.rawURL, tt.address)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestValidateKey(t *testing.T) {
+	require.NoError(t, validateKey("k1"))
+	require.NoError(t, validateKey(strings.Repeat("k", maxKeyBytes)), "exactly at the limit is valid")
+	require.Error(t, validateKey(""))
+	require.Error(t, validateKey(strings.Repeat("k", maxKeyBytes+1)), "one over the limit is rejected")
+}
+
+func TestValidateIdent(t *testing.T) {
+	require.NoError(t, validateIdent("bucket", "iq_test-1%"))
+	require.NoError(t, validateIdent("collection", "_default"))
+	require.NoError(t, validateIdent("bucket", strings.Repeat("a", maxIdentBytes)), "exactly at the limit is valid")
+	require.Error(t, validateIdent("bucket", ""))
+	require.Error(t, validateIdent("bucket", strings.Repeat("a", maxIdentBytes+1)), "one over the limit is rejected")
+	require.Error(t, validateIdent("bucket", "has`tick"))
+	require.Error(t, validateIdent("bucket", "has space"))
+}

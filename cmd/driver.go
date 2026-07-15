@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	iqcassandra "github.com/zsltg/iq/drivers/cassandra"
+	iqcouchbase "github.com/zsltg/iq/drivers/couchbase"
 	iqcouchdb "github.com/zsltg/iq/drivers/couchdb"
 	iqdynamodb "github.com/zsltg/iq/drivers/dynamodb"
 	iqelasticsearch "github.com/zsltg/iq/drivers/elasticsearch"
@@ -157,6 +158,22 @@ var drivers = []driver{
 		explainClear:  iqcouchdb.ExplainClear,
 		explainDrop:   iqcouchdb.ExplainDrop,
 		explainDelete: iqcouchdb.ExplainDelete,
+	},
+	{
+		name:           "couchbase",
+		desc:           "Couchbase document store",
+		schemes:        []string{"couchbase", "couchbases"},
+		doc:            "https://docs.couchbase.com/",
+		versions:       "7.x, 8.x (Community or Enterprise)",
+		addressable:    true,
+		verifiesOnOpen: true,
+		open: func(ctx context.Context, cfg *config) (store, error) {
+			return iqcouchbase.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
+		},
+		explainPlan:  iqcouchbase.ExplainPlan,
+		explainWrite: iqcouchbase.ExplainWrite,
+		explainClear: iqcouchbase.ExplainClear,
+		explainDrop:  iqcouchbase.ExplainDrop,
 	},
 	{
 		name:           "neo4j",

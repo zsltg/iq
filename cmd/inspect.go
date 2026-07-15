@@ -30,8 +30,8 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	)
 	long := "Show a source's native server/database introspection.\n\n" +
 		"The positional argument names the source, like `iq inspect prod`; with none it\n" +
-		"uses --src or the active source. MongoDB, Cassandra, DynamoDB, HBase, CouchDB, and\n" +
-		"Neo4j sources accept sq-style `<source>.<collection>` / `<source>.<table>` /\n" +
+		"uses --src or the active source. MongoDB, Cassandra, DynamoDB, HBase, CouchDB,\n" +
+		"Couchbase, and Neo4j sources accept sq-style `<source>.<collection>` / `<source>.<table>` /\n" +
 		"`<source>.<database>` / `<source>.<label>` addressing (`iq inspect prod.books`) to\n" +
 		"pick the collection/table/database/label, overriding the source URL's\n" +
 		"?collection=/?table=/?database=/?label= default; Redis sources take no collection.\n\n" +
@@ -55,6 +55,10 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"  " + strings.Join(couchInspectCmds, "  ") + "\n" +
 		"  (dbinfo and indexes need a database: address it as source.database or set\n" +
 		"  ?database= on the source url)\n\n" +
+		"Couchbase — runs introspection reads; no --only runs them all, --only narrows:\n" +
+		"  " + strings.Join(couchbaseInspectCmds, "  ") + "\n" +
+		"  (collections needs a bucket: address it as source.collection or set ?bucket=\n" +
+		"  on the source url)\n\n" +
 		"Neo4j — runs metadata procedures; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(neo4jInspectCmds, "  ") + "\n" +
 		"  (all are database-level; labels lists the addressable collections)\n\n" +
@@ -105,6 +109,8 @@ func newInspectCmd(cfg *config) *cobra.Command {
 				return inspectHBase(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "couchdb":
 				return inspectCouch(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+			case "couchbase":
+				return inspectCouchbase(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "neo4j":
 				return inspectNeo4j(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
 			case "elasticsearch", "opensearch":
@@ -533,6 +539,82 @@ func inspectCouch(ctx context.Context, out io.Writer, st store, cfg *config, sub
 // isCouchInspectCmd reports whether sub is a supported CouchDB inspect subcommand.
 func isCouchInspectCmd(sub string) bool {
 	for _, c := range couchInspectCmds {
+		if c == sub {
+			return true
+		}
+	}
+	return false
+}
+
+// couchbaseInspectCmds is the supported set of Couchbase introspection reads `inspect`
+// runs. "cluster", "buckets", and "indexes" are cluster-level; "collections" needs a
+// bucket selected. With no --only it runs them all; --only narrows.
+var couchbaseInspectCmds = []string{"cluster", "buckets", "collections", "indexes"}
+
+// couchbaseInspector is the introspection capability inspectCouchbase needs from the
+// store: SDK manager reads (system:nodes, GetAllBuckets, GetAllScopes) and a
+// system:indexes query, called directly rather than routed through the raw Query path.
+type couchbaseInspector interface {
+	InspectCluster(ctx context.Context) (any, error)
+	InspectBuckets(ctx context.Context) (any, error)
+	InspectCollections(ctx context.Context) (any, error)
+	InspectIndexes(ctx context.Context) (any, error)
+}
+
+// inspectCouchbase runs the requested Couchbase introspection reads (all supported when
+// none are named) and renders each reply keyed by subcommand. "collections" needs a
+// bucket selected and is skipped in the run-all case when none is. With list, it prints
+// the supported names without touching the store.
+func inspectCouchbase(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
+	if list {
+		return writeInspectList(out, couchbaseInspectCmds, jsonOut, yamlOut)
+	}
+	ci, ok := st.(couchbaseInspector)
+	if !ok {
+		return errors.New("inspect is not supported for this source")
+	}
+	explicit := len(subs) > 0
+	which := subs
+	if !explicit {
+		which = couchbaseInspectCmds
+	}
+	for _, sub := range which {
+		if !isCouchbaseInspectCmd(sub) {
+			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(couchbaseInspectCmds, ", "))
+		}
+	}
+
+	results := make([]inspectResult, 0, len(which))
+	for _, sub := range which {
+		var (
+			res any
+			err error
+		)
+		switch sub {
+		case "cluster":
+			res, err = ci.InspectCluster(ctx)
+		case "buckets":
+			res, err = ci.InspectBuckets(ctx)
+		case "collections":
+			res, err = ci.InspectCollections(ctx)
+			if err != nil && !explicit {
+				continue // a source with no bucket selected skips "collections" in run-all
+			}
+		case "indexes":
+			res, err = ci.InspectIndexes(ctx)
+		}
+		if err != nil {
+			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
+		}
+		results = append(results, inspectResult{sub: sub, value: res})
+	}
+
+	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
+}
+
+// isCouchbaseInspectCmd reports whether sub is a supported Couchbase inspect subcommand.
+func isCouchbaseInspectCmd(sub string) bool {
+	for _, c := range couchbaseInspectCmds {
 		if c == sub {
 			return true
 		}

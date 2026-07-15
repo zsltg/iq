@@ -1,8 +1,8 @@
 # iq
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
-databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, Apache HBase, Apache CouchDB, Neo4j,
-Elasticsearch, and OpenSearch are supported; the
+databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, Apache HBase, Apache CouchDB,
+Couchbase, Neo4j, Elasticsearch, and OpenSearch are supported; the
 backend is chosen by the URL scheme, and the query core is driver-agnostic so further backends slot
 in behind the same port.
 
@@ -22,7 +22,7 @@ sq's so the tool feels familiar.
 ## Requirements
 
 - Go 1.26+
-- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j + Elasticsearch + OpenSearch containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
+- Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Couchbase + Neo4j + Elasticsearch + OpenSearch containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
 
 ## Build
 
@@ -63,6 +63,7 @@ iq add -a 'mongodb://localhost:27017/books?collection=items' # a Mongo source; h
 iq add -n orders 'cassandra://localhost:9042/shop?table=orders' # a Cassandra source
 iq add -n books 'hbase://localhost:2181/?table=iq_books'     # an HBase source (host = ZooKeeper quorum)
 iq add -n docs 'couchdb://admin:pass@localhost:5984/?database=iq' # a CouchDB source (host = server)
+iq add -n cb 'couchbase://Administrator:pass@localhost/?bucket=iq' # a Couchbase source (host = cluster)
 iq add -n graph 'neo4j://neo4j:pass@localhost:7687/?label=Person&key=id' # a Neo4j source (label = keyspace)
 iq add -n docs 'elasticsearch://localhost:9200/?index=books' # an Elasticsearch source (index = keyspace)
 iq add -n logs 'opensearch://localhost:9201/?index=books'   # an OpenSearch source (same driver)
@@ -82,7 +83,8 @@ iq --src books.authors '.[]'     # the same connection, a different collection
 - `iq add <url> [-n <handle>] [-a] [-p] [-d <driver>] [--skip-verify] [--store keyring]`
   — register a source, mirroring `sq add`. The URL is the sole positional argument; the backend is
   inferred from its scheme (`redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`, `cassandra://`,
-  `dynamodb://`, `hbase://`, `couchdb://`, `couchdbs://`, `neo4j://`, `neo4j+s://`, `neo4j+ssc://`,
+  `dynamodb://`, `hbase://`, `couchdb://`, `couchdbs://`, `couchbase://`, `couchbases://`,
+  `neo4j://`, `neo4j+s://`, `neo4j+ssc://`,
   `bolt://`, `bolt+s://`, `bolt+ssc://`, `elasticsearch://`, `elasticsearch+s://`, `opensearch://`,
   `opensearch+s://`).
   `-n`/`--handle` names the source; when omitted a handle is derived from the URL (the MongoDB
@@ -94,7 +96,9 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   default chain, never the URL), an HBase default table as `?table=`
   (`hbase://host:2181/?table=books`, the host as the ZooKeeper quorum; cell encodings optionally
   declared with `?types=cf:age=long`), a CouchDB default database as `?database=`
-  (`couchdb://host:5984/?database=books`, the host as the server), a Neo4j default node label as
+  (`couchdb://host:5984/?database=books`, the host as the server), a Couchbase bucket as `?bucket=`
+  with an optional `[scope.]collection` as `?collection=`
+  (`couchbase://host/?bucket=iq&collection=sales.orders`, the host as the cluster), a Neo4j default node label as
   `?label=` (`neo4j://host:7687/?label=Person&key=id`, the host as the bolt server; the node key is
   the `?key=` property, else the elementId; the database is `?database=`, default `neo4j`) or a
   relationship type as `?rel=` (`neo4j://host:7687/?rel=WROTE`, read-only), an Elasticsearch or
@@ -107,7 +111,7 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   `handle.collection` / `handle.table` / `handle.database` / `handle.label` / `handle.index` (Neo4j also `handle.:TYPE`
   for a relationship type). `-a`/`--active` makes the new source active. `-p`/`--password`
   prompts for the URL password (or reads it from stdin) instead of embedding it in the URL.
-  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`, `couchdb`, `neo4j`, `elasticsearch`, `opensearch`) and errors if it
+  `-d`/`--driver` asserts the expected driver (`mongo`, `redis`, `cassandra`, `dynamodb`, `hbase`, `couchdb`, `couchbase`, `neo4j`, `elasticsearch`, `opensearch`) and errors if it
   disagrees with the scheme. The source is
   pinged before it is saved unless `--skip-verify` is set, so a failed add leaves no trace. `--store
   keyring` moves the URL's password into the OS keyring and strips it from the stored URL (default
@@ -131,7 +135,7 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   Bounded by `--timeout`; exits non-zero if any source is unreachable.
 - `iq inspect [<source>[.<collection>]]` — show a source's native introspection. The positional
   names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB,
-  Cassandra, DynamoDB, HBase, CouchDB, Neo4j, Elasticsearch, and OpenSearch sources accept sq-style `<source>.<collection>` /
+  Cassandra, DynamoDB, HBase, CouchDB, Couchbase, Neo4j, Elasticsearch, and OpenSearch sources accept sq-style `<source>.<collection>` /
   `<source>.<table>` / `<source>.<database>` / `<source>.<label>` / `<source>.<index>`
   addressing (`iq inspect prod.books`) to pick the collection/table/database/label/index, overriding the source URL's
   `?collection=`/`?table=`/`?database=`/`?label=`/`?index=` default; Redis sources take no collection.
@@ -141,11 +145,12 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   `serverStatus`, `listCollections`, `collStats`, `buildInfo`, `hostInfo`); for Cassandra, the
   system-schema reads (`local`, `tables`, `columns`); for DynamoDB, the metadata reads (`tables`,
   `table`); for HBase, the table listing (`tables`); for CouchDB, the introspection reads (`server`,
-  `databases`, `dbinfo`, `indexes`); for Neo4j, the metadata procedures (`server`, `databases`,
+  `databases`, `dbinfo`, `indexes`); for Couchbase, the introspection reads (`cluster`, `buckets`,
+  `collections`, `indexes`); for Neo4j, the metadata procedures (`server`, `databases`,
   `labels`, `reltypes`, `constraints`); for Elasticsearch and OpenSearch, the metadata reads
   (`server`, `indices`, `mapping`, `aliases`) — no `--only` runs them
   all. `--list` prints the subcommands/sections available for the source (Mongo's, Cassandra's,
-  DynamoDB's, HBase's, Neo4j's, Elasticsearch's, and OpenSearch's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
+  DynamoDB's, HBase's, CouchDB's, Couchbase's, Neo4j's, Elasticsearch's, and OpenSearch's fixed sets; Redis's live INFO sections). `-j`/`--json` or `-y`/`--yaml` for machine-readable output; bounded
   by `--timeout`. The location header is redacted like `iq ls`: `--reveal` un-redacts an inline
   password, `--expand` resolves a keyring-backed one.
 - `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
@@ -464,6 +469,7 @@ cassandra      Apache Cassandra wide-column store              cassandra        
 dynamodb       Amazon DynamoDB key-value and document store    dynamodb                                           AWS (managed)  https://docs.aws.amazon.com/dynamodb/
 hbase          Apache HBase wide-column store                  hbase                                              1.0+           https://hbase.apache.org/book.html
 couchdb        Apache CouchDB document store                   couchdb, couchdbs                                  2.x, 3.x       https://docs.couchdb.org/
+couchbase      Couchbase document store                        couchbase, couchbases                              7.x, 8.x (Community or Enterprise)  https://docs.couchbase.com/
 neo4j          Neo4j property graph store                      neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc  5.x            https://neo4j.com/docs/
 elasticsearch  Elasticsearch search engine and document store  elasticsearch, elasticsearch+s                     8.x            https://www.elastic.co/docs/
 opensearch     OpenSearch search engine and document store     opensearch, opensearch+s                           2.x, 3.x       https://opensearch.org/docs/
@@ -495,6 +501,7 @@ Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sou
 > (`AWS (managed)` — a managed service with no server version),
 > [gohbase](https://github.com/tsuna/gohbase) (native protobuf RPC, no Thrift gateway) for HBase,
 > [`kivik` v4](https://github.com/go-kivik/kivik) for CouchDB,
+> the [Couchbase Go SDK v2 (`gocb`)](https://github.com/couchbase/gocb) for Couchbase,
 > the [Neo4j Go driver v5](https://github.com/neo4j/neo4j-go-driver) for Neo4j,
 > the [go-elasticsearch v8](https://github.com/elastic/go-elasticsearch) client for
 > Elasticsearch,
@@ -503,7 +510,8 @@ Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sou
 > servers) —
 > not a matrix `iq` tests against.
 > The integration tests are pinned to `redis:8`, `mongo:8`, `cassandra:5`,
-> `amazon/dynamodb-local:2.5.2`, `harisekhon/hbase:2.1`, `couchdb:3`, `neo4j:5`,
+> `amazon/dynamodb-local:2.5.2`, `harisekhon/hbase:2.1`, `couchdb:3`,
+> `couchbase:community-7.6.2`, `neo4j:5`,
 > `docker.elastic.co/elasticsearch/elasticsearch:8.17.4`, and
 > `opensearchproject/opensearch:2.17.1`.
 
@@ -1025,6 +1033,79 @@ and `indexes` (its Mango indexes); `--only` narrows to those subcommands.
 </details>
 
 <details>
+<summary><b>Couchbase</b> — collection keyspace, document-ID mapping, SQL++ pushdown, and raw SQL++</summary>
+
+Register a `couchbase://` source and the same jq interface works against a collection, where **the
+collection is the keyspace: a document's ID is the key and the JSON document is the value**. A
+Couchbase cluster nests bucket → scope → collection: the host is the cluster, the bucket rides in the
+URL's `?bucket=` (required for keyspace work), and the collection is `?collection=` accepting
+`orders` or `sales.orders` (scope defaults to `_default`), overridable per run with a dotted
+`handle.[scope.]collection`. Switching buckets is a different source. Use `couchbases://` for TLS.
+**Credentials travel in the URL userinfo** (SDK `PasswordAuthenticator`), so `--store keyring` moves
+the password to the OS keyring exactly as for the other backends. The SDK's application telemetry is
+disabled explicitly, so the tool reports nothing back to the cluster.
+
+```bash
+iq add -n books 'couchbase://Administrator:password@localhost/?bucket=iq'  # register once, then:
+iq --src books '.["2"]'                                # fetch the document whose ID is 2
+iq --src books '.[] | select(.year > 2015) | .title'  # streamed
+iq --src books --unbounded 'keys'                      # every document ID
+iq --src books.archive '.[]'                           # a different collection in the same bucket
+```
+
+Couchbase documents are JSON, so values need no type coercion; integers keep exact precision (large
+ones never collapse to a float). The document ID is KV metadata, not part of the value, so it is
+never injected into the document. A non-JSON (binary) document is surfaced as a string on a `.["k"]`
+lookup and skipped by a scan (the query service returns only JSON). A bounded `.["k"]` lookup is a KV
+get; a scan is a **SQL++ keyset walk ordered by `META().id`** (never OFFSET/LIMIT paging), so it
+streams with bounded memory. Scans read at `RequestPlus` consistency, so the tool sees its own
+just-written documents (read-your-writes).
+
+### Server-side pre-filtering (predicate pushdown)
+
+By default a `.[] | select(...)` filter's **equality**, **range**, and **existence** clauses are
+translated into a SQL++ `WHERE` (with named parameters) so the query service filters before documents
+reach iq:
+
+| `select(...)` clause | Pushed | SQL++ predicate | Notes |
+| --- | :---: | --- | --- |
+| `.a == x` | ✓ | `` `a` = $p `` | equality; a `null` literal widens to `` (`a` IS NULL OR `a` IS MISSING) `` |
+| `.a > x` / `.a <= x` | ✓ | `` (`a` > $p OR ISSTRING(`a`) OR …) `` | range, widened with `ISTYPE()` clauses so jq's cross-type ordering (null < bool < number < string < array < object) is reproduced — SQL++ comparison operators are type-restricted, so higher/lower-ranked types are re-included explicitly |
+| `.a \| has` / `has("a")` | ✓ | `` `a` IS NOT MISSING `` | key presence, exact |
+| `has("a") \| not` | ✓ | `` `a` IS MISSING `` | key absence, exact |
+| `E1 and E2` | ✓ | `(… AND …)` | drops any conjunct it cannot push (widening) |
+| `E1 or E2` | ✓ | `(… OR …)` | pushed only when **every** branch is pushable; an all-equality OR over one field collapses to `` `a` IN $p `` |
+| `!=`, regex, `length`, `any`, nested-array tests | — | — | run client-side: a plain keyset scan is used, because SQL++ semantics for these could wrongly exclude a document jq would keep |
+
+Every value rides as a named parameter, never concatenated; keyspace and field identifiers are
+validated and backtick-quoted, so nothing user-supplied is ever interpolated raw. Pushdown never
+changes results, only speed: the full jq always re-runs client-side, so a pushed filter is a
+conservative pre-filter; `--explain` shows the `WHERE`, and `--no-compile` streams the whole
+collection and filters entirely client-side.
+
+**Index requirement.** A SQL++ scan needs an index on the collection. On Server 7.6+ a sequential
+scan answers index-free queries automatically; on 7.0–7.5, or for large collections, create one:
+`CREATE PRIMARY INDEX ON \`bucket\`.\`scope\`.\`collection\``. A "no index available" error (code
+4000) is surfaced with exactly that hint.
+
+### Raw commands
+
+`iq exec` runs a raw [SQL++](https://docs.couchbase.com/server/current/n1ql/n1ql-language-reference/index.html)
+statement: the first argument is the statement and an optional second argument is a JSON object of
+named parameters (bound end-to-end, never string-built):
+
+```bash
+iq --src books exec 'SELECT META(t).id, t.* FROM `iq` t WHERE t.year > $min' '{"min": 2015}'
+iq --src books exec 'SELECT COUNT(*) AS n FROM `iq`'
+```
+
+`iq inspect` reads cluster and bucket metadata — `cluster` (nodes and services), `buckets` (the
+cluster's buckets), `collections` (the selected bucket's scopes and collections), and `indexes` (the
+query indexes); `--only` narrows to those subcommands.
+
+</details>
+
+<details>
 <summary><b>Neo4j</b> — node-label and relationship-type keyspaces, key mapping, Cypher pushdown, and raw Cypher</summary>
 
 Register a `neo4j://` source and the same jq interface works against a node label, where **the node
@@ -1362,7 +1443,7 @@ With `--insert`/`--typed` the filter transforms **each item** (its key is preser
 write `.[]` — iteration over the source is implicit. Existing keys are overwritten (upsert) unless
 `--no-overwrite`; `--replace` empties the destination first (with confirmation, or `--force`).
 
-A document store (Mongo, CouchDB, Elasticsearch) stores each value exactly as given and so requires it
+A document store (Mongo, CouchDB, Couchbase, Elasticsearch) stores each value exactly as given and so requires it
 be a JSON object: a bare scalar — a Redis string value, say — is **rejected** with a hint rather than
 silently wrapped as `{"value": …}`, so a successful copy round-trips exactly. Shape it explicitly first,
 e.g. `--filter 'if type == "object" then . else {value: .} end'`.
@@ -1416,7 +1497,7 @@ server-side, Cassandra pushes equality as a CQL `WHERE` (with `ALLOW FILTERING` 
 partition key), DynamoDB pushes equality and existence as a `Scan` `FilterExpression`, HBase pushes
 column equality as a `SingleColumnValueFilter`, CouchDB pushes equality, ranges, existence, a
 byte-safe regex, and length as a
-Mango `_find` selector, Neo4j pushes equality and existence as a Cypher `WHERE` clause, Elasticsearch
+Mango `_find` selector, Couchbase pushes equality, ranges, and existence as a SQL++ `WHERE`, Neo4j pushes equality and existence as a Cypher `WHERE` clause, Elasticsearch
 and OpenSearch push equality and existence as a `bool` query, Redis scans
 and filters client-side. Either way the
 full jq re-runs client-side, so
@@ -1502,17 +1583,20 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   CBOR under `<user cache dir>/iq/dumps`): a full scan of a large dump tees its normalized records
   to disk, and later scans read them back instead of re-decoding — transparent to the ports, so the
   data-flow above is unchanged, and never authoritative (a miss just re-decodes).
-- `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb`, `drivers/hbase`, `drivers/couchdb`, `drivers/neo4j`, `drivers/elasticsearch` — the
+- `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb`, `drivers/hbase`, `drivers/couchdb`, `drivers/couchbase`, `drivers/neo4j`, `drivers/elasticsearch` — the
   adapters. Each has one `*Store`
   satisfying the read ports
   (`Query` for exec, `Get`/`ScanBatches` for jq) and the write ports (`Put`/`Clear`/`TypedScan`,
-  plus `Drop` for Mongo, Cassandra, DynamoDB, HBase, CouchDB, and Elasticsearch, and `Delete`
-  for every live backend — all but the read-only file dump), with a type-to-JSON normalization frozen as
+  plus `Drop` for Mongo, Cassandra, DynamoDB, HBase, CouchDB, Couchbase, and Elasticsearch, and `Delete`
+  for every live backend except Couchbase — all but the read-only file dump and Couchbase, whose
+  per-key delete is a v1 follow-up), with a type-to-JSON normalization frozen as
   that backend's
   encoding contract (Redis types; BSON → `ObjectID`-hex, dates, nested docs; CQL types → uuid-string,
   RFC 3339, base64 blob, collections; DynamoDB `S`/`N`/`B`/`BOOL`/`M`/`L`/sets; HBase raw cell bytes →
   honest UTF-8-or-base64, or an exact `Bytes`-layout value for a `?types=`-declared column; CouchDB
-  documents are already JSON, decoded with exact-integer precision, `_id`/`_rev` kept; Neo4j node
+  documents are already JSON, decoded with exact-integer precision, `_id`/`_rev` kept; Couchbase
+  documents are already JSON, decoded with exact-integer precision, the document ID kept as KV
+  metadata (never injected), a non-JSON document surfaced as a string on a KV get; Neo4j node
   properties with exact integers, base64 bytes, and ISO temporal/spatial strings, `_id`/`_labels`
   kept; Elasticsearch `_source` documents are already JSON, decoded with exact-integer precision, the
   hit `_id` injected) and its
@@ -1527,7 +1611,9 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   `Scan` + per-row `Delete` for clear, per-key whole-row `Delete` (exists-only pre-read), and
   `DisableTable` + `DeleteTable` for drop; CouchDB
   `_bulk_docs` upsert/insert reading current `_rev`s first, `_bulk_docs {_deleted:true}` clear and
-  per-key delete, `DELETE /{db}` drop; Neo4j `UNWIND … MERGE (n:Label {key}) SET n += props`
+  per-key delete, `DELETE /{db}` drop; Couchbase KV bulk `Upsert`/`Insert` (a bulk get pre-read for
+  the overwrite count), `DELETE FROM <keyspace>` clear, `DropCollection` drop (the default collection
+  refuses, pointing at clear); Neo4j `UNWIND … MERGE (n:Label {key}) SET n += props`
   upsert/insert-only,
   paged `MATCH … DETACH DELETE` clear, per-key resolve + `DETACH DELETE` delete, no drop;
   Elasticsearch refreshing `_bulk` index/create by
@@ -1543,7 +1629,9 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   nested `{family: {qualifier: value}}` object, with the ZooKeeper quorum as the host and the
   `namespace:table` from the URL's `?table=` (or a `handle.table` override); CouchDB maps a key to a
   document `_id` within the database it owns from the URL's `?database=` (host as the server, or a
-  dotted `handle.database` override); Neo4j maps a key to a node — the `?key=` property's value or
+  dotted `handle.database` override); Couchbase maps a key to a document ID within the
+  bucket.scope.collection it owns from the URL's `?bucket=` and `?collection=` (cluster as the host, or
+  a dotted `handle.[scope.]collection` override); Neo4j maps a key to a node — the `?key=` property's value or
   the elementId — within the label it owns from the URL's `?label=` (bolt host as the server, or a
   dotted `handle.label` override) inside the `?database=` (default `neo4j`), or to a relationship
   within a `?rel=` type (or a `handle.:TYPE` override), read-only, whose value carries the endpoint
@@ -1557,7 +1645,10 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   but has no cheap count, so it omits `Estimator`; CouchDB pushes equality, ranges, existence, a
   byte-safe regex, and a polymorphic length as a Mango `_find`
   selector (`FilteredScanner`, falling back to a plain `_all_docs` scan for the exact-negation
-  operators and a case-insensitive or non-byte-safe regex) and answers `Estimator` from its `doc_count`; Neo4j pushes equality and
+  operators and a case-insensitive or non-byte-safe regex) and answers `Estimator` from its `doc_count`; Couchbase pushes equality, ranges,
+  and existence as a SQL++ `WHERE` (`FilteredScanner`, falling back to a plain keyset scan for the
+  exact-negation operators, regex, and length) but has no cheap metadata count, so it omits
+  `Estimator` (like Cassandra and HBase); Neo4j pushes equality and
   existence as a Cypher `WHERE` clause (`FilteredScanner`, falling back to a plain label scan for
   ranges — Cypher's cross-type comparison is not jq's — and the other operators) and answers
   `Estimator` from the label's count store; Elasticsearch pushes equality and existence as a `bool`
@@ -1570,7 +1661,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   shared. DynamoDB's connectionless
   client verifies reachability at open (a
   bounded `ListTables` probe), HBase's likewise (a bounded `ClusterStatus` probe, since gohbase
-  connects lazily), CouchDB pings at open, Neo4j verifies connectivity at open, and Elasticsearch
+  connects lazily), CouchDB pings at open, Couchbase waits for the cluster and bucket to become ready
+  at open, Neo4j verifies connectivity at open, and Elasticsearch
   and OpenSearch probe with an info request at open, so `ping`/`add` need no second round-trip. Each
   also contributes pure, connection-free `--explain` describers
   (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
@@ -1630,14 +1722,15 @@ iq --src snap '.[] | select(.active)'     # query a dump offline (RDB, BSON, mon
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 go test -short ./...      # fast unit tests, no external services
-go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Neo4j + Elasticsearch + OpenSearch via testcontainers-go (HBase needs IQ_HBASE_URL)
-docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB + Neo4j + Elasticsearch + OpenSearch for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984, :7687, :9200, :9201)
+go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Couchbase + Neo4j + Elasticsearch + OpenSearch via testcontainers-go (HBase needs IQ_HBASE_URL)
+docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB + Couchbase + Neo4j + Elasticsearch + OpenSearch for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984, :8091-8096/:11210, :7687, :9200, :9201)
 bash scripts/seed-redis.sh    # load example data into the running Redis
 bash scripts/seed-mongo.sh    # load example documents into the running MongoDB
 bash scripts/seed-cassandra.sh    # load example rows into the running Cassandra
 bash scripts/seed-dynamodb.sh    # load example items into the running DynamoDB Local
 bash scripts/seed-hbase.sh    # load example rows into the running HBase
 bash scripts/seed-couchdb.sh    # load example documents into the running CouchDB
+bash scripts/seed-couchbase.sh    # provision + load example documents into the running Couchbase
 bash scripts/seed-neo4j.sh    # load an example graph into the running Neo4j
 bash scripts/seed-elasticsearch.sh    # load example documents into the running Elasticsearch
 bash scripts/seed-opensearch.sh    # load example documents into the running OpenSearch (:9201)
@@ -1661,10 +1754,10 @@ make release              # bump version, regenerate CHANGELOG.md, commit, and t
 ```
 
 Integration tests skip under `go test -short`. The full `go test ./...` needs Docker: it starts
-an ephemeral Redis, MongoDB, Cassandra, DynamoDB Local, CouchDB, Neo4j, Elasticsearch, and OpenSearch via
+an ephemeral Redis, MongoDB, Cassandra, DynamoDB Local, CouchDB, Couchbase, Neo4j, Elasticsearch, and OpenSearch via
 [testcontainers-go](https://github.com/testcontainers/testcontainers-go) on random ports and
 tears them down afterwards — no manual `docker compose up` (Cassandra takes ~1 minute to become
-ready). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL` / `IQ_COUCHDB_URL` / `IQ_NEO4J_URL` / `IQ_ELASTICSEARCH_URL` / `IQ_OPENSEARCH_URL`
+ready; Couchbase is the slowest, ~30-60 s). Set `IQ_REDIS_URL` / `IQ_MONGO_URL` / `IQ_CASSANDRA_URL` / `IQ_DYNAMODB_URL` / `IQ_COUCHDB_URL` / `IQ_COUCHBASE_URL` / `IQ_NEO4J_URL` / `IQ_ELASTICSEARCH_URL` / `IQ_OPENSEARCH_URL`
 to point at an already-running server (for example the `docker compose` stack) to skip container
 startup; the mutation gate, which reruns the suite per mutant, wants this to avoid churn. Against
 a shared Redis the suites operate on reserved databases so no run flushes another's data — 15 and 14
