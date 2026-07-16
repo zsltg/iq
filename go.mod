@@ -1,6 +1,6 @@
 module github.com/zsltg/iq
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/apache/cassandra-gocql-driver/v2 v2.1.2
