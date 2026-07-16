@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.24.0 - 2026-07-16
+### Documentation
+- **contract:** allocate host port 8086 to the planned bigtable driver (1354610)
+- **contract:** replace the bare-verb exec family with routed native expressions (2c54853)
+
+### Bug Fixes
+- **deps:** raise go directive to 1.26.5 to clear GO-2026-5856 (3cb0758)
+
+### Features
+- **couchbase:** add the Couchbase backend driver (5bf9ced)
+- **query:** add the typed Deleter port and iq data delete (c740c54)
+
+
 ## v0.23.0 - 2026-07-08
 ### Features
 - **cassandra:** count upsert overwrites via a batch key pre-read (f44b5a7)
