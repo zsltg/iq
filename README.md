@@ -1738,16 +1738,16 @@ docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
 govulncheck ./...         # dependency vulnerability scan
-bash scripts/mutation-gate.sh   # mutation gate, scoped to the branch diff vs main (fails on any survivor/timeout); set IQ_*_URL to a pre-started stack
+bash scripts/mutation-gate.sh   # mutation gate, scoped to the branch diff vs origin/main (fails on any escaped mutant not in the baseline); set IQ_*_URL to a pre-started stack
 make check                # fast offline gate: format, vet, build, lint, dead code, unit tests + coverage report
 make cover                # full suite + coverage floor (IQ_COVER_MIN, default 80); IQ_COVER_SHORT=1 for a fast report-only run
 make security             # supply-chain + secrets sweep (govulncheck, osv-scanner, gitleaks) + SBOMs to dist/
 make sbom                 # write SPDX + CycloneDX SBOMs of the module to dist/
 make e2e                  # black-box smoke tests that build and drive the iq binary (+ live Redis/Mongo round-trips when IQ_REDIS_URL/IQ_MONGO_URL are set)
-make mutation             # mutation gate over the branch diff vs main (part of make ci)
+make mutation             # mutation gate over the branch diff vs origin/main (part of make ci)
 make ci                   # full pre-merge gate: check + cover + security + mutation (needs Docker + network)
 make tools                # install release tools (svu, git-chglog) into GOPATH/bin
-make tools-dev            # install the quality/security toolchain (gremlins, deadcode, govulncheck, osv-scanner, gitleaks, syft)
+make tools-dev            # install the quality/security toolchain (mutago, deadcode, govulncheck, osv-scanner, gitleaks, syft)
 make version              # print the version the next release would take
 bash scripts/release.sh --dry-run   # preview the next release without changing anything
 make release              # bump version, regenerate CHANGELOG.md, commit, and tag
@@ -1774,13 +1774,20 @@ The compose stack runs under a fixed project name (`iq`) on a pinned `10.100.0.0
 `docker compose` behaves the same from any worktree and the auto-assigned bridge subnet can't
 collide with a LAN host.
 
-The mutation gate scopes to the current branch's diff against `main` by default, so it only
-mutates the lines a change touched. The base resolves to the merge-base with `HEAD`, so it works
-from a linked git worktree and tolerates a local `main` that has drifted from the remote. Override
-the base ref with `IQ_MUTATION_BASE` (set it empty for a full-module scan), or pass a package path
-(e.g. `bash scripts/mutation-gate.sh ./cmd`) for a full scan of that package — gremlins v0.6.0
-returns zero mutants when a path is combined with `--diff`, so a path and diff-scoping are mutually
-exclusive. `IQ_MUTATION_DRYRUN=1` previews the mutant scope without running the tests.
+The mutation gate runs [mutago](https://github.com/quality-gates/mutago) and scopes to the current
+branch's diff against `origin/main` by default (`--git-diff-lines`), so it only mutates the lines a
+change touched. The base is handed to mutago as the merge-base commit with `HEAD`, so it works from
+a linked git worktree and tolerates a local base ref that has drifted from the remote. The gate is
+`--fail-on-escaped`: a covered mutant that survives (asserts nothing) fails it, while `--coverage`
+keeps uncovered lines out of the escaped set — the zero-survivor-on-covered-code contract. Timed-out
+mutants are reported as "errored" and are not gated (a wide `--timeout-coefficient` keeps a slow
+suite from erroring). A genuine equivalent mutant that cannot be killed is accepted into
+`mutago-baseline.json` (committed) with `IQ_MUTATION_UPDATE_BASELINE=1`, after which only *new*
+escapes fail — the baseline uses line-number-independent IDs so it survives refactors. Override the
+base ref with `IQ_MUTATION_BASE` (set it empty for a full-module scan), or pass a package path (e.g.
+`bash scripts/mutation-gate.sh ./cmd`) for a full scan of that package (a path drops the diff-scoping
+flags). `IQ_MUTATION_DRYRUN=1` prints the mutant counts without running the tests (a whole-target
+upper bound; mutago's dry run is not diff-scoped).
 
 Quality gates are local and layered — the project uses no CI service. `make check` is the fast,
 offline pre-commit gate (format, `go vet`, `go build`, `golangci-lint`, dead code via
@@ -1790,7 +1797,7 @@ container-backed suite and enforces a coverage floor (`IQ_COVER_MIN`, default 80
 (`govulncheck`, `osv-scanner`, `gitleaks`) and writes SBOMs to `dist/`; gosec runs as the Go SAST
 inside `golangci-lint run`. `bash scripts/mutation-gate.sh` (also `make mutation`) is the mutation
 gate. `make ci` runs check, cover, security, and the mutation gate together — the full pre-merge
-gate. Because gremlins reruns the suite per mutant, `make ci` is the slowest target; start a shared
+gate. Because mutago reruns the suite per mutant, `make ci` is the slowest target; start a shared
 stack (`docker compose up -d --wait`) first so the containers are reused. Install the toolchain once
 with `make tools-dev`.
 

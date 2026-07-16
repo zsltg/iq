@@ -6,6 +6,13 @@
 *.out
 /coverage.*
 
+# Mutation gate (mutago) run output; the baseline is tracked, these are not.
+/report.json
+/mutago-report.html
+/mutago-summary.json
+/mutago-agentic.json
+/mutago-gitlab.json
+
 # Local env (the tracked template is .env.example).
 .env
 

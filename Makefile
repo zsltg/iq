@@ -38,7 +38,7 @@ tools:
 # tools-dev installs the quality and security toolchain into GOPATH/bin. gofumpt,
 # goimports, and golangci-lint are expected already (see README).
 tools-dev:
-	go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
+	go install github.com/quality-gates/mutago/v2/cmd/mutago@v2.7.7
 	go install golang.org/x/tools/cmd/deadcode@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest
@@ -71,16 +71,16 @@ sbom:
 e2e:
 	go test ./e2e/
 
-# mutation runs the mutation gate over the branch diff against main (override with
-# IQ_MUTATION_BASE; empty for a full-module scan, or pass a package path for a full
-# scan of it). Zero survivors and zero timeouts required. Needs gremlins
-# (make tools-dev) and the integration services up (Docker, or IQ_*_URL).
+# mutation runs the mutation gate over the branch diff against origin/main (override
+# with IQ_MUTATION_BASE; empty for a full-module scan, or pass a package path for a
+# full scan of it). Any escaped mutant not in mutago-baseline.json fails the gate.
+# Needs mutago (make tools-dev) and the integration services up (Docker, or IQ_*_URL).
 mutation:
 	bash scripts/mutation-gate.sh
 
 # ci is the full pre-merge gate: fast checks, the covered full suite (which
 # includes e2e), the security sweep, then the mutation gate over the branch diff.
-# Needs Docker and network. gremlins reruns the suite per mutant, so this is the
+# Needs Docker and network. mutago reruns the suite per mutant, so this is the
 # slowest target — start a shared stack (docker compose up -d --wait) first.
 ci:
 	$(MAKE) check
