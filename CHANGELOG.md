@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.26.0 - 2026-07-17
+### Features
+- **output:** add gron and grona renderings (955e63a)
+- **schema:** emit draft 2020-12 json schemas (2df9c60)
+
+
 ## v0.25.0 - 2026-07-17
 ### Features
 - **schema:** infer draft-07 schemas and allow cross-driver --schema (95f8e57)
