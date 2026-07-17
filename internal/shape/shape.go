@@ -1,6 +1,6 @@
 // Package shape reduces a sample of items to an inferred structural shape and
 // projects it two ways: Comparable, a flat path->node map fed to a structural
-// diff, and JSONSchema, a draft-07 document. NoSQL stores declare no schema, so
+// diff, and JSONSchema, a draft 2020-12 document. NoSQL stores declare no schema, so
 // the shape is sampled and inferred, never authoritative — a wider sample yields
 // a truer shape. It is driver-agnostic and holds no I/O: callers read each side
 // through the query ports and hand the materialized values here.
@@ -266,7 +266,7 @@ func presence(seen, total int) string {
 	return "optional"
 }
 
-// JSONSchema projects the shape to one JSON Schema draft-07 document titled
+// JSONSchema projects the shape to one JSON Schema draft 2020-12 document titled
 // title: $schema and title, then the root value schema. Object properties carry
 // per-object required arrays, strings carry format and a low-cardinality enum,
 // maps carry additionalProperties, and arrays carry items. A non-object root is
@@ -274,7 +274,7 @@ func presence(seen, total int) string {
 // array. It describes values only — key shape is the driver's display concern.
 func (s *Shape) JSONSchema(title string) map[string]any {
 	doc := schemaFor(s.root)
-	doc["$schema"] = "http://json-schema.org/draft-07/schema#"
+	doc["$schema"] = "https://json-schema.org/draft/2020-12/schema"
 	doc["title"] = title
 	return doc
 }

@@ -20,7 +20,7 @@ func writeJSONL(t *testing.T, lines string) string {
 }
 
 // TestSchemaFileSource drives `iq schema` end-to-end against a connection-free
-// file source and pins the emitted draft-07 document.
+// file source and pins the emitted draft 2020-12 document.
 func TestSchemaFileSource(t *testing.T) {
 	path := writeJSONL(t, `{"key":"1","value":{"name":"alice","age":30,"active":true}}
 {"key":"2","value":{"name":"bob","age":25}}
@@ -35,7 +35,7 @@ func TestSchemaFileSource(t *testing.T) {
 
 	var doc map[string]any
 	require.NoError(t, json.Unmarshal([]byte(out), &doc))
-	require.Equal(t, "http://json-schema.org/draft-07/schema#", doc["$schema"])
+	require.Equal(t, "https://json-schema.org/draft/2020-12/schema", doc["$schema"])
 	require.Equal(t, "snap", doc["title"], "title is the handle, never the url")
 	require.Equal(t, "object", doc["type"])
 
@@ -90,7 +90,7 @@ func TestSchemaUnknownSource(t *testing.T) {
 // Example block — which the mutation gate clears field by field.
 func TestSchemaCmdMetadata(t *testing.T) {
 	c := newSchemaCmd(&config{})
-	require.Equal(t, "Emit a draft-07 JSON Schema inferred from a sampled source", c.Short)
+	require.Equal(t, "Emit a draft 2020-12 JSON Schema inferred from a sampled source", c.Short)
 	require.Contains(t, c.Example, "iq schema")
 	require.Contains(t, c.Example, "--sample")
 }

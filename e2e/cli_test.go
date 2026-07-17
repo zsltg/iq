@@ -161,7 +161,7 @@ func TestSchemaEmitsJSONSchema(t *testing.T) {
 
 	var doc map[string]any
 	require.NoError(t, json.Unmarshal([]byte(out), &doc))
-	require.Equal(t, "http://json-schema.org/draft-07/schema#", doc["$schema"])
+	require.Equal(t, "https://json-schema.org/draft/2020-12/schema", doc["$schema"])
 	require.Equal(t, "object", doc["type"])
 	props := doc["properties"].(map[string]any)
 	require.Equal(t, "string", props["name"].(map[string]any)["type"])

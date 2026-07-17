@@ -10,7 +10,7 @@ import (
 )
 
 // newSchemaCmd builds `iq schema [source]`: sample a source and emit a JSON
-// Schema (draft-07) inferred from its values. The positional names the source
+// Schema (draft 2020-12) inferred from its values. The positional names the source
 // exactly as `inspect` does (empty = --src or the active source, sq-style
 // `<source>.<collection>` addressing); the shape is sampled (--sample) and
 // inferred, never declared. It renders driver-agnostic sampled inference, the
@@ -21,7 +21,7 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 		sample  int
 		yamlOut bool
 	)
-	long := "Sample a source and emit a JSON Schema (draft-07) inferred from its values.\n\n" +
+	long := "Sample a source and emit a JSON Schema (draft 2020-12) inferred from its values.\n\n" +
 		"The positional argument names the source, like `iq schema prod`; with none it uses\n" +
 		"--src or the active source, and accepts sq-style `<source>.<collection>` addressing.\n" +
 		"Unlike `inspect`, which shows a backend's native introspection, `schema` infers a\n" +
@@ -35,7 +35,7 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 		"A schema is field names and types — a few hundred bytes — not a dump of documents."
 	c := &cobra.Command{
 		Use:   "schema [source]",
-		Short: "Emit a draft-07 JSON Schema inferred from a sampled source",
+		Short: "Emit a draft 2020-12 JSON Schema inferred from a sampled source",
 		Long:  long,
 		Example: "  $ iq schema                      # active source\n" +
 			"  $ iq schema shop.orders          # one collection (sq-style handle.collection)\n" +

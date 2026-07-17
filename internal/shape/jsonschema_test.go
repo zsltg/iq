@@ -114,7 +114,7 @@ func TestJSONSchemaFormatAndArray(t *testing.T) {
 func TestJSONSchemaRoots(t *testing.T) {
 	t.Run("non-object root is legal", func(t *testing.T) {
 		got := shape.Infer(map[string]any{"1": "a", "2": "b"}).JSONSchema("keyspace")
-		require.Equal(t, "http://json-schema.org/draft-07/schema#", got["$schema"])
+		require.Equal(t, "https://json-schema.org/draft/2020-12/schema", got["$schema"])
 		require.Equal(t, "keyspace", got["title"])
 		require.Equal(t, "string", got["type"])
 		require.NotContains(t, got, "properties")
@@ -138,7 +138,7 @@ func TestJSONSchemaDocumentGolden(t *testing.T) {
 	}
 	got := shape.Infer(items).JSONSchema("shop")
 	require.Equal(t, map[string]any{
-		"$schema": "http://json-schema.org/draft-07/schema#",
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
 		"title":   "shop",
 		"type":    "object",
 		"properties": map[string]any{
