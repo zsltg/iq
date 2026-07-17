@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"testing"
@@ -332,12 +333,30 @@ func TestFlushCompletesDocument(t *testing.T) {
 	})
 }
 
+// errGronWriteFail is the sentinel a sentinelFailAt returns, so a test can assert
+// the cause stays reachable through errors.Is even if the wrapping breaks.
+var errGronWriteFail = errors.New("boom")
+
+// sentinelFailAt fails on exactly the at-th write (1-indexed) with the sentinel
+// errGronWriteFail and succeeds on every other. It isolates a single write-error
+// guard while keeping the underlying cause identifiable through the %w chain.
+type sentinelFailAt struct{ at, n int }
+
+func (w *sentinelFailAt) Write(p []byte) (int, error) {
+	w.n++
+	if w.n == w.at {
+		return 0, errGronWriteFail
+	}
+	return len(p), nil
+}
+
 func TestGronFormatterPropagatesWriteErrors(t *testing.T) {
 	t.Parallel()
-	// Each gron statement is one Write, so failAt isolates a single guard: if any
-	// error return were dropped, the later writes still succeed and the missing
-	// propagation surfaces as a nil result. The value/failAt pairs cover every
-	// write-error guard in emit, walk, and line.
+	// Each gron statement is one Write, so failing the at-th write isolates a
+	// single guard: if any error return were dropped, the later writes still
+	// succeed and the missing propagation surfaces as a nil result. The value/at
+	// pairs cover every write-error guard in emit, walk, and line, and ErrorIs
+	// asserts the cause survives the %w wrap (not just the message).
 	tests := []struct {
 		name string
 		fmt  outputFormat
@@ -354,8 +373,10 @@ func TestGronFormatterPropagatesWriteErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			fm := newFormatter(tt.fmt, &failAt{at: tt.at}, false)
-			require.ErrorContains(t, fm.emit(tt.val), "write result")
+			fm := newFormatter(tt.fmt, &sentinelFailAt{at: tt.at}, false)
+			err := fm.emit(tt.val)
+			require.ErrorContains(t, err, "write result")
+			require.ErrorIs(t, err, errGronWriteFail)
 		})
 	}
 }
@@ -363,12 +384,16 @@ func TestGronFormatterPropagatesWriteErrors(t *testing.T) {
 func TestGronFormatterPropagatesEncodeError(t *testing.T) {
 	t.Parallel()
 	// A value that cannot JSON-encode (a channel) must surface the compact
-	// encoder's error rather than being swallowed on the walk's default path.
+	// encoder's error rather than being swallowed on the walk's default path, and
+	// keep the encoder's cause reachable through the %w wrap (not just the message).
 	for _, f := range []outputFormat{formatGron, formatGronArray} {
 		t.Run(string(f), func(t *testing.T) {
 			t.Parallel()
 			fm := newFormatter(f, &bytes.Buffer{}, false)
-			require.ErrorContains(t, fm.emit(make(chan int)), "encode result")
+			err := fm.emit(make(chan int))
+			require.ErrorContains(t, err, "encode result")
+			var target *json.UnsupportedTypeError
+			require.ErrorAs(t, err, &target)
 		})
 	}
 }
