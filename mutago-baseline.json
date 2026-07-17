@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "mutants": [
+    {
+      "id": "fcc263bd5b29c186524f49494e3b3f45",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/logical",
+      "line": 620
+    },
+    {
+      "id": "fe1bac8ba09dc7e99e4e80230048d6f3",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/remove",
+      "line": 293
+    },
+    {
+      "id": "c6d581179b01a1460b6313b925804788",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/remove",
+      "line": 308
+    },
+    {
+      "id": "38583e7a2e76cb06f885537f967739e1",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/remove",
+      "line": 487
+    },
+    {
+      "id": "af10555f0c70f3477822a4b8232988c3",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/remove",
+      "line": 567
+    },
+    {
+      "id": "3309d6f97333d173dea07d58cca8c765",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/remove",
+      "line": 567
+    },
+    {
+      "id": "82a74944465aaff4fb4cba79d043bd04",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/remove",
+      "line": 568
+    },
+    {
+      "id": "457d6848da6d44de18d3c62e8a407fd0",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/remove",
+      "line": 568
+    },
+    {
+      "id": "02fd69899d32f9718c6248b807897b10",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/remove",
+      "line": 569
+    },
+    {
+      "id": "6be5c0bb2756c4ef6bd7cc3a17be72d3",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/remove",
+      "line": 569
+    },
+    {
+      "id": "a489e3fe1948b4c2026bfc027d8f9c26",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/remove",
+      "line": 620
+    },
+    {
+      "id": "67c061d705374f0edafa2a061c14a4c8",
+      "file": "internal/shape/shape.go",
+      "mutator": "expression/remove",
+      "line": 620
+    },
+    {
+      "id": "6b1f8a784f4f5cf797a4b4f5b6422c6e",
+      "file": "internal/shape/shape.go",
+      "mutator": "loop/break",
+      "line": 244
+    },
+    {
+      "id": "766fe5db8afb65b568422aadeda21aa5",
+      "file": "internal/shape/shape.go",
+      "mutator": "statement/remove",
+      "line": 354
+    },
+    {
+      "id": "aa907ec49a4de78e4b575e0779b71041",
+      "file": "internal/shape/shape.go",
+      "mutator": "statement/remove",
+      "line": 567
+    },
+    {
+      "id": "bf8096272848e1b37f3f08a473948adf",
+      "file": "internal/shape/shape.go",
+      "mutator": "statement/remove",
+      "line": 568
+    },
+    {
+      "id": "e9849fa5dcec381424911d2bf9d17a93",
+      "file": "internal/shape/shape.go",
+      "mutator": "statement/remove",
+      "line": 569
+    },
+    {
+      "id": "544efe91883eb5920f6728c51adfc0fd",
+      "file": "internal/shape/shape.go",
+      "mutator": "statement/return",
+      "line": 461
+    }
+  ]
+}

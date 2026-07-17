@@ -2,8 +2,8 @@
 // (nil, bool, int, float64, string, []any, map[string]any) that every driver
 // adapter produces. It is driver-agnostic and holds no I/O: callers read each
 // side through the query ports and hand the materialized values here. Tree diffs
-// two values; Keyed aligns two keyed item sets; Infer (shape.go) reduces a set to
-// a comparable shape so schema diff runs through the same Tree.
+// two values; Keyed aligns two keyed item sets. Inference of a comparable shape
+// (projected to feed the same Tree) lives in the sibling internal/shape package.
 package diff
 
 import (

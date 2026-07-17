@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -108,13 +109,6 @@ func TestDiffStatsRejectsCrossDriver(t *testing.T) {
 	_, err := diffStats(context.Background(),
 		diffTarget{handle: "a", driver: "redis"},
 		diffTarget{handle: "b", driver: "mongo"}, nil)
-	require.ErrorContains(t, err, "same driver")
-}
-
-func TestDiffSchemaRejectsCrossDriver(t *testing.T) {
-	_, err := diffSchema(context.Background(),
-		diffTarget{handle: "a", driver: "mongo"},
-		diffTarget{handle: "b", driver: "redis"}, 100)
 	require.ErrorContains(t, err, "same driver")
 }
 
@@ -325,6 +319,35 @@ func TestDiffDataAndSchemaMongoIntegration(t *testing.T) {
 	require.ErrorIs(t, err, errQuietExit)
 	require.Contains(t, schemaText, "# schema")
 	require.Contains(t, schemaText, ".email")
+}
+
+// TestDiffSchemaCrossDriverMongoIntegration pins that --schema now compares two
+// different drivers: a connection-free file dump against a live MongoDB source.
+// The mongo value carries an _id field the file value lacks, so the shapes differ
+// — a legible cross-driver row rather than the old same-driver rejection.
+func TestDiffSchemaCrossDriverMongoIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: needs a reachable MongoDB")
+	}
+	base := mongoBaseURL()
+	seedMongo(t, base, "sc", []string{`{"_id":"1","name":"a","age":30}`})
+
+	dump := filepath.Join(t.TempDir(), "d.jsonl")
+	require.NoError(t, os.WriteFile(dump, []byte(`{"key":"1","value":{"name":"a","age":30}}`+"\n"), 0o600))
+
+	c := newSeed()
+	require.NoError(t, c.Add("f", "file://"+dump))
+	require.NoError(t, c.Add("m", base+"?collection=sc"))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: 8 * time.Second}
+	out, err := runCmd(t, quietDiff(cfg), "f", "m", "--schema")
+	// Allowed across drivers (no same-driver rejection); the shapes differ on _id,
+	// so diff exits with the quiet-exit sentinel and renders the schema section.
+	require.ErrorIs(t, err, errQuietExit)
+	require.NotContains(t, out, "same driver")
+	require.Contains(t, out, "# schema")
+	require.Contains(t, out, "_id")
 }
 
 // TestReadAllReportsPagesRedisIntegration pins readAll's onPage contract: a

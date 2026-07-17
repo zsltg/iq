@@ -14,6 +14,7 @@ import (
 	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/diff"
 	"github.com/zsltg/iq/internal/query"
+	"github.com/zsltg/iq/internal/shape"
 )
 
 // errQuietExit signals a non-zero exit with no stderr line: `diff` returns it
@@ -64,8 +65,10 @@ func newDiffCmd(cfg *config) *cobra.Command {
 		"            as the keys lining up — a power-user tool, not a schema comparison.\n" +
 		"  --stats   diff native introspection trees (MongoDB diagnostic commands, Redis\n" +
 		"            INFO). Same driver only. --section narrows which sections.\n" +
-		"  --schema  diff an inferred field->type shape sampled from each source. Same\n" +
-		"            driver only. The shape is sampled (--sample) and inferred, never\n" +
+		"  --schema  diff an inferred field->type shape sampled from each source. Allowed\n" +
+		"            across drivers: the inferred vocabulary (integer/number/string(fmt)/\n" +
+		"            map/array + required/optional) measures logical shape, not per-driver\n" +
+		"            introspection. The shape is sampled (--sample) and inferred, never\n" +
 		"            declared, so a wider sample yields a truer shape.\n\n" +
 		"Use -j/--json or -y/--yaml for a machine-readable delta. diff exits non-zero when\n" +
 		"the sources differ and zero when they match (diff(1)-style), so scripts can branch\n" +
@@ -141,7 +144,7 @@ func newDiffCmd(cfg *config) *cobra.Command {
 	}
 	c.Flags().BoolVar(&dataMode, "data", false, "diff items key by key (default when no layer is chosen; cross-driver allowed)")
 	c.Flags().BoolVar(&statsMode, "stats", false, "diff native introspection trees (same driver only)")
-	c.Flags().BoolVar(&schemaMode, "schema", false, "diff an inferred field/type shape (same driver only)")
+	c.Flags().BoolVar(&schemaMode, "schema", false, "diff an inferred field/type shape (cross-driver allowed)")
 	c.Flags().StringArrayVar(&sections, "section", nil, "introspection section(s) for --stats (repeatable; default: the source's full set)")
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled per side for --schema (0 = all)")
 	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
@@ -278,11 +281,12 @@ func redisInfoTree(info string) map[string]any {
 }
 
 // diffSchema samples each source, infers a field/type shape, and diffs the
-// shapes. Both sources must use the same driver.
+// shapes. It is allowed across drivers: the inferred vocabulary (integer/number/
+// string(format)/map/array + required/optional + wildcards) measures logical
+// shape, not per-driver introspection, so two backends compare meaningfully. Two
+// backends that genuinely normalize a native type differently still diff — that
+// is the JSON each serves back, and the format tags make the row legible.
 func diffSchema(ctx context.Context, left, right diffTarget, sample int) ([]diff.Change, error) {
-	if left.driver != right.driver {
-		return nil, fmt.Errorf("schema diff needs two sources of the same driver; %q is %s and %q is %s", left.handle, left.driver, right.handle, right.driver)
-	}
 	a, err := sampleShape(ctx, left, sample)
 	if err != nil {
 		return nil, err
@@ -294,16 +298,28 @@ func diffSchema(ctx context.Context, left, right diffTarget, sample int) ([]diff
 	return diff.Tree(a, b), nil
 }
 
-// sampleShape reads up to sample items from a source and infers its shape. A
-// sample of zero reads the whole keyspace.
+// sampleShape reads up to sample items from a source and infers its comparable
+// shape. A sample of zero reads the whole keyspace.
 func sampleShape(ctx context.Context, t diffTarget, sample int) (map[string]any, error) {
 	st, err := openStore(ctx, &config{url: t.url, address: t.address})
 	if err != nil {
 		return nil, redactErr(err, t.url)
 	}
 	defer func() { _ = st.Close() }()
+	items, err := sampleItems(ctx, st, sample)
+	if err != nil {
+		return nil, fmt.Errorf("sample %q: %w", t.handle, redactErr(err, t.url))
+	}
+	return shape.Infer(items).Comparable(), nil
+}
+
+// sampleItems reads up to sample items from an open store into a key->value map,
+// stopping the scan once the cap is reached; a sample of zero reads the whole
+// keyspace. The scan error is returned unwrapped so the caller can anchor it with
+// its own source context. Shared by `diff --schema` and `schema`.
+func sampleItems(ctx context.Context, st store, sample int) (map[string]any, error) {
 	items := map[string]any{}
-	err = st.ScanBatches(ctx, func(batch map[string]any) error {
+	err := st.ScanBatches(ctx, func(batch map[string]any) error {
 		for k, v := range batch {
 			items[k] = v
 			if sampleFull(len(items), sample) {
@@ -313,9 +329,9 @@ func sampleShape(ctx context.Context, t diffTarget, sample int) (map[string]any,
 		return nil
 	})
 	if err != nil && !errors.Is(err, errStopSampling) {
-		return nil, fmt.Errorf("sample %q: %w", t.handle, redactErr(err, t.url))
+		return nil, err
 	}
-	return diff.Infer(items), nil
+	return items, nil
 }
 
 // sampleFull reports whether count items reach the sample cap. A sample of zero

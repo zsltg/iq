@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -141,4 +142,30 @@ func TestOfflineFileSourceRoundTrip(t *testing.T) {
 	require.Zerof(t, code, "query failed: %s", stderr)
 	require.Contains(t, out, "hello-iq")
 	require.Contains(t, out, "world-iq")
+}
+
+func TestSchemaEmitsJSONSchema(t *testing.T) {
+	skipShort(t)
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data.jsonl")
+	require.NoError(t, os.WriteFile(data,
+		[]byte(`{"key":"1","value":{"name":"alice","age":30}}`+"\n"+`{"key":"2","value":{"name":"bob"}}`+"\n"), 0o600))
+	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
+
+	out, stderr, code := run(t, env, "add", "file://"+data, "-n", "snap")
+	require.Zerof(t, code, "add failed: %s", stderr)
+	require.Contains(t, out, "added source snap")
+
+	out, stderr, code = run(t, env, "schema", "snap")
+	require.Zerof(t, code, "schema failed: %s", stderr)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &doc))
+	require.Equal(t, "http://json-schema.org/draft-07/schema#", doc["$schema"])
+	require.Equal(t, "object", doc["type"])
+	props := doc["properties"].(map[string]any)
+	require.Equal(t, "string", props["name"].(map[string]any)["type"])
+	require.Equal(t, "integer", props["age"].(map[string]any)["type"])
+	// name is in both documents (required); age is in one (optional).
+	require.Equal(t, []any{"name"}, doc["required"])
 }

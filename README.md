@@ -157,11 +157,24 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   added / removed / changed, keyed by document `_id` (MongoDB) or key (Redis); it reads both
   keyspaces fully into memory, the deliberate cost of needing both key sets at once, and is allowed
   across drivers (a power tool for verifying a migration, not a schema comparison — the match is
-  only as meaningful as the keys lining up). `--stats` diffs native introspection trees and
-  `--schema` diffs an inferred, sampled field/type shape (`--sample`); both require the same driver.
-  Layers combine; `-j`/`--json` or `-y`/`--yaml` for a machine-readable delta. `diff` exits
-  non-zero when the sources differ and zero when they match (diff(1)-style), so scripts can branch
-  on the exit status. Bounded by `--timeout`.
+  only as meaningful as the keys lining up). `--stats` diffs native introspection trees (**same
+  driver only**). `--schema` diffs an inferred, sampled field/type shape (`--sample`) and is **allowed
+  across drivers**: each field path — with `[]` array-element and `{}` map-value wildcards — carries a
+  canonical type (`integer`/`number`/`string(date-time)`/`map`/`array`) and a `required`/`optional`
+  presence, so it measures logical shape rather than sampling luck and stays quiet under resampling.
+  Two backends that genuinely normalize a native type differently (a timestamp as an RFC3339 string
+  vs an epoch number) still diff — that is the JSON each serves back, and the format tags make the
+  row legible rather than mysterious. Layers combine; `-j`/`--json` or `-y`/`--yaml` for a
+  machine-readable delta. `diff` exits non-zero when the sources differ and zero when they match
+  (diff(1)-style), so scripts can branch on the exit status. Bounded by `--timeout`.
+- `iq schema [source]` — sample a source and emit a draft-07 **JSON Schema** inferred from its
+  values (the same inference `diff --schema` uses, projected to standard JSON Schema). It is the
+  driver-agnostic, sampled complement to `iq inspect`'s native introspection: address the source like
+  `inspect` (`iq schema shop.orders`), sample with `--sample`, bounded by `--timeout`. Non-object
+  keyspaces are legal (a string keyspace emits `{"type":"string"}`); it describes values, not keys.
+  The output is standard JSON Schema for interop — pipe it to a code generator
+  (`iq schema prod.orders > s.json && quicktype -s schema s.json -l go`). A schema is field names and
+  types, a few hundred bytes — not a dump of production documents into a third-party tool.
 - `iq group [<name>] [--clear]` — show, set, or clear the active **group**.
 - `iq driver ls` — list the backend drivers iq can dispatch to, each with its description, the URL
   schemes that select it, and its upstream docs. `-v` appends the file driver's readable dump
@@ -1667,9 +1680,15 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   also contributes pure, connection-free `--explain` describers
   (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
 - `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
-  produces. `Tree` diffs two values, `Keyed` aligns two keyed item sets, and `Infer` reduces a set
-  to a sampled field/type shape that feeds back through `Tree`. It holds no I/O: `iq diff` reads
-  each side through the ports and hands the materialized values here.
+  produces. `Tree` diffs two values and `Keyed` aligns two keyed item sets. It holds no I/O: `iq diff`
+  reads each side through the ports and hands the materialized values here.
+- `internal/shape` — driver-agnostic schema inference (heuristics adapted from quicktype, Apache-2.0;
+  no code copied). `Infer` reduces a sample to a typed shape tree; `Comparable` projects a stable
+  field/type map that feeds `diff.Tree`, so `diff --schema` compares logical shape and works
+  cross-driver, and `JSONSchema` projects a draft-07 document for `iq schema`. Presence is
+  parent-relative (`required`/`optional`), numbers split integer from number, strings tag
+  date-time/date/uuid, id-keyed sub-objects collapse to maps, and arrays unify their element shape.
+  Like `diff`, it holds no I/O — the CLI samples through the ports and hands it the values.
 - `internal/config` — the saved sources and stored options. A small TOML store (named connections
   keyed by handle, plus the active source and group, plus a base **options** table and a per-source
   one) the CLI reads to resolve a query's connection and its default flags. It stays driver-agnostic
@@ -1721,6 +1740,8 @@ iq add file:///backups/prod.rdb -n snap   # register a dump file as a read-only 
 iq --src snap '.[] | select(.active)'     # query a dump offline (RDB, BSON, mongoexport, DynamoDB JSON, Cassandra CSV, Neo4j APOC JSON, JSONL)
 iq --src snap --insert prod               # restore a dump into a live source (both registered with iq add)
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
+iq schema prod.orders     # infer a draft-07 JSON Schema from a sampled source (--sample; describes values, not keys)
+iq schema prod.orders > s.json && quicktype -s schema s.json -l go  # generate typed models (a schema is field names/types, a few hundred bytes — not a dump of documents)
 go test -short ./...      # fast unit tests, no external services
 go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Couchbase + Neo4j + Elasticsearch + OpenSearch via testcontainers-go (HBase needs IQ_HBASE_URL)
 docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB + Couchbase + Neo4j + Elasticsearch + OpenSearch for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984, :8091-8096/:11210, :7687, :9200, :9201)
