@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.25.0 - 2026-07-17
+### Features
+- **schema:** infer draft-07 schemas and allow cross-driver --schema (95f8e57)
+
+
 ## v0.24.0 - 2026-07-16
 ### Documentation
 - **contract:** allocate host port 8086 to the planned bigtable driver (1354610)
