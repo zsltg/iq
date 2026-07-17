@@ -56,6 +56,8 @@ var rootFlagGroups = map[string]string{
 	"jsonl":          groupOutput,
 	"yaml":           groupOutput,
 	"raw":            groupOutput,
+	"gron":           groupOutput,
+	"grona":          groupOutput,
 	"format":         groupOutput,
 	"format.decimal": groupOutput,
 	"compact":        groupOutput,

@@ -279,10 +279,12 @@ flags are mutually exclusive and apply to the jq read path and to `--from`/`--co
 | `-A`, `--jsona` | every result wrapped in one `[ ... ]` document |
 | `-r`, `--raw` | scalars unquoted, one per line; objects and arrays fall back to compact JSON |
 | `-y`, `--yaml` | YAML documents, separated by `---` |
+| `-g`, `--gron` | flattened `json.path = value;` assignment statements, one per line (gron); greppable and reversible with `ungron`, each result rooted at a repeated `json` |
+| `-G`, `--grona` | like `--gron` but result N roots at `json[N]`, so the whole stream ungrons back to one JSON array (gron's `--stream` style) |
 
 `-f`, `--format <name>` selects the same renderings by name — `json`, `jsonl`, `jsona`,
-`yaml`, `values` (with `raw` as an alias for `values`) — as an alternative to the shorthand
-flags above. It is mutually exclusive with them, so `-f json --jsonl` is rejected.
+`yaml`, `values` (with `raw` as an alias for `values`), `gron`, `grona` — as an alternative to
+the shorthand flags above. It is mutually exclusive with them, so `-f json --jsonl` is rejected.
 
 > **`--jsona` differs from sq's.** iq's `--jsona` wraps the whole result stream in one array
 > (like `jq -s`); it is the analogue of sq's plain `--json`. sq's `--jsona` instead emits one
@@ -291,7 +293,8 @@ flags above. It is mutually exclusive with them, so `-f json --jsonl` is rejecte
 
 `--compact` collapses the pretty renderings to single-line: `--json` becomes one compact
 value per line (equivalent to `--jsonl`) and `--jsona` becomes a single-line `[ ... ]`. It
-is a no-op for `--jsonl`, `--raw`, and `--yaml`, which are already condensed.
+is a no-op for `--jsonl`, `--raw`, `--yaml`, `--gron`, and `--grona`, which are already
+condensed (gron and grona are inherently line-based).
 
 `-o`, `--output <file>` writes results to `<file>` instead of stdout, truncating an existing
 file. It is global — every command honours it (for example `iq inspect -o report.json`) — and is
@@ -304,8 +307,18 @@ progress and errors still go to stderr.
 ./iq '.[]' -f jsona             # a single JSON array of every result (same as --jsona)
 ./iq '.[]' -A --compact         # the same array on one line
 ./iq '.[]' --yaml               # YAML, easier to read for deeply nested documents
+./iq '.[]' --gron | grep price  # flat json.path = value; lines, greppable and ungron-able
 ./iq '.[]' -A -o results.json   # write the results to a file instead of stdout
 ```
+
+> **gron paths.** `--gron`/`--grona` emit one `path = <compact JSON>;` statement per line,
+> object keys sorted, `ungron`-reversible. A key that is an ASCII identifier
+> (`^[A-Za-z_$][A-Za-z0-9_$]*$`) follows a bare dot (`json.name`); any other key is bracketed
+> and JSON-quoted (`json["odd key"]`) — a deliberate ASCII subset of gron's rule, since
+> over-quoting stays ungron-safe. `--gron` repeats the `json` root for every result, so
+> ungron is last-write-wins across results; `--grona` roots result N at `json[N]` under a
+> leading `json = [];`, so ungron rebuilds the full array (an empty stream ungrons to `[]`,
+> like `--jsona`).
 
 #### Decimal numbers
 
@@ -337,8 +350,8 @@ limitation); exactness is kept in preference to YAML's numeric form.
 
 Output is syntax-highlighted when `iq` writes to a terminal and left plain when it is piped or
 redirected, so captured output stays clean. The `--json`, `--jsonl`, `--jsona`, and
-`--yaml` renderings get syntax highlighting; the `--raw` rendering is always plain so it stays
-safe for shell capture. The human commands color their signal too: `ping` shows `ok`/`error` in
+`--yaml` renderings get syntax highlighting; the `--raw`, `--gron`, and `--grona` renderings
+are always plain so they stay safe for shell capture. The human commands color their signal too: `ping` shows `ok`/`error` in
 green/red, `diff` shows additions green, removals red, and changes yellow, and `ls`/`inspect`
 highlight the active source and section headers. The raw reply bodies from `exec` and `inspect`
 are colored in their native form — JSON syntax highlighting for MongoDB, and redis-cli-style

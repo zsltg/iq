@@ -22,6 +22,8 @@ const (
 	formatJSONArray outputFormat = "jsona"
 	formatValues    outputFormat = "values"
 	formatYAML      outputFormat = "yaml"
+	formatGron      outputFormat = "gron"
+	formatGronArray outputFormat = "grona"
 )
 
 // namedFormats maps the --format flag's value names to the rendering they select.
@@ -34,6 +36,8 @@ var namedFormats = map[string]outputFormat{
 	"yaml":   formatYAML,
 	"values": formatValues,
 	"raw":    formatValues,
+	"gron":   formatGron,
+	"grona":  formatGronArray,
 }
 
 // namedFormat resolves a --format value to its rendering, case-insensitively and
@@ -50,7 +54,7 @@ func validateFormat(s string) error {
 		return nil
 	}
 	if _, ok := namedFormat(s); !ok {
-		return fmt.Errorf("invalid --format %q: want json, jsonl, jsona, yaml, values, or raw", s)
+		return fmt.Errorf("invalid --format %q: want json, jsonl, jsona, yaml, values, gron, grona, or raw", s)
 	}
 	return nil
 }
@@ -66,7 +70,7 @@ func selectFormat(cfg *config) (outputFormat, error) {
 	if cfg.format != "" {
 		f, ok := namedFormat(cfg.format)
 		if !ok {
-			return "", fmt.Errorf("invalid --format %q: want json, jsonl, jsona, yaml, values, or raw", cfg.format)
+			return "", fmt.Errorf("invalid --format %q: want json, jsonl, jsona, yaml, values, gron, grona, or raw", cfg.format)
 		}
 		set = append(set, f)
 	}
@@ -85,13 +89,19 @@ func selectFormat(cfg *config) (outputFormat, error) {
 	if cfg.raw {
 		set = append(set, formatValues)
 	}
+	if cfg.gron {
+		set = append(set, formatGron)
+	}
+	if cfg.gronArray {
+		set = append(set, formatGronArray)
+	}
 	switch len(set) {
 	case 0:
 		return formatJSON, nil
 	case 1:
 		return set[0], nil
 	default:
-		return "", fmt.Errorf("output format flags are mutually exclusive: set at most one of --format, --json, --jsona, --jsonl, --yaml, --raw")
+		return "", fmt.Errorf("output format flags are mutually exclusive: set at most one of --format, --json, --jsona, --jsonl, --yaml, --raw, --gron, --grona")
 	}
 }
 
@@ -106,7 +116,7 @@ type formatter interface {
 
 // newFormatter builds the formatter for f, writing to w. When compact is set,
 // the pretty renderings (json, jsona) collapse to single-line output; the
-// already-condensed formats (jsonl, values, yaml) ignore it.
+// already-condensed formats (jsonl, values, yaml, gron, grona) ignore it.
 func newFormatter(f outputFormat, w io.Writer, compact bool) formatter {
 	switch f {
 	case formatJSONL:
@@ -115,6 +125,10 @@ func newFormatter(f outputFormat, w io.Writer, compact bool) formatter {
 		return &jsonArrayFormatter{w: w, compact: compact}
 	case formatValues:
 		return &valuesFormatter{w: w}
+	case formatGron:
+		return &gronFormatter{w: w}
+	case formatGronArray:
+		return &gronFormatter{w: w, indexed: true}
 	case formatYAML:
 		if colorOn() {
 			return &colorYAMLFormatter{w: w}

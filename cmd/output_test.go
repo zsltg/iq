@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math/big"
 	"testing"
 	"time"
 
@@ -33,9 +34,14 @@ func TestSelectFormat(t *testing.T) {
 		{name: "format values", cfg: config{format: "values"}, want: formatValues},
 		{name: "format raw aliases values", cfg: config{format: "raw"}, want: formatValues},
 		{name: "format is case-insensitive and trimmed", cfg: config{format: " JSON "}, want: formatJSON},
+		{name: "gron", cfg: config{gron: true}, want: formatGron},
+		{name: "grona", cfg: config{gronArray: true}, want: formatGronArray},
+		{name: "format gron", cfg: config{format: "gron"}, want: formatGron},
+		{name: "format grona", cfg: config{format: "grona"}, want: formatGronArray},
 		{name: "invalid format value errors", cfg: config{format: "csv"}, wantErr: true, errContains: `invalid --format "csv"`},
-		{name: "two booleans is a conflict", cfg: config{json: true, yaml: true}, wantErr: true, errContains: "--format, --json, --jsona, --jsonl, --yaml, --raw"},
-		{name: "format with a boolean is a conflict", cfg: config{format: "json", jsonl: true}, wantErr: true, errContains: "--format, --json, --jsona, --jsonl, --yaml, --raw"},
+		{name: "two booleans is a conflict", cfg: config{json: true, yaml: true}, wantErr: true, errContains: "--format, --json, --jsona, --jsonl, --yaml, --raw, --gron, --grona"},
+		{name: "format with a boolean is a conflict", cfg: config{format: "json", jsonl: true}, wantErr: true, errContains: "--format, --json, --jsona, --jsonl, --yaml, --raw, --gron, --grona"},
+		{name: "gron with json is a conflict", cfg: config{gron: true, json: true}, wantErr: true, errContains: "--format, --json, --jsona, --jsonl, --yaml, --raw, --gron, --grona"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -67,6 +73,8 @@ func TestValidateFormat(t *testing.T) {
 		{name: "yaml", in: "yaml"},
 		{name: "values", in: "values"},
 		{name: "raw alias", in: "raw"},
+		{name: "gron", in: "gron"},
+		{name: "grona", in: "grona"},
 		{name: "case-insensitive and trimmed", in: " YAML "},
 		{name: "unknown value errors", in: "csv", wantErr: true},
 	}
@@ -81,6 +89,16 @@ func TestValidateFormat(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// mustBigInt parses s as an arbitrary-precision integer, failing the test if it
+// is not a valid integer literal.
+func mustBigInt(s string) *big.Int {
+	n, ok := new(big.Int).SetString(s, 10)
+	if !ok {
+		panic("invalid big integer literal: " + s)
+	}
+	return n
 }
 
 // render runs the formatter for f (compact toggling single-line output) over
@@ -213,6 +231,55 @@ func TestFormatterOutput(t *testing.T) {
 			vals:    []any{obj, "bob"},
 			want:    "name: alice\nyear: 2020\n---\nbob\n",
 		},
+		{
+			name: "gron flattens nested, sorts keys, declares empty containers",
+			fmt:  formatGron,
+			vals: []any{map[string]any{"b": []any{1, "x"}, "a": map[string]any{}}},
+			want: "json = {};\njson.a = {};\njson.b = [];\njson.b[0] = 1;\njson.b[1] = \"x\";\n",
+		},
+		{
+			name: "gron quotes non-identifier keys and keeps them verbatim",
+			fmt:  formatGron,
+			vals: []any{map[string]any{"odd key": true, "q\"uote": "a<b>&c", "_x$1": 1, "π": 2}},
+			want: "json = {};\njson._x$1 = 1;\njson[\"odd key\"] = true;\njson[\"q\\\"uote\"] = \"a<b>&c\";\njson[\"π\"] = 2;\n",
+		},
+		{
+			name: "gron of an empty top-level array declares only the root",
+			fmt:  formatGron,
+			vals: []any{[]any{}},
+			want: "json = [];\n",
+		},
+		{
+			name: "gron renders a big integer bare",
+			fmt:  formatGron,
+			vals: []any{mustBigInt("12345678901234567890")},
+			want: "json = 12345678901234567890;\n",
+		},
+		{
+			name: "gron repeats the json root across results, including nil",
+			fmt:  formatGron,
+			vals: []any{nil, "s"},
+			want: "json = null;\njson = \"s\";\n",
+		},
+		{
+			name:    "gron ignores compact",
+			fmt:     formatGron,
+			compact: true,
+			vals:    []any{map[string]any{"b": []any{1, "x"}, "a": map[string]any{}}},
+			want:    "json = {};\njson.a = {};\njson.b = [];\njson.b[0] = 1;\njson.b[1] = \"x\";\n",
+		},
+		{
+			name: "grona indexes each result under one array declaration",
+			fmt:  formatGronArray,
+			vals: []any{map[string]any{"a": 1}, "s"},
+			want: "json = [];\njson[0] = {};\njson[0].a = 1;\njson[1] = \"s\";\n",
+		},
+		{
+			name: "grona of an empty stream declares an empty array",
+			fmt:  formatGronArray,
+			vals: nil,
+			want: "json = [];\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -244,6 +311,24 @@ func TestFlushCompletesDocument(t *testing.T) {
 		require.NoError(t, fm.emit("bob"))
 		require.NoError(t, fm.flush())
 		require.Equal(t, "bob\n", b.String())
+	})
+	t.Run("gron streams fully so flush adds nothing", func(t *testing.T) {
+		t.Parallel()
+		var b bytes.Buffer
+		fm := newFormatter(formatGron, &b, false)
+		require.NoError(t, fm.emit("bob"))
+		before := b.String()
+		require.NoError(t, fm.flush())
+		require.Equal(t, before, b.String())
+	})
+	t.Run("grona flush after an emit adds nothing", func(t *testing.T) {
+		t.Parallel()
+		var b bytes.Buffer
+		fm := newFormatter(formatGronArray, &b, false)
+		require.NoError(t, fm.emit("bob"))
+		before := b.String()
+		require.NoError(t, fm.flush())
+		require.Equal(t, before, b.String())
 	})
 }
 

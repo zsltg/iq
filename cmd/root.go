@@ -48,6 +48,8 @@ type config struct {
 	jsonl     bool
 	yaml      bool
 	raw       bool
+	gron      bool
+	gronArray bool
 	compact   bool
 	// Write/movement flags (runMove): --insert names a destination source handle;
 	// --typed emits {key,type,value} records instead of the jq value stream. The rest
@@ -302,9 +304,11 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.Flags().BoolVarP(&cfg.jsonl, "jsonl", "J", false, "output compact JSON, one value per line (JSON Lines)")
 	root.Flags().BoolVarP(&cfg.yaml, "yaml", "y", false, "output YAML documents, separated by ---")
 	root.Flags().BoolVarP(&cfg.raw, "raw", "r", false, "output scalars unquoted, one per line (objects and arrays fall back to compact JSON)")
-	root.Flags().StringVarP(&cfg.format, "format", "f", "", "select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw); an alternative to -j/-J/-A/-y/-r")
-	root.MarkFlagsMutuallyExclusive("format", "json", "jsona", "jsonl", "yaml", "raw")
-	root.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / jsona output to single-line (no-op for jsonl, values, yaml)")
+	root.Flags().BoolVarP(&cfg.gron, "gron", "g", false, "output flattened assignment statements (gron), one per line: greppable, each result rooted at json, reversible with ungron")
+	root.Flags().BoolVarP(&cfg.gronArray, "grona", "G", false, "like --gron but result N roots at json[N], so the whole stream ungrons back to one JSON array (gron's --stream style)")
+	root.Flags().StringVarP(&cfg.format, "format", "f", "", "select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona; an alternative to -j/-J/-A/-y/-r/-g/-G")
+	root.MarkFlagsMutuallyExclusive("format", "json", "jsona", "jsonl", "yaml", "raw", "gron", "grona")
+	root.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / jsona output to single-line (no-op for jsonl, values, yaml, gron, grona)")
 	// Write/movement flags for the default action: --insert redirects results into a
 	// destination source (sq's --insert); --typed emits {key,type,value} records — a
 	// re-importable dump. The rest mirror the retired `iq data copy`.
