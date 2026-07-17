@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.26
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.59.2
 	github.com/aws/smithy-go v1.27.3
+	github.com/buger/jsonparser v1.2.0
 	github.com/couchbase/gocb/v2 v2.12.4
 	github.com/elastic/go-elasticsearch/v8 v8.19.6
 	github.com/fatih/color v1.19.0
