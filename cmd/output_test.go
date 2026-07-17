@@ -332,6 +332,69 @@ func TestFlushCompletesDocument(t *testing.T) {
 	})
 }
 
+func TestGronFormatterPropagatesWriteErrors(t *testing.T) {
+	t.Parallel()
+	// Each gron statement is one Write, so failAt isolates a single guard: if any
+	// error return were dropped, the later writes still succeed and the missing
+	// propagation surfaces as a nil result. The value/failAt pairs cover every
+	// write-error guard in emit, walk, and line.
+	tests := []struct {
+		name string
+		fmt  outputFormat
+		val  any
+		at   int
+	}{
+		{name: "gron map declaration write fails", fmt: formatGron, val: map[string]any{"a": 1}, at: 1},
+		{name: "gron map child recursion write fails", fmt: formatGron, val: map[string]any{"a": 1}, at: 2},
+		{name: "gron array declaration write fails", fmt: formatGron, val: []any{1}, at: 1},
+		{name: "gron array element recursion write fails", fmt: formatGron, val: []any{1}, at: 2},
+		{name: "grona leading declaration write fails", fmt: formatGronArray, val: "s", at: 1},
+		{name: "grona walk propagation write fails", fmt: formatGronArray, val: "s", at: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fm := newFormatter(tt.fmt, &failAt{at: tt.at}, false)
+			require.ErrorContains(t, fm.emit(tt.val), "write result")
+		})
+	}
+}
+
+func TestGronFormatterPropagatesEncodeError(t *testing.T) {
+	t.Parallel()
+	// A value that cannot JSON-encode (a channel) must surface the compact
+	// encoder's error rather than being swallowed on the walk's default path.
+	for _, f := range []outputFormat{formatGron, formatGronArray} {
+		t.Run(string(f), func(t *testing.T) {
+			t.Parallel()
+			fm := newFormatter(f, &bytes.Buffer{}, false)
+			require.ErrorContains(t, fm.emit(make(chan int)), "encode result")
+		})
+	}
+}
+
+func TestRootRejectsMutuallyExclusiveFormatFlags(t *testing.T) {
+	t.Parallel()
+	// Cobra's MarkFlagsMutuallyExclusive rejects conflicting format flags during
+	// Execute, before any store I/O; the new gron/grona flags join that group.
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "gron with json", args: []string{"--gron", "--json", "."}},
+		{name: "grona with raw", args: []string{"--grona", "--raw", "."}},
+		{name: "gron with grona", args: []string{"--gron", "--grona", "."}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root, _ := newRootCmd()
+			_, err := runCmd(t, root, tt.args...)
+			require.ErrorContains(t, err, "none of the others can be")
+		})
+	}
+}
+
 func TestFinish(t *testing.T) {
 	t.Parallel()
 	t.Run("returns the run error and skips flush", func(t *testing.T) {
