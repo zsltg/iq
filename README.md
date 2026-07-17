@@ -1778,6 +1778,7 @@ make cover                # full suite + coverage floor (IQ_COVER_MIN, default 8
 make security             # supply-chain + secrets sweep (govulncheck, osv-scanner, gitleaks) + SBOMs to dist/
 make sbom                 # write SPDX + CycloneDX SBOMs of the module to dist/
 make e2e                  # black-box smoke tests that build and drive the iq binary (+ live Redis/Mongo round-trips when IQ_REDIS_URL/IQ_MONGO_URL are set)
+make bench                # JSON decode + pre-filter benchmarks (no containers); pair two runs with benchstat: make bench | tee new.txt; benchstat old.txt new.txt
 make mutation             # mutation gate over the branch diff vs origin/main (part of make ci)
 make ci                   # full pre-merge gate: check + cover + security + mutation (needs Docker + network)
 make tools                # install release tools (svu, git-chglog) into GOPATH/bin

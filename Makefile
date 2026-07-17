@@ -11,7 +11,7 @@ LDFLAGS := -X github.com/zsltg/iq/cmd.version=$(VERSION) \
            -X github.com/zsltg/iq/cmd.commit=$(COMMIT) \
            -X github.com/zsltg/iq/cmd.date=$(DATE)
 
-.PHONY: build version changelog release tools tools-dev check cover security sbom e2e mutation ci
+.PHONY: build version changelog release tools tools-dev check cover security sbom e2e bench mutation ci
 
 # build compiles the binary with version metadata embedded.
 build:
@@ -70,6 +70,12 @@ sbom:
 # e2e runs the black-box smoke tests that build and drive the iq binary.
 e2e:
 	go test ./e2e/
+
+# bench runs the decode and pre-filter benchmarks (no containers, no network). Pipe
+# two runs through benchstat to compare before/after a change:
+#   make bench | tee new.txt; benchstat old.txt new.txt.
+bench:
+	go test -bench=. -benchmem -run='^$$' ./internal/query/... ./internal/numfmt/... ./drivers/redis/...
 
 # mutation runs the mutation gate over the branch diff against origin/main (override
 # with IQ_MUTATION_BASE; empty for a full-module scan, or pass a package path for a
