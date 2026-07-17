@@ -108,6 +108,30 @@
       "file": "internal/shape/shape.go",
       "mutator": "statement/return",
       "line": 461
+    },
+    {
+      "id": "13548ffece9a593ed54c73d0c0c1b200",
+      "file": "internal/rawpred/rawpred.go",
+      "mutator": "statement/return",
+      "line": 52
+    },
+    {
+      "id": "b7a67e872a5ed4cf7c1af3b179a3aa44",
+      "file": "drivers/redis/filter.go",
+      "mutator": "expression/context-nil",
+      "line": 56
+    },
+    {
+      "id": "7598e64951e38be99e19c6df07e4f8d1",
+      "file": "drivers/redis/filter.go",
+      "mutator": "expression/context-nil",
+      "line": 89
+    },
+    {
+      "id": "578155c117f299062661e7004cef33bb",
+      "file": "drivers/redis/filter.go",
+      "mutator": "expression/context-nil",
+      "line": 91
     }
   ]
 }

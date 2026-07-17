@@ -465,9 +465,10 @@ shows three things, syntax-highlighted when the destination is a terminal:
 - the backend **access plan** — the concrete calls each source will make, derived from the filter's
   route (bounded keys, streaming scan, or materialize): MongoDB `find(<filter>)` (the pushed-down
   filter, on by default, or `{}` under `--no-compile`) or `find` by `_id`; Redis `SCAN 0 MATCH *
-  COUNT n` plus per-key `TYPE`/typed reads, or pipelined typed reads for bounded keys;
-- for MongoDB, the compiled server-side filter as JSON — exactly what the store pre-filters with
-  (empty under `--no-compile`).
+  COUNT n` plus per-key `TYPE`/typed reads (naming the client-side raw-byte prefilter when a
+  predicate compiles), or pipelined typed reads for bounded keys;
+- the compiled filter as JSON — MongoDB's server-side `find` filter, or the predicate Redis's
+  client-side prefilter applies to RedisJSON values (empty under `--no-compile`).
 
 ```bash
 ./iq --src orders --explain '.[] | select(.total > 99) | {id, total}'
@@ -553,8 +554,10 @@ same contract:
   `null`, never an error; a `.[]`-rooted filter streams the keyspace in bounded pages; a holistic
   filter materializes only behind `--unbounded` (see
   [Bounded reads, streaming scans, and materialized scans](#bounded-reads-streaming-scans-and-materialized-scans)).
-- **Pushdown never changes results.** A pushed predicate is only ever a conservative server-side
-  pre-filter; the full jq always re-runs client-side, so output is identical with or without it, and
+- **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter —
+  server-side where the backend can filter, or a client-side raw-byte prefilter that drops a provable
+  non-match before decode where it cannot (Redis, on RedisJSON values). The full jq always re-runs
+  client-side, so output is identical with or without it, and
   [`--explain`](#query-plan---explain--v) shows exactly what was pushed.
 - **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, drop, and per-key
   delete are opt-in ports: a backend implements what its model supports, and a command against a
@@ -584,8 +587,12 @@ iq --src cache --unbounded 'keys'                    # every key
 ```
 
 The `--unbounded` / streaming rules match every backend (`.[]`-rooted filters stream in constant
-memory; `keys`/`.`/`map` materialize and require the flag). Predicate pushdown is a no-op on Redis,
-which has no server-side filtering; the full jq always runs client-side.
+memory; `keys`/`.`/`map` materialize and require the flag). Redis has no server-side filtering, so a
+compiled predicate instead drives a **client-side raw-byte prefilter**: on a streaming scan, each
+RedisJSON value is tested against the predicate on its raw JSON.GET bytes and, when it provably
+cannot match, dropped before the (dominant) decode — every other type is decoded and included
+unchanged. The full jq always re-runs client-side, so output is identical with or without it; the
+prefilter only skips decoding documents the filter would reject. `--no-compile` turns it off.
 
 ### Value encoding
 

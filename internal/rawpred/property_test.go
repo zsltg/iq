@@ -1,0 +1,211 @@
+package rawpred_test
+
+import (
+	"encoding/json"
+	"math/rand"
+	"strings"
+	"testing"
+
+	"github.com/itchyny/gojq"
+	"github.com/stretchr/testify/require"
+
+	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/rawpred"
+)
+
+// TestMatchNeverDropsAMatch is the load-bearing invariant test: for every
+// generated (document, predicate) pair rawpred.Match reports CannotMatch, the
+// document decoded exactly as the driver decodes it and evaluated against the same
+// predicate by an independent reference evaluator must NOT match. A single
+// counterexample is a wrong drop — a document the full jq would have kept. It runs
+// without a container, on a fixed seed, so it is deterministic and repeatable.
+func TestMatchNeverDropsAMatch(t *testing.T) {
+	t.Parallel()
+	rng := rand.New(rand.NewSource(0xC0FFEE))
+
+	const docs, preds = 300, 300
+	rawDocs := make([]string, docs)
+	decoded := make([]any, docs)
+	for i := range rawDocs {
+		rawDocs[i] = genDoc(rng)
+		decoded[i] = decodeDoc(t, rawDocs[i])
+	}
+	predSet := make([]predicate.Node, preds)
+	for i := range predSet {
+		predSet[i] = genPred(rng, 2)
+	}
+
+	drops := 0
+	for _, p := range predSet {
+		for i, raw := range rawDocs {
+			if rawpred.Match([]byte(raw), p) != rawpred.CannotMatch {
+				continue
+			}
+			drops++
+			require.Falsef(t, refMatch(decoded[i], p),
+				"wrong drop: Match said CannotMatch but the decoded document matches\n doc:  %s\n pred: %#v", raw, p)
+		}
+	}
+	// Guard the test itself: if nothing ever dropped, the invariant is vacuous and
+	// the generators need widening.
+	require.Positive(t, drops, "generators produced no CannotMatch cases to check")
+}
+
+// decodeDoc decodes a raw JSON document exactly as the Redis driver does — UseNumber
+// plus numfmt conversion under the default decimal mode — so the reference sees the
+// same Go values gojq will.
+func decodeDoc(t *testing.T, s string) any {
+	t.Helper()
+	dec := json.NewDecoder(strings.NewReader(s))
+	dec.UseNumber()
+	var v any
+	require.NoError(t, dec.Decode(&v))
+	return numfmt.ConvertNumbers(v, numfmt.DecimalAuto)
+}
+
+// refMatch is the independent oracle: it evaluates a predicate over decoded Go
+// values with gojq.Compare as ground truth for jq's cross-type ordering, mirroring
+// predicate semantics directly rather than through rawpred's byte logic.
+func refMatch(v any, node predicate.Node) bool {
+	switch n := node.(type) {
+	case predicate.Eq:
+		return gojq.Compare(pathValue(v, n.Path), n.Value) == 0
+	case predicate.Ne:
+		return gojq.Compare(pathValue(v, n.Path), n.Value) != 0
+	case predicate.Cmp:
+		c := gojq.Compare(pathValue(v, n.Path), n.Value)
+		switch n.Op {
+		case predicate.Gt:
+			return c > 0
+		case predicate.Ge:
+			return c >= 0
+		case predicate.Lt:
+			return c < 0
+		default:
+			return c <= 0
+		}
+	case predicate.Exists:
+		_, ok := pathLookup(v, n.Path)
+		return ok
+	case predicate.NotExists:
+		_, ok := pathLookup(v, n.Path)
+		return !ok
+	case predicate.And:
+		for _, c := range n {
+			if !refMatch(v, c) {
+				return false
+			}
+		}
+		return true
+	case predicate.Or:
+		for _, c := range n {
+			if refMatch(v, c) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+// pathValue returns the value at path, or nil (jq's null) when the field is absent,
+// matching how jq reads a missing field.
+func pathValue(v any, path []string) any {
+	got, ok := pathLookup(v, path)
+	if !ok {
+		return nil
+	}
+	return got
+}
+
+// pathLookup walks path through nested objects, reporting whether the leaf is
+// present.
+func pathLookup(v any, path []string) (any, bool) {
+	cur := v
+	for _, key := range path {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur, ok = m[key]
+		if !ok {
+			return nil, false
+		}
+	}
+	return cur, true
+}
+
+// valueSnippets are the raw JSON field values the document generator draws from,
+// spanning every type and both integer and fractional numbers, precision edges,
+// and escaped strings.
+var valueSnippets = []string{
+	`5`, `6`, `0`, `-3`, `10`, `9007199254740993`, `100000000000000000001`,
+	`1.5`, `-2.5`, `1e2`,
+	`"x"`, `"y"`, `"apple"`, `"banana"`, `"a\"b"`,
+	`true`, `false`, `null`, `[1,2]`, `{"k":1}`,
+}
+
+// genDoc builds a random JSON object over the field universe {a,b,c,n}, each field
+// independently included or omitted so predicates exercise present, absent, and
+// nested paths.
+func genDoc(rng *rand.Rand) string {
+	var parts []string
+	for _, f := range []string{"a", "b", "c"} {
+		if rng.Intn(4) != 0 { // ~75% present
+			parts = append(parts, `"`+f+`":`+valueSnippets[rng.Intn(len(valueSnippets))])
+		}
+	}
+	switch rng.Intn(3) {
+	case 0:
+		parts = append(parts, `"n":{"x":`+valueSnippets[rng.Intn(len(valueSnippets))]+`}`)
+	case 1:
+		// n present but not an object, so a nested path is structurally ambiguous.
+		parts = append(parts, `"n":`+valueSnippets[rng.Intn(len(valueSnippets))])
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
+
+// predPaths are the field paths predicates are generated over: three top-level and
+// one nested.
+var predPaths = [][]string{{"a"}, {"b"}, {"c"}, {"n", "x"}}
+
+// eqValues are the scalar values Eq/Ne are generated with, spanning every scalar
+// type; the numbers stay in the exact float64 range so the reference stays a sound
+// oracle for the cases rawpred can decide.
+var eqValues = []any{5.0, 6.0, 0.0, -3.0, "x", "apple", true, false, nil}
+
+// cmpValues are the number/string values Cmp is generated with.
+var cmpValues = []any{5.0, 0.0, -3.0, "banana", "b"}
+
+// genPred builds a random predicate tree up to the given depth over predPaths,
+// covering every node type rawpred decides on plus And/Or nesting.
+func genPred(rng *rand.Rand, depth int) predicate.Node {
+	if depth <= 0 || rng.Intn(3) == 0 {
+		return genLeaf(rng)
+	}
+	kids := []predicate.Node{genPred(rng, depth-1), genPred(rng, depth-1)}
+	if rng.Intn(2) == 0 {
+		return predicate.And(kids)
+	}
+	return predicate.Or(kids)
+}
+
+// genLeaf builds a random leaf predicate.
+func genLeaf(rng *rand.Rand) predicate.Node {
+	path := predPaths[rng.Intn(len(predPaths))]
+	switch rng.Intn(5) {
+	case 0:
+		return predicate.Eq{Path: path, Value: eqValues[rng.Intn(len(eqValues))]}
+	case 1:
+		return predicate.Ne{Path: path, Value: eqValues[rng.Intn(len(eqValues))]}
+	case 2:
+		ops := []predicate.Op{predicate.Gt, predicate.Ge, predicate.Lt, predicate.Le}
+		return predicate.Cmp{Path: path, Op: ops[rng.Intn(len(ops))], Value: cmpValues[rng.Intn(len(cmpValues))]}
+	case 3:
+		return predicate.Exists{Path: path}
+	default:
+		return predicate.NotExists{Path: path}
+	}
+}

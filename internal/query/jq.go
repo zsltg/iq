@@ -42,9 +42,13 @@ type KVStore interface {
 
 // FilteredScanner is an optional capability a KVStore may also implement: given a
 // pushed-down predicate, stream only the matching documents, letting the store
-// pre-filter server-side. The predicate is a conservative superset, so the engine
-// still re-runs the full filter over each page. A store that cannot push (Redis)
-// simply does not implement it, and the engine falls back to a full scan.
+// pre-filter. The predicate is a conservative superset, so the engine still re-runs
+// the full filter over each page. Most implementers push the predicate to the
+// backend server-side; Redis instead evaluates it client-side against each
+// document's raw bytes, dropping a provable non-match before it is decoded (see
+// internal/rawpred). Either way the engine's re-filter keeps results identical. A
+// store that does neither simply does not implement it, and the engine falls back
+// to a full scan.
 type FilteredScanner interface {
 	ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error
 }

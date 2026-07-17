@@ -255,17 +255,30 @@ func decodeJSON(s string, mode numfmt.DecimalMode) (any, error) {
 // repeat a key; the caller opts into that trade for bounded memory. The walk is
 // bounded by ctx and stops at the first error from fn or the store.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
+	return s.scanPages(ctx, s.Get, fn)
+}
+
+// scanPages is the shared cursor walk under ScanBatches and ScanFiltered: it pages
+// the keyspace with SCAN, builds each page's {key: value} batch with build, and
+// hands the batch to fn. It bounds memory to one page and is bounded by ctx,
+// stopping at the first error from build, fn, or the store. A page that build
+// reduces to an empty batch (every key filtered out) advances the cursor without
+// calling fn, so a caller never sees an empty batch.
+func (s *Store) scanPages(ctx context.Context, build func(context.Context, []string) (map[string]any, error), fn func(batch map[string]any) error) error {
 	iter := s.client.Scan(ctx, 0, "*", scanCount).Iterator()
 	page := make([]string, 0, scanCount)
 	flush := func() error {
 		if len(page) == 0 {
 			return nil
 		}
-		batch, err := s.Get(ctx, page)
+		batch, err := build(ctx, page)
 		if err != nil {
 			return err
 		}
 		page = page[:0]
+		if len(batch) == 0 {
+			return nil
+		}
 		return fn(batch)
 	}
 	for iter.Next(ctx) {
