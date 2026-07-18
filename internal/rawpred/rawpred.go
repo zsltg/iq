@@ -28,6 +28,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/buger/jsonparser"
 
@@ -85,9 +86,9 @@ func NewMatcher(pred predicate.Node) *Matcher {
 }
 
 // prepare walks the predicate tree compiling every Regex reachable through And/Or
-// nodes. It deliberately does not descend into an ElemMatch or NoneMatch Cond: those
-// container nodes are unknown in v1 (the whole document is decoded), so a Regex
-// nested in one is never evaluated on raw bytes and must not be compiled here.
+// nodes and through an ElemMatch or NoneMatch Cond. Those container nodes now
+// evaluate their Cond against each element on raw bytes, so a Regex nested in one is
+// compiled here too, deduplicated by (pattern, flags) exactly like a top-level one.
 func (m *Matcher) prepare(node predicate.Node) {
 	switch n := node.(type) {
 	case predicate.Regex:
@@ -112,6 +113,10 @@ func (m *Matcher) prepare(node predicate.Node) {
 		for _, c := range n {
 			m.prepare(c)
 		}
+	case predicate.ElemMatch:
+		m.prepare(n.Cond)
+	case predicate.NoneMatch:
+		m.prepare(n.Cond)
 	}
 }
 
@@ -185,13 +190,19 @@ func (m *Matcher) eval(raw []byte, node predicate.Node) triple {
 		return evalCmp(raw, n.Path, n.Op, n.Value)
 	case predicate.Regex:
 		return m.evalRegex(raw, n)
+	case predicate.Size:
+		return evalSize(raw, n.Path, n.N)
+	case predicate.ElemMatch:
+		return m.evalElemMatch(raw, n)
+	case predicate.NoneMatch:
+		return m.evalNoneMatch(raw, n)
 	case predicate.And:
 		return m.evalAnd(raw, n)
 	case predicate.Or:
 		return m.evalOr(raw, n)
 	default:
-		// Size, ElemMatch, NoneMatch, and any node type added later are not evaluated
-		// on raw bytes in v1; the document is decoded and re-filtered.
+		// A nil predicate, or any node type added later, is not evaluated on raw
+		// bytes; the document is decoded and re-filtered.
 		return unknown
 	}
 }
@@ -393,6 +404,243 @@ func (m *Matcher) evalOr(raw []byte, children predicate.Or) triple {
 		}
 	}
 	return all
+}
+
+// evalSize decides a Size node — jq's `.path | length == n` — from raw bytes. jq's
+// length is polymorphic, so the field's jsonparser type picks the count: array
+// elements, object keys, the rune length of a string, 0 for null, and |literal| for
+// an integral number. A cleanly-absent field is jq's null, whose length is 0; a
+// boolean, a number the numeric rule cannot pin down, or an ambiguous path is
+// unknown.
+func evalSize(raw []byte, path []string, n int) triple {
+	val, typ, st := getField(raw, path)
+	switch st {
+	case fieldFound:
+		return sizeFound(val, typ, n)
+	case fieldAbsent:
+		// A cleanly-missing field is jq's null, whose length is 0.
+		return boolTriple(n == 0)
+	default:
+		// fieldAmbiguous: the path did not resolve cleanly, so decode to know.
+		return unknown
+	}
+}
+
+// sizeFound decides `length == n` for a present value from its jsonparser type. Only
+// a boolean (jq's length errors on it) and a number the numeric rule cannot pin down
+// stay unknown; every other type counts definitively.
+func sizeFound(val []byte, typ jsonparser.ValueType, n int) triple {
+	switch typ {
+	case jsonparser.Array:
+		c, ok := countElements(val)
+		if !ok {
+			return unknown
+		}
+		return boolTriple(c == n)
+	case jsonparser.Object:
+		c, ok := countKeys(val)
+		if !ok {
+			return unknown
+		}
+		return boolTriple(c == n)
+	case jsonparser.String:
+		s, err := jsonparser.ParseString(val)
+		if err != nil {
+			return unknown
+		}
+		return boolTriple(utf8.RuneCountInString(s) == n)
+	case jsonparser.Null:
+		// jq's length of null is 0.
+		return boolTriple(n == 0)
+	case jsonparser.Number:
+		return sizeOfNumber(val, n)
+	default:
+		// Boolean: jq's length errors on a boolean, so the error must reach the
+		// client — unknown, exactly as Regex over a non-string stays unknown. An
+		// unknown/malformed type is unknown too.
+		return unknown
+	}
+}
+
+// countElements counts the elements of a JSON array, jq's length of an array, or
+// ok=false when jsonparser cannot walk it. The count starts at zero (an empty array
+// has length 0) and rises one per element.
+func countElements(val []byte) (int, bool) {
+	count := 0
+	_, err := jsonparser.ArrayEach(val, func(_ []byte, _ jsonparser.ValueType, _ int, _ error) {
+		count++
+	})
+	if err != nil {
+		return 0, false
+	}
+	return count, true
+}
+
+// countKeys counts the keys of a JSON object, jq's length of an object, or ok=false
+// when jsonparser cannot walk it.
+func countKeys(val []byte) (int, bool) {
+	count := 0
+	err := jsonparser.ObjectEach(val, func(_, _ []byte, _ jsonparser.ValueType, _ int) error {
+		count++
+		return nil
+	})
+	if err != nil {
+		return 0, false
+	}
+	return count, true
+}
+
+// sizeOfNumber decides `length == n` for a number field. jq's length of a number is
+// its magnitude, so the field matches only when |literal| == n. Stripping an optional
+// leading sign and reading the absolute value with ParseUint at bitSize 63 accepts
+// exactly the magnitudes that fit in an int64 (0 .. 2^63-1) and rejects everything
+// else — a fractional number, an exponent form, an integer beyond int64 (a *big.Int
+// once decoded), and MinInt64, whose magnitude 2^63 needs a 64th bit — all left to the
+// full jq. Parsing the magnitude directly avoids a separate sign negation and its
+// MinInt64 overflow corner.
+func sizeOfNumber(raw []byte, n int) triple {
+	if n < 0 {
+		// A number's length is its magnitude, never negative, so it cannot equal a
+		// negative n — jq would reject the document. Handling this first also makes the
+		// uint64(n) conversion below provably non-negative.
+		return definiteNo
+	}
+	mag, err := strconv.ParseUint(strings.TrimPrefix(string(raw), "-"), 10, 63)
+	if err != nil {
+		return unknown
+	}
+	return boolTriple(mag == uint64(n))
+}
+
+// evalElemMatch decides an ElemMatch node — jq's `.path | any(Cond)` — from raw
+// bytes. It folds Cond over the container's elements (an object's values count too,
+// as jq's any iterates them): definiteYes as soon as one element definitely matches,
+// definiteNo only when every element definitely fails, and unknown when any element
+// cannot be decided (unless one already matched, since a match wins outright).
+func (m *Matcher) evalElemMatch(raw []byte, n predicate.ElemMatch) triple {
+	s, ok := m.evalAny(raw, n.Path, n.Cond)
+	if !ok {
+		return unknown
+	}
+	switch {
+	case s.sawYes:
+		// A definite match: any is true regardless of the undecidable elements, and
+		// keeping the document on an unprovable any is always safe anyway.
+		return definiteYes
+	case s.sawUnknown:
+		return unknown
+	default:
+		// Every element definitely failed Cond: any is definitely false.
+		return definiteNo
+	}
+}
+
+// evalNoneMatch decides a NoneMatch node — jq's `.path | any(Cond) | not` — from raw
+// bytes. NoneMatch is exact, so it only ever drops (definiteNo) when a definitely
+// matching element exists AND no element is undecidable: jq's any short-circuits in
+// order (isempty over the first match), so an undecidable element ahead of a match
+// could make jq error rather than return true, which must reach the client. When
+// every element definitely fails, any is definitely false and any|not definitely
+// true.
+func (m *Matcher) evalNoneMatch(raw []byte, n predicate.NoneMatch) triple {
+	s, ok := m.evalAny(raw, n.Path, n.Cond)
+	if !ok {
+		return unknown
+	}
+	switch {
+	case s.sawUnknown:
+		// An undecidable element: jq's any may error before reaching a match, so the
+		// negation cannot be proven either way — keep the document.
+		return unknown
+	case s.sawYes:
+		// A definite match and no undecidable element: any is definitely true, so
+		// any|not is definitely false and the document is dropped.
+		return definiteNo
+	default:
+		return definiteYes
+	}
+}
+
+// anyState folds element verdicts for jq's any(): whether some element definitely
+// matched Cond, and whether some element could not be decided. The pair decides both
+// ElemMatch (any) and NoneMatch (any|not), which read it differently.
+type anyState struct {
+	sawYes     bool
+	sawUnknown bool
+}
+
+// add folds one element's Cond verdict into the accumulator. A definiteNo element
+// leaves both flags untouched, so an empty container and an all-failing container
+// both end with neither flag set.
+func (s *anyState) add(t triple) {
+	switch t {
+	case definiteYes:
+		s.sawYes = true
+	case unknown:
+		s.sawUnknown = true
+	}
+}
+
+// evalAny folds Cond over the elements of the container at path, the shared core of
+// ElemMatch and NoneMatch. It reports ok=false when the field is not a definite array
+// or object (absent, ambiguous, a scalar, or a container jsonparser cannot walk):
+// jq's any errors on a non-container, so neither node can be decided there.
+func (m *Matcher) evalAny(raw []byte, path []string, cond predicate.Node) (anyState, bool) {
+	val, typ, st := getField(raw, path)
+	if st != fieldFound {
+		return anyState{}, false
+	}
+	switch typ {
+	case jsonparser.Array:
+		return m.foldArray(val, cond)
+	case jsonparser.Object:
+		return m.foldObject(val, cond)
+	default:
+		return anyState{}, false
+	}
+}
+
+// foldArray evaluates Cond against every array element, folding the verdicts. A
+// jsonparser walk error abandons the fold as undecidable (ok=false).
+func (m *Matcher) foldArray(val []byte, cond predicate.Node) (anyState, bool) {
+	var s anyState
+	_, err := jsonparser.ArrayEach(val, func(elem []byte, typ jsonparser.ValueType, _ int, cbErr error) {
+		if cbErr != nil {
+			s.sawUnknown = true
+			return
+		}
+		s.add(m.evalElement(elem, typ, cond))
+	})
+	if err != nil {
+		return anyState{}, false
+	}
+	return s, true
+}
+
+// foldObject evaluates Cond against every object value, folding the verdicts, since
+// jq's any iterates an object's values.
+func (m *Matcher) foldObject(val []byte, cond predicate.Node) (anyState, bool) {
+	var s anyState
+	err := jsonparser.ObjectEach(val, func(_, v []byte, typ jsonparser.ValueType, _ int) error {
+		s.add(m.evalElement(v, typ, cond))
+		return nil
+	})
+	if err != nil {
+		return anyState{}, false
+	}
+	return s, true
+}
+
+// evalElement evaluates Cond against one container element. Only an object element
+// can be re-walked as a JSON root by Cond's field paths; every other type — an array,
+// a string (whose bytes jsonparser hands back unquoted, so they must never be re-read
+// as an object), a number, a boolean, or null — is not indexable the way jq's cond
+// needs, so jq would error on it and the element stays unknown, keeping the document.
+func (m *Matcher) evalElement(elem []byte, typ jsonparser.ValueType, cond predicate.Node) triple {
+	if typ != jsonparser.Object {
+		return unknown
+	}
+	return m.eval(elem, cond)
 }
 
 // boolTriple maps a decided boolean to definiteYes or definiteNo.

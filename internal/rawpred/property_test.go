@@ -2,10 +2,13 @@ package rawpred_test
 
 import (
 	"encoding/json"
+	"math"
+	"math/big"
 	"math/rand"
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/itchyny/gojq"
 	"github.com/stretchr/testify/require"
@@ -133,6 +136,19 @@ func refMatch(v any, node predicate.Node) bool {
 			return true
 		}
 		return refRegexp(n.Pattern, n.Flags).MatchString(s)
+	case predicate.Size:
+		return refSize(pathValue(v, n.Path), n.N)
+	case predicate.ElemMatch:
+		// jq's `.path | any(Cond)`: an error evaluating any (a non-container, or a
+		// cond that indexes a non-indexable element) must never drop the document, so
+		// an erroring fold counts as a match (must-keep).
+		match, errored := refAny(pathValue(v, n.Path), n.Cond)
+		return errored || match
+	case predicate.NoneMatch:
+		// jq's `.path | any(Cond) | not`: an erroring any still errors under not, so
+		// an erroring fold is must-keep; otherwise it is the negation of the match.
+		match, errored := refAny(pathValue(v, n.Path), n.Cond)
+		return errored || !match
 	case predicate.And:
 		for _, c := range n {
 			if !refMatch(v, c) {
@@ -150,6 +166,75 @@ func refMatch(v any, node predicate.Node) bool {
 	default:
 		return false
 	}
+}
+
+// refSize mirrors jq's polymorphic length compared to n: array elements, object
+// keys, the rune count of a string, 0 for null, and |value| for a number. jq's
+// length errors on a boolean, which the driver must not drop, so a boolean (and any
+// unexpected decoded type) is treated as a match (must-keep).
+func refSize(v any, n int) bool {
+	switch t := v.(type) {
+	case nil:
+		return n == 0
+	case string:
+		return utf8.RuneCountInString(t) == n
+	case []any:
+		return len(t) == n
+	case map[string]any:
+		return len(t) == n
+	case bool:
+		return true
+	case int:
+		if t < 0 {
+			t = -t
+		}
+		return t == n
+	case *big.Int:
+		return new(big.Int).Abs(t).Cmp(big.NewInt(int64(n))) == 0
+	case float64:
+		return math.Abs(t) == float64(n)
+	default:
+		return true
+	}
+}
+
+// refAny mirrors jq's `any(Cond)`: isempty over `.[] | select(Cond)` short-circuits
+// in element order, so it stops at the first match and errors if an earlier element
+// cannot be iterated or indexed. It returns match=true at the first element that
+// satisfies Cond, and errored=true when the container is a non-container or an
+// element ahead of any match is not indexable the way Cond needs (jq would error).
+func refAny(v any, cond predicate.Node) (match, errored bool) {
+	var elems []any
+	switch t := v.(type) {
+	case []any:
+		elems = t
+	case map[string]any:
+		for _, e := range t {
+			elems = append(elems, e)
+		}
+	default:
+		return false, true
+	}
+	for _, e := range elems {
+		if !refIndexable(e) {
+			return false, true
+		}
+		if refMatch(e, cond) {
+			return true, false
+		}
+	}
+	return false, false
+}
+
+// refIndexable reports whether jq can apply a field-path condition to an element
+// without erroring: only an object (indexed to a value) and null (indexed to null)
+// qualify; a scalar or array errors on `.field`.
+func refIndexable(v any) bool {
+	if v == nil {
+		return true
+	}
+	_, ok := v.(map[string]any)
+	return ok
 }
 
 // refRegexp compiles a test() pattern the way gojq does — i -> (?i), jq m -> (?s)
@@ -219,7 +304,59 @@ func genDoc(rng *rand.Rand) string {
 		// n present but not an object, so a nested path is structurally ambiguous.
 		parts = append(parts, `"n":`+valueSnippets[rng.Intn(len(valueSnippets))])
 	}
+	if rng.Intn(4) != 0 { // ~75% present, exercising the container-node fields
+		parts = append(parts, `"xs":`+xsSnippets[rng.Intn(len(xsSnippets))])
+	}
 	return "{" + strings.Join(parts, ",") + "}"
+}
+
+// xsSnippets are the raw values the "xs" field draws from for ElemMatch/NoneMatch:
+// arrays and objects of element objects (definite folds), empty containers, mixes
+// with scalars and nulls (undecidable folds), and non-containers (jq any errors).
+var xsSnippets = []string{
+	`[{"k":1},{"k":2}]`, `[{"k":1}]`, `[{"k":2},{"k":3}]`, `[]`,
+	`[{"k":1},5]`, `[5,{"k":1}]`, `[1,2]`, `[null,{"k":1}]`,
+	`{"p":{"k":1},"q":{"k":2}}`, `{"p":{"k":2}}`, `{}`,
+	`"str"`, `5`,
+}
+
+// sizeNs are the target lengths Size is generated with, spanning zero, the exact
+// counts of the generated values, and misses.
+var sizeNs = []int{0, 1, 2, 3, 5}
+
+// elemCondValues and elemCondNums are the scalars an element condition compares the
+// element's own k (or absent j) against, spanning the element key values and a type
+// mismatch.
+var (
+	elemCondValues = []any{1.0, 2.0, 5.0, "x"}
+	elemCondNums   = []any{1.0, 2.0}
+)
+
+// genElemCond builds the element condition of an ElemMatch/NoneMatch over the
+// element's own fields, covering Eq, Cmp, and And/Or of equalities — the exact
+// shapes pushdown emits as an any(cond) argument.
+func genElemCond(rng *rand.Rand) predicate.Node {
+	k := []string{"k"}
+	j := []string{"j"}
+	switch rng.Intn(5) {
+	case 0:
+		return predicate.Eq{Path: k, Value: elemCondValues[rng.Intn(len(elemCondValues))]}
+	case 1:
+		ops := []predicate.Op{predicate.Gt, predicate.Ge, predicate.Lt, predicate.Le}
+		return predicate.Cmp{Path: k, Op: ops[rng.Intn(len(ops))], Value: elemCondNums[rng.Intn(len(elemCondNums))]}
+	case 2:
+		return predicate.And{
+			predicate.Eq{Path: k, Value: elemCondValues[rng.Intn(len(elemCondValues))]},
+			predicate.Eq{Path: j, Value: elemCondValues[rng.Intn(len(elemCondValues))]},
+		}
+	case 3:
+		return predicate.Or{
+			predicate.Eq{Path: k, Value: elemCondValues[rng.Intn(len(elemCondValues))]},
+			predicate.Eq{Path: k, Value: elemCondValues[rng.Intn(len(elemCondValues))]},
+		}
+	default:
+		return predicate.Eq{Path: j, Value: elemCondValues[rng.Intn(len(elemCondValues))]}
+	}
 }
 
 // predPaths are the field paths predicates are generated over: three top-level and
@@ -256,10 +393,12 @@ func genPred(rng *rand.Rand, depth int) predicate.Node {
 	return predicate.Or(kids)
 }
 
-// genLeaf builds a random leaf predicate.
+// genLeaf builds a random leaf predicate. Scalar-field nodes draw a path from
+// predPaths; the container nodes ElemMatch/NoneMatch always target the "xs" field,
+// whose values span arrays, objects, and non-containers.
 func genLeaf(rng *rand.Rand) predicate.Node {
 	path := predPaths[rng.Intn(len(predPaths))]
-	switch rng.Intn(6) {
+	switch rng.Intn(9) {
 	case 0:
 		return predicate.Eq{Path: path, Value: eqValues[rng.Intn(len(eqValues))]}
 	case 1:
@@ -271,11 +410,17 @@ func genLeaf(rng *rand.Rand) predicate.Node {
 		return predicate.Exists{Path: path}
 	case 4:
 		return predicate.NotExists{Path: path}
-	default:
+	case 5:
 		return predicate.Regex{
 			Path:    path,
 			Pattern: regexPatterns[rng.Intn(len(regexPatterns))],
 			Flags:   regexFlags[rng.Intn(len(regexFlags))],
 		}
+	case 6:
+		return predicate.Size{Path: path, N: sizeNs[rng.Intn(len(sizeNs))]}
+	case 7:
+		return predicate.ElemMatch{Path: []string{"xs"}, Cond: genElemCond(rng)}
+	default:
+		return predicate.NoneMatch{Path: []string{"xs"}, Cond: genElemCond(rng)}
 	}
 }

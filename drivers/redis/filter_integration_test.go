@@ -3,10 +3,13 @@ package redis_test
 import (
 	"context"
 	"errors"
+	"math"
+	"math/big"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/itchyny/gojq"
 	"github.com/stretchr/testify/require"
@@ -29,10 +32,12 @@ func seedFilterKeyspace(t *testing.T, store *iqredis.Store) (jsonKeys, otherKeys
 	// The s field spans the Regex prefilter's cases: doc1/doc3 are strings that
 	// match ^h (case-insensitively), doc2 a string that does not, doc4 omits s
 	// (missing), and doc5 carries a non-string s (jq test() would error, so it must
-	// never be dropped).
+	// never be dropped). The items array spans the Size/ElemMatch/NoneMatch cases:
+	// doc1 has an element q==1 (any matches), doc2 has none (any fails), and the rest
+	// omit items entirely (a missing array — length 0, any over null errors).
 	docs := map[string]string{
-		"iq:test:sf:doc1": `{"author":{"name":"Rob"},"year":2015,"lang":"go","s":"hello"}`,
-		"iq:test:sf:doc2": `{"author":{"name":"Ken"},"year":1978,"lang":"c","s":"World"}`,
+		"iq:test:sf:doc1": `{"author":{"name":"Rob"},"year":2015,"lang":"go","s":"hello","items":[{"q":1},{"q":2}]}`,
+		"iq:test:sf:doc2": `{"author":{"name":"Ken"},"year":1978,"lang":"c","s":"World","items":[{"q":5}]}`,
 		"iq:test:sf:doc3": `{"author":{"name":"Rob"},"year":1970,"lang":"b","s":"Hi there"}`,
 		"iq:test:sf:doc4": `{"year":2000}`,
 		"iq:test:sf:doc5": `{"author":{"name":"Rob"},"year":"recent","s":123}`,
@@ -91,6 +96,15 @@ func TestScanFilteredMatchesRefilteredScanBatches(t *testing.T) {
 		// Regex over s: matching (doc1/doc3), non-matching (doc2, dropped),
 		// non-string (doc5, kept), and missing (doc4, kept) all exercised at once.
 		{"regex on s, mixed string/non-string/missing", predicate.Regex{Path: []string{"s"}, Pattern: "^h", Flags: "i"}},
+		// Size over items: doc1 (length 2, kept), doc2 (length 1, dropped), and the
+		// items-less docs (length 0, dropped) — a missing array is jq's null length 0.
+		{"size on items array", predicate.Size{Path: []string{"items"}, N: 2}},
+		// ElemMatch over items: doc1 has an element q==1 (kept), doc2's elements all
+		// fail (dropped), and the items-less docs stay (any over a missing array errors).
+		{"elemmatch q==1 over items", predicate.ElemMatch{Path: []string{"items"}, Cond: predicate.Eq{Path: []string{"q"}, Value: 1.0}}},
+		// NoneMatch over items: doc1 has a matching element so it is dropped, doc2's
+		// elements all fail so it stays, and the items-less docs stay.
+		{"nonematch q==1 over items", predicate.NoneMatch{Path: []string{"items"}, Cond: predicate.Eq{Path: []string{"q"}, Value: 1.0}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -218,9 +232,76 @@ func refMatchValue(v any, pred predicate.Node) bool {
 			pat = "(?s)" + pat
 		}
 		return regexp.MustCompile(pat).MatchString(s)
+	case predicate.Size:
+		return refSizeValue(lookup(v, n.Path), n.N)
+	case predicate.ElemMatch:
+		// jq's any errors on a non-container or a non-indexable element ahead of a
+		// match; such an error must not drop the document, so it counts as must-keep.
+		match, errored := refAnyValue(lookup(v, n.Path), n.Cond)
+		return errored || match
+	case predicate.NoneMatch:
+		match, errored := refAnyValue(lookup(v, n.Path), n.Cond)
+		return errored || !match
 	default:
 		return false
 	}
+}
+
+// refSizeValue mirrors jq's length compared to n over a decoded value: array
+// elements, object keys, string runes, 0 for null, |value| for a number; a boolean
+// (jq length errors) and any unexpected type are must-keep.
+func refSizeValue(v any, n int) bool {
+	switch t := v.(type) {
+	case nil:
+		return n == 0
+	case string:
+		return utf8.RuneCountInString(t) == n
+	case []any:
+		return len(t) == n
+	case map[string]any:
+		return len(t) == n
+	case bool:
+		return true
+	case int:
+		if t < 0 {
+			t = -t
+		}
+		return t == n
+	case *big.Int:
+		return new(big.Int).Abs(t).Cmp(big.NewInt(int64(n))) == 0
+	case float64:
+		return math.Abs(t) == float64(n)
+	default:
+		return true
+	}
+}
+
+// refAnyValue mirrors jq's any(Cond), short-circuiting in element order: match=true
+// at the first element satisfying Cond, errored=true on a non-container or a
+// non-indexable element reached before any match (jq would error there).
+func refAnyValue(v any, cond predicate.Node) (match, errored bool) {
+	var elems []any
+	switch t := v.(type) {
+	case []any:
+		elems = t
+	case map[string]any:
+		for _, e := range t {
+			elems = append(elems, e)
+		}
+	default:
+		return false, true
+	}
+	for _, e := range elems {
+		if e != nil {
+			if _, ok := e.(map[string]any); !ok {
+				return false, true
+			}
+		}
+		if refMatchValue(e, cond) {
+			return true, false
+		}
+	}
+	return false, false
 }
 
 // lookup returns the value at path or nil (jq's null) when it is absent.

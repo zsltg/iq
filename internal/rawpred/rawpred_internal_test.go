@@ -193,21 +193,176 @@ func TestEvalAndOr(t *testing.T) {
 	}
 }
 
-func TestEvalUnhandledNodes(t *testing.T) {
-	raw := `{"a":[1,2,3]}`
-	nodes := []predicate.Node{
-		predicate.Size{Path: []string{"a"}, N: 3},
-		predicate.ElemMatch{Path: []string{"a"}, Cond: predicate.Eq{Path: []string{"x"}, Value: 1.0}},
-		predicate.NoneMatch{Path: []string{"a"}, Cond: predicate.Eq{Path: []string{"x"}, Value: 1.0}},
-		// A Regex nested in an ElemMatch/NoneMatch Cond is not descended into: the
-		// container is unknown in v1, so the whole node stays unknown even though the
-		// inner pattern is a definite non-match on a string element.
-		predicate.ElemMatch{Path: []string{"a"}, Cond: predicate.Regex{Path: []string{"s"}, Pattern: "^z"}},
-		predicate.NoneMatch{Path: []string{"a"}, Cond: predicate.Regex{Path: []string{"s"}, Pattern: "^z"}},
+func TestEvalNilNode(t *testing.T) {
+	// A nil predicate falls through eval's type switch to the default branch and is
+	// never provable, so it is unknown (the document is kept).
+	requireTriple(t, `{"a":5}`, nil, unknown)
+}
+
+func TestEvalSize(t *testing.T) {
+	sz := func(path []string, n int) predicate.Size {
+		return predicate.Size{Path: path, N: n}
 	}
-	for _, n := range nodes {
-		t.Run(fmt.Sprintf("%T", n), func(t *testing.T) {
-			requireTriple(t, raw, n, unknown)
+	a := func(n int) predicate.Size { return sz([]string{"a"}, n) }
+	tests := []struct {
+		name string
+		raw  string
+		pred predicate.Size
+		want triple
+	}{
+		// Array: jq length is the element count.
+		{"array count matches", `{"a":[1,2,3]}`, a(3), definiteYes},
+		{"array count below drops", `{"a":[1,2,3]}`, a(2), definiteNo},
+		{"array count above drops", `{"a":[1,2,3]}`, a(4), definiteNo},
+		{"empty array is zero", `{"a":[]}`, a(0), definiteYes},
+		{"empty array vs one drops", `{"a":[]}`, a(1), definiteNo},
+		{"array vs negative drops", `{"a":[1,2,3]}`, a(-1), definiteNo},
+		{"nested array count", `{"n":{"x":[1,2]}}`, sz([]string{"n", "x"}, 2), definiteYes},
+		// Object: jq length is the key count.
+		{"object key count matches", `{"a":{"x":1,"y":2}}`, a(2), definiteYes},
+		{"object key count drops", `{"a":{"x":1,"y":2}}`, a(3), definiteNo},
+		{"empty object is zero", `{"a":{}}`, a(0), definiteYes},
+		// String: jq length is the rune count of the unescaped value.
+		{"string rune count matches", `{"a":"hello"}`, a(5), definiteYes},
+		{"string rune count drops", `{"a":"hello"}`, a(4), definiteNo},
+		{"empty string is zero", `{"a":""}`, a(0), definiteYes},
+		{"unicode literal counts runes not bytes", `{"a":"café"}`, a(4), definiteYes},
+		{"unicode literal byte count drops", `{"a":"café"}`, a(5), definiteNo},
+		{"unicode escape counts one rune", `{"a":"café"}`, a(4), definiteYes},
+		{"multibyte emoji counts once", `{"a":"a😀b"}`, a(3), definiteYes},
+		{"multibyte emoji byte count drops", `{"a":"a😀b"}`, a(6), definiteNo},
+		{"escaped quote counts runes", `{"a":"a\"b"}`, a(3), definiteYes},
+		// Null and absent: jq length of null is 0.
+		{"null is zero", `{"a":null}`, a(0), definiteYes},
+		{"null vs one drops", `{"a":null}`, a(1), definiteNo},
+		{"absent field is zero", `{"b":1}`, a(0), definiteYes},
+		{"absent field vs one drops", `{"b":1}`, a(1), definiteNo},
+		// Number: jq length is |literal|, decided only for a plain int64.
+		{"integer magnitude matches", `{"a":5}`, a(5), definiteYes},
+		{"integer magnitude drops", `{"a":5}`, a(4), definiteNo},
+		{"zero number matches zero", `{"a":0}`, a(0), definiteYes},
+		{"negative uses absolute value", `{"a":-3}`, a(3), definiteYes},
+		{"negative absolute value drops", `{"a":-3}`, a(2), definiteNo},
+		// The digit 9 must parse in base 10 (a base-9 parse would reject it), and a
+		// multi-digit value must read in base 10 (base 11 would read "19" as 20).
+		{"single digit nine decides", `{"a":9}`, a(9), definiteYes},
+		{"two-digit value decides in base ten", `{"a":19}`, a(19), definiteYes},
+		{"two-digit value miss drops in base ten", `{"a":19}`, a(20), definiteNo},
+		{"negative nine uses magnitude", `{"a":-9}`, a(9), definiteYes},
+		// int64 max needs the full 63 magnitude bits: a narrower parse would reject it.
+		{"int64 max magnitude decides", `{"a":9223372036854775807}`, a(9223372036854775807), definiteYes},
+		{"int64 max magnitude miss drops", `{"a":9223372036854775807}`, a(5), definiteNo},
+		// A number's length is never negative, so a negative n drops it definitively
+		// even for a value the numeric rule would otherwise leave unknown.
+		{"integer vs negative n drops", `{"a":5}`, a(-1), definiteNo},
+		{"fractional vs negative n drops", `{"a":1.5}`, a(-1), definiteNo},
+		{"fractional number unknown", `{"a":1.5}`, a(1), unknown},
+		{"fractional number unknown two", `{"a":1.5}`, a(2), unknown},
+		{"exponent number unknown", `{"a":1e2}`, a(100), unknown},
+		{"big int number unknown", `{"a":100000000000000000001}`, a(5), unknown},
+		{"min int64 unknown", `{"a":-9223372036854775808}`, a(0), unknown},
+		// Boolean: jq length errors on a boolean, so it is kept.
+		{"boolean unknown", `{"a":true}`, a(1), unknown},
+		{"boolean unknown zero", `{"a":false}`, a(0), unknown},
+		// Structural surprises are unknown.
+		{"ambiguous path unknown", `{"n":5}`, sz([]string{"n", "x"}, 1), unknown},
+		{"root not object unknown", `[1,2]`, a(2), unknown},
+		{"malformed json unknown", `{"a":`, a(1), unknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requireTriple(t, tt.raw, tt.pred, tt.want)
+		})
+	}
+}
+
+// elemCondK is the standard element condition used across the ElemMatch/NoneMatch
+// tables: the element's own field k equals 1.
+var elemCondK = predicate.Eq{Path: []string{"k"}, Value: 1.0}
+
+func TestEvalElemMatch(t *testing.T) {
+	em := func(path []string, cond predicate.Node) predicate.ElemMatch {
+		return predicate.ElemMatch{Path: path, Cond: cond}
+	}
+	xs := func(cond predicate.Node) predicate.ElemMatch { return em([]string{"xs"}, cond) }
+	tests := []struct {
+		name string
+		raw  string
+		pred predicate.ElemMatch
+		want triple
+	}{
+		// Array container.
+		{"array single match", `{"xs":[{"k":1}]}`, xs(elemCondK), definiteYes},
+		{"array match among failures", `{"xs":[{"k":2},{"k":1}]}`, xs(elemCondK), definiteYes},
+		{"array all fail drops", `{"xs":[{"k":2},{"k":3}]}`, xs(elemCondK), definiteNo},
+		{"empty array drops", `{"xs":[]}`, xs(elemCondK), definiteNo},
+		{"array match wins over scalar", `{"xs":[5,{"k":1}]}`, xs(elemCondK), definiteYes},
+		{"array fail plus scalar unknown", `{"xs":[{"k":2},5]}`, xs(elemCondK), unknown},
+		{"array of scalars unknown", `{"xs":[1,2]}`, xs(elemCondK), unknown},
+		{"array null element blocks drop", `{"xs":[null,{"k":2}]}`, xs(elemCondK), unknown},
+		{"array nested-array element match", `{"xs":[[1],{"k":1}]}`, xs(elemCondK), definiteYes},
+		// Object container: jq any iterates the values.
+		{"object value match", `{"xs":{"a":{"k":1},"b":{"k":2}}}`, xs(elemCondK), definiteYes},
+		{"object values all fail drops", `{"xs":{"a":{"k":2},"b":{"k":3}}}`, xs(elemCondK), definiteNo},
+		{"empty object drops", `{"xs":{}}`, xs(elemCondK), definiteNo},
+		{"object scalar value with match", `{"xs":{"a":5,"b":{"k":1}}}`, xs(elemCondK), definiteYes},
+		{"object scalar value all fail unknown", `{"xs":{"a":{"k":2},"b":5}}`, xs(elemCondK), unknown},
+		// Non-container, absent, ambiguous: jq any errors or cannot resolve.
+		{"absent field unknown", `{"other":1}`, xs(elemCondK), unknown},
+		{"scalar field unknown", `{"xs":5}`, xs(elemCondK), unknown},
+		{"string field unknown", `{"xs":"hi"}`, xs(elemCondK), unknown},
+		{"null field unknown", `{"xs":null}`, xs(elemCondK), unknown},
+		{"nested container path", `{"n":{"xs":[{"k":1}]}}`, em([]string{"n", "xs"}, elemCondK), definiteYes},
+		// Compound and nested-regex conditions (prepare now descends into Cond).
+		{"and cond match", `{"xs":[{"k":1,"j":2}]}`, xs(predicate.And{elemCondK, predicate.Eq{Path: []string{"j"}, Value: 2.0}}), definiteYes},
+		{"and cond one leg fails drops", `{"xs":[{"k":1,"j":3}]}`, xs(predicate.And{elemCondK, predicate.Eq{Path: []string{"j"}, Value: 2.0}}), definiteNo},
+		{"or cond match", `{"xs":[{"k":9}]}`, xs(predicate.Or{elemCondK, predicate.Eq{Path: []string{"k"}, Value: 9.0}}), definiteYes},
+		{"regex cond match", `{"xs":[{"k":"hi"}]}`, xs(predicate.Regex{Path: []string{"k"}, Pattern: "^h"}), definiteYes},
+		{"regex cond non-match drops", `{"xs":[{"k":"bye"}]}`, xs(predicate.Regex{Path: []string{"k"}, Pattern: "^h"}), definiteNo},
+		{"regex cond non-string unknown", `{"xs":[{"k":5}]}`, xs(predicate.Regex{Path: []string{"k"}, Pattern: "^h"}), unknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requireTriple(t, tt.raw, tt.pred, tt.want)
+		})
+	}
+}
+
+func TestEvalNoneMatch(t *testing.T) {
+	nm := func(path []string, cond predicate.Node) predicate.NoneMatch {
+		return predicate.NoneMatch{Path: path, Cond: cond}
+	}
+	xs := func(cond predicate.Node) predicate.NoneMatch { return nm([]string{"xs"}, cond) }
+	tests := []struct {
+		name string
+		raw  string
+		pred predicate.NoneMatch
+		want triple
+	}{
+		// Array container.
+		{"array all fail holds", `{"xs":[{"k":2},{"k":3}]}`, xs(elemCondK), definiteYes},
+		{"array clean match drops", `{"xs":[{"k":1},{"k":2}]}`, xs(elemCondK), definiteNo},
+		// The load-bearing exactness case: a match beside an undecidable element must
+		// NOT drop, because jq's any short-circuits in order and may error first.
+		{"array match plus scalar keeps", `{"xs":[{"k":1},5]}`, xs(elemCondK), unknown},
+		{"array fail plus scalar keeps", `{"xs":[{"k":2},5]}`, xs(elemCondK), unknown},
+		{"empty array holds", `{"xs":[]}`, xs(elemCondK), definiteYes},
+		{"array null element keeps", `{"xs":[null,{"k":1}]}`, xs(elemCondK), unknown},
+		// Object container.
+		{"object all fail holds", `{"xs":{"a":{"k":2}}}`, xs(elemCondK), definiteYes},
+		{"object clean match drops", `{"xs":{"a":{"k":1},"b":{"k":2}}}`, xs(elemCondK), definiteNo},
+		{"object scalar value keeps", `{"xs":{"a":{"k":1},"b":5}}`, xs(elemCondK), unknown},
+		// Non-container, absent, ambiguous.
+		{"absent field unknown", `{"other":1}`, xs(elemCondK), unknown},
+		{"scalar field unknown", `{"xs":5}`, xs(elemCondK), unknown},
+		{"nested container path holds", `{"n":{"xs":[{"k":2}]}}`, nm([]string{"n", "xs"}, elemCondK), definiteYes},
+		// Nested-regex condition (prepare descends into a NoneMatch Cond too).
+		{"regex cond all fail holds", `{"xs":[{"k":"bye"}]}`, xs(predicate.Regex{Path: []string{"k"}, Pattern: "^h"}), definiteYes},
+		{"regex cond clean match drops", `{"xs":[{"k":"hi"},{"k":"bye"}]}`, xs(predicate.Regex{Path: []string{"k"}, Pattern: "^h"}), definiteNo},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requireTriple(t, tt.raw, tt.pred, tt.want)
 		})
 	}
 }
@@ -335,20 +490,23 @@ func TestNewMatcherCompileFailureLeavesNodeUncompiled(t *testing.T) {
 	require.Equal(t, CannotMatch, mGood.Match([]byte(`{"s":"hello"}`)), "a compiled non-matching pattern drops the document")
 }
 
-func TestNewMatcherDeduplicatesAndSkipsCond(t *testing.T) {
-	// Two identical Regex nodes share one compilation, and a Regex inside an
-	// ElemMatch Cond is never compiled (the container is unknown in v1).
+func TestNewMatcherDeduplicatesAndDescendsCond(t *testing.T) {
+	// Identical (pattern, flags) share one compilation, and prepare now descends into
+	// an ElemMatch and a NoneMatch Cond, compiling nested regexes. The NoneMatch
+	// Cond here repeats the top-level (^h, i), so it deduplicates into the same entry
+	// rather than adding a third; only the distinct ElemMatch Cond (deep, "") is new.
 	pred := predicate.And{
 		predicate.Regex{Path: []string{"s"}, Pattern: "^h", Flags: "i"},
 		predicate.Regex{Path: []string{"t"}, Pattern: "^h", Flags: "i"},
 		predicate.ElemMatch{Path: []string{"xs"}, Cond: predicate.Regex{Path: []string{"u"}, Pattern: "deep"}},
+		predicate.NoneMatch{Path: []string{"ys"}, Cond: predicate.Regex{Path: []string{"v"}, Pattern: "^h", Flags: "i"}},
 	}
 	m := NewMatcher(pred)
-	require.Len(t, m.regexes, 1, "identical (pattern, flags) share one entry and the Cond regex is not compiled")
+	require.Len(t, m.regexes, 2, "identical (pattern, flags) share one entry; the ElemMatch Cond adds a second")
 	_, ok := m.regexes[regexKey{pattern: "^h", flags: "i"}]
 	require.True(t, ok)
 	_, ok = m.regexes[regexKey{pattern: "deep", flags: ""}]
-	require.False(t, ok, "a Regex under an ElemMatch Cond must not be compiled")
+	require.True(t, ok, "a Regex under an ElemMatch Cond is compiled now that prepare descends")
 }
 
 func TestNumOrd(t *testing.T) {
