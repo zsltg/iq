@@ -1443,6 +1443,17 @@ Manage the cache with `iq cache`, bypass it for one run with `--no-cache`, or se
 - `iq cache stat [-j/--json | -y/--yaml]` — list cached dumps with their sizes.
 - `iq cache clear [<source>|<path>]` — remove all cached dumps, or just one source's/path's.
 
+**Prefilter.** A file source pushes no filter to a server (there is none), but on a streaming
+scan of an **uncached typed-JSONL** dump a compiled predicate drives a **client-side raw-byte
+prefilter**: each record's raw `value` bytes are tested against the predicate and a provable
+non-match is dropped before it is decoded, so the dominant JSON decode is skipped for records the
+filter would reject. Every other format (YAML, RDB, BSON, Extended JSON, DynamoDB JSON, Cassandra
+CSV, Neo4j APOC), and any scan served from a fresh decode cache (whose bytes are already-decoded
+CBOR, and already fast to stream), decodes in full and lets the client filter. The full jq always
+re-runs client-side, so output is identical with or without the prefilter — it only skips decoding
+dropped records; a prefiltered scan deliberately does not populate the decode cache (that would
+require decoding everything). `--no-compile` turns it off.
+
 </details>
 
 ## Cross-source queries
@@ -1764,7 +1775,13 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   gated by `--unbounded`. Behind the read ports it keeps an optional **decode cache** (`iq cache`,
   CBOR under `<user cache dir>/iq/dumps`): a full scan of a large dump tees its normalized records
   to disk, and later scans read them back instead of re-decoding — transparent to the ports, so the
-  data-flow above is unchanged, and never authoritative (a miss just re-decodes).
+  data-flow above is unchanged, and never authoritative (a miss just re-decodes). It also satisfies
+  `FilteredScanner` with a **client-side raw-byte prefilter** (`internal/rawpred`, the same trick as
+  the Redis/Elasticsearch/Couchbase prefilters): on a streaming scan of an uncached typed-JSONL dump
+  it tests each record's raw `value` bytes against the compiled predicate and drops a provable
+  non-match before decode, duplicating the core's array-tolerant JSONL scan loop driver-side (the
+  core `JSONSource` has no pre-decode seam); every other format and any fresh-cache scan fall back to
+  the plain full-decode path, and a prefiltered scan does not populate the cache.
 - `drivers/redis`, `drivers/mongo`, `drivers/cassandra`, `drivers/dynamodb`, `drivers/hbase`, `drivers/couchdb`, `drivers/couchbase`, `drivers/neo4j`, `drivers/elasticsearch` — the
   adapters. Each has one `*Store`
   satisfying the read ports

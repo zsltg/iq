@@ -47,6 +47,15 @@ type Store struct {
 	dec    numfmt.DecimalMode
 	hints  Hints       // schema hints (?types=/?keys=) a native dump omits; empty for self-describing formats.
 	cache  CacheConfig // decode-cache policy; zero value disables caching.
+
+	// prefilterChecked counts records the client-side raw-byte prefilter evaluated
+	// (ran rawpred over) across this store's filtered scans, and prefilterSkipped
+	// counts the subset it dropped before decode. They are test-only observability —
+	// never read by a query — proving the prefilter engages exactly when it should:
+	// checked stays zero on a bypassed scan (a non-JSONL format, or a fresh CBOR
+	// cache) and rises on a prefiltered one. Never part of the public surface.
+	prefilterChecked int
+	prefilterSkipped int
 }
 
 // Hints carries the schema metadata a native dump does not itself record but a reader
@@ -339,11 +348,23 @@ func (s *Store) FormatRaw(v any, _ bool) string {
 
 // ExplainPlan describes, without opening the file, the work a file query does: a
 // full decode then a client-side filter or scan. There is no server-side pushdown.
-func ExplainPlan(keys selector.KeySet, _ predicate.Node, _ bool) query.AccessPlan {
+// When a scan carries a compiled predicate, an uncached typed-JSONL dump additionally
+// runs a client-side raw-byte prefilter (rawpred) that drops a provable non-match
+// before decode; every other format, and any scan served from a fresh decode cache,
+// decodes in full and lets the client filter. The plan is static (it opens no file),
+// so it names the condition rather than resolving the dump's format here.
+func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.AccessPlan {
 	if !keys.Scan && len(keys.Keys) > 0 {
 		return query.AccessPlan{Ops: []string{
 			"decode dump file",
 			fmt.Sprintf("filter to %d key(s) client-side", len(keys.Keys)),
+		}}
+	}
+	if pred != nil {
+		return query.AccessPlan{Ops: []string{
+			"decode dump file",
+			"uncached typed-JSONL only: client-side raw-byte prefilter (rawpred) drops a provable non-match before decode",
+			"scan client-side",
 		}}
 	}
 	return query.AccessPlan{Ops: []string{"decode dump file", "scan client-side"}}

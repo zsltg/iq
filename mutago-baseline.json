@@ -174,6 +174,30 @@
       "file": "internal/pushdown/conjuncts.go",
       "mutator": "numbers/decrementer",
       "line": 40
+    },
+    {
+      "id": "37d9c30e8d5ee51e4477de4f71990e5c",
+      "file": "drivers/file/filter.go",
+      "mutator": "expression/error-guard",
+      "line": 113
+    },
+    {
+      "id": "7ce847b35cfa365f203e50b1ad2db198",
+      "file": "drivers/file/filter.go",
+      "mutator": "expression/error-guard",
+      "line": 179
+    },
+    {
+      "id": "fa325da92f2a29a6fbce8b0de0a2a116",
+      "file": "drivers/file/filter.go",
+      "mutator": "expression/remove",
+      "line": 138
+    },
+    {
+      "id": "31da6664b0f3fb8ec3b4c7524db9bf44",
+      "file": "drivers/file/filter.go",
+      "mutator": "expression/remove",
+      "line": 225
     }
   ]
 }
