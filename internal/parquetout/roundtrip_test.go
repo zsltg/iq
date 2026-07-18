@@ -3,6 +3,7 @@ package parquetout
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,6 +155,38 @@ func assertColumn(t *testing.T, s *arrow.Schema, name string, dt arrow.DataType,
 	require.Truef(t, f.Nullable, "column %q should be nullable", name)
 	require.Equalf(t, presence, presenceOf(t, f), "column %q presence", name)
 	require.Equalf(t, isJSON, isJSONField(f), "column %q arrow.json marker", name)
+}
+
+// TestWriterMapKeysSorted pins appendMap's sort.Strings: a map column with ten
+// keys per row must serialize with keys in ascending order. Go randomizes map
+// iteration, so dropping the sort yields a random order that matches the sorted
+// expectation only 1/10! of the time — the assertion is order-sensitive (a JSON
+// array), so a lost sort fails with overwhelming probability.
+func TestWriterMapKeysSorted(t *testing.T) {
+	const rows, keysPerRow = 8, 10
+	vals := make([]any, 0, rows)
+	for i := 0; i < rows; i++ {
+		cfg := map[string]any{}
+		for j := 0; j < keysPerRow; j++ {
+			// Per-(key,row)-unique keys so the object is detected as an id-keyed map.
+			cfg[fmt.Sprintf("k%02d_%d", j, i)] = j
+		}
+		vals = append(vals, map[string]any{"id": i, "cfg": cfg})
+	}
+
+	tbl := readTable(t, writeParquet(t, vals))
+	rec := oneRecord(t, tbl)
+	cfgCol := colOf(t, rec, "cfg")
+	_, isMap := field(t, tbl.Schema(), "cfg").Type.(*arrow.MapType)
+	require.True(t, isMap, "cfg should be a map")
+
+	// Row 0's entries, keys in sorted (k00 < k01 < ... < k09) order.
+	parts := make([]string, keysPerRow)
+	for j := 0; j < keysPerRow; j++ {
+		parts[j] = fmt.Sprintf(`{"key":"k%02d_0","value":%d}`, j, j)
+	}
+	want := "[" + strings.Join(parts, ",") + "]"
+	require.JSONEq(t, want, cfgCol.ValueStr(0), "map entries must serialize with keys sorted")
 }
 
 // TestWriterSingleRow pins the final single-row page: the flushPage empty-guard
