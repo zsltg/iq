@@ -37,11 +37,12 @@ func (s *Shape) ODCSSchemaObject(name string) map[string]any {
 // odcsElement renders one node as an ODCS element (a schema object at the root, a
 // property or an array item below it). name is the element identifier; the empty
 // string omits it, which is how an array item — a nameless element definition —
-// is rendered. Object fields descend into a properties array, array elements into
-// an items element. A map (an id-keyed object collapsed by inference) is a
-// dynamic-keyed object: ODCS v3.1.0 has no additionalProperties analog, so its
-// value shape is not attachable to named properties and it renders as a bare
-// object.
+// is rendered. A node carrying named fields descends into a properties array; one
+// carrying a unified array element descends into an items element. Both guards are
+// on the child slot itself, not a redundant kind check: only an object populates
+// fields (a collapsed map nils them, so it renders as a bare object — ODCS v3.1.0
+// has no additionalProperties analog), and only a non-empty array populates elem
+// (an empty array leaves it nil, so it yields no items).
 func (n *node) odcsElement(name string) map[string]any {
 	el := map[string]any{}
 	if name != "" {
@@ -53,10 +54,10 @@ func (n *node) odcsElement(name string) map[string]any {
 			el["logicalTypeOptions"] = opts
 		}
 	}
-	if n.mapVal == nil && n.kinds.has(kindObject) && len(n.fields) > 0 {
+	if len(n.fields) > 0 {
 		el["properties"] = n.odcsProperties()
 	}
-	if n.kinds.has(kindArray) && n.elem != nil {
+	if n.elem != nil {
 		el["items"] = n.elem.odcsElement("")
 	}
 	return el

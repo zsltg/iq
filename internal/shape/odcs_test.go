@@ -53,6 +53,10 @@ func TestODCSScalarTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			prop := odcsField(tt.val)
 			require.Equal(t, tt.wantType, prop["logicalType"])
+			// A scalar is neither an object nor an array: it carries no
+			// properties and no items slot.
+			require.NotContains(t, prop, "properties")
+			require.NotContains(t, prop, "items")
 			if tt.wantFormat == nil {
 				require.NotContains(t, prop, "logicalTypeOptions")
 				return
@@ -61,6 +65,25 @@ func TestODCSScalarTypes(t *testing.T) {
 			require.Equal(t, tt.wantFormat, opts["format"])
 		})
 	}
+}
+
+// TestODCSEmptyObject pins the object-boundary guard: an empty object carries
+// logicalType object but no properties key — the properties slot is emitted only
+// for a strictly non-empty field set, so an empty object never yields an empty
+// properties array.
+func TestODCSEmptyObject(t *testing.T) {
+	prop := odcsField(map[string]any{})
+	require.Equal(t, "object", prop["logicalType"])
+	require.NotContains(t, prop, "properties", "an empty object has no properties slot")
+}
+
+// TestODCSEmptyArray pins the array-boundary guard: an empty array carries
+// logicalType array but no items key — items is emitted only when the array has a
+// unified element, which an empty array never accumulates.
+func TestODCSEmptyArray(t *testing.T) {
+	prop := odcsField([]any{})
+	require.Equal(t, "array", prop["logicalType"])
+	require.NotContains(t, prop, "items", "an empty array has no items slot")
 }
 
 // TestODCSNumberIntegerCollapse pins that a field seen as both integer and number
