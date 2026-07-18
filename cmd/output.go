@@ -3,12 +3,14 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/zsltg/iq/internal/parquetout"
 	"github.com/zsltg/iq/internal/render"
 )
 
@@ -24,20 +26,22 @@ const (
 	formatYAML      outputFormat = "yaml"
 	formatGron      outputFormat = "gron"
 	formatGronArray outputFormat = "grona"
+	formatParquet   outputFormat = "parquet"
 )
 
 // namedFormats maps the --format flag's value names to the rendering they select.
 // The names match the shorthand boolean flags, plus "raw" as an alias for
 // "values" (mirroring the --raw boolean, which selects formatValues).
 var namedFormats = map[string]outputFormat{
-	"json":   formatJSON,
-	"jsonl":  formatJSONL,
-	"jsona":  formatJSONArray,
-	"yaml":   formatYAML,
-	"values": formatValues,
-	"raw":    formatValues,
-	"gron":   formatGron,
-	"grona":  formatGronArray,
+	"json":    formatJSON,
+	"jsonl":   formatJSONL,
+	"jsona":   formatJSONArray,
+	"yaml":    formatYAML,
+	"values":  formatValues,
+	"raw":     formatValues,
+	"gron":    formatGron,
+	"grona":   formatGronArray,
+	"parquet": formatParquet,
 }
 
 // namedFormat resolves a --format value to its rendering, case-insensitively and
@@ -54,7 +58,7 @@ func validateFormat(s string) error {
 		return nil
 	}
 	if _, ok := namedFormat(s); !ok {
-		return fmt.Errorf("invalid --format %q: want json, jsonl, jsona, yaml, values, gron, grona, or raw", s)
+		return fmt.Errorf("invalid --format %q: want json, jsonl, jsona, yaml, values, gron, grona, parquet, or raw", s)
 	}
 	return nil
 }
@@ -70,7 +74,7 @@ func selectFormat(cfg *config) (outputFormat, error) {
 	if cfg.format != "" {
 		f, ok := namedFormat(cfg.format)
 		if !ok {
-			return "", fmt.Errorf("invalid --format %q: want json, jsonl, jsona, yaml, values, gron, grona, or raw", cfg.format)
+			return "", fmt.Errorf("invalid --format %q: want json, jsonl, jsona, yaml, values, gron, grona, parquet, or raw", cfg.format)
 		}
 		set = append(set, f)
 	}
@@ -105,6 +109,22 @@ func selectFormat(cfg *config) (outputFormat, error) {
 	}
 }
 
+// binaryTTYCheck reports whether the destination is an interactive terminal. It
+// is a package var so tests can force the terminal branch, mirroring the
+// stdinIsTerminal seam.
+var binaryTTYCheck = isTerminalWriter
+
+// guardBinaryFormat refuses to write a binary format to an interactive terminal,
+// where the bytes would corrupt the screen. Parquet is the only binary format;
+// the check runs on the raw destination (before any progress-meter wrapping), so
+// a redirect or pipe passes. Redirecting to a file or piping is the fix.
+func guardBinaryFormat(f outputFormat, w io.Writer) error {
+	if f == formatParquet && binaryTTYCheck(w) {
+		return errors.New("refusing to write parquet to the terminal: redirect it to a file (iq '<filter>' --format parquet > out.parquet) or pipe it")
+	}
+	return nil
+}
+
 // formatter renders each value the query engine emits and, on flush, completes
 // the output. Most formatters stream and flush is a no-op; jsona closes its
 // bracket and yaml closes its encoder, so callers must flush once the engine has
@@ -129,6 +149,8 @@ func newFormatter(f outputFormat, w io.Writer, compact bool) formatter {
 		return &gronFormatter{w: w}
 	case formatGronArray:
 		return &gronFormatter{w: w, indexed: true}
+	case formatParquet:
+		return &parquetFormatter{pw: parquetout.NewWriter(w)}
 	case formatYAML:
 		if colorOn() {
 			return &colorYAMLFormatter{w: w}
@@ -355,3 +377,20 @@ func (f *colorYAMLFormatter) emit(v any) error {
 }
 
 func (f *colorYAMLFormatter) flush() error { return nil }
+
+// parquetFormatter streams the emitted values to Parquet. Unlike the text
+// formatters it buffers a leading sample to infer the schema, then writes one
+// record batch per page in bounded memory; flush writes the final page and the
+// file footer, so callers must flush once the engine has finished. The heavy
+// lifting lives in internal/parquetout, keeping the Arrow dependency out of the
+// core query path.
+type parquetFormatter struct{ pw *parquetout.Writer }
+
+func (f *parquetFormatter) emit(v any) error {
+	if err := f.pw.Add(v); err != nil {
+		return fmt.Errorf("encode result: %w", err)
+	}
+	return nil
+}
+
+func (f *parquetFormatter) flush() error { return f.pw.Close() }

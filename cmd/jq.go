@@ -92,6 +92,11 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	if err != nil {
 		return err
 	}
+	// Refuse a binary format on an interactive terminal before any store I/O,
+	// checking the raw stdout ahead of the progress-meter wrapping below.
+	if err := guardBinaryFormat(fm, cmd.OutOrStdout()); err != nil {
+		return err
+	}
 	// The scan-progress spinner renders on stderr; wrapping stdout lets it hold
 	// its repaint while rows stream, so the two never collide. A nil meter (progress
 	// off, or stderr not a terminal) makes every call below a no-op. --verbose

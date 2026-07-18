@@ -208,6 +208,9 @@ func selectTypedFormat(cfg *config) (outputFormat, error) {
 	if fm == formatValues {
 		return "", errors.New("--typed cannot use --raw/--values; choose --jsonl (default), --jsona, or --yaml")
 	}
+	if fm == formatParquet {
+		return "", errors.New("--typed cannot use --format parquet; run the query without --typed to export a columnar file, or choose --jsonl (default), --jsona, or --yaml")
+	}
 	return fm, nil
 }
 

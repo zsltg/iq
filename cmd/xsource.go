@@ -40,6 +40,9 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 	if err != nil {
 		return err
 	}
+	if err := guardBinaryFormat(fm, cmd.OutOrStdout()); err != nil {
+		return err
+	}
 	cf, err := iqconfig.Load()
 	if err != nil {
 		return err

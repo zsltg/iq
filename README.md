@@ -291,8 +291,29 @@ flags are mutually exclusive and apply to the jq read path and to `--from`/`--co
 | `-G`, `--grona` | like `--gron` but result N roots at `json[N]`, so the whole stream ungrons back to one JSON array (gron's `--stream` style) |
 
 `-f`, `--format <name>` selects the same renderings by name — `json`, `jsonl`, `jsona`,
-`yaml`, `values` (with `raw` as an alias for `values`), `gron`, `grona` — as an alternative to
-the shorthand flags above. It is mutually exclusive with them, so `-f json --jsonl` is rejected.
+`yaml`, `values` (with `raw` as an alias for `values`), `gron`, `grona`, `parquet` — as an
+alternative to the shorthand flags above. It is mutually exclusive with them, so `-f json --jsonl`
+is rejected. `parquet` has no shorthand flag: it is a binary columnar format, selected by name only.
+
+> **Parquet export (`--format parquet`).** Streams the result values to an Apache Parquet file
+> (Apache Arrow columnar format) — the bridge to pandas, Polars, DuckDB, and the wider
+> data-science ecosystem. Because it is binary, iq refuses to write it to a terminal: redirect it
+> (`iq '.[]' --format parquet > out.parquet`) or use `-o out.parquet`; a pipe or file is required.
+> The schema is inferred from the first 1000 result values (iq's schema-inference sample) and
+> projected onto Arrow types: `integer→int64`, `number→float64`, `boolean→bool`, `string→utf8`,
+> a `date-time` string→`timestamp[ns, UTC]`, a `date` string→`date32`, `object→struct`,
+> `array→list`, an id-keyed map→`map<utf8, T>`. A column whose sampled shape is heterogeneous or
+> null-only falls back to the `arrow.json` canonical extension (utf8 storage holding byte-lossless
+> canonical JSON), marked in field metadata. The Arrow schema is embedded in the file
+> (`ARROW:schema`), so exact types survive a read-back. A value that does not fit its inferred
+> column type past the sample fails the export naming the column — switch to `--format jsonl` for
+> fully heterogeneous data rather than coercing.
+>
+> **Presence caveat.** Arrow's validity bitmaps cannot distinguish a *missing* field from a field
+> present as `null` — both collapse to a null in the column. iq preserves the distinction inferred
+> from the sample in field metadata (`iq:presence` = `required` | `optional`), so it survives in
+> the schema even though the values collapse. `--typed` dumps cannot use `parquet` (they carry a
+> `{key,type,value}` envelope); run the query without `--typed` to export a columnar file.
 
 > **`--jsona` differs from sq's.** iq's `--jsona` wraps the whole result stream in one array
 > (like `jq -s`); it is the analogue of sq's plain `--json`. sq's `--jsona` instead emits one
@@ -1839,6 +1860,13 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   parent-relative (`required`/`optional`), numbers split integer from number, strings tag
   date-time/date/uuid, id-keyed sub-objects collapse to maps, and arrays unify their element shape.
   Like `diff`, it holds no I/O — the CLI samples through the ports and hands it the values.
+- `internal/parquetout` — the Apache Parquet export surface (`--format parquet`). It buffers the
+  first sample of result values, infers their shape with `internal/shape`, projects that shape onto
+  an Apache Arrow schema (int64/float64/bool/utf8, `timestamp[ns, UTC]`, `date32`, struct/list/map,
+  and an `arrow.json` utf8 fallback for a heterogeneous or null-only column), and streams one Parquet
+  record batch per page with `pqarrow`. It consumes only the normalized value stream, so the Arrow
+  dependency stays contained here and out of the driver-agnostic query core; parent-relative presence
+  rides in field metadata, since Arrow validity bitmaps cannot represent missing-vs-null.
 - `internal/config` — the saved sources and stored options. A small TOML store (named connections
   keyed by handle, plus the active source and group, plus a base **options** table and a per-source
   one) the CLI reads to resolve a query's connection and its default flags. It stays driver-agnostic
@@ -1859,7 +1887,8 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   movement/lifecycle group (`copy`/`clear`/`drop`), a source or config command
   (`add`/`ls`/`rm`/`mv`/`src`/`group`/`ping`/`inspect`/`diff`/`driver`/`config`), or a `--from`/`--combine` cross-source query —
   resolving every source name through the same registry — and formats output (a format-flag-selected
-  renderer for the jq path — `--json`, `--jsonl`, `--jsona`, `--raw`, or `--yaml`, also selectable by
+  renderer for the jq path — `--json`, `--jsonl`, `--jsona`, `--raw`, `--yaml`, `--gron`/`--grona`, or
+  the binary `--format parquet` columnar export, also selectable by
   name with `--format`, and with `--format.decimal` governing how decimals normalize; per-backend for `exec` —
   redis-cli style for Redis, JSON for Mongo), keeping the core free of any output format. The
   diagnostics surface (verbose output, file logging, error rendering, `--debug.pprof`) also lives
@@ -1920,6 +1949,7 @@ iq data clear books       # empty a container (drop removes it; both prompt unle
 iq schema prod.orders     # infer a draft 2020-12 JSON Schema from a sampled source (--sample; describes values, not keys)
 iq schema prod.orders > s.json && quicktype -s schema s.json -l go  # generate typed models (a schema is field names/types, a few hundred bytes — not a dump of documents)
 iq schema prod.orders --format odcs > orders.odcs.yaml  # emit an Open Data Contract Standard v3.1.0 contract (YAML)
+iq --src prod '.[]' --format parquet -o orders.parquet   # export results as an Apache Parquet file (typed columns from the shape sample; binary, refused to a terminal — redirect or -o)
 go test -short ./...      # fast unit tests, no external services
 go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Couchbase + Neo4j + Elasticsearch + OpenSearch via testcontainers-go (HBase needs IQ_HBASE_URL)
 docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB + Couchbase + Neo4j + Elasticsearch + OpenSearch for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984, :8091-8096/:11210, :7687, :9200, :9201)
