@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/zsltg/iq/internal/numfmt"
-	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/rawpred"
 	"github.com/zsltg/iq/internal/render"
 )
@@ -258,14 +257,16 @@ type searchResponse struct {
 // and a bool query for a pushed-down filtered scan. The PIT is always closed, even on
 // error or a cancelled ctx.
 //
-// When prefilter is non-nil, each hit's raw _source is run through rawpred against it
-// before decode, and a hit rawpred proves the predicate rejects is skipped (counted in
+// When prefilter is non-nil, each hit's raw _source is run through it before decode,
+// and a hit the prepared matcher proves the predicate rejects is skipped (counted in
 // prefilterSkipped) rather than decoded and delivered — a byte-level drop that never
-// changes results because prefilter is a conservative superset the caller re-runs in
-// full. The keyset cursor advances past every hit, skipped or kept, so pagination never
-// re-reads or loops; a page emptied entirely by the prefilter is simply not handed to
-// fn, preserving the "a scan never yields an empty batch" contract.
-func (s *Store) pagedSearch(ctx context.Context, query map[string]any, prefilter predicate.Node, fn func(batch map[string]any) error) error {
+// changes results because the matcher's predicate is a conservative superset the caller
+// re-runs in full. The matcher is built once per scan by ScanFiltered (so its Regex
+// patterns compile once, not per hit); the keyset cursor advances past every hit,
+// skipped or kept, so pagination never re-reads or loops; a page emptied entirely by
+// the prefilter is simply not handed to fn, preserving the "a scan never yields an empty
+// batch" contract.
+func (s *Store) pagedSearch(ctx context.Context, query map[string]any, prefilter *rawpred.Matcher, fn func(batch map[string]any) error) error {
 	if s.index == "" {
 		return errNoIndex
 	}
@@ -313,7 +314,7 @@ func (s *Store) pagedSearch(ctx context.Context, query map[string]any, prefilter
 			after = h.Sort
 			if prefilter != nil {
 				s.prefilterChecked++
-				if rawpred.Match(h.Source, prefilter) == rawpred.CannotMatch {
+				if prefilter.Match(h.Source) == rawpred.CannotMatch {
 					s.prefilterSkipped++
 					continue
 				}

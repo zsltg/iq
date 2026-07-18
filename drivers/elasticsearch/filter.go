@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/rawpred"
 )
 
 // fieldClass is the literal kind a mapped field can match exactly with a term query.
@@ -138,11 +139,16 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	// separate branch here: a non-narrowing predicate simply pages the whole index and
 	// the prefilter (when enabled) trims it.
 	query, _ := s.toQuery(pred)
-	prefilter := pred
-	if s.exactPush(pred) || referencesInjectedID(pred) {
-		prefilter = nil
+	// Prepare the predicate once for the whole scan only when a prefilter will actually
+	// run: NewMatcher compiles every Regex pattern here so the per-hit path never
+	// recompiles one. A nil matcher means no prefilter, exactly as before — the two
+	// bypass cases (the server query is exact, or the predicate references the injected
+	// _id) leave it nil so pagedSearch skips the raw-byte check entirely.
+	var matcher *rawpred.Matcher
+	if !s.exactPush(pred) && !referencesInjectedID(pred) {
+		matcher = rawpred.NewMatcher(pred)
 	}
-	return s.pagedSearch(ctx, query, prefilter, fn)
+	return s.pagedSearch(ctx, query, matcher, fn)
 }
 
 // exactPush reports whether toQuery's translation of n captures it exactly — the
