@@ -56,7 +56,15 @@ type driver struct {
 	// post-open health check in `iq ping`/`iq add` needs no second round-trip — like
 	// a read-only source, opening it is the reachability check.
 	verifiesOnOpen bool
-	open           func(ctx context.Context, cfg *config) (store, error)
+	// filtersScan marks a driver that narrows a scan with a pushed predicate —
+	// server-side, or a client-side raw-byte prefilter (Redis) — i.e. one that
+	// implements the FilteredScanner capability. It mirrors that capability so
+	// `--explain` can tell a conjunct a backend declined from a driver that never
+	// filters a scan at all (the read-only file driver), reporting each conjunct as
+	// client-side with the right reason. A driver that leaves it false is scanned
+	// whole and filtered client-side.
+	filtersScan bool
+	open        func(ctx context.Context, cfg *config) (store, error)
 	// explainPlan describes, without connecting, the backend calls this driver
 	// would make for a classified query and pushed predicate — the data the query
 	// plan (--explain/--verbose) shows.
@@ -83,6 +91,7 @@ var drivers = []driver{
 		doc:         "https://www.mongodb.com/docs/",
 		versions:    "4.2+",
 		addressable: true,
+		filtersScan: true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqmongo.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -99,6 +108,7 @@ var drivers = []driver{
 		doc:         "https://cassandra.apache.org/doc/",
 		versions:    "3.11+",
 		addressable: true,
+		filtersScan: true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcassandra.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -116,6 +126,7 @@ var drivers = []driver{
 		versions:       "AWS (managed)",
 		addressable:    true,
 		verifiesOnOpen: true,
+		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqdynamodb.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -133,6 +144,7 @@ var drivers = []driver{
 		versions:       "1.0+",
 		addressable:    true,
 		verifiesOnOpen: true,
+		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqhbase.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -150,6 +162,7 @@ var drivers = []driver{
 		versions:       "2.x, 3.x",
 		addressable:    true,
 		verifiesOnOpen: true,
+		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcouchdb.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -167,6 +180,7 @@ var drivers = []driver{
 		versions:       "7.x, 8.x (Community or Enterprise)",
 		addressable:    true,
 		verifiesOnOpen: true,
+		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcouchbase.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -183,6 +197,7 @@ var drivers = []driver{
 		versions:       "5.x",
 		addressable:    true,
 		verifiesOnOpen: true,
+		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqneo4j.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -200,6 +215,7 @@ var drivers = []driver{
 		versions:       "8.x",
 		addressable:    true,
 		verifiesOnOpen: true,
+		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqelasticsearch.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -219,6 +235,7 @@ var drivers = []driver{
 		verifiesOnOpen: true,
 		// OpenSearch shares the Elasticsearch driver; the source scheme selects the
 		// opensearch-go client behind the same query ports.
+		filtersScan: true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqelasticsearch.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -229,11 +246,12 @@ var drivers = []driver{
 		explainDelete: iqelasticsearch.ExplainDelete,
 	},
 	{
-		name:     "redis",
-		desc:     "Redis key-value store",
-		schemes:  []string{"redis", "rediss"},
-		doc:      "https://redis.io/docs/",
-		versions: "7.0+",
+		name:        "redis",
+		desc:        "Redis key-value store",
+		schemes:     []string{"redis", "rediss"},
+		doc:         "https://redis.io/docs/",
+		versions:    "7.0+",
+		filtersScan: true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqredis.Open(ctx, cfg.url, cfg.trace, cfg.decimalMode)
 		},

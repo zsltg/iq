@@ -458,7 +458,7 @@ IQ_LOG=true IQ_LOG_FILE=/tmp/iq.log ./iq '.[]'       # enable logging via the en
 
 `--explain` prints a formatted **query plan** and exits without connecting or executing;
 `-v`/`--verbose` prints the same plan to stderr, then runs, tracing each backend command. The plan
-shows three things, syntax-highlighted when the destination is a terminal:
+shows four things, syntax-highlighted when the destination is a terminal:
 
 - the jq filter, pretty-printed with real line breaks (nested `source("name"; "<jq>")` sub-filters
   and every `--from`/`--combine` fragment are formatted too);
@@ -467,12 +467,22 @@ shows three things, syntax-highlighted when the destination is a terminal:
   filter, on by default, or `{}` under `--no-compile`) or `find` by `_id`; Redis `SCAN 0 MATCH *
   COUNT n` plus per-key `TYPE`/typed reads (naming the client-side raw-byte prefilter when a
   predicate compiles), or pipelined typed reads for bounded keys;
-- the compiled filter as JSON — MongoDB's server-side `find` filter, or the predicate Redis's
-  client-side prefilter applies to RedisJSON values (empty under `--no-compile`).
+- the **pushdown** breakdown — one line per top-level `select(...)` conjunct saying whether the
+  backend evaluates it (`pushed`) or it re-runs client-side (`client-side`), and why a client-side
+  conjunct did not push. A conjunct is `client-side` when the compiler cannot express it as a
+  provable superset (an inexact negation, a non-portable regex, an unsafe field name, or any other
+  unpushable construct), when the backend's translator declines the compiled predicate (a range on
+  Elasticsearch, say), or when the source does no server-side filtering at all (the read-only file
+  driver). This is the observable split of what the backend evaluated versus what ran client-side;
+  it is absent under `--no-compile`;
+- the compiled filter as JSON — the merged fragment of the pushed conjuncts: MongoDB's server-side
+  `find` filter, or the predicate Redis's client-side prefilter applies to RedisJSON values (empty
+  under `--no-compile`, or when no conjunct pushes).
 
 ```bash
 ./iq --src orders --explain '.[] | select(.total > 99) | {id, total}'
 ./iq --src cache --explain '.[] | select(.active)'   # Redis SCAN + typed reads
+./iq --src orders --explain '.[] | select(.total > 99 and (.active | not))'  # one pushed, one client-side
 ./iq --src orders -v '.[] | select(.total > 99)'     # plan + live `mongo> find(...)` trace
 ./iq -v '.[]' 2>/dev/null                            # trace on stderr; stdout stays pure data
 ```
