@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.27.0 - 2026-07-18
+### Features
+- **couchbase:** prefilter residual scans client-side with rawpred (e87d76d)
+- **elasticsearch:** prefilter residual scans client-side with rawpred (102c68c)
+- **rawpred:** evaluate portable regex predicates on raw bytes (575cc7c)
+- **redis:** prefilter scans client-side with raw-byte predicate evaluation (57bea97)
+
+### Performance
+- **elasticsearch:** reuse a prepared rawpred matcher per scan (303cfd3)
+
+
 ## v0.26.0 - 2026-07-17
 ### Features
 - **output:** add gron and grona renderings (955e63a)
