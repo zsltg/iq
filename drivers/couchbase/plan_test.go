@@ -36,6 +36,42 @@ func TestExplainPlan(t *testing.T) {
 		require.Contains(t, plan.Filter["params"], "p0")
 	})
 
+	t.Run("exact push describes no client-side prefilter", func(t *testing.T) {
+		// An exact push (equality) returns precisely jq's matching set, so ExplainPlan must
+		// not claim a client-side prefilter runs — the phrase distinguishes this branch from
+		// both the partial and the non-narrowing wordings, which do mention it.
+		pred := predicate.Eq{Path: []string{"year"}, Value: 2017}
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
+		require.NotContains(t, plan.Ops[0], "raw-byte prefilter")
+		require.Equal(t, "`t`.`year` = $p0", plan.Filter["where"])
+	})
+
+	t.Run("partial push describes the where and the residual prefilter", func(t *testing.T) {
+		// An And whose != conjunct the server drops: it narrows on the equality, and the
+		// residual is trimmed by the client-side raw-byte prefilter. "residual" is the phrase
+		// unique to this branch (the non-narrowing wording says "provable non-matches"), so it
+		// pins the exact-vs-partial split, not a shared prefix.
+		pred := predicate.And{
+			predicate.Eq{Path: []string{"year"}, Value: 2017},
+			predicate.Ne{Path: []string{"lang"}, Value: "go"},
+		}
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
+		require.Contains(t, plan.Ops[0], "raw-byte prefilter")
+		require.Contains(t, plan.Ops[0], "residual")
+		require.Equal(t, "`t`.`year` = $p0", plan.Filter["where"])
+	})
+
+	t.Run("non-narrowing predicate is a full scan with the prefilter", func(t *testing.T) {
+		// Nothing narrows, so the plan is a full keyset scan trimmed by the prefilter.
+		// "provable non-matches" is the phrase unique to this branch, distinguishing it from
+		// the partial wording's "residual" and pinning the default (non-narrowing) arm.
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, predicate.Ne{Path: []string{"year"}, Value: 2017}, false)
+		require.Contains(t, plan.Ops[0], "raw-byte prefilter")
+		require.Contains(t, plan.Ops[0], "provable non-matches")
+		require.NotContains(t, plan.Ops[0], "WHERE <pushed>")
+		require.Nil(t, plan.Filter)
+	})
+
 	t.Run("narrowing predicate with no params omits the params key", func(t *testing.T) {
 		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, predicate.Exists{Path: []string{"tags"}}, false)
 		require.Equal(t, "`t`.`tags` IS NOT MISSING", plan.Filter["where"])

@@ -1,9 +1,11 @@
 package couchbase
 
 import (
+	"context"
 	"sort"
 	"testing"
 
+	"github.com/couchbase/gocb/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/predicate"
@@ -147,6 +149,24 @@ func TestToWhereNotNarrowing(t *testing.T) {
 			require.Nil(t, params)
 		})
 	}
+}
+
+// TestScanFilteredContextCancelled pins that the context ScanFiltered is handed flows all
+// the way into the gocb query execution — the structural twin of the ScanBatches check,
+// on ScanFiltered's delegation to scan. It uses a non-exact predicate (Ne) so the residual
+// prefilter path is taken, and an explicit Cancel (never a timeout duration) so the
+// cancellation is deterministic and immediate.
+func TestScanFilteredContextCancelled(t *testing.T) {
+	st := seedCollection(t, books())
+	ctx := skipShort(t)
+	cctx, cancel := context.WithCancel(ctx)
+	cancel() // cancel before the scan issues its first query
+
+	err := st.ScanFiltered(cctx, predicate.Ne{Path: []string{"year"}, Value: 2015.0}, func(map[string]any) error { return nil })
+	require.Error(t, err, "a cancelled context must surface as an error, not a silent full scan")
+	// gocb surfaces a cancelled request as its own sentinel (ErrRequestCanceled), not a
+	// wrapped context.Canceled, so match the driver's actual error rather than ctx.Err().
+	require.ErrorIs(t, err, gocb.ErrRequestCanceled)
 }
 
 // TestScanFilteredParity checks the server-side pushdown returns a superset of the true

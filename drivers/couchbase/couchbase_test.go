@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/couchbase/gocb/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -68,6 +69,23 @@ func TestScanBatches(t *testing.T) {
 	require.Greater(t, pages, 1, "small page size should yield multiple pages")
 	require.Len(t, got, len(fixture))
 	require.Equal(t, fixture["2"], got["2"])
+}
+
+// TestScanBatchesContextCancelled pins that the context ScanBatches is handed flows all
+// the way into the gocb query execution: a context cancelled before the scan starts must
+// surface the cancellation instead of being ignored. It uses an explicit Cancel (never a
+// timeout duration) so the cancellation is deterministic and immediate.
+func TestScanBatchesContextCancelled(t *testing.T) {
+	st := seedCollection(t, books())
+	ctx := skipShort(t)
+	cctx, cancel := context.WithCancel(ctx)
+	cancel() // cancel before the scan issues its first query
+
+	err := st.ScanBatches(cctx, func(map[string]any) error { return nil })
+	require.Error(t, err, "a cancelled context must surface as an error, not a silent full scan")
+	// gocb surfaces a cancelled request as its own sentinel (ErrRequestCanceled), not a
+	// wrapped context.Canceled, so match the driver's actual error rather than ctx.Err().
+	require.ErrorIs(t, err, gocb.ErrRequestCanceled)
 }
 
 func TestScanBatchesEmpty(t *testing.T) {

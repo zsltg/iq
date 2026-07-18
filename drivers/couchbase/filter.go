@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/rawpred"
 )
 
 // ScanFiltered streams only the documents a SQL++ WHERE pre-selects for pred, letting
@@ -13,16 +14,89 @@ import (
 // re-runs the full jq per page), so returning extra documents is safe and returning
 // too few is not. When pred compiles to nothing that narrows — an operator whose SQL++
 // semantics could wrongly exclude a jq match (!=, regex, length, element match) — the
-// scan falls back to the plain keyset walk, which is correct and no more expensive.
+// scan falls back to the plain keyset walk (an empty WHERE), which is correct and no
+// more expensive.
+//
+// Whatever the WHERE leaves behind, a client-side raw-byte prefilter runs the full
+// predicate over each row's raw value before it is decoded and drops any row rawpred
+// proves the predicate rejects — so a full-scan fallback or a partially-pushed scan
+// skips the (dominant) UseNumber decode of the documents the query service could not
+// exclude. The prefilter is bypassed only when the WHERE already captures the predicate
+// exactly (the raw scan would only re-confirm matches): a nil matcher means no prefilter.
+// A Couchbase document's ID is KV metadata, never injected into the value the filter
+// sees, so there is no injected-field trap — the raw value rawpred reads is exactly the
+// document.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if s.collection == nil {
 		return errNoBucket
 	}
-	where, params, narrowing := toWhere(pred)
-	if !narrowing {
-		return s.ScanBatches(ctx, fn)
+	// toWhere yields a non-narrowing empty fragment for a predicate it cannot push, and
+	// scan reads an empty where as a full keyset walk, so the fallback needs no separate
+	// branch: a non-narrowing predicate simply walks the whole collection and the
+	// prefilter trims it.
+	where, params, _ := toWhere(pred)
+	// Prepare the predicate once for the whole scan only when a prefilter will actually
+	// run: NewMatcher compiles every Regex pattern here so the per-row path never
+	// recompiles one. A nil matcher means no prefilter — the single bypass case (the
+	// WHERE captures the predicate exactly) leaves it nil so scan skips the raw-byte
+	// check entirely.
+	var matcher *rawpred.Matcher
+	if !exactWhere(pred) {
+		matcher = rawpred.NewMatcher(pred)
 	}
-	return s.scan(ctx, where, params, fn)
+	return s.scan(ctx, where, params, matcher, fn)
+}
+
+// exactWhere reports whether toWhere's translation of n captures it exactly — the query
+// service's WHERE returns precisely jq's matching set, so a client-side raw-byte
+// prefilter over the same rows would only re-confirm matches and is pure overhead. Every
+// node toWhere pushes reproduces jq's semantics exactly: an equality (a `null` literal
+// widened to null-or-missing, measured 0.0% over-return), the ISTYPE-widened range
+// (measured EXACTLY 0.0% — the widening reproduces jq's cross-type order precisely), and
+// existence. Exactness is therefore lost only when a conjunct is dropped or a node is
+// refused: an And is exact only when every conjunct is pushed exactly (a dropped Regex or
+// != conjunct makes it inexact), an Or only when every branch is, and a node toWhere
+// cannot push at all (!=, regex, length, element match, any unknown node) is never exact.
+// A field path toWhere would refuse (a backtick component) is likewise not exact, so the
+// prefilter runs there too.
+func exactWhere(n predicate.Node) bool {
+	switch t := n.(type) {
+	case predicate.Eq:
+		_, ok := fieldRef(t.Path)
+		return ok
+	case predicate.Cmp:
+		_, ok := fieldRef(t.Path)
+		return ok
+	case predicate.Exists:
+		_, ok := fieldRef(t.Path)
+		return ok
+	case predicate.NotExists:
+		_, ok := fieldRef(t.Path)
+		return ok
+	case predicate.And:
+		return allExact(t)
+	case predicate.Or:
+		return allExact(t)
+	default:
+		// Ne, Regex, Size, ElemMatch, NoneMatch, and any unknown node: not pushed, so
+		// never exact — the prefilter must run.
+		return false
+	}
+}
+
+// allExact reports whether every child of a non-empty composite is pushed exactly. An
+// empty composite is never exact: toWhere declines an empty And/Or as non-narrowing, so
+// there is no clause backing an exactness claim.
+func allExact(children []predicate.Node) bool {
+	if len(children) == 0 {
+		return false
+	}
+	for _, c := range children {
+		if !exactWhere(c) {
+			return false
+		}
+	}
+	return true
 }
 
 // rangeOp maps a range operator to its SQL++ comparison symbol.

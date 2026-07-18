@@ -556,8 +556,9 @@ same contract:
   [Bounded reads, streaming scans, and materialized scans](#bounded-reads-streaming-scans-and-materialized-scans)).
 - **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter —
   server-side where the backend can filter, or a client-side raw-byte prefilter that drops a provable
-  non-match before decode where it cannot (Redis, on RedisJSON values; Elasticsearch/OpenSearch, over
-  the residual their server-side query could not narrow). The full jq always re-runs client-side, so
+  non-match before decode where it cannot (Redis, on RedisJSON values; Elasticsearch/OpenSearch and
+  Couchbase, over the residual their server-side query could not narrow). The full jq always re-runs
+  client-side, so
   output is identical with or without it, and [`--explain`](#query-plan---explain--v) shows exactly
   what was pushed.
 - **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, drop, and per-key
@@ -1116,6 +1117,16 @@ validated and backtick-quoted, so nothing user-supplied is ever interpolated raw
 changes results, only speed: the full jq always re-runs client-side, so a pushed filter is a
 conservative pre-filter; `--explain` shows the `WHERE`, and `--no-compile` streams the whole
 collection and filters entirely client-side.
+
+Whatever the `WHERE` leaves behind, a **client-side raw-byte prefilter** runs the full predicate over
+each row's raw value before it is decoded, and drops any row it can prove the predicate rejects. So a
+fallback scan (a `!=`, a regex) or a partially-pushed scan (a dropped conjunct) skips the dominant
+`UseNumber` decode of the documents the query service could not exclude — the same trick as the Redis
+and Elasticsearch prefilters, on the bytes the keyset scan already returned. It is byte-level and
+never changes results (the full jq still re-runs client-side), so it is bypassed in the one case where
+it would be wasted: when the `WHERE` already captured the predicate exactly (the query service
+returned only matches). A Couchbase document's ID is KV metadata, never injected into the value, so —
+unlike the Elasticsearch prefilter — there is no injected-field case to disable it.
 
 **Index requirement.** A SQL++ scan needs an index on the collection. On Server 7.6+ a sequential
 scan answers index-free queries automatically; on 7.0–7.5, or for large collections, create one:

@@ -26,6 +26,7 @@ import (
 	"github.com/couchbase/gocb/v2"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/rawpred"
 	"github.com/zsltg/iq/internal/render"
 )
 
@@ -70,6 +71,14 @@ type Store struct {
 	pageSize   int
 	decimal    numfmt.DecimalMode
 	trace      io.Writer
+	// prefilterChecked counts rows the client-side raw-byte prefilter evaluated (ran
+	// rawpred over) across this store's filtered scans, and prefilterSkipped counts the
+	// subset it dropped before decode. They are diagnostic counters the package's tests
+	// read to prove the prefilter engages exactly when it should — checked stays zero on
+	// an exact-push scan and rises on a prefiltered one — and never part of the public
+	// API; no result depends on either.
+	prefilterChecked int
+	prefilterSkipped int
 }
 
 // connConfig is the parsed form of a couchbase:// source URL: the connection string
@@ -310,14 +319,22 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 // streaming caller keeps only one page in memory and the loop provably terminates on a
 // short page. Bounded by ctx; stops at the first error from fn or the driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
-	return s.scan(ctx, "", nil, fn)
+	return s.scan(ctx, "", nil, nil, fn)
 }
 
 // scan runs the keyset walk shared by ScanBatches and ScanFiltered. where, when
 // non-empty, is an extra predicate ANDed into each page's WHERE (its named parameters
 // ride in params); it must never reference the reserved $after/$page names. Every
 // value travels as a named parameter, never concatenated.
-func (s *Store) scan(ctx context.Context, where string, params map[string]any, fn func(batch map[string]any) error) error {
+//
+// When matcher is non-nil, each row's raw value is run through it before decode, and a
+// row the prepared matcher proves the predicate rejects is skipped (counted in
+// prefilterSkipped) rather than decoded and delivered — a byte-level drop that never
+// changes results because the matcher's predicate is a conservative superset the caller
+// re-runs in full. The keyset cursor advances past every row, skipped or kept, so
+// pagination never re-reads or loops; a page emptied entirely by the prefilter is never
+// handed to fn, preserving the "a scan never yields an empty batch" contract.
+func (s *Store) scan(ctx context.Context, where string, params map[string]any, matcher *rawpred.Matcher, fn func(batch map[string]any) error) error {
 	if s.collection == nil {
 		return errNoBucket
 	}
@@ -353,8 +370,17 @@ func (s *Store) scan(ctx context.Context, where string, params map[string]any, f
 				_ = rows.Close()
 				return fmt.Errorf("couchbase scan: %w", err)
 			}
+			// Advance the keyset cursor for every row read, dropped or kept, so a
+			// prefiltered-out document never stalls or rewinds the walk.
 			n++
 			last = row.K
+			if matcher != nil {
+				s.prefilterChecked++
+				if matcher.Match(row.V) == rawpred.CannotMatch {
+					s.prefilterSkipped++
+					continue
+				}
+			}
 			page[row.K] = decodeValue(row.V, s.decimal)
 		}
 		if err := rows.Err(); err != nil {
