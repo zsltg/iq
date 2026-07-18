@@ -30,8 +30,11 @@ var _ query.FilteredScanner = (*Store)(nil)
 // engine's re-filter preserves the current mixed-keyspace semantics, including
 // jq's behaviour on non-object values.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
+	// Prepare the predicate once for the whole scan: NewMatcher compiles every Regex
+	// pattern here, so the per-document prefilter never recompiles one.
+	matcher := rawpred.NewMatcher(pred)
 	build := func(ctx context.Context, keys []string) (map[string]any, error) {
-		return s.getFiltered(ctx, keys, pred)
+		return s.getFiltered(ctx, keys, matcher)
 	}
 	return s.scanPages(ctx, build, fn)
 }
@@ -42,7 +45,7 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 // key normalizes and is included exactly as Get does — the engine re-filters those
 // with the full jq. It costs the same two round-trips as Get regardless of key
 // count.
-func (s *Store) getFiltered(ctx context.Context, keys []string, pred predicate.Node) (map[string]any, error) {
+func (s *Store) getFiltered(ctx context.Context, keys []string, matcher *rawpred.Matcher) (map[string]any, error) {
 	unique := dedupe(keys)
 
 	types, err := s.pipeTypes(ctx, unique)
@@ -53,7 +56,7 @@ func (s *Store) getFiltered(ctx context.Context, keys []string, pred predicate.N
 	readers := make([]reader, len(unique))
 	_, err = s.client.Pipelined(ctx, func(p goredis.Pipeliner) error {
 		for i, k := range unique {
-			r, rerr := filteredReaderFor(ctx, p, k, types[i], s.decimal, pred)
+			r, rerr := filteredReaderFor(ctx, p, k, types[i], s.decimal, matcher)
 			if rerr != nil {
 				return rerr
 			}
@@ -84,9 +87,9 @@ func (s *Store) getFiltered(ctx context.Context, keys []string, pred predicate.N
 // filteredReaderFor is readerFor with the RedisJSON case swapped for a
 // predicate-aware reader; every other type uses the same reader as an unfiltered
 // read, so mixed-keyspace normalization is unchanged.
-func filteredReaderFor(ctx context.Context, p goredis.Pipeliner, key, typ string, dec numfmt.DecimalMode, pred predicate.Node) (reader, error) {
+func filteredReaderFor(ctx context.Context, p goredis.Pipeliner, key, typ string, dec numfmt.DecimalMode, matcher *rawpred.Matcher) (reader, error) {
 	if typ == "ReJSON-RL" {
-		return filterJSONReader{cmd: p.JSONGet(ctx, key), decimal: dec, pred: pred}, nil
+		return filterJSONReader{cmd: p.JSONGet(ctx, key), decimal: dec, matcher: matcher}, nil
 	}
 	return readerFor(ctx, p, key, typ, dec)
 }
@@ -102,7 +105,7 @@ type dropped struct{}
 type filterJSONReader struct {
 	cmd     *goredis.JSONCmd
 	decimal numfmt.DecimalMode
-	pred    predicate.Node
+	matcher *rawpred.Matcher
 }
 
 func (r filterJSONReader) normalize() (any, error) {
@@ -110,7 +113,7 @@ func (r filterJSONReader) normalize() (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if rawpred.Match([]byte(s), r.pred) == rawpred.CannotMatch {
+	if r.matcher.Match([]byte(s)) == rawpred.CannotMatch {
 		return dropped{}, nil
 	}
 	return decodeJSON(s, r.decimal)

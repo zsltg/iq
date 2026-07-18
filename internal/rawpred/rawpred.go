@@ -12,6 +12,12 @@
 // unhandled node, and every structural surprise collapses to MayMatch, so the
 // prefilter only ever skips a decode it can justify.
 //
+// A predicate that carries Regex nodes compiles their patterns once via NewMatcher:
+// the returned Matcher is reused across a whole scan so the per-document path never
+// recompiles. The package-level Match is the convenience path — it prepares a fresh
+// Matcher per call — and stays correct and API-compatible for callers that hold no
+// scan of their own.
+//
 // It is a driver-side utility: the query core never imports it, so the JSON
 // extraction dependency stays out of the engine and its ports.
 package rawpred
@@ -19,6 +25,7 @@ package rawpred
 import (
 	"errors"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -44,12 +51,102 @@ const (
 // Match reports whether raw can be dropped against pred without decoding it. It
 // returns CannotMatch only when the decoded document provably fails pred; every
 // other case — a match, an ambiguity, an unhandled node, malformed JSON — is
-// MayMatch.
+// MayMatch. It is the convenience path: it prepares a fresh Matcher, so a caller
+// evaluating many documents against one predicate should build a Matcher once with
+// NewMatcher and reuse it instead.
 func Match(raw []byte, pred predicate.Node) Verdict {
-	if eval(raw, pred) == definiteNo {
+	return NewMatcher(pred).Match(raw)
+}
+
+// Matcher is a predicate prepared for repeated matching. NewMatcher walks the tree
+// once and compiles every Regex pattern, so the per-document Match never compiles a
+// pattern again; a driver builds one per scan and reuses it across every document.
+type Matcher struct {
+	pred    predicate.Node
+	regexes map[regexKey]*regexp.Regexp
+}
+
+// regexKey identifies a compiled pattern by the exact (pattern, flags) pair a Regex
+// node carries, so identical nodes share one compilation.
+type regexKey struct {
+	pattern string
+	flags   string
+}
+
+// NewMatcher prepares pred for matching, compiling each Regex pattern once. A
+// pattern that fails to compile is left uncompiled and its node degrades to a decode
+// (evalRegex reads a missing key as unknown), never surfacing an error to the
+// caller: a prefilter that cannot evaluate a node keeps the document, exactly as an
+// unhandled node does.
+func NewMatcher(pred predicate.Node) *Matcher {
+	m := &Matcher{pred: pred, regexes: map[regexKey]*regexp.Regexp{}}
+	m.prepare(pred)
+	return m
+}
+
+// prepare walks the predicate tree compiling every Regex reachable through And/Or
+// nodes. It deliberately does not descend into an ElemMatch or NoneMatch Cond: those
+// container nodes are unknown in v1 (the whole document is decoded), so a Regex
+// nested in one is never evaluated on raw bytes and must not be compiled here.
+func (m *Matcher) prepare(node predicate.Node) {
+	switch n := node.(type) {
+	case predicate.Regex:
+		key := regexKey{pattern: n.Pattern, flags: n.Flags}
+		if _, seen := m.regexes[key]; seen {
+			return
+		}
+		re, ok := compileRegex(n.Pattern, n.Flags)
+		if !ok {
+			// A pattern portableRegex passed but Go's RE2 rejects: leave it
+			// uncompiled so evalRegex reads the missing key as unknown and the
+			// document is decoded. The failure is deliberately not surfaced as an
+			// error — a prefilter that cannot evaluate a node keeps the document.
+			return
+		}
+		m.regexes[key] = re
+	case predicate.And:
+		for _, c := range n {
+			m.prepare(c)
+		}
+	case predicate.Or:
+		for _, c := range n {
+			m.prepare(c)
+		}
+	}
+}
+
+// Match reports whether raw can be dropped against the prepared predicate without
+// decoding it, reusing the patterns compiled at NewMatcher time. Like the package
+// Match it returns CannotMatch only on a provable non-match.
+func (m *Matcher) Match(raw []byte) Verdict {
+	if m.eval(raw, m.pred) == definiteNo {
 		return CannotMatch
 	}
 	return MayMatch
+}
+
+// compileRegex translates a jq test() pattern and flag string to a Go RE2 matcher,
+// exactly as gojq's own compileRegexp does (github.com/itchyny/gojq func.go): the i
+// flag prepends the (?i) inline group (case-insensitive) and jq's m flag prepends
+// (?s) — jq's m means "dot matches newline" (Go's dotall), NOT PCRE's line-anchor
+// multiline. Matching is unanchored, like test()'s regexp.MatchString. The pushdown
+// compiler only ever emits i and m (portableFlags) over an engine-portable pattern
+// (portableRegex), so this never narrows which documents match against jq. It
+// reports ok=false for a pattern RE2 rejects rather than wrapping an error: the
+// failure is never surfaced (the node degrades to a decode), so a returned error
+// would only be discarded.
+func compileRegex(pattern, flags string) (re *regexp.Regexp, ok bool) {
+	if strings.ContainsRune(flags, 'i') {
+		pattern = "(?i)" + pattern
+	}
+	if strings.ContainsRune(flags, 'm') {
+		pattern = "(?s)" + pattern
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, false
+	}
+	return re, true
 }
 
 // triple is the internal three-valued node verdict. It is collapsed to the
@@ -72,7 +169,7 @@ const (
 
 // eval evaluates a predicate node against raw's bytes, three-valued. An unhandled
 // or future node type is unknown, so a new predicate never causes a wrong drop.
-func eval(raw []byte, node predicate.Node) triple {
+func (m *Matcher) eval(raw []byte, node predicate.Node) triple {
 	switch n := node.(type) {
 	case predicate.Eq:
 		return evalEq(raw, n.Path, n.Value)
@@ -86,15 +183,44 @@ func eval(raw []byte, node predicate.Node) triple {
 		return evalExists(raw, n.Path, false)
 	case predicate.Cmp:
 		return evalCmp(raw, n.Path, n.Op, n.Value)
+	case predicate.Regex:
+		return m.evalRegex(raw, n)
 	case predicate.And:
-		return evalAnd(raw, n)
+		return m.evalAnd(raw, n)
 	case predicate.Or:
-		return evalOr(raw, n)
+		return m.evalOr(raw, n)
 	default:
-		// Regex, Size, ElemMatch, NoneMatch, and any node type added later are not
-		// evaluated on raw bytes in v1; the document is decoded and re-filtered.
+		// Size, ElemMatch, NoneMatch, and any node type added later are not evaluated
+		// on raw bytes in v1; the document is decoded and re-filtered.
 		return unknown
 	}
+}
+
+// evalRegex decides a Regex node from the prepared matcher's compiled patterns. It
+// is definiteNo only when the field is a present string the pattern does not match,
+// and definiteYes when it is a present string the pattern matches; every other case
+// — a missing, ambiguous, or non-string field, or a pattern that failed to compile —
+// is unknown. jq's test() errors on a non-string, so a non-string field must reach
+// the client unchanged; leaving it unknown keeps it, so the prefilter never
+// suppresses that error by dropping the document.
+func (m *Matcher) evalRegex(raw []byte, n predicate.Regex) triple {
+	re, ok := m.regexes[regexKey{pattern: n.Pattern, flags: n.Flags}]
+	if !ok {
+		// The pattern failed to compile (NewMatcher left it uncompiled), so the node
+		// is never provable: decode.
+		return unknown
+	}
+	val, typ, _ := getField(raw, n.Path)
+	if typ != jsonparser.String {
+		// Missing (getField reports Unknown), ambiguous (Unknown), or a non-string
+		// value: not a definite string, so decode and let the full jq run.
+		return unknown
+	}
+	s, err := jsonparser.ParseString(val)
+	if err != nil {
+		return unknown
+	}
+	return boolTriple(re.MatchString(s))
 }
 
 // negate flips a three-valued verdict, leaving unknown unknown. It is how Ne reads
@@ -237,10 +363,10 @@ func cmpFound(val []byte, typ jsonparser.ValueType, op predicate.Op, value any, 
 
 // evalAnd decides an And: it fails as soon as one child fails, and holds only when
 // every child holds; anything else is unknown. An empty And matches everything.
-func evalAnd(raw []byte, children predicate.And) triple {
+func (m *Matcher) evalAnd(raw []byte, children predicate.And) triple {
 	all := definiteYes
 	for _, c := range children {
-		switch eval(raw, c) {
+		switch m.eval(raw, c) {
 		case definiteNo:
 			return definiteNo
 		case unknown:
@@ -253,13 +379,13 @@ func evalAnd(raw []byte, children predicate.And) triple {
 // evalOr decides an Or: it holds as soon as one child holds, and fails only when
 // every child fails; anything else is unknown. An empty Or is left unknown rather
 // than dropping everything, since the pushdown compiler never emits one.
-func evalOr(raw []byte, children predicate.Or) triple {
+func (m *Matcher) evalOr(raw []byte, children predicate.Or) triple {
 	if len(children) == 0 {
 		return unknown
 	}
 	all := definiteNo
 	for _, c := range children {
-		switch eval(raw, c) {
+		switch m.eval(raw, c) {
 		case definiteYes:
 			return definiteYes
 		case unknown:

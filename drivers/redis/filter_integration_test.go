@@ -3,6 +3,8 @@ package redis_test
 import (
 	"context"
 	"errors"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,12 +26,16 @@ func seedFilterKeyspace(t *testing.T, store *iqredis.Store) (jsonKeys, otherKeys
 	_, err := store.Query(ctx, []string{"FLUSHDB"})
 	require.NoError(t, err)
 
+	// The s field spans the Regex prefilter's cases: doc1/doc3 are strings that
+	// match ^h (case-insensitively), doc2 a string that does not, doc4 omits s
+	// (missing), and doc5 carries a non-string s (jq test() would error, so it must
+	// never be dropped).
 	docs := map[string]string{
-		"iq:test:sf:doc1": `{"author":{"name":"Rob"},"year":2015,"lang":"go"}`,
-		"iq:test:sf:doc2": `{"author":{"name":"Ken"},"year":1978,"lang":"c"}`,
-		"iq:test:sf:doc3": `{"author":{"name":"Rob"},"year":1970,"lang":"b"}`,
+		"iq:test:sf:doc1": `{"author":{"name":"Rob"},"year":2015,"lang":"go","s":"hello"}`,
+		"iq:test:sf:doc2": `{"author":{"name":"Ken"},"year":1978,"lang":"c","s":"World"}`,
+		"iq:test:sf:doc3": `{"author":{"name":"Rob"},"year":1970,"lang":"b","s":"Hi there"}`,
 		"iq:test:sf:doc4": `{"year":2000}`,
-		"iq:test:sf:doc5": `{"author":{"name":"Rob"},"year":"recent"}`,
+		"iq:test:sf:doc5": `{"author":{"name":"Rob"},"year":"recent","s":123}`,
 	}
 	for k, v := range docs {
 		_, err := store.Query(ctx, []string{"JSON.SET", k, "$", v})
@@ -82,6 +88,9 @@ func TestScanFilteredMatchesRefilteredScanBatches(t *testing.T) {
 		{"nested author name", predicate.Eq{Path: []string{"author", "name"}, Value: "Rob"}},
 		{"exists lang, absent from some docs", predicate.Exists{Path: []string{"lang"}}},
 		{"ne lang", predicate.Ne{Path: []string{"lang"}, Value: "go"}},
+		// Regex over s: matching (doc1/doc3), non-matching (doc2, dropped),
+		// non-string (doc5, kept), and missing (doc4, kept) all exercised at once.
+		{"regex on s, mixed string/non-string/missing", predicate.Regex{Path: []string{"s"}, Pattern: "^h", Flags: "i"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -194,6 +203,21 @@ func refMatchValue(v any, pred predicate.Node) bool {
 		return present(v, n.Path)
 	case predicate.NotExists:
 		return !present(v, n.Path)
+	case predicate.Regex:
+		s, ok := lookup(v, n.Path).(string)
+		if !ok {
+			// jq test() errors on a non-string; the oracle treats it as non-matching,
+			// and rawpred keeps it (MayMatch), so it is never wrongly dropped.
+			return false
+		}
+		pat := n.Pattern
+		if strings.ContainsRune(n.Flags, 'i') {
+			pat = "(?i)" + pat
+		}
+		if strings.ContainsRune(n.Flags, 'm') {
+			pat = "(?s)" + pat
+		}
+		return regexp.MustCompile(pat).MatchString(s)
 	default:
 		return false
 	}

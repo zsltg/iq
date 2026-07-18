@@ -23,10 +23,12 @@ func tripleName(t triple) string {
 	}
 }
 
-// requireTriple asserts eval(raw, node) equals want, naming both sides.
+// requireTriple asserts eval(raw, node) equals want, naming both sides. It prepares
+// a Matcher over node first, so a Regex node's pattern is compiled exactly as
+// production does.
 func requireTriple(t *testing.T, raw string, node predicate.Node, want triple) {
 	t.Helper()
-	got := eval([]byte(raw), node)
+	got := NewMatcher(node).eval([]byte(raw), node)
 	require.Equalf(t, want, got, "eval: got %s want %s", tripleName(got), tripleName(want))
 }
 
@@ -194,16 +196,159 @@ func TestEvalAndOr(t *testing.T) {
 func TestEvalUnhandledNodes(t *testing.T) {
 	raw := `{"a":[1,2,3]}`
 	nodes := []predicate.Node{
-		predicate.Regex{Path: []string{"a"}, Pattern: "x"},
 		predicate.Size{Path: []string{"a"}, N: 3},
 		predicate.ElemMatch{Path: []string{"a"}, Cond: predicate.Eq{Path: []string{"x"}, Value: 1.0}},
 		predicate.NoneMatch{Path: []string{"a"}, Cond: predicate.Eq{Path: []string{"x"}, Value: 1.0}},
+		// A Regex nested in an ElemMatch/NoneMatch Cond is not descended into: the
+		// container is unknown in v1, so the whole node stays unknown even though the
+		// inner pattern is a definite non-match on a string element.
+		predicate.ElemMatch{Path: []string{"a"}, Cond: predicate.Regex{Path: []string{"s"}, Pattern: "^z"}},
+		predicate.NoneMatch{Path: []string{"a"}, Cond: predicate.Regex{Path: []string{"s"}, Pattern: "^z"}},
 	}
 	for _, n := range nodes {
 		t.Run(fmt.Sprintf("%T", n), func(t *testing.T) {
 			requireTriple(t, raw, n, unknown)
 		})
 	}
+}
+
+func TestEvalRegex(t *testing.T) {
+	p := func(pattern, flags string) predicate.Regex {
+		return predicate.Regex{Path: []string{"s"}, Pattern: pattern, Flags: flags}
+	}
+	tests := []struct {
+		name string
+		raw  string
+		pred predicate.Regex
+		want triple
+	}{
+		{"plain match", `{"s":"hello"}`, p("ell", ""), definiteYes},
+		{"plain non-match drops", `{"s":"hello"}`, p("^z", ""), definiteNo},
+		{"unanchored matches midway", `{"s":"abcde"}`, p("cd", ""), definiteYes},
+		{"anchor start matches", `{"s":"hello"}`, p("^he", ""), definiteYes},
+		{"anchor start non-match drops", `{"s":"ohello"}`, p("^he", ""), definiteNo},
+		{"anchor end matches", `{"s":"hello"}`, p("lo$", ""), definiteYes},
+		// The pattern runs against the UNESCAPED value: the raw bytes carry a JSON
+		// escape that decodes to the character the pattern expects.
+		{"escaped quote unescaped before match", `{"s":"a\"b"}`, p(`a"b`, ""), definiteYes},
+		{"escaped backslash unescaped before match", `{"s":"c:\\tmp"}`, p(`c:\\tmp`, ""), definiteYes},
+		{"unicode escape unescaped before match", `{"s":"café"}`, p("café", ""), definiteYes},
+		{"escaped value non-match drops", `{"s":"a\"b"}`, p("^x", ""), definiteNo},
+		// i flag: an uppercase document matches a lowercase pattern only with i.
+		{"i flag matches differing case", `{"s":"HELLO"}`, p("hello", "i"), definiteYes},
+		{"no i flag differing case drops", `{"s":"HELLO"}`, p("hello", ""), definiteNo},
+		{"i flag still requires the letters", `{"s":"world"}`, p("hello", "i"), definiteNo},
+		// jq m flag is dotall: `.` matches a newline only with m -> (?s).
+		{"m flag dot matches newline", "{\"s\":\"a\\nb\"}", p("a.b", "m"), definiteYes},
+		{"no m flag dot skips newline drops", "{\"s\":\"a\\nb\"}", p("a.b", ""), definiteNo},
+		{"im flags combine case and dotall", "{\"s\":\"A\\nB\"}", p("a.b", "im"), definiteYes},
+		// Non-string field types -> unknown (jq test() errors, so the doc must reach
+		// the client).
+		{"number field unknown", `{"s":5}`, p("5", ""), unknown},
+		{"bool field unknown", `{"s":true}`, p("true", ""), unknown},
+		{"null field unknown", `{"s":null}`, p("null", ""), unknown},
+		{"object field unknown", `{"s":{"k":1}}`, p("k", ""), unknown},
+		{"array field unknown", `{"s":["x"]}`, p("x", ""), unknown},
+		// Missing, ambiguous -> unknown.
+		{"missing field unknown", `{"other":"hello"}`, p("hello", ""), unknown},
+		{"ambiguous path unknown", `{"s":5}`, predicate.Regex{Path: []string{"s", "deep"}, Pattern: "x"}, unknown},
+		{"root not object unknown", `["hello"]`, p("hello", ""), unknown},
+		// A pattern that fails to compile -> unknown (never dropped).
+		{"invalid pattern unknown", `{"s":"hello"}`, p("(", ""), unknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requireTriple(t, tt.raw, tt.pred, tt.want)
+		})
+	}
+}
+
+func TestEvalRegexUnderAndOr(t *testing.T) {
+	raw := `{"s":"hello","n":5}`
+	reMiss := predicate.Regex{Path: []string{"s"}, Pattern: "^z"} // definiteNo on "hello"
+	reHit := predicate.Regex{Path: []string{"s"}, Pattern: "^he"} // definiteYes on "hello"
+	eqN := predicate.Eq{Path: []string{"n"}, Value: 5.0}          // definiteYes
+	eqNmiss := predicate.Eq{Path: []string{"n"}, Value: 9.0}      // definiteNo
+	tests := []struct {
+		name string
+		pred predicate.Node
+		want triple
+	}{
+		{"and regex non-match propagates no", predicate.And{eqN, reMiss}, definiteNo},
+		{"and regex match with yes", predicate.And{eqN, reHit}, definiteYes},
+		{"or regex match short circuits yes", predicate.Or{eqNmiss, reHit}, definiteYes},
+		{"or regex non-match with no", predicate.Or{eqNmiss, reMiss}, definiteNo},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requireTriple(t, raw, tt.pred, tt.want)
+		})
+	}
+}
+
+func TestCompileRegex(t *testing.T) {
+	t.Run("translation matches gojq", func(t *testing.T) {
+		// i -> (?i) case-insensitive; jq m -> (?s) dotall; both prepend, matching is
+		// unanchored (MatchString). These assertions pin the exact flag mapping.
+		cases := []struct {
+			flags   string
+			input   string
+			pattern string
+			want    bool
+		}{
+			{"", "HELLO", "hello", false},
+			{"i", "HELLO", "hello", true},
+			{"", "a\nb", "a.b", false},
+			{"m", "a\nb", "a.b", true},
+			{"im", "A\nB", "a.b", true},
+			{"", "abc", "b", true},
+		}
+		for _, c := range cases {
+			re, ok := compileRegex(c.pattern, c.flags)
+			require.True(t, ok)
+			require.NotNil(t, re)
+			require.Equal(t, c.want, re.MatchString(c.input), "pattern %q flags %q on %q", c.pattern, c.flags, c.input)
+		}
+	})
+	t.Run("invalid pattern reports not-ok and returns nil", func(t *testing.T) {
+		re, ok := compileRegex("(", "")
+		require.False(t, ok)
+		require.Nil(t, re)
+	})
+}
+
+func TestNewMatcherCompileFailureLeavesNodeUncompiled(t *testing.T) {
+	// A pattern portableRegex would never emit but that RE2 rejects is left
+	// uncompiled: the key is absent, so evalRegex reads it as unknown and the
+	// document is kept. A valid pattern is stored.
+	bad := predicate.Regex{Path: []string{"s"}, Pattern: "("}
+	mBad := NewMatcher(bad)
+	_, ok := mBad.regexes[regexKey{pattern: "(", flags: ""}]
+	require.False(t, ok, "an uncompilable pattern must not be stored")
+	require.Equal(t, MayMatch, mBad.Match([]byte(`{"s":"hello"}`)), "an uncompilable pattern keeps every document")
+
+	good := predicate.Regex{Path: []string{"s"}, Pattern: "^z"}
+	mGood := NewMatcher(good)
+	re, ok := mGood.regexes[regexKey{pattern: "^z", flags: ""}]
+	require.True(t, ok, "a valid pattern is compiled and stored")
+	require.NotNil(t, re)
+	require.Equal(t, CannotMatch, mGood.Match([]byte(`{"s":"hello"}`)), "a compiled non-matching pattern drops the document")
+}
+
+func TestNewMatcherDeduplicatesAndSkipsCond(t *testing.T) {
+	// Two identical Regex nodes share one compilation, and a Regex inside an
+	// ElemMatch Cond is never compiled (the container is unknown in v1).
+	pred := predicate.And{
+		predicate.Regex{Path: []string{"s"}, Pattern: "^h", Flags: "i"},
+		predicate.Regex{Path: []string{"t"}, Pattern: "^h", Flags: "i"},
+		predicate.ElemMatch{Path: []string{"xs"}, Cond: predicate.Regex{Path: []string{"u"}, Pattern: "deep"}},
+	}
+	m := NewMatcher(pred)
+	require.Len(t, m.regexes, 1, "identical (pattern, flags) share one entry and the Cond regex is not compiled")
+	_, ok := m.regexes[regexKey{pattern: "^h", flags: "i"}]
+	require.True(t, ok)
+	_, ok = m.regexes[regexKey{pattern: "deep", flags: ""}]
+	require.False(t, ok, "a Regex under an ElemMatch Cond must not be compiled")
 }
 
 func TestNumOrd(t *testing.T) {

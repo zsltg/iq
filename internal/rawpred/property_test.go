@@ -3,6 +3,7 @@ package rawpred_test
 import (
 	"encoding/json"
 	"math/rand"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -52,6 +53,38 @@ func TestMatchNeverDropsAMatch(t *testing.T) {
 	require.Positive(t, drops, "generators produced no CannotMatch cases to check")
 }
 
+// TestMatcherEqualsMatch pins that the prepared Matcher and the package-level Match
+// agree on every (document, predicate) pair the generator emits: NewMatcher(pred)
+// reused across a scan must return exactly what a fresh Match(raw, pred) would, so
+// the driver's prepared path is behaviourally identical to the convenience path.
+func TestMatcherEqualsMatch(t *testing.T) {
+	t.Parallel()
+	rng := rand.New(rand.NewSource(0xBADF00D))
+
+	const docs, preds = 300, 300
+	rawDocs := make([]string, docs)
+	for i := range rawDocs {
+		rawDocs[i] = genDoc(rng)
+	}
+	predSet := make([]predicate.Node, preds)
+	for i := range predSet {
+		predSet[i] = genPred(rng, 2)
+	}
+
+	checked := 0
+	for _, p := range predSet {
+		m := rawpred.NewMatcher(p)
+		for _, raw := range rawDocs {
+			want := rawpred.Match([]byte(raw), p)
+			got := m.Match([]byte(raw))
+			require.Equalf(t, want, got,
+				"prepared Matcher disagrees with Match\n doc:  %s\n pred: %#v", raw, p)
+			checked++
+		}
+	}
+	require.Equal(t, docs*preds, checked, "every pair is compared")
+}
+
 // decodeDoc decodes a raw JSON document exactly as the Redis driver does — UseNumber
 // plus numfmt conversion under the default decimal mode — so the reference sees the
 // same Go values gojq will.
@@ -91,6 +124,15 @@ func refMatch(v any, node predicate.Node) bool {
 	case predicate.NotExists:
 		_, ok := pathLookup(v, n.Path)
 		return !ok
+	case predicate.Regex:
+		s, ok := pathValue(v, n.Path).(string)
+		if !ok {
+			// jq's test() errors on a non-string, so such a document must never be
+			// dropped; the oracle treats it as a match (must-keep), which would flag
+			// any wrong drop as a failed invariant.
+			return true
+		}
+		return refRegexp(n.Pattern, n.Flags).MatchString(s)
 	case predicate.And:
 		for _, c := range n {
 			if !refMatch(v, c) {
@@ -108,6 +150,19 @@ func refMatch(v any, node predicate.Node) bool {
 	default:
 		return false
 	}
+}
+
+// refRegexp compiles a test() pattern the way gojq does — i -> (?i), jq m -> (?s)
+// dotall, unanchored MatchString — as an independent restatement of the mapping
+// rawpred must match. It is the oracle's regex, so it never shares rawpred's code.
+func refRegexp(pattern, flags string) *regexp.Regexp {
+	if strings.ContainsRune(flags, 'i') {
+		pattern = "(?i)" + pattern
+	}
+	if strings.ContainsRune(flags, 'm') {
+		pattern = "(?s)" + pattern
+	}
+	return regexp.MustCompile(pattern)
 }
 
 // pathValue returns the value at path, or nil (jq's null) when the field is absent,
@@ -143,7 +198,7 @@ func pathLookup(v any, path []string) (any, bool) {
 var valueSnippets = []string{
 	`5`, `6`, `0`, `-3`, `10`, `9007199254740993`, `100000000000000000001`,
 	`1.5`, `-2.5`, `1e2`,
-	`"x"`, `"y"`, `"apple"`, `"banana"`, `"a\"b"`,
+	`"x"`, `"y"`, `"apple"`, `"banana"`, `"a\"b"`, `"a\nb"`, `"A\nB"`,
 	`true`, `false`, `null`, `[1,2]`, `{"k":1}`,
 }
 
@@ -179,6 +234,15 @@ var eqValues = []any{5.0, 6.0, 0.0, -3.0, "x", "apple", true, false, nil}
 // cmpValues are the number/string values Cmp is generated with.
 var cmpValues = []any{5.0, 0.0, -3.0, "banana", "b"}
 
+// regexPatterns are portable test() patterns the generator draws from: literals,
+// anchors, a dot (to exercise the dotall flag against the newline snippets), and a
+// character class. Each is valid RE2 so NewMatcher always compiles it.
+var regexPatterns = []string{"a", "x", "pp", "^a", "an", "n$", "a.b", "[0-9]"}
+
+// regexFlags are the flag strings the generator draws from, covering none, each of
+// i and m, and both together, so the translation is exercised in every combination.
+var regexFlags = []string{"", "i", "m", "im"}
+
 // genPred builds a random predicate tree up to the given depth over predPaths,
 // covering every node type rawpred decides on plus And/Or nesting.
 func genPred(rng *rand.Rand, depth int) predicate.Node {
@@ -195,7 +259,7 @@ func genPred(rng *rand.Rand, depth int) predicate.Node {
 // genLeaf builds a random leaf predicate.
 func genLeaf(rng *rand.Rand) predicate.Node {
 	path := predPaths[rng.Intn(len(predPaths))]
-	switch rng.Intn(5) {
+	switch rng.Intn(6) {
 	case 0:
 		return predicate.Eq{Path: path, Value: eqValues[rng.Intn(len(eqValues))]}
 	case 1:
@@ -205,7 +269,13 @@ func genLeaf(rng *rand.Rand) predicate.Node {
 		return predicate.Cmp{Path: path, Op: ops[rng.Intn(len(ops))], Value: cmpValues[rng.Intn(len(cmpValues))]}
 	case 3:
 		return predicate.Exists{Path: path}
-	default:
+	case 4:
 		return predicate.NotExists{Path: path}
+	default:
+		return predicate.Regex{
+			Path:    path,
+			Pattern: regexPatterns[rng.Intn(len(regexPatterns))],
+			Flags:   regexFlags[rng.Intn(len(regexFlags))],
+		}
 	}
 }

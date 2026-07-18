@@ -132,6 +132,18 @@
       "file": "drivers/redis/filter.go",
       "mutator": "expression/context-nil",
       "line": 91
+    },
+    {
+      "id": "505413a1ae7c2b23c0e241a30a0acbbe",
+      "file": "drivers/redis/filter.go",
+      "mutator": "expression/context-nil",
+      "line": 59
+    },
+    {
+      "id": "3e53982b48bf26d0ebb314e181cc0a61",
+      "file": "drivers/redis/filter.go",
+      "mutator": "expression/context-nil",
+      "line": 92
     }
   ]
 }
