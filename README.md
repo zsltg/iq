@@ -1562,6 +1562,94 @@ iq data delete cache book:1 book:2         # "deleted 2 key(s), 0 already absent
 iq data delete shop.orders '["eu",42]'     # a composite-key row, by its JSON-array spelling
 ```
 
+## Consuming iq exports
+
+`iq --jsonl` writes one JSON document per line — JSON Lines, the format every dataframe tool
+reads directly. iq's normalization is what makes that read clean: one canonical rendering per
+value, exact integers, decimal strings, RFC3339Nano UTC timestamps, base64 binary, and an
+explicit `null` for an absent field rather than a placeholder. This section is the consumer's
+side — loading an export into a data-science stack without losing that fidelity. The whys below
+were checked against pandas 3.0, Polars 1.42, and DuckDB 1.5.
+
+### pandas
+
+```python
+import pandas as pd
+df = pd.read_json("dump.jsonl", lines=True, dtype_backend="pyarrow")
+```
+
+Pass `dtype_backend="pyarrow"`, not the default. pandas' default NumPy dtypes have no nullable
+integer, so the first `null` in an integer column silently widens the whole column to `float64` —
+`7` becomes `7.0` and any exact integer past `2^53` is corrupted before you look. The Arrow-backed
+path keeps a typed, null-safe `int64[pyarrow]` (missing values read as `pd.NA`, not `NaN`), and
+decimal strings and RFC3339Nano stay strings you can lift to exact types:
+
+```python
+import pyarrow as pa
+df["amount"] = df["amount"].astype(pd.ArrowDtype(pa.decimal128(20, 2)))   # exact decimal
+df["ts"] = df["ts"].astype("timestamp[ns, tz=UTC][pyarrow]")             # nanosecond UTC
+```
+
+pandas still labels `pd.NA` semantics experimental — prefer the Arrow backend, but pin your
+pandas version rather than depend on the exact behaviour.
+
+### Polars
+
+```python
+import polars as pl
+df = pl.read_ndjson("dump.jsonl")
+df.null_count()   # O(1) per column, tracked in the validity bitmap
+```
+
+Polars has one missing value — `null` — uniform across every type. `NaN` is a float *value*, not
+missingness, and iq never emits `NaN` for an absent field, so `mean`, `min`, and `null_count` stay
+honest on iq output: a gap is a `null` that statistics skip, never a `NaN` that poisons the result.
+
+### DuckDB
+
+```sql
+SELECT * FROM read_json_auto('dump.jsonl');
+```
+
+`read_json_auto` (aka `read_json`) infers a type per field and shreds nested documents into
+`STRUCT`/`LIST` you query with dot- and list-access. Two edges of iq's output to know:
+
+- **Timestamps need an explicit cast.** DuckDB's type sniffer accepts fractional seconds only to
+  millisecond precision, so iq's nanosecond RFC3339Nano strings (`2026-07-18T12:34:56.123456789Z`)
+  are inferred as `VARCHAR`, not `TIMESTAMP` (observed on DuckDB 1.5.4 — verify in your version).
+  Cast to `TIMESTAMP_NS` to keep the nanoseconds; plain `TIMESTAMP` truncates to microseconds:
+
+  ```sql
+  SELECT CAST(ts AS TIMESTAMP_NS) AS ts FROM read_json_auto('dump.jsonl');
+  ```
+
+- **The UNNEST trap.** `UNNEST` of an empty *or* `null` list yields zero rows, so a naive
+  `SELECT id, UNNEST(tags) …` silently drops every record whose list is empty or null. Keep them
+  with a lateral left join back:
+
+  ```sql
+  SELECT j.id, u.tag
+  FROM read_json_auto('dump.jsonl') j
+  LEFT JOIN LATERAL UNNEST(j.tags) AS u(tag) ON true;
+  ```
+
+### Splink (entity resolution)
+
+[Splink](https://moj-analytical-services.github.io/splink/) needs a per-record `unique_id`, column
+names that conform across the sources you link, dates truncated to `yyyy-mm-dd`, and — critically —
+*true nulls*, never empty-string placeholders. iq's export already fits: the key rides in each
+record (a ready `unique_id`) and iq emits an explicit `null` for an absent field. Prepare a source
+for Splink with the jq filter — reshape, re-key, and truncate dates in one pass:
+
+```bash
+iq '.[] | {unique_id: .id, name, dob: (.created_at | .[0:10])}' --src people --jsonl
+```
+
+For an entity-resolution consumer the choice between *omitting* a field and writing an explicit
+`null` is load-bearing — they are different inputs to the match. Export explicit nulls (a jq object
+constructor like `{name}` already writes `null` for a missing field); see
+[Null vs missing](#null-vs-missing) for how iq draws that line at each layer.
+
 ## Architecture
 
 The core read path: a jq filter is classified by the **selector**, a scan is optionally **decomposed**
@@ -1786,6 +1874,33 @@ streamable scan runs in `O(page)` memory. The jq semantics are identical for any
 behind `KVStore`. jq is provided by
 [gojq](https://github.com/itchyny/gojq) (pure Go, no cgo), which keeps `iq` a single static
 binary and exposes the AST the key selector walks.
+
+### Null vs missing
+
+Modern query standards treat an *absent* field and an explicit *null* as distinct values.
+[PartiQL](https://partiql.org/) has both `NULL` and `MISSING`, and `MISSING` drops out of a
+projection where `NULL` is carried through. [SQL++](https://arxiv.org/abs/1405.3631) makes missing
+a first-class value and documents real divergence: the same path returns `null` in AsterixDB,
+`missing` in Couchbase, and an error in SQL. [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)
+(JSONPath) models absence as `Nothing`, again distinct from `null`. iq takes a deliberate,
+layered position in that vocabulary rather than one blanket rule:
+
+- **The jq surface reads missing as `null`.** gojq evaluates entirely client-side, so `.a` on a
+  document without `a` yields `null` — the same on every backend. This is the uniform semantics the
+  whole tool promises: a filter behaves identically whether the field is absent, stored as `null`,
+  or the source has no such field at all.
+- **The schema layer preserves the distinction.** `iq schema` tracks *parent-relative presence* —
+  a field observed on some documents but not others is optional, separate from a field that is
+  present-and-nullable — so the inferred shape measures logical structure, not the jq surface's
+  collapse.
+- **Drivers decline pushes whose backend semantics would diverge.** A conjunct is pushed only when
+  the backend reproduces jq's answer for every input including missing and null; Elasticsearch
+  `== null` (which no single term matches as absent-or-null) is declined and re-filtered client-side
+  rather than pushed with the wrong meaning. The per-driver push/not-push tables record each call.
+
+So the collapse is a surface convenience, not a loss: the distinction is kept where it carries
+information (schema inference, pushdown safety) and hidden where uniformity matters more (the query
+surface).
 
 ## Common commands
 

@@ -36,6 +36,8 @@ Cross-driver conventions every backend adapter and driver plan doc follows. Tele
 - Every plan and every README driver block carries the push/not-push table in the valkey plan's format.
 - `--explain` reuses the scan translator so the plan shows the real pushed fragment; never a second hand-written rendering.
 - An unproven push is an E-numbered experiment in the plan, never an assumption.
+- The per-driver push table plus client re-filter is SQL++'s pushdown-correctness-as-configuration-matching (arXiv:1405.3631): push a conjunct only where the driver's semantics match jq's, the client re-run is the correctness net.
+- Trino is the industrial precedent: per-connector pushdown capability, conservative refusal on a type coercion the backend cannot match, EXPLAIN-observable delegation (trino.io pushdown docs) — iq's push tables and `--explain` are the same contract.
 ## Writes
 - Exact-round-trip invariant: a successful Put stores the value exactly as given or the driver rejects; never silently wrap, coerce or truncate.
 - Non-object value where the backend needs a document rejects with the uniform hint: `<driver>: value for key %q is not a JSON object; transform explicitly, e.g. --filter 'if type == "object" then . else {value: .} end'`.
