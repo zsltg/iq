@@ -76,10 +76,7 @@ func (pw *Writer) Close() error {
 // with the Arrow schema stored under ARROW:schema (WithStoreSchema) so exact
 // types round-trip, then drains the sample through the encoder.
 func (pw *Writer) start() error {
-	p, err := inferPlan(pw.sample)
-	if err != nil {
-		return err
-	}
+	p := inferPlan(pw.sample)
 	fw, err := pqarrow.NewFileWriter(
 		p.schema, pw.w,
 		parquet.NewWriterProperties(),
@@ -351,9 +348,12 @@ func uintToInt64(u uint64) (int64, bool) {
 	return int64(u), true
 }
 
-// floatToInt64 converts a finite, integral float to int64 when it fits.
+// floatToInt64 converts a finite, integral float to int64 when it fits. The
+// integrality check also rejects NaN (NaN != NaN), and the range check also
+// rejects ±Inf (Inf is neither < MinInt64 nor < MaxInt64), so no separate
+// IsNaN/IsInf guard is needed.
 func floatToInt64(f float64) (int64, bool) {
-	if math.IsInf(f, 0) || math.IsNaN(f) || f != math.Trunc(f) {
+	if f != math.Trunc(f) {
 		return 0, false
 	}
 	if f < math.MinInt64 || f >= math.MaxInt64 {

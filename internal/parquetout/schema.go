@@ -28,8 +28,9 @@ import (
 // logical type it then cannot read back (storage reads as binary, the extension
 // demands utf8) — the registry resists, so the marker rides in iq's namespace
 // while the utf8 storage round-trips cleanly.
-func jsonEnc() (arrow.DataType, *enc, error) {
-	return arrow.BinaryTypes.String, &enc{kind: encJSON}, nil
+func jsonEnc() (arrow.DataType, *enc) {
+	// kind defaults to encJSON, the zero value of encKind.
+	return arrow.BinaryTypes.String, &enc{}
 }
 
 // sampleBufferSize is how many leading values are buffered before the schema is
@@ -103,22 +104,20 @@ type plan struct {
 // inferPlan reduces the sampled values to a shape, projects it to JSON Schema,
 // and builds the Arrow write plan. An empty sample yields a single null-only
 // arrow.json "value" column, so a zero-row export is still a valid Parquet file.
-func inferPlan(sample []any) (*plan, error) {
+// It cannot fail: shape inference and the shape→Arrow projection are total.
+func inferPlan(sample []any) *plan {
 	items := make(map[string]any, len(sample))
 	for i, v := range sample {
 		items[fmt.Sprintf("%d", i)] = v
 	}
 	root := shape.Infer(items).JSONSchema("parquet")
 
-	dt, e, err := typeFor(root)
-	if err != nil {
-		return nil, err
-	}
+	dt, e := typeFor(root)
 	if e.kind == encStruct {
 		return &plan{
 			schema:  arrow.NewSchema(e.afields, nil),
 			columns: e.fields,
-		}, nil
+		}
 	}
 	// A non-object (or heterogeneous) root has no columns to spread; the whole
 	// value becomes one "value" column.
@@ -127,25 +126,25 @@ func inferPlan(sample []any) (*plan, error) {
 		schema:      arrow.NewSchema([]arrow.Field{f}, nil),
 		columns:     []encField{{name: "value", enc: e}},
 		singleValue: true,
-	}, nil
+	}
 }
 
 // typeFor resolves one JSON Schema subschema to its Arrow data type and encoder
 // plan. A position with more than one non-null type, no type, or only null
 // collapses to the arrow.json fallback — byte-lossless canonical JSON in utf8
 // storage, per the Arrow canonical-extensions spec.
-func typeFor(sub map[string]any) (arrow.DataType, *enc, error) {
+func typeFor(sub map[string]any) (arrow.DataType, *enc) {
 	names := nonNullTypes(sub["type"])
 	if len(names) != 1 {
 		return jsonEnc()
 	}
 	switch names[0] {
 	case "integer":
-		return arrow.PrimitiveTypes.Int64, &enc{kind: encInt}, nil
+		return arrow.PrimitiveTypes.Int64, &enc{kind: encInt}
 	case "number":
-		return arrow.PrimitiveTypes.Float64, &enc{kind: encFloat}, nil
+		return arrow.PrimitiveTypes.Float64, &enc{kind: encFloat}
 	case "boolean":
-		return arrow.FixedWidthTypes.Boolean, &enc{kind: encBool}, nil
+		return arrow.FixedWidthTypes.Boolean, &enc{kind: encBool}
 	case "string":
 		return stringType(sub)
 	case "array":
@@ -159,44 +158,41 @@ func typeFor(sub map[string]any) (arrow.DataType, *enc, error) {
 
 // stringType maps a string subschema, promoting the shape's date-time and date
 // formats to native temporal Arrow types; uuid stays utf8 for v1.
-func stringType(sub map[string]any) (arrow.DataType, *enc, error) {
+func stringType(sub map[string]any) (arrow.DataType, *enc) {
 	switch format(sub) {
 	case "date-time":
-		return &arrow.TimestampType{Unit: arrow.Nanosecond, TimeZone: "UTC"}, &enc{kind: encTimestamp}, nil
+		return &arrow.TimestampType{Unit: arrow.Nanosecond, TimeZone: "UTC"}, &enc{kind: encTimestamp}
 	case "date":
-		return arrow.FixedWidthTypes.Date32, &enc{kind: encDate}, nil
+		return arrow.FixedWidthTypes.Date32, &enc{kind: encDate}
 	default:
-		return arrow.BinaryTypes.String, &enc{kind: encString}, nil
+		return arrow.BinaryTypes.String, &enc{kind: encString}
 	}
 }
 
 // arrayType maps an array subschema to a list of its element type. An array with
 // no observed elements has no items schema; its element falls back to arrow.json.
-func arrayType(sub map[string]any) (arrow.DataType, *enc, error) {
+func arrayType(sub map[string]any) (arrow.DataType, *enc) {
 	items, ok := sub["items"].(map[string]any)
 	if !ok {
 		items = map[string]any{}
 	}
-	elemDT, elemEnc, err := typeFor(items)
-	if err != nil {
-		return nil, nil, err
-	}
-	return arrow.ListOf(elemDT), &enc{kind: encList, elem: elemEnc}, nil
+	elemDT, elemEnc := typeFor(items)
+	return arrow.ListOf(elemDT), &enc{kind: encList, elem: elemEnc}
 }
 
 // objectType maps an object subschema: an id-keyed map (additionalProperties)
 // becomes map<utf8, elem>; a fixed record (properties) becomes a struct; an
 // object with neither observed falls back to arrow.json.
-func objectType(sub map[string]any) (arrow.DataType, *enc, error) {
+func objectType(sub map[string]any) (arrow.DataType, *enc) {
 	if ap, ok := sub["additionalProperties"].(map[string]any); ok {
-		valDT, valEnc, err := typeFor(ap)
-		if err != nil {
-			return nil, nil, err
-		}
-		return arrow.MapOf(arrow.BinaryTypes.String, valDT), &enc{kind: encMap, elem: valEnc}, nil
+		valDT, valEnc := typeFor(ap)
+		return arrow.MapOf(arrow.BinaryTypes.String, valDT), &enc{kind: encMap, elem: valEnc}
 	}
+	// shape.JSONSchema only emits "properties" for an object with at least one
+	// field, so a present map is never empty; !ok (no properties) is the only
+	// no-field case and folds to the arrow.json fallback.
 	props, ok := sub["properties"].(map[string]any)
-	if !ok || len(props) == 0 {
+	if !ok {
 		return jsonEnc()
 	}
 	required := requiredSet(sub["required"])
@@ -210,10 +206,7 @@ func objectType(sub map[string]any) (arrow.DataType, *enc, error) {
 	fields := make([]encField, 0, len(names))
 	for _, name := range names {
 		child, _ := props[name].(map[string]any)
-		fdt, fenc, err := typeFor(child)
-		if err != nil {
-			return nil, nil, err
-		}
+		fdt, fenc := typeFor(child)
 		presence := "optional"
 		if required[name] {
 			presence = "required"
@@ -226,7 +219,7 @@ func objectType(sub map[string]any) (arrow.DataType, *enc, error) {
 		})
 		fields = append(fields, encField{name: name, enc: fenc})
 	}
-	return arrow.StructOf(afields...), &enc{kind: encStruct, afields: afields, fields: fields}, nil
+	return arrow.StructOf(afields...), &enc{kind: encStruct, afields: afields, fields: fields}
 }
 
 // nonNullTypes returns the subschema's declared JSON Schema types with "null"

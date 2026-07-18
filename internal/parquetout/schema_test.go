@@ -1,9 +1,11 @@
 package parquetout
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,8 +69,7 @@ func TestInferPlanScalarProjection(t *testing.T) {
 		sample = append(sample, row)
 	}
 
-	p, err := inferPlan(sample)
-	require.NoError(t, err)
+	p := inferPlan(sample)
 	require.False(t, p.singleValue)
 	s := p.schema
 
@@ -110,8 +111,7 @@ func TestInferPlanNestedProjection(t *testing.T) {
 		map[string]any{"deep": map[string]any{"a": 1, "b": "y"}, "lst": []any{1, 2}},
 		map[string]any{"deep": map[string]any{"a": 2, "b": "z"}, "lst": []any{3}},
 	}
-	p, err := inferPlan(sample)
-	require.NoError(t, err)
+	p := inferPlan(sample)
 
 	t.Run("object becomes struct", func(t *testing.T) {
 		f := field(t, p.schema, "deep")
@@ -147,8 +147,7 @@ func TestInferPlanIDKeyedMap(t *testing.T) {
 			},
 		})
 	}
-	p, err := inferPlan(sample)
-	require.NoError(t, err)
+	p := inferPlan(sample)
 
 	f := field(t, p.schema, "cfg")
 	mt, ok := f.Type.(*arrow.MapType)
@@ -159,17 +158,54 @@ func TestInferPlanIDKeyedMap(t *testing.T) {
 
 func TestInferPlanSingleValueRoot(t *testing.T) {
 	// A non-object stream (scalars) yields one "value" column, not fields.
-	p, err := inferPlan([]any{"a", "b", "c"})
-	require.NoError(t, err)
+	p := inferPlan([]any{"a", "b", "c"})
+	require.True(t, p.singleValue)
+	require.Len(t, p.columns, 1)
+	require.Equal(t, "value", p.columns[0].name)
+	f := field(t, p.schema, "value")
+	require.Equal(t, "value", f.Name)
+	require.True(t, f.Nullable)
+	require.Equal(t, "required", presenceOf(t, f))
+	require.True(t, arrow.TypeEqual(arrow.BinaryTypes.String, f.Type))
+}
+
+// TestWriterSingleValueRoundTrip pins the single-"value"-column path end to end:
+// a scalar stream reads back with its values under the "value" column.
+func TestWriterSingleValueRoundTrip(t *testing.T) {
+	tbl := readTable(t, writeParquet(t, []any{"a", "b", "c"}))
+	require.Equal(t, int64(3), tbl.NumRows())
+	rec := oneRecord(t, tbl)
+	col := colOf(t, rec, "value").(*array.String)
+	require.Equal(t, "a", col.Value(0))
+	require.Equal(t, "b", col.Value(1))
+	require.Equal(t, "c", col.Value(2))
+}
+
+// TestWriterSingleValuePostSampleError pins the single-value error path, which
+// names the "value" column: a sample of valid timestamps locks the column, then
+// a non-timestamp past the sample fails naming that column.
+func TestWriterSingleValuePostSampleError(t *testing.T) {
+	pw := NewWriter(&bytes.Buffer{})
+	for i := 0; i < sampleBufferSize; i++ {
+		require.NoError(t, pw.Add("2021-01-02T03:04:05Z"))
+	}
+	err := pw.Add("not-a-timestamp")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `"value"`)
+}
+
+func TestInferPlanEmptyObjects(t *testing.T) {
+	// Objects with no observed fields have no "properties" in the JSON Schema, so
+	// objectType falls back to a single arrow.json "value" column.
+	p := inferPlan([]any{map[string]any{}, map[string]any{}, map[string]any{}})
 	require.True(t, p.singleValue)
 	f := field(t, p.schema, "value")
-	require.True(t, arrow.TypeEqual(arrow.BinaryTypes.String, f.Type))
+	require.True(t, isJSONField(f), "an all-empty-object stream should yield an arrow.json value column")
 }
 
 func TestInferPlanEmptySample(t *testing.T) {
 	// Zero rows still resolves to a valid single-column schema (arrow.json).
-	p, err := inferPlan(nil)
-	require.NoError(t, err)
+	p := inferPlan(nil)
 	require.True(t, p.singleValue)
 	f := field(t, p.schema, "value")
 	require.True(t, isJSONField(f), "empty sample should yield an arrow.json value column")

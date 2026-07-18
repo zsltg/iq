@@ -2,6 +2,7 @@ package parquetout
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"math/big"
 	"testing"
@@ -142,13 +143,23 @@ func TestToInt64(t *testing.T) {
 		{"uint16", uint16(6), 6, true},
 		{"uint32", uint32(7), 7, true},
 		{"uint64 in range", uint64(10), 10, true},
+		{"uint64 exactly max int64", uint64(math.MaxInt64), math.MaxInt64, true},
+		{"uint64 one past max int64", uint64(math.MaxInt64) + 1, 0, false},
 		{"uint64 overflow", uint64(math.MaxUint64), 0, false},
 		{"integral float32", float32(8), 8, true},
 		{"integral float", 5.0, 5, true},
 		{"fractional float", 5.5, 0, false},
+		{"min int64 as float", float64(math.MinInt64), math.MinInt64, true},
+		{"large positive float out of range", 1e30, 0, false},
+		{"large negative float out of range", -1e30, 0, false},
+		{"positive infinity", math.Inf(1), 0, false},
+		{"negative infinity", math.Inf(-1), 0, false},
 		{"big.Int in range", big.NewInt(123), 123, true},
 		{"big.Int overflow", new(big.Int).Lsh(big.NewInt(1), 100), 0, false},
 		{"json.Number integer", json.Number("15"), 15, true},
+		// Int64() keeps full precision here; the float fallback would round 2^63-1
+		// up to 2^63 and reject it, so this pins the integer-first branch.
+		{"json.Number max int64", json.Number("9223372036854775807"), math.MaxInt64, true},
 		{"json.Number integral float", json.Number("16.0"), 16, true},
 		{"json.Number fractional", json.Number("1.5"), 0, false},
 		{"json.Number junk", json.Number("nope"), 0, false},
@@ -265,6 +276,63 @@ func TestAppendCompositeMismatch(t *testing.T) {
 			require.Contains(t, err.Error(), `"c"`)
 		})
 	}
+}
+
+func TestAppendCompositeChildError(t *testing.T) {
+	// A composite whose CHILD value does not fit its type must surface the child's
+	// error, so the per-element/field append loop propagates rather than swallows.
+	tests := []struct {
+		name string
+		dt   arrow.DataType
+		e    *enc
+		v    any
+	}{
+		{
+			name: "struct field mismatch",
+			dt:   arrow.StructOf(arrow.Field{Name: "a", Type: arrow.PrimitiveTypes.Int64, Nullable: true}),
+			e:    &enc{kind: encStruct, fields: []encField{{name: "a", enc: &enc{kind: encInt}}}},
+			v:    map[string]any{"a": "not-an-int"},
+		},
+		{
+			name: "list element mismatch",
+			dt:   arrow.ListOf(arrow.PrimitiveTypes.Int64),
+			e:    &enc{kind: encList, elem: &enc{kind: encInt}},
+			v:    []any{1, "not-an-int"},
+		},
+		{
+			name: "map value mismatch",
+			dt:   arrow.MapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64),
+			e:    &enc{kind: encMap, elem: &enc{kind: encInt}},
+			v:    map[string]any{"k": "not-an-int"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b := builderFor(t, tc.dt)
+			err := appendVal(b, tc.e, tc.v, "c")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "int64")
+		})
+	}
+}
+
+func TestAppendJSONMarshalError(t *testing.T) {
+	// A value that cannot be JSON-encoded (NaN) fails the arrow.json column,
+	// naming the column and wrapping the marshal error (errors.Unwrap reachable).
+	b := builderFor(t, arrow.BinaryTypes.String)
+	err := appendVal(b, &enc{kind: encJSON}, math.NaN(), "c")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `encode "c" as json`)
+	require.Error(t, errors.Unwrap(err), "the marshal error must be wrapped, not flattened")
+}
+
+func TestCanonicalJSONError(t *testing.T) {
+	// NaN has no JSON representation; canonicalJSON must surface the marshal error
+	// with context, wrapping the cause.
+	_, err := canonicalJSON(math.NaN())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "marshal json")
+	require.Error(t, errors.Unwrap(err), "the marshal error must be wrapped")
 }
 
 func TestAppendStructMissingFieldIsNull(t *testing.T) {

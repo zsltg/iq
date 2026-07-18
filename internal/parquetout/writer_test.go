@@ -3,6 +3,8 @@ package parquetout
 import (
 	"bytes"
 	"context"
+	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -148,6 +150,76 @@ func TestWriterPostSampleMismatch(t *testing.T) {
 	require.Contains(t, err.Error(), `"age"`)
 	require.Contains(t, err.Error(), "int64")
 	require.Contains(t, err.Error(), "jsonl")
+}
+
+// errSink is the sentinel a failAfterWriter returns, so tests can assert the
+// error survives wrapping (errors.Is), pinning the %w in the wrapping Errorf.
+var errSink = errors.New("sink boom")
+
+// failAfterWriter succeeds for the first ok writes (enough for the Parquet magic
+// header, which pqarrow writes eagerly and panics on if it fails) and then fails,
+// so a test can force fw.Write or fw.Close to error.
+type failAfterWriter struct {
+	ok    int
+	calls int
+}
+
+func (w *failAfterWriter) Write(p []byte) (int, error) {
+	w.calls++
+	if w.calls > w.ok {
+		return 0, errSink
+	}
+	return len(p), nil
+}
+
+func TestWriterFlushWriteErrorPropagates(t *testing.T) {
+	// The magic header write succeeds; the record-batch write fails. Close must
+	// surface it (with context, wrapping the cause) rather than swallowing the
+	// failed page.
+	pw := NewWriter(&failAfterWriter{ok: 1})
+	require.NoError(t, pw.Add(map[string]any{"n": 1}))
+	require.NoError(t, pw.Add(map[string]any{"n": 2}))
+	err := pw.Close()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "write parquet batch")
+	require.ErrorIs(t, err, errSink, "the sink error must survive wrapping")
+}
+
+func TestWriterCloseErrorPropagates(t *testing.T) {
+	// Empty stream: no batch is written, so the only failing write is the footer
+	// during fw.Close, which Close must surface, wrapping the cause.
+	pw := NewWriter(&failAfterWriter{ok: 1})
+	err := pw.Close()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "close parquet")
+	require.ErrorIs(t, err, errSink, "the sink error must survive wrapping")
+}
+
+func TestWriterCloseSurfacesEncodeError(t *testing.T) {
+	// A heterogeneous column (integer in one row, string in another) becomes
+	// arrow.json; a NaN in it cannot be marshalled to canonical JSON, so the
+	// buffered sample fails to drain at Close and the error propagates.
+	var buf bytes.Buffer
+	pw := NewWriter(&buf)
+	require.NoError(t, pw.Add(map[string]any{"x": math.NaN()}))
+	require.NoError(t, pw.Add(map[string]any{"x": "s"}))
+	err := pw.Close()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `"x"`)
+	require.Contains(t, err.Error(), "json")
+}
+
+func TestWriterPostSampleObjectExpected(t *testing.T) {
+	// An all-object sample locks a columnar schema; a scalar past the sample has
+	// no object fields to spread, so it fails rather than being coerced.
+	pw := NewWriter(&bytes.Buffer{})
+	for i := 0; i < sampleBufferSize; i++ {
+		require.NoError(t, pw.Add(map[string]any{"n": 1}))
+	}
+	err := pw.Add("scalar-not-object")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "expected an object row")
+	require.Contains(t, err.Error(), "string")
 }
 
 func TestWriterTimestampParseFailurePropagates(t *testing.T) {
