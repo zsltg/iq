@@ -144,6 +144,12 @@
       "file": "drivers/redis/filter.go",
       "mutator": "expression/context-nil",
       "line": 92
+    },
+    {
+      "id": "3662a8d1c95de944071381f400a1331f",
+      "file": "internal/pushdown/conjuncts.go",
+      "mutator": "numbers/decrementer",
+      "line": 40
     }
   ]
 }
