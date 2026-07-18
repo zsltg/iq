@@ -175,6 +175,14 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   The output is standard JSON Schema for interop — pipe it to a code generator
   (`iq schema prod.orders > s.json && quicktype -s schema s.json -l go`). A schema is field names and
   types, a few hundred bytes — not a dump of production documents into a third-party tool.
+  `--format` picks the contract dialect the same inference projects into: `jsonschema` (default,
+  draft 2020-12, honoring `-y` for YAML) or `odcs`, an **Open Data Contract Standard v3.1.0** contract
+  emitted as YAML (its canonical form) for data-contract tooling (datacontract-cli, Soda, Great
+  Expectations). ODCS carries nine logical types with no binary or decimal member, so iq's date-time
+  and date formats demote to `logicalType: date` with a JDK format pattern, a UUID stays `string` with
+  the `uuid` format, and base64-binary and exact-decimal values stay plain `string`. The contract's
+  identifiers (`id`, `name`, schema-object name) derive deterministically from the source handle and
+  keyspace — no timestamps or random ids (`iq schema prod.orders --format odcs > orders.odcs.yaml`).
 - `iq group [<name>] [--clear]` — show, set, or clear the active **group**.
 - `iq driver ls` — list the backend drivers iq can dispatch to, each with its description, the URL
   schemes that select it, and its upstream docs. `-v` appends the file driver's readable dump
@@ -1737,7 +1745,9 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
 - `internal/shape` — driver-agnostic schema inference (heuristics adapted from quicktype, Apache-2.0;
   no code copied). `Infer` reduces a sample to a typed shape tree; `Comparable` projects a stable
   field/type map that feeds `diff.Tree`, so `diff --schema` compares logical shape and works
-  cross-driver, and `JSONSchema` projects a draft 2020-12 document for `iq schema`. Presence is
+  cross-driver, `JSONSchema` projects a draft 2020-12 document for `iq schema`, and `ODCSSchemaObject`
+  projects the same tree into an Open Data Contract Standard v3.1.0 schema object (`iq schema --format
+  odcs`), demoting to ODCS's nine logical types (no binary/decimal). Presence is
   parent-relative (`required`/`optional`), numbers split integer from number, strings tag
   date-time/date/uuid, id-keyed sub-objects collapse to maps, and arrays unify their element shape.
   Like `diff`, it holds no I/O — the CLI samples through the ports and hands it the values.
@@ -1794,6 +1804,7 @@ iq --src snap --insert prod               # restore a dump into a live source (b
 iq data clear books       # empty a container (drop removes it; both prompt unless --force)
 iq schema prod.orders     # infer a draft 2020-12 JSON Schema from a sampled source (--sample; describes values, not keys)
 iq schema prod.orders > s.json && quicktype -s schema s.json -l go  # generate typed models (a schema is field names/types, a few hundred bytes — not a dump of documents)
+iq schema prod.orders --format odcs > orders.odcs.yaml  # emit an Open Data Contract Standard v3.1.0 contract (YAML)
 go test -short ./...      # fast unit tests, no external services
 go test ./...             # full suite; starts ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Couchbase + Neo4j + Elasticsearch + OpenSearch via testcontainers-go (HBase needs IQ_HBASE_URL)
 docker compose up -d --wait   # optional: local Redis + MongoDB + Cassandra + DynamoDB Local + HBase + CouchDB + Couchbase + Neo4j + Elasticsearch + OpenSearch for manual exploration (:6379, :27017, :9042, :8000, :2181, :5984, :8091-8096/:11210, :7687, :9200, :9201)

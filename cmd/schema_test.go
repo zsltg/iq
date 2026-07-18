@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // writeJSONL writes keyed-JSONL lines to a temp file and returns its path.
@@ -102,6 +103,86 @@ func TestSchemaCmdSampleFlag(t *testing.T) {
 	f := c.Flags().Lookup("sample")
 	require.NotNil(t, f)
 	require.Equal(t, "1000", f.DefValue)
+}
+
+// TestSchemaCmdFormatFlag pins the --format flag: registered and defaulting to
+// jsonschema; the gate mutates the default and removes the registration.
+func TestSchemaCmdFormatFlag(t *testing.T) {
+	c := newSchemaCmd(&config{})
+	f := c.Flags().Lookup("format")
+	require.NotNil(t, f)
+	require.Equal(t, "jsonschema", f.DefValue)
+}
+
+// TestSchemaInvalidFormat drives `iq schema --format bogus` and asserts it fails
+// fast with a clear message, before any store I/O.
+func TestSchemaInvalidFormat(t *testing.T) {
+	seedConfig(t, newSeed())
+	cfg := &config{timeout: 5 * time.Second}
+	_, err := runCmd(t, newSchemaCmd(cfg), "any", "--format", "bogus")
+	require.ErrorContains(t, err, "invalid --format")
+	require.ErrorContains(t, err, "jsonschema or odcs")
+}
+
+// TestSchemaODCSOutput drives `iq schema --format odcs` end-to-end against a
+// file source and asserts the emitted YAML parses and carries a valid ODCS
+// v3.1.0 fundamentals envelope and one schema object projecting the inferred
+// shape (types, nested properties, and per-property required flags).
+func TestSchemaODCSOutput(t *testing.T) {
+	path := writeJSONL(t, `{"key":"1","value":{"name":"alice","age":30,"active":true}}
+{"key":"2","value":{"name":"bob","age":25}}
+`)
+	c := newSeed()
+	require.NoError(t, c.Add("snap", "file://"+path))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: 5 * time.Second}
+	out, err := runCmd(t, newSchemaCmd(cfg), "snap", "--format", "odcs")
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, yaml.Unmarshal([]byte(out), &doc), "odcs output must be valid YAML")
+	require.Equal(t, "v3.1.0", doc["apiVersion"])
+	require.Equal(t, "DataContract", doc["kind"])
+	require.Equal(t, "snap", doc["id"], "id derives from the handle, never the url")
+	require.Equal(t, "snap", doc["name"])
+	require.Equal(t, "1.0.0", doc["version"])
+	require.Equal(t, "draft", doc["status"])
+
+	schema := doc["schema"].([]any)
+	require.Len(t, schema, 1)
+	obj := schema[0].(map[string]any)
+	require.Equal(t, "snap", obj["name"])
+	require.Equal(t, "object", obj["logicalType"])
+
+	byName := map[string]map[string]any{}
+	for _, p := range obj["properties"].([]any) {
+		prop := p.(map[string]any)
+		byName[prop["name"].(string)] = prop
+	}
+	require.Equal(t, "string", byName["name"]["logicalType"])
+	require.Equal(t, "integer", byName["age"]["logicalType"])
+	require.Equal(t, "boolean", byName["active"]["logicalType"])
+	// name and age are in every document (required); active is in one (optional).
+	require.True(t, byName["name"]["required"].(bool))
+	require.True(t, byName["age"]["required"].(bool))
+	require.NotContains(t, byName["active"], "required")
+}
+
+// TestSchemaODCSAlwaysYAML pins that `--format odcs` emits YAML even without -y:
+// a data contract is canonically YAML, so the flag is not required.
+func TestSchemaODCSAlwaysYAML(t *testing.T) {
+	path := writeJSONL(t, `{"key":"1","value":{"name":"alice"}}
+`)
+	c := newSeed()
+	require.NoError(t, c.Add("snap", "file://"+path))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: 5 * time.Second}
+	out, err := runCmd(t, newSchemaCmd(cfg), "snap", "--format", "odcs")
+	require.NoError(t, err)
+	require.Contains(t, out, "apiVersion: v3.1.0")
+	require.NotContains(t, out, `"apiVersion"`, "must be YAML, not JSON")
 }
 
 // TestSchemaYAMLOutput drives `iq schema -y` and asserts a YAML document (not
