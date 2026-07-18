@@ -19,6 +19,13 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
+// injectedIDField is the metadata field decodeSource injects into every decoded
+// document's value, carrying the hit's _id. Elasticsearch reserves _id as a metadata
+// field, so it is never a real _source field: the raw _source bytes the prefilter
+// sees never contain it. A predicate rooted at this field therefore cannot be decided
+// on raw bytes (see referencesInjectedID), and documentBody strips it on write.
+const injectedIDField = "_id"
+
 // decodeSource parses a hit's _source into JSON-ready Go values and injects the
 // hit's _id, so a plain .[] stream is self-describing (the document carries its own
 // key, exactly like a Mongo document's _id). Numbers are decoded deliberately
@@ -37,7 +44,7 @@ func decodeSource(raw json.RawMessage, id string, mode numfmt.DecimalMode) (map[
 		}
 		doc = normalizeMap(doc, mode)
 	}
-	doc["_id"] = id
+	doc[injectedIDField] = id
 	return doc, nil
 }
 

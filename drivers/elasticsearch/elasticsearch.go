@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/rawpred"
 	"github.com/zsltg/iq/internal/render"
 )
 
@@ -40,6 +42,14 @@ type Store struct {
 	pageSize int
 	decimal  numfmt.DecimalMode
 	exact    map[string]exactField
+	// prefilterChecked counts hits the client-side raw-byte prefilter evaluated (ran
+	// rawpred over) across this store's filtered scans, and prefilterSkipped counts the
+	// subset it dropped before decode. They are diagnostic counters the package's tests
+	// read to prove the prefilter engages exactly when it should — checked stays zero
+	// on a bypassed scan and rises on a prefiltered one — and never part of the public
+	// API; no result depends on either.
+	prefilterChecked int
+	prefilterSkipped int
 }
 
 // connConfig is the parsed form of a source URL: the wire flavor, the server address
@@ -221,7 +231,7 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 // pagination), so it never re-reads from an offset and holds only one page in
 // memory. Bounded by ctx; stops at the first error from fn or the driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
-	return s.pagedSearch(ctx, nil, fn)
+	return s.pagedSearch(ctx, nil, nil, fn)
 }
 
 // searchResponse is the subset of a _search reply the scan needs: the (possibly
@@ -247,7 +257,15 @@ type searchResponse struct {
 // so a resized index cannot make the walk skip or loop. query is nil for a full scan
 // and a bool query for a pushed-down filtered scan. The PIT is always closed, even on
 // error or a cancelled ctx.
-func (s *Store) pagedSearch(ctx context.Context, query map[string]any, fn func(batch map[string]any) error) error {
+//
+// When prefilter is non-nil, each hit's raw _source is run through rawpred against it
+// before decode, and a hit rawpred proves the predicate rejects is skipped (counted in
+// prefilterSkipped) rather than decoded and delivered — a byte-level drop that never
+// changes results because prefilter is a conservative superset the caller re-runs in
+// full. The keyset cursor advances past every hit, skipped or kept, so pagination never
+// re-reads or loops; a page emptied entirely by the prefilter is simply not handed to
+// fn, preserving the "a scan never yields an empty batch" contract.
+func (s *Store) pagedSearch(ctx context.Context, query map[string]any, prefilter predicate.Node, fn func(batch map[string]any) error) error {
 	if s.index == "" {
 		return errNoIndex
 	}
@@ -290,15 +308,28 @@ func (s *Store) pagedSearch(ctx context.Context, query map[string]any, fn func(b
 		}
 		page := make(map[string]any, len(hits))
 		for _, h := range hits {
+			// Advance the cursor for every hit, skipped or kept, so a prefiltered-out
+			// document never stalls or rewinds the keyset walk.
+			after = h.Sort
+			if prefilter != nil {
+				s.prefilterChecked++
+				if rawpred.Match(h.Source, prefilter) == rawpred.CannotMatch {
+					s.prefilterSkipped++
+					continue
+				}
+			}
 			doc, err := decodeSource(h.Source, h.ID, s.decimal)
 			if err != nil {
 				return err
 			}
 			page[h.ID] = doc
-			after = h.Sort
 		}
-		if err := fn(page); err != nil {
-			return err
+		// A page the prefilter emptied is never handed to fn: a scan never yields an
+		// empty batch.
+		if len(page) > 0 {
+			if err := fn(page); err != nil {
+				return err
+			}
 		}
 		// A page shorter than the requested size is the last one.
 		if len(hits) < s.pageSize {

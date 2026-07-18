@@ -106,13 +106,17 @@ func TestScanFilteredFallsBackForRange(t *testing.T) {
 	st := seedIndex(t, books()...)
 	ctx := skipShort(t)
 
-	// A range does not push; ScanFiltered must fall back to a full walk (the caller
-	// re-runs the jq), so every document is still returned.
+	// A range does not push server-side, so ScanFiltered falls back to a full walk —
+	// but the client-side raw-byte prefilter then drops the documents it can prove the
+	// range rejects before they are decoded. year > 1970 keeps 1984 and 1985 and drops
+	// the 1965 document; the survivors are still a superset the caller re-filters.
 	pred := predicate.Cmp{Path: []string{"year"}, Op: predicate.Gt, Value: 1970.0}
 	got := collect(t, func(fn func(map[string]any) error) error {
 		return st.ScanFiltered(ctx, pred, fn)
 	})
-	require.Len(t, got, 3)
+	require.Equal(t, []string{"2", "3"}, keysOf(got))
+	require.Equal(t, 3, st.prefilterChecked, "every hit of the full-scan fallback is evaluated")
+	require.Equal(t, 1, st.prefilterSkipped, "the 1965 document is prefiltered out before decode")
 }
 
 func TestEstimateCount(t *testing.T) {

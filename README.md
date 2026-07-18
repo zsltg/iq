@@ -556,9 +556,10 @@ same contract:
   [Bounded reads, streaming scans, and materialized scans](#bounded-reads-streaming-scans-and-materialized-scans)).
 - **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter —
   server-side where the backend can filter, or a client-side raw-byte prefilter that drops a provable
-  non-match before decode where it cannot (Redis, on RedisJSON values). The full jq always re-runs
-  client-side, so output is identical with or without it, and
-  [`--explain`](#query-plan---explain--v) shows exactly what was pushed.
+  non-match before decode where it cannot (Redis, on RedisJSON values; Elasticsearch/OpenSearch, over
+  the residual their server-side query could not narrow). The full jq always re-runs client-side, so
+  output is identical with or without it, and [`--explain`](#query-plan---explain--v) shows exactly
+  what was pushed.
 - **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, drop, and per-key
   delete are opt-in ports: a backend implements what its model supports, and a command against a
   missing capability fails with a clear message instead of emulating it (Redis, whose DB index cannot
@@ -1288,6 +1289,16 @@ never onto analyzed `text`, where a term could wrongly exclude a match:
 Pushdown never changes results, only speed: the full jq always re-runs client-side, so a pushed
 filter is a conservative pre-filter; `--explain` shows the query, and `--no-compile` streams the
 whole index and filters entirely client-side.
+
+Whatever the `bool` query leaves behind, a **client-side raw-byte prefilter** runs the full predicate
+over each hit's raw `_source` before it is decoded, and drops any hit it can prove the predicate
+rejects. So a fallback scan (a range, an equality on an unmapped or analyzed field) or a
+partially-pushed scan skips the dominant `UseNumber` decode of the documents the cluster could not
+exclude — the same trick as the Redis prefilter, on the bytes `_search` already returned. It is
+byte-level and never changes results (the full jq still re-runs client-side), so it is bypassed in two
+cases where it would be wasted or wrong: when the `term` query already captured the predicate exactly
+(the cluster returned only matches), and when the predicate references the injected `_id` field, which
+the raw `_source` does not carry.
 
 ### Raw commands
 

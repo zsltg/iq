@@ -119,15 +119,119 @@ func exactFieldsFrom(raw map[string]indexMapping) map[string]exactField {
 // or an equality on a field the mapping does not make exactly matchable — the scan
 // falls back to a plain point-in-time walk, which is correct and no costlier than a
 // match-everything query.
+//
+// Whatever the server query leaves behind, a client-side raw-byte prefilter runs the
+// full predicate over each hit's raw _source before it is decoded and drops any hit
+// rawpred proves the predicate rejects — so a full-scan fallback or a partially-pushed
+// scan skips the (dominant) decode of the documents the server could not exclude. The
+// prefilter is bypassed in two cases where it would be wrong or wasted: when the server
+// query already captures the predicate exactly (the raw scan would only re-confirm
+// matches), and when the predicate references the injected _id field the raw _source
+// does not carry (rawpred would read a clean absence and could wrongly drop a document
+// whose id matches).
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if s.index == "" {
 		return errNoIndex
 	}
-	query, narrowing := s.toQuery(pred)
-	if !narrowing {
-		return s.pagedSearch(ctx, nil, fn)
+	// toQuery yields a nil query for a predicate it cannot narrow, and pagedSearch
+	// reads a nil query as a full point-in-time walk, so the narrowing flag needs no
+	// separate branch here: a non-narrowing predicate simply pages the whole index and
+	// the prefilter (when enabled) trims it.
+	query, _ := s.toQuery(pred)
+	prefilter := pred
+	if s.exactPush(pred) || referencesInjectedID(pred) {
+		prefilter = nil
 	}
-	return s.pagedSearch(ctx, query, fn)
+	return s.pagedSearch(ctx, query, prefilter, fn)
+}
+
+// exactPush reports whether toQuery's translation of n captures it exactly — the
+// backend returns precisely jq's matching set, so a client-side prefilter over the
+// same documents would only re-confirm matches and is pure overhead. Only an equality
+// pushed as a term query is treated as exact: it matches the field value and nothing
+// else. Existence, non-existence, ranges, negations, and any conjunct the translation
+// had to drop leave the backend over- or under-inclusive, so those keep the prefilter;
+// an And or Or is exact only when every child is (an And with a dropped conjunct, or an
+// Or with any non-exact branch, is not).
+func (s *Store) exactPush(n predicate.Node) bool {
+	switch t := n.(type) {
+	case predicate.Eq:
+		_, ok := s.eqQuery(t)
+		return ok
+	case predicate.And:
+		return allExact(s, t)
+	case predicate.Or:
+		return allExact(s, t)
+	default:
+		return false
+	}
+}
+
+// allExact reports whether every child of a non-empty composite is exactly pushable.
+// An empty composite is never exact: it would claim exactness with no term backing it.
+func allExact(s *Store, children []predicate.Node) bool {
+	if len(children) == 0 {
+		return false
+	}
+	for _, c := range children {
+		if !s.exactPush(c) {
+			return false
+		}
+	}
+	return true
+}
+
+// referencesInjectedID reports whether any field path in the predicate tree is rooted
+// at the injected _id field. That field is decodeSource's injection, not a real
+// _source field, so rawpred — which sees only the raw _source — would read it as a
+// clean absence and could wrongly reject a document whose injected id satisfies the
+// predicate. When it does, ScanFiltered disables the prefilter for the whole scan so
+// every document is delivered for the full jq to filter. It walks every node that
+// carries a path, including the element conditions of ElemMatch/NoneMatch, so no
+// _id-rooted path anywhere in the tree is missed.
+func referencesInjectedID(n predicate.Node) bool {
+	switch t := n.(type) {
+	case predicate.Eq:
+		return rootedAtID(t.Path)
+	case predicate.Ne:
+		return rootedAtID(t.Path)
+	case predicate.Cmp:
+		return rootedAtID(t.Path)
+	case predicate.Regex:
+		return rootedAtID(t.Path)
+	case predicate.Size:
+		return rootedAtID(t.Path)
+	case predicate.Exists:
+		return rootedAtID(t.Path)
+	case predicate.NotExists:
+		return rootedAtID(t.Path)
+	case predicate.ElemMatch:
+		return rootedAtID(t.Path) || referencesInjectedID(t.Cond)
+	case predicate.NoneMatch:
+		return rootedAtID(t.Path) || referencesInjectedID(t.Cond)
+	case predicate.And:
+		return anyReferencesInjectedID(t)
+	case predicate.Or:
+		return anyReferencesInjectedID(t)
+	default:
+		return false
+	}
+}
+
+// anyReferencesInjectedID reports whether any child of a composite references the
+// injected _id field.
+func anyReferencesInjectedID(children []predicate.Node) bool {
+	for _, c := range children {
+		if referencesInjectedID(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// rootedAtID reports whether a field path's first segment is the injected _id field.
+func rootedAtID(path []string) bool {
+	return len(path) > 0 && path[0] == injectedIDField
 }
 
 // toQuery translates a neutral predicate into an Elasticsearch query. The second
