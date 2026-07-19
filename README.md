@@ -2023,7 +2023,9 @@ collide with a LAN host.
 
 The mutation gate runs [mutago](https://github.com/quality-gates/mutago) and scopes to the current
 branch's diff against `origin/main` by default (`--git-diff-lines`), so it only mutates the lines a
-change touched. The base is handed to mutago as the merge-base commit with `HEAD`, so it works from
+change touched. The wrapper provisions the pinned mutago itself (`go install ...@v2.7.7` into a
+throwaway GOBIN, run directly), so the gate needs no mutago on `PATH` and does not touch `go.mod`;
+`make tools-dev` still installs mutago for ad-hoc use. The base is handed to mutago as the merge-base commit with `HEAD`, so it works from
 a linked git worktree and tolerates a local base ref that has drifted from the remote. The gate is
 `--fail-on-escaped`: a covered mutant that survives (asserts nothing) fails it, while `--coverage`
 keeps uncovered lines out of the escaped set — the zero-survivor-on-covered-code contract. Timed-out
@@ -2033,8 +2035,14 @@ suite from erroring). A genuine equivalent mutant that cannot be killed is accep
 escapes fail — the baseline uses line-number-independent IDs so it survives refactors. Override the
 base ref with `IQ_MUTATION_BASE` (set it empty for a full-module scan), or pass a package path (e.g.
 `bash scripts/mutation-gate.sh ./cmd`) for a full scan of that package (a path drops the diff-scoping
-flags). `IQ_MUTATION_DRYRUN=1` prints the mutant counts without running the tests (a whole-target
-upper bound; mutago's dry run is not diff-scoped).
+flags). Every run also writes `mutago-agentic.json` (gitignored) with LLM-consumable data for each
+escaped mutant; `IQ_MUTATION_MUTANT=<id>` re-runs a single mutant by that stable id (a fast
+diagnostic to re-verify one survivor or probe an order-dependent escape for flakiness — point it at
+the mutant's package). Accepted baseline entries carry a one-line equivalence justification in the
+committed `mutago-baseline.notes.md`. `IQ_MUTATION_DRYRUN=1` is a mutant-count preview whose cost
+depends on the form: a package-arg dry run is an instant count that runs no tests, while a
+diff-scoped or `./...` dry run first runs the `--coverage` instrumented test pass (whole-target,
+memory-heavy) before counting. Scope dry runs to one package and never run one alongside a live gate.
 
 Quality gates are local and layered — the project uses no CI service. `make check` is the fast,
 offline pre-commit gate (format, `go vet`, `go build`, `golangci-lint`, dead code via

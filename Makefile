@@ -80,7 +80,8 @@ bench:
 # mutation runs the mutation gate over the branch diff against origin/main (override
 # with IQ_MUTATION_BASE; empty for a full-module scan, or pass a package path for a
 # full scan of it). Any escaped mutant not in mutago-baseline.json fails the gate.
-# Needs mutago (make tools-dev) and the integration services up (Docker, or IQ_*_URL).
+# The wrapper provisions the pinned mutago itself (go install into a temp dir); needs Go
+# toolchain access and the integration services up (Docker, or IQ_*_URL).
 mutation:
 	bash scripts/mutation-gate.sh
 
