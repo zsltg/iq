@@ -12,6 +12,10 @@
 # make an escaped-mutant verdict (exit 4) indistinguishable from a run error, whereas the
 # installed binary preserves mutago's exact exit codes and streams output live.
 #
+# Stable policy lives in the committed .mutago.yml (passed via --config on the gate
+# invocation); the invocation-varying and load-bearing flags stay on the command line
+# here. The baseline path stays a CLI flag because v2.7.7 has no config key for it.
+#
 # What counts as a failure. --fail-on-escaped fails on any *escaped* mutant that is
 # not recorded in the baseline (mutago-baseline.json); an escaped mutant means a
 # covered test asserts nothing, so strengthen the test. --coverage keeps uncovered
@@ -135,6 +139,7 @@ if [[ -n "${IQ_MUTATION_MUTANT-}" ]]; then
 fi
 
 "$mutago" \
+  --config .mutago.yml \
   --coverage \
   --fail-on-escaped \
   --baseline mutago-baseline.json \

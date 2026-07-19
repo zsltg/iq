@@ -1,0 +1,28 @@
+# Committed mutago policy for scripts/mutation-gate.sh (github.com/quality-gates/mutago),
+# passed via --config on the gate invocation. Holds only stable, invocation-independent
+# policy. The wrapper keeps every flag that varies per run or is load-bearing enough to
+# stay visible there: --coverage, --fail-on-escaped, --git-diff-lines/--git-diff-base,
+# --workers, --timeout-coefficient, --logger-agentic-json. The baseline path stays a CLI
+# flag (--baseline mutago-baseline.json): mutago v2.7.7 has no config key for it and its
+# YAML decoder rejects unknown keys, so it cannot live here.
+#
+# Locked semantics, do not weaken. The gate is --fail-on-escaped against the committed
+# mutago-baseline.json: any escaped mutant not in the baseline fails it, and --coverage
+# keeps uncovered lines out of the escaped set — zero survivors on covered code. A
+# genuine equivalent is accepted into the baseline with a justification line in
+# mutago-baseline.notes.md; it is never silenced as a mutator family.
+#
+# Measured reference (2026-07-19, covered-code MSI): file driver 95.79%, combined stack
+# 97.24%, couchbase + elasticsearch 100%.
+#
+# Mutator-family curation is DEFERRED, not adopted: no disable_mutators here. A family is
+# silenced only once accumulated mutago-agentic.json data shows it is equivalent-dominated
+# in this codebase — a measured judgement, not an import. Counter-example (2026-07-19):
+# residua disabled numbers/* as noise, but iq killed those same ParseInt / off-by-one
+# mutants as genuine test gaps, so numbers/* stays enabled here.
+#
+# json_output preserves the default report.json that passing --config would otherwise
+# suppress (v2.7.7 enables that report only when --config is unset or json_output is set).
+# silent_mode stays false so killed and skipped lines remain visible during a run.
+json_output: true
+silent_mode: false

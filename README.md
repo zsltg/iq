@@ -2025,7 +2025,9 @@ The mutation gate runs [mutago](https://github.com/quality-gates/mutago) and sco
 branch's diff against `origin/main` by default (`--git-diff-lines`), so it only mutates the lines a
 change touched. The wrapper provisions the pinned mutago itself (`go install ...@v2.7.7` into a
 throwaway GOBIN, run directly), so the gate needs no mutago on `PATH` and does not touch `go.mod`;
-`make tools-dev` still installs mutago for ad-hoc use. The base is handed to mutago as the merge-base commit with `HEAD`, so it works from
+`make tools-dev` still installs mutago for ad-hoc use. Stable, invocation-independent policy lives in
+the committed `.mutago.yml` (passed via `--config`); the per-run and load-bearing flags stay on the
+command line. The base is handed to mutago as the merge-base commit with `HEAD`, so it works from
 a linked git worktree and tolerates a local base ref that has drifted from the remote. The gate is
 `--fail-on-escaped`: a covered mutant that survives (asserts nothing) fails it, while `--coverage`
 keeps uncovered lines out of the escaped set — the zero-survivor-on-covered-code contract. Timed-out
