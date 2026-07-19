@@ -684,6 +684,68 @@ func TestPatchLayerCanceledContext(t *testing.T) {
 	}
 }
 
+func TestDiffOneSideUnreachable(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("good", fileSource(t, `{"key":"1","value":{"name":"a"}}`)))
+	require.NoError(t, c.Add("bad", "redis://127.0.0.1:1/0"))
+	seedConfig(t, c)
+
+	tests := []struct {
+		name        string
+		left, right string
+		layer       string
+	}{
+		{"data left unreachable", "bad", "good", "--data"},
+		{"data right unreachable", "good", "bad", "--data"},
+		{"schema left unreachable", "bad", "good", "--schema"},
+		{"schema right unreachable", "good", "bad", "--schema"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config{timeout: time.Second}
+			// The failing side's read error must surface as-is: a dropped guard
+			// either turns it into a spurious all-added/all-removed delta (quiet
+			// exit) or swallows it into a clean zero exit.
+			_, err := runCmd(t, quietDiff(cfg), tt.left, tt.right, tt.layer)
+			require.Error(t, err)
+			require.NotErrorIs(t, err, errQuietExit)
+		})
+	}
+}
+
+func TestDiffStatsOneSideUnreachableRedisIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: needs a reachable Redis")
+	}
+	base := redisBaseURL()
+	urlA, err := withRedisDB(base, testRedisDB)
+	require.NoError(t, err)
+
+	c := newSeed()
+	require.NoError(t, c.Add("good", urlA))
+	require.NoError(t, c.Add("bad", "redis://127.0.0.1:1/0"))
+	seedConfig(t, c)
+
+	tests := []struct {
+		name        string
+		left, right string
+	}{
+		{"left unreachable", "bad", "good"},
+		{"right unreachable", "good", "bad"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config{timeout: 5 * time.Second}
+			// Same driver on both sides, so the pair passes the cross-driver
+			// check and the collect error itself must surface, never a spurious
+			// one-sided delta.
+			_, err := runCmd(t, quietDiff(cfg), tt.left, tt.right, "--stats")
+			require.Error(t, err)
+			require.NotErrorIs(t, err, errQuietExit)
+		})
+	}
+}
+
 func TestDiffStatsSelfSectionRedisIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: needs a reachable Redis")
