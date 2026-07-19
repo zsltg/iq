@@ -71,12 +71,180 @@ func TestTree(t *testing.T) {
 			b:    map[string]any{"v": "scalar"},
 			want: []diff.Change{{Path: []string{"v"}, Op: diff.OpChange, Old: map[string]any{"a": 1}, New: "scalar"}},
 		},
+		{
+			// LCS aligns [2,3] onto b, so the front insertion is a single Add at
+			// [0] rather than the positional walk's cascade at every later index.
+			name: "front insertion is a single add",
+			a:    []any{2, 3},
+			b:    []any{1, 2, 3},
+			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpAdd, New: 1}},
+		},
+		{
+			// The deleted middle element aligns out, so it is a single Remove; the
+			// trailing 3 anchors and reports nothing.
+			name: "mid deletion is a single remove",
+			a:    []any{1, 2, 3},
+			b:    []any{1, 3},
+			want: []diff.Change{{Path: []string{"[1]"}, Op: diff.OpRemove, Old: 2}},
+		},
+		{
+			// No shared subsequence, so the two elements pair positionally and the
+			// change recurses into the object: the delta lands at [0].v, not on the
+			// whole element.
+			name: "changed element between anchors recurses",
+			a:    []any{map[string]any{"v": 1}},
+			b:    []any{map[string]any{"v": 2}},
+			want: []diff.Change{{Path: []string{"[0]", "v"}, Op: diff.OpChange, Old: 1, New: 2}},
+		},
+		{
+			// An insertion before an anchor shifts the reported index of the later
+			// paired change: add 0 at [0], then 2->9 lands at [2] in the aligned
+			// overlay (1 anchors at [1]), pinning the i+adds index arithmetic.
+			name: "insertion before a change pins the aligned index",
+			a:    []any{1, 2, 3},
+			b:    []any{0, 1, 9, 3},
+			want: []diff.Change{
+				{Path: []string{"[0]"}, Op: diff.OpAdd, New: 0},
+				{Path: []string{"[2]"}, Op: diff.OpChange, Old: 2, New: 9},
+			},
+		},
+		{
+			// int/float64 parity holds through the LCS anchor predicate: 2 and 2.0
+			// anchor, so only the genuine string change survives.
+			name: "int and float anchor together in arrays",
+			a:    []any{1, 2, "x"},
+			b:    []any{1, 2.0, "y"},
+			want: []diff.Change{{Path: []string{"[2]"}, Op: diff.OpChange, Old: "x", New: "y"}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, diff.Tree(tt.a, tt.b))
 		})
 	}
+}
+
+func TestTreeSetArrays(t *testing.T) {
+	opts := diff.Options{SetArrays: true}
+	tests := []struct {
+		name string
+		a, b any
+		want []diff.Change
+	}{
+		{
+			name: "pure reorder is no delta",
+			a:    []any{1, 2},
+			b:    []any{2, 1},
+			want: nil,
+		},
+		{
+			// Multiset counts duplicates: the left has one extra 1, so exactly one
+			// Remove, at the array's own (index-less) path.
+			name: "duplicate count difference is one remove",
+			a:    []any{1, 1, 2},
+			b:    []any{1, 2},
+			want: []diff.Change{{Path: []string{}, Op: diff.OpRemove, Old: 1}},
+		},
+		{
+			// Membership delta both ways, emitted sorted by canonical key.
+			name: "mixed add and remove sorted by canonical key",
+			a:    []any{1, 2},
+			b:    []any{2, 3},
+			want: []diff.Change{
+				{Path: []string{}, Op: diff.OpRemove, Old: 1},
+				{Path: []string{}, Op: diff.OpAdd, New: 3},
+			},
+		},
+		{
+			// No pairing, so a nested array is frozen inside its canonical key:
+			// [1,2] and [2,1] are distinct members, one removed and one added.
+			name: "order stays significant inside a serialized element",
+			a:    []any{[]any{1, 2}},
+			b:    []any{[]any{2, 1}},
+			want: []diff.Change{
+				{Path: []string{}, Op: diff.OpRemove, Old: []any{1, 2}},
+				{Path: []string{}, Op: diff.OpAdd, New: []any{2, 1}},
+			},
+		},
+		{
+			// Canonical marshal collapses 1 and 1.0, so same-magnitude elements are
+			// the same member.
+			name: "int and float of same magnitude are one member",
+			a:    []any{1},
+			b:    []any{1.0},
+			want: nil,
+		},
+		{
+			// Set semantics apply at every array the walk reaches through a map, and
+			// the delta carries the array's field path with no index segment.
+			name: "applies to an array nested in a map",
+			a:    map[string]any{"x": []any{1, 1}},
+			b:    map[string]any{"x": []any{1}},
+			want: []diff.Change{{Path: []string{"x"}, Op: diff.OpRemove, Old: 1}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, diff.TreeOpt(tt.a, tt.b, opts))
+		})
+	}
+}
+
+func TestKeyedOptThreadsSetArrays(t *testing.T) {
+	a := map[string]any{"k": map[string]any{"arr": []any{1, 2}}}
+	b := map[string]any{"k": map[string]any{"arr": []any{2, 1}}}
+
+	// The default aligns the reordered array by LCS, so the item reads as changed.
+	require.Equal(t, []diff.ItemDelta{
+		{Key: "k", Op: diff.OpChange, Changes: []diff.Change{
+			{Path: []string{"arr", "[0]"}, Op: diff.OpRemove, Old: 1},
+			{Path: []string{"arr", "[2]"}, Op: diff.OpAdd, New: 1},
+		}},
+	}, diff.Keyed(a, b))
+
+	// SetArrays threads through the per-item tree, so a pure reorder is no delta.
+	require.Nil(t, diff.KeyedOpt(a, b, diff.Options{SetArrays: true}))
+}
+
+func TestTreeArrayMemoryGuard(t *testing.T) {
+	seq := func(n, extra int) []any {
+		out := make([]any, 0, n+extra)
+		for i := 0; i < extra; i++ {
+			out = append(out, -1-i)
+		}
+		for i := 0; i < n; i++ {
+			out = append(out, i)
+		}
+		return out
+	}
+	t.Run("exactly at the cap still aligns by LCS", func(t *testing.T) {
+		// 1024*1024 = 1<<20 cells, exactly the cap and so not over it: two
+		// equal-length arrays sharing a 1023-element run align to a single Remove at
+		// [0] and a single Add. The removed head and the 1023 anchors each hold one
+		// aligned slot, so the trailing Add lands at [1024]. The positional fallback
+		// would instead report all 1024 indexes as changed, so this pins the strict
+		// ">" boundary.
+		a := append([]any{"L"}, seq(1023, 0)...)
+		b := append(seq(1023, 0), "R")
+		got := diff.Tree(a, b)
+		require.Equal(t, []diff.Change{
+			{Path: []string{"[0]"}, Op: diff.OpRemove, Old: "L"},
+			{Path: []string{"[1024]"}, Op: diff.OpAdd, New: "R"},
+		}, got)
+	})
+	t.Run("over the cap falls back to the positional walk", func(t *testing.T) {
+		// 1100*1101 = 1211100 cells, above the cap: the positional fallback compares
+		// by raw index, so the same front insertion cascades to one delta per index
+		// plus a trailing Add — proving the guard engaged.
+		a := seq(1100, 0)
+		b := seq(1100, 1)
+		got := diff.Tree(a, b)
+		require.Len(t, got, 1101)
+		require.Equal(t, []string{"[0]"}, got[0].Path)
+		require.Equal(t, diff.OpChange, got[0].Op)
+		require.Equal(t, []string{"[1100]"}, got[1100].Path)
+		require.Equal(t, diff.OpAdd, got[1100].Op)
+	})
 }
 
 func TestTreeDeterministicKeyOrder(t *testing.T) {

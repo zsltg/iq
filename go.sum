@@ -267,6 +267,7 @@ github.com/testcontainers/testcontainers-go/modules/mongodb v0.43.0 h1:RJlAAz8dv
 github.com/testcontainers/testcontainers-go/modules/mongodb v0.43.0/go.mod h1:1zaDEZyV1SK+mpz83tmB2KthF6DHaS4Y+lRvy3d2XiE=
 github.com/testcontainers/testcontainers-go/modules/redis v0.43.0 h1:qzATMhrltLr07KcGl/d674ouqI0AFtf6wnQb3VnqP7M=
 github.com/testcontainers/testcontainers-go/modules/redis v0.43.0/go.mod h1:ygEcEUIZzmIlOKpjBfnPn/lUIRNorr1kPj3XfFPTQXM=
+github.com/tidwall/gjson v1.14.2/go.mod h1:/wbyibRr2FHMks5tjHJ5F8dMZh3AcwJEMf5vlfC0lxk=
 github.com/tidwall/gjson v1.18.0 h1:FIDeeyB800efLX89e5a8Y0BNH+LOngJyGrIWxG2FKQY=
 github.com/tidwall/gjson v1.18.0/go.mod h1:/wbyibRr2FHMks5tjHJ5F8dMZh3AcwJEMf5vlfC0lxk=
 github.com/tidwall/match v1.1.1 h1:+Ho715JplO36QYgwN9PGYNhgZvoUSc9X2c80KVTi+GA=

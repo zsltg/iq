@@ -108,7 +108,7 @@ func TestDiffStatsRejectsCrossDriver(t *testing.T) {
 	// The scheme check happens before any store is opened, so no connection is made.
 	_, err := diffStats(context.Background(),
 		diffTarget{handle: "a", driver: "redis"},
-		diffTarget{handle: "b", driver: "mongo"}, nil)
+		diffTarget{handle: "b", driver: "mongo"}, nil, diff.Options{})
 	require.ErrorContains(t, err, "same driver")
 }
 
@@ -477,4 +477,150 @@ func seedMongo(t *testing.T, u, coll string, docs []string) {
 		_, err = r.Run(ctx, []string{fmt.Sprintf(`{"insert":%q,"documents":[%s]}`, coll, d)})
 		require.NoError(t, err)
 	}
+}
+
+func TestLayerCount(t *testing.T) {
+	tests := []struct {
+		name                            string
+		dataMode, statsMode, schemaMode bool
+		want                            int
+	}{
+		{"none", false, false, false, 0},
+		{"data only", true, false, false, 1},
+		{"stats only", false, true, false, 1},
+		{"schema only", false, false, true, 1},
+		{"data and stats", true, true, false, 2},
+		{"all three", true, true, true, 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, layerCount(tt.dataMode, tt.statsMode, tt.schemaMode))
+		})
+	}
+}
+
+func TestRenderPatch(t *testing.T) {
+	t.Run("non-empty patch prints and signals the quiet exit", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := renderPatch(&buf, json.RawMessage(`[{"op":"add","path":"/x","value":1}]`))
+		require.ErrorIs(t, err, errQuietExit)
+		require.Contains(t, buf.String(), `"op": "add"`)
+		require.Contains(t, buf.String(), `"path": "/x"`)
+	})
+	t.Run("empty patch prints [] and exits zero", func(t *testing.T) {
+		var buf bytes.Buffer
+		require.NoError(t, renderPatch(&buf, json.RawMessage(`[]`)))
+		require.Equal(t, "[]\n", buf.String())
+	})
+	t.Run("malformed patch is a decode error", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := renderPatch(&buf, json.RawMessage(`{not a patch`))
+		require.ErrorContains(t, err, "decode json patch")
+	})
+	t.Run("write error propagates", func(t *testing.T) {
+		err := renderPatch(&errAfter{0}, json.RawMessage(`[{"op":"add","path":"/x","value":1}]`))
+		require.Error(t, err)
+	})
+}
+
+func TestDiffPatchRejectsMultipleLayers(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("a", "redis://h:6379/0"))
+	require.NoError(t, c.Add("b", "redis://h:6379/1"))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: time.Second}
+	// Two layers with --patch is rejected before any store is opened, so no
+	// connection is attempted.
+	_, err := runCmd(t, quietDiff(cfg), "a", "b", "--data", "--schema", "--patch")
+	require.ErrorContains(t, err, "single layer")
+}
+
+func TestDiffPatchExcludesStructuredFlags(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("a", "redis://h:6379/0"))
+	require.NoError(t, c.Add("b", "redis://h:6379/1"))
+	seedConfig(t, c)
+
+	tests := []struct {
+		name string
+		flag string
+	}{
+		{"json", "--json"},
+		{"yaml", "--yaml"},
+		{"set-arrays", "--set-arrays"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config{timeout: time.Second}
+			// Cobra enforces the flag groups before RunE, so the pair is rejected
+			// without opening a store.
+			_, err := runCmd(t, quietDiff(cfg), "a", "b", "--patch", tt.flag)
+			require.ErrorContains(t, err, "none of the others can be")
+		})
+	}
+}
+
+func TestDiffPatchRedisIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: needs a reachable Redis")
+	}
+	base := redisBaseURL()
+	urlA, err := withRedisDB(base, testRedisDB)
+	require.NoError(t, err)
+	urlB, err := withRedisDB(base, testRedisDBAlt)
+	require.NoError(t, err)
+	seedRedis(t, urlA, map[string]string{"keep": "same", "shared": "old"})
+	seedRedis(t, urlB, map[string]string{"keep": "same", "shared": "new", "extra": "add"})
+
+	c := newSeed()
+	require.NoError(t, c.Add("a", urlA))
+	require.NoError(t, c.Add("b", urlB))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: 5 * time.Second}
+
+	// Differing sources: the patch is non-empty and diff exits with the quiet-exit
+	// sentinel while still printing a valid RFC 6902 document.
+	out, err := runCmd(t, quietDiff(cfg), "a", "b", "--patch")
+	require.ErrorIs(t, err, errQuietExit)
+	var ops []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &ops))
+	require.NotEmpty(t, ops)
+	for _, op := range ops {
+		require.Contains(t, []any{"add", "remove", "replace"}, op["op"])
+	}
+
+	// Identical sources: the patch is the literal empty array and diff exits zero.
+	same, err := runCmd(t, newDiffCmd(cfg), "a", "a", "--patch")
+	require.NoError(t, err)
+	require.Equal(t, "[]\n", same)
+}
+
+// TestDiffSetArraysMongoIntegration pins that --set-arrays threads into the data
+// layer: a document whose only difference is a reordered array reads as changed by
+// default but equal under --set-arrays.
+func TestDiffSetArraysMongoIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: needs a reachable MongoDB")
+	}
+	base := mongoBaseURL()
+	seedMongo(t, base, "sa", []string{`{"_id":"1","tags":["a","b","c"]}`})
+	seedMongo(t, base, "sb", []string{`{"_id":"1","tags":["c","b","a"]}`})
+
+	c := newSeed()
+	require.NoError(t, c.Add("a", base+"?collection=sa"))
+	require.NoError(t, c.Add("b", base+"?collection=sb"))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: 8 * time.Second}
+
+	// Default order-sensitive diff: the reordered array makes the item differ.
+	_, err := runCmd(t, quietDiff(cfg), "a", "b", "--data")
+	require.ErrorIs(t, err, errQuietExit)
+
+	// --set-arrays compares the array as a multiset, so the reorder is no delta and
+	// diff exits zero.
+	_, err = runCmd(t, newDiffCmd(cfg), "a", "b", "--data", "--set-arrays")
+	require.NoError(t, err)
 }

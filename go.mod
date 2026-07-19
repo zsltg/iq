@@ -37,6 +37,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.43.0
 	github.com/tsuna/gohbase v0.0.0-20260613001017-cfe2cb9e6df3
 	github.com/vbauerster/mpb/v8 v8.12.1
+	github.com/wI2L/jsondiff v0.7.0
 	github.com/zalando/go-keyring v0.2.8
 	go.mongodb.org/mongo-driver/v2 v2.7.0
 	golang.org/x/term v0.43.0
@@ -126,6 +127,7 @@ require (
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect

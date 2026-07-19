@@ -50,7 +50,8 @@ func (t diffTarget) collection() string {
 func newDiffCmd(cfg *config) *cobra.Command {
 	var (
 		dataMode, statsMode, schemaMode bool
-		jsonOut, yamlOut                bool
+		jsonOut, yamlOut, patchOut      bool
+		setArrays                       bool
 		sections                        []string
 		sample                          int
 	)
@@ -72,7 +73,12 @@ func newDiffCmd(cfg *config) *cobra.Command {
 		"            declared, so a wider sample yields a truer shape.\n\n" +
 		"Use -j/--json or -y/--yaml for a machine-readable delta. diff exits non-zero when\n" +
 		"the sources differ and zero when they match (diff(1)-style), so scripts can branch\n" +
-		"on the exit status."
+		"on the exit status.\n\n" +
+		"--set-arrays compares every array order-insensitively as a multiset (duplicates\n" +
+		"counted), reporting membership deltas at the array's own path. --patch emits an\n" +
+		"RFC 6902 JSON Patch instead of the human/JSON delta; it renders exactly one layer\n" +
+		"(choose one of --data/--stats/--schema) and excludes --json, --yaml, and\n" +
+		"--set-arrays."
 	c := &cobra.Command{
 		Use:   "diff <a> <b>",
 		Short: "Compare two sources by data, stats, or inferred schema",
@@ -98,6 +104,9 @@ func newDiffCmd(cfg *config) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if patchOut && layerCount(dataMode, statsMode, schemaMode) > 1 {
+				return errors.New("--patch renders one JSON Patch, so it needs a single layer; choose exactly one of --data, --stats, --schema")
+			}
 			if !dataMode && !statsMode && !schemaMode {
 				dataMode = true
 			}
@@ -105,13 +114,27 @@ func newDiffCmd(cfg *config) *cobra.Command {
 			ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 			defer cancel()
 
+			if patchOut {
+				// The one chosen layer, rendered as an RFC 6902 patch. --data reads
+				// both keyspaces fully, so it carries the same spinner as the
+				// human path; stop it before the error check so the line clears.
+				meter := newProgressMeter(cmd.ErrOrStderr(), cfg.noProgress)
+				raw, err := patchLayer(ctx, left, right, statsMode, schemaMode, sections, sample, meter.Tick)
+				meter.Stop()
+				if err != nil {
+					return err
+				}
+				return renderPatch(cmd.OutOrStdout(), raw)
+			}
+
+			opts := diff.Options{SetArrays: setArrays}
 			rep := report{dataRun: dataMode, statsRun: statsMode, schemaRun: schemaMode}
 			if dataMode {
 				// --data reads both keyspaces fully with no output until the
 				// report renders, so a spinner fits cleanly. Stop it before the
 				// error check and before render, so the line clears either way.
 				meter := newProgressMeter(cmd.ErrOrStderr(), cfg.noProgress)
-				d, err := diffData(ctx, left, right, meter.Tick)
+				d, err := diffData(ctx, left, right, meter.Tick, opts)
 				meter.Stop()
 				if err != nil {
 					return err
@@ -119,14 +142,14 @@ func newDiffCmd(cfg *config) *cobra.Command {
 				rep.Data = d
 			}
 			if statsMode {
-				s, err := diffStats(ctx, left, right, sections)
+				s, err := diffStats(ctx, left, right, sections, opts)
 				if err != nil {
 					return err
 				}
 				rep.Stats = s
 			}
 			if schemaMode {
-				s, err := diffSchema(ctx, left, right, sample)
+				s, err := diffSchema(ctx, left, right, sample, opts)
 				if err != nil {
 					return err
 				}
@@ -147,9 +170,12 @@ func newDiffCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVar(&schemaMode, "schema", false, "diff an inferred field/type shape (cross-driver allowed)")
 	c.Flags().StringArrayVar(&sections, "section", nil, "introspection section(s) for --stats (repeatable; default: the source's full set)")
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled per side for --schema (0 = all)")
+	c.Flags().BoolVar(&setArrays, "set-arrays", false, "compare arrays order-insensitively as multisets (duplicates counted)")
 	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
 	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit machine-readable YAML")
-	c.MarkFlagsMutuallyExclusive("json", "yaml")
+	c.Flags().BoolVar(&patchOut, "patch", false, "emit an RFC 6902 JSON Patch (single layer only; excludes --json/--yaml/--set-arrays)")
+	c.MarkFlagsMutuallyExclusive("json", "yaml", "patch")
+	c.MarkFlagsMutuallyExclusive("patch", "set-arrays")
 	return c
 }
 
@@ -171,17 +197,28 @@ func resolveDiffTarget(cf *iqconfig.Config, name string) (diffTarget, error) {
 	return diffTarget{handle: full, url: u, address: addr, driver: driverName(u)}, nil
 }
 
-// diffData reads both keyspaces fully and diffs them key by key.
-func diffData(ctx context.Context, left, right diffTarget, onPage func(int)) ([]diff.ItemDelta, error) {
-	a, err := readAll(ctx, left, onPage)
+// diffData reads both keyspaces fully and diffs them key by key under opts.
+func diffData(ctx context.Context, left, right diffTarget, onPage func(int), opts diff.Options) ([]diff.ItemDelta, error) {
+	a, b, err := readBoth(ctx, left, right, onPage)
 	if err != nil {
 		return nil, err
 	}
-	b, err := readAll(ctx, right, onPage)
+	return diff.KeyedOpt(a, b, opts), nil
+}
+
+// readBoth materializes both sources' whole keyspaces, ticking onPage per page.
+// It is the shared collector behind the keyed data diff and the --patch data
+// layer.
+func readBoth(ctx context.Context, left, right diffTarget, onPage func(int)) (a, b map[string]any, err error) {
+	a, err = readAll(ctx, left, onPage)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return diff.Keyed(a, b), nil
+	b, err = readAll(ctx, right, onPage)
+	if err != nil {
+		return nil, nil, err
+	}
+	return a, b, nil
 }
 
 // readAll materializes a source's whole keyspace as key -> value. A key repeated
@@ -209,20 +246,31 @@ func readAll(ctx context.Context, t diffTarget, onPage func(int)) (map[string]an
 }
 
 // diffStats runs the same native introspection against both sources and diffs the
-// replies. Both sources must use the same driver.
-func diffStats(ctx context.Context, left, right diffTarget, sections []string) ([]diff.Change, error) {
+// replies under opts. Both sources must use the same driver.
+func diffStats(ctx context.Context, left, right diffTarget, sections []string, opts diff.Options) ([]diff.Change, error) {
+	a, b, err := statsTrees(ctx, left, right, sections)
+	if err != nil {
+		return nil, err
+	}
+	return diff.TreeOpt(a, b, opts), nil
+}
+
+// statsTrees collects both sources' native introspection trees, rejecting a
+// cross-driver pair first. It is the shared collector behind the stats diff and
+// the --patch stats layer.
+func statsTrees(ctx context.Context, left, right diffTarget, sections []string) (a, b map[string]any, err error) {
 	if left.driver != right.driver {
-		return nil, fmt.Errorf("stats diff needs two sources of the same driver; %q is %s and %q is %s", left.handle, left.driver, right.handle, right.driver)
+		return nil, nil, fmt.Errorf("stats diff needs two sources of the same driver; %q is %s and %q is %s", left.handle, left.driver, right.handle, right.driver)
 	}
-	a, err := collectInspect(ctx, left, sections)
+	a, err = collectInspect(ctx, left, sections)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	b, err := collectInspect(ctx, right, sections)
+	b, err = collectInspect(ctx, right, sections)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return diff.Tree(a, b), nil
+	return a, b, nil
 }
 
 // collectInspect runs the introspection commands for a source and returns the
@@ -286,16 +334,75 @@ func redisInfoTree(info string) map[string]any {
 // shape, not per-driver introspection, so two backends compare meaningfully. Two
 // backends that genuinely normalize a native type differently still diff — that
 // is the JSON each serves back, and the format tags make the row legible.
-func diffSchema(ctx context.Context, left, right diffTarget, sample int) ([]diff.Change, error) {
-	a, err := sampleShape(ctx, left, sample)
+func diffSchema(ctx context.Context, left, right diffTarget, sample int, opts diff.Options) ([]diff.Change, error) {
+	a, b, err := schemaShapes(ctx, left, right, sample)
 	if err != nil {
 		return nil, err
 	}
-	b, err := sampleShape(ctx, right, sample)
+	return diff.TreeOpt(a, b, opts), nil
+}
+
+// schemaShapes samples and infers both sources' comparable shapes. It is the
+// shared collector behind the schema diff and the --patch schema layer.
+func schemaShapes(ctx context.Context, left, right diffTarget, sample int) (a, b map[string]any, err error) {
+	a, err = sampleShape(ctx, left, sample)
+	if err != nil {
+		return nil, nil, err
+	}
+	b, err = sampleShape(ctx, right, sample)
+	if err != nil {
+		return nil, nil, err
+	}
+	return a, b, nil
+}
+
+// layerCount counts how many of the three diff layers are selected.
+func layerCount(dataMode, statsMode, schemaMode bool) int {
+	n := 0
+	for _, on := range []bool{dataMode, statsMode, schemaMode} {
+		if on {
+			n++
+		}
+	}
+	return n
+}
+
+// patchLayer collects the one selected layer's two trees and renders their delta
+// as an RFC 6902 JSON Patch. With neither statsMode nor schemaMode it is the data
+// layer (the default), so onPage ticks the read spinner; the stats and schema
+// layers ignore onPage.
+func patchLayer(ctx context.Context, left, right diffTarget, statsMode, schemaMode bool, sections []string, sample int, onPage func(int)) (json.RawMessage, error) {
+	var a, b map[string]any
+	var err error
+	switch {
+	case statsMode:
+		a, b, err = statsTrees(ctx, left, right, sections)
+	case schemaMode:
+		a, b, err = schemaShapes(ctx, left, right, sample)
+	default:
+		a, b, err = readBoth(ctx, left, right, onPage)
+	}
 	if err != nil {
 		return nil, err
 	}
-	return diff.Tree(a, b), nil
+	return diff.Patch(a, b)
+}
+
+// renderPatch pretty-prints an RFC 6902 patch through the shared structured writer
+// and applies the diff(1) exit contract: a non-empty patch returns errQuietExit
+// (non-zero exit) while still printing, an empty patch prints [] and exits zero.
+func renderPatch(out io.Writer, raw json.RawMessage) error {
+	var ops []any
+	if err := json.Unmarshal(raw, &ops); err != nil {
+		return fmt.Errorf("decode json patch: %w", err)
+	}
+	if err := writeStructured(out, ops, false); err != nil {
+		return err
+	}
+	if len(ops) > 0 {
+		return errQuietExit
+	}
+	return nil
 }
 
 // sampleShape reads up to sample items from a source and infers its comparable

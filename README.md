@@ -164,9 +164,17 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   presence, so it measures logical shape rather than sampling luck and stays quiet under resampling.
   Two backends that genuinely normalize a native type differently (a timestamp as an RFC3339 string
   vs an epoch number) still diff — that is the JSON each serves back, and the format tags make the
-  row legible rather than mysterious. Layers combine; `-j`/`--json` or `-y`/`--yaml` for a
-  machine-readable delta. `diff` exits non-zero when the sources differ and zero when they match
-  (diff(1)-style), so scripts can branch on the exit status. Bounded by `--timeout`.
+  row legible rather than mysterious. Arrays are aligned by a longest common subsequence, so a single
+  insertion reports one addition rather than a cascade at every later index. `--set-arrays` instead
+  compares every array order-insensitively as a multiset (duplicates counted), reporting membership
+  deltas at the array's own path with no index segment — a pure reorder becomes no difference. Layers
+  combine; `-j`/`--json` or `-y`/`--yaml` for a machine-readable delta. `--patch` emits an
+  [RFC 6902](https://www.rfc-editor.org/rfc/rfc6902) JSON Patch that transforms the left source into
+  the right (piped to any JSON Patch tool); it renders exactly one layer (choose one of
+  `--data`/`--stats`/`--schema`), and for `--data` the pointers read `/<key>/<field>` over the whole
+  keyspace map. `--patch` excludes `--json`, `--yaml`, and `--set-arrays` (a positional patch cannot
+  carry order-insensitive semantics). `diff` exits non-zero when the sources differ and zero when they
+  match (diff(1)-style), so scripts can branch on the exit status. Bounded by `--timeout`.
 - `iq schema [source]` — sample a source and emit a draft 2020-12 **JSON Schema** inferred from its
   values (the same inference `diff --schema` uses, projected to standard JSON Schema). It is the
   driver-agnostic, sampled complement to `iq inspect`'s native introspection: address the source like
@@ -1866,7 +1874,12 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   also contributes pure, connection-free `--explain` describers
   (`ExplainWrite`/`ExplainClear`/`ExplainDrop`) alongside `ExplainPlan`.
 - `internal/diff` — a driver-agnostic structural diff over the normalized JSON values every adapter
-  produces. `Tree` diffs two values and `Keyed` aligns two keyed item sets. It holds no I/O: `iq diff`
+  produces. `Tree` diffs two values and `Keyed` aligns two keyed item sets; arrays are aligned by a
+  hand-rolled longest-common-subsequence walk (a bounded positional fallback past ~1e6 DP cells), so
+  one insertion is one delta rather than a cascade. `TreeOpt`/`KeyedOpt` take an `Options` carrier
+  whose `SetArrays` switches arrays to order-insensitive multiset comparison. `Patch` renders the same
+  two values as an RFC 6902 JSON Patch via `github.com/wI2L/jsondiff` (the only place that dependency
+  is used; the third-party patch type never crosses the package boundary). It holds no I/O: `iq diff`
   reads each side through the ports and hands the materialized values here.
 - `internal/shape` — driver-agnostic schema inference (heuristics adapted from quicktype, Apache-2.0;
   no code copied). `Infer` reduces a sample to a typed shape tree; `Comparable` projects a stable
