@@ -109,6 +109,19 @@ func TestTree(t *testing.T) {
 			},
 		},
 		{
+			// A paired block of two changed elements after an anchor pins the
+			// recursion offsets (a[ai+k], b[bi+k]) at k=1 with ai,bi > 0: a lost or
+			// negated offset walks the anchor against a later element and reports a
+			// whole-subtree change instead of these field-level deltas.
+			name: "anchored paired block recurses at the right offsets",
+			a:    []any{true, map[string]any{"v": 1}, map[string]any{"w": 1}},
+			b:    []any{true, map[string]any{"v": 2}, map[string]any{"w": 2}},
+			want: []diff.Change{
+				{Path: []string{"[1]", "v"}, Op: diff.OpChange, Old: 1, New: 2},
+				{Path: []string{"[2]", "w"}, Op: diff.OpChange, Old: 1, New: 2},
+			},
+		},
+		{
 			// int/float64 parity holds through the LCS anchor predicate: 2 and 2.0
 			// anchor, so only the genuine string change survives.
 			name: "int and float anchor together in arrays",

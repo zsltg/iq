@@ -516,10 +516,16 @@ func TestRenderPatch(t *testing.T) {
 		var buf bytes.Buffer
 		err := renderPatch(&buf, json.RawMessage(`{not a patch`))
 		require.ErrorContains(t, err, "decode json patch")
+		// %w keeps the json cause reachable for errors.As; %v would sever it.
+		var syn *json.SyntaxError
+		require.ErrorAs(t, err, &syn)
 	})
 	t.Run("write error propagates", func(t *testing.T) {
 		err := renderPatch(&errAfter{0}, json.RawMessage(`[{"op":"add","path":"/x","value":1}]`))
 		require.Error(t, err)
+		// The write error itself, not the quiet-exit sentinel a dropped guard
+		// would fall through to.
+		require.NotErrorIs(t, err, errQuietExit)
 	})
 }
 
@@ -559,6 +565,97 @@ func TestDiffPatchExcludesStructuredFlags(t *testing.T) {
 			require.ErrorContains(t, err, "none of the others can be")
 		})
 	}
+}
+
+// fileSource writes a one-item jsonl dump and returns its file:// URL, giving
+// the patch and schema paths a connection-free end-to-end source.
+func fileSource(t *testing.T, line string) string {
+	t.Helper()
+	dump := filepath.Join(t.TempDir(), "d.jsonl")
+	require.NoError(t, os.WriteFile(dump, []byte(line+"\n"), 0o600))
+	return "file://" + dump
+}
+
+func TestDiffPatchSingleLayer(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("a", fileSource(t, `{"key":"1","value":{"name":"a"}}`)))
+	// b differs in value (for --data) and carries an extra field so the inferred
+	// shape differs too (for --schema).
+	require.NoError(t, c.Add("b", fileSource(t, `{"key":"1","value":{"name":"b","extra":true}}`)))
+	seedConfig(t, c)
+
+	for _, layer := range []string{"--data", "--schema"} {
+		t.Run(layer, func(t *testing.T) {
+			cfg := &config{timeout: 5 * time.Second}
+			// Exactly one explicit layer passes the single-layer gate and renders
+			// a real RFC 6902 patch; the differing sources signal the quiet exit,
+			// never the layer-gate message.
+			out, err := runCmd(t, quietDiff(cfg), "a", "b", layer, "--patch")
+			require.ErrorIs(t, err, errQuietExit)
+			require.NotContains(t, out, "single layer")
+			var ops []map[string]any
+			require.NoError(t, json.Unmarshal([]byte(out), &ops))
+			require.NotEmpty(t, ops)
+			for _, op := range ops {
+				require.Contains(t, op, "op")
+				require.Contains(t, op, "path")
+			}
+		})
+	}
+
+	t.Run("identical sources print the empty patch and exit zero", func(t *testing.T) {
+		cfg := &config{timeout: 5 * time.Second}
+		out, err := runCmd(t, quietDiff(cfg), "a", "a", "--data", "--patch")
+		require.NoError(t, err)
+		require.Equal(t, "[]\n", out)
+	})
+}
+
+func TestDiffPatchStatsCrossDriverError(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("f", fileSource(t, `{"key":"1","value":{}}`)))
+	require.NoError(t, c.Add("r", "redis://127.0.0.1:1/0"))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: time.Second}
+	// statsTrees rejects the cross-driver pair before dialing; the patch path
+	// must surface that error, not fall through to decoding an absent patch.
+	_, err := runCmd(t, quietDiff(cfg), "f", "r", "--stats", "--patch")
+	require.ErrorContains(t, err, "same driver")
+}
+
+func TestDiffSchemaSelfIsEmpty(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("a", fileSource(t, `{"key":"1","value":{"name":"a","age":30}}`)))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: 5 * time.Second}
+	// A source diffed against itself has identical shapes on both sides: exit
+	// zero. A collector that loses a side would report every field as a delta.
+	out, err := runCmd(t, newDiffCmd(cfg), "a", "a", "--schema")
+	require.NoError(t, err)
+	require.Contains(t, out, "no differences")
+}
+
+func TestDiffStatsCanceledContext(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("a", "redis://127.0.0.1:1/0"))
+	require.NoError(t, c.Add("b", "redis://127.0.0.1:1/1"))
+	seedConfig(t, c)
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	left, err := resolveDiffTarget(cf, "a")
+	require.NoError(t, err)
+	right, err := resolveDiffTarget(cf, "b")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	// The already-canceled context fails the collectors before any dial; a
+	// collector that drops the context would reach the network and fail
+	// differently.
+	_, err = diffStats(ctx, left, right, nil, diff.Options{})
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestDiffPatchRedisIntegration(t *testing.T) {
