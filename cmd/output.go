@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -280,11 +279,14 @@ func encodeElem(v any, indent bool) (string, error) {
 
 // valuesFormatter prints jq scalars unquoted, one per line, for shell
 // substitution. A composite value (object or array) has no bare form, so it
-// falls back to compact JSON on its line; nothing is lost.
+// falls back to compact JSON on its line; nothing is lost. Bare strings and
+// nulls always print uncolored (that bareness is the format's contract), but the
+// composite fallback and non-string scalars follow the invocation's color mode,
+// like jq -r.
 type valuesFormatter struct {
 	w   io.Writer
 	buf bytes.Buffer
-	enc *json.Encoder
+	enc render.Encoder
 }
 
 func (f *valuesFormatter) emit(v any) error {
@@ -305,12 +307,13 @@ func (f *valuesFormatter) emit(v any) error {
 func (f *valuesFormatter) flush() error { return nil }
 
 // compact renders v as single-line JSON without HTML escaping, reusing one
-// buffer and encoder across calls and trimming the trailing newline.
+// buffer and encoder across calls and trimming the trailing newline. The encoder
+// syntax-highlights when the invocation's color mode is on and is the plain
+// stdlib encoder otherwise, so color-off output stays byte-identical.
 func (f *valuesFormatter) compact(v any) (string, error) {
 	f.buf.Reset()
 	if f.enc == nil {
-		f.enc = json.NewEncoder(&f.buf)
-		f.enc.SetEscapeHTML(false)
+		f.enc = render.NewJSONEncoder(&f.buf, "", "", colorOn())
 	}
 	if err := f.enc.Encode(v); err != nil {
 		return "", fmt.Errorf("encode result: %w", err)

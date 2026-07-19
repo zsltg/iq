@@ -386,9 +386,10 @@ limitation); exactness is kept in preference to YAML's numeric form.
 ### Colored output
 
 Output is syntax-highlighted when `iq` writes to a terminal and left plain when it is piped or
-redirected, so captured output stays clean. The `--json`, `--jsonl`, `--jsona`, and
-`--yaml` renderings get syntax highlighting; the `--raw`, `--gron`, and `--grona` renderings
-are always plain so they stay safe for shell capture. The human commands color their signal too: `ping` shows `ok`/`error` in
+redirected, so captured output stays clean — that TTY detection is where capture safety comes
+from. Every rendering syntax-highlights on a terminal: `--json`, `--jsonl`, `--jsona`, `--yaml`,
+and now `--raw`, `--gron`, and `--grona` too. Under `--raw`, strings and nulls still print bare
+and uncolored, keeping shell substitution exact. The human commands color their signal too: `ping` shows `ok`/`error` in
 green/red, `diff` shows additions green, removals red, and changes yellow, and `ls`/`inspect`
 highlight the active source and section headers. The raw reply bodies from `exec` and `inspect`
 are colored in their native form — JSON syntax highlighting for MongoDB, and redis-cli-style

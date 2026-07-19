@@ -12,7 +12,92 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/diff"
+	"github.com/zsltg/iq/internal/render"
 )
+
+// TestValuesFormatterColored proves the --raw rendering colors its composite
+// fallback and non-string scalars but keeps bare strings and nulls uncolored,
+// and that with color on the visible bytes still equal the plain rendering.
+func TestValuesFormatterColored(t *testing.T) {
+	// Not parallel: flips the global color mode.
+	orig := color.NoColor
+	t.Cleanup(func() { color.NoColor = orig })
+
+	tests := []struct {
+		name    string
+		val     any
+		colored bool // whether the colored rendering should carry ANSI escapes
+	}{
+		{name: "number", val: 42, colored: true},
+		{name: "bool", val: true, colored: true},
+		{name: "object", val: map[string]any{"name": "alice", "year": 2020}, colored: true},
+		{name: "string is bare and uncolored", val: "alice", colored: false},
+		{name: "nil is bare and uncolored", val: nil, colored: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			color.NoColor = true
+			plain := renderFormatter(t, formatValues, false, tt.val)
+			color.NoColor = false
+			got := renderFormatter(t, formatValues, false, tt.val)
+			require.Equal(t, plain, stripANSI(got), "stripANSI must equal the plain rendering")
+			if tt.colored {
+				require.Contains(t, got, "\x1b[", "colored rendering must carry ANSI escapes")
+			} else {
+				require.NotContains(t, got, "\x1b[", "bare text must carry no escapes")
+			}
+		})
+	}
+}
+
+// TestGronFormatterColored proves both gron variants strip back to their plain,
+// ungron-safe output byte-for-byte and that a *big.Int still renders bare under
+// color (it implements json.Marshaler; the colored encoder must not break that).
+func TestGronFormatterColored(t *testing.T) {
+	// Not parallel: flips the global color mode.
+	orig := color.NoColor
+	t.Cleanup(func() { color.NoColor = orig })
+
+	tests := []struct {
+		name string
+		fm   outputFormat
+		vals []any
+	}{
+		{name: "gron scalars and nesting", fm: formatGron, vals: []any{map[string]any{"a": 1, "b": []any{"x", 2}}}},
+		{name: "grona indexes with a leading declaration", fm: formatGronArray, vals: []any{map[string]any{"a": 1}, "s"}},
+		{name: "gron big integer renders bare", fm: formatGron, vals: []any{mustBigInt("12345678901234567890")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			color.NoColor = true
+			plain := renderFormatter(t, tt.fm, false, tt.vals...)
+			color.NoColor = false
+			got := renderFormatter(t, tt.fm, false, tt.vals...)
+			require.Equal(t, plain, stripANSI(got), "colored gron must strip back to the plain output")
+			require.Contains(t, got, "\x1b[", "colored gron must carry ANSI escapes")
+		})
+	}
+}
+
+// TestGronColoredSegmentRoles pins the exact palette roles: the json root and a
+// bare key segment in the Key role, an array index in the Number role (brackets
+// plain), a string rhs in the String role, and grona's leading declaration.
+func TestGronColoredSegmentRoles(t *testing.T) {
+	// Not parallel: flips the global color mode.
+	orig := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = orig })
+
+	const reset = "\x1b[0m"
+	got := renderFormatter(t, formatGron, false, map[string]any{"name": "alice", "arr": []any{1}})
+	require.Contains(t, got, render.ColorKey+"json"+reset, "json root in the Key role")
+	require.Contains(t, got, render.ColorKey+".name"+reset, "bare key segment in the Key role")
+	require.Contains(t, got, "["+render.ColorNumber+"0"+reset+"]", "array index in the Number role, brackets plain")
+	require.Contains(t, got, render.ColorString+`"alice"`, "string rhs in the String role")
+
+	gotA := renderFormatter(t, formatGronArray, false, "s")
+	require.Contains(t, gotA, render.ColorKey+"json"+reset+" = [];", "grona leading declaration keeps json in the Key role")
+}
 
 // ansiRE matches SGR escape sequences, so a colored rendering can be reduced to
 // its visible text.

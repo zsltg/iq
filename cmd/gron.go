@@ -2,13 +2,14 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/zsltg/iq/internal/render"
 )
 
 // gronIdent matches a key that can follow a bare dot (`.key`) in a gron path.
@@ -22,12 +23,16 @@ var gronIdent = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 // result at a repeated `json` (ungron is last-write-wins across results); the
 // indexed variant (grona) roots result N at json[N] and prefixes a leading
 // `json = [];` declaration, so the whole stream ungrons back to one array.
+// On a terminal the path segments and scalar rhs values syntax-highlight (bare
+// keys and the json root in the Key role, array indices in the Number role, and
+// rhs scalars via the colored encoder); with color off every byte is unchanged,
+// so the output stays ungron-safe.
 type gronFormatter struct {
 	w       io.Writer
 	indexed bool // grona: root result N at json[N] instead of repeating json.
 	n       int  // results emitted (grona root index / declaration latch).
 	buf     bytes.Buffer
-	enc     *json.Encoder
+	enc     render.Encoder
 }
 
 // emit flattens v into gron statements. Plain gron roots at json; grona writes a
@@ -35,14 +40,14 @@ type gronFormatter struct {
 // result N at json[N].
 func (f *gronFormatter) emit(v any) error {
 	if !f.indexed {
-		return f.walk("json", v)
+		return f.walk(gronRoot(), v)
 	}
 	if f.n == 0 {
-		if err := f.line("json", "[]"); err != nil {
+		if err := f.line(gronRoot(), "[]"); err != nil {
 			return err
 		}
 	}
-	if err := f.walk(fmt.Sprintf("json[%d]", f.n), v); err != nil {
+	if err := f.walk(gronRoot()+indexSeg(f.n), v); err != nil {
 		return err
 	}
 	f.n++
@@ -54,7 +59,7 @@ func (f *gronFormatter) emit(v any) error {
 // ungrons to [] (mirroring an empty --jsona rendering []).
 func (f *gronFormatter) flush() error {
 	if f.indexed && f.n == 0 {
-		return f.line("json", "[]")
+		return f.line(gronRoot(), "[]")
 	}
 	return nil
 }
@@ -86,7 +91,7 @@ func (f *gronFormatter) walk(path string, v any) error {
 			return err
 		}
 		for i, e := range t {
-			if err := f.walk(fmt.Sprintf("%s[%d]", path, i), e); err != nil {
+			if err := f.walk(path+indexSeg(i), e); err != nil {
 				return err
 			}
 		}
@@ -102,10 +107,12 @@ func (f *gronFormatter) walk(path string, v any) error {
 
 // key renders an object key as a path segment: a bare `.key` when it is an ASCII
 // identifier, else a bracketed `["<JSON-escaped>"]`. compact keeps HTML-escaping
-// off, so a key like a<b stays verbatim like every other formatter.
+// off, so a key like a<b stays verbatim like every other formatter. A bare
+// segment carries the Key color; a bracketed key's quoted string is colored by
+// compact (the String role) and the brackets stay plain.
 func (f *gronFormatter) key(k string) string {
 	if gronIdent.MatchString(k) {
-		return "." + k
+		return sgr(render.ColorKey, "."+k)
 	}
 	quoted, err := f.compact(k)
 	if err != nil {
@@ -117,17 +124,37 @@ func (f *gronFormatter) key(k string) string {
 
 // compact renders v as single-line JSON without HTML escaping, reusing one
 // buffer and encoder across calls and trimming the trailing newline (so a
-// *big.Int renders bare). It mirrors valuesFormatter.compact.
+// *big.Int renders bare). It mirrors valuesFormatter.compact. The encoder
+// syntax-highlights the rhs when the invocation's color mode is on and is the
+// plain stdlib encoder otherwise, keeping color-off output byte-identical.
 func (f *gronFormatter) compact(v any) (string, error) {
 	f.buf.Reset()
 	if f.enc == nil {
-		f.enc = json.NewEncoder(&f.buf)
-		f.enc.SetEscapeHTML(false)
+		f.enc = render.NewJSONEncoder(&f.buf, "", "", colorOn())
 	}
 	if err := f.enc.Encode(v); err != nil {
 		return "", fmt.Errorf("encode result: %w", err)
 	}
 	return strings.TrimRight(f.buf.String(), "\n"), nil
+}
+
+// gronRoot returns the `json` root path segment, colored in the Key role on a
+// terminal and bare otherwise.
+func gronRoot() string { return sgr(render.ColorKey, "json") }
+
+// indexSeg renders an `[N]` array-index segment: plain brackets around a
+// Number-colored index.
+func indexSeg(i int) string {
+	return "[" + sgr(render.ColorNumber, strconv.Itoa(i)) + "]"
+}
+
+// sgr wraps s in the SGR escape code and a reset when color is on, returning s
+// unchanged otherwise so the plain path stays byte-identical.
+func sgr(code, s string) string {
+	if !colorOn() {
+		return s
+	}
+	return code + s + "\x1b[0m"
 }
 
 // line writes one `path = rhs;` statement followed by a newline.

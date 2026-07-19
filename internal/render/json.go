@@ -17,6 +17,26 @@ import (
 // encoder and the colored encoder satisfy it.
 type Encoder interface{ Encode(v any) error }
 
+// The Color* constants are the SGR escape sequences for each JSON syntax role,
+// the single source of truth for both the colored encoder here and the CLI's own
+// per-segment coloring (gron path segments reuse the Key and Number roles). Only
+// the roles the CLI reuses are exported; the rest stay package-private but still
+// feed jsonColors so the palette has one definition.
+const (
+	// ColorKey is the SGR code for an object key (blue-bold).
+	ColorKey = "\x1b[34;1m"
+	// ColorString is the SGR code for a string value (green).
+	ColorString = "\x1b[32m"
+	// ColorNumber is the SGR code for a number value (cyan).
+	ColorNumber = "\x1b[36m"
+
+	colorBool  = "\x1b[1m"    // Boolean value (bold).
+	colorNull  = "\x1b[2m"    // Null value (faint).
+	colorBytes = "\x1b[2m"    // Byte value (faint).
+	colorTime  = "\x1b[32;2m" // Time value (green-faint).
+	colorPunc  = "\x1b[2m"    // Structural punctuation (faint).
+)
+
 // jsonColors is the JSON syntax palette. It mirrors jsoncolor.DefaultColors but
 // dims punctuation rather than leaving it uncolored: the encoder always writes a
 // reset after each punctuation mark, so an empty punctuation color yields a
@@ -24,14 +44,14 @@ type Encoder interface{ Encode(v any) error }
 // keeps every reset paired and the escape stream well-formed, and reads well —
 // structural punctuation recedes so the values stand out.
 var jsonColors = &jsoncolor.Colors{
-	Key:    jsoncolor.Color("\x1b[34;1m"),
-	String: jsoncolor.Color("\x1b[32m"),
-	Number: jsoncolor.Color("\x1b[36m"),
-	Bool:   jsoncolor.Color("\x1b[1m"),
-	Null:   jsoncolor.Color("\x1b[2m"),
-	Bytes:  jsoncolor.Color("\x1b[2m"),
-	Time:   jsoncolor.Color("\x1b[32;2m"),
-	Punc:   jsoncolor.Color("\x1b[2m"),
+	Key:    jsoncolor.Color(ColorKey),
+	String: jsoncolor.Color(ColorString),
+	Number: jsoncolor.Color(ColorNumber),
+	Bool:   jsoncolor.Color(colorBool),
+	Null:   jsoncolor.Color(colorNull),
+	Bytes:  jsoncolor.Color(colorBytes),
+	Time:   jsoncolor.Color(colorTime),
+	Punc:   jsoncolor.Color(colorPunc),
 }
 
 // NewJSONEncoder returns a streaming JSON encoder writing to w. When colored is
