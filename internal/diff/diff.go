@@ -306,7 +306,10 @@ func lcsPairs(a, b []any) [][2]int {
 		}
 	}
 	var pairs [][2]int
-	for i, j := 0, 0; i < la && j < lb; {
+	// Every iteration advances i or j by one, so the backtrack legitimately takes
+	// at most la+lb steps; the explicit bound makes the loop terminate — with a
+	// visibly wrong alignment — even if an advance is lost, rather than spin.
+	for i, j, steps := 0, 0, 0; i < la && j < lb && steps < la+lb; steps++ {
 		switch {
 		case same(a[i], b[j]):
 			pairs = append(pairs, [2]int{i, j})
