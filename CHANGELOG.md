@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.28.0 - 2026-07-19
+### Documentation
+- add export cookbook, null-vs-missing stance, pushdown citations (59c304d)
+- **mutation:** committed baseline justification notes (f7a3c6b)
+
+### Features
+- **explain:** report per-conjunct pushdown decisions (1c67532)
+- **file:** prefilter uncached jsonl scans client-side with rawpred (eebfe15)
+- **output:** add parquet export format (dd8b213)
+- **rawpred:** evaluate size and element predicates on raw bytes (d456230)
+- **schema:** emit odcs v3.1.0 contracts (76417f1)
+
+
 ## v0.27.0 - 2026-07-18
 ### Features
 - **couchbase:** prefilter residual scans client-side with rawpred (e87d76d)
