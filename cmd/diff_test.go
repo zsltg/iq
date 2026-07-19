@@ -687,7 +687,11 @@ func TestPatchLayerCanceledContext(t *testing.T) {
 func TestDiffOneSideUnreachable(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("good", fileSource(t, `{"key":"1","value":{"name":"a"}}`)))
-	require.NoError(t, c.Add("bad", "redis://127.0.0.1:1/0"))
+	// The bad side must fail instantly and without consuming the shared context:
+	// a connect-refused endpoint burns the whole deadline in driver retries, and
+	// then the good side fails on the expired context too, masking a dropped
+	// error guard. A missing file errors immediately, context untouched.
+	require.NoError(t, c.Add("bad", "file:///nonexistent-iq-test/d.jsonl"))
 	seedConfig(t, c)
 
 	tests := []struct {

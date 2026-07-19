@@ -122,6 +122,38 @@ func TestTree(t *testing.T) {
 			},
 		},
 		{
+			// A map that is a strict subset of the other must NOT anchor: the size
+			// fast-reject in the anchor predicate is what keeps {a:1} and
+			// {a:1,b:2} paired-and-recursed instead of silently equal.
+			name: "subset map does not anchor",
+			a:    []any{map[string]any{"a": 1}},
+			b:    []any{map[string]any{"a": 1, "b": 2}},
+			want: []diff.Change{{Path: []string{"[0]", "b"}, Op: diff.OpAdd, New: 2}},
+		},
+		{
+			// Aligning [1,1,1] with [2,1] exercises the skip-a branch of the DP
+			// fill: its value must flow into the table for the backtrack to pick
+			// the two-delta alignment.
+			name: "duplicate run against shorter array",
+			a:    []any{1, 1, 1},
+			b:    []any{2, 1},
+			want: []diff.Change{
+				{Path: []string{"[0]"}, Op: diff.OpChange, Old: 1, New: 2},
+				{Path: []string{"[1]"}, Op: diff.OpRemove, Old: 1},
+			},
+		},
+		{
+			// The mirror shape exercises the skip-b branch of the DP fill: the
+			// trailing 1 anchors and both 2s read as leading adds.
+			name: "shorter array against duplicate run",
+			a:    []any{1},
+			b:    []any{2, 2, 1},
+			want: []diff.Change{
+				{Path: []string{"[0]"}, Op: diff.OpAdd, New: 2},
+				{Path: []string{"[1]"}, Op: diff.OpAdd, New: 2},
+			},
+		},
+		{
 			// int/float64 parity holds through the LCS anchor predicate: 2 and 2.0
 			// anchor, so only the genuine string change survives.
 			name: "int and float anchor together in arrays",
@@ -149,6 +181,18 @@ func TestTreeSetArrays(t *testing.T) {
 			a:    []any{1, 2},
 			b:    []any{2, 1},
 			want: nil,
+		},
+		{
+			// Elements are bucketed by canonical JSON, so the string "1" and the
+			// int 1 are different members ("1" vs 1); a fmt-style key would
+			// collide them into a spurious match.
+			name: "string and number of the same spelling differ",
+			a:    []any{"1"},
+			b:    []any{1},
+			want: []diff.Change{
+				{Path: []string{}, Op: diff.OpRemove, Old: "1"},
+				{Path: []string{}, Op: diff.OpAdd, New: 1},
+			},
 		},
 		{
 			// Multiset counts duplicates: the left has one extra 1, so exactly one
