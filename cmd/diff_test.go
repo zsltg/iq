@@ -637,6 +637,74 @@ func TestDiffSchemaSelfIsEmpty(t *testing.T) {
 	require.Contains(t, out, "no differences")
 }
 
+func TestDiffCombinedLayersAllowed(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("a", fileSource(t, `{"key":"1","value":{"name":"a"}}`)))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: 5 * time.Second}
+	// Two layers without --patch combine freely; only --patch demands a single
+	// layer. The self-diff is empty on both layers, so the run exits zero.
+	out, err := runCmd(t, newDiffCmd(cfg), "a", "a", "--data", "--schema")
+	require.NoError(t, err)
+	require.Contains(t, out, "no differences")
+}
+
+func TestPatchLayerCanceledContext(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("a", "redis://127.0.0.1:1/0"))
+	require.NoError(t, c.Add("b", "redis://127.0.0.1:1/1"))
+	seedConfig(t, c)
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	left, err := resolveDiffTarget(cf, "a")
+	require.NoError(t, err)
+	right, err := resolveDiffTarget(cf, "b")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tests := []struct {
+		name                  string
+		statsMode, schemaMode bool
+	}{
+		{"data layer", false, false},
+		{"stats layer", true, false},
+		{"schema layer", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The canceled context fails each arm's collector before any dial; an
+			// arm that drops the context would reach the network and fail
+			// differently.
+			_, err := patchLayer(ctx, left, right, tt.statsMode, tt.schemaMode, nil, 0, nil)
+			require.ErrorIs(t, err, context.Canceled)
+		})
+	}
+}
+
+func TestDiffStatsSelfSectionRedisIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: needs a reachable Redis")
+	}
+	base := redisBaseURL()
+	urlA, err := withRedisDB(base, testRedisDB)
+	require.NoError(t, err)
+
+	c := newSeed()
+	require.NoError(t, c.Add("a", urlA))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: 5 * time.Second}
+	// The cluster section is a single stable field (cluster_enabled:0), so a
+	// self-diff is deterministically empty and exits zero. A collector that
+	// loses either side would report the whole section as added or removed.
+	out, err := runCmd(t, newDiffCmd(cfg), "a", "a", "--stats", "--section", "cluster")
+	require.NoError(t, err)
+	require.Contains(t, out, "no differences")
+}
+
 func TestDiffStatsCanceledContext(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("a", "redis://127.0.0.1:1/0"))
