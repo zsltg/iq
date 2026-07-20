@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.30.0 - 2026-07-20
+### Features
+- **diff:** color the human report by operation (5c120d3)
+- **output:** color raw and gron renderings on a terminal (fd80fe6)
+
+
 ## v0.29.0 - 2026-07-20
 ### Refactoring
 - **diff:** fold the anchor predicate into one type switch (d88c9af)
