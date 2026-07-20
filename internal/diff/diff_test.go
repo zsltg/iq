@@ -3,6 +3,7 @@ package diff_test
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"sort"
 	"testing"
 
@@ -607,4 +608,52 @@ func TestTreeSetArraysDeterministicOrder(t *testing.T) {
 		keys = append(keys, string(bs))
 	}
 	require.Equal(t, want, keys)
+}
+
+// TestTreeArrayAlignmentIsMinimalAtScale extends the minimality property past the
+// sizes an exhaustive enumeration can reach. Arrays up to length 12 over four
+// symbols expose a degraded DP table that small inputs hide: a table that is
+// merely wrong rather than differently-tie-broken still finds a minimal path
+// through a handful of elements, but not through a dozen. The seed is fixed, so
+// a failure reproduces exactly.
+func TestTreeArrayAlignmentIsMinimalAtScale(t *testing.T) {
+	rng := rand.New(rand.NewSource(20260720)) //nolint:gosec // deterministic test input, not security
+	for c := 0; c < 4000; c++ {
+		ai := randomInts(rng, rng.Intn(13), 4)
+		bi := randomInts(rng, rng.Intn(13), 4)
+
+		var adds, removes, changes int
+		for _, ch := range diff.Tree(anySlice(ai), anySlice(bi)) {
+			switch ch.Op {
+			case diff.OpAdd:
+				adds++
+			case diff.OpRemove:
+				removes++
+			case diff.OpChange:
+				changes++
+			}
+		}
+
+		lcs := lcsLenOracle(ai, bi)
+		require.Equal(t, len(ai)-lcs, changes+removes, "left side not minimal for %v vs %v", ai, bi)
+		require.Equal(t, len(bi)-lcs, changes+adds, "right side not minimal for %v vs %v", ai, bi)
+	}
+}
+
+// randomInts returns n values drawn from 1..symbols.
+func randomInts(rng *rand.Rand, n, symbols int) []int {
+	out := make([]int, n)
+	for i := range out {
+		out[i] = rng.Intn(symbols) + 1
+	}
+	return out
+}
+
+// anySlice widens a slice of ints to the normalized []any the differ walks.
+func anySlice(xs []int) []any {
+	out := make([]any, len(xs))
+	for i, x := range xs {
+		out[i] = x
+	}
+	return out
 }
