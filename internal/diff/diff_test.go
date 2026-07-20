@@ -1,6 +1,9 @@
 package diff_test
 
 import (
+	"encoding/json"
+	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -155,6 +158,28 @@ func TestTree(t *testing.T) {
 			a:    []any{[]any{1}},
 			b:    []any{0, []any{1.0}},
 			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpAdd, New: 0}},
+		},
+		{
+			// Anchoring compares every element of a nested array, not just the
+			// first: these inner arrays agree at index 0 and differ at index 1, so
+			// they must not anchor — the outer arrays pair positionally instead.
+			name: "nested array anchoring compares beyond the first element",
+			a:    []any{[]any{1, 2}},
+			b:    []any{0, []any{1, 3}},
+			want: []diff.Change{
+				{Path: []string{"[0]"}, Op: diff.OpChange, Old: []any{1, 2}, New: 0},
+				{Path: []string{"[1]"}, Op: diff.OpAdd, New: []any{1, 3}},
+			},
+		},
+		{
+			// The map analog: agreeing on one key is not enough to anchor.
+			name: "map anchoring compares every key",
+			a:    []any{map[string]any{"x": 1, "y": 2}},
+			b:    []any{0, map[string]any{"x": 1, "y": 3}},
+			want: []diff.Change{
+				{Path: []string{"[0]"}, Op: diff.OpChange, Old: map[string]any{"x": 1, "y": 2}, New: 0},
+				{Path: []string{"[1]"}, Op: diff.OpAdd, New: map[string]any{"x": 1, "y": 3}},
+			},
 		},
 		{
 			// A scalar and an empty map are not the same: the anchor predicate's
@@ -367,13 +392,28 @@ func TestTreeArrayMemoryGuard(t *testing.T) {
 }
 
 func TestTreeDeterministicKeyOrder(t *testing.T) {
-	a := map[string]any{"b": 1, "a": 1, "c": 1}
-	b := map[string]any{"b": 2, "a": 2, "c": 2}
+	// Enough keys that Go's randomized map iteration would have to hit the sorted
+	// permutation by chance (1 in 20!) for an unsorted walk to look ordered, so
+	// the assertion pins the sort rather than getting lucky on three keys.
+	const keys = 20
+	a := make(map[string]any, keys)
+	b := make(map[string]any, keys)
+	want := make([]string, 0, keys)
+	for i := 0; i < keys; i++ {
+		k := fmt.Sprintf("k%02d", i)
+		a[k], b[k] = 1, 2
+		want = append(want, k)
+	}
+	sort.Strings(want)
+
 	got := diff.Tree(a, b)
-	require.Len(t, got, 3)
-	require.Equal(t, []string{"a"}, got[0].Path)
-	require.Equal(t, []string{"b"}, got[1].Path)
-	require.Equal(t, []string{"c"}, got[2].Path)
+	require.Len(t, got, keys)
+	paths := make([]string, 0, len(got))
+	for _, c := range got {
+		require.Len(t, c.Path, 1)
+		paths = append(paths, c.Path[0])
+	}
+	require.Equal(t, want, paths)
 }
 
 func TestKeyed(t *testing.T) {
@@ -539,4 +579,32 @@ func TestTreeArrayAlignmentIsMinimal(t *testing.T) {
 			require.Equal(t, len(bi)-lcs, changes+adds, "right side not minimal for %v vs %v", ai, bi)
 		}
 	}
+}
+
+// TestTreeSetArraysDeterministicOrder pins that set-mode deltas are emitted in
+// canonical-key order. Enough distinct members are used that Go's randomized map
+// iteration would have to land on the sorted permutation by chance for an
+// unsorted walk to look ordered.
+func TestTreeSetArraysDeterministicOrder(t *testing.T) {
+	const members = 20
+	a := make([]any, 0, members)
+	want := make([]string, 0, members)
+	for i := 0; i < members; i++ {
+		v := fmt.Sprintf("m%02d", i)
+		a = append(a, v)
+		want = append(want, `"`+v+`"`)
+	}
+	sort.Strings(want)
+
+	// Every member is left-only, so each one reports a Remove in canonical order.
+	got := diff.TreeOpt(a, []any{}, diff.Options{SetArrays: true})
+	require.Len(t, got, members)
+	keys := make([]string, 0, len(got))
+	for _, c := range got {
+		require.Equal(t, diff.OpRemove, c.Op)
+		bs, err := json.Marshal(c.Old)
+		require.NoError(t, err)
+		keys = append(keys, string(bs))
+	}
+	require.Equal(t, want, keys)
 }
