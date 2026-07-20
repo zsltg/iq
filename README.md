@@ -1984,7 +1984,7 @@ docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
 govulncheck ./...         # dependency vulnerability scan
-bash scripts/mutation-gate.sh   # mutation gate, scoped to the branch diff vs origin/main (fails on any escaped mutant not in the baseline); set IQ_*_URL to a pre-started stack
+bash scripts/mutation-gate.sh   # mutation gate, scoped to the branch diff vs origin/main and enumerating only the changed packages (fails on any escaped mutant not in the baseline, and on any errored/timed-out one; IQ_MUTATION_TIMEOUT_COEFFICIENT, default 5); set IQ_*_URL to a pre-started stack
 make check                # fast offline gate: format, vet, build, lint, dead code, unit tests + coverage report
 make cover                # full suite + coverage floor (IQ_COVER_MIN, default 80); IQ_COVER_SHORT=1 for a fast report-only run
 make security             # supply-chain + secrets sweep (govulncheck, osv-scanner, gitleaks) + SBOMs to dist/
@@ -2023,16 +2023,27 @@ collide with a LAN host.
 
 The mutation gate runs [mutago](https://github.com/quality-gates/mutago) and scopes to the current
 branch's diff against `origin/main` by default (`--git-diff-lines`), so it only mutates the lines a
-change touched. The wrapper provisions the pinned mutago itself (`go install ...@v2.7.7` into a
+change touched. A diff-scoped run also narrows its *targets* to the packages holding changed `.go`
+files rather than enumerating `./...`: changed lines are a subset of changed files, which are a
+subset of changed packages, so the mutant set is provably identical while the enumeration pass — the
+memory peak of a run, since mutago loads and instruments every target package — shrinks to what the
+branch touched. A derivation that resolves to nothing (no Go changes) falls back to `./...`, so a run
+never starts with no targets. The wrapper provisions the pinned mutago itself (`go install ...@v2.7.7` into a
 throwaway GOBIN, run directly), so the gate needs no mutago on `PATH` and does not touch `go.mod`;
 `make tools-dev` still installs mutago for ad-hoc use. Stable, invocation-independent policy lives in
 the committed `.mutago.yml` (passed via `--config`); the per-run and load-bearing flags stay on the
 command line. The base is handed to mutago as the merge-base commit with `HEAD`, so it works from
 a linked git worktree and tolerates a local base ref that has drifted from the remote. The gate is
 `--fail-on-escaped`: a covered mutant that survives (asserts nothing) fails it, while `--coverage`
-keeps uncovered lines out of the escaped set — the zero-survivor-on-covered-code contract. Timed-out
-mutants are reported as "errored" and are not gated (a wide `--timeout-coefficient` keeps a slow
-suite from erroring). A genuine equivalent mutant that cannot be killed is accepted into
+keeps uncovered lines out of the escaped set — the zero-survivor-on-covered-code contract. An
+errored mutant — usually one that timed out — fails the gate as well. mutago does not gate these
+itself (its MSI arithmetic scores an error as a kill), so a hung mutant would pass silently; the
+wrapper therefore reads `report.json` after a gate run and fails on `stats.errorCount > 0`, naming
+each errored mutant's file, line and mutator. An errored mutant is unverified, not killed. That check
+is what allows a tight `--timeout-coefficient` (5, a multiplier of the instrumented baseline): raise
+it with `IQ_MUTATION_TIMEOUT_COEFFICIENT` (a positive integer) when a package's suite is legitimately
+slow, rather than letting a slow mutant vanish into an ungated bucket. The check is skipped in the
+non-gating modes (`IQ_MUTATION_UPDATE_BASELINE=1`, `IQ_MUTATION_MUTANT=<id>`). A genuine equivalent mutant that cannot be killed is accepted into
 `mutago-baseline.json` (committed) with `IQ_MUTATION_UPDATE_BASELINE=1`, after which only *new*
 escapes fail — the baseline uses line-number-independent IDs so it survives refactors. Override the
 base ref with `IQ_MUTATION_BASE` (set it empty for a full-module scan), or pass a package path (e.g.
