@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.29.0 - 2026-07-20
+### Refactoring
+- **diff:** fold the anchor predicate into one type switch (d88c9af)
+- **diff:** bound the lcs backtrack loop (38f6de7)
+
+### Bug Fixes
+- **deps:** bump apache/thrift to v0.23.0 for GHSA-wf45-q9ch-q8gh (83f1727)
+
+### Features
+- **diff:** lcs array alignment, --set-arrays multiset mode, rfc 6902 --patch output (58dfc07)
+
+### Performance
+- **mutation:** scope enumeration to changed packages and gate errored mutants (715d309)
+
+
 ## v0.28.0 - 2026-07-19
 ### Documentation
 - add export cookbook, null-vs-missing stance, pushdown citations (59c304d)
