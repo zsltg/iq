@@ -172,16 +172,16 @@ func TestOpColor(t *testing.T) {
 	require.Nil(t, opColor(diff.Op(99)))
 }
 
-func TestDiffSymbolColors(t *testing.T) {
+func TestColorLine(t *testing.T) {
 	// Not parallel: flips the global color mode.
 	orig := color.NoColor
 	color.NoColor = false
 	t.Cleanup(func() { color.NoColor = orig })
 
-	// A colored op wraps its symbol; an op with no color returns it plain.
-	require.Equal(t, pal.add.Sprint(diff.OpAdd.Symbol()), diffSymbol(diff.OpAdd))
-	require.Contains(t, diffSymbol(diff.OpRemove), "\x1b[")
-	require.Equal(t, diff.Op(99).Symbol(), diffSymbol(diff.Op(99)))
+	// A colored op wraps the whole line; an op with no color returns it plain.
+	require.Equal(t, pal.add.Sprint("+ k  1"), colorLine(diff.OpAdd, "+ k  1"))
+	require.Contains(t, colorLine(diff.OpRemove, "- k  1"), "\x1b[")
+	require.Equal(t, "? k  1", colorLine(diff.Op(99), "? k  1"))
 }
 
 func TestRenderPlainTableMatchesTabwriter(t *testing.T) {

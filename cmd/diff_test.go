@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
@@ -62,6 +63,86 @@ func TestReportRenderHuman(t *testing.T) {
 	require.Contains(t, out, "1 added, 1 removed, 1 changed")
 	require.Contains(t, out, "# schema")
 	require.Contains(t, out, "+ .email")
+}
+
+// coloredDiffReport builds a report exercising every colored op across a
+// tree-diff layer (stats) and a data layer: an add, a remove, a tree change,
+// plus a data-mode item add and an item change carrying a nested field change.
+func coloredDiffReport() report {
+	return report{
+		Data: []diff.ItemDelta{
+			{Key: "gone", Op: diff.OpRemove, Old: map[string]any{"v": 1}},
+			{Key: "keep", Op: diff.OpChange, Changes: []diff.Change{{Path: []string{"v"}, Op: diff.OpChange, Old: 1, New: 9}}},
+			{Key: "new", Op: diff.OpAdd, New: map[string]any{"v": 3}},
+		},
+		Stats: []diff.Change{
+			{Path: []string{"mem", "used"}, Op: diff.OpChange, Old: 1, New: 2},
+			{Path: []string{"mem", "gone"}, Op: diff.OpRemove, Old: 5},
+			{Path: []string{"mem", "add"}, Op: diff.OpAdd, New: 7},
+		},
+		dataRun:  true,
+		statsRun: true,
+	}
+}
+
+// TestReportRenderColoredStripsToPlain proves the colored human report reduces
+// byte-for-byte to the uncolored one across every op — an add, a remove, and a
+// change in a tree diff, plus a data-mode item add and an item change with a
+// nested field change — and that color off emits zero escapes.
+func TestReportRenderColoredStripsToPlain(t *testing.T) {
+	// Not parallel: flips the global color mode.
+	orig := color.NoColor
+	t.Cleanup(func() { color.NoColor = orig })
+
+	rep := coloredDiffReport()
+	left := diffTarget{handle: "a", driver: "redis"}
+	right := diffTarget{handle: "b", driver: "redis"}
+
+	color.NoColor = true
+	var plainBuf bytes.Buffer
+	require.NoError(t, rep.render(&plainBuf, left, right, false, false))
+	plain := plainBuf.String()
+	require.NotContains(t, plain, "\x1b[", "color off must emit no escapes")
+
+	color.NoColor = false
+	var colorBuf bytes.Buffer
+	require.NoError(t, rep.render(&colorBuf, left, right, false, false))
+	got := colorBuf.String()
+	require.Contains(t, got, "\x1b[", "colored report must carry ANSI escapes")
+	require.Equal(t, plain, stripANSI(got), "stripANSI must equal the plain rendering")
+}
+
+// TestReportRenderColoredRoles pins the palette role each op carries: add rows
+// green, remove rows red, the change symbol+path yellow with the old value red,
+// the new value green, and the arrow left plain.
+func TestReportRenderColoredRoles(t *testing.T) {
+	// Not parallel: flips the global color mode.
+	orig := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = orig })
+
+	rep := coloredDiffReport()
+	var buf bytes.Buffer
+	require.NoError(t, rep.render(&buf, diffTarget{handle: "a"}, diffTarget{handle: "b"}, false, false))
+	got := buf.String()
+
+	// Raw SGR codes for each role.
+	require.Contains(t, got, "\x1b[32m", "green add code present")
+	require.Contains(t, got, "\x1b[31m", "red remove code present")
+	require.Contains(t, got, "\x1b[33m", "yellow change code present")
+
+	// Whole-line add and remove rows in one color wrap.
+	require.Contains(t, got, pal.add.Sprint("+ mem.add  7"), "tree add line green")
+	require.Contains(t, got, pal.remove.Sprint("- mem.gone  5"), "tree remove line red")
+
+	// A tree change line: symbol+path yellow, old red, new green, arrow plain.
+	require.Contains(t, got,
+		pal.change.Sprintf("%s %s", "~", "mem.used")+": "+pal.remove.Sprint("1")+" → "+pal.add.Sprint("2"),
+		"change line pins yellow path, red old, green new, plain arrow")
+
+	// Data-mode item add colored across the line; the change item header yellow.
+	require.Contains(t, got, pal.add.Sprint(`+ new  {"v":3}`), "data item add line green")
+	require.Contains(t, got, pal.change.Sprint("~ keep"), "data item change header yellow")
 }
 
 func TestReportRenderNoDifferences(t *testing.T) {
@@ -204,6 +285,15 @@ func TestRenderPropagatesWriteErrors(t *testing.T) {
 		// Writes: heading(1), item key line(2), change line(3), summary(4). Fail the
 		// change line only.
 		require.Error(t, renderItems(&failAt{at: 3}, "t", []diff.ItemDelta{item}))
+	})
+	t.Run("renderItems change-header error is returned not swallowed", func(t *testing.T) {
+		// Fail only the item key line (2nd): the change line and summary succeed, so
+		// a helper that dropped the header error would return nil.
+		require.Error(t, renderItems(&failAt{at: 2}, "t", []diff.ItemDelta{item}))
+	})
+	t.Run("renderItems add-row error is returned not swallowed", func(t *testing.T) {
+		// Writes: heading(1), add row(2), summary(3). Fail the add row only.
+		require.Error(t, renderItems(&failAt{at: 2}, "t", []diff.ItemDelta{addItem}))
 	})
 	t.Run("renderItems heading", func(t *testing.T) {
 		require.Error(t, renderItems(&errAfter{0}, "t", []diff.ItemDelta{item}))

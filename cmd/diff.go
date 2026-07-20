@@ -501,7 +501,10 @@ func renderItems(out io.Writer, title string, deltas []diff.ItemDelta) error {
 	for _, d := range deltas {
 		switch d.Op {
 		case diff.OpChange:
-			if _, err := fmt.Fprintf(out, "%s %s\n", diffSymbol(d.Op), d.Key); err != nil {
+			// The item header (symbol + key) takes the change color; the nested
+			// field lines below color by their own op.
+			header := colorLine(d.Op, fmt.Sprintf("%s %s", d.Op.Symbol(), d.Key))
+			if _, err := fmt.Fprintf(out, "%s\n", header); err != nil {
 				return err
 			}
 			for _, ch := range d.Changes {
@@ -510,7 +513,9 @@ func renderItems(out io.Writer, title string, deltas []diff.ItemDelta) error {
 				}
 			}
 		default:
-			if _, err := fmt.Fprintf(out, "%s %s  %s\n", diffSymbol(d.Op), d.Key, compact(sideValue(d.Op, d.Old, d.New))); err != nil {
+			// An add or remove row takes its op's color across the whole line.
+			line := colorLine(d.Op, fmt.Sprintf("%s %s  %s", d.Op.Symbol(), d.Key, compact(sideValue(d.Op, d.Old, d.New))))
+			if _, err := fmt.Fprintf(out, "%s\n", line); err != nil {
 				return err
 			}
 		}
@@ -536,10 +541,18 @@ func renderChangeLine(out io.Writer, prefix string, ch diff.Change) error {
 	path := strings.Join(ch.Path, ".")
 	switch ch.Op {
 	case diff.OpChange:
-		_, err := fmt.Fprintf(out, "%s%s %s: %s → %s\n", prefix, diffSymbol(ch.Op), path, compact(ch.Old), compact(ch.New))
+		// Symbol and path in the change color; the old value red and the new
+		// value green, with the colon and arrow left plain.
+		_, err := fmt.Fprintf(out, "%s%s: %s → %s\n",
+			prefix,
+			pal.change.Sprintf("%s %s", ch.Op.Symbol(), path),
+			pal.remove.Sprint(compact(ch.Old)),
+			pal.add.Sprint(compact(ch.New)))
 		return err
 	default:
-		_, err := fmt.Fprintf(out, "%s%s %s  %s\n", prefix, diffSymbol(ch.Op), path, compact(sideValue(ch.Op, ch.Old, ch.New)))
+		// An add or remove line takes its op's color across symbol, path, and value.
+		line := colorLine(ch.Op, fmt.Sprintf("%s %s  %s", ch.Op.Symbol(), path, compact(sideValue(ch.Op, ch.Old, ch.New))))
+		_, err := fmt.Fprintf(out, "%s%s\n", prefix, line)
 		return err
 	}
 }

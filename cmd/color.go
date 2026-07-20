@@ -97,10 +97,10 @@ func opColor(op diff.Op) *color.Color {
 	}
 }
 
-// diffSymbol returns a diff operation's symbol colored by its op, or the plain
-// symbol for an op with no color.
-func diffSymbol(op diff.Op) string {
-	s := op.Symbol()
+// colorLine wraps a whole rendered line in its operation's color, or returns it
+// plain for an op with no color. One color wrap over the line keeps a single
+// escape pair around add/remove rows rather than stitching per-fragment colors.
+func colorLine(op diff.Op, s string) string {
 	if c := opColor(op); c != nil {
 		return c.Sprint(s)
 	}
