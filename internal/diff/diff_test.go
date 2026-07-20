@@ -139,6 +139,24 @@ func TestTree(t *testing.T) {
 			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpAdd, New: 0}},
 		},
 		{
+			// Numeric parity must survive inside an anchored composite: {v:1} and
+			// {v:1.0} are the same map, so they anchor across the insertion. A
+			// predicate that fell back to a plain deep comparison would treat the
+			// int and the float64 as different and pair the map with the inserted
+			// scalar instead.
+			name: "equal map anchors across an insertion despite int/float spelling",
+			a:    []any{map[string]any{"v": 1}},
+			b:    []any{0, map[string]any{"v": 1.0}},
+			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpAdd, New: 0}},
+		},
+		{
+			// The nested-array analog of the same parity rule.
+			name: "equal nested array anchors across an insertion despite int/float spelling",
+			a:    []any{[]any{1}},
+			b:    []any{0, []any{1.0}},
+			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpAdd, New: 0}},
+		},
+		{
 			// A scalar and an empty map are not the same: the anchor predicate's
 			// one-sided type rejects must hold even when the composite side is
 			// empty (a lost reject makes the nil range-loop vacuously agree).
@@ -441,5 +459,84 @@ func TestOpStringAndSymbol(t *testing.T) {
 			require.Equal(t, tt.str, tt.op.String())
 			require.Equal(t, tt.sym, tt.op.Symbol())
 		})
+	}
+}
+
+// lcsLenOracle returns the length of a longest common subsequence of a and b,
+// computed independently of the package under test: a forward DP over prefixes,
+// where the production code fills a backward table over suffixes. Agreement
+// between two differently-shaped implementations is what makes it an oracle.
+func lcsLenOracle(a, b []int) int {
+	dp := make([][]int, len(a)+1)
+	for i := range dp {
+		dp[i] = make([]int, len(b)+1)
+	}
+	for i := 1; i <= len(a); i++ {
+		for j := 1; j <= len(b); j++ {
+			if a[i-1] == b[j-1] {
+				dp[i][j] = dp[i-1][j-1] + 1
+				continue
+			}
+			dp[i][j] = max(dp[i-1][j], dp[i][j-1])
+		}
+	}
+	return dp[len(a)][len(b)]
+}
+
+// enumerateArrays returns every array of length 0..maxLen over the alphabet
+// 1..symbols, so a property holds over the whole small-input space rather than a
+// handful of hand-picked rows.
+func enumerateArrays(symbols, maxLen int) [][]int {
+	out := [][]int{{}}
+	frontier := [][]int{{}}
+	for l := 0; l < maxLen; l++ {
+		var next [][]int
+		for _, prefix := range frontier {
+			for s := 1; s <= symbols; s++ {
+				grown := append(append([]int{}, prefix...), s)
+				next = append(next, grown)
+				out = append(out, grown)
+			}
+		}
+		frontier = next
+	}
+	return out
+}
+
+// TestTreeArrayAlignmentIsMinimal pins the defining property of the LCS walk over
+// every pair of small scalar arrays: the alignment is minimal. Anchors are the
+// longest common subsequence, so the elements each side does NOT contribute to it
+// are exactly the ones reported — changes+removes on the left, changes+adds on
+// the right (a scalar pair reports one Change, never a nested fan-out). Any
+// mutation that degrades the table, the backtrack, or its bounds yields a
+// non-minimal alignment and fails here, which a fixed table of rows cannot pin.
+func TestTreeArrayAlignmentIsMinimal(t *testing.T) {
+	arrays := enumerateArrays(3, 4)
+	for _, ai := range arrays {
+		for _, bi := range arrays {
+			a, b := make([]any, len(ai)), make([]any, len(bi))
+			for i, v := range ai {
+				a[i] = v
+			}
+			for i, v := range bi {
+				b[i] = v
+			}
+
+			var adds, removes, changes int
+			for _, c := range diff.Tree(a, b) {
+				switch c.Op {
+				case diff.OpAdd:
+					adds++
+				case diff.OpRemove:
+					removes++
+				case diff.OpChange:
+					changes++
+				}
+			}
+
+			lcs := lcsLenOracle(ai, bi)
+			require.Equal(t, len(ai)-lcs, changes+removes, "left side not minimal for %v vs %v", ai, bi)
+			require.Equal(t, len(bi)-lcs, changes+adds, "right side not minimal for %v vs %v", ai, bi)
+		}
 	}
 }

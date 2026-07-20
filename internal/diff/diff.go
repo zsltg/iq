@@ -306,10 +306,9 @@ func lcsPairs(a, b []any) [][2]int {
 		}
 	}
 	var pairs [][2]int
-	// Every iteration advances i or j by one, so the backtrack legitimately takes
-	// at most la+lb steps; the explicit bound makes the loop terminate — with a
-	// visibly wrong alignment — even if an advance is lost, rather than spin.
-	for i, j, steps := 0, 0, 0; i < la && j < lb && steps < la+lb; steps++ {
+	// Every branch advances i or j, so the walk reaches the end of one side and
+	// terminates.
+	for i, j := 0, 0; i < la && j < lb; {
 		switch {
 		case same(a[i], b[j]):
 			pairs = append(pairs, [2]int{i, j})
@@ -328,34 +327,35 @@ func lcsPairs(a, b []any) [][2]int {
 // maps by key, arrays by position, scalars via equal (so an int and a float64 of
 // the same magnitude anchor together, matching the rest of the package).
 func same(a, b any) bool {
-	am, aIsMap := a.(map[string]any)
-	bm, bIsMap := b.(map[string]any)
-	if aIsMap || bIsMap {
-		if !aIsMap || !bIsMap || len(am) != len(bm) {
+	switch av := a.(type) {
+	case map[string]any:
+		bv, ok := b.(map[string]any)
+		if !ok || len(av) != len(bv) {
 			return false
 		}
-		for k, av := range am {
-			bv, ok := bm[k]
-			if !ok || !same(av, bv) {
+		for k, x := range av {
+			y, ok := bv[k]
+			if !ok || !same(x, y) {
 				return false
 			}
 		}
 		return true
-	}
-	as, aIsSlice := a.([]any)
-	bs, bIsSlice := b.([]any)
-	if aIsSlice || bIsSlice {
-		if !aIsSlice || !bIsSlice || len(as) != len(bs) {
+	case []any:
+		bv, ok := b.([]any)
+		if !ok || len(av) != len(bv) {
 			return false
 		}
-		for i := range as {
-			if !same(as[i], bs[i]) {
+		for i := range av {
+			if !same(av[i], bv[i]) {
 				return false
 			}
 		}
 		return true
+	default:
+		// A composite on the right only reaches here against a scalar left, which
+		// the deep comparison in equal already reports as unequal.
+		return equal(a, b)
 	}
-	return equal(a, b)
 }
 
 // ItemDelta is the difference for one keyed item between two sets. Op Add and
