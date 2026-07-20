@@ -122,6 +122,50 @@ func TestTree(t *testing.T) {
 			},
 		},
 		{
+			// An equal map must anchor across an insertion: if the anchor
+			// predicate stops recognizing equal maps, the map pairs with the
+			// inserted scalar instead and the single Add becomes a change pair.
+			name: "equal map anchors across an insertion",
+			a:    []any{map[string]any{"v": 1}},
+			b:    []any{0, map[string]any{"v": 1}},
+			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpAdd, New: 0}},
+		},
+		{
+			// The nested-array analog: an equal inner array must anchor across an
+			// insertion the same way.
+			name: "equal nested array anchors across an insertion",
+			a:    []any{[]any{1}},
+			b:    []any{0, []any{1}},
+			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpAdd, New: 0}},
+		},
+		{
+			// A scalar and an empty map are not the same: the anchor predicate's
+			// one-sided type rejects must hold even when the composite side is
+			// empty (a lost reject makes the nil range-loop vacuously agree).
+			name: "scalar and empty map pair as a change",
+			a:    []any{5},
+			b:    []any{map[string]any{}},
+			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpChange, Old: 5, New: map[string]any{}}},
+		},
+		{
+			name: "empty map and scalar pair as a change",
+			a:    []any{map[string]any{}},
+			b:    []any{5},
+			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpChange, Old: map[string]any{}, New: 5}},
+		},
+		{
+			name: "scalar and empty array pair as a change",
+			a:    []any{5},
+			b:    []any{[]any{}},
+			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpChange, Old: 5, New: []any{}}},
+		},
+		{
+			name: "empty array and scalar pair as a change",
+			a:    []any{[]any{}},
+			b:    []any{5},
+			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpChange, Old: []any{}, New: 5}},
+		},
+		{
 			// A map that is a strict subset of the other must NOT anchor: the size
 			// fast-reject in the anchor predicate is what keeps {a:1} and
 			// {a:1,b:2} paired-and-recursed instead of silently equal.

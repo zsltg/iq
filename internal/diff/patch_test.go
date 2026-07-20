@@ -1,6 +1,7 @@
 package diff_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -76,4 +77,7 @@ func TestPatchMarshalError(t *testing.T) {
 	_, err := diff.Patch(map[string]any{"c": make(chan int)}, map[string]any{})
 	require.Error(t, err)
 	require.ErrorContains(t, err, "json patch")
+	// %w keeps the json cause reachable for errors.As; %v would sever it.
+	var ute *json.UnsupportedTypeError
+	require.ErrorAs(t, err, &ute)
 }
