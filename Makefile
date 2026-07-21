@@ -11,7 +11,7 @@ LDFLAGS := -X github.com/zsltg/iq/cmd.version=$(VERSION) \
            -X github.com/zsltg/iq/cmd.commit=$(COMMIT) \
            -X github.com/zsltg/iq/cmd.date=$(DATE)
 
-.PHONY: build version changelog release tools tools-dev check cover security sbom e2e bench mutation ci
+.PHONY: build version changelog release tools tools-dev check cover security sbom e2e bench docs docs-serve mutation ci
 
 # build compiles the binary with version metadata embedded.
 build:
@@ -76,6 +76,14 @@ e2e:
 #   make bench | tee new.txt; benchstat old.txt new.txt.
 bench:
 	go test -bench=. -benchmem -run='^$$' ./internal/query/... ./internal/numfmt/... ./drivers/redis/...
+
+# docs builds the documentation site (Zensical) into docs/site/; needs uv.
+docs:
+	bash scripts/docs.sh build
+
+# docs-serve runs the documentation dev server at http://localhost:8000.
+docs-serve:
+	bash scripts/docs.sh serve
 
 # mutation runs the mutation gate over the branch diff against origin/main (override
 # with IQ_MUTATION_BASE; empty for a full-module scan, or pass a package path for a

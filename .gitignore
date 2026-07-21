@@ -13,6 +13,11 @@
 /mutago-agentic.json
 /mutago-gitlab.json
 
+# Docs site (Zensical): local venv, build output, and build cache; sources and uv.lock are tracked.
+/docs/.venv/
+/docs/site/
+/docs/.cache/
+
 # Local env (the tracked template is .env.example).
 .env
 

@@ -23,6 +23,7 @@ sq's so the tool feels familiar.
 
 - Go 1.26+
 - Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Couchbase + Neo4j + Elasticsearch + OpenSearch containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
+- [uv](https://docs.astral.sh/uv/) (optional, docs-only) — builds and serves the documentation site under `docs/` (`make docs` / `make docs-serve`); not needed to build or use `iq` itself
 
 ## Build
 
@@ -2005,6 +2006,8 @@ make security             # supply-chain + secrets sweep (govulncheck, osv-scann
 make sbom                 # write SPDX + CycloneDX SBOMs of the module to dist/
 make e2e                  # black-box smoke tests that build and drive the iq binary (+ live Redis/Mongo round-trips when IQ_REDIS_URL/IQ_MONGO_URL are set)
 make bench                # JSON decode + pre-filter benchmarks (no containers); pair two runs with benchstat: make bench | tee new.txt; benchstat old.txt new.txt
+make docs                 # build the documentation site (Zensical) into docs/site/ (needs uv; README is source of truth, site pages are seeded copies)
+make docs-serve           # serve the documentation site locally at http://localhost:8000 (needs uv)
 make mutation             # mutation gate over the branch diff vs origin/main (part of make ci)
 make ci                   # full pre-merge gate: check + cover + security + mutation (needs Docker + network)
 make tools                # install release tools (svu, git-chglog) into GOPATH/bin
