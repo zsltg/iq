@@ -1,0 +1,37 @@
+# Release workflow. GitHub Actions syntax; the primary self-hosted server executes
+# .github/workflows/ too, so the job is guarded to run only on the GitHub mirror
+# (goreleaser publishes to GitHub Releases and pushes the Homebrew/Scoop manifests
+# to the tap/bucket repos — none of which exist on the primary remote). Triggered by a v* tag
+# pushed to the `github` remote. Keep GORELEASER_VERSION in sync with the Makefile.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create the GitHub Release and upload assets
+
+env:
+  GORELEASER_VERSION: v2.17.0
+
+jobs:
+  goreleaser:
+    # Skip on the primary remote (it has no GitHub Releases / tap / bucket).
+    if: startsWith(github.server_url, 'https://github.com')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags so goreleaser can build the changelog
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run GoReleaser
+        env:
+          # GITHUB_TOKEN publishes the Release on this repo; GORELEASER_TOKEN is a
+          # PAT with write access to the shared homebrew-tap and scoop-bucket repos.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_TOKEN: ${{ secrets.GORELEASER_TOKEN }}
+        run: go run github.com/goreleaser/goreleaser/v2@${GORELEASER_VERSION} release --clean

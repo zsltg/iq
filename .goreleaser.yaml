@@ -1,0 +1,144 @@
+# GoReleaser configuration for iq. Run via `go run` (pinned in the Makefile and
+# .github/workflows/release.yml), so it never enters go.mod — same convention as
+# every other non-shipped tool. The real publish happens in CI on a v* tag;
+# validate locally with `make release-check` and dry-build with `make release-snapshot`.
+version: 2
+
+project_name: iq
+
+# One module-level CycloneDX SBOM per release, generated with cyclonedx-gomod
+# (run via `go run`, no new dependency). Attached to the release via
+# `release.extra_files` below. A single authoritative SBOM avoids the per-binary
+# artifact-name collisions goreleaser's `sboms:` stanza hits when several targets
+# share the binary name. `make security`'s syft SBOM is unchanged and separate.
+before:
+  hooks:
+    - go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.10.0 mod -json -licenses -output iq.cdx.json
+
+builds:
+  - id: iq
+    main: .
+    binary: iq
+    # The project invariant: a single static binary, no CGO, -trimpath. Mirrors
+    # the Makefile `build` target so releases are the same artifact.
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    # Stamp the same version variables the Makefile stamps (cmd.version/commit/date);
+    # -s -w drop the symbol table and DWARF for a smaller binary.
+    ldflags:
+      - -s -w -X github.com/zsltg/iq/cmd.version={{ .Version }} -X github.com/zsltg/iq/cmd.commit={{ .ShortCommit }} -X github.com/zsltg/iq/cmd.date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: iq
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - docs/man/iq.1
+      - docs/completions/*
+
+# Linux packages, built by the pure-Go nfpm (no dpkg/rpmbuild/apk toolchains needed).
+nfpms:
+  - id: packages
+    package_name: iq
+    vendor: zsltg
+    homepage: https://github.com/zsltg/iq
+    maintainer: Zsolt Gaspar <17578237+zsltg@users.noreply.github.com>
+    description: Query NoSQL databases with jq from the command line.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    # Install the generated manual page (committed, deterministic, uncompressed —
+    # man reads it as-is, and skipping gzip keeps the package byte-reproducible)
+    # and the shell completion scripts to each shell's standard directory. zsh
+    # loads by function name, so its script installs as `_iq`. PowerShell has no
+    # standard Linux package dir, so it is documented as a manual install only.
+    contents:
+      - src: docs/man/iq.1
+        dst: /usr/share/man/man1/iq.1
+        file_info:
+          mode: 0o644
+      - src: docs/completions/iq.bash
+        dst: /usr/share/bash-completion/completions/iq
+        file_info:
+          mode: 0o644
+      - src: docs/completions/iq.zsh
+        dst: /usr/share/zsh/site-functions/_iq
+        file_info:
+          mode: 0o644
+      - src: docs/completions/iq.fish
+        dst: /usr/share/fish/vendor_completions.d/iq.fish
+        file_info:
+          mode: 0o644
+
+# The source-code tarball, attached to the release alongside the binaries.
+source:
+  enabled: true
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+# Homebrew cask, written into the shared tap repo (one Casks/<proj>.rb per
+# project; `brews` is deprecated upstream in favor of casks). Requires
+# GORELEASER_TOKEN (a PAT with write to zsltg/homebrew-tap). Users install with
+# `brew install zsltg/tap/iq` (brew auto-detects the cask).
+homebrew_casks:
+  - name: iq
+    repository:
+      owner: zsltg
+      name: homebrew-tap
+      token: "{{ .Env.GORELEASER_TOKEN }}"
+    homepage: https://github.com/zsltg/iq
+    description: Query NoSQL databases with jq from the command line.
+    license: MIT
+
+# Scoop manifest, written into the shared bucket repo under bucket/<proj>.json.
+# Requires GORELEASER_TOKEN with write to zsltg/scoop-bucket.
+scoops:
+  - name: iq
+    repository:
+      owner: zsltg
+      name: scoop-bucket
+      token: "{{ .Env.GORELEASER_TOKEN }}"
+    directory: bucket
+    homepage: https://github.com/zsltg/iq
+    description: Query NoSQL databases with jq from the command line.
+    license: MIT
+
+release:
+  github:
+    owner: zsltg
+    name: iq
+  prerelease: auto
+  extra_files:
+    - glob: iq.cdx.json # the module SBOM from the before-hook

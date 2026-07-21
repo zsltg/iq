@@ -11,7 +11,13 @@ LDFLAGS := -X github.com/zsltg/iq/cmd.version=$(VERSION) \
            -X github.com/zsltg/iq/cmd.commit=$(COMMIT) \
            -X github.com/zsltg/iq/cmd.date=$(DATE)
 
-.PHONY: build version changelog release tools tools-dev check cover security sbom e2e bench docs docs-serve mutation ci
+# GoReleaser builds and publishes the cross-platform release artifacts (see
+# .goreleaser.yaml). Run via `go run`, so it never enters go.mod; pinned here and
+# in .github/workflows/release.yml, kept in sync.
+GORELEASER_VERSION := v2.17.0
+GORELEASER         := github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
+
+.PHONY: build version changelog release tools tools-dev check cover security sbom e2e bench docs docs-serve mutation ci man completions release-check release-snapshot
 
 # build compiles the binary with version metadata embedded.
 build:
@@ -84,6 +90,31 @@ docs:
 # docs-serve runs the documentation dev server on 0.0.0.0:8000 (LAN-reachable).
 docs-serve:
 	bash scripts/docs.sh serve
+
+# man regenerates the committed iq(1) man page (deterministic; no date/version)
+# into docs/man/iq.1. Packaged and installed by goreleaser/nfpm.
+man:
+	@mkdir -p docs/man
+	go run . man > docs/man/iq.1
+
+# completions regenerates the committed shell completion scripts into
+# docs/completions/ for the four shells. zsh is committed as iq.zsh and renamed to
+# _iq by nfpm at package time; powershell is documented as a manual install.
+completions:
+	@mkdir -p docs/completions
+	go run . completion bash > docs/completions/iq.bash
+	go run . completion zsh > docs/completions/iq.zsh
+	go run . completion fish > docs/completions/iq.fish
+	go run . completion powershell > docs/completions/iq.ps1
+
+# release-check validates .goreleaser.yaml (no build, no publish).
+release-check:
+	go run $(GORELEASER) check
+
+# release-snapshot builds the full release into dist/ locally without publishing,
+# proving the goreleaser config end to end. Needs network for the go run download.
+release-snapshot:
+	go run $(GORELEASER) release --snapshot --clean --skip=publish
 
 # mutation runs the mutation gate over the branch diff against origin/main (override
 # with IQ_MUTATION_BASE; empty for a full-module scan, or pass a package path for a
