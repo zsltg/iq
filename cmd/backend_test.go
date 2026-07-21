@@ -468,6 +468,92 @@ func TestRunJQWiresRunOptionsFileSource(t *testing.T) {
 	})
 }
 
+// countJSONRecords counts the newline-delimited JSON records in s whose msg equals
+// want. Non-JSON lines (e.g. the pretty --verbose plan text interleaved on the same
+// stream) are skipped, so it isolates the structured records from the human text.
+func countJSONRecords(t *testing.T, s, want string) int {
+	t.Helper()
+	n := 0
+	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var rec map[string]any
+		require.NoErrorf(t, json.Unmarshal([]byte(line), &rec), "JSON line failed to parse: %q", line)
+		if rec["msg"] == want {
+			n++
+		}
+	}
+	return n
+}
+
+// TestBareVerbosePlanNotDuplicated pins FIX 1: a bare -v run (structured sink off)
+// prints the pretty "query plan" text to stderr exactly once and emits NO structured
+// "query plan" record. Before the fix the INFO record was emitted whenever any sink
+// accepted INFO, so the tinted verbose sink rendered it a second time — two "query
+// plan" occurrences on stderr. The file driver runs offline, so no container.
+func TestBareVerbosePlanNotDuplicated(t *testing.T) {
+	seedFileSource(t, `{"key":"a","type":"hash","value":{"total":150}}`+"\n"+
+		`{"key":"b","type":"hash","value":{"total":10}}`+"\n")
+
+	root, _ := newRootCmd()
+	var out, errb bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errb)
+	root.SetArgs([]string{"--src", "snap", "-v", ".[]"})
+	require.NoError(t, root.Execute())
+
+	stderr := errb.String()
+	// The pretty plan is present (its sections prove it is the formatted text, not a
+	// one-line record), and "query plan" appears exactly once: the pretty header. A
+	// re-emitted tinted record would add a second occurrence.
+	require.Contains(t, stderr, "jq filter", "the pretty plan text must be printed under -v")
+	require.Equal(t, 1, strings.Count(stderr, "query plan"),
+		"the query plan must render once (pretty text only), never a duplicated tinted record")
+	require.Zero(t, countJSONRecords(t, stderr, "query plan"),
+		"a bare -v run has no structured sink, so no structured query plan record")
+}
+
+// TestVerbosePlusStderrStructuredPlanOnce pins the "both" matrix cell: -v together
+// with --log.file=stderr. FIX 2 suppresses the tinted sink (same stream), so stderr
+// carries the pretty plan text once plus exactly one structured "query plan" JSON
+// record — no tinted duplicate of either.
+func TestVerbosePlusStderrStructuredPlanOnce(t *testing.T) {
+	seedFileSource(t, `{"key":"a","type":"hash","value":{"total":150}}`+"\n"+
+		`{"key":"b","type":"hash","value":{"total":10}}`+"\n")
+
+	root, _ := newRootCmd()
+	var out, errb bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errb)
+	root.SetArgs([]string{"--src", "snap", "-v", "--log.file=stderr", "--log.format=json", ".[]"})
+	require.NoError(t, root.Execute())
+
+	stderr := errb.String()
+	// The pretty text is still printed once (the -v Fprint, independent of the logger).
+	require.Contains(t, stderr, "jq filter", "the pretty plan text is printed under -v")
+	// Exactly one structured query plan record (the tinted sink is suppressed on the
+	// shared stderr stream, so it contributes no second rendering).
+	require.Equal(t, 1, countJSONRecords(t, stderr, "query plan"),
+		"exactly one structured query plan record; the tinted duplicate is suppressed")
+	require.Equal(t, "file", parseLogRecords(t, jsonLinesOnly(stderr))["query plan"]["driver"],
+		"the structured record names the resolved driver")
+}
+
+// jsonLinesOnly returns only the lines of s that look like JSON objects, dropping the
+// interleaved pretty --verbose plan text so parseLogRecords can consume the rest.
+func jsonLinesOnly(s string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "{") {
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
 // TestRunJQWiresUnboundedFileSource pins that runJQ passes RunOptions.Unbounded to
 // the engine: a holistic filter (keys) materializes only when Unbounded is set, so
 // with --unbounded the run must succeed. Without the field wired, the engine refuses

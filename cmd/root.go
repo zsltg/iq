@@ -102,6 +102,12 @@ type config struct {
 	logger    *slog.Logger
 	logClose  func() error
 	pprofStop func()
+	// logStructured is true when the structured file/stream sink is active
+	// (logOptions.fileActive). It gates the INFO "query plan" record so that a bare
+	// --verbose run — whose tinted sink already renders the pretty plan text — does
+	// not also emit the one-line structured record; the record is for the structured
+	// sink, never the verbose sink alone.
+	logStructured bool
 	// trace, when non-nil, is where a driver writes its live command trace (set
 	// to stderr for the duration of a --verbose run); nil disables tracing.
 	trace io.Writer
@@ -218,6 +224,9 @@ func newRootCmd() (*cobra.Command, *config) {
 			if err != nil {
 				return err
 			}
+			// The structured "query plan" record is gated on the structured sink, so
+			// carry its active-ness onto cfg for the run body to read.
+			cfg.logStructured = logOpts.fileActive()
 			logger, closeLog, err := logOpts.build(cmd.ErrOrStderr(), cmd.OutOrStdout())
 			if err != nil {
 				return err

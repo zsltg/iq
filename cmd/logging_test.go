@@ -306,6 +306,97 @@ func TestBuildVerboseOnly(t *testing.T) {
 	}
 }
 
+// nonEmptyLines counts the non-blank lines in s, one per rendered log record.
+func nonEmptyLines(s string) int {
+	n := 0
+	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
+		if strings.TrimSpace(line) != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// TestBuildSameStreamSuppression pins FIX 2 by observable output: with --verbose
+// and the structured sink both targeting the literal "stderr" stream, one Info
+// record must render exactly ONCE on stderr (the structured JSON wins; the tinted
+// duplicate is suppressed). "stdout" is a different stream, so both sinks stay and
+// the record renders on each. Verbose alone tints stderr; the structured sink alone
+// renders structured only. It asserts renderings, never handler internals, so it
+// kills the o.file == "stderr" comparison mutant and the suppression-branch mutant.
+func TestBuildSameStreamSuppression(t *testing.T) {
+	tests := []struct {
+		name         string
+		verbose      bool
+		file         string // "" means no structured sink
+		disabled     bool   // file is set but the structured sink is off (--log=false)
+		wantStderr   int
+		wantStdout   int
+		stderrIsJSON bool // the single stderr line is the structured JSON, not tinted text
+	}{
+		{
+			name:    "verbose+stderr suppresses the tinted duplicate, structured wins",
+			verbose: true, file: "stderr", wantStderr: 1, wantStdout: 0, stderrIsJSON: true,
+		},
+		{
+			// Suppression requires the structured sink to be ACTIVE, not merely a
+			// "stderr" spelling: with --log=false the tinted sink must survive, or
+			// -v --log=false --log.file=stderr would silently log nothing.
+			name:    "verbose with disabled stderr sink keeps the tinted rendering",
+			verbose: true, file: "stderr", disabled: true, wantStderr: 1, wantStdout: 0,
+		},
+		{
+			name:    "verbose+stdout keeps both: different streams, one rendering each",
+			verbose: true, file: "stdout", wantStderr: 1, wantStdout: 1,
+		},
+		{
+			name:    "verbose alone tints stderr, no structured sink",
+			verbose: true, file: "", wantStderr: 1, wantStdout: 0,
+		},
+		{
+			name:    "structured stderr alone (no verbose) renders once",
+			verbose: false, file: "stderr", wantStderr: 1, wantStdout: 0, stderrIsJSON: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := logOptions{verbose: tt.verbose}
+			if tt.file != "" {
+				o.enable = !tt.disabled
+				o.file = tt.file
+				o.level = slog.LevelDebug
+				o.format = "json"
+			}
+			var stderr, stdout bytes.Buffer
+			logger, closer, err := o.build(&stderr, &stdout)
+			require.NoError(t, err)
+			require.Nil(t, closer, "a stream/verbose target opens no file")
+
+			logger.Info("m")
+
+			require.Equal(t, tt.wantStderr, nonEmptyLines(stderr.String()),
+				"stderr renderings; a lost suppression would double this")
+			require.Equal(t, tt.wantStdout, nonEmptyLines(stdout.String()), "stdout renderings")
+
+			if tt.stderrIsJSON {
+				// The surviving stderr rendering is the structured JSON, not the tinted
+				// text line: it parses as JSON with the record's msg.
+				var rec map[string]any
+				require.NoError(t, json.Unmarshal(bytes.TrimSpace(stderr.Bytes()), &rec),
+					"the single stderr line must be the structured JSON")
+				require.Equal(t, "m", rec["msg"])
+			}
+			if tt.verbose && tt.file == "stdout" {
+				// The comparison must match "stderr" only: the verbose (tinted) sink
+				// stays on stderr as text (no JSON braces) and the structured JSON goes
+				// to stdout. A mutated comparison would suppress the tint here.
+				require.NotContains(t, stderr.String(), "{", "stderr carries the tinted text, not JSON")
+				require.Contains(t, stdout.String(), `"msg":"m"`, "the structured JSON goes to stdout")
+			}
+		})
+	}
+}
+
 // TestBuildFileSink checks the file sink honors level and format, writes 0600,
 // and returns a working closer.
 func TestBuildFileSink(t *testing.T) {

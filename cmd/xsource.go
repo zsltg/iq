@@ -138,11 +138,16 @@ func planFrom(cf *iqconfig.Config, specs []string) ([]fromStage, error) {
 }
 
 // logStagePlan emits the structured "query plan" record for one --from stage at
-// INFO when logging is active, so each cross-source stage's classification,
-// planned ops, and pushdown decisions are captured (distinguished by the handle
-// attr). It shares buildSourcePlan with the --explain text, so the two never
-// drift; building the plan is skipped when no INFO sink is listening.
+// INFO when the structured file/stream sink is active, so each cross-source
+// stage's classification, planned ops, and pushdown decisions are captured
+// (distinguished by the handle attr). Like logQueryPlan it is gated on the
+// structured sink, not the verbose sink, so a bare -v does not render the plan
+// twice. It shares buildSourcePlan with the --explain text, so the two never
+// drift; building the plan is skipped when the structured sink is off or below INFO.
 func (cfg *config) logStagePlan(url, handle, filter string) {
+	if !cfg.logStructured {
+		return
+	}
 	lg := cfg.log()
 	if !lg.Enabled(context.Background(), slog.LevelInfo) {
 		return

@@ -493,6 +493,13 @@ authoritative.) A `--log.file` of `stderr` or `stdout` streams the records to th
 instead of a file — the portable way to feed a CI log collector one JSON object per line without a
 `/dev/stderr` path or a cache file (the stream is never closed and no directory is created).
 
+When `-v` and a structured sink both target **stderr** (`--log.file=stderr`), each record would render
+twice on that one stream — the tinted line, then the structured text/JSON. Because the structured sink
+was configured explicitly, the tinted verbose duplicate is suppressed and the structured rendering
+wins. This applies only to the literal `stderr` stream keyword; a `/dev/stderr` file **path** is a
+distinct target that is not detected, and `--log.file=stdout` is a different stream, so neither
+suppresses `-v`.
+
 ```bash
 ./iq -v '.[]'                                        # verbose diagnostics on stderr
 ./iq --log --log.file=/tmp/iq.log --log.format=json '.[]'   # structured logs to a file
@@ -517,8 +524,12 @@ stage records:
 | `backend cmd` | DEBUG | `driver`, `cmd` — one per wire command the backend ran (credentials already redacted) |
 
 The `query plan` record is built from the same data as the [`--explain` text](#query-plan---explain--v),
-so the two never drift; it is INFO, so it also surfaces under a bare `-v`. The rest are DEBUG (the
-default file level), so a long scan's per-page and per-command volume stays out of an INFO stream.
+so the two never drift. It is emitted **only when the structured sink is active** (a `--log*` file or
+stream target): a bare `-v` already prints the pretty plan text to stderr, so emitting the INFO record
+there too would render the plan a second time as a tinted one-liner. Under `-v` you get the pretty
+text; under `--log*` you get the record; under both you get the pretty text plus the record (written
+to the structured sink). The rest are DEBUG (the default file level), so a long scan's per-page and
+per-command volume stays out of an INFO stream.
 
 ### Query plan (`--explain`, `-v`)
 

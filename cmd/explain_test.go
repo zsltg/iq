@@ -245,7 +245,8 @@ func TestLogQueryPlanEmitsRecord(t *testing.T) {
 	// gateHandler enables only for a non-nil context, so a substituted nil ctx in
 	// the Enabled gate would drop the record.
 	lg := slog.New(&gateHandler{inner: slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})})
-	cfg := &config{url: "redis://h", handle: "cache", logger: lg}
+	// logStructured true: the record is gated on the structured sink being active.
+	cfg := &config{url: "redis://h", handle: "cache", logger: lg, logStructured: true}
 
 	cfg.logQueryPlan(".[] | select(.active)", false)
 
@@ -257,13 +258,25 @@ func TestLogQueryPlanEmitsRecord(t *testing.T) {
 }
 
 // TestLogQueryPlanSkipsWhenNoInfoSink pins that the plan is not built (no record)
-// when no INFO sink is listening — the cheap no-op path.
+// when the structured sink is active but below INFO — the cheap no-op path.
 func TestLogQueryPlanSkipsWhenNoInfoSink(t *testing.T) {
 	var buf bytes.Buffer
 	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError}))
-	cfg := &config{url: "redis://h", handle: "cache", logger: lg}
+	cfg := &config{url: "redis://h", handle: "cache", logger: lg, logStructured: true}
 	cfg.logQueryPlan(".[] | select(.active)", false)
-	require.Empty(t, buf.String(), "no INFO sink must emit no plan record")
+	require.Empty(t, buf.String(), "a structured sink below INFO must emit no plan record")
+}
+
+// TestLogQueryPlanSkipsWithoutStructuredSink pins the FIX-1 gate: even with an INFO
+// sink listening (e.g. a bare -v tinted sink), no "query plan" record is emitted
+// when the structured sink is off, so the pretty plan text is never duplicated as a
+// tinted one-liner. Removing the cfg.logStructured guard would emit the record here.
+func TestLogQueryPlanSkipsWithoutStructuredSink(t *testing.T) {
+	var buf bytes.Buffer
+	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	cfg := &config{url: "redis://h", handle: "cache", logger: lg, logStructured: false}
+	cfg.logQueryPlan(".[] | select(.active)", false)
+	require.Empty(t, buf.String(), "no structured sink must emit no plan record even when INFO is enabled")
 }
 
 // TestLogQueryPlanSkipsUnknownScheme pins that logQueryPlan emits no record when the
@@ -273,7 +286,7 @@ func TestLogQueryPlanSkipsWhenNoInfoSink(t *testing.T) {
 func TestLogQueryPlanSkipsUnknownScheme(t *testing.T) {
 	var buf bytes.Buffer
 	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	cfg := &config{url: "postgres://h/db", handle: "x", logger: lg}
+	cfg := &config{url: "postgres://h/db", handle: "x", logger: lg, logStructured: true}
 	cfg.logQueryPlan(".[]", false)
 	require.Empty(t, buf.String(), "an unknown scheme has no plan, so no query plan record is emitted")
 }

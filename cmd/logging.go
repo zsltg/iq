@@ -124,9 +124,19 @@ func (o logOptions) fileActive() bool { return o.enable && o.file != "" }
 // no-op. The verbose sink writes to stderr at INFO, tinted when o.color is set;
 // the file sink honors the resolved level and format and is never tinted. stderr
 // and stdout are the writers a literal "stderr"/"stdout" file target resolves to.
+//
+// When the verbose sink and the structured sink both target the stderr stream,
+// each record would render twice on that one stream (the tinted line, then the
+// structured text/JSON). The user configured the structured sink explicitly, so
+// the tinted duplicate is suppressed and the structured rendering wins. This
+// matches only the literal "stderr" stream keyword; a "/dev/stderr" file path is
+// a distinct target we do not detect. "stdout" is a different stream, so it never
+// suppresses the verbose sink.
 func (o logOptions) build(stderr, stdout io.Writer) (*slog.Logger, func() error, error) {
 	var handlers []slog.Handler
-	if o.verbose {
+	structuredActive := o.fileActive()
+	suppressVerbose := structuredActive && o.file == "stderr"
+	if o.verbose && !suppressVerbose {
 		handlers = append(handlers, tint.NewHandler(stderr, &tint.Options{
 			Level:       slog.LevelInfo,
 			NoColor:     !o.color,
@@ -134,7 +144,7 @@ func (o logOptions) build(stderr, stdout io.Writer) (*slog.Logger, func() error,
 		}))
 	}
 	var closer func() error
-	if o.fileActive() {
+	if structuredActive {
 		sink, c, err := o.logSink(stderr, stdout)
 		if err != nil {
 			return slog.New(slog.DiscardHandler), nil, err
