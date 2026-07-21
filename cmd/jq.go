@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -85,6 +86,11 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		cfg.trace = cmd.ErrOrStderr()
 	}
 
+	// When logging is active, tee the driver command trace into the log and emit
+	// the structured query plan, so a --log run captures both without --explain/-v.
+	cfg.trace = traceSink(cfg.trace, cfg.log())
+	cfg.logQueryPlan(filter, cross)
+
 	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 	defer cancel()
 
@@ -107,7 +113,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	// One OnPage closure drives both the spinner and the scanned-count log point,
 	// so the core stays UI-agnostic (it only ever calls a plain func).
 	var scanned int
-	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: !cfg.noCompile, OnPage: func(n int) {
+	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: !cfg.noCompile, Logger: cfg.log(), OnPage: func(n int) {
 		scanned += n
 		meter.Tick(n)
 	}}
@@ -146,6 +152,33 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 // and the wall-clock elapsed, at INFO so -v surfaces it.
 func (cfg *config) logQueryComplete(scanned int, start time.Time) {
 	cfg.log().Info("query complete", "scanned", scanned, "elapsed", time.Since(start))
+}
+
+// logQueryPlan emits the one structured "query plan" record at INFO when logging
+// is active, so a CI run captures the classification, planned backend ops, pushed
+// server-side filter, and per-conjunct pushdown decisions that the --explain text
+// shows — without --explain. It shares buildSourcePlan with that text, so the log
+// and the pretty plan never drift. A cross-source source() filter has no single
+// driver, and a stdin dump no backend, so those log a minimal plan; building the
+// plan is skipped entirely when no INFO sink is listening.
+func (cfg *config) logQueryPlan(filter string, cross bool) {
+	lg := cfg.log()
+	if !lg.Enabled(context.Background(), slog.LevelInfo) {
+		return
+	}
+	switch {
+	case cross:
+		lg.Info("query plan", "mode", "cross-source")
+	case cfg.stdin:
+		lg.Info("query plan", "driver", "stdin",
+			"ops", []string{"decode stdin dump", "scan client-side"})
+	default:
+		sp, err := buildSourcePlan(cfg.url, filter, !cfg.noCompile, cfg.unbounded)
+		if err != nil || !sp.hasPlan {
+			return
+		}
+		lg.Info("query plan", sp.logAttrs(cfg.handle)...)
+	}
 }
 
 // finish returns the engine's run error if any; otherwise it flushes the

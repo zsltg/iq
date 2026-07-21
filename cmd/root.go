@@ -218,7 +218,7 @@ func newRootCmd() (*cobra.Command, *config) {
 			if err != nil {
 				return err
 			}
-			logger, closeLog, err := logOpts.build(cmd.ErrOrStderr())
+			logger, closeLog, err := logOpts.build(cmd.ErrOrStderr(), cmd.OutOrStdout())
 			if err != nil {
 				return err
 			}

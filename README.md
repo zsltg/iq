@@ -470,7 +470,7 @@ boundary; query results are never changed by them.
 | --- | --- | --- |
 | `-v`, `--verbose` | off | print diagnostics (source resolved, store opened, query complete with scan count and elapsed) to stderr, plus the [query plan](#query-plan---explain--v) and a live backend command trace (disables the progress spinner) |
 | `--log` | off | enable logging to a file (also via `IQ_LOG`) |
-| `--log.file` | `<user cache dir>/iq/iq.log` | log file path; an empty value disables logging |
+| `--log.file` | `<user cache dir>/iq/iq.log` | log file path, or the literal `stderr`/`stdout` to stream; an empty value disables logging |
 | `--log.level` | `DEBUG` | `DEBUG`, `INFO`, `WARN`, or `ERROR` |
 | `--log.format` | `text` | `text` or `json` |
 | `--error.format` | `text` | error output format: `text` or `json` |
@@ -485,13 +485,40 @@ same `-M`/`-C`/`NO_COLOR` decision as [colored output](#colored-output); `--log`
 records to a file (down to the chosen level, always plain — never tinted). A source location is
 always redacted before it is logged, so a stored credential never reaches a log file.
 
+Setting any `--log.file`/`--log.level`/`--log.format` flag on the command line **implies `--log`**
+— configuring the logger is intent to use it, so `--log` is optional alongside an explicit `--log.*`
+flag. (An environment variable alone does not: a lingering exported `IQ_LOG_FILE` never silently
+starts logging, so the env family still needs `IQ_LOG`. An explicit `--log`, true or false, is
+authoritative.) A `--log.file` of `stderr` or `stdout` streams the records to that standard stream
+instead of a file — the portable way to feed a CI log collector one JSON object per line without a
+`/dev/stderr` path or a cache file (the stream is never closed and no directory is created).
+
 ```bash
 ./iq -v '.[]'                                        # verbose diagnostics on stderr
 ./iq --log --log.file=/tmp/iq.log --log.format=json '.[]'   # structured logs to a file
+./iq --log.file=stderr --log.format=json '.[] | select(.total > 99)'  # stream JSON records to stderr (--log implied)
 IQ_LOG=true IQ_LOG_FILE=/tmp/iq.log ./iq '.[]'       # enable logging via the environment
 ./iq --error.format=json '.bad |'                    # machine-readable errors
 ./iq --debug.pprof=cpu '.[]' && go tool pprof cpu.pprof
 ```
+
+#### Structured stage records (a stable contract)
+
+Under logging, each pipeline stage emits a structured record whose **name and attribute keys are a
+stable contract**, safe to parse in automation. Every datum lives in an attribute, never interpolated
+into the message text, so `--log.format=json` yields one JSON object per line with fixed keys. The
+stage records:
+
+| record (`msg`) | level | attributes |
+| --- | --- | --- |
+| `query plan` | INFO | `handle`, `driver`, `classification` (`keys`, `streamable`, `scan`), `ops`, `filter` (the pushed server-side filter object, omitted when none), `conjuncts` (array of `{expr, pushed, reason}`); a cross-source `source()` filter logs `mode`, a stdin dump logs `driver`+`ops` |
+| `scan strategy` | DEBUG | `pushed` (whether the store pre-filtered), `reason` |
+| `store call` | DEBUG | `op` (`Get`/`ScanBatches`/`ScanFiltered`/`Query`), `elapsed`, item counts (`keys`+`returned`, or `pages`+`items`, or `command`+`args`), and `err` on failure |
+| `backend cmd` | DEBUG | `driver`, `cmd` — one per wire command the backend ran (credentials already redacted) |
+
+The `query plan` record is built from the same data as the [`--explain` text](#query-plan---explain--v),
+so the two never drift; it is INFO, so it also surfaces under a bare `-v`. The rest are DEBUG (the
+default file level), so a long scan's per-page and per-command volume stays out of an INFO stream.
 
 ### Query plan (`--explain`, `-v`)
 

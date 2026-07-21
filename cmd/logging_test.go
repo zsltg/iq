@@ -3,11 +3,13 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,11 +171,53 @@ func TestResolveLogOptions(t *testing.T) {
 			wantLevel: slog.LevelDebug, wantFormat: "text",
 		},
 		{
-			name:       "flag beats env for level",
+			// An explicit --log.level flag wins over the env level and, per
+			// imply-enable, turns logging on without --log.
+			name:       "flag beats env for level, implies enable",
 			args:       []string{"--log.level=WARN"},
 			env:        map[string]string{envLogLevel: "INFO"},
-			wantEnable: false, wantFile: defaultLogFile(), wantActive: false,
+			wantEnable: true, wantFile: defaultLogFile(), wantActive: true,
 			wantLevel: slog.LevelWarn, wantFormat: "text",
+		},
+		{
+			name:       "explicit --log.file implies enable",
+			args:       []string{"--log.file=/tmp/x.log"},
+			wantEnable: true, wantFile: "/tmp/x.log", wantActive: true,
+			wantLevel: slog.LevelDebug, wantFormat: "text",
+		},
+		{
+			name:       "explicit --log.format implies enable",
+			args:       []string{"--log.format=json"},
+			wantEnable: true, wantFile: defaultLogFile(), wantActive: true,
+			wantLevel: slog.LevelDebug, wantFormat: "json",
+		},
+		{
+			// A lingering exported IQ_LOG_FILE must not silently start logging;
+			// env vars alone still require IQ_LOG.
+			name:       "IQ_LOG_FILE alone does not enable",
+			env:        map[string]string{envLogFile: "/tmp/y.log"},
+			wantEnable: false, wantFile: "/tmp/y.log", wantActive: false,
+			wantLevel: slog.LevelDebug, wantFormat: "text",
+		},
+		{
+			// An explicit --log is authoritative and is not overridden by an
+			// implying --log.* flag.
+			name:       "explicit --log=false beats implying flag",
+			args:       []string{"--log=false", "--log.file=/tmp/x.log"},
+			wantEnable: false, wantFile: "/tmp/x.log", wantActive: false,
+			wantLevel: slog.LevelDebug, wantFormat: "text",
+		},
+		{
+			name:       "stderr stream target, implied enable",
+			args:       []string{"--log.file=stderr"},
+			wantEnable: true, wantFile: "stderr", wantActive: true,
+			wantLevel: slog.LevelDebug, wantFormat: "text",
+		},
+		{
+			name:       "stdout stream target",
+			args:       []string{"--log", "--log.file=stdout"},
+			wantEnable: true, wantFile: "stdout", wantActive: true,
+			wantLevel: slog.LevelDebug, wantFormat: "text",
 		},
 		{
 			name:       "env supplies level and format when flag unset",
@@ -243,7 +287,7 @@ func TestBuildVerboseOnly(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var stderr bytes.Buffer
-			logger, closer, err := logOptions{verbose: true, color: tt.color}.build(&stderr)
+			logger, closer, err := logOptions{verbose: true, color: tt.color}.build(&stderr, io.Discard)
 			require.NoError(t, err)
 			require.Nil(t, closer)
 
@@ -268,7 +312,7 @@ func TestBuildFileSink(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "iq.log")
 	o := logOptions{enable: true, file: path, level: slog.LevelDebug, format: "json"}
 
-	logger, closer, err := o.build(io.Discard)
+	logger, closer, err := o.build(io.Discard, io.Discard)
 	require.NoError(t, err)
 	require.NotNil(t, closer)
 	logger.Debug("hello")
@@ -283,10 +327,175 @@ func TestBuildFileSink(t *testing.T) {
 	require.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
 }
 
+// TestBuildStreamTarget checks that a literal stderr/stdout file target writes to
+// the given stream, opens no file, and returns a nil closer (the stream must never
+// be closed).
+func TestBuildStreamTarget(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+		hit  string // which of stderr/stdout receives the record
+	}{
+		{name: "stderr stream", file: "stderr", hit: "stderr"},
+		{name: "stdout stream", file: "stdout", hit: "stdout"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr, stdout bytes.Buffer
+			o := logOptions{enable: true, file: tt.file, level: slog.LevelDebug, format: "json"}
+			logger, closer, err := o.build(&stderr, &stdout)
+			require.NoError(t, err)
+			require.Nil(t, closer, "a stream target must not be closed")
+
+			logger.Info("streamed")
+			if tt.hit == "stderr" {
+				require.Contains(t, stderr.String(), `"msg":"streamed"`)
+				require.Empty(t, stdout.String())
+			} else {
+				require.Contains(t, stdout.String(), `"msg":"streamed"`)
+				require.Empty(t, stderr.String())
+			}
+		})
+	}
+}
+
+// TestTraceLogWriter checks the trace-bridge splits its input into one DEBUG
+// "backend cmd" record per complete line, splitting the driver prefix from the
+// command, buffering a partial line until its newline arrives, and dropping blank
+// lines.
+func TestTraceLogWriter(t *testing.T) {
+	var buf bytes.Buffer
+	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	w := &traceLogWriter{lg: lg}
+
+	// Write reports the full byte count it consumed, even for a partial line.
+	whole := "mongo> find {\"a\":1}\n"
+	n, err := io.WriteString(w, whole)
+	require.NoError(t, err)
+	require.Equal(t, len(whole), n, "Write must report every byte consumed")
+
+	// A line delivered in two writes logs only once its newline arrives.
+	partial := "redis> GET "
+	n, err = io.WriteString(w, partial)
+	require.NoError(t, err)
+	require.Equal(t, len(partial), n)
+	require.Equal(t, 1, strings.Count(buf.String(), "\n"), "partial line must not log yet")
+
+	rest := "foo\n\nbare line\n"
+	n, err = io.WriteString(w, rest)
+	require.NoError(t, err)
+	require.Equal(t, len(rest), n)
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	require.Len(t, lines, 3, "one record per complete non-blank line")
+
+	var recs []map[string]any
+	for _, l := range lines {
+		var m map[string]any
+		require.NoError(t, json.Unmarshal([]byte(l), &m))
+		require.Equal(t, "backend cmd", m["msg"])
+		recs = append(recs, m)
+	}
+	require.Equal(t, "mongo", recs[0]["driver"])
+	require.Equal(t, `find {"a":1}`, recs[0]["cmd"])
+	require.Equal(t, "redis", recs[1]["driver"])
+	require.Equal(t, "GET foo", recs[1]["cmd"], "the split line is reassembled across writes")
+	require.Equal(t, "bare line", recs[2]["cmd"])
+	require.NotContains(t, recs[2], "driver")
+}
+
+// lockProbeHandler records whether traceLogWriter's mutex was free at the instant a
+// record was handled. traceLogWriter emits its records from inside the drain loop,
+// which runs while the write lock is held, so on correct code the probe never finds
+// the mutex free. A mutant that releases the lock early (before the drain) leaves it
+// free during Handle, which the probe observes deterministically on a single
+// goroutine — no -race, no timing, no flakiness.
+type lockProbeHandler struct {
+	slog.Handler
+	w        *traceLogWriter
+	freeSeen *bool
+}
+
+func (h lockProbeHandler) Handle(ctx context.Context, r slog.Record) error {
+	if h.w.mu.TryLock() { // succeeds only if the write lock is NOT held.
+		*h.freeSeen = true
+		h.w.mu.Unlock()
+	}
+	return h.Handler.Handle(ctx, r)
+}
+
+// TestTraceLogWriterHoldsLockWhileEmitting pins that the writer emits its records
+// under the buffer lock, so a concurrent write can never observe (or corrupt) a
+// half-drained buffer. It kills the mutex defer-remove mutant deterministically: a
+// single Write drives one record through the probe, which sees the lock held on
+// correct code and free on the mutant.
+func TestTraceLogWriterHoldsLockWhileEmitting(t *testing.T) {
+	var freeSeen bool
+	w := &traceLogWriter{}
+	w.lg = slog.New(lockProbeHandler{
+		Handler:  slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}),
+		w:        w,
+		freeSeen: &freeSeen,
+	})
+
+	_, err := io.WriteString(w, "redis> PING\n")
+	require.NoError(t, err)
+	require.False(t, freeSeen, "the buffer lock must be held while a record is emitted")
+}
+
+// TestTraceSinkGating checks traceSink returns the input unchanged when no DEBUG
+// sink is listening, and, when one is, a working tee that carries the caller's
+// context to the Enabled gate. It writes through each returned writer so a broken
+// bridge (nil logger, a nil MultiWriter member, a nil return) is caught.
+func TestTraceSinkGating(t *testing.T) {
+	// gateHandler enables only for a non-nil context, so a substituted nil ctx in
+	// traceSink's Enabled check would fall to the "off" path.
+	debug := slog.New(&gateHandler{inner: slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug})})
+	off := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	t.Run("off: existing writer returned unchanged", func(t *testing.T) {
+		existing := &bytes.Buffer{}
+		require.Equal(t, io.Writer(existing), traceSink(existing, off))
+	})
+
+	t.Run("off with no existing trace stays nil", func(t *testing.T) {
+		require.Nil(t, traceSink(nil, off))
+	})
+
+	t.Run("on, no existing: bridge alone logs one record per line", func(t *testing.T) {
+		var recs bytes.Buffer
+		lg := slog.New(&gateHandler{inner: slog.NewJSONHandler(&recs, &slog.HandlerOptions{Level: slog.LevelDebug})})
+		w := traceSink(nil, lg)
+		require.NotNil(t, w, "on: a bridge even with no existing trace")
+		n, err := io.WriteString(w, "redis> PING\n")
+		require.NoError(t, err)
+		require.Equal(t, len("redis> PING\n"), n)
+		require.Contains(t, recs.String(), `"cmd":"PING"`)
+	})
+
+	t.Run("on, existing: writes reach both the existing sink and the log", func(t *testing.T) {
+		var existing, recs bytes.Buffer
+		lg := slog.New(&gateHandler{inner: slog.NewJSONHandler(&recs, &slog.HandlerOptions{Level: slog.LevelDebug})})
+		w := traceSink(&existing, lg)
+		require.NotEqual(t, io.Writer(&existing), w, "on: teed, not the bare writer")
+		n, err := io.WriteString(w, "mongo> find\n")
+		require.NoError(t, err)
+		require.Equal(t, len("mongo> find\n"), n, "the tee must report the full byte count")
+		require.Contains(t, existing.String(), "mongo> find", "the existing trace still receives the raw line")
+		require.Contains(t, recs.String(), `"cmd":"find"`, "the log bridge also receives it")
+	})
+
+	t.Run("gate carries the caller context (nil ctx falls to off)", func(t *testing.T) {
+		// With the gate handler, DEBUG is enabled only when a non-nil ctx reaches
+		// Enabled; traceSink must pass a real context, so it returns a bridge.
+		require.NotNil(t, traceSink(nil, debug), "a real context must enable the bridge")
+	})
+}
+
 // TestBuildNoSinkDiscards checks that with nothing enabled the logger discards
 // (never nil, no closer) so log points are cheap no-ops.
 func TestBuildNoSinkDiscards(t *testing.T) {
-	logger, closer, err := logOptions{}.build(io.Discard)
+	logger, closer, err := logOptions{}.build(io.Discard, io.Discard)
 	require.NoError(t, err)
 	require.Nil(t, closer)
 	require.NotNil(t, logger)
@@ -300,6 +509,6 @@ func TestBuildFileOpenError(t *testing.T) {
 	require.NoError(t, os.WriteFile(notdir, []byte("x"), 0o600))
 	o := logOptions{enable: true, file: filepath.Join(notdir, "iq.log"), level: slog.LevelDebug, format: "text"}
 
-	_, _, err := o.build(io.Discard)
+	_, _, err := o.build(io.Discard, io.Discard)
 	require.Error(t, err)
 }

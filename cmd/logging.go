@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/lmittmann/tint"
 	"github.com/spf13/cobra"
@@ -59,6 +61,17 @@ func resolveLogOptions(cmd *cobra.Command, cfg *config) (logOptions, error) {
 			}
 			o.enable = b
 		}
+		// An explicitly set --log.file/--log.level/--log.format implies enable even
+		// without --log: configuring the logger is intent to use it. This runs only
+		// when --log was not given (an explicit --log, true or false, is
+		// authoritative), and only for a command-line flag — a lingering exported
+		// IQ_LOG_FILE must never silently start logging, so env vars still require
+		// IQ_LOG. An explicit flag thus beats env here, keeping flag > env > default.
+		if !o.enable {
+			o.enable = cmd.Flags().Changed("log.file") ||
+				cmd.Flags().Changed("log.level") ||
+				cmd.Flags().Changed("log.format")
+		}
 	}
 
 	// An explicit --log.file wins (empty explicitly disables); otherwise
@@ -106,11 +119,12 @@ func resolveLogOptions(cmd *cobra.Command, cfg *config) (logOptions, error) {
 func (o logOptions) fileActive() bool { return o.enable && o.file != "" }
 
 // build assembles the invocation logger and, when file logging is on, opens the
-// log file and returns its Close as the second result. The logger is never nil:
-// with no sink it discards, so every log point is a cheap no-op. The verbose
-// sink writes to stderr at INFO, tinted when o.color is set; the file sink
-// honors the resolved level and format and is never tinted.
-func (o logOptions) build(stderr io.Writer) (*slog.Logger, func() error, error) {
+// sink and returns its Close as the second result (nil for a stream target). The
+// logger is never nil: with no sink it discards, so every log point is a cheap
+// no-op. The verbose sink writes to stderr at INFO, tinted when o.color is set;
+// the file sink honors the resolved level and format and is never tinted. stderr
+// and stdout are the writers a literal "stderr"/"stdout" file target resolves to.
+func (o logOptions) build(stderr, stdout io.Writer) (*slog.Logger, func() error, error) {
 	var handlers []slog.Handler
 	if o.verbose {
 		handlers = append(handlers, tint.NewHandler(stderr, &tint.Options{
@@ -121,22 +135,43 @@ func (o logOptions) build(stderr io.Writer) (*slog.Logger, func() error, error) 
 	}
 	var closer func() error
 	if o.fileActive() {
-		f, err := openLogFile(o.file)
+		sink, c, err := o.logSink(stderr, stdout)
 		if err != nil {
 			return slog.New(slog.DiscardHandler), nil, err
 		}
-		closer = f.Close
+		closer = c
 		opts := &slog.HandlerOptions{Level: o.level}
 		if o.format == "json" {
-			handlers = append(handlers, slog.NewJSONHandler(f, opts))
+			handlers = append(handlers, slog.NewJSONHandler(sink, opts))
 		} else {
-			handlers = append(handlers, slog.NewTextHandler(f, opts))
+			handlers = append(handlers, slog.NewTextHandler(sink, opts))
 		}
 	}
 	if len(handlers) == 0 {
 		return slog.New(slog.DiscardHandler), nil, nil
 	}
 	return slog.New(newFanout(handlers...)), closer, nil
+}
+
+// logSink resolves the file target to its writer and a closer. A literal
+// "stderr" or "stdout" is a portable stream target (unlike the "/dev/stderr" path
+// trap): it writes to the provided stream, is never closed — closing os.Stderr or
+// os.Stdout would break the process — and creates no directory. Any other value is
+// a filesystem path, opened (and its parent created) by openLogFile, whose Close
+// is returned so the caller releases it.
+func (o logOptions) logSink(stderr, stdout io.Writer) (io.Writer, func() error, error) {
+	switch o.file {
+	case "stderr":
+		return stderr, nil, nil
+	case "stdout":
+		return stdout, nil, nil
+	default:
+		f, err := openLogFile(o.file)
+		if err != nil {
+			return nil, nil, err
+		}
+		return f, f.Close, nil
+	}
 }
 
 // dropTimeAttr removes the top-level time attribute so the verbose stderr sink
@@ -202,6 +237,62 @@ func (c *config) log() *slog.Logger {
 		return c.logger
 	}
 	return discardLogger
+}
+
+// traceSink returns the writer a driver's live command trace should go to: the
+// existing trace (the --verbose stderr sink, or nil) teed with a DEBUG "backend
+// cmd" log bridge when a DEBUG sink is listening, so a plain --log run captures
+// the wire trace without --verbose. Drivers already redact credentials before
+// they reach the trace, so the bridge logs exactly what --verbose would show.
+// With no DEBUG sink it returns the input unchanged, so tracing stays off unless
+// the caller asked for it.
+func traceSink(existing io.Writer, lg *slog.Logger) io.Writer {
+	if !lg.Enabled(context.Background(), slog.LevelDebug) {
+		return existing
+	}
+	bridge := &traceLogWriter{lg: lg}
+	if existing == nil {
+		return bridge
+	}
+	return io.MultiWriter(existing, bridge)
+}
+
+// traceLogWriter adapts the drivers' line-oriented command trace to structured
+// logging: it buffers partial writes and emits one DEBUG "backend cmd" record per
+// complete line. A line is split on the driver's "> " prefix into a driver attr
+// and a cmd attr; a line without that shape logs the whole text as cmd. Writes are
+// serialized so a trace produced from several goroutines never interleaves a
+// record's parsing.
+type traceLogWriter struct {
+	lg  *slog.Logger
+	mu  sync.Mutex
+	buf []byte
+}
+
+// Write appends p, then drains every complete newline-terminated line into a log
+// record. A trailing partial line is retained for the next Write. It never
+// reports an error, so tracing can never break the query it describes.
+func (w *traceLogWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.buf = append(w.buf, p...)
+	for {
+		i := bytes.IndexByte(w.buf, '\n')
+		if i < 0 {
+			break
+		}
+		line := strings.TrimRight(string(w.buf[:i]), "\r")
+		w.buf = w.buf[i+1:]
+		if line == "" {
+			continue
+		}
+		if driver, cmd, ok := strings.Cut(line, "> "); ok {
+			w.lg.Debug("backend cmd", "driver", driver, "cmd", cmd)
+		} else {
+			w.lg.Debug("backend cmd", "cmd", line)
+		}
+	}
+	return len(p), nil
 }
 
 // fanoutHandler dispatches each record to several slog handlers, so one logger

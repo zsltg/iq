@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -67,11 +68,15 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 		cfg.trace = cmd.ErrOrStderr()
 	}
 
+	// When logging is active, tee each stage's driver command trace into the log,
+	// so a --log combine run captures the wire trace without --verbose.
+	cfg.trace = traceSink(cfg.trace, cfg.log())
+
 	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 	defer cancel()
 
 	cfg.log().Info("combine start", "stages", len(stages))
-	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: !cfg.noCompile}
+	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: !cfg.noCompile, Logger: cfg.log()}
 	names := make([]string, 0, len(stages))
 	values := make([]any, 0, len(stages))
 	for _, st := range stages {
@@ -80,7 +85,10 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 		if err != nil {
 			return fmt.Errorf("--from %q: %w", st.handle, err)
 		}
-		vals, err := collectSource(ctx, &config{url: u, address: st.address, trace: cfg.trace, decimalMode: cfg.decimalMode}, st.filter, opts)
+		cfg.logStagePlan(u, st.handle, st.filter)
+		// The stage config carries the logger so its store decorator and scan
+		// records fire too; the trace writer is already the log-teed sink.
+		vals, err := collectSource(ctx, &config{url: u, address: st.address, trace: cfg.trace, decimalMode: cfg.decimalMode, logger: cfg.logger}, st.filter, opts)
 		if err != nil {
 			if errors.Is(err, query.ErrScanNotAllowed) {
 				return fmt.Errorf("--from %q: %w; add --unbounded or use a .[]-rooted filter", st.handle, err)
@@ -127,6 +135,23 @@ func planFrom(cf *iqconfig.Config, specs []string) ([]fromStage, error) {
 		stages = append(stages, fromStage{varName: v, handle: handle, source: src, address: addr, filter: filter})
 	}
 	return stages, nil
+}
+
+// logStagePlan emits the structured "query plan" record for one --from stage at
+// INFO when logging is active, so each cross-source stage's classification,
+// planned ops, and pushdown decisions are captured (distinguished by the handle
+// attr). It shares buildSourcePlan with the --explain text, so the two never
+// drift; building the plan is skipped when no INFO sink is listening.
+func (cfg *config) logStagePlan(url, handle, filter string) {
+	lg := cfg.log()
+	if !lg.Enabled(context.Background(), slog.LevelInfo) {
+		return
+	}
+	sp, err := buildSourcePlan(url, filter, !cfg.noCompile, cfg.unbounded)
+	if err != nil || !sp.hasPlan {
+		return
+	}
+	lg.Info("query plan", sp.logAttrs(handle)...)
 }
 
 // collectSource opens the source, runs filter through the engine, and gathers

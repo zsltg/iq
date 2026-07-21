@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/itchyny/gojq"
 
@@ -11,6 +12,11 @@ import (
 	"github.com/zsltg/iq/internal/pushdown"
 	"github.com/zsltg/iq/internal/selector"
 )
+
+// discardLogger is the no-op logger the engine uses when RunOptions carries none,
+// so every log point is nil-safe without a guard at the call site. slog is a
+// stdlib type, so logging keeps the core free of any driver or CLI framework.
+var discardLogger = slog.New(slog.DiscardHandler)
 
 // ErrEmptyExpression is returned when Run is called with a blank jq expression.
 var ErrEmptyExpression = errors.New("empty expression: expected a jq filter")
@@ -87,6 +93,21 @@ type RunOptions struct {
 	// bounded read or a pushed-down filtered scan, and a store that cannot
 	// estimate cheaply leaves it uncalled. The core stays UI-agnostic.
 	OnEstimate func(n int64)
+	// Logger, when non-nil, receives the engine's structured records: a DEBUG
+	// "scan strategy" record with the runtime pushdown decision. A nil Logger is
+	// treated as a discard sink, so the core is a cheap no-op when the caller did
+	// not enable logging. It is the stdlib *slog.Logger, so the core stays free of
+	// any driver or CLI framework.
+	Logger *slog.Logger
+}
+
+// logger returns the run's logger, or the shared discard logger when none was
+// set, so every log point is nil-safe without a guard at the call site.
+func (o RunOptions) logger() *slog.Logger {
+	if o.Logger != nil {
+		return o.Logger
+	}
+	return discardLogger
 }
 
 // JQEngine runs a jq expression against a KVStore. The expression is both the
@@ -159,16 +180,25 @@ func (e *JQEngine) Run(ctx context.Context, src string, opts RunOptions, emit fu
 // page, so the choice only affects how much the store returns; the bool also
 // tells Run whether a whole-keyspace estimate is a valid total for the scan.
 func (e *JQEngine) scanner(q *gojq.Query, opts RunOptions) (func(context.Context, func(map[string]any) error) error, bool) {
-	if opts.Compile {
-		if fs, ok := e.store.(FilteredScanner); ok {
-			if pred, ok := pushdown.Compile(q); ok {
-				return func(ctx context.Context, fn func(map[string]any) error) error {
-					return fs.ScanFiltered(ctx, pred, fn)
-				}, true
-			}
-		}
+	log := opts.logger()
+	if !opts.Compile {
+		log.Debug("scan strategy", "pushed", false, "reason", "pushdown disabled")
+		return e.store.ScanBatches, false
 	}
-	return e.store.ScanBatches, false
+	fs, ok := e.store.(FilteredScanner)
+	if !ok {
+		log.Debug("scan strategy", "pushed", false, "reason", "store does not filter scans")
+		return e.store.ScanBatches, false
+	}
+	pred, ok := pushdown.Compile(q)
+	if !ok {
+		log.Debug("scan strategy", "pushed", false, "reason", "no pushable predicate")
+		return e.store.ScanBatches, false
+	}
+	log.Debug("scan strategy", "pushed", true, "reason", "predicate pushed to filtered scanner")
+	return func(ctx context.Context, fn func(map[string]any) error) error {
+		return fs.ScanFiltered(ctx, pred, fn)
+	}, true
 }
 
 // estimate invokes onEstimate with a cheap approximate item count before a scan,

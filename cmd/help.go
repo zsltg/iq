@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -171,12 +172,20 @@ func hasGroupedFlag(fs *pflag.FlagSet) bool {
 	return found
 }
 
+// groupedFlagsFuncOnce serializes the one cobra.AddTemplateFunc call:
+// cobra's template-func registry is an unsynchronized process global, so
+// concurrent newRootCmd calls (parallel tests) racing on it crash the process
+// with concurrent map writes. The registration is idempotent, so once is enough.
+var groupedFlagsFuncOnce sync.Once
+
 // installGroupedHelp registers the groupedFlags template func and rewrites the
 // command's usage template to route both the local and inherited flag blocks
 // through it. Set on the root command, it propagates to every subcommand because
 // Cobra's UsageTemplate walks to the parent when a command has none of its own.
 func installGroupedHelp(root *cobra.Command) {
-	cobra.AddTemplateFunc("groupedFlags", groupedFlagUsages)
+	groupedFlagsFuncOnce.Do(func() {
+		cobra.AddTemplateFunc("groupedFlags", groupedFlagUsages)
+	})
 	annotateFlagGroups(root)
 	tmpl := root.UsageTemplate()
 	tmpl = strings.ReplaceAll(tmpl, ".LocalFlags.FlagUsages", "groupedFlags .LocalFlags")

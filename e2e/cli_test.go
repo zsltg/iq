@@ -144,6 +144,86 @@ func TestOfflineFileSourceRoundTrip(t *testing.T) {
 	require.Contains(t, out, "world-iq")
 }
 
+func TestStructuredLoggingToStderr(t *testing.T) {
+	skipShort(t)
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data.jsonl")
+	require.NoError(t, os.WriteFile(data,
+		[]byte(`{"key":"alpha","value":{"total":150}}`+"\n"+`{"key":"beta","value":{"total":10}}`+"\n"), 0o600))
+	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
+
+	out, stderr, code := run(t, env, "add", "file://"+data, "-n", "snap")
+	require.Zerof(t, code, "add failed: %s", stderr)
+	require.Contains(t, out, "added source snap")
+
+	// --log.file=stderr implies enable (no --log needed); --log.format=json makes
+	// stderr one JSON object per line, parseable in CI. Query output stays on stdout.
+	out, stderr, code = run(t, env,
+		"--src", "snap", "--log.file=stderr", "--log.format=json",
+		".[] | select(.total > 99)")
+	require.Zerof(t, code, "query failed: %s", stderr)
+	require.Contains(t, out, "150", "the matching value is on stdout")
+
+	// Every stderr line must be a JSON object; index the records by msg.
+	byMsg := map[string]map[string]any{}
+	for _, line := range strings.Split(strings.TrimSpace(stderr), "\n") {
+		if line == "" {
+			continue
+		}
+		var rec map[string]any
+		require.NoErrorf(t, json.Unmarshal([]byte(line), &rec), "stderr line not JSON: %q", line)
+		byMsg[rec["msg"].(string)] = rec
+	}
+
+	// The query plan record carries the documented stable keys.
+	plan := byMsg["query plan"]
+	require.NotNil(t, plan, "a query plan record must be logged")
+	require.Equal(t, "snap", plan["handle"])
+	require.Equal(t, "file", plan["driver"])
+	require.Contains(t, plan, "classification")
+	require.Contains(t, plan, "ops")
+	cls := plan["classification"].(map[string]any)
+	require.Equal(t, true, cls["scan"])
+	require.Equal(t, true, cls["streamable"])
+
+	// The runtime scan strategy record proves the engine got a Logger and pushed
+	// the predicate down (the file driver pre-filters via FilteredScanner).
+	stratRec := byMsg["scan strategy"]
+	require.NotNil(t, stratRec, "a scan strategy record must be logged (engine Logger wired)")
+	require.Equal(t, true, stratRec["pushed"], "a pushable filter on the file driver must push")
+
+	// The query complete record's scanned count proves the OnPage hook ran.
+	done := byMsg["query complete"]
+	require.NotNil(t, done, "a query complete record must be logged")
+	require.GreaterOrEqual(t, int(done["scanned"].(float64)), 1, "OnPage must have counted scanned items")
+}
+
+// TestUnboundedLogsHolisticScan drives a holistic (non-streamable) filter with
+// --unbounded through the logging path: it must succeed (proving RunOptions carries
+// Unbounded) and emit a query plan record. Without --unbounded the same filter is
+// refused, so this pins that the flag reaches the engine.
+func TestUnboundedLogsHolisticScan(t *testing.T) {
+	skipShort(t)
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data.jsonl")
+	require.NoError(t, os.WriteFile(data,
+		[]byte(`{"key":"alpha","value":1}`+"\n"+`{"key":"beta","value":2}`+"\n"), 0o600))
+	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
+
+	_, stderr, code := run(t, env, "add", "file://"+data, "-n", "snap")
+	require.Zerof(t, code, "add failed: %s", stderr)
+
+	// keys is holistic (materializes), so it needs --unbounded; the run must succeed.
+	out, stderr, code := run(t, env,
+		"--src", "snap", "--unbounded", "--log.file=stderr", "--log.format=json", "keys")
+	require.Zerof(t, code, "unbounded holistic query failed: %s", stderr)
+	require.Contains(t, out, "alpha", "the keys must be emitted")
+
+	// Sanity: without --unbounded the same filter is refused, so the flag is load-bearing.
+	_, _, code = run(t, env, "--src", "snap", "keys")
+	require.NotZero(t, code, "a holistic scan without --unbounded must be refused")
+}
+
 func TestSchemaEmitsJSONSchema(t *testing.T) {
 	skipShort(t)
 	dir := t.TempDir()

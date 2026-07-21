@@ -1,8 +1,12 @@
 package query_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -83,12 +87,14 @@ func collectOpts(t *testing.T, store query.KVStore, src string, opts query.RunOp
 type filterKV struct {
 	fakeKV
 	gotPred     predicate.Node
+	gotCtx      context.Context
 	filterCalls int
 }
 
-func (f *filterKV) ScanFiltered(_ context.Context, pred predicate.Node, fn func(map[string]any) error) error {
+func (f *filterKV) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(map[string]any) error) error {
 	f.filterCalls++
 	f.gotPred = pred
+	f.gotCtx = ctx
 	// Deliver the keyspace directly (a real store would pre-filter here); this
 	// stays distinct from ScanBatches so a test can tell which path ran.
 	batch := make(map[string]any, len(f.scanKeys))
@@ -96,6 +102,103 @@ func (f *filterKV) ScanFiltered(_ context.Context, pred predicate.Node, fn func(
 		batch[k] = f.values[k]
 	}
 	return fn(batch)
+}
+
+// TestJQEngineScanStrategyRecord pins the DEBUG "scan strategy" record: it
+// reports the runtime pushdown decision (pushed true/false) and a precise reason
+// for each fallback, so a log consumer sees whether the store pre-filtered.
+func TestJQEngineScanStrategyRecord(t *testing.T) {
+	pushable := `.[] | select(.author == "K")`
+	tests := []struct {
+		name       string
+		store      query.KVStore
+		src        string
+		compile    bool
+		wantPushed bool
+		wantReason string
+	}{
+		{
+			name:       "pushed to a filtered scanner",
+			store:      &filterKV{fakeKV: fakeKV{scanKeys: []string{"1"}, values: map[string]any{"1": map[string]any{"author": "K"}}}},
+			src:        pushable,
+			compile:    true,
+			wantPushed: true,
+			wantReason: "predicate pushed to filtered scanner",
+		},
+		{
+			name:       "pushdown disabled",
+			store:      &filterKV{fakeKV: fakeKV{scanKeys: []string{"1"}, values: map[string]any{"1": map[string]any{"author": "K"}}}},
+			src:        pushable,
+			compile:    false,
+			wantPushed: false,
+			wantReason: "pushdown disabled",
+		},
+		{
+			name:       "store does not filter scans",
+			store:      &fakeKV{scanKeys: []string{"1"}, values: map[string]any{"1": map[string]any{"author": "K"}}},
+			src:        pushable,
+			compile:    true,
+			wantPushed: false,
+			wantReason: "store does not filter scans",
+		},
+		{
+			name:       "no pushable predicate",
+			store:      &filterKV{fakeKV: fakeKV{scanKeys: []string{"1"}, values: map[string]any{"1": map[string]any{"year": 2018}}}},
+			src:        ".[]",
+			compile:    true,
+			wantPushed: false,
+			wantReason: "no pushable predicate",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			_, err := collectOpts(t, tt.store, tt.src, query.RunOptions{Compile: tt.compile, Logger: lg})
+			require.NoError(t, err)
+
+			var rec map[string]any
+			for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+				var m map[string]any
+				require.NoError(t, json.Unmarshal([]byte(line), &m))
+				if m["msg"] == "scan strategy" {
+					rec = m
+				}
+			}
+			require.NotNil(t, rec, "a scan strategy record must be emitted")
+			require.Equal(t, tt.wantPushed, rec["pushed"])
+			require.Equal(t, tt.wantReason, rec["reason"])
+		})
+	}
+}
+
+// TestJQEngineNilLoggerIsSafe checks a run with no RunOptions.Logger does not
+// panic — the core defaults to a discard sink.
+func TestJQEngineNilLoggerIsSafe(t *testing.T) {
+	store := &fakeKV{scanKeys: []string{"1"}, values: map[string]any{"1": 1}}
+	_, err := collectOpts(t, store, ".[]", query.RunOptions{Compile: true})
+	require.NoError(t, err)
+}
+
+// ctxMarker is the key for the caller-context assertion below.
+type ctxMarker struct{}
+
+// TestJQEnginePushedScanForwardsCtx pins that the pushed-scan closure hands the
+// caller's context (not a substituted nil) through to ScanFiltered.
+func TestJQEnginePushedScanForwardsCtx(t *testing.T) {
+	store := &filterKV{fakeKV: fakeKV{
+		scanKeys: []string{"1"},
+		values:   map[string]any{"1": map[string]any{"author": "K"}},
+	}}
+	ctx := context.WithValue(context.Background(), ctxMarker{}, "marker")
+
+	err := query.NewJQEngine(store).Run(ctx, `.[] | select(.author == "K")`,
+		query.RunOptions{Compile: true}, func(any) error { return nil })
+
+	require.NoError(t, err)
+	require.Equal(t, 1, store.filterCalls, "the predicate must be pushed")
+	require.NotNil(t, store.gotCtx, "ScanFiltered must receive a non-nil context")
+	require.Equal(t, "marker", store.gotCtx.Value(ctxMarker{}), "the caller's context must reach ScanFiltered")
 }
 
 func TestJQEngineFetchesReferencedKeys(t *testing.T) {

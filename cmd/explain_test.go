@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -164,6 +167,154 @@ func TestWriteConjunctLine(t *testing.T) {
 			require.Equal(t, tt.want, b.String())
 		})
 	}
+}
+
+// planLogRecord builds a sourcePlan through the shared assembly, emits it as the
+// "query plan" record, and returns the parsed JSON so a test asserts the exact
+// structured attrs — the same data the pretty --explain text is built from.
+func planLogRecord(t *testing.T, url, handle, filter string, compile bool) map[string]any {
+	t.Helper()
+	sp, err := buildSourcePlan(url, filter, compile, false)
+	require.NoError(t, err)
+	require.True(t, sp.hasPlan)
+
+	var buf bytes.Buffer
+	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	lg.Info("query plan", sp.logAttrs(handle)...)
+
+	var rec map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &rec))
+	require.Equal(t, "query plan", rec["msg"])
+	return rec
+}
+
+func TestQueryPlanLogAttrs(t *testing.T) {
+	t.Run("mongo pushes a range conjunct, shares the pretty fixture", func(t *testing.T) {
+		// The same fixture as TestBuildJQPlanSingleSourceMongo, asserted structurally.
+		rec := planLogRecord(t, "mongodb://h/shop", "orders", ".[] | select(.total > 99) | {id, total}", true)
+		require.Equal(t, "orders", rec["handle"])
+		require.Equal(t, "mongo", rec["driver"])
+
+		cls := rec["classification"].(map[string]any)
+		require.Equal(t, true, cls["scan"])
+		require.Equal(t, true, cls["streamable"])
+		require.Nil(t, cls["keys"])
+
+		ops := rec["ops"].([]any)
+		require.NotEmpty(t, ops)
+
+		// The pushed server-side filter is a nested object (slog.Any), CI-parseable.
+		filter := rec["filter"].(map[string]any)
+		require.NotEmpty(t, filter)
+
+		conj := rec["conjuncts"].([]any)
+		require.Len(t, conj, 1)
+		c0 := conj[0].(map[string]any)
+		require.Equal(t, ".total > 99", c0["expr"])
+		require.Equal(t, true, c0["pushed"])
+		require.NotContains(t, c0, "reason") // omitempty when pushed
+	})
+
+	t.Run("redis client-side conjunct carries its reason and no filter", func(t *testing.T) {
+		rec := planLogRecord(t, "redis://h", "cache", ".[] | select(.active)", true)
+		require.Equal(t, "redis", rec["driver"])
+		require.NotContains(t, rec, "filter") // no server-side filter -> attr omitted
+
+		c0 := rec["conjuncts"].([]any)[0].(map[string]any)
+		require.Equal(t, false, c0["pushed"])
+		require.Equal(t, "not a pushable comparison", c0["reason"])
+	})
+
+	t.Run("bounded key fetch classifies keys, no scan, no conjuncts attr", func(t *testing.T) {
+		rec := planLogRecord(t, "redis://h", "cache", `.["user:1"]`, true)
+		cls := rec["classification"].(map[string]any)
+		require.Equal(t, false, cls["scan"])
+		require.Equal(t, []any{"user:1"}, cls["keys"])
+		// A bounded fetch has no select conjuncts, so the conjuncts attr is omitted
+		// entirely rather than emitted empty.
+		require.NotContains(t, rec, "conjuncts")
+		require.NotContains(t, rec, "filter")
+	})
+}
+
+// TestLogQueryPlanEmitsRecord pins that logQueryPlan emits the "query plan" record
+// for a resolved single-source query when an INFO sink is listening, and that the
+// caller's (non-nil) context reaches the Enabled gate.
+func TestLogQueryPlanEmitsRecord(t *testing.T) {
+	var buf bytes.Buffer
+	// gateHandler enables only for a non-nil context, so a substituted nil ctx in
+	// the Enabled gate would drop the record.
+	lg := slog.New(&gateHandler{inner: slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})})
+	cfg := &config{url: "redis://h", handle: "cache", logger: lg}
+
+	cfg.logQueryPlan(".[] | select(.active)", false)
+
+	rec := map[string]any{}
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &rec))
+	require.Equal(t, "query plan", rec["msg"])
+	require.Equal(t, "cache", rec["handle"])
+	require.Equal(t, "redis", rec["driver"])
+}
+
+// TestLogQueryPlanSkipsWhenNoInfoSink pins that the plan is not built (no record)
+// when no INFO sink is listening — the cheap no-op path.
+func TestLogQueryPlanSkipsWhenNoInfoSink(t *testing.T) {
+	var buf bytes.Buffer
+	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config{url: "redis://h", handle: "cache", logger: lg}
+	cfg.logQueryPlan(".[] | select(.active)", false)
+	require.Empty(t, buf.String(), "no INFO sink must emit no plan record")
+}
+
+// TestLogQueryPlanSkipsUnknownScheme pins that logQueryPlan emits no record when the
+// source has no registered driver (buildSourcePlan returns hasPlan false with no
+// error): the guard must require BOTH no error AND a plan before logging, so a
+// bare-error or a bare-hasPlan condition would wrongly log an empty plan.
+func TestLogQueryPlanSkipsUnknownScheme(t *testing.T) {
+	var buf bytes.Buffer
+	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	cfg := &config{url: "postgres://h/db", handle: "x", logger: lg}
+	cfg.logQueryPlan(".[]", false)
+	require.Empty(t, buf.String(), "an unknown scheme has no plan, so no query plan record is emitted")
+}
+
+// TestBuildSourcePlanDriverWithoutDescriber pins the `d.explainPlan == nil` guard:
+// a registered driver with no describer must yield hasPlan false rather than
+// dereferencing a nil describer. No shipped driver reaches this branch, so it is
+// exercised by injecting a describer-less driver into the registry for the test.
+func TestBuildSourcePlanDriverWithoutDescriber(t *testing.T) {
+	orig := drivers
+	t.Cleanup(func() { drivers = orig })
+	// A driver with a scheme but a nil explainPlan (the zero-value field).
+	drivers = append(append([]driver{}, orig...), driver{name: "nulldrv", schemes: []string{"nulldrv"}})
+
+	sp, err := buildSourcePlan("nulldrv://x", ".[]", true, false)
+	require.NoError(t, err)
+	require.False(t, sp.hasPlan, "a driver without a describer contributes no plan (no nil-deref)")
+}
+
+func TestQueryPlanLogSharesConjunctDecisionsWithText(t *testing.T) {
+	// The log record's per-conjunct pushed/reason must equal the pretty text's
+	// decisions for the same filter — one assembly, no drift.
+	cfg := &config{url: "mongodb://h/shop", handle: "orders"}
+	filter := ".[] | select(.total > 99 and (.active | not))"
+	out, err := buildJQPlan(cfg, filter, false)
+	require.NoError(t, err)
+
+	rec := planLogRecord(t, cfg.url, cfg.handle, filter, true)
+	conj := rec["conjuncts"].([]any)
+	require.Len(t, conj, 2)
+
+	pushed := conj[0].(map[string]any)
+	require.Equal(t, ".total > 99", pushed["expr"])
+	require.Equal(t, true, pushed["pushed"])
+	require.Contains(t, out, ".total > 99")
+
+	declined := conj[1].(map[string]any)
+	require.Equal(t, ".active | not", declined["expr"])
+	require.Equal(t, false, declined["pushed"])
+	require.Equal(t, "negation is not exactly expressible", declined["reason"])
+	require.Contains(t, out, "negation is not exactly expressible")
 }
 
 func TestBuildJQPlanPushdownDecisions(t *testing.T) {

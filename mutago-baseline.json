@@ -240,6 +240,30 @@
    "file": "internal/shape/shape.go",
    "mutator": "expression/remove",
    "line": 620
+  },
+  {
+   "id": "d61c1d13909632b24aff56c4b2ae5d2c",
+   "file": "cmd/backend.go",
+   "mutator": "expression/context-nil",
+   "line": 33
+  },
+  {
+   "id": "8d8b67cfaa5a2f9ae268a758c53d80ae",
+   "file": "cmd/backend.go",
+   "mutator": "expression/context-nil",
+   "line": 42
+  },
+  {
+   "id": "0994bc19cf0021d62b93daf5a7054485",
+   "file": "cmd/jq.go",
+   "mutator": "expression/context-nil",
+   "line": 166
+  },
+  {
+   "id": "fdbace0a2e553747170ca5df7e0d1925",
+   "file": "cmd/logging.go",
+   "mutator": "expression/context-nil",
+   "line": 250
   }
  ]
 }
