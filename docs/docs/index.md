@@ -26,7 +26,7 @@ sq's so the tool feels familiar.
 
 - Go 1.26+
 - Docker (for the integration tests, which start ephemeral Redis + MongoDB + Cassandra + DynamoDB Local + CouchDB + Couchbase + Neo4j + Elasticsearch + OpenSearch containers; not needed for `go test -short`. HBase integration tests run only against a `docker compose` cluster named by `IQ_HBASE_URL`)
-- [uv](https://docs.astral.sh/uv/) — optional, docs-only: needed to build or serve this documentation site (`make docs` / `make docs-serve`).
+- [uv](https://docs.astral.sh/uv/) (optional, docs-only) — builds and serves the documentation site under `docs/` (`make docs` / `make docs-serve`); not needed to build or use `iq` itself
 
 ## Build
 
@@ -38,3 +38,20 @@ make build                # build with version metadata embedded
 `make build` injects the version, commit, and build date via ldflags; a plain `go build` still
 reports a version recovered from Go's embedded build info. Check it with `iq version` or
 `iq --version`.
+
+## Releasing
+
+Versioning is driven by [Conventional Commits](https://www.conventionalcommits.org/): the release
+tooling reads the commit log, computes the next [semantic version](https://semver.org/), and
+regenerates `CHANGELOG.md`. It is all-Go and local — no CI service or GitHub required.
+
+```bash
+make tools                        # one-time: install svu + git-chglog into GOPATH/bin
+bash scripts/release.sh --dry-run # preview the next version and CHANGELOG.md diff, no changes
+make release                      # bump, regenerate CHANGELOG.md, commit, and tag
+git push --follow-tags            # publish the tag (release.sh never pushes for you)
+```
+
+`make release` must run on a clean `main`. `svu` picks the bump from the commit types since the
+last tag (`feat` → minor, `fix` → patch, a `!`/`BREAKING CHANGE` → major); with no tags yet the
+first release comes out as `v0.1.0`.

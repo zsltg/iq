@@ -45,10 +45,19 @@ Copyright &copy; 2026 The authors
 # can be defined using TOML syntax.
 #
 # Read more: https://zensical.org/docs/setup/navigation/
-# nav = [
-#   { "Get started" = "index.md" },
-#   { "Markdown in 5min" = "markdown.md" },
-# ]
+nav = [
+  { "iq" = "index.md" },
+  { "Sources" = "sources.md" },
+  { "Usage" = "usage.md" },
+  { "Drivers" = "drivers.md" },
+  { "Cross-source queries" = "cross-source-queries.md" },
+  { "Moving data" = "moving-data.md" },
+  { "Consuming iq exports" = "consuming-exports.md" },
+  { "Architecture" = "architecture.md" },
+  { "Common commands" = "common-commands.md" },
+  { "Comparison" = "comparison.md" },
+  { "See also" = "see-also.md" },
+]
 
 # With the "extra_css" option you can add your own CSS styling to customize
 # your Zensical project according to your needs. You can add any number of
