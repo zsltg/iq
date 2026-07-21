@@ -147,8 +147,9 @@ func cacheStat(out io.Writer, dir string, jsonOut, yamlOut bool) error {
 // dumps, or only the one for a named source (file:// only) or dump path.
 func newCacheClearCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "clear [source|path]",
-		Short: "Remove cached dumps (all, or one source/path)",
+		Use:               "clear [source|path]",
+		ValidArgsFunction: completeCacheClear,
+		Short:             "Remove cached dumps (all, or one source/path)",
 		Long: "Remove decode-cache files. With no argument, clear the whole cache; with a saved\n" +
 			"file:// source name or a dump file path, clear only that dump's cache entry.",
 		Args: cobra.MaximumNArgs(1),

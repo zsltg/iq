@@ -1,0 +1,910 @@
+.TH IQ 1 "" "iq" "User Commands"
+.SH NAME
+iq \- Query NoSQL databases with jq from the command line
+.SH SYNOPSIS
+.B iq
+[\fIjq\-filter\fR] [\fIflags\fR]
+.br
+.B iq
+\fIcommand\fR [\fIargs\fR]
+.SH DESCRIPTION
+.PP
+iq runs a jq filter against a NoSQL database.
+.PP
+.RS
+.nf
+  $ iq '.[] | select(.total > 99) | .id' \-\-src shop.orders
+.fi
+.RE
+.PP
+The filter's top\-level paths name the keys to fetch \(em `iq '.greeting'`, or `iq '.["user:1"]'` for a key with a colon. A `.[]`\-rooted filter streams the whole keyspace in constant memory; a filter that collapses the dataset into one value (`.`, `keys`, `map(...)`) needs \-\-unbounded. Always single\-quote the filter so the shell leaves its brackets, spaces, and pipes alone.
+.PP
+A database is a saved source, chosen by URL scheme \(em redis:// or mongodb://. Register with `iq add`, pick a default with `iq src`, list with `iq ls`. Address a MongoDB collection as handle.collection (e.g. \-\-src shop.orders), or set a default in the source URL (...?collection=orders) and drop the suffix.
+.PP
+select(...) clauses are pushed to the backend automatically, results unchanged; run `iq \-\-explain` to see the plan. The README carries the full reference.
+.SH GLOBAL FLAGS
+.TP
+\fB\-\-config\fR
+path to the config file (overrides $IQ_CONFIG; default <user config dir>/iq/iq.toml)
+.TP
+\fB\-s\fR, \fB\-\-src\fR
+run against this saved source for one invocation (overrides the active source; see `iq src`)
+.TP
+\fB\-\-timeout\fR
+per\-query timeout (default 5s)
+.TP
+\fB\-\-combine\fR
+final jq over the \-\-from results (each bound to $name), run over a null input
+.TP
+\fB\-\-explain\fR
+print the formatted query plan (pretty jq, nested filters, and the backend calls) and exit without connecting or executing
+.TP
+\fB\-\-from\fR
+cross\-source stage `name=<jq>`: reduce source name with <jq> and bind its results to $name (repeatable; needs \-\-combine) (default [])
+.TP
+\fB\-\-no\-cache\fR
+disable the file:// dump decode cache (on by default for local dump files above 4 MiB; a cached decode skips re\-parsing the dump on later queries)
+.TP
+\fB\-\-no\-cache\-index\fR
+skip the file:// cache's per\-page key index (still caches the decode; a bounded key read streams the whole cache instead of decoding only candidate pages)
+.TP
+\fB\-\-no\-compile\fR
+disable server\-side predicate pushdown; run the full .[]|select(...) filter client\-side (pushdown is on by default for MongoDB, already a no\-op on Redis; results are unchanged either way)
+.TP
+\fB\-\-unbounded\fR
+permit a filter that loads the whole dataset into memory (also materializes a .[]\-rooted filter instead of streaming it)
+.TP
+\fB\-\-compact\fR
+collapse pretty json / jsona output to single\-line (no\-op for jsonl, values, yaml, gron, grona)
+.TP
+\fB\-f\fR, \fB\-\-format\fR
+select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona; an alternative to \-j/\-J/\-A/\-y/\-r/\-g/\-G
+.TP
+\fB\-\-format.decimal\fR
+how to present a non\-integer decimal to the filter: auto (Mongo Decimal128 exact string, Redis fractional number), number (bare, may lose precision), or string (exact, quoted; use tonumber) (default auto)
+.TP
+\fB\-g\fR, \fB\-\-gron\fR
+output flattened assignment statements (gron), one per line: greppable, each result rooted at json, reversible with ungron
+.TP
+\fB\-G\fR, \fB\-\-grona\fR
+like \-\-gron but result N roots at json[N], so the whole stream ungrons back to one JSON array (gron's \-\-stream style)
+.TP
+\fB\-j\fR, \fB\-\-json\fR
+output pretty JSON, one value per result (the default rendering)
+.TP
+\fB\-A\fR, \fB\-\-jsona\fR
+output every result wrapped in one [ ... ] JSON document (iq's \-\-jsona wraps the whole stream; sq's emits per\-row value\-arrays)
+.TP
+\fB\-J\fR, \fB\-\-jsonl\fR
+output compact JSON, one value per line (JSON Lines)
+.TP
+\fB\-o\fR, \fB\-\-output\fR
+write output to <file> instead of stdout (color off unless \-C; progress and errors still go to stderr)
+.TP
+\fB\-r\fR, \fB\-\-raw\fR
+output scalars unquoted, one per line (objects and arrays fall back to compact JSON)
+.TP
+\fB\-y\fR, \fB\-\-yaml\fR
+output YAML documents, separated by \-\-\-
+.TP
+\fB\-\-dry\-run\fR
+report the effect of \-\-insert without writing anything
+.TP
+\fB\-\-force\fR
+skip the confirmation prompt for \-\-replace
+.TP
+\fB\-\-from\-format\fR
+format of a piped\-stdin source when it cannot be sniffed: jsonl, json, yaml, rdb, bson, mongoexport
+.TP
+\fB\-\-insert\fR
+write each item into this destination `source` (copy/restore/import) instead of rendering
+.TP
+\fB\-\-key\fR
+jq expression yielding each written item's key (\-\-insert/\-\-typed)
+.TP
+\fB\-\-key\-field\fR
+object field to take the key from, for foreign JSON input (\-\-insert)
+.TP
+\fB\-\-key\-prefix\fR
+string prepended to every written key (\-\-insert/\-\-typed)
+.TP
+\fB\-\-no\-overwrite\fR
+insert only; skip keys that already exist (\-\-insert)
+.TP
+\fB\-\-replace\fR
+empty the destination before writing, with confirmation (\-\-insert)
+.TP
+\fB\-\-type\fR
+native type stamped on a reshaped value, e.g. hash, list, json (\-\-insert/\-\-typed)
+.TP
+\fB\-\-typed\fR
+emit typed {key,type,value} records \(em a re\-importable dump (needed for Redis; Mongo's plain output already restores)
+.TP
+\fB\-C\fR, \fB\-\-color\fR
+force colored output even when the destination is not a terminal (e.g. a pager)
+.TP
+\fB\-M\fR, \fB\-\-monochrome\fR
+disable colored output (also honored via NO_COLOR); color is on by default only when writing to a terminal
+.TP
+\fB\-\-no\-progress\fR
+disable the scan progress spinner (shown on stderr for long scans when it is a terminal)
+.TP
+\fB\-\-debug.pprof\fR
+write a runtime profile of the whole run: cpu, mem, block, mutex, goroutine, thread, or trace
+.TP
+\fB\-\-error.format\fR
+error output format: text or json (default text)
+.TP
+\fB\-\-error.format.text.verbose\fR
+for a jq syntax error in text format, show a caret span report (default true)
+.TP
+\fB\-\-error.stack\fR
+print the error cause chain to stderr (may include backend internals)
+.TP
+\fB\-\-log\fR
+enable logging to a file (also via IQ_LOG)
+.TP
+\fB\-\-log.file\fR
+log file path; empty disables logging (default <user cache dir>/iq/iq.log)
+.TP
+\fB\-\-log.format\fR
+log format: text or json (default text)
+.TP
+\fB\-\-log.level\fR
+log level: DEBUG, INFO, WARN, or ERROR (default DEBUG)
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+print verbose diagnostics to stderr; for a query, the formatted plan and a live backend command trace (disables the progress spinner)
+.SH COMMANDS
+.SS iq add
+Register a source from a connection URL (sq\-style)
+.PP
+\fBUsage:\fR iq add <url>
+.PP
+Register a source from a connection URL, like `sq add`. The URL is the only positional argument; \-n/\-\-handle names the source, and when omitted a handle is derived from the URL (the MongoDB database or Cassandra keyspace name, else the driver). The backend is inferred from the URL scheme: redis:// (rediss://), mongodb:// (mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb:// (couchdbs://), couchbase:// (couchbases://), neo4j:// (neo4j+s://, bolt://), elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://); \-d/\-\-driver asserts the expected driver. For MongoDB, a default collection rides in the URL as ?collection= (`mongodb://host/db?collection=orders`); for Cassandra, a default table rides as ?table= (`cassandra://host/keyspace?table=orders`); for DynamoDB, the region is the host and a default table rides as ?table= (`dynamodb://us\-east\-1/?table=orders`, credentials from the AWS default chain); for HBase, the host is the ZooKeeper quorum and a default table rides as ?table= (`hbase://host:2181/?table=books`, cell encodings declared with ?types=cf:age=long); for CouchDB, the host is the server and a default database rides as ?database= (`couchdb://host:5984/?database=orders`); for Couchbase, the host is the cluster and a bucket rides as ?bucket= with an optional scope.collection as ?collection= (`couchbase://host/?bucket=iq&collection=sales.orders`); for Neo4j, the host is the bolt server and a default node label rides as ?label= (or a relationship type as ?rel=); for Elasticsearch and OpenSearch, a default index rides as ?index= (`elasticsearch://host:9200/?index=books`, `opensearch://host:9200/?index=books`). Handles may be grouped with '/' (`iq add \-n prod/books mongodb://...`). \-p prompts for the URL password (or reads it from stdin); with \-\-store keyring the password is moved to the OS keyring and stripped from the stored URL. \-a makes the new source active. The source is pinged before it is saved unless \-\-skip\-verify is set. Note: `iq add` is this command, which shadows jq's built\-in `add` filter \(em write the filter as `[ .a, .b ] | add`.
+.PP
+\fBFlags:\fR
+.TP
+\fB\-a\fR, \fB\-\-active\fR
+make the new source the active source
+.TP
+\fB\-d\fR, \fB\-\-driver\fR
+expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb, couchbase, neo4j, elasticsearch, opensearch); must match the url scheme
+.TP
+\fB\-n\fR, \fB\-\-handle\fR
+handle for the source; derived from the url when omitted
+.TP
+\fB\-p\fR, \fB\-\-password\fR
+prompt for the url password (or read it from stdin)
+.TP
+\fB\-\-skip\-verify\fR
+skip the post\-add reachability check
+.TP
+\fB\-\-store\fR
+where the url's password is kept: inline (in the config file) or keyring (the OS keyring) (default inline)
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  # Register a Redis source named "cache".
+  $ iq add \-n cache redis://localhost:6379/0
+
+  # Register a Mongo source; ?collection= sets its default collection.
+  $ iq add 'mongodb://localhost:27017/shop?collection=orders'
+
+  # A source needing auth, made active: prompt for the password, keep it in the keyring.
+  $ iq add \-a \-p \-\-store keyring 'mongodb://user@localhost:27017/shop?collection=orders'
+.fi
+.RE
+.SS iq group
+Show, set, or clear the active group
+.PP
+\fBUsage:\fR iq group [name]
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-clear\fR
+clear the active group
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq group         # show the active group
+  $ iq group prod    # set it (handles resolve within it)
+  $ iq group \-\-clear # back to top\-level handles
+.fi
+.RE
+.SS iq ls
+List saved sources (the active one marked *), or groups with \-g
+.PP
+\fBUsage:\fR iq ls [group]
+.PP
+List saved sources, the active one marked with '*'. An optional [group] limits the listing to sources in that group. \-v adds each source's driver; \-g lists groups instead of sources; \-j/\-\-json or \-y/\-\-yaml emit machine\-readable output. Passwords are redacted by default: \-\-reveal prints a password stored inline in the config verbatim, and \-\-expand resolves a keyring\-backed source's stored password and inlines it (combine both to print a keyring password verbatim).
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-expand\fR
+resolve keyring\-backed passwords and inline them into printed URLs
+.TP
+\fB\-g\fR, \fB\-\-group\fR
+list groups instead of sources
+.TP
+\fB\-j\fR, \fB\-\-json\fR
+emit machine\-readable JSON
+.TP
+\fB\-\-reveal\fR
+print inline\-stored passwords verbatim instead of redacting them
+.TP
+\fB\-y\fR, \fB\-\-yaml\fR
+emit machine\-readable YAML
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq ls               # list saved sources (active marked *)
+  $ iq ls \-v            # add the driver column
+  $ iq ls \-g            # list groups instead of sources
+  $ iq ls \-j            # machine\-readable JSON
+  $ iq ls prod \-\-reveal # one group, inline passwords shown
+.fi
+.RE
+.SS iq mv
+Rename or move a source or a whole group
+.PP
+\fBUsage:\fR iq mv <old> <new>
+.PP
+Rename a source to a new full handle, or move it into a group by giving the group\-qualified target (`iq mv books prod/books`). When <old> names a group, every source under it is re\-prefixed (`iq mv prod staging` renames prod/* to staging/*). The active source and group follow the move. A keyring\-backed source's stored credential moves with it.
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq mv shop catalog   # rename a source
+  $ iq mv shop prod/shop # move into a group
+  $ iq mv prod staging   # rename a whole group (prod/* \-> staging/*)
+.fi
+.RE
+.SS iq ping
+Check that sources are reachable
+.PP
+\fBUsage:\fR iq ping [name...]
+.PP
+Open each source and round\-trip a cheap command (Redis PING, MongoDB {ping:1}), reporting its driver and the round\-trip time, or the error. With no arguments the active source is pinged; otherwise each argument is a source handle or a group (pinging every member). Each check is bounded by \-\-timeout. Exits non\-zero if any source is unreachable.
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq ping            # the active source
+  $ iq ping cache shop # specific sources
+  $ iq ping prod       # a whole group
+.fi
+.RE
+.SS iq rm
+Remove one or more saved sources or groups
+.PP
+\fBUsage:\fR iq rm <name>...
+.PP
+Remove saved sources or whole groups. Each argument is a source handle or a group name (which removes every source under it). The removal is atomic: if any argument names neither a source nor a group, nothing is removed. A keyring\-backed source's stored credential is deleted too.
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq rm cache               # remove one source
+  $ iq rm cache shop prod/old # several at once
+  $ iq rm prod                # a whole group
+.fi
+.RE
+.SS iq src
+Show or set the active source
+.PP
+\fBUsage:\fR iq src [name]
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq src      # show the active source
+  $ iq src shop # set it
+.fi
+.RE
+.SS iq data
+Manage a source's container (clear, drop, delete)
+.PP
+\fBUsage:\fR iq data
+.PP
+Container lifecycle for a source: `clear` empties a container; `drop` removes one; `delete` removes a named set of keys, keeping the container. (Data movement is on the query command: `iq \-\-src <s> \-\-insert <dst>` to copy/restore, `iq \-\-src <s> \-\-typed` to dump.)
+.PP
+\-\-explain shows the plan without connecting; \-\-dry\-run reports the real effect without changing anything.
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-dry\-run\fR
+report the real effect without changing anything
+.TP
+\fB\-\-explain\fR
+describe the plan without connecting or changing anything
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  # Empty a source's container but keep it; or remove it entirely (Mongo).
+  $ iq data clear cache
+  $ iq data drop shop.orders
+  # Remove specific keys, keeping the container.
+  $ iq data delete cache book:1 book:2
+.fi
+.RE
+.SS iq data clear
+Empty one or more containers (keep them)
+.PP
+\fBUsage:\fR iq data clear <target>...
+.PP
+Empty a collection/keyspace, keeping the container. MongoDB: deleteMany({}). Redis: FLUSHDB. Distinct from `iq rm`, which only unregisters a saved source \(em clear destroys the stored data.
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-force\fR
+skip the confirmation prompt
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq data clear cache             # empty a Redis source (FLUSHDB)
+  $ iq data clear shop.orders shop.users # empty two Mongo collections
+.fi
+.RE
+.SS iq data delete
+Remove specific keys from a container (keep the container)
+.PP
+\fBUsage:\fR iq data delete <target> <key>...
+.PP
+Remove one or more keys from a container, keeping the container. Each key uses the same spelling as a Get: a bare string (`book:1`), or a JSON array for a composite key (`["shop",42]`). A key that is already absent is not an error \(em delete is idempotent, so a re\-run converges. Distinct from `iq data clear`, which empties the whole container, and from `iq rm`, which only unregisters a source. No confirmation prompt: the key list you typed is the confirmation; use \-\-dry\-run to preview. Rejected for a backend with no per\-key delete (e.g. a dump file).
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq data delete cache book:1 book:2   # remove two Redis keys
+  $ iq data delete shop.orders '["eu",42]' # a composite\-key row
+  $ iq data delete cache book:1 \-\-dry\-run   # preview without deleting
+.fi
+.RE
+.SS iq data drop
+Remove one or more containers
+.PP
+\fBUsage:\fR iq data drop <target>...
+.PP
+Remove a container entirely. MongoDB: drop the collection and its indexes. Redis has no droppable container (a DB index only empties), so drop is rejected for a Redis target \(em use `iq data clear`. Distinct from `iq rm`, which only unregisters a saved source; drop destroys the stored data.
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-force\fR
+skip the confirmation prompt
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq data drop shop.orders             # drop one Mongo collection
+  $ iq data drop shop.orders shop.users  # drop several
+.fi
+.RE
+.SS iq diff
+Compare two sources by data, stats, or inferred schema
+.PP
+\fBUsage:\fR iq diff <a> <b>
+.PP
+Compare two saved sources across the layers a schemaless store can meaningfully compare. Selecting no layer defaults to \-\-data; layers combine.
+.PP
+.RS
+.nf
+  \-\-data    item\-level diff: added / removed / changed, keyed by document _id
+            (MongoDB) or key (Redis). Reads both keyspaces fully into memory,
+            so it costs memory proportional to the two sources \(em a deliberate
+            tradeoff, since an added/removed diff needs both key sets at once.
+            Allowed across drivers (Mongo _id vs Redis key): useful for
+            verifying a migration, but the identity match is only as meaningful
+            as the keys lining up \(em a power\-user tool, not a schema comparison.
+  \-\-stats   diff native introspection trees (MongoDB diagnostic commands, Redis
+            INFO). Same driver only. \-\-section narrows which sections.
+  \-\-schema  diff an inferred field\->type shape sampled from each source. Allowed
+            across drivers: the inferred vocabulary (integer/number/string(fmt)/
+            map/array + required/optional) measures logical shape, not per\-driver
+            introspection. The shape is sampled (\-\-sample) and inferred, never
+            declared, so a wider sample yields a truer shape.
+.fi
+.RE
+.PP
+Use \-j/\-\-json or \-y/\-\-yaml for a machine\-readable delta. diff exits non\-zero when the sources differ and zero when they match (diff(1)\-style), so scripts can branch on the exit status.
+.PP
+\-\-set\-arrays compares every array order\-insensitively as a multiset (duplicates counted), reporting membership deltas at the array's own path. \-\-patch emits an RFC 6902 JSON Patch instead of the human/JSON delta; it renders exactly one layer (choose one of \-\-data/\-\-stats/\-\-schema) and excludes \-\-json, \-\-yaml, and \-\-set\-arrays.
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-data\fR
+diff items key by key (default when no layer is chosen; cross\-driver allowed)
+.TP
+\fB\-j\fR, \fB\-\-json\fR
+emit machine\-readable JSON
+.TP
+\fB\-\-patch\fR
+emit an RFC 6902 JSON Patch (single layer only; excludes \-\-json/\-\-yaml/\-\-set\-arrays)
+.TP
+\fB\-\-sample\fR
+max items sampled per side for \-\-schema (0 = all) (default 1000)
+.TP
+\fB\-\-schema\fR
+diff an inferred field/type shape (cross\-driver allowed)
+.TP
+\fB\-\-section\fR
+introspection section(s) for \-\-stats (repeatable; default: the source's full set) (default [])
+.TP
+\fB\-\-set\-arrays\fR
+compare arrays order\-insensitively as multisets (duplicates counted)
+.TP
+\fB\-\-stats\fR
+diff native introspection trees (same driver only)
+.TP
+\fB\-y\fR, \fB\-\-yaml\fR
+emit machine\-readable YAML
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  # Item\-level diff (the default layer) of two collections in one source.
+  $ iq diff shop.orders shop.users
+
+  # Across environments; compare shapes or native stats.
+  $ iq diff prod/shop staging/shop \-\-schema
+  $ iq diff prod/shop staging/shop \-\-stats
+  $ iq diff prod/shop staging/shop \-j
+.fi
+.RE
+.SS iq exec
+Forward a command to the database verbatim and print the reply
+.PP
+\fBUsage:\fR iq exec <command> [args...]
+.PP
+Forward a command to the backend verbatim. For Redis, a command and operands: `iq exec SET greeting hello`, `iq exec HGETALL book:2`. For MongoDB, one JSON command document run with runCommand: `iq exec '{"find":"books","filter":{}}'`. For Cassandra, a CQL statement: `iq exec 'SELECT * FROM books LIMIT 10'`. HBase has no query language, so it takes a shell\-style verb naming its own table: get, scan, count (reads), put, delete (writes): `iq exec get books 42`, `iq exec scan books 10`.
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  # Redis: a command and its operands.
+  $ iq exec SET greeting hello
+  $ iq exec HGETALL user:2
+
+  # MongoDB: one runCommand document (database\-scoped; no collection needed).
+  $ iq exec '{"find":"orders","filter":{}}' \-\-src shop
+
+  # Cassandra: a CQL statement (keyspace\-scoped; no table needed).
+  $ iq exec 'SELECT release_version FROM system.local' \-\-src cluster
+
+  # HBase: a verb naming its own table (get/scan/count/put/delete).
+  $ iq exec get books 42 \-\-src cluster
+  $ iq exec put books 42 cf:title Dune \-\-src cluster
+.fi
+.RE
+.SS iq inspect
+Show a source's native server/database introspection
+.PP
+\fBUsage:\fR iq inspect [source]
+.PP
+Show a source's native server/database introspection.
+.PP
+The positional argument names the source, like `iq inspect prod`; with none it uses \-\-src or the active source. MongoDB, Cassandra, DynamoDB, HBase, CouchDB, Couchbase, and Neo4j sources accept sq\-style `<source>.<collection>` / `<source>.<table>` / `<source>.<database>` / `<source>.<label>` addressing (`iq inspect prod.books`) to pick the collection/table/database/label, overriding the source URL's ?collection=/?table=/?database=/?label= default; Redis sources take no collection.
+.PP
+MongoDB \(em runs diagnostic database commands; no \-\-only runs them all, \-\-only narrows to the named ones:   dbStats  serverStatus  listCollections  collStats  buildInfo  hostInfo   (collStats needs a collection: address it as source.collection or set   ?collection= on the source url)
+.PP
+Cassandra \(em runs system\-table reads; no \-\-only runs them all, \-\-only narrows:   local  tables  columns   (columns needs a table: address it as source.table or set ?table= on the   source url)
+.PP
+DynamoDB \(em runs introspection reads; no \-\-only runs them all, \-\-only narrows:   tables  table   (table needs a table: address it as source.table or set ?table= on the   source url)
+.PP
+HBase \(em runs introspection reads; no \-\-only runs them all, \-\-only narrows:   tables   (tables lists the source namespace's tables)
+.PP
+CouchDB \(em runs introspection reads; no \-\-only runs them all, \-\-only narrows:   server  databases  dbinfo  indexes   (dbinfo and indexes need a database: address it as source.database or set   ?database= on the source url)
+.PP
+Couchbase \(em runs introspection reads; no \-\-only runs them all, \-\-only narrows:   cluster  buckets  collections  indexes   (collections needs a bucket: address it as source.collection or set ?bucket=   on the source url)
+.PP
+Neo4j \(em runs metadata procedures; no \-\-only runs them all, \-\-only narrows:   server  databases  labels  reltypes  constraints   (all are database\-level; labels lists the addressable collections)
+.PP
+Elasticsearch / OpenSearch \(em runs metadata reads; no \-\-only runs them all, \-\-only narrows:   server  indices  mapping  aliases   (mapping needs an index: address it as source.index or set ?index= on the   source url)
+.PP
+Redis \(em runs INFO; \-\-only narrows it to those sections (`iq inspect prod \-\-only memory,server`), and none runs the full INFO. Common sections:   server  clients  memory  persistence  stats  replication  cpu  keyspace
+.PP
+Use \-j/\-\-json or \-y/\-\-yaml for machine\-readable output, or \-\-list to print the subcommands/sections available for the source. The location header is redacted by default: \-\-reveal prints an inline password verbatim, \-\-expand resolves a keyring\-backed one.
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-expand\fR
+resolve a keyring\-backed password and inline it in the location header
+.TP
+\fB\-j\fR, \fB\-\-json\fR
+emit machine\-readable JSON
+.TP
+\fB\-\-list\fR
+list the subcommands/sections available for the source
+.TP
+\fB\-\-only\fR
+narrow to these sections (Redis) / subcommands (MongoDB) (default [])
+.TP
+\fB\-\-reveal\fR
+print an inline\-stored password verbatim in the location header instead of redacting it
+.TP
+\fB\-y\fR, \fB\-\-yaml\fR
+emit machine\-readable YAML
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq inspect                     # active source, database\-level
+  $ iq inspect shop                # a named source, database\-level
+  $ iq inspect shop.orders \-j      # one collection (sq\-style handle.collection)
+  $ iq inspect shop \-\-only dbStats,serverStatus # narrow db\-level sections
+.fi
+.RE
+.SS iq schema
+Emit a draft 2020\-12 JSON Schema inferred from a sampled source
+.PP
+\fBUsage:\fR iq schema [source]
+.PP
+Sample a source and project a schema inferred from its values.
+.PP
+The positional argument names the source, like `iq schema prod`; with none it uses \-\-src or the active source, and accepts sq\-style `<source>.<collection>` addressing. Unlike `inspect`, which shows a backend's native introspection, `schema` infers a driver\-agnostic shape: the field/type structure sampled from the values themselves. The shape is sampled (\-\-sample) and inferred, never declared, so a wider sample yields a truer shape. It describes values, not keys; a non\-object keyspace is legal (a string keyspace emits {"type":"string"}).
+.PP
+\-\-format picks the contract dialect the shape projects into:   jsonschema  JSON Schema draft 2020\-12 (default), for interop with code generators \(em               iq schema prod.orders > orders.schema.json && quicktype \-s schema orders.schema.json \-l go   odcs        Open Data Contract Standard v3.1.0, a YAML data contract for tools such               as datacontract\-cli, Soda, and Great Expectations
+.PP
+jsonschema honors \-y to emit YAML instead of JSON; odcs is always YAML (its canonical form). A schema is field names and types \(em a few hundred bytes \(em not a dump of documents.
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-format\fR
+contract format: jsonschema or odcs (default jsonschema)
+.TP
+\fB\-\-sample\fR
+max items sampled (0 = all) (default 1000)
+.TP
+\fB\-y\fR, \fB\-\-yaml\fR
+emit YAML instead of JSON (jsonschema only; odcs is always YAML)
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq schema                      # active source
+  $ iq schema shop.orders          # one collection (sq\-style handle.collection)
+  $ iq schema prod \-\-sample 5000   # widen the sample
+  $ iq schema prod.orders > orders.schema.json  # save for quicktype
+  $ iq schema prod.orders \-\-format odcs > orders.odcs.yaml  # emit an ODCS v3.1.0 contract
+.fi
+.RE
+.SS iq cache
+Inspect and clear the file:// dump decode cache
+.PP
+\fBUsage:\fR iq cache
+.PP
+Inspect and clear the decode cache for file:// dump sources. iq caches the decoded, normalized records of a local dump above 4 MiB, so a later query skips re\-parsing the RDB/BSON/JSON. The cache keys on the dump's path, size, and mtime, so editing the dump invalidates it automatically. `location` prints the cache directory, `stat` lists cached dumps, and `clear` removes them. Bypass caching for one run with \-\-no\-cache, or turn it off by default with `iq config set no\-cache true`.
+.SS iq cache clear
+Remove cached dumps (all, or one source/path)
+.PP
+\fBUsage:\fR iq cache clear [source|path]
+.PP
+Remove decode\-cache files. With no argument, clear the whole cache; with a saved file:// source name or a dump file path, clear only that dump's cache entry.
+.SS iq cache location
+Print the decode cache directory path
+.PP
+\fBUsage:\fR iq cache location
+.SS iq cache stat
+List the cached dumps and their sizes
+.PP
+\fBUsage:\fR iq cache stat
+.PP
+\fBFlags:\fR
+.TP
+\fB\-j\fR, \fB\-\-json\fR
+emit machine\-readable JSON
+.TP
+\fB\-y\fR, \fB\-\-yaml\fR
+emit machine\-readable YAML
+.SS iq config
+Show the config file and manage stored option defaults
+.PP
+\fBUsage:\fR iq config
+.PP
+Inspect the config file and manage stored option defaults. `set` a persistable flag by name to persist its value so you need not retype it (remove it again with `set \-D`); scope it to one source with \-\-src (`iq config set \-\-src @prod format yaml`). A stored default is overridden per query by an explicit flag, and a source option is overridden only by an explicit flag; the base option applies to every other source. `location` prints the file path, `edit` opens it, `view` dumps it.
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config set format yaml            # persist a base default
+  $ iq config set \-\-src shop format json # scope a default to one source
+  $ iq config ls                         # list stored defaults
+  $ iq config view                       # print the whole config
+  $ iq config location                   # print the config file path
+.fi
+.RE
+.SS iq config edit
+Open the config file in your editor
+.PP
+\fBUsage:\fR iq config edit
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config edit
+.fi
+.RE
+.SS iq config get
+Print an option's effective value
+.PP
+\fBUsage:\fR iq config get <option>
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config get format
+.fi
+.RE
+.SS iq config keyring
+Manage the OS\-keyring secrets backing keyring\-stored sources
+.PP
+\fBUsage:\fR iq config keyring
+.PP
+Manage the OS\-keyring secrets that back keyring\-stored sources (see `iq add \-\-store keyring`). `ls` lists keyring\-backed sources and whether their secret is present; `get`/`set`/`rm` read, write, and delete one secret; `migrate` moves an inline password into the keyring; `prune` deletes stale entries. The keyring library cannot enumerate entries, so these commands reason only about handles the config knows \(em a secret whose source was deleted is undetectable here.
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config keyring ls              # keyring\-backed sources & secret presence
+  $ iq config keyring migrate shop    # move an inline password into the keyring
+  $ iq config keyring get shop \-\-reveal # read a secret
+  $ iq config keyring set shop        # write/update a secret
+  $ iq config keyring rm shop         # delete a secret
+.fi
+.RE
+.SS iq config keyring get
+Print a keyring\-backed source's secret (redacted unless \-\-reveal)
+.PP
+\fBUsage:\fR iq config keyring get <handle>
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-reveal\fR
+print the secret verbatim instead of redacting it
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config keyring get shop \-\-reveal
+.fi
+.RE
+.SS iq config keyring ls
+List keyring\-backed sources and whether each secret is present
+.PP
+\fBUsage:\fR iq config keyring ls
+.PP
+\fBFlags:\fR
+.TP
+\fB\-j\fR, \fB\-\-json\fR
+emit machine\-readable JSON
+.TP
+\fB\-y\fR, \fB\-\-yaml\fR
+emit machine\-readable YAML
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config keyring ls
+.fi
+.RE
+.SS iq config keyring migrate
+Move an inline password into the keyring (\-\-all for every inline source)
+.PP
+\fBUsage:\fR iq config keyring migrate [handle]
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-all\fR
+migrate every inline source that has a password
+.TP
+\fB\-\-dry\-run\fR
+report what would be migrated without writing anything
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config keyring migrate shop # one source
+  $ iq config keyring migrate \-\-all # every inline source
+.fi
+.RE
+.SS iq config keyring prune
+Delete stale keyring entries for non\-keyring sources
+.PP
+\fBUsage:\fR iq config keyring prune
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-dry\-run\fR
+report what would be pruned without deleting anything
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config keyring prune
+.fi
+.RE
+.SS iq config keyring rm
+Delete a source's keyring secret (leaving the source without a credential)
+.PP
+\fBUsage:\fR iq config keyring rm <handle>
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config keyring rm shop
+.fi
+.RE
+.SS iq config keyring set
+Write or update a source's keyring secret
+.PP
+\fBUsage:\fR iq config keyring set <handle> [value]
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config keyring set shop
+.fi
+.RE
+.SS iq config location
+Print the config file path
+.PP
+\fBUsage:\fR iq config location
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config location
+.fi
+.RE
+.SS iq config ls
+List stored options (all with \-v), base or per\-source
+.PP
+\fBUsage:\fR iq config ls
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config ls          # stored options (base)
+  $ iq config ls \-v       # every settable option
+  $ iq config ls \-\-src shop # a source's stored options
+.fi
+.RE
+.SS iq config set
+Store an option's value, or remove it with \-D (base, or per\-source with \-\-src)
+.PP
+\fBUsage:\fR iq config set [\-\-delete] <option> [<value>]
+.PP
+\fBFlags:\fR
+.TP
+\fB\-D\fR, \fB\-\-delete\fR
+remove the stored option instead of setting it (takes <option> only, no value)
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config set format yaml           # store a base default
+  $ iq config set \-\-src shop timeout 30s # a per\-source default
+  $ iq config set \-D format              # remove a stored default
+.fi
+.RE
+.SS iq config view
+Print the whole config as TOML, URLs redacted
+.PP
+\fBUsage:\fR iq config view
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-expand\fR
+resolve keyring\-backed passwords and inline them into printed URLs
+.TP
+\fB\-\-reveal\fR
+print inline\-stored passwords verbatim instead of redacting them
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq config view
+.fi
+.RE
+.SS iq driver
+Inspect the backends iq can talk to
+.PP
+\fBUsage:\fR iq driver
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq driver ls # list the backend drivers iq can dispatch to
+.fi
+.RE
+.SS iq driver ls
+List the backend drivers iq can dispatch to
+.PP
+\fBUsage:\fR iq driver ls
+.PP
+List the backend drivers iq can dispatch to. Each row shows the driver's stable name (as `iq ls` reports it), a description, the URL schemes that select it, the backend server versions the bundled client library supports, and a link to its upstream documentation. \-v appends the file driver's readable dump formats (which auto\-detect, which need ?format=). \-j/\-\-json or \-y/\-\-yaml emit machine\-readable output.
+.PP
+\fBFlags:\fR
+.TP
+\fB\-j\fR, \fB\-\-json\fR
+emit machine\-readable JSON
+.TP
+\fB\-y\fR, \fB\-\-yaml\fR
+emit machine\-readable YAML
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq driver ls    # list the backend drivers
+  $ iq driver ls \-v # also list the file driver's dump formats
+.fi
+.RE
+.SS iq man
+Print the iq(1) manual page (roff)
+.PP
+\fBUsage:\fR iq man
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq man | sudo tee /usr/share/man/man1/iq.1
+.fi
+.RE
+.SS iq version
+Print version, commit, build date, and Go version
+.PP
+\fBUsage:\fR iq version
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  $ iq version
+.fi
+.RE
+.SH EXAMPLES
+.RS
+.nf
+  # Register a Redis source (active) and a Mongo source whose password is kept safe.
+  # The Mongo URL sets a default collection with ?collection=orders.
+  $ iq add \-a \-n cache redis://localhost:6379/0
+  $ iq add \-p \-\-store keyring 'mongodb://user@localhost:27017/shop?collection=orders'
+
+  # List saved sources (the active one marked *); check reachability; inspect metadata.
+  $ iq ls
+  $ iq ping
+  $ iq inspect shop.orders
+
+  # Fetch one key from the active Redis source.
+  $ iq '.greeting'
+
+  # Query a Mongo collection \(em select(...) pushes to the backend.
+  $ iq '.[] | select(.total > 99) | .id' \-\-src shop.orders
+
+  # The URL's ?collection= default lets you drop the suffix.
+  $ iq '.[]' \-\-src shop
+
+  # Output as JSON Lines, or one JSON array written to a file.
+  $ iq '.[]' \-\-src shop.orders \-\-jsonl
+  $ iq '.[]' \-\-src shop.orders \-A \-o results.json
+
+  # Join two collections of one source on a shared id (each \-\-from names its source).
+  $ iq \-\-from shop.orders='.[] | {id, total}' \e
+       \-\-from shop.users='.[] | {id, name}' \e
+       \-\-combine '($shop_users | INDEX(.id)) as $u | $shop_orders[] | . + {name: $u[.id].name}'
+
+  # Query a piped dump file (implicit stdin).
+  $ cat dump.jsonl | iq '.[]'
+.fi
+.RE
+.SH SEE ALSO
+.PP
+jq(1).
+.PP
+The iq README and the documentation site document every command, driver, and option in full.
+.SH AUTHORS
+iq is written by Zsolt Gaspar.

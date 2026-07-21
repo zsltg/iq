@@ -239,6 +239,7 @@ var rootCommandGroups = map[string]string{
 
 	"driver":  cmdGroupInfo,
 	"version": cmdGroupInfo,
+	"man":     cmdGroupInfo,
 }
 
 // installCommandGroups registers the root's command groups and assigns each

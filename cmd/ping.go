@@ -23,8 +23,9 @@ type pingTarget struct {
 // or a group (which pings every member). Each check is bounded by --timeout.
 func newPingCmd(cfg *config) *cobra.Command {
 	return &cobra.Command{
-		Use:   "ping [name...]",
-		Short: "Check that sources are reachable",
+		Use:               "ping [name...]",
+		ValidArgsFunction: completeSourceHandles,
+		Short:             "Check that sources are reachable",
 		Long: "Open each source and round-trip a cheap command (Redis PING, MongoDB {ping:1}),\n" +
 			"reporting its driver and the round-trip time, or the error. With no arguments the\n" +
 			"active source is pinged; otherwise each argument is a source handle or a group\n" +

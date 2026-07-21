@@ -80,9 +80,10 @@ func newDiffCmd(cfg *config) *cobra.Command {
 		"(choose one of --data/--stats/--schema) and excludes --json, --yaml, and\n" +
 		"--set-arrays."
 	c := &cobra.Command{
-		Use:   "diff <a> <b>",
-		Short: "Compare two sources by data, stats, or inferred schema",
-		Long:  long,
+		Use:               "diff <a> <b>",
+		ValidArgsFunction: completeSourceHandles,
+		Short:             "Compare two sources by data, stats, or inferred schema",
+		Long:              long,
 		Example: "  # Item-level diff (the default layer) of two collections in one source.\n" +
 			"  $ iq diff shop.orders shop.users\n" +
 			"\n" +

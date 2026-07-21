@@ -144,10 +144,11 @@ func newConfigLocationCmd() *cobra.Command {
 // then the default).
 func newConfigGetCmd(cfg *config) *cobra.Command {
 	return &cobra.Command{
-		Use:     "get <option>",
-		Short:   "Print an option's effective value",
-		Example: "  $ iq config get format",
-		Args:    cobra.ExactArgs(1),
+		Use:               "get <option>",
+		ValidArgsFunction: firstArgOnly(completeConfigKeys),
+		Short:             "Print an option's effective value",
+		Example:           "  $ iq config get format",
+		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
 			if !isPersistableOption(key) {
@@ -179,8 +180,9 @@ func newConfigGetCmd(cfg *config) *cobra.Command {
 func newConfigSetCmd(cfg *config) *cobra.Command {
 	var del bool
 	c := &cobra.Command{
-		Use:   "set [--delete] <option> [<value>]",
-		Short: "Store an option's value, or remove it with -D (base, or per-source with --src)",
+		Use:               "set [--delete] <option> [<value>]",
+		ValidArgsFunction: firstArgOnly(completeConfigKeys),
+		Short:             "Store an option's value, or remove it with -D (base, or per-source with --src)",
 		Example: "  $ iq config set format yaml           # store a base default\n" +
 			"  $ iq config set --src shop timeout 30s # a per-source default\n" +
 			"  $ iq config set -D format              # remove a stored default",

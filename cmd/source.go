@@ -34,8 +34,9 @@ func newAddCmd(cfg *config) *cobra.Command {
 		skipVerify     bool
 	)
 	c := &cobra.Command{
-		Use:   "add <url>",
-		Short: "Register a source from a connection URL (sq-style)",
+		Use:               "add <url>",
+		ValidArgsFunction: cobra.NoFileCompletions,
+		Short:             "Register a source from a connection URL (sq-style)",
 		Long: "Register a source from a connection URL, like `sq add`. The URL is the only\n" +
 			"positional argument; -n/--handle names the source, and when omitted a handle is\n" +
 			"derived from the URL (the MongoDB database or Cassandra keyspace name, else the\n" +
@@ -271,8 +272,9 @@ func parseStore(store string) (keyring bool, err error) {
 func newLsCmd(cfg *config) *cobra.Command {
 	var groups, jsonOut, yamlOut bool
 	c := &cobra.Command{
-		Use:   "ls [group]",
-		Short: "List saved sources (the active one marked *), or groups with -g",
+		Use:               "ls [group]",
+		ValidArgsFunction: completeGroups,
+		Short:             "List saved sources (the active one marked *), or groups with -g",
 		Long: "List saved sources, the active one marked with '*'. An optional [group] limits\n" +
 			"the listing to sources in that group. -v adds each source's driver; -g lists\n" +
 			"groups instead of sources; -j/--json or -y/--yaml emit machine-readable output.\n" +
@@ -315,8 +317,9 @@ func newLsCmd(cfg *config) *cobra.Command {
 // newRmCmd builds `iq rm <name>...`: remove one or more saved sources or groups.
 func newRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "rm <name>...",
-		Short: "Remove one or more saved sources or groups",
+		Use:               "rm <name>...",
+		ValidArgsFunction: completeHandlesAndGroups,
+		Short:             "Remove one or more saved sources or groups",
 		Long: "Remove saved sources or whole groups. Each argument is a source handle or a\n" +
 			"group name (which removes every source under it). The removal is atomic: if any\n" +
 			"argument names neither a source nor a group, nothing is removed. A keyring-backed\n" +
@@ -354,8 +357,9 @@ func newRmCmd() *cobra.Command {
 // newMvCmd builds `iq mv <old> <new>`: rename or move a source or a whole group.
 func newMvCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "mv <old> <new>",
-		Short: "Rename or move a source or a whole group",
+		Use:               "mv <old> <new>",
+		ValidArgsFunction: firstArgOnly(completeHandlesAndGroups),
+		Short:             "Rename or move a source or a whole group",
 		Long: "Rename a source to a new full handle, or move it into a group by giving the\n" +
 			"group-qualified target (`iq mv books prod/books`). When <old> names a group, every\n" +
 			"source under it is re-prefixed (`iq mv prod staging` renames prod/* to staging/*).\n" +
@@ -413,8 +417,9 @@ func newMvCmd() *cobra.Command {
 // newSrcCmd builds `iq src [name]`: show the active source, or set it.
 func newSrcCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "src [name]",
-		Short: "Show or set the active source",
+		Use:               "src [name]",
+		ValidArgsFunction: completeSourceHandles,
+		Short:             "Show or set the active source",
 		Example: "  $ iq src      # show the active source\n" +
 			"  $ iq src shop # set it",
 		Args: cobra.MaximumNArgs(1),
@@ -450,8 +455,9 @@ func newSrcCmd() *cobra.Command {
 func newGroupCmd() *cobra.Command {
 	var clear bool
 	c := &cobra.Command{
-		Use:   "group [name]",
-		Short: "Show, set, or clear the active group",
+		Use:               "group [name]",
+		ValidArgsFunction: completeGroups,
+		Short:             "Show, set, or clear the active group",
 		Example: "  $ iq group         # show the active group\n" +
 			"  $ iq group prod    # set it (handles resolve within it)\n" +
 			"  $ iq group --clear # back to top-level handles",

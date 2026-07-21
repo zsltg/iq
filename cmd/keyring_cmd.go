@@ -114,10 +114,11 @@ func keyringStatusCell(status string) tableCell {
 // keyring-backed source's secret, redacted unless --reveal is set.
 func newConfigKeyringGetCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
-		Use:     "get <handle>",
-		Short:   "Print a keyring-backed source's secret (redacted unless --reveal)",
-		Example: "  $ iq config keyring get shop --reveal",
-		Args:    cobra.ExactArgs(1),
+		Use:               "get <handle>",
+		ValidArgsFunction: firstArgOnly(completeSourceHandles),
+		Short:             "Print a keyring-backed source's secret (redacted unless --reveal)",
+		Example:           "  $ iq config keyring get shop --reveal",
+		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -152,10 +153,11 @@ func newConfigKeyringGetCmd(cfg *config) *cobra.Command {
 // marked keyring-backed so the new secret takes effect.
 func newConfigKeyringSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "set <handle> [value]",
-		Short:   "Write or update a source's keyring secret",
-		Example: "  $ iq config keyring set shop",
-		Args:    cobra.RangeArgs(1, 2),
+		Use:               "set <handle> [value]",
+		ValidArgsFunction: firstArgOnly(completeSourceHandles),
+		Short:             "Write or update a source's keyring secret",
+		Example:           "  $ iq config keyring set shop",
+		Args:              cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -210,10 +212,11 @@ func newConfigKeyringSetCmd() *cobra.Command {
 // the source is never left pointing at a secret that no longer exists.
 func newConfigKeyringRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "rm <handle>",
-		Short:   "Delete a source's keyring secret (leaving the source without a credential)",
-		Example: "  $ iq config keyring rm shop",
-		Args:    cobra.ExactArgs(1),
+		Use:               "rm <handle>",
+		ValidArgsFunction: firstArgOnly(completeSourceHandles),
+		Short:             "Delete a source's keyring secret (leaving the source without a credential)",
+		Example:           "  $ iq config keyring rm shop",
+		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -249,8 +252,9 @@ func newConfigKeyringRmCmd() *cobra.Command {
 func newConfigKeyringMigrateCmd() *cobra.Command {
 	var all, dryRun bool
 	c := &cobra.Command{
-		Use:   "migrate [handle]",
-		Short: "Move an inline password into the keyring (--all for every inline source)",
+		Use:               "migrate [handle]",
+		ValidArgsFunction: firstArgOnly(completeSourceHandles),
+		Short:             "Move an inline password into the keyring (--all for every inline source)",
 		Example: "  $ iq config keyring migrate shop # one source\n" +
 			"  $ iq config keyring migrate --all # every inline source",
 		Args: cobra.MaximumNArgs(1),

@@ -47,9 +47,10 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 		"jsonschema honors -y to emit YAML instead of JSON; odcs is always YAML (its canonical\n" +
 		"form). A schema is field names and types — a few hundred bytes — not a dump of documents."
 	c := &cobra.Command{
-		Use:   "schema [source]",
-		Short: "Emit a draft 2020-12 JSON Schema inferred from a sampled source",
-		Long:  long,
+		Use:               "schema [source]",
+		ValidArgsFunction: completeSourceHandles,
+		Short:             "Emit a draft 2020-12 JSON Schema inferred from a sampled source",
+		Long:              long,
 		Example: "  $ iq schema                      # active source\n" +
 			"  $ iq schema shop.orders          # one collection (sq-style handle.collection)\n" +
 			"  $ iq schema prod --sample 5000   # widen the sample\n" +

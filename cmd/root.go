@@ -350,6 +350,7 @@ func newRootCmd() (*cobra.Command, *config) {
 		newSchemaCmd(cfg),
 		newDriverCmd(cfg),
 		newVersionCmd(),
+		newManCmd(),
 	)
 	// Render --help flags in labeled sections (Source/Query/Output/Display/
 	// Diagnostics) instead of one flat list. Presentation only: parsing and the
@@ -358,6 +359,12 @@ func newRootCmd() (*cobra.Command, *config) {
 	// Render --help's "Available Commands" in labeled sections (Sources/Query &
 	// Data/Configuration/Info) instead of one flat alphabetical list.
 	installCommandGroups(root)
+	// A bare `iq <jq-filter>` positional is a jq program, never a file, so suppress
+	// the shell's default filename completion. --src completes saved source handles.
+	root.ValidArgsFunction = cobra.NoFileCompletions
+	// RegisterFlagCompletionFunc errors only on an unknown flag; "src" is registered
+	// above, so the error cannot fire and swallowing it keeps setup panic-free.
+	_ = root.RegisterFlagCompletionFunc("src", completeSourceHandles)
 	return root, cfg
 }
 

@@ -73,9 +73,10 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"subcommands/sections available for the source. The location header is redacted by\n" +
 		"default: --reveal prints an inline password verbatim, --expand resolves a keyring-backed one."
 	c := &cobra.Command{
-		Use:   "inspect [source]",
-		Short: "Show a source's native server/database introspection",
-		Long:  long,
+		Use:               "inspect [source]",
+		ValidArgsFunction: completeSourceHandles,
+		Short:             "Show a source's native server/database introspection",
+		Long:              long,
 		Example: "  $ iq inspect                     # active source, database-level\n" +
 			"  $ iq inspect shop                # a named source, database-level\n" +
 			"  $ iq inspect shop.orders -j      # one collection (sq-style handle.collection)\n" +
