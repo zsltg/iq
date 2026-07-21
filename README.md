@@ -19,6 +19,84 @@ sq's so the tool feels familiar.
 > **Not production-ready.** `iq` has potential rough edges — don't rely on it for critical work
 > yet.
 
+## Install
+
+`iq` ships as a single static binary (no runtime dependencies, no CGO).
+
+### Linux
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/zsltg/iq/main/install.sh | sh
+```
+
+The script downloads the release for your OS/arch, verifies its SHA-256 against the release
+checksums, and installs the binary; `IQ_VERSION` pins a version and `IQ_INSTALL_DIR` picks the
+target directory. Or grab a `.deb`, `.rpm`, or `.apk` from the
+[releases](https://github.com/zsltg/iq/releases).
+
+### macOS
+
+```sh
+brew install zsltg/tap/iq
+```
+
+The Linux `curl … | sh` one-liner works on macOS too.
+
+### Windows
+
+```powershell
+scoop bucket add zsltg https://github.com/zsltg/scoop-bucket
+scoop install iq
+```
+
+### Go
+
+```sh
+go install github.com/zsltg/iq@latest
+```
+
+### From source
+
+```sh
+git clone https://github.com/zsltg/iq
+cd iq && make build
+```
+
+### Shell completions
+
+The `.deb`, `.rpm` and `.apk` packages install bash, zsh and fish completions for you. For a
+brew, scoop, go-install or source build, `iq completion <shell>` prints a script to install by
+hand:
+
+```sh
+# bash — load in the current session, or drop it on the completion path
+eval "$(iq completion bash)"
+iq completion bash | sudo tee /usr/share/bash-completion/completions/iq >/dev/null
+
+# zsh — write to a directory on your $fpath, then restart the shell
+iq completion zsh > ~/.zsh/completions/_iq
+
+# fish
+iq completion fish > ~/.config/fish/completions/iq.fish
+
+# powershell — append to your profile
+iq completion powershell >> $PROFILE
+```
+
+Completions cover the commands, their sub-subcommands and flags, and — read live from your
+config — your saved source handles, groups, and config-option keys, so `iq --src <TAB>` offers
+the sources `iq ls` lists. The jq filter itself is a program, not a completable value, so `iq`
+offers no candidates there (and never falls back to filenames).
+
+### Man page
+
+The packages also install an `iq(1)` manual page, so `man iq` works after a package install. For
+a non-package install, pipe it into your man path:
+
+```sh
+iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
+```
+
 ## Requirements
 
 - Go 1.26+
@@ -52,6 +130,20 @@ git push --follow-tags            # publish the tag (release.sh never pushes for
 `make release` must run on a clean `main`. `svu` picks the bump from the commit types since the
 last tag (`feat` → minor, `fix` → patch, a `!`/`BREAKING CHANGE` → major); with no tags yet the
 first release comes out as `v0.1.0`.
+
+Publishing the cross-platform artifacts is a separate step, driven by
+[GoReleaser](https://goreleaser.com/) on GitHub. Push the tag to the `github` remote and the
+`.github/workflows/release.yml` workflow builds the archives and Linux packages (`.deb`/`.rpm`/
+`.apk`), attaches a checksummed set and a CycloneDX SBOM to the GitHub Release, and updates the
+Homebrew tap and Scoop bucket:
+
+```bash
+git push --follow-tags github main # fires the release workflow on the GitHub mirror
+```
+
+Validate the config without publishing anything with `make release-check` (lint the
+`.goreleaser.yaml`) and `make release-snapshot` (build the full release into `dist/` locally).
+Both run GoReleaser via `go run`, so nothing enters `go.mod`.
 
 ## Sources
 
@@ -2007,6 +2099,9 @@ surface).
 go build -o iq .          # build the binary
 make build                # build with version metadata embedded
 iq version                # print version, commit, build date, and Go version
+iq completion bash        # print a shell completion script (bash|zsh|fish|powershell); see Install
+iq man                    # print the iq(1) man page in roff (iq man | sudo tee /usr/share/man/man1/iq.1)
+IQ_VERSION=v1.2.3 IQ_INSTALL_DIR=~/.local/bin sh install.sh   # pin the installed version and target dir
 iq config set format yaml # persist a default flag value (add --src <name> to scope it to a source)
 iq config ls -v           # list every persistable option: value, default, and help
 iq --config ./iq.toml ls  # run against an alternate config file (overrides IQ_CONFIG)
@@ -2050,9 +2145,13 @@ make mutation             # mutation gate over the branch diff vs origin/main (p
 make ci                   # full pre-merge gate: check + cover + security + mutation (needs Docker + network)
 make tools                # install release tools (svu, git-chglog) into GOPATH/bin
 make tools-dev            # install the quality/security toolchain (mutago, deadcode, govulncheck, osv-scanner, gitleaks, syft)
+make man                  # regenerate the committed iq(1) man page into docs/man/iq.1 (deterministic; run after CLI text changes)
+make completions          # regenerate the committed shell completion scripts into docs/completions/
 make version              # print the version the next release would take
 bash scripts/release.sh --dry-run   # preview the next release without changing anything
 make release              # bump version, regenerate CHANGELOG.md, commit, and tag
+make release-check        # validate .goreleaser.yaml without building or publishing (via go run)
+make release-snapshot     # build the full cross-platform release into dist/ locally, no publish
 ```
 
 Integration tests skip under `go test -short`. The full `go test ./...` needs Docker: it starts
