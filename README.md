@@ -2007,7 +2007,7 @@ make sbom                 # write SPDX + CycloneDX SBOMs of the module to dist/
 make e2e                  # black-box smoke tests that build and drive the iq binary (+ live Redis/Mongo round-trips when IQ_REDIS_URL/IQ_MONGO_URL are set)
 make bench                # JSON decode + pre-filter benchmarks (no containers); pair two runs with benchstat: make bench | tee new.txt; benchstat old.txt new.txt
 make docs                 # build the documentation site (Zensical) into docs/site/ (needs uv; README is source of truth, site pages are seeded copies)
-make docs-serve           # serve the documentation site locally at http://localhost:8000 (needs uv)
+make docs-serve           # serve the documentation site on 0.0.0.0:8000, reachable over the LAN (needs uv)
 make mutation             # mutation gate over the branch diff vs origin/main (part of make ci)
 make ci                   # full pre-merge gate: check + cover + security + mutation (needs Docker + network)
 make tools                # install release tools (svu, git-chglog) into GOPATH/bin

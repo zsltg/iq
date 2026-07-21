@@ -18,7 +18,7 @@ Standard Go toolchain; README is the full catalogue once it exists.
 - Coverage: `make cover` (`scripts/coverage.sh`) runs the full suite with `-coverpkg=./...` (so cross-package coverage counts and a testless package still enters the denominator) and fails below the floor (`IQ_COVER_MIN`, default 80); `IQ_COVER_SHORT=1` for a report-only run; needs the integration services up, since `-short` understates the drivers.
 - End-to-end: `make e2e` builds the binary and drives it black-box through `os/exec` (package `e2e`, skips under `-short`).
 - Dead code: `deadcode -test ./...` (whole-program), wired into `make check`.
-- Docs site: `make docs` (build, `docs/site/`), `make docs-serve` (localhost:8000); Zensical under `docs/`, uv-managed; README is source of truth, site pages are seeded copies.
+- Docs site: `make docs` (build, `docs/site/`), `make docs-serve` (0.0.0.0:8000); Zensical under `docs/`, uv-managed; README is source of truth, site pages are seeded copies.
 - Toolchain: `make tools-dev` installs the quality and security tools (mutago, deadcode, govulncheck, osv-scanner, gitleaks, syft) into GOPATH/bin.
 - Release: `make release` (`scripts/release.sh`, needs `svu` and `git-chglog`: `make tools`); computes the next semver from Conventional Commits, regenerates `CHANGELOG.md`, commits, and tags on clean `main`; never pushes; preview with `bash scripts/release.sh --dry-run`; version metadata is embedded by `make build` via ldflags.
 ## Coding Conventions

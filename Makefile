@@ -81,7 +81,7 @@ bench:
 docs:
 	bash scripts/docs.sh build
 
-# docs-serve runs the documentation dev server at http://localhost:8000.
+# docs-serve runs the documentation dev server on 0.0.0.0:8000 (LAN-reachable).
 docs-serve:
 	bash scripts/docs.sh serve
 

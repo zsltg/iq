@@ -3,7 +3,7 @@
 # Markdown mirrored from the README (which stays the source of truth); the site is
 # built with uv against the committed docs/uv.lock, so it is reproducible and needs
 # no Node. Dispatches one argument: `build` emits docs/site/, `serve` runs the dev
-# server at http://localhost:8000.
+# server on 0.0.0.0:8000 (all interfaces, so the preview is reachable over the LAN).
 set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
@@ -19,7 +19,7 @@ case "$cmd" in
     cd docs && exec uv run --locked zensical build --clean
     ;;
   serve)
-    cd docs && exec uv run --locked zensical serve
+    cd docs && exec uv run --locked zensical serve -a 0.0.0.0:8000
     ;;
   *)
     echo "usage: scripts/docs.sh {build|serve}" >&2
