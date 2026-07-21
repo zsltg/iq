@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.31.0 - 2026-07-21
+### Documentation
+- **site:** mirror the full README into the Zensical docs (1503b06)
+
+### Bug Fixes
+- **logging:** stop duplicate plan and record rendering across sinks (cfa1cf4)
+
+### Features
+- **docs:** add zensical documentation site under docs/ (11d1665)
+- **logging:** structured stage records, stream log targets, imply-enable (5d5bd8b)
+
+
 ## v0.30.0 - 2026-07-20
 ### Features
 - **diff:** color the human report by operation (5c120d3)
