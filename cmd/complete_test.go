@@ -126,6 +126,86 @@ func TestCompleteConfigLoadError(t *testing.T) {
 	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 }
 
+// TestWithPrefixEmptyPreservesSlice pins that an empty toComplete returns the
+// candidates slice unchanged — including a nil slice, which must stay nil rather
+// than becoming a freshly allocated empty slice.
+func TestWithPrefixEmptyPreservesSlice(t *testing.T) {
+	require.Nil(t, withPrefix(nil, ""))
+	require.Equal(t, []string{"a", "b"}, withPrefix([]string{"a", "b"}, ""))
+	// A non-empty prefix still filters.
+	require.Equal(t, []string{"a"}, withPrefix([]string{"a", "b"}, "a"))
+	require.Empty(t, withPrefix([]string{"a", "b"}, "z"))
+}
+
+// findCmd resolves a command by its full path from root, requiring an exact leaf.
+func findCmd(t *testing.T, root *cobra.Command, path ...string) *cobra.Command {
+	t.Helper()
+	c, _, err := root.Find(path)
+	require.NoError(t, err)
+	require.Equalf(t, path[len(path)-1], c.Name(), "path %v did not resolve to its leaf", path)
+	return c
+}
+
+// TestCommandArgsAndCompletionWiring pins the Args validators and
+// ValidArgsFunctions wired onto the leaf commands, so dropping either field (or
+// perturbing an argument-count bound) is caught. Completion helpers are exercised
+// against a seeded config so the wiring resolves to the right helper, not just a
+// non-nil placeholder.
+func TestCommandArgsAndCompletionWiring(t *testing.T) {
+	seedTwoGroups(t)
+	handles := []string{"cache", "prod/books", "prod/users", "shop"}
+	root, _ := newRootCmd()
+
+	t.Run("cache clear completes handles and keeps file fallback", func(t *testing.T) {
+		c := findCmd(t, root, "cache", "clear")
+		require.NotNil(t, c.ValidArgsFunction, "cache clear completion wiring dropped")
+		got, dir := c.ValidArgsFunction(c, nil, "")
+		require.Equal(t, handles, got)
+		require.Equal(t, cobra.ShellCompDirectiveDefault, dir)
+	})
+
+	t.Run("config get completes keys and takes exactly one arg", func(t *testing.T) {
+		c := findCmd(t, root, "config", "get")
+		require.NotNil(t, c.ValidArgsFunction, "config get completion wiring dropped")
+		got, dir := c.ValidArgsFunction(c, nil, "")
+		require.Equal(t, persistableOptions, got)
+		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
+
+		require.NotNil(t, c.Args, "config get Args validator dropped")
+		require.Error(t, c.Args(c, []string{}), "config get must reject zero args")
+		require.NoError(t, c.Args(c, []string{"format"}))
+		require.Error(t, c.Args(c, []string{"format", "yaml"}), "config get must reject two args")
+	})
+
+	t.Run("config set completes keys", func(t *testing.T) {
+		c := findCmd(t, root, "config", "set")
+		require.NotNil(t, c.ValidArgsFunction, "config set completion wiring dropped")
+		got, dir := c.ValidArgsFunction(c, nil, "")
+		require.Equal(t, persistableOptions, got)
+		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
+	})
+
+	// The keyring subcommands all complete source handles for their first arg.
+	for _, name := range []string{"get", "set", "rm", "migrate"} {
+		t.Run("keyring "+name+" completes handles", func(t *testing.T) {
+			c := findCmd(t, root, "config", "keyring", name)
+			require.NotNilf(t, c.ValidArgsFunction, "keyring %s completion wiring dropped", name)
+			got, dir := c.ValidArgsFunction(c, nil, "")
+			require.Equal(t, handles, got)
+			require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
+		})
+	}
+
+	t.Run("keyring set takes one or two args", func(t *testing.T) {
+		c := findCmd(t, root, "config", "keyring", "set")
+		require.NotNil(t, c.Args, "keyring set Args validator dropped")
+		require.Error(t, c.Args(c, []string{}), "keyring set must reject zero args")
+		require.NoError(t, c.Args(c, []string{"shop"}))
+		require.NoError(t, c.Args(c, []string{"shop", "secret"}))
+		require.Error(t, c.Args(c, []string{"shop", "secret", "extra"}), "keyring set must reject three args")
+	})
+}
+
 // TestRootCompletionWiring pins that the root and key subcommands carry the
 // completion wiring, so a refactor that drops a ValidArgsFunction is caught.
 func TestRootCompletionWiring(t *testing.T) {
