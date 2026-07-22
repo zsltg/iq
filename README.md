@@ -171,17 +171,17 @@ registered backends — the same canonical names `iq ls -v`, `ping`, `inspect`, 
 
 | Name | Description | Versions |
 | ---- | ----------- | -------- |
-| `mongo` | [MongoDB](https://www.mongodb.com/docs/) document store | 4.2+ |
 | `cassandra` | [Apache Cassandra](https://cassandra.apache.org/doc/) wide-column store | 3.11+ |
-| `dynamodb` | [Amazon DynamoDB](https://docs.aws.amazon.com/dynamodb/) key-value and document store | AWS (managed) |
-| `hbase` | [Apache HBase](https://hbase.apache.org/book.html) wide-column store | 1.0+ |
-| `couchdb` | [Apache CouchDB](https://docs.couchdb.org/) document store | 2.x, 3.x |
 | `couchbase` | [Couchbase](https://docs.couchbase.com/) document store | 7.x, 8.x (Community or Enterprise) |
-| `neo4j` | [Neo4j](https://neo4j.com/docs/) property graph store | 5.x |
+| `couchdb` | [Apache CouchDB](https://docs.couchdb.org/) document store | 2.x, 3.x |
+| `dynamodb` | [Amazon DynamoDB](https://docs.aws.amazon.com/dynamodb/) key-value and document store | AWS (managed) |
 | `elasticsearch` | [Elasticsearch](https://www.elastic.co/docs/) search engine and document store | 8.x |
+| `file` | Local dump file, read-only | — |
+| `hbase` | [Apache HBase](https://hbase.apache.org/book.html) wide-column store | 1.0+ |
+| `mongo` | [MongoDB](https://www.mongodb.com/docs/) document store | 4.2+ |
+| `neo4j` | [Neo4j](https://neo4j.com/docs/) property graph store | 5.x |
 | `opensearch` | [OpenSearch](https://opensearch.org/docs/) search engine and document store | 2.x, 3.x |
 | `redis` | [Redis](https://redis.io/docs/) key-value store | 7.0+ |
-| `file` | Local dump file, read-only | — |
 
 Each driver also declares the URL schemes it answers to (`mongodb`/`mongodb+srv`, `neo4j`/`bolt`
 and their TLS variants, and so on) — see each driver's section below. `iq driver ls -v` repeats
