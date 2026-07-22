@@ -166,29 +166,25 @@ never garbled by it. Disable it with `--no-progress`.
 
 `iq` picks the backend from a source's URL scheme, and the query core is driver-agnostic, so
 further backends slot in behind the same port. Each driver below documents its keyspace mapping,
-value encoding, predicate pushdown, and raw-command escape hatch. `iq driver ls` lists the
-registered backends — the same canonical names `iq ls -v`, `ping`, `inspect`, and `diff` report:
+value encoding, predicate pushdown, and raw-command escape hatch.
 
-| Name | Description | Versions |
+| Name | Database | Versions |
 | ---- | ----------- | -------- |
-| `cassandra` | [Apache Cassandra](https://cassandra.apache.org/doc/) wide-column store | 3.11+ |
-| `couchbase` | [Couchbase](https://docs.couchbase.com/) document store | 7.x, 8.x (Community or Enterprise) |
-| `couchdb` | [Apache CouchDB](https://docs.couchdb.org/) document store | 2.x, 3.x |
-| `dynamodb` | [Amazon DynamoDB](https://docs.aws.amazon.com/dynamodb/) key-value and document store | AWS (managed) |
-| `elasticsearch` | [Elasticsearch](https://www.elastic.co/docs/) search engine and document store | 8.x |
+| `cassandra` | [Apache Cassandra](https://cassandra.apache.org/doc/) | 3.11+ |
+| `couchbase` | [Couchbase](https://docs.couchbase.com/) | 7.x, 8.x (Community or Enterprise) |
+| `couchdb` | [Apache CouchDB](https://docs.couchdb.org/) | 2.x, 3.x |
+| `dynamodb` | [Amazon DynamoDB](https://docs.aws.amazon.com/dynamodb/) | AWS (managed) |
+| `elasticsearch` | [Elasticsearch](https://www.elastic.co/docs/) | 8.x |
 | `file` | Local dump file, read-only | — |
-| `hbase` | [Apache HBase](https://hbase.apache.org/book.html) wide-column store | 1.0+ |
-| `mongo` | [MongoDB](https://www.mongodb.com/docs/) document store | 4.2+ |
-| `neo4j` | [Neo4j](https://neo4j.com/docs/) property graph store | 5.x |
-| `opensearch` | [OpenSearch](https://opensearch.org/docs/) search engine and document store | 2.x, 3.x |
-| `redis` | [Redis](https://redis.io/docs/) key-value store | 7.0+ |
+| `hbase` | [Apache HBase](https://hbase.apache.org/book.html) | 1.0+ |
+| `mongo` | [MongoDB](https://www.mongodb.com/docs/) | 4.2+ |
+| `neo4j` | [Neo4j](https://neo4j.com/docs/) | 5.x |
+| `opensearch` | [OpenSearch](https://opensearch.org/docs/) | 2.x, 3.x |
+| `redis` | [Redis](https://redis.io/docs/) | 7.0+ |
 
-Each driver also declares the URL schemes it answers to (`mongodb`/`mongodb+srv`, `neo4j`/`bolt`
-and their TLS variants, and so on) — see each driver's section below. `iq driver ls -v` repeats
-the rows above and appends the `file` driver's readable dump formats:
+### File dump formats
 
 ```
-file dump formats — a bare name auto-detects (file:///<file_path>), the ?format= form must be passed (file:///<file_path>?format=<source_format>):
   jsonl                  iq typed JSON Lines / array
   yaml                   iq typed YAML
   mongoexport            mongoexport Extended JSON
@@ -199,30 +195,8 @@ file dump formats — a bare name auto-detects (file:///<file_path>), the ?forma
   ?format=neo4j-json     Neo4j APOC JSON export
 ```
 
-Add `-j`/`--json` or `-y`/`--yaml` for machine-readable rows (see [Sources](#sources) for the full flag).
-
-> [!NOTE]
-> `VERSIONS` is the range of backend server versions the bundled client library supports —
-> [`go-redis` v9](https://github.com/redis/go-redis) for Redis, the
-> [MongoDB Go driver v2](https://www.mongodb.com/docs/drivers/go/current/) for MongoDB, the
-> [Apache Cassandra gocql driver v2](https://github.com/apache/cassandra-gocql-driver) for
-> Cassandra, the [AWS SDK for Go v2](https://github.com/aws/aws-sdk-go-v2) for DynamoDB
-> (`AWS (managed)` — a managed service with no server version),
-> [gohbase](https://github.com/tsuna/gohbase) (native protobuf RPC, no Thrift gateway) for HBase,
-> [`kivik` v4](https://github.com/go-kivik/kivik) for CouchDB,
-> the [Couchbase Go SDK v2 (`gocb`)](https://github.com/couchbase/gocb) for Couchbase,
-> the [Neo4j Go driver v5](https://github.com/neo4j/neo4j-go-driver) for Neo4j,
-> the [go-elasticsearch v8](https://github.com/elastic/go-elasticsearch) client for
-> Elasticsearch,
-> and the [opensearch-go v4](https://github.com/opensearch-project/opensearch-go) client for
-> OpenSearch (a fork of go-elasticsearch without the product check that refuses non-Elasticsearch
-> servers) —
-> not a matrix `iq` tests against.
-> The integration tests are pinned to `redis:8`, `mongo:8`, `cassandra:5`,
-> `amazon/dynamodb-local:2.5.2`, `harisekhon/hbase:2.1`, `couchdb:3`,
-> `couchbase:community-7.6.2`, `neo4j:5`,
-> `docker.elastic.co/elasticsearch/elasticsearch:8.17.4`, and
-> `opensearchproject/opensearch:2.17.1`.
+A bare name auto-detects (`file:///<file_path>`), the `?format=` form must be passed
+(`file:///<file_path>?format=<source_format>`).
 
 ### What every driver guarantees
 
