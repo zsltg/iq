@@ -378,7 +378,12 @@ a terminal:
 
 - **Filter**: The `jq` filter pretty-printed with real line breaks, nested
   `source("name"; "<jq>")` sub-filters and every `--from`/`--combine` fragment
-  are formatted too
+  are formatted too. Under `-v`/`--verbose` each top-level pipe stage also carries
+  a short right-aligned note describing it (`— keep inputs where …`), and the stage
+  that reads from the store is marked with its route, colored by cost: a green
+  `bounded read` (keyed lookup), a yellow `streaming scan` (batched over `.[]`), or
+  a red `materialized scan` (an aggregate, a non-`.[]` root, or any scan under
+  `--unbounded`)
 - **Access Plan**: The concrete backend calls each source will make, derived
   from the filter's route (bounded keys, streaming scan, or materialize)
 - **Pushdown**: The breakdown, one line per top-level `select(...)` conjunct
@@ -395,6 +400,9 @@ a terminal:
 
 ```bash title=""
 ./iq --src orders '.[] | select(.total > 99) | {id, total}' --explain
+```
+```bash title="Annotated plan, a note per pipe stage"
+./iq --src orders '.[] | select(.total > 99) | {id, total}' --explain -v
 ```
 ```bash title="Redis SCAN + typed reads"
 ./iq --src cache '.[] | select(.active)' --explain
