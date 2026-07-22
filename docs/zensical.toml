@@ -57,6 +57,8 @@ nav = [
   { "Architecture" = "architecture.md" },
   { "Common commands" = "common-commands.md" },
   { "Output" = "output.md" },
+  { "Query Plan" = "query-plan.md" },
+  { "Diagnostics & Logging" = "diagnostics-and-logging.md" },
   { "Comparison" = "comparison.md" },
   { "See also" = "see-also.md" },
 ]

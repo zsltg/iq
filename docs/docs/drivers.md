@@ -80,7 +80,7 @@ same contract:
   non-match before decode where it cannot (Redis, on RedisJSON values; Elasticsearch/OpenSearch and
   Couchbase, over the residual their server-side query could not narrow). The full jq always re-runs
   client-side, so
-  output is identical with or without it, and [`--explain`](output.md#query-plan-explain-v) shows exactly
+  output is identical with or without it, and [`--explain`](query-plan.md) shows exactly
   what was pushed.
 - **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, drop, and per-key
   delete are opt-in ports: a backend implements what its model supports, and a command against a

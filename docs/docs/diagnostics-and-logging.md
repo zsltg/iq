@@ -1,0 +1,51 @@
+# Diagnostics & Logging
+
+Global flags (adopted from `sq` control verbose output, file logging, error
+rendering, and profiling. They are cross-cutting concerns handled at the CLI
+boundary, query results are never changed by them.
+
+| flag | default | effect |
+| --- | --- | --- |
+| `-v`, `--verbose` | off | print diagnostics (source resolved, store opened, query complete with scan count and elapsed) to stderr, plus the [query plan](query-plan.md) and a live backend command trace (disables the progress spinner) |
+| `--log` | off | enable logging to a file (also via `IQ_LOG`) |
+| `--log.file` | `<user cache dir>/iq/iq.log` | log file path; an empty value disables logging |
+| `--log.level` | `DEBUG` | `DEBUG`, `INFO`, `WARN`, or `ERROR` |
+| `--log.format` | `text` | `text` or `json` |
+| `--error.format` | `text` | error output format: `text` or `json` |
+| `--error.stack` | off | append the wrapped error cause chain (may include backend internals; redacted) |
+| `--error.format.text.verbose` | on | for a jq syntax error in text format, draw a caret span under the offending token |
+| `--debug.pprof` | off | write a runtime profile of the whole run: `cpu`, `mem`, `block`, `mutex`, `goroutine`, `thread`, or `trace` |
+
+## Examples
+
+```bash title="Verbose diagnostics on stderr"
+./iq -v '.[]'
+```
+```bash title="Structured logs to a file"
+./iq --log --log.file=/tmp/iq.log --log.format=json '.[]'
+```
+```bash title="Enable logging via the environment"
+IQ_LOG=true IQ_LOG_FILE=/tmp/iq.log ./iq '.[]'
+```
+```bash title="Machine-readable errors"
+./iq --error.format=json '.bad |'
+```
+```bash title="Runtime profile"
+./iq --debug.pprof=cpu '.[]' && go tool pprof cpu.pprof
+```
+
+!!! note "Logging"
+
+    The `--log*` flags also read the environment when the flag is not set,
+    precedence **flag > env > default**: `IQ_LOG`, `IQ_LOG_FILE`,
+    `IQ_LOG_LEVEL`, `IQ_LOG_FORMAT`.
+
+    `--log` writes structured records to a file (down to the chosen level,
+    always plain — never tinted). A source location is always redacted before
+    it is logged, so a stored credential never reaches a log file.
+
+!!! note "Verbose"
+
+    `-v` writes a terse human stream to stderr (INFO and above), tinted when
+    stderr is a terminal and following the same `-M`/`-C`/`NO_COLOR` decision
+    as [colored output](output.md#color-c-color).
