@@ -271,3 +271,53 @@ layered position in that vocabulary rather than one blanket rule:
 So the collapse is a surface convenience, not a loss: the distinction is kept where it carries
 information (schema inference, pushdown safety) and hidden where uniformity matters more (the query
 surface).
+
+### Bounded reads, streaming scans, and materialized scans
+
+`iq` fetches exactly the keys your filter names, so a normal query's cost is bounded by the keys
+you asked for, never by the size of the database. A filter that needs the whole keyspace is a
+**scan**, and scans come in two kinds:
+
+- **Streaming** — a filter rooted at `.[]` (`.[]`, `.[] | select(...)`, `.[].title`) processes
+  each value independently, so `iq` walks the keyspace in pages and runs the filter page by page,
+  emitting as it goes. Memory stays constant and results appear progressively (interrupt with
+  Ctrl-C or bound with `--timeout`). These run **without a flag**:
+
+  ```bash
+  ./iq '.[] | objects | select((.year|tonumber) > 2015) | .title'   # streamed discovery
+  ```
+
+- **Materialized** — a filter that collapses the collection into one value (`.`, `keys`, `length`,
+  `map(...)`, `group_by`, `sort_by`, aggregates) must load the whole dataset into memory. It runs
+  only with `--unbounded`:
+
+  ```bash
+  ./iq 'keys'                 # error: requires materializing the whole dataset
+  ./iq --unbounded 'keys'     # list every key
+  ./iq --unbounded '.'        # the whole dataset as one JSON object
+  ```
+
+`--unbounded` means "permit loading the whole dataset into memory." Passing it on a streaming
+filter is allowed too: it switches that filter from batched streaming to a single materialized
+pass, giving key-sorted output and a consistent snapshot instead of scan order.
+
+Streamed output is **best-effort**: values arrive in scan order (not key-sorted), and an element
+may repeat if the keyspace is resized mid-scan — the price of never holding more than one page.
+Use `--unbounded` when you need sorted, exactly-once output.
+
+The flag names the cost property (loading everything), not any one store's mechanism, so it will
+mean the same thing for future backends (a Cassandra full scan, a CouchDB `_all_docs`).
+
+A scan has no reliable upfront total (Redis `SCAN`, Mongo cursor), so while one runs `iq` shows an
+animated spinner with a running `N scanned` count on **stderr** — a sparse `.[] | select(...)` over
+a large keyspace is never silent. When a backend can supply a cheap approximate total (MongoDB's
+`estimatedDocumentCount` for an unfiltered whole-collection scan, Redis's `DBSIZE` for its
+whole-keyspace `MATCH *` scan), the count is shown against it as
+`N scanned (~M est)`; the tilde marks it a hint — it comes from cached metadata and drifts under
+concurrent writes, so the scan may exceed it and it never becomes a percentage bar. No total is
+shown for a pushed-down filtered scan (it walks a subset) or for a cross-source scan (a per-source
+estimate would mislead the aggregate). The
+spinner appears only after a short delay, so a fast query never flashes one, and only when stderr
+is a terminal: piped or redirected output is never touched, and result rows streamed to stdout are
+never garbled by it. Disable it with `--no-progress`.
+

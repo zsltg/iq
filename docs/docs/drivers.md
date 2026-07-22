@@ -74,13 +74,13 @@ same contract:
 - **One jq surface.** A bounded filter fetches exactly the named keys — a missing key reads as
   `null`, never an error; a `.[]`-rooted filter streams the keyspace in bounded pages; a holistic
   filter materializes only behind `--unbounded` (see
-  [Bounded reads, streaming scans, and materialized scans](usage.md#bounded-reads-streaming-scans-and-materialized-scans)).
+  [Bounded reads, streaming scans, and materialized scans](architecture.md#bounded-reads-streaming-scans-and-materialized-scans)).
 - **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter —
   server-side where the backend can filter, or a client-side raw-byte prefilter that drops a provable
   non-match before decode where it cannot (Redis, on RedisJSON values; Elasticsearch/OpenSearch and
   Couchbase, over the residual their server-side query could not narrow). The full jq always re-runs
   client-side, so
-  output is identical with or without it, and [`--explain`](usage.md#query-plan-explain-v) shows exactly
+  output is identical with or without it, and [`--explain`](output.md#query-plan-explain-v) shows exactly
   what was pushed.
 - **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, drop, and per-key
   delete are opt-in ports: a backend implements what its model supports, and a command against a
@@ -153,6 +153,17 @@ missing value as `(nil)`, and arrays as a numbered, indented list. The client us
 aggregate replies match redis-cli's classic flat output. Status replies such as `OK` and `PONG`
 appear quoted, a limitation of the underlying client, which does not distinguish them from bulk
 strings.
+
+### Pushdown
+
+Redis `SCAN 0 MATCH * COUNT n` plus per-key `TYPE`/typed reads (naming the
+client-side raw-byte prefilter when a predicate compiles), or pipelined typed
+reads for bounded keys.
+
+### Compiled Filter
+
+The predicate Redis's client-side prefilter applies to RedisJSON values (empty
+under `--no-compile`, or when no conjunct pushes).
 
 ## MongoDB
 
@@ -246,6 +257,15 @@ With no source selected the command errors — there is no ambient URL or enviro
 A dotted `--src handle.collection` (or `handle.collection` positional, for `inspect`/`data`/`diff`)
 overrides the source URL's MongoDB `?collection=` default for one run (rejected for Redis, which has
 no collections); `--timeout` (default `5s`) bounds each query.
+
+### Pushdown
+
+MongoDB `find(<filter>)` (the pushed-down filter, on by default, or `{}` under
+`--no-compile`) or `find` by `_id`.
+
+### Compiled Filter
+
+MongoDB's server-side `find` filter.
 
 ## Apache Cassandra
 
