@@ -169,24 +169,25 @@ further backends slot in behind the same port. Each driver below documents its k
 value encoding, predicate pushdown, and raw-command escape hatch. `iq driver ls` lists the
 registered backends — the same canonical names `iq ls -v`, `ping`, `inspect`, and `diff` report:
 
-```bash
-$ iq driver ls
-DRIVER         DESCRIPTION                                     SCHEMES                                            VERSIONS       DOC
-mongo          MongoDB document store                          mongodb, mongodb+srv                               4.2+           https://www.mongodb.com/docs/
-cassandra      Apache Cassandra wide-column store              cassandra                                          3.11+          https://cassandra.apache.org/doc/
-dynamodb       Amazon DynamoDB key-value and document store    dynamodb                                           AWS (managed)  https://docs.aws.amazon.com/dynamodb/
-hbase          Apache HBase wide-column store                  hbase                                              1.0+           https://hbase.apache.org/book.html
-couchdb        Apache CouchDB document store                   couchdb, couchdbs                                  2.x, 3.x       https://docs.couchdb.org/
-couchbase      Couchbase document store                        couchbase, couchbases                              7.x, 8.x (Community or Enterprise)  https://docs.couchbase.com/
-neo4j          Neo4j property graph store                      neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc  5.x            https://neo4j.com/docs/
-elasticsearch  Elasticsearch search engine and document store  elasticsearch, elasticsearch+s                     8.x            https://www.elastic.co/docs/
-opensearch     OpenSearch search engine and document store     opensearch, opensearch+s                           2.x, 3.x       https://opensearch.org/docs/
-redis          Redis key-value store                           redis, rediss                                      7.0+           https://redis.io/docs/
-file           Local dump file, read-only                      file
+| Name | Description | Versions |
+| ---- | ----------- | -------- |
+| `mongo` | [MongoDB](https://www.mongodb.com/docs/) document store | 4.2+ |
+| `cassandra` | [Apache Cassandra](https://cassandra.apache.org/doc/) wide-column store | 3.11+ |
+| `dynamodb` | [Amazon DynamoDB](https://docs.aws.amazon.com/dynamodb/) key-value and document store | AWS (managed) |
+| `hbase` | [Apache HBase](https://hbase.apache.org/book.html) wide-column store | 1.0+ |
+| `couchdb` | [Apache CouchDB](https://docs.couchdb.org/) document store | 2.x, 3.x |
+| `couchbase` | [Couchbase](https://docs.couchbase.com/) document store | 7.x, 8.x (Community or Enterprise) |
+| `neo4j` | [Neo4j](https://neo4j.com/docs/) property graph store | 5.x |
+| `elasticsearch` | [Elasticsearch](https://www.elastic.co/docs/) search engine and document store | 8.x |
+| `opensearch` | [OpenSearch](https://opensearch.org/docs/) search engine and document store | 2.x, 3.x |
+| `redis` | [Redis](https://redis.io/docs/) key-value store | 7.0+ |
+| `file` | Local dump file, read-only | — |
 
-# -v appends the file driver's readable dump formats:
-$ iq driver ls -v
-… (driver rows as above) …
+Each driver also declares the URL schemes it answers to (`mongodb`/`mongodb+srv`, `neo4j`/`bolt`
+and their TLS variants, and so on) — see each driver's section below. `iq driver ls -v` repeats
+the rows above and appends the `file` driver's readable dump formats:
+
+```
 file dump formats — a bare name auto-detects (file:///<file_path>), the ?format= form must be passed (file:///<file_path>?format=<source_format>):
   jsonl                  iq typed JSON Lines / array
   yaml                   iq typed YAML
