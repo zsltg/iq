@@ -264,6 +264,36 @@
    "file": "cmd/logging.go",
    "mutator": "expression/context-nil",
    "line": 250
+  },
+  {
+   "id": "de2fc8366cbb5da6a6bcf90980a3167c",
+   "file": "cmd/complete.go",
+   "mutator": "statement/return",
+   "line": 69
+  },
+  {
+   "id": "2ee430f494f06b65d310feefc7bf008e",
+   "file": "cmd/complete.go",
+   "mutator": "statement/return",
+   "line": 75
+  },
+  {
+   "id": "53c0f7192ad9a05c2f0a4d3857232b2d",
+   "file": "cmd/man.go",
+   "mutator": "branch/if",
+   "line": 246
+  },
+  {
+   "id": "2cc310b7cd64a0ec5022699186144da0",
+   "file": "cmd/man.go",
+   "mutator": "expression/comparison",
+   "line": 163
+  },
+  {
+   "id": "9adb645adba389b41c668fc52a5094ca",
+   "file": "cmd/man.go",
+   "mutator": "numbers/incrementer",
+   "line": 163
   }
  ]
 }

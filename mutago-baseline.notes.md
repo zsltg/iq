@@ -100,3 +100,14 @@ than accepted here.
 - 8d8b67cfaa5a2f9ae268a758c53d80ae cmd/backend.go:42 expression/context-nil — same slog.Enabled nil-ctx normalization, at the Enabled call inside wrapStoreLogging.
 - 0994bc19cf0021d62b93daf5a7054485 cmd/jq.go:166 expression/context-nil — same slog.Enabled nil-ctx normalization, at the plan-record gating check.
 - fdbace0a2e553747170ca5df7e0d1925 cmd/logging.go:250 expression/context-nil — same slog.Enabled nil-ctx normalization, at traceSink's DEBUG-sink probe.
+
+## cmd/man.go, cmd/complete.go — man page and completion equivalents (accepted 2026-07-22, install-packaging branch)
+The man generator and the dynamic completion helpers leave five genuine equivalents: two
+zero-value directive identities, two guards reachable only by a `Use` string starting with a
+space (which cobra's name derivation makes impossible), and a fall-through that emits a
+byte-identical line.
+- de2fc8366cbb cmd/complete.go:69 statement/return — completeCacheClear error path returns `nil, ShellCompDirectiveDefault`; ShellCompDirectiveDefault is 0, the directive's zero value, so the zero-value return is byte-identical.
+- 2ee430f494f0 cmd/complete.go:75 statement/return — same ShellCompDirectiveDefault==0 identity on completeCacheClear's success return.
+- 2cc310b7cd64 cmd/man.go:163 expression/comparison — manUsageLine `i >= 0` → `i > 0` differs only when IndexByte returns 0, i.e. a Use beginning with a space; cobra derives Name() from the first token, so no such command can exist.
+- 9adb645adba3 cmd/man.go:163 numbers/incrementer — same impossible-input class: the mutated bound differs only for a Use whose first byte is the space.
+- 53c0f7192ad9 cmd/man.go:246 branch/if — writeManExampleBlock's empty-line fast path; the general path renders an empty line as manVerbatim("")+"\n" == "\n", byte-identical output.
