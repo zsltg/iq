@@ -74,7 +74,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		}
 		_, _ = fmt.Fprint(cmd.ErrOrStderr(), plan)
 	} else if cfg.explain || cfg.verbose {
-		plan, err := buildJQPlan(cfg, filter, cross)
+		plan, err := buildJQPlan(cfg, filter, cross, cfg.verbose)
 		if err != nil {
 			return err
 		}

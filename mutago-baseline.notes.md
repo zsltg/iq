@@ -111,3 +111,13 @@ byte-identical line.
 - 2cc310b7cd64 cmd/man.go:163 expression/comparison — manUsageLine `i >= 0` → `i > 0` differs only when IndexByte returns 0, i.e. a Use beginning with a space; cobra derives Name() from the first token, so no such command can exist.
 - 9adb645adba3 cmd/man.go:163 numbers/incrementer — same impossible-input class: the mutated bound differs only for a Use whose first byte is the space.
 - 53c0f7192ad9 cmd/man.go:246 branch/if — writeManExampleBlock's empty-line fast path; the general path renders an empty line as manVerbatim("")+"\n" == "\n", byte-identical output.
+
+## cmd/explain.go — jq-stage annotation equivalents (accepted 2026-07-22, explain-jq-descriptions branch)
+The `--verbose` per-stage jq annotation leaves four genuine equivalents: one unreachable
+error guard and a note-column max loop whose result is independent of its start value and of
+strict-vs-nonstrict comparison.
+- 5e54a9e0b86c cmd/explain.go:130 expression/error-guard — writeAccessPlan returns an error only if render.JSON fails on a driver-produced filter map, which cannot happen for a plain JSON-able map; the call is the last statement in buildJQPlan, so removing or negating its early return leaves the output byte-identical.
+- 3ea86735ab2d cmd/explain.go:246 numbers/incrementer — writeJQExplained's note column starts at `col := 0`, then becomes the max visible width over the note-bearing lines; any non-negative start converges to that same maximum when a note exists and is unused when none do.
+- 98ddb7c013bc cmd/explain.go:246 numbers/decrementer — same col-init convergence, with the start decremented to -1.
+- 28f644a6cfbd cmd/explain.go:249 expression/comparison — the max loop's `w > col` and `w >= col` pick the same maximum, since an equal width leaves col unchanged either way.
+- e17052a49a36 cmd/explain.go:155 expression/error-guard — the buildCombinePlan twin of the 130 guard: writeAccessPlan errors only on an unreachable render.JSON failure, so the error branch never runs and clearing it is byte-identical (flaky-killed as a timeout during the batch baseline run, so recorded here on the follow-up).

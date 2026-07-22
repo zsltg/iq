@@ -7,16 +7,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fatih/color"
+	"github.com/itchyny/gojq"
 	"github.com/stretchr/testify/require"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/selector"
 )
 
 func TestBuildJQPlanSingleSourceMongo(t *testing.T) {
 	// A resolved single-source plan pretty-prints the filter and, with pushdown on
 	// by default, shows the pushed MongoDB filter as the backend call.
 	cfg := &config{url: "mongodb://localhost:27017/shop", handle: "orders"}
-	out, err := buildJQPlan(cfg, ".[] | select(.total > 99) | {id, total}", false)
+	out, err := buildJQPlan(cfg, ".[] | select(.total > 99) | {id, total}", false, false)
 	require.NoError(t, err)
 	require.Contains(t, out, "source: orders (mongo)")
 	// jq is broken onto pipe stages.
@@ -28,11 +31,40 @@ func TestBuildJQPlanSingleSourceMongo(t *testing.T) {
 	require.Contains(t, out, `"$gt": 99`)
 }
 
+func TestBuildJQPlanDescribedAnnotatesStages(t *testing.T) {
+	// With describe set (--explain --verbose), the jq-filter block annotates each pipe
+	// stage with a right-aligned dimmed em-dash note; the dashes align on the widest
+	// stage first line. Color is off under `go test`, so the exact bytes are asserted.
+	cfg := &config{url: "mongodb://localhost:27017/shop", handle: "orders"}
+	filter := ".users[] | select(.age > 30) | {name, city: .addr.city}"
+	out, err := buildJQPlan(cfg, filter, false, true)
+	require.NoError(t, err)
+
+	// The root .users[] stage shows its dimmed jq description followed by its route in
+	// parentheses (leading .users key → bounded read); later stages stay plain notes.
+	want := "  .users[]" + strings.Repeat(" ", 13) + "— each element of .users (bounded read)\n" +
+		"  | select(.age > 30)  — keep inputs where .age > 30\n" +
+		"  | {" + strings.Repeat(" ", 18) + "— build an object (name, city)\n" +
+		"    name,\n    city: .addr.city\n  }\n"
+	require.Contains(t, out, want)
+}
+
+func TestBuildJQPlanDescribeFalseStaysCompact(t *testing.T) {
+	// Plain --explain (describe false) is byte-for-byte the compact path: no em-dash
+	// notes, and the pipe-joined stage layout Format produces.
+	cfg := &config{url: "mongodb://localhost:27017/shop", handle: "orders"}
+	filter := ".users[] | select(.age > 30) | {name, city: .addr.city}"
+	out, err := buildJQPlan(cfg, filter, false, false)
+	require.NoError(t, err)
+	require.NotContains(t, out, "—")
+	require.Contains(t, out, "\n  .users[]\n  | select(.age > 30)\n")
+}
+
 func TestBuildJQPlanMongoNoCompileNoFilter(t *testing.T) {
 	// With --no-compile the plan shows a full-collection scan and no pushed filter,
 	// and pushdown is off entirely, so there is no per-conjunct breakdown either.
 	cfg := &config{url: "mongodb://localhost:27017/shop", handle: "orders", noCompile: true}
-	out, err := buildJQPlan(cfg, ".[] | select(.total > 99)", false)
+	out, err := buildJQPlan(cfg, ".[] | select(.total > 99)", false, false)
 	require.NoError(t, err)
 	require.Contains(t, out, "full-collection scan")
 	require.NotContains(t, out, "  filter:")
@@ -41,7 +73,7 @@ func TestBuildJQPlanMongoNoCompileNoFilter(t *testing.T) {
 
 func TestBuildJQPlanRedisScan(t *testing.T) {
 	cfg := &config{url: "redis://localhost:6379", handle: "cache"}
-	out, err := buildJQPlan(cfg, ".[] | select(.active)", false)
+	out, err := buildJQPlan(cfg, ".[] | select(.active)", false, false)
 	require.NoError(t, err)
 	require.Contains(t, out, "source: cache (redis)")
 	require.Contains(t, out, "redis calls:")
@@ -59,7 +91,7 @@ func TestBuildJQPlanCrossSourceInlinesNested(t *testing.T) {
 	// A cross-source filter is labeled as such and inlines the nested source()
 	// sub-filter, pretty-printed, without resolving a primary source.
 	cfg := &config{}
-	out, err := buildJQPlan(cfg, `source("orders"; ".[] | select(.vip)") | length`, true)
+	out, err := buildJQPlan(cfg, `source("orders"; ".[] | select(.vip)") | length`, true, false)
 	require.NoError(t, err)
 	require.Contains(t, out, "cross-source")
 	require.Contains(t, out, `source("orders";`)
@@ -69,14 +101,14 @@ func TestBuildJQPlanCrossSourceInlinesNested(t *testing.T) {
 
 func TestBuildJQPlanReportsSyntaxError(t *testing.T) {
 	cfg := &config{url: "redis://localhost:6379", handle: "cache"}
-	_, err := buildJQPlan(cfg, ".[ | broken", false)
+	_, err := buildJQPlan(cfg, ".[ | broken", false, false)
 	require.Error(t, err)
 }
 
 func TestWriteAccessPlanUnknownSchemeIsSilent(t *testing.T) {
 	// An unrecognized scheme (no registered driver) contributes no backend section.
 	var b strings.Builder
-	require.NoError(t, writeAccessPlan(&b, "postgres://x/y", ".[]", false, false))
+	require.NoError(t, writeAccessPlan(&b, "postgres://x/y", mustParseCmd(t, ".[]"), false, false))
 	require.Empty(t, b.String())
 }
 
@@ -123,7 +155,7 @@ func TestBuildCombinePlanPerStageAndFinal(t *testing.T) {
 		{varName: "orders", handle: "orders", source: iqconfig.Source{URL: "mongodb://localhost:27017/shop"}, filter: ".[] | select(.total > 10)"},
 		{varName: "cache", handle: "cache", source: iqconfig.Source{URL: "redis://localhost:6379"}, filter: ".[]"},
 	}
-	out, err := buildCombinePlan(cfg, stages)
+	out, err := buildCombinePlan(cfg, stages, false)
 	require.NoError(t, err)
 	require.Contains(t, out, "cross-source combine")
 	require.Contains(t, out, "$orders  <-  orders (mongo)")
@@ -132,6 +164,105 @@ func TestBuildCombinePlanPerStageAndFinal(t *testing.T) {
 	require.Contains(t, out, "SCAN 0 MATCH *")
 	require.Contains(t, out, "combine (over the bound $vars")
 	require.Contains(t, out, "| length")
+}
+
+func TestBuildCombinePlanDescribedAnnotatesStages(t *testing.T) {
+	// The combine plan routes both the per-stage reducer and the final combine program
+	// through the same annotated renderer when describe is set.
+	cfg := &config{combine: "$orders | length"}
+	stages := []fromStage{
+		{varName: "orders", handle: "orders", source: iqconfig.Source{URL: "mongodb://localhost:27017/shop"}, filter: ".[] | select(.total > 10)"},
+	}
+	out, err := buildCombinePlan(cfg, stages, true)
+	require.NoError(t, err)
+	// The reducer's root .[] stage is marked with its route (a mongo scan streams);
+	// its select stays a dimmed note, and the source-less combine program is dimmed too.
+	require.Contains(t, out, "— each element (streaming scan)")
+	require.Contains(t, out, "— keep inputs where .total > 10")
+	require.Contains(t, out, "— length")
+	// The final combine program runs over null input, not a store, so it carries no
+	// route mark even though it is annotated — its markable flag is false.
+	require.Equal(t, 1, strings.Count(out, "streaming scan"), "only the reducer stage is a marked scan")
+	require.NotContains(t, out, "materialized scan")
+}
+
+func TestClassifyAccess(t *testing.T) {
+	// The selector's route classification maps to one of three named costs; --unbounded
+	// downgrades a streamable scan to a materialized one.
+	tests := []struct {
+		name      string
+		filter    string
+		unbounded bool
+		label     string
+	}{
+		{"keyed field is a bounded read", ".foo", false, "bounded read"},
+		{"leading key then iterate stays bounded", ".users[]", false, "bounded read"},
+		{"root iterate is a streaming scan", ".[] | select(.n > 1)", false, "streaming scan"},
+		{"aggregate over the root materializes", "keys", false, "materialized scan"},
+		{"identity materializes", ".", false, "materialized scan"},
+		{"unbounded downgrades a stream to materialized", ".[]", true, "materialized scan"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, err := gojq.Parse(tt.filter)
+			require.NoError(t, err)
+			label, c := classifyAccess(selector.Keys(q), tt.unbounded)
+			require.Equal(t, tt.label, label)
+			require.NotNil(t, c)
+		})
+	}
+}
+
+func TestBuildJQPlanAccessMarkColorsRootStage(t *testing.T) {
+	// The root stage's note leads with its route name in the route color; other stages
+	// stay dimmed. Color is forced on so the escape wrapping is asserted, not just text.
+	restore := color.NoColor
+	color.NoColor = false
+	defer func() { color.NoColor = restore }()
+
+	cfg := &config{url: "redis://localhost:6379", handle: "cache"}
+	out, err := buildJQPlan(cfg, ".foo", false, true)
+	require.NoError(t, err)
+	require.Contains(t, out, pal.ok.Sprint("(bounded read)"))
+}
+
+// mustParseCmd parses a filter for a unit test that calls a query-based helper.
+func mustParseCmd(t *testing.T, filter string) *gojq.Query {
+	t.Helper()
+	q, err := gojq.Parse(filter)
+	require.NoError(t, err)
+	return q
+}
+
+func TestBuildJQPlanCrossSourceHasNoRouteMark(t *testing.T) {
+	// A cross-source filter reads through source(), so no single store owns it: the
+	// annotated form still describes the stages but never tags a data-access route.
+	cfg := &config{}
+	out, err := buildJQPlan(cfg, `source("orders"; ".[]") | length`, true, true)
+	require.NoError(t, err)
+	require.NotContains(t, out, "bounded read")
+	require.NotContains(t, out, "streaming scan")
+	require.NotContains(t, out, "materialized scan")
+}
+
+func TestBuildJQPlanFuncDefMarksBodyStage(t *testing.T) {
+	// A leading func-def is stage 0; the route mark must land on the first body stage
+	// (the .foo read), never on the declaration line.
+	cfg := &config{url: "redis://localhost:6379", handle: "cache"}
+	out, err := buildJQPlan(cfg, "def f: .+1; .foo | f", false, true)
+	require.NoError(t, err)
+	require.Contains(t, out, "— field .foo (bounded read)")
+	require.NotContains(t, out, "def f: . + 1; ") // no note appended to the decl line
+}
+
+func TestBuildJQPlanMarkedStageWithoutDescription(t *testing.T) {
+	// `.a and .b` is a bounded read whose stage has no confident jq description, so its
+	// note is the bare colored route with no parenthesized-description form.
+	cfg := &config{url: "redis://localhost:6379", handle: "cache"}
+	out, err := buildJQPlan(cfg, ".a and .b", false, true)
+	require.NoError(t, err)
+	require.Contains(t, out, "— bounded read")
+	require.NotContains(t, out, "(bounded read)")
 }
 
 func TestWriteConjunctLine(t *testing.T) {
@@ -311,7 +442,7 @@ func TestQueryPlanLogSharesConjunctDecisionsWithText(t *testing.T) {
 	// decisions for the same filter — one assembly, no drift.
 	cfg := &config{url: "mongodb://h/shop", handle: "orders"}
 	filter := ".[] | select(.total > 99 and (.active | not))"
-	out, err := buildJQPlan(cfg, filter, false)
+	out, err := buildJQPlan(cfg, filter, false, false)
 	require.NoError(t, err)
 
 	rec := planLogRecord(t, cfg.url, cfg.handle, filter, true)
@@ -395,7 +526,7 @@ func TestBuildJQPlanPushdownDecisions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &config{url: tt.url, handle: tt.handle}
-			out, err := buildJQPlan(cfg, tt.filter, false)
+			out, err := buildJQPlan(cfg, tt.filter, false, false)
 			require.NoError(t, err)
 			for _, s := range tt.contains {
 				require.Contains(t, out, s)

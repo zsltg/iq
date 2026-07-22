@@ -14,7 +14,9 @@ package jqfmt
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/itchyny/gojq"
 )
@@ -590,4 +592,313 @@ func anyQueryBreaks(args []*gojq.Query) bool {
 		}
 	}
 	return false
+}
+
+// Stage is one top-level pipe stage of an explained filter: its pretty-printed
+// Text (possibly multi-line, colored per the Explain call) and a short human Desc.
+// Desc is empty when no confident description applies — a wrong note is worse than
+// none.
+type Stage struct {
+	Text string
+	Desc string
+}
+
+// HasLeadingDecls reports whether q begins with module/import/func-def declarations,
+// which ExplainQuery peels into its own stage 0. The data-access mark uses it to know
+// the root body stage is index 1 rather than 0, so both share one definition.
+func HasLeadingDecls(q *gojq.Query) bool {
+	return q.Meta != nil || len(q.Imports) > 0 || len(q.FuncDefs) > 0
+}
+
+// ExplainQuery breaks an already-parsed query's top-level pipe chain into ordered
+// stages, left-most first, each with its pretty-printed Text and a short Desc.
+// Leading module/imports/func-defs form their own leading stage. The caller parses
+// once and reuses q, so no parse (and no parse error) happens here.
+func ExplainQuery(q *gojq.Query, colored bool) []Stage {
+	var stages []Stage
+	// Leading declarations (module/imports/func-defs) ride on the top query; peel
+	// them into their own stage so the pipe split below sees only the body. The body
+	// is the whole query with just those declaration fields cleared, so every other
+	// field (term, pipe operands, patterns, op) carries over untouched.
+	if HasLeadingDecls(q) {
+		decls := &gojq.Query{Meta: q.Meta, Imports: q.Imports, FuncDefs: q.FuncDefs}
+		stages = append(stages, Stage{Text: strings.TrimRight(FormatQuery(decls, colored), "\n")})
+		body := *q
+		body.Meta, body.Imports, body.FuncDefs = nil, nil, nil
+		q = &body
+	}
+	for _, s := range splitPipes(q) {
+		stages = append(stages, Stage{Text: stageText(s.q, s.pats, colored), Desc: describe(s.q)})
+	}
+	return stages
+}
+
+// pipeStage is one operand of the top-level pipe chain, carrying the `as $pat`
+// binding that rides on the pipe query and renders after this operand.
+type pipeStage struct {
+	q    *gojq.Query
+	pats []*gojq.Pattern
+}
+
+// splitPipes unwinds a left-leaning top-level pipe chain into ordered operands,
+// left-most first. Each pipe contributes its Left operand plus the patterns that
+// ride on it; the final non-pipe query is the last stage.
+func splitPipes(q *gojq.Query) []pipeStage {
+	var out []pipeStage
+	// A parsed OpPipe query always carries a Right operand, so the loop needs no nil
+	// guard: every pipe contributes its Left, and the final non-pipe query is the tail.
+	for {
+		if q.Op == gojq.OpPipe {
+			out = append(out, pipeStage{q: q.Left, pats: q.Patterns})
+			q = q.Right
+			continue
+		}
+		out = append(out, pipeStage{q: q})
+		return out
+	}
+}
+
+// stageText pretty-prints one stage, appending its `as $pat` binding exactly as
+// composed renders it (`<left> as <pat>`), so the binding stays with its operand.
+func stageText(q *gojq.Query, pats []*gojq.Pattern, colored bool) string {
+	// With no patterns this is exactly FormatQuery(q); the loop below simply adds
+	// nothing, so there is no separate fast path to keep in sync.
+	p := &printer{colored: colored}
+	p.query(q)
+	for i, pat := range pats {
+		p.space()
+		if i == 0 {
+			p.tok(roleKeyword, "as")
+		} else {
+			p.tok(roleOp, "?//")
+		}
+		p.space()
+		p.tok(rolePath, pat.String())
+	}
+	return p.b.String()
+}
+
+// describe returns a short lowercase description of a stage, or "" when the shape
+// is not confidently recognized. A composition describes by its operator; a single
+// term dispatches on its kind.
+func describe(q *gojq.Query) string {
+	// A stage is either a single term or a top-level composition (Term nil): the
+	// composition is described by its operator, the term by its kind.
+	if q.Term == nil {
+		return describeOp(q.Op)
+	}
+	return describeTerm(q.Term)
+}
+
+// describeOp names a top-level binary composition by its operator.
+func describeOp(op gojq.Operator) string {
+	switch op {
+	case gojq.OpComma:
+		return "emit multiple values"
+	case gojq.OpEq, gojq.OpNe, gojq.OpGt, gojq.OpLt, gojq.OpGe, gojq.OpLe:
+		return "compare with " + op.String()
+	case gojq.OpAdd, gojq.OpSub, gojq.OpMul, gojq.OpDiv, gojq.OpMod:
+		return "compute with " + op.String()
+	case gojq.OpAlt:
+		return "default with //"
+	default:
+		return ""
+	}
+}
+
+// describeTerm dispatches a single term to its description, or "" when the kind
+// carries no confident note.
+func describeTerm(t *gojq.Term) string {
+	switch t.Type {
+	case gojq.TermTypeIdentity, gojq.TermTypeIndex, gojq.TermTypeRecurse:
+		return describePath(t)
+	case gojq.TermTypeFunc:
+		return describeFunc(t.Func)
+	case gojq.TermTypeObject:
+		return describeObject(t.Object)
+	case gojq.TermTypeArray:
+		return "collect into an array"
+	case gojq.TermTypeIf:
+		return "conditional"
+	case gojq.TermTypeReduce:
+		return "accumulate over " + inlineArg(t.Reduce.Query)
+	case gojq.TermTypeForeach:
+		return "accumulate over " + inlineArg(t.Foreach.Query)
+	case gojq.TermTypeFormat:
+		return "apply " + t.Format
+	case gojq.TermTypeQuery:
+		return describe(t.Query)
+	default:
+		return ""
+	}
+}
+
+// describePath describes an identity/index/recurse path by its rendered form: the
+// whole input, an element iteration, or a named field.
+func describePath(t *gojq.Term) string {
+	s := t.String()
+	switch {
+	case s == ".":
+		return "the whole input"
+	case s == "..":
+		return "recurse over all values"
+	case s == ".[]":
+		return "each element"
+	case strings.HasSuffix(s, "[]"):
+		return "each element of " + strings.TrimSuffix(s, "[]")
+	default:
+		return "field " + s
+	}
+}
+
+// describeObject describes an object construction, appending the key list when
+// every key is a cheap identifier or plain string (a computed key drops the list).
+func describeObject(o *gojq.Object) string {
+	var keys []string
+	for _, kv := range o.KeyVals {
+		switch {
+		case kv.Key != "":
+			keys = append(keys, strings.TrimPrefix(kv.Key, "$"))
+		case kv.KeyString != nil && kv.KeyString.Queries == nil:
+			keys = append(keys, kv.KeyString.Str)
+		default:
+			return "build an object"
+		}
+	}
+	if len(keys) == 0 {
+		return "build an object"
+	}
+	return "build an object (" + strings.Join(keys, ", ") + ")"
+}
+
+// builtinDesc maps a jq builtin to a static description. Builtins whose note needs
+// an argument rendered are handled in describeFunc before this table is consulted.
+var builtinDesc = map[string]string{
+	"length":         "length",
+	"keys":           "sorted keys",
+	"keys_unsorted":  "keys",
+	"add":            "sum / concatenate",
+	"sort":           "sort",
+	"unique":         "unique values",
+	"reverse":        "reverse",
+	"flatten":        "flatten nested arrays",
+	"to_entries":     "to key/value pairs",
+	"from_entries":   "from key/value pairs",
+	"type":           "the value's type",
+	"tonumber":       "parse as number",
+	"tostring":       "convert to string",
+	"ascii_downcase": "lowercase",
+	"ascii_upcase":   "uppercase",
+	"first":          "first element",
+	"last":           "last element",
+}
+
+// describeFunc describes a function call: the argument-taking builtins first (their
+// note renders the argument inline), then the static table, then a safe "call
+// <name>" fallback that is never misleading.
+func describeFunc(f *gojq.Func) string {
+	switch f.Name {
+	case "select":
+		if len(f.Args) == 1 {
+			return "keep inputs where " + inlineArg(f.Args[0])
+		}
+	case "map":
+		if len(f.Args) == 1 {
+			return "apply " + inlineArg(f.Args[0]) + " to each element"
+		}
+	case "map_values":
+		if len(f.Args) == 1 {
+			return "map each value with " + inlineArg(f.Args[0])
+		}
+	case "sort_by":
+		if len(f.Args) == 1 {
+			return "sort by " + inlineArg(f.Args[0])
+		}
+	case "group_by":
+		if len(f.Args) == 1 {
+			return "group by " + inlineArg(f.Args[0])
+		}
+	case "unique_by":
+		if len(f.Args) == 1 {
+			return "unique by " + inlineArg(f.Args[0])
+		}
+	case "min_by":
+		if len(f.Args) == 1 {
+			return "minimum by " + inlineArg(f.Args[0])
+		}
+	case "max_by":
+		if len(f.Args) == 1 {
+			return "maximum by " + inlineArg(f.Args[0])
+		}
+	case "has":
+		if len(f.Args) == 1 {
+			return "has key " + inlineArg(f.Args[0])
+		}
+	case "contains":
+		if len(f.Args) == 1 {
+			return "contains " + inlineArg(f.Args[0])
+		}
+	case "del":
+		if len(f.Args) == 1 {
+			return "delete " + inlineArg(f.Args[0])
+		}
+	case "limit":
+		if len(f.Args) == 2 {
+			return "first " + inlineArg(f.Args[0]) + " of " + inlineArg(f.Args[1])
+		}
+	case "split":
+		if len(f.Args) >= 1 {
+			return "split on " + inlineArg(f.Args[0])
+		}
+	case "join":
+		if len(f.Args) == 1 {
+			return "join with " + inlineArg(f.Args[0])
+		}
+	case "test":
+		if len(f.Args) >= 1 {
+			return "regex test " + inlineArg(f.Args[0])
+		}
+	case "match":
+		if len(f.Args) >= 1 {
+			return "regex match " + inlineArg(f.Args[0])
+		}
+	case "startswith":
+		if len(f.Args) == 1 {
+			return "starts with " + inlineArg(f.Args[0])
+		}
+	case "endswith":
+		if len(f.Args) == 1 {
+			return "ends with " + inlineArg(f.Args[0])
+		}
+	case "ltrimstr":
+		if len(f.Args) == 1 {
+			return "trim prefix " + inlineArg(f.Args[0])
+		}
+	case "rtrimstr":
+		if len(f.Args) == 1 {
+			return "trim suffix " + inlineArg(f.Args[0])
+		}
+	}
+	if d, ok := builtinDesc[f.Name]; ok {
+		return d
+	}
+	return "call " + f.Name
+}
+
+// inlineArg renders a query argument on a single line, collapsing the pretty
+// printer's line breaks so a description stays on one row.
+func inlineArg(q *gojq.Query) string {
+	return strings.Join(strings.Fields(FormatQuery(q, false)), " ")
+}
+
+// sgrEscape matches a complete ANSI SGR escape (`\x1b[…m`), the only escape this
+// package emits. A truncated or malformed sequence does not match, so its bytes are
+// counted like any other text.
+var sgrEscape = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// VisibleWidth returns the display width of s ignoring this package's ANSI SGR escape
+// runs: it strips every complete `\x1b[…m` sequence, then counts the remaining runes,
+// so a colored stage aligns against a plain one.
+func VisibleWidth(s string) int {
+	return utf8.RuneCountInString(sgrEscape.ReplaceAllString(s, ""))
 }

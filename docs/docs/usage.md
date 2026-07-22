@@ -236,7 +236,12 @@ IQ_LOG=true IQ_LOG_FILE=/tmp/iq.log ./iq '.[]'       # enable logging via the en
 shows four things, syntax-highlighted when the destination is a terminal:
 
 - the jq filter, pretty-printed with real line breaks (nested `source("name"; "<jq>")` sub-filters
-  and every `--from`/`--combine` fragment are formatted too);
+  and every `--from`/`--combine` fragment are formatted too); under `-v`/`--verbose` each top-level
+  pipe stage also carries a short right-aligned note saying what it does (`— keep inputs where …`,
+  `— build an object …`), so `--explain -v` is the annotated, no-connection form. The stage that
+  reads from the store is marked with its route and colored by cost: a green `bounded read` (keyed
+  lookup), a yellow `streaming scan` (batched over `.[]`), or a red `materialized scan` (the whole
+  keyspace buffered — an aggregate, a non-`.[]` root, or any scan under `--unbounded`);
 - the backend **access plan** — the concrete calls each source will make, derived from the filter's
   route (bounded keys, streaming scan, or materialize): MongoDB `find(<filter>)` (the pushed-down
   filter, on by default, or `{}` under `--no-compile`) or `find` by `_id`; Redis `SCAN 0 MATCH *
@@ -256,6 +261,7 @@ shows four things, syntax-highlighted when the destination is a terminal:
 
 ```bash
 ./iq --src orders --explain '.[] | select(.total > 99) | {id, total}'
+./iq --src orders --explain -v '.[] | select(.total > 99) | {id, total}'  # + a note per pipe stage
 ./iq --src cache --explain '.[] | select(.active)'   # Redis SCAN + typed reads
 ./iq --src orders --explain '.[] | select(.total > 99 and (.active | not))'  # one pushed, one client-side
 ./iq --src orders -v '.[] | select(.total > 99)'     # plan + live `mongo> find(...)` trace

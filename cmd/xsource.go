@@ -56,7 +56,7 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 	// --explain prints the plan to stdout and stops before any connection; --verbose
 	// prints it to stderr and turns on the live command trace for the run below.
 	if cfg.explain || cfg.verbose {
-		plan, err := buildCombinePlan(cfg, stages)
+		plan, err := buildCombinePlan(cfg, stages, cfg.verbose)
 		if err != nil {
 			return err
 		}

@@ -294,6 +294,36 @@
    "file": "cmd/man.go",
    "mutator": "numbers/incrementer",
    "line": 163
+  },
+  {
+   "id": "28f644a6cfbd1c4fd2030dede4132808",
+   "file": "cmd/explain.go",
+   "mutator": "expression/comparison",
+   "line": 249
+  },
+  {
+   "id": "5e54a9e0b86ca93efeca1882a131f751",
+   "file": "cmd/explain.go",
+   "mutator": "expression/error-guard",
+   "line": 130
+  },
+  {
+   "id": "98ddb7c013bce6ccb987a3e710f18931",
+   "file": "cmd/explain.go",
+   "mutator": "numbers/decrementer",
+   "line": 246
+  },
+  {
+   "id": "3ea86735ab2ddd1704c461d866ca6ac8",
+   "file": "cmd/explain.go",
+   "mutator": "numbers/incrementer",
+   "line": 246
+  },
+  {
+   "id": "e17052a49a36459678f452ce083eca1e",
+   "file": "cmd/explain.go",
+   "mutator": "expression/error-guard",
+   "line": 155
   }
  ]
 }

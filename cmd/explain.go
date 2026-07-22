@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/itchyny/gojq"
 
 	"github.com/zsltg/iq/internal/jqfmt"
@@ -51,9 +52,15 @@ func buildSourcePlan(url, filter string, compile, unbounded bool) (sourcePlan, e
 	if err != nil {
 		return sourcePlan{}, asSyntaxError(filter, err)
 	}
+	return buildSourcePlanQuery(url, q, compile, unbounded), nil
+}
+
+// buildSourcePlanQuery is buildSourcePlan for an already-parsed query, so the
+// --explain text path (which parses the filter once up front) does not re-parse it.
+func buildSourcePlanQuery(url string, q *gojq.Query, compile, unbounded bool) sourcePlan {
 	d, ok := driverForScheme(schemeOf(url))
 	if !ok || d.explainPlan == nil {
-		return sourcePlan{}, nil
+		return sourcePlan{}
 	}
 	keys := selector.Keys(q)
 	var pred predicate.Node
@@ -70,7 +77,7 @@ func buildSourcePlan(url, filter string, compile, unbounded bool) (sourcePlan, e
 		pushed, reason := conjunctDecision(d, keys, cj, unbounded)
 		sp.conjuncts = append(sp.conjuncts, conjunctPlan{Expr: cj.Expr, Pushed: pushed, Reason: reason})
 	}
-	return sp, nil
+	return sp
 }
 
 // logAttrs renders the source plan as the structured attributes of the "query
@@ -105,8 +112,8 @@ func (sp sourcePlan) logAttrs(handle string) []any {
 // resolved for the non-cross case, so the plan can name the driver without
 // connecting. It is shown by --explain (to stdout, no execution) and --verbose (to
 // stderr, before executing).
-func buildJQPlan(cfg *config, filter string, cross bool) (string, error) {
-	pretty, err := jqfmt.Format(filter, colorOn())
+func buildJQPlan(cfg *config, filter string, cross, describe bool) (string, error) {
+	q, err := gojq.Parse(filter)
 	if err != nil {
 		return "", asSyntaxError(filter, err)
 	}
@@ -118,9 +125,9 @@ func buildJQPlan(cfg *config, filter string, cross bool) (string, error) {
 		writePlanLine(&b, "source", fmt.Sprintf("%s (%s)", cfg.handle, driverName(cfg.url)))
 	}
 	writePlanSection(&b, "jq filter")
-	writeIndented(&b, pretty, 2)
+	writeJQFilterQuery(&b, q, describe, cfg.unbounded, !cross)
 	if !cross {
-		if err := writeAccessPlan(&b, cfg.url, filter, !cfg.noCompile, cfg.unbounded); err != nil {
+		if err := writeAccessPlan(&b, cfg.url, q, !cfg.noCompile, cfg.unbounded); err != nil {
 			return "", err
 		}
 	}
@@ -130,7 +137,7 @@ func buildJQPlan(cfg *config, filter string, cross bool) (string, error) {
 // buildCombinePlan renders the query plan for the cross-source combine action
 // (--from/--combine): each --from stage's source, driver, pretty-printed reducer,
 // and backend calls, then the final --combine program.
-func buildCombinePlan(cfg *config, stages []fromStage) (string, error) {
+func buildCombinePlan(cfg *config, stages []fromStage, describe bool) (string, error) {
 	var b strings.Builder
 	writePlanTitle(&b)
 	writePlanLine(&b, "mode", "cross-source combine (--from/--combine)")
@@ -139,23 +146,141 @@ func buildCombinePlan(cfg *config, stages []fromStage) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("--from %q: %w", st.handle, err)
 		}
-		writePlanSection(&b, fmt.Sprintf("$%s  <-  %s (%s)", st.varName, st.handle, driverName(u)))
-		pretty, err := jqfmt.Format(st.filter, colorOn())
+		q, err := gojq.Parse(st.filter)
 		if err != nil {
 			return "", asSyntaxError(st.filter, err)
 		}
-		writeIndented(&b, pretty, 2)
-		if err := writeAccessPlan(&b, u, st.filter, !cfg.noCompile, cfg.unbounded); err != nil {
+		writePlanSection(&b, fmt.Sprintf("$%s  <-  %s (%s)", st.varName, st.handle, driverName(u)))
+		writeJQFilterQuery(&b, q, describe, cfg.unbounded, true)
+		if err := writeAccessPlan(&b, u, q, !cfg.noCompile, cfg.unbounded); err != nil {
 			return "", err
 		}
 	}
 	writePlanSection(&b, "combine (over the bound $vars, null input)")
-	pretty, err := jqfmt.Format(cfg.combine, colorOn())
+	cq, err := gojq.Parse(cfg.combine)
 	if err != nil {
 		return "", asSyntaxError(cfg.combine, err)
 	}
-	writeIndented(&b, pretty, 2)
+	// The combine program runs over the bound $vars with null input — no source, so
+	// no data-access mark (markable is false).
+	writeJQFilterQuery(&b, cq, describe, cfg.unbounded, false)
 	return b.String(), nil
+}
+
+// writeJQFilterQuery renders a parsed filter under the "jq filter" section: annotated
+// per pipe stage when describe is set, otherwise the compact pretty print. When
+// markable (a resolved single source), the root data-access stage is tagged with its
+// route; a cross-source or source-less program (the --combine step) passes markable
+// false. The query is already parsed, so this path re-uses it and never re-parses.
+func writeJQFilterQuery(b *strings.Builder, q *gojq.Query, describe, unbounded, markable bool) {
+	pretty := jqfmt.FormatQuery(q, colorOn())
+	if !describe {
+		writeIndented(b, pretty, 2)
+		return
+	}
+	var mark *accessMark
+	if markable {
+		mark = accessMarkForQuery(q, unbounded)
+	}
+	writeJQExplained(b, pretty, jqfmt.ExplainQuery(q, colorOn()), 2, mark)
+}
+
+// accessMark labels the pipe stage that reads from the store: which stage (by index
+// in the Explain stage list) performs the root data access, the human name of the
+// route, and the color that names its cost (green bounded read, yellow streaming
+// scan, red materialized scan).
+type accessMark struct {
+	stage int
+	label string
+	c     *color.Color
+}
+
+// accessMarkForQuery classifies a single-source query's root data access into an
+// accessMark. The route comes from the selector's key/scan classification — the same
+// driver-agnostic verdict the access plan uses — with --unbounded downgrading a
+// streamable scan to a materialized one, since it buffers the whole dataset. The
+// responsible stage is the first body stage: index 1 when leading declarations
+// (module/imports/func-defs) occupy stage 0, otherwise stage 0.
+func accessMarkForQuery(q *gojq.Query, unbounded bool) *accessMark {
+	label, c := classifyAccess(selector.Keys(q), unbounded)
+	stage := 0
+	if jqfmt.HasLeadingDecls(q) {
+		stage = 1
+	}
+	return &accessMark{stage: stage, label: label, c: c}
+}
+
+// classifyAccess names the route the KeySet describes and its cost color: bounded
+// keys are a cheap keyed read (green); a scan that distributes over `.[]` streams
+// batch by batch (yellow), unless --unbounded forces it to materialize; any other
+// scan collapses the whole keyspace into memory (red).
+func classifyAccess(keys selector.KeySet, unbounded bool) (string, *color.Color) {
+	switch {
+	case !keys.Scan:
+		return "bounded read", pal.ok
+	case keys.Streamable && !unbounded:
+		return "streaming scan", pal.change
+	default:
+		return "materialized scan", pal.fail
+	}
+}
+
+// writeJQExplained renders the pretty-printed filter with a right-aligned em-dash
+// note on each pipe stage's first line, matching writeConjunctLine's style. The body
+// is the compact render (jqfmt.Format) verbatim — pipe connectors and all — so the
+// annotated form differs from the plain form only by the note column. A stage spans
+// the same number of lines inline as standalone, so each stage's note attaches to the
+// physical line where that stage begins, found by accumulating stage line counts. The
+// stage named by mark (the root data access) is colored by its route cost and leads
+// with the route name; every other note is dimmed. The note column is the widest
+// annotated line by visible width, so ANSI escapes never skew it; a multi-line stage
+// carries its note on the first line only.
+func writeJQExplained(b *strings.Builder, pretty string, stages []jqfmt.Stage, indent int, mark *accessMark) {
+	lines := strings.Split(pretty, "\n")
+	notes := make(map[int]string, len(stages))
+	at := 0
+	for i, s := range stages {
+		notes[at] = stageNote(s.Desc, i, mark)
+		at += strings.Count(s.Text, "\n") + 1
+	}
+	col := 0
+	for i := range lines {
+		if notes[i] != "" {
+			if w := jqfmt.VisibleWidth(lines[i]); w > col {
+				col = w
+			}
+		}
+	}
+	pad := strings.Repeat(" ", indent)
+	for i, line := range lines {
+		if line == "" {
+			b.WriteByte('\n')
+			continue
+		}
+		b.WriteString(pad + line)
+		if note := notes[i]; note != "" {
+			b.WriteString(strings.Repeat(" ", col-jqfmt.VisibleWidth(line)) + "  " + note)
+		}
+		b.WriteByte('\n')
+	}
+}
+
+// stageNote builds one stage's note. Every stage shows its dimmed jq description; the
+// root data-access stage (mark.stage) appends its route name in parentheses, colored
+// by cost. When that stage has no description, the colored route stands alone as the
+// note. Returns "" when there is nothing to show.
+func stageNote(desc string, stage int, mark *accessMark) string {
+	marked := mark != nil && stage == mark.stage
+	switch {
+	case marked && desc != "":
+		return pal.faint.Sprint("— "+desc) + " " + mark.c.Sprint("("+mark.label+")")
+	case marked:
+		return mark.c.Sprint("— " + mark.label)
+	case desc != "":
+		return pal.faint.Sprint("— " + desc)
+	default:
+		return ""
+	}
 }
 
 // writeAccessPlan appends the backend-calls section for one source: the driver's
@@ -164,11 +289,8 @@ func buildCombinePlan(cfg *config, stages []fromStage) (string, error) {
 // with no describer, or an unrecognized scheme, contributes nothing. The predicate
 // is compiled here only when pushdown is enabled (the default; disabled by
 // --no-compile), matching how execution gates the push.
-func writeAccessPlan(b *strings.Builder, url, filter string, compile, unbounded bool) error {
-	sp, err := buildSourcePlan(url, filter, compile, unbounded)
-	if err != nil {
-		return err
-	}
+func writeAccessPlan(b *strings.Builder, url string, q *gojq.Query, compile, unbounded bool) error {
+	sp := buildSourcePlanQuery(url, q, compile, unbounded)
 	if !sp.hasPlan {
 		return nil
 	}
