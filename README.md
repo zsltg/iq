@@ -184,16 +184,16 @@ value encoding, predicate pushdown, and raw-command escape hatch.
 
 ### File dump formats
 
-```
-  jsonl                  iq typed JSON Lines / array
-  yaml                   iq typed YAML
-  mongoexport            mongoexport Extended JSON
-  bson                   mongodump BSON
-  rdb                    Redis RDB snapshot
-  ?format=dynamodb-json  DynamoDB S3 export / scan JSON
-  ?format=cassandra-csv  cqlsh COPY TO CSV
-  ?format=neo4j-json     Neo4j APOC JSON export
-```
+| Type | Description |
+| ---- | ----------- |
+| `jsonl` | iq typed JSON Lines / array |
+| `yaml` | iq typed YAML |
+| `mongoexport` | mongoexport Extended JSON |
+| `bson` | mongodump BSON |
+| `rdb` | Redis RDB snapshot |
+| `?format=dynamodb-json` | DynamoDB S3 export / scan JSON |
+| `?format=cassandra-csv` | cqlsh COPY TO CSV |
+| `?format=neo4j-json` | Neo4j APOC JSON export |
 
 A bare name auto-detects (`file:///<file_path>`), the `?format=` form must be passed
 (`file:///<file_path>?format=<source_format>`).
