@@ -4,6 +4,24 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.32.0 - 2026-07-22
+### Documentation
+- document the -v jq-stage annotation on the Output page (f354612)
+- move output, scans, and pushdown detail into docs-site pages (cf2176a)
+- merge Usage and Common commands into a categorized Getting started (9029be5)
+- drop the scans deep-dive and trim Drivers cross-references (3baf554)
+- render file dump formats as a Type/Description table (734f195)
+- restructure Drivers section with Database column and subheadings (e831f06)
+- order the driver table alphabetically by name (3256223)
+- render the driver list as a table with linked docs (c583e07)
+- trim README to an overview, defer detail to the docs site (4f31f0b)
+- add install section and docs-site install page (f9e5db8)
+
+### Features
+- **cli:** add iq man page and dynamic shell completions (45b9f1b)
+- **explain:** annotate jq stages and mark the data-access route under -v (621b561)
+
+
 ## v0.31.0 - 2026-07-21
 ### Documentation
 - **site:** mirror the full README into the Zensical docs (1503b06)
