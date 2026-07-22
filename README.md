@@ -113,55 +113,6 @@ Always wrap the filter in single quotes. jq syntax is full of characters the she
 otherwise expand or split — brackets (`[ ]`), whitespace, `|`, `*`, `$` — and bracket-quoting a
 colon key like `.["book:1"]` reads as a glob to zsh (`no matches found`) or bash unless quoted.
 
-### Bounded reads, streaming scans, and materialized scans
-
-`iq` fetches exactly the keys your filter names, so a normal query's cost is bounded by the keys
-you asked for, never by the size of the database. A filter that needs the whole keyspace is a
-**scan**, and scans come in two kinds:
-
-- **Streaming** — a filter rooted at `.[]` (`.[]`, `.[] | select(...)`, `.[].title`) processes
-  each value independently, so `iq` walks the keyspace in pages and runs the filter page by page,
-  emitting as it goes. Memory stays constant and results appear progressively (interrupt with
-  Ctrl-C or bound with `--timeout`). These run **without a flag**:
-
-  ```bash
-  ./iq '.[] | objects | select((.year|tonumber) > 2015) | .title'   # streamed discovery
-  ```
-
-- **Materialized** — a filter that collapses the collection into one value (`.`, `keys`, `length`,
-  `map(...)`, `group_by`, `sort_by`, aggregates) must load the whole dataset into memory. It runs
-  only with `--unbounded`:
-
-  ```bash
-  ./iq 'keys'                 # error: requires materializing the whole dataset
-  ./iq --unbounded 'keys'     # list every key
-  ./iq --unbounded '.'        # the whole dataset as one JSON object
-  ```
-
-`--unbounded` means "permit loading the whole dataset into memory." Passing it on a streaming
-filter is allowed too: it switches that filter from batched streaming to a single materialized
-pass, giving key-sorted output and a consistent snapshot instead of scan order.
-
-Streamed output is **best-effort**: values arrive in scan order (not key-sorted), and an element
-may repeat if the keyspace is resized mid-scan — the price of never holding more than one page.
-Use `--unbounded` when you need sorted, exactly-once output.
-
-The flag names the cost property (loading everything), not any one store's mechanism, so it will
-mean the same thing for future backends (a Cassandra full scan, a CouchDB `_all_docs`).
-
-A scan has no reliable upfront total (Redis `SCAN`, Mongo cursor), so while one runs `iq` shows an
-animated spinner with a running `N scanned` count on **stderr** — a sparse `.[] | select(...)` over
-a large keyspace is never silent. When a backend can supply a cheap approximate total (MongoDB's
-`estimatedDocumentCount` for an unfiltered whole-collection scan, Redis's `DBSIZE` for its
-whole-keyspace `MATCH *` scan), the count is shown against it as
-`N scanned (~M est)`; the tilde marks it a hint — it comes from cached metadata and drifts under
-concurrent writes, so the scan may exceed it and it never becomes a percentage bar. No total is
-shown for a pushed-down filtered scan (it walks a subset) or for a cross-source scan (a per-source
-estimate would mislead the aggregate). The
-spinner appears only after a short delay, so a fast query never flashes one, and only when stderr
-is a terminal: piped or redirected output is never touched, and result rows streamed to stdout are
-never garbled by it. Disable it with `--no-progress`.
-
 ## Drivers
 
 `iq` picks the backend from a source's URL scheme, and the query core is driver-agnostic, so
@@ -198,32 +149,30 @@ value encoding, predicate pushdown, and raw-command escape hatch.
 A bare name auto-detects (`file:///<file_path>`), the `?format=` form must be passed
 (`file:///<file_path>?format=<source_format>`).
 
-### What every driver guarantees
+### Guarantees
 
-The per-driver blocks below differ in encoding and pushdown detail, but every backend honors the
+Drivers differ in encoding and pushdown detail, but every backend honors the
 same contract:
 
 - **One URL, native nouns.** The URL scheme picks the driver; the keyspace rides in the URL as the
   backend's own noun (`?collection=`, `?table=`, `?database=`, `?label=`/`?rel=`, `?index=`), and a
-  query overrides it per run with the dotted `handle.<keyspace>` suffix (see [Sources](#sources)).
+  query overrides it per run with the dotted `handle.<keyspace>` suffix.
 - **One jq surface.** A bounded filter fetches exactly the named keys — a missing key reads as
   `null`, never an error; a `.[]`-rooted filter streams the keyspace in bounded pages; a holistic
-  filter materializes only behind `--unbounded` (see
-  [Bounded reads, streaming scans, and materialized scans](#bounded-reads-streaming-scans-and-materialized-scans)).
+  filter materializes only behind `--unbounded`.
 - **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter —
   server-side where the backend can filter, or a client-side raw-byte prefilter that drops a provable
   non-match before decode where it cannot (Redis, on RedisJSON values; Elasticsearch/OpenSearch and
   Couchbase, over the residual their server-side query could not narrow). The full jq always re-runs
   client-side, so
-  output is identical with or without it, and [`--explain`](#query-plan---explain--v) shows exactly
+  output is identical with or without it, and `--explain` shows exactly
   what was pushed.
 - **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, drop, and per-key
   delete are opt-in ports: a backend implements what its model supports, and a command against a
   missing capability fails with a clear message instead of emulating it (Redis, whose DB index cannot
   be removed, simply has no `drop`; the read-only file dump has no per-key `delete`).
 - **Values round-trip.** Every value normalizes to JSON under a frozen per-backend encoding
-  contract, and a `--typed` dump restores through `--insert` losslessly (see
-  [Moving data](#moving-data---insert---typed)).
+  contract, and a `--typed` dump restores through `--insert` losslessly.
 - **Bounded and redacted.** Every backend call is bounded by `--timeout`, and a URL's password is
   redacted from every listing, log line, and error.
 - **A native escape hatch.** `iq exec` speaks the backend's own language — verbatim where one exists
