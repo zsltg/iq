@@ -23,6 +23,24 @@ sq's so the tool feels familiar.
 
     `iq` has potential rough edges — don't rely on it for critical work yet.
 
+## Query routes
+
+The shape of the filter decides how much `iq` reads. Every filter takes one of three routes —
+`--explain` shows which:
+
+```mermaid
+graph LR
+  Q1[".[#quot;1#quot;]"] -->|names a key| T1["bounded read"] --> R1["{ #quot;title#quot;: #quot;The Go…#quot; }<br/>one value"]
+  Q2[".[]"] -->|iterates values| T2["streaming scan"] --> R2["{ … } then { … } then …<br/>each value, streamed"]
+  Q3["."] -->|whole root| T3["materialized scan<br/>(needs --unbounded)"] --> R3["{ #quot;1#quot;: {…}, #quot;2#quot;: {…} }<br/>one object, every key"]
+  classDef bounded fill:#e6f4ea,stroke:#137333,color:#0b3d1f;
+  classDef streaming fill:#fef7e0,stroke:#8a5a00,color:#5c3d00;
+  classDef materialized fill:#fce8e6,stroke:#c5221f,color:#5c0f0a;
+  class T1 bounded;
+  class T2 streaming;
+  class T3 materialized;
+```
+
 ## Installation
 
 `iq` ships as a single static binary (no runtime dependencies, no CGO).
