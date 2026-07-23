@@ -1,7 +1,8 @@
-# iq
+---
+icon: lucide/rocket
+---
 
-*This page mirrors the project [README](https://github.com/zsltg/iq/blob/main/README.md), which
-remains the source of truth until the documentation is fully migrated.*
+# Getting started
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
 databases. Redis, MongoDB, Apache Cassandra, Amazon DynamoDB, Apache HBase, Apache CouchDB,
@@ -14,7 +15,7 @@ fetch, so the store only ever reads a bounded set of keys — never a full keysp
 you ask for one explicitly. Fetched values are normalized to JSON and the filter then runs
 entirely client-side, so its semantics are identical for every backend.
 
-`iq` is inspired by [sq](https://github.com/neilotoole/sq): much of its command surface — the
+`iq` is inspired by [`sq`](https://github.com/neilotoole/sq), much of its command surface — the
 `<source>.<collection>` addressing along with many subcommands and flags — deliberately follows
 sq's so the tool feels familiar.
 
@@ -22,6 +23,86 @@ sq's so the tool feels familiar.
 
     `iq` has potential rough edges — don't rely on it for critical work yet.
 
+## Installation
+
+`iq` ships as a single static binary (no runtime dependencies, no CGO).
+
+=== ":fontawesome-brands-linux: Linux"
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/zsltg/iq/main/install.sh | sh
+    ```
+
+    !!! note
+
+        The script downloads the release for your OS/arch, verifies its SHA-256
+        against the release checksums, and installs the binary; `IQ_VERSION`
+        pins a version and `IQ_INSTALL_DIR` picks the target directory. Or grab
+        a `.deb`, `.rpm`, or `.apk` from the
+        [releases](https://github.com/zsltg/iq/releases).
+
+=== ":fontawesome-brands-apple: macOS"
+
+    ```sh
+    brew install zsltg/tap/iq
+    ```
+
+    The [Linux one-liner](#__tabbed_1_1) works on macOS too.
+
+=== ":fontawesome-brands-windows: Windows"
+
+    ```powershell
+    scoop bucket add zsltg https://github.com/zsltg/scoop-bucket
+    scoop install iq
+    ```
+
+=== ":fontawesome-brands-golang: Go"
+
+    ```sh
+    go install github.com/zsltg/iq@latest
+    ```
+
+## Building from source
+
+```sh
+git clone https://github.com/zsltg/iq
+cd iq && make build
+```
+
+## Shell completions
+
+The `.deb`, `.rpm` and `.apk` packages install bash, zsh and fish completions for you. For a
+brew, scoop, go-install or source build, `iq completion <shell>` prints a script to install by
+hand:
+
+```sh
+# bash — load in the current session, or drop it on the completion path
+eval "$(iq completion bash)"
+iq completion bash | sudo tee /usr/share/bash-completion/completions/iq >/dev/null
+
+# zsh — write to a directory on your $fpath, then restart the shell
+iq completion zsh > ~/.zsh/completions/_iq
+
+# fish
+iq completion fish > ~/.config/fish/completions/iq.fish
+
+# powershell — append to your profile
+iq completion powershell >> $PROFILE
+```
+
+Completions cover the commands, their sub-subcommands and flags, and — read live from your
+config — your saved source handles, groups, and config-option keys, so `iq --src <TAB>` offers
+the sources `iq ls` lists. The jq filter itself is a program, not a completable value, so `iq`
+offers no candidates there (and never falls back to filenames).
+
+## Man page
+
+The packages also install an `iq(1)` manual page, so `man iq` works after a package install. For
+a non-package install, pipe it into your man path:
+
+```sh
+iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
+```
 ## Requirements
 
 - Go 1.26+

@@ -29,13 +29,15 @@ site_author = "Zsolt Gaspar"
 # Read more: https://zensical.org/docs/setup/basics/#site_url
 # TODO: https://<github-user>.github.io/iq/ once the GitHub repo exists (project-pages base path /iq/).
 #site_url = "https://www.example.com/"
+repo_name = "zsltg/iq"
+repo_url = "https://github.com/zsltg/iq"
 
 # The copyright notice appears in the page footer and can contain an HTML
 # fragment.
 #
 # Read more: https://zensical.org/docs/setup/basics/#copyright
 copyright = """
-Copyright &copy; 2026 The authors
+Copyright &copy; 2026 Zsolt Gaspar
 """
 
 # Zensical supports both implicit navigation and explicitly defined navigation.
@@ -46,8 +48,7 @@ Copyright &copy; 2026 The authors
 #
 # Read more: https://zensical.org/docs/setup/navigation/
 nav = [
-  { "iq" = "index.md" },
-  { "Install" = "install.md" },
+  { "Getting started" = "index.md" },
   { "Sources" = "sources.md" },
   { "Usage" = "usage.md" },
   { "Drivers" = "drivers.md" },
@@ -302,11 +303,13 @@ features = [
 # - https://zensical.org/docs/setup/colors/
 # ----------------------------------------------------------------------------
 [[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
 scheme = "default"
 toggle.icon = "lucide/sun"
 toggle.name = "Switch to dark mode"
 
 [[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
 scheme = "slate"
 toggle.icon = "lucide/moon"
 toggle.name = "Switch to light mode"
@@ -314,9 +317,11 @@ toggle.name = "Switch to light mode"
 # ----------------------------------------------------------------------------
 # The "extra" section contains miscellaneous settings.
 # ----------------------------------------------------------------------------
-#[[project.extra.social]]
+[[project.extra.social]]
 #icon = "fontawesome/brands/github"
 #link = "https://github.com/user/repo"
+icon = "fontawesome/brands/github"
+    link = "https://github.com/zsltg"
 
 # ----------------------------------------------------------------------------
 # In this section you can configure the Markdown extensions that are used when

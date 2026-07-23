@@ -1,7 +1,8 @@
-# Comparison
+---
+icon: material/scale-balance
+---
 
-*This page mirrors the project [README](https://github.com/zsltg/iq/blob/main/README.md), which
-remains the source of truth until the documentation is fully migrated.*
+# Comparison
 
 How `iq` relates to other query tools. Its niche is narrow: a single static binary that gives
 NoSQL stores one jq-based query surface, the filter running client-side over normalized JSON so

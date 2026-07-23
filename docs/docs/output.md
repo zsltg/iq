@@ -1,3 +1,7 @@
+---
+icon: material/console
+---
+
 # Output
 
 Results print as pretty JSON by default. A single format flag selects another rendering.
