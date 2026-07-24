@@ -103,6 +103,7 @@ func TestResolveSource(t *testing.T) {
 func TestSplitSourceArg(t *testing.T) {
 	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{
 		"books":     {URL: "mongodb://h/db?collection=books"},
+		"a":         {URL: "mongodb://h/db"},
 		"a.b":       {URL: "mongodb://h/db"},
 		"cache":     {URL: "redis://h"},
 		"prod/blog": {URL: "mongodb://h/db"},
@@ -116,12 +117,30 @@ func TestSplitSourceArg(t *testing.T) {
 	}{
 		{"empty falls through to caller", "", "", "", false},
 		{"plain known source", "books", "books", "", false},
-		{"source and collection split on last dot", "books.chapters", "books", "chapters", true},
+		{"source and collection", "books.chapters", "books", "chapters", true},
 		{"dotted handle resolves whole", "a.b", "a.b", "", false},
 		{"at-prefixed splits, name keeps the at", "@books.chapters", "@books", "chapters", true},
 		{"unknown bare name passes through", "nope", "nope", "", false},
 		{"leading dot is not a split", ".x", ".x", "", false},
 		{"trailing dot is not a split", "x.", "x.", "", false},
+		// The trailing dot must be rejected even when what precedes it names a
+		// real source, or the walk would hand back an empty collection.
+		{"trailing dot on a known source is not a split", "books.", "books.", "", false},
+		{"trailing dot after a dotted address is not a split", "books.sales.", "books.sales.", "", false},
+		// A dotted address: the source is the longest prefix that resolves, and
+		// everything after it stays whole. Couchbase addresses a scope.collection
+		// this way, and a MongoDB collection name may itself contain a dot.
+		{"dotted address keeps its own dots", "books.sales.orders", "books", "sales.orders", true},
+		{"deeply dotted address", "books.a.b.c", "books", "a.b.c", true},
+		{"dotted handle takes a collection", "a.b.chapters", "a.b", "chapters", true},
+		{"dotted handle takes a dotted collection", "a.b.x.y", "a.b", "x.y", true},
+		// No prefix resolves: the last-dot fallback keeps the unknown-source
+		// message pointing at the name the user most likely meant.
+		{"unknown source still splits", "nope.chapters", "nope", "chapters", true},
+		// A one-character handle puts the split at index 1, the first position the
+		// walk and the fallback can both reach.
+		{"single-character source takes a dotted address", "a.x.y", "a", "x.y", true},
+		{"single-character unknown source still splits", "z.chapters", "z", "chapters", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -131,6 +150,20 @@ func TestSplitSourceArg(t *testing.T) {
 			require.Equal(t, tt.wantHasCol, has)
 		})
 	}
+
+	// With both a source and a longer dotted source registered, the longest one
+	// that resolves wins, so registering `books.sales` cannot be shadowed by the
+	// shorter `books`.
+	t.Run("the longest resolvable prefix wins", func(t *testing.T) {
+		cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{
+			"books":       {URL: "couchbase://h/?bucket=iq"},
+			"books.sales": {URL: "couchbase://h/?bucket=sales"},
+		}}
+		name, coll, has := splitSourceArg(cf, "books.sales.orders")
+		require.Equal(t, "books.sales", name)
+		require.Equal(t, "orders", coll)
+		require.True(t, has)
+	})
 }
 
 func TestResolveInspectSource(t *testing.T) {

@@ -324,6 +324,18 @@
    "file": "cmd/explain.go",
    "mutator": "expression/error-guard",
    "line": 155
+  },
+  {
+   "id": "6277c273c32b9f5a6679903ec1a71534",
+   "file": "cmd/resolve.go",
+   "mutator": "expression/comparison",
+   "line": 165
+  },
+  {
+   "id": "4c668185c33abe890d941091c16b6cf2",
+   "file": "cmd/resolve.go",
+   "mutator": "numbers/decrementer",
+   "line": 165
   }
  ]
 }

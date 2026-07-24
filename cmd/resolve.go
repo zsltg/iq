@@ -140,12 +140,15 @@ func cassandraTarget(cfg *config) (keyspace, table string) {
 	return ks, tbl
 }
 
-// splitSourceArg parses an inspect positional into a source name and an optional
+// splitSourceArg parses a source argument into a source name and an optional
 // collection override. It tries the whole arg as a known source first so a handle
-// that legitimately contains a dot (or an @-prefixed one) still resolves; only
-// when that fails does it split on the last dot into <source>.<collection>. An
-// empty arg yields an empty name, letting the caller fall back to --src or the
-// active source.
+// that legitimately contains a dot (or an @-prefixed one) still resolves; failing
+// that it walks the dots right to left and takes the longest prefix that names a
+// real source, so the most specific handle still wins while the remainder stays
+// whole as the address. The remainder may itself be dotted — Couchbase addresses
+// a scope.collection, and a MongoDB collection name may contain a dot — which a
+// last-dot split could not express. An empty arg yields an empty name, letting
+// the caller fall back to --src or the active source.
 func splitSourceArg(cf *iqconfig.Config, arg string) (name, collection string, hasCollection bool) {
 	if arg == "" {
 		return "", "", false
@@ -153,7 +156,20 @@ func splitSourceArg(cf *iqconfig.Config, arg string) (name, collection string, h
 	if _, _, ok := cf.Resolve(arg); ok {
 		return arg, "", false
 	}
-	if i := strings.LastIndex(arg, "."); i > 0 && i < len(arg)-1 {
+	// A trailing dot names no collection, so there is nothing to split. Checking
+	// it once up front keeps it out of the walk below, where it could only ever
+	// match the first step anyway.
+	if strings.HasSuffix(arg, ".") {
+		return arg, "", false
+	}
+	for i := strings.LastIndex(arg, "."); i > 0; i = strings.LastIndex(arg[:i], ".") {
+		if _, _, ok := cf.Resolve(arg[:i]); ok {
+			return arg[:i], arg[i+1:], true
+		}
+	}
+	// No prefix names a source. Fall back to the last-dot split so an unknown
+	// source still reports the name the user most likely meant.
+	if i := strings.LastIndex(arg, "."); i > 0 {
 		return arg[:i], arg[i+1:], true
 	}
 	return arg, "", false
