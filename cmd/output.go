@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -41,6 +42,18 @@ var namedFormats = map[string]outputFormat{
 	"gron":    formatGron,
 	"grona":   formatGronArray,
 	"parquet": formatParquet,
+}
+
+// formatNames returns the --format value names in sorted order, for shell
+// completion. It derives them from namedFormats so the map stays the one source
+// of truth and a new rendering completes without a second edit.
+func formatNames() []string {
+	names := make([]string, 0, len(namedFormats))
+	for n := range namedFormats {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // namedFormat resolves a --format value to its rendering, case-insensitively and

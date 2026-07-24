@@ -311,14 +311,21 @@ func driverByName(name string) (driver, bool) {
 	return driver{}, false
 }
 
-// driverNames renders the registry's driver names as a comma-separated list for
-// an error fragment, so the message stays in sync with the drivers that exist.
-func driverNames() string {
+// driverNameList returns the registry's canonical driver names in registry
+// order. It backs both the driverNames error fragment and `iq add -d`'s shell
+// completion, so neither can drift from the drivers that exist.
+func driverNameList() []string {
 	names := make([]string, len(drivers))
 	for i, d := range drivers {
 		names[i] = d.name
 	}
-	return strings.Join(names, ", ")
+	return names
+}
+
+// driverNames renders the registry's driver names as a comma-separated list for
+// an error fragment, so the message stays in sync with the drivers that exist.
+func driverNames() string {
+	return strings.Join(driverNameList(), ", ")
 }
 
 // expectedSchemes renders the registry's primary schemes as an error fragment

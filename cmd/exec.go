@@ -17,8 +17,12 @@ import (
 // run with runCommand (`iq exec '{"find":"books","filter":{...}}'`).
 func newExecCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
-		Use:   "exec <command> [args...]",
-		Short: "Forward a command to the database verbatim and print the reply",
+		Use: "exec <command> [args...]",
+		// The positionals are a backend verb and its operands, never a file, so
+		// suppress the shell's filename fallback. What each backend accepts is
+		// driver-defined and not enumerable offline, so nothing is offered.
+		ValidArgsFunction: cobra.NoFileCompletions,
+		Short:             "Forward a command to the database verbatim and print the reply",
 		Long: "Forward a command to the backend verbatim. For Redis, a command and operands:\n" +
 			"`iq exec SET greeting hello`, `iq exec HGETALL book:2`. For MongoDB, one JSON\n" +
 			"command document run with runCommand: `iq exec '{\"find\":\"books\",\"filter\":{}}'`.\n" +

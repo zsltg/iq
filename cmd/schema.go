@@ -90,6 +90,7 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled (0 = all)")
 	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit YAML instead of JSON (jsonschema only; odcs is always YAML)")
 	c.Flags().StringVar(&format, "format", schemaFormatJSONSchema, "contract format: jsonschema or odcs")
+	_ = c.RegisterFlagCompletionFunc("format", fixedValues(schemaFormatJSONSchema, schemaFormatODCS))
 	return c
 }
 

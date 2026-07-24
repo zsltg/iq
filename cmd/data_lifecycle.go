@@ -68,8 +68,11 @@ var deleteOp = lifecycleOp{
 func newDataClearCmd(cfg *config, df *dataFlags) *cobra.Command {
 	var force bool
 	c := &cobra.Command{
-		Use:   "clear <target>...",
-		Short: "Empty one or more containers (keep them)",
+		Use: "clear <target>...",
+		// Every positional is a target, so the helper completes each one; without
+		// it the shell offers filenames on a command that destroys data.
+		ValidArgsFunction: completeSourceHandles,
+		Short:             "Empty one or more containers (keep them)",
 		Long: "Empty a collection/keyspace, keeping the container. MongoDB: deleteMany({}).\n" +
 			"Redis: FLUSHDB. Distinct from `iq rm`, which only unregisters a saved source —\n" +
 			"clear destroys the stored data.",
@@ -91,8 +94,9 @@ func newDataClearCmd(cfg *config, df *dataFlags) *cobra.Command {
 func newDataDropCmd(cfg *config, df *dataFlags) *cobra.Command {
 	var force bool
 	c := &cobra.Command{
-		Use:   "drop <target>...",
-		Short: "Remove one or more containers",
+		Use:               "drop <target>...",
+		ValidArgsFunction: completeSourceHandles,
+		Short:             "Remove one or more containers",
 		Long: "Remove a container entirely. MongoDB: drop the collection and its indexes.\n" +
 			"Redis has no droppable container (a DB index only empties), so drop is rejected\n" +
 			"for a Redis target — use `iq data clear`. Distinct from `iq rm`, which only\n" +
@@ -115,8 +119,11 @@ func newDataDropCmd(cfg *config, df *dataFlags) *cobra.Command {
 // it does not prompt: the explicit key list the user typed is its own confirmation.
 func newDataDeleteCmd(cfg *config, df *dataFlags) *cobra.Command {
 	c := &cobra.Command{
-		Use:   "delete <target> <key>...",
-		Short: "Remove specific keys from a container (keep the container)",
+		Use: "delete <target> <key>...",
+		// Only the first positional is a source; the keys that follow are opaque
+		// values, so they get no candidates and no filename fallback.
+		ValidArgsFunction: firstArgOnly(completeSourceHandles),
+		Short:             "Remove specific keys from a container (keep the container)",
 		Long: "Remove one or more keys from a container, keeping the container. Each key uses\n" +
 			"the same spelling as a Get: a bare string (`book:1`), or a JSON array for a\n" +
 			"composite key (`[\"shop\",42]`). A key that is already absent is not an error —\n" +

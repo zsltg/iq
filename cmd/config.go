@@ -181,7 +181,7 @@ func newConfigSetCmd(cfg *config) *cobra.Command {
 	var del bool
 	c := &cobra.Command{
 		Use:               "set [--delete] <option> [<value>]",
-		ValidArgsFunction: firstArgOnly(completeConfigKeys),
+		ValidArgsFunction: completeConfigSet,
 		Short:             "Store an option's value, or remove it with -D (base, or per-source with --src)",
 		Example: "  $ iq config set format yaml           # store a base default\n" +
 			"  $ iq config set --src shop timeout 30s # a per-source default\n" +

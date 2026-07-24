@@ -170,6 +170,9 @@ func newDiffCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVar(&statsMode, "stats", false, "diff native introspection trees (same driver only)")
 	c.Flags().BoolVar(&schemaMode, "schema", false, "diff an inferred field/type shape (cross-driver allowed)")
 	c.Flags().StringArrayVar(&sections, "section", nil, "introspection section(s) for --stats (repeatable; default: the source's full set)")
+	// --section names the same introspection subcommands as `inspect --only`, so
+	// it shares that completion; the driver comes offline from the first target.
+	_ = c.RegisterFlagCompletionFunc("section", completeInspectOnly)
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled per side for --schema (0 = all)")
 	c.Flags().BoolVar(&setArrays, "set-arrays", false, "compare arrays order-insensitively as multisets (duplicates counted)")
 	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")

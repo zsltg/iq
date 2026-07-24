@@ -331,7 +331,7 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.Flags().BoolVar(&cfg.replace, "replace", false, "empty the destination before writing, with confirmation (--insert)")
 	root.Flags().BoolVar(&cfg.force, "force", false, "skip the confirmation prompt for --replace")
 	root.Flags().BoolVar(&cfg.dryRun, "dry-run", false, "report the effect of --insert without writing anything")
-	root.Flags().StringVar(&cfg.fromFormat, "from-format", "", "format of a piped-stdin source when it cannot be sniffed: jsonl, json, yaml, rdb, bson, mongoexport")
+	root.Flags().StringVar(&cfg.fromFormat, "from-format", "", "format of a piped-stdin source when it cannot be sniffed: jsonl, json, yaml, mongoexport, bson, rdb, dynamodb-json, cassandra-csv, or neo4j-json")
 	root.MarkFlagsMutuallyExclusive("insert", "typed")
 	root.AddCommand(
 		newExecCmd(cfg),
@@ -362,9 +362,19 @@ func newRootCmd() (*cobra.Command, *config) {
 	// A bare `iq <jq-filter>` positional is a jq program, never a file, so suppress
 	// the shell's default filename completion. --src completes saved source handles.
 	root.ValidArgsFunction = cobra.NoFileCompletions
-	// RegisterFlagCompletionFunc errors only on an unknown flag; "src" is registered
-	// above, so the error cannot fire and swallowing it keeps setup panic-free.
+	// RegisterFlagCompletionFunc errors only on an unknown flag; every name below is
+	// registered above, so the error cannot fire and swallowing it keeps setup
+	// panic-free. --src and --insert both name a saved source; the rest take a
+	// closed set of values, each mirroring the validator that rejects the others.
 	_ = root.RegisterFlagCompletionFunc("src", completeSourceHandles)
+	_ = root.RegisterFlagCompletionFunc("insert", completeSourceHandles)
+	_ = root.RegisterFlagCompletionFunc("format", fixedValues(formatNames()...))
+	_ = root.RegisterFlagCompletionFunc("from-format", fixedValues(dumpFormatNames...))
+	_ = root.RegisterFlagCompletionFunc("format.decimal", fixedValues(decimalModeNames...))
+	_ = root.RegisterFlagCompletionFunc("log.level", fixedValues(logLevelNames...))
+	_ = root.RegisterFlagCompletionFunc("log.format", fixedValues(textJSONNames...))
+	_ = root.RegisterFlagCompletionFunc("error.format", fixedValues(textJSONNames...))
+	_ = root.RegisterFlagCompletionFunc("debug.pprof", fixedValues(pprofModes...))
 	return root, cfg
 }
 

@@ -166,6 +166,10 @@ func newAddCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVarP(&passwordPrompt, "password", "p", false, "prompt for the url password (or read it from stdin)")
 	c.Flags().BoolVar(&skipVerify, "skip-verify", false, "skip the post-add reachability check")
 	c.Flags().StringVar(&store, "store", "inline", "where the url's password is kept: inline (in the config file) or keyring (the OS keyring)")
+	// Both flags take a closed set; --driver's comes from the registry, so a new
+	// backend completes without a second edit.
+	_ = c.RegisterFlagCompletionFunc("driver", fixedValues(driverNameList()...))
+	_ = c.RegisterFlagCompletionFunc("store", fixedValues(passwordStoreNames...))
 	return c
 }
 

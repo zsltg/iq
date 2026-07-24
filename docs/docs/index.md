@@ -124,8 +124,18 @@ For a [brew](https://brew.sh/), [scoop](https://scoop.sh/),
 
 Completions cover the commands, their sub-subcommands and flags, and — read live from your
 config — your saved source handles, groups, and config-option keys, so `iq --src <TAB>` offers
-the sources `iq ls` lists. The jq filter itself is a program, not a completable value, so `iq`
-offers no candidates there (and never falls back to filenames).
+the sources `iq ls` lists. A flag that takes a closed set completes its values (`--format`,
+`--from-format`, `--format.decimal`, `--log.level`, `--log.format`, `--error.format`,
+`--debug.pprof`, `iq add --driver/--store`, `iq schema --format`), and `iq config set <option>
+<TAB>` offers that option's own values. `iq inspect --only <TAB>` and `iq diff --section <TAB>`
+offer the introspection subcommands of the selected source's backend, worked out from its saved
+URL. The jq filter itself is a program, not a completable value, so `iq` offers no candidates
+there (and never falls back to filenames) — nor do `iq exec`'s backend verb and its operands.
+
+Every completion is offline: it reads your config file and nothing else, so a `<TAB>` never
+opens a connection, never reads the OS keyring, and cannot hang. That is why a collection
+suffix does not complete — `iq --src shop.<TAB>` offers nothing, since listing collections
+would mean connecting.
 
 ## Man page
 

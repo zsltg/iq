@@ -17,6 +17,41 @@ import (
 // runs. With no --only, it runs them all; --only narrows to the named ones.
 var mongoInspectCmds = []string{"dbStats", "serverStatus", "listCollections", "collStats", "buildInfo", "hostInfo"}
 
+// redisInfoCommonSections is the set of INFO sections a Redis server commonly
+// reports. Unlike the other backends' lists it is advisory, not exhaustive — the
+// authoritative set is whatever the live reply carries (redisInfoSections) — so
+// it backs only the long help and --only completion, never validation.
+var redisInfoCommonSections = []string{"server", "clients", "memory", "persistence", "stats", "replication", "cpu", "keyspace"}
+
+// inspectSubcommands returns the --only candidates for a driver, mirroring the
+// dispatch in newInspectCmd's RunE. It takes the canonical driver name so the
+// caller can resolve it offline from a source URL, and returns nil for a driver
+// with no introspection (file) or an unknown one.
+func inspectSubcommands(driver string) []string {
+	switch driver {
+	case "mongo":
+		return mongoInspectCmds
+	case "redis":
+		return redisInfoCommonSections
+	case "cassandra":
+		return cassandraInspectCmds
+	case "dynamodb":
+		return dynamoInspectCmds
+	case "hbase":
+		return hbaseInspectCmds
+	case "couchdb":
+		return couchInspectCmds
+	case "couchbase":
+		return couchbaseInspectCmds
+	case "neo4j":
+		return neo4jInspectCmds
+	case "elasticsearch", "opensearch":
+		return elasticInspectCmds
+	default:
+		return nil
+	}
+}
+
 // newInspectCmd builds `iq inspect [source]`: show a source's native
 // server/database introspection. The positional names the source (sq-style
 // `<source>.<collection>` addressing); with none it uses --src or the active
@@ -68,7 +103,7 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"  source url)\n\n" +
 		"Redis — runs INFO; --only narrows it to those sections\n" +
 		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
-		"  server  clients  memory  persistence  stats  replication  cpu  keyspace\n\n" +
+		"  " + strings.Join(redisInfoCommonSections, "  ") + "\n\n" +
 		"Use -j/--json or -y/--yaml for machine-readable output, or --list to print the\n" +
 		"subcommands/sections available for the source. The location header is redacted by\n" +
 		"default: --reveal prints an inline password verbatim, --expand resolves a keyring-backed one."
@@ -131,6 +166,10 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	c.MarkFlagsMutuallyExclusive("json", "yaml")
 	c.Flags().BoolVar(&list, "list", false, "list the subcommands/sections available for the source")
 	c.Flags().StringSliceVar(&only, "only", nil, "narrow to these sections (Redis) / subcommands (MongoDB)")
+	// --only's candidates depend on the source's backend, which the completion
+	// derives offline from the stored URL scheme; the error can only fire for an
+	// unknown flag name, so swallowing it keeps setup panic-free (as at root).
+	_ = c.RegisterFlagCompletionFunc("only", completeInspectOnly)
 	c.Flags().BoolVar(&cfg.reveal, "reveal", false, "print an inline-stored password verbatim in the location header instead of redacting it")
 	c.Flags().BoolVar(&cfg.expand, "expand", false, "resolve a keyring-backed password and inline it in the location header")
 	return c
