@@ -8,11 +8,11 @@ printed as pretty JSON by default (see [Output formats](output.md) to change it;
 against the active source — see [Sources](sources.md)):
 
 ```bash
-./iq '.greeting'                          # fetch key "greeting"
-./iq '.["book:1"]'                        # a key containing a colon needs bracket-quoting
-./iq '.["book:1"].title'                  # fetch book:1, extract one field
-./iq '[ .["book:1"].title, .["book:2"].title ]'   # fetch both keys, project a field from each
-./iq '.["book:2"].price | tonumber + 5'   # values are strings; convert before arithmetic
+iq '.greeting'                          # fetch key "greeting"
+iq '.["book:1"]'                        # a key containing a colon needs bracket-quoting
+iq '.["book:1"].title'                  # fetch book:1, extract one field
+iq '[ .["book:1"].title, .["book:2"].title ]'   # fetch both keys, project a field from each
+iq '.["book:2"].price | tonumber + 5'   # values are strings; convert before arithmetic
 ```
 
 Always wrap the filter in single quotes. jq syntax is full of characters the shell would

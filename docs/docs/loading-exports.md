@@ -1,14 +1,21 @@
-# Consuming iq exports
+---
+icon: lucide/file-up
+---
 
-*This page mirrors the project [README](https://github.com/zsltg/iq/blob/main/README.md), which
-remains the source of truth until the documentation is fully migrated.*
+# Loading exports
 
-`iq --jsonl` writes one JSON document per line — JSON Lines, the format every dataframe tool
-reads directly. iq's normalization is what makes that read clean: one canonical rendering per
-value, exact integers, decimal strings, RFC3339Nano UTC timestamps, base64 binary, and an
-explicit `null` for an absent field rather than a placeholder. This section is the consumer's
-side — loading an export into a data-science stack without losing that fidelity. The whys below
-were checked against pandas 3.0, Polars 1.42, and DuckDB 1.5.
+`iq --jsonl` writes one JSON document per line (JSON Lines), the format every
+dataframe tool reads directly.
+
+Normalization is what makes that read clean, one canonical rendering per
+value, exact integers, decimal strings,
+[RFC3339Nano](https://pkg.go.dev/time#pkg-constants) UTC timestamps[^1], base64
+binary, and an explicit `null` for an absent field rather than a placeholder.
+
+This section is the consumer's side, loading an export into a data-science
+stack without losing that fidelity. The whys below were checked against
+[pandas](https://pandas.pydata.org/) 3.0, [Polars](https://pola.rs/) 1.42, and
+[DuckDB](https://duckdb.org/) 1.5.
 
 ### pandas
 
@@ -17,11 +24,14 @@ import pandas as pd
 df = pd.read_json("dump.jsonl", lines=True, dtype_backend="pyarrow")
 ```
 
-Pass `dtype_backend="pyarrow"`, not the default. pandas' default NumPy dtypes have no nullable
-integer, so the first `null` in an integer column silently widens the whole column to `float64` —
-`7` becomes `7.0` and any exact integer past `2^53` is corrupted before you look. The Arrow-backed
-path keeps a typed, null-safe `int64[pyarrow]` (missing values read as `pd.NA`, not `NaN`), and
-decimal strings and RFC3339Nano stay strings you can lift to exact types:
+Pass `dtype_backend="pyarrow"`, not the default. pandas' default NumPy dtypes
+have no nullable integer, so the first `null` in an integer column silently
+widens the whole column to `float64`, `7` becomes `7.0` and any exact integer
+past `2^53` is corrupted before you look.
+
+The Arrow-backed path keeps a typed, null-safe `int64[pyarrow]` (missing values
+read as `pd.NA`, not `NaN`), and decimal strings and RFC3339Nano stay strings
+you can lift to exact types:
 
 ```python
 import pyarrow as pa
@@ -88,3 +98,5 @@ For an entity-resolution consumer the choice between *omitting* a field and writ
 `null` is load-bearing — they are different inputs to the match. Export explicit nulls (a jq object
 constructor like `{name}` already writes `null` for a missing field); see
 [Null vs missing](architecture.md#null-vs-missing) for how iq draws that line at each layer.
+
+[^1]: https://datatracker.ietf.org/doc/html/rfc3339

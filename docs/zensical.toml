@@ -48,17 +48,17 @@ Copyright &copy; 2026 Zsolt Gaspar
 #
 # Read more: https://zensical.org/docs/setup/navigation/
 nav = [
-  { "Getting started" = "index.md" },
+  { "Get started" = "index.md" },
   { "Sources" = "sources.md" },
   { "Usage" = "usage.md" },
   { "Drivers" = "drivers.md" },
   { "Cross-source queries" = "cross-source-queries.md" },
   { "Moving data" = "moving-data.md" },
-  { "Consuming iq exports" = "consuming-exports.md" },
+  { "Loading exports" = "loading-exports.md" },
   { "Architecture" = "architecture.md" },
   { "Common commands" = "common-commands.md" },
   { "Output" = "output.md" },
-  { "Query Plan" = "query-plan.md" },
+  { "Query plan" = "query-plan.md" },
   { "Diagnostics & Logging" = "diagnostics-and-logging.md" },
   { "Comparison" = "comparison.md" },
   { "See also" = "see-also.md" },

@@ -1,5 +1,5 @@
 ---
-icon: material/console
+icon: lucide/palette
 ---
 
 # Output
@@ -106,7 +106,7 @@ iq '.[]' -A
     a columnar projection that a heterogeneous `jq` value stream has no honest
     analogue for, so `iq` keeps the `sq` flag name but its own behaviour.
 
-### JSON Lines `-r`, `--raw`
+### Raw `-r`, `--raw`
 
 Unquoted scalars, one per line. Objects and arrays fall back to compact JSON.
 
@@ -231,6 +231,8 @@ file ([Apache Arrow](https://arrow.apache.org/) columnar format), the bridge
 to [pandas](https://pandas.pydata.org/), [Polars](https://pola.rs/),
 [DuckDB](https://duckdb.org/), and the wider data-science ecosystem.
 
+Because it is binary, `iq` refuses to write it to a terminal. Redirect it or use `-o out.parquet`, a pipe or file is required.
+
 ```
 iq '.[]' --format parquet -o out.parquet
 ```
@@ -244,8 +246,6 @@ table = pq.read_table(io.BytesIO(sys.stdin.buffer.read()))
 print(table)
 "
 ```
-
-Because it is binary, `iq` refuses to write it to a terminal. Redirect it or use `-o out.parquet`, a pipe or file is required.
 
 !!! note "Schema"
 

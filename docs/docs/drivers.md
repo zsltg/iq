@@ -142,10 +142,10 @@ refused with a clear message.
 the escape hatch for writes, administration, and seeding the jq read path does not cover:
 
 ```bash
-./iq exec SET greeting hello   # "OK"
-./iq exec GET greeting         # "hello"
-./iq exec INCR counter         # (integer) 1
-./iq exec GET missing          # (nil)
+iq exec SET greeting hello   # "OK"
+iq exec GET greeting         # "hello"
+iq exec INCR counter         # (integer) 1
+iq exec GET missing          # (nil)
 ```
 
 Its output mirrors redis-cli's cooked style: bulk strings quoted, integers as `(integer) N`, a

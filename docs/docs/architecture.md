@@ -284,7 +284,7 @@ you asked for, never by the size of the database. A filter that needs the whole 
   Ctrl-C or bound with `--timeout`). These run **without a flag**:
 
   ```bash
-  ./iq '.[] | objects | select((.year|tonumber) > 2015) | .title'   # streamed discovery
+  iq '.[] | objects | select((.year|tonumber) > 2015) | .title'   # streamed discovery
   ```
 
 - **Materialized** — a filter that collapses the collection into one value (`.`, `keys`, `length`,
@@ -292,9 +292,9 @@ you asked for, never by the size of the database. A filter that needs the whole 
   only with `--unbounded`:
 
   ```bash
-  ./iq 'keys'                 # error: requires materializing the whole dataset
-  ./iq --unbounded 'keys'     # list every key
-  ./iq --unbounded '.'        # the whole dataset as one JSON object
+  iq 'keys'                 # error: requires materializing the whole dataset
+  iq --unbounded 'keys'     # list every key
+  iq --unbounded '.'        # the whole dataset as one JSON object
   ```
 
 `--unbounded` means "permit loading the whole dataset into memory." Passing it on a streaming
