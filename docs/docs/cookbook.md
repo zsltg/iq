@@ -1,3 +1,7 @@
+---
+icon: material/book-open-blank-variant-outline
+---
+
 # Common commands
 
 *This page mirrors the project [README](https://github.com/zsltg/iq/blob/main/README.md), which

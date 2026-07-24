@@ -7,3 +7,8 @@
 [data-md-color-scheme="slate"] .md-logo img {
   filter: invert(1);
 }
+
+/* Prevent line wrapping for inline code blocks */
+.md-typeset :not(pre) > code {
+  white-space: nowrap;
+}

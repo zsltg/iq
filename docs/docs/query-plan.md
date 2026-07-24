@@ -1,5 +1,5 @@
 ---
-icon: material/database-search
+icon: material/clipboard-list-outline
 ---
 
 # Query Plan

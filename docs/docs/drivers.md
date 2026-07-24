@@ -1,3 +1,7 @@
+---
+icon: material/engine-outline
+---
+
 # Drivers
 
 *This page mirrors the project [README](https://github.com/zsltg/iq/blob/main/README.md), which
@@ -88,7 +92,7 @@ same contract:
   be removed, simply has no `drop`; the read-only file dump has no per-key `delete`).
 - **Values round-trip.** Every value normalizes to JSON under a frozen per-backend encoding
   contract, and a `--typed` dump restores through `--insert` losslessly (see
-  [Moving data](moving-data.md)).
+  [Write data](write-data.md)).
 - **Bounded and redacted.** Every backend call is bounded by `--timeout`, and a URL's password is
   redacted from every listing, log line, and error.
 - **A native escape hatch.** `iq exec` speaks the backend's own language — verbatim where one exists

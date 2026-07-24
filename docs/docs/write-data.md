@@ -1,3 +1,7 @@
+---
+icon: material/pencil-outline
+---
+
 # Moving data (`--insert`, `--typed`)
 
 *This page mirrors the project [README](https://github.com/zsltg/iq/blob/main/README.md), which

@@ -1,15 +1,33 @@
+---
+icon: material/database-outline
+---
+
 # Sources
 
-*This page mirrors the project [README](https://github.com/zsltg/iq/blob/main/README.md), which
-remains the source of truth until the documentation is fully migrated.*
+`iq` connects only through **saved sources**, a named connection you register
+once, then select by name or as the default.
 
-`iq` connects only through **saved sources**: a named connection you register once, then select
-by name or as the default. Register one with `iq add`, then make it active:
+## Add `add`
 
-```bash
-iq add -n cache redis://localhost:6379/0                    # register a Redis source as "cache"
-iq add -a 'mongodb://localhost:27017/books?collection=items' # a Mongo source; handle "books" from the db, made active
-iq add -n orders 'cassandra://localhost:9042/shop?table=orders' # a Cassandra source
+| short | long | default | description |
+| --- | --- | --- | --- |
+| `-a` | `--active` | off | make the new source the active source |
+| `-d <string>` | `--driver <string>` | auto-detect | expected backend driver, must match the URL scheme |
+| `-n <string>` | `--handle <string>` | database name | handle for the source, derived from the URL when omitted |
+| `-p` | `--password` | off | prompt for the URL passwrod or read it from stdin |
+| | `--skip-verify` | off | skip the post-add reachability check |
+| | `--store <string>` | `inline` | where the URL's password is kept, `inline` (in the config file) or `keyring` (OS keyring) |
+
+```sh { title='Add a MongoDB source, does not become active, defaults to handle "books"' }
+iq add mongodb://localhost:27017/books
+```
+```sh { title='Add a Redis source with the handle "cache"' }
+iq add -n cache redis://localhost:6379/0
+```
+```sh { title='Add a Cassandra source scoped to the "orders" table with the handle "orders" and make it the active source' }
+iq add -a -n orders cassandra://localhost:9042/shop?table=orders
+```
+```sh
 iq add -n books 'hbase://localhost:2181/?table=iq_books'     # an HBase source (host = ZooKeeper quorum)
 iq add -n docs 'couchdb://admin:pass@localhost:5984/?database=iq' # a CouchDB source (host = server)
 iq add -n cb 'couchbase://Administrator:pass@localhost/?bucket=iq' # a Couchbase source (host = cluster)
@@ -19,6 +37,19 @@ iq add -n logs 'opensearch://localhost:9201/?index=books'   # an OpenSearch sour
 iq src cache                                                 # make "cache" the active source
 iq ls                                                        # list sources: handle driver url (active marked *); -v adds format + options
 ```
+
+## Group `group`
+
+## List `ls`
+
+## Move `mv`
+
+## Ping `ping`
+
+## Remove `rm`
+
+## Show/Set `src`
+
 
 Once a source is active, every query runs against it. Select a different source for a single
 command with `--src`/`-s`, without changing the active one; address a MongoDB collection or a
@@ -162,7 +193,7 @@ when connecting.
 > `iq add` shadows jq's built-in `add` filter at the top level. To sum with jq, write it inside a
 > larger expression, e.g. `iq '[ .a, .b ] | add'`.
 
-### Stored options (`iq config`)
+## Stored options (`iq config`)
 
 The same file also holds **stored option defaults**: persist a flag's value once so you need not
 retype it. Set an option globally, or scope it to one source with `--src`. At query time the

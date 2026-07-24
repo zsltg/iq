@@ -4,45 +4,34 @@ icon: lucide/package-open
 
 # Get started
 
-`iq` is a Go command-line tool that runs [`jq`](https://jqlang.github.io/jq/)
-filters against NoSQL databases (see [Drivers](drivers.md) for supported
-backends). The backend is chosen by the URL scheme, and the query core is
-driver-agnostic so further backends slot in behind the same port.
-
-The filter is both the transform and the key selector: its top-level paths name the keys to
-fetch, so the store only ever reads a bounded set of keys — never a full keyspace scan, unless
-you ask for one explicitly. Fetched values are normalized to JSON and the filter then runs
-entirely client-side, so its semantics are identical for every backend.
-
-`iq` is inspired by [`sq`](https://github.com/neilotoole/sq), much of its command surface — the
-`<source>.<collection>` addressing along with many subcommands and flags — deliberately follows
-sq's so the tool feels familiar.
-
 !!! warning "Not production-ready"
 
     `iq` has potential rough edges — don't rely on it for critical work yet.
 
-## Query routes
 
-The shape of the filter decides how much `iq` reads. Every filter takes one of three routes —
-`--explain` shows which:
+`iq` is a Go[^1] command-line tool that runs
+`jq`[^2] filters against
+NoSQL[^3] databases. The backend is chosen by the URI
+scheme[^4], and the query core is driver-agnostic, so further backends slot in
+behind the same port (see
+[Drivers](drivers.md#drivers){ data-preview }).
 
-```mermaid
-graph LR
-  Q1[".[#quot;1#quot;]"] -->|names a key| T1["bounded read"] --> R1["{ #quot;title#quot;: #quot;The Go…#quot; }<br/>one value"]
-  Q2[".[]"] -->|iterates values| T2["streaming scan"] --> R2["{ … } then { … } then …<br/>each value, streamed"]
-  Q3["."] -->|whole root| T3["materialized scan<br/>(needs --unbounded)"] --> R3["{ #quot;1#quot;: {…}, #quot;2#quot;: {…} }<br/>one object, every key"]
-  classDef bounded fill:#e6f4ea,stroke:#137333,color:#0b3d1f;
-  classDef streaming fill:#fef7e0,stroke:#8a5a00,color:#5c3d00;
-  classDef materialized fill:#fce8e6,stroke:#c5221f,color:#5c0f0a;
-  class T1 bounded;
-  class T2 streaming;
-  class T3 materialized;
-```
+Normally, `jq` would read the whole top level JSON value into memory before
+parsing. In case of `iq`, the filter is both the transform and the key
+selector, the selector walks the parsed `jq` AST and based on that execute
+a **bounded read**, **streaming scan** (with **pushdown**) or **materialized
+scan** to optimize the query (see [Architecture](architecture.md)).
+
+Fetched values are normalized to JSON and the filter then runs entirely
+client-side, so its semantics are identical for every backend.
+
+`iq` is inspired by [`sq`](https://sq.io), much of its command surface and the
+`<source>.<collection>` addressing along with many subcommands and flags
+deliberately similar.
 
 ## Installation
 
-`iq` ships as a single static binary (no runtime dependencies, no CGO).
+`iq` ships as a single static binary (no runtime dependencies, no CGO[^5]).
 
 === ":fontawesome-brands-linux: Linux"
 
@@ -153,6 +142,7 @@ iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
 
 ## Build
 
+No issues found
 ```bash
 go build -o iq .          # plain build
 make build                # build with version metadata embedded
@@ -178,3 +168,12 @@ git push --follow-tags            # publish the tag (release.sh never pushes for
 `make release` must run on a clean `main`. `svu` picks the bump from the commit types since the
 last tag (`feat` → minor, `fix` → patch, a `!`/`BREAKING CHANGE` → major); with no tags yet the
 first release comes out as `v0.1.0`.
+
+*[URI]: Uniform Resource Identifier
+*[JSON]: JavaScript Object Notation
+*[AST]: Abstract Syntax Tree
+[^1]: Go is a high-level, general-purpose programming language that is statically typed and compiled. https://go.dev
+[^2]: `jq` is a widely-used command-line utility and very high-level, functional, domain-specific programming language designed for processing JSON data. https://jqlang.org
+[^3]: NoSQL refers to a type of database design that stores and retrieves data differently from the traditional table-based structure of relational databases. https://en.wikipedia.org/wiki/NoSQL
+[^4]: RFC3986 proposes a generic URI syntax and a process for resolving URI references that might be in relative form, along with guidelines and security considerations for the use of URIs on the Internet. https://datatracker.ietf.org/doc/html/rfc3986
+[^5]: Cgo enables the creation of Go packages that call C code. https://pkg.go.dev/cmd/cgo
