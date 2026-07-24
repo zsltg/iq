@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/docs/assets/iq-logo-white.svg">
-    <img src="docs/docs/assets/iq-logo.svg" alt="iq" width="120">
+    <img src="docs/docs/assets/iq-logo.svg" alt="iq" width="60">
   </picture>
 </p>
 

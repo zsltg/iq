@@ -72,7 +72,7 @@ nav = [
 #
 # Read more: https://zensical.org/docs/customization/#additional-css
 #
-#extra_css = ["stylesheets/extra.css"]
+extra_css = ["stylesheets/extra.css"]
 
 # With the `extra_javascript` option you can add your own JavaScript to your
 # project to customize the behavior according to your needs.
@@ -269,10 +269,9 @@ features = [
 # option in the "theme" subsection. The logo must be a relative path to a file
 # in your "docs_dir", e.g., to use `docs/assets/logo.png` you would set:
 # ----------------------------------------------------------------------------
-# The white variant is deliberate: the header keeps the theme's primary colour in
-# both the light and dark schemes, and its text is white, so the black artwork
-# would be near-invisible there.
-logo = "assets/iq-logo-white.svg"
+# The black mark suits the light header; stylesheets/extra.css inverts it for the
+# slate scheme, so one file serves both themes and follows the theme toggle.
+logo = "assets/iq-logo.svg"
 
 # ----------------------------------------------------------------------------
 # If you don't have a dedicated project logo, you can use a built-in icon from
