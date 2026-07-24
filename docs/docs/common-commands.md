@@ -37,7 +37,7 @@ docker compose down       # stop the local services
 gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
 govulncheck ./...         # dependency vulnerability scan
-bash scripts/mutation-gate.sh   # mutation gate, scoped to the branch diff vs origin/main and enumerating only the changed packages (fails on any escaped mutant not in the baseline, and on any errored/timed-out one; IQ_MUTATION_TIMEOUT_COEFFICIENT, default 5); set IQ_*_URL to a pre-started stack
+bash scripts/mutation-gate.sh   # mutation gate, scoped to the branch diff vs origin/main and enumerating only the packages with a changed non-test file (fails on any escaped mutant not in the baseline, and on any errored/timed-out one; IQ_MUTATION_TIMEOUT_COEFFICIENT, default 5; IQ_MUTATION_WORKERS, default 1); set IQ_*_URL to a pre-started stack
 make check                # fast offline gate: format, vet, build, lint, dead code, unit tests + coverage report
 make cover                # full suite + coverage floor (IQ_COVER_MIN, default 80); IQ_COVER_SHORT=1 for a fast report-only run
 make security             # supply-chain + secrets sweep (govulncheck, osv-scanner, gitleaks) + SBOMs to dist/
@@ -98,9 +98,19 @@ each errored mutant's file, line and mutator. An errored mutant is unverified, n
 is what allows a tight `--timeout-coefficient` (5, a multiplier of the instrumented baseline): raise
 it with `IQ_MUTATION_TIMEOUT_COEFFICIENT` (a positive integer) when a package's suite is legitimately
 slow, rather than letting a slow mutant vanish into an ungated bucket. The check is skipped in the
-non-gating modes (`IQ_MUTATION_UPDATE_BASELINE=1`, `IQ_MUTATION_MUTANT=<id>`). A genuine equivalent mutant that cannot be killed is accepted into
+non-gating modes (`IQ_MUTATION_UPDATE_BASELINE=1`, `IQ_MUTATION_MUTANT=<id>`). Workers stay serial by
+default; `IQ_MUTATION_WORKERS` (a positive integer) raises them, which is worth doing only when the
+run is already memory-bounded — inside a `systemd-run --user --scope -p MemoryHigh=10G` unit, 2–3 is
+the useful range. A genuine equivalent mutant that cannot be killed is accepted into
 `mutago-baseline.json` (committed) with `IQ_MUTATION_UPDATE_BASELINE=1`, after which only *new*
-escapes fail — the baseline uses line-number-independent IDs so it survives refactors. Override the
+escapes fail — the baseline uses line-number-independent IDs so it survives refactors. mutago
+*replaces* the baseline with the current run's survivors, so under the default diff scoping it would
+silently drop every accepted entry outside the diff; the wrapper snapshots the committed file and
+merges it back, making an update a pure append and printing the ids it accepted. Strengthen the tests
+first — the update run reruns the same mutants, so it doubles as the verification — then check the
+printed ids against the justifications in `mutago-baseline.notes.md` before committing. An id you did
+not expect is a prompt to re-verify it with `IQ_MUTATION_MUTANT=<id>` (order-dependent escapes are
+flaky-killable), not to commit it. Override the
 base ref with `IQ_MUTATION_BASE` (set it empty for a full-module scan), or pass a package path (e.g.
 `bash scripts/mutation-gate.sh ./cmd`) for a full scan of that package (a path drops the diff-scoping
 flags). Every run also writes `mutago-agentic.json` (gitignored) with LLM-consumable data for each

@@ -46,8 +46,14 @@
 # instead of enumerating ./...: changed lines are a subset of changed files, which are a
 # subset of changed packages, so the mutant set is identical while the enumeration pass —
 # the memory peak of a run, since mutago loads and instruments every target package —
-# shrinks to what the branch touched. An empty derivation falls back to ./...; a run
-# never starts with no targets. Pass a package path (e.g. ./cmd) for a full mutation
+# shrinks to what the branch touched. Only packages with a changed non-test file count:
+# mutago mutates source rather than tests, and a mutant is killable only by its own
+# package's tests, so a package whose diff is all _test.go contributes nothing and is
+# dropped — gate-neutral, and it keeps ./e2e (whose TestMain rebuilds the binary) out of
+# a run that would otherwise pay that per mutant. A test-only diff keeps those packages
+# as targets rather than widening to ./..., since it yields no mutants either way. An
+# empty derivation falls back to ./...; a run never starts with no targets. Pass a
+# package path (e.g. ./cmd) for a full mutation
 # scan of that package instead: a path drops the diff-scoping flags and mutates the
 # whole package. Set IQ_MUTATION_BASE= (empty) to mutate the whole module.
 #
@@ -68,7 +74,19 @@
 #
 # IQ_MUTATION_UPDATE_BASELINE=1 records the current survivors into mutago-baseline.json
 # and exits 0 (accept genuine equivalent mutants deliberately, then commit the file
-# and add a justification line to mutago-baseline.notes.md).
+# and add a justification line to mutago-baseline.notes.md). mutago itself *replaces*
+# the baseline with the run's survivors, which under diff scoping would silently drop
+# every accepted entry outside the diff; this wrapper snapshots the committed file and
+# merges it back, so an update is always an append and the diff shows exactly what was
+# accepted. The run doubles as the verification: it reruns the same mutants, so the ids
+# it prints are the survivors that remain after your test changes. Review that list
+# against mutago-baseline.notes.md before committing — an id with no justification line
+# is one to re-verify with IQ_MUTATION_MUTANT=<id> (order-dependent escapes are
+# flaky-killable) rather than accept.
+#
+# IQ_MUTATION_WORKERS overrides the serial default (1), forwarded to --workers. Serial is
+# right for a container-backed suite rerun per mutant; 2-3 is the useful range when the
+# run is already memory-bounded, e.g. inside a systemd-run MemoryHigh=10G unit.
 #
 # The suite provisions its own containers, but mutago reruns it per mutant, so start
 # a shared stack and point the tests at it to avoid per-mutant churn:
@@ -93,6 +111,17 @@ if [[ ! "$timeout_coefficient" =~ ^[1-9][0-9]*$ ]]; then
   exit 1
 fi
 
+# Worker count. Serial (1) is the default because a container-backed suite rerun per mutant
+# contends for the same backends, and because the run is memory-dominant. Raise it only when
+# the run is memory-bounded by something else — inside the systemd-run MemoryHigh=10G unit,
+# 2-3 is the useful range. Validated like the coefficient: a bad value is a stop, never a
+# silent fallback, so a typo cannot quietly halve the gate's rigour by starving it.
+workers="${IQ_MUTATION_WORKERS-1}"
+if [[ ! "$workers" =~ ^[1-9][0-9]*$ ]]; then
+  echo "mutation gate: IQ_MUTATION_WORKERS must be a positive integer, got '$workers'" >&2
+  exit 1
+fi
+
 # Provision the pinned mutago into a throwaway GOBIN and run that binary directly, so the
 # gate needs no mutago on PATH and preserves exact exit codes (see header). Cleaned on any
 # exit. `go install pkg@version` is module-independent: it does not read or write go.mod.
@@ -100,7 +129,13 @@ mutago_bindir=$(mktemp -d) || {
   echo "mutation gate: could not create temp dir" >&2
   exit 1
 }
-trap 'rm -rf "$mutago_bindir"' EXIT
+baseline_snapshot=""
+cleanup() {
+  rm -rf "$mutago_bindir"
+  [[ -n "$baseline_snapshot" ]] && rm -f "$baseline_snapshot"
+  return 0
+}
+trap cleanup EXIT
 if ! GOBIN="$mutago_bindir" go install "${mutago_pkg}@${MUTAGO_VERSION}"; then
   echo "mutation gate: could not install mutago ${MUTAGO_VERSION}" >&2
   exit 1
@@ -140,10 +175,29 @@ targets=("$@")
 if [[ "$has_path" -eq 0 ]]; then
   targets=(./...)
   if [[ -n "$diff_ref" ]]; then
-    mapfile -t changed_dirs < <(
-      git diff --name-only --diff-filter=d "$diff_ref" -- '*.go' |
-        while IFS= read -r file; do dirname "$file"; done | sort -u
-    )
+    mapfile -t changed_go < <(git diff --name-only --diff-filter=d "$diff_ref" -- '*.go')
+    changed_dirs=()
+    if [[ ${#changed_go[@]} -gt 0 ]]; then
+      # Only packages with a changed *non-test* file can contribute: mutago mutates
+      # source, not tests, and a mutant is killable only by its own package's tests, so
+      # a package whose diff is all _test.go adds no mutants and kills nothing. Dropping
+      # it is gate-neutral and can be a large saving — ./e2e in the target list makes
+      # every mutant pay its TestMain binary rebuild.
+      mapfile -t changed_dirs < <(
+        printf '%s\n' "${changed_go[@]}" | grep -v '_test\.go$' |
+          while IFS= read -r file; do [[ -n "$file" ]] && dirname "$file"; done | sort -u
+      )
+      if [[ ${#changed_dirs[@]} -eq 0 ]]; then
+        # A test-only diff yields no mutants whatever the targets are, so keep the
+        # enumeration narrow rather than letting the empty derivation fall through to
+        # the whole module below.
+        mapfile -t changed_dirs < <(
+          printf '%s\n' "${changed_go[@]}" |
+            while IFS= read -r file; do [[ -n "$file" ]] && dirname "$file"; done | sort -u
+        )
+        echo "mutation gate: only test files changed; enumerating their packages (no mutants either way)"
+      fi
+    fi
     changed_pkgs=()
     for dir in "${changed_dirs[@]}"; do
       [[ -n "$dir" ]] || continue
@@ -155,6 +209,13 @@ if [[ "$has_path" -eq 0 ]]; then
     if [[ ${#changed_pkgs[@]} -gt 0 ]]; then
       targets=("${changed_pkgs[@]}")
       echo "mutation gate: enumerating ${#changed_pkgs[@]} changed package(s): ${changed_pkgs[*]}"
+    elif [[ ${#changed_go[@]} -eq 0 ]]; then
+      # The branch changes no Go file at all (docs, scripts, config). --git-diff-lines
+      # restricts mutation to changed lines, so there is provably nothing to mutate and
+      # the only possible verdict is a pass — but the ./... fallback below would spend a
+      # whole-module enumeration proving it. Report and pass instead.
+      echo "mutation gate: no Go files changed against ${base}; nothing to mutate"
+      exit 0
     else
       echo "mutation gate: no changed Go packages resolved; enumerating the whole module"
     fi
@@ -176,10 +237,22 @@ if [[ "${IQ_MUTATION_DRYRUN-}" == "1" ]]; then
   exit $?
 fi
 
+baseline_file=mutago-baseline.json
 mode=()
 if [[ "${IQ_MUTATION_UPDATE_BASELINE-}" == "1" ]]; then
   echo "mutation gate: updating baseline (accepting current survivors, no gate)"
   mode=(--update-baseline)
+  # mutago *replaces* the baseline with the current run's survivors. Under the default
+  # diff scoping that is destructive: every previously accepted entry outside the diff
+  # disappears, silently un-accepting equivalents this branch never looked at. Snapshot
+  # the committed file so the merge below can put them back.
+  if [[ -f "$baseline_file" ]]; then
+    baseline_snapshot=$(mktemp) || {
+      echo "mutation gate: could not create temp file" >&2
+      exit 1
+    }
+    cp "$baseline_file" "$baseline_snapshot"
+  fi
 fi
 
 # Single-mutant diagnostic: mutago runs only this id and suppresses the gate verdict.
@@ -196,10 +269,59 @@ fi
   --baseline mutago-baseline.json \
   --logger-agentic-json \
   --ignore-msi-with-no-mutations \
-  --workers 1 \
+  --workers "$workers" \
   --timeout-coefficient "$timeout_coefficient" \
   "${mode[@]}" "${mutant[@]}" "${scope[@]}" "${targets[@]}"
 status=$?
+
+# Restore what a diff-scoped --update-baseline just dropped: merge the snapshot back,
+# keeping its entries in their original order so the commit diff is a pure append, and
+# name the ids this run actually accepted. Those ids are what the reviewer checks against
+# mutago-baseline.notes.md — an id here that has no justification line is the signal to
+# re-verify it (IQ_MUTATION_MUTANT=<id>) rather than commit it.
+if [[ ${#mode[@]} -gt 0 && -n "$baseline_snapshot" && -f "$baseline_file" ]]; then
+  if ! python3 - "$baseline_snapshot" "$baseline_file" <<'PY'; then
+import json
+import sys
+
+snapshot_path, baseline_path = sys.argv[1], sys.argv[2]
+try:
+    with open(snapshot_path, encoding="utf-8") as handle:
+        kept = json.load(handle)
+    with open(baseline_path, encoding="utf-8") as handle:
+        written = json.load(handle)
+except (OSError, ValueError) as err:
+    print("mutation gate: could not merge baseline: {}".format(err), file=sys.stderr)
+    sys.exit(1)
+
+entries = list(kept.get("mutants") or [])
+seen = {entry.get("id") for entry in entries}
+added = [entry for entry in (written.get("mutants") or []) if entry.get("id") not in seen]
+entries.extend(added)
+kept["mutants"] = entries
+
+with open(baseline_path, "w", encoding="utf-8") as handle:
+    handle.write(json.dumps(kept, indent=1) + "\n")
+
+if added:
+    print("mutation gate: accepted {} new baseline entr{}:".format(
+        len(added), "y" if len(added) == 1 else "ies"))
+    for entry in added:
+        print("  {} {}:{} {}".format(
+            entry.get("id", "?"),
+            entry.get("file", "?"),
+            entry.get("line", "?"),
+            entry.get("mutator", "?"),
+        ))
+else:
+    print("mutation gate: baseline unchanged (no new survivors accepted)")
+PY
+    echo "mutation gate: baseline merge failed; restoring the committed file" >&2
+    cp "$baseline_snapshot" "$baseline_file"
+    exit 1
+  fi
+  echo "mutation gate: justify each new entry in mutago-baseline.notes.md before committing"
+fi
 
 # Errored mutants are not gated by mutago: its MSI arithmetic counts an error as a kill, so
 # a mutant that hung or crashed the suite would pass silently — exactly the hole a tight
