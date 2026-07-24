@@ -167,6 +167,10 @@ func TestCompleteCSV(t *testing.T) {
 		{"bare prefix filters", "b", []string{"b"}, both},
 		{"trailing comma re-attaches the head", "a,", []string{"a,b", "a,c"}, both},
 		{"mid-word after a comma", "a,c", []string{"a,c"}, both},
+		// A leading comma is the only input where the split boundary is
+		// observable: the head is "," and every candidate keeps it.
+		{"leading comma keeps an empty first segment", ",", []string{",a", ",b", ",c"}, both},
+		{"leading comma with a prefix", ",b", []string{",b"}, both},
 		{"several chosen", "a,b,", []string{"a,b,c"}, both},
 		{"all chosen leaves nothing", "a,b,c,", nil, cobra.ShellCompDirectiveNoFileComp},
 		{"no match leaves nothing", "z", nil, cobra.ShellCompDirectiveNoFileComp},
@@ -242,6 +246,14 @@ func TestSourceDriverName(t *testing.T) {
 
 	t.Run("an unknown source yields no driver", func(t *testing.T) {
 		require.Empty(t, sourceDriverName(root, []string{"nosuch"}))
+	})
+
+	// Cobra always hands a completion its command, but the helper must not
+	// dereference one it was not given: without the nil guard the --src lookup
+	// panics here instead of falling through to the active source.
+	t.Run("a nil command falls through to the active source", func(t *testing.T) {
+		require.Equal(t, "mongo", sourceDriverName(nil, nil))
+		require.Equal(t, "redis", sourceDriverName(nil, []string{"cache"}))
 	})
 }
 
@@ -323,6 +335,17 @@ func TestCompleteConfigSet(t *testing.T) {
 		require.Nil(t, optionValues(nil, "verbose"))
 		// An enum option needs no command to resolve.
 		require.Equal(t, logLevelNames, optionValues(nil, "log.level"))
+	})
+
+	// The option name comes from whatever the user has typed, which completion
+	// never validates: `iq config set bogus <TAB>` reaches optionValues with a
+	// name no flag carries, so the lookup returns nil and must not be
+	// dereferenced for its type.
+	t.Run("an unregistered option name completes nothing", func(t *testing.T) {
+		require.Nil(t, optionValues(c, "not-a-flag"))
+		got, dir := completeConfigSet(c, []string{"not-a-flag"}, "")
+		require.Empty(t, got)
+		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 	})
 }
 

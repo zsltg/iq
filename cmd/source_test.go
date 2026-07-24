@@ -167,6 +167,11 @@ func TestAddDriverMismatch(t *testing.T) {
 
 	_, err = runCmd(t, newAddCmd(&config{}), "-d", "surrealdb", "redis://h:6379/0", "--skip-verify")
 	require.ErrorContains(t, err, "unknown driver")
+	// The message must name the drivers that do exist, so the suggestion stays
+	// useful and in sync with the registry.
+	for _, name := range driverNameList() {
+		require.ErrorContainsf(t, err, name, "unknown-driver error omits %q", name)
+	}
 }
 
 func TestAddPasswordPromptFromStdin(t *testing.T) {

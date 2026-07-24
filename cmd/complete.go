@@ -113,10 +113,11 @@ func fixedValues(values ...string) cobra.CompletionFunc {
 // put so another comma and segment can follow.
 func completeCSV(fn cobra.CompletionFunc) cobra.CompletionFunc {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		head, tail := "", toComplete
-		if i := strings.LastIndex(toComplete, ","); i >= 0 {
-			head, tail = toComplete[:i+1], toComplete[i+1:]
-		}
+		// LastIndex returns -1 when no comma has been typed yet, which splits into
+		// an empty head and the whole word — the same as not splitting at all — so
+		// the split needs no guard.
+		i := strings.LastIndex(toComplete, ",")
+		head, tail := toComplete[:i+1], toComplete[i+1:]
 		chosen := make(map[string]bool)
 		for _, s := range strings.Split(head, ",") {
 			if s != "" {
