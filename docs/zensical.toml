@@ -24,11 +24,21 @@ site_description = "Query NoSQL databases with jq from the command line"
 # Read more: https://zensical.org/docs/setup/basics/#site_author
 site_author = "Zsolt Gaspar"
 
-# The site_url is the canonical URL for your site. When building online
-# documentation you should set this.
+# The site_url is the canonical URL for your site. It is the base every absolute
+# link is resolved against: the <link rel="canonical"> in each page head and every
+# <loc> in the generated sitemap.xml, which stays empty while this is unset.
+#
+# Keep the path in sync with wherever the site is actually served. Instant
+# previews ({ data-preview } links) only render when a link's URL is found in
+# sitemap.xml; the theme rewrites each <loc> to the current protocol, hostname
+# and port but keeps its path verbatim. So the host is portable — this URL works
+# unchanged from localhost — while the /iq/ prefix is not: served anywhere else
+# (a root deployment, or `python -m http.server` over docs/site/) previews
+# silently stop rendering. `zensical serve` mounts the site under this path, so
+# `make docs-serve` reproduces the deployed layout at /iq/, not /.
+#
 # Read more: https://zensical.org/docs/setup/basics/#site_url
-# TODO: https://<github-user>.github.io/iq/ once the GitHub repo exists (project-pages base path /iq/).
-#site_url = "https://www.example.com/"
+site_url = "https://zsltg.github.io/iq/"
 repo_name = "zsltg/iq"
 repo_url = "https://github.com/zsltg/iq"
 
