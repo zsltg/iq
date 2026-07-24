@@ -1,13 +1,14 @@
-<svg width="680" height="360" viewBox="0 0 680 360" xmlns="http://www.w3.org/2000/svg" role="img">
-  <title>IQ logo — magnifying glass with letter I inside the lens</title>
-  <desc>Black and white line drawing: magnifying glass with handle fused seamlessly into the ring, pointing bottom right, serif I centered in the lens.</desc>
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>IQ logo — magnifying glass with letter I</title>
+  <desc>IQ mark: magnifying glass, handle fused seamlessly into the ring pointing bottom right, serif I centered in the lens with flush stem.</desc>
   <g stroke="#000" fill="none">
-    <circle cx="320" cy="160" r="85" stroke-width="6"/>
-    <!-- Handle embedded in ring stroke band (radial 82-88): start at radial ~84 -->
-    <path d="M379.4 219.4 L436 276" stroke-width="11" stroke-linecap="butt"/>
-    <circle cx="436" cy="276" r="5.5" fill="#000" stroke="none"/>
-    <path d="M296 120 h48" stroke-width="6" stroke-linecap="round"/>
-    <path d="M296 200 h48" stroke-width="6" stroke-linecap="round"/>
-    <path d="M320 120 v80" stroke-width="6" stroke-linecap="butt"/>
+    <circle cx="27" cy="27" r="20" stroke-width="6"/>
+    <!-- Handle: starts inside the ring stroke band so it fuses with the border -->
+    <path d="M41 41 L55 55" stroke-width="9" stroke-linecap="butt"/>
+    <circle cx="55" cy="55" r="4.5" fill="#000" stroke="none"/>
+    <!-- I: stem has butt ends hidden inside the serif strokes -->
+    <path d="M21 17.5 h12" stroke-width="5" stroke-linecap="round"/>
+    <path d="M21 36.5 h12" stroke-width="5" stroke-linecap="round"/>
+    <path d="M27 17.5 v19" stroke-width="6" stroke-linecap="butt"/>
   </g>
 </svg>
