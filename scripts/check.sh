@@ -35,7 +35,28 @@ step "go build"
 go build ./... || note_fail "build"
 
 step "golangci-lint"
-golangci-lint run || note_fail "lint"
+# golangci-lint caches analysis results, and entries survive the worktree they were
+# produced in. Remove a sibling worktree and its cached findings resurface here as
+# issues in ../<worktree>/... files that this tree does not contain — a failure the
+# diff cannot explain and no edit can fix. Clearing the cache cures it, but doing so
+# unconditionally costs the whole cache: lint is ~3s warm against ~65s cold, which
+# would undo this gate's reason to exist. So retry only on that exact shape — a
+# reported path outside the repo, which a run rooted at the repo root can never
+# legitimately produce.
+lint_out="$(golangci-lint run 2>&1)"
+lint_status=$?
+if [[ "$lint_status" -ne 0 ]] && grep -qE '^\.\./' <<<"$lint_out"; then
+  echo "lint reported issues outside this tree (stale cache from a removed worktree); clearing it and retrying" >&2
+  golangci-lint cache clean
+  lint_out="$(golangci-lint run 2>&1)"
+  lint_status=$?
+fi
+if [[ -n "$lint_out" ]]; then
+  printf '%s\n' "$lint_out"
+fi
+if [[ "$lint_status" -ne 0 ]]; then
+  note_fail "lint"
+fi
 
 step "deadcode"
 dead="$("${deadcode[@]}" -test ./... 2>&1)"

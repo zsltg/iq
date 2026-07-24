@@ -124,7 +124,10 @@ memory-heavy) before counting. Scope dry runs to one package and never run one a
 
 Quality gates are local and layered — the project uses no CI service. `make check` is the fast,
 offline pre-commit gate (format, `go vet`, `go build`, `golangci-lint`, dead code via
-`deadcode`, and `go test -short` with a coverage report). `make cover` runs the full
+`deadcode`, and `go test -short` with a coverage report). If lint reports issues in
+`../<worktree>/...` paths — golangci-lint's cache outliving a worktree you have since removed —
+`make check` clears the cache and retries once, so that failure heals itself instead of blocking
+on findings from files this tree does not contain. `make cover` runs the full
 container-backed suite and enforces a coverage floor (`IQ_COVER_MIN`, default 80;
 `IQ_COVER_SHORT=1` for a fast report-only run). `make security` sweeps dependencies and secrets
 (`govulncheck`, `osv-scanner`, `gitleaks`) and writes SBOMs to `dist/`; gosec runs as the Go SAST
