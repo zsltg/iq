@@ -1,0 +1,13 @@
+<svg width="680" height="360" viewBox="0 0 680 360" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>IQ logo — magnifying glass with letter I inside the lens</title>
+  <desc>Black and white line drawing: magnifying glass with handle fused seamlessly into the ring, pointing bottom right, serif I centered in the lens.</desc>
+  <g stroke="#000" fill="none">
+    <circle cx="320" cy="160" r="85" stroke-width="6"/>
+    <!-- Handle embedded in ring stroke band (radial 82-88): start at radial ~84 -->
+    <path d="M379.4 219.4 L436 276" stroke-width="11" stroke-linecap="butt"/>
+    <circle cx="436" cy="276" r="5.5" fill="#000" stroke="none"/>
+    <path d="M296 120 h48" stroke-width="6" stroke-linecap="round"/>
+    <path d="M296 200 h48" stroke-width="6" stroke-linecap="round"/>
+    <path d="M320 120 v80" stroke-width="6" stroke-linecap="butt"/>
+  </g>
+</svg>
