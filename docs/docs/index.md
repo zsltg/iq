@@ -169,9 +169,6 @@ git push --follow-tags            # publish the tag (release.sh never pushes for
 last tag (`feat` → minor, `fix` → patch, a `!`/`BREAKING CHANGE` → major); with no tags yet the
 first release comes out as `v0.1.0`.
 
-*[URI]: Uniform Resource Identifier
-*[JSON]: JavaScript Object Notation
-*[AST]: Abstract Syntax Tree
 [^1]: Go is a high-level, general-purpose programming language that is statically typed and compiled. https://go.dev
 [^2]: `jq` is a widely-used command-line utility and very high-level, functional, domain-specific programming language designed for processing JSON data. https://jqlang.org
 [^3]: NoSQL refers to a type of database design that stores and retrieves data differently from the traditional table-based structure of relational databases. https://en.wikipedia.org/wiki/NoSQL

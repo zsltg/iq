@@ -367,6 +367,18 @@ pygments_lang_class = true
 [project.markdown_extensions.pymdownx.magiclink]
 [project.markdown_extensions.pymdownx.mark]
 [project.markdown_extensions.pymdownx.smartsymbols]
+
+# The abbr extension resolves its definitions per page, so a *[TERM]: block only
+# glosses the page it sits on. Snippets auto_append pastes the shared definition
+# file onto every page instead, which is what makes a term render the same way
+# wherever it appears — including inside an instant preview, whose tooltip is
+# built from the target page's own HTML and so shows nothing the target did not
+# define itself. The path resolves against base_path, which defaults to the
+# build's working directory (docs/, see scripts/docs.sh); keeping the file
+# outside docs_dir stops it from being built as a page of its own.
+[project.markdown_extensions.pymdownx.snippets]
+auto_append = ["includes/abbreviations.md"]
+
 [project.markdown_extensions.pymdownx.superfences]
 custom_fences = [
   { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" }
