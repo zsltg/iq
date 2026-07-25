@@ -223,30 +223,27 @@ func handleBase(rawURL string) string {
 // lastSegment reduces a dotted keyspace spec to its final part (Couchbase's
 // ?collection=sales.orders names collection "orders"). A dotted handle is a legal
 // name but shadows `handle.address` addressing, so a derived one never carries a
-// dot.
+// dot. LastIndexByte reports -1 for an undotted spec, so the slice then starts at
+// 0 and the whole spec is the last segment.
 func lastSegment(s string) string {
-	if i := strings.LastIndexByte(s, '.'); i >= 0 {
-		return s[i+1:]
-	}
-	return s
+	return s[strings.LastIndexByte(s, '.')+1:]
 }
 
 // fileStem returns the dump file's base name without its extension for a local
 // dump source (file:///dumps/books.json names "books") — the container such a
-// source reads, since its path names a file rather than a database. It reports
-// false for a connected backend, and for a URL that names no usable stem, so the
-// caller falls through to the path and driver-name rules.
+// source reads, since its path names a file rather than a database. DumpPath
+// rejects every non-file:// URL, so a connected backend reports false here, as
+// does a file URL naming no usable stem (file:/// is the bare root,
+// file:///dumps/.json is all extension); the caller then falls through to the
+// path and driver-name rules.
 func fileStem(rawURL string) (string, bool) {
-	if d, ok := driverForScheme(schemeOf(rawURL)); !ok || !d.readOnly {
-		return "", false
-	}
 	path, err := iqfile.DumpPath(rawURL)
 	if err != nil {
 		return "", false
 	}
 	base := filepath.Base(path)
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	if stem == "" || stem == "." || stem == string(filepath.Separator) {
+	if stem == "" || stem == string(filepath.Separator) {
 		return "", false
 	}
 	return stem, true

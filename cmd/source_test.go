@@ -141,6 +141,7 @@ func TestSuggestHandle(t *testing.T) {
 		{"hbase table", "hbase://h:2181/?table=books", "books"},
 		{"couchdb database", "couchdb://h:5984/?database=orders", "orders"},
 		{"couchbase collection beats bucket", "couchbase://h/?bucket=iq&collection=sales.orders", "orders"},
+		{"leading-dot spec keeps only the segment after it", "couchbase://h/?collection=.orders", "orders"},
 		{"couchbase bucket when no collection", "couchbase://h/?bucket=iq", "iq"},
 		{"neo4j label", "neo4j://h:7687/?label=Movie", "Movie"},
 		{"neo4j rel", "neo4j://h:7687/?rel=KNOWS", "KNOWS"},
@@ -156,6 +157,10 @@ func TestSuggestHandle(t *testing.T) {
 		// file://segment/... puts the first segment in the host; DumpPath folds it
 		// back into the path, so the stem is still the file's.
 		{"file two-slash form", "file://dumps/books.json", "books"},
+		// A file url naming no usable stem falls through to the path, then the driver.
+		{"file bare root falls back to driver", "file:///", "file"},
+		{"file dotfile is all extension, falls back to the path", "file:///dumps/.json", "dumps"},
+		{"file naming no path segment falls back to driver", "file://.", "file"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
