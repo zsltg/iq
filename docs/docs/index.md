@@ -4,9 +4,15 @@ icon: lucide/package-open
 
 # Get started
 
-!!! warning "Not production-ready"
+!!! warning "Pre-1.0"
 
-    `iq` has potential rough edges — don't rely on it for critical work yet.
+    Flags, output shapes and the config format can still change between
+    releases.
+
+    `--insert`, `iq data clear` and `iq data drop` write to live
+    databases, point them at data you can afford to lose first.
+
+    Use `--explain` to see the query plan without making changes.
 
 
 `iq` is a Go[^1] command-line tool that runs

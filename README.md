@@ -21,8 +21,12 @@ entirely client-side, so its semantics are identical for every backend.
 sq's to make the tool feel familiar.
 
 > [!WARNING]
-> **Not production-ready.** `iq` has potential rough edges — don't rely on it for critical work
-> yet.
+> **Pre-1.0.** Flags, output shapes and the config format can still change between releases.
+>
+> `--insert`, `iq data clear` and `iq data drop` write to live databases, point them at data
+> you can afford to lose first.
+>
+> Use `--explain` to see the query plan without making changes.
 
 ## Install
 
