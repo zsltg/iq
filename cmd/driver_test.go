@@ -215,3 +215,28 @@ func lineWith(t *testing.T, out, sub string) string {
 	t.Fatalf("no line contains %q in:\n%s", sub, out)
 	return ""
 }
+
+// TestRegistryAddressParams pins the registry invariants the handle derivation and
+// the keyspace guard both rely on: a backend is addressable exactly when it
+// declares a keyspace param, and only a keyspace-less backend claims query params
+// of its own.
+func TestRegistryAddressParams(t *testing.T) {
+	for _, d := range drivers {
+		t.Run(d.name, func(t *testing.T) {
+			require.Equal(t, d.addressable, len(d.addressParams) > 0,
+				"addressable and addressParams must agree")
+			for _, p := range d.addressParams {
+				require.NotEmpty(t, p, "a keyspace param name must not be empty")
+			}
+			if len(d.addressParams) > 0 {
+				require.Empty(t, d.urlParams, "a keyspace-bearing backend owns its whole query string")
+			}
+		})
+	}
+}
+
+func TestAllAddressParams(t *testing.T) {
+	params := allAddressParams()
+	require.Equal(t, []string{"collection", "table", "database", "bucket", "label", "rel", "index"}, params,
+		"every keyspace spelling in the registry, deduped, in registry order")
+}

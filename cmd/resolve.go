@@ -66,18 +66,16 @@ func addressUnsupported(rawURL, addr string) error {
 	return fmt.Errorf("%s sources have no collections; drop the %q suffix", driverName(rawURL), addr)
 }
 
-// urlAddressUnsupported rejects a source URL that carries a driver-owned address
-// param (MongoDB's ?collection=) on a backend that takes none (Redis, file). It
-// guards `iq add` so a mistaken default fails fast rather than at connect time.
+// urlAddressUnsupported rejects a source URL that carries a keyspace param any
+// backend owns (?collection=, ?table=, ?index=, …) on a backend that takes none
+// (Redis, file). It guards `iq add` so a mistaken default fails fast rather than
+// being silently ignored at connect time.
 func urlAddressUnsupported(rawURL string) error {
-	c := iqmongo.CollectionFromURI(rawURL)
-	if c == "" {
+	p := foreignAddressParam(rawURL)
+	if p == "" {
 		return nil
 	}
-	if d, ok := driverForScheme(schemeOf(rawURL)); ok && d.addressable {
-		return nil
-	}
-	return fmt.Errorf("%s sources have no collections; drop the ?collection= from the url", driverName(rawURL))
+	return fmt.Errorf("%s sources have no collections; drop the ?%s= from the url", driverName(rawURL), p)
 }
 
 // resolveInspectSource fills cfg from the source named by the inspect positional,

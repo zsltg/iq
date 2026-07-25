@@ -212,3 +212,33 @@ func TestResolveInspectSource(t *testing.T) {
 		require.ErrorContains(t, resolveInspectSource(&config{}, "cache.foo"), "no collections")
 	})
 }
+
+func TestURLAddressUnsupported(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr string
+	}{
+		{"redis rejects a collection param", "redis://h:6379/0?collection=orders", "no collections; drop the ?collection="},
+		{"redis rejects a table param", "redis://h:6379/0?table=orders", "no collections; drop the ?table="},
+		{"redis rejects an index param", "redis://h:6379/0?index=books", "no collections; drop the ?index="},
+		{"file rejects a collection param", "file:///dumps/books.json?collection=orders", "no collections; drop the ?collection="},
+		{"file keeps its own hint params", "file:///dumps/graph.json?label=Movie&rel=KNOWS", ""},
+		{"redis without a keyspace param passes", "redis://h:6379/0", ""},
+		{"mongo owns its collection param", "mongodb://h/shop?collection=orders", ""},
+		{"couchbase keeps a stray connstr param", "couchbase://h/?bucket=iq&kv_timeout=5s", ""},
+		{"elasticsearch owns its index param", "elasticsearch://h:9200/?index=books", ""},
+		{"unknown scheme passes, the scheme check reports it", "postgres://h/db?table=x", ""},
+		{"unparseable url passes, the driver reports it", "redis://%zz@h/0?table=x", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := urlAddressUnsupported(tt.url)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}

@@ -7,12 +7,14 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	iqfile "github.com/zsltg/iq/drivers/file"
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
@@ -39,8 +41,9 @@ func newAddCmd(cfg *config) *cobra.Command {
 		Short:             "Register a source from a connection URL (sq-style)",
 		Long: "Register a source from a connection URL, like `sq add`. The URL is the only\n" +
 			"positional argument; -n/--handle names the source, and when omitted a handle is\n" +
-			"derived from the URL (the MongoDB database or Cassandra keyspace name, else the\n" +
-			"driver). The backend is inferred from the URL scheme: redis:// (rediss://),\n" +
+			"derived from the URL: the keyspace it pins (?collection=, ?table=, ?index=, …), else\n" +
+			"the MongoDB database or Cassandra keyspace name, else the dump file's stem for a\n" +
+			"file:// source, else the driver. The backend is inferred from the URL scheme: redis:// (rediss://),\n" +
 			"mongodb:// (mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb://\n" +
 			"(couchdbs://), couchbase:// (couchbases://), neo4j:// (neo4j+s://, bolt://),\n" +
 			"elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://); -d/--driver asserts the\n" +
@@ -68,7 +71,7 @@ func newAddCmd(cfg *config) *cobra.Command {
 		Example: "  # Register a Redis source named \"cache\".\n" +
 			"  $ iq add -n cache redis://localhost:6379/0\n" +
 			"\n" +
-			"  # Register a Mongo source; ?collection= sets its default collection.\n" +
+			"  # Register a Mongo source; ?collection= sets its default collection and names it \"orders\".\n" +
 			"  $ iq add 'mongodb://localhost:27017/shop?collection=orders'\n" +
 			"\n" +
 			"  # A source needing auth, made active: prompt for the password, keep it in the keyring.\n" +
@@ -160,7 +163,7 @@ func newAddCmd(cfg *config) *cobra.Command {
 			return err
 		},
 	}
-	c.Flags().StringVarP(&handle, "handle", "n", "", "handle for the source; derived from the url when omitted")
+	c.Flags().StringVarP(&handle, "handle", "n", "", "handle for the source; derived from the keyspace the url names when omitted")
 	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb, couchbase, neo4j, elasticsearch, opensearch); must match the url scheme")
 	c.Flags().BoolVarP(&active, "active", "a", false, "make the new source the active source")
 	c.Flags().BoolVarP(&passwordPrompt, "password", "p", false, "prompt for the url password (or read it from stdin)")
@@ -174,9 +177,10 @@ func newAddCmd(cfg *config) *cobra.Command {
 }
 
 // suggestHandle derives a source handle from rawURL when -n is omitted, mirroring
-// sq: the MongoDB database name when the URL names one, otherwise the driver name
-// (redis, mongo). The candidate is sanitized to the handle alphabet and made
-// unique against existing sources by appending 2, 3, … on collision.
+// sq: the most specific container the URL names (see handleBase), falling back to
+// the driver name (redis, mongo). The candidate is sanitized to the handle
+// alphabet and made unique against existing sources by appending 2, 3, … on
+// collision.
 func suggestHandle(cf *iqconfig.Config, rawURL string) string {
 	base := sanitizeHandle(handleBase(rawURL))
 	if base == "" {
@@ -191,10 +195,19 @@ func suggestHandle(cf *iqconfig.Config, rawURL string) string {
 	}
 }
 
-// handleBase picks the raw handle stem for a URL: the first path segment when it
-// is a non-numeric name (a MongoDB database), else the driver name. A multi-host
-// Mongo URI that net/url cannot parse falls back to the driver name too.
+// handleBase picks the raw handle stem for a URL: the most specific container the
+// URL names, in order — the keyspace a driver-owned query param pins
+// (?collection=, ?table=, ?index=, …), the dump file's stem for a file source,
+// the first path segment when it is a non-numeric name (a MongoDB database or
+// Cassandra keyspace), else the driver name. A multi-host Mongo URI that net/url
+// cannot parse falls back to the driver name too.
 func handleBase(rawURL string) string {
+	if a := urlAddressName(rawURL); a != "" {
+		return lastSegment(a)
+	}
+	if stem, ok := fileStem(rawURL); ok {
+		return stem
+	}
 	if u, err := url.Parse(rawURL); err == nil {
 		seg := strings.TrimLeft(u.Path, "/")
 		if i := strings.IndexByte(seg, '/'); i >= 0 {
@@ -205,6 +218,38 @@ func handleBase(rawURL string) string {
 		}
 	}
 	return driverName(rawURL)
+}
+
+// lastSegment reduces a dotted keyspace spec to its final part (Couchbase's
+// ?collection=sales.orders names collection "orders"). A dotted handle is a legal
+// name but shadows `handle.address` addressing, so a derived one never carries a
+// dot.
+func lastSegment(s string) string {
+	if i := strings.LastIndexByte(s, '.'); i >= 0 {
+		return s[i+1:]
+	}
+	return s
+}
+
+// fileStem returns the dump file's base name without its extension for a local
+// dump source (file:///dumps/books.json names "books") — the container such a
+// source reads, since its path names a file rather than a database. It reports
+// false for a connected backend, and for a URL that names no usable stem, so the
+// caller falls through to the path and driver-name rules.
+func fileStem(rawURL string) (string, bool) {
+	if d, ok := driverForScheme(schemeOf(rawURL)); !ok || !d.readOnly {
+		return "", false
+	}
+	path, err := iqfile.DumpPath(rawURL)
+	if err != nil {
+		return "", false
+	}
+	base := filepath.Base(path)
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	if stem == "" || stem == "." || stem == string(filepath.Separator) {
+		return "", false
+	}
+	return stem, true
 }
 
 // isAllDigits reports whether s is non-empty and every rune is a decimal digit,

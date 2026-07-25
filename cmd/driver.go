@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -51,6 +53,19 @@ type driver struct {
 	// (handle.address) naming a sub-container — MongoDB's collection. A
 	// non-addressable backend (Redis, file) rejects an address at resolve time.
 	addressable bool
+	// addressParams names the URL query params that pin a source's default
+	// keyspace, most specific first (Couchbase's ?collection= outranks its
+	// ?bucket=). `iq add` derives a handle from the first one the URL sets, and
+	// urlAddressUnsupported rejects any of these spellings on a backend that
+	// declares none. Empty for a backend with no keyspace (Redis, file), which is
+	// exactly the set that is not addressable.
+	addressParams []string
+	// urlParams names query params a keyspace-less backend reads for its own
+	// purposes, so the foreign-keyspace guard does not mistake one for a keyspace
+	// it cannot honour — the file driver takes ?label= and ?rel= as decode hints
+	// for a graph dump. Empty for a backend that declares addressParams, which
+	// owns its whole query string.
+	urlParams []string
 	// verifiesOnOpen marks a backend whose open already round-trips to the server
 	// (DynamoDB's connectionless client issues a reachability probe at open), so the
 	// post-open health check in `iq ping`/`iq add` needs no second round-trip — like
@@ -85,13 +100,14 @@ type driver struct {
 // listing order of `iq driver ls` and the enumeration order of expectedSchemes.
 var drivers = []driver{
 	{
-		name:        "mongo",
-		desc:        "MongoDB document store",
-		schemes:     []string{"mongodb", "mongodb+srv"},
-		doc:         "https://www.mongodb.com/docs/",
-		versions:    "4.2+",
-		addressable: true,
-		filtersScan: true,
+		name:          "mongo",
+		desc:          "MongoDB document store",
+		schemes:       []string{"mongodb", "mongodb+srv"},
+		doc:           "https://www.mongodb.com/docs/",
+		versions:      "4.2+",
+		addressable:   true,
+		addressParams: []string{"collection"},
+		filtersScan:   true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqmongo.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -102,13 +118,14 @@ var drivers = []driver{
 		explainDelete: iqmongo.ExplainDelete,
 	},
 	{
-		name:        "cassandra",
-		desc:        "Apache Cassandra wide-column store",
-		schemes:     []string{"cassandra"},
-		doc:         "https://cassandra.apache.org/doc/",
-		versions:    "3.11+",
-		addressable: true,
-		filtersScan: true,
+		name:          "cassandra",
+		desc:          "Apache Cassandra wide-column store",
+		schemes:       []string{"cassandra"},
+		doc:           "https://cassandra.apache.org/doc/",
+		versions:      "3.11+",
+		addressable:   true,
+		addressParams: []string{"table"},
+		filtersScan:   true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcassandra.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -125,6 +142,7 @@ var drivers = []driver{
 		doc:            "https://docs.aws.amazon.com/dynamodb/",
 		versions:       "AWS (managed)",
 		addressable:    true,
+		addressParams:  []string{"table"},
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -143,6 +161,7 @@ var drivers = []driver{
 		doc:            "https://hbase.apache.org/book.html",
 		versions:       "1.0+",
 		addressable:    true,
+		addressParams:  []string{"table"},
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -161,6 +180,7 @@ var drivers = []driver{
 		doc:            "https://docs.couchdb.org/",
 		versions:       "2.x, 3.x",
 		addressable:    true,
+		addressParams:  []string{"database"},
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -179,6 +199,7 @@ var drivers = []driver{
 		doc:            "https://docs.couchbase.com/",
 		versions:       "7.x, 8.x (Community or Enterprise)",
 		addressable:    true,
+		addressParams:  []string{"collection", "bucket"},
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -196,6 +217,7 @@ var drivers = []driver{
 		doc:            "https://neo4j.com/docs/",
 		versions:       "5.x",
 		addressable:    true,
+		addressParams:  []string{"label", "rel", "database"},
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -214,6 +236,7 @@ var drivers = []driver{
 		doc:            "https://www.elastic.co/docs/",
 		versions:       "8.x",
 		addressable:    true,
+		addressParams:  []string{"index"},
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -232,6 +255,7 @@ var drivers = []driver{
 		doc:            "https://opensearch.org/docs/",
 		versions:       "2.x, 3.x",
 		addressable:    true,
+		addressParams:  []string{"index"},
 		verifiesOnOpen: true,
 		// OpenSearch shares the Elasticsearch driver; the source scheme selects the
 		// opensearch-go client behind the same query ports.
@@ -262,11 +286,12 @@ var drivers = []driver{
 		explainDelete: iqredis.ExplainDelete,
 	},
 	{
-		name:     "file",
-		desc:     "Local dump file, read-only",
-		schemes:  []string{"file"},
-		readOnly: true,
-		formats:  iqfile.SupportedFormats(),
+		name:      "file",
+		desc:      "Local dump file, read-only",
+		schemes:   []string{"file"},
+		readOnly:  true,
+		urlParams: []string{"label", "rel"},
+		formats:   iqfile.SupportedFormats(),
 		open: func(_ context.Context, cfg *config) (store, error) {
 			return iqfile.Open(cfg.url, cfg.decimalMode, cfg.fileCacheConfig())
 		},
@@ -297,6 +322,79 @@ func driverName(url string) string {
 		return d.name
 	}
 	return scheme
+}
+
+// urlAddressName returns the keyspace a source URL pins through a driver-owned
+// query param: the value of the first of the driver's addressParams the URL sets,
+// most specific first. It is what `iq add` names a source after when -n is
+// omitted. Empty when the driver declares no keyspace param, the URL sets none,
+// or the URL does not parse.
+func urlAddressName(rawURL string) string {
+	d, ok := driverForScheme(schemeOf(rawURL))
+	if !ok {
+		return ""
+	}
+	q, ok := urlQuery(rawURL)
+	if !ok {
+		return ""
+	}
+	for _, p := range d.addressParams {
+		if v := q.Get(p); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// foreignAddressParam returns the name of a keyspace param a URL sets that its
+// backend cannot honour: any spelling in the registry's union on a backend that
+// declares none (Redis, file), minus the params that backend reads itself. It is
+// the guard `iq add` runs so a mistaken default fails fast rather than being
+// silently ignored at connect time. Empty when the URL carries no such param.
+func foreignAddressParam(rawURL string) string {
+	d, ok := driverForScheme(schemeOf(rawURL))
+	if !ok || len(d.addressParams) > 0 {
+		return ""
+	}
+	q, ok := urlQuery(rawURL)
+	if !ok {
+		return ""
+	}
+	for _, p := range allAddressParams() {
+		if slices.Contains(d.urlParams, p) {
+			continue
+		}
+		if q.Get(p) != "" {
+			return p
+		}
+	}
+	return ""
+}
+
+// allAddressParams returns every keyspace param name in the registry, deduped and
+// in registry order, so the guard's report is deterministic and a new backend's
+// spelling joins it without a second edit.
+func allAddressParams() []string {
+	params := make([]string, 0, len(drivers))
+	for _, d := range drivers {
+		for _, p := range d.addressParams {
+			if !slices.Contains(params, p) {
+				params = append(params, p)
+			}
+		}
+	}
+	return params
+}
+
+// urlQuery parses a source URL's query string. An unparseable URL yields false
+// rather than an error: every caller treats it as "names nothing", leaving the
+// driver to report the real parse failure at open time.
+func urlQuery(rawURL string) (url.Values, bool) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, false
+	}
+	return u.Query(), true
 }
 
 // driverByName returns the driver with the given canonical name, dispatching

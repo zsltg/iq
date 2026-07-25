@@ -8,6 +8,7 @@ Cross-driver conventions every backend adapter and driver plan doc follows. Tele
 - Credentials ride in the URL userinfo, spliced from the keyring when the source is keyring-backed; every rendering of a location goes through the redaction helper; never log, print or trace a credential.
 - Exception by design: dynamodb-style backends take credentials from the SDK's default environment chain, never the URL.
 - Keyspace param uses the backend's native noun: `?collection=` `?table=` `?set=` `?type=` `?measurement=` `?label=` `?edge=` `?rel=` `?index=` `?bucket=`; a query overrides it with the dotted `handle.<keyspace>` suffix.
+- The driver registry entry lists its keyspace params in `addressParams`, most specific first; `iq add` names a source after the first one the URL sets, and a backend declaring none rejects every spelling.
 - Database-level container: the URL path where the backend natively addresses by path, else `?database=`; never `?db=`.
 - `?key=` picks which field or property is the key; `?keytype=` pins the key's type or encoding and is the only spelling — it supersedes `?idtype=`, `?vid=` and `?rowkeytype=`.
 - Missing-keyspace sentinel error follows the uniform shape: "no <keyspace> selected; address it as handle.<keyspace> or set ?<keyspace>= in the source url".

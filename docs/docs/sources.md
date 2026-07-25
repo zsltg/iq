@@ -13,7 +13,7 @@ once, then select by name or as the default.
 | --- | --- | --- | --- |
 | `-a` | `--active` | off | make the new source the active source |
 | `-d <string>` | `--driver <string>` | auto-detect | expected backend driver, must match the URL scheme |
-| `-n <string>` | `--handle <string>` | database name | handle for the source, derived from the URL when omitted |
+| `-n <string>` | `--handle <string>` | the keyspace the URL names | handle for the source, derived from the URL when omitted |
 | `-p` | `--password` | off | prompt for the URL passwrod or read it from stdin |
 | | `--skip-verify` | off | skip the post-add reachability check |
 | | `--store <string>` | `inline` | where the URL's password is kept, `inline` (in the config file) or `keyring` (OS keyring) |
@@ -24,8 +24,8 @@ iq add mongodb://localhost:27017/books
 ```sh { title='Add a Redis source with the handle "cache"' }
 iq add -n cache redis://localhost:6379/0
 ```
-```sh { title='Add a Cassandra source scoped to the "orders" table with the handle "orders" and make it the active source' }
-iq add -a -n orders cassandra://localhost:9042/shop?table=orders
+```sh { title='Add a Cassandra source scoped to the "orders" table and make it active; the handle defaults to "orders"' }
+iq add -a 'cassandra://localhost:9042/shop?table=orders'
 ```
 ```sh
 iq add -n books 'hbase://localhost:2181/?table=iq_books'     # an HBase source (host = ZooKeeper quorum)
@@ -67,9 +67,11 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   `neo4j://`, `neo4j+s://`, `neo4j+ssc://`,
   `bolt://`, `bolt+s://`, `bolt+ssc://`, `elasticsearch://`, `elasticsearch+s://`, `opensearch://`,
   `opensearch+s://`).
-  `-n`/`--handle` names the source; when omitted a handle is derived from the URL (the MongoDB
-  database or Cassandra keyspace name, else the driver, disambiguated with a numeric suffix on
-  collision). A MongoDB default collection rides in the URL as `?collection=`
+  `-n`/`--handle` names the source; when omitted a handle is derived from the most specific
+  container the URL names — the keyspace a driver-owned param pins (`?collection=`, `?table=`,
+  `?index=`, `?bucket=`, `?database=`, `?label=`, `?rel=`), else the MongoDB database or Cassandra
+  keyspace name, else the dump file's stem for a `file://` source, else the driver, disambiguated
+  with a numeric suffix on collision. A MongoDB default collection rides in the URL as `?collection=`
   (`mongodb://host/db?collection=items`), a Cassandra default table as `?table=`
   (`cassandra://host/keyspace?table=orders`), a DynamoDB default table as `?table=`
   (`dynamodb://us-east-1/?table=orders`, the region as the host; credentials come from the AWS

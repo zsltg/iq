@@ -96,6 +96,9 @@ func TestAddSuggestsHandle(t *testing.T) {
 		{"mongo db name", "mongodb://h:27017/catalog", "catalog"},
 		{"mongo srv db name", "mongodb+srv://u:p@c.example.net/inventory", "inventory"},
 		{"mongo no db falls back to driver", "mongodb://h:27017", "mongo"},
+		{"mongo collection beats db", "mongodb://h:27017/shop?collection=orders", "orders"},
+		{"elasticsearch index", "elasticsearch://h:9200/?index=books", "books"},
+		{"file dump stem", "file:///dumps/catalog.json", "catalog"},
 		{"redis numeric db falls back to driver", "redis://h:6379/0", "redis"},
 		{"redis no db falls back to driver", "rediss://h:6379", "redis"},
 	}
@@ -127,6 +130,32 @@ func TestSuggestHandle(t *testing.T) {
 		{"numeric db 9 falls back to driver", "redis://h:6379/9", "redis"},
 		{"no path falls back to driver", "mongodb://h:27017", "mongo"},
 		{"unparseable url falls back to driver", "redis://%zz@h/0", "redis"},
+		// The keyspace a driver-owned param pins is the most specific container the
+		// URL names, so it wins over the database or keyspace in the path.
+		{"mongo collection beats db", "mongodb://h/shop?collection=orders", "orders"},
+		{"mongo empty collection falls back to db", "mongodb://h/shop?collection=", "shop"},
+		{"cassandra table beats keyspace", "cassandra://h/ks?table=events", "events"},
+		{"cassandra without table takes the keyspace", "cassandra://h/ks", "ks"},
+		{"dynamodb table beats the region host", "dynamodb://us-east-1/?table=orders", "orders"},
+		{"dynamodb without table falls back to driver", "dynamodb://us-east-1/", "dynamodb"},
+		{"hbase table", "hbase://h:2181/?table=books", "books"},
+		{"couchdb database", "couchdb://h:5984/?database=orders", "orders"},
+		{"couchbase collection beats bucket", "couchbase://h/?bucket=iq&collection=sales.orders", "orders"},
+		{"couchbase bucket when no collection", "couchbase://h/?bucket=iq", "iq"},
+		{"neo4j label", "neo4j://h:7687/?label=Movie", "Movie"},
+		{"neo4j rel", "neo4j://h:7687/?rel=KNOWS", "KNOWS"},
+		{"neo4j database when neither label nor rel", "neo4j://h:7687/?database=movies", "movies"},
+		{"elasticsearch index", "elasticsearch://h:9200/?index=books", "books"},
+		{"elasticsearch without index falls back to driver", "elasticsearch://h:9200/", "elasticsearch"},
+		{"opensearch index", "opensearch://h:9200/?index=books", "books"},
+		// A file source's container is the dump itself, so its stem names it.
+		{"file dump stem", "file:///home/user/dump.json", "dump"},
+		{"file dump stem ignores the format param", "file:///home/user/dump.bin?format=bson", "dump"},
+		{"file hint params are not a keyspace", "file:///home/user/graph.json?label=Movie", "graph"},
+		{"file without an extension", "file:///dumps/books", "books"},
+		// file://segment/... puts the first segment in the host; DumpPath folds it
+		// back into the path, so the stem is still the file's.
+		{"file two-slash form", "file://dumps/books.json", "books"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
