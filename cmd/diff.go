@@ -65,7 +65,8 @@ func newDiffCmd(cfg *config) *cobra.Command {
 		"            verifying a migration, but the identity match is only as meaningful\n" +
 		"            as the keys lining up — a power-user tool, not a schema comparison.\n" +
 		"  --stats   diff native introspection trees (MongoDB diagnostic commands, Redis\n" +
-		"            INFO). Same driver only. --section narrows which sections.\n" +
+		"            INFO). Same driver only. --section narrows which sections, comma-\n" +
+		"            separated or repeated (`--section memory,server`).\n" +
 		"  --schema  diff an inferred field->type shape sampled from each source. Allowed\n" +
 		"            across drivers: the inferred vocabulary (integer/number/string(fmt)/\n" +
 		"            map/array + required/optional) measures logical shape, not per-driver\n" +
@@ -90,6 +91,7 @@ func newDiffCmd(cfg *config) *cobra.Command {
 			"  # Across environments; compare shapes or native stats.\n" +
 			"  $ iq diff prod/shop staging/shop --schema\n" +
 			"  $ iq diff prod/shop staging/shop --stats\n" +
+			"  $ iq diff prod/shop staging/shop --stats --section memory,server\n" +
 			"  $ iq diff prod/shop staging/shop -j",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -169,9 +171,10 @@ func newDiffCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVar(&dataMode, "data", false, "diff items key by key (default when no layer is chosen; cross-driver allowed)")
 	c.Flags().BoolVar(&statsMode, "stats", false, "diff native introspection trees (same driver only)")
 	c.Flags().BoolVar(&schemaMode, "schema", false, "diff an inferred field/type shape (cross-driver allowed)")
-	c.Flags().StringArrayVar(&sections, "section", nil, "introspection section(s) for --stats (repeatable; default: the source's full set)")
+	c.Flags().StringSliceVar(&sections, "section", nil, "introspection section(s) for --stats (comma-separated or repeatable; default: the source's full set)")
 	// --section names the same introspection subcommands as `inspect --only`, so
-	// it shares that completion; the driver comes offline from the first target.
+	// it shares that completion and its comma-separated list shape; the driver
+	// comes offline from the first target.
 	_ = c.RegisterFlagCompletionFunc("section", completeInspectOnly)
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled per side for --schema (0 = all)")
 	c.Flags().BoolVar(&setArrays, "set-arrays", false, "compare arrays order-insensitively as multisets (duplicates counted)")

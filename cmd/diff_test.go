@@ -861,6 +861,31 @@ func TestDiffStatsSelfSectionRedisIntegration(t *testing.T) {
 	require.Contains(t, out, "no differences")
 }
 
+// TestDiffSectionFlagList pins --section as a comma-separated list flag, the
+// shape `inspect --only` has and the shape its shared completion offers: a
+// repeated flag must keep accumulating, and a comma must split.
+func TestDiffSectionFlagList(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"comma separated", []string{"--section", "memory,server"}, []string{"memory", "server"}},
+		{"repeated", []string{"--section", "memory", "--section", "server"}, []string{"memory", "server"}},
+		{"mixed", []string{"--section", "memory,server", "--section", "cluster"}, []string{"memory", "server", "cluster"}},
+		{"single", []string{"--section", "memory"}, []string{"memory"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newDiffCmd(&config{})
+			require.NoError(t, c.ParseFlags(tt.args))
+			got, err := c.Flags().GetStringSlice("section")
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestDiffStatsCanceledContext(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("a", "redis://127.0.0.1:1/0"))

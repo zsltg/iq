@@ -402,7 +402,8 @@ Compare two saved sources across the layers a schemaless store can meaningfully 
             verifying a migration, but the identity match is only as meaningful
             as the keys lining up \(em a power\-user tool, not a schema comparison.
   \-\-stats   diff native introspection trees (MongoDB diagnostic commands, Redis
-            INFO). Same driver only. \-\-section narrows which sections.
+            INFO). Same driver only. \-\-section narrows which sections, comma\-
+            separated or repeated (`\-\-section memory,server`).
   \-\-schema  diff an inferred field\->type shape sampled from each source. Allowed
             across drivers: the inferred vocabulary (integer/number/string(fmt)/
             map/array + required/optional) measures logical shape, not per\-driver
@@ -433,7 +434,7 @@ max items sampled per side for \-\-schema (0 = all) (default 1000)
 diff an inferred field/type shape (cross\-driver allowed)
 .TP
 \fB\-\-section\fR
-introspection section(s) for \-\-stats (repeatable; default: the source's full set) (default [])
+introspection section(s) for \-\-stats (comma\-separated or repeatable; default: the source's full set) (default [])
 .TP
 \fB\-\-set\-arrays\fR
 compare arrays order\-insensitively as multisets (duplicates counted)
@@ -453,6 +454,7 @@ emit machine\-readable YAML
   # Across environments; compare shapes or native stats.
   $ iq diff prod/shop staging/shop \-\-schema
   $ iq diff prod/shop staging/shop \-\-stats
+  $ iq diff prod/shop staging/shop \-\-stats \-\-section memory,server
   $ iq diff prod/shop staging/shop \-j
 .fi
 .RE
