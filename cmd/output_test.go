@@ -467,4 +467,28 @@ func TestRunRejectsConflictingFormat(t *testing.T) {
 		err := runCombine(cmd, &config{from: []string{"x=."}, combine: "$x", json: true, raw: true, timeout: time.Second})
 		require.ErrorContains(t, err, "mutually exclusive")
 	})
+
+	// --explain short-circuits before any connection, but the format flags are
+	// resolved ahead of it, so a conflict is still an error rather than a plan.
+	t.Run("runJQ with explain", func(t *testing.T) {
+		t.Parallel()
+		var out bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		cmd.SetOut(&out)
+		err := runJQ(cmd, &config{json: true, raw: true, explain: true, timeout: time.Second}, ".")
+		require.ErrorContains(t, err, "mutually exclusive")
+		require.Empty(t, out.String())
+	})
+
+	t.Run("runCombine with explain", func(t *testing.T) {
+		t.Parallel()
+		var out bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		cmd.SetOut(&out)
+		err := runCombine(cmd, &config{from: []string{"x=."}, combine: "$x", json: true, raw: true, explain: true, timeout: time.Second})
+		require.ErrorContains(t, err, "mutually exclusive")
+		require.Empty(t, out.String())
+	})
 }

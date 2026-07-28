@@ -52,6 +52,19 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		return asSyntaxError(filter, err)
 	}
 
+	// Resolve the output format before any source work, so conflicting format flags
+	// fail fast rather than after a source is resolved — runCombine already orders
+	// it this way, and the two entry points must reject the same flags alike.
+	fm, err := selectFormat(cfg)
+	if err != nil {
+		return err
+	}
+	// Refuse a binary format on an interactive terminal before any store I/O,
+	// checking the raw stdout ahead of the progress-meter wrapping below.
+	if err := guardBinaryFormat(fm, cmd.OutOrStdout()); err != nil {
+		return err
+	}
+
 	// A single-source filter resolves its source up front (no connection), so both
 	// the query plan and the execution below name and dispatch the same driver. When
 	// no source is selected and stdin is piped, the query reads that stdin (sq-style).
@@ -94,15 +107,6 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 	defer cancel()
 
-	fm, err := selectFormat(cfg)
-	if err != nil {
-		return err
-	}
-	// Refuse a binary format on an interactive terminal before any store I/O,
-	// checking the raw stdout ahead of the progress-meter wrapping below.
-	if err := guardBinaryFormat(fm, cmd.OutOrStdout()); err != nil {
-		return err
-	}
 	// The scan-progress spinner renders on stderr; wrapping stdout lets it hold
 	// its repaint while rows stream, so the two never collide. A nil meter (progress
 	// off, or stderr not a terminal) makes every call below a no-op. --verbose
