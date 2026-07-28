@@ -20,27 +20,30 @@ type pingTarget struct {
 
 // newPingCmd builds `iq ping [name...]`: check that sources are reachable. With
 // no arguments it pings the active source; otherwise each argument names a source
-// or a group (which pings every member). Each check is bounded by --timeout.
+// or a group (which pings every member), and --all pings every saved source. Each
+// check is bounded by --timeout.
 func newPingCmd(cfg *config) *cobra.Command {
-	return &cobra.Command{
+	var all bool
+	c := &cobra.Command{
 		Use:               "ping [name...]",
 		ValidArgsFunction: completeSourceHandles,
 		Short:             "Check that sources are reachable",
 		Long: "Open each source and round-trip a cheap command (Redis PING, MongoDB {ping:1}),\n" +
 			"reporting its driver and the round-trip time, or the error. With no arguments the\n" +
 			"active source is pinged; otherwise each argument is a source handle or a group\n" +
-			"(pinging every member). Each check is bounded by --timeout. Exits non-zero if any\n" +
-			"source is unreachable.",
+			"(pinging every member), and --all pings every saved source. Each check is bounded\n" +
+			"by --timeout. Exits non-zero if any source is unreachable.",
 		Example: "  $ iq ping            # the active source\n" +
 			"  $ iq ping cache shop # specific sources\n" +
-			"  $ iq ping prod       # a whole group",
+			"  $ iq ping prod       # a whole group\n" +
+			"  $ iq ping --all      # every saved source",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
 				return err
 			}
-			targets, err := pingTargets(cf, args)
+			targets, err := pingTargets(cf, args, all)
 			if err != nil {
 				return err
 			}
@@ -64,12 +67,30 @@ func newPingCmd(cfg *config) *cobra.Command {
 			return nil
 		},
 	}
+	c.Flags().BoolVar(&all, "all", false, "ping every saved source")
+	return c
 }
 
-// pingTargets resolves the ping arguments to sources: the active source when
-// none are given, otherwise each argument as a source or a group (expanded to its
-// members). It errors if there is no active source or an argument is unknown.
-func pingTargets(cf *iqconfig.Config, args []string) ([]pingTarget, error) {
+// pingTargets resolves the ping arguments to sources: every saved source when all
+// is set, the active source when no arguments are given, otherwise each argument
+// as a source or a group (expanded to its members). It errors if --all is
+// combined with arguments, --all finds no saved sources, there is no active
+// source, or an argument is unknown.
+func pingTargets(cf *iqconfig.Config, args []string, all bool) ([]pingTarget, error) {
+	if all {
+		if len(args) > 0 {
+			return nil, errors.New("--all pings every source; drop the source arguments")
+		}
+		handles := cf.List()
+		if len(handles) == 0 {
+			return nil, errors.New("no sources; add one with `iq add <url>`")
+		}
+		targets := make([]pingTarget, 0, len(handles))
+		for _, h := range handles {
+			targets = append(targets, pingTarget{handle: h.Name, source: h.Source})
+		}
+		return targets, nil
+	}
 	if len(args) == 0 {
 		if cf.Active == "" {
 			return nil, errors.New("no active source; name one or run `iq src <name>`")

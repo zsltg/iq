@@ -113,8 +113,9 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   (`iq mv books prod/books`). When `<old>` is a group, every member is re-prefixed
   (`iq mv prod staging`). The active source and group follow the move.
 - `iq ping [<name>...]` — check that sources are reachable, reporting each driver and round-trip
-  time (or the error). No arguments pings the active source; a group name pings every member.
-  Bounded by `--timeout`; exits non-zero if any source is unreachable.
+  time (or the error). No arguments pings the active source; a group name pings every member;
+  `--all` pings every saved source and takes no arguments. Bounded by `--timeout`; exits
+  non-zero if any source is unreachable.
 - `iq inspect [<source>[.<collection>]]` — show a source's native introspection. The positional
   names the source (`iq inspect prod`); with none it uses `--src` or the active source. MongoDB,
   Cassandra, DynamoDB, HBase, CouchDB, Couchbase, Neo4j, Elasticsearch, and OpenSearch sources accept sq-style `<source>.<collection>` /

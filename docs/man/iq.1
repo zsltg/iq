@@ -268,7 +268,12 @@ Check that sources are reachable
 .PP
 \fBUsage:\fR iq ping [name...]
 .PP
-Open each source and round\-trip a cheap command (Redis PING, MongoDB {ping:1}), reporting its driver and the round\-trip time, or the error. With no arguments the active source is pinged; otherwise each argument is a source handle or a group (pinging every member). Each check is bounded by \-\-timeout. Exits non\-zero if any source is unreachable.
+Open each source and round\-trip a cheap command (Redis PING, MongoDB {ping:1}), reporting its driver and the round\-trip time, or the error. With no arguments the active source is pinged; otherwise each argument is a source handle or a group (pinging every member), and \-\-all pings every saved source. Each check is bounded by \-\-timeout. Exits non\-zero if any source is unreachable.
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-all\fR
+ping every saved source
 .PP
 \fBExamples:\fR
 .RS
@@ -276,6 +281,7 @@ Open each source and round\-trip a cheap command (Redis PING, MongoDB {ping:1}),
   $ iq ping            # the active source
   $ iq ping cache shop # specific sources
   $ iq ping prod       # a whole group
+  $ iq ping \-\-all      # every saved source
 .fi
 .RE
 .SS iq rm
