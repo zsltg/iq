@@ -72,11 +72,11 @@ func (s *Store) getFiltered(ctx context.Context, keys []string, matcher *rawpred
 
 	out := make(map[string]any, len(unique))
 	for i, k := range unique {
-		v, err := readers[i].normalize()
+		v, present, err := readers[i].normalize()
 		if err != nil {
 			return nil, fmt.Errorf("read key %q: %w", k, err)
 		}
-		if _, drop := v.(dropped); drop {
+		if !present {
 			continue
 		}
 		out[k] = v
@@ -94,27 +94,31 @@ func filteredReaderFor(ctx context.Context, p goredis.Pipeliner, key, typ string
 	return readerFor(ctx, p, key, typ, dec)
 }
 
-// dropped is the sentinel a filtered reader returns for a document the prefilter
-// proved cannot match, so getFiltered omits the key without decoding it. It is
-// unexported, so no normal value can collide with it.
-type dropped struct{}
-
 // filterJSONReader is jsonReader plus the prefilter: it runs the raw JSON.GET reply
-// through rawpred and returns dropped on a provable non-match, otherwise decoding
-// the survivor exactly as jsonReader does.
+// through rawpred and reports a provable non-match as not-present, otherwise
+// decoding the survivor exactly as jsonReader does. A dropped document and an
+// absent key are the same thing to the caller — neither is in the map — so the
+// presence flag carries both and no sentinel value is needed.
 type filterJSONReader struct {
 	cmd     *goredis.JSONCmd
 	decimal numfmt.DecimalMode
 	matcher *rawpred.Matcher
 }
 
-func (r filterJSONReader) normalize() (any, error) {
+func (r filterJSONReader) normalize() (any, bool, error) {
 	s, err := r.cmd.Result()
+	if errors.Is(err, goredis.Nil) {
+		return nil, false, nil
+	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if r.matcher.Match([]byte(s)) == rawpred.CannotMatch {
-		return dropped{}, nil
+		return nil, false, nil
 	}
-	return decodeJSON(s, r.decimal)
+	v, err := decodeJSON(s, r.decimal)
+	if err != nil {
+		return nil, false, err
+	}
+	return v, true, nil
 }

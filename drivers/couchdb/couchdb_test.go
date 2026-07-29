@@ -54,8 +54,7 @@ func TestGet(t *testing.T) {
 	doc, ok := got["2"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "Martin Kleppmann", doc["author"])
-	require.Contains(t, got, "99")
-	require.Nil(t, got["99"], "a missing key reads as null")
+	require.NotContains(t, got, "99", "a missing key is absent from the map")
 }
 
 func TestScanBatchesPaginates(t *testing.T) {

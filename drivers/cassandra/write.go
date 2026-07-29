@@ -95,11 +95,11 @@ func (s *Store) existingKeySet(ctx context.Context, keys []string) (map[string]b
 	if err != nil {
 		return nil, err
 	}
+	// Get omits a key with no row, so membership is the existence answer; a row
+	// that normalizes to nil would still be a row.
 	found := make(map[string]bool, len(rows))
-	for k, v := range rows {
-		if v != nil {
-			found[k] = true
-		}
+	for k := range rows {
+		found[k] = true
 	}
 	return found, nil
 }

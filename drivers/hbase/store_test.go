@@ -18,7 +18,7 @@ func cell(family, qualifier, value string) map[string]map[string][]byte {
 	return map[string]map[string][]byte{family: {qualifier: []byte(value)}}
 }
 
-func TestGetReturnsRowsAndNulls(t *testing.T) {
+func TestGetReturnsRowsAndOmitsMissing(t *testing.T) {
 	fc := newFakeClient()
 	fc.seed("1", cell("cf", "title", "Dune"))
 	fc.seed("2", cell("cf", "title", "Hyperion"))
@@ -27,9 +27,8 @@ func TestGetReturnsRowsAndNulls(t *testing.T) {
 	got, err := st.Get(context.Background(), []string{"1", "2", "missing"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{
-		"1":       map[string]any{"cf": map[string]any{"title": "Dune"}},
-		"2":       map[string]any{"cf": map[string]any{"title": "Hyperion"}},
-		"missing": nil,
+		"1": map[string]any{"cf": map[string]any{"title": "Dune"}},
+		"2": map[string]any{"cf": map[string]any{"title": "Hyperion"}},
 	}, got)
 }
 

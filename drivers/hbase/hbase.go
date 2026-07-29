@@ -179,7 +179,7 @@ func splitTable(table string) (namespace, qualifier string) {
 }
 
 // Get fetches the rows whose key is one of keys and returns them keyed by the same
-// string key. A key with no row maps to nil. Each key is a bounded point Get (HBase's
+// string key. A key with no row is absent from the map. Each key is a bounded point Get (HBase's
 // efficient single-row read); empty keys short-circuit with no round-trip.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	if s.table == "" {
@@ -203,9 +203,8 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		if err != nil {
 			return nil, fmt.Errorf("hbase get: %w", err)
 		}
-		// A key with no cells reads as null, matching the KV contract.
+		// A key with no cells is left out, matching the KV contract.
 		if len(res.Cells) == 0 {
-			out[k] = nil
 			continue
 		}
 		out[k] = rowFromCells(res.Cells, s.types)

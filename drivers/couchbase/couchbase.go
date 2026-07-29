@@ -265,7 +265,7 @@ func (s *Store) keyspaceRef() string {
 }
 
 // Get fetches the documents whose ID matches one of keys and returns them keyed by ID.
-// A key with no document maps to nil, per the KV contract. A non-JSON (binary)
+// A key with no document is absent from the map, per the KV contract. A non-JSON (binary)
 // document is rendered as a string. Empty keys short-circuit with no round-trip.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	if s.collection == nil {
@@ -293,7 +293,6 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		key := op.ID
 		if op.Err != nil {
 			if errors.Is(op.Err, gocb.ErrDocumentNotFound) {
-				out[key] = nil
 				continue
 			}
 			return nil, fmt.Errorf("couchbase get: %w", op.Err)
@@ -303,12 +302,6 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 			return nil, fmt.Errorf("couchbase get: decode %q: %w", key, err)
 		}
 		out[key] = decodeValue(raw, s.decimal)
-	}
-	// A duplicated key resolves once above; make every requested key present.
-	for _, k := range keys {
-		if _, ok := out[k]; !ok {
-			out[k] = nil
-		}
 	}
 	return out, nil
 }

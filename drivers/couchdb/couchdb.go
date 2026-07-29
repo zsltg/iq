@@ -122,7 +122,7 @@ func parseURL(rawURL, address string) (connConfig, error) {
 }
 
 // Get fetches the documents whose _id matches one of keys and returns them keyed by
-// _id string. A key with no document (missing or deleted) maps to nil. Empty keys
+// _id string. A key with no document (missing or deleted) is absent from the map. Empty keys
 // short-circuit with no round-trip.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	if s.db == "" {
@@ -136,8 +136,8 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var raw json.RawMessage
-		// A missing or deleted key has no document body; ScanDoc reports it, and the
-		// key is filled with nil below, matching the KV contract.
+		// A missing or deleted key has no document body; ScanDoc reports it, and
+		// the key is simply left out, matching the KV contract.
 		if err := rows.ScanDoc(&raw); err != nil {
 			continue
 		}
@@ -153,11 +153,6 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("couchdb all_docs: %w", err)
-	}
-	for _, k := range keys {
-		if _, ok := out[k]; !ok {
-			out[k] = nil
-		}
 	}
 	return out, nil
 }

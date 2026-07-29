@@ -140,7 +140,7 @@ func TestJSONLSourceTyped(t *testing.T) {
 	require.Equal(t, "hash", recs["b"].Type)
 }
 
-func TestGetAndMissing(t *testing.T) {
+func TestGetOmitsMissing(t *testing.T) {
 	u := writeDump(t, "dump.rdb", buildRDB(t), "")
 	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
@@ -148,8 +148,7 @@ func TestGetAndMissing(t *testing.T) {
 	got, err := st.Get(context.Background(), []string{"s", "absent"})
 	require.NoError(t, err)
 	require.Equal(t, "hello", got["s"])
-	require.Nil(t, got["absent"])
-	require.Contains(t, got, "absent") // a missing key is present as nil.
+	require.NotContains(t, got, "absent") // a missing key is absent, not a nil entry.
 }
 
 func TestFormatOverride(t *testing.T) {

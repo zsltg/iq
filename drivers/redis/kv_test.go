@@ -67,7 +67,27 @@ func TestGetNormalizesEveryType(t *testing.T) {
 		"big": 9007199254740993, // above 2^53: exact int, not a lossy float64
 		"r":   1.5,
 	}, got["iq:test:json"], "RedisJSON parsed with integer precision preserved")
-	require.Nil(t, got["iq:test:absent"], "missing key is null")
+	require.NotContains(t, got, "iq:test:absent", "a missing key is absent from the map")
+}
+
+// TestGetKeepsStoredJSONNull pins the case that forces presence to ride beside
+// the value rather than being read off it: a RedisJSON document may legitimately
+// be the JSON null, so its normalized value is nil while the key exists. Reading
+// absence off the value would silently drop it.
+func TestGetKeepsStoredJSONNull(t *testing.T) {
+	store := openIntegration(t)
+	ctx := context.Background()
+	const key = "iq:test:jsonnull"
+	_, err := store.Query(ctx, []string{"JSON.SET", key, "$", "null"})
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = store.Query(ctx, []string{"DEL", key}) })
+
+	got, err := store.Get(ctx, []string{key, "iq:test:jsonnull:absent"})
+
+	require.NoError(t, err)
+	require.Contains(t, got, key, "a stored JSON null is a present value")
+	require.Nil(t, got[key])
+	require.NotContains(t, got, "iq:test:jsonnull:absent", "a missing key is absent")
 }
 
 func TestGetEmptyKeysMakesNoRoundTrip(t *testing.T) {

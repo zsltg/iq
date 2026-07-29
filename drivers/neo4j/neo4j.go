@@ -276,7 +276,7 @@ func (s *Store) run(ctx context.Context, sess neo4j.SessionWithContext, cypher s
 
 // Get fetches the nodes whose key matches one of keys and returns them keyed by that
 // string. The key is the elementId (default) or the string form of the ?key=
-// property. A key with no node maps to nil; empty keys short-circuit. For a ?key=
+// property. A key with no node is absent from the map; empty keys short-circuit. For a ?key=
 // source a key matching more than one node is an error — the KV contract is one
 // value per key — rather than an arbitrary pick.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
@@ -314,11 +314,6 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	}
 	if err := res.Err(); err != nil {
 		return nil, fmt.Errorf("neo4j get: %w", err)
-	}
-	for _, k := range keys {
-		if _, ok := out[k]; !ok {
-			out[k] = nil
-		}
 	}
 	return out, nil
 }

@@ -20,8 +20,8 @@ const scanCount = 100
 // Get fetches each key and returns it normalized to JSON-ready Go values, keyed
 // by key name. It reads the type of every key in one pipeline, then the value of
 // every key with its type-appropriate reader in a second pipeline, so the whole
-// batch costs two round-trips regardless of key count. A missing key maps to
-// nil. Keys are read once each; duplicates in the input collapse.
+// batch costs two round-trips regardless of key count. A missing key is absent
+// from the map. Keys are read once each; duplicates in the input collapse.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	if len(keys) == 0 {
 		return map[string]any{}, nil
@@ -78,18 +78,24 @@ func (s *Store) pipeValues(ctx context.Context, keys, types []string) (map[strin
 
 	out := make(map[string]any, len(keys))
 	for i, k := range keys {
-		v, err := readers[i].normalize()
+		v, present, err := readers[i].normalize()
 		if err != nil {
 			return nil, fmt.Errorf("read key %q: %w", k, err)
+		}
+		if !present {
+			continue
 		}
 		out[k] = v
 	}
 	return out, nil
 }
 
-// reader normalizes one key's pipelined reply into a JSON-ready value.
+// reader normalizes one key's pipelined reply into a JSON-ready value, and
+// reports whether the key was there to read. Presence cannot be inferred from
+// the value: a RedisJSON document may legitimately be the JSON null, so nil is
+// a real value here and absence needs its own channel.
 type reader interface {
-	normalize() (any, error)
+	normalize() (any, bool, error)
 }
 
 // readerFor queues the read appropriate to a key's type and returns the reader
@@ -119,80 +125,99 @@ func readerFor(ctx context.Context, p goredis.Pipeliner, key, typ string, dec nu
 	}
 }
 
-// missingReader normalizes an absent key to null.
+// missingReader stands in for a key TYPE reported as absent.
 type missingReader struct{}
 
-func (missingReader) normalize() (any, error) { return nil, nil }
+func (missingReader) normalize() (any, bool, error) { return nil, false, nil }
 
 // stringReader normalizes a string value. The raw string is preserved; numeric
 // strings are not coerced, so a jq filter decides whether to `tonumber`.
 type stringReader struct{ cmd *goredis.StringCmd }
 
-func (r stringReader) normalize() (any, error) {
+func (r stringReader) normalize() (any, bool, error) {
 	v, err := r.cmd.Result()
+	// The key expired or was deleted between the TYPE and GET pipelines; it is
+	// absent, not a null value.
 	if errors.Is(err, goredis.Nil) {
-		return nil, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return v, nil
+	return v, true, nil
 }
 
 // hashReader normalizes a hash to an object of string fields.
 type hashReader struct{ cmd *goredis.MapStringStringCmd }
 
-func (r hashReader) normalize() (any, error) {
+func (r hashReader) normalize() (any, bool, error) {
 	m, err := r.cmd.Result()
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	// Redis deletes a hash when its last field goes, so an empty reply means the
+	// key vanished after TYPE saw it — absent, not an empty object.
+	if len(m) == 0 {
+		return nil, false, nil
 	}
 	out := make(map[string]any, len(m))
 	for k, v := range m {
 		out[k] = v
 	}
-	return out, nil
+	return out, true, nil
 }
 
 // listReader normalizes a list to an array in list order.
 type listReader struct{ cmd *goredis.StringSliceCmd }
 
-func (r listReader) normalize() (any, error) {
+func (r listReader) normalize() (any, bool, error) {
 	vs, err := r.cmd.Result()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return toAnySlice(vs), nil
+	// An empty list cannot exist in Redis; the key went away after TYPE.
+	if len(vs) == 0 {
+		return nil, false, nil
+	}
+	return toAnySlice(vs), true, nil
 }
 
 // setReader normalizes a set to a lexically sorted array. A Redis set has no
 // order, so sorting makes the output deterministic and testable.
 type setReader struct{ cmd *goredis.StringSliceCmd }
 
-func (r setReader) normalize() (any, error) {
+func (r setReader) normalize() (any, bool, error) {
 	vs, err := r.cmd.Result()
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	// An empty set cannot exist in Redis; the key went away after TYPE.
+	if len(vs) == 0 {
+		return nil, false, nil
 	}
 	sort.Strings(vs)
-	return toAnySlice(vs), nil
+	return toAnySlice(vs), true, nil
 }
 
 // zsetReader normalizes a sorted set to an array of {member, score} objects in
 // score-ascending order, preserving rank — the frozen canonical encoding.
 type zsetReader struct{ cmd *goredis.ZSliceCmd }
 
-func (r zsetReader) normalize() (any, error) {
+func (r zsetReader) normalize() (any, bool, error) {
 	zs, err := r.cmd.Result()
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	// An empty sorted set cannot exist in Redis; the key went away after TYPE.
+	if len(zs) == 0 {
+		return nil, false, nil
 	}
 	out := make([]any, len(zs))
 	for i, z := range zs {
 		member, _ := z.Member.(string)
 		out[i] = map[string]any{"member": member, "score": z.Score}
 	}
-	return out, nil
+	return out, true, nil
 }
 
 // streamReader normalizes a stream to an array of {id, fields} objects in entry
@@ -201,10 +226,10 @@ func (r zsetReader) normalize() (any, error) {
 // names are not available to preserve.
 type streamReader struct{ cmd *goredis.XMessageSliceCmd }
 
-func (r streamReader) normalize() (any, error) {
+func (r streamReader) normalize() (any, bool, error) {
 	msgs, err := r.cmd.Result()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	out := make([]any, len(msgs))
 	for i, m := range msgs {
@@ -214,7 +239,9 @@ func (r streamReader) normalize() (any, error) {
 		}
 		out[i] = map[string]any{"id": m.ID, "fields": fields}
 	}
-	return out, nil
+	// Unlike the other collections a stream survives losing every entry, so an
+	// empty reply is a present, empty stream.
+	return out, true, nil
 }
 
 // jsonReader normalizes a RedisJSON document by parsing its JSON.GET reply. The
@@ -225,12 +252,22 @@ type jsonReader struct {
 	decimal numfmt.DecimalMode
 }
 
-func (r jsonReader) normalize() (any, error) {
+func (r jsonReader) normalize() (any, bool, error) {
 	s, err := r.cmd.Result()
-	if err != nil {
-		return nil, err
+	// Deleted between the TYPE and JSON.GET pipelines: absent, not null.
+	if errors.Is(err, goredis.Nil) {
+		return nil, false, nil
 	}
-	return decodeJSON(s, r.decimal)
+	if err != nil {
+		return nil, false, err
+	}
+	// A stored JSON null decodes to nil and is a present value, which is why
+	// presence rides beside the value rather than being read off it.
+	v, err := decodeJSON(s, r.decimal)
+	if err != nil {
+		return nil, false, err
+	}
+	return v, true, nil
 }
 
 // decodeJSON parses a JSON document into JSON-ready Go values, decoding numbers

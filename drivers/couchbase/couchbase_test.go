@@ -31,8 +31,7 @@ func TestGet(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, fixture["1"], out["1"])
 	require.Equal(t, fixture["3"], out["3"])
-	require.Nil(t, out["missing"])
-	require.Contains(t, out, "missing")
+	require.NotContains(t, out, "missing", "a key with no document is absent from the map")
 }
 
 func TestGetEmpty(t *testing.T) {

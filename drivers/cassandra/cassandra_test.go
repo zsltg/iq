@@ -21,8 +21,8 @@ func TestGetSingleKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{
 		"1": map[string]any{"id": 1, "title": "Hobbit", "author": "Tolkien"},
-		"3": nil,
 	}, got)
+	require.NotContains(t, got, "3", "a key with no row is absent, not a nil entry")
 }
 
 func TestGetCompositeKey(t *testing.T) {
@@ -42,8 +42,8 @@ func TestGetCompositeKey(t *testing.T) {
 	require.Equal(t, map[string]any{
 		`["US","1"]`: map[string]any{"country": "US", "id": 1, "amount": 100},
 		`["US","2"]`: map[string]any{"country": "US", "id": 2, "amount": 200},
-		`["US","9"]`: nil,
 	}, got)
+	require.NotContains(t, got, `["US","9"]`, "a key with no row is absent, not a nil entry")
 }
 
 func TestScanBatchesYieldsAllRows(t *testing.T) {

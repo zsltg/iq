@@ -93,7 +93,9 @@ func (s *loggingStore) record(op string, start time.Time, err error, attrs ...an
 	s.lg.Debug("store call", args...)
 }
 
-// Get delegates the bounded fetch, logging the requested and returned key counts.
+// Get delegates the bounded fetch, logging the requested and returned key
+// counts. Since a missing key is absent from the result, "returned" is the
+// number of keys that existed, not an echo of "keys".
 func (s *loggingStore) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	start := time.Now()
 	out, err := s.st.Get(ctx, keys)

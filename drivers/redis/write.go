@@ -373,10 +373,14 @@ func (s *Store) typedGet(ctx context.Context, keys []string) ([]query.Record, er
 	}
 	recs := make([]query.Record, 0, len(unique))
 	for i, k := range unique {
-		if types[i] == "none" {
-			continue // key vanished between SCAN and read; skip rather than write a null.
+		// A key that vanished between SCAN and read is absent from values, whether
+		// TYPE already said so or the value read raced; skip it rather than write
+		// a null. A stored JSON null is present, so it still becomes a record.
+		v, ok := values[k]
+		if !ok {
+			continue
 		}
-		recs = append(recs, query.Record{Key: k, Type: typeName(types[i]), Value: values[k]})
+		recs = append(recs, query.Record{Key: k, Type: typeName(types[i]), Value: v})
 	}
 	return recs, nil
 }

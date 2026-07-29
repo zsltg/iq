@@ -35,7 +35,10 @@ func (f *fakeKV) Get(_ context.Context, keys []string) (map[string]any, error) {
 	}
 	out := make(map[string]any, len(keys))
 	for _, k := range keys {
-		out[k] = f.values[k]
+		// A missing key is absent from the result, per the KVStore contract.
+		if v, ok := f.values[k]; ok {
+			out[k] = v
+		}
 	}
 	return out, nil
 }
@@ -210,6 +213,32 @@ func TestJQEngineFetchesReferencedKeys(t *testing.T) {
 	require.Equal(t, []any{"Go"}, got)
 	require.Equal(t, []string{"book:1"}, store.gotGetKeys)
 	require.Zero(t, store.scanCalls, "a specific key must not trigger a scan")
+}
+
+// TestJQEngineReadsAbsentKeyAsNull pins the query-visible half of the KVStore
+// presence contract: Get omits a missing key, and indexing an absent map key is
+// null in jq, so a bounded read of a key that is not there still emits null —
+// exactly what it emitted when the store filled the key in with nil. A store
+// that holds the key with a nil value is indistinguishable here, which is the
+// point: the difference is visible to a caller reading the map, never to jq.
+func TestJQEngineReadsAbsentKeyAsNull(t *testing.T) {
+	tests := []struct {
+		name   string
+		values map[string]any
+	}{
+		{"key absent", map[string]any{}},
+		{"key present holding null", map[string]any{"book:1": nil}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeKV{values: tt.values}
+
+			got, err := collect(t, store, `.["book:1"]`, false)
+
+			require.NoError(t, err)
+			require.Equal(t, []any{nil}, got)
+		})
+	}
 }
 
 func TestJQEngineStreamsInBatchesWithoutFlag(t *testing.T) {

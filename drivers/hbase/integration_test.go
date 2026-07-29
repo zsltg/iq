@@ -44,7 +44,7 @@ func TestIntegrationPutGetScan(t *testing.T) {
 	got, err := st.Get(ctx, []string{"1", "missing"})
 	require.NoError(t, err)
 	require.Equal(t, "Dune", got["1"].(map[string]any)["cf"].(map[string]any)["title"])
-	require.Nil(t, got["missing"])
+	require.NotContains(t, got, "missing", "a key with no row is absent from the map")
 
 	seen := map[string]any{}
 	require.NoError(t, st.ScanBatches(ctx, func(b map[string]any) error {

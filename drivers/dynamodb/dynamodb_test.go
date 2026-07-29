@@ -43,7 +43,7 @@ func TestGetByKey(t *testing.T) {
 	require.IsType(t, map[string]any{}, got["1"])
 	require.Equal(t, "The Go Programming Language", got["1"].(map[string]any)["title"])
 	require.Equal(t, 2018, got["3"].(map[string]any)["year"])
-	require.Nil(t, got["999"]) // a missing key reads as null
+	require.NotContains(t, got, "999") // a missing key is absent from the map
 }
 
 func TestGetEmpty(t *testing.T) {

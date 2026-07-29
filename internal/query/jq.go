@@ -33,8 +33,11 @@ var ErrScanNotAllowed = errors.New("query requires materializing the whole datas
 // walks the whole keyspace in pages with ScanBatches.
 type KVStore interface {
 	// Get fetches the named keys and returns a map from key to its value
-	// normalized as JSON-ready Go values. A missing key maps to nil. The keys
-	// are deduplicated by the caller.
+	// normalized as JSON-ready Go values. A missing key is absent from the map,
+	// so presence answers existence and a stored JSON null stays distinguishable
+	// from a key that is not there; a jq expression reads either as null, since
+	// indexing an absent map key yields null. The keys are deduplicated by the
+	// caller.
 	Get(ctx context.Context, keys []string) (map[string]any, error)
 	// ScanBatches walks the whole keyspace, invoking fn with each page of
 	// {key: value} as it is fetched, so a streaming caller never holds more than

@@ -235,7 +235,7 @@ func (s *Store) loadKeySchema(ctx context.Context) error {
 }
 
 // Get fetches the items whose primary key matches one of keys and returns them keyed
-// by the same string key. A key with no item maps to nil. Keys are fetched with
+// by the same string key. A key with no item is absent from the map. Keys are fetched with
 // BatchGetItem in batches of 100, retrying the throttled leftovers (UnprocessedKeys)
 // with bounded backoff. Empty keys short-circuit with no round-trip.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
@@ -261,12 +261,6 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 			out[s.keyOf(item)] = s.normalizeItem(item)
 		}); err != nil {
 			return nil, err
-		}
-	}
-	// A requested key with no item reads as null, matching the KV contract.
-	for _, k := range keys {
-		if _, ok := out[k]; !ok {
-			out[k] = nil
 		}
 	}
 	return out, nil

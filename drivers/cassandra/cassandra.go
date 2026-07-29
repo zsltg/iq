@@ -253,7 +253,7 @@ func tableMeta(session *gocql.Session, keyspace, table string) (*gocql.TableMeta
 }
 
 // Get fetches the rows whose primary key matches one of keys and returns them keyed
-// by the same string key. A key with no row maps to nil. A single-column primary
+// by the same string key. A key with no row is absent from the map. A single-column primary
 // key uses one WHERE ... IN query; a composite key uses one point query per key
 // (each bounded by ctx). Empty keys short-circuit with no round-trip.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
@@ -273,12 +273,6 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	}
 	if err != nil {
 		return nil, err
-	}
-	// A requested key with no row reads as null, matching the KV contract.
-	for _, k := range keys {
-		if _, ok := out[k]; !ok {
-			out[k] = nil
-		}
 	}
 	return out, nil
 }

@@ -181,7 +181,7 @@ func validateIndex(name string) error {
 }
 
 // Get fetches the documents whose _id matches one of keys and returns them keyed by
-// _id string. A key with no document (missing) maps to nil. Empty keys short-circuit
+// _id string. A key with no document (missing) is absent from the map. Empty keys short-circuit
 // with no round-trip.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	if s.index == "" {
@@ -207,7 +207,6 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	}
 	for _, d := range mr.Docs {
 		if !d.Found {
-			out[d.ID] = nil
 			continue
 		}
 		doc, err := decodeSource(d.Source, d.ID, s.decimal)
@@ -215,12 +214,6 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 			return nil, err
 		}
 		out[d.ID] = doc
-	}
-	// Defensive: any key the response omitted reads as absent.
-	for _, k := range keys {
-		if _, ok := out[k]; !ok {
-			out[k] = nil
-		}
 	}
 	return out, nil
 }

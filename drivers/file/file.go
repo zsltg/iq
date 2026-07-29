@@ -287,8 +287,8 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 }
 
 // Get resolves specific keys with a single filtered streaming pass, stopping once
-// every requested key is found. A key not in the dump maps to nil, matching the
-// KVStore contract.
+// every requested key is found. A key not in the dump is absent from the map,
+// matching the KVStore contract.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	if len(keys) == 0 {
 		return map[string]any{}, nil
@@ -302,7 +302,6 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	out := make(map[string]any, len(keys))
 	for _, k := range keys {
 		want[k] = struct{}{}
-		out[k] = nil
 	}
 	found := make(map[string]bool, len(keys))
 	err := s.records(ctx, false, func(recs []query.Record) error {

@@ -87,7 +87,7 @@ func buildBigRDB(t *testing.T, n int) []byte {
 }
 
 // TestCacheIndexedGet confirms a warm indexed Get is handled by the index path
-// (ok=true), returns the right values, and maps a missing key to nil.
+// (ok=true), returns the right values, and omits a missing key.
 func TestCacheIndexedGet(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "big.rdb")
 	require.NoError(t, os.WriteFile(path, buildBigRDB(t, bigCount), 0o600))
@@ -104,7 +104,38 @@ func TestCacheIndexedGet(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "v7", out["k7"])
 	require.Equal(t, "v599", out["k599"])
-	require.Nil(t, out["nope"])
+	require.NotContains(t, out, "nope", "a missing key is absent from the map")
+}
+
+// TestCacheGetMatchesStreamedGet pins the two bounded-read paths against each
+// other. The indexed cache and the streaming pass build their result maps
+// independently, so a presence rule applied to one and forgotten in the other
+// would make the same query answer differently depending on whether a cache
+// happened to be warm.
+func TestCacheGetMatchesStreamedGet(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "big.rdb")
+	require.NoError(t, os.WriteFile(path, buildBigRDB(t, bigCount), 0o600))
+	url := "file://" + path
+	dir := t.TempDir()
+	keys := []string{"k7", "k599", "nope"}
+
+	// Cold store, cache disabled: the streaming path answers.
+	cold, err := Open(url, numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	streamed, err := cold.Get(context.Background(), keys)
+	require.NoError(t, err)
+
+	// Warm the index, then read the same keys through the cache path.
+	warm, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
+	require.NoError(t, err)
+	require.NoError(t, warm.TypedScan(context.Background(), func([]query.Record) error { return nil }))
+	st, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
+	require.NoError(t, err)
+	cached, ok := st.cacheGet(context.Background(), keys)
+	require.True(t, ok, "the warm index must serve this read")
+
+	require.Equal(t, streamed, cached)
+	require.NotContains(t, streamed, "nope")
 }
 
 // TestCacheFlatModeFallsBack confirms flat mode writes a cache with no usable
@@ -296,7 +327,7 @@ func TestCacheGetDoesNotPopulate(t *testing.T) {
 
 	got, err := st.Get(context.Background(), []string{"missing"})
 	require.NoError(t, err)
-	require.Nil(t, got["missing"])
+	require.NotContains(t, got, "missing", "a missing key is absent from the map")
 	require.Empty(t, cacheFiles(t, dir), "Get must not populate the cache")
 
 	found, err := st.Get(context.Background(), []string{"s"})

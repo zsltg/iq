@@ -24,7 +24,7 @@ Cross-driver conventions every backend adapter and driver plan doc follows. Tele
 - Exec search rows always carry the row identity plus the backend's own metric vocabulary (`_score`, `_distance`); do not rename a backend's metric to another backend's word.
 - TypedScan `Type` discriminator: `"document"` default; backend natives where the type changes decoding (redis `string|hash|list|set|zset|stream|json`, `"point"`, `"node"`, `"vertex"`/`"edge"`).
 ## Reads
-- Get on a missing key yields nil, never an error.
+- Get on a missing key omits it from the returned map, never an error; a key present with a nil value means a stored JSON null.
 - Pagination ladder, take the highest rung the SDK offers: SDK iterator or stream, then native cursor/PIT/bookmark, then keyset (sorted key + range predicate) with a short-page exit, then offset paging only when the backend offers nothing else and then with the three-exit pattern (empty page, short page, offset >= total).
 - Never hand-roll OFFSET/SKIP arithmetic when a cursor or keyset exists; manual skip paging times out the mutation gate and rescans the keyspace per page.
 - Page size 100 unless the backend dictates otherwise; state a deviation in the plan.

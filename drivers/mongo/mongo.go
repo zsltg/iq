@@ -125,7 +125,7 @@ func databaseFromURI(uri string) (string, error) {
 }
 
 // Get fetches the documents whose _id matches one of keys and returns them keyed
-// by _id string. A key with no document maps to nil. Empty keys short-circuit
+// by _id string. A key with no document is absent from the map. Empty keys short-circuit
 // with no round-trip.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	if s.collection == "" {
@@ -150,12 +150,6 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	}
 	if err := cur.Err(); err != nil {
 		return nil, fmt.Errorf("mongodb cursor: %w", err)
-	}
-	// A requested key with no document reads as null, matching the KV contract.
-	for _, k := range keys {
-		if _, ok := out[k]; !ok {
-			out[k] = nil
-		}
 	}
 	return out, nil
 }

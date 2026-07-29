@@ -62,7 +62,7 @@ func TestIntegrationGetScanCountFilter(t *testing.T) {
 		require.NotNil(t, got["1"])
 		require.Equal(t, "Go", got["1"].(map[string]any)["title"])
 		require.Equal(t, 2018, got["3"].(map[string]any)["year"])
-		require.Nil(t, got["missing"])
+		require.NotContains(t, got, "missing", "a key with no node is absent from the map")
 	})
 
 	t.Run("scan all", func(t *testing.T) {

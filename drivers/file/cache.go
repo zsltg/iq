@@ -479,7 +479,6 @@ func (s *Store) cacheGet(ctx context.Context, keys []string) (map[string]any, bo
 	out := make(map[string]any, len(keys))
 	for _, k := range keys {
 		want[k] = struct{}{}
-		out[k] = nil
 	}
 	found := make(map[string]bool, len(keys))
 	for i := range idx.Pages {

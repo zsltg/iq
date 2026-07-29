@@ -40,13 +40,13 @@ func TestGet(t *testing.T) {
 
 	got, err := st.Get(ctx, []string{"1", "3", "missing"})
 	require.NoError(t, err)
-	require.Len(t, got, 3)
+	require.Len(t, got, 2, "only the two existing keys come back")
 
 	doc := got["1"].(map[string]any)
 	require.Equal(t, "Dune", doc["title"])
 	require.Equal(t, 1965, doc["year"])
 	require.Equal(t, "1", doc["_id"]) // the _id is injected into the value.
-	require.Nil(t, got["missing"])
+	require.NotContains(t, got, "missing", "a key with no document is absent from the map")
 }
 
 func TestGetEmptyKeys(t *testing.T) {

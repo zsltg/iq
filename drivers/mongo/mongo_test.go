@@ -98,7 +98,7 @@ func TestGetByID(t *testing.T) {
 		"_id": "b1", "title": "Go", "year": 2015, "tags": []any{"go"},
 	}, got["b1"])
 	require.Equal(t, "Mongo", got[oid.Hex()].(map[string]any)["title"], "ObjectID key matched by hex")
-	require.Nil(t, got["missing"], "absent _id reads as null")
+	require.NotContains(t, got, "missing", "an absent _id is absent from the map")
 }
 
 // TestGetDecimalMode reads a stored Decimal128 through Get under each decimal
