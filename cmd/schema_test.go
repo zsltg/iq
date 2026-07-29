@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -139,6 +140,70 @@ func TestSchemaSampleCap(t *testing.T) {
 			require.Len(t, items, tt.want)
 		})
 	}
+}
+
+// TestSchemaSampleCapFiltered is the cap test for the *filtered* branch, which
+// counts its own emissions and keys them synthetically rather than inheriting
+// the store's keys. Both halves matter: the counter decides when the cap trips,
+// and the stop sentinel must be swallowed rather than surfaced as an error —
+// mutate either and an over- or under-filled sample passes silently.
+func TestSchemaSampleCapFiltered(t *testing.T) {
+	path := writeJSONL(t, `{"key":"1","value":{"a":1}}
+{"key":"2","value":{"a":2}}
+{"key":"3","value":{"a":3}}
+{"key":"4","value":{"a":4}}
+`)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	st, err := openStore(ctx, &config{url: "file://" + path})
+	require.NoError(t, err)
+	defer func() { _ = st.Close() }()
+
+	tests := []struct {
+		name   string
+		filter string
+		sample int
+		want   int
+	}{
+		{"cap of one stops at one", ".[]", 1, 1},
+		{"cap of two stops at two", ".[]", 2, 2},
+		{"cap of three stops at three", ".[]", 3, 3},
+		{"cap above the keyspace reads all", ".[]", 10, 4},
+		{"zero reads every survivor", ".[]", 0, 4},
+		{"the cap counts survivors, not items scanned", ".[] | select(.a > 2)", 1, 1},
+		{"a filter narrowing below the cap yields what survives", ".[] | select(.a > 2)", 10, 2},
+		{"a fan-out filter counts each emitted value", ".[] | .a, .a", 3, 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items, err := sampleItems(ctx, st, tt.filter, tt.sample, query.RunOptions{})
+
+			require.NoError(t, err, "the stop sentinel must never surface as an error")
+			require.Len(t, items, tt.want)
+			// The synthetic keys are the counter's output, so a shifted start or a
+			// missed increment shows up as a collision or a gap.
+			for i := range tt.want {
+				require.Contains(t, items, strconv.Itoa(i), "keys run 0..n-1")
+			}
+		})
+	}
+}
+
+// TestSchemaSampleFilteredPropagatesError pins the other half of the sentinel
+// guard: a real error from the engine is returned, not swallowed alongside it.
+func TestSchemaSampleFilteredPropagatesError(t *testing.T) {
+	path := writeJSONL(t, `{"key":"1","value":{"a":1}}`+"\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	st, err := openStore(ctx, &config{url: "file://" + path})
+	require.NoError(t, err)
+	defer func() { _ = st.Close() }()
+
+	// A holistic filter needs the whole dataset materialized, which the options
+	// here do not permit, so the engine refuses before emitting anything.
+	_, err = sampleItems(ctx, st, "keys", 0, query.RunOptions{})
+
+	require.ErrorIs(t, err, query.ErrScanNotAllowed)
 }
 
 func TestSchemaUnknownSource(t *testing.T) {
