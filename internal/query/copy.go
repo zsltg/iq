@@ -22,10 +22,10 @@ var ErrNoKey = errors.New("record has no key")
 type RecordSource func(ctx context.Context, fn func(batch []Record) error) error
 
 // Copier moves records from a RecordSource into a Putter in bounded pages,
-// applying an optional per-record Transform (the --filter/--key logic) between
-// them. It accumulates a WriteStat and streams, so memory stays O(page). Writes
-// are non-atomic across keys — the WriteStat reports honestly rather than
-// pretending all-or-nothing.
+// applying an optional per-record Transform (the item filter and --key logic)
+// between them. It accumulates a WriteStat and streams, so memory stays O(page).
+// Writes are non-atomic across keys — the WriteStat reports honestly rather
+// than pretending all-or-nothing.
 type Copier struct {
 	Dst       Putter
 	Mode      WriteMode
@@ -133,10 +133,10 @@ func NewTransform(opts TransformOptions) (func(Record) ([]Record, error), error)
 	if opts.Filter != "" {
 		q, err := gojq.Parse(opts.Filter)
 		if err != nil {
-			return nil, fmt.Errorf("parse --filter: %w", err)
+			return nil, fmt.Errorf("parse item filter: %w", err)
 		}
 		if filterCode, err = gojq.Compile(q); err != nil {
-			return nil, fmt.Errorf("compile --filter: %w", err)
+			return nil, fmt.Errorf("compile item filter: %w", err)
 		}
 	}
 	if opts.Key != "" {
@@ -186,7 +186,7 @@ func applyFilter(code *gojq.Code, value any) ([]any, error) {
 			return out, nil
 		}
 		if err, ok := v.(error); ok {
-			return nil, fmt.Errorf("apply --filter: %w", err)
+			return nil, fmt.Errorf("apply item filter: %w", err)
 		}
 		out = append(out, v)
 	}
@@ -212,7 +212,7 @@ func deriveKey(opts TransformOptions, keyCode *gojq.Code, sourceKey string, valu
 	} else if single {
 		key = sourceKey
 	} else {
-		return "", fmt.Errorf("%w: --filter emits multiple values per item; add --key or --key-field", ErrNoKey)
+		return "", fmt.Errorf("%w: the item filter emits multiple values per item; add --key or --key-field", ErrNoKey)
 	}
 	if key == "" {
 		return "", ErrNoKey

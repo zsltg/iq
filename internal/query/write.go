@@ -12,7 +12,7 @@ import (
 // backend; key is the record key the value arrived under.
 func NonObjectValueError(driver, key string) error {
 	return fmt.Errorf(
-		`%s: value for key %q is not a JSON object; transform explicitly, e.g. --filter 'if type == "object" then . else {value: .} end'`,
+		`%s: value for key %q is not a JSON object; transform explicitly, e.g. iq 'if type == "object" then . else {value: .} end' --insert <dest>`,
 		driver, key,
 	)
 }

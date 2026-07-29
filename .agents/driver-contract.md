@@ -41,7 +41,7 @@ Cross-driver conventions every backend adapter and driver plan doc follows. Tele
 - Trino is the industrial precedent: per-connector pushdown capability, conservative refusal on a type coercion the backend cannot match, EXPLAIN-observable delegation (trino.io pushdown docs) — iq's push tables and `--explain` are the same contract.
 ## Writes
 - Exact-round-trip invariant: a successful Put stores the value exactly as given or the driver rejects; never silently wrap, coerce or truncate.
-- Non-object value where the backend needs a document rejects with the uniform hint: `<driver>: value for key %q is not a JSON object; transform explicitly, e.g. --filter 'if type == "object" then . else {value: .} end'`.
+- Non-object value where the backend needs a document rejects with the uniform hint: `<driver>: value for key %q is not a JSON object; transform explicitly, e.g. iq 'if type == "object" then . else {value: .} end' --insert <dest>`.
 - Never invent data on write: no synthesized vectors, no defaulted fields the user did not pass.
 - Keyless-Put ladder: backend or SDK mints the id, else the client mints UUIDv4 (never ad-hoc hex), else `ErrNoKey` for external-identity KV stores, else derive-from-value or refuse where identity is value-derived (influx).
 - Where the backend lacks primary-key uniqueness (milvus), the uniqueness pre-read is load-bearing; do not drop it for speed.

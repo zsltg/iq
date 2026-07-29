@@ -108,7 +108,7 @@ The query core is driver-agnostic and lives behind two ports a backend adapter i
   named set of keys by canonical key). A backend implements
   only the capabilities its model supports, and a command type-asserts and rejects cleanly when one
   is absent — so a new backend never edits the commands, and Redis, whose DB index cannot be
-  removed, simply omits `Dropper`, while a keyless store like InfluxDB omits `Deleter`. `Copier` streams `TypedScan → optional --filter transform →
+  removed, simply omits `Dropper`, while a keyless store like InfluxDB omits `Deleter`. `Copier` streams `TypedScan → optional item-filter transform →
   Put` in bounded pages; the type tag is what makes a Redis round-trip lossless, since a hash and a
   document both normalize to a JSON object. The default command's `--insert` (write items into a
   source) and `--typed` (emit a re-importable `{key,type,value}` dump) drive this — sq-style, with

@@ -25,7 +25,7 @@ write `.[]` — iteration over the source is implicit. Existing keys are overwri
 A document store (Mongo, CouchDB, Couchbase, Elasticsearch) stores each value exactly as given and so requires it
 be a JSON object: a bare scalar — a Redis string value, say — is **rejected** with a hint rather than
 silently wrapped as `{"value": …}`, so a successful copy round-trips exactly. Shape it explicitly first,
-e.g. `--filter 'if type == "object" then . else {value: .} end'`.
+e.g. `iq 'if type == "object" then . else {value: .} end' --insert <dest>`.
 
 ```bash
 iq --src books --insert books2                        # source → source, key/_id-preserving
