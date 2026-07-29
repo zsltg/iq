@@ -384,6 +384,49 @@ func TestDiffExitCodeRedisIntegration(t *testing.T) {
 	require.ErrorIs(t, err, errQuietExit)
 }
 
+// TestDiffFilterSurface pins the command-level filter rules without touching a
+// store: --filter supplies a default that a side's own "=" overrides, and
+// --stats refuses a filter on both the human and the --patch path (they reach
+// the stats collector by different routes).
+func TestDiffFilterSurface(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("a", "redis://h:6379/0"))
+	require.NoError(t, c.Add("b", "redis://h:6379/1"))
+	seedConfig(t, c)
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+
+	t.Run("--filter defaults both sides", func(t *testing.T) {
+		left, err := parseSourceSpec(cf, "a", ".[] | select(.x)")
+		require.NoError(t, err)
+		right, err := parseSourceSpec(cf, "b", ".[] | select(.x)")
+		require.NoError(t, err)
+
+		require.Equal(t, ".[] | select(.x)", left.filter)
+		require.Equal(t, ".[] | select(.x)", right.filter)
+	})
+
+	t.Run("a side's own filter wins over the default", func(t *testing.T) {
+		_, err := parseSourceSpec(cf, ".[] | select(.y)", ".[] | select(.x)")
+		require.Error(t, err, "the address half must still name a source")
+
+		got, err := parseSourceSpec(cf, "a=.[] | select(.y)", ".[] | select(.x)")
+		require.NoError(t, err)
+		require.Equal(t, ".[] | select(.y)", got.filter)
+	})
+
+	t.Run("--stats refuses a filter", func(t *testing.T) {
+		cfg := &config{timeout: 5 * time.Second}
+		for _, extra := range [][]string{{"--stats"}, {"--stats", "--patch"}} {
+			args := append([]string{"a=.[]", "b"}, extra...)
+
+			_, err := runCmd(t, newDiffCmd(cfg), args...)
+
+			require.ErrorContains(t, err, "no items to filter", "args: %v", args)
+		}
+	})
+}
+
 func TestDiffDataAndSchemaMongoIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: needs a reachable MongoDB")
@@ -440,6 +483,67 @@ func TestDiffSchemaCrossDriverMongoIntegration(t *testing.T) {
 	require.Contains(t, out, "_id")
 }
 
+// TestReadAllFilteredRedisIntegration pins the scoped read: only the items the
+// spec's filter keeps come back, and each keeps its own key so the diff can
+// still match by key. The unfiltered control reads the same keyspace whole, so
+// the filter is what narrows it rather than the seeding.
+func TestReadAllFilteredRedisIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: needs a reachable Redis")
+	}
+	base := redisBaseURL()
+	u, err := withRedisDB(base, testRedisDB)
+	require.NoError(t, err)
+	seedRedis(t, u, map[string]string{"k1": "keep", "k2": "drop", "k3": "keep"})
+
+	tests := []struct {
+		name   string
+		filter string
+		want   map[string]any
+	}{
+		{"no filter reads the keyspace", "", map[string]any{"k1": "keep", "k2": "drop", "k3": "keep"}},
+		{"select keeps the survivors under their keys", `.[] | select(. == "keep")`, map[string]any{"k1": "keep", "k3": "keep"}},
+		{"projection keeps the key", `.[] | {v: .}`, map[string]any{
+			"k1": map[string]any{"v": "keep"},
+			"k2": map[string]any{"v": "drop"},
+			"k3": map[string]any{"v": "keep"},
+		}},
+		{"a filter matching nothing yields nothing", `.[] | select(. == "absent")`, map[string]any{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			spec := sourceSpec{endpoint: endpoint{handle: "a", url: u}, filter: tt.filter}
+
+			got, err := readAll(ctx, &config{}, spec, nil)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestReadAllRejectsUnkeyedFilterRedisIntegration pins that a filter which
+// cannot keep a key is refused rather than quietly producing an unattributable
+// value: a keyed diff has nowhere to put it.
+func TestReadAllRejectsUnkeyedFilterRedisIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: needs a reachable Redis")
+	}
+	base := redisBaseURL()
+	u, err := withRedisDB(base, testRedisDB)
+	require.NoError(t, err)
+	seedRedis(t, u, map[string]string{"k1": "v1"})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	spec := sourceSpec{endpoint: endpoint{handle: "a", url: u}, filter: "keys"}
+
+	_, err = readAll(ctx, &config{}, spec, nil)
+
+	require.ErrorIs(t, err, query.ErrNotKeyed)
+}
+
 // TestReadAllReportsPagesRedisIntegration pins readAll's onPage contract: a
 // non-nil callback receives one tick per scanned page whose sizes sum to the
 // keyspace, and a nil callback is simply skipped. Without the non-nil case the
@@ -473,7 +577,7 @@ func TestReadAllReportsPagesRedisIntegration(t *testing.T) {
 			if tt.withCB {
 				onPage = func(n int) { pages = append(pages, n) }
 			}
-			got, err := readAll(ctx, tgt, onPage)
+			got, err := readAll(ctx, &config{}, tgt, onPage)
 			require.NoError(t, err)
 			require.Len(t, got, len(kv))
 			if !tt.withCB {
@@ -768,7 +872,7 @@ func TestPatchLayerCanceledContext(t *testing.T) {
 			// The canceled context fails each arm's collector before any dial; an
 			// arm that drops the context would reach the network and fail
 			// differently.
-			_, err := patchLayer(ctx, left, right, tt.statsMode, tt.schemaMode, nil, 0, nil)
+			_, err := patchLayer(ctx, &config{}, left, right, tt.statsMode, tt.schemaMode, nil, 0, nil)
 			require.ErrorIs(t, err, context.Canceled)
 		})
 	}

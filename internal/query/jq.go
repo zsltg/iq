@@ -27,6 +27,17 @@ var ErrEmptyExpression = errors.New("empty expression: expected a jq filter")
 // CLI; the caller translates it into whatever opt-in it exposes.
 var ErrScanNotAllowed = errors.New("query requires materializing the whole dataset")
 
+// ErrNotKeyed is returned by RunKeyed for an expression whose output cannot be
+// attributed to a key: one that collapses the keyspace into a single value, or
+// one bounded to several keys at once. The message names no flag so the core
+// stays independent of the CLI.
+var ErrNotKeyed = errors.New("expression does not keep each item's key")
+
+// ErrMultiValued is returned by RunKeyed when a filter emits more than one value
+// for one key. A keyed set holds one value per key, so the caller is told rather
+// than having a value silently picked for it.
+var ErrMultiValued = errors.New("filter emits multiple values for one key")
+
 // KVStore is the port the jq use case depends on. A driver adapter implements
 // it; the core never imports a concrete driver. The jq expression names the keys
 // to read, so the store fetches a caller-supplied, bounded set with Get, or
@@ -222,6 +233,109 @@ func (e *JQEngine) estimate(ctx context.Context, onEstimate func(int64)) {
 		return
 	}
 	onEstimate(n)
+}
+
+// RunKeyed runs src the way Run does but keeps each output attached to the key
+// it came from, calling emit once per surviving key. It is the read a keyed
+// comparison needs: a diff matches items by key, and Run's value stream has
+// dropped the key by the time it emits.
+//
+// It routes two ways, both of which preserve the key:
+//   - streamable (`.[]`-rooted): the whole expression runs against a
+//     single-entry root per item, page by page. A streamable filter distributes
+//     over any partition of the input, and one element is a partition, so the
+//     result equals a whole-keyspace run. With Compile, a pushable predicate
+//     still pre-filters at the store.
+//   - key-bounded naming exactly one key: the key is fetched, and the whole
+//     expression runs against it — so `.["k"].field` projects as written. A key
+//     the store does not have emits nothing at all, which is what lets a diff
+//     say removed rather than changed-to-null.
+//
+// Anything else returns ErrNotKeyed: a holistic filter collapses the keyspace
+// into one value with no key to attribute it to, and a bounded filter naming
+// several keys yields one output over several candidate keys, which no
+// attribution rule can settle.
+//
+// A filter that emits more than one value for a key is an error, not a silent
+// pick: a keyed set holds one value per key.
+func (e *JQEngine) RunKeyed(ctx context.Context, src string, opts RunOptions, emit func(key string, v any) error) error {
+	if src == "" {
+		return ErrEmptyExpression
+	}
+	q, err := gojq.Parse(src)
+	if err != nil {
+		return fmt.Errorf("parse expression: %w", err)
+	}
+	keys := selector.Keys(q)
+	code, err := gojq.Compile(q)
+	if err != nil {
+		return fmt.Errorf("compile expression: %w", err)
+	}
+
+	switch {
+	case !keys.Scan:
+		if len(keys.Keys) != 1 {
+			return ErrNotKeyed
+		}
+		root, err := e.store.Get(ctx, keys.Keys)
+		if err != nil {
+			return fmt.Errorf("fetch keys: %w", err)
+		}
+		k := keys.Keys[0]
+		v, ok := root[k]
+		if !ok {
+			// Absent, not null: emitting nothing is what distinguishes a key the
+			// store does not have from one holding a null.
+			return nil
+		}
+		return emitKeyed(ctx, code, k, v, emit)
+	case keys.Streamable:
+		scan, pushed := e.scanner(q, opts)
+		if !pushed {
+			e.estimate(ctx, opts.OnEstimate)
+		}
+		err := scan(ctx, func(batch map[string]any) error {
+			if opts.OnPage != nil {
+				opts.OnPage(len(batch))
+			}
+			for k, v := range batch {
+				if err := emitKeyed(ctx, code, k, v, emit); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("scan keys: %w", err)
+		}
+		return nil
+	default:
+		return ErrNotKeyed
+	}
+}
+
+// emitKeyed runs code over the single-entry root {key: value} and forwards the
+// one value it produces. Zero outputs means the filter dropped the item; more
+// than one means the filter fans a single key out into several values, which a
+// keyed set cannot hold, so it is refused with the key named.
+func emitKeyed(ctx context.Context, code *gojq.Code, key string, value any, emit func(string, any) error) error {
+	var out any
+	n := 0
+	err := runCode(ctx, code, map[string]any{key: value}, func(v any) error {
+		n++
+		if n > 1 {
+			return fmt.Errorf("%w: key %q", ErrMultiValued, key)
+		}
+		out = v
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return nil
+	}
+	return emit(key, out)
 }
 
 // runBounded fetches the named keys and runs the filter once over them.

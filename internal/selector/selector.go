@@ -51,6 +51,13 @@ func streamable(q *gojq.Query) bool {
 	// Follow the leftmost stage of the pipe chain: `a | b | c` nests as
 	// ((a | b) | c), so the first stage is the deepest Left.
 	for q.Op == gojq.OpPipe {
+		// `E as $x | body` is a pipe carrying binding patterns, and its body is fed
+		// the *root*, not each bound element — so `.[] as $x | .` yields the whole
+		// input once per element and does not distribute over a partition, however
+		// much its left side looks like a plain `.[]`.
+		if len(q.Patterns) > 0 {
+			return false
+		}
 		q = q.Left
 	}
 	if q.Term == nil {

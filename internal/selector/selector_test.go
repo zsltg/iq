@@ -74,6 +74,9 @@ func TestKeysScan(t *testing.T) {
 		{"interpolated index", `.["\(.x)"]`, false},
 		{"variable reference", "$x", false},
 		{"control flow", "if .a then .b end", false},
+		{"root binding feeds the body the root", ".[] as $x | .", false},
+		{"root binding, body ignores the root", ".[] as $x | $x", false},
+		{"binding inside the residual stays per-element", ".[] | .a as $x | {$x}", true},
 		{"scan wins over explicit key", "[ ., .a ]", false},
 		{"unresolvable inside array", "[ .a, keys ]", false},
 	}

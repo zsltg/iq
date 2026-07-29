@@ -19,7 +19,14 @@ remains the untyped escape hatch for anything the typed path does not cover.)
   `iq '.[]' --jsonl` is already a restorable backup, exactly as in sq.
 
 With `--insert`/`--typed` the filter transforms **each item** (its key is preserved), so you do **not**
-write `.[]` — iteration over the source is implicit. Existing keys are overwritten (upsert) unless
+write `.[]` — iteration over the source is implicit. This is the one place iq reads a filter per item;
+everywhere else — a plain query, `--from`, and the `<source>=<jq>` specs `iq diff` and `iq schema` take —
+the filter is rooted at the whole keyspace and you write `.[]` yourself. The split is deliberate: a
+keyspace-rooted filter can aggregate across items (`[.[] | .total] | add`) and can name a single key
+(`.["orders:42"]`), neither of which a per-item filter can express, while the write path has no keyspace
+at all when items arrive from piped stdin. Nothing can tell the two apart automatically — `.name` means
+*the key named "name"* keyspace-rooted and *the field `name`* per item — so they stay separate rather
+than guessing. Existing keys are overwritten (upsert) unless
 `--no-overwrite`; `--replace` empties the destination first (with confirmation, or `--force`).
 
 A document store (Mongo, CouchDB, Couchbase, Elasticsearch) stores each value exactly as given and so requires it

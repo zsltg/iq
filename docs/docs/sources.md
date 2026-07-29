@@ -137,8 +137,8 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   by `--timeout`. The location header is redacted like `iq ls`: `--reveal` un-redacts an inline
   password, `--expand` resolves a keyring-backed one.
 - `iq diff <a> <b>` — compare two sources. `--data` (the default) diffs items key by key —
-  added / removed / changed, keyed by document `_id` (MongoDB) or key (Redis); it reads both
-  keyspaces fully into memory, the deliberate cost of needing both key sets at once, and is allowed
+  added / removed / changed, keyed by document `_id` (MongoDB) or key (Redis); unfiltered it reads
+  both keyspaces fully into memory, the deliberate cost of needing both key sets at once, and is allowed
   across drivers (a power tool for verifying a migration, not a schema comparison — the match is
   only as meaningful as the keys lining up). `--stats` diffs native introspection trees (**same
   driver only**). `--schema` diffs an inferred, sampled field/type shape (`--sample`) and is **allowed
@@ -158,11 +158,32 @@ iq --src books.authors '.[]'     # the same connection, a different collection
   keyspace map. `--patch` excludes `--json`, `--yaml`, and `--set-arrays` (a positional patch cannot
   carry order-insensitive semantics). `diff` exits non-zero when the sources differ and zero when they
   match (diff(1)-style), so scripts can branch on the exit status. Bounded by `--timeout`.
+
+    Each side may carry a jq filter, scoping the comparison to part of a keyspace: per side as
+    `<source>=<jq>`, or for both at once with `--filter`, a side's own filter winning. The filter is
+    `.[]`-rooted as on a plain query — iteration is **not** implicit here, unlike `--insert` — because
+    a keyed diff needs every item to keep its key, and a pushable `select(...)` narrows the read at the
+    backend rather than merely narrowing the report. A filter may instead name a single key
+    (`prod=.["orders:42"]`) to compare one document, where an absent key reports as *removed* rather
+    than as a change to null. A filter that collapses the keyspace (`keys`, `map(...)`) or fans one
+    item out into several values (`.[] | .tags[]`) is refused: neither leaves a key to match on.
+    `--stats` takes no filter at all — it diffs the backend's own introspection, which has no items.
+
+    ```bash
+    iq diff prod staging --filter '.[] | select(.status == "new")'
+    iq diff 'prod=.[] | select(.type == "order")' 'staging=.[] | select(.kind == "ORDER")'
+    iq diff 'prod=.["orders:42"]' 'staging=.["orders:42"]'
+    ```
 - `iq schema [source]` — sample a source and emit a draft 2020-12 **JSON Schema** inferred from its
   values (the same inference `diff --schema` uses, projected to standard JSON Schema). It is the
   driver-agnostic, sampled complement to `iq inspect`'s native introspection: address the source like
   `inspect` (`iq schema shop.orders`), sample with `--sample`, bounded by `--timeout`. Non-object
   keyspaces are legal (a string keyspace emits `{"type":"string"}`); it describes values, not keys.
+  A `source=<jq>` spec (or `--filter`) scopes which items the shape is inferred from, so
+  `iq schema 'prod.orders=.[] | select(.active)'` describes only the active ones; the `--sample` cap
+  then applies to the survivors, so a selective filter walks further into the keyspace to fill it.
+  Because a shape describes values and never keys, a filter that fans one item out into several
+  values is fine here even though a keyed `diff` must refuse it.
   The output is standard JSON Schema for interop — pipe it to a code generator
   (`iq schema prod.orders > s.json && quicktype -s schema s.json -l go`). A schema is field names and
   types, a few hundred bytes — not a dump of production documents into a third-party tool.

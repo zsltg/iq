@@ -394,16 +394,18 @@ skip the confirmation prompt
 .SS iq diff
 Compare two sources by data, stats, or inferred schema
 .PP
-\fBUsage:\fR iq diff <a> <b>
+\fBUsage:\fR iq diff <a>[=<jq>] <b>[=<jq>]
 .PP
 Compare two saved sources across the layers a schemaless store can meaningfully compare. Selecting no layer defaults to \-\-data; layers combine.
 .PP
 .RS
 .nf
   \-\-data    item\-level diff: added / removed / changed, keyed by document _id
-            (MongoDB) or key (Redis). Reads both keyspaces fully into memory,
-            so it costs memory proportional to the two sources \(em a deliberate
-            tradeoff, since an added/removed diff needs both key sets at once.
+            (MongoDB) or key (Redis). Unfiltered it reads both keyspaces fully
+            into memory, so it costs memory proportional to the two sources \(em a
+            deliberate tradeoff, since an added/removed diff needs both key sets
+            at once; a filter narrows that read, and a pushable one narrows it
+            at the backend.
             Allowed across drivers (Mongo _id vs Redis key): useful for
             verifying a migration, but the identity match is only as meaningful
             as the keys lining up \(em a power\-user tool, not a schema comparison.
@@ -420,12 +422,25 @@ Compare two saved sources across the layers a schemaless store can meaningfully 
 .PP
 Use \-j/\-\-json or \-y/\-\-yaml for a machine\-readable delta. diff exits non\-zero when the sources differ and zero when they match (diff(1)\-style), so scripts can branch on the exit status.
 .PP
+Each side may carry a jq filter, so a diff can be scoped to part of a keyspace: per side as `<source>=<jq>`, or for both at once with \-\-filter, a side's own filter winning. The filter is `.[]`\-rooted as on a plain query (iteration is not implicit here, unlike \-\-insert), because a keyed diff needs each item to keep its key:
+.PP
+.RS
+.nf
+    iq diff prod staging \-\-filter '.[] | select(.status == "new")'
+.fi
+.RE
+.PP
+A filter may instead name a single key (prod=.["orders:42"]) to compare one document. One that collapses the keyspace, or fans an item out into several values, is refused: neither leaves a key to match on. \-\-stats takes no filter \(em it diffs the backend's own introspection, which has no items.
+.PP
 \-\-set\-arrays compares every array order\-insensitively as a multiset (duplicates counted), reporting membership deltas at the array's own path. \-\-patch emits an RFC 6902 JSON Patch instead of the human/JSON delta; it renders exactly one layer (choose one of \-\-data/\-\-stats/\-\-schema) and excludes \-\-json, \-\-yaml, and \-\-set\-arrays.
 .PP
 \fBFlags:\fR
 .TP
 \fB\-\-data\fR
 diff items key by key (default when no layer is chosen; cross\-driver allowed)
+.TP
+\fB\-\-filter\fR
+`.[]`\-rooted jq filter scoping both sides; a spec's own `source=<jq>` overrides it for that side
 .TP
 \fB\-j\fR, \fB\-\-json\fR
 emit machine\-readable JSON
@@ -456,6 +471,11 @@ emit machine\-readable YAML
 .nf
   # Item\-level diff (the default layer) of two collections in one source.
   $ iq diff shop.orders shop.users
+
+  # Scope both sides to part of the keyspace, or each side separately.
+  $ iq diff prod staging \-\-filter '.[] | select(.status == "new")'
+  $ iq diff 'prod=.[] | select(.type == "order")' 'staging=.[] | select(.kind == "ORDER")'
+  $ iq diff 'prod=.["orders:42"]' 'staging=.["orders:42"]'   # one document
 
   # Across environments; compare shapes or native stats.
   $ iq diff prod/shop staging/shop \-\-schema
@@ -550,17 +570,22 @@ emit machine\-readable YAML
 .SS iq schema
 Emit a draft 2020\-12 JSON Schema inferred from a sampled source
 .PP
-\fBUsage:\fR iq schema [source]
+\fBUsage:\fR iq schema [source[=<jq>]]
 .PP
 Sample a source and project a schema inferred from its values.
 .PP
-The positional argument names the source, like `iq schema prod`; with none it uses \-\-src or the active source, and accepts sq\-style `<source>.<collection>` addressing. Unlike `inspect`, which shows a backend's native introspection, `schema` infers a driver\-agnostic shape: the field/type structure sampled from the values themselves. The shape is sampled (\-\-sample) and inferred, never declared, so a wider sample yields a truer shape. It describes values, not keys; a non\-object keyspace is legal (a string keyspace emits {"type":"string"}).
+The positional argument names the source, like `iq schema prod`; with none it uses \-\-src or the active source, and accepts sq\-style `<source>.<collection>` addressing. Unlike `inspect`, which shows a backend's native introspection, `schema` infers a driver\-agnostic shape: the field/type structure sampled from the values themselves. The shape is sampled (\-\-sample) and inferred, never declared, so a wider sample yields a truer shape. A `source=<jq>` spec (or \-\-filter) scopes which items the shape is inferred from, so `iq schema 'prod=.[] | select(.active)'` describes only the active ones; the sample cap then applies to the survivors, so a selective filter walks further into the keyspace to fill it.
+.PP
+It describes values, not keys; a non\-object keyspace is legal (a string keyspace emits {"type":"string"}).
 .PP
 \-\-format picks the contract dialect the shape projects into:   jsonschema  JSON Schema draft 2020\-12 (default), for interop with code generators \(em               iq schema prod.orders > orders.schema.json && quicktype \-s schema orders.schema.json \-l go   odcs        Open Data Contract Standard v3.1.0, a YAML data contract for tools such               as datacontract\-cli, Soda, and Great Expectations
 .PP
 jsonschema honors \-y to emit YAML instead of JSON; odcs is always YAML (its canonical form). A schema is field names and types \(em a few hundred bytes \(em not a dump of documents.
 .PP
 \fBFlags:\fR
+.TP
+\fB\-\-filter\fR
+jq filter scoping which items the shape is inferred from; the spec form `source=<jq>` sets it per source
 .TP
 \fB\-\-format\fR
 contract format: jsonschema or odcs (default jsonschema)
@@ -577,6 +602,7 @@ emit YAML instead of JSON (jsonschema only; odcs is always YAML)
   $ iq schema                      # active source
   $ iq schema shop.orders          # one collection (sq\-style handle.collection)
   $ iq schema prod \-\-sample 5000   # widen the sample
+  $ iq schema 'prod.orders=.[] | select(.active)'  # shape of a subset
   $ iq schema prod.orders > orders.schema.json  # save for quicktype
   $ iq schema prod.orders \-\-format odcs > orders.odcs.yaml  # emit an ODCS v3.1.0 contract
 .fi

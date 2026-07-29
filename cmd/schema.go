@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -30,6 +31,7 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 		sample  int
 		yamlOut bool
 		format  string
+		filter  string
 	)
 	long := "Sample a source and project a schema inferred from its values.\n\n" +
 		"The positional argument names the source, like `iq schema prod`; with none it uses\n" +
@@ -37,7 +39,11 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 		"Unlike `inspect`, which shows a backend's native introspection, `schema` infers a\n" +
 		"driver-agnostic shape: the field/type structure sampled from the values themselves.\n" +
 		"The shape is sampled (--sample) and inferred, never declared, so a wider sample\n" +
-		"yields a truer shape. It describes values, not keys; a non-object keyspace is legal\n" +
+		"yields a truer shape. A `source=<jq>` spec (or --filter) scopes which items the\n" +
+		"shape is inferred from, so `iq schema 'prod=.[] | select(.active)'` describes\n" +
+		"only the active ones; the sample cap then applies to the survivors, so a\n" +
+		"selective filter walks further into the keyspace to fill it.\n\n" +
+		"It describes values, not keys; a non-object keyspace is legal\n" +
 		"(a string keyspace emits {\"type\":\"string\"}).\n\n" +
 		"--format picks the contract dialect the shape projects into:\n" +
 		"  jsonschema  JSON Schema draft 2020-12 (default), for interop with code generators —\n" +
@@ -47,13 +53,14 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 		"jsonschema honors -y to emit YAML instead of JSON; odcs is always YAML (its canonical\n" +
 		"form). A schema is field names and types — a few hundred bytes — not a dump of documents."
 	c := &cobra.Command{
-		Use:               "schema [source]",
+		Use:               "schema [source[=<jq>]]",
 		ValidArgsFunction: completeSourceHandles,
 		Short:             "Emit a draft 2020-12 JSON Schema inferred from a sampled source",
 		Long:              long,
 		Example: "  $ iq schema                      # active source\n" +
 			"  $ iq schema shop.orders          # one collection (sq-style handle.collection)\n" +
 			"  $ iq schema prod --sample 5000   # widen the sample\n" +
+			"  $ iq schema 'prod.orders=.[] | select(.active)'  # shape of a subset\n" +
 			"  $ iq schema prod.orders > orders.schema.json  # save for quicktype\n" +
 			"  $ iq schema prod.orders --format odcs > orders.odcs.yaml  # emit an ODCS v3.1.0 contract",
 		Args: cobra.MaximumNArgs(1),
@@ -65,7 +72,16 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 			if len(args) > 0 {
 				arg = args[0]
 			}
-			if err := resolveInspectSource(cfg, arg); err != nil {
+			// The address half selects the source; the filter half (from the spec's
+			// "=" or --filter) scopes which items the shape is inferred from.
+			addr, specFilter, _ := strings.Cut(arg, "=")
+			if strings.TrimSpace(specFilter) == "" && strings.Contains(arg, "=") {
+				return fmt.Errorf("invalid source %q: empty filter", arg)
+			}
+			if specFilter != "" {
+				filter = specFilter
+			}
+			if err := resolveInspectSource(cfg, addr); err != nil {
 				return err
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
@@ -75,9 +91,9 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 				return redactErr(err, cfg.url)
 			}
 			defer func() { _ = st.Close() }()
-			items, err := sampleItems(ctx, st, sample)
+			items, err := sampleItems(ctx, st, filter, sample, cfg.runOptions())
 			if err != nil {
-				return fmt.Errorf("sample %q: %w", cfg.handle, redactErr(err, cfg.url))
+				return fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(filter, err), cfg.url))
 			}
 			sh := shape.Infer(items)
 			if format == schemaFormatODCS {
@@ -88,6 +104,7 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 		},
 	}
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled (0 = all)")
+	c.Flags().StringVar(&filter, "filter", "", "jq filter scoping which items the shape is inferred from; the spec form `source=<jq>` sets it per source")
 	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit YAML instead of JSON (jsonschema only; odcs is always YAML)")
 	c.Flags().StringVar(&format, "format", schemaFormatJSONSchema, "contract format: jsonschema or odcs")
 	_ = c.RegisterFlagCompletionFunc("format", fixedValues(schemaFormatJSONSchema, schemaFormatODCS))

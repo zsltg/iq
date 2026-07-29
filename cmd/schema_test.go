@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"github.com/zsltg/iq/internal/query"
 )
 
 // writeJSONL writes keyed-JSONL lines to a temp file and returns its path.
@@ -73,7 +75,7 @@ func TestSchemaSampleCap(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			items, err := sampleItems(ctx, st, tt.sample)
+			items, err := sampleItems(ctx, st, "", tt.sample, query.RunOptions{})
 			require.NoError(t, err)
 			require.Len(t, items, tt.want)
 		})

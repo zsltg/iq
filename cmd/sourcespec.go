@@ -7,6 +7,7 @@ import (
 
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/query"
 )
 
 // sourceSpec is a source paired with the jq that reduces it: the address half
@@ -28,6 +29,28 @@ func (s sourceSpec) collection() string {
 		return s.address
 	}
 	return iqmongo.CollectionFromURI(s.url)
+}
+
+// runConfig builds the per-source config a read of this spec runs under. It
+// carries the run-wide settings forward — decimal mode above all, which changes
+// what the filter computes on — so one spec string means the same thing in `iq`
+// as it does in `iq diff`, and so a store decorator still logs and traces.
+func (s sourceSpec) runConfig(cfg *config) *config {
+	return &config{
+		url:          s.url,
+		address:      s.address,
+		trace:        cfg.trace,
+		decimalMode:  cfg.decimalMode,
+		logger:       cfg.logger,
+		noCache:      cfg.noCache,
+		noCacheIndex: cfg.noCacheIndex,
+	}
+}
+
+// runOptions builds the engine options a spec read runs under, so pushdown and
+// the structured logger reach the engine the same way they do on a plain query.
+func (cfg *config) runOptions() query.RunOptions {
+	return query.RunOptions{Compile: !cfg.noCompile, Logger: cfg.logger}
 }
 
 // parseSourceSpec resolves one `<source>[=<jq filter>]` spec. The cut is at the

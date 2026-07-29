@@ -152,6 +152,9 @@ documentation site (`make docs`).
 | `iq --src snap --insert prod` | Restore a dump into a live source |
 | `iq data clear books` | Empty a container (`iq data drop` removes it) |
 | `iq schema prod.orders` | Infer a JSON Schema from a sampled source |
+| `iq schema 'prod.orders=.[] \| select(.active)'` | Infer the shape of part of a source |
+| `iq diff prod staging` | Compare two sources by data, stats, or inferred schema |
+| `iq diff prod staging --filter '.[] \| select(.status == "new")'` | Compare only part of each keyspace |
 | `iq --src prod '.[]' --format parquet -o out.parquet` | Export results as Apache Parquet |
 
 ### Config
