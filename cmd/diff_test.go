@@ -415,15 +415,38 @@ func TestDiffFilterSurface(t *testing.T) {
 		require.Equal(t, ".[] | select(.y)", got.filter)
 	})
 
-	t.Run("--stats refuses a filter", func(t *testing.T) {
+	t.Run("--stats refuses a filter on either side", func(t *testing.T) {
 		cfg := &config{timeout: 5 * time.Second}
-		for _, extra := range [][]string{{"--stats"}, {"--stats", "--patch"}} {
-			args := append([]string{"a=.[]", "b"}, extra...)
+		// Either side's filter must trip it, on both the human and the --patch
+		// path (they reach the stats collector by different routes).
+		sides := [][]string{{"a=.[]", "b"}, {"a", "b=.[]"}, {"a=.[]", "b=.[]"}}
+		for _, operands := range sides {
+			for _, extra := range [][]string{{"--stats"}, {"--stats", "--patch"}} {
+				args := append(append([]string{}, operands...), extra...)
 
-			_, err := runCmd(t, newDiffCmd(cfg), args...)
+				_, err := runCmd(t, newDiffCmd(cfg), args...)
 
-			require.ErrorContains(t, err, "no items to filter", "args: %v", args)
+				require.ErrorContains(t, err, "no items to filter", "args: %v", args)
+			}
 		}
+	})
+
+	t.Run("--stats without a filter is not refused", func(t *testing.T) {
+		cfg := &config{timeout: 5 * time.Second}
+
+		_, err := runCmd(t, newDiffCmd(cfg), "a", "b", "--stats")
+
+		require.Error(t, err, "the sources are unreachable, so it fails to connect")
+		require.NotContains(t, err.Error(), "no items to filter", "nothing was filtered")
+	})
+
+	t.Run("a filtered data diff is allowed through", func(t *testing.T) {
+		cfg := &config{timeout: 5 * time.Second}
+
+		_, err := runCmd(t, newDiffCmd(cfg), "a=.[]", "b", "--data")
+
+		require.Error(t, err, "the sources are unreachable, so it fails to connect")
+		require.NotContains(t, err.Error(), "no items to filter", "only --stats refuses a filter")
 	})
 }
 
@@ -522,6 +545,36 @@ func TestReadAllFilteredRedisIntegration(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestReadAllFilteredReportsPagesRedisIntegration pins that a filtered read
+// still ticks the progress meter. The filtered path builds its own engine
+// options, so it would be easy to drop the callback there and leave the spinner
+// frozen on exactly the reads that take longest.
+func TestReadAllFilteredReportsPagesRedisIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: needs a reachable Redis")
+	}
+	base := redisBaseURL()
+	u, err := withRedisDB(base, testRedisDB)
+	require.NoError(t, err)
+	kv := map[string]string{"k1": "keep", "k2": "keep", "k3": "keep"}
+	seedRedis(t, u, kv)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	spec := sourceSpec{endpoint: endpoint{handle: "a", url: u}, filter: `.[] | select(. == "keep")`}
+	var pages []int
+
+	got, err := readAll(ctx, &config{}, spec, func(n int) { pages = append(pages, n) })
+
+	require.NoError(t, err)
+	require.Len(t, got, len(kv))
+	require.NotEmpty(t, pages, "a filtered read must still report its pages")
+	sum := 0
+	for _, n := range pages {
+		sum += n
+	}
+	require.Equal(t, len(kv), sum, "the ticks count the items scanned")
 }
 
 // TestReadAllRejectsUnkeyedFilterRedisIntegration pins that a filter which

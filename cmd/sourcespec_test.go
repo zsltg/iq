@@ -1,11 +1,15 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/numfmt"
 )
 
 func specConfig(t *testing.T) *iqconfig.Config {
@@ -61,8 +65,8 @@ func TestParseSourceSpecRejects(t *testing.T) {
 		{"blank filter", "users=   ", "empty filter"},
 		{"empty name", "=.[]", "expected <source>"},
 		{"blank spec", "", "expected <source>"},
-		{"unknown source", "nope=.[]", "unknown source"},
-		{"stdin is not a source", "-=.[]", "unknown source"},
+		{"unknown source", "nope=.[]", "run `iq ls`"},
+		{"stdin is not a source", "-=.[]", "run `iq ls`"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -85,4 +89,46 @@ func TestResolveSourceSpecRefusesFileEndpoints(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+// TestSourceSpecRunConfigPropagates pins that a spec read inherits the run-wide
+// settings. Decimal mode is the one that changes results — it decides how a
+// fractional number reaches the filter — so a spec dropped here would quietly
+// match different documents in `iq diff` than in `iq`. The rest keep the store
+// decorator logging and tracing as it does on a plain query.
+func TestSourceSpecRunConfigPropagates(t *testing.T) {
+	var trace bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config{
+		trace:        &trace,
+		decimalMode:  numfmt.DecimalString,
+		logger:       lg,
+		noCache:      true,
+		noCacheIndex: true,
+	}
+	spec := sourceSpec{endpoint: endpoint{url: "redis://h:6379", address: "orders"}}
+
+	got := spec.runConfig(cfg)
+
+	require.Equal(t, "redis://h:6379", got.url, "the spec's own url")
+	require.Equal(t, "orders", got.address, "the spec's own keyspace")
+	require.Same(t, &trace, got.trace)
+	require.Equal(t, numfmt.DecimalString, got.decimalMode)
+	require.Same(t, lg, got.logger)
+	require.True(t, got.noCache)
+	require.True(t, got.noCacheIndex)
+}
+
+// TestConfigRunOptions pins the engine options a spec read runs under: pushdown
+// follows --no-compile inverted, and the logger is handed through so the scan
+// strategy record still fires.
+func TestConfigRunOptions(t *testing.T) {
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	on := (&config{noCompile: false, logger: lg}).runOptions()
+	off := (&config{noCompile: true, logger: lg}).runOptions()
+
+	require.True(t, on.Compile, "pushdown is on unless --no-compile")
+	require.False(t, off.Compile, "--no-compile turns pushdown off")
+	require.Same(t, lg, on.Logger)
 }

@@ -50,6 +50,65 @@ func TestSchemaFileSource(t *testing.T) {
 	require.Equal(t, []any{"age", "name"}, doc["required"])
 }
 
+// TestSchemaFilterScopesTheShape pins the spec form end to end: only the items
+// the filter keeps reach the inference, so a field that lives solely on the
+// excluded documents disappears from the schema, and a field the survivors all
+// carry becomes required. --filter is the same knob without the spec syntax, and
+// a spec's own "=" wins over it.
+func TestSchemaFilterScopesTheShape(t *testing.T) {
+	path := writeJSONL(t, `{"key":"1","value":{"kind":"live","n":1}}
+{"key":"2","value":{"kind":"archived","legacy":true}}
+`)
+	c := newSeed()
+	require.NoError(t, c.Add("snap", "file://"+path))
+	seedConfig(t, c)
+
+	props := func(t *testing.T, args ...string) (map[string]any, []any) {
+		t.Helper()
+		out, err := runCmd(t, newSchemaCmd(&config{timeout: 5 * time.Second}), args...)
+		require.NoError(t, err)
+		var doc map[string]any
+		require.NoError(t, json.Unmarshal([]byte(out), &doc))
+		req, _ := doc["required"].([]any)
+		return doc["properties"].(map[string]any), req
+	}
+
+	t.Run("unfiltered sees both documents", func(t *testing.T) {
+		p, req := props(t, "snap")
+		require.Contains(t, p, "legacy")
+		require.Equal(t, []any{"kind"}, req, "only kind is on every document")
+	})
+
+	t.Run("spec filter scopes it", func(t *testing.T) {
+		p, req := props(t, `snap=.[] | select(.kind == "live")`)
+		require.NotContains(t, p, "legacy", "the archived document is out of scope")
+		require.Equal(t, []any{"kind", "n"}, req, "every survivor carries n")
+	})
+
+	t.Run("--filter scopes it the same way", func(t *testing.T) {
+		p, _ := props(t, "snap", "--filter", `.[] | select(.kind == "live")`)
+		require.NotContains(t, p, "legacy")
+	})
+
+	t.Run("a spec filter overrides --filter", func(t *testing.T) {
+		p, _ := props(t, `snap=.[] | select(.kind == "live")`, "--filter", `.[] | select(.kind == "archived")`)
+		require.NotContains(t, p, "legacy", "the spec's own filter is the one that ran")
+	})
+}
+
+// TestSchemaRejectsEmptySpecFilter pins that `source=` is a mistake rather than
+// a silently unfiltered read: the "=" says a filter is coming.
+func TestSchemaRejectsEmptySpecFilter(t *testing.T) {
+	path := writeJSONL(t, `{"key":"1","value":{"a":1}}`+"\n")
+	c := newSeed()
+	require.NoError(t, c.Add("snap", "file://"+path))
+	seedConfig(t, c)
+
+	_, err := runCmd(t, newSchemaCmd(&config{timeout: 5 * time.Second}), "snap=")
+
+	require.ErrorContains(t, err, "empty filter")
+}
+
 // TestSchemaSampleCap pins the shared sampling helper's cap against a file store:
 // a positive sample bounds the read, zero reads the whole keyspace.
 func TestSchemaSampleCap(t *testing.T) {
