@@ -130,3 +130,12 @@ touching the source map (internal/config/config.go:453) — so the extra step ca
 and the walk falls through to the same result.
 - 6277c273c32b cmd/resolve.go:165 expression/comparison — the walk's `i > 0` → `i >= 0` adds one iteration for a leading-dot argument, resolving `arg[:0]` == "", which Resolve rejects outright.
 - 4c668185c33a cmd/resolve.go:165 numbers/decrementer — same empty-prefix iteration via `i > -1`; LastIndex returns -1 only when no dot remains, so the bound admits exactly the same unmatchable step.
+
+## cmd — source-spec equivalents (accepted 2026-07-29, feat/source-spec branch)
+Two survivors whose mutations cannot change behaviour, for unrelated reasons. The explain
+entry is the third recording of one guard: it was accepted at :130 and again at :155, and
+this branch moved it once more by passing the stage's own resolved url instead of a local,
+which re-hashes the id. The sourcespec entry mutates an argument the callee only consults on
+a path the caller has already excluded.
+- b55f9e8e0c94594627063091c26cbb36 cmd/explain.go:151 expression/error-guard — the buildCombinePlan writeAccessPlan guard again: it errors only if render.JSON fails on a driver-produced filter map, which cannot happen for a plain JSON-able map, so the error branch never runs and clearing it leaves the plan byte-identical (same reasoning as the :130 and :155 entries above).
+- 569a2c9df78609ff09ef028db4b61b1e cmd/sourcespec.go:91 conditional/bool-literal — flips the isDst argument of resolveEndpoint, which that function reads only when the argument is the empty string (cmd/data.go:82-87); resolveSourceSpec rejects an empty or all-space name two statements earlier, so the flipped value is never consulted from this call site.

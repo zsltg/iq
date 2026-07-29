@@ -336,6 +336,18 @@
    "file": "cmd/resolve.go",
    "mutator": "numbers/decrementer",
    "line": 165
+  },
+  {
+   "id": "b55f9e8e0c94594627063091c26cbb36",
+   "file": "cmd/explain.go",
+   "mutator": "expression/error-guard",
+   "line": 151
+  },
+  {
+   "id": "569a2c9df78609ff09ef028db4b61b1e",
+   "file": "cmd/sourcespec.go",
+   "mutator": "conditional/bool-literal",
+   "line": 91
   }
  ]
 }
