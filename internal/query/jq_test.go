@@ -24,12 +24,14 @@ type fakeKV struct {
 	scanKeys   []string // the keyspace ScanBatches walks, in this order
 	batchSize  int      // page size; 0 means one page of everything
 	gotGetKeys []string
-	scanCalls  int // times ScanBatches was invoked
-	batchCount int // pages fed to fn
+	gotGetCtx  context.Context // the ctx Get was handed, so a dropped one is visible
+	scanCalls  int             // times ScanBatches was invoked
+	batchCount int             // pages fed to fn
 }
 
-func (f *fakeKV) Get(_ context.Context, keys []string) (map[string]any, error) {
+func (f *fakeKV) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	f.gotGetKeys = keys
+	f.gotGetCtx = ctx
 	if f.getErr != nil {
 		return nil, f.getErr
 	}

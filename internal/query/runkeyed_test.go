@@ -205,6 +205,39 @@ func TestRunKeyedRejectsUnkeyable(t *testing.T) {
 	}
 }
 
+// TestRunKeyedForwardsCtx pins that the caller's context reaches the store on
+// both routes. A keyed read is the one a diff makes, and a diff is bounded by
+// --timeout; a dropped context there would turn a bounded read into an
+// unbounded one that no test would otherwise notice.
+func TestRunKeyedForwardsCtx(t *testing.T) {
+	ctx := context.WithValue(context.Background(), ctxMarker{}, "marker")
+
+	t.Run("bounded route reaches Get", func(t *testing.T) {
+		store := &fakeKV{values: map[string]any{"a": map[string]any{"n": 1}}}
+
+		err := query.NewJQEngine(store).RunKeyed(ctx, `.["a"]`, query.RunOptions{}, func(string, any) error { return nil })
+
+		require.NoError(t, err)
+		require.NotNil(t, store.gotGetCtx, "Get must receive a non-nil context")
+		require.Equal(t, "marker", store.gotGetCtx.Value(ctxMarker{}), "the caller's context must reach Get")
+	})
+
+	t.Run("pushed scan route reaches ScanFiltered", func(t *testing.T) {
+		store := &filterKV{fakeKV: fakeKV{
+			scanKeys: []string{"a"},
+			values:   map[string]any{"a": map[string]any{"n": 1}},
+		}}
+
+		err := query.NewJQEngine(store).RunKeyed(ctx, `.[] | select(.n == 1)`,
+			query.RunOptions{Compile: true}, func(string, any) error { return nil })
+
+		require.NoError(t, err)
+		require.Equal(t, 1, store.filterCalls, "the predicate must be pushed")
+		require.NotNil(t, store.gotCtx, "ScanFiltered must receive a non-nil context")
+		require.Equal(t, "marker", store.gotCtx.Value(ctxMarker{}), "the caller's context must reach ScanFiltered")
+	})
+}
+
 func TestRunKeyedRejectsEmptyExpression(t *testing.T) {
 	_, err := collectKeyed(t, &fakeKV{}, "", query.RunOptions{})
 

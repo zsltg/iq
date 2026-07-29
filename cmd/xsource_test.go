@@ -79,10 +79,12 @@ func TestPlanFrom(t *testing.T) {
 		spec string
 		want string
 	}{
-		{"no equals", "users", "expected name="},
-		{"empty name", "=.a", "expected <source>"},
-		{"empty filter", "users=", "empty filter"},
-		{"unknown source", "nope=.a", "unknown source"},
+		// Every row asserts the --from context too: the inner message alone never
+		// says which clause was malformed, and a combine may carry several.
+		{"no equals", "users", `invalid --from "users": expected name=`},
+		{"empty name", "=.a", `invalid --from "=.a": `},
+		{"empty filter", "users=", `invalid --from "users=": `},
+		{"unknown source", "nope=.a", `invalid --from "nope=.a": `},
 	}
 	for _, tt := range errTests {
 		t.Run(tt.name, func(t *testing.T) {

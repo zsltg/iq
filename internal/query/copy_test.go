@@ -22,10 +22,11 @@ func TestTransformKeying(t *testing.T) {
 		"title": "Dune", "year": 1965, "tags": []any{"sf", "classic"},
 	}}
 	tests := []struct {
-		name    string
-		opts    query.TransformOptions
-		want    []query.Record
-		wantErr string
+		name      string
+		opts      query.TransformOptions
+		want      []query.Record
+		wantErr   string
+		wantErrIs error
 	}{
 		{
 			name: "select keeps whole item and source key",
@@ -56,6 +57,9 @@ func TestTransformKeying(t *testing.T) {
 			name:    "explosion without key fails fast",
 			opts:    query.TransformOptions{Filter: ".tags[]"},
 			wantErr: "multiple values",
+			// The sentinel must survive the wrap: a caller distinguishes "this
+			// record has no key" from any other write failure by errors.Is.
+			wantErrIs: query.ErrNoKey,
 		},
 		{
 			name: "explosion with key expression",
@@ -73,6 +77,9 @@ func TestTransformKeying(t *testing.T) {
 			got, err := fn(in)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
+				if tt.wantErrIs != nil {
+					require.ErrorIs(t, err, tt.wantErrIs)
+				}
 				return
 			}
 			require.NoError(t, err)
@@ -89,9 +96,16 @@ func TestTransformKeyField(t *testing.T) {
 	require.Equal(t, []query.Record{{Key: "7", Value: map[string]any{"id": "7", "title": "Dune"}}}, got)
 }
 
+// TestTransformBadFilter pins that a malformed expression is reported with the
+// context of which expression failed. A bare gojq parse error says only what the
+// syntax problem was, never which of the two expressions carried it, so the
+// wrapper is the whole message from the caller's point of view.
 func TestTransformBadFilter(t *testing.T) {
 	_, err := query.NewTransform(query.TransformOptions{Filter: "this is not jq ("})
-	require.Error(t, err)
+	require.ErrorContains(t, err, "parse item filter", "the failing expression must be named")
+
+	_, err = query.NewTransform(query.TransformOptions{Key: "this is not jq ("})
+	require.ErrorContains(t, err, "parse --key", "the failing expression must be named")
 }
 
 // capturePutter records the batches and modes it is asked to write.
