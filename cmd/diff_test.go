@@ -48,8 +48,8 @@ func TestReportRenderHuman(t *testing.T) {
 		dataRun:   true,
 		schemaRun: true,
 	}
-	left := diffTarget{handle: "a", driver: "redis"}
-	right := diffTarget{handle: "b", driver: "redis"}
+	left := sourceSpec{endpoint: endpoint{handle: "a", driver: "redis"}}
+	right := sourceSpec{endpoint: endpoint{handle: "b", driver: "redis"}}
 	var buf bytes.Buffer
 	require.NoError(t, rep.render(&buf, left, right, false, false))
 	out := buf.String()
@@ -95,8 +95,8 @@ func TestReportRenderColoredStripsToPlain(t *testing.T) {
 	t.Cleanup(func() { color.NoColor = orig })
 
 	rep := coloredDiffReport()
-	left := diffTarget{handle: "a", driver: "redis"}
-	right := diffTarget{handle: "b", driver: "redis"}
+	left := sourceSpec{endpoint: endpoint{handle: "a", driver: "redis"}}
+	right := sourceSpec{endpoint: endpoint{handle: "b", driver: "redis"}}
 
 	color.NoColor = true
 	var plainBuf bytes.Buffer
@@ -123,7 +123,7 @@ func TestReportRenderColoredRoles(t *testing.T) {
 
 	rep := coloredDiffReport()
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, diffTarget{handle: "a"}, diffTarget{handle: "b"}, false, false))
+	require.NoError(t, rep.render(&buf, sourceSpec{endpoint: endpoint{handle: "a"}}, sourceSpec{endpoint: endpoint{handle: "b"}}, false, false))
 	got := buf.String()
 
 	// Raw SGR codes for each role.
@@ -148,7 +148,7 @@ func TestReportRenderColoredRoles(t *testing.T) {
 func TestReportRenderNoDifferences(t *testing.T) {
 	rep := report{Data: []diff.ItemDelta{}, dataRun: true}
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, diffTarget{handle: "a"}, diffTarget{handle: "b"}, false, false))
+	require.NoError(t, rep.render(&buf, sourceSpec{endpoint: endpoint{handle: "a"}}, sourceSpec{endpoint: endpoint{handle: "b"}}, false, false))
 	require.Contains(t, buf.String(), "no differences")
 }
 
@@ -158,7 +158,7 @@ func TestReportRenderJSON(t *testing.T) {
 		dataRun: true,
 	}
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, diffTarget{handle: "a"}, diffTarget{handle: "b"}, true, false))
+	require.NoError(t, rep.render(&buf, sourceSpec{endpoint: endpoint{handle: "a"}}, sourceSpec{endpoint: endpoint{handle: "b"}}, true, false))
 
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
@@ -176,10 +176,10 @@ func TestResolveDiffTargetUnknown(t *testing.T) {
 	cf, err := iqconfig.Load()
 	require.NoError(t, err)
 
-	_, err = resolveDiffTarget(cf, "missing")
+	_, err = diffSpec(cf, "missing")
 	require.ErrorContains(t, err, "unknown source")
 
-	tgt, err := resolveDiffTarget(cf, "known")
+	tgt, err := diffSpec(cf, "known")
 	require.NoError(t, err)
 	require.Equal(t, "redis", tgt.driver)
 	require.Equal(t, "redis://h:6379/0", tgt.url)
@@ -188,8 +188,8 @@ func TestResolveDiffTargetUnknown(t *testing.T) {
 func TestDiffStatsRejectsCrossDriver(t *testing.T) {
 	// The scheme check happens before any store is opened, so no connection is made.
 	_, err := diffStats(context.Background(),
-		diffTarget{handle: "a", driver: "redis"},
-		diffTarget{handle: "b", driver: "mongo"}, nil, diff.Options{})
+		sourceSpec{endpoint: endpoint{handle: "a", driver: "redis"}},
+		sourceSpec{endpoint: endpoint{handle: "b", driver: "mongo"}}, nil, diff.Options{})
 	require.ErrorContains(t, err, "same driver")
 }
 
@@ -312,19 +312,19 @@ func TestRenderPropagatesWriteErrors(t *testing.T) {
 	})
 	t.Run("render header", func(t *testing.T) {
 		rep := report{dataRun: true}
-		require.Error(t, rep.render(&errAfter{0}, diffTarget{}, diffTarget{}, false, false))
+		require.Error(t, rep.render(&errAfter{0}, sourceSpec{}, sourceSpec{}, false, false))
 	})
 	t.Run("render data section", func(t *testing.T) {
 		rep := report{Data: []diff.ItemDelta{item}, dataRun: true}
-		require.Error(t, rep.render(&errAfter{1}, diffTarget{}, diffTarget{}, false, false))
+		require.Error(t, rep.render(&errAfter{1}, sourceSpec{}, sourceSpec{}, false, false))
 	})
 	t.Run("render stats section", func(t *testing.T) {
 		rep := report{Stats: []diff.Change{change}, statsRun: true}
-		require.Error(t, rep.render(&errAfter{1}, diffTarget{}, diffTarget{}, false, false))
+		require.Error(t, rep.render(&errAfter{1}, sourceSpec{}, sourceSpec{}, false, false))
 	})
 	t.Run("render schema section", func(t *testing.T) {
 		rep := report{Schema: []diff.Change{change}, schemaRun: true}
-		require.Error(t, rep.render(&errAfter{1}, diffTarget{}, diffTarget{}, false, false))
+		require.Error(t, rep.render(&errAfter{1}, sourceSpec{}, sourceSpec{}, false, false))
 	})
 }
 
@@ -454,7 +454,7 @@ func TestReadAllReportsPagesRedisIntegration(t *testing.T) {
 	require.NoError(t, err)
 	kv := map[string]string{"k1": "v1", "k2": "v2", "k3": "v3"}
 	seedRedis(t, u, kv)
-	tgt := diffTarget{handle: "a", url: u}
+	tgt := sourceSpec{endpoint: endpoint{handle: "a", url: u}}
 
 	tests := []struct {
 		name    string
@@ -747,9 +747,9 @@ func TestPatchLayerCanceledContext(t *testing.T) {
 	seedConfig(t, c)
 	cf, err := iqconfig.Load()
 	require.NoError(t, err)
-	left, err := resolveDiffTarget(cf, "a")
+	left, err := diffSpec(cf, "a")
 	require.NoError(t, err)
-	right, err := resolveDiffTarget(cf, "b")
+	right, err := diffSpec(cf, "b")
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -893,9 +893,9 @@ func TestDiffStatsCanceledContext(t *testing.T) {
 	seedConfig(t, c)
 	cf, err := iqconfig.Load()
 	require.NoError(t, err)
-	left, err := resolveDiffTarget(cf, "a")
+	left, err := diffSpec(cf, "a")
 	require.NoError(t, err)
-	right, err := resolveDiffTarget(cf, "b")
+	right, err := diffSpec(cf, "b")
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

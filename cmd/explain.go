@@ -142,17 +142,13 @@ func buildCombinePlan(cfg *config, stages []fromStage, describe bool) (string, e
 	writePlanTitle(&b)
 	writePlanLine(&b, "mode", "cross-source combine (--from/--combine)")
 	for _, st := range stages {
-		u, err := effectiveURL(st.source, st.handle)
+		q, err := gojq.Parse(st.spec.filter)
 		if err != nil {
-			return "", fmt.Errorf("--from %q: %w", st.handle, err)
+			return "", asSyntaxError(st.spec.filter, err)
 		}
-		q, err := gojq.Parse(st.filter)
-		if err != nil {
-			return "", asSyntaxError(st.filter, err)
-		}
-		writePlanSection(&b, fmt.Sprintf("$%s  <-  %s (%s)", st.varName, st.handle, driverName(u)))
+		writePlanSection(&b, fmt.Sprintf("$%s  <-  %s (%s)", st.varName, st.spec.handle, driverName(st.spec.url)))
 		writeJQFilterQuery(&b, q, describe, cfg.unbounded, true)
-		if err := writeAccessPlan(&b, u, q, !cfg.noCompile, cfg.unbounded); err != nil {
+		if err := writeAccessPlan(&b, st.spec.url, q, !cfg.noCompile, cfg.unbounded); err != nil {
 			return "", err
 		}
 	}

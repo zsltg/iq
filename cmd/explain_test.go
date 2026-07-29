@@ -11,7 +11,6 @@ import (
 	"github.com/itchyny/gojq"
 	"github.com/stretchr/testify/require"
 
-	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/selector"
 )
 
@@ -152,8 +151,8 @@ func TestBuildCombinePlanPerStageAndFinal(t *testing.T) {
 		combine: "$orders + $cache | length",
 	}
 	stages := []fromStage{
-		{varName: "orders", handle: "orders", source: iqconfig.Source{URL: "mongodb://localhost:27017/shop"}, filter: ".[] | select(.total > 10)"},
-		{varName: "cache", handle: "cache", source: iqconfig.Source{URL: "redis://localhost:6379"}, filter: ".[]"},
+		{varName: "orders", spec: sourceSpec{endpoint: endpoint{handle: "orders", url: "mongodb://localhost:27017/shop", driver: "mongo"}, filter: ".[] | select(.total > 10)"}},
+		{varName: "cache", spec: sourceSpec{endpoint: endpoint{handle: "cache", url: "redis://localhost:6379", driver: "redis"}, filter: ".[]"}},
 	}
 	out, err := buildCombinePlan(cfg, stages, false)
 	require.NoError(t, err)
@@ -171,7 +170,7 @@ func TestBuildCombinePlanDescribedAnnotatesStages(t *testing.T) {
 	// through the same annotated renderer when describe is set.
 	cfg := &config{combine: "$orders | length"}
 	stages := []fromStage{
-		{varName: "orders", handle: "orders", source: iqconfig.Source{URL: "mongodb://localhost:27017/shop"}, filter: ".[] | select(.total > 10)"},
+		{varName: "orders", spec: sourceSpec{endpoint: endpoint{handle: "orders", url: "mongodb://localhost:27017/shop", driver: "mongo"}, filter: ".[] | select(.total > 10)"}},
 	}
 	out, err := buildCombinePlan(cfg, stages, true)
 	require.NoError(t, err)

@@ -10,7 +10,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/diff"
 	"github.com/zsltg/iq/internal/query"
@@ -25,24 +24,6 @@ var errQuietExit = errors.New("differences found")
 // errStopSampling stops a ScanBatches walk once the schema sample is full. It is
 // a control signal, never surfaced.
 var errStopSampling = errors.New("sample complete")
-
-// diffTarget is one side of a diff: the resolved handle, connection URL, dotted
-// address override (may be ""), and canonical driver name.
-type diffTarget struct {
-	handle  string
-	url     string
-	address string
-	driver  string
-}
-
-// collection returns the effective MongoDB collection for this target: the dotted
-// address override when set, else the URL's ?collection= default.
-func (t diffTarget) collection() string {
-	if t.address != "" {
-		return t.address
-	}
-	return iqmongo.CollectionFromURI(t.url)
-}
 
 // newDiffCmd builds `iq diff <a> <b>`: compare two saved sources. --data (the
 // default) diffs items key by key; --stats diffs native introspection; --schema
@@ -99,11 +80,11 @@ func newDiffCmd(cfg *config) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			left, err := resolveDiffTarget(cf, args[0])
+			left, err := diffSpec(cf, args[0])
 			if err != nil {
 				return err
 			}
-			right, err := resolveDiffTarget(cf, args[1])
+			right, err := diffSpec(cf, args[1])
 			if err != nil {
 				return err
 			}
@@ -186,26 +167,8 @@ func newDiffCmd(cfg *config) *cobra.Command {
 	return c
 }
 
-// resolveDiffTarget resolves a source handle to a connection target, splicing in
-// a keyring secret when the source uses one.
-func resolveDiffTarget(cf *iqconfig.Config, name string) (diffTarget, error) {
-	base, addr, _ := splitSourceArg(cf, name)
-	src, full, ok := cf.Resolve(base)
-	if !ok {
-		return diffTarget{}, fmt.Errorf("unknown source %q; run `iq ls`", base)
-	}
-	u, err := effectiveURL(src, full)
-	if err != nil {
-		return diffTarget{}, fmt.Errorf("source %q: %w", full, err)
-	}
-	if err := addressUnsupported(u, addr); err != nil {
-		return diffTarget{}, err
-	}
-	return diffTarget{handle: full, url: u, address: addr, driver: driverName(u)}, nil
-}
-
 // diffData reads both keyspaces fully and diffs them key by key under opts.
-func diffData(ctx context.Context, left, right diffTarget, onPage func(int), opts diff.Options) ([]diff.ItemDelta, error) {
+func diffData(ctx context.Context, left, right sourceSpec, onPage func(int), opts diff.Options) ([]diff.ItemDelta, error) {
 	a, b, err := readBoth(ctx, left, right, onPage)
 	if err != nil {
 		return nil, err
@@ -216,7 +179,7 @@ func diffData(ctx context.Context, left, right diffTarget, onPage func(int), opt
 // readBoth materializes both sources' whole keyspaces, ticking onPage per page.
 // It is the shared collector behind the keyed data diff and the --patch data
 // layer.
-func readBoth(ctx context.Context, left, right diffTarget, onPage func(int)) (a, b map[string]any, err error) {
+func readBoth(ctx context.Context, left, right sourceSpec, onPage func(int)) (a, b map[string]any, err error) {
 	a, err = readAll(ctx, left, onPage)
 	if err != nil {
 		return nil, nil, err
@@ -230,7 +193,7 @@ func readBoth(ctx context.Context, left, right diffTarget, onPage func(int)) (a,
 
 // readAll materializes a source's whole keyspace as key -> value. A key repeated
 // across scan pages (the store's weak scan guarantee) simply overwrites.
-func readAll(ctx context.Context, t diffTarget, onPage func(int)) (map[string]any, error) {
+func readAll(ctx context.Context, t sourceSpec, onPage func(int)) (map[string]any, error) {
 	st, err := openStore(ctx, &config{url: t.url, address: t.address})
 	if err != nil {
 		return nil, redactErr(err, t.url)
@@ -254,7 +217,7 @@ func readAll(ctx context.Context, t diffTarget, onPage func(int)) (map[string]an
 
 // diffStats runs the same native introspection against both sources and diffs the
 // replies under opts. Both sources must use the same driver.
-func diffStats(ctx context.Context, left, right diffTarget, sections []string, opts diff.Options) ([]diff.Change, error) {
+func diffStats(ctx context.Context, left, right sourceSpec, sections []string, opts diff.Options) ([]diff.Change, error) {
 	a, b, err := statsTrees(ctx, left, right, sections)
 	if err != nil {
 		return nil, err
@@ -265,7 +228,7 @@ func diffStats(ctx context.Context, left, right diffTarget, sections []string, o
 // statsTrees collects both sources' native introspection trees, rejecting a
 // cross-driver pair first. It is the shared collector behind the stats diff and
 // the --patch stats layer.
-func statsTrees(ctx context.Context, left, right diffTarget, sections []string) (a, b map[string]any, err error) {
+func statsTrees(ctx context.Context, left, right sourceSpec, sections []string) (a, b map[string]any, err error) {
 	if left.driver != right.driver {
 		return nil, nil, fmt.Errorf("stats diff needs two sources of the same driver; %q is %s and %q is %s", left.handle, left.driver, right.handle, right.driver)
 	}
@@ -283,7 +246,7 @@ func statsTrees(ctx context.Context, left, right diffTarget, sections []string) 
 // collectInspect runs the introspection commands for a source and returns the
 // replies as one tree: Mongo keys each diagnostic reply by subcommand; Redis
 // parses INFO into section -> key -> value.
-func collectInspect(ctx context.Context, t diffTarget, sections []string) (map[string]any, error) {
+func collectInspect(ctx context.Context, t sourceSpec, sections []string) (map[string]any, error) {
 	st, err := openStore(ctx, &config{url: t.url, address: t.address})
 	if err != nil {
 		return nil, redactErr(err, t.url)
@@ -341,7 +304,7 @@ func redisInfoTree(info string) map[string]any {
 // shape, not per-driver introspection, so two backends compare meaningfully. Two
 // backends that genuinely normalize a native type differently still diff — that
 // is the JSON each serves back, and the format tags make the row legible.
-func diffSchema(ctx context.Context, left, right diffTarget, sample int, opts diff.Options) ([]diff.Change, error) {
+func diffSchema(ctx context.Context, left, right sourceSpec, sample int, opts diff.Options) ([]diff.Change, error) {
 	a, b, err := schemaShapes(ctx, left, right, sample)
 	if err != nil {
 		return nil, err
@@ -351,7 +314,7 @@ func diffSchema(ctx context.Context, left, right diffTarget, sample int, opts di
 
 // schemaShapes samples and infers both sources' comparable shapes. It is the
 // shared collector behind the schema diff and the --patch schema layer.
-func schemaShapes(ctx context.Context, left, right diffTarget, sample int) (a, b map[string]any, err error) {
+func schemaShapes(ctx context.Context, left, right sourceSpec, sample int) (a, b map[string]any, err error) {
 	a, err = sampleShape(ctx, left, sample)
 	if err != nil {
 		return nil, nil, err
@@ -378,7 +341,7 @@ func layerCount(dataMode, statsMode, schemaMode bool) int {
 // as an RFC 6902 JSON Patch. With neither statsMode nor schemaMode it is the data
 // layer (the default), so onPage ticks the read spinner; the stats and schema
 // layers ignore onPage.
-func patchLayer(ctx context.Context, left, right diffTarget, statsMode, schemaMode bool, sections []string, sample int, onPage func(int)) (json.RawMessage, error) {
+func patchLayer(ctx context.Context, left, right sourceSpec, statsMode, schemaMode bool, sections []string, sample int, onPage func(int)) (json.RawMessage, error) {
 	var a, b map[string]any
 	var err error
 	switch {
@@ -414,7 +377,7 @@ func renderPatch(out io.Writer, raw json.RawMessage) error {
 
 // sampleShape reads up to sample items from a source and infers its comparable
 // shape. A sample of zero reads the whole keyspace.
-func sampleShape(ctx context.Context, t diffTarget, sample int) (map[string]any, error) {
+func sampleShape(ctx context.Context, t sourceSpec, sample int) (map[string]any, error) {
 	st, err := openStore(ctx, &config{url: t.url, address: t.address})
 	if err != nil {
 		return nil, redactErr(err, t.url)
@@ -474,7 +437,7 @@ func (r report) empty() bool {
 }
 
 // render writes the report as JSON, YAML, or a human diff.
-func (r report) render(out io.Writer, left, right diffTarget, jsonOut, yamlOut bool) error {
+func (r report) render(out io.Writer, left, right sourceSpec, jsonOut, yamlOut bool) error {
 	if jsonOut || yamlOut {
 		return writeStructured(out, r, yamlOut)
 	}
@@ -593,4 +556,14 @@ func compact(v any) string {
 		return fmt.Sprintf("%v", v)
 	}
 	return string(b)
+}
+
+// diffSpec resolves one diff operand. Diff compares whole keyspaces, so the
+// operand is an address only; the spec's filter half arrives with --filter.
+func diffSpec(cf *iqconfig.Config, arg string) (sourceSpec, error) {
+	ep, err := resolveSourceSpec(cf, arg)
+	if err != nil {
+		return sourceSpec{}, err
+	}
+	return sourceSpec{endpoint: ep}, nil
 }

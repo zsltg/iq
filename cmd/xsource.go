@@ -13,15 +13,11 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// fromStage is one resolved --from clause: a source and the jq that reduces it,
-// bound to a variable for the combine step. address is the dotted override on the
-// source spec (shop.orders), "" when absent.
+// fromStage is one resolved --from clause: the source spec it names, bound to a
+// jq variable for the combine step.
 type fromStage struct {
 	varName string
-	handle  string
-	source  iqconfig.Source
-	address string
-	filter  string
+	spec    sourceSpec
 }
 
 // runCombine is the cross-source action (--from/--combine): it runs each --from
@@ -80,20 +76,16 @@ func runCombine(cmd *cobra.Command, cfg *config) error {
 	names := make([]string, 0, len(stages))
 	values := make([]any, 0, len(stages))
 	for _, st := range stages {
-		cfg.log().Debug("from source", "handle", st.handle)
-		u, err := effectiveURL(st.source, st.handle)
-		if err != nil {
-			return fmt.Errorf("--from %q: %w", st.handle, err)
-		}
-		cfg.logStagePlan(u, st.handle, st.filter)
+		cfg.log().Debug("from source", "handle", st.spec.handle)
+		cfg.logStagePlan(st.spec.url, st.spec.handle, st.spec.filter)
 		// The stage config carries the logger so its store decorator and scan
 		// records fire too; the trace writer is already the log-teed sink.
-		vals, err := collectSource(ctx, &config{url: u, address: st.address, trace: cfg.trace, decimalMode: cfg.decimalMode, logger: cfg.logger}, st.filter, opts)
+		vals, err := collectSource(ctx, &config{url: st.spec.url, address: st.spec.address, trace: cfg.trace, decimalMode: cfg.decimalMode, logger: cfg.logger}, st.spec.filter, opts)
 		if err != nil {
 			if errors.Is(err, query.ErrScanNotAllowed) {
-				return fmt.Errorf("--from %q: %w; add --unbounded or use a .[]-rooted filter", st.handle, err)
+				return fmt.Errorf("--from %q: %w; add --unbounded or use a .[]-rooted filter", st.spec.handle, err)
 			}
-			return fmt.Errorf("--from %q: %w", st.handle, err)
+			return fmt.Errorf("--from %q: %w", st.spec.handle, err)
 		}
 		names = append(names, "$"+st.varName)
 		values = append(values, vals)
@@ -112,27 +104,22 @@ func planFrom(cf *iqconfig.Config, specs []string) ([]fromStage, error) {
 	stages := make([]fromStage, 0, len(specs))
 	bound := make(map[string]string, len(specs))
 	for _, spec := range specs {
-		name, filter, ok := strings.Cut(spec, "=")
-		if !ok || name == "" {
+		s, err := parseSourceSpec(cf, spec, "")
+		if err != nil {
+			return nil, fmt.Errorf("invalid --from %q: %w", spec, err)
+		}
+		// A combine stage needs an explicit reduction: there is no default filter
+		// to fall back on, so a spec with no "=" is a missing program.
+		if s.filter == "" {
 			return nil, fmt.Errorf("invalid --from %q: expected name=<jq filter>", spec)
 		}
-		if strings.TrimSpace(filter) == "" {
-			return nil, fmt.Errorf("invalid --from %q: empty filter", spec)
-		}
-		base, addr, _ := splitSourceArg(cf, name)
-		src, handle, found := cf.Resolve(base)
-		if !found {
-			return nil, fmt.Errorf("unknown source %q in --from; run `iq ls`", base)
-		}
-		if err := addressUnsupported(src.URL, addr); err != nil {
-			return nil, fmt.Errorf("--from %q: %w", name, err)
-		}
+		name, _, _ := strings.Cut(spec, "=")
 		v := varName(name)
 		if prev, dup := bound[v]; dup {
 			return nil, fmt.Errorf("--from %q and %q both bind $%s; rename one", prev, name, v)
 		}
 		bound[v] = name
-		stages = append(stages, fromStage{varName: v, handle: handle, source: src, address: addr, filter: filter})
+		stages = append(stages, fromStage{varName: v, spec: s})
 	}
 	return stages, nil
 }

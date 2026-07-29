@@ -41,9 +41,9 @@ func TestPlanFrom(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, stages, 1)
 		require.Equal(t, "users", stages[0].varName)
-		require.Equal(t, "users", stages[0].handle)
-		require.Equal(t, ".a", stages[0].filter)
-		require.Equal(t, "redis://h", stages[0].source.URL)
+		require.Equal(t, "users", stages[0].spec.handle)
+		require.Equal(t, ".a", stages[0].spec.filter)
+		require.Equal(t, "redis://h", stages[0].spec.url)
 	})
 
 	t.Run("grouped handle sanitizes the var", func(t *testing.T) {
@@ -51,21 +51,21 @@ func TestPlanFrom(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, stages, 1)
 		require.Equal(t, "prod_books", stages[0].varName)
-		require.Equal(t, "prod/books", stages[0].handle)
+		require.Equal(t, "prod/books", stages[0].spec.handle)
 	})
 
 	t.Run("filter may contain equals signs", func(t *testing.T) {
 		stages, err := planFrom(cf, []string{"users=.[] | select(.a == 1)"})
 		require.NoError(t, err)
-		require.Equal(t, ".[] | select(.a == 1)", stages[0].filter)
+		require.Equal(t, ".[] | select(.a == 1)", stages[0].spec.filter)
 	})
 
 	t.Run("dotted spec sets the address and binds the dotted var", func(t *testing.T) {
 		stages, err := planFrom(cf, []string{"shop.customers=.[]"})
 		require.NoError(t, err)
 		require.Len(t, stages, 1)
-		require.Equal(t, "shop", stages[0].handle)
-		require.Equal(t, "customers", stages[0].address)
+		require.Equal(t, "shop", stages[0].spec.handle)
+		require.Equal(t, "customers", stages[0].spec.address)
 		require.Equal(t, "shop_customers", stages[0].varName)
 	})
 
@@ -80,7 +80,7 @@ func TestPlanFrom(t *testing.T) {
 		want string
 	}{
 		{"no equals", "users", "expected name="},
-		{"empty name", "=.a", "expected name="},
+		{"empty name", "=.a", "expected <source>"},
 		{"empty filter", "users=", "empty filter"},
 		{"unknown source", "nope=.a", "unknown source"},
 	}
