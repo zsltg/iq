@@ -101,11 +101,24 @@ func TestTransformKeyField(t *testing.T) {
 // syntax problem was, never which of the two expressions carried it, so the
 // wrapper is the whole message from the caller's point of view.
 func TestTransformBadFilter(t *testing.T) {
-	_, err := query.NewTransform(query.TransformOptions{Filter: "this is not jq ("})
-	require.ErrorContains(t, err, "parse item filter", "the failing expression must be named")
+	for _, tt := range []struct {
+		name string
+		opts query.TransformOptions
+		want string
+	}{
+		{"item filter", query.TransformOptions{Filter: "this is not jq ("}, "parse item filter"},
+		{"key expression", query.TransformOptions{Key: "this is not jq ("}, "parse --key"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := query.NewTransform(tt.opts)
 
-	_, err = query.NewTransform(query.TransformOptions{Key: "this is not jq ("})
-	require.ErrorContains(t, err, "parse --key", "the failing expression must be named")
+			require.ErrorContains(t, err, tt.want, "the failing expression must be named")
+			// Naming the expression is done by wrapping, so gojq's own parse error
+			// has to stay reachable underneath; formatting it in instead reads the
+			// same but severs errors.Is/As for every caller.
+			require.Error(t, errors.Unwrap(err), "the parse error must stay unwrappable")
+		})
+	}
 }
 
 // capturePutter records the batches and modes it is asked to write.

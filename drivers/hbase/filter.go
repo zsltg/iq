@@ -67,9 +67,16 @@ func eqToFilter(types typeMap, eq predicate.Eq) (filter.Filter, bool) {
 		return nil, false
 	}
 	comparator := filter.NewBinaryComparator(filter.NewByteArrayComparable(b))
+	// Named rather than passed as bare trailing literals: the two booleans are
+	// meaningless at the call site otherwise, and an inline-comment form here is
+	// mangled by the mutation printer into code that does not parse.
+	const (
+		filterIfMissing   = true
+		latestVersionOnly = true
+	)
 	return filter.NewSingleColumnValueFilter(
 		[]byte(family), []byte(qualifier), filter.Equal, comparator,
-		true /*filterIfMissing*/, true, /*latestVersionOnly*/
+		filterIfMissing, latestVersionOnly,
 	), true
 }
 

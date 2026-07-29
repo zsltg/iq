@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -75,21 +76,29 @@ func TestPlanFrom(t *testing.T) {
 	})
 
 	errTests := []struct {
-		name string
-		spec string
-		want string
+		name    string
+		spec    string
+		want    string
+		wrapped bool // the clause error wraps a cause, so the chain must survive
 	}{
 		// Every row asserts the --from context too: the inner message alone never
-		// says which clause was malformed, and a combine may carry several.
-		{"no equals", "users", `invalid --from "users": expected name=`},
-		{"empty name", "=.a", `invalid --from "=.a": `},
-		{"empty filter", "users=", `invalid --from "users=": `},
-		{"unknown source", "nope=.a", `invalid --from "nope=.a": `},
+		// says which clause was malformed, and a combine may carry several. The
+		// rows that wrap a cause also assert the chain survives.
+		{"no equals", "users", `invalid --from "users": expected name=`, false},
+		{"empty name", "=.a", `invalid --from "=.a": `, true},
+		{"empty filter", "users=", `invalid --from "users=": `, true},
+		{"unknown source", "nope=.a", `invalid --from "nope=.a": `, true},
 	}
 	for _, tt := range errTests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := planFrom(cf, []string{tt.spec})
 			require.ErrorContains(t, err, tt.want)
+			// The clause context is added by wrapping, so the underlying cause has
+			// to stay reachable: formatting it into the message instead would read
+			// identically and silently break errors.Is/As for every caller.
+			if tt.wrapped {
+				require.Error(t, errors.Unwrap(err), "the cause must stay unwrappable")
+			}
 		})
 	}
 
