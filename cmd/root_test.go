@@ -43,6 +43,33 @@ func TestRootRejectsBadDiagnosticsFlags(t *testing.T) {
 	}
 }
 
+// TestRootRejectsWriteWithCombine pins the dispatch order: the cross-source
+// branch is reached before the move branch, so a write flag paired with it used
+// to be read, ignored, and silently dropped. Each case must now fail loudly, and
+// the last one pins that a plain move still reaches runMove untouched.
+func TestRootRejectsWriteWithCombine(t *testing.T) {
+	t.Setenv("IQ_CONFIG", filepath.Join(t.TempDir(), "absent.toml"))
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"insert with from", []string{"--from", "users=.", "--combine", ".", "--insert", "dest"}, "--insert/--typed with --from/--combine"},
+		{"typed with from", []string{"--from", "users=.", "--combine", ".", "--typed"}, "--insert/--typed with --from/--combine"},
+		{"insert with combine alone", []string{"--combine", ".", "--insert", "dest"}, "--insert/--typed with --from/--combine"},
+		{"plain move still dispatches", []string{"--insert", "dest"}, "no source selected"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, _ := newRootCmd()
+
+			_, err := runCmd(t, root, tt.args...)
+
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
 func TestValidateErrorFormat(t *testing.T) {
 	require.NoError(t, validateErrorFormat("text"))
 	require.NoError(t, validateErrorFormat("JSON"))

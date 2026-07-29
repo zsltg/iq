@@ -248,6 +248,11 @@ func newRootCmd() (*cobra.Command, *config) {
 				if len(args) > 0 {
 					return errors.New("cannot use a positional filter with --from/--combine; put the final program in --combine")
 				}
+				// A combine emits values over a null input, so there are no keys to
+				// write with; refuse rather than render and silently drop the write.
+				if cfg.insert != "" || cfg.typed {
+					return errors.New("cannot use --insert/--typed with --from/--combine; a combine emits values with no keys, so pipe its output into a second `iq --insert` with --key or --key-field")
+				}
 				return runCombine(cmd, cfg)
 			}
 			// --insert/--typed turn the command into a data move: the source's items
