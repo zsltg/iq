@@ -52,6 +52,35 @@ func BenchmarkResidualFilter(b *testing.B) {
 	}
 }
 
+// BenchmarkSingletonFilter measures what a keyed run pays: the same compiled
+// residual over the same corpus, but one gojq iterator per item instead of one
+// per page, which is how RunKeyed applies a spec filter to keep every item's key.
+// Read it against BenchmarkResidualFilter — the delta between the two is the cost
+// of the per-item application, and it is why the unfiltered read path still
+// collects pages rather than routing through RunKeyed.
+func BenchmarkSingletonFilter(b *testing.B) {
+	code := mustCompile(b, residualFilterExpr)
+	ctx := context.Background()
+	sink := func(v any) error { return nil }
+	for _, shape := range benchShapes {
+		for _, rate := range benchRates {
+			docs := genCorpus(shape, benchDocCount(shape), rate)
+			singles := corpusPages(docs, 1)
+			b.Run(shape.String()+"/"+rateLabel(rate), func(b *testing.B) {
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					for _, one := range singles {
+						if err := runCode(ctx, code, one, sink); err != nil {
+							b.Fatalf("runCode: %v", err)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
 // rateLabel formats a match rate as a compact percentage for a sub-benchmark name.
 func rateLabel(rate float64) string {
 	switch rate {
