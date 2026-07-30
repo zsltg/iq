@@ -100,9 +100,12 @@ func combineTransform(cfg *config) (func(query.Record) ([]query.Record, error), 
 	if cfg.noOverwrite && cfg.replace {
 		return nil, errors.New("--no-overwrite and --replace are mutually exclusive")
 	}
+	// Type is deliberately absent: NewTransform stamps opts.Type only on a value
+	// its own filter reshaped, and this transform has no filter — the --with
+	// program is the filter. --type rides on the record instead (combineRecords),
+	// where the identity transform carries it through untouched.
 	return query.NewTransform(query.TransformOptions{
-		Key: cfg.moveKey, KeyField: cfg.keyField,
-		KeyPrefix: cfg.keyPrefix, Type: cfg.moveType,
+		Key: cfg.moveKey, KeyField: cfg.keyField, KeyPrefix: cfg.keyPrefix,
 	})
 }
 
@@ -119,14 +122,14 @@ func guardWriteFlags(cmd *cobra.Command) error {
 }
 
 // combineRecords adapts the combine's value stream to a RecordSource: each
-// emitted value becomes a keyless record, and the transform's --key/--key-field
-// mints the key the write path needs. The Copier batches to its own page size,
-// so the write side stays O(page) even though each source's reduced result is
-// already resident.
-func combineRecords(with string, names []string, values []any) query.RecordSource {
+// emitted value becomes a keyless record carrying recType (--type), and the
+// transform's --key/--key-field mints the key the write path needs. The Copier
+// batches to its own page size, so the write side stays O(page) even though each
+// source's reduced result is already resident.
+func combineRecords(with string, names []string, values []any, recType string) query.RecordSource {
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
 		return query.NewCombiner().Run(ctx, with, names, values, func(v any) error {
-			return fn([]query.Record{{Value: v}})
+			return fn([]query.Record{{Value: v, Type: recType}})
 		})
 	}
 }
@@ -216,7 +219,7 @@ func runCombine(cmd *cobra.Command, cfg *config, args []string, with string) err
 	if cfg.insert != "" {
 		// The combine runs inside the record source, so its values stream into the
 		// copier rather than being collected first; a jq error surfaces from Copy.
-		err := runInsert(cmd, ctx, cfg, combineRecords(with, names, values), transform)
+		err := runInsert(cmd, ctx, cfg, combineRecords(with, names, values, cfg.moveType), transform)
 		cfg.log().Info("combine complete", "stages", len(stages))
 		return asSyntaxError(with, err)
 	}

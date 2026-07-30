@@ -163,6 +163,46 @@ func TestBuildCombinePlanPerStageAndFinal(t *testing.T) {
 	require.Contains(t, out, "| length")
 }
 
+// TestBuildCombinePlanShowsTheWrite pins that an --explain of a writing combine
+// names its destination and the driver's write operations. Without it the plan
+// renders as though the command only reads, which is the one thing an explain of
+// a destructive run must not do. The write mode reaches the driver too, so
+// --no-overwrite is visible in the plan rather than only at the write boundary.
+func TestBuildCombinePlanShowsTheWrite(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("joined", "redis://h:6379/1"))
+	seedConfig(t, c)
+
+	stages := []combineStage{
+		{varName: "orders", spec: sourceSpec{endpoint: endpoint{handle: "orders", url: "redis://h:6379/0", driver: "redis"}, filter: ".[]"}},
+	}
+
+	t.Run("upsert names the destination and its ops", func(t *testing.T) {
+		out, err := buildCombinePlan(&config{insert: "joined"}, stages, "$orders[]", false)
+		require.NoError(t, err)
+		require.Contains(t, out, "write  ->  joined")
+		require.Contains(t, out, "JSON.SET")
+	})
+
+	t.Run("--no-overwrite reaches the driver's write plan", func(t *testing.T) {
+		out, err := buildCombinePlan(&config{insert: "joined", noOverwrite: true}, stages, "$orders[]", false)
+		require.NoError(t, err)
+		require.Contains(t, out, "write  ->  joined")
+		require.NotContains(t, out, "(replace)", "insert-only must not plan a replacing write")
+	})
+
+	t.Run("no destination, no write section", func(t *testing.T) {
+		out, err := buildCombinePlan(&config{}, stages, "$orders[]", false)
+		require.NoError(t, err)
+		require.NotContains(t, out, "write  ->")
+	})
+
+	t.Run("an unknown destination surfaces", func(t *testing.T) {
+		_, err := buildCombinePlan(&config{insert: "nope"}, stages, "$orders[]", false)
+		require.Error(t, err)
+	})
+}
+
 func TestBuildCombinePlanDescribedAnnotatesStages(t *testing.T) {
 	// The combine plan routes both the per-stage reducer and the final combine program
 	// through the same annotated renderer when describe is set.

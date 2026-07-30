@@ -182,16 +182,44 @@ func TestCombineTransform(t *testing.T) {
 		})
 	}
 
-	t.Run("accepts --key", func(t *testing.T) {
-		tr, err := combineTransform(&config{insert: "dest", moveKey: ".id"})
-		require.NoError(t, err)
-		require.NotNil(t, tr)
+	// Each write mode alone is legal — only the pair conflicts. Asserting just the
+	// conflicting pair would let the guard widen to either flag unnoticed.
+	t.Run("each write mode alone is accepted", func(t *testing.T) {
+		for _, cfg := range []*config{
+			{insert: "dest", moveKey: ".id", noOverwrite: true},
+			{insert: "dest", moveKey: ".id", replace: true},
+		} {
+			_, err := combineTransform(cfg)
+			require.NoError(t, err)
+		}
 	})
 
-	t.Run("accepts --key-field", func(t *testing.T) {
-		tr, err := combineTransform(&config{insert: "dest", keyField: "id"})
+	// A transform that is merely non-nil proves nothing: these drive it and assert
+	// the key it actually mints, so dropping --key-prefix cannot pass unseen.
+	keyed := func(t *testing.T, cfg *config, value any) query.Record {
+		t.Helper()
+		tr, err := combineTransform(cfg)
 		require.NoError(t, err)
 		require.NotNil(t, tr)
+		out, err := tr(query.Record{Value: value})
+		require.NoError(t, err)
+		require.Len(t, out, 1)
+		return out[0]
+	}
+
+	t.Run("--key mints the key from the value", func(t *testing.T) {
+		got := keyed(t, &config{insert: "dest", moveKey: ".id | tostring"}, map[string]any{"id": 7})
+		require.Equal(t, "7", got.Key)
+	})
+
+	t.Run("--key-field takes the key from a field", func(t *testing.T) {
+		got := keyed(t, &config{insert: "dest", keyField: "id"}, map[string]any{"id": "abc"})
+		require.Equal(t, "abc", got.Key)
+	})
+
+	t.Run("--key-prefix is prepended to the minted key", func(t *testing.T) {
+		got := keyed(t, &config{insert: "dest", moveKey: ".id | tostring", keyPrefix: "j:"}, map[string]any{"id": 7})
+		require.Equal(t, "j:7", got.Key)
 	})
 }
 
@@ -200,18 +228,31 @@ func TestCombineTransform(t *testing.T) {
 // record, in order, and the combine's own error propagates instead of being
 // swallowed into a short copy.
 func TestCombineRecordsStreamsKeylessRecords(t *testing.T) {
-	t.Run("each value becomes a record", func(t *testing.T) {
-		src := combineRecords("$a[]", []string{"$a"}, []any{[]any{1, 2, 3}})
+	collect := func(t *testing.T, src query.RecordSource) []query.Record {
+		t.Helper()
 		var got []query.Record
 		require.NoError(t, src(context.Background(), func(batch []query.Record) error {
 			got = append(got, batch...)
 			return nil
 		}))
+		return got
+	}
+
+	t.Run("each value becomes a record", func(t *testing.T) {
+		got := collect(t, combineRecords("$a[]", []string{"$a"}, []any{[]any{1, 2, 3}}, ""))
 		require.Equal(t, []query.Record{{Value: 1}, {Value: 2}, {Value: 3}}, got)
 	})
 
+	// --type rides on the record, not on the transform: NewTransform stamps its
+	// own Type only on a value its filter reshaped, and this transform has no
+	// filter, so a type passed there would be silently dropped.
+	t.Run("--type is stamped on every record", func(t *testing.T) {
+		got := collect(t, combineRecords("$a[]", []string{"$a"}, []any{[]any{1, 2}}, "json"))
+		require.Equal(t, []query.Record{{Value: 1, Type: "json"}, {Value: 2, Type: "json"}}, got)
+	})
+
 	t.Run("a combine error stops the walk", func(t *testing.T) {
-		src := combineRecords(`$a[] | error("boom")`, []string{"$a"}, []any{[]any{1}})
+		src := combineRecords(`$a[] | error("boom")`, []string{"$a"}, []any{[]any{1}}, "")
 		err := src(context.Background(), func([]query.Record) error { return nil })
 		require.ErrorContains(t, err, "boom")
 	})
