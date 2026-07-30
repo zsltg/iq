@@ -4,6 +4,43 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.33.0 - 2026-07-30
+### Bug Fixes
+- **cmd:** resolve a dotted address against the longest matching source (c94d564)
+- **combine:** refuse to plan a write the run cannot make (bff590a)
+- **combine:** make --insert --type take effect (1673e67)
+- **deps:** bump x/text and grpc to clear known vulnerabilities (1bd7dd8)
+- **diff:** split --section on commas like inspect --only (fb5ef3b)
+- **query:** stop advising a --filter flag that does not exist (0d76c68)
+- **query:** resolve the output format before the source in runJQ (4d4d5a5)
+- **root:** reject --insert/--typed alongside --from/--combine (adbaf9c)
+
+### Features
+- **add:** derive the source handle from the keyspace the url names (e7232b1)
+- **cmd:** complete enum flag values, lifecycle targets and inspect sections (dc35095)
+- **combine:** write the combined results with --insert (752e15e)
+- **combine:** promote the cross-source join to its own command (3b8f9c9)
+- **diff:** scope a diff or an inferred schema with a per-source filter (b56c502)
+- **ping:** add --all to ping every saved source (784f65a)
+
+### Refactoring
+- **cmd:** resolve every read source through one spec parser (9603428)
+- **query:** make Get omit a missing key instead of mapping it to nil (4412bd4)
+
+### Documentation
+- state the concrete pre-1.0 risks in the warning (092778c)
+- invert the site logo for dark mode, shrink the README mark to 60px (6ea5108)
+- use the bold lens mark for the README and site logo (a503352)
+- add the iq logo to the README and the docs site (3574de5)
+- retitle pages, rename the exports guide, drop ./ from examples (7716f3b)
+- add a Mermaid query-routes diagram to Getting started (b58a77c)
+- merge install into Getting started and add repo/theme metadata (ceead25)
+- split query-plan and diagnostics pages out of the Output page (60457d0)
+- **site:** share the abbreviation definitions across every page (b0e787f)
+- **site:** set site_url so instant previews work (a2f8f23)
+- **site:** rename the task pages and reorder the nav (9a2c651)
+
+
 ## v0.32.0 - 2026-07-22
 ### Documentation
 - document the -v jq-stage annotation on the Output page (f354612)
