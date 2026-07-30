@@ -316,15 +316,21 @@ Each positional is a source spec, `<source>[=<jq>]`, the same grammar `iq diff` 
 .PP
 Each source reduces at the source, and a pushable filter pushes down, so this never copies whole datasets to join them. A spec with no filter binds the whole keyspace, which is a holistic read: it needs \-\-unbounded, exactly as the same expression would on a plain query.
 .PP
-A combine emits values over a null input, so its results carry no keys. To write them somewhere, pipe the output into a second `iq \-\-insert` with \-\-key or \-\-key\-field.
+\-\-insert writes the results into a destination source instead of rendering them. A combine emits values over a null input, so its results carry no keys to inherit: \-\-key (or \-\-key\-field) is required there, and the run is refused up front rather than failing partway through a copy. \-\-key\-prefix, \-\-type, \-\-no\-overwrite, \-\-replace and \-\-dry\-run mean what they do on `iq \-\-insert`. There is no \-\-typed here, for the same reason: a typed dump needs a key too.
 .PP
 \fBFlags:\fR
 .TP
 \fB\-\-compact\fR
 collapse pretty json / jsona output to single\-line (no\-op for jsonl, values, yaml, gron, grona)
 .TP
+\fB\-\-dry\-run\fR
+report the effect of \-\-insert without writing anything
+.TP
 \fB\-\-explain\fR
 print the formatted query plan (pretty jq, per\-source filters, and the backend calls) and exit without connecting or executing
+.TP
+\fB\-\-force\fR
+skip the confirmation prompt for \-\-replace
 .TP
 \fB\-f\fR, \fB\-\-format\fR
 select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona; an alternative to \-j/\-J/\-A/\-y/\-r/\-g/\-G
@@ -335,6 +341,9 @@ output flattened assignment statements (gron), one per line: greppable, each res
 \fB\-G\fR, \fB\-\-grona\fR
 like \-\-gron but result N roots at json[N], so the whole stream ungrons back to one JSON array (gron's \-\-stream style)
 .TP
+\fB\-\-insert\fR
+write the combined results into this destination `source` instead of rendering (needs \-\-key or \-\-key\-field)
+.TP
 \fB\-j\fR, \fB\-\-json\fR
 output pretty JSON, one value per result (the default rendering)
 .TP
@@ -344,11 +353,29 @@ output every result wrapped in one [ ... ] JSON document (iq's \-\-jsona wraps t
 \fB\-J\fR, \fB\-\-jsonl\fR
 output compact JSON, one value per line (JSON Lines)
 .TP
+\fB\-\-key\fR
+jq expression yielding each written item's key (\-\-insert)
+.TP
+\fB\-\-key\-field\fR
+object field to take each written item's key from (\-\-insert)
+.TP
+\fB\-\-key\-prefix\fR
+string prepended to every written key (\-\-insert)
+.TP
 \fB\-\-no\-compile\fR
 disable server\-side predicate pushdown; run each spec's full .[]|select(...) filter client\-side (results are unchanged either way)
 .TP
+\fB\-\-no\-overwrite\fR
+skip keys that already exist (\-\-insert)
+.TP
 \fB\-r\fR, \fB\-\-raw\fR
 output scalars unquoted, one per line (objects and arrays fall back to compact JSON)
+.TP
+\fB\-\-replace\fR
+empty the destination before writing, with confirmation (\-\-insert)
+.TP
+\fB\-\-type\fR
+native type stamped on each written value, e.g. hash, list, json (\-\-insert)
 .TP
 \fB\-\-unbounded\fR
 permit a spec that loads a whole keyspace into memory (also materializes a .[]\-rooted filter instead of streaming it)
@@ -372,6 +399,10 @@ output YAML documents, separated by \-\-\-
 
   # A spec with no filter binds the whole keyspace (holistic, so \-\-unbounded).
   $ iq combine prod staging \-\-with '$prod + $staging' \-\-unbounded
+
+  # Write the joined rows into a third source instead of rendering them.
+  $ iq combine 'users=.[]' 'orders=.[]' \-\-with '$orders[]' \e
+      \-\-insert joined \-\-key '.id | tostring'
 .fi
 .RE
 .SS iq data

@@ -44,22 +44,23 @@ func TestRootRejectsBadDiagnosticsFlags(t *testing.T) {
 	}
 }
 
-// TestCombineTakesNoWriteFlags pins that a combine cannot be paired with a write.
-// Its results come out of one program over a null input and carry no keys, so
-// there is nothing to write with; when combine was a mode of the root command the
-// write flags parsed happily and were then silently dropped. As a subcommand it
-// simply does not define them, and the last case pins that a plain move — the
-// root action that does own them — still dispatches.
-func TestCombineTakesNoWriteFlags(t *testing.T) {
+// TestCombineWriteFlagsAreExplicit pins that a combine never writes by accident.
+// Its results come out of one program over a null input and carry no keys, so a
+// destination needs a key expression; when combine was a mode of the root command
+// the write flags parsed happily and were then silently dropped. Now --insert
+// demands a key, a key flag without --insert is refused, --typed does not exist
+// here at all, and a plain move — the root action that owns these flags — still
+// dispatches.
+func TestCombineWriteFlagsAreExplicit(t *testing.T) {
 	t.Setenv("IQ_CONFIG", filepath.Join(t.TempDir(), "absent.toml"))
 	tests := []struct {
 		name string
 		args []string
 		want string
 	}{
-		{"insert", []string{"combine", "users=.", "--with", ".", "--insert", "dest"}, "unknown flag: --insert"},
+		{"insert without a key", []string{"combine", "users=.", "--with", ".", "--insert", "dest"}, "needs --key or --key-field"},
 		{"typed", []string{"combine", "users=.", "--with", ".", "--typed"}, "unknown flag: --typed"},
-		{"key", []string{"combine", "users=.", "--with", ".", "--key", ".id"}, "unknown flag: --key"},
+		{"key without insert", []string{"combine", "users=.", "--with", ".", "--key", ".id"}, "applies to --insert"},
 		{"plain move still dispatches", []string{"--insert", "dest"}, "no source selected"},
 	}
 	for _, tt := range tests {

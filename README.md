@@ -156,6 +156,7 @@ documentation site (`make docs`).
 | `iq diff prod staging` | Compare two sources by data, stats, or inferred schema |
 | `iq diff prod staging --filter '.[] \| select(.status == "new")'` | Compare only part of each keyspace |
 | `iq combine 'users=.[]' 'orders=.[]' --with '$users + $orders'` | Query several sources and join their results |
+| `iq combine … --insert joined --key '.id \| tostring'` | Write the combined results into a destination |
 | `iq --src prod '.[]' --format parquet -o out.parquet` | Export results as Apache Parquet |
 
 ### Config

@@ -54,6 +54,24 @@ streams without it. A spec with no filter at all is the whole keyspace, so it is
 `--unbounded` too. Specs do not see each other's data, so a lookup whose keys depend on another
 source's rows is not expressible here — reduce both sources and join them in `--with`.
 
+**Writing the results.** `--insert <source>` writes the combined results into a destination
+instead of rendering them, reusing the same write path as `iq --insert`: `--key-prefix`, `--type`,
+`--no-overwrite`, `--replace`/`--force`, and `--dry-run` all mean what they do there.
+
+```bash
+# join, then persist the joined rows into a third source
+iq combine 'users=.[] | {id, name}' \
+           'orders=.[] | select(.total > 99)' \
+   --with '($users | INDEX(.id)) as $u | $orders[] | . + {name: $u[.userId].name}' \
+   --insert joined --key '.userId | tostring' --key-prefix 'j:'
+```
+
+`--key` (or `--key-field`) is **required**, unlike on a plain `iq --insert` where each item carries
+its source key. A combine's results come out of one program over a null input, so no value has a key
+to inherit — the run is refused up front rather than failing partway through a copy. For the same
+reason there is no `--typed` here: a typed dump is a stream of `{key,type,value}` records and would
+need the same key. A write flag used without `--insert` is an error, never silently ignored.
+
 ### Composing in one filter with `source()`
 
 When a lookup's keys depend on another source's rows — or you just want to compose several sources

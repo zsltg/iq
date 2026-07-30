@@ -8,9 +8,11 @@ import (
 	"github.com/fatih/color"
 	"github.com/itchyny/gojq"
 
+	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/jqfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/pushdown"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/render"
 	"github.com/zsltg/iq/internal/selector"
 )
@@ -159,7 +161,36 @@ func buildCombinePlan(cfg *config, stages []combineStage, with string, describe 
 	// The combine program runs over the bound $vars with null input — no source, so
 	// no data-access mark (markable is false).
 	writeJQFilterQuery(&b, cq, describe, cfg.unbounded, false)
+	if cfg.insert != "" {
+		if err := writeCombineWritePlan(&b, cfg); err != nil {
+			return "", err
+		}
+	}
 	return b.String(), nil
+}
+
+// writeCombineWritePlan appends the destination and its write operations, so an
+// --explain of a writing combine does not read as though it only reads.
+func writeCombineWritePlan(b *strings.Builder, cfg *config) error {
+	cf, err := iqconfig.Load()
+	if err != nil {
+		return err
+	}
+	dst, err := resolveEndpoint(cf, cfg.insert, true)
+	if err != nil {
+		return err
+	}
+	mode := query.Upsert
+	if cfg.noOverwrite {
+		mode = query.InsertOnly
+	}
+	writePlanSection(b, "write  ->  "+dst.label())
+	if d, ok := driverForScheme(schemeOf(dst.url)); ok && d.explainWrite != nil {
+		for _, op := range d.explainWrite(mode).Ops {
+			b.WriteString("  " + op + "\n")
+		}
+	}
+	return nil
 }
 
 // writeJQFilterQuery renders a parsed filter under the "jq filter" section: annotated

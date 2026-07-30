@@ -36,9 +36,12 @@ func newCombineCmd(cfg *config) *cobra.Command {
 		"never copies whole datasets to join them. A spec with no filter binds the whole\n" +
 		"keyspace, which is a holistic read: it needs --unbounded, exactly as the same\n" +
 		"expression would on a plain query.\n\n" +
-		"A combine emits values over a null input, so its results carry no keys. To write\n" +
-		"them somewhere, pipe the output into a second `iq --insert` with --key or\n" +
-		"--key-field."
+		"--insert writes the results into a destination source instead of rendering them.\n" +
+		"A combine emits values over a null input, so its results carry no keys to\n" +
+		"inherit: --key (or --key-field) is required there, and the run is refused up\n" +
+		"front rather than failing partway through a copy. --key-prefix, --type,\n" +
+		"--no-overwrite, --replace and --dry-run mean what they do on `iq --insert`.\n" +
+		"There is no --typed here, for the same reason: a typed dump needs a key too."
 	c := &cobra.Command{
 		Use:               "combine <source>[=<jq>]... --with <jq>",
 		ValidArgsFunction: completeSourceHandles,
@@ -53,7 +56,11 @@ func newCombineCmd(cfg *config) *cobra.Command {
 			"      --with '{prod: $prod[0], staging: $staging[0]}'\n" +
 			"\n" +
 			"  # A spec with no filter binds the whole keyspace (holistic, so --unbounded).\n" +
-			"  $ iq combine prod staging --with '$prod + $staging' --unbounded",
+			"  $ iq combine prod staging --with '$prod + $staging' --unbounded\n" +
+			"\n" +
+			"  # Write the joined rows into a third source instead of rendering them.\n" +
+			"  $ iq combine 'users=.[]' 'orders=.[]' --with '$orders[]' \\\n" +
+			"      --insert joined --key '.id | tostring'",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCombine(cmd, cfg, args, with)
@@ -63,8 +70,65 @@ func newCombineCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a spec that loads a whole keyspace into memory (also materializes a .[]-rooted filter instead of streaming it)")
 	c.Flags().BoolVar(&cfg.noCompile, "no-compile", false, "disable server-side predicate pushdown; run each spec's full .[]|select(...) filter client-side (results are unchanged either way)")
 	c.Flags().BoolVar(&cfg.explain, "explain", false, "print the formatted query plan (pretty jq, per-source filters, and the backend calls) and exit without connecting or executing")
+	c.Flags().StringVar(&cfg.insert, "insert", "", "write the combined results into this destination `source` instead of rendering (needs --key or --key-field)")
+	c.Flags().StringVar(&cfg.moveKey, "key", "", "jq expression yielding each written item's key (--insert)")
+	c.Flags().StringVar(&cfg.keyField, "key-field", "", "object field to take each written item's key from (--insert)")
+	c.Flags().StringVar(&cfg.keyPrefix, "key-prefix", "", "string prepended to every written key (--insert)")
+	c.Flags().StringVar(&cfg.moveType, "type", "", "native type stamped on each written value, e.g. hash, list, json (--insert)")
+	c.Flags().BoolVar(&cfg.noOverwrite, "no-overwrite", false, "skip keys that already exist (--insert)")
+	c.Flags().BoolVar(&cfg.replace, "replace", false, "empty the destination before writing, with confirmation (--insert)")
+	c.Flags().BoolVar(&cfg.force, "force", false, "skip the confirmation prompt for --replace")
+	c.Flags().BoolVar(&cfg.dryRun, "dry-run", false, "report the effect of --insert without writing anything")
 	addRenderFlags(c, cfg)
 	return c
+}
+
+// combineWriteFlags names the write flags in the order they are registered, for
+// the error that reports one used without --insert.
+var combineWriteFlags = []string{"key", "key-field", "key-prefix", "type", "no-overwrite", "replace", "force", "dry-run"}
+
+// combineTransform builds the record transform a --insert run writes through,
+// and rejects the two shapes that cannot work. A combine emits values over a
+// null input, so no record carries a source key to inherit: without --key or
+// --key-field every record would fail at the write boundary with ErrNoKey, one
+// record into a partial copy, so it is refused here instead. The filter half of
+// the transform stays empty — the --with program already is the filter.
+func combineTransform(cfg *config) (func(query.Record) ([]query.Record, error), error) {
+	if cfg.moveKey == "" && cfg.keyField == "" {
+		return nil, errors.New("--insert needs --key or --key-field: a combine emits values over a null input, so there are no source keys to write with")
+	}
+	if cfg.noOverwrite && cfg.replace {
+		return nil, errors.New("--no-overwrite and --replace are mutually exclusive")
+	}
+	return query.NewTransform(query.TransformOptions{
+		Key: cfg.moveKey, KeyField: cfg.keyField,
+		KeyPrefix: cfg.keyPrefix, Type: cfg.moveType,
+	})
+}
+
+// guardWriteFlags refuses a write flag on a run that renders. Each one only has
+// meaning against a destination, so accepting it silently would repeat the defect
+// --from/--combine had: a flag read, ignored, and dropped without a word.
+func guardWriteFlags(cmd *cobra.Command) error {
+	for _, name := range combineWriteFlags {
+		if f := cmd.Flags().Lookup(name); f != nil && f.Changed {
+			return fmt.Errorf("--%s applies to --insert; combine renders its results unless a destination is given", name)
+		}
+	}
+	return nil
+}
+
+// combineRecords adapts the combine's value stream to a RecordSource: each
+// emitted value becomes a keyless record, and the transform's --key/--key-field
+// mints the key the write path needs. The Copier batches to its own page size,
+// so the write side stays O(page) even though each source's reduced result is
+// already resident.
+func combineRecords(with string, names []string, values []any) query.RecordSource {
+	return func(ctx context.Context, fn func(batch []query.Record) error) error {
+		return query.NewCombiner().Run(ctx, with, names, values, func(v any) error {
+			return fn([]query.Record{{Value: v}})
+		})
+	}
 }
 
 // runCombine runs each spec's jq against its own source (reduced and, where the
@@ -75,14 +139,28 @@ func runCombine(cmd *cobra.Command, cfg *config, args []string, with string) err
 	if strings.TrimSpace(with) == "" {
 		return errors.New("combine needs --with to say how to combine the results")
 	}
-	// Resolve the output format before any source work, so conflicting format
-	// flags fail fast rather than after opening and scanning every source.
-	fm, err := selectFormat(cfg)
-	if err != nil {
-		return err
-	}
-	if err := guardBinaryFormat(fm, cmd.OutOrStdout()); err != nil {
-		return err
+	// The write path and the render path resolve different things, but both do it
+	// before any source work so a bad flag fails fast rather than after opening
+	// and scanning every source.
+	var (
+		fm        outputFormat
+		transform func(query.Record) ([]query.Record, error)
+		err       error
+	)
+	if cfg.insert != "" {
+		if transform, err = combineTransform(cfg); err != nil {
+			return err
+		}
+	} else {
+		if err = guardWriteFlags(cmd); err != nil {
+			return err
+		}
+		if fm, err = selectFormat(cfg); err != nil {
+			return err
+		}
+		if err = guardBinaryFormat(fm, cmd.OutOrStdout()); err != nil {
+			return err
+		}
 	}
 	cf, err := iqconfig.Load()
 	if err != nil {
@@ -133,6 +211,14 @@ func runCombine(cmd *cobra.Command, cfg *config, args []string, with string) err
 		}
 		names = append(names, "$"+st.varName)
 		values = append(values, vals)
+	}
+
+	if cfg.insert != "" {
+		// The combine runs inside the record source, so its values stream into the
+		// copier rather than being collected first; a jq error surfaces from Copy.
+		err := runInsert(cmd, ctx, cfg, combineRecords(with, names, values), transform)
+		cfg.log().Info("combine complete", "stages", len(stages))
+		return asSyntaxError(with, err)
 	}
 
 	f := newFormatter(fm, cmd.OutOrStdout(), cfg.compact)

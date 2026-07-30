@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/query"
 )
 
 func TestVarName(t *testing.T) {
@@ -157,6 +158,80 @@ func TestCombineCmdRequiresASource(t *testing.T) {
 	c := newCombineCmd(&config{})
 	require.Error(t, c.Args(c, nil))
 	require.NoError(t, c.Args(c, []string{"users=."}))
+}
+
+// TestCombineTransform pins the two shapes --insert refuses before any source is
+// opened. A combine emits over a null input, so no record carries a key to
+// inherit: without --key or --key-field every record would die at the write
+// boundary mid-copy, which is worse than refusing up front.
+func TestCombineTransform(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *config
+		want string
+	}{
+		{"no key at all", &config{insert: "dest"}, "needs --key or --key-field"},
+		{"key-prefix alone is not a key", &config{insert: "dest", keyPrefix: "x:"}, "needs --key or --key-field"},
+		{"conflicting write modes", &config{insert: "dest", moveKey: ".id", noOverwrite: true, replace: true}, "mutually exclusive"},
+		{"bad --key expression", &config{insert: "dest", moveKey: ".["}, "--key"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := combineTransform(tt.cfg)
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+
+	t.Run("accepts --key", func(t *testing.T) {
+		tr, err := combineTransform(&config{insert: "dest", moveKey: ".id"})
+		require.NoError(t, err)
+		require.NotNil(t, tr)
+	})
+
+	t.Run("accepts --key-field", func(t *testing.T) {
+		tr, err := combineTransform(&config{insert: "dest", keyField: "id"})
+		require.NoError(t, err)
+		require.NotNil(t, tr)
+	})
+}
+
+// TestCombineRecordsStreamsKeylessRecords pins the adapter between the combine's
+// value stream and the write path: every emitted value becomes one keyless
+// record, in order, and the combine's own error propagates instead of being
+// swallowed into a short copy.
+func TestCombineRecordsStreamsKeylessRecords(t *testing.T) {
+	t.Run("each value becomes a record", func(t *testing.T) {
+		src := combineRecords("$a[]", []string{"$a"}, []any{[]any{1, 2, 3}})
+		var got []query.Record
+		require.NoError(t, src(context.Background(), func(batch []query.Record) error {
+			got = append(got, batch...)
+			return nil
+		}))
+		require.Equal(t, []query.Record{{Value: 1}, {Value: 2}, {Value: 3}}, got)
+	})
+
+	t.Run("a combine error stops the walk", func(t *testing.T) {
+		src := combineRecords(`$a[] | error("boom")`, []string{"$a"}, []any{[]any{1}})
+		err := src(context.Background(), func([]query.Record) error { return nil })
+		require.ErrorContains(t, err, "boom")
+	})
+}
+
+// TestCombineRejectsWriteFlagsWithoutInsert pins that a write flag on a
+// rendering run is refused rather than read and dropped — the exact defect the
+// retired --from/--combine surface had.
+func TestCombineRejectsWriteFlagsWithoutInsert(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("users", "redis://127.0.0.1:1/0"))
+	seedConfig(t, c)
+
+	for _, flag := range []string{"--key=.id", "--key-field=id", "--key-prefix=x:", "--type=json", "--no-overwrite", "--replace", "--force", "--dry-run"} {
+		t.Run(flag, func(t *testing.T) {
+			root, _ := newRootCmd()
+			_, err := runCmd(t, root, "combine", "--timeout", "200ms", flag, "users=.[]", "--with", "$users")
+			require.ErrorContains(t, err, "applies to --insert")
+		})
+	}
 }
 
 // TestCombineRefusesParquetToTerminal exercises the binary-format guard inside
