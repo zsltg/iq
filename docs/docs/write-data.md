@@ -20,7 +20,7 @@ remains the untyped escape hatch for anything the typed path does not cover.)
 
 With `--insert`/`--typed` the filter transforms **each item** (its key is preserved), so you do **not**
 write `.[]` — iteration over the source is implicit. This is the one place iq reads a filter per item;
-everywhere else — a plain query, `--from`, and the `<source>=<jq>` specs `iq diff` and `iq schema` take —
+everywhere else — a plain query and the `<source>=<jq>` specs `iq combine`, `iq diff` and `iq schema` take —
 the filter is rooted at the whole keyspace and you write `.[]` yourself. The split is deliberate: a
 keyspace-rooted filter can aggregate across items (`[.[] | .total] | add`) and can name a single key
 (`.["orders:42"]`), neither of which a per-item filter can express, while the write path has no keyspace

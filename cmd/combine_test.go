@@ -31,14 +31,14 @@ func TestVarName(t *testing.T) {
 	}
 }
 
-func TestPlanFrom(t *testing.T) {
+func TestPlanCombine(t *testing.T) {
 	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
 	require.NoError(t, cf.Add("users", "redis://h"))
 	require.NoError(t, cf.Add("shop", "mongodb://h/db?collection=orders"))
 	require.NoError(t, cf.Add("prod/books", "mongodb://h/db?collection=books"))
 
 	t.Run("resolves a stage", func(t *testing.T) {
-		stages, err := planFrom(cf, []string{"users=.a"})
+		stages, err := planCombine(cf, []string{"users=.a"})
 		require.NoError(t, err)
 		require.Len(t, stages, 1)
 		require.Equal(t, "users", stages[0].varName)
@@ -48,7 +48,7 @@ func TestPlanFrom(t *testing.T) {
 	})
 
 	t.Run("grouped handle sanitizes the var", func(t *testing.T) {
-		stages, err := planFrom(cf, []string{"prod/books=.[]"})
+		stages, err := planCombine(cf, []string{"prod/books=.[]"})
 		require.NoError(t, err)
 		require.Len(t, stages, 1)
 		require.Equal(t, "prod_books", stages[0].varName)
@@ -56,13 +56,13 @@ func TestPlanFrom(t *testing.T) {
 	})
 
 	t.Run("filter may contain equals signs", func(t *testing.T) {
-		stages, err := planFrom(cf, []string{"users=.[] | select(.a == 1)"})
+		stages, err := planCombine(cf, []string{"users=.[] | select(.a == 1)"})
 		require.NoError(t, err)
 		require.Equal(t, ".[] | select(.a == 1)", stages[0].spec.filter)
 	})
 
 	t.Run("dotted spec sets the address and binds the dotted var", func(t *testing.T) {
-		stages, err := planFrom(cf, []string{"shop.customers=.[]"})
+		stages, err := planCombine(cf, []string{"shop.customers=.[]"})
 		require.NoError(t, err)
 		require.Len(t, stages, 1)
 		require.Equal(t, "shop", stages[0].spec.handle)
@@ -71,27 +71,37 @@ func TestPlanFrom(t *testing.T) {
 	})
 
 	t.Run("redis rejects a dotted spec", func(t *testing.T) {
-		_, err := planFrom(cf, []string{"users.foo=.[]"})
+		_, err := planCombine(cf, []string{"users.foo=.[]"})
 		require.ErrorContains(t, err, "no collections")
+	})
+
+	// A spec with no "=" is legal and means the whole keyspace, the same as it
+	// does for diff and schema; "." is holistic, so the engine's scan guard — not
+	// this parser — is what decides whether the read is allowed.
+	t.Run("bare address binds the whole keyspace", func(t *testing.T) {
+		stages, err := planCombine(cf, []string{"users"})
+		require.NoError(t, err)
+		require.Len(t, stages, 1)
+		require.Equal(t, "users", stages[0].varName)
+		require.Equal(t, ".", stages[0].spec.filter)
 	})
 
 	errTests := []struct {
 		name    string
 		spec    string
 		want    string
-		wrapped bool // the clause error wraps a cause, so the chain must survive
+		wrapped bool // the spec error wraps a cause, so the chain must survive
 	}{
-		// Every row asserts the --from context too: the inner message alone never
-		// says which clause was malformed, and a combine may carry several. The
+		// Every row asserts the spec context too: the inner message alone never
+		// says which spec was malformed, and a combine may carry several. The
 		// rows that wrap a cause also assert the chain survives.
-		{"no equals", "users", `invalid --from "users": expected name=`, false},
-		{"empty name", "=.a", `invalid --from "=.a": `, true},
-		{"empty filter", "users=", `invalid --from "users=": `, true},
-		{"unknown source", "nope=.a", `invalid --from "nope=.a": `, true},
+		{"empty name", "=.a", `invalid source "=.a": `, true},
+		{"empty filter", "users=", `invalid source "users=": `, true},
+		{"unknown source", "nope=.a", `invalid source "nope=.a": `, true},
 	}
 	for _, tt := range errTests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := planFrom(cf, []string{tt.spec})
+			_, err := planCombine(cf, []string{tt.spec})
 			require.ErrorContains(t, err, tt.want)
 			// The clause context is added by wrapping, so the underlying cause has
 			// to stay reachable: formatting it into the message instead would read
@@ -103,7 +113,7 @@ func TestPlanFrom(t *testing.T) {
 	}
 
 	t.Run("duplicate variable", func(t *testing.T) {
-		_, err := planFrom(cf, []string{"users=.a", "users=.b"})
+		_, err := planCombine(cf, []string{"users=.a", "users=.b"})
 		require.ErrorContains(t, err, "both bind $users")
 	})
 }
@@ -112,13 +122,28 @@ func TestRunCombineGuards(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 
-	t.Run("combine without from", func(t *testing.T) {
-		err := runCombine(cmd, &config{combine: "."})
-		require.ErrorContains(t, err, "at least one --from")
-	})
+	// --with is checked before any source work, so a missing program never costs
+	// a connection. Cobra's MinimumNArgs(1) covers the no-source case.
+	tests := []struct {
+		name string
+		with string
+	}{
+		{"missing", ""},
+		{"blank", "   "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := runCombine(cmd, &config{}, []string{"users=."}, tt.with)
+			require.ErrorContains(t, err, "needs --with")
+		})
+	}
+}
 
-	t.Run("from without combine", func(t *testing.T) {
-		err := runCombine(cmd, &config{from: []string{"users=."}})
-		require.ErrorContains(t, err, "requires --combine")
-	})
+// TestCombineCmdRequiresASource pins that `iq combine --with .` with no
+// positional is refused by the arg validator rather than reaching runCombine and
+// combining nothing.
+func TestCombineCmdRequiresASource(t *testing.T) {
+	c := newCombineCmd(&config{})
+	require.Error(t, c.Args(c, nil))
+	require.NoError(t, c.Args(c, []string{"users=."}))
 }

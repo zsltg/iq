@@ -137,8 +137,8 @@ func TestExplainFlagPrintsPlanAndStopsBeforeConnecting(t *testing.T) {
 		seedConfig(t, c)
 
 		root, _ := newRootCmd()
-		out, err := runCmd(t, root, "--timeout", "200ms", "--explain",
-			"--from", "orders=.[] | select(.vip)", "--combine", "$orders | length")
+		out, err := runCmd(t, root, "combine", "--timeout", "200ms", "--explain",
+			"orders=.[] | select(.vip)", "--with", "$orders | length")
 		require.NoError(t, err)
 		require.Contains(t, out, "cross-source combine")
 		require.Contains(t, out, "$orders  <-  orders (mongo)")
@@ -147,14 +147,12 @@ func TestExplainFlagPrintsPlanAndStopsBeforeConnecting(t *testing.T) {
 }
 
 func TestBuildCombinePlanPerStageAndFinal(t *testing.T) {
-	cfg := &config{
-		combine: "$orders + $cache | length",
-	}
-	stages := []fromStage{
+	cfg := &config{}
+	stages := []combineStage{
 		{varName: "orders", spec: sourceSpec{endpoint: endpoint{handle: "orders", url: "mongodb://localhost:27017/shop", driver: "mongo"}, filter: ".[] | select(.total > 10)"}},
 		{varName: "cache", spec: sourceSpec{endpoint: endpoint{handle: "cache", url: "redis://localhost:6379", driver: "redis"}, filter: ".[]"}},
 	}
-	out, err := buildCombinePlan(cfg, stages, false)
+	out, err := buildCombinePlan(cfg, stages, "$orders + $cache | length", false)
 	require.NoError(t, err)
 	require.Contains(t, out, "cross-source combine")
 	require.Contains(t, out, "$orders  <-  orders (mongo)")
@@ -168,11 +166,11 @@ func TestBuildCombinePlanPerStageAndFinal(t *testing.T) {
 func TestBuildCombinePlanDescribedAnnotatesStages(t *testing.T) {
 	// The combine plan routes both the per-stage reducer and the final combine program
 	// through the same annotated renderer when describe is set.
-	cfg := &config{combine: "$orders | length"}
-	stages := []fromStage{
+	cfg := &config{}
+	stages := []combineStage{
 		{varName: "orders", spec: sourceSpec{endpoint: endpoint{handle: "orders", url: "mongodb://localhost:27017/shop", driver: "mongo"}, filter: ".[] | select(.total > 10)"}},
 	}
-	out, err := buildCombinePlan(cfg, stages, true)
+	out, err := buildCombinePlan(cfg, stages, "$orders | length", true)
 	require.NoError(t, err)
 	// The reducer's root .[] stage is marked with its route (a mongo scan streams);
 	// its select stays a dimmed note, and the source-less combine program is dimmed too.

@@ -6,7 +6,7 @@ icon: lucide/palette
 
 Results print as pretty JSON by default. A single format flag selects another rendering.
 
-The flags are mutually exclusive and apply to the jq read path and to `--from`/`--combine`, but not to
+The flags are mutually exclusive and apply to the jq read path and to `iq combine`, but not to
 `exec` (which prints the backend's native reply).
 
 ## Format flags

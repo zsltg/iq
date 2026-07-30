@@ -8,11 +8,30 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
 	"github.com/zsltg/iq/internal/parquetout"
 	"github.com/zsltg/iq/internal/render"
 )
+
+// addRenderFlags registers the output-rendering flags on c, writing into cfg.
+// Both the default jq action and `iq combine` emit a stream of values through the
+// same formatter, so they must offer the same renderings; registering them from
+// one place is what keeps the two surfaces from drifting. One rendering per run:
+// the flags are mutually exclusive and default to pretty json when none is set.
+func addRenderFlags(c *cobra.Command, cfg *config) {
+	c.Flags().BoolVarP(&cfg.json, "json", "j", false, "output pretty JSON, one value per result (the default rendering)")
+	c.Flags().BoolVarP(&cfg.jsonArray, "jsona", "A", false, "output every result wrapped in one [ ... ] JSON document (iq's --jsona wraps the whole stream; sq's emits per-row value-arrays)")
+	c.Flags().BoolVarP(&cfg.jsonl, "jsonl", "J", false, "output compact JSON, one value per line (JSON Lines)")
+	c.Flags().BoolVarP(&cfg.yaml, "yaml", "y", false, "output YAML documents, separated by ---")
+	c.Flags().BoolVarP(&cfg.raw, "raw", "r", false, "output scalars unquoted, one per line (objects and arrays fall back to compact JSON)")
+	c.Flags().BoolVarP(&cfg.gron, "gron", "g", false, "output flattened assignment statements (gron), one per line: greppable, each result rooted at json, reversible with ungron")
+	c.Flags().BoolVarP(&cfg.gronArray, "grona", "G", false, "like --gron but result N roots at json[N], so the whole stream ungrons back to one JSON array (gron's --stream style)")
+	c.Flags().StringVarP(&cfg.format, "format", "f", "", "select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona; an alternative to -j/-J/-A/-y/-r/-g/-G")
+	c.MarkFlagsMutuallyExclusive("format", "json", "jsona", "jsonl", "yaml", "raw", "gron", "grona")
+	c.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / jsona output to single-line (no-op for jsonl, values, yaml, gron, grona)")
+}
 
 // outputFormat is the closed set of renderings the output-format flags select.
 // A closed type keeps an unknown format unrepresentable past selectFormat.

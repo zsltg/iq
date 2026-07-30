@@ -39,7 +39,7 @@ a terminal:
 - **Filter**
 
     - The `jq` filter pretty-printed with real line breaks, nested
-      `source("name"; "<jq>")` sub-filters and every `--from`/`--combine` fragment
+      `source("name"; "<jq>")` sub-filters and every `iq combine` fragment
       are formatted too.
     - Under `-v`/`--verbose` each top-level pipe stage also carries
       a short right-aligned note describing it (`— keep inputs where …`), and the stage

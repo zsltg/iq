@@ -464,7 +464,7 @@ func TestRunRejectsConflictingFormat(t *testing.T) {
 		cmd := &cobra.Command{}
 		cmd.SetContext(context.Background())
 		cmd.SetOut(&bytes.Buffer{})
-		err := runCombine(cmd, &config{from: []string{"x=."}, combine: "$x", json: true, raw: true, timeout: time.Second})
+		err := runCombine(cmd, &config{json: true, raw: true, timeout: time.Second}, []string{"x=."}, "$x")
 		require.ErrorContains(t, err, "mutually exclusive")
 	})
 
@@ -487,7 +487,7 @@ func TestRunRejectsConflictingFormat(t *testing.T) {
 		cmd := &cobra.Command{}
 		cmd.SetContext(context.Background())
 		cmd.SetOut(&out)
-		err := runCombine(cmd, &config{from: []string{"x=."}, combine: "$x", json: true, raw: true, explain: true, timeout: time.Second})
+		err := runCombine(cmd, &config{json: true, raw: true, explain: true, timeout: time.Second}, []string{"x=."}, "$x")
 		require.ErrorContains(t, err, "mutually exclusive")
 		require.Empty(t, out.String())
 	})

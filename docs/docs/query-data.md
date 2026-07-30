@@ -28,29 +28,31 @@ colon key like `.["book:1"]` reads as a glob to zsh (`no matches found`) or bash
 *This page mirrors the project [README](https://github.com/zsltg/iq/blob/main/README.md), which
 remains the source of truth until the documentation is fully migrated.*
 
-`--from` and `--combine` run one query across several sources and stitch the results together.
-Each `--from name='<jq>'` reduces a source *at the source* — bounded reads, streaming scans, and
-predicate pushdown all still apply — and binds its result set to `$name`; `--combine '<jq>'` then
-runs over those variables. Nothing copies whole datasets: each source returns only what its jq keeps.
+`iq combine` runs one query across several sources and stitches the results together.
+Each positional is an ordinary source spec, `<source>[=<jq>]` — the same grammar `iq diff` and
+`iq schema` take — reduced *at the source* (bounded reads, streaming scans, and predicate pushdown
+all still apply) and bound to `$name`; `--with '<jq>'` then runs over those variables. Nothing
+copies whole datasets: each source returns only what its jq keeps.
 
 ```bash
 # join users with orders on a shared id, across two sources
-iq --from users='.[] | {id, name}' \
-   --from orders='.[] | select(.total > 99)' \
-   --combine '($users | INDEX(.id)) as $u | $orders[] | . + {name: $u[.userId].name}'
+iq combine 'users=.[] | {id, name}' \
+           'orders=.[] | select(.total > 99)' \
+   --with '($users | INDEX(.id)) as $u | $orders[] | . + {name: $u[.userId].name}'
 ```
 
-Each `--from` names a saved source (the same handles as `iq ls`, group-namespaced), so it resolves
+Each spec names a saved source (the same handles as `iq ls`, group-namespaced), so it resolves
 through the registry exactly like `--src`. The bound variable is the source name with `/`, `.`, or
-`-` replaced by `_`, so `prod/books` binds `$prod_books`. `--combine` is a plain jq program, so it
+`-` replaced by `_`, so `prod/books` binds `$prod_books`. `--with` is a plain jq program, so it
 can join, union (`$a + $b`), aggregate, or fan across any number of sources.
 
-**Reduce, then combine.** Each `--from` stage is evaluated independently and its (already reduced)
-result is held in memory before `--combine` runs — so keep a stage's output small with
-`select`/projection/aggregation. A stage that must materialize its whole source (`keys`, `.`,
-`map(...)`) still needs `--unbounded`, exactly like a single-source query; a `.[]`-rooted stage
-streams without it. Stages do not see each other's data, so a lookup whose keys depend on another
-source's rows is not expressible here — reduce both sources and join them in `--combine`.
+**Reduce, then combine.** Each spec is evaluated independently and its (already reduced)
+result is held in memory before `--with` runs — so keep a stage's output small with
+`select`/projection/aggregation. A spec that must materialize its whole source (`keys`, `.`,
+`map(...)`) still needs `--unbounded`, exactly like a single-source query; a `.[]`-rooted spec
+streams without it. A spec with no filter at all is the whole keyspace, so it is holistic and needs
+`--unbounded` too. Specs do not see each other's data, so a lookup whose keys depend on another
+source's rows is not expressible here — reduce both sources and join them in `--with`.
 
 ### Composing in one filter with `source()`
 
@@ -75,7 +77,7 @@ yields a stream, collect it before indexing: `INDEX(source(…); .id)` or `[sour
 > (jq indexing needs a concrete array), even though the read itself streams. Push the reduction into
 > the sub-filter — `source("orders"; ".[] | select(.total > 99)")`, not
 > `source("orders"; ".[]")` filtered outside — so only the rows you need are held. A bare
-> `source("big")` over a large source buys no streaming benefit; prefer `--from`/`--combine` when
+> `source("big")` over a large source buys no streaming benefit; prefer `iq combine` when
 > each side is large and independent.
 
 A filter that calls `source()` runs over a **null input**: every read is an explicit `source()` call
@@ -86,17 +88,17 @@ registry like `--src`, active-group namespacing included.
 element (the connection is reused, but the sub-filter re-executes). Hoist a constant lookup into a
 binding — `INDEX(source("users"; ".[]"); .id) as $u | …` — and index `$u` per element instead.
 
-### Choosing `--from`/`--combine` vs `source()`
+### Choosing `iq combine` vs `source()`
 
 Both reduce per source then combine; pick by what the query needs.
 
-| | `--from` / `--combine` | in-filter `source()` |
+| | `iq combine` | in-filter `source()` |
 | --- | --- | --- |
-| Shape | explicit flags: a stage per source, then one combine | a single jq filter |
-| Correlated reads (B keyed by A's rows) | ✗ stages are independent | ✓ nest `source()` |
-| Quoting | each stage is its own flag value | sub-filter is a quoted string inside the filter |
+| Shape | a positional spec per source, then one `--with` program | a single jq filter |
+| Correlated reads (B keyed by A's rows) | ✗ specs are independent | ✓ nest `source()` |
+| Quoting | each spec is its own argument | sub-filter is a quoted string inside the filter |
 | Memory | each reduced result held until combine | same, plus a correlated `source()` re-runs per row |
 
-Reach for `--from`/`--combine` for a straightforward join, union, or aggregate across a few sources;
+Reach for `iq combine` for a straightforward join, union, or aggregate across a few sources;
 reach for `source()` when a read depends on another source's values, or to keep everything in one
 composable filter.

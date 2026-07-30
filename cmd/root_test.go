@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,20 +44,22 @@ func TestRootRejectsBadDiagnosticsFlags(t *testing.T) {
 	}
 }
 
-// TestRootRejectsWriteWithCombine pins the dispatch order: the cross-source
-// branch is reached before the move branch, so a write flag paired with it used
-// to be read, ignored, and silently dropped. Each case must now fail loudly, and
-// the last one pins that a plain move still reaches runMove untouched.
-func TestRootRejectsWriteWithCombine(t *testing.T) {
+// TestCombineTakesNoWriteFlags pins that a combine cannot be paired with a write.
+// Its results come out of one program over a null input and carry no keys, so
+// there is nothing to write with; when combine was a mode of the root command the
+// write flags parsed happily and were then silently dropped. As a subcommand it
+// simply does not define them, and the last case pins that a plain move — the
+// root action that does own them — still dispatches.
+func TestCombineTakesNoWriteFlags(t *testing.T) {
 	t.Setenv("IQ_CONFIG", filepath.Join(t.TempDir(), "absent.toml"))
 	tests := []struct {
 		name string
 		args []string
 		want string
 	}{
-		{"insert with from", []string{"--from", "users=.", "--combine", ".", "--insert", "dest"}, "--insert/--typed with --from/--combine"},
-		{"typed with from", []string{"--from", "users=.", "--combine", ".", "--typed"}, "--insert/--typed with --from/--combine"},
-		{"insert with combine alone", []string{"--combine", ".", "--insert", "dest"}, "--insert/--typed with --from/--combine"},
+		{"insert", []string{"combine", "users=.", "--with", ".", "--insert", "dest"}, "unknown flag: --insert"},
+		{"typed", []string{"combine", "users=.", "--with", ".", "--typed"}, "unknown flag: --typed"},
+		{"key", []string{"combine", "users=.", "--with", ".", "--key", ".id"}, "unknown flag: --key"},
 		{"plain move still dispatches", []string{"--insert", "dest"}, "no source selected"},
 	}
 	for _, tt := range tests {
@@ -66,6 +69,26 @@ func TestRootRejectsWriteWithCombine(t *testing.T) {
 			_, err := runCmd(t, root, tt.args...)
 
 			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+// TestRootTakesNoCombineFlags pins that the retired --from/--combine spellings
+// are gone outright rather than quietly accepted: the cross-source action is
+// `iq combine` now, and a stale script must fail loudly instead of running a
+// single-source query that ignores the flags.
+func TestRootTakesNoCombineFlags(t *testing.T) {
+	t.Setenv("IQ_CONFIG", filepath.Join(t.TempDir(), "absent.toml"))
+	for _, args := range [][]string{
+		{"--from", "users=.", "--combine", "."},
+		{"--combine", "."},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			root, _ := newRootCmd()
+
+			_, err := runCmd(t, root, args...)
+
+			require.ErrorContains(t, err, "unknown flag")
 		})
 	}
 }

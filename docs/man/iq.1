@@ -33,14 +33,8 @@ run against this saved source for one invocation (overrides the active source; s
 \fB\-\-timeout\fR
 per\-query timeout (default 5s)
 .TP
-\fB\-\-combine\fR
-final jq over the \-\-from results (each bound to $name), run over a null input
-.TP
 \fB\-\-explain\fR
 print the formatted query plan (pretty jq, nested filters, and the backend calls) and exit without connecting or executing
-.TP
-\fB\-\-from\fR
-cross\-source stage `name=<jq>`: reduce source name with <jq> and bind its results to $name (repeatable; needs \-\-combine) (default [])
 .TP
 \fB\-\-no\-cache\fR
 disable the file:// dump decode cache (on by default for local dump files above 4 MiB; a cached decode skips re\-parsing the dump on later queries)
@@ -309,6 +303,75 @@ Show or set the active source
 .nf
   $ iq src      # show the active source
   $ iq src shop # set it
+.fi
+.RE
+.SS iq combine
+Query several sources and combine their results
+.PP
+\fBUsage:\fR iq combine <source>[=<jq>]... \-\-with <jq>
+.PP
+Query several sources and combine their results with one jq program.
+.PP
+Each positional is a source spec, `<source>[=<jq>]`, the same grammar `iq diff` and `iq schema` take. The spec's results bind to a jq variable named after the source, with '/', '.' and '\-' becoming '_' \(em so `prod/books=.[]` binds $prod_books \(em and \-\-with is the final program, run over a null input with every variable in scope.
+.PP
+Each source reduces at the source, and a pushable filter pushes down, so this never copies whole datasets to join them. A spec with no filter binds the whole keyspace, which is a holistic read: it needs \-\-unbounded, exactly as the same expression would on a plain query.
+.PP
+A combine emits values over a null input, so its results carry no keys. To write them somewhere, pipe the output into a second `iq \-\-insert` with \-\-key or \-\-key\-field.
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-compact\fR
+collapse pretty json / jsona output to single\-line (no\-op for jsonl, values, yaml, gron, grona)
+.TP
+\fB\-\-explain\fR
+print the formatted query plan (pretty jq, per\-source filters, and the backend calls) and exit without connecting or executing
+.TP
+\fB\-f\fR, \fB\-\-format\fR
+select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona; an alternative to \-j/\-J/\-A/\-y/\-r/\-g/\-G
+.TP
+\fB\-g\fR, \fB\-\-gron\fR
+output flattened assignment statements (gron), one per line: greppable, each result rooted at json, reversible with ungron
+.TP
+\fB\-G\fR, \fB\-\-grona\fR
+like \-\-gron but result N roots at json[N], so the whole stream ungrons back to one JSON array (gron's \-\-stream style)
+.TP
+\fB\-j\fR, \fB\-\-json\fR
+output pretty JSON, one value per result (the default rendering)
+.TP
+\fB\-A\fR, \fB\-\-jsona\fR
+output every result wrapped in one [ ... ] JSON document (iq's \-\-jsona wraps the whole stream; sq's emits per\-row value\-arrays)
+.TP
+\fB\-J\fR, \fB\-\-jsonl\fR
+output compact JSON, one value per line (JSON Lines)
+.TP
+\fB\-\-no\-compile\fR
+disable server\-side predicate pushdown; run each spec's full .[]|select(...) filter client\-side (results are unchanged either way)
+.TP
+\fB\-r\fR, \fB\-\-raw\fR
+output scalars unquoted, one per line (objects and arrays fall back to compact JSON)
+.TP
+\fB\-\-unbounded\fR
+permit a spec that loads a whole keyspace into memory (also materializes a .[]\-rooted filter instead of streaming it)
+.TP
+\fB\-\-with\fR
+final jq over the bound source results (each spec's results bound to $name), run over a null input
+.TP
+\fB\-y\fR, \fB\-\-yaml\fR
+output YAML documents, separated by \-\-\-
+.PP
+\fBExamples:\fR
+.RS
+.nf
+  # Join two sources: every order whose customer is in the other source.
+  $ iq combine 'orders=.[]' 'customers=.[] | .id' \e
+      \-\-with '$orders | map(select(.customer as $c | $customers | index($c)))'
+
+  # Reduce each side first, then compare the totals.
+  $ iq combine 'prod=[.[] | .total] | add' 'staging=[.[] | .total] | add' \e
+      \-\-with '{prod: $prod[0], staging: $staging[0]}'
+
+  # A spec with no filter binds the whole keyspace (holistic, so \-\-unbounded).
+  $ iq combine prod staging \-\-with '$prod + $staging' \-\-unbounded
 .fi
 .RE
 .SS iq data

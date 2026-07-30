@@ -40,8 +40,6 @@ type config struct {
 	unbounded bool
 	noCompile bool
 	explain   bool
-	from      []string
-	combine   string
 	format    string
 	json      bool
 	jsonArray bool
@@ -242,19 +240,6 @@ func newRootCmd() (*cobra.Command, *config) {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// A cross-source query (--from/--combine) reads several sources and
-			// combines them; a plain positional filter runs against one source.
-			if len(cfg.from) > 0 || cfg.combine != "" {
-				if len(args) > 0 {
-					return errors.New("cannot use a positional filter with --from/--combine; put the final program in --combine")
-				}
-				// A combine emits values over a null input, so there are no keys to
-				// write with; refuse rather than render and silently drop the write.
-				if cfg.insert != "" || cfg.typed {
-					return errors.New("cannot use --insert/--typed with --from/--combine; a combine emits values with no keys, so pipe its output into a second `iq --insert` with --key or --key-field")
-				}
-				return runCombine(cmd, cfg)
-			}
 			// --insert/--typed turn the command into a data move: the source's items
 			// are transformed by the optional positional filter and written to a
 			// destination source (--insert) or emitted as a typed dump (--typed). A
@@ -309,20 +294,7 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
 	root.Flags().BoolVar(&cfg.noCompile, "no-compile", false, "disable server-side predicate pushdown; run the full .[]|select(...) filter client-side (pushdown is on by default for MongoDB, already a no-op on Redis; results are unchanged either way)")
 	root.Flags().BoolVar(&cfg.explain, "explain", false, "print the formatted query plan (pretty jq, nested filters, and the backend calls) and exit without connecting or executing")
-	root.Flags().StringArrayVar(&cfg.from, "from", nil, "cross-source stage `name=<jq>`: reduce source name with <jq> and bind its results to $name (repeatable; needs --combine)")
-	root.Flags().StringVar(&cfg.combine, "combine", "", "final jq over the --from results (each bound to $name), run over a null input")
-	// One rendering per run: the format flags are mutually exclusive and default
-	// to pretty json when none is set.
-	root.Flags().BoolVarP(&cfg.json, "json", "j", false, "output pretty JSON, one value per result (the default rendering)")
-	root.Flags().BoolVarP(&cfg.jsonArray, "jsona", "A", false, "output every result wrapped in one [ ... ] JSON document (iq's --jsona wraps the whole stream; sq's emits per-row value-arrays)")
-	root.Flags().BoolVarP(&cfg.jsonl, "jsonl", "J", false, "output compact JSON, one value per line (JSON Lines)")
-	root.Flags().BoolVarP(&cfg.yaml, "yaml", "y", false, "output YAML documents, separated by ---")
-	root.Flags().BoolVarP(&cfg.raw, "raw", "r", false, "output scalars unquoted, one per line (objects and arrays fall back to compact JSON)")
-	root.Flags().BoolVarP(&cfg.gron, "gron", "g", false, "output flattened assignment statements (gron), one per line: greppable, each result rooted at json, reversible with ungron")
-	root.Flags().BoolVarP(&cfg.gronArray, "grona", "G", false, "like --gron but result N roots at json[N], so the whole stream ungrons back to one JSON array (gron's --stream style)")
-	root.Flags().StringVarP(&cfg.format, "format", "f", "", "select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona; an alternative to -j/-J/-A/-y/-r/-g/-G")
-	root.MarkFlagsMutuallyExclusive("format", "json", "jsona", "jsonl", "yaml", "raw", "gron", "grona")
-	root.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / jsona output to single-line (no-op for jsonl, values, yaml, gron, grona)")
+	addRenderFlags(root, cfg)
 	// Write/movement flags for the default action: --insert redirects results into a
 	// destination source (sq's --insert); --typed emits {key,type,value} records — a
 	// re-importable dump. The rest mirror the retired `iq data copy`.
@@ -353,6 +325,7 @@ func newRootCmd() (*cobra.Command, *config) {
 		newInspectCmd(cfg),
 		newDiffCmd(cfg),
 		newSchemaCmd(cfg),
+		newCombineCmd(cfg),
 		newDriverCmd(cfg),
 		newVersionCmd(),
 		newManCmd(),

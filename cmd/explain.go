@@ -134,13 +134,12 @@ func buildJQPlan(cfg *config, filter string, cross, describe bool) (string, erro
 	return b.String(), nil
 }
 
-// buildCombinePlan renders the query plan for the cross-source combine action
-// (--from/--combine): each --from stage's source, driver, pretty-printed reducer,
-// and backend calls, then the final --combine program.
-func buildCombinePlan(cfg *config, stages []fromStage, describe bool) (string, error) {
+// buildCombinePlan renders the query plan for `iq combine`: each stage's source,
+// driver, pretty-printed reducer, and backend calls, then the final --with program.
+func buildCombinePlan(cfg *config, stages []combineStage, with string, describe bool) (string, error) {
 	var b strings.Builder
 	writePlanTitle(&b)
-	writePlanLine(&b, "mode", "cross-source combine (--from/--combine)")
+	writePlanLine(&b, "mode", "cross-source combine")
 	for _, st := range stages {
 		q, err := gojq.Parse(st.spec.filter)
 		if err != nil {
@@ -153,9 +152,9 @@ func buildCombinePlan(cfg *config, stages []fromStage, describe bool) (string, e
 		}
 	}
 	writePlanSection(&b, "combine (over the bound $vars, null input)")
-	cq, err := gojq.Parse(cfg.combine)
+	cq, err := gojq.Parse(with)
 	if err != nil {
-		return "", asSyntaxError(cfg.combine, err)
+		return "", asSyntaxError(with, err)
 	}
 	// The combine program runs over the bound $vars with null input — no source, so
 	// no data-access mark (markable is false).
