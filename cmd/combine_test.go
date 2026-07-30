@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -23,6 +26,14 @@ func TestVarName(t *testing.T) {
 		{"1x", "_1x"},
 		{"0y", "_0y"},
 		{"9z", "_9z"},
+		// The guard's three conjuncts each carry their own weight, so each needs a
+		// case that only it decides. Empty: the length check is what keeps v[0]
+		// from panicking. Below '0': a punctuation lead is not a digit, so it must
+		// not be escaped even though it sorts under '9'. Single digit: the escape
+		// reads the *first* byte, so a one-character name must not index past it.
+		{"", ""},
+		{"!x", "!x"},
+		{"1", "_1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -146,4 +157,57 @@ func TestCombineCmdRequiresASource(t *testing.T) {
 	c := newCombineCmd(&config{})
 	require.Error(t, c.Args(c, nil))
 	require.NoError(t, c.Args(c, []string{"users=."}))
+}
+
+// TestCombineRefusesParquetToTerminal exercises the binary-format guard inside
+// runCombine: parquet to an interactive terminal must be refused before any
+// source is opened, exactly as the plain query path refuses it. The format is
+// resolved ahead of the first connection, so the refusal costs no I/O.
+func TestCombineRefusesParquetToTerminal(t *testing.T) {
+	origTTY := binaryTTYCheck
+	binaryTTYCheck = func(io.Writer) bool { return true }
+	t.Cleanup(func() { binaryTTYCheck = origTTY })
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	err := runCombine(cmd, &config{format: "parquet", timeout: time.Second}, []string{"users=."}, "$users")
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "terminal")
+	require.Empty(t, buf.Bytes(), "nothing should be written when the format is refused")
+}
+
+// TestCombineExplainSurfacesAPlanError pins that a plan that cannot be built
+// stops the run: --explain parses every stage's filter, so an unparseable one
+// must surface its syntax error rather than fall through to a connection.
+func TestCombineExplainSurfacesAPlanError(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("users", "redis://h:6379/0"))
+	seedConfig(t, c)
+
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "combine", "--explain", "users=.[", "--with", "$users")
+
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "connect", "the plan must fail before any dial")
+}
+
+// TestCombineVerboseWritesThePlanToStderr pins that --verbose alone renders the
+// plan: it shares the branch with --explain but keeps running afterwards, so a
+// guard that only honored --explain would silently drop the trace a -v run is
+// asked for. The run itself then fails on the unreachable source, which is not
+// what this asserts.
+func TestCombineVerboseWritesThePlanToStderr(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("users", "redis://127.0.0.1:1/0"))
+	seedConfig(t, c)
+
+	root, _ := newRootCmd()
+	out, _ := runCmd(t, root, "combine", "--verbose", "--timeout", "200ms", "users=.[]", "--with", "$users")
+
+	require.Contains(t, out, "query plan")
+	require.Contains(t, out, "$users  <-  users (redis)")
 }

@@ -487,6 +487,22 @@ func TestCommandArgsAndCompletionWiring(t *testing.T) {
 		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 	})
 
+	// combine takes one spec per source, so every positional completes handles —
+	// not just the first — and the arg validator demands at least one.
+	t.Run("combine completes handles for every spec", func(t *testing.T) {
+		c := findCmd(t, root, "combine")
+		require.NotNil(t, c.ValidArgsFunction, "combine completion wiring dropped")
+		got, dir := c.ValidArgsFunction(c, nil, "")
+		require.Equal(t, handles, got)
+		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
+
+		got, _ = c.ValidArgsFunction(c, []string{"shop=.[]"}, "")
+		require.Equal(t, handles, got)
+
+		require.Error(t, c.Args(c, nil), "combine needs at least one source")
+		require.NoError(t, c.Args(c, []string{"shop=.[]"}))
+	})
+
 	t.Run("exec suppresses filename completion", func(t *testing.T) {
 		c := findCmd(t, root, "exec")
 		require.NotNil(t, c.ValidArgsFunction, "exec completion wiring dropped")
