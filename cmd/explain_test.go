@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -200,6 +202,27 @@ func TestBuildCombinePlanShowsTheWrite(t *testing.T) {
 	t.Run("an unknown destination surfaces", func(t *testing.T) {
 		_, err := buildCombinePlan(&config{insert: "nope"}, stages, "$orders[]", false)
 		require.Error(t, err)
+	})
+
+	// The plan has to refuse exactly what the run refuses. A file:// source is
+	// read-only — the file driver registers no write describer — so a plan that
+	// rendered a write section for one would describe a run that cannot happen,
+	// and would have no operations to list under it either.
+	t.Run("a read-only destination is refused, as the run refuses it", func(t *testing.T) {
+		dump := filepath.Join(t.TempDir(), "dump.jsonl")
+		require.NoError(t, os.WriteFile(dump, []byte("{\"key\":\"k\",\"value\":1}\n"), 0o600))
+		c := newSeed()
+		require.NoError(t, c.Add("joined", "redis://h:6379/1"))
+		require.NoError(t, c.Add("dump", "file://"+dump))
+		seedConfig(t, c)
+
+		_, err := buildCombinePlan(&config{insert: "dump"}, stages, "$orders[]", false)
+		require.ErrorContains(t, err, "cannot be written to")
+	})
+
+	t.Run("stdout is refused", func(t *testing.T) {
+		_, err := buildCombinePlan(&config{insert: "-"}, stages, "$orders[]", false)
+		require.ErrorContains(t, err, "must name a saved source")
 	})
 }
 

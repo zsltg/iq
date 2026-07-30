@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -180,15 +181,24 @@ func writeCombineWritePlan(b *strings.Builder, cfg *config) error {
 	if err != nil {
 		return err
 	}
+	// The plan must refuse what the run refuses. runInsert rejects stdio, and a
+	// backend with no write describer is one that cannot be written to at all (the
+	// file driver is read-only) — rendering a bare write section for either would
+	// describe a run that cannot happen.
+	if dst.isFile {
+		return errors.New("--insert must name a saved source, not stdout")
+	}
+	d, ok := driverForScheme(schemeOf(dst.url))
+	if !ok || d.explainWrite == nil {
+		return fmt.Errorf("destination %s (%s) cannot be written to", dst.label(), dst.driver)
+	}
 	mode := query.Upsert
 	if cfg.noOverwrite {
 		mode = query.InsertOnly
 	}
 	writePlanSection(b, "write  ->  "+dst.label())
-	if d, ok := driverForScheme(schemeOf(dst.url)); ok && d.explainWrite != nil {
-		for _, op := range d.explainWrite(mode).Ops {
-			b.WriteString("  " + op + "\n")
-		}
+	for _, op := range d.explainWrite(mode).Ops {
+		b.WriteString("  " + op + "\n")
 	}
 	return nil
 }
