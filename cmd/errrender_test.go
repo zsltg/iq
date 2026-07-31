@@ -118,6 +118,20 @@ func TestRedactMessage(t *testing.T) {
 			"authentication failed for user admin",
 			"authentication failed for user admin",
 		},
+		{
+			"a backticked url masks the password without a stray escape",
+			"dialed `mongodb://user:hunter2@host:27017/db` twice",
+			"dialed `mongodb://user:xxxxx@host:27017/db` twice",
+		},
+		{
+			// The advice iq itself prints for an unknown source: a scheme literal
+			// inside a code span, which the closing backtick used to make
+			// unparseable, collapsing the URL to "(unparseable url)" and swallowing
+			// the backtick that closed the span.
+			"our own scheme-literal advice survives intact",
+			"unknown source \"nosuch\"; run `iq ls` (register a dump with `iq add file:///path/to/dump.json` to read one)",
+			"unknown source \"nosuch\"; run `iq ls` (register a dump with `iq add file:///path/to/dump.json` to read one)",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

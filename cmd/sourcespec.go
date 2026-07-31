@@ -86,7 +86,10 @@ func resolveSourceSpec(cf *iqconfig.Config, name string) (endpoint, error) {
 	// a read spec has no such fallbacks, and says so before delegating.
 	base, _, _ := splitSourceArg(cf, name)
 	if _, _, ok := cf.Resolve(base); !ok {
-		return endpoint{}, fmt.Errorf("unknown source %q; run `iq ls` (register a dump with `iq add file://...` to read one)", base)
+		// The example URL is spelled out rather than elided: redactMessage trims
+		// trailing prose punctuation off a URL match, so a "file://..." here would
+		// lose its ellipsis to that trim and print as "file:".
+		return endpoint{}, fmt.Errorf("unknown source %q; run `iq ls` (register a dump with `iq add file:///path/to/dump.json` to read one)", base)
 	}
 	ep, err := resolveEndpoint(cf, name, false)
 	if err != nil {

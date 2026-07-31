@@ -171,9 +171,18 @@ func causeChain(err error) []string {
 // redactMessage before parsing.
 var urlLike = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"']+`)
 
-// trailingPunct is the prose punctuation a URL match may pick up when it is
-// embedded in a sentence; redactMessage trims it before url.Parse.
-const trailingPunct = ".,;:!?)]}>"
+// trailingDelims is what a URL match may pick up when it is embedded in a
+// sentence: prose punctuation, and the backtick that closes a code span in our
+// own advice strings. redactMessage trims it before url.Parse. A backtick is
+// never part of a URL, so trimming one can only sharpen the match: left on, it
+// lands in the host and fails the parse outright, or in the path and survives as
+// a %60 the URL never had.
+//
+// The trim is a run, not a single byte, because a URL can close a parenthetical
+// and a sentence at once ("(mongodb://host/db)."). The cost is that a URL truly
+// ending in one of these loses it — an elided "scheme://..." keeps no ellipsis —
+// so a message iq writes itself spells its example URL out in full.
+const trailingDelims = ".,;:!?)]}>`"
 
 // redactMessage redacts any connection-URL substring in msg, so --error.stack
 // and --error.format json (which surface the whole wrapped cause chain, raw leaf
@@ -193,11 +202,11 @@ const trailingPunct = ".,;:!?)]}>"
 // puts a secret outside the userinfo must extend redactURL rather than rely here.
 func redactMessage(msg string) string {
 	return urlLike.ReplaceAllStringFunc(msg, func(m string) string {
-		// Split off trailing prose punctuation so url.Parse sees a clean URL and
-		// masks its password, instead of failing on the stray byte and collapsing
-		// the whole span to "(unparseable url)". The password is masked either way;
+		// Split off the trailing delimiters so url.Parse sees a clean URL and masks
+		// its password, instead of failing on the stray byte and collapsing the
+		// whole span to "(unparseable url)". The password is masked either way;
 		// this only keeps the surrounding message readable.
-		u := strings.TrimRight(m, trailingPunct)
+		u := strings.TrimRight(m, trailingDelims)
 		return redactURL(u) + m[len(u):]
 	})
 }
