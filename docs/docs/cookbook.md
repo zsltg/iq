@@ -4,10 +4,10 @@ icon: material/book-open-blank-variant-outline
 
 # Common commands
 
-*This page is the full catalogue of developer-facing commands and environment variables, and
-the only place it lives — the [README](https://github.com/zsltg/iq/blob/main/README.md) is the
-user-facing overview. A change that adds or alters a command, a dependency or an environment
-variable updates this page in the same change.*
+*Developer-facing commands are documented across this site, not in the
+[README](https://github.com/zsltg/iq/blob/main/README.md), which is the user-facing overview. A
+change that adds or alters a command, a dependency or an environment variable updates the page
+that covers it in the same change.*
 
 ```bash
 go build -o iq .          # build the binary

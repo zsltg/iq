@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build or serve the Zensical documentation site under docs/. Sources are plain
 # hand-maintained Markdown under docs/docs/ — nothing regenerates them from the
-# README, and the developer command catalogue lives only there; the site is
+# README, and the developer command catalogue lives across these pages; the site is
 # built with uv against the committed docs/uv.lock, so it is reproducible and needs
 # no Node. Dispatches one argument: `build` emits docs/site/, `serve` runs the dev
 # server on 0.0.0.0:8000 (all interfaces, so the preview is reachable over the LAN).
