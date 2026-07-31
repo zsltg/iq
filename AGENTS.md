@@ -7,7 +7,7 @@ Load-bearing shape only; no framework chosen yet, README carries specifics once 
 - Language: Go, built to a single static binary.
 - CLI parsing, configuration, NoSQL drivers, output formatting: libraries TBD; every pick permissive-licensed, dependency-light, no telemetry or PII.
 ## Commands
-Standard Go toolchain; README is the full catalogue once it exists.
+Standard Go toolchain; `docs/docs/cookbook.md` is the full catalogue.
 - Build: `go build ./...`.
 - Test, scoped to your diff by default: `go test ./<pkg>/...`; full run `go test ./...`; skip container-backed integration tests with `go test -short ./...`; 100% pass.
 - Vet and lint: `go vet ./...`, `golangci-lint run`; fix every reported issue before committing, do not wait to be asked; golangci-lint's cache outlives the worktree that filled it, so a removed sibling worktree can resurface its findings as issues in `../<worktree>/...` paths that this tree does not contain — `make check` detects that shape (a reported path outside the repo), clears the cache and retries once rather than clearing unconditionally, which would trade a ~3s warm lint for a ~65s cold one on every run; atop the v2 defaults (`staticcheck`, `unused`, among others) the config enables `godot` (comments end with a period), `gosec` (the Go SAST, excluded from `_test.go` fixtures), `errorlint`, `testifylint`, `bodyclose`, `noctx`, and `misspell`.
@@ -19,7 +19,7 @@ Standard Go toolchain; README is the full catalogue once it exists.
 - Coverage: `make cover` (`scripts/coverage.sh`) runs the full suite with `-coverpkg=./...` (so cross-package coverage counts and a testless package still enters the denominator) and fails below the floor (`IQ_COVER_MIN`, default 80); `IQ_COVER_SHORT=1` for a report-only run; needs the integration services up, since `-short` understates the drivers.
 - End-to-end: `make e2e` builds the binary and drives it black-box through `os/exec` (package `e2e`, skips under `-short`).
 - Dead code: `deadcode -test ./...` (whole-program), wired into `make check`.
-- Docs site: `make docs` (build, `docs/site/`), `make docs-serve` (0.0.0.0:8000); Zensical under `docs/`, uv-managed; README is source of truth, site pages are seeded copies.
+- Docs site: `make docs` (build, `docs/site/`), `make docs-serve` (0.0.0.0:8000); Zensical under `docs/`, uv-managed; site pages under `docs/docs/` are hand-maintained and nothing regenerates them from the README, which stays the user-facing overview and the Architecture source of truth.
 - Toolchain: `make tools-dev` installs the quality and security tools (mutago, deadcode, govulncheck, osv-scanner, gitleaks, syft) into GOPATH/bin.
 - Release: `make release` (`scripts/release.sh`, needs `svu` and `git-chglog`: `make tools`); computes the next semver from Conventional Commits, regenerates `CHANGELOG.md`, commits, and tags on clean `main`; never pushes; preview with `bash scripts/release.sh --dry-run`; version metadata is embedded by `make build` via ldflags.
 ## Coding Conventions
@@ -49,7 +49,7 @@ The port is trivially thin (`Store.Query`); the cost is around the adapter, and 
 - Auth fits the connection contract: authentication reduces to config the composition root injects, with no native dependency (Kerberos/GSSAPI) and no live-account requirement; token refresh and rotation obey the secret rules — never log a credential, release every resource, bound every outbound call.
 - Query semantics fit the model: the datastore's query shape maps onto the selector's classification and the pushdown-to-predicate mapping; a backend with hard constraints (partition-key-required, per-request cost units, row-key-range-only) that forces a redesign or defeats pushdown is a design decision to raise first, and updates the README Architecture Mermaid in the same change.
 ## Docs stay current
-- README Common commands is the full catalogue; update it in the same change that adds or alters a developer-facing command, dependency or environment variable; environment variables also update `.env.example`.
+- `docs/docs/cookbook.md` Common commands is the full catalogue and the only place it lives; README is user-facing and carries no command catalogue, so never add one back to it; update the cookbook in the same change that adds or alters a developer-facing command, dependency or environment variable; environment variables also update `.env.example`, except gate-control variables (`IQ_MUTATION_*`, `IQ_COVER_*`, `IQ_CAPS_*`), which are documented in the cookbook only.
 - A change to the system's shape (a new datastore target, a new delivery surface, a changed connection contract) updates the README Architecture section in the same change.
 - A change to the selector's classification, the pushdown-to-predicate mapping, or a core port updates the README Architecture Mermaid diagram in the same change; the diagrams are port-level, so a backend-adapter change updates the Architecture prose and the driver table instead, never the diagram; keep the committed diagram in sync, never redraw it from scratch.
 ## Boundaries

@@ -1,4 +1,4 @@
-# iq build and release automation. See README "Common commands".
+# iq build and release automation. See docs/docs/cookbook.md "Common commands".
 # Release logic lives in scripts/release.sh; this Makefile is a thin wrapper and
 # the single source of truth for build-time version embedding.
 
@@ -42,7 +42,7 @@ tools:
 	go install github.com/git-chglog/git-chglog/cmd/git-chglog@latest
 
 # tools-dev installs the quality and security toolchain into GOPATH/bin. gofumpt,
-# goimports, and golangci-lint are expected already (see README).
+# goimports, and golangci-lint are expected already (see docs/docs/cookbook.md).
 tools-dev:
 	go install github.com/quality-gates/mutago/v2/cmd/mutago@v2.7.7
 	go install github.com/google/capslock/cmd/capslock@v0.3.2

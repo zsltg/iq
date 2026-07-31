@@ -4,8 +4,10 @@ icon: material/book-open-blank-variant-outline
 
 # Common commands
 
-*This page mirrors the project [README](https://github.com/zsltg/iq/blob/main/README.md), which
-remains the source of truth until the documentation is fully migrated.*
+*This page is the full catalogue of developer-facing commands and environment variables, and
+the only place it lives — the [README](https://github.com/zsltg/iq/blob/main/README.md) is the
+user-facing overview. A change that adds or alters a command, a dependency or an environment
+variable updates this page in the same change.*
 
 ```bash
 go build -o iq .          # build the binary
@@ -49,7 +51,7 @@ make security             # supply-chain + secrets sweep (govulncheck, osv-scann
 make sbom                 # write SPDX + CycloneDX SBOMs of the module to dist/
 make e2e                  # black-box smoke tests that build and drive the iq binary (+ live Redis/Mongo round-trips when IQ_REDIS_URL/IQ_MONGO_URL are set)
 make bench                # JSON decode + pre-filter benchmarks (no containers); pair two runs with benchstat: make bench | tee new.txt; benchstat old.txt new.txt
-make docs                 # build the documentation site (Zensical) into docs/site/ (needs uv; README is source of truth, site pages are seeded copies)
+make docs                 # build the documentation site (Zensical) into docs/site/ (needs uv; pages under docs/docs/ are hand-maintained, nothing regenerates them)
 make docs-serve           # serve the documentation site on 0.0.0.0:8000, reachable over the LAN (needs uv)
 make capabilities         # capability-drift gate (capslock) vs capslock-baseline.json; runs only when go.mod/go.sum changed (IQ_CAPS_FORCE=1 forces it, IQ_CAPS_BASE overrides the base ref, IQ_CAPS_GOOS=darwin|windows is a review aid, IQ_CAPS_UPDATE_BASELINE=1 records a new set)
 make mutation             # mutation gate over the branch diff vs origin/main (part of make ci)
