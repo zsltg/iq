@@ -1,0 +1,1362 @@
+{
+  "capabilityInfo": [
+    {
+      "packageName": "main",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cassandra",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "config",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/internal/config",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "render",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/internal/render",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cassandra",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "render",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/internal/render",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cassandra",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "render",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/internal/render",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cassandra",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "config",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/config",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cassandra",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "render",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/render",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cassandra",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "render",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/internal/render",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cassandra",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "render",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/internal/render",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cassandra",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "config",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/internal/config",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "rawpred",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/internal/rawpred",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "render",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/internal/render",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cassandra",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "config",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/config",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "diff",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/diff",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "jqfmt",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/jqfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "rawpred",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/rawpred",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "render",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/render",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "shape",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/shape",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cassandra",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "config",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/internal/config",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "diff",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/internal/diff",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "jqfmt",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/internal/jqfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "render",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/internal/render",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "main",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cmd",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/cmd",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "cassandra",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    }
+  ]
+}

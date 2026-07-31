@@ -42,6 +42,7 @@ gofumpt -w . && goimports -w .   # format
 go vet ./... && golangci-lint run   # vet and lint
 govulncheck ./...         # dependency vulnerability scan
 bash scripts/mutation-gate.sh   # mutation gate, scoped to the branch diff vs origin/main and enumerating only the packages with a changed non-test file (fails on any escaped mutant not in the baseline, and on any errored/timed-out one; IQ_MUTATION_TIMEOUT_COEFFICIENT, default 5; IQ_MUTATION_WORKERS, default 1); set IQ_*_URL to a pre-started stack
+bash scripts/capabilities.sh    # capability gate: what a dependency can *do*, compared against the committed capslock baseline (skips unless go.mod/go.sum changed vs origin/main; ~7.3 GB peak RSS when it runs)
 make check                # fast offline gate: format, vet, build, lint, dead code, unit tests + coverage report
 make cover                # full suite + coverage floor (IQ_COVER_MIN, default 80); IQ_COVER_SHORT=1 for a fast report-only run
 make security             # supply-chain + secrets sweep (govulncheck, osv-scanner, gitleaks) + SBOMs to dist/
@@ -50,10 +51,11 @@ make e2e                  # black-box smoke tests that build and drive the iq bi
 make bench                # JSON decode + pre-filter benchmarks (no containers); pair two runs with benchstat: make bench | tee new.txt; benchstat old.txt new.txt
 make docs                 # build the documentation site (Zensical) into docs/site/ (needs uv; README is source of truth, site pages are seeded copies)
 make docs-serve           # serve the documentation site on 0.0.0.0:8000, reachable over the LAN (needs uv)
+make capabilities         # capability-drift gate (capslock) vs capslock-baseline.json; runs only when go.mod/go.sum changed (IQ_CAPS_FORCE=1 forces it, IQ_CAPS_BASE overrides the base ref, IQ_CAPS_GOOS=darwin|windows is a review aid, IQ_CAPS_UPDATE_BASELINE=1 records a new set)
 make mutation             # mutation gate over the branch diff vs origin/main (part of make ci)
-make ci                   # full pre-merge gate: check + cover + security + mutation (needs Docker + network)
+make ci                   # full pre-merge gate: check + cover + security + capabilities + mutation (needs Docker + network)
 make tools                # install release tools (svu, git-chglog) into GOPATH/bin
-make tools-dev            # install the quality/security toolchain (mutago, deadcode, govulncheck, osv-scanner, gitleaks, syft)
+make tools-dev            # install the quality/security toolchain (mutago, capslock, deadcode, govulncheck, osv-scanner, gitleaks, syft)
 make version              # print the version the next release would take
 bash scripts/release.sh --dry-run   # preview the next release without changing anything
 make release              # bump version, regenerate CHANGELOG.md, commit, and tag
@@ -126,6 +128,34 @@ depends on the form: a package-arg dry run is an instant count that runs no test
 diff-scoped or `./...` dry run first runs the `--coverage` instrumented test pass (whole-target,
 memory-heavy) before counting. Scope dry runs to one package and never run one alongside a live gate.
 
+The capability gate runs [capslock](https://github.com/google/capslock) and answers what the
+dependency tree can actually *do* — the question `govulncheck` (is a dependency
+known-vulnerable), `osv-scanner` and `gitleaks` (did we leak a secret) do not ask. It compares
+the module's `(package, capability)` set against the committed `capslock-baseline.json` and
+lets capslock exit-code-enforce: 0 when the set matches, 1 on drift in *either* direction, 2 on
+a run error, which the wrapper keeps distinct. The wrapper provisions the pinned capslock
+itself (`go install ...@v0.3.2` into a throwaway GOBIN, run directly), so the gate needs no
+capslock on `PATH` and does not touch `go.mod`; `make tools-dev` installs it for ad-hoc use.
+Because the analysis costs ~7.3 GB peak RSS and ~39 s, the gate is conditional: it runs only
+when `go.mod` or `go.sum` differ from the merge-base with the base ref (`IQ_CAPS_BASE`, default
+`origin/main`) and otherwise prints the reason and exits 0, so a docs-only or code-only branch
+pays nothing. `IQ_CAPS_FORCE=1` runs it regardless. Two limits are accepted deliberately:
+package granularity compares capability *sets*, so a package that already holds a capability
+can gain new call paths into it invisibly (the tree is saturated — `drivers/redis` alone
+carries `ARBITRARY_EXECUTION`), and the comparison is bidirectional, so a benign dependency
+bump that *drops* a capability fails the gate too. Both are resolved the same way: read the
+call paths capslock prints, then record the new set with `IQ_CAPS_UPDATE_BASELINE=1` (which
+regenerates the baseline, trimmed to the `capabilityInfo` array with `jq`, and prints every row
+gained or lost) and justify each new `EXEC` / `ARBITRARY_EXECUTION` / `MODIFY_SYSTEM_STATE` /
+`SYSTEM_CALLS` row in the committed `capslock-baseline.notes.md` — which also records the known
+false positives, so a row like `internal/render` → `NETWORK` (interface dispatch through
+`io.Writer`) is not re-litigated. The baseline is linux-only; `IQ_CAPS_GOOS=linux|darwin|windows`
+re-runs the analysis for another shipped target as a review aid at driver admission and is
+*expected* to report differences, so read it as evidence rather than as a verdict (a value
+outside that whitelist is a hard stop, and a non-linux run may not regenerate the baseline).
+A Go toolchain bump churns the baseline tree-wide, since capability rows include stdlib-derived
+paths, and may require bumping the pinned capslock version alongside the regeneration.
+
 Quality gates are local and layered — the project uses no CI service. `make check` is the fast,
 offline pre-commit gate (format, `go vet`, `go build`, `golangci-lint`, dead code via
 `deadcode`, and `go test -short` with a coverage report). If lint reports issues in
@@ -135,8 +165,11 @@ on findings from files this tree does not contain. `make cover` runs the full
 container-backed suite and enforces a coverage floor (`IQ_COVER_MIN`, default 80;
 `IQ_COVER_SHORT=1` for a fast report-only run). `make security` sweeps dependencies and secrets
 (`govulncheck`, `osv-scanner`, `gitleaks`) and writes SBOMs to `dist/`; gosec runs as the Go SAST
-inside `golangci-lint run`. `bash scripts/mutation-gate.sh` (also `make mutation`) is the mutation
-gate. `make ci` runs check, cover, security, and the mutation gate together — the full pre-merge
-gate. Because mutago reruns the suite per mutant, `make ci` is the slowest target; start a shared
+inside `golangci-lint run`. `bash scripts/capabilities.sh` (also `make capabilities`) is the
+capability-drift gate, which runs only when the dependency graph moved. `bash
+scripts/mutation-gate.sh` (also `make mutation`) is the mutation gate. `make ci` runs check,
+cover, security, capabilities, and the mutation gate together — the full pre-merge gate; the
+capability step sits between security and mutation so its analysis never overlaps the mutation
+gate's memory. Because mutago reruns the suite per mutant, `make ci` is the slowest target; start a shared
 stack (`docker compose up -d --wait`) first so the containers are reused. Install the toolchain once
 with `make tools-dev`.

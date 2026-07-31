@@ -17,7 +17,7 @@ LDFLAGS := -X github.com/zsltg/iq/cmd.version=$(VERSION) \
 GORELEASER_VERSION := v2.17.0
 GORELEASER         := github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 
-.PHONY: build version changelog release tools tools-dev check cover security sbom e2e bench docs docs-serve mutation ci man completions release-check release-snapshot
+.PHONY: build version changelog release tools tools-dev check cover security sbom e2e bench docs docs-serve capabilities mutation ci man completions release-check release-snapshot
 
 # build compiles the binary with version metadata embedded.
 build:
@@ -45,6 +45,7 @@ tools:
 # goimports, and golangci-lint are expected already (see README).
 tools-dev:
 	go install github.com/quality-gates/mutago/v2/cmd/mutago@v2.7.7
+	go install github.com/google/capslock/cmd/capslock@v0.3.2
 	go install golang.org/x/tools/cmd/deadcode@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest
@@ -116,6 +117,16 @@ release-check:
 release-snapshot:
 	go run $(GORELEASER) release --snapshot --clean --skip=publish
 
+# capabilities runs the capability-drift gate (capslock) against capslock-baseline.json.
+# It runs only when go.mod or go.sum differ from the merge-base with origin/main
+# (override with IQ_CAPS_BASE; IQ_CAPS_FORCE=1 runs it regardless), because the analysis
+# costs ~7.3 GB peak RSS. A gained or lost capability fails it; record a new set with
+# IQ_CAPS_UPDATE_BASELINE=1 and justify it in capslock-baseline.notes.md. IQ_CAPS_GOOS
+# re-runs it for darwin or windows as a review aid (the baseline is linux-only). The
+# wrapper provisions the pinned capslock itself (go install into a temp dir).
+capabilities:
+	bash scripts/capabilities.sh
+
 # mutation runs the mutation gate over the branch diff against origin/main (override
 # with IQ_MUTATION_BASE; empty for a full-module scan, or pass a package path for a
 # full scan of it). Any escaped mutant not in mutago-baseline.json fails the gate.
@@ -125,11 +136,14 @@ mutation:
 	bash scripts/mutation-gate.sh
 
 # ci is the full pre-merge gate: fast checks, the covered full suite (which
-# includes e2e), the security sweep, then the mutation gate over the branch diff.
-# Needs Docker and network. mutago reruns the suite per mutant, so this is the
-# slowest target — start a shared stack (docker compose up -d --wait) first.
+# includes e2e), the security sweep, the capability gate, then the mutation gate over
+# the branch diff. Needs Docker and network. mutago reruns the suite per mutant, so this
+# is the slowest target — start a shared stack (docker compose up -d --wait) first. The
+# capability step sits between them so its ~7.3 GB analysis never overlaps the mutation
+# gate's memory, and it usually skips outright (no go.mod/go.sum change).
 ci:
 	$(MAKE) check
 	$(MAKE) cover
 	$(MAKE) security
+	$(MAKE) capabilities
 	$(MAKE) mutation
