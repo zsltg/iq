@@ -161,10 +161,9 @@ func newRootCmd() (*cobra.Command, *config) {
 			"  $ iq '.[]' --src shop.orders --jsonl\n" +
 			"  $ iq '.[]' --src shop.orders -A -o results.json\n" +
 			"\n" +
-			"  # Join two collections of one source on a shared id (each --from names its source).\n" +
-			"  $ iq --from shop.orders='.[] | {id, total}' \\\n" +
-			"       --from shop.users='.[] | {id, name}' \\\n" +
-			"       --combine '($shop_users | INDEX(.id)) as $u | $shop_orders[] | . + {name: $u[.id].name}'\n" +
+			"  # Join two collections of one source on a shared id (each spec binds $shop_orders, $shop_users).\n" +
+			"  $ iq combine 'shop.orders=.[] | {id, total}' 'shop.users=.[] | {id, name}' \\\n" +
+			"      --with '($shop_users | INDEX(.id)) as $u | $shop_orders[] | . + {name: $u[.id].name}'\n" +
 			"\n" +
 			"  # Query a piped dump file (implicit stdin).\n" +
 			"  $ cat dump.jsonl | iq '.[]'",

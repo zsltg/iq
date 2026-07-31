@@ -1020,10 +1020,9 @@ Print version, commit, build date, and Go version
   $ iq '.[]' \-\-src shop.orders \-\-jsonl
   $ iq '.[]' \-\-src shop.orders \-A \-o results.json
 
-  # Join two collections of one source on a shared id (each \-\-from names its source).
-  $ iq \-\-from shop.orders='.[] | {id, total}' \e
-       \-\-from shop.users='.[] | {id, name}' \e
-       \-\-combine '($shop_users | INDEX(.id)) as $u | $shop_orders[] | . + {name: $u[.id].name}'
+  # Join two collections of one source on a shared id (each spec binds $shop_orders, $shop_users).
+  $ iq combine 'shop.orders=.[] | {id, total}' 'shop.users=.[] | {id, name}' \e
+      \-\-with '($shop_users | INDEX(.id)) as $u | $shop_orders[] | . + {name: $u[.id].name}'
 
   # Query a piped dump file (implicit stdin).
   $ cat dump.jsonl | iq '.[]'

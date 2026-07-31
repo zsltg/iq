@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
@@ -232,6 +234,134 @@ func TestRootHelpEveryCommandGrouped(t *testing.T) {
 		require.NotEmptyf(t, sub.GroupID, "command %q has no group", sub.Name())
 		require.Truef(t, realGroups[sub.GroupID], "command %q in unknown group %q", sub.Name(), sub.GroupID)
 	}
+}
+
+// TestExamplesUseLiveFlags is the drift guard for --help: every flag spelled in
+// an Example block resolves against the command that example actually invokes,
+// so help text that still advertises a retired flag fails here. The root example
+// outlived the --from/--combine pair that `iq combine` replaced, and shipped
+// teaching a spelling the binary rejects.
+func TestExamplesUseLiveFlags(t *testing.T) {
+	root, _ := newRootCmd()
+
+	for _, c := range allCommands(root) {
+		if c.Example == "" {
+			continue
+		}
+		t.Run(c.CommandPath(), func(t *testing.T) {
+			for _, line := range exampleInvocations(c.Example) {
+				target, _, err := root.Find(line)
+				require.NoErrorf(t, err, "example %q names no command", strings.Join(line, " "))
+				for _, tok := range line {
+					name, ok := flagName(tok)
+					if !ok {
+						continue
+					}
+					require.NotNilf(t, lookupFlag(target, name),
+						"example on %q spells %s, which %q does not define",
+						c.CommandPath(), tok, target.CommandPath())
+				}
+			}
+		})
+	}
+}
+
+// allCommands returns cmd and every command beneath it, depth-first.
+func allCommands(cmd *cobra.Command) []*cobra.Command {
+	out := []*cobra.Command{cmd}
+	for _, sub := range cmd.Commands() {
+		out = append(out, allCommands(sub)...)
+	}
+	return out
+}
+
+// exampleInvocations extracts the `iq ...` invocations from an Example block as
+// token slices, with the leading "iq" dropped so each slice is what Find takes.
+// A trailing "\" continues an invocation onto the next line; single-quoted spans
+// (jq programs, URLs) are dropped whole, since a flag is never spelled inside
+// one and their contents would otherwise tokenize into noise.
+func exampleInvocations(example string) [][]string {
+	var out [][]string
+	var pending string
+	for _, line := range strings.Split(example, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case pending != "":
+			// A continuation: already inside an invocation.
+		case strings.HasPrefix(line, "$ "):
+			line = strings.TrimPrefix(line, "$ ")
+		default:
+			continue // a comment or a blank separator
+		}
+		if rest, ok := strings.CutSuffix(line, "\\"); ok {
+			pending += rest
+			continue
+		}
+		if toks := invocationTokens(pending + line); toks != nil {
+			out = append(out, toks)
+		}
+		pending = ""
+	}
+	return out
+}
+
+// invocationTokens tokenizes one shell line and returns the arguments to its
+// first `iq`, or nil when the line invokes something else entirely. Everything
+// from a pipe, redirect or trailing comment onward is not an argument to iq, so
+// it is cut.
+func invocationTokens(line string) []string {
+	line = quotedSpan.ReplaceAllString(line, " arg ")
+	toks := strings.Fields(line)
+	start := -1
+	for i, tok := range toks {
+		if tok == "iq" {
+			start = i + 1
+			break
+		}
+	}
+	if start == -1 {
+		return nil
+	}
+	toks = toks[start:]
+	for i, tok := range toks {
+		if tok == "|" || tok == ">" || tok == ">>" || tok == "&&" || strings.HasPrefix(tok, "#") {
+			return toks[:i]
+		}
+	}
+	return toks
+}
+
+// quotedSpan matches a single-quoted span, the only quoting the examples use.
+var quotedSpan = regexp.MustCompile(`'[^']*'`)
+
+// flagName reduces one token to the flag name it spells: "--src" and
+// "--src=shop" both give "src", and a shorthand gives its single letter. The
+// bare "-" (stdin) and a non-flag operand give ok false.
+func flagName(tok string) (string, bool) {
+	name, ok := strings.CutPrefix(tok, "--")
+	if !ok {
+		if name, ok = strings.CutPrefix(tok, "-"); !ok || name == "" {
+			return "", false
+		}
+	}
+	name, _, _ = strings.Cut(name, "=")
+	return name, name != ""
+}
+
+// lookupFlag finds a flag on cmd by name or by shorthand, including the ones it
+// inherits from root.
+func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {
+	for _, set := range []*pflag.FlagSet{cmd.Flags(), cmd.InheritedFlags()} {
+		if f := set.Lookup(name); f != nil {
+			return f
+		}
+		if len(name) == 1 {
+			if f := set.ShorthandLookup(name); f != nil {
+				return f
+			}
+		}
+	}
+	return nil
 }
 
 // sectionBetween returns the slice of s between the end of from and the start

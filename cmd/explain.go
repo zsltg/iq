@@ -206,7 +206,7 @@ func writeCombineWritePlan(b *strings.Builder, cfg *config) error {
 // writeJQFilterQuery renders a parsed filter under the "jq filter" section: annotated
 // per pipe stage when describe is set, otherwise the compact pretty print. When
 // markable (a resolved single source), the root data-access stage is tagged with its
-// route; a cross-source or source-less program (the --combine step) passes markable
+// route; a cross-source or source-less program (the combine --with step) passes markable
 // false. The query is already parsed, so this path re-uses it and never re-parses.
 func writeJQFilterQuery(b *strings.Builder, q *gojq.Query, describe, unbounded, markable bool) {
 	pretty := jqfmt.FormatQuery(q, colorOn())
