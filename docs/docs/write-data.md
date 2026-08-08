@@ -46,11 +46,14 @@ cat foreign.json | iq --insert books --key-field id   # import foreign JSON from
 iq '{t: .title}' --src books --insert kv --key '.t'   # reshape + re-key while copying
 ```
 
-`--typed` serializes the records in the chosen format — `--jsonl` (default), `--jsona`, or
-`--yaml` — and **all three re-import** through a `file://` source or a piped `--insert`,
+`--typed` serializes the records in the chosen format — `--jsonl` (default), `--json`, `--jsona`, or
+`--yaml` — and **all four re-import** through a `file://` source or a piped `--insert`,
 auto-detected from content by their typed `{key,…,value}` envelope. A huge first record can defeat
 the content sniff, so a `.yaml`/`.yml` name or an explicit `?format=` / `--from-format` remains
-available as an override. `--dry-run` reports the effect without writing; `--explain` prints the move
+available as an override. The renderings that cannot carry a record back are rejected rather than
+written: `--raw`/`--values` (a scalar cannot hold the envelope), `--format parquet` (columnar), and
+`--gron`/`--grona` (flattened assignments no source decodes) — drop `--typed` to grep or export the
+value stream instead. `--dry-run` reports the effect without writing; `--explain` prints the move
 plan without connecting.
 
 `iq data clear <target>…` empties a container (Mongo `deleteMany({})`, Redis `FLUSHDB`); `iq data

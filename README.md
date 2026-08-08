@@ -280,7 +280,7 @@ graph TD
   MSRC --> TX["per-item jq transform + re-key"]
   TX --> DST{"--insert or --typed?"}
   DST -->|--insert| PUT["Putter.Put (upsert / insert-only)"]
-  DST -->|--typed| ENC["emit {key,type,value} → jsonl / jsona / yaml"]
+  DST -->|--typed| ENC["emit {key,type,value} → jsonl / json / jsona / yaml"]
   PUT --> BW["backend adapter:<br/>type-aware native writes"]
   LF["iq data clear / drop / delete (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop / Deleter.Delete (capability-gated)"]
 ```

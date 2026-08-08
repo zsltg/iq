@@ -194,9 +194,15 @@ func (p typedPutter) Put(_ context.Context, batch []query.Record, _ query.WriteM
 	return query.WriteStat{Written: len(batch)}, nil
 }
 
+// typedFormatChoices names the renderings a typed dump can use, for the rejection
+// messages below; every one of them re-imports through a file:// source.
+const typedFormatChoices = "choose --jsonl (default), --json, --jsona, or --yaml"
+
 // selectTypedFormat resolves the record serialization for --typed: the chosen
-// structured format, or jsonl when none is set. The scalar "values" rendering
-// cannot represent a record and is rejected.
+// structured format, or jsonl when none is set. A dump exists to be re-imported,
+// so a rendering that cannot carry a {key,type,value} record back is rejected:
+// the scalar "values" rendering cannot represent a record, parquet is columnar,
+// and gron flattens the record to assignment statements that no source decodes.
 func selectTypedFormat(cfg *config) (outputFormat, error) {
 	if !anyFormatFlag(cfg) {
 		return formatJSONL, nil
@@ -206,17 +212,23 @@ func selectTypedFormat(cfg *config) (outputFormat, error) {
 		return "", err
 	}
 	if fm == formatValues {
-		return "", errors.New("--typed cannot use --raw/--values; choose --jsonl (default), --jsona, or --yaml")
+		return "", errors.New("--typed cannot use --raw/--values; " + typedFormatChoices)
 	}
 	if fm == formatParquet {
-		return "", errors.New("--typed cannot use --format parquet; run the query without --typed to export a columnar file, or choose --jsonl (default), --jsona, or --yaml")
+		return "", errors.New("--typed cannot use --format parquet; run the query without --typed to export a columnar file, or " + typedFormatChoices)
+	}
+	if fm == formatGron || fm == formatGronArray {
+		return "", errors.New("--typed cannot use --gron/--grona; a gron dump does not re-import, so run the query without --typed to grep the rendering, or " + typedFormatChoices)
 	}
 	return fm, nil
 }
 
-// anyFormatFlag reports whether the invocation set any output-format flag.
+// anyFormatFlag reports whether the invocation set any output-format flag. Every
+// flag selectFormat reads is listed, so a rendering --typed rejects reaches that
+// rejection instead of falling through to the jsonl default.
 func anyFormatFlag(cfg *config) bool {
-	return cfg.format != "" || cfg.json || cfg.jsonArray || cfg.jsonl || cfg.yaml || cfg.raw
+	return cfg.format != "" || cfg.json || cfg.jsonArray || cfg.jsonl || cfg.yaml || cfg.raw ||
+		cfg.gron || cfg.gronArray
 }
 
 // reportMove writes the outcome to stderr, so a --typed dump on stdout stays clean.

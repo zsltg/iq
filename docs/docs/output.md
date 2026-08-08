@@ -188,6 +188,13 @@ json.year = 2017;
     `--gron` repeats the `json` root for every result, so ungron[^1] is
     last-write-wins across results.
 
+!!! warning "Typed dumps are not supported"
+
+    `--typed` rejects `--gron` and `--grona`: a flattened assignment stream is a
+    rendering to grep, not a dump — no source re-imports it. Drop `--typed` to
+    gron the value stream, or dump with `--jsonl` (default), `--json`, `--jsona`,
+    or `--yaml`.
+
 ### gron Array `-G`, `--grona`
 
 Like `--gron` but result N roots at `json[N]`, so the whole stream ungrons[^1] back

@@ -139,3 +139,13 @@ which re-hashes the id. The sourcespec entry mutates an argument the callee only
 a path the caller has already excluded.
 - b55f9e8e0c94594627063091c26cbb36 cmd/explain.go:151 expression/error-guard — the buildCombinePlan writeAccessPlan guard again: it errors only if render.JSON fails on a driver-produced filter map, which cannot happen for a plain JSON-able map, so the error branch never runs and clearing it leaves the plan byte-identical (same reasoning as the :130 and :155 entries above).
 - 569a2c9df78609ff09ef028db4b61b1e cmd/sourcespec.go:91 conditional/bool-literal — flips the isDst argument of resolveEndpoint, which that function reads only when the argument is the empty string (cmd/data.go:82-87); resolveSourceSpec rejects an empty or all-space name two statements earlier, so the flipped value is never consulted from this call site.
+
+## cmd — typed-format equivalent (accepted 2026-08-08, fix/typed-format-rejects-gron branch)
+One survivor, equivalent because the flag it drops and the fallback it drops through to select
+the same rendering. The entry is pre-existing behaviour, surfaced only because this branch
+edited that return to add the gron disjuncts, pulling the line into the diff scope. Every other
+disjunct in the chain is killable and was killed: dropping any of them makes a rejected or
+pretty rendering fall back to jsonl, which the format table and rejection table in
+cmd/move_test.go both assert against. Verified by hand before acceptance — the mutation applied
+to a file copy passes the whole cmd suite, so the ESCAPED verdict is real and not a flake.
+- 6157a43f092c0968579680e291eba8bf cmd/move.go:230 expression/remove — clears `cfg.jsonl` from anyFormatFlag, but selectTypedFormat already early-returns formatJSONL when no format flag is set, so `--typed --jsonl` reaches formatJSONL either way (through selectFormat originally, through the default under the mutant); the flags are mutually exclusive, so no combination separates the two paths.

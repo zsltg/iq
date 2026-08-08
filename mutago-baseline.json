@@ -348,6 +348,12 @@
    "file": "cmd/sourcespec.go",
    "mutator": "conditional/bool-literal",
    "line": 91
+  },
+  {
+   "id": "6157a43f092c0968579680e291eba8bf",
+   "file": "cmd/move.go",
+   "mutator": "expression/remove",
+   "line": 230
   }
  ]
 }
