@@ -112,6 +112,15 @@ func TestVersionReportsMetadata(t *testing.T) {
 	require.Contains(t, out, "go:")
 }
 
+func TestVersionFlagIsBare(t *testing.T) {
+	skipShort(t)
+	out, _, code := run(t, nil, "--version")
+	require.Zero(t, code)
+	require.NotContains(t, out, "iq")
+	require.NotContains(t, out, "version")
+	require.Regexp(t, `^\S+\n$`, out)
+}
+
 func TestHelpListsUsage(t *testing.T) {
 	skipShort(t)
 	out, _, code := run(t, nil, "--help")

@@ -112,6 +112,15 @@ func TestRootVerboseShorthand(t *testing.T) {
 	require.NotEmpty(t, root.Version)
 }
 
+// TestRootVersionFlagIsBare pins the scriptable contract: --version prints the
+// version alone, with no name or "version" prefix; `iq version` is the rich form.
+func TestRootVersionFlagIsBare(t *testing.T) {
+	root, _ := newRootCmd()
+	out, err := runCmd(t, root, "--version")
+	require.NoError(t, err)
+	require.Equal(t, buildVersion()+"\n", out)
+}
+
 // TestRootFormatShorthand pins -f to the unified --format selector.
 func TestRootFormatShorthand(t *testing.T) {
 	root, _ := newRootCmd()

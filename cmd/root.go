@@ -258,6 +258,8 @@ func newRootCmd() (*cobra.Command, *config) {
 			return runJQ(cmd, cfg, args[0])
 		},
 	}
+	// --version prints the bare version for scripts; `iq version` is the human form.
+	root.SetVersionTemplate("{{.Version}}\n")
 	root.PersistentFlags().StringVarP(&cfg.src, "src", "s", "", "run against this saved source for one invocation (overrides the active source; see `iq src`)")
 	root.PersistentFlags().StringVar(&cfg.configPath, "config", "", "path to the config file (overrides $IQ_CONFIG; default <user config dir>/iq/iq.toml)")
 	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "per-query timeout")

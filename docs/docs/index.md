@@ -155,8 +155,9 @@ make build                # build with version metadata embedded
 ```
 
 `make build` injects the version, commit, and build date via ldflags; a plain `go build` still
-reports a version recovered from Go's embedded build info. Check it with `iq version` or
-`iq --version`.
+reports a version recovered from Go's embedded build info. `iq version` prints the version,
+commit, build date, and Go version; `iq --version` prints the bare version alone (e.g. `v1.2.3`,
+or `dev+<commit>` for an untagged build) so scripts can read it without parsing.
 
 ## Releasing
 
