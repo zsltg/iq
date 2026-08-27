@@ -8,17 +8,18 @@
 # iq
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
-databases. The backend is chosen by the URL scheme, and the query core is driver-agnostic
+databases. The backend is chosen by the URI scheme, and the query core is driver-agnostic
 so further backends slot in behind the same port.
 
 The filter is both the transform and the key selector: its top-level paths name the keys to
-fetch, so the store only ever reads a bounded set of keys, never a full keyspace scan, unless
-you ask for one explicitly. Fetched values are normalized to JSON and the filter then runs
-entirely client-side, so its semantics are identical for every backend.
+fetch, so a normal query reads a bounded set of keys; a `.[]`-rooted filter streams the
+keyspace in pages, and a filter that collapses it into one value materializes only behind
+`--unbounded`. Fetched values are normalized to JSON and the filter then runs entirely
+client-side, so its semantics are identical for every backend.
 
 `iq` is inspired by [sq](https://github.com/neilotoole/sq): much of its command surface (the
-`<source>.<collection>` addressing along with many subcommands and flags) deliberately follows
-sq's to make the tool feel familiar.
+dotted `<handle>.<keyspace>` addressing, sq's `<source>.<collection>`, along with many
+subcommands and flags) deliberately follows sq's to make the tool feel familiar.
 
 > [!WARNING]
 > **Pre-1.0.** Flags, output shapes and the config format can still change between releases.
@@ -30,7 +31,8 @@ sq's to make the tool feel familiar.
 
 ## Install
 
-`iq` ships as a single static binary (no runtime dependencies, no CGO).
+`iq` ships as a single static binary (no runtime dependencies, no CGO), prebuilt for Linux,
+macOS, and Windows on amd64 and arm64.
 
 ### Linux
 
@@ -99,7 +101,7 @@ the sources `iq ls` lists. A flag that takes a closed set completes its values (
 `--debug.pprof`, `iq add --driver/--store`, `iq schema --format`), and `iq config set <option>
 <TAB>` offers that option's own values. `iq inspect --only <TAB>` and `iq diff --section <TAB>`
 offer the introspection subcommands of the selected source's backend, worked out from its saved
-URL. The jq filter itself is a program, not a completable value, so `iq` offers no candidates
+URI. The jq filter itself is a program, not a completable value, so `iq` offers no candidates
 there (and never falls back to filenames) — nor do `iq exec`'s backend verb and its operands.
 
 Every completion is offline: it reads your config file and nothing else, so a `<TAB>` never
@@ -132,7 +134,7 @@ Always wrap the filter in single quotes — jq syntax is full of characters the 
 otherwise expand or split (`[ ]`, whitespace, `|`, `*`, `$`).
 
 The commands below are a starter set; every command and flag is documented in full on the
-documentation site (`make docs`).
+[documentation site](https://zsltg.github.io/iq/).
 
 ### Sources
 
@@ -169,8 +171,9 @@ documentation site (`make docs`).
 
 ## Drivers
 
-`iq` picks the backend from a source's URL scheme, and the query core is driver-agnostic, so
-further backends slot in behind the same port. Each driver below documents its keyspace mapping,
+`iq` picks the backend from a source's URI scheme, and the query core is driver-agnostic, so
+further backends slot in behind the same port. The
+[Drivers page](https://zsltg.github.io/iq/drivers/) documents each driver's keyspace mapping,
 value encoding, predicate pushdown, and raw-command escape hatch.
 
 | Name | Database | Versions |
@@ -186,6 +189,9 @@ value encoding, predicate pushdown, and raw-command escape hatch.
 | `neo4j` | [Neo4j](https://neo4j.com/docs/) | 5.x |
 | `opensearch` | [OpenSearch](https://opensearch.org/docs/) | 2.x, 3.x |
 | `redis` | [Redis](https://redis.io/docs/) | 7.0+ |
+
+The Versions column lists the range of backend server versions the bundled client library
+supports.
 
 ### File dump formats
 
@@ -208,7 +214,7 @@ A bare name auto-detects (`file:///<file_path>`), the `?format=` form must be pa
 Drivers differ in encoding and pushdown detail, but every backend honors the
 same contract:
 
-- **One URL, native nouns.** The URL scheme picks the driver; the keyspace rides in the URL as the
+- **One URI, native nouns.** The URI scheme picks the driver; the keyspace rides in the URI as the
   backend's own noun (`?collection=`, `?table=`, `?database=`, `?label=`/`?rel=`, `?index=`), and a
   query overrides it per run with the dotted `handle.<keyspace>` suffix.
 - **One jq surface.** A bounded filter fetches exactly the named keys — a missing key reads as
@@ -227,11 +233,13 @@ same contract:
   be removed, simply has no `drop`; the read-only file dump has no per-key `delete`).
 - **Values round-trip.** Every value normalizes to JSON under a frozen per-backend encoding
   contract, and a `--typed` dump restores through `--insert` losslessly.
-- **Bounded and redacted.** Every backend call is bounded by `--timeout`, and a URL's password is
+- **Bounded and redacted.** Every backend call is bounded by `--timeout`, and a URI's password is
   redacted from every listing, log line, and error.
 - **A native escape hatch.** `iq exec` speaks the backend's own language — verbatim where one exists
   (Redis commands, Mongo command documents, CQL, PartiQL, Cypher, Mango, the Elasticsearch DSL), a small
-  fixed verb set where none does (HBase) — see each driver's Raw commands section.
+  fixed verb set where none does (HBase) — see each driver's Raw commands section on the
+  [Drivers page](https://zsltg.github.io/iq/drivers/). Every `iq` flag
+  must come before `exec`: everything after it is forwarded to the backend untouched.
 
 ## Architecture
 
@@ -362,3 +370,12 @@ native dialect.
 
 - [awesome-jq](https://github.com/jqlang/awesome-jq) — the curated list of jq tools, guides, and
   resources. `iq` uses jq as its filter language, so most of what applies to jq carries over.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the build, test, quality-gate, and release
+workflow.
+
+## License
+
+[MIT](LICENSE).
