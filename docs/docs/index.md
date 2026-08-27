@@ -23,11 +23,11 @@ scheme[^4], and the query core is driver-agnostic, so further backends slot in
 behind the same port (see
 [Drivers](drivers.md#drivers)).
 
-Normally, `jq` would read the whole top level JSON value into memory before
-parsing. In case of `iq`, the filter is both the *transform* and the *key
-selector*, the selector walks the parsed `jq` AST and based on that execute
-a *bounded read*, *streaming scan* (with *pushdown*) or *materialized
-scan* to optimize the query (see
+Normally, `jq` parses the whole top-level JSON value into memory before the
+filter runs. In the case of `iq`, the filter is both the *transform* and the
+*key selector*: the selector walks the parsed `jq` AST and, based on that,
+executes a *bounded read*, a *streaming scan* (with *pushdown*), or a
+*materialized scan* to optimize the query (see
 [How it works](how-it-works.md#how-it-works)).
 
 Fetched values are normalized to JSON and the filter then runs entirely
@@ -63,7 +63,7 @@ and flags are deliberately similar.
     brew install zsltg/tap/iq
     ```
 
-    The [Linux one-liner](#__tabbed_1_1) works on macOS too.
+    The Linux install script above works on macOS too.
 
 === ":fontawesome-brands-windows: Windows"
 
@@ -86,8 +86,6 @@ cd iq && make build
 ```
 
 ## The basics
-
-
 
 ```sh { title='Add a collection named "books" from a MongoDB source' }
 iq add 'mongodb://localhost:27017/iq?collection=books'
@@ -114,7 +112,7 @@ iq '.[]'
 You can find detailed examples in [Sources](sources.md#sources), [Query data](query-data.md#query-data) and [Write data](write-data.md#write-data).
 
 For more advanced usage check [Output](output.md#output), [Query plan](query-plan.md#query-plan), [Cookbook](cookbook.md#cookbook) and
-[Loading exports](loading-exports.md#loading-exports),
+[Loading exports](loading-exports.md#loading-exports).
 
 For debugging, see [Diagnostics & Logging](diagnostics-and-logging.md#diagnostics-logging).
 
@@ -166,7 +164,7 @@ command from its module path into GOPATH/bin") or source build,
 Completions cover the commands, their sub-subcommands and flags, and read live
 from your config the saved source handles, groups, and config-option keys, so
 `iq --src <TAB>` offers the sources `iq ls` lists. A flag that takes a closed
-set completes its values offers that option's own values.
+set offers that option's own values.
 
 `iq inspect --only <TAB>` and `iq diff --section <TAB>` offer the
 introspection subcommands of the selected source's backend, worked out from its
@@ -183,8 +181,8 @@ nothing, since listing collections would mean connecting.
 
 ## Man page
 
-The packages also install an `iq(1)` manual page, so `man iq` works after a package install. For
-a non-package install, pipe it into your man path:
+The `.deb`, `.rpm`, and `.apk` packages also install an `iq(1)` manual page, so `man iq` works
+after a package install. For any other install, pipe it into your man path:
 
 ```sh
 iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null

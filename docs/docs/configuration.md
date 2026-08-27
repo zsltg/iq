@@ -4,6 +4,11 @@ icon: material/cog-outline
 
 # Configuration `config`
 
+The config file lives at `<user_config_dir>/iq/iq.toml`; `IQ_CONFIG` points
+it elsewhere, and `--config` overrides both for one run (precedence: `--config`
+> `IQ_CONFIG` > default). It holds the saved sources and the stored option
+defaults below; `iq config location` prints the resolved path.
+
 Inspect the config file and manage stored option defaults. Persist a flag's
 value once so you need not retype it. Set an option globally, or scope it to
 one source with `--src`.
@@ -39,6 +44,7 @@ iq -f json '.[]'
     - `--format`, `--format.decimal`, `--compact`
     - `--timeout`
     - `--monochrome`, `--color`, `--no-progress`
+    - `--no-cache`, `--no-cache-index`
     - `--verbose`, `--log*`, `--error*`
 
     Per-invocation flags are not storable:
@@ -123,11 +129,11 @@ iq config keyring rm <handle>
 
 ### Migrate `migrate`
 
-Move an inline password into the keyring, rewriting the stored URL to its
+Move an inline password into the keyring, rewriting the stored URI to its
 password-less form.
 
 ```sh
-iq config keyrign migrate [<handle>] [--all] [--dry-run]
+iq config keyring migrate [<handle>] [--all] [--dry-run]
 ```
 
 ### Prune `prune`

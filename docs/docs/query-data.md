@@ -82,7 +82,7 @@ iq 'INDEX(source("users"; ".[]"); .id) as $u
 
 !!! tip "Optimize memory usage"
 
-    Binding `source()` to a `iq` value materializes that call's whole result
+    Binding `source()` to a jq variable materializes that call's whole result
     set in memory (`jq` indexing needs a concrete array), even though the read
     itself streams.
 
@@ -97,7 +97,7 @@ iq 'INDEX(source("users"; ".[]"); .id) as $u
 
 `iq combine <source>[=<jq>]... --with <jq> [flags]`
 
-Query several sources and combine their results with one `iq` program.
+Query several sources and combine their results with one `jq` program.
 
 Each positional is a source spec (`<source>[=<jq>]`) reduced at the source
 (bounded reads, streaming scans, and predicate pushdown all still apply). The
@@ -138,4 +138,4 @@ Disable pushdown.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
-| | `--no-compile` | ✗ | disable server-side predicate pushdown, run each spec's filter client-side |
+| | `--no-compile` | ✗ | disable predicate pushdown, run the full `.[] | select()` filter client-side |

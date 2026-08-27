@@ -21,22 +21,22 @@ once, then select by name or as the default.
 
 ## Add `add`
 
-`iq add <url> [flags]`
+`iq add <uri> [flags]`
 
 Register a source from a connection URI. The URI is the only positional
 argument.
 
-Each driver support a different set of URI parameters, see
+Each driver supports a different set of URI parameters, see
 [Drivers](drivers.md).
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
 | `-a` | `--active` | ✗ | make the new source the active source |
-| `-d <string>` | `--driver <string>` | auto-detect | expected backend driver, must match the URL scheme |
-| `-n <string>` | `--handle <string>` | the keyspace the URI names | handle for the source, derived from the URL when omitted |
-| `-p` | `--password` | ✗ | prompt for the URL passwrod or read it from stdin |
+| `-d <string>` | `--driver <string>` | auto-detect | expected backend driver, must match the URI scheme |
+| `-n <string>` | `--handle <string>` | the keyspace the URI names | handle for the source, derived from the URI when omitted |
+| `-p` | `--password` | ✗ | prompt for the URI password or read it from stdin |
 | | `--skip-verify` | ✗ | skip the post-add reachability check |
-| | `--store <string>` | `inline` | where the URL's password is kept, `inline` (in the config file) or `keyring` (OS keyring) |
+| | `--store <string>` | `inline` | where the URI's password is kept, `inline` (in the config file) or `keyring` (OS keyring) |
 
 ```sh { title='Add an inactive MongoDB source, defaults to handle "books"' }
 iq add mongodb://localhost:27017/books
@@ -47,7 +47,7 @@ iq add -n cache redis://localhost:6379/0
 ```sh { title='Add a Cassandra source and make it active, defaults to handle "orders"' }
 iq add -a 'cassandra://localhost:9042/shop?table=orders'
 ```
-```sh { title='Add an inactive MongoDB source, prompts for the password for a user named "iq" in the "admin" database, defaults to handle "books"' }
+```sh { title='Add an inactive MongoDB source, prompts for the password for a user named "iq" in the "iq" database, defaults to handle "books"' }
 iq add -p 'mongodb://iq@localhost:27018/iq?collection=books'
 ```
 ```sh { title='Add an inactive MongoDB source, prompts for the password for a user named "root" in the "admin" database, defaults to handle "books"' }
@@ -207,7 +207,7 @@ Show or set the active source.
 Once a source is active, every query runs against it. Select a different source for a single
 command with `--src`/`-s`, without changing the active one; address a MongoDB collection or a
 Cassandra table with a dotted `handle.collection` / `handle.table` suffix. With no active source
-and no `--src` the command errors — there is no ambient URL or environment fallback:
+and no `--src` the command errors, there is no ambient URI or environment fallback.
 
 ```sh { title='Show the active source' }
 iq src
@@ -345,7 +345,7 @@ iq diff 'prod=.["orders:42"]' 'staging=.["orders:42"]'
 
 ## Schema `schema`
 
-`iq schema [source] [flags]`
+`iq schema [source[=<jq>]] [flags]`
 
 Sample a source and project a schema inferred from its values (the same
 inference [`diff --schema`](#diff-diff) uses).
@@ -364,7 +364,7 @@ refuse it.
 | --- | --- | --- | --- |
 | | `--filter <string>` | none | jq filter scoping which items the shape is inferred from, the spec form `source=<jq>` sets it per source |
 | | `--format <string>` | `jsonschema` | picks the contract dialect the shape projects into, JSON Schema draft 2020-12[^4] (`jsonschema`) or Open Data Contract Standard v3.1.0[^5] (`odcs`) |
-| | `--sample <int>` | | max items sampled (0 = all) (default 1000) |
+| | `--sample <int>` | `1000` | max items sampled (0 = all) |
 | `-y` | `--yaml` | ✗ | emit YAML instead of JSON (`jsonschema` only, `odcs` is always YAML) |
 
 ```sh { title='Schema of the active source' }

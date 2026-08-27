@@ -4,7 +4,7 @@ icon: material/engine-outline
 
 # Drivers
 
-`iq` picks the backend from a source's URL scheme, and the query core is
+`iq` picks the backend from a source's URI scheme, and the query core is
 driver-agnostic, so further backends slot in behind the same port.
 
 Each driver below documents its keyspace mapping, value encoding, predicate
@@ -36,7 +36,7 @@ iq driver ls -v
 The per-driver blocks below differ in encoding and pushdown detail, but every backend honors the
 same contract:
 
-- **One URL, native nouns.** The URL scheme picks the driver; the keyspace rides in the URL as the
+- **One URI, native nouns.** The URI scheme picks the driver; the keyspace rides in the URI as the
   backend's own noun (`?collection=`, `?table=`, `?database=`, `?label=`/`?rel=`, `?index=`), and a
   query overrides it per run with the dotted `handle.<keyspace>` suffix (see [Sources](sources.md)).
 - **One jq surface.** A bounded filter fetches exactly the named keys — a missing key reads as
@@ -57,11 +57,12 @@ same contract:
 - **Values round-trip.** Every value normalizes to JSON under a frozen per-backend encoding
   contract, and a `--typed` dump restores through `--insert` losslessly (see
   [Write data](write-data.md)).
-- **Bounded and redacted.** Every backend call is bounded by `--timeout`, and a URL's password is
+- **Bounded and redacted.** Every backend call is bounded by `--timeout`, and a URI's password is
   redacted from every listing, log line, and error.
 - **A native escape hatch.** `iq exec` speaks the backend's own language — verbatim where one exists
   (Redis commands, Mongo command documents, CQL, PartiQL, Cypher, Mango, the Elasticsearch DSL), a small
-  fixed verb set where none does (HBase) — see each driver's Raw commands section.
+  fixed verb set where none does (HBase) — see each driver's Raw commands section. Every `iq` flag
+  must come before `exec`: everything after it is forwarded to the backend untouched.
 
 ## Cassandra
 
@@ -70,8 +71,9 @@ store built for high write throughput across many nodes.
 
 Register a `cassandra://` source and the same jq interface works against a table, where **the table
 is the keyspace: a row's primary key is the key and the row is the value**. The keyspace comes from
-the URL path; the table from the URL's `?table=` (overridable per run with a dotted `handle.table`);
-multiple contact points are comma-separated.
+the URI path; the table from the URI's `?table=` (overridable per run with a dotted `handle.table`);
+multiple contact points are comma-separated, and `?consistency=` sets the read/write consistency
+level (default `QUORUM`).
 
 ```sh { title='Register a Cassandra source' }
 iq add -n books 'cassandra://localhost:9042/iq?table=books'
@@ -169,10 +171,10 @@ combining a key-value engine with SQL++ queries.
 Register a `couchbase://` source and the same jq interface works against a collection, where **the
 collection is the keyspace: a document's ID is the key and the JSON document is the value**. A
 Couchbase cluster nests bucket → scope → collection: the host is the cluster, the bucket rides in the
-URL's `?bucket=` (required for keyspace work), and the collection is `?collection=` accepting
+URI's `?bucket=` (required for keyspace work), and the collection is `?collection=` accepting
 `orders` or `sales.orders` (scope defaults to `_default`), overridable per run with a dotted
 `handle.[scope.]collection`. Switching buckets is a different source. Use `couchbases://` for TLS.
-**Credentials travel in the URL userinfo** (SDK `PasswordAuthenticator`), so `--store keyring` moves
+**Credentials travel in the URI userinfo** (SDK `PasswordAuthenticator`), so `--store keyring` moves
 the password to the OS keyring exactly as for the other backends. The SDK's application telemetry is
 disabled explicitly, so the tool reports nothing back to the cluster.
 
@@ -193,7 +195,8 @@ iq --src books.archive '.[]'
 ```
 
 Couchbase documents are JSON, so values need no type coercion; integers keep exact precision (large
-ones never collapse to a float). The document ID is KV metadata, not part of the value, so it is
+ones never collapse to a float). Couchbase has no per-key `iq data delete` yet (`clear` and `drop`
+work); it is a v1 follow-up. The document ID is KV metadata, not part of the value, so it is
 never injected into the document. A non-JSON (binary) document is surfaced as a string on a `.["k"]`
 lookup and skipped by a scan (the query service returns only JSON). A bounded `.["k"]` lookup is a KV
 get; a scan is a **SQL++ keyset walk ordered by `META().id`** (never OFFSET/LIMIT paging), so it
@@ -261,9 +264,9 @@ speaks HTTP and JSON, built around multi-master replication.
 
 Register a `couchdb://` source and the same jq interface works against a database, where **the
 database is the keyspace: a document's `_id` is the key and the document is the value**. The host is
-the CouchDB server; the database rides in the URL's `?database=` (overridable per run with a dotted
+the CouchDB server; the database rides in the URI's `?database=` (overridable per run with a dotted
 `handle.database`, since one server hosts many databases). Use `couchdbs://` for TLS. **Credentials
-travel in the URL userinfo** (HTTP basic auth), so `--store keyring` moves the password to the OS
+travel in the URI userinfo** (HTTP basic auth), so `--store keyring` moves the password to the OS
 keyring exactly as for the other backends.
 
 ```sh { title='Register a CouchDB source' }
@@ -342,9 +345,9 @@ and `indexes` (its Mango indexes); `--only` narrows to those subcommands.
 serverless key-value and document database.
 
 Register a `dynamodb://` source and the same jq interface works against a table, where **the table
-is the keyspace: an item's primary key is the key and the item is the value**. The region is the URL
-host; the table rides in the URL's `?table=` (overridable per run with a dotted `handle.table`). An
-optional `?endpoint=` points at DynamoDB Local. **Credentials never travel in the URL** — the AWS
+is the keyspace: an item's primary key is the key and the item is the value**. The region is the URI
+host; the table rides in the URI's `?table=` (overridable per run with a dotted `handle.table`). An
+optional `?endpoint=` points at DynamoDB Local. **Credentials never travel in the URI** — the AWS
 default credential chain (environment, `~/.aws`, IAM role) resolves them, so no secret touches the
 config or keyring.
 
@@ -451,12 +454,13 @@ engines built on Lucene, queried over HTTP with JSON.
 Register an `elasticsearch://` (or `opensearch://`) source and the same jq interface works against an
 index, where **the
 index is the keyspace: a document's `_id` is the key and its `_source` is the value**. The host is
-the server; the index rides in the URL's `?index=` (overridable per run with a dotted
+the server; the index rides in the URI's `?index=` (overridable per run with a dotted
 `handle.index`, since one server hosts many indices). Use `elasticsearch+s://` / `opensearch+s://` for
 TLS. **Credentials,
-when the cluster needs them, travel in the URL userinfo** (HTTP basic auth), so `--store keyring`
+when the cluster needs them, travel in the URI userinfo** (HTTP basic auth), so `--store keyring`
 moves the password to the OS keyring exactly as for the other backends. **OpenSearch is the same
-driver** behind the scheme — everything below applies to both; the only differences are internal (the
+driver** behind the scheme (two `iq driver ls` entries, with their own supported version ranges,
+sharing one implementation) — everything below applies to both; the only differences are internal (the
 [opensearch-go](https://github.com/opensearch-project/opensearch-go) client, since Elasticsearch's
 own client refuses non-Elasticsearch servers; OpenSearch's point-in-time endpoint; and, since it
 predates Elasticsearch's `_shard_doc`, an `_id` keyset sort for scans).
@@ -542,8 +546,8 @@ can use), and `aliases` (the server's aliases); `--only` narrows to those subcom
 on Hadoop, modeled on Google Bigtable.
 
 Register an `hbase://` source and the same jq interface works against a table, where **the table is
-the keyspace: a row key is the key and the row is the value**. The URL host is the ZooKeeper quorum
-(comma-separated hosts, default port `2181`); the table rides in the URL's `?table=` (a
+the keyspace: a row key is the key and the row is the value**. The URI host is the ZooKeeper quorum
+(comma-separated hosts, default port `2181`); the table rides in the URI's `?table=` (a
 `namespace:table`, overridable per run with a dotted `handle.table`). The ZooKeeper znode parent
 defaults to `/hbase`, overridable with `?znode=`.
 
@@ -583,8 +587,7 @@ default and **exactly** when you declare its encoding:
 The driver **never guesses** a numeric type from bytes (an 8-byte string is indistinguishable from a
 `long`); it either *knows* (you declared it) or is *honest* (text, else base64). Declared columns
 round-trip losslessly in both directions. An undeclared column read back as base64 (non-UTF-8 bytes)
-does **not** round-trip through a write — declare it `bytes` for that. The row key is likewise
-text-or-base64 unless `?keytype=` declares it (`&keytype=long`).
+does **not** round-trip through a write — declare it `bytes` for that.
 
 ```sh { title='Declare the numeric columns so they read as numbers' }
 iq add -n books 'hbase://localhost:2181/?table=iq_books&types=cf:year=long,cf:price=double'
@@ -592,6 +595,13 @@ iq add -n books 'hbase://localhost:2181/?table=iq_books&types=cf:year=long,cf:pr
 ```sh { title='Filter on a declared column, no tonumber needed' }
 iq --src books '.[] | select(.cf.year > 2015) | .cf.title'
 ```
+
+### Key encoding
+
+The row key follows the same contract as a cell: text when it is valid UTF-8,
+base64 otherwise, unless `?keytype=` declares its encoding (`&keytype=long`
+reads and writes the 8-byte `Bytes` layout), so a declared key round-trips
+losslessly.
 
 ### Pushdown
 
@@ -635,7 +645,7 @@ iq --src books exec delete iq_books 5
 
 Structured writes go through `iq data` (`clear`/`drop`/`delete`, plus `--insert`) with write modes,
 stats, and `--explain`; `iq data delete <table> <rowkey>…` is the typed, capability-gated per-key
-delete that formalizes the raw `delete` verb below. The raw `put`/`delete` verbs remain the
+delete that formalizes the raw `delete` verb above. The raw `put`/`delete` verbs remain the
 lower-level escape hatch (a single cell, a column), mirroring the other drivers' raw paths. `iq
 inspect` lists the source namespace's tables (`tables`).
 
@@ -644,10 +654,10 @@ inspect` lists the source namespace's tables (`tables`).
 [MongoDB](https://www.mongodb.com) is a document database that stores
 JSON-like documents in collections.
 
-Register a `mongodb://` source and the same jq
+Register a `mongodb://` source (`mongodb+srv://` for SRV discovery) and the same jq
 interface works against a collection, where **the collection is the keyspace: a document's `_id`
 is the key and the document is the value**. The database comes from the URI path; the collection
-from the URL's `?collection=` (the driver's own connection option, overridable per run with a dotted
+from the URI's `?collection=` (the driver's own connection option, overridable per run with a dotted
 `handle.collection`).
 
 ```sh { title='Register a MongoDB source' }
@@ -731,7 +741,7 @@ iq --src books exec '{"aggregate":"books","pipeline":[{"$group":{"_id":null,"avg
 
 `iq inspect` runs diagnostic database commands — `dbStats`, `serverStatus`, `listCollections`,
 `collStats` (needs a collection: address it as `source.collection` or set `?collection=` on the
-source URL), `buildInfo`, and `hostInfo`; `--only` narrows to those subcommands.
+source URI), `buildInfo`, and `hostInfo`; `--only` narrows to those subcommands.
 
 ## Neo4j
 
@@ -741,10 +751,10 @@ queried with Cypher.
 Register a `neo4j://` source and the same jq interface works against a node label, where **the node
 label is the keyspace: a node's key is the key and the node is the value**. Neo4j has no single
 keyspace, so a label is the addressable collection (like a Mongo collection or a Cassandra table):
-the host is the bolt server, the label rides in the URL's `?label=` (overridable per run with a
+the host is the bolt server, the label rides in the URI's `?label=` (overridable per run with a
 dotted `handle.label`), and the database — Neo4j is multi-database — is `?database=` (default
 `neo4j`). Use `neo4j+s://` (or `bolt://` for a single instance, `+s`/`+ssc` for TLS). **Credentials
-travel in the URL userinfo** (bolt basic auth), so `--store keyring` moves the password to the OS
+travel in the URI userinfo** (bolt basic auth), so `--store keyring` moves the password to the OS
 keyring exactly as for the other backends.
 
 **The key is the elementId by default, or a property you name with `?key=`.** `elementId(n)` is
@@ -852,9 +862,10 @@ narrows to those subcommands.
 [Redis](https://redis.io) is an in-memory key-value store used as a cache,
 database, and message broker.
 
-Register a `redis://` source and the same jq interface works against the Redis keyspace, where **a
-key maps directly to a Redis key and the value is whatever that key holds**. The database index
-comes from the URL path (`/0`); every value is a string, so numeric comparisons need `tonumber`.
+Register a `redis://` source (`rediss://` for TLS) and the same jq interface works against the
+Redis keyspace, where **a key maps directly to a Redis key and the value is whatever that key
+holds**. The database index comes from the URI path (`/0`); every value is a string, so numeric
+comparisons need `tonumber`.
 
 ```sh { title='Register a Redis source' }
 iq add -n cache redis://localhost:6379/0
@@ -905,16 +916,16 @@ would reject. `--no-compile` turns it off.
 the escape hatch for writes, administration, and seeding the jq read path does not cover:
 
 ```sh { title='Set a key, replies "OK"' }
-iq exec SET greeting hello
+iq --src cache exec SET greeting hello
 ```
 ```sh { title='Read it back, replies "hello"' }
-iq exec GET greeting
+iq --src cache exec GET greeting
 ```
 ```sh { title='Increment a counter, replies (integer) 1' }
-iq exec INCR counter
+iq --src cache exec INCR counter
 ```
 ```sh { title='Read a missing key, replies (nil)' }
-iq exec GET missing
+iq --src cache exec GET missing
 ```
 
 Its output mirrors redis-cli's cooked style: bulk strings quoted, integers as `(integer) N`, a
@@ -959,6 +970,7 @@ pass `?format=` since its content is not sniffable through the compression.
 | Format | Produced by | Notes |
 | --- | --- | --- |
 | Typed JSONL | `iq --src <s> --typed -o <file>` | iq's own dump; lossless round-trip |
+| Typed YAML | `iq --src <s> --typed -y -o <file>` | the same records as YAML documents; auto-detected by a `.yaml`/`.yml` name, else `?format=yaml` |
 | Redis RDB | `redis-cli --rdb`, `SAVE` | values match a live scan; RDB ≤ v12 (Redis ≤ 7.2) |
 | Mongo BSON | `mongodump` | single `.bson` file |
 | Mongo Extended JSON | `mongoexport` | one document per line, or a `--jsonArray` array |

@@ -4,7 +4,7 @@ icon: material/stethoscope
 
 # Diagnostics & Logging
 
-Global flags (adopted from `sq` control verbose output, file logging, error
+Global flags, adopted from `sq`, control verbose output, file logging, error
 rendering, and profiling.
 
 They are cross-cutting concerns handled at the CLI boundary, query results are
@@ -20,7 +20,8 @@ never changed by them.
 | `--log.level` | `DEBUG` | `DEBUG`, `INFO`, `WARN`, or `ERROR` |
 | `--log.format` | `text` | `text` or `json` |
 | `--error.format` | `text` | error output format: `text` or `json` |
-| `--error.stack` | off | append the wrapped error cause chain (may include backend internals; redacted) |
+| `--error.stack` | off | print the wrapped error cause chain to stderr (may include backend internals; credentials stay redacted) |
+| `--no-progress` | off | disable the scan progress spinner (`-v` disables it too), see [Global flags](global-flags.md#global-flags) |
 | `--error.format.text.verbose` | on | for a jq syntax error in text format, draw a caret span under the offending token |
 | `--debug.pprof` | off | write a runtime profile of the whole run: `cpu`, `mem`, `block`, `mutex`, `goroutine`, `thread`, or `trace` |
 

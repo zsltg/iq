@@ -11,10 +11,11 @@ The flags are mutually exclusive and apply to the jq read path and to `iq combin
 
 ## Format flags
 
-Shorthand flags are available for most format.
+Shorthand flags are available for most formats.
 
 `-f`, `--format <name>` selects the same renderings by name (`json`, `jsonl`,
-`jsona`, `yaml`, `raw`, `gron`, `grona`, `parquet`). It is mutually exclusive
+`jsona`, `yaml`, `values` with the alias `raw`, `gron`, `grona`, `parquet`).
+It is mutually exclusive
 with them, so `-f json --jsonl` is rejected.
 
 `parquet` has no shorthand flag, it is a binary columnar format, selected by name only.
@@ -111,11 +112,11 @@ iq '.[]' -A
 Unquoted scalars, one per line. Objects and arrays fall back to compact JSON.
 
 ```
-iq '.[]' -r
+iq '.[].title' -r
 ```
 ```
-{"_id":"1","author":"Donovan and Kernighan","price":39,"tags":["go","programming"],"title":"The Go Programming Language","year":2015}
-{"_id":"2","author":"Martin Kleppmann","price":45,"tags":["data","architecture"],"title":"Designing Data-Intensive Applications","year":2017}
+The Go Programming Language
+Designing Data-Intensive Applications
 ```
 
 ### YAML `-y`, `--yaml`
@@ -287,8 +288,9 @@ Collapses the pretty renderings to single-line: `--json` becomes one compact
 value per line (equivalent to `--jsonl`) and `--jsona` becomes a single-line
 `[ ... ]`.
 
-It is a no-op for `--jsonl`, `--raw`, `--yaml`, `--gron`, and `--grona`, which
-are already condensed (`--gron` and `--grona` are inherently line-based).
+It is a no-op for `--jsonl`, `--raw`, `--yaml`, `--gron`, `--grona`, and
+`--format parquet`, which are already condensed or binary (`--gron` and
+`--grona` are inherently line-based).
 
 ## File `-o`, `--output <file>`
 

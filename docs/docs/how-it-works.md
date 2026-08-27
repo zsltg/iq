@@ -5,12 +5,13 @@ icon: material/sitemap-outline
 # How it works
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters
-against NoSQL databases. The backend is chosen by the URL scheme, and the query
+against NoSQL databases. The backend is chosen by the URI scheme, and the query
 core is driver-agnostic so further backends slot in behind the same port.
 
-The filter is both the transform and the key selector: its top-level paths name
-the keys to fetch, so the store only ever reads a bounded set of keys, never a
-full keyspace scan, unless you ask for one explicitly. Fetched values are
+The filter is both the transform and the key selector: its top-level paths
+name the keys to fetch, so a normal query reads a bounded set of keys; a
+`.[]`-rooted filter streams the keyspace in pages, and a filter that collapses
+it into one value materializes only behind `--unbounded`. Fetched values are
 normalized to JSON and the filter then runs entirely client-side, so its
 semantics are identical for every backend.
 
@@ -30,8 +31,8 @@ three routes.
 1. **Bounded reads** (with explicit keys) only read the specified subset of
    items from the source, the cost is bounded by the keys you asked for, never
    by the size of the database.
-2. **Streaming scans** (a filter rooted at `.[]` (`.[]`, `.[] | select()`,
-   `.[].title`) processes each value independently, walking the keyspace in
+2. **Streaming scans** (a filter rooted at `.[]`: `.[]`, `.[] | select()`,
+   `.[].title`) process each value independently, walking the keyspace in
    pages and running the filter page by page, emitting as it goes. Memory stays
    constant and results appear progressively.
 3. **Materialized scans** (a filter that collapses the collection into one
@@ -199,7 +200,7 @@ position in that vocabulary rather than one blanket rule.
 
 - **The jq surface reads missing as `null`.** gojq evaluates entirely
   client-side, so `.a` on a document without `a` yields `null`, the same on
-  every backend. This is the uniform semantics the  whole tool promises, a
+  every backend. This is the uniform semantics the whole tool promises, a
   filter behaves identically whether the field is absent, stored as `null`, or
   the source has no such field at all.
 - **The schema layer preserves the distinction.** `iq schema` tracks

@@ -16,8 +16,8 @@ preserved), so you do not write `.[]`, iteration over the source is implicit.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
-| | `--insert <source>` | ✗ | write the combined results into a destination source instead of rendering (needs `--key` or `--key-field`) |
-| | `--typed` | ✗ | emit typed `{"key":…, "type":…, "value":…}` records, a re-importable dump (not required for all sources) |
+| | `--insert <source>` | ✗ | write each item into this destination source (copy/restore/import) instead of rendering |
+| | `--typed` | ✗ | emit typed `{"key":…, "type":…, "value":…}` records, a re-importable dump (needed for Redis; a document store's plain output already restores) |
 
 ```sh { title='Source → Source, key/id preserving' }
 iq --src books --insert books2
@@ -54,8 +54,8 @@ iq --src books --insert books2 --explain
     Nothing can tell the two apart automatically (`.name` means the key named
     "name" keyspace-rooted and the field `name` per item) so they stay separate
     rather than guessing. Existing keys are overwritten (upsert) unless
-    `--no-overwrite` or `--replace` empties the destination first (with
-    confirmation, or `--force`).
+    `--no-overwrite` makes the run insert-only; `--replace` empties the
+    destination first (with confirmation, or `--force`).
 
     A document store (Mongo, CouchDB, Couchbase, Elasticsearch) stores each
     value exactly as given and so requires it be a JSON object. A bare scalar
@@ -73,34 +73,34 @@ iq --src books --insert books2 --explain
 
     A huge first record can defeat the content sniff, so a `.yaml`/`.yml` name
     or an explicit `?format=` / `--from-format` remains available as an
-    override.
+    override (`jsonl`, `yaml`, `mongoexport`, `bson`, `rdb`, `dynamodb-json`,
+    `cassandra-csv`, or `neo4j-json`; aliases like `json` are accepted).
 
     The renderings that cannot carry a record back are rejected rather than
     written. `--raw` (a scalar cannot hold the envelope), `--format parquet`
     (columnar) and `--gron`/`--grona` (flattened assignments no source
     decodes) drop `--typed` to grep or export the value stream instead.
 
-## Key mapping `-key*`
+## Key mapping `--key*`
 
-`--insert <source>` writes the results into a destination rather than rendering
-them, reusing the same write path as `--insert`, so `--key-prefix`, `--type`,
-`--no-overwrite`, `--replace`/`--force` and `--dry-run` all mean what they do
-there.
+On a plain copy each item carries its source key, so no key flag is needed.
+Foreign JSON (piped stdin, a reshaped stream) has no natural key: `--key-field`
+takes it from an object field, `--key` computes it with a jq expression, and
+`--key-prefix` prepends a namespace either way.
 
-`--key` (or `--key-field`) is required with `--insert`, unlike a plain copy
-where each item carries its source key. A combine's results come out of one
-program over a null input, so no value has a key to inherit and the run is
-refused up front rather than failing partway through a copy.
-
-For the same reason there is no `--typed` here, a typed dump is a stream of
-`{key,type,value}` records and would need the same key. A write flag used
-without `--insert` is an error, never silently ignored.
+`iq combine --insert` is the one write that always requires `--key` or
+`--key-field`: a combine's results come out of one program over a null input,
+so no value has a key to inherit and the run is refused up front rather than
+failing partway through a copy. For the same reason `combine` has no
+`--typed`, a typed dump is a stream of `{key,type,value}` records and would
+need the same key. A write flag used without `--insert` is an error, never
+silently ignored.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
-| | `--key <string>` | none | `jq` expression yielding each written item's key (--insert) |
+| | `--key <string>` | none | `jq` expression yielding each written item's key (--insert/--typed) |
 | | `--key-field <string>` | none | object field to take each written item's key from (--insert) |
-| | `--key-prefix <string>` | none | string prepended to every written key (--insert) |
+| | `--key-prefix <string>` | none | string prepended to every written key (--insert/--typed) |
 
 ```sh { title='Persist the joined rows into a third source' }
 iq combine 'users=.[] | {id, name}' 'orders=.[] | select(.total > 99)' \
@@ -119,7 +119,7 @@ iq '{t: .title}' --src books --insert kv --key '.t'
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
-| | `--type <string>` | none | native type stamped on each written value, e.g. hash, list, json (--insert) |
+| | `--type <string>` | none | native type stamped on each written value, e.g. hash, list, json (--insert/--typed) |
 
 ## Replace `--replace`
 
@@ -129,11 +129,22 @@ iq '{t: .title}' --src books --insert kv --key '.t'
 | | `--force` | ✗ | skip the confirmation prompt for `--replace` |
 | | `--no-overwrite` | ✗ | skip keys that already exist (--insert) |
 
+## Lifecycle previews
+
+Every `iq data` subcommand (`delete`, `clear`, `drop`) shares two previews;
+`clear` and `drop` also prompt before destroying data, `--force` skips the
+prompt.
+
+| short :material-flag-outline: | long :material-flag-outline: | default | description |
+| --- | --- | --- | --- |
+| | `--explain` | ✗ | print the access plan and exit without connecting or changing anything |
+| | `--dry-run` | ✗ | connect and report the real effect without changing anything |
+
 ## Delete `data delete`
 
 `iq data delete <target> <key>` removes a named set of keys, keeping the
-container. The typed, capability-gated, explainable counterpart of the raw
-per-key `iq exec delete`.
+container. The typed, capability-gated, explainable counterpart of a raw
+per-key delete (HBase's `exec delete` verb, a Redis `DEL`).
 
 Each key uses the same spelling as a *Get*, a bare string (`book:1`) or a JSON
 array for a composite key (`["shop",42]`). A key already absent is not an error
@@ -144,11 +155,6 @@ Unlike `data clear`/`data drop` it does not prompt, the explicit key list you
 typed is the confirmation (use `--dry-run` to preview). A backend with no
 per-key identity (the read-only file dump) rejects it (like Redis rejects
 `data drop`).
-
-| short :material-flag-outline: | long :material-flag-outline: | default | description |
-| --- | --- | --- | --- |
-| | `--dry-run` | ✗ | report the effect of `data delete` without writing anything |
-| | `--explain` | ✗ | prints a formatted query plan and exists without connecting or executing |
 
 ```sh { title='"deleted 2 key(s), 0 already absent"' }
 iq data delete cache book:1 book:2
@@ -173,10 +179,6 @@ iq data clear shop.orders shop.users
 
 ## Drop `data drop`
 
-| short :material-flag-outline: | long :material-flag-outline: | default | description |
-| --- | --- | --- | --- |
-| | `--force` | ✗ | skip the confirmation prompt for `drop` |
-
 Removes the container entirely and prompts for confirmation unless `--force` is
 used. Sources without a droppable container are rejected (for example Redis).
 
@@ -200,6 +202,9 @@ the real transform, probes capabilities and then suppresses the write.
 | --- | --- | --- | --- |
 | | `--dry-run` | ✗ | report the effect of `--insert` without writing anything |
 
+```sh { title='Dry run for a copy into "books2"' }
+iq --src books --insert books2 --dry-run
+```
 ```sh { title='Dry run for clearing source "books"' }
 iq data clear books --dry-run
 ```

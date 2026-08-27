@@ -12,7 +12,7 @@ backend command.
 
 ## Examples
 
-```bash title=""
+```bash title="Plan only, no connection"
 ./iq --src orders '.[] | select(.total > 99) | {id, total}' --explain
 ```
 ```bash title="Annotated plan, a note per pipe stage"
@@ -62,10 +62,10 @@ a terminal:
       (`client-side`), and why a client-side conjunct did not push.
     - A conjunct is `client-side` when the compiler cannot express it as
       a provable superset (an inexact negation, a non-portable regex, an unsafe
-      field name, or any other  unpushable construct)
-    - When the backend's translator declines the compiled predicate (a range on
-      Elasticsearch, say), or when the source does no server-side filtering at
-      all (the read-only file driver).
+      field name, or any other unpushable construct), when the backend's
+      translator declines the compiled predicate (a range on Elasticsearch,
+      say), or when the source does no server-side filtering at all (the
+      read-only file driver).
     - This is the observable split of what the backend evaluated versus what
     ran client-side, it is absent under `--no-compile`.
 
