@@ -42,13 +42,13 @@ func newDiffCmd(cfg *config) *cobra.Command {
 		"compare. Selecting no layer defaults to --data; layers combine.\n\n" +
 		"  --data    item-level diff: added / removed / changed, keyed by document _id\n" +
 		"            (MongoDB) or key (Redis). Unfiltered it reads both keyspaces fully\n" +
-		"            into memory, so it costs memory proportional to the two sources — a\n" +
+		"            into memory, so it costs memory proportional to the two sources, a\n" +
 		"            deliberate tradeoff, since an added/removed diff needs both key sets\n" +
 		"            at once; a filter narrows that read, and a pushable one narrows it\n" +
 		"            at the backend.\n" +
 		"            Allowed across drivers (Mongo _id vs Redis key): useful for\n" +
 		"            verifying a migration, but the identity match is only as meaningful\n" +
-		"            as the keys lining up — a power-user tool, not a schema comparison.\n" +
+		"            as the keys lining up, a power-user tool, not a schema comparison.\n" +
 		"  --stats   diff native introspection trees (MongoDB diagnostic commands, Redis\n" +
 		"            INFO). Same driver only. --section narrows which sections, comma-\n" +
 		"            separated or repeated (`--section memory,server`).\n" +
@@ -68,7 +68,7 @@ func newDiffCmd(cfg *config) *cobra.Command {
 		"    iq diff prod staging --filter '.[] | select(.status == \"new\")'\n\n" +
 		"A filter may instead name a single key (prod=.[\"orders:42\"]) to compare one\n" +
 		"document. One that collapses the keyspace, or fans an item out into several\n" +
-		"values, is refused: neither leaves a key to match on. --stats takes no filter —\n" +
+		"values, is refused: neither leaves a key to match on. --stats takes no filter,\n" +
 		"it diffs the backend's own introspection, which has no items.\n\n" +
 		"--set-arrays compares every array order-insensitively as a multiset (duplicates\n" +
 		"counted), reporting membership deltas at the array's own path. --patch emits an\n" +

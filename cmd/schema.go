@@ -46,12 +46,12 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 		"It describes values, not keys; a non-object keyspace is legal\n" +
 		"(a string keyspace emits {\"type\":\"string\"}).\n\n" +
 		"--format picks the contract dialect the shape projects into:\n" +
-		"  jsonschema  JSON Schema draft 2020-12 (default), for interop with code generators —\n" +
+		"  jsonschema  JSON Schema draft 2020-12 (default), for interop with code generators,\n" +
 		"              iq schema prod.orders > orders.schema.json && quicktype -s schema orders.schema.json -l go\n" +
 		"  odcs        Open Data Contract Standard v3.1.0, a YAML data contract for tools such\n" +
 		"              as datacontract-cli, Soda, and Great Expectations\n\n" +
 		"jsonschema honors -y to emit YAML instead of JSON; odcs is always YAML (its canonical\n" +
-		"form). A schema is field names and types — a few hundred bytes — not a dump of documents."
+		"form). A schema is field names and types, a few hundred bytes, not a dump of documents."
 	c := &cobra.Command{
 		Use:               "schema [source[=<jq>]]",
 		ValidArgsFunction: completeSourceHandles,

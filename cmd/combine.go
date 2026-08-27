@@ -29,8 +29,8 @@ func newCombineCmd(cfg *config) *cobra.Command {
 	long := "Query several sources and combine their results with one jq program.\n\n" +
 		"Each positional is a source spec, `<source>[=<jq>]`, the same grammar `iq diff`\n" +
 		"and `iq schema` take. The spec's results bind to a jq variable named after the\n" +
-		"source, with '/', '.' and '-' becoming '_' — so `prod/books=.[]` binds $prod_books\n" +
-		"— and --with is the final program, run over a null input with every variable in\n" +
+		"source, with '/', '.' and '-' becoming '_', so `prod/books=.[]` binds $prod_books,\n" +
+		"and --with is the final program, run over a null input with every variable in\n" +
 		"scope.\n\n" +
 		"Each source reduces at the source, and a pushable filter pushes down, so this\n" +
 		"never copies whole datasets to join them. A spec with no filter binds the whole\n" +

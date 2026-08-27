@@ -125,7 +125,7 @@ func newRootCmd() (*cobra.Command, *config) {
 			"\n" +
 			"  $ iq '.[] | select(.total > 99) | .id' --src shop.orders\n" +
 			"\n" +
-			"The filter's top-level paths name the keys to fetch — `iq '.greeting'`, or\n" +
+			"The filter's top-level paths name the keys to fetch: `iq '.greeting'`, or\n" +
 			"`iq '.[\"user:1\"]'` for a key with a colon. A `.[]`-rooted filter streams the\n" +
 			"whole keyspace in constant memory; a filter that collapses the dataset into one\n" +
 			"value (`.`, `keys`, `map(...)`) needs --unbounded. Always single-quote the\n" +
@@ -155,7 +155,7 @@ func newRootCmd() (*cobra.Command, *config) {
 			"  # Fetch one key from the active Redis source.\n" +
 			"  $ iq '.greeting'\n" +
 			"\n" +
-			"  # Query a Mongo collection — select(...) pushes to the backend.\n" +
+			"  # Query a Mongo collection; select(...) pushes to the backend.\n" +
 			"  $ iq '.[] | select(.total > 99) | .id' --src shop.orders\n" +
 			"\n" +
 			"  # The URI's ?collection= default lets you drop the suffix.\n" +
@@ -311,7 +311,7 @@ func newRootCmd() (*cobra.Command, *config) {
 	// destination source (sq's --insert); --typed emits {key,type,value} records — a
 	// re-importable dump. The rest mirror the retired `iq data copy`.
 	root.Flags().StringVar(&cfg.insert, "insert", "", "write each item into this destination `source` (copy/restore/import) instead of rendering")
-	root.Flags().BoolVar(&cfg.typed, "typed", false, "emit typed {key,type,value} records — a re-importable dump (needed for Redis; Mongo's plain output already restores)")
+	root.Flags().BoolVar(&cfg.typed, "typed", false, "emit typed {key,type,value} records, a re-importable dump (needed for Redis; Mongo's plain output already restores)")
 	root.Flags().StringVar(&cfg.moveKey, "key", "", "jq expression yielding each written item's key (--insert/--typed)")
 	root.Flags().StringVar(&cfg.keyField, "key-field", "", "object field to take the key from, for foreign JSON input (--insert)")
 	root.Flags().StringVar(&cfg.keyPrefix, "key-prefix", "", "string prepended to every written key (--insert/--typed)")

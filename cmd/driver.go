@@ -570,7 +570,7 @@ func writeDriverFormats(out io.Writer, d driver) error {
 	if len(d.formats) == 0 {
 		return nil
 	}
-	if _, err := fmt.Fprintf(out, "\n%s dump formats — a bare name auto-detects "+
+	if _, err := fmt.Fprintf(out, "\n%s dump formats, a bare name auto-detects "+
 		"(file:///<file_path>), the ?format= form must be passed "+
 		"(file:///<file_path>?format=<source_format>):\n", d.name); err != nil {
 		return err

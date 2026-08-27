@@ -34,7 +34,7 @@ func newConfigKeyringCmd(cfg *config) *cobra.Command {
 			"present; `get`/`set`/`rm` read, write, and delete one secret; `migrate` moves an\n" +
 			"inline password into the keyring; `prune` deletes stale entries. The keyring\n" +
 			"library cannot enumerate entries, so these commands reason only about handles the\n" +
-			"config knows — a secret whose source was deleted is undetectable here.",
+			"config knows, a secret whose source was deleted is undetectable here.",
 		Example: "  $ iq config keyring ls              # keyring-backed sources & secret presence\n" +
 			"  $ iq config keyring migrate shop    # move an inline password into the keyring\n" +
 			"  $ iq config keyring get shop --reveal # read a secret\n" +

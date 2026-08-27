@@ -70,38 +70,38 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"`<source>.<database>` / `<source>.<label>` addressing (`iq inspect prod.books`) to\n" +
 		"pick the collection/table/database/label, overriding the source URI's\n" +
 		"?collection=/?table=/?database=/?label= default; Redis sources take no collection.\n\n" +
-		"MongoDB — runs diagnostic database commands; no --only runs them all,\n" +
+		"MongoDB: runs diagnostic database commands; no --only runs them all,\n" +
 		"--only narrows to the named ones:\n" +
 		"  " + strings.Join(mongoInspectCmds, "  ") + "\n" +
 		"  (collStats needs a collection: address it as source.collection or set\n" +
 		"  ?collection= on the source URI)\n\n" +
-		"Cassandra — runs system-table reads; no --only runs them all, --only narrows:\n" +
+		"Cassandra: runs system-table reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(cassandraInspectCmds, "  ") + "\n" +
 		"  (columns needs a table: address it as source.table or set ?table= on the\n" +
 		"  source URI)\n\n" +
-		"DynamoDB — runs introspection reads; no --only runs them all, --only narrows:\n" +
+		"DynamoDB: runs introspection reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(dynamoInspectCmds, "  ") + "\n" +
 		"  (table needs a table: address it as source.table or set ?table= on the\n" +
 		"  source URI)\n\n" +
-		"HBase — runs introspection reads; no --only runs them all, --only narrows:\n" +
+		"HBase: runs introspection reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(hbaseInspectCmds, "  ") + "\n" +
 		"  (tables lists the source namespace's tables)\n\n" +
-		"CouchDB — runs introspection reads; no --only runs them all, --only narrows:\n" +
+		"CouchDB: runs introspection reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(couchInspectCmds, "  ") + "\n" +
 		"  (dbinfo and indexes need a database: address it as source.database or set\n" +
 		"  ?database= on the source URI)\n\n" +
-		"Couchbase — runs introspection reads; no --only runs them all, --only narrows:\n" +
+		"Couchbase: runs introspection reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(couchbaseInspectCmds, "  ") + "\n" +
 		"  (collections needs a bucket: address it as source.collection or set ?bucket=\n" +
 		"  on the source URI)\n\n" +
-		"Neo4j — runs metadata procedures; no --only runs them all, --only narrows:\n" +
+		"Neo4j: runs metadata procedures; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(neo4jInspectCmds, "  ") + "\n" +
 		"  (all are database-level; labels lists the addressable collections)\n\n" +
-		"Elasticsearch / OpenSearch — runs metadata reads; no --only runs them all, --only narrows:\n" +
+		"Elasticsearch / OpenSearch: runs metadata reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(elasticInspectCmds, "  ") + "\n" +
 		"  (mapping needs an index: address it as source.index or set ?index= on the\n" +
 		"  source URI)\n\n" +
-		"Redis — runs INFO; --only narrows it to those sections\n" +
+		"Redis: runs INFO; --only narrows it to those sections\n" +
 		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
 		"  " + strings.Join(redisInfoCommonSections, "  ") + "\n\n" +
 		"Use -j/--json or -y/--yaml for machine-readable output, or --list to print the\n" +
