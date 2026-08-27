@@ -83,3 +83,17 @@ and the rest purely from the whole-tree analysis scope. The same artifact inflat
 driver's row set — it is why a whole-tree run shows 11–13 capabilities per driver while
 `drivers/redis` alone shows 8 — and it is the reason the baseline is only ever compared
 against a run of the same scope.
+
+## github.com/zsltg/iq/internal/diff, github.com/zsltg/iq/internal/jqfmt — ARBITRARY_EXECUTION, MODIFY_SYSTEM_STATE/SIGNALS, NETWORK (FALSE POSITIVE, Go 1.27 encoding/json)
+The same interface-dispatch artifact as `internal/render`, surfaced by the Go 1.27 toolchain
+bump (capslock v0.3.3, 2026-08-27). From 1.27 `encoding/json` is implemented atop
+`encoding/json/v2`: its `jsontext` decoder reads through an `io.Reader`, which capslock
+resolves against every implementation in the analyzed set (the printed path lands in
+`klauspost/compress/s2.Decode`), and `encoding/json.transformMarshalError` compares errors
+against `os/signal.signalError`, which is the `SIGNALS` row. Both packages only call
+`json.Marshal` / `json.Unmarshal` on in-memory values: `diff.canonicalKey` to build a
+canonical set key, `jqfmt` through `gojq.Parse` unescaping string literals. Confirmation:
+analyzed *alone* with the same capslock, `internal/diff` reports `{REFLECT, UNANALYZED,
+UNSAFE_POINTER}` and `internal/jqfmt` `{FILES, REFLECT, UNANALYZED, UNSAFE_POINTER}`, so
+every row above comes purely from the whole-tree scope. They were the last two json-calling
+packages not already saturated, which is why the toolchain bump moved only these two.

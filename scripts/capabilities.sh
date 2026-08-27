@@ -72,7 +72,7 @@
 set -uo pipefail
 
 # Pinned capslock version — keep in step with AGENTS.md and `make tools-dev` (Makefile).
-CAPSLOCK_VERSION=v0.3.2
+CAPSLOCK_VERSION=v0.3.3
 capslock_pkg=github.com/google/capslock/cmd/capslock
 
 cd "$(git rev-parse --show-toplevel)" || exit 1

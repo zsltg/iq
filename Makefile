@@ -46,7 +46,7 @@ tools:
 # goimports, and golangci-lint are expected already (see CONTRIBUTING.md).
 tools-dev:
 	go install github.com/quality-gates/mutago/v2/cmd/mutago@v2.7.7
-	go install github.com/google/capslock/cmd/capslock@v0.3.2
+	go install github.com/google/capslock/cmd/capslock@v0.3.3
 	go install golang.org/x/tools/cmd/deadcode@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest
