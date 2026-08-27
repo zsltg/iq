@@ -2,8 +2,11 @@
 
 ## Requirements
 
-- Go 1.26+
+- Go 1.26.5+ (matches `go.mod`)
 - Docker — integration tests and the local stack; not needed for `go test -short`
+- [gofumpt](https://github.com/mvdan/gofumpt), [goimports](https://pkg.go.dev/golang.org/x/tools/cmd/goimports),
+  and [golangci-lint](https://golangci-lint.run) on `PATH` — `make check` runs them and
+  `make tools-dev` does not install them
 - [uv](https://docs.astral.sh/uv/) — docs site only; not needed to build or use `iq`
 
 ## Build
@@ -25,7 +28,7 @@ an untagged build) so scripts can read it without parsing.
 go test -short ./...   # fast unit tests, no external services
 go test ./...          # full suite, ephemeral backends via testcontainers-go
 make e2e               # black-box tests that build and drive the iq binary
-make bench             # JSON decode + pre-filter benchmarks; pair two runs with benchstat
+make bench             # decode, filter, number-conversion, and dump I/O benchmarks; pair two runs with benchstat
 ```
 
 - The full suite starts ephemeral Redis, MongoDB, Cassandra, DynamoDB Local,
@@ -34,7 +37,8 @@ make bench             # JSON decode + pre-filter benchmarks; pair two runs with
   ~1 minute to become ready, Couchbase ~30–60 s.
 - Set `IQ_<BACKEND>_URL` (`IQ_REDIS_URL`, `IQ_MONGO_URL`, …) to a pre-started
   server (for example the compose stack) to skip container startup; the
-  mutation gate wants this.
+  mutation gate wants this. `.env.example` is the tracked template with the
+  full list and per-backend guidance.
 - HBase is the exception: its native RPC needs fixed hostnames, so its tests
   run only when `IQ_HBASE_URL` points at the compose cluster
   (`docker compose up -d --wait hbase`, host networking, ~1–2 minutes ready).
@@ -46,7 +50,7 @@ make bench             # JSON decode + pre-filter benchmarks; pair two runs with
 ## Local stack
 
 ```bash
-docker compose up -d --wait      # all backends on their standard ports
+docker compose up -d --wait      # all backends on their published ports
 bash scripts/seed-<backend>.sh   # example data: redis, mongo, cassandra, dynamodb,
                                  # hbase, couchdb, couchbase, neo4j, elasticsearch, opensearch
 docker compose down
@@ -54,17 +58,19 @@ docker compose down
 
 The stack runs under a fixed project name (`iq`) on a pinned `10.100.0.0/24`
 bridge, so compose behaves the same from any worktree and the subnet cannot
-collide with a LAN host.
+collide with a LAN host. OpenSearch is published on 9201 to avoid
+Elasticsearch on 9200, and HBase uses host networking (see `compose.yaml`).
 
 ## Quality gates
 
-Local and layered — the project uses no CI service. The full doctrine binds in
-[AGENTS.md](AGENTS.md).
+Local and layered — the quality gates run on your machine, not in CI (the two
+GitHub workflows only build the docs site and publish releases). The full
+doctrine binds in [AGENTS.md](AGENTS.md).
 
 ```bash
 make check          # fast offline gate: format, vet, build, lint, dead code, short tests
 make cover          # full suite + coverage floor
-make security       # govulncheck + osv-scanner + gitleaks, SBOMs to dist/
+make security       # govulncheck + osv-scanner + gitleaks (tree + git history), SBOMs to dist/
 make capabilities   # capslock capability drift (runs only when go.mod/go.sum moved)
 make mutation       # mutago mutation gate over the branch diff
 make ci             # all of the above, in order; start the compose stack first
@@ -109,8 +115,10 @@ Run with the integration services up.
 
 - `IQ_MUTATION_BASE` — base ref; empty for a full-module scan; a package arg
   (`bash scripts/mutation-gate.sh ./cmd`) full-scans that package
-- `IQ_MUTATION_WORKERS` — parallel mutants (default 1)
-- `IQ_MUTATION_TIMEOUT_COEFFICIENT` — per-mutant timeout multiplier (default 5)
+- `IQ_MUTATION_WORKERS` — parallel mutants (default 1; raise to 2-3 only when
+  the run is already memory-bounded, e.g. inside a systemd-run MemoryHigh unit)
+- `IQ_MUTATION_TIMEOUT_COEFFICIENT` — per-mutant timeout multiplier (default
+  5; raise it for a legitimately slow package instead of letting mutants time out)
 - `IQ_MUTATION_UPDATE_BASELINE=1` — accept equivalents (append-only)
 - `IQ_MUTATION_MUTANT=<id>` — re-run one mutant as a diagnostic
 - `IQ_MUTATION_DRYRUN=1` — mutant-count preview; scope it to one package
@@ -131,6 +139,16 @@ make docs-serve  # serve on 0.0.0.0:8000
 
 Pages under `docs/docs/` are hand-maintained; nothing regenerates them from
 the README.
+
+### Generated artifacts
+
+```bash
+make man          # regenerate the committed docs/man/iq.1
+make completions  # regenerate the committed docs/completions/iq.{bash,zsh,fish,ps1}
+```
+
+Both are shipped by the release packaging and drift-guarded by tests, so any
+change to a command, flag, or help string regenerates them in the same commit.
 
 ## Toolchain
 
@@ -157,14 +175,19 @@ for ad-hoc use.
 ```bash
 make tools                          # one-time: svu + git-chglog
 make version                        # print the version the next release would take
+make changelog                      # regenerate CHANGELOG.md alone
 bash scripts/release.sh --dry-run   # preview, no changes
+make release-check                  # validate the goreleaser config
+make release-snapshot               # local snapshot build of every artifact, no tag
 make release                        # bump, regenerate CHANGELOG.md, commit, tag
 git push --follow-tags              # release.sh never pushes
 ```
 
 Conventional Commits drive the bump (`feat` → minor, `fix` → patch,
 `!`/`BREAKING CHANGE` → major); `make release` must run on a clean `main`;
-with no tags yet the first release is `v0.1.0`.
+with no tags yet the first release is `v0.1.0`. Publishing happens in the
+GitHub repository: the release workflow runs goreleaser when a `v*` tag
+reaches it.
 
 ## Architecture
 
@@ -181,12 +204,18 @@ section and the docs site's How it works page; the adapter contract in
   (caller-gated by `--unbounded`); `Runner` is `iq exec`; `Combiner` and
   `CrossEngine` reach other sources through the `SourceOpener` port. Optional
   capability ports carry the rest: `FilteredScanner` (pushdown), `Estimator`
-  (scan totals), and the write side `Putter`, `TypedReader`, `Clearer`,
-  `Dropper`, `Deleter` — an adapter implements what its model supports, and a
-  command type-asserts and rejects cleanly when a port is absent.
+  (scan totals), `TypedReader` on the copy's read side, and the write side
+  `Putter`, `Clearer`, `Dropper`, `Deleter` — an adapter implements what its
+  model supports, and a command type-asserts and rejects cleanly when a port
+  is absent.
 - `drivers/*` — one adapter per backend, each freezing that backend's
   type-to-JSON normalization and its inverse for writes; `drivers/file` is
   the read-only adapter over dump files and piped stdin, with a decode cache.
+- `internal/pushdown` / `internal/predicate` — compile the pushable part of a
+  filter's `select()` into the backend-neutral `predicate.Node` the adapters
+  translate; `internal/rawpred` evaluates the same predicate over raw bytes
+  for the client-side prefilters.
+- `internal/render` — the output renderers behind the format flags.
 - `internal/diff` — driver-agnostic structural diff (LCS-aligned arrays,
   optional multiset arrays, RFC 6902 patch rendering); no I/O.
 - `internal/shape` — schema inference (JSON Schema draft 2020-12, ODCS
@@ -196,4 +225,7 @@ section and the docs site's How it works page; the adapter contract in
   defaults; keyring port so passwords never enter the config file.
 - `cmd` — CLI adapter and composition root: the self-describing driver
   registry (`cmd/driver.go`, one entry per backend), source resolution,
-  stored-option merging, output renderers, diagnostics.
+  stored-option merging, output selection, diagnostics.
+- Small helpers: `internal/jqfmt` (filter pretty-printing), `internal/numfmt`
+  (number normalization), `internal/neo4jenvelope` (the shared Neo4j record
+  envelope).
