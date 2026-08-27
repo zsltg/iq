@@ -62,9 +62,9 @@ func newDiffCmd(cfg *config) *cobra.Command {
 		"on the exit status.\n\n" +
 		"Each side may carry a jq filter, so a diff can be scoped to part of a keyspace:\n" +
 		"per side as `<source>=<jq>`, or for both at once with --filter, a side's own\n" +
-		"filter winning. The filter is `.[]`-rooted as on a plain query (iteration is not\n" +
-		"implicit here, unlike --insert), because a keyed diff needs each item to keep its\n" +
-		"key:\n\n" +
+		"filter winning. Write the filter `.[]`-rooted, as on a plain query (iteration\n" +
+		"is not implicit here, unlike --insert), because a keyed diff needs each item to\n" +
+		"keep its key:\n\n" +
 		"    iq diff prod staging --filter '.[] | select(.status == \"new\")'\n\n" +
 		"A filter may instead name a single key (prod=.[\"orders:42\"]) to compare one\n" +
 		"document. One that collapses the keyspace, or fans an item out into several\n" +
@@ -182,7 +182,7 @@ func newDiffCmd(cfg *config) *cobra.Command {
 	// comes offline from the first target.
 	_ = c.RegisterFlagCompletionFunc("section", completeInspectOnly)
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled per side for --schema (0 = all)")
-	c.Flags().StringVar(&filter, "filter", "", "`.[]`-rooted jq filter scoping both sides; a spec's own `source=<jq>` overrides it for that side")
+	c.Flags().StringVar(&filter, "filter", "", "jq filter you root at `.[]`, scoping both sides; a spec's own `source=<jq>` overrides it for that side")
 	c.Flags().BoolVar(&setArrays, "set-arrays", false, "compare arrays order-insensitively as multisets (duplicates counted)")
 	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
 	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit machine-readable YAML")
