@@ -3,7 +3,8 @@ linters:
   # Curated set atop the v2 defaults (errcheck, govet, ineffassign, staticcheck,
   # unused). Each maps to an AGENTS.md rule: gosec is the SAST, errorlint guards
   # the %w wrapping scheme, testifylint the testify idioms, bodyclose + noctx the
-  # bounded/closed outbound calls, misspell + godot the comment hygiene.
+  # bounded/closed outbound calls, misspell + godot the comment hygiene, modernize
+  # the Go 1.21+ idioms (slices, maps, range-over-int, SplitSeq, AsType).
   enable:
     - godot
     - gosec
@@ -12,6 +13,7 @@ linters:
     - bodyclose
     - noctx
     - misspell
+    - modernize
   settings:
     gosec:
       # G404: the sole math/rand use is non-cryptographic retry-backoff jitter

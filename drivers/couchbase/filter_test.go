@@ -2,6 +2,7 @@ package couchbase
 
 import (
 	"context"
+	"maps"
 	"sort"
 	"testing"
 
@@ -195,9 +196,7 @@ func TestScanFilteredParity(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := map[string]any{}
 			require.NoError(t, st.ScanFiltered(ctx, tt.pred, func(batch map[string]any) error {
-				for k, v := range batch {
-					got[k] = v
-				}
+				maps.Copy(got, batch)
 				return nil
 			}))
 			ids := make([]string, 0, len(got))

@@ -83,7 +83,7 @@ func TestParquetFormatterPropagatesEncodeError(t *testing.T) {
 	f := newFormatter(formatParquet, &bytes.Buffer{}, false)
 	// The parquetout sample is 1000 values; fill it with an int column, then a
 	// string in that column past the sample fails.
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		require.NoError(t, f.emit(map[string]any{"n": 1}))
 	}
 	err := f.emit(map[string]any{"n": "not-an-int"})

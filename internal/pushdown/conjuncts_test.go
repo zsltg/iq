@@ -166,7 +166,7 @@ func TestConjuncts(t *testing.T) {
 // nested `(((expr)))` parses to. It builds the nesting directly so a test can exceed
 // maxNestDepth without relying on the jq parser's own recursion limit.
 func wrapQuery(q *gojq.Query, depth int) *gojq.Query {
-	for i := 0; i < depth; i++ {
+	for range depth {
 		q = &gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeQuery, Query: q}}
 	}
 	return q

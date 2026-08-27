@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"maps"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,9 +66,7 @@ func TestScanBatchesPagesEveryRow(t *testing.T) {
 	seen := map[string]any{}
 	err := st.ScanBatches(context.Background(), func(batch map[string]any) error {
 		pages = append(pages, len(batch))
-		for k, v := range batch {
-			seen[k] = v
-		}
+		maps.Copy(seen, batch)
 		return nil
 	})
 	require.NoError(t, err)
@@ -119,9 +118,7 @@ func TestScanFilteredStreamsRows(t *testing.T) {
 	err := st.ScanFiltered(context.Background(),
 		predicate.Eq{Path: []string{"cf", "author"}, Value: "Herbert"},
 		func(batch map[string]any) error {
-			for k, v := range batch {
-				seen[k] = v
-			}
+			maps.Copy(seen, batch)
 			return nil
 		})
 	require.NoError(t, err)

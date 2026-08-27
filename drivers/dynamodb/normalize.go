@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math/big"
 	"strconv"
 
@@ -254,9 +255,7 @@ func (s *Store) toItem(r recordValue) (map[string]types.AttributeValue, error) {
 		if err != nil {
 			return nil, err
 		}
-		for name, av := range keyAVs {
-			item[name] = av
-		}
+		maps.Copy(item, keyAVs)
 	}
 	for _, k := range s.keys {
 		if _, ok := item[k.name]; !ok {

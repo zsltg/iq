@@ -429,7 +429,7 @@ func planHeader(s string) string {
 // multi-line block nests under its label.
 func writeIndented(b *strings.Builder, text string, n int) {
 	pad := strings.Repeat(" ", n)
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		if line == "" {
 			b.WriteByte('\n')
 			continue

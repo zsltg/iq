@@ -2,6 +2,7 @@ package neo4j
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -68,9 +69,7 @@ func TestIntegrationGetScanCountFilter(t *testing.T) {
 	t.Run("scan all", func(t *testing.T) {
 		seen := map[string]any{}
 		require.NoError(t, st.ScanBatches(ctx, func(p map[string]any) error {
-			for k, v := range p {
-				seen[k] = v
-			}
+			maps.Copy(seen, p)
 			return nil
 		}))
 		require.Len(t, seen, 3)
@@ -86,9 +85,7 @@ func TestIntegrationGetScanCountFilter(t *testing.T) {
 	t.Run("filtered scan pushes equality", func(t *testing.T) {
 		seen := map[string]any{}
 		require.NoError(t, st.ScanFiltered(ctx, predicate.Eq{Path: []string{"title"}, Value: "DDIA"}, func(p map[string]any) error {
-			for k, v := range p {
-				seen[k] = v
-			}
+			maps.Copy(seen, p)
 			return nil
 		}))
 		require.Contains(t, seen, "2")
@@ -98,9 +95,7 @@ func TestIntegrationGetScanCountFilter(t *testing.T) {
 	t.Run("filtered scan falls back for a range", func(t *testing.T) {
 		seen := map[string]any{}
 		require.NoError(t, st.ScanFiltered(ctx, predicate.Cmp{Path: []string{"year"}, Op: predicate.Gt, Value: 2016.0}, func(p map[string]any) error {
-			for k, v := range p {
-				seen[k] = v
-			}
+			maps.Copy(seen, p)
 			return nil
 		}))
 		// The range does not push, so the full label is scanned (correct superset).
@@ -124,9 +119,7 @@ func TestIntegrationScanPaging(t *testing.T) {
 	pages := 0
 	require.NoError(t, st.ScanBatches(ctx, func(p map[string]any) error {
 		pages++
-		for k, v := range p {
-			seen[k] = v
-		}
+		maps.Copy(seen, p)
 		return nil
 	}))
 	require.Len(t, seen, 200)
@@ -358,9 +351,7 @@ func TestIntegrationRelationships(t *testing.T) {
 	t.Run("scan yields the relationship envelope", func(t *testing.T) {
 		seen := map[string]any{}
 		require.NoError(t, st.ScanBatches(ctx, func(p map[string]any) error {
-			for k, v := range p {
-				seen[k] = v
-			}
+			maps.Copy(seen, p)
 			return nil
 		}))
 		require.Len(t, seen, 2)
@@ -470,9 +461,7 @@ func TestIntegrationKeyIntegrity(t *testing.T) {
 		st := openStore(t, ctx, "ItKeyless", "id")
 		seen := map[string]any{}
 		require.NoError(t, st.ScanBatches(ctx, func(p map[string]any) error {
-			for k, v := range p {
-				seen[k] = v
-			}
+			maps.Copy(seen, p)
 			return nil
 		}))
 		require.Len(t, seen, 2)

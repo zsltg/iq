@@ -111,7 +111,7 @@ func TestWriterRoundTrip(t *testing.T) {
 func TestWriterListAndMapRoundTrip(t *testing.T) {
 	// Eight rows so "cfg" trips the id-keyed-map heuristic; "tags" is a list.
 	vals := make([]any, 0, 8)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		vals = append(vals, map[string]any{
 			"id":   i,
 			"tags": []any{"x", "y"},
@@ -142,7 +142,7 @@ func TestWriterPostSampleMismatch(t *testing.T) {
 	// coerce. This exercises the real post-sample encode path (Add after start).
 	var buf bytes.Buffer
 	pw := NewWriter(&buf)
-	for i := 0; i < sampleBufferSize; i++ {
+	for range sampleBufferSize {
 		require.NoError(t, pw.Add(map[string]any{"age": 1}))
 	}
 	err := pw.Add(map[string]any{"age": "thirty"})
@@ -213,7 +213,7 @@ func TestWriterPostSampleObjectExpected(t *testing.T) {
 	// An all-object sample locks a columnar schema; a scalar past the sample has
 	// no object fields to spread, so it fails rather than being coerced.
 	pw := NewWriter(&bytes.Buffer{})
-	for i := 0; i < sampleBufferSize; i++ {
+	for range sampleBufferSize {
 		require.NoError(t, pw.Add(map[string]any{"n": 1}))
 	}
 	err := pw.Add("scalar-not-object")
@@ -228,7 +228,7 @@ func TestWriterTimestampParseFailurePropagates(t *testing.T) {
 	// rather than coercing to a wrong instant.
 	var buf bytes.Buffer
 	pw := NewWriter(&buf)
-	for i := 0; i < sampleBufferSize; i++ {
+	for range sampleBufferSize {
 		require.NoError(t, pw.Add(map[string]any{"ts": "2021-01-02T03:04:05Z"}))
 	}
 	err := pw.Add(map[string]any{"ts": "nope"})

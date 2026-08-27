@@ -93,7 +93,7 @@ func TestCassandraCSVFieldCountMismatch(t *testing.T) {
 func TestPagingCassandra(t *testing.T) {
 	var buf bytes.Buffer
 	buf.WriteString("id\n")
-	for i := 0; i < bigCount; i++ {
+	for i := range bigCount {
 		fmt.Fprintf(&buf, "k%d\n", i)
 	}
 	u := writeDump(t, "big.csv", buf.Bytes(), "format=cassandra-csv&keys=id")
@@ -107,7 +107,7 @@ func TestPagingExactMultipleCassandra(t *testing.T) {
 	// perfect multiple yields a single page with no empty tail.
 	var buf bytes.Buffer
 	buf.WriteString("id\n")
-	for i := 0; i < pageSize; i++ {
+	for i := range pageSize {
 		fmt.Fprintf(&buf, "k%d\n", i)
 	}
 	u := writeDump(t, "exact.csv", buf.Bytes(), "format=cassandra-csv&keys=id")

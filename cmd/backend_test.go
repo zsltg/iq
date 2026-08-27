@@ -356,7 +356,7 @@ func (h *gateHandler) WithGroup(n string) slog.Handler {
 // matches and whose keyAttr equals want.
 func findRecord(t *testing.T, buf *bytes.Buffer, msg, keyAttr, want string) map[string]any {
 	t.Helper()
-	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(buf.String(), "\n"), "\n") {
 		if line == "" {
 			continue
 		}
@@ -398,7 +398,7 @@ func TestTraceTeeLogsBackendCmdIntegration(t *testing.T) {
 	// Every stderr line is a JSON record; a scan issues at least one wire command,
 	// which the trace tee turns into a "backend cmd" record tagged with the driver.
 	var sawBackendCmd bool
-	for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(stderr.String()), "\n") {
 		if line == "" {
 			continue
 		}
@@ -417,7 +417,7 @@ func TestTraceTeeLogsBackendCmdIntegration(t *testing.T) {
 func parseLogRecords(t *testing.T, s string) map[string]map[string]any {
 	t.Helper()
 	byMsg := map[string]map[string]any{}
-	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(s), "\n") {
 		if line == "" {
 			continue
 		}
@@ -474,7 +474,7 @@ func TestRunJQWiresRunOptionsFileSource(t *testing.T) {
 func countJSONRecords(t *testing.T, s, want string) int {
 	t.Helper()
 	n := 0
-	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(s), "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "{") {
 			continue
@@ -545,7 +545,7 @@ func TestVerbosePlusStderrStructuredPlanOnce(t *testing.T) {
 // interleaved pretty --verbose plan text so parseLogRecords can consume the rest.
 func jsonLinesOnly(s string) string {
 	var b strings.Builder
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "{") {
 			b.WriteString(line)
 			b.WriteByte('\n')

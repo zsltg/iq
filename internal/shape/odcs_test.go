@@ -151,7 +151,7 @@ func TestODCSArray(t *testing.T) {
 // root holds field "m" whose distinct per-instance keys make it collapse.
 func TestODCSMapValue(t *testing.T) {
 	items := make(map[string]any, 12)
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		items[strconv.Itoa(i)] = map[string]any{
 			"m": map[string]any{"k" + strconv.Itoa(i): map[string]any{"v": i}},
 		}
@@ -183,7 +183,7 @@ func TestODCSNonObjectRoot(t *testing.T) {
 func TestODCSDeterministic(t *testing.T) {
 	build := func(seed int) map[string]any {
 		items := make(map[string]any, 5)
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			items[strconv.Itoa(seed*100+i)] = map[string]any{"b": 2, "a": "x", "c": true}
 		}
 		return shape.Infer(items).ODCSSchemaObject("t")

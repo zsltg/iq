@@ -303,10 +303,8 @@ var drivers = []driver{
 // registry. It is the one place that maps a scheme to a backend.
 func driverForScheme(scheme string) (driver, bool) {
 	for _, d := range drivers {
-		for _, s := range d.schemes {
-			if s == scheme {
-				return d, true
-			}
+		if slices.Contains(d.schemes, scheme) {
+			return d, true
 		}
 	}
 	return driver{}, false

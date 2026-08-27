@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -161,11 +162,12 @@ func (s *Store) keyProjection() (string, map[string]string) {
 		names[ph] = k.name
 		parts[i] = ph
 	}
-	proj := parts[0]
+	var proj strings.Builder
+	proj.WriteString(parts[0])
 	for _, p := range parts[1:] {
-		proj += ", " + p
+		proj.WriteString(", " + p)
 	}
-	return proj, names
+	return proj.String(), names
 }
 
 // deleteItems removes a page of items by primary key with BatchWriteItem in batches of

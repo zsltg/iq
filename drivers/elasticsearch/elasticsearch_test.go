@@ -1,6 +1,7 @@
 package elasticsearch
 
 import (
+	"maps"
 	"sort"
 	"strconv"
 	"testing"
@@ -26,9 +27,7 @@ func collect(t *testing.T, scan func(func(map[string]any) error) error) map[stri
 	t.Helper()
 	out := map[string]any{}
 	require.NoError(t, scan(func(batch map[string]any) error {
-		for k, v := range batch {
-			out[k] = v
-		}
+		maps.Copy(out, batch)
 		return nil
 	}))
 	return out
@@ -76,7 +75,7 @@ func TestScanBatches(t *testing.T) {
 func TestScanBatchesPaging(t *testing.T) {
 	// Seed more than one page so the point-in-time + search_after loop iterates.
 	docs := make([]map[string]any, 0, 250)
-	for i := 0; i < 250; i++ {
+	for i := range 250 {
 		id := strconv.Itoa(i)
 		docs = append(docs, map[string]any{"_id": id, "n": i})
 	}

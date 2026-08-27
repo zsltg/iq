@@ -3,6 +3,7 @@ package dynamodb
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -159,12 +160,8 @@ func join(c *counter, nodes []predicate.Node, sep string, allRequired bool) (fra
 		}
 		exprs = append(exprs, f.expr)
 		displays = append(displays, f.display)
-		for k, v := range f.names {
-			names[k] = v
-		}
-		for k, v := range f.values {
-			values[k] = v
-		}
+		maps.Copy(names, f.names)
+		maps.Copy(values, f.values)
 	}
 	if len(exprs) == 0 {
 		return frag{}, false

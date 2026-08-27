@@ -28,7 +28,7 @@ func TestEstimateCountReflectsDBSize(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	require.NoError(t, store.client.FlushDB(ctx).Err())
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		require.NoError(t, store.client.Set(ctx, fmt.Sprintf("iq:test:est:%d", i), "v", 0).Err())
 	}
 

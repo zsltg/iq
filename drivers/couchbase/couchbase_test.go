@@ -3,6 +3,7 @@ package couchbase
 import (
 	"bytes"
 	"context"
+	"maps"
 	"testing"
 	"time"
 
@@ -60,9 +61,7 @@ func TestScanBatches(t *testing.T) {
 	require.NoError(t, st.ScanBatches(ctx, func(batch map[string]any) error {
 		pages++
 		require.LessOrEqual(t, len(batch), st.pageSize)
-		for k, v := range batch {
-			got[k] = v
-		}
+		maps.Copy(got, batch)
 		return nil
 	}))
 	require.Greater(t, pages, 1, "small page size should yield multiple pages")

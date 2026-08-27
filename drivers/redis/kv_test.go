@@ -3,6 +3,7 @@ package redis_test
 import (
 	"context"
 	"errors"
+	"maps"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -134,9 +135,7 @@ func TestScanBatchesYieldsSeededValues(t *testing.T) {
 	batches := 0
 	err := store.ScanBatches(context.Background(), func(batch map[string]any) error {
 		batches++
-		for k, v := range batch {
-			merged[k] = v
-		}
+		maps.Copy(merged, batch)
 		return nil
 	})
 	require.NoError(t, err)

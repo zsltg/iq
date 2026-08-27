@@ -175,7 +175,7 @@ func TestStructuredLoggingToStderr(t *testing.T) {
 
 	// Every stderr line must be a JSON object; index the records by msg.
 	byMsg := map[string]map[string]any{}
-	for _, line := range strings.Split(strings.TrimSpace(stderr), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(stderr), "\n") {
 		if line == "" {
 			continue
 		}

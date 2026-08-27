@@ -151,7 +151,7 @@ func groupedFlagUsages(fs *pflag.FlagSet) string {
 		b.WriteString("  " + group + ":\n")
 		// pflag indents flag lines by two spaces; add two more so they sit under
 		// the section header.
-		for _, line := range strings.Split(usage, "\n") {
+		for line := range strings.SplitSeq(usage, "\n") {
 			b.WriteString("  " + line + "\n")
 		}
 	}

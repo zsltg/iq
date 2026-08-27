@@ -169,7 +169,7 @@ func walkSlice(path []string, a, b []any, out *[]Change, o Options) {
 	block := func(pa, pb int) {
 		la, lb := pa-ai, pb-bi
 		common := min(la, lb)
-		for k := 0; k < common; k++ {
+		for k := range common {
 			child := append(path, "["+strconv.Itoa(pos)+"]") //nolint:gocritic // cloned before storage
 			walk(child, a[ai+k], b[bi+k], out, o)
 			pos++
@@ -198,7 +198,7 @@ func walkSlice(path []string, a, b []any, out *[]Change, o Options) {
 // only one side are Add or Remove; overlapping indexes recurse.
 func walkPositional(path []string, a, b []any, out *[]Change, o Options) {
 	n := max(len(a), len(b))
-	for i := 0; i < n; i++ {
+	for i := range n {
 		child := append(path, "["+strconv.Itoa(i)+"]") //nolint:gocritic // cloned before storage
 		switch {
 		case i >= len(b):
@@ -225,7 +225,7 @@ func walkSet(path []string, a, b []any, out *[]Change) {
 	left, right := multiset(a), multiset(b)
 	for _, key := range sortedSetKeys(left.counts, right.counts) {
 		delta := left.counts[key] - right.counts[key]
-		for i := 0; i < delta; i++ {
+		for range delta {
 			*out = append(*out, Change{Path: clone(path), Op: OpRemove, Old: left.sample[key]})
 		}
 		for i := 0; i < -delta; i++ {

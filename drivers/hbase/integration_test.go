@@ -2,6 +2,7 @@ package hbase
 
 import (
 	"context"
+	"maps"
 	"testing"
 	"time"
 
@@ -16,9 +17,7 @@ func row(cells map[string]map[string]any) any {
 	out := map[string]any{}
 	for family, quals := range cells {
 		fam := map[string]any{}
-		for q, v := range quals {
-			fam[q] = v
-		}
+		maps.Copy(fam, quals)
 		out[family] = fam
 	}
 	return out
@@ -48,9 +47,7 @@ func TestIntegrationPutGetScan(t *testing.T) {
 
 	seen := map[string]any{}
 	require.NoError(t, st.ScanBatches(ctx, func(b map[string]any) error {
-		for k, v := range b {
-			seen[k] = v
-		}
+		maps.Copy(seen, b)
 		return nil
 	}))
 	require.Len(t, seen, 2)
@@ -83,9 +80,7 @@ func TestIntegrationScanFiltered(t *testing.T) {
 	require.NoError(t, st.ScanFiltered(ctx,
 		predicate.Eq{Path: []string{"cf", "author"}, Value: "Herbert"},
 		func(b map[string]any) error {
-			for k, v := range b {
-				seen[k] = v
-			}
+			maps.Copy(seen, b)
 			return nil
 		}))
 	// The server-side SingleColumnValueFilter returns only the matching row.

@@ -225,13 +225,13 @@ func manFlagNames(f *pflag.Flag) string {
 // first line begins with whitespace) which is rendered verbatim in a no-fill
 // region so its layout survives.
 func writeManProse(b *strings.Builder, text string) {
-	for _, para := range strings.Split(text, "\n\n") {
+	for para := range strings.SplitSeq(text, "\n\n") {
 		if para == "" {
 			continue
 		}
 		if isIndentedBlock(para) {
 			b.WriteString(".PP\n.RS\n.nf\n")
-			for _, ln := range strings.Split(para, "\n") {
+			for ln := range strings.SplitSeq(para, "\n") {
 				b.WriteString(manVerbatim(ln) + "\n")
 			}
 			b.WriteString(".fi\n.RE\n")
@@ -252,7 +252,7 @@ func isIndentedBlock(para string) bool {
 // indented region, so wrapping and spacing survive. A blank line stays blank.
 func writeManExampleBlock(b *strings.Builder, example string) {
 	b.WriteString(".RS\n.nf\n")
-	for _, ln := range strings.Split(example, "\n") {
+	for ln := range strings.SplitSeq(example, "\n") {
 		if ln == "" {
 			b.WriteString("\n")
 			continue

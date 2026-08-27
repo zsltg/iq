@@ -21,10 +21,7 @@ const (
 // newBloom allocates a filter sized for n keys. It is never empty, so an
 // all-absent page still has a well-formed (all-zero) filter.
 func newBloom(n int) []byte {
-	bits := n * bloomBitsPerKey
-	if bits < 8 {
-		bits = 8
-	}
+	bits := max(n*bloomBitsPerKey, 8)
 	return make([]byte, (bits+7)/8)
 }
 
@@ -33,7 +30,7 @@ func newBloom(n int) []byte {
 func bloomAdd(filter []byte, key string) {
 	m := uint32(len(filter) * 8) //nolint:gosec // G115: a page's bloom filter is a few KB, so len*8 fits uint32.
 	h1, h2 := bloomHashes(key)
-	for i := uint32(0); i < bloomHashCount; i++ {
+	for i := range uint32(bloomHashCount) {
 		pos := (h1 + i*h2) % m
 		filter[pos/8] |= 1 << (pos % 8)
 	}
@@ -49,7 +46,7 @@ func bloomHas(filter []byte, key string) bool {
 	}
 	m := uint32(len(filter) * 8) //nolint:gosec // G115: a page's bloom filter is a few KB, so len*8 fits uint32.
 	h1, h2 := bloomHashes(key)
-	for i := uint32(0); i < bloomHashCount; i++ {
+	for i := range uint32(bloomHashCount) {
 		pos := (h1 + i*h2) % m
 		if filter[pos/8]&(1<<(pos%8)) == 0 {
 			return false

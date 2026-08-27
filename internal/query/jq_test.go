@@ -163,7 +163,7 @@ func TestJQEngineScanStrategyRecord(t *testing.T) {
 			require.NoError(t, err)
 
 			var rec map[string]any
-			for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+			for line := range strings.SplitSeq(strings.TrimRight(buf.String(), "\n"), "\n") {
 				var m map[string]any
 				require.NoError(t, json.Unmarshal([]byte(line), &m))
 				if m["msg"] == "scan strategy" {

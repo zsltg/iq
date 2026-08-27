@@ -15,6 +15,7 @@ package jqfmt
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -586,12 +587,7 @@ func objectNeedsBreak(o *gojq.Object) bool {
 
 // anyQueryBreaks reports whether any query in args needs breaking.
 func anyQueryBreaks(args []*gojq.Query) bool {
-	for _, a := range args {
-		if queryNeedsBreak(a) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(args, queryNeedsBreak)
 }
 
 // Stage is one top-level pipe stage of an explained filter: its pretty-printed

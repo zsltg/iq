@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -245,9 +246,7 @@ func readAll(ctx context.Context, cfg *config, t sourceSpec, onPage func(int)) (
 		if onPage != nil {
 			onPage(len(batch))
 		}
-		for k, v := range batch {
-			all[k] = v
-		}
+		maps.Copy(all, batch)
 		return nil
 	})
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"testing"
 
@@ -31,9 +32,7 @@ func scanPages(t *testing.T, scan func(func(map[string]any) error) error) (sizes
 	require.NoError(t, scan(func(batch map[string]any) error {
 		require.NotEmpty(t, batch, "a page handed to the caller is never empty")
 		sizes = append(sizes, len(batch))
-		for k, v := range batch {
-			seen[k] = v
-		}
+		maps.Copy(seen, batch)
 		return nil
 	}))
 	for k := range seen {

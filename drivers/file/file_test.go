@@ -363,7 +363,7 @@ func TestPagingRDB(t *testing.T) {
 	enc := encoder.NewEncoder(&buf)
 	require.NoError(t, enc.WriteHeader())
 	require.NoError(t, enc.WriteDBHeader(0, bigCount, 0))
-	for i := 0; i < bigCount; i++ {
+	for i := range bigCount {
 		require.NoError(t, enc.WriteStringObject(fmt.Sprintf("k%d", i), []byte("v")))
 	}
 	require.NoError(t, enc.WriteEnd())
@@ -374,7 +374,7 @@ func TestPagingRDB(t *testing.T) {
 
 func TestPagingBSON(t *testing.T) {
 	var data []byte
-	for i := 0; i < bigCount; i++ {
+	for i := range bigCount {
 		data = append(data, mustBSON(t, bson.M{"_id": fmt.Sprintf("k%d", i)})...)
 	}
 	st, err := Open(writeDump(t, "big.bson", data, ""), numfmt.DecimalAuto, CacheConfig{})
@@ -384,7 +384,7 @@ func TestPagingBSON(t *testing.T) {
 
 func TestPagingExtJSON(t *testing.T) {
 	var b strings.Builder
-	for i := 0; i < bigCount; i++ {
+	for i := range bigCount {
 		fmt.Fprintf(&b, "{\"_id\":\"k%d\",\"i\":%d}\n", i, i)
 	}
 	st, err := Open(writeDump(t, "big.json", []byte(b.String()), "format=mongoexport"), numfmt.DecimalAuto, CacheConfig{})
@@ -399,7 +399,7 @@ func TestPagingExactMultipleRDB(t *testing.T) {
 	enc := encoder.NewEncoder(&buf)
 	require.NoError(t, enc.WriteHeader())
 	require.NoError(t, enc.WriteDBHeader(0, pageSize, 0))
-	for i := 0; i < pageSize; i++ {
+	for i := range pageSize {
 		require.NoError(t, enc.WriteStringObject(fmt.Sprintf("k%d", i), []byte("v")))
 	}
 	require.NoError(t, enc.WriteEnd())
@@ -410,7 +410,7 @@ func TestPagingExactMultipleRDB(t *testing.T) {
 
 func TestPagingExactMultipleBSON(t *testing.T) {
 	var data []byte
-	for i := 0; i < pageSize; i++ {
+	for i := range pageSize {
 		data = append(data, mustBSON(t, bson.M{"_id": fmt.Sprintf("k%d", i)})...)
 	}
 	st, err := Open(writeDump(t, "exact.bson", data, ""), numfmt.DecimalAuto, CacheConfig{})

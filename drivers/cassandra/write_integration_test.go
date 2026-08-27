@@ -2,6 +2,7 @@ package cassandra
 
 import (
 	"context"
+	"maps"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -119,9 +120,7 @@ func TestClearAndDropIntegration(t *testing.T) {
 	require.NoError(t, st.Clear(context.Background()))
 	got := map[string]any{}
 	require.NoError(t, st.ScanBatches(context.Background(), func(batch map[string]any) error {
-		for k, v := range batch {
-			got[k] = v
-		}
+		maps.Copy(got, batch)
 		return nil
 	}))
 	require.Empty(t, got, "clear must empty the table")

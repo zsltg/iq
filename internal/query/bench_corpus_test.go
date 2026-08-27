@@ -226,10 +226,7 @@ func corpusRecords(docs []map[string]any) []Record {
 func corpusPages(docs []map[string]any, pageSize int) []map[string]any {
 	var pages []map[string]any
 	for i := 0; i < len(docs); i += pageSize {
-		end := i + pageSize
-		if end > len(docs) {
-			end = len(docs)
-		}
+		end := min(i+pageSize, len(docs))
 		page := make(map[string]any, end-i)
 		for j := i; j < end; j++ {
 			page[fmt.Sprintf("k%d", j)] = docs[j]

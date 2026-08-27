@@ -30,7 +30,7 @@ var cborEnc = mustEncMode(cbor.EncOptions{})
 // wrote, returning their bytes unchanged rather than erroring. Integers still
 // arrive as uint64/int64 — narrowInts converts them to int after decode.
 var cborDec = mustDecMode(cbor.DecOptions{
-	DefaultMapType: reflect.TypeOf(map[string]any(nil)),
+	DefaultMapType: reflect.TypeFor[map[string]any](),
 	UTF8:           cbor.UTF8DecodeInvalid,
 })
 

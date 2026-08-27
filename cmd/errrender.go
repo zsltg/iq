@@ -153,7 +153,7 @@ func causeChain(err error) []string {
 	frames := make([]string, 0, len(msgs))
 	for i, msg := range msgs {
 		if i+1 < len(msgs) {
-			if trimmed := strings.TrimSuffix(msg, msgs[i+1]); trimmed != msg {
+			if trimmed, ok := strings.CutSuffix(msg, msgs[i+1]); ok {
 				msg = strings.TrimRight(trimmed, ": ")
 			}
 		}

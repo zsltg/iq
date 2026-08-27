@@ -116,7 +116,7 @@ func parseTypeMap(s string) (typeMap, error) {
 	if s == "" {
 		return out, nil
 	}
-	for _, entry := range strings.Split(s, ",") {
+	for entry := range strings.SplitSeq(s, ",") {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
 			continue

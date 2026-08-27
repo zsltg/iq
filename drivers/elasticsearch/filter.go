@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/zsltg/iq/internal/predicate"
@@ -227,12 +228,7 @@ func referencesInjectedID(n predicate.Node) bool {
 // anyReferencesInjectedID reports whether any child of a composite references the
 // injected _id field.
 func anyReferencesInjectedID(children []predicate.Node) bool {
-	for _, c := range children {
-		if referencesInjectedID(c) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(children, referencesInjectedID)
 }
 
 // rootedAtID reports whether a field path's first segment is the injected _id field.

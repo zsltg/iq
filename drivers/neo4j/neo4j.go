@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"regexp"
 	"strings"
@@ -352,9 +353,7 @@ func (s *Store) pagedScan(ctx context.Context, where string, filterParams map[st
 		params["key"] = s.target.key
 		keyExpr = "CASE WHEN " + v + "[$key] IS NULL THEN elementId(" + v + ") ELSE toString(" + v + "[$key]) END"
 	}
-	for k, val := range filterParams {
-		params[k] = val
-	}
+	maps.Copy(params, filterParams)
 	cond := "elementId(" + v + ") > $after"
 	if where != "" {
 		cond += " AND (" + where + ")"

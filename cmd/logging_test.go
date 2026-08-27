@@ -309,7 +309,7 @@ func TestBuildVerboseOnly(t *testing.T) {
 // nonEmptyLines counts the non-blank lines in s, one per rendered log record.
 func nonEmptyLines(s string) int {
 	n := 0
-	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(s), "\n") {
 		if strings.TrimSpace(line) != "" {
 			n++
 		}

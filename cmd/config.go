@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -32,12 +33,7 @@ var persistableOptions = []string{
 
 // isPersistableOption reports whether key names a storable option.
 func isPersistableOption(key string) bool {
-	for _, k := range persistableOptions {
-		if k == key {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(persistableOptions, key)
 }
 
 // applyStoredOptions merges stored option defaults into cmd's flags before the

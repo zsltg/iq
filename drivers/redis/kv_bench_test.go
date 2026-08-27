@@ -2,6 +2,7 @@ package redis
 
 import (
 	"encoding/json"
+	"maps"
 	"math/rand"
 	"testing"
 
@@ -41,9 +42,7 @@ func buildDecodeCorpus() []benchShape {
 		"created": "2026-07-01T00:00:00Z", "balance": rng.Int63n(1_000_000_000),
 	}
 	nested := map[string]any{}
-	for k, v := range flat {
-		nested[k] = v
-	}
+	maps.Copy(nested, flat)
 	nested["profile"] = map[string]any{
 		"bio": randStr(rng, 40), "location": randStr(rng, 16),
 		"website":  "https://" + randStr(rng, 10) + ".example.com",
@@ -52,9 +51,7 @@ func buildDecodeCorpus() []benchShape {
 	nested["metrics"] = map[string]any{"visits": rng.Intn(100_000), "purchases": rng.Intn(500), "revenue": rng.Float64() * 10_000, "rating": rng.Float64() * 5}
 
 	array := map[string]any{}
-	for k, v := range nested {
-		array[k] = v
-	}
+	maps.Copy(array, nested)
 	events := make([]any, 80)
 	for i := range events {
 		events[i] = map[string]any{"ts": "2026-01-01T00:00:00Z", "kind": randStr(rng, 10), "amount": rng.Float64() * 1000, "count": rng.Intn(1000), "note": randStr(rng, 24)}

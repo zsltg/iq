@@ -36,12 +36,12 @@ func TestBloomBinaryKeys(t *testing.T) {
 // target) makes the test deterministic rather than flaky.
 func TestBloomFalsePositiveRate(t *testing.T) {
 	f := newBloom(pageSize)
-	for i := 0; i < pageSize; i++ {
+	for i := range pageSize {
 		bloomAdd(f, fmt.Sprintf("present:%d", i))
 	}
 	const trials = 5000
 	fp := 0
-	for i := 0; i < trials; i++ {
+	for i := range trials {
 		if bloomHas(f, fmt.Sprintf("absent:%d", i)) {
 			fp++
 		}

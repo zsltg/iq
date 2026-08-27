@@ -3,6 +3,7 @@ package couchdb
 import (
 	"bytes"
 	"context"
+	"maps"
 	"sort"
 	"testing"
 
@@ -27,9 +28,7 @@ func collect(t *testing.T, scan func(func(map[string]any) error) error) map[stri
 	t.Helper()
 	out := map[string]any{}
 	require.NoError(t, scan(func(batch map[string]any) error {
-		for k, v := range batch {
-			out[k] = v
-		}
+		maps.Copy(out, batch)
 		return nil
 	}))
 	return out

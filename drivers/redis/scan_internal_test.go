@@ -37,7 +37,7 @@ func TestScanBatchesBoundsPageSize(t *testing.T) {
 
 	require.NoError(t, store.client.FlushDB(ctx).Err())
 	const n = 5
-	for i := 0; i < n; i++ {
+	for i := range n {
 		require.NoError(t, store.client.Set(ctx, fmt.Sprintf("iq:test:page:%d", i), "v", 0).Err())
 	}
 	store.pageSize = 2

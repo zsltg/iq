@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -278,10 +279,5 @@ func labelsToAny(labels []string) []any {
 
 // contains reports whether name is one of labels.
 func contains(labels []string, name string) bool {
-	for _, l := range labels {
-		if l == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(labels, name)
 }

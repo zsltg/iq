@@ -3,6 +3,7 @@ package dynamodb
 import (
 	"bytes"
 	"context"
+	"maps"
 	"strconv"
 	"testing"
 	"time"
@@ -57,9 +58,7 @@ func TestScanBatches(t *testing.T) {
 	st := seedBooks(t)
 	all := map[string]any{}
 	err := st.ScanBatches(context.Background(), func(batch map[string]any) error {
-		for k, v := range batch {
-			all[k] = v
-		}
+		maps.Copy(all, batch)
 		return nil
 	})
 	require.NoError(t, err)
@@ -72,9 +71,7 @@ func TestScanFiltered(t *testing.T) {
 	pred := predicate.Eq{Path: []string{"year"}, Value: 2017.0}
 	got := map[string]any{}
 	err := st.ScanFiltered(context.Background(), pred, func(batch map[string]any) error {
-		for k, v := range batch {
-			got[k] = v
-		}
+		maps.Copy(got, batch)
 		return nil
 	})
 	require.NoError(t, err)
@@ -88,9 +85,7 @@ func TestScanFilteredUnpushableFallsBackToFullScan(t *testing.T) {
 	pred := predicate.Cmp{Path: []string{"year"}, Op: predicate.Gt, Value: 2000.0}
 	got := map[string]any{}
 	err := st.ScanFiltered(context.Background(), pred, func(batch map[string]any) error {
-		for k, v := range batch {
-			got[k] = v
-		}
+		maps.Copy(got, batch)
 		return nil
 	})
 	require.NoError(t, err)

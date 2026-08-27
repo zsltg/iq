@@ -3,6 +3,7 @@ package redis_test
 import (
 	"context"
 	"errors"
+	"maps"
 	"math"
 	"math/big"
 	"regexp"
@@ -64,9 +65,7 @@ func collect(t *testing.T, scan func(context.Context, func(map[string]any) error
 	out := map[string]any{}
 	err := scan(context.Background(), func(batch map[string]any) error {
 		require.NotEmpty(t, batch, "a scan never yields an empty batch")
-		for k, v := range batch {
-			out[k] = v
-		}
+		maps.Copy(out, batch)
 		return nil
 	})
 	require.NoError(t, err)

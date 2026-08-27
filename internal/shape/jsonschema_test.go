@@ -24,7 +24,7 @@ func fieldSchema(vals []any) map[string]any {
 func vals(spec map[string]int) []any {
 	var out []any
 	for v, n := range spec {
-		for i := 0; i < n; i++ {
+		for range n {
 			out = append(out, v)
 		}
 	}
@@ -34,7 +34,7 @@ func vals(spec map[string]int) []any {
 // evenVals builds distinct string values, each repeated the same number of times.
 func evenVals(distinct, each int) []any {
 	spec := make(map[string]int, distinct)
-	for i := 0; i < distinct; i++ {
+	for i := range distinct {
 		spec["v"+strconv.Itoa(i)] = each
 	}
 	return vals(spec)
@@ -130,7 +130,7 @@ func TestJSONSchemaRoots(t *testing.T) {
 // required arrays, an enum, and a collapsed map together.
 func TestJSONSchemaDocumentGolden(t *testing.T) {
 	items := map[string]any{}
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		items[strconv.Itoa(i)] = map[string]any{
 			"status": []string{"active", "inactive"}[i%2],      // 16 instances, 2 distinct -> enum
 			"ref":    map[string]any{"u" + strconv.Itoa(i): 1}, // 16 unique keys -> map of integer
@@ -186,7 +186,7 @@ func TestJSONSchemaObjectRequired(t *testing.T) {
 // still surfaces as additionalProperties.enum with its full sorted value set.
 func TestJSONSchemaEnumInMap(t *testing.T) {
 	items := map[string]any{}
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		s := strconv.Itoa(i)
 		items[s] = map[string]any{"m": map[string]any{"u" + s: []string{"active", "inactive"}[i%2]}}
 	}

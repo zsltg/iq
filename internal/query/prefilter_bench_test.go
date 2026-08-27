@@ -22,10 +22,7 @@ func buildScanPages(docs []map[string]any, pageSize int) []scanPage {
 	raw := rawDocs(docs)
 	var pages []scanPage
 	for i := 0; i < len(raw); i += pageSize {
-		end := i + pageSize
-		if end > len(raw) {
-			end = len(raw)
-		}
+		end := min(i+pageSize, len(raw))
 		p := scanPage{keys: make([]string, 0, end-i), raw: make([][]byte, 0, end-i)}
 		for j := i; j < end; j++ {
 			p.keys = append(p.keys, fmt.Sprintf("k%d", j))

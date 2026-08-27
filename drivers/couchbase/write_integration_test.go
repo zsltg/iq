@@ -1,6 +1,7 @@
 package couchbase
 
 import (
+	"maps"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -62,9 +63,7 @@ func TestPutKeylessMintsID(t *testing.T) {
 
 	got := map[string]any{}
 	require.NoError(t, st.ScanBatches(ctx, func(batch map[string]any) error {
-		for k, v := range batch {
-			got[k] = v
-		}
+		maps.Copy(got, batch)
 		return nil
 	}))
 	require.Len(t, got, 1)

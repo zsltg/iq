@@ -39,7 +39,7 @@ func TestInferPlanScalarProjection(t *testing.T) {
 	// all ten, "opt" in half. "mix" sees an integer and a fractional number, so
 	// integer∪number collapses to double.
 	sample := make([]any, 0, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		row := map[string]any{
 			"req":  i,
 			"flt":  1.5,
@@ -138,7 +138,7 @@ func TestInferPlanIDKeyedMap(t *testing.T) {
 	// Eight object rows whose "cfg" object carries distinct keys each trip the
 	// id-keyed-map heuristic (mapMinInstances, mapMinKeys, mapMinDistinctRatio).
 	sample := make([]any, 0, 8)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		sample = append(sample, map[string]any{
 			"id": i,
 			"cfg": map[string]any{
@@ -186,7 +186,7 @@ func TestWriterSingleValueRoundTrip(t *testing.T) {
 // a non-timestamp past the sample fails naming that column.
 func TestWriterSingleValuePostSampleError(t *testing.T) {
 	pw := NewWriter(&bytes.Buffer{})
-	for i := 0; i < sampleBufferSize; i++ {
+	for range sampleBufferSize {
 		require.NoError(t, pw.Add("2021-01-02T03:04:05Z"))
 	}
 	err := pw.Add("not-a-timestamp")

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 
 	"github.com/itchyny/gojq"
 
@@ -374,9 +375,7 @@ func (e *JQEngine) runMaterialized(ctx context.Context, code *gojq.Code, onPage 
 		if onPage != nil {
 			onPage(len(batch))
 		}
-		for k, v := range batch {
-			root[k] = v
-		}
+		maps.Copy(root, batch)
 		return nil
 	})
 	if err != nil {

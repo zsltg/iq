@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"strings"
 	"testing"
@@ -80,7 +81,7 @@ func TestPrefilterParity(t *testing.T) {
 	// More records than a page, so both scans flush a full page at the boundary and a
 	// trailing partial page — the page partitioning must match exactly.
 	var multi strings.Builder
-	for i := 0; i < pageSize+50; i++ {
+	for i := range pageSize + 50 {
 		fmt.Fprintf(&multi, `{"key":"m%d","type":"document","value":{"n":%d}}`+"\n", i, i)
 	}
 
@@ -153,7 +154,7 @@ func TestPrefilterParityErrors(t *testing.T) {
 func TestPrefilterClasses(t *testing.T) {
 	// Ten records k0..k9, each value {"n":i,"s":<even->"apple", odd->"banana">}.
 	var lines []string
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		s := "banana"
 		if i%2 == 0 {
 			s = "apple"
@@ -226,7 +227,7 @@ func TestPrefilterClassesMultiPage(t *testing.T) {
 	const n = pageSize*2 + 5
 	var b strings.Builder
 	var wantKeys []string
-	for i := 0; i < n; i++ {
+	for i := range n {
 		fmt.Fprintf(&b, `{"key":"k%d","type":"document","value":{"n":%d}}`+"\n", i, i)
 		if i >= 100 { // Cmp keeps n >= 100 (Ge), drops the first 100.
 			wantKeys = append(wantKeys, fmt.Sprintf("k%d", i))
@@ -330,9 +331,7 @@ func oneRecord() string { return `{"key":"a","type":"string","value":"x"}` + "\n
 func flatten(pages []map[string]any) map[string]any {
 	out := map[string]any{}
 	for _, p := range pages {
-		for k, v := range p {
-			out[k] = v
-		}
+		maps.Copy(out, p)
 	}
 	return out
 }
@@ -442,7 +441,7 @@ func TestScanFilteredDecodeErrorWraps(t *testing.T) {
 // the intermediate emit's error keeps scanning and flushes a second page before failing.
 func TestScanFilteredPageEmitError(t *testing.T) {
 	var b strings.Builder
-	for i := 0; i < pageSize+10; i++ {
+	for i := range pageSize + 10 {
 		fmt.Fprintf(&b, `{"key":"k%d","type":"document","value":{"n":%d}}`+"\n", i, i)
 	}
 	st := jsonlStore(t, b.String(), CacheConfig{})
@@ -462,7 +461,7 @@ func TestScanFilteredPageEmitError(t *testing.T) {
 // instead of 0 loses that guard and emits a spurious empty page.
 func TestScanFilteredDropAllEmitsNoPage(t *testing.T) {
 	var lines []string
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		lines = append(lines, fmt.Sprintf(`{"key":"k%d","type":"document","value":{"n":%d}}`, i, i))
 	}
 	st := jsonlStore(t, strings.Join(lines, "\n")+"\n", CacheConfig{})

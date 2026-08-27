@@ -79,8 +79,8 @@ func buildBigRDB(t *testing.T, n int) []byte {
 	enc := encoder.NewEncoder(&buf)
 	require.NoError(t, enc.WriteHeader())
 	require.NoError(t, enc.WriteDBHeader(0, uint64(n), 0))
-	for i := 0; i < n; i++ {
-		require.NoError(t, enc.WriteStringObject(fmt.Sprintf("k%d", i), []byte(fmt.Sprintf("v%d", i))))
+	for i := range n {
+		require.NoError(t, enc.WriteStringObject(fmt.Sprintf("k%d", i), fmt.Appendf(nil, "v%d", i)))
 	}
 	require.NoError(t, enc.WriteEnd())
 	return buf.Bytes()
@@ -520,7 +520,7 @@ func TestListCacheMissingDir(t *testing.T) {
 // scan, so a streaming consumer sees the same batch shape.
 func TestCachePagesMatch(t *testing.T) {
 	var b strings.Builder
-	for i := 0; i < bigCount; i++ {
+	for i := range bigCount {
 		fmt.Fprintf(&b, "{\"_id\":\"k%d\",\"i\":%d}\n", i, i)
 	}
 	path := filepath.Join(t.TempDir(), "big.json")

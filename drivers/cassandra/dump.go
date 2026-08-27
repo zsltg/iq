@@ -28,7 +28,7 @@ func ParseColumnTypes(hint string) (map[string]gocql.Type, error) {
 	if strings.TrimSpace(hint) == "" {
 		return out, nil
 	}
-	for _, entry := range strings.Split(hint, ",") {
+	for entry := range strings.SplitSeq(hint, ",") {
 		col, typ, ok := strings.Cut(entry, "=")
 		if !ok {
 			return nil, fmt.Errorf("cassandra: malformed ?types= entry %q: want column=cqltype", entry)

@@ -3,6 +3,7 @@ package cassandra
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strconv"
 	"testing"
 
@@ -102,9 +103,7 @@ func TestScanFilteredReturnsMatching(t *testing.T) {
 
 	got := map[string]any{}
 	err := st.ScanFiltered(context.Background(), eqAuthor("Tolkien"), func(batch map[string]any) error {
-		for k, v := range batch {
-			got[k] = v
-		}
+		maps.Copy(got, batch)
 		return nil
 	})
 	require.NoError(t, err)

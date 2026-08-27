@@ -354,10 +354,10 @@ func TestKeyedOptThreadsSetArrays(t *testing.T) {
 func TestTreeArrayMemoryGuard(t *testing.T) {
 	seq := func(n, extra int) []any {
 		out := make([]any, 0, n+extra)
-		for i := 0; i < extra; i++ {
+		for i := range extra {
 			out = append(out, -1-i)
 		}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			out = append(out, i)
 		}
 		return out
@@ -400,7 +400,7 @@ func TestTreeDeterministicKeyOrder(t *testing.T) {
 	a := make(map[string]any, keys)
 	b := make(map[string]any, keys)
 	want := make([]string, 0, keys)
-	for i := 0; i < keys; i++ {
+	for i := range keys {
 		k := fmt.Sprintf("k%02d", i)
 		a[k], b[k] = 1, 2
 		want = append(want, k)
@@ -530,7 +530,7 @@ func lcsLenOracle(a, b []int) int {
 func enumerateArrays(symbols, maxLen int) [][]int {
 	out := [][]int{{}}
 	frontier := [][]int{{}}
-	for l := 0; l < maxLen; l++ {
+	for range maxLen {
 		var next [][]int
 		for _, prefix := range frontier {
 			for s := 1; s <= symbols; s++ {
@@ -590,7 +590,7 @@ func TestTreeSetArraysDeterministicOrder(t *testing.T) {
 	const members = 20
 	a := make([]any, 0, members)
 	want := make([]string, 0, members)
-	for i := 0; i < members; i++ {
+	for i := range members {
 		v := fmt.Sprintf("m%02d", i)
 		a = append(a, v)
 		want = append(want, `"`+v+`"`)
@@ -618,7 +618,7 @@ func TestTreeSetArraysDeterministicOrder(t *testing.T) {
 // a failure reproduces exactly.
 func TestTreeArrayAlignmentIsMinimalAtScale(t *testing.T) {
 	rng := rand.New(rand.NewSource(20260720)) //nolint:gosec // deterministic test input, not security
-	for c := 0; c < 4000; c++ {
+	for range 4000 {
 		ai := randomInts(rng, rng.Intn(13), 4)
 		bi := randomInts(rng, rng.Intn(13), 4)
 

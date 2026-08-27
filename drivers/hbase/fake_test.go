@@ -2,6 +2,7 @@ package hbase
 
 import (
 	"io"
+	"maps"
 	"sort"
 
 	"github.com/tsuna/gohbase/hrpc"
@@ -87,9 +88,7 @@ func (f *fakeClient) apply(key string, values map[string]map[string][]byte) {
 		if row[family] == nil {
 			row[family] = map[string][]byte{}
 		}
-		for q, v := range quals {
-			row[family][q] = v
-		}
+		maps.Copy(row[family], quals)
 	}
 }
 

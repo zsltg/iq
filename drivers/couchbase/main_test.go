@@ -220,7 +220,7 @@ func openIntegration(t *testing.T, collection string) *Store {
 func requireEventually(t *testing.T, ctx context.Context, fn func() error) {
 	t.Helper()
 	var last error
-	for i := 0; i < 120; i++ {
+	for range 120 {
 		if last = fn(); last == nil {
 			return
 		}

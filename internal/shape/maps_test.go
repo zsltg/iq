@@ -55,7 +55,7 @@ func mapTypeOf(items map[string]any, path string) []any {
 func TestInferMapsCorpus(t *testing.T) {
 	items := map[string]any{}
 	fixed := []string{"a", "b", "c", "d", "e", "f", "g", "h"} // 8 fixed fields, repeated every instance
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		rec := make(map[string]any, len(fixed))
 		for _, k := range fixed {
 			rec[k] = 1
@@ -90,7 +90,7 @@ func TestInferMapsThresholds(t *testing.T) {
 		// pass; only the object-instance count crosses the boundary.
 		eight := make([][]string, 8)
 		seven := make([][]string, 7)
-		for i := 0; i < 8; i++ {
+		for i := range 8 {
 			eight[i] = nKeysOffset(i, 8)
 			if i < 7 {
 				seven[i] = nKeysOffset(i, 8)
@@ -124,7 +124,7 @@ func TestInferMapsThresholds(t *testing.T) {
 		// Each item has one unique field name, so the root would look like a map;
 		// collapsing it would hide the whole collection, so it must stay an object.
 		items := map[string]any{}
-		for i := 0; i < 12; i++ {
+		for i := range 12 {
 			items[strconv.Itoa(i)] = map[string]any{"field" + strconv.Itoa(i): 1}
 		}
 		got := shape.Infer(items).Comparable()
@@ -147,7 +147,7 @@ func nKeysOffset(offset, n int) []string {
 // into a collapsed map value and collapse the inner id-keyed map too.
 func TestInferMapsNested(t *testing.T) {
 	items := map[string]any{}
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		s := strconv.Itoa(i)
 		items[s] = map[string]any{"f": map[string]any{
 			"outer" + s: map[string]any{"inner" + s: map[string]any{"leaf": 1}},
@@ -163,7 +163,7 @@ func TestInferMapsNested(t *testing.T) {
 // element: recursion must descend through elem and collapse the element.
 func TestInferMapsArrayElement(t *testing.T) {
 	elems := make([]any, 8)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		elems[i] = map[string]any{"u" + strconv.Itoa(i): map[string]any{"leaf": 1}}
 	}
 	got := shape.Infer(map[string]any{"1": map[string]any{"arr": elems}}).Comparable()
@@ -212,7 +212,7 @@ func TestInferMapsFormatMerge(t *testing.T) {
 	oneCarrier := func(v string) []string {
 		out := make([]string, 0, 41)
 		out = append(out, v)
-		for i := 0; i < 40; i++ {
+		for i := range 40 {
 			out = append(out, "plain"+strconv.Itoa(i))
 		}
 		return out

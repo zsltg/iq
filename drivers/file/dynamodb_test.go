@@ -79,7 +79,7 @@ func TestDynamoUnknownShape(t *testing.T) {
 
 func TestPagingDynamo(t *testing.T) {
 	var buf bytes.Buffer
-	for i := 0; i < bigCount; i++ {
+	for i := range bigCount {
 		fmt.Fprintf(&buf, `{"Item":{"pk":{"S":"k%d"}}}`+"\n", i)
 	}
 	u := writeDump(t, "big.json", buf.Bytes(), "format=dynamodb-json&keys=pk")
@@ -90,7 +90,7 @@ func TestPagingDynamo(t *testing.T) {
 
 func TestPagingExactMultipleDynamo(t *testing.T) {
 	var buf bytes.Buffer
-	for i := 0; i < pageSize; i++ {
+	for i := range pageSize {
 		fmt.Fprintf(&buf, `{"Item":{"pk":{"S":"k%d"}}}`+"\n", i)
 	}
 	u := writeDump(t, "exact.json", buf.Bytes(), "format=dynamodb-json&keys=pk")

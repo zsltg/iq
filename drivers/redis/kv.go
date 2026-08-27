@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -234,9 +235,7 @@ func (r streamReader) normalize() (any, bool, error) {
 	out := make([]any, len(msgs))
 	for i, m := range msgs {
 		fields := make(map[string]any, len(m.Values))
-		for k, v := range m.Values {
-			fields[k] = v
-		}
+		maps.Copy(fields, m.Values)
 		out[i] = map[string]any{"id": m.ID, "fields": fields}
 	}
 	// Unlike the other collections a stream survives losing every entry, so an

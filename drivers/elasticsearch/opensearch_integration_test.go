@@ -51,7 +51,7 @@ func TestOpenSearchScanPIT(t *testing.T) {
 func TestOpenSearchScanPITPaging(t *testing.T) {
 	// More than one page so the OpenSearch point-in-time + search_after loop iterates.
 	docs := make([]map[string]any, 0, 250)
-	for i := 0; i < 250; i++ {
+	for i := range 250 {
 		docs = append(docs, map[string]any{"_id": strconv.Itoa(i), "n": i})
 	}
 	st := seedIndexOn(t, requireOpenSearch(t), docs...)

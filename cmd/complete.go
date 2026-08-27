@@ -119,7 +119,7 @@ func completeCSV(fn cobra.CompletionFunc) cobra.CompletionFunc {
 		i := strings.LastIndex(toComplete, ",")
 		head, tail := toComplete[:i+1], toComplete[i+1:]
 		chosen := make(map[string]bool)
-		for _, s := range strings.Split(head, ",") {
+		for s := range strings.SplitSeq(head, ",") {
 			if s != "" {
 				chosen[s] = true
 			}

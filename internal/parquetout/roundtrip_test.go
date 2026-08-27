@@ -32,7 +32,7 @@ func rowGroups(t *testing.T, b []byte) int {
 func TestWriterFullRoundTrip(t *testing.T) {
 	const n = 8
 	vals := make([]any, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		row := map[string]any{
 			"i":  i,
 			"f":  float64(i) + 0.5,
@@ -80,7 +80,7 @@ func TestWriterFullRoundTrip(t *testing.T) {
 	optCol := colOf(t, rec, "opt").(*array.Int64)
 	narbCol := colOf(t, rec, "narb").(*array.Int64)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		require.Equalf(t, int64(i), iCol.Value(i), "i row %d", i)
 		require.InDeltaf(t, float64(i)+0.5, fCol.Value(i), 1e-9, "f row %d", i)
 		require.Equalf(t, i%2 == 0, bCol.Value(i), "b row %d", i)
@@ -165,9 +165,9 @@ func assertColumn(t *testing.T, s *arrow.Schema, name string, dt arrow.DataType,
 func TestWriterMapKeysSorted(t *testing.T) {
 	const rows, keysPerRow = 8, 10
 	vals := make([]any, 0, rows)
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		cfg := map[string]any{}
-		for j := 0; j < keysPerRow; j++ {
+		for j := range keysPerRow {
 			// Per-(key,row)-unique keys so the object is detected as an id-keyed map.
 			cfg[fmt.Sprintf("k%02d_%d", j, i)] = j
 		}
@@ -182,7 +182,7 @@ func TestWriterMapKeysSorted(t *testing.T) {
 
 	// Row 0's entries, keys in sorted (k00 < k01 < ... < k09) order.
 	parts := make([]string, keysPerRow)
-	for j := 0; j < keysPerRow; j++ {
+	for j := range keysPerRow {
 		parts[j] = fmt.Sprintf(`{"key":"k%02d_0","value":%d}`, j, j)
 	}
 	want := "[" + strings.Join(parts, ",") + "]"
@@ -208,7 +208,7 @@ func TestWriterCrossesPageBoundary(t *testing.T) {
 	for _, total := range []int{pageBatchSize + 1, 2 * pageBatchSize} {
 		t.Run(fmt.Sprintf("%d rows", total), func(t *testing.T) {
 			vals := make([]any, 0, total)
-			for i := 0; i < total; i++ {
+			for i := range total {
 				vals = append(vals, map[string]any{"n": i})
 			}
 			buf := writeParquet(t, vals)
@@ -218,7 +218,7 @@ func TestWriterCrossesPageBoundary(t *testing.T) {
 			require.Equal(t, int64(total), tbl.NumRows())
 			rec := oneRecord(t, tbl)
 			nCol := colOf(t, rec, "n").(*array.Int64)
-			for i := 0; i < total; i++ {
+			for i := range total {
 				require.Equalf(t, int64(i), nCol.Value(i), "row %d", i)
 			}
 		})

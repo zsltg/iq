@@ -23,15 +23,15 @@ type benchShape struct {
 func buildNumfmtCorpus() []benchShape {
 	rng := rand.New(rand.NewSource(0xBEEF)) //nolint:gosec // deterministic corpus, not security.
 	flat := map[string]any{}
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		flat[fmt.Sprintf("f%d", i)] = rng.Intn(1_000_000)
 	}
 	flat["ratio"] = rng.Float64()
 
 	nested := map[string]any{"top": rng.Int63()}
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		sub := map[string]any{}
-		for j := 0; j < 8; j++ {
+		for j := range 8 {
 			sub[fmt.Sprintf("n%d", j)] = rng.Float64() * 1000
 		}
 		nested[fmt.Sprintf("group%d", i)] = sub

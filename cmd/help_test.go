@@ -291,7 +291,7 @@ func allCommands(cmd *cobra.Command) []*cobra.Command {
 func exampleInvocations(example string) [][]string {
 	var out [][]string
 	var pending string
-	for _, line := range strings.Split(example, "\n") {
+	for line := range strings.SplitSeq(example, "\n") {
 		line = strings.TrimSpace(line)
 		switch {
 		case pending != "":

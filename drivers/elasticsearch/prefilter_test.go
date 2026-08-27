@@ -3,6 +3,7 @@ package elasticsearch
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"sort"
 	"testing"
@@ -323,9 +324,7 @@ func collectFrom(ctx context.Context, t *testing.T, scan func(context.Context, f
 	out := map[string]any{}
 	require.NoError(t, scan(ctx, func(batch map[string]any) error {
 		require.NotEmpty(t, batch, "a scan never yields an empty batch")
-		for k, v := range batch {
-			out[k] = v
-		}
+		maps.Copy(out, batch)
 		return nil
 	}))
 	return out

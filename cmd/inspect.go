@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 
@@ -242,13 +243,13 @@ func redisInfoSections(info string) []string {
 func parseRedisInfo(info string) map[string]map[string]string {
 	sections := make(map[string]map[string]string)
 	section := "default"
-	for _, line := range strings.Split(info, "\n") {
+	for line := range strings.SplitSeq(info, "\n") {
 		line = strings.TrimRight(line, "\r")
 		if line == "" {
 			continue
 		}
-		if strings.HasPrefix(line, "#") {
-			section = strings.TrimSpace(strings.TrimPrefix(line, "#"))
+		if after, ok := strings.CutPrefix(line, "#"); ok {
+			section = strings.TrimSpace(after)
 			continue
 		}
 		k, v, ok := strings.Cut(line, ":")
@@ -311,12 +312,7 @@ func mongoInspectDoc(sub, collection string) string {
 
 // isMongoInspectCmd reports whether sub is a supported diagnostic command.
 func isMongoInspectCmd(sub string) bool {
-	for _, c := range mongoInspectCmds {
-		if c == sub {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(mongoInspectCmds, sub)
 }
 
 // cassandraInspectCmds is the supported set of Cassandra system-table reads inspect
@@ -386,12 +382,7 @@ func cassandraInspectStmt(sub, keyspace, table string) (string, bool) {
 
 // isCassandraInspectCmd reports whether sub is a supported diagnostic read.
 func isCassandraInspectCmd(sub string) bool {
-	for _, c := range cassandraInspectCmds {
-		if c == sub {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(cassandraInspectCmds, sub)
 }
 
 // cqlString renders s as a single-quoted CQL string literal, doubling an embedded
@@ -578,12 +569,7 @@ func inspectCouch(ctx context.Context, out io.Writer, st store, cfg *config, sub
 
 // isCouchInspectCmd reports whether sub is a supported CouchDB inspect subcommand.
 func isCouchInspectCmd(sub string) bool {
-	for _, c := range couchInspectCmds {
-		if c == sub {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(couchInspectCmds, sub)
 }
 
 // couchbaseInspectCmds is the supported set of Couchbase introspection reads `inspect`
@@ -654,12 +640,7 @@ func inspectCouchbase(ctx context.Context, out io.Writer, st store, cfg *config,
 
 // isCouchbaseInspectCmd reports whether sub is a supported Couchbase inspect subcommand.
 func isCouchbaseInspectCmd(sub string) bool {
-	for _, c := range couchbaseInspectCmds {
-		if c == sub {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(couchbaseInspectCmds, sub)
 }
 
 // elasticInspectCmds is the supported set of Elasticsearch introspection reads
@@ -731,12 +712,7 @@ func inspectElastic(ctx context.Context, out io.Writer, st store, cfg *config, s
 
 // isElasticInspectCmd reports whether sub is a supported Elasticsearch inspect subcommand.
 func isElasticInspectCmd(sub string) bool {
-	for _, c := range elasticInspectCmds {
-		if c == sub {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(elasticInspectCmds, sub)
 }
 
 // neo4jInspectCmds is the supported set of Neo4j introspection reads `inspect` runs.
@@ -807,12 +783,7 @@ func inspectNeo4j(ctx context.Context, out io.Writer, st store, cfg *config, sub
 
 // isNeo4jInspectCmd reports whether sub is a supported Neo4j inspect subcommand.
 func isNeo4jInspectCmd(sub string) bool {
-	for _, c := range neo4jInspectCmds {
-		if c == sub {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(neo4jInspectCmds, sub)
 }
 
 // writeInspectList renders the names --list emits: a JSON or YAML array with

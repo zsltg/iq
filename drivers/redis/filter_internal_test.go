@@ -35,7 +35,7 @@ func TestScanFilteredSkipsFullyDroppedPage(t *testing.T) {
 
 	require.NoError(t, store.client.FlushDB(ctx).Err())
 	const n = 3
-	for i := 0; i < n; i++ {
+	for i := range n {
 		key := fmt.Sprintf("iq:test:drop:%d", i)
 		require.NoError(t, store.client.Do(ctx, "JSON.SET", key, "$", fmt.Sprintf(`{"a":%d}`, i)).Err())
 	}

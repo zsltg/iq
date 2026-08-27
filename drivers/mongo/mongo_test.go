@@ -2,6 +2,7 @@ package mongo
 
 import (
 	"context"
+	"maps"
 	"os"
 	"testing"
 	"time"
@@ -162,9 +163,7 @@ func TestScanBatchesYieldsAllDocs(t *testing.T) {
 	batches := 0
 	err := store.ScanBatches(context.Background(), func(batch map[string]any) error {
 		batches++
-		for k, v := range batch {
-			merged[k] = v
-		}
+		maps.Copy(merged, batch)
 		return nil
 	})
 	require.NoError(t, err)
@@ -231,9 +230,7 @@ func TestScanFilteredReturnsMatchingSubset(t *testing.T) {
 		context.Background(),
 		predicate.Eq{Path: []string{"author"}, Value: "Kleppmann"},
 		func(batch map[string]any) error {
-			for k, v := range batch {
-				merged[k] = v
-			}
+			maps.Copy(merged, batch)
 			return nil
 		},
 	)

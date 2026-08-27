@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"strings"
 	"time"
@@ -343,9 +344,7 @@ func (s *Store) scan(ctx context.Context, where string, params map[string]any, m
 	after := ""
 	for {
 		args := map[string]any{"after": after, "page": s.pageSize}
-		for k, v := range params {
-			args[k] = v
-		}
+		maps.Copy(args, params)
 		s.tracef("query %s", stmt)
 		rows, err := s.query(ctx, stmt, args)
 		if err != nil {

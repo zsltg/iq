@@ -208,7 +208,7 @@ func TestNeo4jFormatString(t *testing.T) {
 
 func TestPagingNeo4j(t *testing.T) {
 	var buf bytes.Buffer
-	for i := 0; i < bigCount; i++ {
+	for i := range bigCount {
 		fmt.Fprintf(&buf, `{"type":"node","id":"n%d","labels":["Person"],"properties":{}}`+"\n", i)
 	}
 	u := writeDump(t, "big.json", buf.Bytes(), "format=neo4j&label=Person")

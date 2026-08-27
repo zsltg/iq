@@ -207,7 +207,7 @@ func TestDriverLsVerboseJSON(t *testing.T) {
 // lineWith returns the single output line containing sub, failing the test if none does.
 func lineWith(t *testing.T, out, sub string) string {
 	t.Helper()
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		if strings.Contains(ln, sub) {
 			return ln
 		}

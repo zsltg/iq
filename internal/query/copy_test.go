@@ -143,10 +143,7 @@ func (p *capturePutter) Put(_ context.Context, batch []query.Record, mode query.
 func recordsSource(recs []query.Record, size int) query.RecordSource {
 	return func(_ context.Context, fn func([]query.Record) error) error {
 		for i := 0; i < len(recs); i += size {
-			end := i + size
-			if end > len(recs) {
-				end = len(recs)
-			}
+			end := min(i+size, len(recs))
 			if err := fn(recs[i:end]); err != nil {
 				return err
 			}
