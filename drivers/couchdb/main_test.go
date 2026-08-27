@@ -45,16 +45,14 @@ func runTests(m *testing.M) int {
 	if base == "" {
 		ctx := context.Background()
 		container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-			ContainerRequest: testcontainers.ContainerRequest{
-				Image:        couchImage,
-				ExposedPorts: []string{"5984/tcp"},
-				Env: map[string]string{
-					"COUCHDB_USER":     couchUser,
-					"COUCHDB_PASSWORD": couchPassword,
-				},
-				WaitingFor: wait.ForHTTP("/_up").WithPort("5984/tcp").WithStartupTimeout(60 * time.Second),
+			Image:        couchImage,
+			ExposedPorts: []string{"5984/tcp"},
+			Env: map[string]string{
+				"COUCHDB_USER":     couchUser,
+				"COUCHDB_PASSWORD": couchPassword,
 			},
-			Started: true,
+			WaitingFor: wait.ForHTTP("/_up").WithPort("5984/tcp").WithStartupTimeout(60 * time.Second),
+			Started:    true,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "start couchdb container: %v\n", err)

@@ -86,14 +86,12 @@ func runTests(m *testing.M) int {
 func startContainer(image, scheme string, env map[string]string) (string, func(), error) {
 	ctx := context.Background()
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        image,
-			ExposedPorts: []string{"9200/tcp"},
-			Env:          env,
-			WaitingFor: wait.ForHTTP("/_cluster/health").
-				WithPort("9200/tcp").
-				WithStartupTimeout(180 * time.Second),
-		},
+		Image:        image,
+		ExposedPorts: []string{"9200/tcp"},
+		Env:          env,
+		WaitingFor: wait.ForHTTP("/_cluster/health").
+			WithPort("9200/tcp").
+			WithStartupTimeout(180 * time.Second),
 		Started: true,
 	})
 	if err != nil {

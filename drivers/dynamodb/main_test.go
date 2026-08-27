@@ -47,12 +47,10 @@ func runTests(m *testing.M) int {
 	if base == "" {
 		ctx := context.Background()
 		container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-			ContainerRequest: testcontainers.ContainerRequest{
-				Image:        dynamoImage,
-				ExposedPorts: []string{"8000/tcp"},
-				WaitingFor:   wait.ForListeningPort("8000/tcp"),
-			},
-			Started: true,
+			Image:        dynamoImage,
+			ExposedPorts: []string{"8000/tcp"},
+			WaitingFor:   wait.ForListeningPort("8000/tcp"),
+			Started:      true,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "start dynamodb-local container: %v\n", err)

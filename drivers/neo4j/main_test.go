@@ -39,13 +39,11 @@ func runTests(m *testing.M) int {
 	if base == "" {
 		ctx := context.Background()
 		container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-			ContainerRequest: testcontainers.ContainerRequest{
-				Image:        neo4jImage,
-				ExposedPorts: []string{"7687/tcp", "7474/tcp"},
-				Env:          map[string]string{"NEO4J_AUTH": neo4jUser + "/" + neo4jPassword},
-				WaitingFor:   wait.ForHTTP("/").WithPort("7474/tcp").WithStartupTimeout(180 * time.Second),
-			},
-			Started: true,
+			Image:        neo4jImage,
+			ExposedPorts: []string{"7687/tcp", "7474/tcp"},
+			Env:          map[string]string{"NEO4J_AUTH": neo4jUser + "/" + neo4jPassword},
+			WaitingFor:   wait.ForHTTP("/").WithPort("7474/tcp").WithStartupTimeout(180 * time.Second),
+			Started:      true,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "start neo4j container: %v\n", err)

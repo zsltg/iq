@@ -106,7 +106,7 @@ func TestSourceSpecRunConfigPropagates(t *testing.T) {
 		noCache:      true,
 		noCacheIndex: true,
 	}
-	spec := sourceSpec{endpoint: endpoint{url: "redis://h:6379", address: "orders"}}
+	spec := sourceSpec{url: "redis://h:6379", address: "orders"}
 
 	got := spec.runConfig(cfg)
 

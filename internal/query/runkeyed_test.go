@@ -223,10 +223,10 @@ func TestRunKeyedForwardsCtx(t *testing.T) {
 	})
 
 	t.Run("pushed scan route reaches ScanFiltered", func(t *testing.T) {
-		store := &filterKV{fakeKV: fakeKV{
+		store := &filterKV{
 			scanKeys: []string{"a"},
 			values:   map[string]any{"a": map[string]any{"n": 1}},
-		}}
+		}
 
 		err := query.NewJQEngine(store).RunKeyed(ctx, `.[] | select(.n == 1)`,
 			query.RunOptions{Compile: true}, func(string, any) error { return nil })
@@ -248,10 +248,10 @@ func TestRunKeyedRejectsEmptyExpression(t *testing.T) {
 // the store: filtering inside a keyed read is meant to read less, not merely
 // report less.
 func TestRunKeyedPushesPredicate(t *testing.T) {
-	store := &filterKV{fakeKV: fakeKV{
+	store := &filterKV{
 		values:   map[string]any{"a": map[string]any{"n": 1}, "b": map[string]any{"n": 2}},
 		scanKeys: []string{"a", "b"},
-	}}
+	}
 
 	got, err := collectKeyed(t, store, `.[] | select(.n == 1)`, query.RunOptions{Compile: true})
 

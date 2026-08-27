@@ -1,6 +1,6 @@
 module github.com/zsltg/iq
 
-go 1.26.5
+go 1.27.0
 
 require (
 	github.com/apache/arrow-go/v18 v18.6.0

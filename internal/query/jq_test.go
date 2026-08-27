@@ -124,7 +124,7 @@ func TestJQEngineScanStrategyRecord(t *testing.T) {
 	}{
 		{
 			name:       "pushed to a filtered scanner",
-			store:      &filterKV{fakeKV: fakeKV{scanKeys: []string{"1"}, values: map[string]any{"1": map[string]any{"author": "K"}}}},
+			store:      &filterKV{scanKeys: []string{"1"}, values: map[string]any{"1": map[string]any{"author": "K"}}},
 			src:        pushable,
 			compile:    true,
 			wantPushed: true,
@@ -132,7 +132,7 @@ func TestJQEngineScanStrategyRecord(t *testing.T) {
 		},
 		{
 			name:       "pushdown disabled",
-			store:      &filterKV{fakeKV: fakeKV{scanKeys: []string{"1"}, values: map[string]any{"1": map[string]any{"author": "K"}}}},
+			store:      &filterKV{scanKeys: []string{"1"}, values: map[string]any{"1": map[string]any{"author": "K"}}},
 			src:        pushable,
 			compile:    false,
 			wantPushed: false,
@@ -148,7 +148,7 @@ func TestJQEngineScanStrategyRecord(t *testing.T) {
 		},
 		{
 			name:       "no pushable predicate",
-			store:      &filterKV{fakeKV: fakeKV{scanKeys: []string{"1"}, values: map[string]any{"1": map[string]any{"year": 2018}}}},
+			store:      &filterKV{scanKeys: []string{"1"}, values: map[string]any{"1": map[string]any{"year": 2018}}},
 			src:        ".[]",
 			compile:    true,
 			wantPushed: false,
@@ -191,10 +191,10 @@ type ctxMarker struct{}
 // TestJQEnginePushedScanForwardsCtx pins that the pushed-scan closure hands the
 // caller's context (not a substituted nil) through to ScanFiltered.
 func TestJQEnginePushedScanForwardsCtx(t *testing.T) {
-	store := &filterKV{fakeKV: fakeKV{
+	store := &filterKV{
 		scanKeys: []string{"1"},
 		values:   map[string]any{"1": map[string]any{"author": "K"}},
-	}}
+	}
 	ctx := context.WithValue(context.Background(), ctxMarker{}, "marker")
 
 	err := query.NewJQEngine(store).Run(ctx, `.[] | select(.author == "K")`,
@@ -300,13 +300,13 @@ func TestJQEngineStreamableMaterializesWithFlag(t *testing.T) {
 }
 
 func TestJQEngineCompilePushesPredicate(t *testing.T) {
-	store := &filterKV{fakeKV: fakeKV{
+	store := &filterKV{
 		scanKeys: []string{"1", "2"},
 		values: map[string]any{
 			"1": map[string]any{"author": "K", "title": "A"},
 			"2": map[string]any{"author": "K", "title": "B"},
 		},
-	}}
+	}
 
 	got, err := collectOpts(t, store, `.[] | select(.author == "K") | .title`, query.RunOptions{Compile: true})
 
@@ -318,10 +318,10 @@ func TestJQEngineCompilePushesPredicate(t *testing.T) {
 }
 
 func TestJQEngineCompileFallsBackWhenNotPushable(t *testing.T) {
-	store := &filterKV{fakeKV: fakeKV{
+	store := &filterKV{
 		scanKeys: []string{"1"},
 		values:   map[string]any{"1": map[string]any{"year": 2018}},
-	}}
+	}
 
 	// A filter with no select has nothing to push, so the engine full-scans.
 	got, err := collectOpts(t, store, ".[]", query.RunOptions{Compile: true})

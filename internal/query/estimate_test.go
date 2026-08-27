@@ -57,10 +57,8 @@ func TestJQEngineEstimateReportsTotal(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &estimatorKV{
-				fakeKV: fakeKV{
-					scanKeys: []string{"a", "b"},
-					values:   map[string]any{"a": 1, "b": 2},
-				},
+				scanKeys: []string{"a", "b"},
+				values:   map[string]any{"a": 1, "b": 2},
 				estimate: 42,
 			}
 			var got []int64
@@ -83,10 +81,8 @@ func TestJQEngineEstimateReportsTotal(t *testing.T) {
 // the store actually walks.
 func TestJQEngineEstimateSkippedForPushedScan(t *testing.T) {
 	store := &filterEstimatorKV{
-		filterKV: filterKV{fakeKV: fakeKV{
-			scanKeys: []string{"1"},
-			values:   map[string]any{"1": map[string]any{"author": "K"}},
-		}},
+		scanKeys: []string{"1"},
+		values:   map[string]any{"1": map[string]any{"author": "K"}},
 		estimate: 99,
 	}
 	var got []int64
@@ -117,7 +113,7 @@ func TestJQEngineEstimateBestEffort(t *testing.T) {
 
 	t.Run("nil callback never touches the store", func(t *testing.T) {
 		store := &estimatorKV{
-			fakeKV:   fakeKV{scanKeys: []string{"a"}, values: map[string]any{"a": 1}},
+			scanKeys: []string{"a"}, values: map[string]any{"a": 1},
 			estimate: 7,
 		}
 
@@ -129,7 +125,7 @@ func TestJQEngineEstimateBestEffort(t *testing.T) {
 
 	t.Run("estimate error is swallowed and the scan still completes", func(t *testing.T) {
 		store := &estimatorKV{
-			fakeKV:      fakeKV{scanKeys: []string{"a", "b"}, values: map[string]any{"a": 1, "b": 2}},
+			scanKeys: []string{"a", "b"}, values: map[string]any{"a": 1, "b": 2},
 			estimateErr: errors.New("count failed"),
 		}
 		var got []int64

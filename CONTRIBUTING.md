@@ -2,10 +2,11 @@
 
 ## Requirements
 
-- Go 1.26.5+ (matches `go.mod`)
+- Go 1.27.0+ (matches `go.mod`)
 - Docker: integration tests and the local stack; not needed for `go test -short`
 - [gofumpt](https://github.com/mvdan/gofumpt), [goimports](https://pkg.go.dev/golang.org/x/tools/cmd/goimports),
-  and [golangci-lint](https://golangci-lint.run) on `PATH`: `make check` runs them,
+  and [golangci-lint](https://golangci-lint.run) v2.13+ (earlier releases bundle a
+  staticcheck that panics on Go 1.27 syntax) on `PATH`: `make check` runs them,
   and `make tools-dev` does not install them
 - [uv](https://docs.astral.sh/uv/): docs site only; not needed to build or use `iq`
 

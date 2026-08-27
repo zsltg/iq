@@ -48,8 +48,8 @@ func TestReportRenderHuman(t *testing.T) {
 		dataRun:   true,
 		schemaRun: true,
 	}
-	left := sourceSpec{endpoint: endpoint{handle: "a", driver: "redis"}}
-	right := sourceSpec{endpoint: endpoint{handle: "b", driver: "redis"}}
+	left := sourceSpec{handle: "a", driver: "redis"}
+	right := sourceSpec{handle: "b", driver: "redis"}
 	var buf bytes.Buffer
 	require.NoError(t, rep.render(&buf, left, right, false, false))
 	out := buf.String()
@@ -95,8 +95,8 @@ func TestReportRenderColoredStripsToPlain(t *testing.T) {
 	t.Cleanup(func() { color.NoColor = orig })
 
 	rep := coloredDiffReport()
-	left := sourceSpec{endpoint: endpoint{handle: "a", driver: "redis"}}
-	right := sourceSpec{endpoint: endpoint{handle: "b", driver: "redis"}}
+	left := sourceSpec{handle: "a", driver: "redis"}
+	right := sourceSpec{handle: "b", driver: "redis"}
 
 	color.NoColor = true
 	var plainBuf bytes.Buffer
@@ -123,7 +123,7 @@ func TestReportRenderColoredRoles(t *testing.T) {
 
 	rep := coloredDiffReport()
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, sourceSpec{endpoint: endpoint{handle: "a"}}, sourceSpec{endpoint: endpoint{handle: "b"}}, false, false))
+	require.NoError(t, rep.render(&buf, sourceSpec{handle: "a"}, sourceSpec{handle: "b"}, false, false))
 	got := buf.String()
 
 	// Raw SGR codes for each role.
@@ -148,7 +148,7 @@ func TestReportRenderColoredRoles(t *testing.T) {
 func TestReportRenderNoDifferences(t *testing.T) {
 	rep := report{Data: []diff.ItemDelta{}, dataRun: true}
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, sourceSpec{endpoint: endpoint{handle: "a"}}, sourceSpec{endpoint: endpoint{handle: "b"}}, false, false))
+	require.NoError(t, rep.render(&buf, sourceSpec{handle: "a"}, sourceSpec{handle: "b"}, false, false))
 	require.Contains(t, buf.String(), "no differences")
 }
 
@@ -158,7 +158,7 @@ func TestReportRenderJSON(t *testing.T) {
 		dataRun: true,
 	}
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, sourceSpec{endpoint: endpoint{handle: "a"}}, sourceSpec{endpoint: endpoint{handle: "b"}}, true, false))
+	require.NoError(t, rep.render(&buf, sourceSpec{handle: "a"}, sourceSpec{handle: "b"}, true, false))
 
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
@@ -188,8 +188,8 @@ func TestResolveDiffTargetUnknown(t *testing.T) {
 func TestDiffStatsRejectsCrossDriver(t *testing.T) {
 	// The scheme check happens before any store is opened, so no connection is made.
 	_, err := diffStats(context.Background(),
-		sourceSpec{endpoint: endpoint{handle: "a", driver: "redis"}},
-		sourceSpec{endpoint: endpoint{handle: "b", driver: "mongo"}}, nil, diff.Options{})
+		sourceSpec{handle: "a", driver: "redis"},
+		sourceSpec{handle: "b", driver: "mongo"}, nil, diff.Options{})
 	require.ErrorContains(t, err, "same driver")
 }
 
@@ -537,7 +537,7 @@ func TestReadAllFilteredRedisIntegration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			spec := sourceSpec{endpoint: endpoint{handle: "a", url: u}, filter: tt.filter}
+			spec := sourceSpec{handle: "a", url: u, filter: tt.filter}
 
 			got, err := readAll(ctx, &config{}, spec, nil)
 
@@ -562,7 +562,7 @@ func TestReadAllFilteredReportsPagesRedisIntegration(t *testing.T) {
 	seedRedis(t, u, kv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	spec := sourceSpec{endpoint: endpoint{handle: "a", url: u}, filter: `.[] | select(. == "keep")`}
+	spec := sourceSpec{handle: "a", url: u, filter: `.[] | select(. == "keep")`}
 	var pages []int
 
 	got, err := readAll(ctx, &config{}, spec, func(n int) { pages = append(pages, n) })
@@ -590,7 +590,7 @@ func TestReadAllRejectsUnkeyedFilterRedisIntegration(t *testing.T) {
 	seedRedis(t, u, map[string]string{"k1": "v1"})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	spec := sourceSpec{endpoint: endpoint{handle: "a", url: u}, filter: "keys"}
+	spec := sourceSpec{handle: "a", url: u, filter: "keys"}
 
 	_, err = readAll(ctx, &config{}, spec, nil)
 
@@ -611,7 +611,7 @@ func TestReadAllReportsPagesRedisIntegration(t *testing.T) {
 	require.NoError(t, err)
 	kv := map[string]string{"k1": "v1", "k2": "v2", "k3": "v3"}
 	seedRedis(t, u, kv)
-	tgt := sourceSpec{endpoint: endpoint{handle: "a", url: u}}
+	tgt := sourceSpec{handle: "a", url: u}
 
 	tests := []struct {
 		name    string

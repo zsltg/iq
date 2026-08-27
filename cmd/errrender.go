@@ -118,8 +118,7 @@ func renderErrorJSON(w io.Writer, err error) {
 	for _, frame := range stackFrames(err) {
 		body.Causes = append(body.Causes, redactMessage(frame))
 	}
-	var se *filterSyntaxError
-	if errors.As(err, &se) {
+	if se, ok := errors.AsType[*filterSyntaxError](err); ok {
 		off := se.offset
 		body.Offset = &off
 		body.Token = se.token

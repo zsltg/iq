@@ -453,8 +453,7 @@ func (s *Store) query(ctx context.Context, stmt string, params map[string]any) (
 // case (code 4000) to an actionable CREATE PRIMARY INDEX hint. A raw gocb error dump
 // is never surfaced to the user.
 func (s *Store) queryError(op string, err error) error {
-	var qerr *gocb.QueryError
-	if errors.As(err, &qerr) {
+	if qerr, ok := errors.AsType[*gocb.QueryError](err); ok {
 		for _, d := range qerr.Errors {
 			if d.Code == queryNoIndex {
 				return fmt.Errorf(
