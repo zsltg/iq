@@ -8,13 +8,13 @@ icon: lucide/package-open
 `jq`[^2] filters against
 NoSQL databases. The backend is chosen by the URI
 scheme[^4], and the query core is driver-agnostic, so further backends slot in
-behind the same port (see
+behind the same port[^port] (see
 [Drivers](drivers.md#drivers)).
 
 Normally, `jq` parses the whole top-level JSON value into memory before the
 filter runs. In the case of `iq`, the filter is both the *transform* and the
-*key selector*: the selector walks the parsed `jq` AST and, based on that,
-executes a *bounded read*, a *streaming scan* (with *pushdown*), or a
+*key selector*: the selector walks the parsed `jq` AST[^ast] and, based on that,
+executes a *bounded read*, a *streaming scan* (with *pushdown*[^pushdown]), or a
 *materialized scan* to optimize the query (see
 [How it works](how-it-works.md#how-it-works)).
 
@@ -174,7 +174,7 @@ candidates there (and never falls back to filenames), nor do `iq exec`'s
 backend verb and its operands.
 
 Every completion is offline, it reads your config file and nothing else, so a
-`<TAB>` never opens a connection, never reads the OS keyring, and cannot hang.
+`<TAB>` never opens a connection, never reads the OS keyring[^keyring], and cannot hang.
 That is why a collection suffix does not complete, `iq --src shop.<TAB>` offers
 nothing, since listing collections would mean connecting.
 
@@ -190,3 +190,7 @@ iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
 [^4]: RFC3986 proposes a generic URI syntax and a process for resolving URI references that might be in relative form, along with guidelines and security considerations for the use of URIs on the Internet. https://datatracker.ietf.org/doc/html/rfc3986
 [^5]: Cgo enables the creation of Go packages that call C code. https://pkg.go.dev/cmd/cgo
 [^6]: SHA-256 is a Secure Hash Algorithm with a message digest size of 256. https://nvlpubs.nist.gov/nistpubs/fips/nist.fips.180-4.pdf
+[^port]: A port in the ports-and-adapters (hexagonal) sense, the interface the query core defines and each backend driver implements as an adapter, so the core never depends on a specific database. https://alistair.cockburn.us/hexagonal-architecture/
+[^ast]: An abstract syntax tree is the tree a parser builds from a program's source, here the parsed `jq` filter the key selector inspects to decide how to read (see [How it works](how-it-works.md#read-strategies)). https://en.wikipedia.org/wiki/Abstract_syntax_tree
+[^pushdown]: Predicate pushdown hands part of the filter to the database so it returns only matching items instead of everything for client-side filtering, each driver's page lists what it can push (see [Drivers](drivers.md#drivers)). https://en.wikipedia.org/wiki/Predicate_pushdown
+[^keyring]: The operating system's credential store (macOS Keychain, Windows Credential Manager, the Secret Service on Linux), where `--store keyring` sources keep their secrets (see [Configuration](configuration.md#keyring-keyring)). https://pkg.go.dev/github.com/zalando/go-keyring
