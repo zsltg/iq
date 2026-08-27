@@ -12,3 +12,36 @@
 .md-typeset :not(pre) > code {
   white-space: nowrap;
 }
+
+/* Inside a table the nowrap above would pin the table's minimum width to its
+   longest code span, pushing wide tables (the pushdown translation columns)
+   past the center column into a horizontal scroll. Let code wrap there; the
+   prose columns already do. */
+.md-typeset table:not([class]) code {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* The theme's cell padding (.9375em 1.25em) is generous for the dense flag
+   and pushdown tables; tighten it so more of them fit without scrolling. */
+.md-typeset table:not([class]) th,
+.md-typeset table:not([class]) td {
+  padding: 0.6em 0.8em;
+}
+
+/* The theme's th { min-width: 5rem } floors every column at 80px, so a
+   many-column table (comparison.md: seven columns, three holding a single
+   glyph) cannot fit the center column no matter its content. Let a column
+   size to its content instead. */
+.md-typeset table:not([class]) th {
+  min-width: 2rem;
+}
+
+/* On a phone a multi-column table cannot compress below its longest tokens;
+   scroll it inside the column instead of letting it jut past the margin. */
+@media screen and (max-width: 44.9375em) {
+  .md-typeset table:not([class]) {
+    display: block;
+    overflow-x: auto;
+  }
+}
