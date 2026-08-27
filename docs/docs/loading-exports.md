@@ -97,6 +97,6 @@ iq '.[] | {unique_id: .id, name, dob: (.created_at | .[0:10])}' --src people --j
 For an entity-resolution consumer the choice between *omitting* a field and writing an explicit
 `null` is load-bearing — they are different inputs to the match. Export explicit nulls (a jq object
 constructor like `{name}` already writes `null` for a missing field); see
-[Null vs missing](architecture.md#null-vs-missing) for how iq draws that line at each layer.
+[Null vs missing](how-it-works.md#null-vs-missing) for how iq draws that line at each layer.
 
 [^1]: https://datatracker.ietf.org/doc/html/rfc3339

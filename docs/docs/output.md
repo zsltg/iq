@@ -347,13 +347,6 @@ Output is syntax-highlighted when `iq` writes to a terminal and left plain when
 it is piped or redirected, so captured output stays clean, TTY detection is
 where capture safety comes from.
 
-| control | effect |
-| --- | --- |
-| (default) | color on only when the destination is a terminal |
-| `-M`, `--monochrome` | force color off |
-| `-C`, `--color` | force color on, even into a pipe or pager |
-| `NO_COLOR` env (any value) | color off unless overridden by `-C` |
-
 ```bash title="Colored on a terminal, plain when piped"
 ./iq '.[]'
 ```
@@ -377,5 +370,14 @@ where capture safety comes from.
     The raw reply bodies from `exec` and `inspect` are colored in their native
     form, for example JSON syntax highlighting for MongoDB, and redis-cli-style
     value tokens for Redis.
+
+## No color `-M`, `--monochrome`
+
+Disable colored output. Color is on by default only when writing to a terminal.
+
+!!! tip "NO_COLOR"
+
+    Colored output is also disabled if the `NO_COLOR` environment variable is
+    set. `-C` forces colored output and overrides `NO_COLOR`.
 
 [^1]: https://github.com/tomnomnom/gron#ungronning

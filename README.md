@@ -12,12 +12,12 @@ databases. The backend is chosen by the URL scheme, and the query core is driver
 so further backends slot in behind the same port.
 
 The filter is both the transform and the key selector: its top-level paths name the keys to
-fetch, so the store only ever reads a bounded set of keys — never a full keyspace scan, unless
+fetch, so the store only ever reads a bounded set of keys, never a full keyspace scan, unless
 you ask for one explicitly. Fetched values are normalized to JSON and the filter then runs
 entirely client-side, so its semantics are identical for every backend.
 
-`iq` is inspired by [sq](https://github.com/neilotoole/sq): much of its command surface — the
-`<source>.<collection>` addressing along with many subcommands and flags — deliberately follows
+`iq` is inspired by [sq](https://github.com/neilotoole/sq): much of its command surface (the
+`<source>.<collection>` addressing along with many subcommands and flags) deliberately follows
 sq's to make the tool feel familiar.
 
 > [!WARNING]
