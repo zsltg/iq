@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.34.1 - 2026-08-27
+### Documentation
+- correct the pages against the code (1903435)
+- **agents:** refresh tech stack and widen the sync policy (3de2033)
+- **cmd:** comma voice for the help surface (a203a7e)
+- **comparison:** comma voice for the closing paragraphs (6730fd9)
+- **contributing:** comma voice for the audit's new sentences (2faf54c)
+- **contributing:** correct the guide against the build reality (914ff79)
+- **man:** regenerate the man page for the diff help rewording (70fa130)
+- **readme:** license, contributing, and reference fixes (7a26cf1)
+- **style:** comma voice, drop the em-dashes (d853e91)
+
+### Bug Fixes
+- **cmd:** correct and clarify the help surface (cc75c0e)
+
+
 ## v0.34.0 - 2026-08-27
 ### Documentation
 - split the contributor guide out of the cookbook (5c76933)
