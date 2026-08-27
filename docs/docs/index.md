@@ -6,7 +6,7 @@ icon: lucide/package-open
 
 `iq` is a Go command-line tool that runs
 `jq`[^2] filters against
-NoSQL[^3] databases. The backend is chosen by the URI
+NoSQL databases. The backend is chosen by the URI
 scheme[^4], and the query core is driver-agnostic, so further backends slot in
 behind the same port (see
 [Drivers](drivers.md#drivers)).
@@ -187,7 +187,6 @@ after a package install. For any other install, pipe it into your man path:
 iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
 ```
 [^2]: `jq` is a widely-used command-line utility and very high-level, functional, domain-specific programming language designed for processing JSON data. https://jqlang.org
-[^3]: NoSQL refers to a type of database design that stores and retrieves data differently from the traditional table-based structure of relational databases. https://en.wikipedia.org/wiki/NoSQL
 [^4]: RFC3986 proposes a generic URI syntax and a process for resolving URI references that might be in relative form, along with guidelines and security considerations for the use of URIs on the Internet. https://datatracker.ietf.org/doc/html/rfc3986
 [^5]: Cgo enables the creation of Go packages that call C code. https://pkg.go.dev/cmd/cgo
 [^6]: SHA-256 is a Secure Hash Algorithm with a message digest size of 256. https://nvlpubs.nist.gov/nistpubs/fips/nist.fips.180-4.pdf
