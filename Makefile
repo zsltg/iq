@@ -1,4 +1,4 @@
-# iq build and release automation. The command catalogue is the docs site under docs/docs/.
+# iq build and release automation. The developer command catalogue is CONTRIBUTING.md.
 # Release logic lives in scripts/release.sh; this Makefile is a thin wrapper and
 # the single source of truth for build-time version embedding.
 
@@ -19,9 +19,10 @@ GORELEASER         := github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 
 .PHONY: build version changelog release tools tools-dev check cover security sbom e2e bench docs docs-serve capabilities mutation ci man completions release-check release-snapshot
 
-# build compiles the binary with version metadata embedded.
+# build compiles the binary with version metadata embedded, static and
+# trimmed exactly like a release artifact (goreleaser mirrors these flags).
 build:
-	go build -ldflags "$(LDFLAGS)" -o iq .
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o iq .
 
 # version prints the version the next release would take.
 version:
@@ -42,7 +43,7 @@ tools:
 	go install github.com/git-chglog/git-chglog/cmd/git-chglog@latest
 
 # tools-dev installs the quality and security toolchain into GOPATH/bin. gofumpt,
-# goimports, and golangci-lint are expected already (see the docs site under docs/docs/).
+# goimports, and golangci-lint are expected already (see CONTRIBUTING.md).
 tools-dev:
 	go install github.com/quality-gates/mutago/v2/cmd/mutago@v2.7.7
 	go install github.com/google/capslock/cmd/capslock@v0.3.2
