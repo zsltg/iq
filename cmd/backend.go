@@ -193,11 +193,11 @@ func (s *loggingFilterEstimator) EstimateCount(ctx context.Context) (int64, erro
 func dialStore(ctx context.Context, cfg *config) (store, error) {
 	scheme := schemeOf(cfg.url)
 	if scheme == "" {
-		return nil, fmt.Errorf("missing url scheme in %q; %s", redactURL(cfg.url), expectedSchemes())
+		return nil, fmt.Errorf("missing URI scheme in %q; %s", redactURL(cfg.url), expectedSchemes())
 	}
 	d, ok := driverForScheme(scheme)
 	if !ok {
-		return nil, fmt.Errorf("unsupported url scheme %q; %s", scheme, expectedSchemes())
+		return nil, fmt.Errorf("unsupported URI scheme %q; %s", scheme, expectedSchemes())
 	}
 	return d.open(ctx, cfg)
 }

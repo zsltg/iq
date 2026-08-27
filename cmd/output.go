@@ -28,9 +28,9 @@ func addRenderFlags(c *cobra.Command, cfg *config) {
 	c.Flags().BoolVarP(&cfg.raw, "raw", "r", false, "output scalars unquoted, one per line (objects and arrays fall back to compact JSON)")
 	c.Flags().BoolVarP(&cfg.gron, "gron", "g", false, "output flattened assignment statements (gron), one per line: greppable, each result rooted at json, reversible with ungron")
 	c.Flags().BoolVarP(&cfg.gronArray, "grona", "G", false, "like --gron but result N roots at json[N], so the whole stream ungrons back to one JSON array (gron's --stream style)")
-	c.Flags().StringVarP(&cfg.format, "format", "f", "", "select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona; an alternative to -j/-J/-A/-y/-r/-g/-G")
+	c.Flags().StringVarP(&cfg.format, "format", "f", "", "select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona, or parquet (binary; redirect or pipe it); an alternative to -j/-J/-A/-y/-r/-g/-G")
 	c.MarkFlagsMutuallyExclusive("format", "json", "jsona", "jsonl", "yaml", "raw", "gron", "grona")
-	c.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / jsona output to single-line (no-op for jsonl, values, yaml, gron, grona)")
+	c.Flags().BoolVar(&cfg.compact, "compact", false, "collapse pretty json / jsona output to single-line (no-op for jsonl, raw, yaml, gron, grona, parquet)")
 }
 
 // outputFormat is the closed set of renderings the output-format flags select.

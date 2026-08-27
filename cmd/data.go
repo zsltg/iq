@@ -13,7 +13,7 @@ import (
 )
 
 // dataFlags holds the two previews shared by every `iq data` subcommand as parent
-// persistent flags, so copy/clear/drop expose them identically. They are mutually
+// persistent flags, so clear/drop/delete expose them identically. They are mutually
 // exclusive: --explain describes the plan without connecting, --dry-run connects
 // and reports the real effect without mutating.
 type dataFlags struct {
@@ -92,7 +92,7 @@ func resolveEndpoint(cf *iqconfig.Config, arg string, isDst bool) (endpoint, err
 	src, full, ok := cf.Resolve(name)
 	if !ok {
 		return endpoint{}, fmt.Errorf("unknown source %q; register it with `iq add` "+
-			"(a dump file too, via a file:// url), write a file with -o, or use - for stdin/stdout", arg)
+			"(a dump file too, via a file:// URI), write a file with -o, or use - for stdin/stdout", arg)
 	}
 	u, err := effectiveURL(src, full)
 	if err != nil {

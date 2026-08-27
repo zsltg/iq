@@ -26,7 +26,7 @@ import (
 )
 
 // driver describes one backend iq can talk to: a stable name, a human
-// description, the URL schemes that select it, its upstream docs, and the opener
+// description, the URI schemes that select it, its upstream docs, and the opener
 // that connects. The drivers registry below is the single source of truth —
 // openStore, supportedScheme, driverForScheme, driverName, and `iq driver ls`
 // all derive from it, so adding a backend is one entry, not edits scattered
@@ -483,7 +483,7 @@ func newDriverCmd(cfg *config) *cobra.Command {
 }
 
 // newDriverLsCmd builds `iq driver ls`: list the registered backend drivers, each
-// with its description, the URL schemes that select it, and its upstream docs. The
+// with its description, the URI schemes that select it, and its upstream docs. The
 // global -v/--verbose appends the read-only file driver's dump-format catalogue.
 func newDriverLsCmd(cfg *config) *cobra.Command {
 	var jsonOut, yamlOut bool
@@ -491,7 +491,7 @@ func newDriverLsCmd(cfg *config) *cobra.Command {
 		Use:   "ls",
 		Short: "List the backend drivers iq can dispatch to",
 		Long: "List the backend drivers iq can dispatch to. Each row shows the driver's stable\n" +
-			"name (as `iq ls` reports it), a description, the URL schemes that select it, the\n" +
+			"name (as `iq ls` reports it), a description, the URI schemes that select it, the\n" +
 			"backend server versions the bundled client library supports, and a link to its\n" +
 			"upstream documentation. -v appends the file driver's readable dump formats (which\n" +
 			"auto-detect, which need ?format=). -j/--json or -y/--yaml emit machine-readable output.",

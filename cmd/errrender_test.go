@@ -126,7 +126,7 @@ func TestRedactMessage(t *testing.T) {
 		{
 			// The advice iq itself prints for an unknown source: a scheme literal
 			// inside a code span, which the closing backtick used to make
-			// unparseable, collapsing the URL to "(unparseable url)" and swallowing
+			// unparseable, collapsing the URI to "(unparseable URI)" and swallowing
 			// the backtick that closed the span.
 			"our own scheme-literal advice survives intact",
 			"unknown source \"nosuch\"; run `iq ls` (register a dump with `iq add file:///path/to/dump.json` to read one)",

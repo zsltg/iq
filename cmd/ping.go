@@ -28,8 +28,10 @@ func newPingCmd(cfg *config) *cobra.Command {
 		Use:               "ping [name...]",
 		ValidArgsFunction: completeSourceHandles,
 		Short:             "Check that sources are reachable",
-		Long: "Open each source and round-trip a cheap command (Redis PING, MongoDB {ping:1}),\n" +
-			"reporting its driver and the round-trip time, or the error. With no arguments the\n" +
+		Long: "Open each source and round-trip a cheap backend-specific command (Redis PING,\n" +
+			"Cassandra a version read, {ping:1} and its kin elsewhere; a dump file and\n" +
+			"DynamoDB verify at open), reporting its driver and the round-trip time, or the\n" +
+			"error. With no arguments the\n" +
 			"active source is pinged; otherwise each argument is a source handle or a group\n" +
 			"(pinging every member), and --all pings every saved source. Each check is bounded\n" +
 			"by --timeout. Exits non-zero if any source is unreachable.",
@@ -83,7 +85,7 @@ func pingTargets(cf *iqconfig.Config, args []string, all bool) ([]pingTarget, er
 		}
 		handles := cf.List()
 		if len(handles) == 0 {
-			return nil, errors.New("no sources; add one with `iq add <url>`")
+			return nil, errors.New("no sources; add one with `iq add <uri>`")
 		}
 		targets := make([]pingTarget, 0, len(handles))
 		for _, h := range handles {

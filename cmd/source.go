@@ -36,38 +36,41 @@ func newAddCmd(cfg *config) *cobra.Command {
 		skipVerify     bool
 	)
 	c := &cobra.Command{
-		Use:               "add <url>",
+		Use:               "add <uri>",
 		ValidArgsFunction: cobra.NoFileCompletions,
-		Short:             "Register a source from a connection URL (sq-style)",
-		Long: "Register a source from a connection URL, like `sq add`. The URL is the only\n" +
-			"positional argument; -n/--handle names the source, and when omitted a handle is\n" +
-			"derived from the URL: the keyspace it pins (?collection=, ?table=, ?index=, …), else\n" +
-			"the MongoDB database or Cassandra keyspace name, else the dump file's stem for a\n" +
-			"file:// source, else the driver. The backend is inferred from the URL scheme: redis:// (rediss://),\n" +
-			"mongodb:// (mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb://\n" +
+		Short:             "Register a source from a connection URI (sq-style)",
+		Long: "Register a source from a connection URI, like `sq add`. The URI is the only\n" +
+			"positional argument; -n/--handle names the source, and when omitted a handle\n" +
+			"is derived from the URI: the keyspace it pins (?collection=, ?table=,\n" +
+			"?index=, …), else the MongoDB database or Cassandra keyspace name (its schema\n" +
+			"container), else the dump file's stem for a file:// source, else the driver.\n" +
+			"The backend is inferred from the URI scheme: redis:// (rediss://), mongodb://\n" +
+			"(mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb://\n" +
 			"(couchdbs://), couchbase:// (couchbases://), neo4j:// (neo4j+s://, bolt://),\n" +
-			"elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://); -d/--driver asserts the\n" +
-			"expected driver. For MongoDB, a default\n" +
-			"collection rides in the URL as ?collection= (`mongodb://host/db?collection=orders`);\n" +
-			"for Cassandra, a default table rides as ?table= (`cassandra://host/keyspace?table=orders`);\n" +
-			"for DynamoDB, the region\n" +
-			"is the host and a default table rides as ?table= (`dynamodb://us-east-1/?table=orders`,\n" +
-			"credentials from the AWS default chain); for HBase, the host is the ZooKeeper quorum\n" +
-			"and a default table rides as ?table= (`hbase://host:2181/?table=books`, cell\n" +
-			"encodings declared with ?types=cf:age=long); for CouchDB, the host is the server and a\n" +
-			"default database rides as ?database= (`couchdb://host:5984/?database=orders`); for\n" +
-			"Couchbase, the host is the cluster and a bucket rides as ?bucket= with an optional\n" +
-			"scope.collection as ?collection= (`couchbase://host/?bucket=iq&collection=sales.orders`); for\n" +
-			"Neo4j, the host is the bolt server and a default node label rides as ?label= (or a\n" +
-			"relationship type as ?rel=); for Elasticsearch and OpenSearch, a default index rides as\n" +
-			"?index= (`elasticsearch://host:9200/?index=books`, `opensearch://host:9200/?index=books`).\n" +
-			"Handles may be\n" +
-			"grouped with '/' (`iq add -n prod/books\n" +
-			"mongodb://...`). -p prompts for the URL password (or reads it from stdin); with\n" +
-			"--store keyring the password is moved to the OS keyring and stripped from the\n" +
-			"stored URL. -a makes the new source active. The source is pinged before it is\n" +
-			"saved unless --skip-verify is set. Note: `iq add` is this command, which shadows\n" +
-			"jq's built-in `add` filter — write the filter as `[ .a, .b ] | add`.",
+			"elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://);\n" +
+			"-d/--driver asserts the expected driver.\n" +
+			"\n" +
+			"Each driver reads its own URI options. MongoDB: a default collection as\n" +
+			"?collection= (`mongodb://host/db?collection=orders`). Cassandra: a default\n" +
+			"table as ?table= (`cassandra://host/keyspace?table=orders`). DynamoDB: the\n" +
+			"region is the host, a default table as ?table=\n" +
+			"(`dynamodb://us-east-1/?table=orders`, credentials from the AWS default\n" +
+			"chain). HBase: the host is the ZooKeeper quorum, a default table as ?table=\n" +
+			"(`hbase://host:2181/?table=books`, cell encodings declared with\n" +
+			"?types=cf:age=long). CouchDB: the host is the server, a default database as\n" +
+			"?database= (`couchdb://host:5984/?database=orders`). Couchbase: the host is\n" +
+			"the cluster, a bucket as ?bucket= with an optional scope.collection as\n" +
+			"?collection= (`couchbase://host/?bucket=iq&collection=sales.orders`). Neo4j:\n" +
+			"the host is the bolt server, a default node label as ?label= (or a\n" +
+			"relationship type as ?rel=). Elasticsearch and OpenSearch: a default index as\n" +
+			"?index= (`elasticsearch://host:9200/?index=books`).\n" +
+			"\n" +
+			"Handles may be grouped with '/' (`iq add -n prod/books mongodb://…`). -p\n" +
+			"prompts for the URI password (or reads it from stdin); with --store keyring\n" +
+			"the password is moved to the OS keyring and stripped from the stored URI. -a\n" +
+			"makes the new source active. The source is pinged before it is saved unless\n" +
+			"--skip-verify is set. Note: `iq add` is this command, which shadows jq's\n" +
+			"built-in `add` filter: write the filter as `[ .a, .b ] | add`.",
 		Example: "  # Register a Redis source named \"cache\".\n" +
 			"  $ iq add -n cache redis://localhost:6379/0\n" +
 			"\n" +
@@ -85,10 +88,10 @@ func newAddCmd(cfg *config) *cobra.Command {
 				}
 			}
 			if !supportedScheme(rawURL) {
-				return fmt.Errorf("unsupported url scheme %q; %s", schemeOf(rawURL), expectedSchemes())
+				return fmt.Errorf("unsupported URI scheme %q; %s", schemeOf(rawURL), expectedSchemes())
 			}
 			if driverFlag != "" && driverName(rawURL) != driverFlag {
-				return fmt.Errorf("--driver %q does not match url scheme %q:// (driver %q)", driverFlag, schemeOf(rawURL), driverName(rawURL))
+				return fmt.Errorf("--driver %q does not match URI scheme %q:// (driver %q)", driverFlag, schemeOf(rawURL), driverName(rawURL))
 			}
 			if err := urlAddressUnsupported(rawURL); err != nil {
 				return err
@@ -117,7 +120,7 @@ func newAddCmd(cfg *config) *cobra.Command {
 					return err
 				}
 				if !ok {
-					return errors.New("--store keyring: url has no password to store")
+					return errors.New("--store keyring: URI has no password to store")
 				}
 				storedURL, password = stripped, pw
 			}
@@ -163,12 +166,12 @@ func newAddCmd(cfg *config) *cobra.Command {
 			return err
 		},
 	}
-	c.Flags().StringVarP(&handle, "handle", "n", "", "handle for the source; derived from the keyspace the url names when omitted")
-	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb, couchbase, neo4j, elasticsearch, opensearch); must match the url scheme")
+	c.Flags().StringVarP(&handle, "handle", "n", "", "handle for the source; derived from the keyspace the URI names when omitted")
+	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb, couchbase, neo4j, elasticsearch, opensearch); must match the URI scheme")
 	c.Flags().BoolVarP(&active, "active", "a", false, "make the new source the active source")
-	c.Flags().BoolVarP(&passwordPrompt, "password", "p", false, "prompt for the url password (or read it from stdin)")
+	c.Flags().BoolVarP(&passwordPrompt, "password", "p", false, "prompt for the URI password (or read it from stdin)")
 	c.Flags().BoolVar(&skipVerify, "skip-verify", false, "skip the post-add reachability check")
-	c.Flags().StringVar(&store, "store", "inline", "where the url's password is kept: inline (in the config file) or keyring (the OS keyring)")
+	c.Flags().StringVar(&store, "store", "inline", "where the URI's password is kept: inline (in the config file) or keyring (the OS keyring)")
 	// Both flags take a closed set; --driver's comes from the registry, so a new
 	// backend completes without a second edit.
 	_ = c.RegisterFlagCompletionFunc("driver", fixedValues(driverNameList()...))
@@ -322,7 +325,8 @@ func newLsCmd(cfg *config) *cobra.Command {
 		ValidArgsFunction: completeGroups,
 		Short:             "List saved sources (the active one marked *), or groups with -g",
 		Long: "List saved sources, the active one marked with '*'. An optional [group] limits\n" +
-			"the listing to sources in that group. -v adds each source's driver; -g lists\n" +
+			"the listing to sources in that group. -v adds a header row, FORMAT and OPTIONS\n" +
+			"columns, and a [keyring] tag on keyring-backed sources; -g lists\n" +
 			"groups instead of sources; -j/--json or -y/--yaml emit machine-readable output.\n" +
 			"Passwords are redacted by default: --reveal prints a password stored inline in\n" +
 			"the config verbatim, and --expand resolves a keyring-backed source's stored\n" +
@@ -554,7 +558,7 @@ func newGroupCmd() *cobra.Command {
 func redactURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "(unparseable url)"
+		return "(unparseable URI)"
 	}
 	return u.Redacted()
 }

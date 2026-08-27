@@ -73,8 +73,9 @@ func newDataClearCmd(cfg *config, df *dataFlags) *cobra.Command {
 		// it the shell offers filenames on a command that destroys data.
 		ValidArgsFunction: completeSourceHandles,
 		Short:             "Empty one or more containers (keep them)",
-		Long: "Empty a collection/keyspace, keeping the container. MongoDB: deleteMany({}).\n" +
-			"Redis: FLUSHDB. Distinct from `iq rm`, which only unregisters a saved source —\n" +
+		Long: "Empty a container, keeping it. MongoDB: deleteMany({}). Redis: FLUSHDB.\n" +
+			"Preview with --explain (no connection) or --dry-run (no changes). Distinct\n" +
+			"from `iq rm`, which only unregisters a saved source —\n" +
 			"clear destroys the stored data.",
 		Example: "  $ iq data clear cache             # empty a Redis source (FLUSHDB)\n" +
 			"  $ iq data clear shop.orders shop.users # empty two Mongo collections",
@@ -99,7 +100,8 @@ func newDataDropCmd(cfg *config, df *dataFlags) *cobra.Command {
 		Short:             "Remove one or more containers",
 		Long: "Remove a container entirely. MongoDB: drop the collection and its indexes.\n" +
 			"Redis has no droppable container (a DB index only empties), so drop is rejected\n" +
-			"for a Redis target — use `iq data clear`. Distinct from `iq rm`, which only\n" +
+			"for a Redis target — use `iq data clear`. Preview with --explain (no connection)\n" +
+			"or --dry-run (no changes). Distinct from `iq rm`, which only\n" +
 			"unregisters a saved source; drop destroys the stored data.",
 		Example: "  $ iq data drop shop.orders             # drop one Mongo collection\n" +
 			"  $ iq data drop shop.orders shop.users  # drop several",
@@ -129,8 +131,8 @@ func newDataDeleteCmd(cfg *config, df *dataFlags) *cobra.Command {
 			"composite key (`[\"shop\",42]`). A key that is already absent is not an error —\n" +
 			"delete is idempotent, so a re-run converges. Distinct from `iq data clear`, which\n" +
 			"empties the whole container, and from `iq rm`, which only unregisters a source.\n" +
-			"No confirmation prompt: the key list you typed is the confirmation; use --dry-run\n" +
-			"to preview. Rejected for a backend with no per-key delete (e.g. a dump file).",
+			"No confirmation prompt: the key list you typed is the confirmation; preview with\n" +
+			"--explain or --dry-run. Rejected for a backend with no per-key delete (e.g. a dump file).",
 		Example: "  $ iq data delete cache book:1 book:2   # remove two Redis keys\n" +
 			"  $ iq data delete shop.orders '[\"eu\",42]' # a composite-key row\n" +
 			"  $ iq data delete cache book:1 --dry-run   # preview without deleting",

@@ -85,8 +85,9 @@ func TestManPageHasStructure(t *testing.T) {
 	require.Contains(t, out, ".SS iq add")
 	require.Contains(t, out, ".SS iq config set")
 	require.Contains(t, out, ".SS iq man")
-	// Auto-added help/completion commands are deliberately omitted.
-	require.NotContains(t, out, ".SS iq completion")
+	// The auto-added completion command is documented (the README and docs tell
+	// users to run it); cobra's help command stays omitted.
+	require.Contains(t, out, ".SS iq completion")
 	require.NotContains(t, out, ".SS iq help")
 }
 

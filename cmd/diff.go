@@ -176,13 +176,13 @@ func newDiffCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVar(&dataMode, "data", false, "diff items key by key (default when no layer is chosen; cross-driver allowed)")
 	c.Flags().BoolVar(&statsMode, "stats", false, "diff native introspection trees (same driver only)")
 	c.Flags().BoolVar(&schemaMode, "schema", false, "diff an inferred field/type shape (cross-driver allowed)")
-	c.Flags().StringSliceVar(&sections, "section", nil, "introspection section(s) for --stats (comma-separated or repeatable; default: the source's full set)")
+	c.Flags().StringSliceVar(&sections, "section", nil, "introspection sections or subcommands for --stats (comma-separated or repeatable; iq inspect --list names them; default: the source's full set)")
 	// --section names the same introspection subcommands as `inspect --only`, so
 	// it shares that completion and its comma-separated list shape; the driver
 	// comes offline from the first target.
 	_ = c.RegisterFlagCompletionFunc("section", completeInspectOnly)
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled per side for --schema (0 = all)")
-	c.Flags().StringVar(&filter, "filter", "", "jq filter you root at `.[]`, scoping both sides; a spec's own `source=<jq>` overrides it for that side")
+	c.Flags().StringVar(&filter, "filter", "", "jq filter rooted at .[] scoping both sides; a spec's own source=<jq> overrides it for that side")
 	c.Flags().BoolVar(&setArrays, "set-arrays", false, "compare arrays order-insensitively as multisets (duplicates counted)")
 	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
 	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit machine-readable YAML")

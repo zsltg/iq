@@ -126,6 +126,17 @@ func writeManCommands(b *strings.Builder, root *cobra.Command) {
 			writeManCommandTree(b, sub)
 		}
 	}
+	// Cobra adds the completion command at Execute time, so a fresh root does not
+	// carry it yet; initialize it explicitly so the page is identical whether it
+	// is generated through `iq man` or straight from newRootCmd. It carries no
+	// group, so the grouped walk above misses it, and the README and docs tell
+	// users to run it, so the page documents it after the grouped commands.
+	root.InitDefaultCompletionCmd()
+	for _, sub := range root.Commands() {
+		if !sub.Hidden && sub.Name() == "completion" {
+			writeManCommandTree(b, sub)
+		}
+	}
 }
 
 // writeManCommandTree renders one command as a .SS subsection — full path, one-

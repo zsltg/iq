@@ -71,7 +71,7 @@ func TestSplitPassword(t *testing.T) {
 
 func TestSplitPasswordRejectsUnparseable(t *testing.T) {
 	_, _, _, err := splitPassword("redis://u:%zz@h")
-	require.ErrorContains(t, err, "parse url")
+	require.ErrorContains(t, err, "parse URI")
 }
 
 func TestInjectPassword(t *testing.T) {

@@ -239,7 +239,7 @@ func newConfigKeyringRmCmd() *cobra.Command {
 				return err
 			}
 			_ = keyringStore.Delete(iqconfig.CleanHandle(full))
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted keyring secret for %s; its stored URL now has no password\n", full)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted keyring secret for %s; its stored URI now has no password\n", full)
 			return err
 		},
 	}

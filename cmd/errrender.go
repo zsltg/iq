@@ -204,7 +204,7 @@ func redactMessage(msg string) string {
 	return urlLike.ReplaceAllStringFunc(msg, func(m string) string {
 		// Split off the trailing delimiters so url.Parse sees a clean URL and masks
 		// its password, instead of failing on the stray byte and collapsing the
-		// whole span to "(unparseable url)". The password is masked either way;
+		// whole span to "(unparseable URI)". The password is masked either way;
 		// this only keeps the surrounding message readable.
 		u := strings.TrimRight(m, trailingDelims)
 		return redactURL(u) + m[len(u):]

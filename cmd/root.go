@@ -131,15 +131,19 @@ func newRootCmd() (*cobra.Command, *config) {
 			"value (`.`, `keys`, `map(...)`) needs --unbounded. Always single-quote the\n" +
 			"filter so the shell leaves its brackets, spaces, and pipes alone.\n" +
 			"\n" +
-			"A database is a saved source, chosen by URL scheme — redis:// or mongodb://.\n" +
-			"Register with `iq add`, pick a default with `iq src`, list with `iq ls`. Address\n" +
-			"a MongoDB collection as handle.collection (e.g. --src shop.orders), or set a\n" +
-			"default in the source URL (...?collection=orders) and drop the suffix.\n" +
+			"A database is a saved source, chosen by URI scheme (redis://, mongodb://,\n" +
+			"cassandra://, and more; run `iq driver ls` for the full list). Register with\n" +
+			"`iq add`, pick a default with `iq src`, list with `iq ls`. Address a\n" +
+			"collection, table, database, label, or index as handle.name (e.g. --src\n" +
+			"shop.orders), or set a default in the source URI (...?collection=orders) and\n" +
+			"drop the suffix.\n" +
 			"\n" +
 			"select(...) clauses are pushed to the backend automatically, results unchanged;\n" +
-			"run `iq --explain` to see the plan. The README carries the full reference.",
+			"run `iq '<filter>' --explain` to see the plan. A filter can also read other\n" +
+			"sources inline with source(\"name\"; \"<jq>\"). The documentation site carries\n" +
+			"the full reference.",
 		Example: "  # Register a Redis source (active) and a Mongo source whose password is kept safe.\n" +
-			"  # The Mongo URL sets a default collection with ?collection=orders.\n" +
+			"  # The Mongo URI sets a default collection with ?collection=orders.\n" +
 			"  $ iq add -a -n cache redis://localhost:6379/0\n" +
 			"  $ iq add -p --store keyring 'mongodb://user@localhost:27017/shop?collection=orders'\n" +
 			"\n" +
@@ -154,12 +158,16 @@ func newRootCmd() (*cobra.Command, *config) {
 			"  # Query a Mongo collection — select(...) pushes to the backend.\n" +
 			"  $ iq '.[] | select(.total > 99) | .id' --src shop.orders\n" +
 			"\n" +
-			"  # The URL's ?collection= default lets you drop the suffix.\n" +
+			"  # The URI's ?collection= default lets you drop the suffix.\n" +
 			"  $ iq '.[]' --src shop\n" +
 			"\n" +
 			"  # Output as JSON Lines, or one JSON array written to a file.\n" +
 			"  $ iq '.[]' --src shop.orders --jsonl\n" +
 			"  $ iq '.[]' --src shop.orders -A -o results.json\n" +
+			"\n" +
+			"  # Join two sources in one filter with source() (runs over null input, needs no active source).\n" +
+			"  $ iq 'INDEX(source(\"users\"; \".[]\"); .id) as $u\n" +
+			"      | source(\"orders\"; \".[] | select(.total > 99)\") | {name: $u[.userId].name, total}'\n" +
 			"\n" +
 			"  # Join two collections of one source on a shared id (each spec binds $shop_orders, $shop_users).\n" +
 			"  $ iq combine 'shop.orders=.[] | {id, total}' 'shop.users=.[] | {id, name}' \\\n" +
@@ -259,10 +267,13 @@ func newRootCmd() (*cobra.Command, *config) {
 		},
 	}
 	// --version prints the bare version for scripts; `iq version` is the human form.
+	// The flag is declared here (instead of cobra's lazy default) so its help text
+	// says that, rather than the generic "version for iq".
 	root.SetVersionTemplate("{{.Version}}\n")
-	root.PersistentFlags().StringVarP(&cfg.src, "src", "s", "", "run against this saved source for one invocation (overrides the active source; see `iq src`)")
+	root.Flags().Bool("version", false, "print the bare version and exit (for scripts; iq version is the human form)")
+	root.PersistentFlags().StringVarP(&cfg.src, "src", "s", "", "run against this saved `source` for one invocation (overrides the active source, see iq src)")
 	root.PersistentFlags().StringVar(&cfg.configPath, "config", "", "path to the config file (overrides $IQ_CONFIG; default <user config dir>/iq/iq.toml)")
-	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "per-query timeout")
+	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "timeout for the whole operation: a query, a diff, a combine, or an --insert copy")
 	root.PersistentFlags().BoolVarP(&cfg.monochrome, "monochrome", "M", false, "disable colored output (also honored via NO_COLOR); color is on by default only when writing to a terminal")
 	root.PersistentFlags().BoolVarP(&cfg.forceColor, "color", "C", false, "force colored output even when the destination is not a terminal (e.g. a pager)")
 	root.PersistentFlags().BoolVar(&cfg.noProgress, "no-progress", false, "disable the scan progress spinner (shown on stderr for long scans when it is a terminal)")
@@ -280,9 +291,9 @@ func newRootCmd() (*cobra.Command, *config) {
 	// is resolved to cfg.decimalMode in PersistentPreRunE and honored at
 	// normalization time, so it changes what the filter computes on, not just the print.
 	root.PersistentFlags().StringVar(&cfg.decimal, "format.decimal", "auto", "how to present a non-integer decimal to the filter: auto (Mongo Decimal128 exact string, Redis fractional number), number (bare, may lose precision), or string (exact, quoted; use tonumber)")
-	// Diagnostics flags (sq-compatible). -v is global; `iq ls` reuses it for its
-	// driver column. --log* also honor IQ_LOG/IQ_LOG_FILE/IQ_LOG_LEVEL/IQ_LOG_FORMAT.
-	root.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "print verbose diagnostics to stderr; for a query, the formatted plan and a live backend command trace (disables the progress spinner)")
+	// Diagnostics flags (sq-compatible). -v is global; the listing commands reuse
+	// it for extra columns. --log* also honor IQ_LOG/IQ_LOG_FILE/IQ_LOG_LEVEL/IQ_LOG_FORMAT.
+	root.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "verbose output: for a query, the formatted plan and a live backend trace on stderr (disables the progress spinner); for a listing, extra columns")
 	root.PersistentFlags().BoolVar(&cfg.logEnable, "log", false, "enable logging to a file (also via IQ_LOG)")
 	root.PersistentFlags().StringVar(&cfg.logFile, "log.file", "", "log file path; empty disables logging (default <user cache dir>/iq/iq.log)")
 	root.PersistentFlags().StringVar(&cfg.logLevel, "log.level", "DEBUG", "log level: DEBUG, INFO, WARN, or ERROR")
@@ -293,7 +304,7 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.PersistentFlags().StringVar(&cfg.pprofMode, "debug.pprof", "", "write a runtime profile of the whole run: cpu, mem, block, mutex, goroutine, thread, or trace")
 	// --unbounded and --no-compile are local to the default jq action.
 	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it)")
-	root.Flags().BoolVar(&cfg.noCompile, "no-compile", false, "disable server-side predicate pushdown; run the full .[]|select(...) filter client-side (pushdown is on by default for MongoDB, already a no-op on Redis; results are unchanged either way)")
+	root.Flags().BoolVar(&cfg.noCompile, "no-compile", false, "disable predicate pushdown; run the full .[]|select(...) filter client-side (pushdown is on by default where the backend supports it, see iq --explain; results are unchanged either way)")
 	root.Flags().BoolVar(&cfg.explain, "explain", false, "print the formatted query plan (pretty jq, nested filters, and the backend calls) and exit without connecting or executing")
 	addRenderFlags(root, cfg)
 	// Write/movement flags for the default action: --insert redirects results into a
@@ -309,7 +320,7 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.Flags().BoolVar(&cfg.replace, "replace", false, "empty the destination before writing, with confirmation (--insert)")
 	root.Flags().BoolVar(&cfg.force, "force", false, "skip the confirmation prompt for --replace")
 	root.Flags().BoolVar(&cfg.dryRun, "dry-run", false, "report the effect of --insert without writing anything")
-	root.Flags().StringVar(&cfg.fromFormat, "from-format", "", "format of a piped-stdin source when it cannot be sniffed: jsonl, json, yaml, mongoexport, bson, rdb, dynamodb-json, cassandra-csv, or neo4j-json")
+	root.Flags().StringVar(&cfg.fromFormat, "from-format", "", "format of a piped-stdin source when it cannot be sniffed: jsonl, yaml, mongoexport, bson, rdb, dynamodb-json, cassandra-csv, or neo4j-json (aliases like json accepted)")
 	root.MarkFlagsMutuallyExclusive("insert", "typed")
 	root.AddCommand(
 		newExecCmd(cfg),

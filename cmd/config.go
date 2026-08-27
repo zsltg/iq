@@ -96,10 +96,12 @@ func newConfigCmd(cfg *config) *cobra.Command {
 		Short: "Show the config file and manage stored option defaults",
 		Long: "Inspect the config file and manage stored option defaults. `set` a persistable\n" +
 			"flag by name to persist its value so you need not retype it (remove it again with\n" +
-			"`set -D`); scope it to one source with --src (`iq config set --src @prod format\n" +
+			"`set -D`); scope it to one source with --src (`iq config set --src prod format\n" +
 			"yaml`). A stored default is overridden per query by an explicit flag, and a source\n" +
 			"option is overridden only by an explicit flag; the base option applies to every\n" +
-			"other source. `location` prints the file path, `edit` opens it, `view` dumps it.",
+			"other source. `get` reads one stored default and `ls` lists them all; `location`\n" +
+			"prints the file path, `edit` opens it, `view` dumps it; `keyring` manages the\n" +
+			"OS-keyring secrets of keyring-backed sources.",
 		Example: "  $ iq config set format yaml            # persist a base default\n" +
 			"  $ iq config set --src shop format json # scope a default to one source\n" +
 			"  $ iq config ls                         # list stored defaults\n" +

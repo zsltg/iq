@@ -29,7 +29,7 @@ func resolveSource(cfg *config) error {
 		name = cf.Active
 	}
 	if name == "" {
-		return fmt.Errorf("%w; add one with `iq add <url>` then select it with `iq src <name>`", errNoSource)
+		return fmt.Errorf("%w; add one with `iq add <uri>` then select it with `iq src <name>`", errNoSource)
 	}
 	base, addr, _ := splitSourceArg(cf, name)
 	src, full, ok := cf.Resolve(base)
@@ -75,7 +75,7 @@ func urlAddressUnsupported(rawURL string) error {
 	if p == "" {
 		return nil
 	}
-	return fmt.Errorf("%s sources have no collections; drop the ?%s= from the url", driverName(rawURL), p)
+	return fmt.Errorf("%s sources have no collections; drop the ?%s= from the URI", driverName(rawURL), p)
 }
 
 // resolveInspectSource fills cfg from the source named by the inspect positional,
@@ -95,7 +95,7 @@ func resolveInspectSource(cfg *config, arg string) error {
 		name = cf.Active
 	}
 	if name == "" {
-		return fmt.Errorf("%w; add one with `iq add <url>` then select it with `iq src <name>`", errNoSource)
+		return fmt.Errorf("%w; add one with `iq add <uri>` then select it with `iq src <name>`", errNoSource)
 	}
 	base, addr, _ := splitSourceArg(cf, name)
 	src, full, ok := cf.Resolve(base)

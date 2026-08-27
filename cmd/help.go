@@ -49,8 +49,7 @@ var rootFlagGroups = map[string]string{
 	"no-cache":       groupQuery,
 	"no-cache-index": groupQuery,
 	"explain":        groupQuery,
-	"from":           groupQuery,
-	"combine":        groupQuery,
+	"from-format":    groupQuery,
 
 	"json":           groupOutput,
 	"jsona":          groupOutput,
@@ -74,7 +73,6 @@ var rootFlagGroups = map[string]string{
 	"replace":      groupWrite,
 	"force":        groupWrite,
 	"dry-run":      groupWrite,
-	"from-format":  groupWrite,
 
 	"monochrome":  groupDisplay,
 	"color":       groupDisplay,

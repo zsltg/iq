@@ -74,6 +74,14 @@ func TestRootHelpEveryFlagGrouped(t *testing.T) {
 	}
 	root.PersistentFlags().VisitAll(check)
 	root.Flags().VisitAll(check)
+
+	// The orphan direction: every mapped name must resolve to a registered root
+	// flag, so a retired flag's entry cannot linger in the map unnoticed.
+	for name := range rootFlagGroups {
+		if root.PersistentFlags().Lookup(name) == nil && root.Flags().Lookup(name) == nil {
+			t.Errorf("rootFlagGroups maps %q, which is not a registered root flag", name)
+		}
+	}
 }
 
 // TestSubcommandHelpGroupsGlobalFlags pins that a subcommand groups its inherited

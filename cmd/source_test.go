@@ -35,7 +35,7 @@ func TestRedactURL(t *testing.T) {
 		{"multi-host with creds", "mongodb://u:p@h1,h2/db", "mongodb://u:xxxxx@h1,h2/db"},
 		{"multi-host no creds", "mongodb://h1,h2/db", "mongodb://h1,h2/db"},
 		{"no scheme unchanged", "just-a-string", "just-a-string"},
-		{"unparseable yields placeholder", "redis://u:%zz@h", "(unparseable url)"},
+		{"unparseable yields placeholder", "redis://u:%zz@h", "(unparseable URI)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,7 +80,7 @@ func TestAddCommand(t *testing.T) {
 	require.Empty(t, s.Collection)
 
 	_, err = runCmd(t, newAddCmd(&config{}), "postgres://h/db", "--skip-verify")
-	require.ErrorContains(t, err, "unsupported url scheme")
+	require.ErrorContains(t, err, "unsupported URI scheme")
 
 	// A driver-owned collection param is rejected for a backend that has none.
 	_, err = runCmd(t, newAddCmd(&config{}), "redis://h?collection=x", "--skip-verify")
@@ -197,7 +197,7 @@ func TestAddActiveMakesActive(t *testing.T) {
 func TestAddDriverMismatch(t *testing.T) {
 	seedConfig(t, newSeed())
 	_, err := runCmd(t, newAddCmd(&config{}), "-d", "mongo", "redis://h:6379/0", "--skip-verify")
-	require.ErrorContains(t, err, "does not match url scheme")
+	require.ErrorContains(t, err, "does not match URI scheme")
 
 	_, err = runCmd(t, newAddCmd(&config{}), "-d", "surrealdb", "redis://h:6379/0", "--skip-verify")
 	require.ErrorContains(t, err, "unknown driver")

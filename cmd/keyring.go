@@ -35,7 +35,7 @@ func effectiveURL(src iqconfig.Source, handle string) (string, error) {
 func splitPassword(raw string) (stripped, password string, ok bool, err error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", "", false, fmt.Errorf("parse url: %w", err)
+		return "", "", false, fmt.Errorf("parse URI: %w", err)
 	}
 	if u.User == nil {
 		return raw, "", false, nil
@@ -58,7 +58,7 @@ func splitPassword(raw string) (stripped, password string, ok bool, err error) {
 func injectPassword(raw, password string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("parse url: %w", err)
+		return "", fmt.Errorf("parse URI: %w", err)
 	}
 	name := ""
 	if u.User != nil {

@@ -68,39 +68,39 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"uses --src or the active source. MongoDB, Cassandra, DynamoDB, HBase, CouchDB,\n" +
 		"Couchbase, and Neo4j sources accept sq-style `<source>.<collection>` / `<source>.<table>` /\n" +
 		"`<source>.<database>` / `<source>.<label>` addressing (`iq inspect prod.books`) to\n" +
-		"pick the collection/table/database/label, overriding the source URL's\n" +
+		"pick the collection/table/database/label, overriding the source URI's\n" +
 		"?collection=/?table=/?database=/?label= default; Redis sources take no collection.\n\n" +
 		"MongoDB — runs diagnostic database commands; no --only runs them all,\n" +
 		"--only narrows to the named ones:\n" +
 		"  " + strings.Join(mongoInspectCmds, "  ") + "\n" +
 		"  (collStats needs a collection: address it as source.collection or set\n" +
-		"  ?collection= on the source url)\n\n" +
+		"  ?collection= on the source URI)\n\n" +
 		"Cassandra — runs system-table reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(cassandraInspectCmds, "  ") + "\n" +
 		"  (columns needs a table: address it as source.table or set ?table= on the\n" +
-		"  source url)\n\n" +
+		"  source URI)\n\n" +
 		"DynamoDB — runs introspection reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(dynamoInspectCmds, "  ") + "\n" +
 		"  (table needs a table: address it as source.table or set ?table= on the\n" +
-		"  source url)\n\n" +
+		"  source URI)\n\n" +
 		"HBase — runs introspection reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(hbaseInspectCmds, "  ") + "\n" +
 		"  (tables lists the source namespace's tables)\n\n" +
 		"CouchDB — runs introspection reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(couchInspectCmds, "  ") + "\n" +
 		"  (dbinfo and indexes need a database: address it as source.database or set\n" +
-		"  ?database= on the source url)\n\n" +
+		"  ?database= on the source URI)\n\n" +
 		"Couchbase — runs introspection reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(couchbaseInspectCmds, "  ") + "\n" +
 		"  (collections needs a bucket: address it as source.collection or set ?bucket=\n" +
-		"  on the source url)\n\n" +
+		"  on the source URI)\n\n" +
 		"Neo4j — runs metadata procedures; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(neo4jInspectCmds, "  ") + "\n" +
 		"  (all are database-level; labels lists the addressable collections)\n\n" +
 		"Elasticsearch / OpenSearch — runs metadata reads; no --only runs them all, --only narrows:\n" +
 		"  " + strings.Join(elasticInspectCmds, "  ") + "\n" +
 		"  (mapping needs an index: address it as source.index or set ?index= on the\n" +
-		"  source url)\n\n" +
+		"  source URI)\n\n" +
 		"Redis — runs INFO; --only narrows it to those sections\n" +
 		"(`iq inspect prod --only memory,server`), and none runs the full INFO. Common sections:\n" +
 		"  " + strings.Join(redisInfoCommonSections, "  ") + "\n\n" +
@@ -154,7 +154,7 @@ func newInspectCmd(cfg *config) *cobra.Command {
 			case "file":
 				// inspect reports live server metadata; a dump file has none. Point
 				// the user at the operations that do work on a file source.
-				return errors.New("inspect reports live server metadata, which a file source has none; " +
+				return errors.New("inspect reports live server metadata, and a file source has none; " +
 					"query it with a jq filter (`iq '.[]' --src <name>`) or compare it with `iq diff`")
 			default:
 				return inspectMongo(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
@@ -165,7 +165,7 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit machine-readable YAML")
 	c.MarkFlagsMutuallyExclusive("json", "yaml")
 	c.Flags().BoolVar(&list, "list", false, "list the subcommands/sections available for the source")
-	c.Flags().StringSliceVar(&only, "only", nil, "narrow to these sections (Redis) / subcommands (MongoDB)")
+	c.Flags().StringSliceVar(&only, "only", nil, "narrow to these sections or subcommands (--list names the source's set)")
 	// --only's candidates depend on the source's backend, which the completion
 	// derives offline from the stored URL scheme; the error can only fire for an
 	// unknown flag name, so swallowing it keeps setup panic-free (as at root).
@@ -286,7 +286,7 @@ func inspectMongo(ctx context.Context, out io.Writer, st store, cfg *config, sub
 	for _, sub := range which {
 		if sub == "collStats" && coll == "" {
 			if explicit {
-				return fmt.Errorf("collStats needs a collection; address it as handle.collection or set ?collection= on the source url")
+				return fmt.Errorf("collStats needs a collection; address it as handle.collection or set ?collection= on the source URI")
 			}
 			continue // skip in the run-all case
 		}
@@ -349,7 +349,7 @@ func inspectCassandra(ctx context.Context, out io.Writer, st store, cfg *config,
 		stmt, ok := cassandraInspectStmt(sub, keyspace, table)
 		if !ok {
 			if explicit {
-				return fmt.Errorf("columns needs a table; address it as handle.table or set ?table= on the source url")
+				return fmt.Errorf("columns needs a table; address it as handle.table or set ?table= on the source URI")
 			}
 			continue // skip in the run-all case
 		}

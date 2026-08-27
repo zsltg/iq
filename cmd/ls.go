@@ -78,7 +78,7 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 			_, err := fmt.Fprintf(out, "no sources in group %s\n", filter)
 			return err
 		}
-		_, err := fmt.Fprintln(out, "no sources; add one with `iq add <name> <url>`")
+		_, err := fmt.Fprintln(out, "no sources; add one with `iq add <uri>` (name it with -n)")
 		return err
 	}
 	if cf.Group != "" {

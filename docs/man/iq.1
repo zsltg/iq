@@ -19,22 +19,25 @@ iq runs a jq filter against a NoSQL database.
 .PP
 The filter's top\-level paths name the keys to fetch \(em `iq '.greeting'`, or `iq '.["user:1"]'` for a key with a colon. A `.[]`\-rooted filter streams the whole keyspace in constant memory; a filter that collapses the dataset into one value (`.`, `keys`, `map(...)`) needs \-\-unbounded. Always single\-quote the filter so the shell leaves its brackets, spaces, and pipes alone.
 .PP
-A database is a saved source, chosen by URL scheme \(em redis:// or mongodb://. Register with `iq add`, pick a default with `iq src`, list with `iq ls`. Address a MongoDB collection as handle.collection (e.g. \-\-src shop.orders), or set a default in the source URL (...?collection=orders) and drop the suffix.
+A database is a saved source, chosen by URI scheme (redis://, mongodb://, cassandra://, and more; run `iq driver ls` for the full list). Register with `iq add`, pick a default with `iq src`, list with `iq ls`. Address a collection, table, database, label, or index as handle.name (e.g. \-\-src shop.orders), or set a default in the source URI (...?collection=orders) and drop the suffix.
 .PP
-select(...) clauses are pushed to the backend automatically, results unchanged; run `iq \-\-explain` to see the plan. The README carries the full reference.
+select(...) clauses are pushed to the backend automatically, results unchanged; run `iq '<filter>' \-\-explain` to see the plan. A filter can also read other sources inline with source("name"; "<jq>"). The documentation site carries the full reference.
 .SH GLOBAL FLAGS
 .TP
 \fB\-\-config\fR
 path to the config file (overrides $IQ_CONFIG; default <user config dir>/iq/iq.toml)
 .TP
 \fB\-s\fR, \fB\-\-src\fR
-run against this saved source for one invocation (overrides the active source; see `iq src`)
+run against this saved `source` for one invocation (overrides the active source, see iq src)
 .TP
 \fB\-\-timeout\fR
-per\-query timeout (default 5s)
+timeout for the whole operation: a query, a diff, a combine, or an \-\-insert copy (default 5s)
 .TP
 \fB\-\-explain\fR
 print the formatted query plan (pretty jq, nested filters, and the backend calls) and exit without connecting or executing
+.TP
+\fB\-\-from\-format\fR
+format of a piped\-stdin source when it cannot be sniffed: jsonl, yaml, mongoexport, bson, rdb, dynamodb\-json, cassandra\-csv, or neo4j\-json (aliases like json accepted)
 .TP
 \fB\-\-no\-cache\fR
 disable the file:// dump decode cache (on by default for local dump files above 4 MiB; a cached decode skips re\-parsing the dump on later queries)
@@ -43,16 +46,16 @@ disable the file:// dump decode cache (on by default for local dump files above 
 skip the file:// cache's per\-page key index (still caches the decode; a bounded key read streams the whole cache instead of decoding only candidate pages)
 .TP
 \fB\-\-no\-compile\fR
-disable server\-side predicate pushdown; run the full .[]|select(...) filter client\-side (pushdown is on by default for MongoDB, already a no\-op on Redis; results are unchanged either way)
+disable predicate pushdown; run the full .[]|select(...) filter client\-side (pushdown is on by default where the backend supports it, see iq \-\-explain; results are unchanged either way)
 .TP
 \fB\-\-unbounded\fR
 permit a filter that loads the whole dataset into memory (also materializes a .[]\-rooted filter instead of streaming it)
 .TP
 \fB\-\-compact\fR
-collapse pretty json / jsona output to single\-line (no\-op for jsonl, values, yaml, gron, grona)
+collapse pretty json / jsona output to single\-line (no\-op for jsonl, raw, yaml, gron, grona, parquet)
 .TP
 \fB\-f\fR, \fB\-\-format\fR
-select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona; an alternative to \-j/\-J/\-A/\-y/\-r/\-g/\-G
+select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona, or parquet (binary; redirect or pipe it); an alternative to \-j/\-J/\-A/\-y/\-r/\-g/\-G
 .TP
 \fB\-\-format.decimal\fR
 how to present a non\-integer decimal to the filter: auto (Mongo Decimal128 exact string, Redis fractional number), number (bare, may lose precision), or string (exact, quoted; use tonumber) (default auto)
@@ -86,9 +89,6 @@ report the effect of \-\-insert without writing anything
 .TP
 \fB\-\-force\fR
 skip the confirmation prompt for \-\-replace
-.TP
-\fB\-\-from\-format\fR
-format of a piped\-stdin source when it cannot be sniffed: jsonl, json, yaml, mongoexport, bson, rdb, dynamodb\-json, cassandra\-csv, or neo4j\-json
 .TP
 \fB\-\-insert\fR
 write each item into this destination `source` (copy/restore/import) instead of rendering
@@ -148,14 +148,18 @@ log format: text or json (default text)
 log level: DEBUG, INFO, WARN, or ERROR (default DEBUG)
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
-print verbose diagnostics to stderr; for a query, the formatted plan and a live backend command trace (disables the progress spinner)
+verbose output: for a query, the formatted plan and a live backend trace on stderr (disables the progress spinner); for a listing, extra columns
 .SH COMMANDS
 .SS iq add
-Register a source from a connection URL (sq\-style)
+Register a source from a connection URI (sq\-style)
 .PP
-\fBUsage:\fR iq add <url>
+\fBUsage:\fR iq add <uri>
 .PP
-Register a source from a connection URL, like `sq add`. The URL is the only positional argument; \-n/\-\-handle names the source, and when omitted a handle is derived from the URL: the keyspace it pins (?collection=, ?table=, ?index=, ...), else the MongoDB database or Cassandra keyspace name, else the dump file's stem for a file:// source, else the driver. The backend is inferred from the URL scheme: redis:// (rediss://), mongodb:// (mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb:// (couchdbs://), couchbase:// (couchbases://), neo4j:// (neo4j+s://, bolt://), elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://); \-d/\-\-driver asserts the expected driver. For MongoDB, a default collection rides in the URL as ?collection= (`mongodb://host/db?collection=orders`); for Cassandra, a default table rides as ?table= (`cassandra://host/keyspace?table=orders`); for DynamoDB, the region is the host and a default table rides as ?table= (`dynamodb://us\-east\-1/?table=orders`, credentials from the AWS default chain); for HBase, the host is the ZooKeeper quorum and a default table rides as ?table= (`hbase://host:2181/?table=books`, cell encodings declared with ?types=cf:age=long); for CouchDB, the host is the server and a default database rides as ?database= (`couchdb://host:5984/?database=orders`); for Couchbase, the host is the cluster and a bucket rides as ?bucket= with an optional scope.collection as ?collection= (`couchbase://host/?bucket=iq&collection=sales.orders`); for Neo4j, the host is the bolt server and a default node label rides as ?label= (or a relationship type as ?rel=); for Elasticsearch and OpenSearch, a default index rides as ?index= (`elasticsearch://host:9200/?index=books`, `opensearch://host:9200/?index=books`). Handles may be grouped with '/' (`iq add \-n prod/books mongodb://...`). \-p prompts for the URL password (or reads it from stdin); with \-\-store keyring the password is moved to the OS keyring and stripped from the stored URL. \-a makes the new source active. The source is pinged before it is saved unless \-\-skip\-verify is set. Note: `iq add` is this command, which shadows jq's built\-in `add` filter \(em write the filter as `[ .a, .b ] | add`.
+Register a source from a connection URI, like `sq add`. The URI is the only positional argument; \-n/\-\-handle names the source, and when omitted a handle is derived from the URI: the keyspace it pins (?collection=, ?table=, ?index=, ...), else the MongoDB database or Cassandra keyspace name (its schema container), else the dump file's stem for a file:// source, else the driver. The backend is inferred from the URI scheme: redis:// (rediss://), mongodb:// (mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb:// (couchdbs://), couchbase:// (couchbases://), neo4j:// (neo4j+s://, bolt://), elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://); \-d/\-\-driver asserts the expected driver.
+.PP
+Each driver reads its own URI options. MongoDB: a default collection as ?collection= (`mongodb://host/db?collection=orders`). Cassandra: a default table as ?table= (`cassandra://host/keyspace?table=orders`). DynamoDB: the region is the host, a default table as ?table= (`dynamodb://us\-east\-1/?table=orders`, credentials from the AWS default chain). HBase: the host is the ZooKeeper quorum, a default table as ?table= (`hbase://host:2181/?table=books`, cell encodings declared with ?types=cf:age=long). CouchDB: the host is the server, a default database as ?database= (`couchdb://host:5984/?database=orders`). Couchbase: the host is the cluster, a bucket as ?bucket= with an optional scope.collection as ?collection= (`couchbase://host/?bucket=iq&collection=sales.orders`). Neo4j: the host is the bolt server, a default node label as ?label= (or a relationship type as ?rel=). Elasticsearch and OpenSearch: a default index as ?index= (`elasticsearch://host:9200/?index=books`).
+.PP
+Handles may be grouped with '/' (`iq add \-n prod/books mongodb://...`). \-p prompts for the URI password (or reads it from stdin); with \-\-store keyring the password is moved to the OS keyring and stripped from the stored URI. \-a makes the new source active. The source is pinged before it is saved unless \-\-skip\-verify is set. Note: `iq add` is this command, which shadows jq's built\-in `add` filter: write the filter as `[ .a, .b ] | add`.
 .PP
 \fBFlags:\fR
 .TP
@@ -163,19 +167,19 @@ Register a source from a connection URL, like `sq add`. The URL is the only posi
 make the new source the active source
 .TP
 \fB\-d\fR, \fB\-\-driver\fR
-expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb, couchbase, neo4j, elasticsearch, opensearch); must match the url scheme
+expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb, couchbase, neo4j, elasticsearch, opensearch); must match the URI scheme
 .TP
 \fB\-n\fR, \fB\-\-handle\fR
-handle for the source; derived from the keyspace the url names when omitted
+handle for the source; derived from the keyspace the URI names when omitted
 .TP
 \fB\-p\fR, \fB\-\-password\fR
-prompt for the url password (or read it from stdin)
+prompt for the URI password (or read it from stdin)
 .TP
 \fB\-\-skip\-verify\fR
 skip the post\-add reachability check
 .TP
 \fB\-\-store\fR
-where the url's password is kept: inline (in the config file) or keyring (the OS keyring) (default inline)
+where the URI's password is kept: inline (in the config file) or keyring (the OS keyring) (default inline)
 .PP
 \fBExamples:\fR
 .RS
@@ -213,7 +217,7 @@ List saved sources (the active one marked *), or groups with \-g
 .PP
 \fBUsage:\fR iq ls [group]
 .PP
-List saved sources, the active one marked with '*'. An optional [group] limits the listing to sources in that group. \-v adds each source's driver; \-g lists groups instead of sources; \-j/\-\-json or \-y/\-\-yaml emit machine\-readable output. Passwords are redacted by default: \-\-reveal prints a password stored inline in the config verbatim, and \-\-expand resolves a keyring\-backed source's stored password and inlines it (combine both to print a keyring password verbatim).
+List saved sources, the active one marked with '*'. An optional [group] limits the listing to sources in that group. \-v adds a header row, FORMAT and OPTIONS columns, and a [keyring] tag on keyring\-backed sources; \-g lists groups instead of sources; \-j/\-\-json or \-y/\-\-yaml emit machine\-readable output. Passwords are redacted by default: \-\-reveal prints a password stored inline in the config verbatim, and \-\-expand resolves a keyring\-backed source's stored password and inlines it (combine both to print a keyring password verbatim).
 .PP
 \fBFlags:\fR
 .TP
@@ -262,7 +266,7 @@ Check that sources are reachable
 .PP
 \fBUsage:\fR iq ping [name...]
 .PP
-Open each source and round\-trip a cheap command (Redis PING, MongoDB {ping:1}), reporting its driver and the round\-trip time, or the error. With no arguments the active source is pinged; otherwise each argument is a source handle or a group (pinging every member), and \-\-all pings every saved source. Each check is bounded by \-\-timeout. Exits non\-zero if any source is unreachable.
+Open each source and round\-trip a cheap backend\-specific command (Redis PING, Cassandra a version read, {ping:1} and its kin elsewhere; a dump file and DynamoDB verify at open), reporting its driver and the round\-trip time, or the error. With no arguments the active source is pinged; otherwise each argument is a source handle or a group (pinging every member), and \-\-all pings every saved source. Each check is bounded by \-\-timeout. Exits non\-zero if any source is unreachable.
 .PP
 \fBFlags:\fR
 .TP
@@ -321,7 +325,7 @@ Each source reduces at the source, and a pushable filter pushes down, so this ne
 \fBFlags:\fR
 .TP
 \fB\-\-compact\fR
-collapse pretty json / jsona output to single\-line (no\-op for jsonl, values, yaml, gron, grona)
+collapse pretty json / jsona output to single\-line (no\-op for jsonl, raw, yaml, gron, grona, parquet)
 .TP
 \fB\-\-dry\-run\fR
 report the effect of \-\-insert without writing anything
@@ -333,7 +337,7 @@ print the formatted query plan (pretty jq, per\-source filters, and the backend 
 skip the confirmation prompt for \-\-replace
 .TP
 \fB\-f\fR, \fB\-\-format\fR
-select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona; an alternative to \-j/\-J/\-A/\-y/\-r/\-g/\-G
+select the output rendering by name: json (default), jsonl, jsona, yaml, values (alias: raw), gron, grona, or parquet (binary; redirect or pipe it); an alternative to \-j/\-J/\-A/\-y/\-r/\-g/\-G
 .TP
 \fB\-g\fR, \fB\-\-gron\fR
 output flattened assignment statements (gron), one per line: greppable, each result rooted at json, reversible with ungron
@@ -437,7 +441,7 @@ Empty one or more containers (keep them)
 .PP
 \fBUsage:\fR iq data clear <target>...
 .PP
-Empty a collection/keyspace, keeping the container. MongoDB: deleteMany({}). Redis: FLUSHDB. Distinct from `iq rm`, which only unregisters a saved source \(em clear destroys the stored data.
+Empty a container, keeping it. MongoDB: deleteMany({}). Redis: FLUSHDB. Preview with \-\-explain (no connection) or \-\-dry\-run (no changes). Distinct from `iq rm`, which only unregisters a saved source \(em clear destroys the stored data.
 .PP
 \fBFlags:\fR
 .TP
@@ -456,7 +460,7 @@ Remove specific keys from a container (keep the container)
 .PP
 \fBUsage:\fR iq data delete <target> <key>...
 .PP
-Remove one or more keys from a container, keeping the container. Each key uses the same spelling as a Get: a bare string (`book:1`), or a JSON array for a composite key (`["shop",42]`). A key that is already absent is not an error \(em delete is idempotent, so a re\-run converges. Distinct from `iq data clear`, which empties the whole container, and from `iq rm`, which only unregisters a source. No confirmation prompt: the key list you typed is the confirmation; use \-\-dry\-run to preview. Rejected for a backend with no per\-key delete (e.g. a dump file).
+Remove one or more keys from a container, keeping the container. Each key uses the same spelling as a Get: a bare string (`book:1`), or a JSON array for a composite key (`["shop",42]`). A key that is already absent is not an error \(em delete is idempotent, so a re\-run converges. Distinct from `iq data clear`, which empties the whole container, and from `iq rm`, which only unregisters a source. No confirmation prompt: the key list you typed is the confirmation; preview with \-\-explain or \-\-dry\-run. Rejected for a backend with no per\-key delete (e.g. a dump file).
 .PP
 \fBExamples:\fR
 .RS
@@ -471,7 +475,7 @@ Remove one or more containers
 .PP
 \fBUsage:\fR iq data drop <target>...
 .PP
-Remove a container entirely. MongoDB: drop the collection and its indexes. Redis has no droppable container (a DB index only empties), so drop is rejected for a Redis target \(em use `iq data clear`. Distinct from `iq rm`, which only unregisters a saved source; drop destroys the stored data.
+Remove a container entirely. MongoDB: drop the collection and its indexes. Redis has no droppable container (a DB index only empties), so drop is rejected for a Redis target \(em use `iq data clear`. Preview with \-\-explain (no connection) or \-\-dry\-run (no changes). Distinct from `iq rm`, which only unregisters a saved source; drop destroys the stored data.
 .PP
 \fBFlags:\fR
 .TP
@@ -534,7 +538,7 @@ A filter may instead name a single key (prod=.["orders:42"]) to compare one docu
 diff items key by key (default when no layer is chosen; cross\-driver allowed)
 .TP
 \fB\-\-filter\fR
-jq filter you root at `.[]`, scoping both sides; a spec's own `source=<jq>` overrides it for that side
+jq filter rooted at .[] scoping both sides; a spec's own source=<jq> overrides it for that side
 .TP
 \fB\-j\fR, \fB\-\-json\fR
 emit machine\-readable JSON
@@ -549,7 +553,7 @@ max items sampled per side for \-\-schema (0 = all) (default 1000)
 diff an inferred field/type shape (cross\-driver allowed)
 .TP
 \fB\-\-section\fR
-introspection section(s) for \-\-stats (comma\-separated or repeatable; default: the source's full set) (default [])
+introspection sections or subcommands for \-\-stats (comma\-separated or repeatable; iq inspect \-\-list names them; default: the source's full set) (default [])
 .TP
 \fB\-\-set\-arrays\fR
 compare arrays order\-insensitively as multisets (duplicates counted)
@@ -583,24 +587,29 @@ Forward a command to the database verbatim and print the reply
 .PP
 \fBUsage:\fR iq exec <command> [args...]
 .PP
-Forward a command to the backend verbatim. For Redis, a command and operands: `iq exec SET greeting hello`, `iq exec HGETALL book:2`. For MongoDB, one JSON command document run with runCommand: `iq exec '{"find":"books","filter":{}}'`. For Cassandra, a CQL statement: `iq exec 'SELECT * FROM books LIMIT 10'`. HBase has no query language, so it takes a shell\-style verb naming its own table: get, scan, count (reads), put, delete (writes): `iq exec get books 42`, `iq exec scan books 10`.
+Forward a command to the backend verbatim, in the backend's own language. Redis: a command and operands (`iq \-\-src cache exec SET greeting hello`). MongoDB: one JSON command document run with runCommand. Cassandra: a CQL statement. DynamoDB: a PartiQL statement. CouchDB: a Mango _find request or a bare selector. Couchbase: a SQL++ statement, optionally followed by a JSON object of named parameters. Neo4j: a Cypher statement, optionally followed by a JSON object of parameters. Elasticsearch and OpenSearch: a _search body or a bare query object. HBase has no query language, so it takes a shell\-style verb naming its own table: get, scan, count (reads), put, delete (writes).
+.PP
+Every iq flag must come before `exec`: everything after it is forwarded to the backend untouched. The documentation site's Drivers page details each backend's shape.
 .PP
 \fBExamples:\fR
 .RS
 .nf
   # Redis: a command and its operands.
-  $ iq exec SET greeting hello
-  $ iq exec HGETALL user:2
+  $ iq \-\-src cache exec SET greeting hello
+  $ iq \-\-src cache exec HGETALL user:2
 
   # MongoDB: one runCommand document (database\-scoped; no collection needed).
-  $ iq exec '{"find":"orders","filter":{}}' \-\-src shop
+  $ iq \-\-src shop exec '{"find":"orders","filter":{}}'
 
   # Cassandra: a CQL statement (keyspace\-scoped; no table needed).
-  $ iq exec 'SELECT release_version FROM system.local' \-\-src cluster
+  $ iq \-\-src cluster exec 'SELECT release_version FROM system.local'
+
+  # Neo4j: parameterized Cypher (parameters ride as a JSON object).
+  $ iq \-\-src graph exec 'MATCH (n:Person) WHERE n.age > $min RETURN n.name' '{"min": 40}'
 
   # HBase: a verb naming its own table (get/scan/count/put/delete).
-  $ iq exec get books 42 \-\-src cluster
-  $ iq exec put books 42 cf:title Dune \-\-src cluster
+  $ iq \-\-src cluster exec get books 42
+  $ iq \-\-src cluster exec put books 42 cf:title Dune
 .fi
 .RE
 .SS iq inspect
@@ -610,23 +619,23 @@ Show a source's native server/database introspection
 .PP
 Show a source's native server/database introspection.
 .PP
-The positional argument names the source, like `iq inspect prod`; with none it uses \-\-src or the active source. MongoDB, Cassandra, DynamoDB, HBase, CouchDB, Couchbase, and Neo4j sources accept sq\-style `<source>.<collection>` / `<source>.<table>` / `<source>.<database>` / `<source>.<label>` addressing (`iq inspect prod.books`) to pick the collection/table/database/label, overriding the source URL's ?collection=/?table=/?database=/?label= default; Redis sources take no collection.
+The positional argument names the source, like `iq inspect prod`; with none it uses \-\-src or the active source. MongoDB, Cassandra, DynamoDB, HBase, CouchDB, Couchbase, and Neo4j sources accept sq\-style `<source>.<collection>` / `<source>.<table>` / `<source>.<database>` / `<source>.<label>` addressing (`iq inspect prod.books`) to pick the collection/table/database/label, overriding the source URI's ?collection=/?table=/?database=/?label= default; Redis sources take no collection.
 .PP
-MongoDB \(em runs diagnostic database commands; no \-\-only runs them all, \-\-only narrows to the named ones:   dbStats  serverStatus  listCollections  collStats  buildInfo  hostInfo   (collStats needs a collection: address it as source.collection or set   ?collection= on the source url)
+MongoDB \(em runs diagnostic database commands; no \-\-only runs them all, \-\-only narrows to the named ones:   dbStats  serverStatus  listCollections  collStats  buildInfo  hostInfo   (collStats needs a collection: address it as source.collection or set   ?collection= on the source URI)
 .PP
-Cassandra \(em runs system\-table reads; no \-\-only runs them all, \-\-only narrows:   local  tables  columns   (columns needs a table: address it as source.table or set ?table= on the   source url)
+Cassandra \(em runs system\-table reads; no \-\-only runs them all, \-\-only narrows:   local  tables  columns   (columns needs a table: address it as source.table or set ?table= on the   source URI)
 .PP
-DynamoDB \(em runs introspection reads; no \-\-only runs them all, \-\-only narrows:   tables  table   (table needs a table: address it as source.table or set ?table= on the   source url)
+DynamoDB \(em runs introspection reads; no \-\-only runs them all, \-\-only narrows:   tables  table   (table needs a table: address it as source.table or set ?table= on the   source URI)
 .PP
 HBase \(em runs introspection reads; no \-\-only runs them all, \-\-only narrows:   tables   (tables lists the source namespace's tables)
 .PP
-CouchDB \(em runs introspection reads; no \-\-only runs them all, \-\-only narrows:   server  databases  dbinfo  indexes   (dbinfo and indexes need a database: address it as source.database or set   ?database= on the source url)
+CouchDB \(em runs introspection reads; no \-\-only runs them all, \-\-only narrows:   server  databases  dbinfo  indexes   (dbinfo and indexes need a database: address it as source.database or set   ?database= on the source URI)
 .PP
-Couchbase \(em runs introspection reads; no \-\-only runs them all, \-\-only narrows:   cluster  buckets  collections  indexes   (collections needs a bucket: address it as source.collection or set ?bucket=   on the source url)
+Couchbase \(em runs introspection reads; no \-\-only runs them all, \-\-only narrows:   cluster  buckets  collections  indexes   (collections needs a bucket: address it as source.collection or set ?bucket=   on the source URI)
 .PP
 Neo4j \(em runs metadata procedures; no \-\-only runs them all, \-\-only narrows:   server  databases  labels  reltypes  constraints   (all are database\-level; labels lists the addressable collections)
 .PP
-Elasticsearch / OpenSearch \(em runs metadata reads; no \-\-only runs them all, \-\-only narrows:   server  indices  mapping  aliases   (mapping needs an index: address it as source.index or set ?index= on the   source url)
+Elasticsearch / OpenSearch \(em runs metadata reads; no \-\-only runs them all, \-\-only narrows:   server  indices  mapping  aliases   (mapping needs an index: address it as source.index or set ?index= on the   source URI)
 .PP
 Redis \(em runs INFO; \-\-only narrows it to those sections (`iq inspect prod \-\-only memory,server`), and none runs the full INFO. Common sections:   server  clients  memory  persistence  stats  replication  cpu  keyspace
 .PP
@@ -644,7 +653,7 @@ emit machine\-readable JSON
 list the subcommands/sections available for the source
 .TP
 \fB\-\-only\fR
-narrow to these sections (Redis) / subcommands (MongoDB) (default [])
+narrow to these sections or subcommands (\-\-list names the source's set) (default [])
 .TP
 \fB\-\-reveal\fR
 print an inline\-stored password verbatim in the location header instead of redacting it
@@ -679,7 +688,7 @@ jsonschema honors \-y to emit YAML instead of JSON; odcs is always YAML (its can
 \fBFlags:\fR
 .TP
 \fB\-\-filter\fR
-jq filter scoping which items the shape is inferred from; the spec form `source=<jq>` sets it per source
+jq filter scoping which items the shape is inferred from; the spec form source=<jq> sets it per source
 .TP
 \fB\-\-format\fR
 contract format: jsonschema or odcs (default jsonschema)
@@ -734,7 +743,7 @@ Show the config file and manage stored option defaults
 .PP
 \fBUsage:\fR iq config
 .PP
-Inspect the config file and manage stored option defaults. `set` a persistable flag by name to persist its value so you need not retype it (remove it again with `set \-D`); scope it to one source with \-\-src (`iq config set \-\-src @prod format yaml`). A stored default is overridden per query by an explicit flag, and a source option is overridden only by an explicit flag; the base option applies to every other source. `location` prints the file path, `edit` opens it, `view` dumps it.
+Inspect the config file and manage stored option defaults. `set` a persistable flag by name to persist its value so you need not retype it (remove it again with `set \-D`); scope it to one source with \-\-src (`iq config set \-\-src prod format yaml`). A stored default is overridden per query by an explicit flag, and a source option is overridden only by an explicit flag; the base option applies to every other source. `get` reads one stored default and `ls` lists them all; `location` prints the file path, `edit` opens it, `view` dumps it; `keyring` manages the OS\-keyring secrets of keyring\-backed sources.
 .PP
 \fBExamples:\fR
 .RS
@@ -955,7 +964,7 @@ List the backend drivers iq can dispatch to
 .PP
 \fBUsage:\fR iq driver ls
 .PP
-List the backend drivers iq can dispatch to. Each row shows the driver's stable name (as `iq ls` reports it), a description, the URL schemes that select it, the backend server versions the bundled client library supports, and a link to its upstream documentation. \-v appends the file driver's readable dump formats (which auto\-detect, which need ?format=). \-j/\-\-json or \-y/\-\-yaml emit machine\-readable output.
+List the backend drivers iq can dispatch to. Each row shows the driver's stable name (as `iq ls` reports it), a description, the URI schemes that select it, the backend server versions the bundled client library supports, and a link to its upstream documentation. \-v appends the file driver's readable dump formats (which auto\-detect, which need ?format=). \-j/\-\-json or \-y/\-\-yaml emit machine\-readable output.
 .PP
 \fBFlags:\fR
 .TP
@@ -988,17 +997,164 @@ Print version, commit, build date, and Go version
 .PP
 \fBUsage:\fR iq version
 .PP
+Print the version, commit, build date, and Go toolchain version, one per line. For scripts, the \-\-version flag prints the bare version alone instead.
+.PP
 \fBExamples:\fR
 .RS
 .nf
   $ iq version
+  $ iq \-\-version   # bare version only, for scripts
 .fi
 .RE
+.SS iq completion
+Generate the autocompletion script for the specified shell
+.PP
+\fBUsage:\fR iq completion
+.PP
+Generate the autocompletion script for iq for the specified shell. See each sub\-command's help for details on how to use the generated script. 
+.SS iq completion bash
+Generate the autocompletion script for bash
+.PP
+\fBUsage:\fR iq completion bash
+.PP
+Generate the autocompletion script for the bash shell.
+.PP
+This script depends on the 'bash\-completion' package. If it is not installed already, you can install it via your OS's package manager.
+.PP
+To load completions in your current shell session:
+.PP
+.RS
+.nf
+	source <(iq completion bash)
+.fi
+.RE
+.PP
+To load completions for every new session, execute once:
+.PP
+#### Linux:
+.PP
+.RS
+.nf
+	iq completion bash > /etc/bash_completion.d/iq
+.fi
+.RE
+.PP
+#### macOS:
+.PP
+.RS
+.nf
+	iq completion bash > $(brew \-\-prefix)/etc/bash_completion.d/iq
+.fi
+.RE
+.PP
+You will need to start a new shell for this setup to take effect. 
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-no\-descriptions\fR
+disable completion descriptions
+.SS iq completion fish
+Generate the autocompletion script for fish
+.PP
+\fBUsage:\fR iq completion fish
+.PP
+Generate the autocompletion script for the fish shell.
+.PP
+To load completions in your current shell session:
+.PP
+.RS
+.nf
+	iq completion fish | source
+.fi
+.RE
+.PP
+To load completions for every new session, execute once:
+.PP
+.RS
+.nf
+	iq completion fish > ~/.config/fish/completions/iq.fish
+.fi
+.RE
+.PP
+You will need to start a new shell for this setup to take effect. 
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-no\-descriptions\fR
+disable completion descriptions
+.SS iq completion powershell
+Generate the autocompletion script for powershell
+.PP
+\fBUsage:\fR iq completion powershell
+.PP
+Generate the autocompletion script for powershell.
+.PP
+To load completions in your current shell session:
+.PP
+.RS
+.nf
+	iq completion powershell | Out\-String | Invoke\-Expression
+.fi
+.RE
+.PP
+To load completions for every new session, add the output of the above command to your powershell profile. 
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-no\-descriptions\fR
+disable completion descriptions
+.SS iq completion zsh
+Generate the autocompletion script for zsh
+.PP
+\fBUsage:\fR iq completion zsh
+.PP
+Generate the autocompletion script for the zsh shell.
+.PP
+If shell completion is not already enabled in your environment you will need to enable it.  You can execute the following once:
+.PP
+.RS
+.nf
+	echo "autoload \-U compinit; compinit" >> ~/.zshrc
+.fi
+.RE
+.PP
+To load completions in your current shell session:
+.PP
+.RS
+.nf
+	source <(iq completion zsh)
+.fi
+.RE
+.PP
+To load completions for every new session, execute once:
+.PP
+#### Linux:
+.PP
+.RS
+.nf
+	iq completion zsh > "${fpath[1]}/_iq"
+.fi
+.RE
+.PP
+#### macOS:
+.PP
+.RS
+.nf
+	iq completion zsh > $(brew \-\-prefix)/share/zsh/site\-functions/_iq
+.fi
+.RE
+.PP
+You will need to start a new shell for this setup to take effect. 
+.PP
+\fBFlags:\fR
+.TP
+\fB\-\-no\-descriptions\fR
+disable completion descriptions
 .SH EXAMPLES
 .RS
 .nf
   # Register a Redis source (active) and a Mongo source whose password is kept safe.
-  # The Mongo URL sets a default collection with ?collection=orders.
+  # The Mongo URI sets a default collection with ?collection=orders.
   $ iq add \-a \-n cache redis://localhost:6379/0
   $ iq add \-p \-\-store keyring 'mongodb://user@localhost:27017/shop?collection=orders'
 
@@ -1013,12 +1169,16 @@ Print version, commit, build date, and Go version
   # Query a Mongo collection \(em select(...) pushes to the backend.
   $ iq '.[] | select(.total > 99) | .id' \-\-src shop.orders
 
-  # The URL's ?collection= default lets you drop the suffix.
+  # The URI's ?collection= default lets you drop the suffix.
   $ iq '.[]' \-\-src shop
 
   # Output as JSON Lines, or one JSON array written to a file.
   $ iq '.[]' \-\-src shop.orders \-\-jsonl
   $ iq '.[]' \-\-src shop.orders \-A \-o results.json
+
+  # Join two sources in one filter with source() (runs over null input, needs no active source).
+  $ iq 'INDEX(source("users"; ".[]"); .id) as $u
+      | source("orders"; ".[] | select(.total > 99)") | {name: $u[.userId].name, total}'
 
   # Join two collections of one source on a shared id (each spec binds $shop_orders, $shop_users).
   $ iq combine 'shop.orders=.[] | {id, total}' 'shop.users=.[] | {id, name}' \e
