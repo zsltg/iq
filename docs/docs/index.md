@@ -171,7 +171,7 @@ introspection subcommands of the selected source's backend, worked out from its
 saved URI.
 
 The `jq` filter itself is a program, not a completable value, so `iq` offers no
-candidates there (and never falls back to filenames) — nor do `iq exec`'s
+candidates there (and never falls back to filenames), nor do `iq exec`'s
 backend verb and its operands.
 
 Every completion is offline, it reads your config file and nothing else, so a

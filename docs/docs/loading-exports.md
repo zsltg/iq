@@ -39,7 +39,7 @@ df["amount"] = df["amount"].astype(pd.ArrowDtype(pa.decimal128(20, 2)))   # exac
 df["ts"] = df["ts"].astype("timestamp[ns, tz=UTC][pyarrow]")             # nanosecond UTC
 ```
 
-pandas still labels `pd.NA` semantics experimental — prefer the Arrow backend, but pin your
+pandas still labels `pd.NA` semantics experimental, prefer the Arrow backend, but pin your
 pandas version rather than depend on the exact behaviour.
 
 ### Polars
@@ -50,7 +50,7 @@ df = pl.read_ndjson("dump.jsonl")
 df.null_count()   # O(1) per column, tracked in the validity bitmap
 ```
 
-Polars has one missing value — `null` — uniform across every type. `NaN` is a float *value*, not
+Polars has one missing value, `null`, uniform across every type. `NaN` is a float *value*, not
 missingness, and iq never emits `NaN` for an absent field, so `mean`, `min`, and `null_count` stay
 honest on iq output: a gap is a `null` that statistics skip, never a `NaN` that poisons the result.
 
@@ -65,7 +65,7 @@ SELECT * FROM read_json_auto('dump.jsonl');
 
 - **Timestamps need an explicit cast.** DuckDB's type sniffer accepts fractional seconds only to
   millisecond precision, so iq's nanosecond RFC3339Nano strings (`2026-07-18T12:34:56.123456789Z`)
-  are inferred as `VARCHAR`, not `TIMESTAMP` (observed on DuckDB 1.5.4 — verify in your version).
+  are inferred as `VARCHAR`, not `TIMESTAMP` (observed on DuckDB 1.5.4, verify in your version).
   Cast to `TIMESTAMP_NS` to keep the nanoseconds; plain `TIMESTAMP` truncates to microseconds:
 
   ```sql
@@ -85,17 +85,17 @@ SELECT * FROM read_json_auto('dump.jsonl');
 ### Splink (entity resolution)
 
 [Splink](https://moj-analytical-services.github.io/splink/) needs a per-record `unique_id`, column
-names that conform across the sources you link, dates truncated to `yyyy-mm-dd`, and — critically —
+names that conform across the sources you link, dates truncated to `yyyy-mm-dd`, and, critically,
 *true nulls*, never empty-string placeholders. iq's export already fits: the key rides in each
 record (a ready `unique_id`) and iq emits an explicit `null` for an absent field. Prepare a source
-for Splink with the jq filter — reshape, re-key, and truncate dates in one pass:
+for Splink with the jq filter, reshape, re-key, and truncate dates in one pass:
 
 ```bash
 iq '.[] | {unique_id: .id, name, dob: (.created_at | .[0:10])}' --src people --jsonl
 ```
 
 For an entity-resolution consumer the choice between *omitting* a field and writing an explicit
-`null` is load-bearing — they are different inputs to the match. Export explicit nulls (a jq object
+`null` is load-bearing, they are different inputs to the match. Export explicit nulls (a jq object
 constructor like `{name}` already writes `null` for a missing field); see
 [Null vs missing](how-it-works.md#null-vs-missing) for how iq draws that line at each layer.
 

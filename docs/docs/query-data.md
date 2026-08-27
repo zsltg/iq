@@ -86,7 +86,7 @@ iq 'INDEX(source("users"; ".[]"); .id) as $u
     set in memory (`jq` indexing needs a concrete array), even though the read
     itself streams.
 
-    Push the reduction into the sub-filter — `source("orders"; ".[] |
+    Push the reduction into the sub-filter, `source("orders"; ".[] |
     select(.total > 99)")`, not `source("orders"; ".[]")` filtered outside, so
     only the rows you need are held.
 

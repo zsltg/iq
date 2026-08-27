@@ -39,11 +39,11 @@ same contract:
 - **One URI, native nouns.** The URI scheme picks the driver; the keyspace rides in the URI as the
   backend's own noun (`?collection=`, `?table=`, `?database=`, `?label=`/`?rel=`, `?index=`), and a
   query overrides it per run with the dotted `handle.<keyspace>` suffix (see [Sources](sources.md)).
-- **One jq surface.** A bounded filter fetches exactly the named keys — a missing key reads as
+- **One jq surface.** A bounded filter fetches exactly the named keys, a missing key reads as
   `null`, never an error; a `.[]`-rooted filter streams the keyspace in bounded pages; a holistic
   filter materializes only behind `--unbounded` (see
   [Read strategies](how-it-works.md#read-strategies)).
-- **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter —
+- **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter,
   server-side where the backend can filter, or a client-side raw-byte prefilter that drops a provable
   non-match before decode where it cannot (Redis, on RedisJSON values; Elasticsearch/OpenSearch and
   Couchbase, over the residual their server-side query could not narrow). The full jq always re-runs
@@ -59,9 +59,9 @@ same contract:
   [Write data](write-data.md)).
 - **Bounded and redacted.** Every backend call is bounded by `--timeout`, and a URI's password is
   redacted from every listing, log line, and error.
-- **A native escape hatch.** `iq exec` speaks the backend's own language — verbatim where one exists
+- **A native escape hatch.** `iq exec` speaks the backend's own language, verbatim where one exists
   (Redis commands, Mongo command documents, CQL, PartiQL, Cypher, Mango, the Elasticsearch DSL), a small
-  fixed verb set where none does (HBase) — see each driver's Raw commands section. Every `iq` flag
+  fixed verb set where none does (HBase), see each driver's Raw commands section. Every `iq` flag
   must come before `exec`: everything after it is forwarded to the backend untouched.
 
 ## Cassandra
@@ -97,8 +97,8 @@ connect time, so the driver knows the primary-key columns and their types.
 
 ### Key encoding
 
-A row's key is its **full primary key** — the partition-key columns followed by the clustering
-columns. A single-column primary key renders as its bare value (`42`, a uuid, a text value — like a
+A row's key is its **full primary key**, the partition-key columns followed by the clustering
+columns. A single-column primary key renders as its bare value (`42`, a uuid, a text value, like a
 Mongo `_id`); a composite primary key renders as a compact JSON array in schema order:
 
 ```sh { title='Fetch by a single-column key, bare' }
@@ -144,13 +144,13 @@ the cluster filters before rows reach iq. Only equality and same-column membersh
 | ranges, regex, `has`, `length`, negations, nested paths | — | — | run client-side; ranges are skipped because jq treats a missing field as the lowest value, which CQL cannot reproduce |
 
 A pushed `WHERE` that does not resolve to the full partition key runs with `ALLOW FILTERING`, so the
-coordinator does the scan — an opt-in cost (it is shown in `--explain`). Pushdown never changes
+coordinator does the scan, an opt-in cost (it is shown in `--explain`). Pushdown never changes
 results, only speed: the full jq always re-runs client-side, so a pushed filter is a conservative
 pre-filter. Pass `--no-compile` to stream the whole table and filter entirely client-side.
 
 ### Raw commands
 
-`iq exec` runs a CQL statement verbatim and prints the rows as JSON — the escape hatch for
+`iq exec` runs a CQL statement verbatim and prints the rows as JSON, the escape hatch for
 server-side queries, DDL, and administration the jq read path does not cover:
 
 ```sh { title='Read the cluster version' }
@@ -160,7 +160,7 @@ iq --src books exec 'SELECT release_version FROM system.local'
 iq --src books exec "SELECT title FROM books WHERE year > 2015 ALLOW FILTERING"
 ```
 
-`iq inspect` reads the system schema — `local` (cluster/version), `tables` (the keyspace's tables),
+`iq inspect` reads the system schema, `local` (cluster/version), `tables` (the keyspace's tables),
 and `columns` (a table's columns); `--only` narrows to those subcommands.
 
 ## Couchbase
@@ -228,12 +228,12 @@ collection and filters entirely client-side.
 Whatever the `WHERE` leaves behind, a **client-side raw-byte prefilter** runs the full predicate over
 each row's raw value before it is decoded, and drops any row it can prove the predicate rejects. So a
 fallback scan (a `!=`, a regex) or a partially-pushed scan (a dropped conjunct) skips the dominant
-`UseNumber` decode of the documents the query service could not exclude — the same trick as the Redis
+`UseNumber` decode of the documents the query service could not exclude, the same trick as the Redis
 and Elasticsearch prefilters, on the bytes the keyset scan already returned. It is byte-level and
 never changes results (the full jq still re-runs client-side), so it is bypassed in the one case where
 it would be wasted: when the `WHERE` already captured the predicate exactly (the query service
-returned only matches). A Couchbase document's ID is KV metadata, never injected into the value, so —
-unlike the Elasticsearch prefilter — there is no injected-field case to disable it.
+returned only matches). A Couchbase document's ID is KV metadata, never injected into the value, so,
+unlike the Elasticsearch prefilter, there is no injected-field case to disable it.
 
 **Index requirement.** A SQL++ scan needs an index on the collection. On Server 7.6+ a sequential
 scan answers index-free queries automatically; on 7.0–7.5, or for large collections, create one:
@@ -253,7 +253,7 @@ iq --src books exec 'SELECT META(t).id, t.* FROM `iq` t WHERE t.year > $min' '{"
 iq --src books exec 'SELECT COUNT(*) AS n FROM `iq`'
 ```
 
-`iq inspect` reads cluster and bucket metadata — `cluster` (nodes and services), `buckets` (the
+`iq inspect` reads cluster and bucket metadata, `cluster` (nodes and services), `buckets` (the
 cluster's buckets), `collections` (the selected bucket's scopes and collections), and `indexes` (the
 query indexes); `--only` narrows to those subcommands.
 
@@ -314,7 +314,7 @@ bytes with no unicode option, and skips a non-string field (an `is_binary` guard
 gojq's RE2: pure-ASCII literals, anchors, quantifiers, groups, positive classes, and the `\d \w \s`
 shorthands. An unescaped `.`, a negated class (`[^…]`, `\D`, `\W`, `\S`), any non-ASCII byte, or the
 `i` flag is declined and runs client-side, because over multi-byte text a byte engine and a rune
-engine would diverge. The subject string may be any Unicode — only the pattern is constrained.
+engine would diverge. The subject string may be any Unicode, only the pattern is constrained.
 
 Pushdown never changes results, only speed: the full jq always re-runs client-side, so a pushed
 filter is a conservative pre-filter; `--explain` shows the selector, and `--no-compile` streams the
@@ -335,7 +335,7 @@ iq --src books exec '{"selector": {"year": {"$gt": 2015}}, "limit": 10}'
 iq --src books exec '{"author": "Martin Kleppmann"}'
 ```
 
-`iq inspect` reads server and database metadata — `server` (version and vendor), `databases` (the
+`iq inspect` reads server and database metadata, `server` (version and vendor), `databases` (the
 server's databases), `dbinfo` (the selected database's document count, sizes, and update sequence),
 and `indexes` (its Mango indexes); `--only` narrows to those subcommands.
 
@@ -347,7 +347,7 @@ serverless key-value and document database.
 Register a `dynamodb://` source and the same jq interface works against a table, where **the table
 is the keyspace: an item's primary key is the key and the item is the value**. The region is the URI
 host; the table rides in the URI's `?table=` (overridable per run with a dotted `handle.table`). An
-optional `?endpoint=` points at DynamoDB Local. **Credentials never travel in the URI** — the AWS
+optional `?endpoint=` points at DynamoDB Local. **Credentials never travel in the URI**, the AWS
 default credential chain (environment, `~/.aws`, IAM role) resolves them, so no secret touches the
 config or keyring.
 
@@ -373,8 +373,8 @@ so the driver knows the partition and (optional) sort key and their types.
 
 ### Key encoding
 
-An item's key is its **full primary key** — the partition key, then the sort key when the table has
-one. A partition-key-only table renders the key as its bare value (`42`, a string — like a Mongo
+An item's key is its **full primary key**, the partition key, then the sort key when the table has
+one. A partition-key-only table renders the key as its bare value (`42`, a string, like a Mongo
 `_id`); a table with a sort key renders a compact JSON array in schema order:
 
 ```sh { title='Fetch by a partition-key-only key, bare' }
@@ -424,7 +424,7 @@ always safe:
 | ranges, regex, `length`, `!=`, nested paths | — | — | run client-side; ranges are skipped because jq orders a string above every number, which a typed DynamoDB comparison cannot reproduce |
 
 A `Scan` reads the whole table (there is no `WHERE` on a primary-key membership like a relational
-store); the `FilterExpression` only avoids shipping non-matching items over the wire — the cost is
+store); the `FilterExpression` only avoids shipping non-matching items over the wire, the cost is
 shown in `--explain`. Pushdown never changes results, only speed: the full jq always re-runs
 client-side, so a pushed filter is a conservative pre-filter. Pass `--no-compile` to stream the whole
 table and filter entirely client-side.
@@ -432,7 +432,7 @@ table and filter entirely client-side.
 ### Raw commands
 
 `iq exec` runs a [PartiQL](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.html)
-statement verbatim and prints the items as JSON — the escape hatch for server-side queries and
+statement verbatim and prints the items as JSON, the escape hatch for server-side queries and
 writes the jq read path does not cover:
 
 ```sh { title='Fetch one item by key with PartiQL' }
@@ -442,7 +442,7 @@ iq --src books exec 'SELECT * FROM "books" WHERE id = 2'
 iq --src books exec 'SELECT title FROM "books" WHERE "year" > 2015'
 ```
 
-`iq inspect` reads table metadata — `tables` (the region's tables) and `table` (the selected table's
+`iq inspect` reads table metadata, `tables` (the region's tables) and `table` (the selected table's
 key schema, item count, size, billing mode, and index names); `--only` narrows to those subcommands.
 
 ## Elasticsearch & OpenSearch
@@ -460,7 +460,7 @@ TLS. **Credentials,
 when the cluster needs them, travel in the URI userinfo** (HTTP basic auth), so `--store keyring`
 moves the password to the OS keyring exactly as for the other backends. **OpenSearch is the same
 driver** behind the scheme (two `iq driver ls` entries, with their own supported version ranges,
-sharing one implementation) — everything below applies to both; the only differences are internal (the
+sharing one implementation), everything below applies to both; the only differences are internal (the
 [opensearch-go](https://github.com/opensearch-project/opensearch-go) client, since Elasticsearch's
 own client refuses non-Elasticsearch servers; OpenSearch's point-in-time endpoint; and, since it
 predates Elasticsearch's `_shard_doc`, an `_id` keyset sort for scans).
@@ -487,7 +487,7 @@ iq add -n logs 'opensearch://localhost:9201/?index=books'
 Elasticsearch documents are JSON, so values need no type coercion; integers keep exact precision
 (large ones never collapse to a float). Each document's `_id` (Elasticsearch metadata, stored
 outside `_source`) is injected into the value as `_id`, so a plain `.[]` stream is self-describing
-and restorable — like a Mongo document, `--typed` is not needed for a lossless backup. The
+and restorable, like a Mongo document, `--typed` is not needed for a lossless backup. The
 `--unbounded` / streaming rules are identical to every backend; a scan pages the index with a
 point-in-time and `search_after` (keyset pagination, sorted by `_shard_doc`), so it never re-reads
 from an offset.
@@ -496,7 +496,7 @@ from an offset.
 
 By default a `.[] | select(...)` filter's **equality** and **existence** clauses are translated into
 an Elasticsearch `bool` query so the cluster filters before documents reach iq. The index mapping is
-read once at connect, so an equality is pushed only onto a field whose type matches it exactly —
+read once at connect, so an equality is pushed only onto a field whose type matches it exactly,
 never onto analyzed `text`, where a term could wrongly exclude a match:
 
 | `select(...)` clause | Pushed | Elasticsearch query | Notes |
@@ -516,7 +516,7 @@ Whatever the `bool` query leaves behind, a **client-side raw-byte prefilter** ru
 over each hit's raw `_source` before it is decoded, and drops any hit it can prove the predicate
 rejects. So a fallback scan (a range, an equality on an unmapped or analyzed field) or a
 partially-pushed scan skips the dominant `UseNumber` decode of the documents the cluster could not
-exclude — the same trick as the Redis prefilter, on the bytes `_search` already returned. It is
+exclude, the same trick as the Redis prefilter, on the bytes `_search` already returned. It is
 byte-level and never changes results (the full jq still re-runs client-side), so it is bypassed in two
 cases where it would be wasted or wrong: when the `term` query already captured the predicate exactly
 (the cluster returned only matches), and when the predicate references the injected `_id` field, which
@@ -526,8 +526,8 @@ the raw `_source` does not carry.
 
 `iq exec` runs a raw [`_search`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html):
 the argument is a JSON search body (`{"query":{…},"size":…,"aggs":…}`) or a bare query object
-(`{"match":{"title":"dune"}}`, wrapped as `{"query":…}`), and it prints the whole reply — hits,
-aggregations, and all — as JSON:
+(`{"match":{"title":"dune"}}`, wrapped as `{"query":…}`), and it prints the whole reply, hits,
+aggregations, and all, as JSON:
 
 ```sh { title='Run a raw range query' }
 iq --src books exec '{"query": {"range": {"year": {"gt": 2015}}}}'
@@ -536,7 +536,7 @@ iq --src books exec '{"query": {"range": {"year": {"gt": 2015}}}}'
 iq --src books exec '{"match": {"author": "Kleppmann"}}'
 ```
 
-`iq inspect` reads server and index metadata — `server` (node, cluster, and version), `indices` (the
+`iq inspect` reads server and index metadata, `server` (node, cluster, and version), `indices` (the
 server's indices), `mapping` (the selected index's field mapping, which shows what a term pushdown
 can use), and `aliases` (the server's aliases); `--only` narrows to those subcommands.
 
@@ -572,7 +572,7 @@ A row is a **nested object**: `{family: {qualifier: value}}`, so a cell is addre
 
 ### Value encoding
 
-HBase stores **no types** — every cell is raw bytes — so a value is presented **honestly** by
+HBase stores **no types**, every cell is raw bytes, so a value is presented **honestly** by
 default and **exactly** when you declare its encoding:
 
 | Column | Read as | Written from |
@@ -587,7 +587,7 @@ default and **exactly** when you declare its encoding:
 The driver **never guesses** a numeric type from bytes (an 8-byte string is indistinguishable from a
 `long`); it either *knows* (you declared it) or is *honest* (text, else base64). Declared columns
 round-trip losslessly in both directions. An undeclared column read back as base64 (non-UTF-8 bytes)
-does **not** round-trip through a write — declare it `bytes` for that.
+does **not** round-trip through a write, declare it `bytes` for that.
 
 ```sh { title='Declare the numeric columns so they read as numbers' }
 iq add -n books 'hbase://localhost:2181/?table=iq_books&types=cf:year=long,cf:price=double'
@@ -623,7 +623,7 @@ speed: the full jq always re-runs client-side, so a pushed filter is a conservat
 
 ### Raw commands
 
-HBase has **no query language**, so `iq exec` is a small, safe verb set mapped straight onto RPC —
+HBase has **no query language**, so `iq exec` is a small, safe verb set mapped straight onto RPC,
 never a built query string, so it is injection-safe. Each verb names its own table. Reads: `get`,
 `scan`, `count`; writes: `put`, `delete` (values encoded through the same declared-type contract):
 
@@ -674,7 +674,7 @@ iq --src books --unbounded 'keys'
 ```
 
 Because Mongo values are natively typed, numeric comparisons like `.year > 2015` need no
-`tonumber` — unlike Redis, where everything is a string. Documents normalize to JSON with the
+`tonumber`, unlike Redis, where everything is a string. Documents normalize to JSON with the
 same rules everywhere: an `ObjectID` becomes its hex string, a date becomes an RFC 3339 string,
 numbers stay numbers, nested documents and arrays are preserved. A missing `_id` reads as `null`.
 The `--unbounded` / streaming rules are identical to every backend (`.[]`-rooted filters stream a cursor
@@ -716,13 +716,13 @@ it and stream the whole collection, filtering entirely client-side. What it can 
 
 **Portable regex.** iq's jq is [gojq](https://github.com/itchyny/gojq), which compiles a `test()`
 pattern with Go's RE2; MongoDB uses PCRE. A pattern is pushed only when every construct it uses
-means the same — or a superset — in both: literals, anchors (`^` `$`), `.`, quantifiers
+means the same, or a superset, in both: literals, anchors (`^` `$`), `.`, quantifiers
 (`* + ? {n,m}`), alternation (`|`), groups, character classes, the ASCII `\d` `\w` `\s` `\D` `\W`
 shorthands, and word boundaries (`\b`, `\B`). `\S` is the one shorthand held back: RE2's `\s` omits
 the vertical tab that PCRE's `\s` matches, so RE2's `\S` matches a vertical tab PCRE's does not, and
-pushing it would drop a document jq keeps (`\s` diverges the other way — a superset the client-side
+pushing it would drop a document jq keeps (`\s` diverges the other way, a superset the client-side
 re-run corrects). Flags follow the same rule: gojq accepts only `i`, `m`, `g`, and iq pushes `i`
-(case-insensitive) and `m` — which in jq means "`.` matches newline" (dotall) and so maps to PCRE's
+(case-insensitive) and `m`, which in jq means "`.` matches newline" (dotall) and so maps to PCRE's
 `s`, not PCRE's `m`. A pattern using lookaround (`(?=…)`), backreferences (`\1`), unicode properties
 (`\p{…}`), POSIX classes (`[[:…:]]`), or possessive quantifiers is not portable and stays
 client-side, so the pushed set always equals jq's.
@@ -730,7 +730,7 @@ client-side, so the pushed set always equals jq's.
 ### Raw commands
 
 `iq exec` runs a single JSON command document with `runCommand` and prints the reply as
-JSON — the escape hatch for server-side queries, aggregation, and administration:
+JSON, the escape hatch for server-side queries, aggregation, and administration:
 
 ```sh { title='Run a native find command' }
 iq --src books exec '{"find":"books","filter":{"year":{"$gt":2015}}}'
@@ -739,7 +739,7 @@ iq --src books exec '{"find":"books","filter":{"year":{"$gt":2015}}}'
 iq --src books exec '{"aggregate":"books","pipeline":[{"$group":{"_id":null,"avg":{"$avg":"$price"}}}],"cursor":{}}'
 ```
 
-`iq inspect` runs diagnostic database commands — `dbStats`, `serverStatus`, `listCollections`,
+`iq inspect` runs diagnostic database commands, `dbStats`, `serverStatus`, `listCollections`,
 `collStats` (needs a collection: address it as `source.collection` or set `?collection=` on the
 source URI), `buildInfo`, and `hostInfo`; `--only` narrows to those subcommands.
 
@@ -752,7 +752,7 @@ Register a `neo4j://` source and the same jq interface works against a node labe
 label is the keyspace: a node's key is the key and the node is the value**. Neo4j has no single
 keyspace, so a label is the addressable collection (like a Mongo collection or a Cassandra table):
 the host is the bolt server, the label rides in the URI's `?label=` (overridable per run with a
-dotted `handle.label`), and the database — Neo4j is multi-database — is `?database=` (default
+dotted `handle.label`), and the database, Neo4j is multi-database, is `?database=` (default
 `neo4j`). Use `neo4j+s://` (or `bolt://` for a single instance, `+s`/`+ssc` for TLS). **Credentials
 travel in the URI userinfo** (bolt basic auth), so `--store keyring` moves the password to the OS
 keyring exactly as for the other backends.
@@ -789,7 +789,7 @@ one node is an error rather than an arbitrary pick.
 
 A **relationship type** is an addressable collection too, so you can query a graph's edges the same
 way. Name it with `?rel=KNOWS` on the source, or address one per run with the `:` marker
-(`handle.:KNOWS`) — a leading colon can never be a valid label, so it unambiguously selects a
+(`handle.:KNOWS`), a leading colon can never be a valid label, so it unambiguously selects a
 relationship type. A source names either a label or a relationship type, not both.
 
 ```sh { title='Register a relationship-type source' }
@@ -806,7 +806,7 @@ Each relationship's value is its properties plus a self-describing envelope: `_t
 `_id` (its elementId), and `_start` / `_end` (the endpoint node elementIds). The scan, key, count,
 and `select(...)` pushdown rules are identical to nodes (the predicate is pushed onto the edge
 variable). **Relationship collections are read-only for now**: creating an edge needs endpoint
-resolution — which nodes to connect and by which key — which is a further follow-up, so a copy or
+resolution, which nodes to connect and by which key, which is a further follow-up, so a copy or
 `iq data` write into a relationship source is refused with a clear message. Write nodes with
 `?label=`.
 
@@ -834,10 +834,10 @@ streams the whole label and filters entirely client-side.
 A copy into a Neo4j label upserts each node with `MERGE (n:Label {key}) SET n += props`, so a re-run
 converges. **Writing needs a `?key=` property** (a MERGE key must be stable, and the elementId is
 server-assigned) **and a uniqueness constraint on it** (`CREATE CONSTRAINT ... REQUIRE n.<key> IS
-UNIQUE`) — without the constraint a MERGE could match and overwrite several nodes at once, so the
+UNIQUE`), without the constraint a MERGE could match and overwrite several nodes at once, so the
 write is refused up front rather than fanning out. `iq data clear` detach-deletes every node in the
 label (and the relationships they hold); a label is not a droppable container, so `iq data drop` is
-unsupported. Writes set node properties only — relationships are a follow-up.
+unsupported. Writes set node properties only, relationships are a follow-up.
 
 ### Raw commands
 
@@ -852,7 +852,7 @@ iq --src graph exec 'MATCH (n:Person) WHERE n.age > $min RETURN n.name, n.age' '
 iq --src graph exec 'MATCH (n) RETURN count(n) AS nodes'
 ```
 
-`iq inspect` reads deployment and schema metadata — `server` (components and version), `databases`
+`iq inspect` reads deployment and schema metadata, `server` (components and version), `databases`
 (the deployment's databases), `labels` (the addressable node labels), `reltypes` (relationship
 types), and `constraints` (which shows the uniqueness constraint a `?key=` write needs); `--only`
 narrows to those subcommands.
@@ -905,14 +905,14 @@ refused with a clear message.
 
 Redis has no server-side filtering, so a compiled predicate instead drives a **client-side
 raw-byte prefilter**: on a streaming scan, each RedisJSON value is tested against the predicate on
-its raw JSON.GET bytes and, when it provably cannot match, dropped before the (dominant) decode —
+its raw JSON.GET bytes and, when it provably cannot match, dropped before the (dominant) decode,
 every other type is decoded and included unchanged. The full jq always re-runs client-side, so
 output is identical with or without it; the prefilter only skips decoding documents the filter
 would reject. `--no-compile` turns it off.
 
 ### Raw commands
 
-`iq exec` forwards a command to the database verbatim and prints the reply in redis-cli style —
+`iq exec` forwards a command to the database verbatim and prints the reply in redis-cli style,
 the escape hatch for writes, administration, and seeding the jq read path does not cover:
 
 ```sh { title='Set a key, replies "OK"' }
@@ -940,7 +940,7 @@ strings.
 ## File dumps
 
 A `file://` source reads a database dump straight from disk, so a snapshot is queried, inspected
-for shape, diffed, and restored with the same jq interface — **no running server**. It is
+for shape, diffed, and restored with the same jq interface, **no running server**. It is
 read-only: a `file://` endpoint is never a copy *destination*, and `iq exec`/`iq inspect` (which
 need a live server) do not apply.
 
@@ -983,11 +983,11 @@ materialization is the core's, gated by `--unbounded`, exactly as for a live bac
 fidelity** is the record round-trip: values and native types reconstruct, but TTLs, exact
 encodings, stream consumer groups, RDB module types, and Mongo indexes do not carry.
 
-**Neo4j record ids.** A dump's `_id` — and a relationship's `_start`/`_end` — is APOC's numeric
+**Neo4j record ids.** A dump's `_id`, and a relationship's `_start`/`_end`, is APOC's numeric
 export id, not the live driver's `elementId`, because APOC's default export does not write
 elementIds. Within one dump the ids are self-consistent: a relationship's `_start`/`_end` reference
 the same ids its nodes carry as `_id`, so `?rel=` endpoints resolve against the default-keyed
-`?label=` nodes exactly as they do live. Two things the numeric id cannot do, both by nature — it
+`?label=` nodes exactly as they do live. Two things the numeric id cannot do, both by nature: it
 does not match the `_id` of the same node read from the live source (different id schemes), and it
 is not stable across re-exports (Neo4j reuses a deleted node's id, the reason `id()` is deprecated
 in favor of `elementId()`). For an identifier that is stable and identical across a live source and
@@ -996,14 +996,14 @@ its dump, key on a business property with `?key=<prop>`: it reads the same value
 **Decode cache.** Re-querying the same large dump re-parses it every time, so iq caches the
 decoded, normalized records of a scanned dump above 4 MiB and reads them back on later queries,
 skipping the RDB/BSON/JSON decode (a warm scan of an 8 MiB dump runs several times faster). The
-cache lives under `<user cache dir>/iq/dumps`, keys on the dump's path, size, and mtime — so
-editing the dump invalidates it automatically — and is transparent: a stale or absent cache just
+cache lives under `<user cache dir>/iq/dumps`, keys on the dump's path, size, and mtime, so
+editing the dump invalidates it automatically, and is transparent: a stale or absent cache just
 means a full decode, never a wrong or failed query. Only full scans populate it (a bounded
 key read does not), and stdin is never cached.
 
 Alongside the records, a scan writes a **per-page key index** (a Bloom filter per page), so a
 later bounded read (`iq --src snap '.["id"]'`) decodes only the pages that may hold a wanted key
-instead of streaming the whole cache — a point lookup or a missing-key check stays fast even on a
+instead of streaming the whole cache, a point lookup or a missing-key check stays fast even on a
 huge dump. The index is on by default and distribution-agnostic (it hashes keys, so random
 ids/UUIDs are fine). Skip it with `--no-cache-index` (the flat cache is still written; a bounded
 read just streams it) when a very large keyspace makes the index build memory unwelcome.
@@ -1011,9 +1011,9 @@ read just streams it) when a very large keyspace makes the index build memory un
 Manage the cache with `iq cache`, bypass it for one run with `--no-cache`, or set a default with
 `iq config set no-cache true` / `iq config set no-cache-index true`.
 
-- `iq cache location` — print the cache directory path.
-- `iq cache stat [-j/--json | -y/--yaml]` — list cached dumps with their sizes.
-- `iq cache clear [<source>|<path>]` — remove all cached dumps, or just one source's/path's.
+- `iq cache location`: print the cache directory path.
+- `iq cache stat [-j/--json | -y/--yaml]`: list cached dumps with their sizes.
+- `iq cache clear [<source>|<path>]`: remove all cached dumps, or just one source's/path's.
 
 **Prefilter.** A file source pushes no filter to a server (there is none), but on a streaming
 scan of an **uncached typed-JSONL** dump a compiled predicate drives a **client-side raw-byte
@@ -1022,6 +1022,6 @@ non-match is dropped before it is decoded, so the dominant JSON decode is skippe
 filter would reject. Every other format (YAML, RDB, BSON, Extended JSON, DynamoDB JSON, Cassandra
 CSV, Neo4j APOC), and any scan served from a fresh decode cache (whose bytes are already-decoded
 CBOR, and already fast to stream), decodes in full and lets the client filter. The full jq always
-re-runs client-side, so output is identical with or without the prefilter — it only skips decoding
+re-runs client-side, so output is identical with or without the prefilter, it only skips decoding
 dropped records; a prefiltered scan deliberately does not populate the decode cache (that would
 require decoding everything). `--no-compile` turns it off.

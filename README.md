@@ -80,33 +80,33 @@ brew, scoop, go-install or source build, `iq completion <shell>` prints a script
 hand:
 
 ```sh
-# bash — load in the current session, or drop it on the completion path
+# bash: load in the current session, or drop it on the completion path
 eval "$(iq completion bash)"
 iq completion bash | sudo tee /usr/share/bash-completion/completions/iq >/dev/null
 
-# zsh — write to a directory on your $fpath, then restart the shell
+# zsh: write to a directory on your $fpath, then restart the shell
 iq completion zsh > ~/.zsh/completions/_iq
 
 # fish
 iq completion fish > ~/.config/fish/completions/iq.fish
 
-# powershell — append to your profile
+# powershell: append to your profile
 iq completion powershell >> $PROFILE
 ```
 
-Completions cover the commands, their sub-subcommands and flags, and — read live from your
-config — your saved source handles, groups, and config-option keys, so `iq --src <TAB>` offers
+Completions cover the commands, their sub-subcommands and flags, and, read live from your
+config, your saved source handles, groups, and config-option keys, so `iq --src <TAB>` offers
 the sources `iq ls` lists. A flag that takes a closed set completes its values (`--format`,
 `--from-format`, `--format.decimal`, `--log.level`, `--log.format`, `--error.format`,
 `--debug.pprof`, `iq add --driver/--store`, `iq schema --format`), and `iq config set <option>
 <TAB>` offers that option's own values. `iq inspect --only <TAB>` and `iq diff --section <TAB>`
 offer the introspection subcommands of the selected source's backend, worked out from its saved
 URI. The jq filter itself is a program, not a completable value, so `iq` offers no candidates
-there (and never falls back to filenames) — nor do `iq exec`'s backend verb and its operands.
+there (and never falls back to filenames), nor do `iq exec`'s backend verb and its operands.
 
 Every completion is offline: it reads your config file and nothing else, so a `<TAB>` never
 opens a connection, never reads the OS keyring, and cannot hang. That is why a collection
-suffix does not complete — `iq --src shop.<TAB>` offers nothing, since listing collections
+suffix does not complete, `iq --src shop.<TAB>` offers nothing, since listing collections
 would mean connecting.
 
 ### Man page
@@ -130,7 +130,7 @@ prints as pretty JSON. Queries run against the active source.
 ./iq '.["book:2"].price | tonumber + 5'   # values are strings; convert before arithmetic
 ```
 
-Always wrap the filter in single quotes — jq syntax is full of characters the shell would
+Always wrap the filter in single quotes, jq syntax is full of characters the shell would
 otherwise expand or split (`[ ]`, whitespace, `|`, `*`, `$`).
 
 The commands below are a starter set; every command and flag is documented in full on the
@@ -217,10 +217,10 @@ same contract:
 - **One URI, native nouns.** The URI scheme picks the driver; the keyspace rides in the URI as the
   backend's own noun (`?collection=`, `?table=`, `?database=`, `?label=`/`?rel=`, `?index=`), and a
   query overrides it per run with the dotted `handle.<keyspace>` suffix.
-- **One jq surface.** A bounded filter fetches exactly the named keys — a missing key reads as
+- **One jq surface.** A bounded filter fetches exactly the named keys, a missing key reads as
   `null`, never an error; a `.[]`-rooted filter streams the keyspace in bounded pages; a holistic
   filter materializes only behind `--unbounded`.
-- **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter —
+- **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter,
   server-side where the backend can filter, or a client-side raw-byte prefilter that drops a provable
   non-match before decode where it cannot (Redis, on RedisJSON values; Elasticsearch/OpenSearch and
   Couchbase, over the residual their server-side query could not narrow). The full jq always re-runs
@@ -235,9 +235,9 @@ same contract:
   contract, and a `--typed` dump restores through `--insert` losslessly.
 - **Bounded and redacted.** Every backend call is bounded by `--timeout`, and a URI's password is
   redacted from every listing, log line, and error.
-- **A native escape hatch.** `iq exec` speaks the backend's own language — verbatim where one exists
+- **A native escape hatch.** `iq exec` speaks the backend's own language, verbatim where one exists
   (Redis commands, Mongo command documents, CQL, PartiQL, Cypher, Mango, the Elasticsearch DSL), a small
-  fixed verb set where none does (HBase) — see each driver's Raw commands section on the
+  fixed verb set where none does (HBase), see each driver's Raw commands section on the
   [Drivers page](https://zsltg.github.io/iq/drivers/). Every `iq` flag
   must come before `exec`: everything after it is forwarded to the backend untouched.
 
@@ -317,18 +317,18 @@ The tools it resembles fall into five groups:
   but are language specs or tied to a specific engine, not a portable CLI.
 - Data virtualization / federation platforms (Denodo, Dremio, MindsDB) run as a server that
   translates SQL into each backend's native query, spanning relational, NoSQL, and files without
-  migrating data — broad reach, but the unification lives in a heavyweight service, not a binary
+  migrating data, broad reach, but the unification lives in a heavyweight service, not a binary
   you run locally.
 - Universal database clients (DBeaver, DBX, LazySQL) put one GUI or TUI in front of many
-  backends, but each connection still speaks that backend's native query language — a shared
+  backends, but each connection still speaks that backend's native query language, a shared
   shell, not a shared language.
 
-`sq` — the tool `iq`'s command surface is modelled on — belongs to the first group: it unifies
+`sq`, the tool `iq`'s command surface is modelled on, belongs to the first group: it unifies
 relational databases and files, and never reaches NoSQL.
 
 Apache Calcite doesn't fit any group above: it's the SQL parsing/optimization framework several
 multi-backend engines (Drill, Dremio) embed, not a standalone tool. It's listed because its
-adapter model — translating SQL onto MongoDB, Cassandra, Elasticsearch, and others — is the
+adapter model, translating SQL onto MongoDB, Cassandra, Elasticsearch, and others, is the
 template most SQL-over-NoSQL tools follow.
 
 Legend: ● primary, ◐ partial, — none. Model is the shape the query language speaks; footprint is
@@ -373,7 +373,7 @@ unified language, each connection still speaks that backend's native dialect.
 
 ## See also
 
-- [awesome-jq](https://github.com/jqlang/awesome-jq) — the curated list of jq tools, guides, and
+- [awesome-jq](https://github.com/jqlang/awesome-jq): the curated list of jq tools, guides, and
   resources. `iq` uses jq as its filter language, so most of what applies to jq carries over.
 
 ## Contributing

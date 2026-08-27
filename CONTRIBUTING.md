@@ -3,11 +3,11 @@
 ## Requirements
 
 - Go 1.26.5+ (matches `go.mod`)
-- Docker — integration tests and the local stack; not needed for `go test -short`
+- Docker: integration tests and the local stack; not needed for `go test -short`
 - [gofumpt](https://github.com/mvdan/gofumpt), [goimports](https://pkg.go.dev/golang.org/x/tools/cmd/goimports),
   and [golangci-lint](https://golangci-lint.run) on `PATH`: `make check` runs them,
   and `make tools-dev` does not install them
-- [uv](https://docs.astral.sh/uv/) — docs site only; not needed to build or use `iq`
+- [uv](https://docs.astral.sh/uv/): docs site only; not needed to build or use `iq`
 
 ## Build
 
@@ -33,7 +33,7 @@ make bench             # decode, filter, number-conversion, and dump I/O benchma
 
 - The full suite starts ephemeral Redis, MongoDB, Cassandra, DynamoDB Local,
   CouchDB, Couchbase, Neo4j, Elasticsearch, and OpenSearch on random ports and
-  tears them down afterwards — no manual compose needed. Cassandra takes
+  tears them down afterwards, no manual compose needed. Cassandra takes
   ~1 minute to become ready, Couchbase ~30–60 s.
 - Set `IQ_<BACKEND>_URL` (`IQ_REDIS_URL`, `IQ_MONGO_URL`, …) to a pre-started
   server (for example the compose stack) to skip container startup; the
@@ -42,8 +42,8 @@ make bench             # decode, filter, number-conversion, and dump I/O benchma
 - HBase is the exception: its native RPC needs fixed hostnames, so its tests
   run only when `IQ_HBASE_URL` points at the compose cluster
   (`docker compose up -d --wait hbase`, host networking, ~1–2 minutes ready).
-- Against a shared Redis the suites use reserved DBs — 15/14 `cmd` scratch,
-  13 the Redis driver's, 12 e2e — so data seeded into DB 0 survives a run.
+- Against a shared Redis the suites use reserved DBs, 15/14 `cmd` scratch,
+  13 the Redis driver's, 12 e2e, so data seeded into DB 0 survives a run.
 - Live e2e round-trips (`e2e/live_test.go`) run only when `IQ_REDIS_URL` /
   `IQ_MONGO_URL` are set, no localhost fallback.
 
@@ -89,7 +89,7 @@ worktree; check clears the cache and retries once.
 Full container-backed suite with `-coverpkg=./...`; fails below
 `IQ_COVER_MIN` (default 80). `IQ_COVER_SHORT=1` runs a fast report-only pass.
 
-### Capability gate — `scripts/capabilities.sh`
+### Capability gate (`scripts/capabilities.sh`)
 
 Asks what the dependency tree can *do* ([capslock](https://github.com/google/capslock)),
 compared against the committed `capslock-baseline.json`. Conditional: runs
@@ -98,34 +98,34 @@ only when `go.mod`/`go.sum` differ from the merge-base with the base ref
 regenerate with `IQ_CAPS_UPDATE_BASELINE=1`, and justify each new high-risk
 row in `capslock-baseline.notes.md`.
 
-- `IQ_CAPS_BASE` — base ref (default `origin/main`)
-- `IQ_CAPS_FORCE=1` — run regardless
-- `IQ_CAPS_GOOS=linux|darwin|windows` — review aid for other targets, expected to differ
-- `IQ_CAPS_UPDATE_BASELINE=1` — record a new baseline
+- `IQ_CAPS_BASE`: base ref (default `origin/main`)
+- `IQ_CAPS_FORCE=1`: run regardless
+- `IQ_CAPS_GOOS=linux|darwin|windows`: review aid for other targets, expected to differ
+- `IQ_CAPS_UPDATE_BASELINE=1`: record a new baseline
 
-### Mutation gate — `scripts/mutation-gate.sh`
+### Mutation gate (`scripts/mutation-gate.sh`)
 
 [mutago](https://github.com/quality-gates/mutago) over the branch diff vs
 `origin/main`, targets narrowed to the changed packages. The contract is zero
 survivors on covered code: an escaped covered mutant means a test asserts
-nothing — strengthen the test; an errored or timed-out mutant also fails
+nothing, strengthen the test; an errored or timed-out mutant also fails
 (unverified, not killed). A genuine equivalent is accepted into
 `mutago-baseline.json` with a justification in `mutago-baseline.notes.md`.
 Run with the integration services up.
 
-- `IQ_MUTATION_BASE` — base ref; empty for a full-module scan; a package arg
+- `IQ_MUTATION_BASE`: base ref; empty for a full-module scan; a package arg
   (`bash scripts/mutation-gate.sh ./cmd`) full-scans that package
-- `IQ_MUTATION_WORKERS` — parallel mutants (default 1; raise to 2-3 only when
+- `IQ_MUTATION_WORKERS`: parallel mutants (default 1; raise to 2-3 only when
   the run is already memory-bounded, e.g. inside a systemd-run MemoryHigh unit)
-- `IQ_MUTATION_TIMEOUT_COEFFICIENT` — per-mutant timeout multiplier (default
+- `IQ_MUTATION_TIMEOUT_COEFFICIENT`: per-mutant timeout multiplier (default
   5; raise it for a legitimately slow package instead of letting mutants time out)
-- `IQ_MUTATION_UPDATE_BASELINE=1` — accept equivalents (append-only)
-- `IQ_MUTATION_MUTANT=<id>` — re-run one mutant as a diagnostic
-- `IQ_MUTATION_DRYRUN=1` — mutant-count preview; scope it to one package
+- `IQ_MUTATION_UPDATE_BASELINE=1`: accept equivalents (append-only)
+- `IQ_MUTATION_MUTANT=<id>`: re-run one mutant as a diagnostic
+- `IQ_MUTATION_DRYRUN=1`: mutant-count preview; scope it to one package
 
 ### make ci
 
-check + cover + security + capabilities + mutation, in that order — the
+check + cover + security + capabilities + mutation, in that order, the
 capability step sits before mutation so their memory peaks never overlap.
 Slowest target (mutago reruns the suite per mutant); start a shared stack
 first so the containers are reused.
@@ -196,34 +196,34 @@ adapters and the CLI at the edge. Depth lives in the README's Architecture
 section and the docs site's How it works page; the adapter contract in
 `.agents/driver-contract.md`.
 
-- `internal/selector` — pure jq-AST analysis. Classifies a filter as a
+- `internal/selector`: pure jq-AST analysis. Classifies a filter as a
   bounded set of named keys or a scan, and a scan as streamable
   (`.[]`-rooted) or holistic. Depends only on the jq library.
-- `internal/query` — the use cases. `JQEngine` routes bounded → `Get`,
+- `internal/query`: the use cases. `JQEngine` routes bounded → `Get`,
   streamable scan → filter per `ScanBatches` page, holistic → materialize
   (caller-gated by `--unbounded`); `Runner` is `iq exec`; `Combiner` and
   `CrossEngine` reach other sources through the `SourceOpener` port. Optional
   capability ports carry the rest: `FilteredScanner` (pushdown), `Estimator`
   (scan totals), `TypedReader` on the copy's read side, and the write side
-  `Putter`, `Clearer`, `Dropper`, `Deleter` — an adapter implements what its
+  `Putter`, `Clearer`, `Dropper`, `Deleter`, an adapter implements what its
   model supports, and a command type-asserts and rejects cleanly when a port
   is absent.
-- `drivers/*` — one adapter per backend, each freezing that backend's
+- `drivers/*`: one adapter per backend, each freezing that backend's
   type-to-JSON normalization and its inverse for writes; `drivers/file` is
   the read-only adapter over dump files and piped stdin, with a decode cache.
-- `internal/pushdown` / `internal/predicate` — compile the pushable part of a
+- `internal/pushdown` / `internal/predicate`: compile the pushable part of a
   filter's `select()` into the backend-neutral `predicate.Node` the adapters
   translate; `internal/rawpred` evaluates the same predicate over raw bytes
   for the client-side prefilters.
-- `internal/render` — the output renderers behind the format flags.
-- `internal/diff` — driver-agnostic structural diff (LCS-aligned arrays,
+- `internal/render`: the output renderers behind the format flags.
+- `internal/diff`: driver-agnostic structural diff (LCS-aligned arrays,
   optional multiset arrays, RFC 6902 patch rendering); no I/O.
-- `internal/shape` — schema inference (JSON Schema draft 2020-12, ODCS
+- `internal/shape`: schema inference (JSON Schema draft 2020-12, ODCS
   projection, parent-relative presence); no I/O.
-- `internal/parquetout` — the parquet export; contains the Arrow dependency.
-- `internal/config` / `internal/secret` — TOML store for sources and option
+- `internal/parquetout`: the parquet export; contains the Arrow dependency.
+- `internal/config` / `internal/secret`: TOML store for sources and option
   defaults; keyring port so passwords never enter the config file.
-- `cmd` — CLI adapter and composition root: the self-describing driver
+- `cmd`: CLI adapter and composition root: the self-describing driver
   registry (`cmd/driver.go`, one entry per backend), source resolution,
   stored-option merging, output selection, diagnostics.
 - Small helpers: `internal/jqfmt` (filter pretty-printing), `internal/numfmt`

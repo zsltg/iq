@@ -192,7 +192,7 @@ json.year = 2017;
 !!! warning "Typed dumps are not supported"
 
     `--typed` rejects `--gron` and `--grona`: a flattened assignment stream is a
-    rendering to grep, not a dump — no source re-imports it. Drop `--typed` to
+    rendering to grep, not a dump, no source re-imports it. Drop `--typed` to
     gron the value stream, or dump with `--jsonl` (default), `--json`, `--jsona`,
     or `--yaml`.
 
@@ -266,7 +266,7 @@ print(table)
 
     The Arrow schema is embedded in the file (`ARROW:schema`), so exact types survive a read-back.
     A value that does not fit its inferred column type past the sample fails the export naming
-    the column — switch to `--format jsonl` for fully heterogeneous data rather than coercing.
+    the column, switch to `--format jsonl` for fully heterogeneous data rather than coercing.
 
 !!! info "Presence caveat"
 

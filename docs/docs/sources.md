@@ -72,7 +72,7 @@ iq add -p 'mongodb://root@localhost:27018/iq?authSource=admin&collection=books'
 Show, set, or clear the active group.
 
 A `/` in a name groups sources (`prod/books`, `dev/books`). Set an active group with
-`iq group prod`, and an unqualified name resolves inside it — `iq src books` then selects
+`iq group prod`, and an unqualified name resolves inside it, `iq src books` then selects
 `prod/books`, falling back to a top-level `books` if the group has none.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |

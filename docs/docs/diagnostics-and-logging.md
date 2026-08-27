@@ -32,7 +32,7 @@ never changed by them.
     `IQ_LOG_LEVEL`, `IQ_LOG_FORMAT`.
 
     `--log` writes structured records to a file (down to the chosen level,
-    always plain — never tinted). A source location is always redacted before
+    always plain, never tinted). A source location is always redacted before
     it is logged, so a stored credential never reaches a log file.
 
 !!! note "Verbose"

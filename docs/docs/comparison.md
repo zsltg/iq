@@ -18,18 +18,18 @@ The tools it resembles fall into five groups:
   but are language specs or tied to a specific engine, not a portable CLI.
 - Data virtualization / federation platforms (Denodo, Dremio, MindsDB) run as a server that
   translates SQL into each backend's native query, spanning relational, NoSQL, and files without
-  migrating data — broad reach, but the unification lives in a heavyweight service, not a binary
+  migrating data, broad reach, but the unification lives in a heavyweight service, not a binary
   you run locally.
 - Universal database clients (DBeaver, DBX, LazySQL) put one GUI or TUI in front of many
-  backends, but each connection still speaks that backend's native query language — a shared
+  backends, but each connection still speaks that backend's native query language, a shared
   shell, not a shared language.
 
-`sq` — the tool `iq`'s command surface is modelled on — belongs to the first group: it unifies
+`sq`, the tool `iq`'s command surface is modelled on, belongs to the first group: it unifies
 relational databases and files, and never reaches NoSQL.
 
 Apache Calcite doesn't fit any group above: it's the SQL parsing/optimization framework several
 multi-backend engines (Drill, Dremio) embed, not a standalone tool. It's listed because its
-adapter model — translating SQL onto MongoDB, Cassandra, Elasticsearch, and others — is the
+adapter model, translating SQL onto MongoDB, Cassandra, Elasticsearch, and others, is the
 template most SQL-over-NoSQL tools follow.
 
 Legend: ● primary, ◐ partial, — none. Model is the shape the query language speaks; footprint is
