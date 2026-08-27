@@ -356,15 +356,20 @@ what you run.
 | [Trino](https://trino.io) / [Presto](https://prestodb.io) | SQL | ● | ● | ● | tabular (◐ JSON) | server / engine |
 | [usql](https://github.com/xo/usql) | native SQL | ● | ◐ | — | tabular | single binary (multiplexer) |
 
-Placement is by each tool's primary targets; several (Trino, Drill, OctoSQL, DuckDB, Calcite)
-partially reach neighbouring columns via connectors, adapters, or extensions, and `iq` reaches
-Files the same way — a read-only `file://` source over database dumps, not arbitrary files. The
-takeaway is the
-NoSQL column paired with footprint: `iq` is the only tool pairing a unified query language across
-NoSQL backends with a single lightweight binary. Data virtualization platforms (Denodo, Dremio,
-MindsDB) get the unified language but need a server. Universal clients (DBeaver, DBX, LazySQL)
-get a lightweight footprint but no unified language — each connection still speaks that backend's
-native dialect.
+Placement is by each tool's primary targets, several (Trino, Drill, OctoSQL,
+DuckDB, Calcite) partially reach neighbouring columns via connectors, adapters
+or extensions, and `iq` reaches files the same way, a read-only `file://`
+source over database dumps, not arbitrary files.
+
+The takeaway is the NoSQL column paired with footprint, `iq` is the only tool
+pairing a unified query language across NoSQL backends with a single
+lightweight binary.
+
+Data virtualization platforms (Denodo, Dremio, MindsDB) get the unified
+language but need a server.
+
+Universal clients (DBeaver, DBX, LazySQL) get a lightweight footprint but no
+unified language, each connection still speaks that backend's native dialect.
 
 ## See also
 
