@@ -21,13 +21,14 @@ client-side, so its semantics are identical for every backend.
 dotted `<handle>.<keyspace>` addressing, sq's `<source>.<collection>`, along with many
 subcommands and flags) deliberately follows sq's to make the tool feel familiar.
 
-> [!WARNING]
-> **Pre-1.0.** Flags, output shapes and the config format can still change between releases.
+> [!NOTE]
+> `iq` was built with assistance from AI tools, so its code and the results it produces may
+> contain mistakes.
 >
 > `--insert`, `iq data clear` and `iq data drop` write to live databases, point them at data
-> you can afford to lose first.
+> you can afford to lose first, and use `--explain` to see the query plan without making changes.
 >
-> Use `--explain` to see the query plan without making changes.
+> Feedback and bug reports are very welcome.
 
 ## Install
 

@@ -4,18 +4,6 @@ icon: lucide/package-open
 
 # Get started
 
-!!! warning "Pre-1.0"
-
-    Flags, output shapes and the config format can still change between
-    releases.
-
-    `--insert`, `iq data clear` and `iq data drop` write to live
-    databases, point them at data you can afford to lose first.
-
-    Use `--explain` to see the
-    [query plan](query-plan.md#query-plan) without executing it.
-
-
 `iq` is a Go[^1] command-line tool that runs
 `jq`[^2] filters against
 NoSQL[^3] databases. The backend is chosen by the URI
@@ -37,6 +25,17 @@ client-side, so its semantics are identical for every backend.
 access to SQL databases and files like CSV or Excel"), much of its command
 surface and the `<source>.<collection>` addressing along with many subcommands
 and flags are deliberately similar.
+
+!!! note
+
+    `iq` was built with assistance from AI tools, so its code and the results it
+    produces may contain mistakes.
+
+    `--insert`, `iq data clear` and `iq data drop` write to live databases, point
+    them at data you can afford to lose first, and use `--explain` to see the
+    [query plan](query-plan.md#query-plan) without making changes.
+
+    Feedback and bug reports are very welcome.
 
 ## Installation
 
