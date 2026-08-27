@@ -382,4 +382,4 @@ Disable colored output. Color is on by default only when writing to a terminal.
     Colored output is also disabled if the `NO_COLOR` environment variable is
     set. `-C` forces colored output and overrides `NO_COLOR`.
 
-[^1]: https://github.com/tomnomnom/gron#ungronning
+[^1]: `gron` flattens JSON into one `json.path = value;` assignment per line so it can be grepped, and `gron --ungron` reverses that, rebuilding the JSON from the assignments, which is what makes `--gron` output round-trippable. https://github.com/tomnomnom/gron#ungronning

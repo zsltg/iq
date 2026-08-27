@@ -99,4 +99,4 @@ For an entity-resolution consumer the choice between *omitting* a field and writ
 constructor like `{name}` already writes `null` for a missing field); see
 [Null vs missing](how-it-works.md#null-vs-missing) for how iq draws that line at each layer.
 
-[^1]: https://datatracker.ietf.org/doc/html/rfc3339
+[^1]: RFC 3339 is the date and time format for use in Internet protocols, a profile of ISO 8601, and RFC3339Nano is Go's layout for it with nanosecond precision, so every timestamp renders the same way in every export. https://datatracker.ietf.org/doc/html/rfc3339
