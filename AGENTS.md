@@ -3,9 +3,10 @@ Telegraph style, every line binds. Root rules and policies only; per-book depth 
 ## Project
 A Go command-line tool that connects to NoSQL databases and runs queries. Single static binary; the CLI is a thin delivery mechanism over a driver-agnostic query core.
 ## Tech Stack
-Load-bearing shape only; no framework chosen yet, README carries specifics once they exist.
-- Language: Go, built to a single static binary.
-- CLI parsing, configuration, NoSQL drivers, output formatting: libraries TBD; every pick permissive-licensed, dependency-light, no telemetry or PII.
+Load-bearing picks only; every pick permissive-licensed, dependency-light, no telemetry or PII.
+- Language: Go, built to a single static binary (CGO off).
+- CLI: cobra + pflag; jq: gojq (pure Go, exposes the AST the selector walks); config: TOML store in `internal/config`; secrets: OS keyring port in `internal/secret`.
+- Backends: one permissive SDK per driver under `drivers/` (ten backends, OpenSearch shares the Elasticsearch adapter); Parquet export: Apache Arrow, contained in `internal/parquetout`.
 ## Commands
 Standard Go toolchain; `CONTRIBUTING.md` is the developer-facing command catalogue; the docs site under `docs/docs/` is the user-facing surface.
 - Build: `go build ./...`.
@@ -20,7 +21,9 @@ Standard Go toolchain; `CONTRIBUTING.md` is the developer-facing command catalog
 - End-to-end: `make e2e` builds the binary and drives it black-box through `os/exec` (package `e2e`, skips under `-short`).
 - Dead code: `deadcode -test ./...` (whole-program), wired into `make check`.
 - Docs site: `make docs` (build, `docs/site/`), `make docs-serve` (0.0.0.0:8000); Zensical under `docs/`, uv-managed; site pages under `docs/docs/` are hand-maintained and nothing regenerates them from the README, which stays the user-facing overview and the Architecture source of truth.
-- Toolchain: `make tools-dev` installs the quality and security tools (mutago, deadcode, govulncheck, osv-scanner, gitleaks, syft) into GOPATH/bin.
+- Toolchain: `make tools-dev` installs the quality and security tools (mutago, capslock, deadcode, govulncheck, osv-scanner, gitleaks, syft) into GOPATH/bin; gofumpt, goimports and golangci-lint are expected on PATH.
+- Benchmarks: `make bench` (decode, filter, number conversion, dump I/O; no containers); SBOMs alone: `make sbom`.
+- Generated artifacts: `make man` and `make completions` regenerate the committed man page and shell completions; drift-guarded by tests, so any command or help change regenerates them in the same commit.
 - Release: `make release` (`scripts/release.sh`, needs `svu` and `git-chglog`: `make tools`); computes the next semver from Conventional Commits, regenerates `CHANGELOG.md`, commits, and tags on clean `main`; never pushes; preview with `bash scripts/release.sh --dry-run`; version metadata is embedded by `make build` via ldflags.
 ## Coding Conventions
 Boring, linear, readable code.
@@ -49,9 +52,10 @@ The port is trivially thin (`Store.Query`); the cost is around the adapter, and 
 - Auth fits the connection contract: authentication reduces to config the composition root injects, with no native dependency (Kerberos/GSSAPI) and no live-account requirement; token refresh and rotation obey the secret rules — never log a credential, release every resource, bound every outbound call.
 - Query semantics fit the model: the datastore's query shape maps onto the selector's classification and the pushdown-to-predicate mapping; a backend with hard constraints (partition-key-required, per-request cost units, row-key-range-only) that forces a redesign or defeats pushdown is a design decision to raise first, and updates the README Architecture Mermaid in the same change.
 ## Docs stay current
-- `CONTRIBUTING.md` in the root is the catalogue of developer-facing commands; the docs site under `docs/docs/` is the user-facing surface, spread across topic pages; README carries no command catalogue, so never add one back to it; update `CONTRIBUTING.md` in the same change that adds or alters a developer-facing command, dependency or environment variable, and the docs page that covers a user-facing one; environment variables also update `.env.example`, except gate-control variables (`IQ_MUTATION_*`, `IQ_COVER_*`, `IQ_CAPS_*`), which are documented in `CONTRIBUTING.md` only.
+- `CONTRIBUTING.md` in the root is the catalogue of developer-facing commands; the docs site under `docs/docs/` is the user-facing surface, spread across topic pages; README carries no command catalogue (its starter tables of illustrative one-liners stay; a per-flag reference never returns), so never add one back to it; update `CONTRIBUTING.md` in the same change that adds or alters a developer-facing command, dependency or environment variable, and the docs page that covers a user-facing one; environment variables also update `.env.example`, except gate-control variables (`IQ_MUTATION_*`, `IQ_COVER_*`, `IQ_CAPS_*`), which are documented in `CONTRIBUTING.md` only.
 - A change to the system's shape (a new datastore target, a new delivery surface, a changed connection contract) updates the README Architecture section in the same change.
 - A change to the selector's classification, the pushdown-to-predicate mapping, or a core port updates the README Architecture Mermaid diagram in the same change; the diagrams are port-level, so a backend-adapter change updates the Architecture prose and the driver table instead, never the diagram; keep the committed diagram in sync, never redraw it from scratch.
+- Deliberately duplicated sections stay in sync, both copies in the same change: README Architecture prose and diagrams ↔ `docs/docs/how-it-works.md`, README Guarantees ↔ `docs/docs/drivers.md`, README Comparison ↔ `docs/docs/comparison.md`, README See also ↔ `docs/docs/see-also.md`.
 ## Boundaries
 Never:
 - Hand-edit generated artifacts (`go generate` output, vendored code).
