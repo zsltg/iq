@@ -1,0 +1,41 @@
+# OpenSSF Scorecard: scores the repository's security posture (pinned
+# dependencies, token permissions, branch protection, security policy, ...)
+# and uploads the result as SARIF to the Security tab. publish_results feeds
+# the README badge from api.securityscorecards.dev, which only works for a
+# public repository on github.com; the action refuses to run anywhere else, so
+# this workflow is inert on any other forge.
+name: Scorecard
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '32 6 * * 1' # Mondays 06:32 UTC
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    if: github.repository == 'zsltg/iq'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # upload the SARIF to code scanning
+      id-token: write # sign the published results
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run analysis
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          sarif_file: results.sarif

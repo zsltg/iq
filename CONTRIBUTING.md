@@ -160,6 +160,25 @@ CI, as it does locally without `IQ_HBASE_URL`. The `test` job runs without
 Tool versions are pinned in the workflow's `env` block; keep them in sync with
 the Makefile and `scripts/`.
 
+Posture and upkeep around the pipeline, all on GitHub:
+
+- `.github/workflows/scorecard.yml` runs the OpenSSF Scorecard on pushes to
+  `main` and weekly, uploads the SARIF to the Security tab and publishes the
+  score behind the README badge. Every action in every workflow is pinned by
+  commit SHA with the release in a trailing comment; keep it that way (a tag
+  pin is a Scorecard deduction and a supply-chain gap).
+- `renovate.json` drives Renovate (the Mend GitHub App): one grouped PR a week
+  for minor and patch bumps, one PR per major, Go toolchain bumps on their own,
+  action digests refreshed, and the tool versions in `ci.yml`, the Makefile
+  and `scripts/` tracked through custom regex managers. A human merges; a PR
+  that moves `go.mod` runs `make capabilities`, which is the review AGENTS.md
+  asks for on a dependency change.
+- `.coderabbit.yaml` configures CodeRabbit's pull-request review, with
+  per-path instructions distilled from AGENTS.md; it reviews, it never
+  approves or merges.
+- `SECURITY.md` is the vulnerability-reporting policy: GitHub private
+  vulnerability reporting only.
+
 ## Docs
 
 ```bash

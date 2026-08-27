@@ -8,6 +8,12 @@
 <p align="center">
   <a href="https://pkg.go.dev/github.com/zsltg/iq"><img src="https://pkg.go.dev/badge/github.com/zsltg/iq.svg" alt="Go Reference"></a>
   <a href="https://github.com/zsltg/iq/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zsltg/iq/ci.yml?branch=main" alt="CI"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/zsltg/iq"><img src="https://api.securityscorecards.dev/projects/github.com/zsltg/iq/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://coderabbit.ai"><img src="https://img.shields.io/coderabbit/prs/github/zsltg/iq?utm_source=oss&utm_medium=github&utm_campaign=zsltg%2Fiq&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews" alt="CodeRabbit Reviews"></a>
+  <!-- Fill in the project IDs after registering on bestpractices.dev and codescene.io:
+  <a href="https://www.bestpractices.dev/projects/<ID>"><img src="https://www.bestpractices.dev/projects/<ID>/badge" alt="OpenSSF Best Practices"></a>
+  <a href="https://codescene.io/projects/<ID>"><img src="https://codescene.io/projects/<ID>/status-badges/code-health" alt="CodeScene Code Health"></a>
+  -->
   <a href="https://github.com/zsltg/iq/releases"><img src="https://img.shields.io/github/v/release/zsltg/iq" alt="Release"></a>
   <a href="https://codecov.io/gh/zsltg/iq"><img src="https://codecov.io/gh/zsltg/iq/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://github.com/zsltg/iq/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/zsltg/iq/badges/mutation.json" alt="Mutation score"></a>

@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit review configuration. The doctrine it enforces lives in AGENTS.md;
+# the instructions below point the reviewer at the rules that matter per path.
+language: en-US
+early_access: false
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "internal/**"
+      instructions: |
+        Query core. It must stay driver-agnostic: no import of a specific
+        NoSQL driver or of cobra/pflag. Plain request and response structs
+        cross the boundary, never a driver row or a framework context. Every
+        error that crosses a boundary is wrapped with context via
+        fmt.Errorf("...: %w", err); sentinels stay errors.New. Validate
+        untrusted input at function entry and return immediately.
+    - path: "drivers/**"
+      instructions: |
+        Backend adapters. Never build a query or filter from unsanitised
+        input, parameterise everything; no string concatenation of user input
+        into a query. Bound every outbound call with a context deadline;
+        retries are bounded with backoff and only for idempotent operations.
+        Stream or paginate large results, release every resource on both
+        paths. Never render a raw driver error, stack trace or database
+        internal to the user, and never log a credential or connection string.
+    - path: "**/*_test.go"
+      instructions: |
+        Tests are table-driven and flat: one behaviour per case, a t.Run
+        subtest per row, arrange-act-assert, no shared mutable fixtures. Use
+        testify require by default, assert only to report several independent
+        failures at once. Container-backed tests call testing.Short() and skip.
+    - path: "{README.md,CONTRIBUTING.md,AGENTS.md,docs/docs/**/*.md}"
+      instructions: |
+        Comma voice, no em-dashes. README carries no command catalogue;
+        developer commands go to CONTRIBUTING.md, user-facing ones to the
+        docs site. Deliberately duplicated sections must change together:
+        README Architecture and docs/docs/how-it-works.md, README Guarantees
+        and docs/docs/drivers.md, README Comparison and docs/docs/comparison.md,
+        README See also and docs/docs/see-also.md.
+    - path: "{go.mod,go.sum}"
+      instructions: |
+        A new or upgraded dependency needs a permissive license, no telemetry,
+        and a green capability gate (capslock-baseline.json, with any new
+        EXEC / ARBITRARY_EXECUTION / MODIFY_SYSTEM_STATE / SYSTEM_CALLS row
+        justified in capslock-baseline.notes.md).
+  tools:
+    golangci-lint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    markdownlint:
+      enabled: false
+chat:
+  auto_reply: true
