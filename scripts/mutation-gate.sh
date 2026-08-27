@@ -30,7 +30,9 @@
 # baseline). The check is skipped in the non-gating modes (--update-baseline, single-mutant).
 # Every gate run also writes mutago-agentic.json (--logger-agentic-json): enriched,
 # LLM-consumable data for each escaped mutant, including the stable id used below to
-# re-run one mutant. It is regenerated per run and gitignored next to report.json.
+# re-run one mutant. It is regenerated per run and gitignored next to report.json, as is
+# mutago-summary.json (--logger-summary-json), whose coveredCodeMsi the CI `deep` job
+# turns into the README mutation badge.
 #
 # Accepted baseline entries are justified one-per-line in mutago-baseline.notes.md
 # (committed): consult it before re-litigating a refactor-resurfaced equivalent, and
@@ -268,6 +270,7 @@ fi
   --fail-on-escaped \
   --baseline mutago-baseline.json \
   --logger-agentic-json \
+  --logger-summary-json \
   --ignore-msi-with-no-mutations \
   --workers "$workers" \
   --timeout-coefficient "$timeout_coefficient" \

@@ -64,9 +64,10 @@ Elasticsearch on 9200, and HBase uses host networking (see `compose.yaml`).
 
 ## Quality gates
 
-Local and layered: the quality gates run on your machine, not in CI (the two
-GitHub workflows only build the docs site and publish releases). The full
-doctrine binds in [AGENTS.md](AGENTS.md).
+Local and layered: the quality gates run on your machine first, and
+`.github/workflows/ci.yml` runs the same set on the GitHub mirror (see
+[Continuous integration](#continuous-integration)). The full doctrine binds in
+[AGENTS.md](AGENTS.md).
 
 ```bash
 make check          # fast offline gate: format, vet, build, lint, dead code, short tests
@@ -130,6 +131,34 @@ check + cover + security + capabilities + mutation, in that order, the
 capability step sits before mutation so their memory peaks never overlap.
 Slowest target (mutago reruns the suite per mutant); start a shared stack
 first so the containers are reused.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on the GitHub mirror only (the primary remote has
+Actions off; `docs.yml` deploys the site and `release.yml` publishes releases,
+both guarded the same way). Every push and pull request runs one job per gate:
+`lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
+Linux, macOS and Windows), `coverage` (`scripts/coverage.sh` with the floor, then
+a reporting-only Codecov upload, `CODECOV_TOKEN` secret), `e2e` (redis pass, then
+the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
+`vuln` (govulncheck), `osv` (OSV plus the permissive license allowlist), `sbom`
+(syft), `deadcode`, `secrets` (gitleaks, tree and history), `capabilities`
+(`scripts/capabilities.sh` against the PR base), `mutate-diff`
+(`scripts/mutation-gate.sh` against the PR base) and `docs` (site build). The
+weekly `deep` job (Mondays, or `workflow_dispatch`) re-runs the vulnerability and
+secret scans against fresh data and mutates the whole module
+(`IQ_MUTATION_BASE=` empty), then publishes the covered-code MSI from
+`mutago-summary.json` as the README mutation badge on the one-file `badges`
+branch.
+
+Containers run one at a time in CI: no `IQ_*_URL` is set, so each driver's
+`TestMain` provisions its own testcontainer, `GOFLAGS=-p=1` serialises the
+package test binaries (coverage and mutation), and the e2e job brings up a
+single compose service per pass. HBase has no testcontainers path and skips in
+CI, as it does locally without `IQ_HBASE_URL`. The `test` job runs without
+`-race` until the order-dependent data race in `cmd` (`color.NoColor`) is fixed.
+Tool versions are pinned in the workflow's `env` block; keep them in sync with
+the Makefile and `scripts/`.
 
 ## Docs
 
