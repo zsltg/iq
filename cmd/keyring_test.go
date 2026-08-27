@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -72,6 +73,10 @@ func TestSplitPassword(t *testing.T) {
 func TestSplitPasswordRejectsUnparseable(t *testing.T) {
 	_, _, _, err := splitPassword("redis://u:%zz@h")
 	require.ErrorContains(t, err, "parse URI")
+	// The cause stays unwrappable (%w, not %v), so a caller can errors.As to
+	// the parse failure underneath the context.
+	var uerr *url.Error
+	require.ErrorAs(t, err, &uerr)
 }
 
 func TestInjectPassword(t *testing.T) {

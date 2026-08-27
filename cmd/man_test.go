@@ -91,6 +91,22 @@ func TestManPageHasStructure(t *testing.T) {
 	require.NotContains(t, out, ".SS iq help")
 }
 
+// TestManOmitsHiddenCompletion pins the Hidden guard on the completion walk: a
+// deliberately hidden completion command (cobra's CompletionOptions
+// HiddenDefaultCmd) stays out of the page.
+func TestManOmitsHiddenCompletion(t *testing.T) {
+	root, _ := newRootCmd()
+	root.InitDefaultCompletionCmd()
+	for _, sub := range root.Commands() {
+		if sub.Name() == "completion" {
+			sub.Hidden = true
+		}
+	}
+	var b strings.Builder
+	require.NoError(t, writeManPage(&b, root))
+	require.NotContains(t, b.String(), ".SS iq completion")
+}
+
 // TestManPageDeterministic pins that the page is a pure function of the command
 // tree: two renders are byte-identical (no date, version, or map-iteration order
 // leaking in).
