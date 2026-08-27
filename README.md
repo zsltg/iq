@@ -5,6 +5,16 @@
   </picture>
 </p>
 
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/zsltg/iq"><img src="https://pkg.go.dev/badge/github.com/zsltg/iq.svg" alt="Go Reference"></a>
+  <a href="https://github.com/zsltg/iq/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zsltg/iq/ci.yml?branch=main" alt="CI"></a>
+  <a href="https://github.com/zsltg/iq/releases"><img src="https://img.shields.io/github/v/release/zsltg/iq" alt="Release"></a>
+  <a href="https://codecov.io/gh/zsltg/iq"><img src="https://codecov.io/gh/zsltg/iq/branch/main/graph/badge.svg" alt="Coverage"></a>
+  <a href="https://github.com/zsltg/iq/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/zsltg/iq/badges/mutation.json" alt="Mutation score"></a>
+  <a href="https://github.com/zsltg/iq/blob/main/LICENSE"><img src="https://img.shields.io/github/license/zsltg/iq" alt="License: MIT"></a>
+  <img src="https://img.shields.io/github/go-mod/go-version/zsltg/iq" alt="Go version">
+</p>
+
 # iq
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
