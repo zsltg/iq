@@ -4,6 +4,27 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.34.0 - 2026-08-27
+### Documentation
+- split the contributor guide out of the cookbook (5c76933)
+- **agents:** the command catalogue spans docs pages, not one (ccefaca)
+- **agents:** make the docs cookbook the command catalogue (dffcb51)
+- **cmd:** reword the diff filter help (0a9c1c5)
+- **contributing:** carry the bare --version doc over the rebase (f02770e)
+- **drivers:** standardize the per-driver sections (5001c9b)
+- **readme:** align the architecture prose with the how-it-works page (0e9e753)
+- **site:** restructure the site around per-topic pages (481afd6)
+- **style:** let wide tables fit the center column (2de0ad4)
+
+### Features
+- **cmd:** print a bare version for --version (2ae4752)
+
+### Bug Fixes
+- **cmd:** reject gron under --typed and stop swallowing the shorthand (af17a16)
+- **errors:** stop the redactor mangling iq's own unknown-source advice (8ef55c6)
+- **help:** stop the root example teaching --from/--combine (5e705ab)
+
+
 ## v0.33.0 - 2026-07-30
 ### Bug Fixes
 - **cmd:** resolve a dotted address against the longest matching source (c94d564)
