@@ -64,7 +64,13 @@ nfpms:
       - deb
       - rpm
       - apk
+      - archlinux
     bindir: /usr/bin
+    # pacman metadata: the packager is what `pacman -Qi` reports, pkgbase stays
+    # the package name.
+    archlinux:
+      packager: Zsolt Gaspar <17578237+zsltg@users.noreply.github.com>
+      pkgbase: iq
     # Install the generated manual page (committed, deterministic, uncompressed —
     # man reads it as-is, and skipping gzip keeps the package byte-reproducible)
     # and the shell completion scripts to each shell's standard directory. zsh

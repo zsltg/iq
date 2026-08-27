@@ -53,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/zsltg/iq/main/install.sh | sh
 
 The script downloads the release for your OS/arch, verifies its SHA-256 against the release
 checksums, and installs the binary; `IQ_VERSION` pins a version and `IQ_INSTALL_DIR` picks the
-target directory. Or grab a `.deb`, `.rpm`, or `.apk` from the
+target directory. Or grab a `.deb`, `.rpm`, `.apk`, or Arch `.pkg.tar.zst` from the
 [releases](https://github.com/zsltg/iq/releases).
 
 ### macOS
@@ -86,7 +86,7 @@ cd iq && make build
 
 ### Shell completions
 
-The `.deb`, `.rpm` and `.apk` packages install bash, zsh and fish completions for you. For a
+The `.deb`, `.rpm`, `.apk` and `.pkg.tar.zst` packages install bash, zsh and fish completions for you. For a
 brew, scoop, go-install or source build, `iq completion <shell>` prints a script to install by
 hand:
 

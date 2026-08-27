@@ -53,7 +53,7 @@ and flags are deliberately similar.
         against the release checksums, and installs the binary, `IQ_VERSION`
         pins a version and `IQ_INSTALL_DIR` picks the target directory.
 
-        You can also download a `.deb`, `.rpm`, or `.apk` from the
+        You can also download a `.deb`, `.rpm`, `.apk`, or Arch `.pkg.tar.zst` from the
         [releases](https://github.com/zsltg/iq/releases).
 
 === ":fontawesome-brands-apple: macOS"
@@ -119,7 +119,7 @@ Supported data sources are listed in [Drivers](drivers.md#drivers).
 
 ## Shell completions
 
-The `.deb`, `.rpm` and `.apk` packages install
+The `.deb`, `.rpm`, `.apk` and `.pkg.tar.zst` packages install
 [Bash](https://tiswww.case.edu/php/chet/bash/bashtop.html "GNU Bourne-Again
 SHell, the default shell on most Linux distributions"),
 [Zsh](https://www.zsh.org/ "Extended Bourne shell, the default on macOS since
@@ -180,7 +180,7 @@ nothing, since listing collections would mean connecting.
 
 ## Man page
 
-The `.deb`, `.rpm`, and `.apk` packages also install an `iq(1)` manual page, so `man iq` works
+The `.deb`, `.rpm`, `.apk`, and `.pkg.tar.zst` packages also install an `iq(1)` manual page, so `man iq` works
 after a package install. For any other install, pipe it into your man path:
 
 ```sh
