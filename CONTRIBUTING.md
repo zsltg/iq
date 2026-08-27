@@ -15,7 +15,9 @@ iq version         # check the result
 ```
 
 A plain `go build` still reports a version recovered from Go's embedded build
-info.
+info. `iq version` prints the version, commit, build date, and Go version;
+`iq --version` prints the bare version alone (`v1.2.3`, or `dev+<commit>` for
+an untagged build) so scripts can read it without parsing.
 
 ## Testing
 
