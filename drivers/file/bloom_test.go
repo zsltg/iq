@@ -68,3 +68,23 @@ func TestBloomDeterministic(t *testing.T) {
 	require.Equal(t, h1a, h1b)
 	require.Equal(t, h2a, h2b)
 }
+
+// TestBloomSizing pins the filter's byte length: bloomBitsPerKey bits per key,
+// rounded up to whole bytes, and never empty, so an all-absent page still gets a
+// well-formed one-byte filter that bloomAdd and bloomHas can index into.
+func TestBloomSizing(t *testing.T) {
+	tests := []struct {
+		name string
+		n    int
+		want int
+	}{
+		{name: "zero keys floors at one byte", n: 0, want: 1},
+		{name: "one key rounds ten bits up to two bytes", n: 1, want: 2},
+		{name: "four keys fill five bytes exactly", n: 4, want: 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Len(t, newBloom(tt.n), tt.want)
+		})
+	}
+}

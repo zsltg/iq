@@ -354,6 +354,12 @@
    "file": "cmd/move.go",
    "mutator": "expression/remove",
    "line": 230
+  },
+  {
+   "id": "3f457cc19b54cb4bf565b520d24a98d3",
+   "file": "drivers/file/bloom.go",
+   "mutator": "numbers/decrementer",
+   "line": 24
   }
  ]
 }
