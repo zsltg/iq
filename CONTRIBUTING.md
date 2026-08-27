@@ -5,8 +5,8 @@
 - Go 1.26.5+ (matches `go.mod`)
 - Docker — integration tests and the local stack; not needed for `go test -short`
 - [gofumpt](https://github.com/mvdan/gofumpt), [goimports](https://pkg.go.dev/golang.org/x/tools/cmd/goimports),
-  and [golangci-lint](https://golangci-lint.run) on `PATH` — `make check` runs them and
-  `make tools-dev` does not install them
+  and [golangci-lint](https://golangci-lint.run) on `PATH`: `make check` runs them,
+  and `make tools-dev` does not install them
 - [uv](https://docs.astral.sh/uv/) — docs site only; not needed to build or use `iq`
 
 ## Build
@@ -63,7 +63,7 @@ Elasticsearch on 9200, and HBase uses host networking (see `compose.yaml`).
 
 ## Quality gates
 
-Local and layered — the quality gates run on your machine, not in CI (the two
+Local and layered: the quality gates run on your machine, not in CI (the two
 GitHub workflows only build the docs site and publish releases). The full
 doctrine binds in [AGENTS.md](AGENTS.md).
 
