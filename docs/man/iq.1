@@ -516,7 +516,7 @@ Compare two saved sources across the layers a schemaless store can meaningfully 
 .PP
 Use \-j/\-\-json or \-y/\-\-yaml for a machine\-readable delta. diff exits non\-zero when the sources differ and zero when they match (diff(1)\-style), so scripts can branch on the exit status.
 .PP
-Each side may carry a jq filter, so a diff can be scoped to part of a keyspace: per side as `<source>=<jq>`, or for both at once with \-\-filter, a side's own filter winning. The filter is `.[]`\-rooted as on a plain query (iteration is not implicit here, unlike \-\-insert), because a keyed diff needs each item to keep its key:
+Each side may carry a jq filter, so a diff can be scoped to part of a keyspace: per side as `<source>=<jq>`, or for both at once with \-\-filter, a side's own filter winning. Write the filter `.[]`\-rooted, as on a plain query (iteration is not implicit here, unlike \-\-insert), because a keyed diff needs each item to keep its key:
 .PP
 .RS
 .nf
@@ -534,7 +534,7 @@ A filter may instead name a single key (prod=.["orders:42"]) to compare one docu
 diff items key by key (default when no layer is chosen; cross\-driver allowed)
 .TP
 \fB\-\-filter\fR
-`.[]`\-rooted jq filter scoping both sides; a spec's own `source=<jq>` overrides it for that side
+jq filter you root at `.[]`, scoping both sides; a spec's own `source=<jq>` overrides it for that side
 .TP
 \fB\-j\fR, \fB\-\-json\fR
 emit machine\-readable JSON
