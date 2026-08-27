@@ -117,17 +117,65 @@ iq '{t: .title}' --src books --insert kv --key '.t'
 
 ## Type mapping `--type`
 
+A plain copy carries each item's native type along (a Redis hash lands as a
+hash), so no type flag is needed. A filter that reshapes the value drops that
+type, the output is just JSON, and `--type` names the native type the
+destination should store it as. Left unset, a typed destination infers it from
+the shape (Redis writes a scalar as a `string` and an object or array as
+`json`), so `--type` is only required when you want something else, a `hash`
+built from an object, a `list` or `set` from an array, a `zset` from
+`[{member, score}]` pairs. A document store ignores it, every value is a
+document there. With `--typed` the same flag stamps the `type` field of each
+dump record instead.
+
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
 | | `--type <string>` | none | native type stamped on each written value, e.g. hash, list, json (--insert/--typed) |
 
+```sh { title='Reshape Mongo documents into Redis hashes' }
+iq '{title, year: (.year | tostring)}' --src books --insert cache --type hash
+```
+```sh { title='Project one field per item into a Redis list' }
+iq '[.tags[]]' --src books --insert cache --type list --key-prefix 'tags:'
+```
+```sh { title='Same reshape, no --type: an object lands as RedisJSON' }
+iq '{title, year}' --src books --insert cache
+```
+```sh { title='Dump reshaped items with an explicit type tag' }
+iq '{title}' --src books --typed --type json -o titles.jsonl
+```
+
 ## Replace `--replace`
+
+By default a write upserts: existing keys are overwritten, everything else in
+the destination stays. `--replace` turns the copy into a restore, it empties
+the destination first (the same operation as `iq data clear`, a Redis
+`FLUSHDB`, a Mongo `deleteMany({})`) and then writes, so the destination ends
+up holding exactly the source. Because it destroys data it prompts
+(`clear <destination> before writing`), `--force` answers yes, and `--dry-run`
+reports the copy without clearing anything. A destination that cannot be
+cleared (the read-only file dump) is refused up front. `--no-overwrite` is the
+opposite choice, insert-only, so the two are mutually exclusive, and neither
+applies to a `--typed` dump.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
 | | `--replace` | ✗ | empty the destination before writing, with confirmation (--insert) |
 | | `--force` | ✗ | skip the confirmation prompt for `--replace` |
 | | `--no-overwrite` | ✗ | skip keys that already exist (--insert) |
+
+```sh { title='Restore a dump so the destination matches it exactly' }
+iq --src snap --insert cache --replace
+```
+```sh { title='Same, unattended (no prompt)' }
+iq --src snap --insert cache --replace --force
+```
+```sh { title='Preview the restore: reports the copy, clears nothing' }
+iq --src snap --insert cache --replace --dry-run
+```
+```sh { title='Fill gaps only, never touch an existing key' }
+iq --src books --insert books2 --no-overwrite
+```
 
 ## Lifecycle previews
 
@@ -139,6 +187,16 @@ prompt.
 | --- | --- | --- | --- |
 | | `--explain` | ✗ | print the access plan and exit without connecting or changing anything |
 | | `--dry-run` | ✗ | connect and report the real effect without changing anything |
+
+```sh { title='Plan only: which operation, and whether the driver supports it' }
+iq data drop cache --explain
+```
+```sh { title='Connect and count what a clear would remove, then stop' }
+iq data clear shop.orders --dry-run
+```
+```sh { title='Check which of the named keys exist before deleting' }
+iq data delete cache book:1 book:2 --dry-run
+```
 
 ## Delete `data delete`
 
