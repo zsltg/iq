@@ -235,19 +235,15 @@ same contract:
 
 ## Architecture
 
-The core read path: a jq filter is classified by the **selector**, a scan is optionally **decomposed**
-into a native predicate, and each backend maps that predicate its own way — MongoDB pushes it
-server-side, Cassandra pushes equality as a CQL `WHERE` (with `ALLOW FILTERING` when it is not the
-partition key), DynamoDB pushes equality and existence as a `Scan` `FilterExpression`, HBase pushes
-column equality as a `SingleColumnValueFilter`, CouchDB pushes equality, ranges, existence, a
-byte-safe regex, and length as a
-Mango `_find` selector, Couchbase pushes equality, ranges, and existence as a SQL++ `WHERE`, Neo4j pushes equality and existence as a Cypher `WHERE` clause, Elasticsearch
-and OpenSearch push equality and existence as a `bool` query, Redis scans
-and filters client-side. Either way the
-full jq re-runs client-side, so
-the pushed predicate is only ever a conservative pre-filter and results are identical with or without it.
+### Query routes
 
-Query / read path:
+A jq filter is classified by the **selector**, a scan is optionally
+**decomposed** into a native predicate, and each backend maps that predicate
+its own way.
+
+Regardless of pushdown, the full jq re-runs client-side, so the pushed
+predicate is only ever a conservative pre-filter and results are identical with
+or without it.
 
 ```mermaid
 graph TD
@@ -266,13 +262,19 @@ graph TD
   JQ --> OUT["format renderer<br/>→ output"]
 ```
 
-A scan emits per-page progress (`RunOptions.OnPage`) to a stderr spinner — CLI only, off unless
-attached to a terminal — and an unfiltered scan can fetch a cheap up-front total
-(`RunOptions.OnEstimate`, answered from backend metadata where the backend keeps one — a collection
-estimate like Mongo's `estimatedDocumentCount`, table metadata, an index count) so progress reads
-as ~N.
+A scan emits per-page progress to a stderr spinner (CLI only, off unless
+attached to a terminal) and an unfiltered scan can fetch a cheap up-front total
+estimate (where the backend metadata makes it possible).
 
-Data movement & lifecycle / write path:
+### Write routes
+
+Writes ride the query command, there is no separate copy tool. Items arrive
+from `--src` (a live source or a `file://` dump) or piped stdin, and each is
+read as a typed record, so the native type survives the trip.
+
+The `jq` filter transforms each item with its key preserved, this is the one
+place a filter runs per item rather than over the whole keyspace, iteration is
+implicit and you do not write `.[]`.
 
 ```mermaid
 graph TD
