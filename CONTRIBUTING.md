@@ -187,7 +187,10 @@ make docs-serve  # serve on 0.0.0.0:8000
 ```
 
 Pages under `docs/docs/` are hand-maintained; nothing regenerates them from
-the README.
+the README. Both targets first write the gitignored `docs/docs/llms-full.txt`,
+every nav page concatenated in order, published at
+`https://zsltg.github.io/iq/llms-full.txt` so an agent reads the whole manual in
+one fetch.
 
 ### Generated artifacts
 

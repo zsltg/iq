@@ -253,6 +253,15 @@ A bare name auto-detects (`file:///<file_path>`), the `?format=` form must be pa
 [Drivers page](https://zsltg.github.io/iq/drivers/#file-dumps) documents what produces each
 format, the options some of them need, and the round-trip caveats.
 
+## AI agents
+
+`iq` ships an [Agent Skill](https://agentskills.io) at
+[`skills/iq/SKILL.md`](skills/iq/SKILL.md), so an agent can be taught the whole surface in one
+file: `npx skills add zsltg/iq`. It covers finding a source, `--explain` before every scan,
+`--dry-run` before every write, the machine-readable output flags and the JSON error shape, and
+the rules around destructive commands. The
+[AI agents page](https://zsltg.github.io/iq/agents/) documents the other install paths.
+
 ## Drivers
 
 `iq` picks the backend from a source's URI scheme, and the query core is driver-agnostic, so
@@ -392,6 +401,7 @@ semantics are identical across backends.
 | Inspect a backup | `redis-rdb-tools`, `bsondump`, `mongoexport` files, DynamoDB export JSON, `cqlsh COPY` CSV, APOC JSON, each read by its own tool or by hand | one reader over six formats, queryable, diffable, restorable, with no server |
 | Copy or migrate between stores | ad-hoc scripts, `mongodump`/`mongorestore` and `elasticdump` for one store at a time, Redpanda Connect or Bento for any-to-any (a YAML pipeline plus the Bloblang mapping language), Airbyte for a platform | one command, a typed round-trip, an inline jq transform, cross-driver |
 | Compare environments, watch schema drift | export both sides, then `diff`, `jd` or `jq` by hand | `iq diff` over data, stats, or inferred schema, with `diff(1)` exit codes for CI |
+| Give an AI agent database access | one MCP server per backend (MongoDB's own, Google's MCP Toolbox for Databases), each speaking its native dialect behind a server process | one binary and one language for all of them, `--explain` as a dry run, and a skill any agent that reads the Agent Skills format can install (see [AI agents](#ai-agents)) |
 
 ### What iq is not
 

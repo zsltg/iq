@@ -69,6 +69,7 @@ nav = [
   { "Configuration" = "configuration.md" },
   { "Loading exports" = "loading-exports.md" },
   { "Cookbook" = "cookbook.md" },
+  { "AI agents" = "agents.md" },
   { "Diagnostics & Logging" = "diagnostics-and-logging.md" },
   { "Drivers" = "drivers.md" },
   { "Comparison" = "comparison.md" },

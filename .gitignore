@@ -21,6 +21,9 @@
 /docs/site/
 /docs/.cache/
 
+# Docs: the concatenated manual, written by scripts/docs.sh on every build.
+/docs/docs/llms-full.txt
+
 # Local env (the tracked template is .env.example).
 .env
 
