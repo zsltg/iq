@@ -4,36 +4,74 @@ icon: lucide/package-open
 
 # Get started
 
-`iq` is a Go command-line tool that runs
-`jq`[^2] filters against
-NoSQL databases. The backend is chosen by the URI
-scheme[^4], and the query core is driver-agnostic, so further backends slot in
-behind the same port[^port] (see
+`jq`[^2] for NoSQL databases.
+
+`iq` runs `jq` filters to query, dump, copy, diff and write data across Redis,
+MongoDB, Cassandra, DynamoDB, Elasticsearch, OpenSearch, CouchDB, Couchbase,
+HBase and Neo4j instances, and their dump files, from a single static binary (see
 [Drivers](drivers.md#drivers)).
 
-Normally, `jq` parses the whole top-level JSON value into memory before the
-filter runs. In the case of `iq`, the filter is both the *transform* and the
-*key selector*: the selector walks the parsed `jq` AST[^ast] and, based on that,
-executes a *bounded read*, a *streaming scan* (with *pushdown*[^pushdown]), or a
-*materialized scan* to optimize the query (see
+Fetched values are normalized to JSON and the filter runs entirely client-side,
+so one filter means the same thing everywhere.
+
+The backend is chosen by the URI scheme[^4], and the filter is both the
+*transform* and the *key selector*: the selector walks the parsed `jq` AST[^ast]
+and, based on that, executes a *bounded read*, a *streaming scan* (with
+*pushdown*[^pushdown]), or a *materialized scan* (see
 [How it works](how-it-works.md#how-it-works)).
 
-Fetched values are normalized to JSON and the filter then runs entirely
-client-side, so its semantics are identical for every backend.
+Typed dumps carry native types across stores, so a copy, a restore or a
+migration is one command instead of an export plus a conversion script.
 
 `iq` is inspired by [`sq`](https://sq.io "Command-line tool giving jq-style
-access to SQL databases and files like CSV or Excel"), much of its command
-surface and the `<source>.<collection>` addressing along with many subcommands
-and flags are deliberately similar.
+access to SQL databases and files like CSV or Excel"), whose command surface it
+deliberately follows.
+
+## What it's for
+
+Register the sources once, then every row below is a command you can run:
+
+```sh
+iq add -n orders 'mongodb://localhost:27017/shop?collection=orders'
+iq add -n staging 'mongodb://staging:27017/shop?collection=orders'
+iq add -n cache redis://localhost:6379/0
+iq add -n snap file:///backups/prod.rdb
+```
+
+| You want to | Run |
+| --- | --- |
+| Read one document from any store | `iq --src orders '.["o-42"]'` |
+| Stream a filtered sample, pushed to the server where it can be | `iq --src orders '.[] \| select(.status == "new") \| {id, total}'` |
+| Query a backup without restoring it | `iq --src snap '.[] \| select(.active)'` |
+| Copy one store into another, native types intact | `iq --src orders --insert cache` |
+| Diff two environments, data or inferred schema | `iq diff orders staging --schema` |
+| See the plan before anything runs | `iq --src orders '.[] \| select(.total > 99)' --explain` |
+
+## Why not `<native cli> | jq`?
+
+- The filter names the keys, so there is no native query to write first, and a
+  missing key reads as `null` rather than an error.
+- Paging, bounded memory and `--timeout` are handled: a `.[]`-rooted filter
+  streams the keyspace, and a filter that would load all of it at once is
+  refused unless you ask with `--unbounded`.
+- Every backend's values (Redis hashes, sets and streams, BSON, DynamoDB
+  attribute values, CQL types) normalize to one JSON, so one filter means one
+  thing on all of them.
+- Typed dumps and `--insert` carry native types across stores, so a copy, a
+  restore or a migration is one command instead of an export plus a conversion
+  script.
 
 !!! note
 
-    `iq` was built with assistance from AI tools, so its code and the results it
-    produces may contain mistakes.
+    `iq` is built with AI assistance, and every change passes the full test
+    suite, container-backed integration tests for every backend, and a mutation
+    gate before it lands (see
+    [CONTRIBUTING.md](https://github.com/zsltg/iq/blob/main/CONTRIBUTING.md)).
 
-    `--insert`, `iq data clear` and `iq data drop` write to live databases, point
-    them at data you can afford to lose first, and use `--explain` to see the
-    [query plan](query-plan.md#query-plan) without making changes.
+    Queries are read-only. `--insert`, `--replace`, `iq data clear`,
+    `iq data drop` and `iq data delete` write to the target. Use `--explain` to
+    see the [query plan](query-plan.md#query-plan) or `--dry-run` to report the
+    effect, without changing anything.
 
     Feedback and bug reports are very welcome.
 
@@ -190,7 +228,6 @@ iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
 [^4]: RFC3986 proposes a generic URI syntax and a process for resolving URI references that might be in relative form, along with guidelines and security considerations for the use of URIs on the Internet. https://datatracker.ietf.org/doc/html/rfc3986
 [^5]: Cgo enables the creation of Go packages that call C code. https://pkg.go.dev/cmd/cgo
 [^6]: SHA-256 is a Secure Hash Algorithm with a message digest size of 256. https://nvlpubs.nist.gov/nistpubs/fips/nist.fips.180-4.pdf
-[^port]: A port in the ports-and-adapters (hexagonal) sense, the interface the query core defines and each backend driver implements as an adapter, so the core never depends on a specific database. https://alistair.cockburn.us/hexagonal-architecture/
 [^ast]: An abstract syntax tree is the tree a parser builds from a program's source, here the parsed `jq` filter the key selector inspects to decide how to read (see [How it works](how-it-works.md#read-strategies)). https://en.wikipedia.org/wiki/Abstract_syntax_tree
 [^pushdown]: Predicate pushdown hands part of the filter to the database so it returns only matching items instead of everything for client-side filtering, each driver's page lists what it can push (see [Drivers](drivers.md#drivers)). https://en.wikipedia.org/wiki/Predicate_pushdown
 [^keyring]: The operating system's credential store (macOS Keychain, Windows Credential Manager, the Secret Service on Linux), where `--store keyring` sources keep their secrets (see [Configuration](configuration.md#keyring-keyring)). https://pkg.go.dev/github.com/zalando/go-keyring

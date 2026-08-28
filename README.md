@@ -23,26 +23,31 @@
 
 # iq
 
-A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters against NoSQL
-databases. The backend is chosen by the URI scheme, and the query core is driver-agnostic
-so further backends slot in behind the same port.
+`iq` runs [jq](https://jqlang.github.io/jq/) filters to query, dump, copy, diff and write data
+across Redis, MongoDB, Cassandra, DynamoDB, Elasticsearch, OpenSearch, CouchDB, Couchbase, HBase
+and Neo4j instances, and their dump files, from a single static binary.
+
+Fetched values are normalized to JSON and the filter runs entirely client-side,
+so one filter means the same thing everywhere.
 
 The filter is both the transform and the key selector: its top-level paths name the keys to
-fetch, so a normal query reads a bounded set of keys; a `.[]`-rooted filter streams the
-keyspace in pages, and a filter that collapses it into one value materializes only behind
-`--unbounded`. Fetched values are normalized to JSON and the filter then runs entirely
-client-side, so its semantics are identical for every backend.
+fetch, so `iq` reads a bounded set of keys, streams the keyspace in pages, or materializes it,
+depending on what the filter asks for.
 
-`iq` is inspired by [sq](https://github.com/neilotoole/sq): much of its command surface (the
-dotted `<handle>.<keyspace>` addressing, sq's `<source>.<collection>`, along with many
-subcommands and flags) deliberately follows sq's to make the tool feel familiar.
+Typed dumps carry native types across stores, so a copy, a restore or a
+migration is one command instead of an export plus a conversion script.
+
+`iq` is inspired by [sq](https://github.com/neilotoole/sq), whose command surface it
+deliberately follows to make the tool feel familiar.
 
 > [!NOTE]
-> `iq` was built with assistance from AI tools, so its code and the results it produces may
-> contain mistakes.
+> `iq` is built with AI assistance, and every change passes the full test suite,
+> container-backed integration tests for every backend, and a mutation gate before it lands
+> (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 >
-> `--insert`, `iq data clear` and `iq data drop` write to live databases, point them at data
-> you can afford to lose first, and use `--explain` to see the query plan without making changes.
+> Queries are read-only. `--insert`, `--replace`, `iq data clear`, `iq data drop` and
+> `iq data delete` write to the target. Use `--explain` to see the query plan or `--dry-run`
+> to report the effect, without changing anything.
 >
 > Feedback and bug reports are very welcome.
 
@@ -90,7 +95,8 @@ git clone https://github.com/zsltg/iq
 cd iq && make build
 ```
 
-### Shell completions
+<details>
+<summary><h3>Shell completions</h3></summary>
 
 The `.deb`, `.rpm`, `.apk` and `.pkg.tar.zst` packages install bash, zsh and fish completions for you. For a
 brew, scoop, go-install or source build, `iq completion <shell>` prints a script to install by
@@ -126,7 +132,10 @@ opens a connection, never reads the OS keyring, and cannot hang. That is why a c
 suffix does not complete, `iq --src shop.<TAB>` offers nothing, since listing collections
 would mean connecting.
 
-### Man page
+</details>
+
+<details>
+<summary><h3>Man page</h3></summary>
 
 The packages also install an `iq(1)` manual page, so `man iq` works after a package install. For
 a non-package install, pipe it into your man path:
@@ -135,16 +144,31 @@ a non-package install, pipe it into your man path:
 iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
 ```
 
-## Getting started
+</details>
 
-The default action is a jq filter: its top-level paths name the keys to fetch, and the result
-prints as pretty JSON. Queries run against the active source.
+## Get started
 
-```bash
-./iq '.greeting'                          # fetch key "greeting"
-./iq '.["book:1"].title'                  # a colon key needs bracket-quoting; extract one field
-./iq '[ .["book:1"].title, .["book:2"].title ]'   # fetch both keys, project a field from each
-./iq '.["book:2"].price | tonumber + 5'   # values are strings; convert before arithmetic
+```sh
+# Add a collection named "books" from a MongoDB source.
+iq add 'mongodb://localhost:27017/iq?collection=books'
+
+# Check the list of sources you added.
+iq ls
+
+# Make a source active.
+iq src books
+
+# Inspect the database.
+iq inspect
+
+# Explain the query plan for a bounded read, a dry run.
+iq '.["1"]' --explain -v
+
+# Run the query to get the document with id "1".
+iq '.["1"]'
+
+# Run a query to get all documents in batches, a streaming scan.
+iq '.[]'
 ```
 
 Always wrap the filter in single quotes, jq syntax is full of characters the shell would
@@ -168,7 +192,7 @@ The commands below are a starter set; every command and flag is documented in fu
 | --- | --- |
 | `iq --src books --insert books2` | Copy one source into another (cross-driver) |
 | `iq --src cache --typed -o dump.jsonl` | Dump a source to a re-importable typed file |
-| `iq --src snap --insert prod` | Restore a dump into a live source |
+| `iq --src snap --insert cache` | Restore a dump into a live source |
 | `iq data clear books` | Empty a container (`iq data drop` removes it) |
 | `iq schema prod.orders` | Infer a JSON Schema from a sampled source |
 | `iq schema 'prod.orders=.[] \| select(.active)'` | Infer the shape of part of a source |
@@ -186,6 +210,49 @@ The commands below are a starter set; every command and flag is documented in fu
 | `iq config ls -v` | List every persistable option |
 | `iq --config ./iq.toml ls` | Use an alternate config file |
 
+## Backups and dumps
+
+A `file://` source reads a database dump straight from disk, so a snapshot is queried,
+inspected for shape, diffed against a live source, and restored through the same jq
+interface, with no running server. It is read-only: a `file://` endpoint is never a copy
+destination, and `iq exec` and `iq inspect`, which need a live server, do not apply.
+
+```sh
+# Register a dump like any other source.
+iq add -n snap file:///backups/prod.rdb
+
+# Bounded read of one key.
+iq --src snap '.["session:42"]'
+
+# Streamed scan.
+iq --src snap '.[] | select(.active)'
+
+# A whole-dataset filter still obeys --unbounded.
+iq --src snap 'keys' --unbounded
+
+# Diff a dump against a live source.
+iq diff snap cache --data
+
+# Restore the dump into a live source.
+iq --src snap --insert cache
+```
+
+| Type | Description |
+| ---- | ----------- |
+| `jsonl` | iq typed JSON Lines / array |
+| `yaml` | iq typed YAML |
+| `mongoexport` | mongoexport Extended JSON |
+| `bson` | mongodump BSON |
+| `rdb` | Redis RDB snapshot |
+| `?format=dynamodb-json` | DynamoDB S3 export / scan JSON |
+| `?format=cassandra-csv` | cqlsh COPY TO CSV |
+| `?format=neo4j-json` | Neo4j APOC JSON export |
+
+A bare name auto-detects (`file:///<file_path>`), the `?format=` form must be passed
+(`file:///<file_path>?format=<source_format>`). The
+[Drivers page](https://zsltg.github.io/iq/drivers/#file-dumps) documents what produces each
+format, the options some of them need, and the round-trip caveats.
+
 ## Drivers
 
 `iq` picks the backend from a source's URI scheme, and the query core is driver-agnostic, so
@@ -200,7 +267,7 @@ value encoding, predicate pushdown, and raw-command escape hatch.
 | `couchdb` | [Apache CouchDB](https://docs.couchdb.org/) | 2.x, 3.x |
 | `dynamodb` | [Amazon DynamoDB](https://docs.aws.amazon.com/dynamodb/) | AWS (managed) |
 | `elasticsearch` | [Elasticsearch](https://www.elastic.co/docs/) | 8.x |
-| `file` | Local dump file, read-only | — |
+| `file` | Local dump file, read-only (see [Backups and dumps](#backups-and-dumps)) | — |
 | `hbase` | [Apache HBase](https://hbase.apache.org/book.html) | 1.0+ |
 | `mongo` | [MongoDB](https://www.mongodb.com/docs/) | 4.2+ |
 | `neo4j` | [Neo4j](https://neo4j.com/docs/) | 5.x |
@@ -209,22 +276,6 @@ value encoding, predicate pushdown, and raw-command escape hatch.
 
 The Versions column lists the range of backend server versions the bundled client library
 supports.
-
-### File dump formats
-
-| Type | Description |
-| ---- | ----------- |
-| `jsonl` | iq typed JSON Lines / array |
-| `yaml` | iq typed YAML |
-| `mongoexport` | mongoexport Extended JSON |
-| `bson` | mongodump BSON |
-| `rdb` | Redis RDB snapshot |
-| `?format=dynamodb-json` | DynamoDB S3 export / scan JSON |
-| `?format=cassandra-csv` | cqlsh COPY TO CSV |
-| `?format=neo4j-json` | Neo4j APOC JSON export |
-
-A bare name auto-detects (`file:///<file_path>`), the `?format=` form must be passed
-(`file:///<file_path>?format=<source_format>`).
 
 ### Guarantees
 
@@ -259,6 +310,15 @@ same contract:
   must come before `exec`: everything after it is forwarded to the backend untouched.
 
 ## Architecture
+
+The backend is chosen by the URI scheme, and the query core is driver-agnostic, so further
+backends slot in behind the same port.
+
+The filter is both the transform and the key selector: its top-level paths name the keys to
+fetch, so a normal query reads a bounded set of keys; a `.[]`-rooted filter streams the
+keyspace in pages, and a filter that collapses it into one value materializes only behind
+`--unbounded`. Fetched values are normalized to JSON and the filter then runs entirely
+client-side, so its semantics are identical for every backend.
 
 ### Query routes
 
@@ -324,29 +384,26 @@ How `iq` relates to other query tools. Its niche is narrow: a single static bina
 NoSQL stores one jq-based query surface, the filter running client-side over normalized JSON so
 semantics are identical across backends.
 
-The tools it resembles fall into five groups:
+### By job
 
-- Multi-backend SQL (`sq`, Trino, Drill, OctoSQL, usql) unifies databases under one SQL-ish
-  language, but targets relational stores; where it reaches NoSQL it runs as a server or engine.
-- SQL over files (DuckDB, dsq, trdsql, and others) queries CSV/JSON/Parquet locally, not live
-  databases.
-- Relational + NoSQL languages (PartiQL, SQL++, JSONiq, GraphQL) span nested and tabular data,
-  but are language specs or tied to a specific engine, not a portable CLI.
-- Data virtualization / federation platforms (Denodo, Dremio, MindsDB) run as a server that
-  translates SQL into each backend's native query, spanning relational, NoSQL, and files without
-  migrating data, broad reach, but the unification lives in a heavyweight service, not a binary
-  you run locally.
-- Universal database clients (DBeaver, DBX, LazySQL) put one GUI or TUI in front of many
-  backends, but each connection still speaks that backend's native query language, a shared
-  shell, not a shared language.
+| Job | What people use today | What `iq` changes |
+| --- | --- | --- |
+| Query a live store from a shell | `redis-cli`, `mongosh`, `cqlsh`, `aws dynamodb`, `curl` against Elasticsearch, each piped into `jq` | one language and one config over all of them, the filter names the keys, paging and normalization are handled |
+| Inspect a backup | `redis-rdb-tools`, `bsondump`, `mongoexport` files, DynamoDB export JSON, `cqlsh COPY` CSV, APOC JSON, each read by its own tool or by hand | one reader over six formats, queryable, diffable, restorable, with no server |
+| Copy or migrate between stores | ad-hoc scripts, `mongodump`/`mongorestore` and `elasticdump` for one store at a time, Redpanda Connect or Bento for any-to-any (a YAML pipeline plus the Bloblang mapping language), Airbyte for a platform | one command, a typed round-trip, an inline jq transform, cross-driver |
+| Compare environments, watch schema drift | export both sides, then `diff`, `jd` or `jq` by hand | `iq diff` over data, stats, or inferred schema, with `diff(1)` exit codes for CI |
 
-`sq`, the tool `iq`'s command surface is modelled on, belongs to the first group: it unifies
-relational databases and files, and never reaches NoSQL.
+### What iq is not
 
-Apache Calcite doesn't fit any group above: it's the SQL parsing/optimization framework several
-multi-backend engines (Drill, Dremio) embed, not a standalone tool. It's listed because its
-adapter model, translating SQL onto MongoDB, Cassandra, Elasticsearch, and others, is the
-template most SQL-over-NoSQL tools follow.
+- Not an analytics engine. Pushdown covers equality and existence on every backend, ranges on
+  MongoDB, CouchDB and Couchbase, regex on MongoDB and CouchDB, and everything else runs as a
+  client-side scan, while an aggregate materializes the keyspace behind `--unbounded`. A heavy
+  question belongs in the backend's own language through `iq exec`, or in a query engine.
+- Not a replacement for the native shell where the backend's own feature is the point:
+  aggregation pipelines, relevance scoring, graph traversals, vector search. `iq exec` forwards
+  those verbatim rather than modelling them.
+
+### Tools that unify many databases under one language
 
 Legend: ● primary, ◐ partial, — none. Model is the shape the query language speaks; footprint is
 what you run.
@@ -355,38 +412,32 @@ what you run.
 |---|---|:---:|:---:|:---:|---|---|
 | **iq** | **jq** | — | **●** | **◐** | **document** | **single binary** |
 | [sq](https://sq.io) | SLQ / SQL | ● | — | ● | tabular | single binary |
-| [Apache Calcite](https://calcite.apache.org) | SQL | ● | ◐ | ◐ | relational (via adapters) | library / embedded |
-| [Apache Drill](https://drill.apache.org) | SQL | ● | ● | ● | schema-free (both) | server / engine |
-| [DBeaver](https://dbeaver.io) | native per-backend | ● | ◐ | ◐ | client-side, per backend | desktop app (JVM) |
-| [DBX](https://github.com/t8y2/dbx) | native per-backend | ● | ◐ | ◐ | client-side, per backend | desktop app / CLI |
-| [Denodo](https://www.denodo.com) | SQL | ● | ● | ◐ | virtual relational | server (commercial) |
-| [Dremio](https://www.dremio.com) | SQL | ● | ◐ | ● | tabular (Arrow) | server / cluster |
-| [dsq](https://github.com/multiprocessio/dsq) | SQL | — | — | ● | tabular | single binary |
-| [DuckDB](https://duckdb.org) | SQL | ◐ | — | ● | tabular | in-process / CLI |
-| [GraphQL federation](https://graphql.org/learn/federation/) | GraphQL | ● | ● | — | typed graph (both) | server |
-| [JSONiq](https://www.jsoniq.org) | JSONiq | — | ● | ● | document | library / engine |
-| [LazySQL](https://github.com/jorgerojas26/lazysql) | native SQL | ● | — | — | tabular | single binary (TUI) |
-| [MindsDB](https://mindsdb.com) | SQL | ● | ● | ◐ | virtual relational | server |
-| [OctoSQL](https://github.com/cube2222/octosql) | SQL | ● | ◐ | ● | tabular | single binary |
-| [PartiQL](https://partiql.org) | PartiQL | ● | ● | ◐ | nested (both) | spec / embedded |
-| [SQL++](https://asterixdb.apache.org/docs/0.9.9/sqlpp/manual.html) / [N1QL](https://www.couchbase.com/products/n1ql/) | SQL++ | ◐ | ● | — | document | DB engine |
-| [Trino](https://trino.io) / [Presto](https://prestodb.io) | SQL | ● | ● | ● | tabular (◐ JSON) | server / engine |
 | [usql](https://github.com/xo/usql) | native SQL | ● | ◐ | — | tabular | single binary (multiplexer) |
+| [OctoSQL](https://github.com/cube2222/octosql) | SQL | ● | ◐ | ● | tabular | single binary |
+| [DuckDB](https://duckdb.org) | SQL | ◐ | — | ● | tabular | in-process / CLI |
+| SQL over files ([dsq](https://github.com/multiprocessio/dsq), [trdsql](https://github.com/noborus/trdsql)) | SQL | — | — | ● | tabular | single binary |
+| [Trino](https://trino.io) / [Presto](https://prestodb.io) | SQL | ● | ● | ● | tabular (◐ JSON) | server / engine |
+| [Apache Drill](https://drill.apache.org) | SQL | ● | ● | ● | schema-free (both) | server / engine |
+| Data virtualization ([Denodo](https://www.denodo.com), [Dremio](https://www.dremio.com), [MindsDB](https://mindsdb.com)) | SQL | ● | ● | ◐ | virtual relational | server |
+| Universal clients ([DBeaver](https://dbeaver.io), [DataGrip](https://www.jetbrains.com/datagrip/), [DBX](https://github.com/t8y2/dbx), [LazySQL](https://github.com/jorgerojas26/lazysql)) | native per-backend | ● | ◐ | ◐ | client-side, per backend | desktop app / TUI |
+| [Redpanda Connect](https://github.com/redpanda-data/connect) | Bloblang, a mapping language | ◐ | ● | ◐ | document | single binary (YAML pipeline) |
+| [MCP Toolbox for Databases](https://github.com/googleapis/genai-toolbox) | native per-backend, as MCP tools | ● | ● | — | per backend | server |
 
-Placement is by each tool's primary targets, several (Trino, Drill, OctoSQL,
-DuckDB, Calcite) partially reach neighbouring columns via connectors, adapters
-or extensions, and `iq` reaches files the same way, a read-only `file://`
-source over database dumps, not arbitrary files.
+Placement is by each tool's primary targets, several (Trino, Drill, OctoSQL, DuckDB) partially
+reach neighbouring columns via connectors or extensions, and `iq` reaches files the same way, a
+read-only `file://` source over database dumps, not arbitrary files.
 
-The takeaway is the NoSQL column paired with footprint, `iq` is the only tool
-pairing a unified query language across NoSQL backends with a single
-lightweight binary.
+`sq`, the tool `iq`'s command surface is modelled on, unifies relational databases and files,
+and never reaches NoSQL. Language specs and embedded libraries (PartiQL, SQL++ / N1QL, JSONiq,
+Apache Calcite, GraphQL federation) span nested and tabular data too, but they are
+specifications or components inside an engine, not something anyone runs instead of a CLI.
 
-Data virtualization platforms (Denodo, Dremio, MindsDB) get the unified
-language but need a server.
-
-Universal clients (DBeaver, DBX, LazySQL) get a lightweight footprint but no
-unified language, each connection still speaks that backend's native dialect.
+The takeaway is the NoSQL column paired with footprint: among these tools, `iq` is the only
+single binary that gives NoSQL stores one query language. What reaches further runs as a server
+(Trino, Drill, the virtualization platforms, the MCP Toolbox), and what is as light either
+speaks each backend's own dialect (usql, the universal clients) or targets files and relational
+stores instead (sq, DuckDB, dsq). Redpanda Connect is a single binary too, but Bloblang maps
+records through a pipeline, it is not a query surface you type at a shell.
 
 ## See also
 

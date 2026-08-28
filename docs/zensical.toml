@@ -17,7 +17,7 @@ site_name = "iq"
 # meaningful description of the site content for use by search engines.
 #
 # Read more: https://zensical.org/docs/setup/basics/#site_description
-site_description = "Query NoSQL databases with jq from the command line"
+site_description = "jq for NoSQL databases. Use iq to query, dump, copy, diff and write data across Redis, MongoDB, Cassandra, DynamoDB, Elasticsearch, OpenSearch, CouchDB, Couchbase, HBase and Neo4j instances, from a single static binary."
 
 # The site_author attribute. This is used in the HTML head element.
 #

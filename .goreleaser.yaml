@@ -58,7 +58,7 @@ nfpms:
     vendor: zsltg
     homepage: https://github.com/zsltg/iq
     maintainer: Zsolt Gaspar <17578237+zsltg@users.noreply.github.com>
-    description: Query NoSQL databases with jq from the command line.
+    description: jq for NoSQL databases. Use iq to query, dump, copy, diff and write data across Redis, MongoDB, Cassandra, DynamoDB, Elasticsearch, OpenSearch, CouchDB, Couchbase, HBase and Neo4j instances, from a single static binary.
     license: MIT
     formats:
       - deb
@@ -125,7 +125,7 @@ homebrew_casks:
       name: homebrew-tap
       token: "{{ .Env.GORELEASER_TOKEN }}"
     homepage: https://github.com/zsltg/iq
-    description: Query NoSQL databases with jq from the command line.
+    description: jq for NoSQL databases. Use iq to query, dump, copy, diff and write data across Redis, MongoDB, Cassandra, DynamoDB, Elasticsearch, OpenSearch, CouchDB, Couchbase, HBase and Neo4j instances, from a single static binary.
     license: MIT
 
 # Scoop manifest, written into the shared bucket repo under bucket/<proj>.json.
@@ -138,7 +138,7 @@ scoops:
       token: "{{ .Env.GORELEASER_TOKEN }}"
     directory: bucket
     homepage: https://github.com/zsltg/iq
-    description: Query NoSQL databases with jq from the command line.
+    description: jq for NoSQL databases. Use iq to query, dump, copy, diff and write data across Redis, MongoDB, Cassandra, DynamoDB, Elasticsearch, OpenSearch, CouchDB, Couchbase, HBase and Neo4j instances, from a single static binary.
     license: MIT
 
 release:

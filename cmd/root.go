@@ -120,8 +120,8 @@ func newRootCmd() (*cobra.Command, *config) {
 	root := &cobra.Command{
 		Use:     "iq <jq-filter>",
 		Version: buildVersion(),
-		Short:   "Query NoSQL databases with jq from the command line",
-		Long: "iq runs a jq filter against a NoSQL database.\n" +
+		Short:   "jq for NoSQL databases",
+		Long: "jq for NoSQL databases.\n" +
 			"\n" +
 			"  $ iq '.[] | select(.total > 99) | .id' --src shop.orders\n" +
 			"\n" +
