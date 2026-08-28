@@ -82,9 +82,10 @@ make sbom           # SPDX + CycloneDX SBOMs only
 ### make check
 
 Format (`gofumpt` + `goimports`), `go vet`, `go build`, `golangci-lint`
-(gosec included), `deadcode`, `go test -short` with a coverage report. Lint
-findings in `../<worktree>/...` paths are a stale cache from a removed
-worktree; check clears the cache and retries once.
+(gosec included), `deadcode`, the demo stamp gate ([Recorded demo](#recorded-demo)),
+and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
+paths are a stale cache from a removed worktree; check clears the cache and
+retries once.
 
 ### make cover
 
@@ -191,6 +192,38 @@ the README. Both targets first write the gitignored `docs/docs/llms-full.txt`,
 every nav page concatenated in order, published at
 `https://zsltg.github.io/iq/llms-full.txt` so an agent reads the whole manual in
 one fetch.
+
+### Recorded demo
+
+```bash
+make demo         # re-record the README demo if the code it shows has changed
+make demo-record  # record unconditionally (FORCE=1 make demo does the same)
+make demo-check   # fail when the demo shows code that has since moved
+```
+
+`docs/docs/assets/demo.svg` is generated, not hand-captured: `expect` types the
+commands, `asciinema` (3.x or newer) records the session, `asciinema convert`
+rewrites the cast as asciicast v2, and `termsvg` (pinned in `scripts/demo/demo.mk`,
+provisioned by the target itself into a throwaway GOBIN via `go install`, no PATH
+dependency, no `go.mod` change) renders it as an animated SVG: vector text stepped
+through by a CSS keyframe animation, so it plays anywhere an `<img>` does and
+scales to the README and docs columns without blur. `scripts/demo/postrender.py`
+then embeds a ~3.5 KB subset of Source Code Pro (OFL-1.1, `scripts/demo/demo-font.*`)
+so every browser draws the text on termsvg's 12px grid and the cursor stays on the
+last character (termsvg only names a font stack, and a fontconfig that resolves it
+to a font with another advance makes the cursor drift); it refuses a recording
+that types a glyph outside the subset, and `make demo-font` regenerates the subset
+from the pinned upstream release (needs the network and `uvx`) after the glyph
+list in `scripts/demo/font.sh` is widened. `make demo-record` names whichever tool
+is missing or too old, brings up the `mongo` compose service, and seeds it;
+recording is manual, since CI has neither expect nor asciinema.
+
+`docs/demo.stamp` is the hash of every source the SVG was recorded from.
+`make demo-check` re-hashes them and fails, naming the files that moved, so a
+stale recording is a failed gate rather than something noticed months later; it
+needs git and `sha256sum` only, which is why it runs in `make check` and in CI.
+Never hand-edit the stamp, and commit it with the SVG in the same change. Details
+in [scripts/demo/README.md](scripts/demo/README.md).
 
 ### Generated artifacts
 

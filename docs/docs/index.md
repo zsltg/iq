@@ -75,6 +75,8 @@ iq add -n snap file:///backups/prod.rdb
 
     Feedback and bug reports are very welcome.
 
+<p align="center"><img src="assets/demo.svg" width="100%" alt="iq registers a MongoDB source, reads one document by key, filters a scan with a pushed-down predicate, explains the plan, and prints the result as gron"></p>
+
 ## Installation
 
 `iq` ships as a single static binary (no runtime dependencies, no CGO[^5]).

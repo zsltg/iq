@@ -3,6 +3,10 @@
 # `iq` has a document collection to explore. The data is ephemeral: `docker
 # compose down` discards it. Re-run any time to reset. The books collection uses
 # string _ids ("1".."4") so the jq key mapping (key = _id) is obvious.
+#
+# The recorded README demo reads this dataset (scripts/demo/README.md), and asserts
+# its shape before it records a frame: reshape the books here and re-record the GIF in
+# the same change, or scripts/demo/seed.sh fails and names the expectation that moved.
 set -euo pipefail
 
 if ! docker compose exec -T mongo mongosh --quiet --eval 'db.adminCommand("ping").ok' >/dev/null 2>&1; then
@@ -21,4 +25,4 @@ db.books.insertMany([
 EOF
 
 count=$(docker compose exec -T mongo mongosh --quiet iq --eval 'db.books.countDocuments({})' | tr -dc '0-9')
-echo "Seeded example data: ${count} documents in iq.books. Try: iq -u mongodb://localhost:27017/iq -c books '.[\"2\"]'"
+echo "Seeded example data: ${count} documents in iq.books. Try: iq add 'mongodb://localhost:27017/iq?collection=books' && iq '.[\"2\"]'"

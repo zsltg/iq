@@ -17,6 +17,17 @@ LDFLAGS := -X github.com/zsltg/iq/cmd.version=$(VERSION) \
 GORELEASER_VERSION := v2.17.0
 GORELEASER         := github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 
+# The README demo (docs/docs/assets/demo.svg) is recorded by expect + asciinema + termsvg.
+# Its knobs and recipes live beside the scripts they drive, because every value in
+# there changes the recorded pixels and is hashed with that directory: a knob moved
+# there is a re-record, and an edit to this file is not. Targets: demo, demo-record,
+# demo-check.
+#
+# Pinned first, because make takes its default goal from the first target it reads and
+# the include supplies one: without this, a bare `make` would record the demo.
+.DEFAULT_GOAL := build
+include scripts/demo/demo.mk
+
 .PHONY: build version changelog release tools tools-dev check cover security sbom e2e bench docs docs-serve capabilities mutation ci man completions release-check release-snapshot
 
 # build compiles the binary with version metadata embedded, static and

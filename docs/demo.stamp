@@ -1,0 +1,26 @@
+# docs/docs/assets/demo.svg's provenance: the sources it was recorded from, and their hashes.
+# Written by `make demo-record` (scripts/demo/stamp.sh), never hand-edit it.
+#
+# `make demo-check` re-hashes these files and fails when they no longer match,
+# because a SVG recorded from sources that have since moved shows output that iq no
+# longer prints. Re-record with `make demo`; commit the SVG and this file together.
+#
+# sha256 of each file's bytes (CR stripped), sorted by path.
+c362b3204fb8284c6c3f793b35d2f042581174e84d79cf773a0471c3441987d8  cmd/color.go
+1c0646534f78f78f4bef5ca48b2488c0b9264b6a489b7055a35b0aae0beddcd0  cmd/errrender.go
+2e826b616a4df5f99f617bf783af8b49050e91ef05ac5be9dcdb57603c6a33e8  cmd/explain.go
+2b744fc441ff2c21f1f43bad84086f8720d861f27727164b3092ec8317491087  cmd/gron.go
+eb3b0bc2b2847abf019d044c9d5314a4aaa363196a609141ef02fdf1fd880e84  cmd/output.go
+a27cfd8a41705c2cb3a66e884333bf7829b6d6070a80ea6045d63a2c793b5577  cmd/source.go
+6c12289ea6f82c3bdc18d55eb57708cad6aafb0f83bec404ad66e24c3e4ef104  internal/jqfmt/jqfmt.go
+79fccd3e4d126366e7ae7333ee90bfe95d66c3c1f2484d8dec6b16ad5920f8c7  internal/render/json.go
+d14ecfee7a6abd013f957c07a8f58b362fc1eb220468363c2bd0a4b7a5dc6091  scripts/demo/basic.exp
+0b2c3168605cb4f3ba54cf3cf2003f67ff894c66484c75702007f23eda92c353  scripts/demo/demo-font.LICENSE
+43f63917ac86cf1056672cb5b820013dba7eed089474931a0ed9bd419fef33c1  scripts/demo/demo-font.chars
+ccc6ffb9bcf1f991005173e70114e6285a59aa8070cbfe26a32c96c363e62117  scripts/demo/demo-font.woff2
+5ad69bcbae7449a5ddc8f3313b9c67b15e7fbb45c326e73329159ba04c3df9f6  scripts/demo/demo.mk
+86615f8aa5e56ee88662e0b968fb62792d812872dff5cb6fe48a37c742866ba7  scripts/demo/font.sh
+a0c795444aece622d8d96a3fa2657b6917e3f53dbf3fdf49f9a72410b8e77247  scripts/demo/postrender.py
+44e8dd36cb8eff68c5eceddfcb50727a15e07aeec0904737d120cef958de3c9b  scripts/demo/seed.sh
+086812d204b9db0e469033dcb75c79f1eecf78c56a7eb2e2ded40703d9c90a5f  scripts/demo/stamp.sh
+97504722c4f4ed38c5f6f908d4b44b9c2ed44bba4ff897432603d4efa79c5eea  scripts/seed-mongo.sh

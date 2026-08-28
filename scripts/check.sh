@@ -66,6 +66,13 @@ if [[ -n "$dead" ]]; then
   note_fail "deadcode"
 fi
 
+step "demo stamp"
+# The README GIF is a recording of code; the stamp is the hash of the sources it was
+# recorded from. Re-hashing them needs git and sha256sum only, no expect, asciinema,
+# agg or patched font, so a stale recording fails here rather than being noticed
+# months later. Re-record with `make demo`.
+bash scripts/demo/stamp.sh check || note_fail "demo stamp"
+
 step "unit tests (-short) + coverage report"
 if go test -short -covermode=atomic -coverprofile=coverage.out ./...; then
   total="$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}')"

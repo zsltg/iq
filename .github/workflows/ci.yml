@@ -323,6 +323,19 @@ jobs:
           host="${GITHUB_SERVER_URL#*://}"
           git push --force "${scheme}://x-access-token:${GITHUB_TOKEN}@${host}/${GITHUB_REPOSITORY}.git" badges
 
+  # The README GIF is a recording of iq's output, and nothing in a build tells you when
+  # the code it shows has moved on. The stamp is the hash of the sources it was
+  # recorded from, and re-hashing them needs git and sha256sum only, so this gate runs
+  # here even though none of the recorder (expect, asciinema, agg, a patched Nerd Font)
+  # is installed; recording stays manual, catching staleness does not.
+  demo-check:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Demo stamp
+        run: bash scripts/demo/stamp.sh check
+
   # Build the Zensical docs site on every change so a broken page fails the PR;
   # docs.yml owns the GitHub Pages deploy on pushes to main.
   docs:

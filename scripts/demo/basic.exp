@@ -1,0 +1,262 @@
+#!/usr/bin/expect -f
+#
+# One pass over iq's reason to exist: register a NoSQL source, read one key, push a
+# predicate down to the server, show the plan that proves it, and end on greppable
+# output.
+#
+#   make demo      # seeds the world, records this, renders docs/docs/assets/demo.svg
+#
+# iq is a command-line tool, not a TUI, so the demo types shell command lines and
+# asserts what they print. expect is the tool for that; asciinema records what it
+# drives and termsvg renders the cast (see scripts/demo/demo.mk).
+#
+# Everything on screen is seeded by scripts/demo/seed.sh: the four books in the local
+# MongoDB from compose.yaml, an isolated HOME, config and cache under $DEMO_ROOT, and
+# a copy of the built binary the shell resolves as `iq`. No real config, no real
+# keyring, no credential, and no home path on screen.
+#
+# This script ASSERTS what it narrates. A recording is a claim about the tool, and
+# output is what the claim is made of: reshape the seeded books, rename a section of
+# the plan, drop a color, and the recording still succeeds while the SVG shows output
+# iq no longer prints. So every screen is checked before the demo moves on, and a
+# mismatch aborts the recording instead of rendering a plausible lie. If an assertion
+# here fails, the demo is stale, not wrong: re-read the real output and update this
+# narration and scripts/demo/seed.sh's expectations together.
+
+log_user 1
+
+set root $env(IQ_DEMO_ROOT)
+
+# Size the pty the shell and iq draw into, from the same geometry the recorder uses.
+# Left to itself expect hands it an 80x24 screen, two rows short of the gron screen,
+# and the pager below would break its pages somewhere else.
+set stty_init "rows $env(DEMO_ROWS) cols $env(DEMO_COLS)"
+
+# expect only reads the session while an `expect` command is running. Anything it has
+# not read is not in the recording, so every pause below must be one of these, and a
+# bare `sleep` is only ever safe on an idle screen.
+
+# await: wait for output to arrive, and abort loudly if it never does. Match on text
+# iq writes in one piece, and pass a single, space-free token, for two reasons. The
+# color writer wraps each JSON token in its own escape sequence, so a pattern that
+# straddles two tokens never matches, and an expect that quietly waits out its timeout
+# bakes a dead pause into the SVG. And expect substitutes $what into the block below
+# and only then splits the result into a pattern list, so the value has to survive as
+# one list element: a space in it becomes two patterns, and an unbalanced brace makes
+# the split fail, at which point expect matches the whole block as one literal pattern,
+# the `timeout` arm is gone with it, and the recording hangs instead of aborting.
+#
+# One token is not available at all, and it is the obvious one: the `$ ` prompt. Its
+# space makes it two patterns by the rule above, and a bare `$` is worse than useless,
+# since expect reads it as an end-of-buffer anchor rather than as a dollar sign.
+# Measured with `exp_internal 1`: `$` matches the EMPTY buffer, so an `await` for it
+# returns before the shell has printed anything and asserts nothing whatsoever, and
+# once there is a prompt in the buffer to match it stops matching at all. So the
+# prompt is asserted as `2004h`, the tail of the bracketed-paste escape readline
+# writes immediately before drawing it, which is one token, has no space in it, and is
+# printed exactly when the shell is ready for the next line.
+proc await {what} {
+    expect {
+        -timeout 20
+        $what {}
+        timeout {
+            send_user "\ndemo: timed out waiting for: $what\n"
+            exit 1
+        }
+    }
+}
+
+# hold: pause on a screen long enough to read it, still draining as it waits. Whole
+# seconds only, expect rejects a fractional timeout.
+proc hold {seconds} {
+    expect -timeout $seconds "\x00"
+}
+
+# beat: the pause between the last keystroke and Enter. Short enough to feel like
+# typing, and safe without draining because `await` has already emptied the pty and
+# the screen is sitting still.
+proc beat {} {
+    sleep 0.4
+}
+
+# forget: drop everything printed so far, so the next `await` can only be answered by
+# what the NEXT command prints.
+#
+# expect's buffer is cumulative, and the demo's own typing is echoed into it: `books`
+# is in the URI the first command types, so an `await "books"` could be answered by
+# the echo and assert nothing at all. Safe only on an idle screen, `hold` has just
+# drained the pty, and it drains rather than pauses.
+proc forget {} {
+    expect -timeout 1 -re {(?s).*}
+}
+
+# keystrokes: put text on the command line one character at a time, at a human pace.
+# The shared half of `type` and `recall`, and the reason both read as typing.
+#
+# One character per send, each paced by a sleep and followed by a drain, because
+# expect reads the shell only while an `expect` command is running. `send -h` on the
+# whole line is the obvious spelling and the wrong one twice over: nothing reads the
+# echo while it types, so the line lands in the recording as one instant paste after a
+# dead pause, and send_human's delays sit BETWEEN the characters of one send, so
+# sending a character at a time through it types at no pace at all. The sleep is the
+# pace, and the drain is what puts the echoed character into the recording: -timeout 0
+# against a pattern that cannot match empty, so it costs nothing and still does the one
+# read that moves it.
+proc keystrokes {text} {
+    foreach ch [split $text ""] {
+        send -- $ch
+        # 30 to 75 ms a keystroke: fast enough not to bore, uneven enough to read as a
+        # person typing rather than a paste.
+        sleep [expr {0.03 + rand() * 0.045}]
+        expect {
+            -timeout 0
+            -re {(?s).+} {}
+            timeout {}
+        }
+    }
+}
+
+# type: type one whole command line, then press Enter.
+proc type {line} {
+    keystrokes $line
+    beat
+    send -- "\r"
+}
+
+# recall: press the up arrow, let readline redraw the previous command line, append
+# suffix to it, and press Enter. What a person does rather than retyping the filter.
+#
+# The up arrow is readline's own binding, and bash -i under a pty keeps its history in
+# memory, so no HISTFILE and no shell option is needed. The await is not decoration:
+# readline redraws the recalled line in one write, and waiting for its tail is what
+# keeps the appended characters from being sent into a prompt that is still empty.
+#
+# That tail is the end of command 3's filter, and the pattern for it is spelled the way
+# it is twice over. Space-free for the reason `await` gives; the whole tail, `{title,
+# price}'`, would be split into two patterns and the `timeout` arm lost with them. And
+# the remaining brace is backslashed, which is Tcl's business rather than the pattern's:
+# a proc body is a braced word, and Tcl counts braces inside it without caring about
+# quotes or comments, so an unescaped one here closes the proc early. Everything with a
+# brace in it is therefore said up here, at the top level, where a comment is a comment.
+proc recall {suffix} {
+    send -- "\033\[A"
+    await "price\}'"
+    beat
+    keystrokes $suffix
+    beat
+    send -- "\r"
+}
+
+# Every command line entered here is also parsed by cmd/demo_test.go, which resolves it
+# against the real cobra tree, so a renamed flag fails `go test` before anybody records
+# an SVG that shows it. A recall resolves as the previous typed line with its suffix
+# appended, which is what the shell actually runs, and the test resolves the head of
+# that line, up to the first pipe outside quotes, because everything past it is the
+# shell's business rather than iq's. Keep both shapes literal: one `type {iq ...}` or
+# `recall {...}` per line, braces on the same line, nothing computed.
+
+# A bare interactive shell, no rc files and no profile, so nothing of the recorder's
+# environment reaches the screen. PS1 is `$ ` (seed.sh's env.sh), and the working
+# directory is the sandbox, so no path is on screen either. -noecho: otherwise expect
+# prints the spawn command, putting the recorder's own absolute paths into the
+# recording.
+cd $root
+spawn -noecho bash --norc --noprofile -i
+await "2004h"
+hold 1
+
+# 1. Register the source. The URI is the whole configuration: the scheme picks the
+#    driver, ?collection= pins the keyspace, and -a makes it the source every later
+#    command runs against. `add` echoes the handle it derived from that keyspace,
+#    which is what the next four commands are addressed to.
+forget
+type {iq add -a 'mongodb://localhost:27017/iq?collection=books'}
+# Two space-free tokens in order: `added` cannot be answered by the echo of the line
+# just typed, and `books` is then matched in what follows it, which is the derived
+# handle rather than the ?collection= in the URI.
+await "added"
+await "books"
+hold 3
+
+# 2. A bounded read. The collection is a jq object keyed by _id, so `.["2"]` is a
+#    single-document fetch, not a scan: iq turns the key into the driver's own
+#    point read.
+forget
+type {iq '.["2"]'}
+await "Kleppmann"
+hold 3
+
+# 3. A streaming scan with a range predicate and a projection. The filter is jq, all
+#    of it, and the result is jq's, whatever the backend can and cannot do.
+forget
+type {iq '.[] | select(.year > 2015) | {title, price}'}
+await "Philosophy"
+hold 4
+
+# 4. The same command again, recalled from history with the up arrow and explained
+#    rather than retyped. --explain prints the plan without connecting: the pretty
+#    filter with each stage annotated, the projection now among them as a stage of its
+#    own, the mongo calls the filter becomes, and the pushdown section, which is the
+#    point of the whole screen. The conjunct is compiled to a Mongo filter and
+#    evaluated on the server, so the scan never leaves it.
+#
+#    The plan is 36 lines into a 26-row terminal, so it goes where a person sends
+#    output taller than the screen: into a pager. -C is what keeps its colors, iq
+#    turns the color writer off when stdout is not a terminal and this stdout is a
+#    pipe; less -R passes the escapes it forces on straight through. Two screens, one
+#    Space between them, and the reader is the one turning the page.
+#
+#    -v is on stderr, which is not in the pipe, so its resolved source line is written
+#    to the terminal rather than to the pager: less has the alternate screen up by
+#    then, the line lands at the top of it, and the plan painting under it scrolls it
+#    off. Measured, not assumed, and nothing else on screen moves.
+forget
+recall { --explain -v -C | less -R}
+# Page one, the top 25 lines: the source, the annotated filter, the calls it becomes,
+# and the pushdown section down to the middle of the compiled Mongo filter. `calls:`
+# is the mongo section's header, the one token of the screen that cannot also be read
+# off the recalled command line.
+await "calls:"
+hold 5
+# Space pages down, and `forget` first because the assertion below is about what the
+# SECOND page paints. less scrolls rather than repainting: the page is one screen from
+# the end, so it stops with the last line at the bottom, which puts the `mongo calls:`
+# header back at the top and paints only the eleven rows that close the compiled
+# filter, plus its own prompt. Those eleven rows are what is asserted, in order: the
+# `object` arm of the $type list, then the `(END)` less prints when there is no more
+# to page. `object` is in the annotation on page one too, which is exactly why the
+# buffer is dropped first.
+forget
+send -- " "
+await "object"
+await "END"
+hold 6
+# q quits, the alternate screen goes with it, and the recalled command line is on
+# screen again with the prompt under it, which is where the next command is typed. The
+# assertion is that prompt, spelled `2004h` for the reason `await` gives above: if less
+# were still up, the next command would be typed into the pager and never run.
+send -- "q"
+await "2004h"
+beat
+
+# 5. A regex predicate, pushed down the same way, printed as gron: one assignment
+#    statement per leaf, greppable, and reversible with ungron. Ending here leaves the
+#    last frame, the one the render holds longest and the one a README reader sees
+#    before the SVG loops, on output rather than on an empty prompt.
+forget
+type {iq '.[] | select(.author | test("Martin"))' -g}
+# `Martin` is in the line just typed, so the assertion is the author it is NOT: the
+# second match, whose year is the last line of the last screen.
+await "Robert"
+await "2008"
+hold 5
+
+# The recording finished, and every screen it narrates was the screen it claimed. Say
+# so on disk: asciinema exits 0 even when the command it recorded died (`asciinema rec
+# --command 'exit 3'` returns 0), so an aborted run would otherwise sail on and termsvg
+# would render the abort message straight over docs/docs/assets/demo.svg. demo.mk
+# renders only if this file exists. `exec` writes nothing to the pty, so it costs the
+# recording nothing.
+exec touch $root/recorded.ok
+
+exit 0

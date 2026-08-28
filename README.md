@@ -51,6 +51,8 @@ deliberately follows to make the tool feel familiar.
 >
 > Feedback and bug reports are very welcome.
 
+<p align="center"><img src="docs/docs/assets/demo.svg" width="100%" alt="iq registers a MongoDB source, reads one document by key, filters a scan with a pushed-down predicate, explains the plan, and prints the result as gron"></p>
+
 ## Install
 
 `iq` ships as a single static binary (no runtime dependencies, no CGO), prebuilt for Linux,
