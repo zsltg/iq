@@ -1,0 +1,23 @@
+# osv-scanner configuration, read automatically for go.mod in this directory.
+# The CI osv job gates every dependency against the permissive allowlist in
+# .github/workflows/ci.yml; the overrides below correct deps.dev license data
+# where the code license is permissive and only the module's documentation
+# carries a Creative Commons license, plus the stdlib pseudo-package.
+
+[[PackageOverrides]]
+name = "github.com/modelcontextprotocol/go-sdk"
+ecosystem = "Go"
+license.override = ["Apache-2.0", "MIT"]
+reason = "Code is Apache-2.0 (MIT for not-yet-relicensed contributions) per its LICENSE; CC-BY-4.0 applies to documentation only."
+
+[[PackageOverrides]]
+name = "github.com/opencontainers/go-digest"
+ecosystem = "Go"
+license.override = ["Apache-2.0"]
+reason = "Code is Apache-2.0 per its LICENSE; CC-BY-SA-4.0 in LICENSE.docs covers the documentation only."
+
+[[PackageOverrides]]
+name = "stdlib"
+ecosystem = "Go"
+license.override = ["BSD-3-Clause"]
+reason = "The Go standard library, BSD-3-Clause; deps.dev reports it as UNKNOWN."

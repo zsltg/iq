@@ -174,6 +174,13 @@ Posture and upkeep around the pipeline, all on GitHub:
   and `scripts/` tracked through custom regex managers. A human merges; a PR
   that moves `go.mod` runs `make capabilities`, which is the review AGENTS.md
   asks for on a dependency change.
+- `osv-scanner.toml` carries the license overrides the CI `osv` job needs:
+  the job gates every dependency against the permissive allowlist in `ci.yml`
+  (`make security` scans for vulnerabilities only), and deps.dev reports a
+  module's documentation license (CC-BY) or UNKNOWN for a few modules whose
+  code is permissive; each override names the LICENSE file it was read from.
+  A new violation means reading the module's LICENSE, then either an override
+  with a reason or a different dependency.
 - `.coderabbit.yaml` configures CodeRabbit's pull-request review, with
   per-path instructions distilled from AGENTS.md; it reviews, it never
   approves or merges.
