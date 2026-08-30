@@ -216,6 +216,8 @@ iq inspect books
 iq ls
 ```
 
+Check [Sources](https://zsltg.github.io/iq/sources/) for more details.
+
 ### Query data
 
 **Fetch an item with the ID "2"**
@@ -233,6 +235,8 @@ iq '.[] | select(.year > 2015) | {title, price}'
 iq '.[] | select(.year > 2015) | {title, price}' --explain -v
 ```
 
+Check [Query data](https://zsltg.github.io/iq/query-data/) for more details.
+
 ### Diff
 
 **Diff schema of two sources**
@@ -249,6 +253,8 @@ iq diff 'dev=.["1"]' 'qa=.["1"]'
 ```sh
 iq diff dev qa
 ```
+
+Check [Diff](https://zsltg.github.io/iq/sources/#diff-diff) for more details.
 
 ### Write data
 
@@ -273,6 +279,8 @@ iq --src snap --insert cache
 iq '.[] | select(.year > 2015)' --src books --insert recent
 ```
 
+Check [Write data](https://zsltg.github.io/iq/write-data/) for more details.
+
 ### Cross-source combine
 
 **Compose across sources**
@@ -288,6 +296,8 @@ iq combine 'users=.[] | {id, name}' \
            'orders=.[] | select(.total > 99)' \
    --with '($users | INDEX(.id)) as $u | $orders[] | . + {name: $u[.userId].name}'
 ```
+
+Check [Cross-source queries](https://zsltg.github.io/iq/query-data/#cross-source-queries) for more details.
 
 ### Keyspace commands
 
@@ -306,12 +316,16 @@ iq data clear cache
 iq data drop shop.orders
 ```
 
+Check [Delete](https://zsltg.github.io/iq/write-data/#delete-data-delete), [Clear](https://zsltg.github.io/iq/write-data/#clear-data-clear) and [Drop](https://zsltg.github.io/iq/write-data/#drop-data-drop) for more details.
+
 ### UNIX pipes
 
 **Implicit stdin source**
 ```sh
 cat dump.jsonl | iq '.[]'
 ```
+
+Check [Insert](https://zsltg.github.io/iq/write-data/#insert-insert) for more details on piped stdin.
 
 ## Drivers
 
