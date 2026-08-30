@@ -194,6 +194,60 @@ iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
 
 ## Get started
 
+### Sources
+
+**Driver list**
+```sh
+iq driver ls
+```
+
+**Add a collection named "books" from a MongoDB source and make it active.**
+```sh
+iq add -a 'mongodb://localhost:27017/iq?collection=books'
+```
+
+**Inspect a source**
+```sh
+iq inspect books
+```
+
+**List sources**
+```sh
+iq ls
+```
+
+### Query data
+
+**Fetch a document with the id "2"**
+```sh
+iq '.["2"]'
+```
+
+**Fetch documents where the key "year" is larger than "2015" and return objects that contain the keys "title" and "price"**
+```sh
+iq '.[] | select(.year > 2015) | {title, price}
+```
+
+**Print a formatted query plan**
+```sh
+iq '.[] | select(.year > 2015) | {title, price} --explain -v
+```
+
+### Diff
+
+**Diff schema of two sources**
+```sh
+iq diff --schema dev qa
+```
+
+### Write data
+
+### Cross-source combine
+
+### Keyspace commands
+
+### UNIX pipes
+
 ```sh
 # Add a collection named "books" from a MongoDB source.
 iq add 'mongodb://localhost:27017/iq?collection=books'
@@ -243,6 +297,9 @@ iq schema books
 
 # Compare two sources by data, stats, or inferred schema.
 iq diff prod staging
+
+# Compare one document as each source holds it.
+iq diff 'prod=.["1"]' 'staging=.["1"]'
 
 # Query several sources and join their results.
 iq combine 'users=.[]' 'orders=.[]' --with '$users + $orders'
