@@ -548,6 +548,7 @@ records through a pipeline, it is not a query surface you type at a shell.
 
 - [jq manual](https://jqlang.org/manual/): the language reference for the filters `iq` runs.
 - [awesome-jq](https://github.com/jqlang/awesome-jq): a curated list of jq tools, guides, and resources.
+- [sq](https://github.com/neilotoole/sq): jq-style queries over SQL databases and document files.
 - [gojq](https://github.com/itchyny/gojq): the pure-Go jq implementation `iq` embeds.
 - [jaq](https://github.com/01mf02/jaq): a Rust jq clone focused on speed and stricter semantics.
 - [yq](https://github.com/mikefarah/yq): jq-style filters for YAML, TOML, and XML.
