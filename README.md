@@ -24,8 +24,9 @@
 # iq
 
 `iq` runs [jq](https://jqlang.github.io/jq/) filters to query, dump, copy, diff and write data
-across Redis, MongoDB, Cassandra, DynamoDB, Elasticsearch, OpenSearch, CouchDB, Couchbase, HBase
-and Neo4j instances, and their dump files, from a single static binary.
+across NoSQL databases, and their dump files, from a single static binary.
+
+<p align="center"><img src="docs/docs/assets/demo.svg" width="100%" alt="iq registers a MongoDB source, reads one document by key, filters a scan with a pushed-down predicate, explains the plan, and prints the result as gron"></p>
 
 Fetched values are normalized to JSON and the filter runs entirely client-side,
 so one filter means the same thing everywhere.
@@ -50,8 +51,6 @@ deliberately follows to make the tool feel familiar.
 > to report the effect, without changing anything.
 >
 > Feedback and bug reports are very welcome.
-
-<p align="center"><img src="docs/docs/assets/demo.svg" width="100%" alt="iq registers a MongoDB source, reads one document by key, filters a scan with a pushed-down predicate, explains the plan, and prints the result as gron"></p>
 
 ## Install
 
@@ -95,6 +94,29 @@ go install github.com/zsltg/iq@latest
 ```sh
 git clone https://github.com/zsltg/iq
 cd iq && make build
+```
+
+### Agent Skill
+
+It covers finding a source, `--explain` before every scan, `--dry-run` before
+every write, the machine-readable output flags and the JSON error shape and
+the rules around destructive commands.
+
+```sh
+npx skills add zsltg/iq
+```
+
+### Agent MCP
+
+For an agent that speaks [MCP](https://modelcontextprotocol.io), `iq mcp`
+serves the same core over stdio.
+
+It is read-only by default, `--allow writes|exec|destructive` opens the rest
+and a tool that is not allowed is never registered. Every result is capped,
+every error redacted, and every destructive call confirmed.
+
+```sh
+claude mcp add iq -- iq mcp --timeout 30s
 ```
 
 <details>
@@ -254,22 +276,6 @@ A bare name auto-detects (`file:///<file_path>`), the `?format=` form must be pa
 (`file:///<file_path>?format=<source_format>`). The
 [Drivers page](https://zsltg.github.io/iq/drivers/#file-dumps) documents what produces each
 format, the options some of them need, and the round-trip caveats.
-
-## AI agents
-
-`iq` ships an [Agent Skill](https://agentskills.io) at
-[`skills/iq/SKILL.md`](skills/iq/SKILL.md), so an agent can be taught the whole surface in one
-file: `npx skills add zsltg/iq`. It covers finding a source, `--explain` before every scan,
-`--dry-run` before every write, the machine-readable output flags and the JSON error shape, and
-the rules around destructive commands. The
-[AI agents page](https://zsltg.github.io/iq/agents/) documents the other install paths.
-
-For an agent that speaks [MCP](https://modelcontextprotocol.io) rather than shell, `iq mcp`
-serves the same core over stdio: `claude mcp add iq -- iq mcp --timeout 30s`. It is read-only
-by default, `--allow writes|exec|destructive` opens the rest, and a tool that is not allowed is
-never registered. Every result is capped, every error redacted, and every destructive call
-confirmed. The [AI agents page](https://zsltg.github.io/iq/agents/#mcp-server) documents the
-client configuration, the safety model and the tool table.
 
 ## Drivers
 
