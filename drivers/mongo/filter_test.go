@@ -151,6 +151,33 @@ func TestToFilter(t *testing.T) {
 			bson.M{"a": bson.M{"$in": bson.A{1.0, 2.0}}},
 		},
 		{
+			// A single-branch or is not a membership test: the $in collapse needs at
+			// least two equalities, so one branch stays an $or.
+			"or of one equality stays $or",
+			predicate.Or{predicate.Eq{Path: []string{"a"}, Value: 1.0}},
+			bson.M{"$or": bson.A{bson.M{"a": 1.0}}},
+		},
+		{
+			// Neither branch is an equality, so the $in collapse must reject the whole
+			// or rather than read a zero-value equality out of the first non-Eq branch.
+			"or of two ranges on one field stays $or",
+			predicate.Or{
+				predicate.Cmp{Path: []string{"a"}, Op: predicate.Gt, Value: 5.0},
+				predicate.Cmp{Path: []string{"a"}, Op: predicate.Lt, Value: 1.0},
+			},
+			bson.M{"$or": bson.A{
+				bson.M{"$or": bson.A{
+					bson.M{"a": bson.M{"$gt": 5.0}},
+					bson.M{"a": bson.M{"$type": bson.A{"string", "array", "object"}}},
+				}},
+				bson.M{"$or": bson.A{
+					bson.M{"a": bson.M{"$lt": 1.0}},
+					bson.M{"a": bson.M{"$type": bson.A{"null", "bool"}}},
+					bson.M{"a": bson.M{"$exists": false}},
+				}},
+			}},
+		},
+		{
 			"or mixing equality and range stays $or",
 			predicate.Or{
 				predicate.Eq{Path: []string{"a"}, Value: 1.0},

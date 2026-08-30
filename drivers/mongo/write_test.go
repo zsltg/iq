@@ -33,6 +33,13 @@ func TestDocumentFor(t *testing.T) {
 			want: bson.M{"title": "Dune"},
 		},
 		{
+			// The key is the only identity, so a keyless record must drop the _id its
+			// value carries and let MongoDB mint one.
+			name: "keyless object drops a read _id",
+			rec:  query.Record{Value: map[string]any{"_id": "stale", "title": "Dune"}},
+			want: bson.M{"title": "Dune"},
+		},
+		{
 			name:    "scalar value is rejected, not wrapped",
 			rec:     query.Record{Key: "k2", Value: "hello"},
 			wantErr: true,

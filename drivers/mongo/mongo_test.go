@@ -1,14 +1,22 @@
 package mongo
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"maps"
+	"net/url"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/event"
 
 	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
@@ -32,16 +40,35 @@ func testURI() string {
 // MongoDB and registers cleanup.
 func openIntegration(t *testing.T, collection string) *Store {
 	t.Helper()
+	return openIntegrationTraced(t, collection, nil)
+}
+
+// openIntegrationTraced is openIntegration with a command trace, so a test can
+// assert which commands a call issues — or that it issues none.
+func openIntegrationTraced(t *testing.T, collection string, trace io.Writer) *Store {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping mongodb integration test in -short mode")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	store, err := Open(ctx, testURI(), collection, nil, numfmt.DecimalAuto)
+	store, err := Open(ctx, testURI(), collection, trace, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	return store
+}
+
+// uriWithCollection appends a ?collection= default to the test URI, the form a
+// source string carries when the collection is not addressed explicitly.
+func uriWithCollection(t *testing.T, collection string) string {
+	t.Helper()
+	u, err := url.Parse(testURI())
+	require.NoError(t, err)
+	q := u.Query()
+	q.Set("collection", collection)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // seedDocs replaces the collection's contents with docs.
@@ -90,6 +117,7 @@ func TestGetByID(t *testing.T) {
 	seedDocs(t, store, []any{
 		bson.M{"_id": "b1", "title": "Go", "year": int32(2015), "tags": bson.A{"go"}},
 		bson.M{"_id": oid, "title": "Mongo"},
+		bson.M{"_id": "b2", "title": "Unasked"},
 	})
 
 	got, err := store.Get(context.Background(), []string{"b1", oid.Hex(), "missing"})
@@ -100,6 +128,7 @@ func TestGetByID(t *testing.T) {
 	}, got["b1"])
 	require.Equal(t, "Mongo", got[oid.Hex()].(map[string]any)["title"], "ObjectID key matched by hex")
 	require.NotContains(t, got, "missing", "an absent _id is absent from the map")
+	require.NotContains(t, got, "b2", "a document that was not asked for is not fetched")
 }
 
 // TestGetDecimalMode reads a stored Decimal128 through Get under each decimal
@@ -135,12 +164,14 @@ func TestGetDecimalMode(t *testing.T) {
 }
 
 func TestGetEmptyKeysNoRoundTrip(t *testing.T) {
-	store := openIntegration(t, "empty_docs")
+	var trace bytes.Buffer
+	store := openIntegrationTraced(t, "empty_docs", &trace)
 
 	got, err := store.Get(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{}, got)
+	require.Empty(t, trace.String(), "an empty key list issues no command at all")
 }
 
 func TestGetWithoutCollectionFails(t *testing.T) {
@@ -190,9 +221,10 @@ func TestEstimateCountReturnsCollectionSize(t *testing.T) {
 func TestEstimateCountWithoutCollectionFails(t *testing.T) {
 	store := openIntegration(t, "")
 
-	_, err := store.EstimateCount(context.Background())
+	n, err := store.EstimateCount(context.Background())
 
 	require.ErrorIs(t, err, errNoCollection)
+	require.Zero(t, n, "the error path returns no count")
 }
 
 func TestScanBatchesBoundsPageSize(t *testing.T) {
@@ -496,4 +528,301 @@ func TestSplitCollection(t *testing.T) {
 			require.Equal(t, tt.wantColl, CollectionFromURI(tt.uri))
 		})
 	}
+}
+
+// TestOpenTakesCollectionFromURI proves the ?collection= default is adopted when
+// the address carries no collection of its own.
+func TestOpenTakesCollectionFromURI(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping mongodb integration test in -short mode")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	store, err := Open(ctx, uriWithCollection(t, "uri_default_docs"), "", nil, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	require.Equal(t, "uri_default_docs", store.collection, "the URI default is the keyspace")
+	_, err = store.EstimateCount(ctx)
+	require.NoError(t, err, "a collection-scoped call works without an address override")
+}
+
+// TestOpenAddressOverridesURICollection pins the precedence: an addressed
+// collection wins over the URI default.
+func TestOpenAddressOverridesURICollection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping mongodb integration test in -short mode")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	store, err := Open(ctx, uriWithCollection(t, "uri_default_docs"), "addressed_docs", nil, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	require.Equal(t, "addressed_docs", store.collection)
+}
+
+// TestOpenWithCanceledContextFails proves the ping that verifies the connection is
+// bound by the caller's context rather than an unbounded one.
+func TestOpenWithCanceledContextFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping mongodb integration test in -short mode")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	store, err := Open(ctx, testURI(), "canceled_open_docs", nil, numfmt.DecimalAuto)
+
+	require.ErrorContains(t, err, "connect mongodb")
+	require.Nil(t, store)
+}
+
+// TestOperationsHonorCanceledContext proves every outbound call is bound by the
+// caller's context: with an already-canceled one, none of them reaches the server.
+func TestOperationsHonorCanceledContext(t *testing.T) {
+	store := openIntegration(t, "canceled_ops_docs")
+	seedDocs(t, store, []any{bson.M{"_id": "a", "n": int32(1)}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	recs := []query.Record{{Key: "a", Value: map[string]any{"n": 1.0}}}
+
+	tests := []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{"get", func(ctx context.Context) error { _, err := store.Get(ctx, []string{"a"}); return err }},
+		{"scan batches", func(ctx context.Context) error {
+			return store.ScanBatches(ctx, func(map[string]any) error { return nil })
+		}},
+		{"scan filtered", func(ctx context.Context) error {
+			return store.ScanFiltered(ctx, predicate.Eq{Path: []string{"n"}, Value: 1.0}, func(map[string]any) error { return nil })
+		}},
+		{"typed scan", func(ctx context.Context) error {
+			return store.TypedScan(ctx, func([]query.Record) error { return nil })
+		}},
+		{"estimate count", func(ctx context.Context) error { _, err := store.EstimateCount(ctx); return err }},
+		{"query", func(ctx context.Context) error {
+			_, err := store.Query(ctx, []string{`{"count":"canceled_ops_docs"}`})
+			return err
+		}},
+		{"put upsert", func(ctx context.Context) error { _, err := store.Put(ctx, recs, query.Upsert); return err }},
+		{"put insert only", func(ctx context.Context) error {
+			_, err := store.Put(ctx, recs, query.InsertOnly)
+			return err
+		}},
+		{"delete", func(ctx context.Context) error { _, err := store.Delete(ctx, []string{"a"}); return err }},
+		{"clear", store.Clear},
+		{"drop", store.Drop},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run(ctx)
+			require.Error(t, err, "a canceled context must not be replaced by an unbounded one")
+			require.ErrorIs(t, err, context.Canceled)
+		})
+	}
+
+	// The canceled calls were refused before they reached the server, so the seeded
+	// document is untouched.
+	got, err := store.Get(context.Background(), []string{"a"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"_id": "a", "n": 1}, got["a"])
+}
+
+// TestScanBatchesPropagatesCallbackError proves a callback error stops the scan and
+// surfaces unchanged, rather than being swallowed into a successful scan.
+func TestScanBatchesPropagatesCallbackError(t *testing.T) {
+	store := openIntegration(t, "callback_error_docs")
+	seedDocs(t, store, []any{
+		bson.M{"_id": "1", "n": int32(1)},
+		bson.M{"_id": "2", "n": int32(2)},
+		bson.M{"_id": "3", "n": int32(3)},
+		bson.M{"_id": "4", "n": int32(4)},
+	})
+	store.pageSize = 2
+
+	boom := errors.New("boom")
+	pages := 0
+	err := store.ScanBatches(context.Background(), func(map[string]any) error {
+		pages++
+		return boom
+	})
+
+	require.ErrorIs(t, err, boom, "the callback's error is returned as-is")
+	require.Equal(t, 1, pages, "the scan stops at the failing page")
+}
+
+// TestScanBatchesStopsWhenContextCancelsMidScan proves the cursor's own paging is
+// bound by the caller's context, not just the initial find: cancelling between
+// pages fails the scan instead of draining the collection.
+func TestScanBatchesStopsWhenContextCancelsMidScan(t *testing.T) {
+	store := openIntegration(t, "midscan_cancel_docs")
+	seedDocs(t, store, []any{
+		bson.M{"_id": "1", "n": int32(1)},
+		bson.M{"_id": "2", "n": int32(2)},
+		bson.M{"_id": "3", "n": int32(3)},
+	})
+	// One document per batch, so every page after the first needs a fresh round trip
+	// that the canceled context must refuse.
+	store.pageSize = 1
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	pages := 0
+	err := store.ScanBatches(ctx, func(map[string]any) error {
+		pages++
+		cancel()
+		return nil
+	})
+
+	require.ErrorIs(t, err, context.Canceled, "a mid-scan cancellation fails the scan")
+	require.Equal(t, 1, pages, "no page is handed over after the cancellation")
+}
+
+// TestCloseDisconnects proves Close actually tears the client down: a later call
+// on the closed store fails rather than silently working.
+func TestCloseDisconnects(t *testing.T) {
+	store := openIntegration(t, "close_docs")
+
+	require.NoError(t, store.Close())
+
+	_, err := store.EstimateCount(context.Background())
+	require.ErrorContains(t, err, "client is disconnected")
+}
+
+// TestRawAcceptsRelaxedExtendedJSON proves the command document is parsed in
+// relaxed Extended JSON, the form a user types: a canonical-only parse would
+// reject the relaxed $date spelling outright.
+func TestRawAcceptsRelaxedExtendedJSON(t *testing.T) {
+	store := openIntegration(t, "raw_relaxed_docs")
+	seedDocs(t, store, []any{
+		bson.M{"_id": "1", "at": bson.NewDateTimeFromTime(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))},
+	})
+
+	res, err := store.Query(context.Background(), []string{
+		`{"count":"raw_relaxed_docs","query":{"at":{"$date":"2024-01-01T00:00:00Z"}}}`,
+	})
+
+	require.NoError(t, err)
+	require.EqualValues(t, 1, res.(map[string]any)["n"], "the relaxed $date matched the stored date")
+}
+
+func TestRawRejectsInvalidJSON(t *testing.T) {
+	store := openIntegration(t, "raw_docs")
+
+	_, err := store.Query(context.Background(), []string{"{not json"})
+
+	require.ErrorContains(t, err, "parse mongodb command")
+	require.Error(t, errors.Unwrap(err), "the parser's own error stays wrapped, not flattened into text")
+}
+
+func TestRawRejectsUnknownCommand(t *testing.T) {
+	store := openIntegration(t, "raw_docs")
+
+	res, err := store.Query(context.Background(), []string{`{"noSuchCommand":1}`})
+
+	require.ErrorContains(t, err, "mongodb command")
+	require.Nil(t, res)
+}
+
+// cancelOnCommand cancels a context the first time the named command is traced,
+// giving a test a deterministic cancellation point between two round trips of one
+// call. It is an io.Writer because that is how the driver's command trace is wired.
+type cancelOnCommand struct {
+	name   string
+	cancel context.CancelFunc
+
+	mu   sync.Mutex
+	seen bool
+}
+
+func (c *cancelOnCommand) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.seen && bytes.Contains(p, []byte(c.name)) {
+		c.seen = true
+		c.cancel()
+	}
+	return len(p), nil
+}
+
+// TestGetStopsWhenContextCancelsMidFetch proves the by-_id fetch stays bound by the
+// caller's context across every round trip: a find's first batch holds 101
+// documents, so a larger result needs a getMore, and cancelling at that point must
+// fail the fetch instead of draining the cursor under an unbounded context.
+func TestGetStopsWhenContextCancelsMidFetch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	store := openIntegrationTraced(t, "midfetch_cancel_docs", &cancelOnCommand{name: "getMore", cancel: cancel})
+
+	const docs = 250
+	seed := make([]any, docs)
+	keys := make([]string, docs)
+	for i := range seed {
+		keys[i] = fmt.Sprintf("k%03d", i)
+		seed[i] = bson.M{"_id": keys[i], "n": int32(i)}
+	}
+	seedDocs(t, store, seed)
+
+	got, err := store.Get(ctx, keys)
+
+	require.ErrorIs(t, err, context.Canceled, "the cursor error keeps the cancellation wrapped")
+	require.ErrorContains(t, err, "mongodb cursor", "and is anchored at this driver")
+	require.Nil(t, got, "no partial result is handed back as a success")
+}
+
+// TestEstimateCountFailureReturnsZero pins the count returned alongside an error:
+// a failed estimate is no estimate, so the caller never reads a fabricated total.
+func TestEstimateCountFailureReturnsZero(t *testing.T) {
+	store := openIntegration(t, "estimate_error_docs")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	n, err := store.EstimateCount(ctx)
+
+	require.Error(t, err)
+	require.Zero(t, n, "a failed estimate returns no count")
+}
+
+// writerFunc adapts a function to io.Writer, so a test can observe how the command
+// monitor calls into its trace writer.
+type writerFunc func(p []byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// TestCommandMonitorSerializesWrites proves the monitor holds its lock for the whole
+// write: two concurrent commands must never be inside the trace writer at once, or
+// their lines would tear into each other.
+func TestCommandMonitorSerializesWrites(t *testing.T) {
+	raw, err := bson.Marshal(bson.M{"find": "books"})
+	require.NoError(t, err)
+
+	var inside, overlaps atomic.Int32
+	monitor := newCommandMonitor(writerFunc(func(p []byte) (int, error) {
+		if inside.Add(1) > 1 {
+			overlaps.Add(1)
+		}
+		time.Sleep(50 * time.Millisecond)
+		inside.Add(-1)
+		return len(p), nil
+	}))
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			<-start
+			monitor.Started(context.Background(), &event.CommandStartedEvent{
+				CommandName: "find",
+				Command:     bson.Raw(raw),
+			})
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	require.Zero(t, overlaps.Load(), "the writer is never entered concurrently")
 }

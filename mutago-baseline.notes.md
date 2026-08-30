@@ -167,3 +167,17 @@ parseFileURL folds the RFC 8089 drive form (file:///C:/dir/file) to a native pat
 nativePath(runtime.GOOS, path); nativePath itself is tested for every OS by parameter, so all
 its mutants are killed on Linux.
 - e34537e600cfd647de83b718dbb6f09c drivers/file/file.go:190 statement/remove — drops the `path = nativePath(runtime.GOOS, path)` call in parseFileURL; nativePath returns its input unchanged for every goos but windows, so on the Linux gate host the removal is a no-op. Only a Windows test run can observe it (TestURLRoundTrip does, through DumpPath, on windows-latest in CI).
+
+## drivers/mongo — full-scan equivalents (accepted 2026-08-30, test/mongo-mutation branch)
+First full scan of the package (only its diff lines had ever been gated): 48 escapes, all of
+them killed by strengthened tests except the six below. Four are driver-context normalization
+or an unreachable decode guard, two are a bit size the standard library ignores. Every one was
+verified by hand — the mutation applied to a file copy passes the whole package suite — before
+acceptance; the killed ones are covered by the cancelled-context table, the mid-fetch and
+mid-scan cancellation tests, the unordered-write tests and the command-monitor test.
+- d70002bbf70b drivers/mongo/mongo.go:100 expression/context-nil — `_ = client.Disconnect(ctx)` on Open's failed-ping path; the result is discarded and the driver maps a nil ctx to context.Background(), so neither the returned error nor the (nil) store changes.
+- c5ea53e8585d drivers/mongo/mongo.go:143 expression/context-nil — `defer func() { _ = cur.Close(ctx) }()`; Close's only effect is a best-effort killCursors whose error is discarded, and a nil ctx becomes context.Background() inside the driver.
+- f492a2761e42 drivers/mongo/mongo.go:255 expression/context-nil — `s.client.Disconnect(context.Background())` → `Disconnect(nil)`; the driver's first act is `if ctx == nil { ctx = context.Background() }`, so the mutant is byte-identical to the original call.
+- 925ed1e9b0f7 drivers/mongo/mongo.go:146 expression/error-guard — `cur.Decode(&doc)` into a bson.M cannot fail on a document the server actually returned (the guard covers malformed wire data only), so the branch is unreachable from any test that talks to a real MongoDB.
+- b97da05ec7d2 drivers/mongo/normalize.go:86 numbers/decrementer — `strconv.ParseFloat(str, 64)` → bitSize 63; ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path, so the parsed float is identical (verified against Go 1.27).
+- b537ea92d1b6 drivers/mongo/normalize.go:86 numbers/incrementer — same site with bitSize 65; identical for the same reason.

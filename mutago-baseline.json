@@ -384,6 +384,42 @@
    "file": "drivers/file/file.go",
    "mutator": "statement/remove",
    "line": 190
+  },
+  {
+   "id": "d70002bbf70b827017d342c5cdde1bae",
+   "file": "drivers/mongo/mongo.go",
+   "mutator": "expression/context-nil",
+   "line": 100
+  },
+  {
+   "id": "c5ea53e8585dd6af09b72372ba5c156f",
+   "file": "drivers/mongo/mongo.go",
+   "mutator": "expression/context-nil",
+   "line": 143
+  },
+  {
+   "id": "f492a2761e42e38767b278f77e5d93bb",
+   "file": "drivers/mongo/mongo.go",
+   "mutator": "expression/context-nil",
+   "line": 255
+  },
+  {
+   "id": "925ed1e9b0f7669ef08093ac400aad5a",
+   "file": "drivers/mongo/mongo.go",
+   "mutator": "expression/error-guard",
+   "line": 146
+  },
+  {
+   "id": "b97da05ec7d2cb610afb0f74a89af5ff",
+   "file": "drivers/mongo/normalize.go",
+   "mutator": "numbers/decrementer",
+   "line": 86
+  },
+  {
+   "id": "b537ea92d1b6420d9abc2140e5c0be74",
+   "file": "drivers/mongo/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 86
   }
  ]
 }
