@@ -341,6 +341,58 @@ func TestURLRoundTrip(t *testing.T) {
 	}
 }
 
+func TestIsDrivePath(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"C:/x", true},
+		{"c:", true},
+		{"Z:\\x", true},
+		{"a:", true},
+		{"z:", true},
+		{"A:", true},
+		{"", false},
+		{"C", false},
+		{":", false},
+		{"1:/x", false},
+		{"@:", false},
+		{"[:", false},
+		{"`:", false},
+		{"{:", false},
+		{"Cx/", false},
+		{"/C:/x", false},
+		{"C/:", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			require.Equal(t, tt.want, isDrivePath(tt.in))
+		})
+	}
+}
+
+func TestNativePath(t *testing.T) {
+	tests := []struct {
+		name, goos, in, want string
+	}{
+		{name: "windows drive form", goos: "windows", in: "/C:/dir/f.json", want: filepath.FromSlash("C:/dir/f.json")},
+		{name: "windows lowercase drive", goos: "windows", in: "/d:/f", want: filepath.FromSlash("d:/f")},
+		{name: "windows unix path untouched", goos: "windows", in: "/abs/x", want: "/abs/x"},
+		{name: "windows bare drive without slash", goos: "windows", in: "C:/x", want: "C:/x"},
+		{name: "windows lone slash", goos: "windows", in: "/", want: "/"},
+		{name: "windows empty", goos: "windows", in: "", want: ""},
+		{name: "windows slash then non-drive", goos: "windows", in: "/C/x", want: "/C/x"},
+		{name: "windows drive after a non-slash", goos: "windows", in: "xC:/f", want: "xC:/f"},
+		{name: "linux keeps the drive form", goos: "linux", in: "/C:/dir/f.json", want: "/C:/dir/f.json"},
+		{name: "darwin keeps the drive form", goos: "darwin", in: "/C:/dir/f.json", want: "/C:/dir/f.json"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, nativePath(tt.goos, tt.in))
+		})
+	}
+}
+
 func TestExplainPlan(t *testing.T) {
 	scan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false)
 	require.Equal(t, []string{"decode dump file", "scan client-side"}, scan.Ops)

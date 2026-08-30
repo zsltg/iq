@@ -123,7 +123,23 @@ func URL(path string) string {
 
 // isDrivePath reports whether p starts with a Windows drive letter and colon.
 func isDrivePath(p string) bool {
-	return len(p) >= 2 && p[1] == ':' && ('a' <= p[0]|0x20 && p[0]|0x20 <= 'z')
+	if len(p) < 2 || p[1] != ':' {
+		return false
+	}
+	c := p[0]
+	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
+}
+
+// nativePath maps the path of a parsed file:// URL to the filesystem path for
+// goos. On Windows the RFC 8089 drive form file:///C:/dir/file parses to
+// /C:/dir/file: the leading slash separates the empty host from the drive, so
+// the native path starts at the drive letter. Every other path is returned as
+// is.
+func nativePath(goos, path string) string {
+	if goos != "windows" || path == "" || path[0] != '/' || !isDrivePath(path[1:]) {
+		return path
+	}
+	return filepath.FromSlash(path[1:])
 }
 
 // DumpPath returns the filesystem path a file:// URL refers to — the same path
@@ -171,11 +187,7 @@ func parseFileURL(raw string) (path string, format Format, hints Hints, err erro
 	if path == "" {
 		return "", FormatUnknown, Hints{}, errors.New("file url has no path")
 	}
-	if runtime.GOOS == "windows" && len(path) > 1 && path[0] == '/' && isDrivePath(path[1:]) {
-		// file:///C:/dir/file: the leading slash separates the empty host from
-		// the drive; the native path starts at the drive letter.
-		path = filepath.FromSlash(path[1:])
-	}
+	path = nativePath(runtime.GOOS, path)
 	q := u.Query()
 	if f := q.Get("format"); f != "" {
 		format, err = ParseFormat(f)
