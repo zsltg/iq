@@ -24,7 +24,8 @@
 # iq
 
 `iq` runs [jq](https://jqlang.github.io/jq/) filters to query, dump, copy, diff and write data
-across NoSQL databases, and their dump files, from a single static binary.
+across NoSQL databases, and their dump files, from a single static binary. See
+[Drivers](#drivers) for supported databases.
 
 <p align="center"><img src="docs/docs/assets/demo.svg" width="100%" alt="iq registers a MongoDB source, reads one document by key, filters a scan with a pushed-down predicate, explains the plan, and prints the result as gron"></p>
 
@@ -42,8 +43,8 @@ migration is one command instead of an export plus a conversion script.
 deliberately follows to make the tool feel familiar.
 
 > [!NOTE]
-> `iq` is built with AI assistance, and every change passes the full test suite,
-> container-backed integration tests for every backend, and a mutation gate before it lands
+> `iq` is built with AI assistance, every change passes the full test suite,
+> container-backed integration tests for every backend and a mutation gate before it lands
 > (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 >
 > Queries are read-only. `--insert`, `--replace`, `iq data clear`, `iq data drop` and

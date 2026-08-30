@@ -7,8 +7,8 @@ icon: lucide/package-open
 `jq`[^2] for NoSQL databases.
 
 `iq` runs `jq` filters to query, dump, copy, diff and write data across NoSQL
-databases, and their dump files, from a single static binary (see
-[Drivers](drivers.md#drivers)).
+databases, and their dump files, from a single static binary. See
+[Drivers](drivers.md#drivers) for supported databases.
 
 <p align="center"><img src="assets/demo.svg" width="100%" alt="iq registers a MongoDB source, reads one document by key, filters a scan with a pushed-down predicate, explains the plan, and prints the result as gron"></p>
 
