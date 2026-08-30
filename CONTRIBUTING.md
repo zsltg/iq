@@ -163,8 +163,10 @@ at a time per machine is what keeps the gate's timeouts honest.
 Containers run one at a time in CI: no `IQ_*_URL` is set, so each driver's
 `TestMain` provisions its own testcontainer, `GOFLAGS=-p=1` serialises the
 package test binaries (coverage and mutation), and the e2e job brings up a
-single compose service per pass. HBase has no testcontainers path and skips in
-CI, as it does locally without `IQ_HBASE_URL`. The `test` job runs without
+single compose service per pass. HBase has no testcontainers path, so the
+`coverage` job and the hbase `deep-mutate` job start its compose service (host
+networking) and set `IQ_HBASE_URL`; everywhere else it skips, as it does locally
+without `IQ_HBASE_URL`. The `test` job runs without
 `-race` until the order-dependent data race in `cmd` (`color.NoColor`) is fixed.
 Tool versions are pinned in the workflow's `env` block; keep them in sync with
 the Makefile and `scripts/`.

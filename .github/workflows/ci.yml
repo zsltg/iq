@@ -110,9 +110,12 @@ jobs:
         run: go test -short -shuffle=on ./...
 
   # Full suite with -coverpkg=./... and the IQ_COVER_MIN floor (scripts/coverage.sh).
-  # No IQ_*_URL is set, so every driver's TestMain provisions its own testcontainer;
-  # -p=1 keeps that to one container at a time. HBase has no testcontainers path
-  # and skips, as it does locally.
+  # No IQ_*_URL is set except HBase's, so every other driver's TestMain provisions
+  # its own testcontainer and -p=1 keeps that to one container at a time. HBase
+  # has no testcontainers path (native RPC needs the region server's advertised
+  # hostname), so its compose service runs with host networking for the whole
+  # run; it binds fixed host ports no testcontainer uses, and -p=1 means only its
+  # own package talks to it while it is the one container busy.
   coverage:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -124,9 +127,12 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - name: Start HBase (compose, host networking)
+        run: docker compose up -d --wait hbase
       - name: Test with coverage (one container at a time) + floor
         env:
           GOFLAGS: -p=1
+          IQ_HBASE_URL: hbase://localhost:2181/
         run: bash scripts/coverage.sh
       # Reporting only, the floor above is the gate. Guarded to the GitHub mirror:
       # marketplace actions beyond checkout/setup-go are not mirrored elsewhere.
@@ -384,12 +390,20 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # HBase has no testcontainers path (native RPC needs the region server's
+      # advertised hostname, so the compose service runs with host networking);
+      # its integration tests, which kill the mutants the in-package fake only
+      # covers, run against the compose stack, one container on this runner.
+      - name: Start HBase (compose, host networking)
+        if: matrix.package == './drivers/hbase'
+        run: docker compose up -d --wait hbase
       # The package-arg form drops the diff scoping: a full scan of this package
       # against the committed baseline. The wrapper writes mutago-summary.json.
       - name: Mutation testing (${{ matrix.package }})
         env:
           GOFLAGS: -p=1
           PKG: ${{ matrix.package }}
+          IQ_HBASE_URL: ${{ matrix.package == './drivers/hbase' && 'hbase://localhost:2181/' || '' }}
         run: bash scripts/mutation-gate.sh "$PKG"
       - name: Name the artifact after the package
         id: name
