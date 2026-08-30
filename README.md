@@ -218,12 +218,12 @@ iq ls
 
 ### Query data
 
-**Fetch a document with the id "2"**
+**Fetch an item with the ID "2"**
 ```sh
 iq '.["2"]'
 ```
 
-**Fetch documents where the key "year" is larger than "2015" and return objects that contain the keys "title" and "price"**
+**Fetch items where the key "year" is larger than "2015" and return objects that contain the keys "title" and "price"**
 ```sh
 iq '.[] | select(.year > 2015) | {title, price}
 ```
@@ -240,13 +240,73 @@ iq '.[] | select(.year > 2015) | {title, price} --explain -v
 iq diff --schema dev qa
 ```
 
+**Diff the items with the same ID from two sources**
+```sh
+iq diff 'dev=.["1"]' 'qa=.["1"]'
+```
+
+**Diff items key by key**
+```sh
+iq diff dev qa
+```
+
 ### Write data
+
+**Insert items from one source to another, key/id preserving (same driver) or object values only (cross-driver)**
+```sh
+iq --src books --insert books2
+```
+
+**Create a lossless (typed) dump**
+```sh
+iq --src cache --typed -o dump.jsonl
+```
+
+**Add a dump as a source and restore it to a live source**
+```sh
+iq add file:///dump.jsonl -n snap
+iq --src snap --insert cache
+```
 
 ### Cross-source combine
 
-### Keyspace commands
+**Compose across sources**
+```sh
+iq 'INDEX(source("users"; ".[]"); .id) as $u
+    | source("orders"; ".[] | select(.total > 99)")
+    | {name: $u[.userId].name, total}'
+```
+
+**Combine across sources**
+```sh
+iq combine 'users=.[] | {id, name}' \
+           'orders=.[] | select(.total > 99)' \
+   --with '($users | INDEX(.id)) as $u | $orders[] | . + {name: $u[.userId].name}'
+```
+
+###  commands
+
+**Delete two items**
+```sh
+iq data delete cache book:1 book:2
+```
+
+**Empty a source called "cache"**
+```sh
+iq data clear cache
+```
+
+**Drop a collection called "orders"**
+```sh
+iq data drop shop.orders
+```
 
 ### UNIX pipes
+
+**Implicit stdin source**
+```sh
+cat dump.jsonl | iq '.[]'
+```
 
 ```sh
 # Add a collection named "books" from a MongoDB source.
@@ -280,6 +340,9 @@ The commands below are a starter set; every command and flag is documented in fu
 # Copy one source into another, across drivers.
 iq --src books --insert books2
 
+# Copy only the documents a filter selects, they keep their keys.
+iq '.[] | select(.year > 2015)' --src books --insert recent
+
 # Dump a source to a re-importable typed file, and restore it.
 iq --src books --typed -o books.jsonl
 iq add -n snap file:///backups/books.jsonl
@@ -297,9 +360,6 @@ iq schema books
 
 # Compare two sources by data, stats, or inferred schema.
 iq diff prod staging
-
-# Compare one document as each source holds it.
-iq diff 'prod=.["1"]' 'staging=.["1"]'
 
 # Query several sources and join their results.
 iq combine 'users=.[]' 'orders=.[]' --with '$users + $orders'
