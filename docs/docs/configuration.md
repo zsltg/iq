@@ -5,8 +5,8 @@ icon: material/cog-outline
 # Configuration `config`
 
 The config file lives at `<user_config_dir>/iq/iq.toml`; `IQ_CONFIG` points
-it elsewhere, and `--config` overrides both for one run (precedence: `--config`
-> `IQ_CONFIG` > default). It holds the saved sources and the stored option
+it elsewhere, and `--config` :material-earth:{ title="Global flag" } overrides both for one run (precedence:
+`--config` > `IQ_CONFIG` > default). It holds the saved sources and the stored option
 defaults below; `iq config location` prints the resolved path.
 
 Inspect the config file and manage stored option defaults. Persist a flag's

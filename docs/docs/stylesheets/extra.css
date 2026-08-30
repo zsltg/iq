@@ -22,6 +22,24 @@
   overflow-wrap: break-word;
 }
 
+/* A flag broken across two lines is unreadable, so the columns that hold one
+   keep the nowrap. The first column is safe in every table: its longest code
+   span anywhere is --error.format.text.verbose, 27 characters. The second is
+   only safe in the flag tables, whose header carries the :material-flag-outline:
+   icon, so key on that; a wide reference table (the file-dump "Produced by"
+   column, the pushdown translations) has no icon there and keeps wrapping. */
+.md-typeset table:not([class]) td:first-child code,
+.md-typeset table:not([class]):has(thead th .twemoji) td:nth-child(2) code {
+  white-space: nowrap;
+}
+
+/* The flag tables label their first two columns "short" and "long" followed by
+   the flag icon, and in a narrow column the icon drops to a second line on its
+   own. Those cells are a word plus a glyph, so pinning them costs no width. */
+.md-typeset table:not([class]) th:has(.twemoji) {
+  white-space: nowrap;
+}
+
 /* The theme's cell padding (.9375em 1.25em) is generous for the dense flag
    and pushdown tables; tighten it so more of them fit without scrolling. */
 .md-typeset table:not([class]) th,

@@ -20,9 +20,9 @@ with them, so `-f json --jsonl` is rejected.
 
 `parquet` has no shorthand flag, it is a binary columnar format, selected by name only.
 
-### JSON `-j`, `--json`
+### JSON `--json`
 
-Pretty JSON, one value per result (default).
+Pretty JSON, one value per result (default). Shorthand `-j`.
 
 ```
 iq '.[]' -j
@@ -52,9 +52,9 @@ iq '.[]' -j
 }
 ```
 
-### JSON Lines `-J`, `--jsonl`
+### JSON Lines `--jsonl`
 
-Compact JSON, one value per line.
+Compact JSON, one value per line. Shorthand `-J`.
 
 ```
 iq '.[]' -J
@@ -64,9 +64,9 @@ iq '.[]' -J
 {"_id":"2","author":"Martin Kleppmann","price":45,"tags":["data","architecture"],"title":"Designing Data-Intensive Applications","year":2017}
 ```
 
-### JSON Array `-A`, `--jsona`
+### JSON Array `--jsona`
 
-Every result wrapped in one array `[ ... ]`.
+Every result wrapped in one array `[ ... ]`. Shorthand `-A`.
 
 ```
 iq '.[]' -A
@@ -107,9 +107,10 @@ iq '.[]' -A
     a columnar projection that a heterogeneous `jq` value stream has no honest
     analogue for, so `iq` keeps the `sq` flag name but its own behaviour.
 
-### Raw `-r`, `--raw`
+### Raw `--raw`
 
 Unquoted scalars, one per line. Objects and arrays fall back to compact JSON.
+Shorthand `-r`.
 
 ```
 iq '.[].title' -r
@@ -119,9 +120,9 @@ The Go Programming Language
 Designing Data-Intensive Applications
 ```
 
-### YAML `-y`, `--yaml`
+### YAML `--yaml`
 
-YAML documents, separated by `---`.
+YAML documents, separated by `---`. Shorthand `-y`.
 
 ```
 iq '.[]' -y
@@ -146,9 +147,9 @@ title: Designing Data-Intensive Applications
 year: 2017
 ```
 
-### gron `-g`, `--gron`
+### gron `--gron`
 
-Flattened `json.path = value;` assignment statements, one per line.
+Flattened `json.path = value;` assignment statements, one per line. Shorthand `-g`.
 
 Greppable and reversible with `gron --ungron`[^1], each result rooted at a repeated `json`.
 
@@ -196,10 +197,10 @@ json.year = 2017;
     gron the value stream, or dump with `--jsonl` (default), `--json`, `--jsona`,
     or `--yaml`.
 
-### gron Array `-G`, `--grona`
+### gron Array `--grona`
 
 Like `--gron` but result N roots at `json[N]`, so the whole stream ungrons[^1] back
-to one JSON array (gron's `--stream` style).
+to one JSON array (gron's `--stream` style). Shorthand `-G`.
 
 ```
 iq '.[]' -G
@@ -292,17 +293,20 @@ It is a no-op for `--jsonl`, `--raw`, `--yaml`, `--gron`, `--grona`, and
 `--format parquet`, which are already condensed or binary (`--gron` and
 `--grona` are inherently line-based).
 
-## File `-o`, `--output <file>`
+## File `--output <file>`
 
-Writes results to `<file>` instead of stdout, truncating an existing file.
+`--output` :material-earth:{ title="Global flag" } is global, every command honours it (for example
+`iq inspect -o report.json`), see [Global flags](global-flags.md#global-flags).
 
-It is global, every command honours it (for example `iq inspect -o report.json`)
-and is orthogonal to the format flags.
+Writes results to `<file>` instead of stdout, truncating an existing file, with the
+shorthand `-o`. It is orthogonal to the format flags.
 
 Color is off for a file unless you force it with `-C`, progress and errors
 still go to stderr.
 
 ## Numbers `--format.decimal`
+
+`--format.decimal` :material-earth:{ title="Global flag" } is global.
 
 `--format.decimal <auto|number|string>` chooses how a **non-integer decimal**
 from the backend is presented to the filter.
@@ -343,7 +347,9 @@ from the backend is presented to the filter.
     string under `--yaml` (a `yaml.v3` limitation), exactness is kept in preference
     to YAML's numeric form.
 
-## Color `-C`, `--color`
+## Color `--color`
+
+`--color` :material-earth:{ title="Global flag" }, shorthand `-C`, is global.
 
 Output is syntax-highlighted when `iq` writes to a terminal and left plain when
 it is piped or redirected, so captured output stays clean, TTY detection is
@@ -373,7 +379,9 @@ where capture safety comes from.
     form, for example JSON syntax highlighting for MongoDB, and redis-cli-style
     value tokens for Redis.
 
-## No color `-M`, `--monochrome`
+## No color `--monochrome`
+
+`--monochrome` :material-earth:{ title="Global flag" }, shorthand `-M`, is global.
 
 Disable colored output. Color is on by default only when writing to a terminal.
 

@@ -1008,8 +1008,9 @@ huge dump. The index is on by default and distribution-agnostic (it hashes keys,
 ids/UUIDs are fine). Skip it with `--no-cache-index` (the flat cache is still written; a bounded
 read just streams it) when a very large keyspace makes the index build memory unwelcome.
 
-Manage the cache with `iq cache`, bypass it for one run with `--no-cache`, or set a default with
-`iq config set no-cache true` / `iq config set no-cache-index true`.
+Manage the cache with `iq cache`, bypass it for one run with `--no-cache` :material-earth:{ title="Global flag" }, or set a default
+with `iq config set no-cache true` / `iq config set no-cache-index true` (`--no-cache-index` :material-earth:{ title="Global flag" }
+too).
 
 - `iq cache location`: print the cache directory path.
 - `iq cache stat [-j/--json | -y/--yaml]`: list cached dumps with their sizes.

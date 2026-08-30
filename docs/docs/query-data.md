@@ -132,6 +132,15 @@ iq combine 'users=.[] | {id, name}' \
     still needs `--unbounded`, exactly like a single-source query. A
     `.[]`-rooted spec streams without it.
 
+## Unbounded `--unbounded`
+
+Permit a filter that loads the whole dataset into memory. It also materializes a
+`.[]`-rooted filter instead of streaming it, so a filter that collapses the
+keyspace into one value (`keys`, `.`, `map(...)`) runs only with it, see
+[Read strategies](how-it-works.md#read-strategies).
+
+`iq combine` and `iq data` carry their own copies of the flag where they apply.
+
 ## Client-side `--no-compile`
 
 Disable pushdown.

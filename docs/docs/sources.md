@@ -103,7 +103,7 @@ An optional `[group]` limits the listing to sources in that group.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
-| `-v` | `--verbose` | ✗ | show a header and a `FORMAT` (a file source's detected dump format) and an `OPTIONS` (the source's stored option defaults) column |
+| `-v` | `--verbose` | ✗ | show a header and a `FORMAT` (a file source's detected dump format) and an `OPTIONS` (the source's stored option defaults) column :material-earth:{ title="Global flag" } |
 | `-g` | `--group` | ✗ | lists groups instead of sources |
 | `-j` | `--json` | ✗ | emit machine-readable JSON output |
 | `-y` | `--yaml` | ✗ | emit machine-readable YAML output |
@@ -163,7 +163,7 @@ source is unreachable.
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
 | | `--all` | ✗ | ping every saved source, rejects source arguments |
-| | `--timeout` | `5s` | per-query timeout |
+| | `--timeout` | `5s` | per-query timeout :material-earth:{ title="Global flag" } |
 
 ```sh { title='Ping the active source' }
 iq ping
@@ -203,6 +203,9 @@ iq rm dev
 `iq src [name] [flags]`
 
 Show or set the active source.
+
+`--src` :material-earth:{ title="Global flag" } is global, every command accepts it, see
+[Global flags](global-flags.md#global-flags).
 
 Once a source is active, every query runs against it. Select a different source for a single
 command with `--src`/`-s`, without changing the active one; address a MongoDB collection or a
