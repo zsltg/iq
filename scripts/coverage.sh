@@ -24,7 +24,10 @@ if [[ "${IQ_COVER_SHORT-}" == "1" ]]; then
   gate=0
 else
   echo "coverage: full suite (ephemeral containers unless IQ_*_URL is set)"
-  go test -covermode=atomic -coverpkg=./... -coverprofile="$profile" ./... || exit 1
+  # -timeout is per test binary: the elasticsearch package alone pulls and boots
+  # two JVM containers, which on a cold 2-vCPU CI runner outruns go test's
+  # default budget; the CI job's own timeout still bounds the whole run.
+  go test -timeout 30m -covermode=atomic -coverpkg=./... -coverprofile="$profile" ./... || exit 1
   gate=1
 fi
 
