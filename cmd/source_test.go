@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
@@ -12,9 +13,13 @@ import (
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
-// runCmd executes c with args, capturing its combined output.
+// runCmd executes c with args, capturing its combined output. The root PreRun
+// resolves the global color mode for the invocation, so the prior value is
+// restored after the test: a -C run must not tint a later test's output.
 func runCmd(t *testing.T, c *cobra.Command, args ...string) (string, error) {
 	t.Helper()
+	orig := color.NoColor
+	t.Cleanup(func() { color.NoColor = orig })
 	var buf bytes.Buffer
 	c.SetOut(&buf)
 	c.SetErr(&buf)

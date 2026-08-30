@@ -522,6 +522,11 @@ func TestQueryPlanLogSharesConjunctDecisionsWithText(t *testing.T) {
 }
 
 func TestBuildJQPlanPushdownDecisions(t *testing.T) {
+	// The assertions match plain text, so pin color off regardless of what an
+	// earlier test left in the global mode.
+	orig := color.NoColor
+	color.NoColor = true
+	t.Cleanup(func() { color.NoColor = orig })
 	// The pushdown section enumerates, per top-level select conjunct, whether the
 	// backend evaluates it (pushed) or it re-runs client-side, with the reason a
 	// client-side conjunct did not push. Compile-stage declines carry a precise
