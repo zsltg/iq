@@ -4,7 +4,7 @@ icon: material/scale-balance
 
 # Comparison
 
-How `iq` relates to other query tools. Its niche is narrow: a single static binary that gives
+How `iq` relates to other query tools. Its niche is narrow, a single static binary that gives
 NoSQL stores one jq-based query surface, the filter running client-side over normalized JSON so
 semantics are identical across backends.
 
@@ -30,7 +30,7 @@ semantics are identical across backends.
 
 ## Tools that unify many databases under one language
 
-Legend: ● primary, ◐ partial, — none. Model is the shape the query language speaks; footprint is
+Legend: ● primary, ◐ partial, — none. Model is the shape the query language speaks, footprint is
 what you run.
 
 | Tool | Query language | Relational | NoSQL | Files | Data model | Footprint |
@@ -57,7 +57,7 @@ and never reaches NoSQL. Language specs and embedded libraries (PartiQL, SQL++ /
 Apache Calcite, GraphQL federation) span nested and tabular data too, but they are
 specifications or components inside an engine, not something anyone runs instead of a CLI.
 
-The takeaway is the NoSQL column paired with footprint: among these tools, `iq` is the only
+The takeaway is the NoSQL column paired with footprint, among these tools, `iq` is the only
 single binary that gives NoSQL stores one query language. What reaches further runs as a server
 (Trino, Drill, the virtualization platforms, the MCP Toolbox), and what is as light either
 speaks each backend's own dialect (usql, the universal clients) or targets files and relational

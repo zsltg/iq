@@ -14,7 +14,7 @@ Fetched values are normalized to JSON and the filter runs entirely client-side,
 so one filter means the same thing everywhere.
 
 The backend is chosen by the URI scheme[^4], and the filter is both the
-*transform* and the *key selector*: the selector walks the parsed `jq` AST[^ast]
+*transform* and the *key selector*, the selector walks the parsed `jq` AST[^ast]
 and, based on that, executes a *bounded read*, a *streaming scan* (with
 *pushdown*[^pushdown]), or a *materialized scan* (see
 [How it works](how-it-works.md#how-it-works)).

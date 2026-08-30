@@ -52,7 +52,7 @@ df.null_count()   # O(1) per column, tracked in the validity bitmap
 
 Polars has one missing value, `null`, uniform across every type. `NaN` is a float *value*, not
 missingness, and iq never emits `NaN` for an absent field, so `mean`, `min`, and `null_count` stay
-honest on iq output: a gap is a `null` that statistics skip, never a `NaN` that poisons the result.
+honest on iq output, a gap is a `null` that statistics skip, never a `NaN` that poisons the result.
 
 ### DuckDB
 
@@ -86,7 +86,7 @@ SELECT * FROM read_json_auto('dump.jsonl');
 
 [Splink](https://moj-analytical-services.github.io/splink/) needs a per-record `unique_id`, column
 names that conform across the sources you link, dates truncated to `yyyy-mm-dd`, and, critically,
-*true nulls*, never empty-string placeholders. iq's export already fits: the key rides in each
+*true nulls*, never empty-string placeholders. iq's export already fits, the key rides in each
 record (a ready `unique_id`) and iq emits an explicit `null` for an absent field. Prepare a source
 for Splink with the jq filter, reshape, re-key, and truncate dates in one pass:
 

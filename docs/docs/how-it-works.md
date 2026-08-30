@@ -8,7 +8,7 @@ A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters
 against NoSQL databases. The backend is chosen by the URI scheme, and the query
 core is driver-agnostic so further backends slot in behind the same port.
 
-The filter is both the transform and the key selector: its top-level paths
+The filter is both the transform and the key selector, its top-level paths
 name the keys to fetch, so a normal query reads a bounded set of keys; a
 `.[]`-rooted filter streams the keyspace in pages, and a filter that collapses
 it into one value materializes only behind `--unbounded`. Fetched values are
@@ -21,7 +21,7 @@ sources, and runs the same engine, so it adds no port and changes no
 classification; what it adds is its own bounds, a tool set fixed at startup by
 `--allow`, per-result item and byte caps, and the CLI's redacted error shape.
 
-`iq` is inspired by [sq](https://github.com/neilotoole/sq): much of its command
+`iq` is inspired by [sq](https://github.com/neilotoole/sq), much of its command
 surface (the `<source>.<collection>` addressing along with many subcommands and
 flags) deliberately follows sq's to make the tool feel familiar.
 
@@ -37,7 +37,7 @@ three routes.
 1. **Bounded reads** (with explicit keys) only read the specified subset of
    items from the source, the cost is bounded by the keys you asked for, never
    by the size of the database.
-2. **Streaming scans** (a filter rooted at `.[]`: `.[]`, `.[] | select()`,
+2. **Streaming scans** (a filter rooted at `.[]`, eg. `.[]`, `.[] | select()`,
    `.[].title`) process each value independently, walking the keyspace in
    pages and running the filter page by page, emitting as it goes. Memory stays
    constant and results appear progressively.
