@@ -146,11 +146,17 @@ the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
 (syft), `deadcode`, `secrets` (gitleaks, tree and history), `capabilities`
 (`scripts/capabilities.sh` against the PR base), `mutate-diff`
 (`scripts/mutation-gate.sh` against the PR base) and `docs` (site build). The
-weekly `deep` job (Mondays, or `workflow_dispatch`) re-runs the vulnerability and
-secret scans against fresh data and mutates the whole module
-(`IQ_MUTATION_BASE=` empty), then publishes the covered-code MSI from
-`mutago-summary.json` as the README mutation badge on the one-file `badges`
-branch.
+weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
+workflow) re-run the vulnerability and secret scans against fresh data
+(`deep-scan`) and mutate the whole module one package per runner
+(`deep-enumerate` lists every package with Go sources, `deep-mutate` is a
+matrix over them, each a full package scan through the wrapper's package-arg
+form with its own containers on its own machine, eight runners at a time), then
+`deep-badge` merges the per-package `mutago-summary.json` files with
+`scripts/mutation-summary.sh` (kills over covered mutants, summed, not a mean
+of ratios) and publishes the covered-code MSI as the README mutation badge on
+the one-file `badges` branch. Parallelism is across runners only: one container
+at a time per machine is what keeps the gate's timeouts honest.
 
 Containers run one at a time in CI: no `IQ_*_URL` is set, so each driver's
 `TestMain` provisions its own testcontainer, `GOFLAGS=-p=1` serialises the
