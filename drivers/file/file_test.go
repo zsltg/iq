@@ -3,7 +3,9 @@ package file
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,6 +18,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/selector"
 )
@@ -625,4 +628,354 @@ func TestOpenReaderBufferedStdin(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "yo", got["b"])
 	require.Len(t, collect(t, st), 2) // a second scan re-reads the buffer
+}
+
+// TestOpenReaderCarriesTheDecimalMode confirms the buffered (stdin) store keeps the
+// decimal mode it was opened with: dropping it would silently decode a piped dump
+// under a different number policy than the same dump read from a path.
+func TestOpenReaderCarriesTheDecimalMode(t *testing.T) {
+	for _, dec := range []numfmt.DecimalMode{numfmt.DecimalAuto, numfmt.DecimalString} {
+		t.Run(fmt.Sprintf("mode %d survives", dec), func(t *testing.T) {
+			st, err := OpenReader([]byte(`{"key":"a","type":"string","value":"x"}`), FormatJSONL, dec)
+			require.NoError(t, err)
+			require.Equal(t, dec, st.dec)
+		})
+	}
+}
+
+// TestParseFileURLOpaqueForm covers the file:relative spelling, whose path url.Parse
+// reports as the opaque part rather than as Path. Losing it turns a legal relative
+// dump url into a "no path" rejection.
+func TestParseFileURLOpaqueForm(t *testing.T) {
+	p, _, _, err := parseFileURL("file:dump.rdb")
+	require.NoError(t, err)
+	require.Equal(t, "dump.rdb", p)
+
+	p, forced, hints, err := parseFileURL("file:sub/d.csv?format=cassandra-csv&keys=id")
+	require.NoError(t, err)
+	require.Equal(t, "sub/d.csv", p)
+	require.Equal(t, FormatCassandraCSV, forced)
+	require.Equal(t, "id", hints.Keys)
+}
+
+// TestMaybeGunzip pins the two-byte gzip sniff. Both magic bytes must match before
+// the stream is unwrapped — a dump whose first byte happens to be 0x1f is not gzip —
+// and a stream too short to sniff passes through for the decoder to report.
+func TestMaybeGunzip(t *testing.T) {
+	gz := gzipBytes(t, []byte("payload"))
+	tests := []struct {
+		name    string
+		in      []byte
+		want    string
+		wantErr string
+	}{
+		{name: "a gzip stream is unwrapped", in: gz, want: "payload"},
+		{name: "plain json passes through", in: []byte(`{"a":1}`), want: `{"a":1}`},
+		{name: "only the first magic byte matches", in: []byte{0x1f, 'x', 'y'}, want: "\x1fxy"},
+		{name: "only the second magic byte matches", in: []byte{0x00, 0x8b, 'y'}, want: "\x00\x8by"},
+		{name: "an empty stream passes through", in: nil, want: ""},
+		{name: "a one-byte stream is too short to sniff", in: []byte{0x1f}, want: "\x1f"},
+		{name: "a bare gzip magic is a broken gzip dump", in: []byte{0x1f, 0x8b}, wantErr: "open gzip dump"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := maybeGunzip(bytes.NewReader(tt.in))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.Nil(t, r)
+				return
+			}
+			require.NoError(t, err)
+			got, err := io.ReadAll(r)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, string(got))
+		})
+	}
+	t.Run("a read failure is reported", func(t *testing.T) {
+		_, err := maybeGunzip(errReader{err: errors.New("disk gone")})
+		require.ErrorContains(t, err, "read dump head")
+	})
+}
+
+// TestGetWithNoKeysNeverTouchesTheDump proves the empty-request fast path is a real
+// short circuit and not merely a scan that happens to find nothing: the store points
+// at a path that does not exist, so any decode would fail.
+func TestGetWithNoKeysNeverTouchesTheDump(t *testing.T) {
+	st := &Store{path: filepath.Join(t.TempDir(), "absent.json"), format: FormatJSONL}
+	got, err := st.Get(context.Background(), nil)
+	require.NoError(t, err)
+	require.Empty(t, got)
+
+	_, err = st.Get(context.Background(), []string{"a"})
+	require.Error(t, err, "a non-empty request really does open the dump")
+}
+
+// TestGetStopsOnceEveryKeyIsFound pins the early stop. The dump holds a full page of
+// good records followed by a corrupt one, so a scan that runs past the point where
+// every requested key is found fails — the only way to observe a stop that is
+// otherwise invisible in the result.
+func TestGetStopsOnceEveryKeyIsFound(t *testing.T) {
+	var b strings.Builder
+	for i := range pageSize {
+		fmt.Fprintf(&b, "{\"key\":\"k%d\",\"type\":\"string\",\"value\":\"v%d\"}\n", i, i)
+	}
+	b.WriteString("{not json at all\n")
+	u := writeDump(t, "dump.json", []byte(b.String()), "format=jsonl")
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+
+	got, err := st.Get(context.Background(), []string{"k0", "k499"})
+	require.NoError(t, err, "the scan stopped before reaching the corrupt record")
+	require.Equal(t, map[string]any{"k0": "v0", "k499": "v499"}, got)
+
+	_, err = st.Get(context.Background(), []string{"k0", "missing"})
+	require.Error(t, err, "a key that is never found runs the scan into the corrupt record")
+}
+
+// TestExplainPlanRouting pins which plan each request shape produces: only a bounded
+// (non-scan) request with at least one key reports the key-filter plan, a scan reports
+// the scan plan even when keys are present, and a predicate adds the prefilter line.
+func TestExplainPlanRouting(t *testing.T) {
+	tests := []struct {
+		name string
+		keys selector.KeySet
+		pred predicate.Node
+		want []string
+	}{
+		{
+			name: "one key is a bounded filter",
+			keys: selector.KeySet{Keys: []string{"a"}},
+			want: []string{"decode dump file", "filter to 1 key(s) client-side"},
+		},
+		{
+			name: "a scan with keys is still a scan",
+			keys: selector.KeySet{Scan: true, Keys: []string{"a"}},
+			want: []string{"decode dump file", "scan client-side"},
+		},
+		{
+			name: "no keys and no scan is a scan",
+			keys: selector.KeySet{},
+			want: []string{"decode dump file", "scan client-side"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, ExplainPlan(tt.keys, tt.pred, false).Ops)
+		})
+	}
+	t.Run("a predicate adds the prefilter line", func(t *testing.T) {
+		ops := ExplainPlan(selector.KeySet{Scan: true}, predicate.And{}, false).Ops
+		require.Len(t, ops, 3)
+		require.Contains(t, ops[1], "rawpred")
+	})
+}
+
+// TestZSetValueOrdering pins the sorted-set rendering: score ascending, ties broken
+// lexically by member. Three tied members in an order that is neither sorted nor its
+// own reverse catch a comparator that stops distinguishing equal scores.
+func TestZSetValueOrdering(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []*model.ZSetEntry
+		want    []any
+	}{
+		{
+			name:    "scores order ascending",
+			entries: []*model.ZSetEntry{{Member: "b", Score: 2}, {Member: "a", Score: 1}},
+			want: []any{
+				map[string]any{"member": "a", "score": float64(1)},
+				map[string]any{"member": "b", "score": float64(2)},
+			},
+		},
+		{
+			name:    "equal scores break lexically by member",
+			entries: []*model.ZSetEntry{{Member: "a", Score: 1}, {Member: "c", Score: 1}, {Member: "b", Score: 1}},
+			want: []any{
+				map[string]any{"member": "a", "score": float64(1)},
+				map[string]any{"member": "b", "score": float64(1)},
+				map[string]any{"member": "c", "score": float64(1)},
+			},
+		},
+		{
+			name:    "a lower score outranks a lexically earlier member",
+			entries: []*model.ZSetEntry{{Member: "a", Score: 9}, {Member: "z", Score: 1}},
+			want: []any{
+				map[string]any{"member": "z", "score": float64(1)},
+				map[string]any{"member": "a", "score": float64(9)},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, zsetValue(&model.ZSetObject{Entries: tt.entries}))
+		})
+	}
+}
+
+// TestStreamValueOrdering pins the stream rendering: id order (milliseconds, then
+// sequence), tombstoned and id-less messages skipped, and equal ids left in the order
+// the dump recorded them.
+func TestStreamValueOrdering(t *testing.T) {
+	tests := []struct {
+		name string
+		msgs []*model.StreamMessage
+		want []any
+	}{
+		{
+			name: "equal milliseconds order by sequence",
+			msgs: []*model.StreamMessage{
+				{Id: &model.StreamId{Ms: 5, Sequence: 1}, Fields: map[string]string{"a": "1"}},
+				{Id: &model.StreamId{Ms: 5, Sequence: 3}, Fields: map[string]string{"c": "3"}},
+				{Id: &model.StreamId{Ms: 5, Sequence: 2}, Fields: map[string]string{"b": "2"}},
+			},
+			want: []any{
+				map[string]any{"id": "5-1", "fields": map[string]any{"a": "1"}},
+				map[string]any{"id": "5-2", "fields": map[string]any{"b": "2"}},
+				map[string]any{"id": "5-3", "fields": map[string]any{"c": "3"}},
+			},
+		},
+		{
+			name: "a duplicate id keeps the recorded order",
+			msgs: []*model.StreamMessage{
+				{Id: &model.StreamId{Ms: 1, Sequence: 1}, Fields: map[string]string{"first": "1"}},
+				{Id: &model.StreamId{Ms: 1, Sequence: 1}, Fields: map[string]string{"second": "2"}},
+			},
+			want: []any{
+				map[string]any{"id": "1-1", "fields": map[string]any{"first": "1"}},
+				map[string]any{"id": "1-1", "fields": map[string]any{"second": "2"}},
+			},
+		},
+		{
+			name: "a message with no id carries no record",
+			msgs: []*model.StreamMessage{
+				{Fields: map[string]string{"orphan": "x"}},
+				{Id: &model.StreamId{Ms: 1, Sequence: 0}, Fields: map[string]string{"a": "1"}},
+			},
+			want: []any{map[string]any{"id": "1-0", "fields": map[string]any{"a": "1"}}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := streamValue(&model.StreamObject{Entries: []*model.StreamEntry{{Msgs: tt.msgs}}})
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestRDBSourceFailures pins the two ways an RDB read stops: a cancelled scan
+// reports the cancellation, and an undecodable snapshot reports the parse failure.
+// Both are carried out of the parser's callback, so neither may be dropped.
+func TestRDBSourceFailures(t *testing.T) {
+	good := buildRDB(t)
+	t.Run("a cancelled scan reports the cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := rdbSource(bytes.NewReader(good), pageSize)(ctx, func([]query.Record) error { return nil })
+		require.ErrorIs(t, err, context.Canceled)
+	})
+	t.Run("a consumer error stops the scan", func(t *testing.T) {
+		boom := errors.New("consumer said no")
+		err := rdbSource(bytes.NewReader(good), 1)(context.Background(), func([]query.Record) error { return boom })
+		require.ErrorIs(t, err, boom)
+	})
+	t.Run("an undecodable snapshot is a parse error", func(t *testing.T) {
+		err := rdbSource(bytes.NewReader(corruptBody(good)), pageSize)(context.Background(), func([]query.Record) error { return nil })
+		require.ErrorContains(t, err, "parse rdb")
+	})
+}
+
+// failFirstCall is a page consumer that refuses only its first page, so a test can
+// tell a source that propagates a consumer error from one that swallows it and
+// happens to succeed on a later flush.
+type failFirstCall struct {
+	calls int
+	err   error
+}
+
+func (f *failFirstCall) accept([]query.Record) error {
+	f.calls++
+	if f.calls == 1 {
+		return f.err
+	}
+	return nil
+}
+
+// TestBSONSourceFailures pins the framed reader's two failure points: a document
+// whose declared length outruns the file is a read failure, and a well-framed but
+// undecodable document is a decode failure. Each keeps its own message, so a
+// truncated dump is never reported as a corrupt one.
+func TestBSONSourceFailures(t *testing.T) {
+	drain := func(r io.Reader) error {
+		return bsonSource(r, pageSize, numfmt.DecimalAuto)(context.Background(), func([]query.Record) error { return nil })
+	}
+	t.Run("a truncated document is a read failure", func(t *testing.T) {
+		require.ErrorContains(t, drain(bytes.NewReader([]byte{20, 0, 0, 0, 1, 2, 3})), "read bson document")
+	})
+	t.Run("an undecodable document is a decode failure", func(t *testing.T) {
+		require.ErrorContains(t, drain(bytes.NewReader([]byte{6, 0, 0, 0, 0xff, 0x00})), "decode bson document")
+	})
+	t.Run("a truncated length frame is a length read failure", func(t *testing.T) {
+		require.ErrorContains(t, drain(bytes.NewReader([]byte{20, 0})), "read bson length")
+	})
+	t.Run("a consumer error propagates", func(t *testing.T) {
+		d, err := bson.Marshal(bson.M{"_id": "k1"})
+		require.NoError(t, err)
+		boom := errors.New("consumer said no")
+		f := &failFirstCall{err: boom}
+		require.ErrorIs(t, bsonSource(bytes.NewReader(append(d, d...)), 1, numfmt.DecimalAuto)(context.Background(), f.accept), boom)
+	})
+}
+
+// TestExtJSONSourceFailures pins the mongoexport reader's error handling. The
+// line-oriented form must report a malformed record rather than stopping quietly at
+// it, an unexpected closing bracket is malformed input and not an end of stream, an
+// undecodable document is a decode failure, and a consumer error propagates even
+// when a later page would have succeeded.
+func TestExtJSONSourceFailures(t *testing.T) {
+	drain := func(body string, size int, fn func([]query.Record) error) error {
+		return extJSONSource(strings.NewReader(body), size, numfmt.DecimalAuto)(context.Background(), fn)
+	}
+	ignore := func([]query.Record) error { return nil }
+
+	t.Run("a malformed line is a decode failure", func(t *testing.T) {
+		require.ErrorContains(t, drain(`{"_id":1}`+"\n{oops\n", pageSize, ignore), "decode mongoexport json")
+	})
+	t.Run("a stray closing bracket is a decode failure", func(t *testing.T) {
+		require.ErrorContains(t, drain(`{"_id":1}`+"\n]\n", pageSize, ignore), "decode mongoexport json")
+	})
+	t.Run("an undecodable extended json document is refused", func(t *testing.T) {
+		require.ErrorContains(t, drain(`{"_id":{"$oid":"not-hex"}}`, pageSize, ignore), "decode extended json document")
+	})
+	t.Run("a truncated array is a decode failure", func(t *testing.T) {
+		require.ErrorContains(t, drain(`[{"_id":1},`, pageSize, ignore), "decode mongoexport json")
+	})
+	t.Run("a consumer error propagates from a full page", func(t *testing.T) {
+		boom := errors.New("consumer said no")
+		f := &failFirstCall{err: boom}
+		require.ErrorIs(t, drain(`{"_id":1}`+"\n"+`{"_id":2}`+"\n"+`{"_id":3}`+"\n", 2, f.accept), boom)
+	})
+	t.Run("an empty dump yields nothing", func(t *testing.T) {
+		require.NoError(t, drain("", pageSize, ignore))
+	})
+}
+
+// TestExtJSONIsCanonical pins the extended-JSON dialect the reader accepts. It
+// decodes in canonical mode, so a canonical $date (a $numberLong wrapper) is read
+// and the relaxed spelling (an ISO-8601 string) is refused rather than silently
+// read under a different dialect than a live scan uses.
+func TestExtJSONIsCanonical(t *testing.T) {
+	recs := map[string]query.Record{}
+	collectInto := func(batch []query.Record) error {
+		for _, r := range batch {
+			recs[r.Key] = r
+		}
+		return nil
+	}
+	body := `{"_id":"a","when":{"$date":{"$numberLong":"1577836800000"}}}` + "\n"
+	require.NoError(t, extJSONSource(strings.NewReader(body), pageSize, numfmt.DecimalAuto)(context.Background(), collectInto))
+	require.Contains(t, recs, "a")
+
+	relaxed := `{"_id":"a","when":{"$date":"2020-01-01T00:00:00Z"}}` + "\n"
+	err := extJSONSource(strings.NewReader(relaxed), pageSize, numfmt.DecimalAuto)(context.Background(), collectInto)
+	require.ErrorContains(t, err, "decode extended json document")
 }
