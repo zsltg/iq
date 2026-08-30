@@ -1,0 +1,5 @@
+# Generated artifacts and goldens are compared byte-for-byte by tests, so every
+# text file checks out with LF on every platform, whatever core.autocrlf says.
+* text=auto eol=lf
+# Upstream license text kept byte-exact.
+scripts/demo/demo-font.LICENSE -text

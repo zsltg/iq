@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -195,7 +196,12 @@ func TestConfigEdit(t *testing.T) {
 	dir := t.TempDir()
 	sentinel := filepath.Join(dir, "ran")
 	script := filepath.Join(dir, "ed.sh")
-	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\necho ran > '"+sentinel+"'\n"), 0o755))
+	body := "#!/bin/sh\necho ran > '" + sentinel + "'\n"
+	if runtime.GOOS == "windows" { // a batch file is the executable script there.
+		script = filepath.Join(dir, "ed.cmd")
+		body = "@echo ran> \"" + sentinel + "\"\r\n"
+	}
+	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
 	t.Setenv("IQ_EDITOR", script)
 
 	root, _ := newRootCmd()

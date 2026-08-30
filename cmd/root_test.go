@@ -187,7 +187,8 @@ func TestOpenOutputFile(t *testing.T) {
 // root PreRun without a backend, so it isolates the redirect.
 func TestRootOutputRedirectsToFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "out.txt")
-	root, _ := newRootCmd()
+	root, cfg := newRootCmd()
+	closeResources(t, cfg)
 	buf, err := runCmd(t, root, "--output", path, "version")
 	require.NoError(t, err)
 
@@ -202,7 +203,8 @@ func TestRootOutputRedirectsToFile(t *testing.T) {
 // redirects to a (non-terminal) file, mirroring the pager behavior.
 func TestRootOutputColorForcedToFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "out.txt")
-	root, _ := newRootCmd()
+	root, cfg := newRootCmd()
+	closeResources(t, cfg)
 	_, err := runCmd(t, root, "--color", "--output", path, "version")
 	require.NoError(t, err)
 	require.True(t, colorOn())

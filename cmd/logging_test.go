@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -413,9 +414,11 @@ func TestBuildFileSink(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"msg":"hello"`)
 
-	fi, err := os.Stat(path)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+	if runtime.GOOS != "windows" { // Windows keeps no Unix mode bits to assert on.
+		fi, err := os.Stat(path)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+	}
 }
 
 // TestBuildStreamTarget checks that a literal stderr/stdout file target writes to

@@ -536,7 +536,8 @@ func TestMCPRefusesStdoutLogSink(t *testing.T) {
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
-			root, _ := newRootCmd()
+			root, cfg := newRootCmd()
+			closeResources(t, cfg)
 			_, err := runCmd(t, root, tc.args...)
 			require.Error(t, err)
 			if tc.wantErr {

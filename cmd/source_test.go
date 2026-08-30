@@ -13,6 +13,22 @@ import (
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
+// closeResources releases the diagnostics handles a root run opened in
+// PersistentPreRunE (the --output file, the log file), as Execute does after
+// ExecuteContext; a test that runs the root directly registers it so the temp
+// dir can be removed on Windows, where an open file cannot be deleted.
+func closeResources(t *testing.T, cfg *config) {
+	t.Helper()
+	t.Cleanup(func() {
+		if cfg.logClose != nil {
+			_ = cfg.logClose()
+		}
+		if cfg.outClose != nil {
+			_ = cfg.outClose()
+		}
+	})
+}
+
 // runCmd executes c with args, capturing its combined output. The root PreRun
 // resolves the global color mode for the invocation, so the prior value is
 // restored after the test: a -C run must not tint a later test's output.

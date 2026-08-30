@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,7 +67,9 @@ func TestCacheStatJSON(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, cacheStat(&buf, dir, true, false))
 	require.Contains(t, buf.String(), "\"dump\"")
-	require.Contains(t, buf.String(), dump)
+	quoted, err := json.Marshal(dump) // the path as JSON encodes it (backslashes escaped on Windows).
+	require.NoError(t, err)
+	require.Contains(t, buf.String(), string(quoted))
 }
 
 func TestCacheStatEmpty(t *testing.T) {
