@@ -225,12 +225,12 @@ iq '.["2"]'
 
 **Fetch items where the key "year" is larger than "2015" and return objects that contain the keys "title" and "price"**
 ```sh
-iq '.[] | select(.year > 2015) | {title, price}
+iq '.[] | select(.year > 2015) | {title, price}'
 ```
 
 **Print a formatted query plan**
 ```sh
-iq '.[] | select(.year > 2015) | {title, price} --explain -v
+iq '.[] | select(.year > 2015) | {title, price}' --explain -v
 ```
 
 ### Diff
@@ -268,6 +268,11 @@ iq add file:///dump.jsonl -n snap
 iq --src snap --insert cache
 ```
 
+**Insert items from one source to another narrowed down with a query**
+```sh
+iq '.[] | select(.year > 2015)' --src books --insert recent
+```
+
 ### Cross-source combine
 
 **Compose across sources**
@@ -284,7 +289,7 @@ iq combine 'users=.[] | {id, name}' \
    --with '($users | INDEX(.id)) as $u | $orders[] | . + {name: $u[.userId].name}'
 ```
 
-###  commands
+### Keyspace commands
 
 **Delete two items**
 ```sh
@@ -307,106 +312,6 @@ iq data drop shop.orders
 ```sh
 cat dump.jsonl | iq '.[]'
 ```
-
-```sh
-# Add a collection named "books" from a MongoDB source.
-iq add 'mongodb://localhost:27017/iq?collection=books'
-
-# Make a source active.
-iq src books
-
-# Inspect the database.
-iq inspect
-
-# Explain the query plan for a bounded read, a dry run.
-iq '.["1"]' --explain -v
-
-# Run the query to get the document with id "1".
-iq '.["1"]'
-
-# Run a query to get all documents in batches, a streaming scan.
-iq '.[]'
-```
-
-Always wrap the filter in single quotes, jq syntax is full of characters the shell would
-otherwise expand or split (`[ ]`, whitespace, `|`, `*`, `$`).
-
-The commands below are a starter set; every command and flag is documented in full on the
-[documentation site](https://zsltg.github.io/iq/).
-
-### Move data
-
-```sh
-# Copy one source into another, across drivers.
-iq --src books --insert books2
-
-# Copy only the documents a filter selects, they keep their keys.
-iq '.[] | select(.year > 2015)' --src books --insert recent
-
-# Dump a source to a re-importable typed file, and restore it.
-iq --src books --typed -o books.jsonl
-iq add -n snap file:///backups/books.jsonl
-iq --src snap --insert books
-
-# Export a query as Apache Parquet.
-iq --src books '.[]' --format parquet -o books.parquet
-```
-
-### Compare and describe
-
-```sh
-# Infer a JSON Schema from a sampled source.
-iq schema books
-
-# Compare two sources by data, stats, or inferred schema.
-iq diff prod staging
-
-# Query several sources and join their results.
-iq combine 'users=.[]' 'orders=.[]' --with '$users + $orders'
-```
-
-## Backups and dumps
-
-A `file://` source reads a database dump straight from disk, so a snapshot is queried,
-inspected for shape, diffed against a live source, and restored through the same jq
-interface, with no running server. It is read-only: a `file://` endpoint is never a copy
-destination, and `iq exec` and `iq inspect`, which need a live server, do not apply.
-
-```sh
-# Register a dump like any other source.
-iq add -n snap file:///backups/prod.rdb
-
-# Bounded read of one key.
-iq --src snap '.["session:42"]'
-
-# Streamed scan.
-iq --src snap '.[] | select(.active)'
-
-# A whole-dataset filter still obeys --unbounded.
-iq --src snap 'keys' --unbounded
-
-# Diff a dump against a live source.
-iq diff snap cache --data
-
-# Restore the dump into a live source.
-iq --src snap --insert cache
-```
-
-| Type | Description |
-| ---- | ----------- |
-| `jsonl` | iq typed JSON Lines / array |
-| `yaml` | iq typed YAML |
-| `mongoexport` | mongoexport Extended JSON |
-| `bson` | mongodump BSON |
-| `rdb` | Redis RDB snapshot |
-| `?format=dynamodb-json` | DynamoDB S3 export / scan JSON |
-| `?format=cassandra-csv` | cqlsh COPY TO CSV |
-| `?format=neo4j-json` | Neo4j APOC JSON export |
-
-A bare name auto-detects (`file:///<file_path>`), the `?format=` form must be passed
-(`file:///<file_path>?format=<source_format>`). The
-[Drivers page](https://zsltg.github.io/iq/drivers/#file-dumps) documents what produces each
-format, the options some of them need, and the round-trip caveats.
 
 ## Drivers
 
@@ -463,6 +368,29 @@ same contract:
   fixed verb set where none does (HBase), see each driver's Raw commands section on the
   [Drivers page](https://zsltg.github.io/iq/drivers/). Every `iq` flag
   must come before `exec`: everything after it is forwarded to the backend untouched.
+
+## Backups and dumps
+
+A `file://` source reads a database dump straight from disk, so a snapshot is queried,
+inspected for shape, diffed against a live source, and restored through the same jq
+interface, with no running server. It is read-only: a `file://` endpoint is never a copy
+destination, and `iq exec` and `iq inspect`, which need a live server, do not apply.
+
+| Type | Description |
+| ---- | ----------- |
+| `jsonl` | iq typed JSON Lines / array |
+| `yaml` | iq typed YAML |
+| `mongoexport` | mongoexport Extended JSON |
+| `bson` | mongodump BSON |
+| `rdb` | Redis RDB snapshot |
+| `?format=dynamodb-json` | DynamoDB S3 export / scan JSON |
+| `?format=cassandra-csv` | cqlsh COPY TO CSV |
+| `?format=neo4j-json` | Neo4j APOC JSON export |
+
+A bare name auto-detects (`file:///<file_path>`), the `?format=` form must be passed
+(`file:///<file_path>?format=<source_format>`). The
+[Drivers page](https://zsltg.github.io/iq/drivers/#file-dumps) documents what produces each
+format, the options some of them need, and the round-trip caveats.
 
 ## Architecture
 
