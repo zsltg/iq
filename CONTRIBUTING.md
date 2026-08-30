@@ -177,6 +177,11 @@ Posture and upkeep around the pipeline, all on GitHub:
 - `.coderabbit.yaml` configures CodeRabbit's pull-request review, with
   per-path instructions distilled from AGENTS.md; it reviews, it never
   approves or merges.
+- `socket.yml` configures the Socket GitHub App: on every pull request that
+  moves `go.mod` or `go.sum` it reports what the new module versions do
+  (install scripts, obfuscation, typosquats, maintainer changes), the
+  complement of `make capabilities`, which reports what our own dependency
+  tree can do; it comments, it never blocks a merge.
 - `SECURITY.md` is the vulnerability-reporting policy: GitHub private
   vulnerability reporting only.
 

@@ -9,6 +9,7 @@
   <a href="https://pkg.go.dev/github.com/zsltg/iq"><img src="https://pkg.go.dev/badge/github.com/zsltg/iq.svg" alt="Go Reference"></a>
   <a href="https://github.com/zsltg/iq/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zsltg/iq/ci.yml?branch=main" alt="CI"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/zsltg/iq"><img src="https://api.securityscorecards.dev/projects/github.com/zsltg/iq/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://socket.dev/go/package/github.com/zsltg/iq"><img src="https://socket.dev/api/badge/go/package/github.com/zsltg/iq" alt="Socket"></a>
   <a href="https://coderabbit.ai"><img src="https://img.shields.io/coderabbit/prs/github/zsltg/iq?utm_source=oss&utm_medium=github&utm_campaign=zsltg%2Fiq&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews" alt="CodeRabbit Reviews"></a>
   <!-- Fill in the project IDs after registering on bestpractices.dev and codescene.io:
   <a href="https://www.bestpractices.dev/projects/<ID>"><img src="https://www.bestpractices.dev/projects/<ID>/badge" alt="OpenSSF Best Practices"></a>

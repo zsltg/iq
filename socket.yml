@@ -1,0 +1,17 @@
+# Socket.dev configuration for the Socket GitHub App, installed on the GitHub
+# repository when it goes public. Socket analyses what a dependency change
+# does (install scripts, obfuscation, typosquats, maintainer changes) on every
+# pull request that moves go.mod or go.sum; it comments, it never blocks a
+# merge. Schema: https://docs.socket.dev/docs/socket-yml
+version: 2
+triggerPaths:
+  - go.mod
+  - go.sum
+projectIgnorePaths:
+  - docs/site
+  - dist
+githubApp:
+  enabled: true
+  pullRequestAlertsEnabled: true
+  dependencyOverviewEnabled: true
+  projectReportsEnabled: true

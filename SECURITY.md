@@ -21,4 +21,5 @@ license allowlist), `gitleaks` (working tree and history), an SBOM build,
 `gosec` through `golangci-lint`, and `capslock` (capability drift of the
 dependency tree against a committed baseline). A weekly run repeats the
 vulnerability and secret scans against fresh advisory data, and the OpenSSF
-Scorecard workflow reports the repository's security posture.
+Scorecard workflow reports the repository's security posture. Socket reviews
+every dependency change on a pull request.
