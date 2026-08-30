@@ -196,22 +196,22 @@ iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
 
 ### Sources
 
-**Driver list**
+Driver list:
 ```sh
 iq driver ls
 ```
 
-**Add a collection named "books" from a MongoDB source and make it active.**
+Add a collection named "books" from a MongoDB source and make it active:
 ```sh
 iq add -a 'mongodb://localhost:27017/iq?collection=books'
 ```
 
-**Inspect a source**
+Inspect a source:
 ```sh
 iq inspect books
 ```
 
-**List sources**
+List sources:
 ```sh
 iq ls
 ```
@@ -220,17 +220,17 @@ Check [Sources](https://zsltg.github.io/iq/sources/) for more details.
 
 ### Query data
 
-**Fetch an item with the ID "2"**
+Fetch an item with the ID "2":
 ```sh
 iq '.["2"]'
 ```
 
-**Fetch items where the key "year" is larger than "2015" and return objects that contain the keys "title" and "price"**
+Fetch items where the key "year" is larger than "2015" and return objects that contain the keys "title" and "price":
 ```sh
 iq '.[] | select(.year > 2015) | {title, price}'
 ```
 
-**Print a formatted query plan**
+Print a formatted query plan:
 ```sh
 iq '.[] | select(.year > 2015) | {title, price}' --explain -v
 ```
@@ -239,17 +239,17 @@ Check [Query data](https://zsltg.github.io/iq/query-data/) for more details.
 
 ### Diff
 
-**Diff schema of two sources**
+Diff schema of two sources:
 ```sh
 iq diff --schema dev qa
 ```
 
-**Diff the items with the same ID from two sources**
+Diff the items with the same ID from two sources:
 ```sh
 iq diff 'dev=.["1"]' 'qa=.["1"]'
 ```
 
-**Diff items key by key**
+Diff items key by key:
 ```sh
 iq diff dev qa
 ```
@@ -258,23 +258,23 @@ Check [Diff](https://zsltg.github.io/iq/sources/#diff-diff) for more details.
 
 ### Write data
 
-**Insert items from one source to another, key/id preserving (same driver) or object values only (cross-driver)**
+Insert items from one source to another, key/id preserving (same driver) or object values only (cross-driver):
 ```sh
 iq --src books --insert books2
 ```
 
-**Create a lossless (typed) dump**
+Create a lossless (typed) dump:
 ```sh
 iq --src cache --typed -o dump.jsonl
 ```
 
-**Add a dump as a source and restore it to a live source**
+Add a dump as a source and restore it to a live source:
 ```sh
 iq add file:///dump.jsonl -n snap
 iq --src snap --insert cache
 ```
 
-**Insert items from one source to another narrowed down with a query**
+Insert items from one source to another narrowed down with a query:
 ```sh
 iq '.[] | select(.year > 2015)' --src books --insert recent
 ```
@@ -283,14 +283,14 @@ Check [Write data](https://zsltg.github.io/iq/write-data/) for more details.
 
 ### Cross-source combine
 
-**Compose across sources**
+Compose across sources:
 ```sh
 iq 'INDEX(source("users"; ".[]"); .id) as $u
     | source("orders"; ".[] | select(.total > 99)")
     | {name: $u[.userId].name, total}'
 ```
 
-**Combine across sources**
+Combine across sources:
 ```sh
 iq combine 'users=.[] | {id, name}' \
            'orders=.[] | select(.total > 99)' \
@@ -301,17 +301,17 @@ Check [Cross-source queries](https://zsltg.github.io/iq/query-data/#cross-source
 
 ### Keyspace commands
 
-**Delete two items**
+Delete two items:
 ```sh
 iq data delete cache book:1 book:2
 ```
 
-**Empty a source called "cache"**
+Empty a source called "cache":
 ```sh
 iq data clear cache
 ```
 
-**Drop a collection called "orders"**
+Drop a collection called "orders":
 ```sh
 iq data drop shop.orders
 ```
@@ -320,7 +320,7 @@ Check [Delete](https://zsltg.github.io/iq/write-data/#delete-data-delete), [Clea
 
 ### UNIX pipes
 
-**Implicit stdin source**
+Implicit stdin source:
 ```sh
 cat dump.jsonl | iq '.[]'
 ```
