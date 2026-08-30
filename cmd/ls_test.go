@@ -9,6 +9,8 @@ import (
 	"github.com/fatih/color"
 	"github.com/stretchr/testify/require"
 
+	iqfile "github.com/zsltg/iq/drivers/file"
+
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
@@ -63,7 +65,7 @@ func TestLsVerboseFileFormat(t *testing.T) {
 	require.NoError(t, os.WriteFile(dump, []byte("REDIS0011"), 0o600))
 
 	c := newSeed()
-	require.NoError(t, c.Add("dump", "file://"+dump))
+	require.NoError(t, c.Add("dump", iqfile.URL(dump)))
 	require.NoError(t, c.Add("cache", "redis://h"))
 	require.NoError(t, c.Add("gone", "file:///no/such/dump.rdb")) // a moved/missing dump
 	seedConfig(t, c)
@@ -88,7 +90,7 @@ func TestLsColorRoles(t *testing.T) {
 	require.NoError(t, os.WriteFile(dump, []byte("REDIS0011"), 0o600))
 	c := newSeed()
 	require.NoError(t, c.Add("cache", "redis://h"))
-	require.NoError(t, c.Add("dump", "file://"+dump))
+	require.NoError(t, c.Add("dump", iqfile.URL(dump)))
 	require.NoError(t, c.SetOption("@cache", "timeout", "30s"))
 	require.NoError(t, c.SetActive("cache"))
 	seedConfig(t, c)
@@ -145,7 +147,7 @@ func TestLsJSONVerbose(t *testing.T) {
 	dump := filepath.Join(t.TempDir(), "d.rdb")
 	require.NoError(t, os.WriteFile(dump, []byte("REDIS0011"), 0o600))
 	c := newSeed()
-	require.NoError(t, c.Add("dump", "file://"+dump))
+	require.NoError(t, c.Add("dump", iqfile.URL(dump)))
 	require.NoError(t, c.SetOption("@dump", "timeout", "30s"))
 	seedConfig(t, c)
 

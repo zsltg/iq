@@ -40,7 +40,7 @@ func seedCache(t *testing.T, cacheDir string) string {
 	// A typed-JSONL dump is the simplest to hand-write and caches like any other.
 	dump := filepath.Join(t.TempDir(), "dump.jsonl")
 	require.NoError(t, os.WriteFile(dump, []byte("{\"key\":\"a\",\"type\":\"string\",\"value\":\"x\"}\n"), 0o600))
-	st, err := iqfile.Open("file://"+dump+"?format=jsonl", numfmt.DecimalAuto,
+	st, err := iqfile.Open(iqfile.URL(dump)+"?format=jsonl", numfmt.DecimalAuto,
 		iqfile.CacheConfig{Dir: cacheDir, Enabled: true, MinSize: 1})
 	require.NoError(t, err)
 	require.NoError(t, st.TypedScan(context.Background(), func([]query.Record) error { return nil }))

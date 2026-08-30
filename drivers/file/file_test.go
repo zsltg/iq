@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -25,7 +26,7 @@ func writeDump(t *testing.T, name string, content []byte, query string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name)
 	require.NoError(t, os.WriteFile(path, content, 0o600))
-	u := "file://" + path
+	u := URL(path)
 	if query != "" {
 		u += "?" + query
 	}
@@ -311,6 +312,33 @@ func TestParseFileURLVariants(t *testing.T) {
 
 	_, _, _, err = parseFileURL("file://")
 	require.ErrorContains(t, err, "no path")
+}
+
+// TestURLRoundTrip pins URL as the inverse of DumpPath: a Unix path takes the
+// triple-slash form, a drive path the RFC 8089 form, and DumpPath folds each
+// back to a native path (the drive form only on Windows, where it is native).
+func TestURLRoundTrip(t *testing.T) {
+	tests := []struct {
+		name, path, url, back string
+	}{
+		{name: "absolute unix path", path: "/abs/x.rdb", url: "file:///abs/x.rdb", back: "/abs/x.rdb"},
+		{name: "space is percent-escaped", path: "/a b/c.json", url: "file:///a%20b/c.json", back: "/a b/c.json"},
+		{name: "drive path", path: "C:/dir/f.json", url: "file:///C:/dir/f.json", back: "/C:/dir/f.json"},
+		{name: "lowercase drive path", path: "d:/f", url: "file:///d:/f", back: "/d:/f"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u := URL(tt.path)
+			require.Equal(t, tt.url, u)
+			back, err := DumpPath(u)
+			require.NoError(t, err)
+			want := tt.back
+			if drive := strings.TrimPrefix(tt.back, "/"); runtime.GOOS == "windows" && isDrivePath(drive) {
+				want = filepath.FromSlash(drive) // the drive form is native only on Windows.
+			}
+			require.Equal(t, want, back)
+		})
+	}
 }
 
 func TestExplainPlan(t *testing.T) {

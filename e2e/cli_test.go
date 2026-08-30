@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	iqfile "github.com/zsltg/iq/drivers/file"
 )
 
 // iqBin is the path to the binary built once for the package by TestMain.
@@ -143,7 +145,7 @@ func TestOfflineFileSourceRoundTrip(t *testing.T) {
 		[]byte(`{"key":"alpha","value":"hello-iq"}`+"\n"+`{"key":"beta","value":"world-iq"}`+"\n"), 0o600))
 	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
 
-	out, stderr, code := run(t, env, "add", "file://"+data, "-n", "snap")
+	out, stderr, code := run(t, env, "add", iqfile.URL(data), "-n", "snap")
 	require.Zerof(t, code, "add failed: %s", stderr)
 	require.Contains(t, out, "added source snap")
 
@@ -161,7 +163,7 @@ func TestStructuredLoggingToStderr(t *testing.T) {
 		[]byte(`{"key":"alpha","value":{"total":150}}`+"\n"+`{"key":"beta","value":{"total":10}}`+"\n"), 0o600))
 	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
 
-	out, stderr, code := run(t, env, "add", "file://"+data, "-n", "snap")
+	out, stderr, code := run(t, env, "add", iqfile.URL(data), "-n", "snap")
 	require.Zerof(t, code, "add failed: %s", stderr)
 	require.Contains(t, out, "added source snap")
 
@@ -219,7 +221,7 @@ func TestUnboundedLogsHolisticScan(t *testing.T) {
 		[]byte(`{"key":"alpha","value":1}`+"\n"+`{"key":"beta","value":2}`+"\n"), 0o600))
 	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
 
-	_, stderr, code := run(t, env, "add", "file://"+data, "-n", "snap")
+	_, stderr, code := run(t, env, "add", iqfile.URL(data), "-n", "snap")
 	require.Zerof(t, code, "add failed: %s", stderr)
 
 	// keys is holistic (materializes), so it needs --unbounded; the run must succeed.
@@ -241,7 +243,7 @@ func TestSchemaEmitsJSONSchema(t *testing.T) {
 		[]byte(`{"key":"1","value":{"name":"alice","age":30}}`+"\n"+`{"key":"2","value":{"name":"bob"}}`+"\n"), 0o600))
 	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
 
-	out, stderr, code := run(t, env, "add", "file://"+data, "-n", "snap")
+	out, stderr, code := run(t, env, "add", iqfile.URL(data), "-n", "snap")
 	require.Zerof(t, code, "add failed: %s", stderr)
 	require.Contains(t, out, "added source snap")
 

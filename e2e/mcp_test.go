@@ -13,6 +13,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	iqfile "github.com/zsltg/iq/drivers/file"
 )
 
 // tappedPipe wraps the server's stdout so the test can both feed it to the MCP
@@ -87,7 +89,7 @@ func TestMCPStdioSession(t *testing.T) {
 	require.NoError(t, os.WriteFile(data,
 		[]byte(`{"key":"alpha","value":"hello-iq"}`+"\n"+`{"key":"beta","value":"world-iq"}`+"\n"), 0o600))
 	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
-	mustRun(t, env, "add", "file://"+data, "-n", "snap")
+	mustRun(t, env, "add", iqfile.URL(data), "-n", "snap")
 
 	cs, tap, stderr := startMCP(t, env, "--timeout", "30s")
 
@@ -157,7 +159,7 @@ func TestMCPStdioAllowRegistersWriteTools(t *testing.T) {
 	data := filepath.Join(dir, "data.jsonl")
 	require.NoError(t, os.WriteFile(data, []byte(`{"key":"alpha","value":"hello-iq"}`+"\n"), 0o600))
 	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
-	mustRun(t, env, "add", "file://"+data, "-n", "snap")
+	mustRun(t, env, "add", iqfile.URL(data), "-n", "snap")
 
 	t.Run("writes and destructive register their tools", func(t *testing.T) {
 		cs, _, _ := startMCP(t, env, "--allow", "writes", "--allow", "destructive")

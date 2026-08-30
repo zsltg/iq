@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	iqfile "github.com/zsltg/iq/drivers/file"
 )
 
 // e2eRedisDB is the logical Redis database the live e2e round-trip owns. The reserved
@@ -77,7 +79,7 @@ func TestLiveRedisRoundTrip(t *testing.T) {
 	if _, stderr, code := run(t, env, "add", redisURL, "-n", "rlive"); code != 0 {
 		t.Fatalf("add rlive failed: %s", stderr)
 	}
-	if _, stderr, code := run(t, env, "add", "file://"+dump, "-n", "rseed"); code != 0 {
+	if _, stderr, code := run(t, env, "add", iqfile.URL(dump), "-n", "rseed"); code != 0 {
 		t.Fatalf("add rseed failed: %s", stderr)
 	}
 	// Start from an empty reserved DB so the counts below are deterministic.

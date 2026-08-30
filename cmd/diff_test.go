@@ -16,6 +16,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
+	iqfile "github.com/zsltg/iq/drivers/file"
+
 	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/diff"
 	"github.com/zsltg/iq/internal/query"
@@ -492,7 +494,7 @@ func TestDiffSchemaCrossDriverMongoIntegration(t *testing.T) {
 	require.NoError(t, os.WriteFile(dump, []byte(`{"key":"1","value":{"name":"a","age":30}}`+"\n"), 0o600))
 
 	c := newSeed()
-	require.NoError(t, c.Add("f", "file://"+dump))
+	require.NoError(t, c.Add("f", iqfile.URL(dump)))
 	require.NoError(t, c.Add("m", base+"?collection=sc"))
 	seedConfig(t, c)
 
@@ -820,7 +822,7 @@ func fileSource(t *testing.T, line string) string {
 	t.Helper()
 	dump := filepath.Join(t.TempDir(), "d.jsonl")
 	require.NoError(t, os.WriteFile(dump, []byte(line+"\n"), 0o600))
-	return "file://" + dump
+	return iqfile.URL(dump)
 }
 
 func TestDiffPatchSingleLayer(t *testing.T) {

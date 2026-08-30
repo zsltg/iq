@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
+	iqfile "github.com/zsltg/iq/drivers/file"
+
 	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/query"
 )
@@ -23,7 +25,7 @@ func seedFileSource(t *testing.T, jsonl string) {
 	path := filepath.Join(t.TempDir(), "dump.jsonl")
 	require.NoError(t, os.WriteFile(path, []byte(jsonl), 0o600))
 	c := newSeed()
-	require.NoError(t, c.Add("snap", "file://"+path))
+	require.NoError(t, c.Add("snap", iqfile.URL(path)))
 	seedConfig(t, c)
 }
 
@@ -91,7 +93,7 @@ func TestTypedJSONDumpReimports(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dump.json")
 	require.NoError(t, os.WriteFile(path, []byte(dump), 0o600))
 	c := newSeed()
-	require.NoError(t, c.Add("back", "file://"+path))
+	require.NoError(t, c.Add("back", iqfile.URL(path)))
 	seedConfig(t, c)
 
 	root2, _ := newRootCmd()

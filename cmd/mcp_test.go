@@ -20,6 +20,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
+	iqfile "github.com/zsltg/iq/drivers/file"
+
 	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/query"
 
@@ -43,7 +45,7 @@ func seedMCP(t *testing.T) string {
 	data := filepath.Join(dir, "data.jsonl")
 	require.NoError(t, os.WriteFile(data, []byte(mcpDump), 0o600))
 	c := newSeed()
-	require.NoError(t, c.Add("snap", "file://"+data))
+	require.NoError(t, c.Add("snap", iqfile.URL(data)))
 	require.NoError(t, c.SetActive("snap"))
 	t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
 	require.NoError(t, c.Save())
@@ -652,7 +654,7 @@ func TestMCPDiffComparesSources(t *testing.T) {
 	), 0o600))
 	cf, err := iqconfig.Load()
 	require.NoError(t, err)
-	require.NoError(t, cf.Add("other", "file://"+other))
+	require.NoError(t, cf.Add("other", iqfile.URL(other)))
 	require.NoError(t, cf.Save())
 
 	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
@@ -1595,7 +1597,7 @@ func TestMCPPingNamesTheSource(t *testing.T) {
 	data := seedMCP(t)
 	cf, err := iqconfig.Load()
 	require.NoError(t, err)
-	require.NoError(t, cf.Add("other", "file://"+data))
+	require.NoError(t, cf.Add("other", iqfile.URL(data)))
 	require.NoError(t, cf.Save())
 	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
 
@@ -1668,7 +1670,7 @@ func TestMCPProgressAccumulatesAcrossPages(t *testing.T) {
 	require.NoError(t, os.WriteFile(data, []byte(b.String()), 0o600))
 	cf, err := iqconfig.Load()
 	require.NoError(t, err)
-	require.NoError(t, cf.Add("big", "file://"+data))
+	require.NoError(t, cf.Add("big", iqfile.URL(data)))
 	require.NoError(t, cf.Save())
 
 	got := make(chan float64, 64)

@@ -19,6 +19,8 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 
 	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
@@ -107,6 +109,23 @@ func OpenReader(data []byte, format Format, dec numfmt.DecimalMode) (*Store, err
 	return &Store{data: data, format: format, dec: dec}, nil
 }
 
+// URL returns the file:// URL for a filesystem path, the inverse of DumpPath:
+// an absolute Unix path becomes file:///abs/path, a Windows drive path the RFC
+// 8089 form file:///C:/dir/file (slash-separated, percent-escaped), which
+// parseFileURL folds back to the native path.
+func URL(path string) string {
+	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	if isDrivePath(u.Path) {
+		u.Path = "/" + u.Path
+	}
+	return u.String()
+}
+
+// isDrivePath reports whether p starts with a Windows drive letter and colon.
+func isDrivePath(p string) bool {
+	return len(p) >= 2 && p[1] == ':' && ('a' <= p[0]|0x20 && p[0]|0x20 <= 'z')
+}
+
 // DumpPath returns the filesystem path a file:// URL refers to — the same path
 // Open resolves and the decode cache records in its header — so a caller can map
 // a saved file source to its cache entry (iq cache clear @src).
@@ -151,6 +170,11 @@ func parseFileURL(raw string) (path string, format Format, hints Hints, err erro
 	}
 	if path == "" {
 		return "", FormatUnknown, Hints{}, errors.New("file url has no path")
+	}
+	if runtime.GOOS == "windows" && len(path) > 1 && path[0] == '/' && isDrivePath(path[1:]) {
+		// file:///C:/dir/file: the leading slash separates the empty host from
+		// the drive; the native path starts at the drive letter.
+		path = filepath.FromSlash(path[1:])
 	}
 	q := u.Query()
 	if f := q.Get("format"); f != "" {

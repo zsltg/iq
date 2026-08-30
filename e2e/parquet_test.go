@@ -13,6 +13,8 @@ import (
 	"github.com/apache/arrow-go/v18/parquet"
 	"github.com/apache/arrow-go/v18/parquet/pqarrow"
 	"github.com/stretchr/testify/require"
+
+	iqfile "github.com/zsltg/iq/drivers/file"
 )
 
 // TestParquetExportRoundTrip drives the built binary black-box: it exports a
@@ -27,7 +29,7 @@ func TestParquetExportRoundTrip(t *testing.T) {
 			`{"key":"2","value":{"name":"bob","age":25}}`+"\n"), 0o600))
 	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
 
-	_, stderr, code := run(t, env, "add", "file://"+data, "-n", "snap")
+	_, stderr, code := run(t, env, "add", iqfile.URL(data), "-n", "snap")
 	require.Zerof(t, code, "add failed: %s", stderr)
 
 	out, stderr, code := run(t, env, "--src", "snap", ".[]", "--format", "parquet")

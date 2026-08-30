@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	iqfile "github.com/zsltg/iq/drivers/file"
 	"github.com/zsltg/iq/internal/query"
 )
 
@@ -30,7 +31,7 @@ func TestSchemaFileSource(t *testing.T) {
 {"key":"2","value":{"name":"bob","age":25}}
 `)
 	c := newSeed()
-	require.NoError(t, c.Add("snap", "file://"+path))
+	require.NoError(t, c.Add("snap", iqfile.URL(path)))
 	seedConfig(t, c)
 
 	cfg := &config{timeout: 5 * time.Second}
@@ -61,7 +62,7 @@ func TestSchemaFilterScopesTheShape(t *testing.T) {
 {"key":"2","value":{"kind":"archived","legacy":true}}
 `)
 	c := newSeed()
-	require.NoError(t, c.Add("snap", "file://"+path))
+	require.NoError(t, c.Add("snap", iqfile.URL(path)))
 	seedConfig(t, c)
 
 	props := func(t *testing.T, args ...string) (map[string]any, []any) {
@@ -102,7 +103,7 @@ func TestSchemaFilterScopesTheShape(t *testing.T) {
 func TestSchemaRejectsEmptySpecFilter(t *testing.T) {
 	path := writeJSONL(t, `{"key":"1","value":{"a":1}}`+"\n")
 	c := newSeed()
-	require.NoError(t, c.Add("snap", "file://"+path))
+	require.NoError(t, c.Add("snap", iqfile.URL(path)))
 	seedConfig(t, c)
 
 	_, err := runCmd(t, newSchemaCmd(&config{timeout: 5 * time.Second}), "snap=")
@@ -119,7 +120,7 @@ func TestSchemaSampleCap(t *testing.T) {
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	st, err := openStore(ctx, &config{url: "file://" + path})
+	st, err := openStore(ctx, &config{url: iqfile.URL(path)})
 	require.NoError(t, err)
 	defer func() { _ = st.Close() }()
 
@@ -155,7 +156,7 @@ func TestSchemaSampleCapFiltered(t *testing.T) {
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	st, err := openStore(ctx, &config{url: "file://" + path})
+	st, err := openStore(ctx, &config{url: iqfile.URL(path)})
 	require.NoError(t, err)
 	defer func() { _ = st.Close() }()
 
@@ -195,7 +196,7 @@ func TestSchemaSampleFilteredPropagatesError(t *testing.T) {
 	path := writeJSONL(t, `{"key":"1","value":{"a":1}}`+"\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	st, err := openStore(ctx, &config{url: "file://" + path})
+	st, err := openStore(ctx, &config{url: iqfile.URL(path)})
 	require.NoError(t, err)
 	defer func() { _ = st.Close() }()
 
@@ -259,7 +260,7 @@ func TestSchemaODCSOutput(t *testing.T) {
 {"key":"2","value":{"name":"bob","age":25}}
 `)
 	c := newSeed()
-	require.NoError(t, c.Add("snap", "file://"+path))
+	require.NoError(t, c.Add("snap", iqfile.URL(path)))
 	seedConfig(t, c)
 
 	cfg := &config{timeout: 5 * time.Second}
@@ -301,7 +302,7 @@ func TestSchemaODCSAlwaysYAML(t *testing.T) {
 	path := writeJSONL(t, `{"key":"1","value":{"name":"alice"}}
 `)
 	c := newSeed()
-	require.NoError(t, c.Add("snap", "file://"+path))
+	require.NoError(t, c.Add("snap", iqfile.URL(path)))
 	seedConfig(t, c)
 
 	cfg := &config{timeout: 5 * time.Second}
@@ -317,7 +318,7 @@ func TestSchemaYAMLOutput(t *testing.T) {
 	path := writeJSONL(t, `{"key":"1","value":{"name":"alice"}}
 `)
 	c := newSeed()
-	require.NoError(t, c.Add("snap", "file://"+path))
+	require.NoError(t, c.Add("snap", iqfile.URL(path)))
 	seedConfig(t, c)
 
 	cfg := &config{timeout: 5 * time.Second}

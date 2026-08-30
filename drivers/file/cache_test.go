@@ -91,7 +91,7 @@ func buildBigRDB(t *testing.T, n int) []byte {
 func TestCacheIndexedGet(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "big.rdb")
 	require.NoError(t, os.WriteFile(path, buildBigRDB(t, bigCount), 0o600))
-	url := "file://" + path
+	url := URL(path)
 	dir := t.TempDir()
 
 	warm, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
@@ -115,7 +115,7 @@ func TestCacheIndexedGet(t *testing.T) {
 func TestCacheGetMatchesStreamedGet(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "big.rdb")
 	require.NoError(t, os.WriteFile(path, buildBigRDB(t, bigCount), 0o600))
-	url := "file://" + path
+	url := URL(path)
 	dir := t.TempDir()
 	keys := []string{"k7", "k599", "nope"}
 
@@ -143,7 +143,7 @@ func TestCacheGetMatchesStreamedGet(t *testing.T) {
 func TestCacheFlatModeFallsBack(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "big.rdb")
 	require.NoError(t, os.WriteFile(path, buildBigRDB(t, bigCount), 0o600))
-	url := "file://" + path
+	url := URL(path)
 	dir := t.TempDir()
 
 	warm, err := Open(url, numfmt.DecimalAuto, flatCfg(dir))
@@ -168,7 +168,7 @@ func TestCacheFlatModeFallsBack(t *testing.T) {
 func TestCacheGetSkipsNonCandidatePages(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "big.rdb")
 	require.NoError(t, os.WriteFile(path, buildBigRDB(t, bigCount), 0o600))
-	url := "file://" + path
+	url := URL(path)
 	dir := t.TempDir()
 
 	warm, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
@@ -261,7 +261,7 @@ func TestCacheDifferential(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), tt.file)
 			require.NoError(t, os.WriteFile(path, tt.content, 0o600))
-			url := "file://" + path
+			url := URL(path)
 			if tt.q != "" {
 				url += "?" + tt.q
 			}
@@ -295,7 +295,7 @@ func TestCacheServedFromCacheFile(t *testing.T) {
 	require.NoError(t, err)
 	fi, err := os.Stat(path)
 	require.NoError(t, err)
-	url := "file://" + path
+	url := URL(path)
 	dir := t.TempDir()
 
 	w, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
@@ -319,7 +319,7 @@ func TestCacheServedFromCacheFile(t *testing.T) {
 func TestCacheGetDoesNotPopulate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "d.rdb")
 	writeRDBWithString(t, path, "s", []byte("hello"))
-	url := "file://" + path
+	url := URL(path)
 	dir := t.TempDir()
 
 	st, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
@@ -344,7 +344,7 @@ func TestCacheGetDoesNotPopulate(t *testing.T) {
 func TestCacheWarmGet(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "d.rdb")
 	writeRDBWithString(t, path, "s", []byte("hello"))
-	url := "file://" + path
+	url := URL(path)
 	dir := t.TempDir()
 
 	warm, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
@@ -374,7 +374,7 @@ func TestCacheWarmGet(t *testing.T) {
 func TestCacheInvalidatesOnChange(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "d.rdb")
 	writeRDBWithString(t, path, "s", []byte("first"))
-	url := "file://" + path
+	url := URL(path)
 	dir := t.TempDir()
 
 	w, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
@@ -396,7 +396,7 @@ func TestCacheInvalidatesOnChange(t *testing.T) {
 func TestCacheCorruptFallsBack(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "d.rdb")
 	writeRDBWithString(t, path, "s", []byte("hello"))
-	url := "file://" + path
+	url := URL(path)
 	dir := t.TempDir()
 
 	st, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
@@ -454,7 +454,7 @@ func TestListAndRemoveCache(t *testing.T) {
 	writeRDBWithString(t, p1, "s", []byte("one"))
 	writeRDBWithString(t, p2, "s", []byte("two"))
 	for _, p := range []string{p1, p2} {
-		st, err := Open("file://"+p, numfmt.DecimalAuto, cacheCfg(dir))
+		st, err := Open(URL(p), numfmt.DecimalAuto, cacheCfg(dir))
 		require.NoError(t, err)
 		_ = collect(t, st)
 	}
@@ -488,12 +488,12 @@ func TestListCacheSameDumpSorted(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(t.TempDir(), "d.rdb")
 	writeRDBWithString(t, path, "s", []byte("first"))
-	st1, err := Open("file://"+path, numfmt.DecimalAuto, cacheCfg(dir))
+	st1, err := Open(URL(path), numfmt.DecimalAuto, cacheCfg(dir))
 	require.NoError(t, err)
 	_ = collect(t, st1)
 
 	writeRDBWithString(t, path, "s", []byte("second-and-longer"))
-	st2, err := Open("file://"+path, numfmt.DecimalAuto, cacheCfg(dir))
+	st2, err := Open(URL(path), numfmt.DecimalAuto, cacheCfg(dir))
 	require.NoError(t, err)
 	_ = collect(t, st2)
 
@@ -525,7 +525,7 @@ func TestCachePagesMatch(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "big.json")
 	require.NoError(t, os.WriteFile(path, []byte(b.String()), 0o600))
-	url := "file://" + path + "?format=mongoexport"
+	url := URL(path) + "?format=mongoexport"
 	dir := t.TempDir()
 
 	warm, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))

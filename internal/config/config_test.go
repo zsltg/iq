@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -93,7 +94,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	if runtime.GOOS != "windows" { // Windows keeps no Unix mode bits to assert on.
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
 
 	leftovers, err := filepath.Glob(filepath.Join(filepath.Dir(path), "iq-*.toml"))
 	require.NoError(t, err)

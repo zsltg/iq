@@ -13,6 +13,8 @@ import (
 	"github.com/itchyny/gojq"
 	"github.com/stretchr/testify/require"
 
+	iqfile "github.com/zsltg/iq/drivers/file"
+
 	"github.com/zsltg/iq/internal/selector"
 )
 
@@ -213,7 +215,7 @@ func TestBuildCombinePlanShowsTheWrite(t *testing.T) {
 		require.NoError(t, os.WriteFile(dump, []byte("{\"key\":\"k\",\"value\":1}\n"), 0o600))
 		c := newSeed()
 		require.NoError(t, c.Add("joined", "redis://h:6379/1"))
-		require.NoError(t, c.Add("dump", "file://"+dump))
+		require.NoError(t, c.Add("dump", iqfile.URL(dump)))
 		seedConfig(t, c)
 
 		_, err := buildCombinePlan(&config{insert: "dump"}, stages, "$orders[]", false)
