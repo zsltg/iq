@@ -50,6 +50,10 @@ func runTests(m *testing.M) int {
 			"discovery.type":         "single-node",
 			"xpack.security.enabled": "false",
 			"ES_JAVA_OPTS":           "-Xms512m -Xmx512m",
+			// A CI runner's disk sits past the flood-stage watermark after a few
+			// image pulls, which leaves new shards unassigned and every write
+			// waiting; the container is ephemeral, so the decider is off.
+			"cluster.routing.allocation.disk.threshold_enabled": "false",
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "start elasticsearch container: %v\n", err)
@@ -67,6 +71,8 @@ func runTests(m *testing.M) int {
 			"discovery.type":          "single-node",
 			"DISABLE_SECURITY_PLUGIN": "true",
 			"OPENSEARCH_JAVA_OPTS":    "-Xms512m -Xmx512m",
+			// Same as above; past the flood stage OpenSearch blocks index creation.
+			"cluster.routing.allocation.disk.threshold_enabled": "false",
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "start opensearch container: %v\n", err)
