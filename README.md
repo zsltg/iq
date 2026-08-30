@@ -98,7 +98,7 @@ cd iq && make build
 ```
 
 <details>
-<summary><h3>Shell completions</h3></summary>
+<summary><strong>Shell completions</strong></summary>
 
 The `.deb`, `.rpm`, `.apk` and `.pkg.tar.zst` packages install bash, zsh and fish completions for you. For a
 brew, scoop, go-install or source build, `iq completion <shell>` prints a script to install by
@@ -137,7 +137,7 @@ would mean connecting.
 </details>
 
 <details>
-<summary><h3>Man page</h3></summary>
+<summary><strong>Man page</strong></summary>
 
 The packages also install an `iq(1)` manual page, so `man iq` works after a package install. For
 a non-package install, pipe it into your man path:
@@ -482,12 +482,3 @@ records through a pipeline, it is not a query surface you type at a shell.
   live-previews a filter as you type, handy for building `iq` filters, and
   [ijq](https://github.com/gpanders/ijq), interactive jq with a side-by-side input and output
   view.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the build, test, quality-gate, and release
-workflow.
-
-## License
-
-[MIT](LICENSE).
