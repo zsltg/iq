@@ -454,6 +454,12 @@ A scan emits per-page progress to a stderr spinner (CLI only, off unless
 attached to a terminal) and an unfiltered scan can fetch a cheap up-front total
 estimate (where the backend metadata makes it possible).
 
+A bounded filter runs client-side over just the named keys, so its cost is `O(keys requested)`; a
+streamable scan runs in `O(page)` memory. The jq semantics are identical for any future backend
+behind `KVStore`. jq is provided by
+[gojq](https://github.com/itchyny/gojq) (pure Go, no cgo), which keeps `iq` a single static
+binary and exposes the AST the key selector walks.
+
 ### Write routes
 
 Writes ride the query command, there is no separate copy tool. Items arrive
@@ -474,12 +480,6 @@ graph TD
   PUT --> BW["backend adapter:<br/>type-aware native writes"]
   LF["iq data clear / drop / delete (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop / Deleter.Delete (capability-gated)"]
 ```
-
-A bounded filter runs client-side over just the named keys, so its cost is `O(keys requested)`; a
-streamable scan runs in `O(page)` memory. The jq semantics are identical for any future backend
-behind `KVStore`. jq is provided by
-[gojq](https://github.com/itchyny/gojq) (pure Go, no cgo), which keeps `iq` a single static
-binary and exposes the AST the key selector walks.
 
 ## Comparison
 
