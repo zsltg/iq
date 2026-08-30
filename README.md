@@ -198,9 +198,6 @@ iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
 # Add a collection named "books" from a MongoDB source.
 iq add 'mongodb://localhost:27017/iq?collection=books'
 
-# Check the list of sources you added.
-iq ls
-
 # Make a source active.
 iq src books
 
@@ -223,38 +220,33 @@ otherwise expand or split (`[ ]`, whitespace, `|`, `*`, `$`).
 The commands below are a starter set; every command and flag is documented in full on the
 [documentation site](https://zsltg.github.io/iq/).
 
-### Sources
+### Move data
 
-| Command | Description |
-| --- | --- |
-| `iq add -n cache redis://localhost:6379/0` | Register a source |
-| `iq ls` | List sources (`-v` for detail) |
-| `iq src cache` | Set the active source |
-| `iq add -n snap file:///backups/prod.rdb` | Register a dump file as a read-only source |
+```sh
+# Copy one source into another, across drivers.
+iq --src books --insert books2
 
-### Data
+# Dump a source to a re-importable typed file, and restore it.
+iq --src books --typed -o books.jsonl
+iq add -n snap file:///backups/books.jsonl
+iq --src snap --insert books
 
-| Command | Description |
-| --- | --- |
-| `iq --src books --insert books2` | Copy one source into another (cross-driver) |
-| `iq --src cache --typed -o dump.jsonl` | Dump a source to a re-importable typed file |
-| `iq --src snap --insert cache` | Restore a dump into a live source |
-| `iq data clear books` | Empty a container (`iq data drop` removes it) |
-| `iq schema prod.orders` | Infer a JSON Schema from a sampled source |
-| `iq schema 'prod.orders=.[] \| select(.active)'` | Infer the shape of part of a source |
-| `iq diff prod staging` | Compare two sources by data, stats, or inferred schema |
-| `iq diff prod staging --filter '.[] \| select(.status == "new")'` | Compare only part of each keyspace |
-| `iq combine 'users=.[]' 'orders=.[]' --with '$users + $orders'` | Query several sources and join their results |
-| `iq combine … --insert joined --key '.id \| tostring'` | Write the combined results into a destination |
-| `iq --src prod '.[]' --format parquet -o out.parquet` | Export results as Apache Parquet |
+# Export a query as Apache Parquet.
+iq --src books '.[]' --format parquet -o books.parquet
+```
 
-### Config
+### Compare and describe
 
-| Command | Description |
-| --- | --- |
-| `iq config set format yaml` | Persist a default flag value |
-| `iq config ls -v` | List every persistable option |
-| `iq --config ./iq.toml ls` | Use an alternate config file |
+```sh
+# Infer a JSON Schema from a sampled source.
+iq schema books
+
+# Compare two sources by data, stats, or inferred schema.
+iq diff prod staging
+
+# Query several sources and join their results.
+iq combine 'users=.[]' 'orders=.[]' --with '$users + $orders'
+```
 
 ## Backups and dumps
 
