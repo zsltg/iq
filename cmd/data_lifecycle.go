@@ -194,28 +194,37 @@ func dedupeKeys(raw []string) ([]string, error) {
 	return keys, nil
 }
 
-// applyDataDelete opens the target, checks the Deleter capability, then reports
-// (--dry-run) or performs the delete, printing an honest DeleteStat.
+// applyDataDelete performs the delete and prints its honest outcome line.
 func applyDataDelete(cmd *cobra.Command, ctx context.Context, t endpoint, keys []string, dry bool) error {
+	line, err := deleteKeys(ctx, t, keys, dry)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), line)
+	return nil
+}
+
+// deleteKeys opens the target, checks the Deleter capability, then reports
+// (dry) or performs the delete, returning the outcome line. It is the one
+// implementation both `iq data delete` and the MCP iq_data_delete tool drive.
+func deleteKeys(ctx context.Context, t endpoint, keys []string, dry bool) (string, error) {
 	st, err := openStore(ctx, &config{url: t.url, address: t.address})
 	if err != nil {
-		return redactErr(err, t.url)
+		return "", redactErr(err, t.url)
 	}
 	defer func() { _ = st.Close() }()
 
 	if !deleteOp.supported(st) {
-		return fmt.Errorf("%s: backend %s does not support delete", t.label(), t.driver)
+		return "", fmt.Errorf("%s: backend %s does not support delete", t.label(), t.driver)
 	}
 	if dry {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "would delete %d key(s) from %s\n", len(keys), t.label())
-		return nil
+		return fmt.Sprintf("would delete %d key(s) from %s", len(keys), t.label()), nil
 	}
 	stat, err := st.(query.Deleter).Delete(ctx, keys)
 	if err != nil {
-		return redactErr(err, t.url)
+		return "", redactErr(err, t.url)
 	}
-	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "deleted %d key(s), %d already absent\n", stat.Deleted, stat.Missing)
-	return nil
+	return fmt.Sprintf("deleted %d key(s), %d already absent", stat.Deleted, stat.Missing), nil
 }
 
 // runLifecycle applies op to each target: printing the plan (--explain), reporting
@@ -256,30 +265,41 @@ func runLifecycle(cmd *cobra.Command, cfg *config, df *dataFlags, force bool, ar
 	return nil
 }
 
-// applyLifecycle opens the target, checks the capability, then reports (--dry-run)
-// or performs the op after confirmation.
+// applyLifecycle performs the op on one target and prints its outcome line.
 func applyLifecycle(cmd *cobra.Command, ctx context.Context, op lifecycleOp, t endpoint, dry, force bool) error {
+	confirm := func(action string) error { return confirmDestruction(cmd, action, force) }
+	line, err := applyLifecycleOp(ctx, op, t, dry, confirm)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), line)
+	return nil
+}
+
+// applyLifecycleOp opens the target, checks the capability, then reports (dry) or
+// performs the op after confirm returns nil, returning the outcome line. It is
+// the one implementation both `iq data clear`/`drop` and the MCP iq_data_clear /
+// iq_data_drop tools drive; confirm is never called on a dry run.
+func applyLifecycleOp(ctx context.Context, op lifecycleOp, t endpoint, dry bool, confirm func(action string) error) (string, error) {
 	st, err := openStore(ctx, &config{url: t.url, address: t.address})
 	if err != nil {
-		return redactErr(err, t.url)
+		return "", redactErr(err, t.url)
 	}
 	defer func() { _ = st.Close() }()
 
 	if !op.supported(st) {
-		return fmt.Errorf("%s: backend %s does not support %s", t.label(), t.driver, op.name)
+		return "", fmt.Errorf("%s: backend %s does not support %s", t.label(), t.driver, op.name)
 	}
 	if dry {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "would %s %s%s\n", op.name, t.label(), affectedSuffix(ctx, st))
-		return nil
+		return fmt.Sprintf("would %s %s%s", op.name, t.label(), affectedSuffix(ctx, st)), nil
 	}
-	if err := confirmDestruction(cmd, fmt.Sprintf("%s %s", op.name, t.label()), force); err != nil {
-		return err
+	if err := confirm(fmt.Sprintf("%s %s", op.name, t.label())); err != nil {
+		return "", err
 	}
 	if err := op.run(ctx, st); err != nil {
-		return redactErr(err, t.url)
+		return "", redactErr(err, t.url)
 	}
-	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%sed %s\n", op.name, t.label())
-	return nil
+	return fmt.Sprintf("%sed %s", op.name, t.label()), nil
 }
 
 // affectedSuffix appends an approximate item count to a dry-run line when the store

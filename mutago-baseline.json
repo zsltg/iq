@@ -360,6 +360,24 @@
    "file": "drivers/file/bloom.go",
    "mutator": "numbers/decrementer",
    "line": 24
+  },
+  {
+   "id": "fbfaeb5c66700fc63114587d8be26a00",
+   "file": "cmd/move.go",
+   "mutator": "branch/if",
+   "line": 172
+  },
+  {
+   "id": "cc46f0c68e46b1b7ced227270766bb4e",
+   "file": "cmd/move.go",
+   "mutator": "composite/field-clear",
+   "line": 189
+  },
+  {
+   "id": "5617b58cc6aae489cd730271088f1d40",
+   "file": "cmd/move.go",
+   "mutator": "statement/return",
+   "line": 172
   }
  ]
 }

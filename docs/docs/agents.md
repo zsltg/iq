@@ -51,6 +51,116 @@ curl -fsSL https://raw.githubusercontent.com/zsltg/iq/main/skills/iq/SKILL.md \
   -o ~/.claude/skills/iq/SKILL.md
 ```
 
+## MCP server
+
+`iq mcp` serves the same query core as a
+[Model Context Protocol](https://modelcontextprotocol.io) server, speaking
+JSON-RPC over stdin and stdout. It is the CLI's operations as tools, over the
+same saved sources and the same engine, so an agent that cannot run shell
+commands still gets the whole surface. It targets the 2026-07-28 specification
+revision and negotiates back to 2025-11-25 for an older client.
+
+### Client configuration
+
+The server is the binary itself, so a client only needs the command. The
+inherited `--timeout` defaults to 5 seconds, which is short for a scan, so pass
+a longer one:
+
+```sh
+claude mcp add iq -- iq mcp --timeout 30s
+```
+
+```sh
+codex mcp add iq -- iq mcp --timeout 30s
+```
+
+For Cursor and any other client that takes a JSON server block:
+
+```json
+{
+  "command": "iq",
+  "args": ["mcp", "--timeout", "30s"]
+}
+```
+
+The server inherits the saved sources and the keyring of whoever starts it, so
+point an agent at a config holding only the sources it may reach rather than
+your own:
+
+```sh
+iq mcp --config ~/.config/iq/agent.toml --timeout 30s
+```
+
+Register that config's sources with the same `iq add --config
+~/.config/iq/agent.toml ...` you would use anywhere else.
+
+### Safety model
+
+- **Read-only by default.** The write, exec and lifecycle tools exist only
+  behind `--allow`, and a tool that is not allowed is never registered: it is
+  absent from `tools/list` and unknown to the server, so a client cannot call it
+  by name. `--allow writes` adds `iq_insert`, `--allow exec` adds `iq_exec`, and
+  `--allow destructive` adds `iq_data_clear`, `iq_data_drop` and
+  `iq_data_delete` (and permits `iq_insert`'s `replace`). The flag is
+  repeatable.
+- **Every result is bounded.** `--max-items` (200) and `--max-bytes` (256 KiB,
+  roughly 64k tokens) are hard caps; a per-call `max_items` or `max_bytes` may
+  only lower them, never raise them. A capped result comes back with
+  `truncated: true` rather than an error, so the agent knows there was more.
+- **Every call is bounded.** The inherited `--timeout` bounds each call, and a
+  per-call `timeout` may only shorten it.
+- **Confirmations.** A destructive call without `confirm: true` does not
+  proceed. Where the client can ask its user, the server returns an
+  input-required result carrying the question and the client retries the call
+  with the answer; where it cannot, the call comes back refused, naming what to
+  pass. The CLI's `--force` has no counterpart here: a confirmed call is the
+  confirmation.
+- **`iq_explain` first.** It never connects, and it names the route and the
+  pushed-down conjuncts, so a plan can be read before a scan runs.
+- **Errors are redacted.** Every failure is a tool result carrying the CLI's
+  `{"error":{"message","causes"}}` document with every connection URI redacted,
+  so no raw driver error and no stored password reaches a transcript.
+
+### Tools
+
+`readOnly` marks a tool that never modifies anything; `destructive` marks one
+that may. Every tool declares `openWorldHint: false`: the sources are a closed,
+configured set. The annotations are display hints, not the gate, `--allow` is.
+
+| Tool | Allowed by | Annotations | What it does |
+| --- | --- | --- | --- |
+| `iq_sources` | always | readOnly, idempotent | The handles this server may reach, with each URI's password redacted |
+| `iq_ping` | always | readOnly, idempotent | Round-trip one cheap backend command and report the time |
+| `iq_explain` | always | readOnly, idempotent | The access plan for a filter, without connecting |
+| `iq_query` | always | readOnly, idempotent | Run a jq filter; returns `{items, count, truncated}` |
+| `iq_inspect` | always | readOnly, idempotent | A backend's native introspection, optionally narrowed by `only` |
+| `iq_schema` | always | readOnly, idempotent | A draft 2020-12 JSON Schema inferred from a sample |
+| `iq_diff` | always | readOnly, idempotent | Compare two sources by data, stats, or inferred schema |
+| `iq_insert` | `--allow writes` | destructive, idempotent | Copy items into another source; `no_overwrite` defaults to true |
+| `iq_exec` | `--allow exec` | destructive | Forward a command to the backend verbatim |
+| `iq_data_clear` | `--allow destructive` | destructive, idempotent | Empty a container, keeping it |
+| `iq_data_drop` | `--allow destructive` | destructive, idempotent | Remove a container entirely |
+| `iq_data_delete` | `--allow destructive` | destructive, idempotent | Remove named keys, keeping the container |
+
+Every tool returns `structuredContent` against a declared `outputSchema`, plus
+the same JSON in a text block for a client that reads only unstructured content.
+`tools/list` is sorted by name and cacheable for an hour with a private scope,
+since only a restart can change it.
+
+### Limits
+
+- stdio only. There is no HTTP transport, so the server is a child process of
+  its client and reachable by nothing else.
+- The tool set is fixed at process start. Changing `--allow` means restarting
+  the server.
+- The server advertises the `tools` capability alone. Prompts, resources,
+  sampling, roots and protocol-level logging are not implemented; the last three
+  are deprecated as of the 2026-07-28 revision. Diagnostics go to stderr, or to
+  the `--log` file, never to stdout, which carries the protocol and nothing
+  else.
+- A long dump is not a good tool result. Cap it, or run the CLI and read the
+  file.
+
 The whole manual is also served as one file,
 [llms-full.txt](https://zsltg.github.io/iq/llms-full.txt), so an agent can read
 every page of this site in a single fetch.

@@ -15,6 +15,12 @@ it into one value materializes only behind `--unbounded`. Fetched values are
 normalized to JSON and the filter then runs entirely client-side, so its
 semantics are identical for every backend.
 
+The CLI and `iq mcp` are two thin delivery mechanisms over that one core. The
+MCP server exposes the CLI's own operations as tools, resolves the same saved
+sources, and runs the same engine, so it adds no port and changes no
+classification; what it adds is its own bounds, a tool set fixed at startup by
+`--allow`, per-result item and byte caps, and the CLI's redacted error shape.
+
 `iq` is inspired by [sq](https://github.com/neilotoole/sq): much of its command
 surface (the `<source>.<collection>` addressing along with many subcommands and
 flags) deliberately follows sq's to make the tool feel familiar.

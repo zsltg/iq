@@ -477,6 +477,20 @@
       "capabilityType": "CAPABILITY_TYPE_DIRECT"
     },
     {
+      "packageName": "diff",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/diff",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "jqfmt",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/jqfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "READ_SYSTEM_STATE",
       "capability": "CAPABILITY_READ_SYSTEM_STATE",
@@ -491,6 +505,13 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "render",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/render",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "secret",
       "capabilityName": "READ_SYSTEM_STATE",
       "capability": "CAPABILITY_READ_SYSTEM_STATE",
@@ -499,14 +520,14 @@
     },
     {
       "packageName": "main",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "main",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
@@ -533,10 +554,31 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "cassandra",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "couchbase",
       "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
@@ -548,10 +590,24 @@
     },
     {
       "packageName": "dynamodb",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
       "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
       "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "elasticsearch",
@@ -568,8 +624,22 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "file",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "hbase",
       "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "hbase",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/hbase",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
@@ -582,10 +652,31 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "mongo",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "neo4j",
       "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
@@ -597,10 +688,24 @@
     },
     {
       "packageName": "diff",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/diff",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "diff",
       "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/diff",
       "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "jqfmt",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/jqfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "jqfmt",
@@ -611,10 +716,24 @@
     },
     {
       "packageName": "parquetout",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "parquetout",
       "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/parquetout",
       "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "query",
@@ -631,15 +750,22 @@
       "capabilityType": "CAPABILITY_TYPE_DIRECT"
     },
     {
-      "packageName": "secret",
+      "packageName": "render",
       "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/render",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "secret",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/secret",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "secret",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/secret",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
@@ -785,10 +911,108 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "cassandra",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/drivers/cassandra",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchbase",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/drivers/couchbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "couchdb",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/drivers/couchdb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "dynamodb",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/drivers/dynamodb",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "elasticsearch",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/drivers/elasticsearch",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "file",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/drivers/file",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "hbase",
       "capabilityName": "SYSTEM_CALLS",
       "capability": "CAPABILITY_SYSTEM_CALLS",
       "packageDir": "github.com/zsltg/iq/drivers/hbase",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "mongo",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/drivers/mongo",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "neo4j",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/drivers/neo4j",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "redis",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/drivers/redis",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "diff",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/internal/diff",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "jqfmt",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/internal/jqfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "query",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "render",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/internal/render",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
@@ -1443,10 +1667,38 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "diff",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/internal/diff",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "jqfmt",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/internal/jqfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "parquetout",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/internal/parquetout",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "query",
       "capabilityName": "EXEC",
       "capability": "CAPABILITY_EXEC",
       "packageDir": "github.com/zsltg/iq/internal/query",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "render",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/internal/render",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {

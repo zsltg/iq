@@ -134,32 +134,7 @@ func newInspectCmd(cfg *config) *cobra.Command {
 			}
 			defer func() { _ = st.Close() }()
 
-			out := cmd.OutOrStdout()
-			switch driverName(cfg.url) {
-			case "redis":
-				return inspectRedis(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
-			case "cassandra":
-				return inspectCassandra(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
-			case "dynamodb":
-				return inspectDynamo(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
-			case "hbase":
-				return inspectHBase(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
-			case "couchdb":
-				return inspectCouch(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
-			case "couchbase":
-				return inspectCouchbase(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
-			case "neo4j":
-				return inspectNeo4j(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
-			case "elasticsearch", "opensearch":
-				return inspectElastic(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
-			case "file":
-				// inspect reports live server metadata; a dump file has none. Point
-				// the user at the operations that do work on a file source.
-				return errors.New("inspect reports live server metadata, and a file source has none; " +
-					"query it with a jq filter (`iq '.[]' --src <name>`) or compare it with `iq diff`")
-			default:
-				return inspectMongo(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
-			}
+			return dispatchInspect(ctx, cmd.OutOrStdout(), st, cfg, only, jsonOut, yamlOut, list)
 		},
 	}
 	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
@@ -174,6 +149,37 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVar(&cfg.reveal, "reveal", false, "print an inline-stored password verbatim in the location header instead of redacting it")
 	c.Flags().BoolVar(&cfg.expand, "expand", false, "resolve a keyring-backed password and inline it in the location header")
 	return c
+}
+
+// dispatchInspect routes a resolved, opened source to its driver's inspector and
+// writes the rendering to out. It is the one dispatch both `iq inspect` and the
+// MCP iq_inspect tool go through, so a new backend's inspector is wired once.
+func dispatchInspect(ctx context.Context, out io.Writer, st store, cfg *config, only []string, jsonOut, yamlOut, list bool) error {
+	switch driverName(cfg.url) {
+	case "redis":
+		return inspectRedis(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+	case "cassandra":
+		return inspectCassandra(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+	case "dynamodb":
+		return inspectDynamo(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+	case "hbase":
+		return inspectHBase(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+	case "couchdb":
+		return inspectCouch(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+	case "couchbase":
+		return inspectCouchbase(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+	case "neo4j":
+		return inspectNeo4j(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+	case "elasticsearch", "opensearch":
+		return inspectElastic(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+	case "file":
+		// inspect reports live server metadata; a dump file has none. Point the
+		// user at the operations that do work on a file source.
+		return errors.New("inspect reports live server metadata, and a file source has none; " +
+			"query it with a jq filter (`iq '.[]' --src <name>`) or compare it with `iq diff`")
+	default:
+		return inspectMongo(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+	}
 }
 
 // inspectResult pairs a subcommand/section name with its rendered reply, the

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -131,4 +133,29 @@ func TestPingIntegration(t *testing.T) {
 	out, err := runCmd(t, newPingCmd(cfg))
 	require.NoError(t, err)
 	require.Contains(t, out, "ok")
+}
+
+// TestRedactErr proves the URI is masked only when the message carries it, and
+// that an empty URI (a cross-source run resolves none) leaves the error chain
+// untouched instead of flattening it: strings.Contains matches "" everywhere.
+func TestRedactErr(t *testing.T) {
+	sentinel := errors.New("boom")
+	tests := []struct {
+		name      string
+		err       error
+		rawURL    string
+		wantMsg   string
+		keepChain bool
+	}{
+		{"uri in message is masked", fmt.Errorf("dial redis://u:hunter2@h:6379/0: %w", sentinel), "redis://u:hunter2@h:6379/0", "dial redis://u:xxxxx@h:6379/0: boom", false},
+		{"uri absent keeps the error", fmt.Errorf("dial: %w", sentinel), "redis://u:hunter2@h:6379/0", "dial: boom", true},
+		{"empty uri keeps the chain", fmt.Errorf("dial: %w", sentinel), "", "dial: boom", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := redactErr(tc.err, tc.rawURL)
+			require.EqualError(t, got, tc.wantMsg)
+			require.Equal(t, tc.keepChain, errors.Is(got, sentinel))
+		})
+	}
 }

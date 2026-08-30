@@ -24,6 +24,22 @@ func TestInspectFileSourceErrors(t *testing.T) {
 	require.ErrorContains(t, err, "live server metadata")
 }
 
+// TestDispatchInspectForwardsContext proves the dispatch hands the caller's
+// context to the driver's inspector rather than one of its own, so a deadline or
+// a cancellation reaches the backend commands. The default branch (MongoDB) is
+// the one exercised: it issues its diagnostic commands through Store.Query, and
+// the fake records the context each call received.
+func TestDispatchInspectForwardsContext(t *testing.T) {
+	st := &fakeStore{}
+	cfg := &config{url: "mongodb://h/db?collection=books", handle: "shop"}
+	ctx := t.Context()
+
+	var buf bytes.Buffer
+	require.NoError(t, dispatchInspect(ctx, &buf, st, cfg, []string{"dbStats"}, true, false, false))
+	require.Equal(t, ctx, st.gotCtx)
+	require.NotNil(t, st.gotCtx)
+}
+
 // fakeInspectStore is a minimal store for exercising renderInspectResults without
 // a backend: the helper only calls FormatRaw, so the read/write ports are inert.
 type fakeInspectStore struct{}

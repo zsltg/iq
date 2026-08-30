@@ -150,3 +150,14 @@ cmd/move_test.go both assert against. Verified by hand before acceptance — the
 to a file copy passes the whole cmd suite, so the ESCAPED verdict is real and not a flake.
 - 6157a43f092c0968579680e291eba8bf cmd/move.go:230 expression/remove — clears `cfg.jsonl` from anyFormatFlag, but selectTypedFormat already early-returns formatJSONL when no format flag is set, so `--typed --jsonl` reaches formatJSONL either way (through selectFormat originally, through the default under the mutant); the flags are mutually exclusive, so no combination separates the two paths.
 - 3f457cc19b54cb4bf565b520d24a98d3 drivers/file/bloom.go:24 numbers/decrementer — lowers the bit floor in `max(n*bloomBitsPerKey, 8)` to 7; the floor only binds at n=0 and the byte count is `(bits+7)/8`, which is 1 for both 7 and 8, so the allocated filter is identical. The sibling incrementer (floor 9, two bytes at n=0) is killed by TestBloomSizing. Verified by hand: the mutation applied to a file copy passes the whole file-driver suite.
+
+## cmd — insert path equivalents (accepted 2026-08-28, feat/mcp branch)
+Three survivors in applyInsert, the write path `iq --insert` and the MCP iq_insert tool share.
+Two guard an unreachable branch and one is a batching size with no observable result; every
+other mutant on the path is killed by TestApplyInsertRedisIntegration (dry-run replace neither
+asks nor clears, a replace asks then clears, a refused confirmation aborts before clearing,
+insert-only skips, upsert overwrites, the transform shapes the write, the label and the outcome
+line are reported) and TestApplyInsertNeedsADestination.
+- 5617b58cc6aae489cd730271088f1d40 cmd/move.go:172 statement/return — returns nil instead of the "cannot be written to" error when the destination store is not a Putter; drivers/file is the only store without Put, and applyInsert refuses a file destination two statements earlier, before any store is opened, so no destination reaches this branch.
+- fbfaeb5c66700fc63114587d8be26a00 cmd/move.go:172 branch/if — drops the same branch; unreachable for the same reason, and kept as the guard a future read-only driver would need.
+- cc46f0c68e46b1b7ced227270766bb4e cmd/move.go:189 composite/field-clear — clears `PageSize: movePageSize` from the Copier, which then batches 100 records instead of 500; batching changes neither the records written nor the reported counts, and the write is observable only through those.

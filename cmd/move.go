@@ -106,56 +106,92 @@ func stdinRecordSource(r io.Reader, cfg *config) (query.RecordSource, error) {
 	return iqfile.RecordSourceFor(r, format, cfg.decimalMode, iqfile.Hints{})
 }
 
+// insertRequest is the write side of a move, stated without any CLI type so both
+// `iq --insert` and the MCP iq_insert tool drive one implementation: the
+// destination handle, the write mode, whether the destination is emptied first,
+// whether the run only reports, and how a destructive step is confirmed.
+type insertRequest struct {
+	dst     string
+	mode    query.WriteMode
+	replace bool
+	dryRun  bool
+	// confirm gates emptying the destination for replace. It returns nil to
+	// proceed and an error to abort; it is never called on a dry run.
+	confirm func(action string) error
+}
+
 // runInsert copies the source records into the --insert destination through a
 // Putter, honoring the write mode and --replace, and reports the outcome.
 func runInsert(cmd *cobra.Command, ctx context.Context, cfg *config, recSrc query.RecordSource, transform func(query.Record) ([]query.Record, error)) error {
-	cf, err := iqconfig.Load()
+	label, stat, err := applyInsert(ctx, insertRequestFor(cmd, cfg), recSrc, transform)
 	if err != nil {
 		return err
 	}
-	dst, err := resolveEndpoint(cf, cfg.insert, true)
-	if err != nil {
-		return err
-	}
-	if dst.isFile {
-		return errors.New("--insert must name a saved source; to write a file dump use --typed with -o")
-	}
+	reportMove(cmd, label, stat, cfg.dryRun)
+	return nil
+}
+
+// insertRequestFor states the CLI's --insert flags as an insertRequest: the
+// destination, the write mode --no-overwrite selects, --replace, --dry-run, and
+// the interactive confirmation --force short-circuits.
+func insertRequestFor(cmd *cobra.Command, cfg *config) insertRequest {
 	mode := query.Upsert
 	if cfg.noOverwrite {
 		mode = query.InsertOnly
 	}
+	return insertRequest{
+		dst: cfg.insert, mode: mode, replace: cfg.replace, dryRun: cfg.dryRun,
+		confirm: func(action string) error { return confirmDestruction(cmd, action, cfg.force) },
+	}
+}
+
+// applyInsert resolves the destination, opens it, empties it when replace is set
+// (after confirmation), and copies the records through the Putter. It returns the
+// destination label for the outcome line and the write statistics. Every error
+// crossing out of it has the connection URI redacted.
+func applyInsert(ctx context.Context, req insertRequest, recSrc query.RecordSource, transform func(query.Record) ([]query.Record, error)) (string, query.WriteStat, error) {
+	cf, err := iqconfig.Load()
+	if err != nil {
+		return "", query.WriteStat{}, err
+	}
+	dst, err := resolveEndpoint(cf, req.dst, true)
+	if err != nil {
+		return "", query.WriteStat{}, err
+	}
+	if dst.isFile {
+		return "", query.WriteStat{}, errors.New("--insert must name a saved source; to write a file dump use --typed with -o")
+	}
 
 	st, err := openStore(ctx, &config{url: dst.url, address: dst.address})
 	if err != nil {
-		return redactErr(err, dst.url)
+		return "", query.WriteStat{}, redactErr(err, dst.url)
 	}
 	defer func() { _ = st.Close() }()
 	putter, ok := st.(query.Putter)
 	if !ok {
-		return fmt.Errorf("destination %s (%s) cannot be written to", dst.handle, dst.driver)
+		return "", query.WriteStat{}, fmt.Errorf("destination %s (%s) cannot be written to", dst.handle, dst.driver)
 	}
-	if cfg.replace {
+	if req.replace {
 		clearer, ok := st.(query.Clearer)
 		if !ok {
-			return fmt.Errorf("--replace: destination %s (%s) cannot be cleared", dst.handle, dst.driver)
+			return "", query.WriteStat{}, fmt.Errorf("--replace: destination %s (%s) cannot be cleared", dst.handle, dst.driver)
 		}
-		if !cfg.dryRun {
-			if err := confirmDestruction(cmd, fmt.Sprintf("clear %s before writing", dst.label()), cfg.force); err != nil {
-				return err
+		if !req.dryRun {
+			if err := req.confirm(fmt.Sprintf("clear %s before writing", dst.label())); err != nil {
+				return "", query.WriteStat{}, err
 			}
 			if err := clearer.Clear(ctx); err != nil {
-				return redactErr(err, dst.url)
+				return "", query.WriteStat{}, redactErr(err, dst.url)
 			}
 		}
 	}
 
-	copier := query.Copier{Dst: putter, Mode: mode, PageSize: movePageSize, Transform: transform}
-	stat, err := copier.Copy(ctx, recSrc, cfg.dryRun)
+	copier := query.Copier{Dst: putter, Mode: req.mode, PageSize: movePageSize, Transform: transform}
+	stat, err := copier.Copy(ctx, recSrc, req.dryRun)
 	if err != nil {
-		return redactErr(err, dst.url)
+		return "", query.WriteStat{}, redactErr(err, dst.url)
 	}
-	reportMove(cmd, dst.label(), stat, cfg.dryRun)
-	return nil
+	return dst.label(), stat, nil
 }
 
 // runTypedDump streams the source records to stdout/-o as {key,type,value} records

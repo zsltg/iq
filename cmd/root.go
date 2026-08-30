@@ -338,6 +338,7 @@ func newRootCmd() (*cobra.Command, *config) {
 		newDiffCmd(cfg),
 		newSchemaCmd(cfg),
 		newCombineCmd(cfg),
+		newMCPCmd(cfg),
 		newDriverCmd(cfg),
 		newVersionCmd(),
 		newManCmd(),

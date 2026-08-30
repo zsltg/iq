@@ -97,3 +97,41 @@ analyzed *alone* with the same capslock, `internal/diff` reports `{REFLECT, UNAN
 UNSAFE_POINTER}` and `internal/jqfmt` `{FILES, REFLECT, UNANALYZED, UNSAFE_POINTER}`, so
 every row above comes purely from the whole-tree scope. They were the last two json-calling
 packages not already saturated, which is why the toolchain bump moved only these two.
+
+## Tree-wide EXEC / MODIFY_SYSTEM_STATE/ENV / READ_SYSTEM_STATE / SYSTEM_CALLS (FALSE POSITIVE, the MCP SDK's callback surface)
+The same interface-dispatch artifact as `internal/render` and `internal/diff` above, surfaced
+by `github.com/modelcontextprotocol/go-sdk` v1.7.0 (2026-08-28, `iq mcp`). Thirty-six rows
+gained, none lost, across four capabilities:
+
+- `EXEC`: `internal/diff`, `internal/jqfmt`, `internal/parquetout`, `internal/render`.
+- `MODIFY_SYSTEM_STATE/ENV`: every `drivers/*` package plus `internal/diff`, `internal/jqfmt`,
+  `internal/parquetout`, `internal/query`, `internal/render`.
+- `READ_SYSTEM_STATE`: `internal/diff`, `internal/jqfmt`, `internal/render`.
+- `SYSTEM_CALLS`: every `drivers/*` package but `hbase`, which already held it, plus the same
+  five `internal/*` packages.
+
+No package gained a capability by doing anything new; `cmd`, the only package that imports the
+SDK, gained no row at all, because it already held every one of these. What the SDK adds is
+implementations of two widely held function types, and capslock resolves a call through a
+function value against every implementation in the analyzed set. Two chains produce all
+thirty-six rows:
+
+    (*slog.Logger).log                    -> (*mcp.LoggingHandler).Handle   [slog.Handler]
+    (*query.JQEngine).RunKeyed$1          -> (*mcpServer).progressHooks$1   [func(int)]
+
+Both land in `mcp.ServerSession`, from which capslock walks the whole server: every tool
+handler, and through `toolPing` -> `effectiveURL` -> `internal/secret` the D-Bus session-bus
+discovery that calls `os.Setenv` (the `ENV` row) and `syscall.UnixCredentials` (the
+`SYSTEM_CALLS` row), and through `toolExec` -> `(*redis.Store).Close` the go-redis close hook
+that reaches `os/exec` (the `EXEC` row). Every one of those tails is already annotated above as
+a pre-existing, accepted surface of the keyring and of go-redis; the SDK only made more
+packages alias into them. `mcp.LoggingHandler` is never constructed by `iq`: protocol-level
+logging is deprecated in the 2026-07-28 revision and `iq mcp` advertises the `tools` capability
+alone. It is linked because it lives in the same package as the server.
+
+Confirmation, capslock v0.3.3 with each package analyzed *alone*: `internal/render` and
+`internal/diff` each report `{REFLECT, UNANALYZED, UNSAFE_POINTER}` and nothing else, and
+`drivers/file` reports `{ARBITRARY_EXECUTION, EXEC, FILES, NETWORK, READ_SYSTEM_STATE, REFLECT,
+RUNTIME, UNANALYZED, UNSAFE_POINTER}` — no `SYSTEM_CALLS`, no `MODIFY_SYSTEM_STATE/ENV`. Every
+row listed above therefore comes from the whole-tree scope, which is why the baseline is only
+ever compared against a run of that same scope.

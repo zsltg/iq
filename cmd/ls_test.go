@@ -166,6 +166,28 @@ func TestLsJSONVerbose(t *testing.T) {
 	require.Equal(t, "30s", vrows[0].Options["timeout"])
 }
 
+// TestLsJSONKeyringFlag proves the machine-readable listing marks which sources
+// keep their password in the OS keyring, the flag the text view renders as the
+// [keyring] tag.
+func TestLsJSONKeyringFlag(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("inline", "redis://u:p@h:6379/0"))
+	c.Sources["kr"] = iqconfig.Source{URL: "redis://u@h:6379/0", Keyring: true}
+	seedConfig(t, c)
+
+	out, err := runCmd(t, newLsCmd(&config{}), "--json")
+	require.NoError(t, err)
+	var rows []sourceRow
+	require.NoError(t, json.Unmarshal([]byte(out), &rows))
+	require.Len(t, rows, 2)
+	byHandle := map[string]sourceRow{}
+	for _, r := range rows {
+		byHandle[r.Handle] = r
+	}
+	require.True(t, byHandle["kr"].Keyring)
+	require.False(t, byHandle["inline"].Keyring)
+}
+
 func TestLsGroups(t *testing.T) {
 	seedLs(t)
 	out, err := runCmd(t, newLsCmd(&config{}), "-g")

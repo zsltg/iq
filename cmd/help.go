@@ -232,6 +232,7 @@ var rootCommandGroups = map[string]string{
 	"combine": cmdGroupQuery,
 	"inspect": cmdGroupQuery,
 	"schema":  cmdGroupQuery,
+	"mcp":     cmdGroupQuery,
 
 	"config": cmdGroupConfig,
 	"cache":  cmdGroupConfig,

@@ -49,28 +49,7 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 	}
 
 	if jsonOut || yamlOut {
-		rows := make([]sourceRow, 0, len(list))
-		for _, h := range list {
-			driver := driverName(h.Source.URL)
-			row := sourceRow{
-				Handle:     h.Name,
-				Driver:     driver,
-				Location:   displayLocation(h.Source, h.Name, reveal, expand),
-				Collection: iqmongo.CollectionFromURI(h.Source.URL),
-				Keyring:    h.Source.Keyring,
-				Active:     h.Name == cf.Active,
-			}
-			if verbose {
-				row.Options = h.Source.Options
-				if driver == "file" {
-					if f, err := iqfile.DetectFormat(h.Source.URL); err == nil {
-						row.Format = f.String()
-					}
-				}
-			}
-			rows = append(rows, row)
-		}
-		return writeStructured(out, rows, yamlOut)
+		return writeStructured(out, sourceRows(cf, list, verbose, reveal, expand), yamlOut)
 	}
 
 	if len(list) == 0 {
@@ -124,6 +103,35 @@ func listSources(out io.Writer, cf *iqconfig.Config, filter string, verbose, rev
 		})
 	}
 	return renderTable(out, rows)
+}
+
+// sourceRows projects saved sources into the machine-readable row shape shared by
+// `iq ls --json` and the MCP iq_sources tool. Every location is redacted unless
+// reveal (inline passwords) or expand (keyring passwords) is set, so a stored
+// password never leaves the process by default.
+func sourceRows(cf *iqconfig.Config, list []iqconfig.Handle, verbose, reveal, expand bool) []sourceRow {
+	rows := make([]sourceRow, 0, len(list))
+	for _, h := range list {
+		driver := driverName(h.Source.URL)
+		row := sourceRow{
+			Handle:     h.Name,
+			Driver:     driver,
+			Location:   displayLocation(h.Source, h.Name, reveal, expand),
+			Collection: iqmongo.CollectionFromURI(h.Source.URL),
+			Keyring:    h.Source.Keyring,
+			Active:     h.Name == cf.Active,
+		}
+		if verbose {
+			row.Options = h.Source.Options
+			if driver == "file" {
+				if f, err := iqfile.DetectFormat(h.Source.URL); err == nil {
+					row.Format = f.String()
+				}
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 // formatCell renders a source's FORMAT column for `iq ls -v`: a file source's

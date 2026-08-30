@@ -192,7 +192,7 @@ func healthArgs(rawURL string) []string {
 // its redacted form, so a driver error that echoes the URL cannot leak a password.
 func redactErr(err error, rawURL string) error {
 	msg := err.Error()
-	if strings.Contains(msg, rawURL) {
+	if rawURL != "" && strings.Contains(msg, rawURL) {
 		return errors.New(strings.ReplaceAll(msg, rawURL, redactURL(rawURL)))
 	}
 	return err

@@ -264,6 +264,13 @@ file: `npx skills add zsltg/iq`. It covers finding a source, `--explain` before 
 the rules around destructive commands. The
 [AI agents page](https://zsltg.github.io/iq/agents/) documents the other install paths.
 
+For an agent that speaks [MCP](https://modelcontextprotocol.io) rather than shell, `iq mcp`
+serves the same core over stdio: `claude mcp add iq -- iq mcp --timeout 30s`. It is read-only
+by default, `--allow writes|exec|destructive` opens the rest, and a tool that is not allowed is
+never registered. Every result is capped, every error redacted, and every destructive call
+confirmed. The [AI agents page](https://zsltg.github.io/iq/agents/#mcp-server) documents the
+client configuration, the safety model and the tool table.
+
 ## Drivers
 
 `iq` picks the backend from a source's URI scheme, and the query core is driver-agnostic, so
@@ -330,6 +337,12 @@ fetch, so a normal query reads a bounded set of keys; a `.[]`-rooted filter stre
 keyspace in pages, and a filter that collapses it into one value materializes only behind
 `--unbounded`. Fetched values are normalized to JSON and the filter then runs entirely
 client-side, so its semantics are identical for every backend.
+
+The CLI and `iq mcp` are two thin delivery mechanisms over that one core. The MCP server
+exposes the CLI's own operations as tools, resolves the same saved sources, and runs the same
+engine, so it adds no port and changes no classification; what it adds is its own bounds, a
+tool set fixed at startup by `--allow`, per-result item and byte caps, and the CLI's redacted
+error shape.
 
 ### Query routes
 
@@ -403,7 +416,7 @@ semantics are identical across backends.
 | Inspect a backup | `redis-rdb-tools`, `bsondump`, `mongoexport` files, DynamoDB export JSON, `cqlsh COPY` CSV, APOC JSON, each read by its own tool or by hand | one reader over six formats, queryable, diffable, restorable, with no server |
 | Copy or migrate between stores | ad-hoc scripts, `mongodump`/`mongorestore` and `elasticdump` for one store at a time, Redpanda Connect or Bento for any-to-any (a YAML pipeline plus the Bloblang mapping language), Airbyte for a platform | one command, a typed round-trip, an inline jq transform, cross-driver |
 | Compare environments, watch schema drift | export both sides, then `diff`, `jd` or `jq` by hand | `iq diff` over data, stats, or inferred schema, with `diff(1)` exit codes for CI |
-| Give an AI agent database access | one MCP server per backend (MongoDB's own, Google's MCP Toolbox for Databases), each speaking its native dialect behind a server process | one binary and one language for all of them, `--explain` as a dry run, and a skill any agent that reads the Agent Skills format can install (see [AI agents](#ai-agents)) |
+| Give an AI agent database access | one MCP server per backend (MongoDB's own, Google's MCP Toolbox for Databases), each speaking its native dialect behind a server process | one binary and one language for all of them, `--explain` as a dry run, a skill any agent that reads the Agent Skills format can install, and an MCP server, read-only by default (see [AI agents](#ai-agents)) |
 
 ### What iq is not
 
