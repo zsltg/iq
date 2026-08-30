@@ -132,8 +132,10 @@ demo-record: build
 	asciinema convert --overwrite -f asciicast-v2 $(DEMO_ROOT)/demo.cast $(DEMO_ROOT)/demo-v2.cast
 # The render: one text layer per frame, laid side by side and stepped through with a
 # CSS keyframe animation, so it plays anywhere an <img> does, GitHub, other forges and the
-# docs site included, with no script and no font to install. --no-window drops the
-# window chrome (the three traffic-light dots), --minify takes ~30% off, and
+# docs site included, with no script and no font to install. The chrome around it is
+# termsvg's own: a rounded rect and the three traffic-light dots, with the terminal
+# content translated below a 60px header, so the demo reads as a terminal window in
+# the README and the docs. --minify takes ~30% off, and
 # --max-idle caps any gap with no output. Every deliberate pause in the recording is
 # shorter than that cap: the longest is the plan's, the 6 seconds each of its two
 # pages is held for. So it changes none of them, it is a backstop so a wait that stops
@@ -143,7 +145,7 @@ demo-record: build
 # its progress bar goes to a log that is shown only when the render fails.
 	@bindir=$$(mktemp -d) && trap 'rm -rf "$$bindir"' EXIT \
 		&& GOBIN="$$bindir" go install $(TERMSVG_PKG)@$(TERMSVG_VERSION) \
-		&& { "$$bindir"/termsvg export --no-window --minify --max-idle 8s --theme $(DEMO_THEME) \
+		&& { "$$bindir"/termsvg export --minify --max-idle 8s --theme $(DEMO_THEME) \
 			$(DEMO_ROOT)/demo-v2.cast -o $(DEMO_SVG) >"$$bindir"/termsvg.log 2>&1 \
 			|| { tr '\r' '\n' <"$$bindir"/termsvg.log | grep -v '^IR Processing' | tail -20; exit 1; }; } \
 		&& echo "make demo: rendered $(DEMO_SVG), $$(stat -c %s $(DEMO_SVG)) bytes"
