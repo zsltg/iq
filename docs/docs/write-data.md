@@ -120,13 +120,15 @@ iq '{t: .title}' --src books --insert kv --key '.t'
 A plain copy carries each item's native type along (a Redis hash lands as a
 hash), so no type flag is needed. A filter that reshapes the value drops that
 type, the output is just JSON, and `--type` names the native type the
-destination should store it as. Left unset, a typed destination infers it from
-the shape (Redis writes a scalar as a `string` and an object or array as
-`json`), so `--type` is only required when you want something else, a `hash`
-built from an object, a `list` or `set` from an array, a `zset` from
-`[{member, score}]` pairs. A document store ignores it, every value is a
-document there. With `--typed` the same flag stamps the `type` field of each
-dump record instead.
+destination should store it as.
+
+Left unset, a typed destination infers it from the shape (Redis writes a scalar
+as a `string` and an object or array as `json`), so `--type` is only required
+when you want something else, a `hash` built from an object, a `list` or `set`
+from an array, a `zset` from `[{member, score}]` pairs.
+
+A document store ignores it, every value is a document there. With `--typed`
+the same flag stamps the `type` field of each dump record instead.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
@@ -147,16 +149,19 @@ iq '{title}' --src books --typed --type json -o titles.jsonl
 
 ## Replace `--replace`
 
-By default a write upserts: existing keys are overwritten, everything else in
+By default a write upserts, existing keys are overwritten, everything else in
 the destination stays. `--replace` turns the copy into a restore, it empties
 the destination first (the same operation as `iq data clear`, a Redis
 `FLUSHDB`, a Mongo `deleteMany({})`) and then writes, so the destination ends
-up holding exactly the source. Because it destroys data it prompts
-(`clear <destination> before writing`), `--force` answers yes, and `--dry-run`
-reports the copy without clearing anything. A destination that cannot be
-cleared (the read-only file dump) is refused up front. `--no-overwrite` is the
-opposite choice, insert-only, so the two are mutually exclusive, and neither
-applies to a `--typed` dump.
+up holding exactly the source.
+
+Because it destroys data it prompts (`clear <destination> before writing`),
+`--force` answers yes, and `--dry-run` reports the copy without clearing
+anything.
+
+A destination that cannot be cleared (the read-only file dump) is refused up
+front. `--no-overwrite` is the opposite choice, insert-only, so the two are
+mutually exclusive, and neither applies to a `--typed` dump.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
