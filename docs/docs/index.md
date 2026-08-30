@@ -4,9 +4,7 @@ icon: lucide/package-open
 
 # Get started
 
-`jq`[^2] for NoSQL databases.
-
-`iq` runs `jq` filters to query, dump, copy, diff and write data across NoSQL
+`iq` runs `jq`[^2] filters to query, dump, copy, diff and write data across NoSQL
 databases, and their dump files, from a single static binary. See
 [Drivers](drivers.md#drivers) for supported databases.
 
@@ -27,40 +25,6 @@ migration is one command instead of an export plus a conversion script.
 `iq` is inspired by [`sq`](https://sq.io "Command-line tool giving jq-style
 access to SQL databases and files like CSV or Excel"), whose command surface it
 deliberately follows.
-
-## What it's for
-
-Register the sources once, then every row below is a command you can run:
-
-```sh
-iq add -n orders 'mongodb://localhost:27017/shop?collection=orders'
-iq add -n staging 'mongodb://staging:27017/shop?collection=orders'
-iq add -n cache redis://localhost:6379/0
-iq add -n snap file:///backups/prod.rdb
-```
-
-| You want to | Run |
-| --- | --- |
-| Read one document from any store | `iq --src orders '.["o-42"]'` |
-| Stream a filtered sample, pushed to the server where it can be | `iq --src orders '.[] \| select(.status == "new") \| {id, total}'` |
-| Query a backup without restoring it | `iq --src snap '.[] \| select(.active)'` |
-| Copy one store into another, native types intact | `iq --src orders --insert cache` |
-| Diff two environments, data or inferred schema | `iq diff orders staging --schema` |
-| See the plan before anything runs | `iq --src orders '.[] \| select(.total > 99)' --explain` |
-
-## Why not `<native cli> | jq`?
-
-- The filter names the keys, so there is no native query to write first, and a
-  missing key reads as `null` rather than an error.
-- Paging, bounded memory and `--timeout` are handled: a `.[]`-rooted filter
-  streams the keyspace, and a filter that would load all of it at once is
-  refused unless you ask with `--unbounded`.
-- Every backend's values (Redis hashes, sets and streams, BSON, DynamoDB
-  attribute values, CQL types) normalize to one JSON, so one filter means one
-  thing on all of them.
-- Typed dumps and `--insert` carry native types across stores, so a copy, a
-  restore or a migration is one command instead of an export plus a conversion
-  script.
 
 !!! note
 
@@ -125,26 +89,42 @@ cd iq && make build
 
 ## The basics
 
-```sh { title='Add a collection named "books" from a MongoDB source' }
-iq add 'mongodb://localhost:27017/iq?collection=books'
+Register a source for each store you work with, then make one of them active:
+
+```sh
+iq add -n orders 'mongodb://localhost:27017/shop?collection=orders'
+iq add -n staging 'mongodb://staging:27017/shop?collection=orders'
+iq add -n cache redis://localhost:6379/0
+iq add -n snap file:///backups/prod.rdb
+iq src orders
 ```
+
 ```sh { title='Check the list of sources you added' }
 iq ls
 ```
-```sh { title='Make a source active' }
-iq src books
-```
-```sh { title='Inspect the database' }
+```sh { title='Inspect the active source' }
 iq inspect
 ```
 ```sh { title='Explain the query plan for a bounded read, a dry run' }
-iq '.["1"]' --explain -v
+iq '.["o-42"]' --explain -v
 ```
-```sh { title='Run the query to get the document with id "1"' }
-iq '.["1"]'
+```sh { title='Run the query to get the document with id "o-42"' }
+iq '.["o-42"]'
 ```
 ```sh { title='Run a query to get all documents in batches, a streaming scan' }
 iq '.[]'
+```
+```sh { title='Stream a filtered sample, pushed to the server where it can be' }
+iq --src orders '.[] | select(.status == "new") | {id, total}'
+```
+```sh { title='Query a backup without restoring it' }
+iq --src snap '.[] | select(.active)'
+```
+```sh { title='Copy one store into another, native types intact' }
+iq --src orders --insert cache
+```
+```sh { title='Diff two environments, data or inferred schema' }
+iq diff orders staging --schema
 ```
 
 You can find detailed examples in [Sources](sources.md#sources), [Query data](query-data.md#query-data) and [Write data](write-data.md#write-data).

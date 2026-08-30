@@ -32,9 +32,8 @@ across NoSQL databases, and their dump files, from a single static binary. See
 Fetched values are normalized to JSON and the filter runs entirely client-side,
 so one filter means the same thing everywhere.
 
-The filter is both the transform and the key selector: its top-level paths name the keys to
-fetch, so `iq` reads a bounded set of keys, streams the keyspace in pages, or materializes it,
-depending on what the filter asks for.
+The filter is also the key selector: its top-level paths name the keys to fetch, so a query
+reads only what it asks for (see [Architecture](#architecture)).
 
 Typed dumps carry native types across stores, so a copy, a restore or a
 migration is one command instead of an export plus a conversion script.
@@ -99,9 +98,11 @@ cd iq && make build
 
 ### Agent Skill
 
-It covers finding a source, `--explain` before every scan, `--dry-run` before
-every write, the machine-readable output flags and the JSON error shape and
-the rules around destructive commands.
+`iq` ships an [Agent Skill](https://agentskills.io), a single Markdown file
+([`skills/iq/SKILL.md`](skills/iq/SKILL.md)) that any agent reading the Agent Skills format
+can load. It covers finding a source, `--explain` before every scan, `--dry-run` before every
+write, the machine-readable output flags and the JSON error shape, and the rules around
+destructive commands.
 
 ```sh
 npx skills add zsltg/iq
@@ -116,36 +117,67 @@ It is read-only by default, `--allow writes|exec|destructive` opens the rest
 and a tool that is not allowed is never registered. Every result is capped,
 every error redacted, and every destructive call confirmed.
 
-**[Claude Code](https://claude.com/claude-code)**
+Claude Code:
 ```sh
 claude mcp add iq -- iq mcp --timeout 30s
 ```
 
-**[Codex CLI](https://openai.com/codex/)**
+Codex CLI:
 ```sh
 codex mcp add iq -- iq mcp --timeout 30s
 ```
 
-**[Gemini CLI](https://geminicli.com)**
+Gemini CLI:
 ```sh
 gemini mcp add iq iq mcp -- --timeout 30s
 ```
 
-**[Cursor](https://cursor.com), [Cline](https://cline.bot), [Antigravity](https://antigravity.google), [Copilot](https://github.com/features/copilot)**
+Cursor, Cline and Antigravity:
 ```json
-{"command": "iq", "args": ["mcp", "--timeout", "30s"]}
+{
+  "mcpServers": {
+    "iq": {
+      "command": "iq",
+      "args": ["mcp", "--timeout", "30s"]
+    }
+  }
+}
 ```
 
-**[OpenCode](https://opencode.ai)**
+Copilot in VS Code, which names the map `servers` and wants the transport spelled out:
 ```json
-{"command": ["iq", "mcp", "--timeout", "30s"]}
+{
+  "servers": {
+    "iq": {
+      "type": "stdio",
+      "command": "iq",
+      "args": ["mcp", "--timeout", "30s"]
+    }
+  }
+}
 ```
+
+OpenCode, which names it `mcp` and takes the command as one array:
+```json
+{
+  "mcp": {
+    "iq": {
+      "type": "local",
+      "command": ["iq", "mcp", "--timeout", "30s"],
+      "enabled": true
+    }
+  }
+}
+```
+
+Check [AI agents](https://zsltg.github.io/iq/agents/#client-configuration) for each client's
+config file and the key it wants around the block.
 
 <details>
 <summary><strong>Shell completions</strong></summary>
 
-The `.deb`, `.rpm`, `.apk` and `.pkg.tar.zst` packages install bash, zsh and fish completions for you. For a
-brew, scoop, go-install or source build, `iq completion <shell>` prints a script to install by
+The `.deb`, `.rpm`, `.apk` and `.pkg.tar.zst` packages install bash, zsh and fish completions
+for you. For a brew, scoop, go-install or source build, `iq completion <shell>` prints a script to install by
 hand:
 
 ```sh
@@ -225,7 +257,7 @@ Fetch an item with the ID "2":
 iq '.["2"]'
 ```
 
-Fetch items where the key "year" is larger than "2015" and return objects that contain the keys "title" and "price":
+Filter a scan and reshape each item:
 ```sh
 iq '.[] | select(.year > 2015) | {title, price}'
 ```
@@ -258,7 +290,7 @@ Check [Diff](https://zsltg.github.io/iq/sources/#diff-diff) for more details.
 
 ### Write data
 
-Insert items from one source to another, key/id preserving (same driver) or object values only (cross-driver):
+Copy one source into another, keys preserved (a cross-driver copy carries values only):
 ```sh
 iq --src books --insert books2
 ```
@@ -274,14 +306,14 @@ iq add file:///dump.jsonl -n snap
 iq --src snap --insert cache
 ```
 
-Insert items from one source to another narrowed down with a query:
+Copy only the items a filter selects:
 ```sh
 iq '.[] | select(.year > 2015)' --src books --insert recent
 ```
 
 Check [Write data](https://zsltg.github.io/iq/write-data/) for more details.
 
-### Cross-source combine
+### Cross-source query
 
 Compose across sources:
 ```sh
@@ -316,7 +348,9 @@ Drop a collection called "orders":
 iq data drop shop.orders
 ```
 
-Check [Delete](https://zsltg.github.io/iq/write-data/#delete-data-delete), [Clear](https://zsltg.github.io/iq/write-data/#clear-data-clear) and [Drop](https://zsltg.github.io/iq/write-data/#drop-data-drop) for more details.
+Check [Delete](https://zsltg.github.io/iq/write-data/#delete-data-delete),
+[Clear](https://zsltg.github.io/iq/write-data/#clear-data-clear) and
+[Drop](https://zsltg.github.io/iq/write-data/#drop-data-drop) for more details.
 
 ### UNIX pipes
 
@@ -389,6 +423,18 @@ A `file://` source reads a database dump straight from disk, so a snapshot is qu
 inspected for shape, diffed against a live source, and restored through the same jq
 interface, with no running server. It is read-only: a `file://` endpoint is never a copy
 destination, and `iq exec` and `iq inspect`, which need a live server, do not apply.
+
+Register a dump like any other source:
+```sh
+iq add -n snap file:///backups/prod.rdb
+```
+
+Query, diff and restore it with no server running:
+```sh
+iq --src snap '.["session:42"]'
+iq diff snap cache --data
+iq --src snap --insert cache
+```
 
 | Type | Description |
 | ---- | ----------- |
@@ -480,72 +526,11 @@ graph TD
   LF["iq data clear / drop / delete (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop / Deleter.Delete (capability-gated)"]
 ```
 
-## Comparison
-
-How `iq` relates to other query tools. Its niche is narrow: a single static binary that gives
-NoSQL stores one jq-based query surface, the filter running client-side over normalized JSON so
-semantics are identical across backends.
-
-### By job
-
-| Job | What people use today | What `iq` changes |
-| --- | --- | --- |
-| Query a live store from a shell | `redis-cli`, `mongosh`, `cqlsh`, `aws dynamodb`, `curl` against Elasticsearch, each piped into `jq` | one language and one config over all of them, the filter names the keys, paging and normalization are handled |
-| Inspect a backup | `redis-rdb-tools`, `bsondump`, `mongoexport` files, DynamoDB export JSON, `cqlsh COPY` CSV, APOC JSON, each read by its own tool or by hand | one reader over six formats, queryable, diffable, restorable, with no server |
-| Copy or migrate between stores | ad-hoc scripts, `mongodump`/`mongorestore` and `elasticdump` for one store at a time, Redpanda Connect or Bento for any-to-any (a YAML pipeline plus the Bloblang mapping language), Airbyte for a platform | one command, a typed round-trip, an inline jq transform, cross-driver |
-| Compare environments, watch schema drift | export both sides, then `diff`, `jd` or `jq` by hand | `iq diff` over data, stats, or inferred schema, with `diff(1)` exit codes for CI |
-| Give an AI agent database access | one MCP server per backend (MongoDB's own, Google's MCP Toolbox for Databases), each speaking its native dialect behind a server process | one binary and one language for all of them, `--explain` as a dry run, a skill any agent that reads the Agent Skills format can install, and an MCP server, read-only by default (see [AI agents](#ai-agents)) |
-
-### What iq is not
-
-- Not an analytics engine. Pushdown covers equality and existence on every backend, ranges on
-  MongoDB, CouchDB and Couchbase, regex on MongoDB and CouchDB, and everything else runs as a
-  client-side scan, while an aggregate materializes the keyspace behind `--unbounded`. A heavy
-  question belongs in the backend's own language through `iq exec`, or in a query engine.
-- Not a replacement for the native shell where the backend's own feature is the point:
-  aggregation pipelines, relevance scoring, graph traversals, vector search. `iq exec` forwards
-  those verbatim rather than modelling them.
-
-### Tools that unify many databases under one language
-
-Legend: ● primary, ◐ partial, — none. Model is the shape the query language speaks; footprint is
-what you run.
-
-| Tool | Query language | Relational | NoSQL | Files | Data model | Footprint |
-|---|---|:---:|:---:|:---:|---|---|
-| **iq** | **jq** | — | **●** | **◐** | **document** | **single binary** |
-| [sq](https://sq.io) | SLQ / SQL | ● | — | ● | tabular | single binary |
-| [usql](https://github.com/xo/usql) | native SQL | ● | ◐ | — | tabular | single binary (multiplexer) |
-| [OctoSQL](https://github.com/cube2222/octosql) | SQL | ● | ◐ | ● | tabular | single binary |
-| [DuckDB](https://duckdb.org) | SQL | ◐ | — | ● | tabular | in-process / CLI |
-| SQL over files ([dsq](https://github.com/multiprocessio/dsq), [trdsql](https://github.com/noborus/trdsql)) | SQL | — | — | ● | tabular | single binary |
-| [Trino](https://trino.io) / [Presto](https://prestodb.io) | SQL | ● | ● | ● | tabular (◐ JSON) | server / engine |
-| [Apache Drill](https://drill.apache.org) | SQL | ● | ● | ● | schema-free (both) | server / engine |
-| Data virtualization ([Denodo](https://www.denodo.com), [Dremio](https://www.dremio.com), [MindsDB](https://mindsdb.com)) | SQL | ● | ● | ◐ | virtual relational | server |
-| Universal clients ([DBeaver](https://dbeaver.io), [DataGrip](https://www.jetbrains.com/datagrip/), [DBX](https://github.com/t8y2/dbx), [LazySQL](https://github.com/jorgerojas26/lazysql)) | native per-backend | ● | ◐ | ◐ | client-side, per backend | desktop app / TUI |
-| [Redpanda Connect](https://github.com/redpanda-data/connect) | Bloblang, a mapping language | ◐ | ● | ◐ | document | single binary (YAML pipeline) |
-| [MCP Toolbox for Databases](https://github.com/googleapis/genai-toolbox) | native per-backend, as MCP tools | ● | ● | — | per backend | server |
-
-Placement is by each tool's primary targets, several (Trino, Drill, OctoSQL, DuckDB) partially
-reach neighbouring columns via connectors or extensions, and `iq` reaches files the same way, a
-read-only `file://` source over database dumps, not arbitrary files.
-
-`sq`, the tool `iq`'s command surface is modelled on, unifies relational databases and files,
-and never reaches NoSQL. Language specs and embedded libraries (PartiQL, SQL++ / N1QL, JSONiq,
-Apache Calcite, GraphQL federation) span nested and tabular data too, but they are
-specifications or components inside an engine, not something anyone runs instead of a CLI.
-
-The takeaway is the NoSQL column paired with footprint: among these tools, `iq` is the only
-single binary that gives NoSQL stores one query language. What reaches further runs as a server
-(Trino, Drill, the virtualization platforms, the MCP Toolbox), and what is as light either
-speaks each backend's own dialect (usql, the universal clients) or targets files and relational
-stores instead (sq, DuckDB, dsq). Redpanda Connect is a single binary too, but Bloblang maps
-records through a pipeline, it is not a query surface you type at a shell.
-
 ## See also
 
-`iq` uses jq as its filter language, so the jq ecosystem carries over.
+Where `iq` sits among other tools, and the jq ecosystem its filter language carries over.
 
+- [Comparison](https://zsltg.github.io/iq/comparison/): how `iq` relates to other tools, and what it is not.
 - [jq manual](https://jqlang.org/manual/): the language reference for the filters `iq` runs.
 - [awesome-jq](https://github.com/jqlang/awesome-jq): a curated list of jq tools, guides, and resources.
 - [sq](https://github.com/neilotoole/sq): jq-style queries over SQL databases and document files.
