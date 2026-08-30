@@ -115,8 +115,29 @@ It is read-only by default, `--allow writes|exec|destructive` opens the rest
 and a tool that is not allowed is never registered. Every result is capped,
 every error redacted, and every destructive call confirmed.
 
+**[Claude Code](https://claude.com/claude-code)**
 ```sh
 claude mcp add iq -- iq mcp --timeout 30s
+```
+
+**[Codex CLI](https://openai.com/codex/)**
+```sh
+codex mcp add iq -- iq mcp --timeout 30s
+```
+
+**[Gemini CLI](https://geminicli.com)**
+```sh
+gemini mcp add iq iq mcp -- --timeout 30s
+```
+
+**[Cursor](https://cursor.com), [Cline](https://cline.bot), [Antigravity](https://antigravity.google), [Copilot](https://github.com/features/copilot)**
+```json
+{"command": "iq", "args": ["mcp", "--timeout", "30s"]}
+```
+
+**[OpenCode](https://opencode.ai)**
+```json
+{"command": ["iq", "mcp", "--timeout", "30s"]}
 ```
 
 <details>

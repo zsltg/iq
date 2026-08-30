@@ -64,24 +64,85 @@ revision and negotiates back to 2025-11-25 for an older client.
 
 The server is the binary itself, so a client only needs the command. The
 inherited `--timeout` defaults to 5 seconds, which is short for a scan, so pass
-a longer one:
+a longer one. Every example below registers the same server, `iq mcp --timeout
+30s`, under the name `iq`.
+
+[Claude Code](https://claude.com/claude-code):
 
 ```sh
 claude mcp add iq -- iq mcp --timeout 30s
 ```
 
+[Codex CLI](https://openai.com/codex/) (the `--` separates the server command from Codex's own options; the
+same entry can be written by hand as `[mcp_servers.iq]` in
+`~/.codex/config.toml`):
+
 ```sh
 codex mcp add iq -- iq mcp --timeout 30s
 ```
 
-For Cursor and any other client that takes a JSON server block:
+[Gemini CLI](https://geminicli.com) (the `--` matters here too, a `--timeout` before it is Gemini's own
+connection timeout in milliseconds, not iq's):
+
+```sh
+gemini mcp add iq iq mcp -- --timeout 30s
+```
+
+[Cursor](https://cursor.com) (`.cursor/mcp.json` in the project, or `~/.cursor/mcp.json` for every
+project), [Cline](https://cline.bot) (`~/.cline/mcp.json` for the CLI, the MCP Servers panel's
+Configure tab in the IDE extensions), [Antigravity](https://antigravity.google)
+(`~/.gemini/config/mcp_config.json`, or `.agents/mcp_config.json` in the
+workspace) and the Gemini CLI settings file (`~/.gemini/settings.json`) all take
+the same `mcpServers` block:
 
 ```json
 {
-  "command": "iq",
-  "args": ["mcp", "--timeout", "30s"]
+  "mcpServers": {
+    "iq": {
+      "command": "iq",
+      "args": ["mcp", "--timeout", "30s"]
+    }
+  }
 }
 ```
+
+[Copilot](https://github.com/features/copilot) in VS Code (`.vscode/mcp.json` in the workspace, or the user profile
+file behind the `MCP: Open User Configuration` command) names the map `servers`
+and wants the transport spelled out:
+
+```json
+{
+  "servers": {
+    "iq": {
+      "type": "stdio",
+      "command": "iq",
+      "args": ["mcp", "--timeout", "30s"]
+    }
+  }
+}
+```
+
+[OpenCode](https://opencode.ai) (`opencode.json`) names it `mcp`, calls a stdio server `local` and
+takes the command as one array:
+
+```json
+{
+  "mcp": {
+    "iq": {
+      "type": "local",
+      "command": ["iq", "mcp", "--timeout", "30s"],
+      "enabled": true
+    }
+  }
+}
+```
+
+[pi.dev](https://pi.dev) ships no MCP client by design, it expects a CLI plus a skill, which is
+exactly what `iq` and the [Skill](#skill) above are; install the skill and pi
+drives the binary directly.
+
+Any other client that takes a stdio server block needs the same two facts, the
+command `iq` and the arguments `mcp --timeout 30s`.
 
 The server inherits the saved sources and the keyring of whoever starts it, so
 point an agent at a config holding only the sources it may reach rather than
