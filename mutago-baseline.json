@@ -378,6 +378,12 @@
    "file": "cmd/move.go",
    "mutator": "statement/return",
    "line": 172
+  },
+  {
+   "id": "e34537e600cfd647de83b718dbb6f09c",
+   "file": "drivers/file/file.go",
+   "mutator": "statement/remove",
+   "line": 190
   }
  ]
 }

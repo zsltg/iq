@@ -1049,7 +1049,9 @@ iq diff snap prod --data
 
 The format is detected from the file's content (or forced with a `?format=` query, e.g.
 `file:///d.bin?format=bson`). A gzipped dump is unwrapped transparently, a gzipped dump must
-pass `?format=` since its content is not sniffable through the compression.
+pass `?format=` since its content is not sniffable through the compression. On Windows a drive
+path takes the `file:///C:/path/to/dump.json` form (forward slashes, three slashes before the
+drive letter).
 
 | Format | Produced by | Notes |
 | --- | --- | --- |
