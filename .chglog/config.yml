@@ -7,6 +7,8 @@ info:
   title: CHANGELOG
   repository_url: ""
 options:
+  # Only release tags section the changelog; backup/* and other refs stay out.
+  tag_filter_pattern: "^v"
   commits:
     filters:
       Type:
