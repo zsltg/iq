@@ -4,16 +4,51 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.35.0 - 2026-08-30
+### Documentation
+- use the comma voice, break up long paragraphs and list the capabilities (735bc4a)
+- tighten the readme and the docs landing page (c8247c7)
+- describe the two url-only footnotes (5ff3b71)
+- lead with what iq does, one tagline pair, compare by job (7645b4a)
+- **agents:** show the mcp server registration for every major harness (40eb1c3)
+- **demo:** frame the recording as a terminal window (3994192)
+- **flags:** document each flag once and mark the global ones (87f9ed6)
+- **index:** drop the Go footnote (a35283d)
+- **index:** drop the NoSQL footnote (6922d89)
+- **index:** footnote ast, pushdown, port and keyring (3149b71)
+- **readme:** show a diff of one document across two sources (3d1c79f)
+- **readme:** introduce each get-started example with a plain sentence (c30e7ff)
+- **readme:** rework get started into labelled one-liners by job (60cb7ef)
+- **readme:** make every get-started example copyable (20a9830)
+- **readme:** adopt the residua badge set (39f82b8)
+- **readme:** point the intro at the drivers section (d7b2b56)
+- **readme:** point each get-started section at its docs page (c78c23a)
+- **readme:** lead with the demo and fold the agent setup into install (0bda877)
+- **readme:** inline the collapsed-section headings and drop the tail sections (debc953)
+- **readme:** keep the query-cost paragraph under query routes (b231a64)
+- **readme:** show a filtered copy under --insert (3d42671)
+- **readme:** trim the query-cost paragraph to its own facts (b6d65af)
+- **see-also:** flatten the link list to one bullet each (71ec680)
+- **see-also:** link sq (2c83350)
+- **write-data:** describe --type and --replace, add lifecycle preview examples (3be8026)
+- **write-data:** split the type and replace prose into shorter paragraphs (d037293)
+
+### Features
+- **demo:** record the README demo and gate its freshness (c5c7100)
+- **mcp:** serve the query core as an MCP server over stdio (80430a1)
+- **skill:** ship the agent skill and the one-file manual (09f38ca)
+
+
 ## v0.34.2 - 2026-08-27
 ### Documentation
-- replace the pre-1.0 warning with an ai-assistance note (dd2b35d)
+- replace the pre-1.0 warning with an ai-assistance note (6dc39f0)
 - **see-also:** map the jq ecosystem (dc6d381)
 
 ### Bug Fixes
-- **deps:** bump go-archive, otel and x/net past their advisories (4ceda38)
+- **deps:** bump go-archive, otel and x/net past their advisories (5ac6aa5)
 
 ### Refactoring
-- enable the modernize linter and apply its fixes (d5eaff2)
+- enable the modernize linter and apply its fixes (66c7807)
 
 
 ## v0.34.1 - 2026-08-27
