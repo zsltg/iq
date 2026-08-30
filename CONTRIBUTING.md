@@ -153,7 +153,11 @@ workflow) re-run the vulnerability, secret and zizmor workflow scans against fre
 (`deep-scan`) and mutate the whole module one package per runner
 (`deep-enumerate` lists every package with Go sources, `deep-mutate` is a
 matrix over them, each a full package scan through the wrapper's package-arg
-form with its own containers on its own machine, eight runners at a time), then
+form on its own machine, eight runners at a time; a driver job starts its
+compose service(s) once and sets the `IQ_*_URL` override, so per-mutant test
+runs reuse the running service the way the local per-driver recipe does,
+couchbase provisioned by `scripts/seed-couchbase.sh` with `IQ_SEED_BUCKET` and
+`IQ_SEED_DATA=0`), then
 `deep-badge` merges the per-package `mutago-summary.json` files with
 `scripts/mutation-summary.sh` (kills over covered mutants, summed, not a mean
 of ratios) and publishes the covered-code MSI as the README mutation badge on

@@ -143,6 +143,9 @@ services:
       discovery.type: single-node
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      # A CI runner's disk sits past the flood-stage watermark, which leaves new
+      # shards unassigned and every write waiting; the instance is ephemeral.
+      cluster.routing.allocation.disk.threshold_enabled: "false"
     # Elasticsearch on a JVM is slow to become ready, so the healthcheck retries generously.
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
@@ -164,6 +167,8 @@ services:
       discovery.type: single-node
       DISABLE_SECURITY_PLUGIN: "true"
       OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+      # Same as elasticsearch: past the flood stage OpenSearch blocks index creation.
+      cluster.routing.allocation.disk.threshold_enabled: "false"
     # OpenSearch on a JVM is slow to become ready, so the healthcheck retries generously.
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]

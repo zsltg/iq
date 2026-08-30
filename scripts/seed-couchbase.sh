@@ -14,7 +14,10 @@ set -euo pipefail
 container=iq-couchbase
 user=Administrator
 pass=password
-bucket=iq
+# Overridable for harness use: CI provisions the integration-test bucket
+# (IQ_SEED_BUCKET=iq_test IQ_SEED_DATA=0) with the same idempotent steps.
+bucket="${IQ_SEED_BUCKET:-iq}"
+seed_data="${IQ_SEED_DATA:-1}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required to seed Couchbase." >&2
@@ -63,6 +66,11 @@ done
 if [ "${indexed:-0}" != "1" ]; then
   echo "Couchbase query service did not become ready to create the primary index." >&2
   exit 1
+fi
+
+if [ "$seed_data" != "1" ]; then
+  echo "Provisioned cluster, bucket ${bucket}, and primary index (no sample data)."
+  exit 0
 fi
 
 docker exec -i "$container" cbq -e http://127.0.0.1:8093 -u "$user" -p "$pass" -q=true --script="
