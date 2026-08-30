@@ -1,0 +1,135 @@
+# Install smoke test: proves a published release installs and runs through the
+# paths a user takes, on a fresh hosted runner with no checkout: the Homebrew
+# cask on macOS, the Scoop manifest on Windows, install.sh, the .deb and
+# `go install` on Linux. Every path ends in the same black-box check: the
+# binary reports the release tag, registers a dump as a source and queries it.
+# Runs on demand (tag input, default latest) and when a Release is published;
+# it needs the repo, the tap and the bucket to be public, so it is a go-public
+# step, not a per-push gate. Actions are pinned by commit SHA (Scorecard).
+name: Install smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to verify (e.g. v0.35.0); empty means the latest release
+        required: false
+        default: ""
+  release:
+    types: [published]
+
+permissions:
+  contents: read # gh release download of the .deb
+
+env:
+  # The tag under test; resolved to the latest release below when empty.
+  IQ_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+  # The black-box check every install path ends in, run with bash -c "$SMOKE":
+  # the installed binary registers a dump as a source and queries it.
+  SMOKE: |
+    set -eu
+    dir="$(mktemp -d)"
+    printf '{"key":"alpha","value":"hello-iq"}\n{"key":"beta","value":"world-iq"}\n' > "$dir/data.jsonl"
+    export IQ_CONFIG="$dir/iq.toml"
+    iq add "file://$dir/data.jsonl" -n snap
+    iq --src snap '.[]' | tee "$dir/out"
+    grep -q hello-iq "$dir/out" && grep -q world-iq "$dir/out"
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${IQ_TAG:-$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)}"
+          echo "IQ_TAG=$tag" >> "$GITHUB_ENV"
+          echo "verifying $tag"
+      - name: install.sh
+        run: |
+          curl -fsSL --proto '=https' --tlsv1.2 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh" \
+            | IQ_VERSION="$IQ_TAG" IQ_INSTALL_DIR="$HOME/.local/bin" sh
+          "$HOME/.local/bin/iq" --version
+          test "$("$HOME/.local/bin/iq" --version)" = "$IQ_TAG"
+          rm -f "$HOME/.local/bin/iq"
+      - name: .deb package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$IQ_TAG" -R "$GITHUB_REPOSITORY" -p 'iq_*_linux_amd64.deb' -D pkg
+          sudo dpkg -i pkg/iq_*_linux_amd64.deb
+          test "$(iq --version)" = "$IQ_TAG"
+          man -w iq
+          sudo dpkg -r iq
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - name: go install
+        run: |
+          go install "github.com/zsltg/iq@$IQ_TAG"
+          test "$("$(go env GOPATH)/bin/iq" --version)" = "$IQ_TAG"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Query a dump
+        run: bash -c "$SMOKE"
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - name: Resolve tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${IQ_TAG:-$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)}"
+          echo "IQ_TAG=$tag" >> "$GITHUB_ENV"
+          echo "verifying $tag"
+      - name: Homebrew cask
+        run: |
+          brew install zsltg/tap/iq
+          test "$(iq --version)" = "$IQ_TAG"
+      - name: Query a dump (brew)
+        run: bash -c "$SMOKE"
+      - name: install.sh
+        run: |
+          brew uninstall iq
+          curl -fsSL --proto '=https' --tlsv1.2 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh" \
+            | IQ_VERSION="$IQ_TAG" IQ_INSTALL_DIR="$HOME/.local/bin" sh
+          test "$("$HOME/.local/bin/iq" --version)" = "$IQ_TAG"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Query a dump (install.sh)
+        run: bash -c "$SMOKE"
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Resolve tag
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = if ($env:IQ_TAG) { $env:IQ_TAG } else { gh release view -R $env:GITHUB_REPOSITORY --json tagName -q .tagName }
+          "IQ_TAG=$tag" >> $env:GITHUB_ENV
+          "verifying $tag"
+      - name: Scoop manifest
+        shell: pwsh
+        run: |
+          Invoke-Expression "& {$(Invoke-RestMethod get.scoop.sh)} -RunAsAdmin"
+          $shims = Join-Path $HOME 'scoop\shims'
+          $env:PATH = "$shims;$env:PATH"
+          scoop bucket add zsltg https://github.com/zsltg/scoop-bucket
+          scoop install iq
+          $v = (iq --version | Out-String).Trim()
+          if ($v -ne $env:IQ_TAG) { throw "iq --version printed '$v', expected '$env:IQ_TAG'" }
+          $shims >> $env:GITHUB_PATH
+      - name: Query a dump
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'smoke'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Set-Content -Path "$dir\data.jsonl" -Value "{`"key`":`"alpha`",`"value`":`"hello-iq`"}`n{`"key`":`"beta`",`"value`":`"world-iq`"}" -NoNewline
+          $env:IQ_CONFIG = "$dir\iq.toml"
+          $url = 'file:///' + ("$dir\data.jsonl" -replace '\\', '/')
+          iq add $url -n snap
+          $out = (iq --src snap '.[]' | Out-String)
+          $out
+          if ($out -notmatch 'hello-iq' -or $out -notmatch 'world-iq') { throw 'query output missing the dump values' }

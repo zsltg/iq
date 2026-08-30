@@ -189,6 +189,13 @@ Posture and upkeep around the pipeline, all on GitHub:
   (install scripts, obfuscation, typosquats, maintainer changes), the
   complement of `make capabilities`, which reports what our own dependency
   tree can do; it comments, it never blocks a merge.
+- `.github/workflows/install-smoke.yml` verifies a published release the way
+  a user installs it, on fresh hosted runners with no checkout: the Homebrew
+  cask on macOS, the Scoop manifest on Windows, `install.sh`, the `.deb` and
+  `go install` on Linux, each ending in `iq --version` equal to the tag and a
+  query against a registered dump. It runs when a Release is published and on
+  demand (Actions, Install smoke, Run workflow, with an optional tag); it
+  needs the repo, the tap and the bucket to be public.
 - `SECURITY.md` is the vulnerability-reporting policy: GitHub private
   vulnerability reporting only.
 
