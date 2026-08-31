@@ -1,6 +1,8 @@
 package dynamodb
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -39,7 +41,12 @@ func TestParseKeySchema(t *testing.T) {
 		{
 			name:    "empty attribute",
 			hint:    "pk,",
-			wantErr: "empty key attribute",
+			wantErr: `empty key attribute in ?keys="pk,"`,
+		},
+		{
+			name:    "empty attribute name before a type suffix",
+			hint:    ":S",
+			wantErr: `empty key attribute name in ?keys=":S"`,
 		},
 		{
 			name:    "too many attributes",
@@ -105,6 +112,18 @@ func TestParseItemErrors(t *testing.T) {
 		{"unknown tag", `{"a":{"X":"x"}}`, "unknown attribute type tag"},
 		{"bad base64", `{"a":{"B":"!!!"}}`, "decode B"},
 		{"not an object", `{"a":"plain"}`, "decode attribute value"},
+		{"item is not an object", `[1,2]`, "dynamodb: decode item"},
+		{"bool payload is not a bool", `{"a":{"BOOL":"yes"}}`, "decode BOOL"},
+		{"null payload is not a bool", `{"a":{"NULL":"yes"}}`, "decode NULL"},
+		{"list payload is not an array", `{"a":{"L":"x"}}`, "decode L"},
+		{"string set payload is not an array", `{"a":{"SS":"x"}}`, "decode SS"},
+		{"number set payload is not an array", `{"a":{"NS":"x"}}`, "decode NS"},
+		{"binary set payload is not an array", `{"a":{"BS":"x"}}`, "decode BS"},
+		{"binary set element is not base64", `{"a":{"BS":["!!!"]}}`, "decode BS element"},
+		{"string payload is not a string", `{"a":{"S":1}}`, "decode string value"},
+		{"binary payload is not a string", `{"a":{"B":1}}`, "decode string value"},
+		{"map payload is not an object", `{"a":{"M":"x"}}`, "decode item"},
+		{"nested list element is malformed", `{"a":{"L":["plain"]}}`, "decode attribute value"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -126,4 +145,77 @@ func TestKeyOfParity(t *testing.T) {
 	composite, err := ParseKeySchema("pk:S,sk:N")
 	require.NoError(t, err)
 	require.Equal(t, `["a","3"]`, KeyOf(composite, item))
+}
+
+// TestParseItemTypedValues pins the typed attribute values ParseItem builds, not just
+// their normalized form: a NULL's payload, for one, normalizes to nil whatever the
+// decoded boolean was, so only the attribute value itself proves the payload was read.
+func TestParseItemTypedValues(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want types.AttributeValue
+	}{
+		{"null true", `{"NULL":true}`, &types.AttributeValueMemberNULL{Value: true}},
+		{"null false", `{"NULL":false}`, &types.AttributeValueMemberNULL{Value: false}},
+		{"bool true", `{"BOOL":true}`, &types.AttributeValueMemberBOOL{Value: true}},
+		{"bool false", `{"BOOL":false}`, &types.AttributeValueMemberBOOL{Value: false}},
+		{"string", `{"S":"hi"}`, &types.AttributeValueMemberS{Value: "hi"}},
+		{"number", `{"N":"42"}`, &types.AttributeValueMemberN{Value: "42"}},
+		{"binary", `{"B":"aGk="}`, &types.AttributeValueMemberB{Value: []byte("hi")}},
+		{"string set", `{"SS":["a","b"]}`, &types.AttributeValueMemberSS{Value: []string{"a", "b"}}},
+		{"number set", `{"NS":["1"]}`, &types.AttributeValueMemberNS{Value: []string{"1"}}},
+		{"binary set", `{"BS":["aGk="]}`, &types.AttributeValueMemberBS{Value: [][]byte{[]byte("hi")}}},
+		{
+			name: "map",
+			raw:  `{"M":{"inner":{"S":"deep"}}}`,
+			want: &types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
+				"inner": &types.AttributeValueMemberS{Value: "deep"},
+			}},
+		},
+		{
+			name: "list",
+			raw:  `{"L":[{"N":"1"},{"BOOL":false}]}`,
+			want: &types.AttributeValueMemberL{Value: []types.AttributeValue{
+				&types.AttributeValueMemberN{Value: "1"},
+				&types.AttributeValueMemberBOOL{Value: false},
+			}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			item, err := ParseItem([]byte(`{"a":` + tc.raw + `}`))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, item["a"])
+		})
+	}
+}
+
+// TestParseItemErrorsUnwrap pins that a decode failure keeps the standard-library
+// cause in the chain, so a caller can inspect it with errors.As rather than only
+// reading a rendered string.
+func TestParseItemErrorsUnwrap(t *testing.T) {
+	t.Run("attribute value is not a tagged object", func(t *testing.T) {
+		_, err := ParseItem([]byte(`{"a":"plain"}`))
+		var typeErr *json.UnmarshalTypeError
+		require.ErrorAs(t, err, &typeErr)
+	})
+
+	t.Run("string payload is not a string", func(t *testing.T) {
+		_, err := ParseItem([]byte(`{"a":{"S":1}}`))
+		var typeErr *json.UnmarshalTypeError
+		require.ErrorAs(t, err, &typeErr)
+	})
+
+	t.Run("binary payload is not base64", func(t *testing.T) {
+		_, err := ParseItem([]byte(`{"a":{"B":"!!!"}}`))
+		var corrupt base64.CorruptInputError
+		require.ErrorAs(t, err, &corrupt)
+	})
+
+	t.Run("item is not an object", func(t *testing.T) {
+		_, err := ParseItem([]byte(`[1,2]`))
+		var typeErr *json.UnmarshalTypeError
+		require.ErrorAs(t, err, &typeErr)
+	})
 }
