@@ -826,9 +826,10 @@ func TestBackoffGrowsAndCaps(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// A timer never fires early, so the lower bound holds for every sample. It
 			// can fire late under load, so the upper bound is asserted on the fastest
-			// of at most three samples, which no scheduling hiccup can inflate.
+			// sample, taken as soon as one lands under the bound and giving up only
+			// after ten consecutive late ones, which no scheduling hiccup produces.
 			var fastest time.Duration
-			for i := range 3 {
+			for i := range 10 {
 				start := time.Now()
 				require.NoError(t, backoff(context.Background(), tt.attempt))
 				elapsed := time.Since(start)
