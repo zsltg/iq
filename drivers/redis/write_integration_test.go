@@ -2,6 +2,7 @@ package redis_test
 
 import (
 	"context"
+	"encoding/json"
 	"math"
 	"testing"
 
@@ -106,6 +107,54 @@ func TestPutRejectsUnencodableJSONIntegration(t *testing.T) {
 	// rather than writing a corrupt value.
 	_, err := store.Put(ctx, []query.Record{{Key: "k", Type: "json", Value: math.NaN()}}, query.Upsert)
 	require.ErrorContains(t, err, "json")
+	var unsupported *json.UnsupportedValueError
+	require.ErrorAs(t, err, &unsupported, "the encoder's cause survives both wraps")
+}
+
+// TestPutRejectsAKeylessRecordIntegration pins the guard that stops a batch before
+// it writes anything: a record with no key cannot be written under any mode, and
+// the error carries the shared sentinel so the CLI can point at --key-field.
+func TestPutRejectsAKeylessRecordIntegration(t *testing.T) {
+	store := openIntegration(t)
+	tests := []struct {
+		name string
+		mode query.WriteMode
+	}{
+		{name: "upsert", mode: query.Upsert},
+		{name: "insert only", mode: query.InsertOnly},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := store.Put(context.Background(), []query.Record{{Value: "x"}}, tt.mode)
+
+			require.ErrorIs(t, err, query.ErrNoKey, "the sentinel survives the wrap")
+			require.ErrorContains(t, err, "--key-field")
+		})
+	}
+}
+
+// TestPutWritesNothingForAnEmptyAggregateIntegration pins the empty-container
+// guards: Redis has no empty hash, list, set or sorted set, so an empty value
+// writes no key at all rather than issuing an argument-less command the server
+// would reject.
+func TestPutWritesNothingForAnEmptyAggregateIntegration(t *testing.T) {
+	store := openIntegration(t)
+	ctx := context.Background()
+	keys := []string{"eh", "el", "es", "ez"}
+	freshKeys(t, store, keys...)
+
+	stat, err := store.Put(ctx, []query.Record{
+		{Key: "eh", Type: "hash", Value: map[string]any{}},
+		{Key: "el", Type: "list", Value: []any{}},
+		{Key: "es", Type: "set", Value: []any{}},
+		{Key: "ez", Type: "zset", Value: []any{}},
+	}, query.Upsert)
+
+	require.NoError(t, err, "an empty aggregate is written as nothing, not as a bad command")
+	require.Equal(t, len(keys), stat.Written)
+	got, err := store.Get(ctx, keys)
+	require.NoError(t, err)
+	require.Empty(t, got, "no key exists for an empty aggregate")
 }
 
 func TestDeleteIntegration(t *testing.T) {

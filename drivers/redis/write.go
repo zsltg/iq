@@ -113,9 +113,9 @@ func queueWrite(ctx context.Context, p goredis.Pipeliner, r query.Record) error 
 	case "hash":
 		return queueHash(ctx, p, r)
 	case "list":
-		return queueElements(ctx, p, r, func(key string, vals []any) { p.RPush(ctx, key, vals...) })
+		return queueElements(r, func(key string, vals []any) { p.RPush(ctx, key, vals...) })
 	case "set":
-		return queueElements(ctx, p, r, func(key string, vals []any) { p.SAdd(ctx, key, vals...) })
+		return queueElements(r, func(key string, vals []any) { p.SAdd(ctx, key, vals...) })
 	case "zset":
 		return queueZSet(ctx, p, r)
 	case "stream":
@@ -174,8 +174,10 @@ func queueHash(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
 }
 
 // queueElements queues a list or set reconstruction from a normalized array via
-// add, which appends the stringified elements under key.
-func queueElements(_ context.Context, _ goredis.Pipeliner, r query.Record, add func(key string, vals []any)) error {
+// add, which appends the stringified elements under key. The pipeline and its
+// context reach the server through add alone, so this stringifying half needs
+// neither.
+func queueElements(r query.Record, add func(key string, vals []any)) error {
 	arr, ok := r.Value.([]any)
 	if !ok {
 		return fmt.Errorf("key %q: value is not an array", r.Key)

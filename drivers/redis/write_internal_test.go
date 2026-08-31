@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -141,8 +142,9 @@ func TestAsFloat(t *testing.T) {
 	f, err := asFloat(2)
 	require.NoError(t, err)
 	require.Equal(t, 2.0, f) //nolint:testifylint // exact equality intended: asFloat(2) must be exactly 2.0.
-	_, err = asFloat("nope")
+	f, err = asFloat("nope")
 	require.Error(t, err)
+	require.Zero(t, f, "a rejected score returns the zero value beside the error, never a sentinel")
 }
 
 func TestTypeName(t *testing.T) {
@@ -157,4 +159,66 @@ func TestExplainWriteClearDrop(t *testing.T) {
 	plan, ok := ExplainDrop()
 	require.False(t, ok)
 	require.Contains(t, plan.Ops[0], "unsupported")
+}
+
+// TestQueueWriteClearsAnyExpiry pins that rewriting a string replaces the whole
+// value, its time to live included: Put's contract is replacement, so a rewritten
+// key must not inherit the expiry of the value it replaced. Only queueWrite can
+// show it — Put deletes an existing key before rewriting it, which would clear the
+// expiry either way.
+func TestQueueWriteClearsAnyExpiry(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	const key = "iq:test:expiring"
+	require.NoError(t, store.client.Set(ctx, key, "old", time.Hour).Err())
+
+	_, err := store.client.Pipelined(ctx, func(p goredis.Pipeliner) error {
+		return queueWrite(ctx, p, query.Record{Key: key, Type: "string", Value: "new"})
+	})
+	require.NoError(t, err)
+
+	ttl, err := store.client.TTL(ctx, key).Result()
+	require.NoError(t, err)
+	require.Equal(t, time.Duration(-1), ttl, "the rewritten string carries no expiry")
+	got, err := store.client.Get(ctx, key).Result()
+	require.NoError(t, err)
+	require.Equal(t, "new", got)
+}
+
+// TestDeleteAccumulatesAcrossChunks pins the chunked DEL accounting: both counts
+// are summed over every chunk, so a delete larger than one round-trip reports the
+// whole batch rather than only its last chunk.
+func TestDeleteAccumulatesAcrossChunks(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	require.NoError(t, store.client.MSet(ctx, "iq:test:d0", "a", "iq:test:d1", "b", "iq:test:d2", "c").Err())
+	// Three chunks, each with a different present/missing split, so an assignment
+	// in place of an accumulation cannot land on the right totals by luck.
+	store.pageSize = 2
+
+	stat, err := store.Delete(ctx, []string{
+		"iq:test:d0", "iq:test:d1", "iq:test:d2", "iq:test:miss0", "iq:test:miss1",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 3, stat.Deleted, "every chunk's deletions are summed")
+	require.Equal(t, 2, stat.Missing, "every chunk's misses are summed")
+}
+
+// TestClearSurfacesTheFlushError pins that a failed FLUSHDB is reported: Clear
+// answers `iq data clear`, so reporting success on a keyspace it did not empty
+// would be the worst possible lie.
+func TestClearSurfacesTheFlushError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	dead, cancelDead := context.WithCancel(ctx)
+	cancelDead()
+
+	err := store.Clear(dead)
+
+	require.ErrorContains(t, err, "redis flushdb")
+	require.ErrorIs(t, err, context.Canceled, "the command's cause survives the wrap")
 }
