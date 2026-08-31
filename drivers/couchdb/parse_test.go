@@ -1,9 +1,13 @@
 package couchdb
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/zsltg/iq/internal/numfmt"
 )
 
 func TestParseURL(t *testing.T) {
@@ -86,6 +90,42 @@ func TestParseURL(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.wantDSN, cc.dsn)
 			require.Equal(t, tt.wantDB, cc.db)
+		})
+	}
+}
+
+func TestOpenRejectsAMalformedURL(t *testing.T) {
+	// A bad source URL fails at parse time with the parser's own message, before
+	// any connection is attempted, so the user is told what is wrong with the URL
+	// rather than that some server is unreachable.
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{
+			name: "wrong scheme",
+			url:  "http://host:5984/",
+			want: "couchdb url must use couchdb:// or couchdbs://",
+		},
+		{
+			name: "missing host",
+			url:  "couchdb:///?database=iq",
+			want: "couchdb url must name a host",
+		},
+		{
+			name: "unparsable url",
+			url:  "couchdb://host:5984/%zz",
+			want: "parse couchdb url",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			st, err := Open(ctx, tt.url, "", nil, numfmt.DecimalAuto)
+			require.Nil(t, st)
+			require.ErrorContains(t, err, tt.want)
 		})
 	}
 }

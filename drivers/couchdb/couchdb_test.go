@@ -5,6 +5,7 @@ import (
 	"context"
 	"maps"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -250,4 +251,40 @@ func TestOpenBadServerFailsFast(t *testing.T) {
 	_, err := Open(ctx, "couchdb://127.0.0.1:1/", "iq", nil, numfmt.DecimalAuto)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "connect couchdb")
+}
+
+func TestOpenCarriesTheDecimalMode(t *testing.T) {
+	// The decimal mode chosen at the composition root reaches every decode: in
+	// string mode a fractional number keeps its exact literal instead of becoming
+	// a float.
+	seedDB(t, map[string]any{"_id": "1", "price": 19.99})
+	ctx := skipShort(t)
+
+	st, err := Open(ctx, testURL(), dbName(t), nil, numfmt.DecimalString)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	got, err := st.Get(ctx, []string{"1"})
+	require.NoError(t, err)
+	require.Equal(t, "19.99", got["1"].(map[string]any)["price"])
+}
+
+func TestScanFilteredStopsOnAShortPage(t *testing.T) {
+	// Three matches at a page size of two: the second _find comes back short,
+	// which ends the walk there. A third request would be a wasted round trip, so
+	// the traced request count is the assertion.
+	seedDB(t, kindDocs(3)...)
+	ctx := skipShort(t)
+
+	var buf bytes.Buffer
+	st, err := Open(ctx, testURL(), dbName(t), &buf, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	st.pageSize = 2
+
+	got := collect(t, func(fn func(map[string]any) error) error {
+		return st.ScanFiltered(ctx, predicate.Eq{Path: []string{"kind"}, Value: "book"}, fn)
+	})
+	require.Len(t, got, 3)
+	require.Equal(t, 2, strings.Count(buf.String(), "_find"), "a short page ends the walk")
 }
