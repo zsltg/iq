@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
@@ -102,6 +103,21 @@ func TestDecodeJSONNumbers(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestDecodeJSONRejectsMalformedDocument pins the decode guard: a reply that is not
+// JSON is an error naming the stage and carrying the parser's own cause, never a
+// silent nil value that would read as a stored JSON null.
+func TestDecodeJSONRejectsMalformedDocument(t *testing.T) {
+	t.Parallel()
+
+	v, err := decodeJSON(`{"a":x}`, numfmt.DecimalAuto)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "decode redis json")
+	var syntaxErr *json.SyntaxError
+	require.ErrorAs(t, err, &syntaxErr, "the parser's cause survives the wrap")
+	require.Nil(t, v)
 }
 
 // TestConvertNumbersRecurses checks that number conversion reaches into nested
