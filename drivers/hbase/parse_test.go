@@ -52,23 +52,30 @@ func TestParseURL(t *testing.T) {
 		require.Equal(t, "ns:t", cc.table)
 	})
 
+	// Each row names the message it must produce: several of these inputs would still
+	// fail one guard further on, so only the message tells the guards apart.
 	tests := []struct {
 		name string
 		url  string
 		addr string
+		want string
 	}{
-		{"wrong scheme", "redis://zk/", ""},
-		{"no host", "hbase:///?table=t", ""},
-		{"table with slash", "hbase://zk/?table=a/b", ""},
-		{"bad type", "hbase://zk/?table=t&types=cf:a=blorp", ""},
-		{"bad keytype", "hbase://zk/?table=t&keytype=blorp", ""},
-		{"malformed types entry", "hbase://zk/?table=t&types=noequals", ""},
-		{"types column not family:qualifier", "hbase://zk/?table=t&types=col=long", ""},
+		{"wrong scheme", "redis://zk/", "", "must start with hbase://"},
+		{"no host", "hbase:///?table=t", "", "must name at least one ZooKeeper host"},
+		{"empty host in a quorum", "hbase://a,,b/?table=t", "", `has an empty host in "a,,b"`},
+		{"table with slash", "hbase://zk/?table=a/b", "", "must be [namespace:]table, not a path"},
+		{"bad type", "hbase://zk/?table=t&types=cf:a=blorp", "", `unknown column type "blorp"`},
+		{"bad keytype", "hbase://zk/?table=t&keytype=blorp", "", `unknown column type "blorp"`},
+		{"malformed types entry", "hbase://zk/?table=t&types=noequals", "", `malformed ?types= entry "noequals"`},
+		{"types column not family:qualifier", "hbase://zk/?table=t&types=col=long", "", `?types= column "col" must be family:qualifier`},
+		{"types column with an empty qualifier", "hbase://zk/?table=t&types=cf:=long", "", `?types= column "cf:" must be family:qualifier`},
+		{"types column with an empty family", "hbase://zk/?table=t&types=:q=long", "", `?types= column ":q" must be family:qualifier`},
+		{"query string that will not parse", "hbase://zk/?table=t&%zz=1", "", "parse hbase url query"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := parseURL(tt.url, tt.addr)
-			require.Error(t, err)
+			require.ErrorContains(t, err, tt.want)
 		})
 	}
 }

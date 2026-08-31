@@ -1,6 +1,7 @@
 package hbase
 
 import (
+	"bytes"
 	"context"
 	"maps"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 )
@@ -187,4 +189,29 @@ func TestIntegrationDeclaredLongRoundTrip(t *testing.T) {
 	got, err := st.Get(ctx, []string{"1"})
 	require.NoError(t, err)
 	require.Equal(t, 412, got["1"].(map[string]any)["cf"].(map[string]any)["pages"])
+}
+
+func TestIntegrationOpenConfiguresTheStoreFromTheURL(t *testing.T) {
+	url := integrationOrSkip(t)
+	const table = "iq_it_open"
+	createTable(t, url, table, "cf")
+
+	var trace bytes.Buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	st, err := Open(ctx, url+"?types=cf:pages=long&keytype=long", table, &trace, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	// Everything the URL decides has to reach the Store: the table it is scoped to,
+	// the declared column and row-key encodings, the streaming page size, and the
+	// trace writer the CLI's --verbose hands in.
+	require.Equal(t, table, st.table)
+	require.Equal(t, typeMap{cellKey("cf", "pages"): ctLong}, st.types)
+	require.Equal(t, ctLong, st.rowkeyType)
+	require.Equal(t, scanBatch, st.pageSize)
+
+	_, err = st.Get(ctx, []string{"100"})
+	require.NoError(t, err)
+	require.Equal(t, "hbase> get "+table+" rows=1\n", trace.String())
 }

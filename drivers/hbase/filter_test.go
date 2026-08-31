@@ -104,6 +104,15 @@ func TestPushdownColumns(t *testing.T) {
 			ok:   true,
 		},
 		{
+			name: "and with one pushable conjunct pushes that one column",
+			pred: predicate.And{
+				predicate.Eq{Path: []string{"cf", "author"}, Value: "Herbert"},
+				predicate.Cmp{Path: []string{"cf", "age"}, Op: predicate.Gt, Value: float64(10)},
+			},
+			cols: []string{cellKey("cf", "author")},
+			ok:   true,
+		},
+		{
 			name: "nothing pushable",
 			pred: predicate.Cmp{Path: []string{"cf", "age"}, Op: predicate.Lt, Value: float64(5)},
 			ok:   false,

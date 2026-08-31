@@ -3,6 +3,7 @@ package hbase
 import (
 	"encoding/base64"
 	"math"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -143,6 +144,103 @@ func TestRowKeyRoundTrip(t *testing.T) {
 			b, err := encodeRowKey(tt.ct, tt.key)
 			require.NoError(t, err)
 			require.Equal(t, tt.key, rowKeyString(tt.ct, b))
+		})
+	}
+}
+
+func TestEncodeCellBoolIsASingleCanonicalByte(t *testing.T) {
+	// Bytes.toBytes(boolean) is exactly one byte, 1 or 0. Any non-zero byte decodes
+	// back as true, so the round trip cannot pin this: the bytes themselves must be.
+	on, err := encodeCell(ctBool, true)
+	require.NoError(t, err)
+	require.Equal(t, []byte{1}, on)
+
+	off, err := encodeCell(ctBool, false)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0}, off)
+}
+
+func TestEncodeCellKeepsTheParseCause(t *testing.T) {
+	t.Run("a bytes column keeps the base64 cause", func(t *testing.T) {
+		_, err := encodeCell(ctBytes, "not base64!!")
+		var corrupt base64.CorruptInputError
+		require.ErrorAs(t, err, &corrupt)
+	})
+
+	t.Run("a long column keeps the strconv cause", func(t *testing.T) {
+		_, err := encodeCell(ctLong, "abc")
+		var num *strconv.NumError
+		require.ErrorAs(t, err, &num)
+		require.Equal(t, "ParseInt", num.Func)
+	})
+
+	t.Run("a double column keeps the strconv cause", func(t *testing.T) {
+		_, err := encodeCell(ctDouble, "xyz")
+		var num *strconv.NumError
+		require.ErrorAs(t, err, &num)
+		require.Equal(t, "ParseFloat", num.Func)
+	})
+}
+
+func TestToInt64(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      any
+		want    int64
+		wantErr bool
+	}{
+		{name: "int", in: 7, want: 7},
+		{name: "int64", in: int64(-9), want: -9},
+		{name: "whole float", in: float64(1234), want: 1234},
+		{name: "a string is read in base ten", in: "100", want: 100},
+		{name: "the largest int64", in: strconv.FormatInt(math.MaxInt64, 10), want: math.MaxInt64},
+		{name: "the smallest int64", in: strconv.FormatInt(math.MinInt64, 10), want: math.MinInt64},
+		{name: "a fractional float is refused", in: 1.5, wantErr: true},
+		{name: "an unparsable string is refused", in: "abc", wantErr: true},
+		{name: "a non-number is refused", in: true, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := toInt64(tt.in)
+			if tt.wantErr {
+				require.Error(t, err)
+				// A refused coercion carries no number beside its error.
+				require.Zero(t, got)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestToFloat64(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      any
+		want    float64
+		wantErr bool
+	}{
+		{name: "float64", in: 3.5, want: 3.5},
+		{name: "int", in: 7, want: 7},
+		{name: "int64", in: int64(-2), want: -2},
+		{name: "a decimal string", in: "3.5", want: 3.5},
+		{name: "an exponent string", in: "1e300", want: 1e300},
+		{name: "an unparsable string is refused", in: "xyz", wantErr: true},
+		{name: "a non-number is refused", in: true, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := toFloat64(tt.in)
+			if tt.wantErr {
+				require.Error(t, err)
+				// A refused coercion carries no number beside its error.
+				require.Zero(t, got)
+				return
+			}
+			require.NoError(t, err)
+			// A zero delta is exact equality; a double column must not round.
+			require.InDelta(t, tt.want, got, 0)
 		})
 	}
 }

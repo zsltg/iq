@@ -18,24 +18,12 @@ func TestExplainPlan(t *testing.T) {
 		require.Nil(t, plan.Filter)
 	})
 
-	t.Run("full scan streamed", func(t *testing.T) {
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false)
-		require.Contains(t, plan.Ops[0], "full-table scan")
-		require.Contains(t, plan.Ops[1], "streamed in pages")
-		require.Nil(t, plan.Filter)
-	})
-
 	t.Run("filtered scan lists pushed columns", func(t *testing.T) {
 		pred := predicate.Eq{Path: []string{"cf", "author"}, Value: "Herbert"}
 		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
 		require.Contains(t, plan.Ops[0], "SingleColumnValueFilter")
 		require.Contains(t, plan.Ops[0], cellKey("cf", "author"))
 		require.Equal(t, map[string]any{"columns": []string{cellKey("cf", "author")}}, plan.Filter)
-	})
-
-	t.Run("unbounded materializes", func(t *testing.T) {
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, true)
-		require.Contains(t, plan.Ops[1], "materialized in memory")
 	})
 }
 
@@ -58,4 +46,43 @@ func TestExplainDelete(t *testing.T) {
 	// Delete removes the named rows.
 	require.Contains(t, plan.Ops[0], "exists-only Get")
 	require.Contains(t, plan.Ops[1], "Delete (whole row)")
+}
+
+func TestExplainPlanStreamingMode(t *testing.T) {
+	tests := []struct {
+		name       string
+		streamable bool
+		unbounded  bool
+		want       string
+	}{
+		{
+			name:       "a streamable bounded query is paged",
+			streamable: true,
+			want:       "cursor streamed in pages of 100",
+		},
+		{
+			name:       "an unbounded query materializes",
+			streamable: true,
+			unbounded:  true,
+			want:       "whole result materialized in memory",
+		},
+		{
+			name: "a non-streamable query materializes",
+			want: "whole result materialized in memory",
+		},
+		{
+			name:      "neither streamable nor bounded materializes",
+			unbounded: true,
+			want:      "whole result materialized in memory",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: tt.streamable}, nil, tt.unbounded)
+			require.Equal(t, []string{
+				"Scan: full-table scan (every row read, filtered client-side)",
+				tt.want,
+			}, plan.Ops)
+		})
+	}
 }

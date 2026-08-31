@@ -1,10 +1,10 @@
 package hbase
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"maps"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,20 +25,14 @@ func TestGetReturnsRowsAndOmitsMissing(t *testing.T) {
 	fc.seed("2", cell("cf", "title", "Hyperion"))
 	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
 
-	got, err := st.Get(context.Background(), []string{"1", "2", "missing"})
+	// The missing key sits between two present ones, so a walk that stopped at it
+	// rather than skipping it would lose the row behind it.
+	got, err := st.Get(context.Background(), []string{"1", "missing", "2"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{
 		"1": map[string]any{"cf": map[string]any{"title": "Dune"}},
 		"2": map[string]any{"cf": map[string]any{"title": "Hyperion"}},
 	}, got)
-}
-
-func TestGetEmptyKeysNoRoundTrip(t *testing.T) {
-	fc := newFakeClient()
-	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
-	got, err := st.Get(context.Background(), nil)
-	require.NoError(t, err)
-	require.Empty(t, got)
 }
 
 func TestGetNoTableErrors(t *testing.T) {
@@ -216,10 +210,11 @@ func TestQueryErrors(t *testing.T) {
 		{"unknown verb", []string{"scanx", "books"}, "unknown command"},
 		{"get arity", []string{"get", "books"}, "get needs"},
 		{"scan arity", []string{"scan"}, "scan needs"},
+		{"scan surplus argument", []string{"scan", "books", "2", "extra"}, "scan needs"},
 		{"put arity", []string{"put", "books", "7", "cf:title"}, "put needs"},
-		{"put bad column", []string{"put", "books", "7", "title", "x"}, "must be family:qualifier"},
 		{"delete arity", []string{"delete"}, "delete needs"},
-		{"delete bad column", []string{"delete", "books", "7", "title"}, "must be family:qualifier"},
+		{"delete without a row key", []string{"delete", "books"}, "delete needs"},
+		{"delete surplus argument", []string{"delete", "books", "7", "cf:t", "extra"}, "delete needs"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -397,20 +392,46 @@ func TestFormatRaw(t *testing.T) {
 	require.NotEmpty(t, st.FormatRaw(make(chan int), false))
 }
 
-func TestTraceOpWritesWhenEnabled(t *testing.T) {
-	fc := newFakeClient()
-	fc.seed("1", cell("cf", "n", "x"))
-	var buf bytes.Buffer
-	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
-	st.trace = &buf
-	_, err := st.Get(context.Background(), []string{"1"})
-	require.NoError(t, err)
-	require.Contains(t, buf.String(), "hbase> get books")
-}
-
 func TestCloseClosesClient(t *testing.T) {
 	fc := newFakeClient()
 	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
 	require.NoError(t, st.Close())
 	require.Equal(t, 1, fc.closeCalls)
+}
+
+func TestQueryScanLimitOne(t *testing.T) {
+	fc := newFakeClient()
+	for _, k := range []string{"1", "2", "3"} {
+		fc.seed(k, cell("cf", "n", k))
+	}
+	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
+	// A limit of one must stop at the first row: the cap is inclusive.
+	got, err := st.Query(context.Background(), []string{"scan", "books", "1"})
+	require.NoError(t, err)
+	require.Len(t, got.(map[string]any), 1)
+}
+
+func TestQueryColumnMustBeFamilyQualifier(t *testing.T) {
+	tests := []struct {
+		name   string
+		column string
+	}{
+		{"no separator", "title"},
+		{"empty qualifier", "cf:"},
+		{"empty family", ":title"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := newFakeStore(newFakeClient(), &fakeAdmin{}, "books", typeMap{}, ctAuto)
+
+			_, err := st.Query(context.Background(), []string{"put", "books", "7", tt.column, "x"})
+			require.ErrorContains(t, err, "must be family:qualifier")
+			// The message names the column the caller wrote, not another argument.
+			require.ErrorContains(t, err, strconv.Quote(tt.column))
+
+			_, err = st.Query(context.Background(), []string{"delete", "books", "7", tt.column})
+			require.ErrorContains(t, err, "must be family:qualifier")
+			require.ErrorContains(t, err, strconv.Quote(tt.column))
+		})
+	}
 }
