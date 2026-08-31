@@ -2,6 +2,7 @@ package couchdb
 
 import (
 	"context"
+	"net/url"
 	"testing"
 	"time"
 
@@ -92,6 +93,17 @@ func TestParseURL(t *testing.T) {
 			require.Equal(t, tt.wantDB, cc.db)
 		})
 	}
+}
+
+func TestParseURLWrapsTheURLFailure(t *testing.T) {
+	// The parser's own failure is wrapped, not flattened to a string, so a caller
+	// can still reach the url package's error.
+	cc, err := parseURL("couchdb://host:5984/%zz", "")
+	require.Equal(t, connConfig{}, cc)
+	require.ErrorContains(t, err, "parse couchdb url")
+
+	var urlErr *url.Error
+	require.ErrorAs(t, err, &urlErr)
 }
 
 func TestOpenRejectsAMalformedURL(t *testing.T) {

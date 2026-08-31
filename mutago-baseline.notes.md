@@ -343,3 +343,26 @@ precision the standard library treats identically. Covered-code MSI 88.76 -> 94.
 - 33265e6357968b93d0166f6c3a04ec74 drivers/redis/write.go:258 expression/context-nil — `p.XAdd(ctx, &goredis.XAddArgs{...})` → nil; same.
 - bcda4e484c659dcd1b8d4a1ba61f1296 drivers/redis/write.go:23 numbers/decrementer — Put's `len(batch) == 0` short-circuit made `== -1`; an empty batch reaches putUpsert, whose pipeline queues nothing, so the zero WriteStat and nil error are identical.
 - 760ad7f757c7ac930a6a6fa68b5bb156 drivers/redis/write.go:277 numbers/incrementer — `strconv.FormatFloat(t, 'g', -1, 64)` → precision -2; strconv selects the shortest representation for any negative precision, so the rendered scalar is byte-identical (same as drivers/dynamodb/filter.go:192).
+
+## drivers/couchdb — full-scan equivalents (accepted 2026-08-31, test/couchdb-mutation branch)
+First full scan of the package (only its diff lines had ever been gated): 52 escapes, 50 of
+them killed by new tests. Most of the residue was driver behaviour a live CouchDB cannot be
+asked to produce — a row that fails to scan, a document body that is not an object, an
+iteration that breaks mid-walk, a bulk write reporting a per-document conflict, a reply with
+no paging bookmark, a row with neither id nor revision — so those paths are now driven
+through kivik's own mock driver (`mockdb`, the same module, so no new dependency) against a
+Store holding a scripted `*kivik.Client`. The rest were plain assertion gaps: the four
+inspect projections were checked for "non-empty" instead of field by field, documentBody's
+identity strip was only ever observed through a round trip, the `$gte`/`$lte` arms of the
+range push and the one-branch and empty `Or` were never compiled, and the short page that
+ends a `_find` walk saved a round trip nothing counted (the request trace now counts it).
+The update run surfaced three more escapes the new tests had turned from uncovered into
+covered — the `%w` wraps on parseURL's url failure, on Query's Mango parse failure, and on
+findPaged's scan failure; those were killed with `errors.As`/`errors.Is` assertions on the
+cause, not accepted, and their ids removed from the baseline before the closing run verified
+the remaining pair. The two below survive because the mutation cannot change what the code
+does: one is an assignment of the value the variable already holds, the other a conjunct the
+guard beside it already implies. Each was verified by hand — the mutation applied to the real
+file, the whole package suite still green — before acceptance.
+- 7beb181f5718acd4619b4ffa114e7674 drivers/couchdb/couchdb.go:113 expression/remove — parseURL's path fallback `if p := strings.Trim(u.Path, "/"); p != "" && !strings.Contains(p, "/")` with the `p != ""` conjunct dropped. The block is reached only when `db == ""`, and the conjunct can only newly admit `p == ""`, whose body then runs `db = p`, assigning "" to a db that is already "". Both forms leave the same connConfig.
+- d02d70f46a0e4f06f96cdc0cb91ee619 drivers/couchdb/write.go:69 expression/remove — upsert's `if _, existed := revs[batch[i].Key]; existed && batch[i].Key != ""` with the key-non-empty conjunct dropped. revs comes from currentRevs, which sends only the batch's non-empty keys to _all_docs, and currentRevsForKeys stores a row only under the id the server echoed back, so `existed` is already false for every keyless record. The conjunct beside it decides every case.

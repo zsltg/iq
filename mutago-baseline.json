@@ -966,6 +966,18 @@
    "file": "drivers/redis/write.go",
    "mutator": "numbers/incrementer",
    "line": 277
+  },
+  {
+   "id": "7beb181f5718acd4619b4ffa114e7674",
+   "file": "drivers/couchdb/couchdb.go",
+   "mutator": "expression/remove",
+   "line": 113
+  },
+  {
+   "id": "d02d70f46a0e4f06f96cdc0cb91ee619",
+   "file": "drivers/couchdb/write.go",
+   "mutator": "expression/remove",
+   "line": 69
   }
  ]
 }

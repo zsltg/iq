@@ -2,6 +2,7 @@ package couchdb
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -135,6 +136,10 @@ func TestQueryRejectsUnparsableJSON(t *testing.T) {
 	require.Nil(t, res)
 	require.ErrorContains(t, err, "parse couchdb mango query")
 	require.NoError(t, mock.ExpectationsWereMet())
+
+	// The decoder's own error stays reachable through the wrap.
+	var syntax *json.SyntaxError
+	require.ErrorAs(t, err, &syntax)
 }
 
 func TestCloseSurfacesTheClientError(t *testing.T) {
@@ -152,11 +157,13 @@ func TestFindPagedSurfacesScanFailure(t *testing.T) {
 	// A _find row that carries an error instead of a document fails the scan with
 	// the scan message, distinct from a decode failure.
 	st, _, mdb := newMockStore(t, 10, 1)
+	boom := errors.New("row failed")
 	mdb.ExpectFind().WillReturn(mockdb.NewRows().
-		AddRow(&driver.Row{ID: "1", Error: errors.New("row failed")}))
+		AddRow(&driver.Row{ID: "1", Error: boom}))
 
 	err := st.findPaged(context.Background(), map[string]any{"a": 1}, func(map[string]any) error { return nil })
 	require.ErrorContains(t, err, "couchdb scan document")
+	require.ErrorIs(t, err, boom)
 }
 
 func TestFindPagedSurfacesDecodeFailure(t *testing.T) {
