@@ -25,6 +25,7 @@ type fakeKV struct {
 	batchSize  int      // page size; 0 means one page of everything
 	gotGetKeys []string
 	gotGetCtx  context.Context // the ctx Get was handed, so a dropped one is visible
+	gotScanCtx context.Context // the ctx ScanBatches was handed, likewise
 	scanCalls  int             // times ScanBatches was invoked
 	batchCount int             // pages fed to fn
 }
@@ -45,8 +46,9 @@ func (f *fakeKV) Get(ctx context.Context, keys []string) (map[string]any, error)
 	return out, nil
 }
 
-func (f *fakeKV) ScanBatches(_ context.Context, fn func(map[string]any) error) error {
+func (f *fakeKV) ScanBatches(ctx context.Context, fn func(map[string]any) error) error {
 	f.scanCalls++
+	f.gotScanCtx = ctx
 	if f.scanErr != nil {
 		return f.scanErr
 	}
@@ -217,6 +219,35 @@ func TestJQEngineFetchesReferencedKeys(t *testing.T) {
 	require.Zero(t, store.scanCalls, "a specific key must not trigger a scan")
 }
 
+// TestJQEngineForwardsContextToStore pins that every read path hands the store
+// the caller's context rather than a substituted nil: a bounded Get, a streaming
+// ScanBatches, and the materialized ScanBatches behind --unbounded. A nil there
+// silently unbounds the call the caller asked to be bounded.
+func TestJQEngineForwardsContextToStore(t *testing.T) {
+	tests := []struct {
+		name      string
+		src       string
+		unbounded bool
+		got       func(*fakeKV) context.Context
+	}{
+		{name: "bounded read", src: `.["a"]`, got: func(f *fakeKV) context.Context { return f.gotGetCtx }},
+		{name: "streaming scan", src: ".[]", got: func(f *fakeKV) context.Context { return f.gotScanCtx }},
+		{name: "materialized scan", src: "keys", unbounded: true, got: func(f *fakeKV) context.Context { return f.gotScanCtx }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeKV{scanKeys: []string{"a"}, values: map[string]any{"a": 1}}
+			ctx := context.WithValue(context.Background(), ctxMarker{}, "marker")
+
+			err := query.NewJQEngine(store).Run(ctx, tt.src, query.RunOptions{Unbounded: tt.unbounded}, func(any) error { return nil })
+
+			require.NoError(t, err)
+			require.NotNil(t, tt.got(store), "the store must receive a non-nil context")
+			require.Equal(t, "marker", tt.got(store).Value(ctxMarker{}), "the caller's context must reach the store")
+		})
+	}
+}
+
 // TestJQEngineReadsAbsentKeyAsNull pins the query-visible half of the KVStore
 // presence contract: Get omits a missing key, and indexing an absent map key is
 // null in jq, so a bounded read of a key that is not there still emits null —
@@ -363,6 +394,9 @@ func TestJQEnginePropagatesParseError(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "parse expression")
 	require.Nil(t, store.gotGetKeys)
+	// Naming the step is done by wrapping, so gojq's own parse error has to stay
+	// reachable underneath; formatting it in reads the same and severs errors.As.
+	require.Error(t, errors.Unwrap(err), "the parse error must stay unwrappable")
 }
 
 func TestJQEnginePropagatesStoreError(t *testing.T) {
@@ -373,6 +407,7 @@ func TestJQEnginePropagatesStoreError(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "boom")
 	require.ErrorContains(t, err, "fetch keys")
+	require.ErrorIs(t, err, store.getErr, "the store error must stay unwrappable")
 }
 
 func TestJQEnginePropagatesScanError(t *testing.T) {
@@ -383,6 +418,7 @@ func TestJQEnginePropagatesScanError(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "scan boom")
 	require.ErrorContains(t, err, "scan keys")
+	require.ErrorIs(t, err, store.scanErr, "the store error must stay unwrappable")
 }
 
 func TestJQEnginePropagatesRuntimeError(t *testing.T) {
@@ -393,4 +429,5 @@ func TestJQEnginePropagatesRuntimeError(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "run expression")
+	require.Error(t, errors.Unwrap(err), "the jq runtime error must stay unwrappable")
 }

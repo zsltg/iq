@@ -14,13 +14,15 @@ import (
 // was asked so a test can assert when the engine requests a total.
 type estimatorKV struct {
 	fakeKV
-	estimate      int64
-	estimateErr   error
-	estimateCalls int
+	estimate       int64
+	estimateErr    error
+	estimateCalls  int
+	gotEstimateCtx context.Context // the ctx EstimateCount was handed
 }
 
-func (f *estimatorKV) EstimateCount(context.Context) (int64, error) {
+func (f *estimatorKV) EstimateCount(ctx context.Context) (int64, error) {
 	f.estimateCalls++
+	f.gotEstimateCtx = ctx
 	if f.estimateErr != nil {
 		return 0, f.estimateErr
 	}
@@ -140,4 +142,36 @@ func TestJQEngineEstimateBestEffort(t *testing.T) {
 		require.Nil(t, got, "a failed estimate reports no total")
 		require.Equal(t, 1, store.estimateCalls, "the estimate is attempted once, not retried")
 	})
+}
+
+// TestJQEngineEstimateForwardsContext pins that the estimate is bounded by the
+// caller's context on both paths that request one. It is a best-effort hint, but
+// a hint handed a nil context is an unbounded call the caller never asked for,
+// and it is made before the scan it precedes.
+func TestJQEngineEstimateForwardsContext(t *testing.T) {
+	tests := []struct {
+		name      string
+		src       string
+		unbounded bool
+	}{
+		{name: "before a streaming scan", src: ".[]"},
+		{name: "before a materialized scan", src: "keys", unbounded: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &estimatorKV{
+				scanKeys: []string{"a"}, values: map[string]any{"a": 1},
+				estimate: 7,
+			}
+			ctx := context.WithValue(context.Background(), ctxMarker{}, "marker")
+			opts := query.RunOptions{Unbounded: tt.unbounded, OnEstimate: func(int64) {}}
+
+			err := query.NewJQEngine(store).Run(ctx, tt.src, opts, func(any) error { return nil })
+
+			require.NoError(t, err)
+			require.Equal(t, 1, store.estimateCalls)
+			require.NotNil(t, store.gotEstimateCtx, "EstimateCount must receive a non-nil context")
+			require.Equal(t, "marker", store.gotEstimateCtx.Value(ctxMarker{}), "the caller's context must reach EstimateCount")
+		})
+	}
 }

@@ -3,6 +3,7 @@ package query_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -108,6 +109,10 @@ func TestTransformBadFilter(t *testing.T) {
 	}{
 		{"item filter", query.TransformOptions{Filter: "this is not jq ("}, "parse item filter"},
 		{"key expression", query.TransformOptions{Key: "this is not jq ("}, "parse --key"},
+		// An undefined function parses cleanly and fails at compile instead, which
+		// is a separate guard with its own wording; a parse-only check never sees it.
+		{"item filter compile", query.TransformOptions{Filter: "nosuchfunc"}, "compile item filter"},
+		{"key expression compile", query.TransformOptions{Key: "nosuchfunc"}, "compile --key"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := query.NewTransform(tt.opts)
@@ -121,22 +126,52 @@ func TestTransformBadFilter(t *testing.T) {
 	}
 }
 
-// capturePutter records the batches and modes it is asked to write.
+// capturePutter records the batches and modes it is asked to write. stat, when
+// set, is the per-batch outcome it reports instead of the default "everything
+// written", so a test can drive the counters a Copier totals.
 type capturePutter struct {
-	batches [][]query.Record
-	mode    query.WriteMode
-	err     error
+	batches  [][]query.Record
+	mode     query.WriteMode
+	err      error
+	failFrom int // 1-based batch number err starts at; 0 means from the first
+	stat     *query.WriteStat
+	gotCtx   context.Context // the ctx Put was handed, so a dropped one is visible
+	calls    int
 }
 
-func (p *capturePutter) Put(_ context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
-	if p.err != nil {
+func (p *capturePutter) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
+	p.gotCtx = ctx
+	p.calls++
+	if p.err != nil && p.calls >= max(p.failFrom, 1) {
 		return query.WriteStat{}, p.err
 	}
 	// Copy the slice: the Copier reuses its buffer across batches.
 	b := append([]query.Record(nil), batch...)
 	p.batches = append(p.batches, b)
 	p.mode = mode
+	if p.stat != nil {
+		return *p.stat, nil
+	}
 	return query.WriteStat{Written: len(batch)}, nil
+}
+
+// batchSizes reports the length of each batch the putter received, which is what
+// distinguishes one page size from another.
+func (p *capturePutter) batchSizes() []int {
+	out := make([]int, 0, len(p.batches))
+	for _, b := range p.batches {
+		out = append(out, len(b))
+	}
+	return out
+}
+
+// numberedRecords returns n records keyed k0..k(n-1).
+func numberedRecords(n int) []query.Record {
+	out := make([]query.Record, 0, n)
+	for i := range n {
+		out = append(out, query.Record{Key: fmt.Sprintf("k%d", i), Value: i})
+	}
+	return out
 }
 
 // recordsSource turns a fixed slice into a RecordSource paged at size.
@@ -289,4 +324,149 @@ func TestCopierPropagatesPutError(t *testing.T) {
 	c := query.Copier{Dst: dst, PageSize: 10}
 	_, err := c.Copy(context.Background(), recordsSource([]query.Record{{Key: "a", Value: 1}}, 10), false)
 	require.ErrorIs(t, err, sentinel)
+}
+
+// TestCopierTotalsEveryWriteStatField pins that a copy accumulates all three
+// counters across pages, not just the one the default putter reports. Overwritten
+// and Skipped are what make a non-atomic multi-key write honest, and a copy that
+// summed only Written would report the same total as one that dropped them.
+func TestCopierTotalsEveryWriteStatField(t *testing.T) {
+	dst := &capturePutter{stat: &query.WriteStat{Written: 1, Overwritten: 2, Skipped: 3}}
+	c := query.Copier{Dst: dst, PageSize: 1}
+
+	stat, err := c.Copy(context.Background(), recordsSource(numberedRecords(2), 2), false)
+
+	require.NoError(t, err)
+	require.Equal(t, []int{1, 1}, dst.batchSizes(), "two pages, so two per-batch stats to fold")
+	require.Equal(t, query.WriteStat{Written: 2, Overwritten: 4, Skipped: 6}, stat)
+}
+
+// TestCopierPageBoundaries pins the page arithmetic exactly: which page size a
+// zero PageSize falls back to, and that a non-zero one is honoured as written.
+// Batch counts alone cannot see an off-by-one in the default, so the sizes are
+// compared element by element against a record count that straddles it.
+func TestCopierPageBoundaries(t *testing.T) {
+	tests := []struct {
+		name     string
+		pageSize int
+		records  int
+		want     []int
+	}{
+		// 101 records straddle the default 100: a default of 99 would split 99/2 and
+		// one of 101 would send a single batch.
+		{name: "zero page size defaults to one hundred", pageSize: 0, records: 101, want: []int{100, 1}},
+		// A page size of 1 must flush per record; treating "<= 1" as unset would
+		// send one batch of 3 instead.
+		{name: "page size one flushes per record", pageSize: 1, records: 3, want: []int{1, 1, 1}},
+		// Records that divide evenly must not produce a trailing empty batch: the
+		// final flush has nothing buffered and must not reach the store at all.
+		{name: "exact multiple sends no empty trailing batch", pageSize: 2, records: 4, want: []int{2, 2}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dst := &capturePutter{}
+			c := query.Copier{Dst: dst, PageSize: tt.pageSize}
+
+			stat, err := c.Copy(context.Background(), recordsSource(numberedRecords(tt.records), tt.records), false)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.records, stat.Written)
+			require.Equal(t, tt.want, dst.batchSizes())
+		})
+	}
+}
+
+// TestCopierDryRunCountsEveryPage pins that a dry run's count is the real record
+// count across several pages. The dry branch keeps its own buffer bookkeeping, so
+// a reset that leaves a record behind, or a total that assigns instead of adding,
+// reports a plausible but wrong number from a single-page run.
+func TestCopierDryRunCountsEveryPage(t *testing.T) {
+	dst := &capturePutter{}
+	c := query.Copier{Dst: dst, PageSize: 2}
+
+	stat, err := c.Copy(context.Background(), recordsSource(numberedRecords(5), 5), true)
+
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{Written: 5}, stat, "every record is counted once, across three pages")
+	require.Empty(t, dst.batches, "a dry run writes nothing")
+}
+
+// TestCopierStopsOnMidCopyPutError pins that a page flushed inside the read loop
+// propagates its error immediately, rather than the copy running on and only the
+// final flush being checked.
+func TestCopierStopsOnMidCopyPutError(t *testing.T) {
+	sentinel := errors.New("put boom")
+	dst := &capturePutter{err: sentinel}
+	c := query.Copier{Dst: dst, PageSize: 1}
+
+	_, err := c.Copy(context.Background(), recordsSource(numberedRecords(3), 3), false)
+
+	require.ErrorIs(t, err, sentinel)
+}
+
+// TestCopierReportsWhatItWroteBeforeFailing pins that a copy interrupted partway
+// still returns the stat for the pages that landed. Writes are not atomic across
+// keys, so a caller shown a zero total after two of three pages were written has
+// been told the destination is untouched when it is not.
+func TestCopierReportsWhatItWroteBeforeFailing(t *testing.T) {
+	sentinel := errors.New("put boom")
+	dst := &capturePutter{err: sentinel, failFrom: 3}
+	c := query.Copier{Dst: dst, PageSize: 1}
+
+	stat, err := c.Copy(context.Background(), recordsSource(numberedRecords(3), 3), false)
+
+	require.ErrorIs(t, err, sentinel)
+	require.Equal(t, query.WriteStat{Written: 2}, stat, "the two pages that landed must be reported")
+}
+
+// TestCopierStopsOnTransformError pins that a transform failure stops the copy
+// instead of the record being dropped and the walk continuing.
+func TestCopierStopsOnTransformError(t *testing.T) {
+	sentinel := errors.New("transform boom")
+	dst := &capturePutter{}
+	c := query.Copier{
+		Dst:       dst,
+		PageSize:  10,
+		Transform: func(query.Record) ([]query.Record, error) { return nil, sentinel },
+	}
+
+	_, err := c.Copy(context.Background(), recordsSource(numberedRecords(2), 2), false)
+
+	require.ErrorIs(t, err, sentinel)
+	require.Empty(t, dst.batches, "nothing is written once the transform fails")
+}
+
+// TestCopierForwardsContext pins that the caller's context reaches both edges of
+// a copy — the source it reads through and the putter it writes to — rather than
+// either being handed a nil.
+func TestCopierForwardsContext(t *testing.T) {
+	ctx := context.WithValue(context.Background(), ctxMarker{}, "marker")
+	var srcCtx context.Context
+	src := func(c context.Context, fn func([]query.Record) error) error {
+		srcCtx = c
+		return fn(numberedRecords(1))
+	}
+	dst := &capturePutter{}
+
+	_, err := (&query.Copier{Dst: dst, PageSize: 10}).Copy(ctx, src, false)
+
+	require.NoError(t, err)
+	require.NotNil(t, srcCtx, "the source must receive a non-nil context")
+	require.Equal(t, "marker", srcCtx.Value(ctxMarker{}), "the caller's context must reach the source")
+	require.NotNil(t, dst.gotCtx, "Put must receive a non-nil context")
+	require.Equal(t, "marker", dst.gotCtx.Value(ctxMarker{}), "the caller's context must reach Put")
+}
+
+// TestTransformWithoutFilterKeepsSourceType pins that a transform that does not
+// reshape the value leaves the record's native type alone. Only a reshaping
+// filter may restamp it, so a copy that merely re-keys a Redis hash must not
+// arrive at the destination as an untyped record.
+func TestTransformWithoutFilterKeepsSourceType(t *testing.T) {
+	fn, err := query.NewTransform(query.TransformOptions{KeyPrefix: "p:"})
+	require.NoError(t, err)
+
+	got, err := fn(query.Record{Key: "k", Type: "hash", Value: map[string]any{"f": "v"}})
+
+	require.NoError(t, err)
+	require.Equal(t, []query.Record{{Key: "p:k", Type: "hash", Value: map[string]any{"f": "v"}}}, got)
 }

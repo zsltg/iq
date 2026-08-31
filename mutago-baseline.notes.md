@@ -462,3 +462,40 @@ before acceptance.
 - 1e973c7c2926c8a2523d2dce8d009647 internal/diff/diff.go:467 branch/if — equal's `if _, ok := asFloat(b); ok { return false }` body cleared, so a number on the right falls through to `reflect.DeepEqual(a, b)`. The branch is reached only when `asFloat(a)` failed, so a's dynamic type is outside the normalized numeric set while b's is inside it; DeepEqual reports false for any two values of different dynamic types, so the fall-through returns the same false the guard returned. No input can separate the two forms. The guard stays as the statement that a number is never equal to a non-number, and it is not unasserted: the negation of the same condition is killed by the int-versus-string rows.
 - 38e51015625f7feb403fd818e673222f internal/diff/diff.go:486 numbers/decrementer — asFloat's `default: return 0, false` becomes `return -1, false`. asFloat is unexported and has two callers, both in equal, and both read the float only inside the `ok` branch; a false second result means the first is discarded, so no value it carries is observable.
 - 21ce2b52bd662b3b6a2f4c5416d8dd48 internal/diff/diff.go:486 numbers/incrementer — the same return, `return 1, false`, discarded for the same reason.
+
+## internal/query — full-scan equivalents (accepted 2026-08-31, test/diffquery-mutation branch)
+First full scan of the package (its CI `deep-mutate` job was preempted before the first verdict, so
+the escape list came from a local scan): 532 mutants, 77 escapes, 68 of them killed by new tests.
+Four themes account for nearly all of them. The `%w` wraps were never followed: eleven of them read
+identically as `%v`, so every one now has an `errors.Is`, `errors.As` or `errors.Unwrap` assertion
+on the cause rather than a substring check on the message. The ports were never asked which context
+they received: Get, ScanBatches, EstimateCount, Store.Query, Putter.Put, the RecordSource and
+SourceOpener.Open all now record it, and a marker value proves the caller's context arrives instead
+of a substituted nil. The page arithmetic was only ever counted, never sized: a record count that
+straddles the default (101 against 100) and a page size of one now pin both the fallback and the
+`<= 0` test, in the Copier and in JSONLSource alike, and an exact multiple proves no empty trailing
+batch reaches the store. And the failure paths of the dump readers had no tests at all: an encode
+failure, a cancelled context, a refusing consumer, a reader error, a malformed typed envelope, a
+malformed plain value, a stray `]` where the decoder's own "is there more" probe says no, an
+unparsable trailer, a one-byte document, and a line above and below the 16 MiB cap are all driven
+now. The remaining three themes were narrower: the bound `source()` function's arity (one or two
+arguments, so a zero- or three-argument call must fail at compile), which of two arguments a
+type-mismatch message reports, and WriteStat's Overwritten and Skipped counters, which no copy had
+ever folded across pages.
+The update run surfaced three more escapes the new tests had turned from uncovered into covered —
+the `%w` wraps on decodeValue's and JSONSource's decode failures, and the partial WriteStat a copy
+returns when a page fails partway; those were killed with `errors.Is`/`errors.As` assertions on the
+cause and a putter that fails only on its third batch, not accepted, and the baseline was
+regenerated so it holds exactly the nine below.
+The nine below survive because the mutation cannot change what the code does. Each was re-run in
+isolation with `IQ_MUTATION_MUTANT=<id>` after the new tests landed and escaped again, and the
+mechanism was checked against the source of the library it depends on.
+- d25802f1e59c4bea621c28f39ce8f1ce internal/query/copy.go:267 numbers/incrementer — scalarKey's `strconv.FormatFloat(t, 'g', -1, 64)` precision becomes -2. strconv's ftoa takes `shortest := prec < 0`, so every negative precision is the same request: the smallest digit count that round-trips. -1 is the documented spelling of it, not a magnitude.
+- 03128e9587f09b02833dfea08be65ead internal/query/dump.go:51 arithmetic/bitwise — the scanner's initial buffer size `64 << 10` becomes `64 >> 10`, i.e. 0.
+- 50515d01f31f491ea13616fd1b25e52a internal/query/dump.go:51 numbers/decrementer — the same size becomes `63 << 10`.
+- 8ea21c3710dc9d5f6bab1c689ca51b2c internal/query/dump.go:51 numbers/decrementer — the same size becomes `64 << 9`.
+- 51b008c9093f675582c640c84d593146 internal/query/dump.go:51 numbers/incrementer — the same size becomes `65 << 10`.
+- 89ecb8a92c78788933091fd53c9a717b internal/query/dump.go:51 numbers/incrementer — the same size becomes `64 << 11`. All five are the `initBuf` argument to `sc.Buffer`, an allocation hint and nothing else: bufio.Scanner doubles its buffer on demand (from `startBufSize` when it is handed an empty one) and caps the growth at `maxTokenSize`, so every starting size reaches the same 16 MiB ceiling and accepts and refuses exactly the same lines. The second argument is the one that decides behaviour, and all five of its mutants are killed by TestJSONLSourceLineCap, which reads a line just under the cap and refuses one just over it.
+- a99b26be16234e839cad9b703fdf3066 internal/query/dump.go:174 expression/error-guard — JSONSource's `if _, err := dec.Token(); err != nil` guard, on the token that consumes a top-level array's `[`. The guard is reached only when startsJSONArray has already peeked that `[`, which leaves it buffered in the bufio.Reader, and bufio serves buffered bytes without touching the underlying reader; the decoder needs exactly that one byte to return Delim('['). Probed with a reader that fails immediately after handing out `[`: the failure surfaces at the following `dec.Decode`, whose guard is killed, never at this one.
+- 29ccef2f8744f6121dc99131ebd5d688 internal/query/dump.go:128 expression/remove — convertNumbers' `if i, err := t.Int64(); err == nil && int64(int(i)) == i` with the round-trip conjunct dropped. The conjunct exists so a 32-bit build falls through to the *big.Int branch for a value that overflows its `int`; on the linux/amd64 the gate runs, `int` is 64 bits and the round trip is the identity. Same class as the accepted internal/numfmt/convert.go:41 entry, which is the same guard in the read path.
+- b2cd4944894a055379941789463c373e internal/query/dump.go:188 expression/remove — JSONSource's `if !array && errors.Is(err, io.EOF)` with the `!array` conjunct dropped, so an io.EOF from Decode would end an array walk quietly instead of being reported. In array mode Decode is only reached past `if array && !dec.More()`, and encoding/json's More returns false exactly when its peek fails, which at end of input it does; so inside an array the decoder is never called with nothing left to read, and it answers a truncated array with io.ErrUnexpectedEOF, which this condition does not match either way. The other two mutants of the same condition are the reachable ones, and TestJSONSourceRejectsTrailingGarbage kills both.

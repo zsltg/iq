@@ -1098,6 +1098,60 @@
    "file": "internal/diff/diff.go",
    "mutator": "numbers/incrementer",
    "line": 486
+  },
+  {
+   "id": "d25802f1e59c4bea621c28f39ce8f1ce",
+   "file": "internal/query/copy.go",
+   "mutator": "numbers/incrementer",
+   "line": 267
+  },
+  {
+   "id": "03128e9587f09b02833dfea08be65ead",
+   "file": "internal/query/dump.go",
+   "mutator": "arithmetic/bitwise",
+   "line": 51
+  },
+  {
+   "id": "a99b26be16234e839cad9b703fdf3066",
+   "file": "internal/query/dump.go",
+   "mutator": "expression/error-guard",
+   "line": 174
+  },
+  {
+   "id": "29ccef2f8744f6121dc99131ebd5d688",
+   "file": "internal/query/dump.go",
+   "mutator": "expression/remove",
+   "line": 128
+  },
+  {
+   "id": "b2cd4944894a055379941789463c373e",
+   "file": "internal/query/dump.go",
+   "mutator": "expression/remove",
+   "line": 188
+  },
+  {
+   "id": "50515d01f31f491ea13616fd1b25e52a",
+   "file": "internal/query/dump.go",
+   "mutator": "numbers/decrementer",
+   "line": 51
+  },
+  {
+   "id": "8ea21c3710dc9d5f6bab1c689ca51b2c",
+   "file": "internal/query/dump.go",
+   "mutator": "numbers/decrementer",
+   "line": 51
+  },
+  {
+   "id": "51b008c9093f675582c640c84d593146",
+   "file": "internal/query/dump.go",
+   "mutator": "numbers/incrementer",
+   "line": 51
+  },
+  {
+   "id": "89ecb8a92c78788933091fd53c9a717b",
+   "file": "internal/query/dump.go",
+   "mutator": "numbers/incrementer",
+   "line": 51
   }
  ]
 }

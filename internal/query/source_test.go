@@ -2,6 +2,7 @@ package query_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -10,14 +11,24 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// fakeOpener resolves names to fake KVStores for the source() function.
+// fakeOpener resolves names to fake KVStores for the source() function. openErr,
+// when set, is the failure Open reports for an unknown name, so a test can follow
+// one specific error out through the wraps.
 type fakeOpener struct {
-	stores map[string]query.KVStore
+	stores  map[string]query.KVStore
+	openErr error
+	gotCtx  *context.Context // the ctx Open was handed, so a dropped one is visible
 }
 
-func (o fakeOpener) Open(_ context.Context, name string) (query.KVStore, error) {
+func (o fakeOpener) Open(ctx context.Context, name string) (query.KVStore, error) {
+	if o.gotCtx != nil {
+		*o.gotCtx = ctx
+	}
 	st, ok := o.stores[name]
 	if !ok {
+		if o.openErr != nil {
+			return nil, o.openErr
+		}
 		return nil, fmt.Errorf("unknown source %q", name)
 	}
 	return st, nil
@@ -59,7 +70,34 @@ func TestUsesSource(t *testing.T) {
 	t.Run("parse error", func(t *testing.T) {
 		_, err := query.UsesSource("@@@ not jq")
 		require.Error(t, err)
+		// Naming the step is done by wrapping, so gojq's own parse error has to
+		// stay reachable underneath.
+		require.Error(t, errors.Unwrap(err), "the parse error must stay unwrappable")
 	})
+}
+
+// TestUsesSourceArity pins the arity the probe binding declares. source() takes
+// one or two arguments, so a call outside that range is not the cross-source
+// builtin at all and must not be routed to the cross engine — a widened probe
+// would claim a filter that the real binding then refuses to compile.
+func TestUsesSourceArity(t *testing.T) {
+	tests := []struct {
+		name   string
+		filter string
+		want   bool
+	}{
+		{name: "one argument is cross-source", filter: `source("a")`, want: true},
+		{name: "two arguments are cross-source", filter: `source("a"; ".")`, want: true},
+		{name: "no argument is not", filter: `source`, want: false},
+		{name: "three arguments are not", filter: `source("a"; "."; ".")`, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := query.UsesSource(tt.filter)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestSourceFunction(t *testing.T) {
@@ -121,7 +159,63 @@ func TestSourceFunction(t *testing.T) {
 	t.Run("non-string name errors", func(t *testing.T) {
 		_, err := runCross(opener, `source(1; ".")`, query.RunOptions{})
 		require.ErrorContains(t, err, "name must be a string")
+		// The message reports the type of the offending argument, the name; naming
+		// the filter's type instead would read as "got string" for this call.
+		require.ErrorContains(t, err, "got int", "the reported type is the name's, not the filter's")
 	})
+
+	t.Run("the filter's type is reported for a non-string filter", func(t *testing.T) {
+		_, err := runCross(opener, `source("users"; 1)`, query.RunOptions{})
+		require.ErrorContains(t, err, "filter must be a string")
+		require.ErrorContains(t, err, `source("users")`, "the message names the source")
+		require.ErrorContains(t, err, "got int", "the reported type is the filter's, not the name's")
+	})
+
+	t.Run("the source error stays unwrappable", func(t *testing.T) {
+		sentinel := errors.New("open boom")
+		failing := fakeOpener{stores: map[string]query.KVStore{}, openErr: sentinel}
+		_, err := runCross(failing, `source("gone"; ".")`, query.RunOptions{})
+		require.ErrorContains(t, err, `source "gone"`)
+		// The opener's failure crosses two wraps on its way out; formatting it in
+		// at either one severs errors.Is for the caller that has to classify it.
+		require.ErrorIs(t, err, sentinel)
+	})
+
+	t.Run("the caller's context reaches the opener", func(t *testing.T) {
+		var got context.Context
+		recording := fakeOpener{stores: opener.stores, gotCtx: &got}
+		var out []any
+		ctx := context.WithValue(context.Background(), ctxMarker{}, "marker")
+		err := query.NewCrossEngine(recording).Run(ctx, `source("users"; ".u1.name")`, query.RunOptions{},
+			func(v any) error { out = append(out, v); return nil })
+		require.NoError(t, err)
+		require.Equal(t, []any{"Ann"}, out)
+		require.NotNil(t, got, "Open must receive a non-nil context")
+		require.Equal(t, "marker", got.Value(ctxMarker{}), "the caller's context must reach the opener")
+	})
+}
+
+// TestCrossEngineSourceArity pins the arity of the bound source() function. One
+// or two arguments are the whole surface: a zero-argument call has no name to
+// resolve and a three-argument one carries an argument the implementation would
+// silently ignore, so both must fail at compile rather than run.
+func TestCrossEngineSourceArity(t *testing.T) {
+	opener := fakeOpener{stores: map[string]query.KVStore{
+		"users": &fakeKV{values: map[string]any{"u1": 1}, scanKeys: []string{"u1"}},
+	}}
+	tests := []struct {
+		name   string
+		filter string
+	}{
+		{name: "no argument", filter: `source`},
+		{name: "three arguments", filter: `source("users"; "."; ".")`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := runCross(opener, tt.filter, query.RunOptions{})
+			require.ErrorContains(t, err, "compile expression")
+		})
+	}
 }
 
 func TestCrossEngineErrors(t *testing.T) {
