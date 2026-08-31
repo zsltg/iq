@@ -542,6 +542,27 @@ func TestCacheGetIndexPolicy(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, map[string]any{"k0": "v0", "k700": "v700", "k1000": "v1000"}, out)
 	})
+	t.Run("a page the filters exclude is skipped, not a stopping point", func(t *testing.T) {
+		st, m, h := cacheFixture(t)
+		plantCache(t, st, m, cacheBytes(t, h, nRecords(2*pageSize+1), true, nil))
+		f, err := os.Open(st.cacheFile(m))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = f.Close() })
+		size, err := fileSize(f)
+		require.NoError(t, err)
+		indexOffset, err := readTrailer(f, size)
+		require.NoError(t, err)
+		idx, err := readIndex(f, indexOffset, size)
+		require.NoError(t, err)
+		require.Len(t, idx.Pages, 3)
+		// The key lives only in the last page, and the first page's filter really does
+		// exclude it, so a read that stopped at the first non-candidate would lose it.
+		require.False(t, bloomHas(idx.Pages[0].Filter, "k1000"))
+
+		out, ok := st.cacheGet(context.Background(), []string{"k1000"})
+		require.True(t, ok)
+		require.Equal(t, map[string]any{"k1000": "v1000"}, out)
+	})
 	t.Run("a cancelled context abandons the index read", func(t *testing.T) {
 		st, m, h := cacheFixture(t)
 		plantCache(t, st, m, cacheBytes(t, h, nRecords(3), true, nil))

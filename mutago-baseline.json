@@ -420,6 +420,252 @@
    "file": "drivers/mongo/normalize.go",
    "mutator": "numbers/incrementer",
    "line": 86
+  },
+  {
+   "id": "4702d30bfae5c4cd2c150a2749ab46c5",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/comparison",
+   "line": 574
+  },
+  {
+   "id": "9a12822cbaba3824543b385811b459ce",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/comparison",
+   "line": 576
+  },
+  {
+   "id": "6d61c0aa8f84b3c5c64ec83d5d8d0f15",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 122
+  },
+  {
+   "id": "fe55b530d19646560322fda114d61a31",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 292
+  },
+  {
+   "id": "446be0cd7d2f0209723c35f4744b8acd",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/remove",
+   "line": 467
+  },
+  {
+   "id": "c7fa9b921071d593ab0dabd526f37a95",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/remove",
+   "line": 475
+  },
+  {
+   "id": "9b389bd6c4ed2eac39bcaeb01cae5346",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/remove",
+   "line": 558
+  },
+  {
+   "id": "1cade0d0d9d7a1d1621097ccc066de96",
+   "file": "drivers/file/cache.go",
+   "mutator": "numbers/incrementer",
+   "line": 495
+  },
+  {
+   "id": "83eab4bb13c723cd1be377ed7eea28e1",
+   "file": "drivers/file/cache.go",
+   "mutator": "statement/return",
+   "line": 576
+  },
+  {
+   "id": "83535655adb596a9db5b41fd3678eeb1",
+   "file": "drivers/file/cache.go",
+   "mutator": "statement/return",
+   "line": 614
+  },
+  {
+   "id": "a5776bc0b54aeb78b502cfa940066024",
+   "file": "drivers/file/cassandra.go",
+   "mutator": "branch/if",
+   "line": 99
+  },
+  {
+   "id": "5d6cecd548efb192558ac422ac748d85",
+   "file": "drivers/file/cassandra.go",
+   "mutator": "conditional/bool-literal",
+   "line": 39
+  },
+  {
+   "id": "7a06a12c45b6dca481dfe2fd5aee631d",
+   "file": "drivers/file/cassandra.go",
+   "mutator": "numbers/incrementer",
+   "line": 40
+  },
+  {
+   "id": "e9d2453f6f93e2a6a01f2fcb1b96e182",
+   "file": "drivers/file/cassandra.go",
+   "mutator": "statement/remove",
+   "line": 39
+  },
+  {
+   "id": "d89bdc4dfe249d92d0c4085a23e06340",
+   "file": "drivers/file/detect.go",
+   "mutator": "branch/if",
+   "line": 206
+  },
+  {
+   "id": "096350411b1ca4f288cc8a590ab26c74",
+   "file": "drivers/file/detect.go",
+   "mutator": "expression/comparison",
+   "line": 161
+  },
+  {
+   "id": "43f599983251773dc7d810463ff1148c",
+   "file": "drivers/file/detect.go",
+   "mutator": "expression/remove",
+   "line": 150
+  },
+  {
+   "id": "f5f3cd412a70e9727295719eb6854896",
+   "file": "drivers/file/detect.go",
+   "mutator": "numbers/decrementer",
+   "line": 161
+  },
+  {
+   "id": "248b371646e765dbb2445df91d1c2727",
+   "file": "drivers/file/detect.go",
+   "mutator": "numbers/decrementer",
+   "line": 250
+  },
+  {
+   "id": "086a59f5a54db6ae79e7ae744c2b77d1",
+   "file": "drivers/file/detect.go",
+   "mutator": "numbers/decrementer",
+   "line": 250
+  },
+  {
+   "id": "e97a69fca836d2c77f988578c6c9d6c2",
+   "file": "drivers/file/detect.go",
+   "mutator": "numbers/incrementer",
+   "line": 221
+  },
+  {
+   "id": "630fc938740df3516a7d96c6a0f8c55d",
+   "file": "drivers/file/detect.go",
+   "mutator": "numbers/incrementer",
+   "line": 250
+  },
+  {
+   "id": "368581278664ad349a7a64af6b604e62",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 99
+  },
+  {
+   "id": "e9779a9c068230d06ee5988e7a00014c",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 145
+  },
+  {
+   "id": "eeb84b031cd5a1ce102d7a2ecbb79e8e",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 151
+  },
+  {
+   "id": "853420eac2c8cb784e68654d32b65e2b",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 170
+  },
+  {
+   "id": "e959cd5dc29e1d1f6bc87b40b8bef60d",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 196
+  },
+  {
+   "id": "db769e0a49496a825ed5c21f293d455d",
+   "file": "drivers/file/file.go",
+   "mutator": "conditional/bool-literal",
+   "line": 350
+  },
+  {
+   "id": "fdb6613b3cb747a4fe5ba6218b64f69b",
+   "file": "drivers/file/file.go",
+   "mutator": "expression/remove",
+   "line": 182
+  },
+  {
+   "id": "3010f9fcee4e99eaa07e15d1bb1f4654",
+   "file": "drivers/file/file.go",
+   "mutator": "statement/return",
+   "line": 159
+  },
+  {
+   "id": "7c903f929870bf9edeb9c018e42a5bb5",
+   "file": "drivers/file/file.go",
+   "mutator": "statement/return",
+   "line": 176
+  },
+  {
+   "id": "344b074185e8c234a613b1468f8e9d0b",
+   "file": "drivers/file/file.go",
+   "mutator": "statement/return",
+   "line": 188
+  },
+  {
+   "id": "bc9401a966b3dce56304999f87843784",
+   "file": "drivers/file/file.go",
+   "mutator": "statement/return",
+   "line": 195
+  },
+  {
+   "id": "9547ee9cc2ce06cb474c6fb3e385fcdf",
+   "file": "drivers/file/mongo.go",
+   "mutator": "expression/error-guard",
+   "line": 93
+  },
+  {
+   "id": "eee383190b764df3d797e5964432f5b0",
+   "file": "drivers/file/mongo.go",
+   "mutator": "expression/remove",
+   "line": 106
+  },
+  {
+   "id": "3b80a9a0b9289a9db028ebb05d5b7bbd",
+   "file": "drivers/file/neo4j.go",
+   "mutator": "expression/error-guard",
+   "line": 56
+  },
+  {
+   "id": "a2bdbf15126dcf96ad1de5d8ae5377cf",
+   "file": "drivers/file/neo4j.go",
+   "mutator": "numbers/incrementer",
+   "line": 264
+  },
+  {
+   "id": "cef35d51bf2f33f899a949a8a887a327",
+   "file": "drivers/file/neo4j.go",
+   "mutator": "statement/return",
+   "line": 110
+  },
+  {
+   "id": "fadcb92636adebbf9e7ca1372b57b3a2",
+   "file": "drivers/file/rdb.go",
+   "mutator": "expression/comparison",
+   "line": 93
+  },
+  {
+   "id": "f934ce4c8d9813c87d06db2abb53ebcf",
+   "file": "drivers/file/rdb.go",
+   "mutator": "expression/comparison",
+   "line": 95
+  },
+  {
+   "id": "0a4fab84db634e38ce728550886ffef1",
+   "file": "drivers/file/rdb.go",
+   "mutator": "expression/comparison",
+   "line": 127
   }
  ]
 }

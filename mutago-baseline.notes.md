@@ -181,3 +181,60 @@ mid-scan cancellation tests, the unordered-write tests and the command-monitor t
 - 925ed1e9b0f7 drivers/mongo/mongo.go:146 expression/error-guard — `cur.Decode(&doc)` into a bson.M cannot fail on a document the server actually returned (the guard covers malformed wire data only), so the branch is unreachable from any test that talks to a real MongoDB.
 - b97da05ec7d2 drivers/mongo/normalize.go:86 numbers/decrementer — `strconv.ParseFloat(str, 64)` → bitSize 63; ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path, so the parsed float is identical (verified against Go 1.27).
 - b537ea92d1b6 drivers/mongo/normalize.go:86 numbers/incrementer — same site with bitSize 65; identical for the same reason.
+
+## drivers/file — full-scan equivalents (accepted 2026-08-31, test/file-mutation branch)
+First full scan of the package; only its diff lines had ever been gated. CI's scan of the
+unstrengthened package reported 216 escaped mutants, 210 of them new (covered-code MSI
+81.8%). Strengthened tests killed 169 of those; the 41 below are genuine equivalents, in
+seven classes: returning a named constant whose value is its type's zero, so `return 0` is
+byte-identical (15 entries, every `FormatUnknown`/`nodeKind` return); a `<` already guarded
+by an inequality, or one whose operands are unique by construction; a guard the next
+statement re-derives, or whose condition no caller can produce; a disjunct subsumed by the
+one beside it; an arithmetic or formatting change the standard library — or the OR-composed
+expression around it — ignores; bookkeeping with no observable output; and a failure only an
+unwritable filesystem or a second OS user could produce. Each was verified by hand (the
+mutation applied to a file copy passes the whole package suite) before acceptance. One
+surprise in the update run, cache.go:492 loop/break, was re-verified with IQ_MUTATION_MUTANT
+and found killable — a new bounded-read test had merely turned a previously uncovered line
+into a covered one — so it was killed by a test and removed from the baseline, not accepted.
+- 4702d30bfae5c4cd2c150a2749ab46c5 drivers/file/cache.go:574 expression/comparison — the DumpPath `<` runs only inside `if out[i].DumpPath != out[j].DumpPath`, so `<=` and `<` agree on every pair that branch can see.
+- 9a12822cbaba3824543b385811b459ce drivers/file/cache.go:576 expression/comparison — the File tiebreak `<=` differs from `<` only for two entries with the same file name, which one directory cannot hold.
+- 83eab4bb13c723cd1be377ed7eea28e1 drivers/file/cache.go:576 statement/return — returns false for the File tiebreak; os.ReadDir yields names already ascending and the tiebreak is by that same name, so entries sharing a DumpPath are already in tiebreak order and no correct DumpPath sort reorders them.
+- 6d61c0aa8f84b3c5c64ec83d5d8d0f15 drivers/file/cache.go:122 expression/error-guard — filepath.Abs returns "" with its error and the next statement stats that "", returning the same `cacheMeta{}, false`; the guard only shortens the path to an identical result.
+- fe55b530d19646560322fda114d61a31 drivers/file/cache.go:292 expression/error-guard — writeHeader fails only if a write to the just-created temp file fails, which no test can produce without an unwritable or full filesystem; writeHeader's own three write guards are covered directly through an io.Writer.
+- 446be0cd7d2f0209723c35f4744b8acd drivers/file/cache.go:467 expression/remove — drops `err != nil` from cacheGet's freshness check; readHeader zeroes its header on error and cacheable guarantees `m.size >= minSize > 0`, so `h.Size != m.size` is already true whenever err is.
+- c7fa9b921071d593ab0dabd526f37a95 drivers/file/cache.go:475 expression/remove — drops `err != nil` beside `len(idx.Pages) == 0`; readIndex returns a zero indexBlock on error, whose Pages is nil, so the surviving disjunct already covers it.
+- 9b389bd6c4ed2eac39bcaeb01cae5346 drivers/file/cache.go:558 expression/remove — drops `de.IsDir()` from ListCache's filter; a directory that survives the .cbor extension test is then opened by headerOf, whose first read of a directory fails, so it is skipped either way.
+- 1cade0d0d9d7a1d1621097ccc066de96 drivers/file/cache.go:495 numbers/incrementer — `i+1 < len(idx.Pages)` becomes `i+2`, widening only the second-to-last page's decode span to the end of the record region; decodePage copies just the wanted keys, so the returned map and the found set are identical.
+- 83535655adb596a9db5b41fd3678eeb1 drivers/file/cache.go:614 statement/return — `return removed` becomes `return 0` on a remove failure; every cache file sits in the one directory whose permissions decide that failure, so a failing run has removed nothing and `removed` is already 0.
+- a5776bc0b54aeb78b502cfa940066024 drivers/file/cassandra.go:99 branch/if — drops `ct = gocql.TypeText` for an untyped column; bindKeyValue's default branch returns the raw string, exactly what TypeText returns, so the bound value is identical.
+- 5d6cecd548efb192558ac422ac748d85 drivers/file/cassandra.go:39 conditional/bool-literal — `cr.ReuseRecord = false`; the reader copies the header and reads each row's fields into fresh maps before the next Read, so reuse is an allocation choice with no observable effect.
+- e9d2453f6f93e2a6a01f2fcb1b96e182 drivers/file/cassandra.go:39 statement/remove — the same setting removed, equivalent for the same reason.
+- 7a06a12c45b6dca481dfe2fd5aee631d drivers/file/cassandra.go:40 numbers/incrementer — `cr.FieldsPerRecord = -1` becomes -2; encoding/csv treats every negative value alike (no width check), and recordForCSVRow still validates the width against the header.
+- 368581278664ad349a7a64af6b604e62 drivers/file/detect.go:99 statement/return — `return FormatUnknown` becomes `return 0`; FormatUnknown is iota 0, so the returned value is unchanged.
+- e9779a9c068230d06ee5988e7a00014c drivers/file/detect.go:145 statement/return — the same zero-value identity on the open-failure return.
+- eeb84b031cd5a1ce102d7a2ecbb79e8e drivers/file/detect.go:151 statement/return — the same identity on the head-read-failure return.
+- 853420eac2c8cb784e68654d32b65e2b drivers/file/detect.go:170 statement/return — the same identity on the empty-dump return.
+- e959cd5dc29e1d1f6bc87b40b8bef60d drivers/file/detect.go:196 statement/return — the same identity on the undetectable-format return.
+- 43f599983251773dc7d810463ff1148c drivers/file/detect.go:150 expression/remove — drops `!errors.Is(err, bufio.ErrBufferFull)`; the peek asks a 4096-byte bufio.Reader for 512 bytes, so ErrBufferFull is unreachable and the conjunct is inert.
+- 096350411b1ca4f288cc8a590ab26c74 drivers/file/detect.go:161 expression/comparison — `len(head) > 512` becomes `>= 512`, which differs only at exactly 512, where `head = head[:512]` is the identity.
+- f5f3cd412a70e9727295719eb6854896 drivers/file/detect.go:161 numbers/decrementer — `> 511` admits the same single extra length, 512, where the truncation is again the identity; the incrementer `> 513`, which does change the sniffed head, is killed by TestDetectSniffWindow.
+- d89bdc4dfe249d92d0c4085a23e06340 drivers/file/detect.go:206 branch/if — drops the early `return FormatMongoexport` for an undecidable head; obj is nil there, so both key lookups miss and the function falls through to the same FormatMongoexport return.
+- e97a69fca836d2c77f988578c6c9d6c2 drivers/file/detect.go:221 numbers/incrementer — `len(h) > 0` becomes `> 1`, differing only for the one-byte head "[": stepping past it leaves "" and not stepping leaves "[", and json.Decoder rejects both, so firstJSONObject reports false either way.
+- 248b371646e765dbb2445df91d1c2727 drivers/file/detect.go:250 numbers/decrementer — `int(head[1])<<7`; the four bytes are combined with OR, so with head[3] zero the value never exceeds 0xFFFEFF (under the 16 MiB cap) whichever shift is used, and with head[3] non-zero both forms exceed the cap exactly when the lower bytes are non-zero, so the verdict cannot change.
+- 086a59f5a54db6ae79e7ae744c2b77d1 drivers/file/detect.go:250 numbers/decrementer — `int(head[2])<<15`, equivalent by the same OR argument.
+- 630fc938740df3516a7d96c6a0f8c55d drivers/file/detect.go:250 numbers/incrementer — `int(head[1])<<9`, equivalent by the same OR argument; the sibling shifts that can cross the five-byte minimum or the 16 MiB cap (<<17, <<23, <<25 and the >> forms) are all killed by TestLooksLikeBSON.
+- 3010f9fcee4e99eaa07e15d1bb1f4654 drivers/file/file.go:159 statement/return — `return FormatUnknown, err` becomes `return 0, err`; FormatUnknown is iota 0.
+- 7c903f929870bf9edeb9c018e42a5bb5 drivers/file/file.go:176 statement/return — the same identity on the non-file-scheme rejection.
+- 344b074185e8c234a613b1468f8e9d0b drivers/file/file.go:188 statement/return — the same identity on the empty-path rejection.
+- bc9401a966b3dce56304999f87843784 drivers/file/file.go:195 statement/return — the same identity on the bad-?format= rejection.
+- fdb6613b3cb747a4fe5ba6218b64f69b drivers/file/file.go:182 expression/remove — drops `u.Host != ""` from the host-folding guard; with an empty host the body computes `path = "" + path`, so entering it is the identity.
+- db769e0a49496a825ed5c21f293d455d drivers/file/file.go:350 conditional/bool-literal — `found[r.Key] = true` becomes `= false`; the assignment still creates the map entry, so len(found) advances identically and the early stop fires at the same record.
+- 9547ee9cc2ce06cb474c6fb3e385fcdf drivers/file/mongo.go:93 expression/error-guard — Token() consuming the '[' startsArray already peeked in the same buffered reader cannot fail; the same class as the accepted drivers/file/filter.go:113 entry above.
+- eee383190b764df3d797e5964432f5b0 drivers/file/mongo.go:106 expression/remove — drops `!array` from the end-of-stream check; in array mode Decode is only reached when More() is true, so it never returns io.EOF and the dropped conjunct never decides.
+- 3b80a9a0b9289a9db028ebb05d5b7bbd drivers/file/neo4j.go:56 expression/error-guard — the same already-peeked-'[' Token guard as mongo.go:93.
+- cef35d51bf2f33f899a949a8a887a327 drivers/file/neo4j.go:110 statement/return — `return nodeKind` becomes `return 0`; nodeKind is iota 0. The sibling zero returns on the two error paths are killed by TestNeo4jKeyspaceSelector, which asserts the kind a rejection reports.
+- a2bdbf15126dcf96ad1de5d8ae5377cf drivers/file/neo4j.go:264 numbers/incrementer — strconv.FormatFloat precision -1 becomes -2; strconv selects the shortest representation for any negative precision, so the rendered literal is identical.
+- fadcb92636adebbf9e7ca1372b57b3a2 drivers/file/rdb.go:93 expression/comparison — the score `<` runs only inside `if Score != Score`, so `<=` and `<` agree on every pair that branch can see.
+- 0a4fab84db634e38ce728550886ffef1 drivers/file/rdb.go:127 expression/comparison — the same guarded-by-!= identity for the stream's millisecond comparison.
+- f934ce4c8d9813c87d06db2abb53ebcf drivers/file/rdb.go:95 expression/comparison — the member tiebreak `<=` differs from `<` only for two entries with the same member, which one sorted set cannot hold; the sibling sequence tiebreak at :129, where a dump can repeat an id, is killed by TestStreamValueOrdering.
