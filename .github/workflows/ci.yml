@@ -447,10 +447,16 @@ jobs:
         env:
           PKG: ${{ matrix.package }}
         run: echo "slug=$(echo "$PKG" | tr '/.' '--' | sed 's/^-*//')" >> "$GITHUB_OUTPUT"
+      # mutago-summary.json feeds deep-badge; mutago-agentic.json carries each
+      # escaped mutant WITH its stable id, which is what IQ_MUTATION_MUTANT takes,
+      # so hardening a package starts by downloading this artifact rather than by
+      # re-deriving ids from a log.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mutation-${{ steps.name.outputs.slug || 'root' }}
-          path: mutago-summary.json
+          path: |
+            mutago-summary.json
+            mutago-agentic.json
           if-no-files-found: error
           retention-days: 7
 
