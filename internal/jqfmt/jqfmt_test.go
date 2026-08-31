@@ -1,6 +1,7 @@
 package jqfmt
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -92,6 +93,39 @@ func TestFormatGolden(t *testing.T) {
 		{`if .a then (.b|.c) else .d end`, "if .a\nthen\n  (\n    .b\n    | .c\n  )\nelse .d\nend"},
 		{`.a | @base64`, ".a\n| @base64"},
 		{`.[] | select(.total > 99) | {id, total}`, ".[]\n| select(.total > 99)\n| {\n  id,\n  total\n}"},
+		// A top-level comma composition renders inline, separator then one space.
+		{`.a, .b`, ".a, .b"},
+		// Each if clause alone decides the break: a breaking condition, a breaking
+		// then-body, or the mere presence of an elif or else clause.
+		{`if (.a|.b) then .c end`, "if (\n  .a\n  | .b\n)\nthen .c\nend"},
+		{`if .a then (.b|.c) end`, "if .a\nthen\n  (\n    .b\n    | .c\n  )\nend"},
+		{`if .a then .b elif .c then .d end`, "if .a\nthen .b\nelif .c\nthen .d\nend"},
+		// A try with no catch keeps the catch clause out of the break decision.
+		{`try .a`, "try .a"},
+		// reduce/foreach break on any clause: the accumulator seed, the update, or
+		// foreach's optional extract; a foreach whose three clauses are all simple
+		// stays inline.
+		{`reduce .[] as $x ((.a|.b); 0)`, "reduce .[] as $x (\n  (\n    .a\n    | .b\n  );\n  0\n)"},
+		{`foreach .[] as $x (0; .a; (.b|.c))`, "foreach .[] as $x (\n  0;\n  .a;\n  (\n    .b\n    | .c\n  )\n)"},
+		{`foreach .[] as $x (0; . + $x; .)`, "foreach .[] as $x (0; . + $x; .)"},
+		// A func-def inside an argument breaks that argument.
+		{`select(def f: .; f)`, "select(\n  def f: .;\n  f\n)"},
+		// A binary composition breaks when either side does.
+		{`[(.a|.b) + .c]`, "[\n  (\n    .a\n    | .b\n  ) + .c\n]"},
+		{`[.a + (.b|.c)]`, "[\n  .a + (\n    .b\n    | .c\n  )\n]"},
+		// A one-entry object breaks only when its value or computed key breaks.
+		{`{a: .x}`, "{ a: .x }"},
+		{`{(.k): .v}`, "{ (.k): .v }"},
+		{`{a: (.x|.y)}`, "{\n  a: (\n    .x\n    | .y\n  )\n}"},
+		// A func-def's parameter list and a call's argument separator.
+		{`def f(x): x; f(.a)`, "def f(x): x;\nf(.a)"},
+		{`limit(3; .[])`, "limit(3; .[])"},
+		// Every suffix of a descended term is re-emitted, in order.
+		{`(.a | .b).c.d`, "(\n  .a\n  | .b\n).c.d"},
+		// Only a call literally named source with two string literals gets the
+		// nested-filter treatment; anything else takes the ordinary path.
+		{`foo("a"; "b")`, `foo("a"; "b")`},
+		{`source(.x; ".a")`, `source(.x; ".a")`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.src, func(t *testing.T) {
@@ -143,22 +177,75 @@ func stripANSI(s string) string {
 }
 
 func TestFormatNestedSource(t *testing.T) {
-	// A static source("name"; "<sub>") call unquotes and pretty-prints the nested
-	// jq inline as its own indented block.
-	out, err := Format(`source("orders"; ".[] | select(.vip)")`, false)
+	// A static source("name"; "<sub>") call unquotes and pretty-prints the nested jq
+	// inline as its own indented block: the sub-filter's own line breaks are re-indented
+	// under the call, the closing paren returns to the call's own indent, and a suffix
+	// on the call still follows it. Exact output, so a dropped token or a dropped
+	// re-indent is visible.
+	tests := []struct {
+		name, src, want string
+	}{
+		{
+			"pipe sub-filter",
+			`source("orders"; ".[] | select(.vip)")`,
+			"source(\"orders\";\n  .[]\n  | select(.vip)\n)",
+		},
+		{
+			"single-term sub-filter",
+			`source("n"; ".a")`,
+			"source(\"n\";\n  .a\n)",
+		},
+		{
+			"suffix after the call",
+			`source("n"; ".a").x`,
+			"source(\"n\";\n  .a\n).x",
+		},
+		{
+			"nested source indents one level deeper",
+			`source("n"; "source(\"m\"; \".a\")")`,
+			"source(\"n\";\n  source(\"m\";\n    .a\n  )\n)",
+		},
+		{
+			"an unparseable sub-filter stays a plain argument",
+			`source("n"; ".[ | broken")`,
+			`source("n"; ".[ | broken")`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := Format(tt.src, false)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, out)
+		})
+	}
+}
+
+// paint wraps text in the color of its role, the exact escape pairing tok emits.
+func paint(r role, text string) string { return ansi[r] + text + ansiReset }
+
+func TestFormatNestedSourceColored(t *testing.T) {
+	// The nested block and the source() call around it are colored by the same setting,
+	// so the call's own name, parens, separator and quoted source name carry color too,
+	// not just the sub-filter. Exact escape stream, token by token.
+	out, err := Format(`source("n"; ".a")`, true)
 	require.NoError(t, err)
-	require.Contains(t, out, `source("orders";`)
-	require.Contains(t, out, ".[]")
-	require.Contains(t, out, "select(.vip)")
-	// The nested sub-filter's pipe is broken onto its own line and indented.
-	require.Contains(t, out, "\n  .[]")
-	require.Contains(t, out, "\n  | select(.vip)")
+	want := paint(roleFunc, "source") + paint(rolePunc, "(") + paint(roleString, `"n"`) +
+		paint(rolePunc, ";") + "\n  " + paint(rolePath, ".a") + "\n" + paint(rolePunc, ")")
+	require.Equal(t, want, out)
 }
 
 func TestFormatParseError(t *testing.T) {
-	_, err := Format(`.[ | broken`, false)
+	src := `.[ | broken`
+	_, err := Format(src, false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "parse expression")
+	// The gojq failure is wrapped, not flattened into a string, so a caller can still
+	// reach the cause through errors.Unwrap.
+	_, raw := gojq.Parse(src)
+	require.Error(t, raw)
+	cause := errors.Unwrap(err)
+	require.Error(t, cause, "the parse failure must stay unwrappable")
+	require.Equal(t, raw.Error(), cause.Error())
 }
 
 func TestExplain(t *testing.T) {
@@ -307,6 +394,145 @@ func TestVisibleWidthBoundaries(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, VisibleWidth(tt.in))
+		})
+	}
+}
+
+func TestStringLiteral(t *testing.T) {
+	// Only a plain, uninterpolated, unsuffixed string literal standing alone is a static
+	// source() argument; every other query shape is rejected so the ordinary printing
+	// path keeps it verbatim.
+	tests := []struct {
+		name, src, want string
+		ok              bool
+	}{
+		{name: "plain literal", src: `"hello"`, want: "hello", ok: true},
+		{name: "path term", src: `.a`},
+		{name: "pipe composition", src: `.a | .b`},
+		{name: "binary composition", src: `"a" + "b"`},
+		{name: "func-def before the literal", src: `def f: .; "x"`},
+		{name: "literal with a suffix", src: `"abc"?`},
+		{name: "interpolated literal", src: `"\(.a)"`},
+		{name: "format applied to a literal", src: `@base64 "text"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := stringLiteral(mustParse(t, tt.src))
+			require.Equal(t, tt.ok, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestStringLiteralRejectsMalformedQueries(t *testing.T) {
+	// The parser never emits these shapes — it sets Op only on a composition, whose Term
+	// is nil, and always fills Str on a string term — so each guard is pinned here on a
+	// hand-built query. Rejection, not a nil dereference, is the contract.
+	strTerm := &gojq.Term{Type: gojq.TermTypeString, Str: &gojq.String{Str: "x"}}
+	tests := []struct {
+		name string
+		q    *gojq.Query
+	}{
+		{"no operator and no term", &gojq.Query{}},
+		{"operator set beside a term", &gojq.Query{Op: gojq.OpAdd, Term: strTerm}},
+		{"string term with no string", &gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeString}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := stringLiteral(tt.q)
+			require.False(t, ok)
+			require.Empty(t, got)
+		})
+	}
+}
+
+func TestSourceCallRejectsMalformedTerms(t *testing.T) {
+	// The shape check reads t.Func only after the term type says it is a call, and only
+	// a call actually named source is rewritten. Each guard is pinned on a hand-built
+	// term the parser would never produce, so none of them can be dropped silently.
+	args := []*gojq.Query{mustParse(t, `"orders"`), mustParse(t, `".a"`)}
+	tests := []struct {
+		name string
+		term *gojq.Term
+	}{
+		{"call payload on a non-call term", &gojq.Term{
+			Type: gojq.TermTypeString,
+			Str:  &gojq.String{Str: "x"},
+			Func: &gojq.Func{Name: "source", Args: args},
+		}},
+		{"call term with no call payload", &gojq.Term{Type: gojq.TermTypeFunc}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &printer{}
+			got, ok := p.sourceCall(tt.term)
+			require.False(t, ok)
+			require.Empty(t, got)
+		})
+	}
+}
+
+func TestTokColorsOnlyMappedRoles(t *testing.T) {
+	// A role with no entry in the ansi table writes its text plain even with coloring on,
+	// so the printer never opens a color it cannot name; a mapped role is wrapped in its
+	// code and a reset.
+	unmapped := role(len(ansi))
+	tests := []struct {
+		name    string
+		colored bool
+		r       role
+		want    string
+	}{
+		{"mapped role colored", true, roleFunc, ansi[roleFunc] + "x" + ansiReset},
+		{"unmapped role colored", true, unmapped, "x"},
+		{"mapped role uncolored", false, roleFunc, "x"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Empty(t, ansi[unmapped], "the unmapped role must stay absent from the table")
+			p := &printer{colored: tt.colored}
+			p.tok(tt.r, "x")
+			require.Equal(t, tt.want, p.b.String())
+		})
+	}
+}
+
+func TestQueryNeedsBreakOnDeclarations(t *testing.T) {
+	// A leading declaration breaks its query on its own, whatever the body is. Only the
+	// top-level query can carry a module header, and Format prints that one without
+	// consulting the predicate, so the predicate is exercised directly here.
+	tests := []struct {
+		name, src string
+		want      bool
+	}{
+		{"module header", `module {v: 1}; .a`, true},
+		{"func-def", `def f: .; .a`, true},
+		{"plain leaf body", `.a`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, queryNeedsBreak(mustParse(t, tt.src)))
+		})
+	}
+}
+
+func TestPrinterEmptyContainers(t *testing.T) {
+	// An empty literal stays on one line and opens no indented block. termNeedsBreak
+	// keeps an empty object or array on the leaf path, so these forms are pinned by
+	// calling the descending printer directly.
+	tests := []struct {
+		name  string
+		write func(p *printer)
+		want  string
+	}{
+		{"empty object", func(p *printer) { p.object(&gojq.Object{}) }, "{}"},
+		{"empty array", func(p *printer) { p.array(&gojq.Array{}) }, "[]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &printer{}
+			tt.write(p)
+			require.Equal(t, tt.want, p.b.String())
 		})
 	}
 }
