@@ -59,6 +59,28 @@ func TestToSelector(t *testing.T) {
 			wantNarrowing: true,
 		},
 		{
+			name: "greater-or-equal adds the same higher-ranked types under $gte",
+			pred: predicate.Cmp{Path: []string{"year"}, Op: predicate.Ge, Value: 2015.0},
+			wantSelector: map[string]any{"$or": []any{
+				map[string]any{"year": map[string]any{"$gte": 2015.0}},
+				map[string]any{"year": map[string]any{"$type": "string"}},
+				map[string]any{"year": map[string]any{"$type": "array"}},
+				map[string]any{"year": map[string]any{"$type": "object"}},
+			}},
+			wantNarrowing: true,
+		},
+		{
+			name: "less-or-equal adds the lower-ranked types and a missing field",
+			pred: predicate.Cmp{Path: []string{"year"}, Op: predicate.Le, Value: 2015.0},
+			wantSelector: map[string]any{"$or": []any{
+				map[string]any{"year": map[string]any{"$lte": 2015.0}},
+				map[string]any{"year": map[string]any{"$type": "null"}},
+				map[string]any{"year": map[string]any{"$type": "boolean"}},
+				map[string]any{"year": map[string]any{"$exists": false}},
+			}},
+			wantNarrowing: true,
+		},
+		{
 			name:          "exists",
 			pred:          predicate.Exists{Path: []string{"tags"}},
 			wantSelector:  map[string]any{"tags": map[string]any{"$exists": true}},
@@ -117,6 +139,24 @@ func TestToSelector(t *testing.T) {
 				predicate.Eq{Path: []string{"a"}, Value: "x"},
 				predicate.Ne{Path: []string{"b"}, Value: "y"},
 			},
+			wantNarrowing: false,
+		},
+		{
+			name: "or of a single pushable branch narrows to a one-arm $or",
+			pred: predicate.Or{predicate.Eq{Path: []string{"a"}, Value: "x"}},
+			wantSelector: map[string]any{"$or": []any{
+				map[string]any{"a": "x"},
+			}},
+			wantNarrowing: true,
+		},
+		{
+			name:          "an empty or has nothing to push and does not narrow",
+			pred:          predicate.Or{},
+			wantNarrowing: false,
+		},
+		{
+			name:          "an empty and has nothing to push and does not narrow",
+			pred:          predicate.And{},
 			wantNarrowing: false,
 		},
 		{
@@ -198,6 +238,9 @@ func TestByteSafeRegex(t *testing.T) {
 		{"positive class", "[abc]", true},
 		{"caret before a class is not negation", "^[a]", true},
 		{"trailing open bracket", "a[", true},
+		{"caret not preceded by a bracket is an anchor", "a^b", true},
+		{"class opener at the very end", "ab[", true},
+		{"pattern ends with a negated class opener", "[^", false},
 		{"escaped backslash then letter", `a\\d`, true},
 		{"unescaped dot", "a.c", false},
 		{"negated class", "[^a]", false},
