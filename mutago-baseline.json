@@ -804,6 +804,168 @@
    "file": "drivers/dynamodb/trace.go",
    "mutator": "expression/remove",
    "line": 55
+  },
+  {
+   "id": "da214413f2737db99961296445e31f16",
+   "file": "drivers/redis/kv.go",
+   "mutator": "branch/if",
+   "line": 28
+  },
+  {
+   "id": "d5c43949128e64f8fcace984b59a0dd9",
+   "file": "drivers/redis/kv.go",
+   "mutator": "branch/if",
+   "line": 308
+  },
+  {
+   "id": "df468c19faeee5b4855eb3e06e7f8690",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 44
+  },
+  {
+   "id": "82cf8c47e08e4bf648c2549f9998eceb",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 65
+  },
+  {
+   "id": "8e3cb2b99806944a03766b588f09b7f3",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 109
+  },
+  {
+   "id": "7d856bc2fba007d175485f9528a6817e",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 111
+  },
+  {
+   "id": "1fb448713cd88962f83dc9c79c3c175a",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 113
+  },
+  {
+   "id": "09c8a3967bc3b986c5b79cf08a22f839",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 115
+  },
+  {
+   "id": "c90adcfa21033ba9fd3b0f7ebec6c2de",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 117
+  },
+  {
+   "id": "9235d952f28969607ac6973afc1a54eb",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 119
+  },
+  {
+   "id": "f60032c63c642e82b7f4a5a12fda2a86",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 121
+  },
+  {
+   "id": "4b7421b81e3b7df89422c407399ec562",
+   "file": "drivers/redis/kv.go",
+   "mutator": "numbers/decrementer",
+   "line": 27
+  },
+  {
+   "id": "b8332d504b6a15ebea35bef846cb687e",
+   "file": "drivers/redis/kv.go",
+   "mutator": "numbers/decrementer",
+   "line": 307
+  },
+  {
+   "id": "8a9bf3c7fc9698a61264d7cbbfb66a2a",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 42
+  },
+  {
+   "id": "8fca4cd2ecaabb8998ad75f915d6ddf8",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 43
+  },
+  {
+   "id": "e0e06a97c60cab83f63ed7906582cba8",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 73
+  },
+  {
+   "id": "21848caa08750bedf1d5471ae101afce",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 112
+  },
+  {
+   "id": "a04e5bf09f892f9e29ea63165b12d21c",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 114
+  },
+  {
+   "id": "fd6546d693a3f03c55a54cd937e5fd90",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 116
+  },
+  {
+   "id": "4a203a6e60413fcf367ad1a4b0931d60",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 118
+  },
+  {
+   "id": "129103cbe3cfcef7266e59a4bdda9da1",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 120
+  },
+  {
+   "id": "e23f12865e3f460429c444e1bd5a3fef",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 122
+  },
+  {
+   "id": "f4519986eedb3f27d6008b866c7acbfc",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 172
+  },
+  {
+   "id": "9a00a0bb240ab3ca47176eab991cfa6e",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 226
+  },
+  {
+   "id": "33265e6357968b93d0166f6c3a04ec74",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 258
+  },
+  {
+   "id": "bcda4e484c659dcd1b8d4a1ba61f1296",
+   "file": "drivers/redis/write.go",
+   "mutator": "numbers/decrementer",
+   "line": 23
+  },
+  {
+   "id": "760ad7f757c7ac930a6a6fa68b5bb156",
+   "file": "drivers/redis/write.go",
+   "mutator": "numbers/incrementer",
+   "line": 277
   }
  ]
 }

@@ -293,3 +293,53 @@ verified by hand — the mutation applied to the real file, the whole package su
 - c4a107b075b68a6af3a9749b439cc47b drivers/dynamodb/normalize.go:88 numbers/incrementer — `new(big.Int).SetString(s, 10)` → base 11; only the ok flag is read, and isIntLiteral has already restricted s to an optional sign and decimal digits, each a valid base-11 digit too. The base-9 sibling, where '9' is not, is killed by TestNumberValue.
 - 007970fbff2655047d22c0a44a1fd690 drivers/dynamodb/trace.go:47 branch/if — tableOf's `if rv.IsNil() { return "" }` cleared; Elem() of a nil pointer is the invalid zero Value, whose Kind is not Struct, so the guard below returns the same "".
 - ee4f978b2ea5d131d577f489382eaf36 drivers/dynamodb/trace.go:55 expression/remove — the `f.IsValid()` conjunct dropped from the TableName guard; an invalid Value's Kind is Invalid, never Pointer, so the conjunct beside it already rejects it. The `f.Kind() == reflect.Pointer` conjunct, whose removal makes IsNil panic on a non-pointer TableName field, is killed by TestTableOf.
+
+## drivers/redis — full-scan equivalents (accepted 2026-08-31, test/redis-mutation branch)
+First full scan of the package (only its diff lines had ever been gated): 611 mutants, 57 escapes,
+three of them the per-command-context entries already accepted above, whose content-hash ids still
+match. Of the other 54, 26 were killed by new tests — the cursor walk over more than one SCAN
+round, a page error that must abort the walk rather than be masked by a later page that succeeds,
+the cursor's own failure, the mid-read race both read paths tolerate (staged with a pipeline hook:
+a vanished key is absence, a retyped key is a named read failure), the store's decimal mode
+reaching the plain read path's RedisJSON reader, dedupe's collapse, the malformed-document decode
+guard, the chunked DEL accounting summed over three chunks, the expiry a rewritten string must not
+inherit, the empty-aggregate guards that keep an argument-less command off the wire, the
+keyless-record sentinel under both write modes, the zero score a rejected coercion returns beside
+its error, Close's error rather than a silent nil, the AUTH redaction's HELLO scoping, the package
+init that silences go-redis's global logger (observed by making the library want to log in a child
+copy of the test binary, since that logger is a global with no getter which captured stderr at its
+own init), and the cause behind every wrapped error those tests reach. Two more needed no test:
+queueElements took a context and a pipeliner it never used, so the dead parameters were deleted
+and their mutants no longer exist. The 27 below are the remaining 26 plus one the new tests turned
+from uncovered into covered (kv.go:308), and they fall into three classes: go-redis's per-command
+context, which `(*Pipeline).BatchProcess` discards (the class of the accepted entries above, now
+enumerated across the whole package); a short-circuit whose absence reaches a pipeline with no
+commands, which `(*Pipeline).Exec` returns from before any round trip; and a negative FormatFloat
+precision the standard library treats identically. Covered-code MSI 88.76 -> 94.36.
+- da214413f2737db99961296445e31f16 drivers/redis/kv.go:28 branch/if — the same short-circuit's body cleared; equivalent for the same reason, and it saves only the two no-op pipelines.
+- d5c43949128e64f8fcace984b59a0dd9 drivers/redis/kv.go:308 branch/if — the same guard's body cleared; equivalent for the same reason (newly covered by the multi-round scan test, which ends on an empty page).
+- df468c19faeee5b4855eb3e06e7f8690 drivers/redis/kv.go:44 expression/context-nil — `p.Type(ctx, k)` → nil; queued command context, discarded by BatchProcess.
+- 82cf8c47e08e4bf648c2549f9998eceb drivers/redis/kv.go:65 expression/context-nil — `readerFor(ctx, ...)` → nil; the ctx reaches only the queued value command.
+- 8e3cb2b99806944a03766b588f09b7f3 drivers/redis/kv.go:109 expression/context-nil — `p.Get(ctx, key)` → nil; queued command context, discarded by BatchProcess.
+- 7d856bc2fba007d175485f9528a6817e drivers/redis/kv.go:111 expression/context-nil — `p.HGetAll(ctx, key)` → nil; same.
+- 1fb448713cd88962f83dc9c79c3c175a drivers/redis/kv.go:113 expression/context-nil — `p.LRange(ctx, key, 0, -1)` → nil; same.
+- 09c8a3967bc3b986c5b79cf08a22f839 drivers/redis/kv.go:115 expression/context-nil — `p.SMembers(ctx, key)` → nil; same.
+- c90adcfa21033ba9fd3b0f7ebec6c2de drivers/redis/kv.go:117 expression/context-nil — `p.ZRangeWithScores(ctx, key, 0, -1)` → nil; same.
+- 9235d952f28969607ac6973afc1a54eb drivers/redis/kv.go:119 expression/context-nil — `p.XRange(ctx, key, "-", "+")` → nil; same.
+- f60032c63c642e82b7f4a5a12fda2a86 drivers/redis/kv.go:121 expression/context-nil — `p.JSONGet(ctx, key)` → nil; same.
+- 4b7421b81e3b7df89422c407399ec562 drivers/redis/kv.go:27 numbers/decrementer — Get's `len(keys) == 0` short-circuit made `== -1`, never true; an empty read then falls through to two pipelines that queue nothing, and `(*Pipeline).Exec` returns before any round trip, so the identical empty map comes back.
+- b8332d504b6a15ebea35bef846cb687e drivers/redis/kv.go:307 numbers/decrementer — scanPages' `len(page) == 0` flush guard made `== -1`; an empty page reaches build, whose zero-key read is the same no-op pipeline, and the `len(batch) == 0` check below returns the identical nil.
+- 8a9bf3c7fc9698a61264d7cbbfb66a2a drivers/redis/write.go:42 expression/context-nil — `p.Del(ctx, r.Key)` → nil; queued command context, discarded by BatchProcess.
+- 8fca4cd2ecaabb8998ad75f915d6ddf8 drivers/redis/write.go:43 expression/context-nil — `queueWrite(ctx, ...)` → nil; every command it queues is pipelined, so the discarded context is the only thing that changes.
+- e0e06a97c60cab83f63ed7906582cba8 drivers/redis/write.go:73 expression/context-nil — `p.Exists(ctx, r.Key)` → nil; same as :42.
+- 21848caa08750bedf1d5471ae101afce drivers/redis/write.go:112 expression/context-nil — `p.Set(ctx, r.Key, v, 0)` → nil; same.
+- a04e5bf09f892f9e29ea63165b12d21c drivers/redis/write.go:114 expression/context-nil — `queueHash(ctx, ...)` → nil; its only use of the ctx is the pipelined HSET.
+- fd6546d693a3f03c55a54cd937e5fd90 drivers/redis/write.go:116 expression/context-nil — `p.RPush(ctx, ...)` → nil inside queueElements' add callback; the queued RPUSH's context is discarded.
+- 4a203a6e60413fcf367ad1a4b0931d60 drivers/redis/write.go:118 expression/context-nil — `p.SAdd(ctx, ...)` → nil in the same callback shape; same.
+- 129103cbe3cfcef7266e59a4bdda9da1 drivers/redis/write.go:120 expression/context-nil — `queueZSet(ctx, ...)` → nil; its only use of the ctx is the pipelined ZADD.
+- e23f12865e3f460429c444e1bd5a3fef drivers/redis/write.go:122 expression/context-nil — `queueStream(ctx, ...)` → nil; its only use of the ctx is the pipelined XADDs.
+- f4519986eedb3f27d6008b866c7acbfc drivers/redis/write.go:172 expression/context-nil — `p.HSet(ctx, r.Key, fields...)` → nil; same as :42.
+- 9a00a0bb240ab3ca47176eab991cfa6e drivers/redis/write.go:226 expression/context-nil — `p.ZAdd(ctx, r.Key, members...)` → nil; same.
+- 33265e6357968b93d0166f6c3a04ec74 drivers/redis/write.go:258 expression/context-nil — `p.XAdd(ctx, &goredis.XAddArgs{...})` → nil; same.
+- bcda4e484c659dcd1b8d4a1ba61f1296 drivers/redis/write.go:23 numbers/decrementer — Put's `len(batch) == 0` short-circuit made `== -1`; an empty batch reaches putUpsert, whose pipeline queues nothing, so the zero WriteStat and nil error are identical.
+- 760ad7f757c7ac930a6a6fa68b5bb156 drivers/redis/write.go:277 numbers/incrementer — `strconv.FormatFloat(t, 'g', -1, 64)` → precision -2; strconv selects the shortest representation for any negative precision, so the rendered scalar is byte-identical (same as drivers/dynamodb/filter.go:192).
