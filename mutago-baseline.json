@@ -1152,6 +1152,66 @@
    "file": "internal/query/dump.go",
    "mutator": "numbers/incrementer",
    "line": 51
+  },
+  {
+   "id": "4c2b9ffba20864009b884446505bd613",
+   "file": "drivers/hbase/filter.go",
+   "mutator": "expression/error-guard",
+   "line": 30
+  },
+  {
+   "id": "4a9c13a319df546e3ed695312b651c07",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "branch/if",
+   "line": 105
+  },
+  {
+   "id": "3968ff34cb25de5b9e23b668c371d569",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "expression/error-guard",
+   "line": 117
+  },
+  {
+   "id": "1776c8f21dc36c86651923884fe2b278",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "numbers/decrementer",
+   "line": 322
+  },
+  {
+   "id": "a9a81c63acc8912b13d1ef62aab03c79",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "statement/remove",
+   "line": 106
+  },
+  {
+   "id": "8f294e8c90fdcb1f13cb00b98a822f0a",
+   "file": "drivers/hbase/normalize.go",
+   "mutator": "numbers/decrementer",
+   "line": 219
+  },
+  {
+   "id": "e55c46ed4e95912550a77f73604d5c8a",
+   "file": "drivers/hbase/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 219
+  },
+  {
+   "id": "9fddefd1d54bf2948977ac86903c2380",
+   "file": "drivers/hbase/normalize.go",
+   "mutator": "statement/return",
+   "line": 71
+  },
+  {
+   "id": "e489c6e21e9851bf6a0bdaa23d41f351",
+   "file": "drivers/hbase/normalize.go",
+   "mutator": "statement/return",
+   "line": 253
+  },
+  {
+   "id": "e3d5e1a379fb395b8de6739dee4b99a9",
+   "file": "drivers/hbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 45
   }
  ]
 }

@@ -1,6 +1,7 @@
 package hbase
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -129,4 +130,13 @@ func TestTarget(t *testing.T) {
 
 	_, err = Target("nothbase://zk/", "")
 	require.Error(t, err)
+}
+
+func TestParseURLKeepsTheQueryParseCause(t *testing.T) {
+	// The query string is net/url's to parse, and its own error is what says which
+	// escape was bad, so it has to survive the wrap rather than be flattened into text.
+	_, err := parseURL("hbase://zk/?table=t&%zz=1", "")
+	var escape url.EscapeError
+	require.ErrorAs(t, err, &escape)
+	require.Equal(t, url.EscapeError("%zz"), escape)
 }
