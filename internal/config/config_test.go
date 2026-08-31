@@ -545,14 +545,23 @@ func TestRemoveAll(t *testing.T) {
 	})
 
 	t.Run("removed sources come out sorted", func(t *testing.T) {
-		c := &config.Config{Sources: map[string]config.Source{}}
-		require.NoError(t, c.Add("b", "redis://h"))
-		require.NoError(t, c.Add("a", "redis://h"))
-		require.NoError(t, c.Add("c", "redis://h"))
-		removed, err := c.RemoveAll([]string{"c", "a", "b"})
-		require.NoError(t, err)
-		require.Equal(t, []string{"a", "b", "c"},
-			[]string{removed[0].Handle, removed[1].Handle, removed[2].Handle})
+		// The handles are collected by ranging a map, whose iteration order is
+		// randomized per range, so an unsorted result would pass by chance now
+		// and then; repeat until that is impossible.
+		for range 10 {
+			c := &config.Config{Sources: map[string]config.Source{}}
+			for _, h := range []string{"b", "a", "e", "c", "d"} {
+				require.NoError(t, c.Add(h, "redis://h"))
+			}
+
+			removed, err := c.RemoveAll([]string{"c", "a", "e", "b", "d"})
+			require.NoError(t, err)
+			handles := make([]string, 0, len(removed))
+			for _, r := range removed {
+				handles = append(handles, r.Handle)
+			}
+			require.Equal(t, []string{"a", "b", "c", "d", "e"}, handles)
+		}
 	})
 }
 
@@ -567,6 +576,21 @@ func TestGroups(t *testing.T) {
 	require.Equal(t, 2, c.CountGroup("prod")) // prod/books, prod/eu/cache
 	require.Equal(t, 1, c.CountGroup("prod/eu"))
 	require.Equal(t, 0, c.CountGroup("nope"))
+}
+
+func TestGroupsSorted(t *testing.T) {
+	c := &config.Config{Sources: map[string]config.Source{}}
+	for _, h := range []string{"beta/a", "alpha/a", "gamma/a", "delta/a", "epsilon/a"} {
+		require.NoError(t, c.Add(h, "redis://h"))
+	}
+	want := []string{"alpha", "beta", "delta", "epsilon", "gamma"}
+
+	// The groups are collected by ranging a map, whose iteration order is
+	// randomized per range, so an unsorted result would pass by chance now and
+	// then; repeat until that is impossible.
+	for range 10 {
+		require.Equal(t, want, c.Groups())
+	}
 }
 
 func TestGroupsEmpty(t *testing.T) {
