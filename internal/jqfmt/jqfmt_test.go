@@ -84,6 +84,9 @@ func TestFormatGolden(t *testing.T) {
 		{`reduce .[] as $x (0; . + $x)`, "reduce .[] as $x (0; . + $x)"},
 		{`reduce .[] as $x (0; .a|.b)`, "reduce .[] as $x (\n  0;\n  .a\n  | .b\n)"},
 		{`select(.a|.b)`, "select(\n  .a\n  | .b\n)"},
+		// A call whose argument breaks reports the break to the enclosing form too, so
+		// the array around it opens its own block rather than collapsing to one line.
+		{`[select(.a|.b)]`, "[\n  select(\n    .a\n    | .b\n  )\n]"},
 		{`try .a catch (.b|.c)`, "try .a\ncatch\n  (\n    .b\n    | .c\n  )"},
 		{`foreach .[] as $x (0; . + $x)`, "foreach .[] as $x (0; . + $x)"},
 		{`foreach .[] as $x (0; .a|.b; .c)`, "foreach .[] as $x (\n  0;\n  .a\n  | .b;\n  .c\n)"},
