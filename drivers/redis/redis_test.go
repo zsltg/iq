@@ -3,12 +3,14 @@ package redis_test
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
 	"testing"
 	"time"
 
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
 	iqredis "github.com/zsltg/iq/drivers/redis"
@@ -48,6 +50,8 @@ func TestOpenRejectsBadURL(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "parse redis url")
+	var urlErr *url.Error
+	require.ErrorAs(t, err, &urlErr, "the parser's cause survives the wrap")
 }
 
 func TestOpenFailsFastWhenUnreachable(t *testing.T) {
@@ -59,6 +63,8 @@ func TestOpenFailsFastWhenUnreachable(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "connect redis")
+	var opErr *net.OpError
+	require.ErrorAs(t, err, &opErr, "the dialer's cause survives the wrap")
 }
 
 func TestStoreRoundTrip(t *testing.T) {
@@ -93,6 +99,18 @@ func TestStoreReturnsCommandError(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "redis:")
+	var redisErr goredis.Error
+	require.ErrorAs(t, err, &redisErr, "the server's cause survives the wrap")
+}
+
+// TestCloseReportsTheClientError pins that Close reports what the client says
+// rather than swallowing it: closing an already-closed store is the observable
+// case, and a silent nil there would hide a genuine shutdown failure too.
+func TestCloseReportsTheClientError(t *testing.T) {
+	store := openIntegration(t)
+
+	require.NoError(t, store.Close())
+	require.Error(t, store.Close(), "a second close surfaces the client's error")
 }
 
 func TestStoreUsesRESP2FlatReplies(t *testing.T) {

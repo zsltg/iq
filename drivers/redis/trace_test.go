@@ -23,6 +23,13 @@ func TestFormatRedisCmd(t *testing.T) {
 			args: []any{"HELLO", "3", "AUTH", "alice", "s3cr3t"},
 			want: "HELLO 3 AUTH (redacted) (redacted)",
 		},
+		{
+			// Only a HELLO handshake carries credentials after an AUTH token, so an
+			// "auth" argument to any other command is ordinary data and stays visible.
+			name: "auth argument outside hello is not redacted",
+			args: []any{"SET", "auth", "token"},
+			want: "SET auth token",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
