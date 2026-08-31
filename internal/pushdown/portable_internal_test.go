@@ -22,6 +22,7 @@ func TestPortableRegex(t *testing.T) {
 		"a(",         // a trailing '(' (no lookahead) is left to the engine
 		"a[",         // a trailing '[' (not a POSIX class) is left to the engine
 		`x\d`,        // a trailing portable escape
+		`\(?`,        // an escaped paren is a literal, so the `?` only quantifies it
 	}
 	for _, p := range portable {
 		require.True(t, portableRegex(p), "should be portable: %q", p)
@@ -42,6 +43,9 @@ func TestPortableRegex(t *testing.T) {
 		`[\p{L}]`,     // engine-specific escape inside a class
 		`\S`,          // RE2 \S matches a vertical tab PCRE's does not — narrows
 		`x\Sy`,        // the same escape mid-pattern
+		"(?",          // a group extension truncated to the end of the pattern
+		"[[",          // a POSIX class truncated to the end of the pattern
+		`\d(?i)`,      // an inline flag group after a portable escape
 	}
 	for _, p := range notPortable {
 		require.False(t, portableRegex(p), "should not be portable: %q", p)
