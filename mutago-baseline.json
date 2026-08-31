@@ -1044,6 +1044,24 @@
    "file": "internal/rawpred/rawpred.go",
    "mutator": "loop/break",
    "line": 728
+  },
+  {
+   "id": "7c019bb775c298a196100f0acb68bc55",
+   "file": "internal/numfmt/convert.go",
+   "mutator": "expression/remove",
+   "line": 41
+  },
+  {
+   "id": "dd0c601a1d638e7ae052249c40e639c0",
+   "file": "internal/numfmt/decimal.go",
+   "mutator": "statement/return",
+   "line": 37
+  },
+  {
+   "id": "939386efa8e17c4320ce6076daec5835",
+   "file": "internal/numfmt/decimal.go",
+   "mutator": "statement/return",
+   "line": 43
   }
  ]
 }
