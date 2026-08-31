@@ -28,7 +28,7 @@ GORELEASER         := github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 .DEFAULT_GOAL := build
 include scripts/demo/demo.mk
 
-.PHONY: build version changelog release tools tools-dev check cover security sbom e2e bench docs docs-serve capabilities mutation ci man completions release-check release-snapshot
+.PHONY: build version changelog release tools tools-dev hooks check cover security sbom e2e bench docs docs-serve capabilities mutation ci man completions release-check release-snapshot
 
 # build compiles the binary with version metadata embedded, static and
 # trimmed exactly like a release artifact (goreleaser mirrors these flags).
@@ -63,6 +63,14 @@ tools-dev:
 	go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest
 	go install github.com/zricethezav/gitleaks/v8@latest
 	go install github.com/anchore/syft/cmd/syft@latest
+
+# hooks points core.hooksPath at the committed .githooks, which guard the commit
+# identity: the address a repository publishes is the one in its git config, and
+# an override is expensive to remove once pushed. Per checkout, worktrees
+# included, so run it once in each.
+hooks:
+	git config core.hooksPath .githooks
+	@echo "hooks: core.hooksPath -> .githooks (pre-commit, pre-push)"
 
 # check is the fast, offline gate: format, vet, build, lint, dead code, and the
 # unit suite with a coverage report. No Docker, no network.

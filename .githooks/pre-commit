@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+# Reject a commit whose author identity differs from the configured user.email.
+#
+# The identity a repository publishes is the one in its git config; anything
+# else (a `git -c user.email=...`, a GIT_AUTHOR_EMAIL in the environment, a
+# tool that fills the field in from somewhere else) puts a different address
+# into history that is expensive to remove once pushed. `git var
+# GIT_AUTHOR_IDENT` resolves the identity the commit will actually carry, so
+# this sees a --author, a -c override and an environment variable alike.
+#
+# Deliberate override, e.g. applying someone else's patch: commit with
+# --no-verify.
+set -eu
+
+# The configured identity is read from config FILES only: a `git -c
+# user.email=...` override would otherwise move both sides of the comparison
+# and pass. --show-origin prints "<origin>\t<value>" per source in increasing
+# precedence, so the last file: line is the effective file value.
+configured=$(git config --show-origin --get-all user.email 2>/dev/null |
+	awk -F'\t' '$1 ~ /^file:/ { v = $2 } END { print v }')
+[ -n "$configured" ] || exit 0
+
+author=$(git var GIT_AUTHOR_IDENT | sed -n 's/.*<\(.*\)>.*/\1/p')
+if [ "$author" != "$configured" ]; then
+	echo "pre-commit: author <$author> is not the configured user.email <$configured>." >&2
+	echo "pre-commit: fix the override, or pass --no-verify if the difference is deliberate." >&2
+	exit 1
+fi

@@ -149,6 +149,25 @@ duration` and is the expensive step, not the fixing. Work it in this order.
 Point a container-backed package at a running service (`IQ_<DRIVER>_URL`, see
 `.env.example`) before any of this, or every mutant pays for a fresh container.
 
+### Commit identity (`make hooks`)
+
+```bash
+make hooks   # per checkout, worktrees included
+```
+
+Points `core.hooksPath` at the committed `.githooks`. Both hooks compare a
+commit's address against the `user.email` configured in a config file, read
+with `--show-origin` so a `git -c user.email=...` cannot move both sides of the
+comparison at once. `pre-commit` resolves the identity the commit will carry,
+so it catches a `--author`, a `-c` override and a `GIT_AUTHOR_EMAIL` alike;
+`pre-push` re-checks author and committer across everything being published,
+which is what catches commits the hook never saw: a `--no-verify`, a tool that
+bypasses hooks, a replayed rebase, or history written before the hooks existed.
+The address a repository publishes is the one in its config, and removing a
+different one from published history costs a force-push over every clone. A
+deliberate override, such as applying someone else's patch, passes
+`--no-verify`.
+
 ### make ci
 
 check + cover + security + capabilities + mutation, in that order, the
