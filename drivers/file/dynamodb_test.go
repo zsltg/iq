@@ -3,7 +3,10 @@ package file
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -104,4 +107,38 @@ func TestDynamoFormatString(t *testing.T) {
 	f, err := ParseFormat("ddb")
 	require.NoError(t, err)
 	require.Equal(t, FormatDynamoDBJSON, f)
+}
+
+// TestDynamoSourceFailures pins the dump reader's error handling: an "Items" value
+// that is not an array is a decode failure rather than a silently empty page, a
+// malformed top-level object is reported, and a consumer error propagates even when
+// a later page would have succeeded.
+func TestDynamoSourceFailures(t *testing.T) {
+	drain := func(t *testing.T, body string, size int, fn func([]query.Record) error) error {
+		t.Helper()
+		src, err := dynamoSource(strings.NewReader(body), size, numfmt.DecimalAuto, Hints{Keys: "pk"})
+		require.NoError(t, err)
+		return src(context.Background(), fn)
+	}
+	ignore := func([]query.Record) error { return nil }
+
+	t.Run("a non-array Items value is a decode failure", func(t *testing.T) {
+		require.ErrorContains(t, drain(t, `{"Items":5}`, pageSize, ignore), "decode dynamodb Items")
+	})
+	t.Run("a malformed dump is a decode failure", func(t *testing.T) {
+		require.ErrorContains(t, drain(t, `{"Item":`, pageSize, ignore), "decode dynamodb dump")
+	})
+	t.Run("a consumer error propagates from a full page", func(t *testing.T) {
+		boom := errors.New("consumer said no")
+		f := &failFirstCall{err: boom}
+		body := `{"Items":[{"pk":{"S":"a"}},{"pk":{"S":"b"}},{"pk":{"S":"c"}}]}`
+		require.ErrorIs(t, drain(t, body, 2, f.accept), boom)
+	})
+	t.Run("a cancelled scan stops", func(t *testing.T) {
+		src, err := dynamoSource(strings.NewReader(`{"Items":[{"pk":{"S":"a"}}]}`), pageSize, numfmt.DecimalAuto, Hints{Keys: "pk"})
+		require.NoError(t, err)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		require.ErrorIs(t, src(ctx, ignore), context.Canceled)
+	})
 }

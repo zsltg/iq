@@ -2,7 +2,10 @@ package file
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -121,4 +124,67 @@ func TestCassandraFormatString(t *testing.T) {
 	f, err := ParseFormat("cql")
 	require.NoError(t, err)
 	require.Equal(t, FormatCassandraCSV, f)
+}
+
+// TestCassandraCSVFailures pins the CSV reader's error handling. A header that
+// cannot be parsed is reported as a header failure and a bad row as a row failure,
+// a bad value keeps the underlying parse cause reachable so a caller can classify
+// it, and a cancelled scan stops rather than decoding the whole dump.
+func TestCassandraCSVFailures(t *testing.T) {
+	drain := func(t *testing.T, body, query string, ctx context.Context, fn func([]query.Record) error) error {
+		t.Helper()
+		u := writeDump(t, "c.csv", []byte(body), query)
+		st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+		require.NoError(t, err)
+		return st.TypedScan(ctx, fn)
+	}
+	ignore := func([]query.Record) error { return nil }
+
+	t.Run("an unparsable header is a header failure", func(t *testing.T) {
+		err := drain(t, "id,\"na\"me\nx,1\n", "format=cassandra-csv&keys=id", context.Background(), ignore)
+		require.ErrorContains(t, err, "read cassandra csv header")
+	})
+	t.Run("an unparsable row is a row failure", func(t *testing.T) {
+		err := drain(t, "id,name\nx,\"na\"me\n", "format=cassandra-csv&keys=id", context.Background(), ignore)
+		require.ErrorContains(t, err, "read cassandra csv row")
+	})
+	t.Run("a bad value keeps its parse cause", func(t *testing.T) {
+		err := drain(t, "id,age\nx,notanint\n", "format=cassandra-csv&keys=id&types=age=int", context.Background(), ignore)
+		require.ErrorContains(t, err, `cassandra csv column "age"`)
+		require.ErrorIs(t, err, strconv.ErrSyntax)
+	})
+	t.Run("a cancelled scan stops", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := drain(t, "id\nx\ny\n", "format=cassandra-csv&keys=id", ctx, ignore)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+	t.Run("a consumer error propagates from a full page", func(t *testing.T) {
+		var buf bytes.Buffer
+		buf.WriteString("id\n")
+		for i := range pageSize {
+			fmt.Fprintf(&buf, "k%d\n", i)
+		}
+		boom := errors.New("consumer said no")
+		f := &failFirstCall{err: boom}
+		err := drain(t, buf.String(), "format=cassandra-csv&keys=id", context.Background(), f.accept)
+		require.ErrorIs(t, err, boom)
+	})
+	t.Run("a one-row trailing page is still emitted", func(t *testing.T) {
+		var buf bytes.Buffer
+		buf.WriteString("id\n")
+		for i := range pageSize + 1 {
+			fmt.Fprintf(&buf, "k%d\n", i)
+		}
+		u := writeDump(t, "tail.csv", buf.Bytes(), "format=cassandra-csv&keys=id")
+		st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+		require.NoError(t, err)
+		require.Equal(t, []int{pageSize, 1}, pageSizes(t, st))
+	})
+	t.Run("an empty dump yields nothing", func(t *testing.T) {
+		u := writeDump(t, "empty.csv", nil, "format=cassandra-csv&keys=id")
+		st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+		require.NoError(t, err)
+		require.Empty(t, collect(t, st))
+	})
 }

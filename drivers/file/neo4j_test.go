@@ -2,8 +2,12 @@ package file
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -215,4 +219,162 @@ func TestPagingNeo4j(t *testing.T) {
 	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, []int{pageSize, bigCount - pageSize}, pageSizes(t, st))
+}
+
+// TestNeo4jKeyspaceSelector pins the keyspace resolution behind ?label=/?rel=,
+// including the kind reported alongside each rejection: exactly one selector is
+// required, and a rejected call reports the zero kind rather than a stray one.
+func TestNeo4jKeyspaceSelector(t *testing.T) {
+	tests := []struct {
+		name     string
+		hints    Hints
+		wantKind neo4jKind
+		wantName string
+		wantErr  string
+	}{
+		{name: "a label selects the node keyspace", hints: Hints{Label: "Person"}, wantKind: nodeKind, wantName: "Person"},
+		{name: "a rel selects the relationship keyspace", hints: Hints{Rel: "KNOWS"}, wantKind: relKind, wantName: "KNOWS"},
+		{name: "both selectors is a contradiction", hints: Hints{Label: "Person", Rel: "KNOWS"}, wantErr: "only one"},
+		{name: "neither selector leaves the keyspace unnamed", hints: Hints{}, wantErr: "needs a keyspace"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			kind, name, err := neo4jKeyspace(tt.hints)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.Equal(t, neo4jKind(0), kind, "a rejected selector reports the zero kind")
+				require.Empty(t, name)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantKind, kind)
+			require.Equal(t, tt.wantName, name)
+		})
+	}
+}
+
+// TestNeo4jKeyspaceIsolation is the rule a dump read depends on: a dump interleaves
+// every label and type, so a read must emit only the selected kind. The fixture
+// deliberately names a node label and a relationship type the same, so a filter that
+// checked only the name would leak the other kind into the scan.
+func TestNeo4jKeyspaceIsolation(t *testing.T) {
+	dump := `{"type":"node","id":"0","labels":["KNOWS"],"properties":{"n":1}}
+{"id":"5","type":"relationship","label":"KNOWS","properties":{"r":1},"start":{"id":"0"},"end":{"id":"0"}}
+{"id":"6","type":"relationship","label":"LIKES","properties":{"r":2},"start":{"id":"0"},"end":{"id":"0"}}
+`
+	tests := []struct {
+		name     string
+		query    string
+		wantKeys []string
+		wantType string
+	}{
+		{name: "a rel read skips a node sharing its name", query: "format=neo4j&rel=KNOWS", wantKeys: []string{"5"}, wantType: "relationship"},
+		{name: "a rel read skips another relationship type", query: "format=neo4j&rel=LIKES", wantKeys: []string{"6"}, wantType: "relationship"},
+		{name: "a node read skips a relationship sharing its name", query: "format=neo4j&label=KNOWS", wantKeys: []string{"0"}, wantType: "node"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u := writeDump(t, "g.json", []byte(dump), tt.query)
+			st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+			require.NoError(t, err)
+			recs := collect(t, st)
+			require.Len(t, recs, len(tt.wantKeys))
+			for _, k := range tt.wantKeys {
+				require.Contains(t, recs, k)
+				require.Equal(t, tt.wantType, recs[k].Type)
+			}
+		})
+	}
+}
+
+// TestNeo4jRecordKey pins how a record's map key is chosen: the export id unless
+// ?key= names a property, and the export id again when that property is absent or
+// null — including the corner where no ?key= is set at all but the node happens to
+// carry an empty-named property.
+func TestNeo4jRecordKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		keyProp string
+		props   map[string]any
+		want    string
+	}{
+		{name: "no key property uses the export id", props: map[string]any{"email": "ada@x"}, want: "9"},
+		{name: "an empty-named property is not a key property", props: map[string]any{"": "weird"}, want: "9"},
+		{name: "a named property is the key", keyProp: "email", props: map[string]any{"email": "ada@x"}, want: "ada@x"},
+		{name: "a missing property falls back to the export id", keyProp: "email", props: map[string]any{"name": "Ada"}, want: "9"},
+		{name: "a null property falls back to the export id", keyProp: "email", props: map[string]any{"email": nil}, want: "9"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, recordKey("9", tt.props, tt.keyProp))
+		})
+	}
+}
+
+// TestNeo4jNullKeyPropertyEndToEnd drives the null fallback through a real dump, so
+// the rule holds for the JSON null a decoder actually produces rather than only for
+// a hand-built map.
+func TestNeo4jNullKeyPropertyEndToEnd(t *testing.T) {
+	dump := `{"type":"node","id":"0","labels":["Person"],"properties":{"email":null,"name":"Ada"}}` + "\n"
+	u := writeDump(t, "g.json", []byte(dump), "format=neo4j&label=Person&key=email")
+	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	recs := collect(t, st)
+	require.Len(t, recs, 1)
+	require.Contains(t, recs, "0", "a null key property falls back to the export id")
+}
+
+// partialReader yields a fixed prefix and then fails, so a test can drive a failure
+// that lands mid-decode rather than in the prologue peek.
+type partialReader struct {
+	prefix []byte
+	err    error
+}
+
+func (p *partialReader) Read(b []byte) (int, error) {
+	if len(p.prefix) == 0 {
+		return 0, p.err
+	}
+	n := copy(b, p.prefix)
+	p.prefix = p.prefix[n:]
+	return n, nil
+}
+
+// TestNeo4jReadFailures separates the reader's two failure points. A stream that
+// fails before any record is a prologue read failure; one that fails mid-record is a
+// decode failure whose cause stays reachable through the wrap.
+func TestNeo4jReadFailures(t *testing.T) {
+	boom := errors.New("disk gone")
+	drain := func(r io.Reader) error {
+		src, err := neo4jSource(r, pageSize, numfmt.DecimalAuto, Hints{Label: "Person"})
+		require.NoError(t, err)
+		return src(context.Background(), func([]query.Record) error { return nil })
+	}
+	t.Run("a prologue read failure is reported as such", func(t *testing.T) {
+		err := drain(errReader{err: boom})
+		require.ErrorContains(t, err, "read neo4j json")
+		require.ErrorIs(t, err, boom)
+	})
+	t.Run("a mid-record read failure keeps its cause", func(t *testing.T) {
+		err := drain(&partialReader{prefix: []byte(`{"type":"node","id":"1"`), err: boom})
+		require.ErrorContains(t, err, "decode neo4j json")
+		require.ErrorIs(t, err, boom)
+	})
+	t.Run("a cancelled scan stops", func(t *testing.T) {
+		src, err := neo4jSource(strings.NewReader(apocNodes), pageSize, numfmt.DecimalAuto, Hints{Label: "Person"})
+		require.NoError(t, err)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		require.ErrorIs(t, src(ctx, func([]query.Record) error { return nil }), context.Canceled)
+	})
+	t.Run("a consumer error propagates from a full page", func(t *testing.T) {
+		var buf bytes.Buffer
+		for i := range pageSize + 1 {
+			fmt.Fprintf(&buf, `{"type":"node","id":"%d","labels":["Person"],"properties":{"n":%d}}`+"\n", i, i)
+		}
+		src, err := neo4jSource(&buf, 2, numfmt.DecimalAuto, Hints{Label: "Person"})
+		require.NoError(t, err)
+		consumer := &failFirstCall{err: boom}
+		require.ErrorIs(t, src(context.Background(), consumer.accept), boom)
+	})
 }
