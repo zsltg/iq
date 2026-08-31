@@ -36,6 +36,31 @@ func TestPath(t *testing.T) {
 	})
 }
 
+func TestPathWithoutUserConfigDir(t *testing.T) {
+	// With no override and no home-like variable on any platform, os.UserConfigDir
+	// fails and Path must surface that rather than join a relative fallback.
+	t.Setenv(config.EnvConfig, "")
+	t.Setenv("XDG_CONFIG_HOME", "") // unix
+	t.Setenv("HOME", "")            // unix and darwin
+	t.Setenv("AppData", "")         // windows
+
+	p, err := config.Path()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "locate user config dir")
+	require.Empty(t, p)
+}
+
+func TestLoadRejectsMalformedTOML(t *testing.T) {
+	p := tempConfig(t)
+	require.NoError(t, os.WriteFile(p, []byte("this is = = not toml\n"), 0o600))
+
+	c, err := config.Load()
+	require.Error(t, err)
+	require.Nil(t, c)
+	require.ErrorContains(t, err, "parse config")
+	require.ErrorContains(t, err, p)
+}
+
 func TestLoadMissing(t *testing.T) {
 	tempConfig(t)
 	c, err := config.Load()
@@ -117,6 +142,34 @@ func TestSaveCreatesDir(t *testing.T) {
 
 	_, err := os.Stat(nested)
 	require.NoError(t, err)
+}
+
+func TestSaveFailures(t *testing.T) {
+	t.Run("parent path is a file", func(t *testing.T) {
+		base := t.TempDir()
+		notADir := filepath.Join(base, "notadir")
+		require.NoError(t, os.WriteFile(notADir, []byte("x"), 0o600))
+		t.Setenv(config.EnvConfig, filepath.Join(notADir, "iq.toml"))
+
+		err := (&config.Config{Sources: map[string]config.Source{}}).Save()
+		require.Error(t, err)
+		require.ErrorContains(t, err, "create config dir")
+	})
+
+	t.Run("target path is a directory", func(t *testing.T) {
+		base := t.TempDir()
+		target := filepath.Join(base, "iq.toml")
+		require.NoError(t, os.Mkdir(target, 0o700))
+		t.Setenv(config.EnvConfig, target)
+
+		err := (&config.Config{Sources: map[string]config.Source{}}).Save()
+		require.Error(t, err)
+		require.ErrorContains(t, err, "replace config")
+
+		leftovers, globErr := filepath.Glob(filepath.Join(base, "iq-*.toml"))
+		require.NoError(t, globErr)
+		require.Empty(t, leftovers, "a failed save left a temp file behind")
+	})
 }
 
 func TestAdd(t *testing.T) {
