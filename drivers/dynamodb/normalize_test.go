@@ -1,6 +1,8 @@
 package dynamodb
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -66,11 +68,33 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestNumberValue(t *testing.T) {
-	require.Equal(t, 10, numberValue("10", numfmt.DecimalAuto))
-	require.Equal(t, 10, numberValue("10", numfmt.DecimalNumber)) // integers stay int in every mode
-	require.Equal(t, "1.5", numberValue("1.5", numfmt.DecimalAuto))
-	require.Equal(t, "1.5", numberValue("1.5", numfmt.DecimalString))
-	require.Equal(t, 1.5, numberValue("1.5", numfmt.DecimalNumber)) //nolint:testifylint // exact float+type intended: DecimalNumber must yield the float64 1.5.
+	// The largest int64 must still parse as an int (a narrower parse would spill it to
+	// the big.Int path and present it as a string), and an integer beyond int64 must
+	// keep its exact decimal string in every mode, number mode included, where the
+	// float path would round it.
+	tests := []struct {
+		name string
+		in   string
+		mode numfmt.DecimalMode
+		want any
+	}{
+		{"integer auto", "10", numfmt.DecimalAuto, 10},
+		{"integer number mode stays int", "10", numfmt.DecimalNumber, 10},
+		{"max int64 stays an int", "9223372036854775807", numfmt.DecimalAuto, 9223372036854775807},
+		{"min int64 stays an int", "-9223372036854775808", numfmt.DecimalAuto, -9223372036854775808},
+		{"decimal auto keeps the string", "1.5", numfmt.DecimalAuto, "1.5"},
+		{"decimal string mode keeps the string", "1.5", numfmt.DecimalString, "1.5"},
+		{"decimal number mode floats", "1.5", numfmt.DecimalNumber, 1.5},
+		{"overflowing integer auto keeps the exact string", "123456789012345678901234567890", numfmt.DecimalAuto, "123456789012345678901234567890"},
+		{"overflowing integer number mode keeps the exact string", "123456789012345678901234567890", numfmt.DecimalNumber, "123456789012345678901234567890"},
+		{"overflowing negative integer number mode keeps the exact string", "-99999999999999999999", numfmt.DecimalNumber, "-99999999999999999999"},
+		{"unparseable number keeps the string", "1e", numfmt.DecimalNumber, "1e"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, numberValue(tt.in, tt.mode)) //nolint:testifylint // exact float+type intended: number mode must yield float64, not a rounded compare.
+		})
+	}
 }
 
 func TestIsIntLiteral(t *testing.T) {
@@ -131,6 +155,8 @@ func TestDecodeKeyErrors(t *testing.T) {
 
 	_, err = composite.decodeKey("not-json")
 	require.ErrorContains(t, err, "decode composite key")
+	var syntaxErr *json.SyntaxError
+	require.ErrorAs(t, err, &syntaxErr) // the JSON cause stays in the chain
 
 	none := &Store{}
 	_, err = none.decodeKey("x")
@@ -155,6 +181,8 @@ func TestKeyAV(t *testing.T) {
 
 	_, err = keyAV(KeyAttr{name: "k", typ: types.ScalarAttributeTypeB}, "!!!not-base64")
 	require.ErrorContains(t, err, "is not base64")
+	var corrupt base64.CorruptInputError
+	require.ErrorAs(t, err, &corrupt) // the base64 cause stays in the chain
 }
 
 func TestToAttributeValue(t *testing.T) {
