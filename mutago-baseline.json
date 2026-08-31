@@ -1020,6 +1020,12 @@
    "file": "internal/config/options.go",
    "mutator": "expression/remove",
    "line": 83
+  },
+  {
+   "id": "bed35ced74f680ddc78ea9611ec83eb3",
+   "file": "internal/render/json.go",
+   "mutator": "statement/remove",
+   "line": 67
   }
  ]
 }

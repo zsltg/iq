@@ -398,3 +398,20 @@ acceptance.
 - 8727d6e6f7cd10c9cdd62603dce5379d internal/config/options.go:49 branch/if — GetOption's `if !ok { return "", false }` body cleared. optionsFor returns `ok == false` only together with a nil map, and the next statement indexes that same nil map, yielding the identical "" and false. The guard is a readability shortcut, not a behavioural one; same class as the accepted internal/pushdown/pushdown.go:405 entry.
 - 6e235b84704b53af98d39f9e0ab9dd94 internal/config/options.go:90 expression/comparison — OptionList's `sort.Slice` less function widened from `<` to `<=`. opts is built by ranging a map, so no two Key values are equal, and on distinct keys `<=` is the same predicate as `<`. That the call sorts at all is pinned by TestOptionListSortsByKey, which kills the `return false` mutant on the same line.
 - 5d5732b03749eec931d19cd8409094c7 internal/config/options.go:83 expression/remove — OptionList's `if handle != "" && !ok` with the non-empty conjunct dropped. optionsFor's first statement returns `ok == true` for every empty handle, so `!ok` is already false wherever the dropped conjunct would be, and the guard beside it decides every case. Same class as the accepted drivers/couchdb/write.go:69 entry.
+
+## internal/render — full-scan equivalents (accepted 2026-08-31, test/internal-mutation branch)
+First full scan of the package (only its diff lines had ever been gated): 8 escapes, 7 of them
+killed. The package is exercised mostly from `cmd`, and a mutant counts as killed only by its own
+package's tests, so the assertions had to move here. All seven were assertion gaps in the
+colored-JSON writer: the plain round trip was compared with `require.JSONEq`, which unmarshals
+both sides and so forgives exactly what the two encoder settings decide — HTML escaping and the
+two-space layout — and the colored encoder was never asked to render an HTML metacharacter, never
+re-encoded often enough for Go's randomised map order to expose an unsorted pass, and never made
+to fail. The plain and colored round trips now compare line by line, eight keys are re-encoded ten
+times, and a channel drives the encode failure. The update run surfaced one more escape the new
+failure test had turned from uncovered into covered, the `%w` wrap on that failure; it was killed
+with an `errors.As` assertion on the `*json.UnsupportedTypeError` cause, not accepted, and its id
+removed from the baseline before the closing run verified the one below. It survives because the
+call it removes only re-asserts the library default. It was verified by hand — the mutation applied
+to the real file, the whole package suite still green — before acceptance.
+- bed35ced74f680ddc78ea9611ec83eb3 internal/render/json.go:67 statement/remove — the colored branch's `enc.SetSortMapKeys(true)` call dropped. `jsoncolor.NewEncoder` constructs with `flags: EscapeHTML | SortMapKeys`, so the call sets a bit that is already set and removing it changes no byte of the output. The call stays as a deliberate pin against a library default change, and it is not unasserted: the `true`->`false` flip on the same line is killed by TestNewJSONEncoderColoredSortsMapKeys. (The `SetEscapeHTML(false)` call two lines above is the opposite case — it clears a default bit — and both its removal and its flip are killed.)
