@@ -440,3 +440,25 @@ suite still green — before acceptance.
 - dd0c601a1d638e7ae052249c40e639c0 internal/numfmt/decimal.go:37 statement/return — ParseDecimalMode's `case "auto": return DecimalAuto, nil` becomes `return 0, nil`. DecimalAuto is the first iota of DecimalMode, deliberately so ("a store opened without an explicit mode defaults to it"), so 0 IS DecimalAuto. The other two arms return non-zero modes and are killed by TestParseDecimalMode.
 - 939386efa8e17c4320ce6076daec5835 internal/numfmt/decimal.go:43 statement/return — the same function's `default: return DecimalAuto, fmt.Errorf(...)` becomes `return 0, ...`, identical for the same reason. That the arm errors at all is pinned by the invalid-value rows, which assert the message.
 - 7c019bb775c298a196100f0acb68bc55 internal/numfmt/convert.go:41 expression/remove — ConvertNumber's `if i, err := n.Int64(); err == nil && int64(int(i)) == i` with the round-trip conjunct dropped. The conjunct exists so a 32-bit build falls through to the *big.Int branch for a value that overflows its `int`; on the linux/amd64 the gate runs, `int` is 64 bits and the round trip is the identity, so the conjunct is constantly true and no input can separate the two forms. Out-of-int64 literals are covered by the big-int row, which fails `err == nil` two operands earlier.
+
+## internal/diff — full-scan equivalents (accepted 2026-08-31, test/diffquery-mutation branch)
+First full scan of the package since the LCS/set-arrays/patch work (the CI `deep-mutate` job was
+preempted mid-run, so its list stopped inside the composite mutator): 347 mutants, 18 escapes, 5 of
+them already accepted above and one more (diff.go:317) no longer covered. Seven of the thirteen new
+ones were killed. Six were the `Summary.Empty` conjunction, which two rows — all-zero and
+all-non-zero — cannot separate from a disjunction, a re-associated guard or a dropped conjunct,
+since every rewriting agrees on those two; a five-row table now asserts that one non-zero counter
+alone makes a summary non-empty. The seventh was the positional fallback's surplus-right Add, whose
+value was never read back: the over-the-cap subtest asserted the delta's path and op and let the
+`New` field go, so it now compares the whole Change, and a mirrored case pins the surplus-left
+Remove the same way (that arm had no coverage at all before). The six below survive because the
+mutation cannot change what the code does: four write a field the value it already holds or a
+return the caller never reads, one is a guard whose fall-through answers identically. Each was
+verified by hand — the mutation applied to the real file, the whole package suite still green —
+before acceptance.
+- ad6f9cb96664edfdca29fd45e9fe103e internal/diff/diff.go:144 composite/field-clear — `Op: OpAdd` dropped from walkMap's right-only Change literal. OpAdd is iota 0, the zero value of Op and deliberately so ("an unset Op is never a silent Change"), so the cleared field holds the value it was assigned. Same class as the accepted diff.go:184 and diff.go:232 entries above.
+- 4d45f48d5f17eb374e9b73b85fabbd4b internal/diff/diff.go:207 composite/field-clear — the same zero-value identity for walkPositional's surplus-right Change literal. The other field-clear on this line, the one that drops `New: b[i]`, is not equivalent and is killed by TestTreeArrayMemoryGuard's whole-Change comparison.
+- 3c8e23fa70268383fbbf7bb2ff2a5890 internal/diff/diff.go:390 composite/field-clear — the same zero-value identity for KeyedOpt's right-only ItemDelta literal.
+- 1e973c7c2926c8a2523d2dce8d009647 internal/diff/diff.go:467 branch/if — equal's `if _, ok := asFloat(b); ok { return false }` body cleared, so a number on the right falls through to `reflect.DeepEqual(a, b)`. The branch is reached only when `asFloat(a)` failed, so a's dynamic type is outside the normalized numeric set while b's is inside it; DeepEqual reports false for any two values of different dynamic types, so the fall-through returns the same false the guard returned. No input can separate the two forms. The guard stays as the statement that a number is never equal to a non-number, and it is not unasserted: the negation of the same condition is killed by the int-versus-string rows.
+- 38e51015625f7feb403fd818e673222f internal/diff/diff.go:486 numbers/decrementer — asFloat's `default: return 0, false` becomes `return -1, false`. asFloat is unexported and has two callers, both in equal, and both read the float only inside the `ok` branch; a false second result means the first is discarded, so no value it carries is observable.
+- 21ce2b52bd662b3b6a2f4c5416d8dd48 internal/diff/diff.go:486 numbers/incrementer — the same return, `return 1, false`, discarded for the same reason.

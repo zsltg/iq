@@ -380,15 +380,27 @@ func TestTreeArrayMemoryGuard(t *testing.T) {
 	t.Run("over the cap falls back to the positional walk", func(t *testing.T) {
 		// 1100*1101 = 1211100 cells, above the cap: the positional fallback compares
 		// by raw index, so the same front insertion cascades to one delta per index
-		// plus a trailing Add — proving the guard engaged.
+		// plus a trailing Add — proving the guard engaged. The surplus-right delta
+		// is compared whole, Op and New together: an Add that reported the index but
+		// dropped the value it added would satisfy a path-and-op-only assertion.
 		a := seq(1100, 0)
 		b := seq(1100, 1)
 		got := diff.Tree(a, b)
 		require.Len(t, got, 1101)
-		require.Equal(t, []string{"[0]"}, got[0].Path)
-		require.Equal(t, diff.OpChange, got[0].Op)
-		require.Equal(t, []string{"[1100]"}, got[1100].Path)
-		require.Equal(t, diff.OpAdd, got[1100].Op)
+		require.Equal(t, diff.Change{Path: []string{"[0]"}, Op: diff.OpChange, Old: 0, New: -1}, got[0])
+		require.Equal(t, diff.Change{Path: []string{"[1100]"}, Op: diff.OpAdd, New: 1099}, got[1100])
+	})
+	t.Run("over the cap reports the surplus left as removes", func(t *testing.T) {
+		// The mirror of the case above: the longer side is the left one, so the
+		// positional walk ends in the surplus-left arm instead. It is the only
+		// caller that reaches that arm with the fallback engaged, and the delta is
+		// compared whole so the removed value is pinned alongside its op.
+		a := seq(1100, 1)
+		b := seq(1100, 0)
+		got := diff.Tree(a, b)
+		require.Len(t, got, 1101)
+		require.Equal(t, diff.Change{Path: []string{"[0]"}, Op: diff.OpChange, Old: -1, New: 0}, got[0])
+		require.Equal(t, diff.Change{Path: []string{"[1100]"}, Op: diff.OpRemove, Old: 1099}, got[1100])
 	})
 }
 
@@ -466,6 +478,30 @@ func TestSummarize(t *testing.T) {
 		cs := []diff.Change{{Op: diff.OpAdd}, {Op: diff.OpChange}}
 		require.Equal(t, diff.Summary{Added: 1, Changed: 1}, diff.SummarizeChanges(cs))
 	})
+}
+
+// TestSummaryEmptyNeedsEveryCount pins Empty as the conjunction of all three
+// counters: one non-zero counter alone must make a summary non-empty, so a
+// disjunction, a dropped conjunct, or a re-associated one is visible. A single
+// all-zero and a single all-non-zero row cannot see any of that, since every
+// rewriting of the guard agrees on those two.
+func TestSummaryEmptyNeedsEveryCount(t *testing.T) {
+	tests := []struct {
+		name string
+		s    diff.Summary
+		want bool
+	}{
+		{name: "all zero is empty", s: diff.Summary{}, want: true},
+		{name: "one add is not empty", s: diff.Summary{Added: 1}, want: false},
+		{name: "one remove is not empty", s: diff.Summary{Removed: 1}, want: false},
+		{name: "one change is not empty", s: diff.Summary{Changed: 1}, want: false},
+		{name: "all three are not empty", s: diff.Summary{Added: 1, Removed: 1, Changed: 1}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.s.Empty())
+		})
+	}
 }
 
 func TestOpMarshalJSON(t *testing.T) {

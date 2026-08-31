@@ -1062,6 +1062,42 @@
    "file": "internal/numfmt/decimal.go",
    "mutator": "statement/return",
    "line": 43
+  },
+  {
+   "id": "1e973c7c2926c8a2523d2dce8d009647",
+   "file": "internal/diff/diff.go",
+   "mutator": "branch/if",
+   "line": 467
+  },
+  {
+   "id": "ad6f9cb96664edfdca29fd45e9fe103e",
+   "file": "internal/diff/diff.go",
+   "mutator": "composite/field-clear",
+   "line": 144
+  },
+  {
+   "id": "4d45f48d5f17eb374e9b73b85fabbd4b",
+   "file": "internal/diff/diff.go",
+   "mutator": "composite/field-clear",
+   "line": 207
+  },
+  {
+   "id": "3c8e23fa70268383fbbf7bb2ff2a5890",
+   "file": "internal/diff/diff.go",
+   "mutator": "composite/field-clear",
+   "line": 390
+  },
+  {
+   "id": "38e51015625f7feb403fd818e673222f",
+   "file": "internal/diff/diff.go",
+   "mutator": "numbers/decrementer",
+   "line": 486
+  },
+  {
+   "id": "21ce2b52bd662b3b6a2f4c5416d8dd48",
+   "file": "internal/diff/diff.go",
+   "mutator": "numbers/incrementer",
+   "line": 486
   }
  ]
 }
