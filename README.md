@@ -6,20 +6,24 @@
 </p>
 
 <p align="center">
-  <a href="https://pkg.go.dev/github.com/zsltg/iq"><img src="https://pkg.go.dev/badge/github.com/zsltg/iq.svg" alt="Go Reference"></a>
+  <!-- Three clusters, not a list. One: proof it works, escalating from "it builds" to
+  "the tests assert something". Two: third-party assessment (the placeholders join it once
+  go-public-checklist.md step 5 yields their IDs). Three: furniture. A badge earns a slot
+  only by showing a number that could be bad and that a stranger reads in one second. -->
   <a href="https://github.com/zsltg/iq/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zsltg/iq/ci.yml?branch=main" alt="CI"></a>
+  <a href="https://codecov.io/gh/zsltg/iq"><img src="https://img.shields.io/codecov/c/github/zsltg/iq/main?label=coverage" alt="Coverage"></a>
+  <a href="https://github.com/zsltg/iq/blob/main/CONTRIBUTING.md#mutation-gate-scriptsmutation-gatesh"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/zsltg/iq/badges/mutation.json" alt="Mutation score"></a>
+  &nbsp;
   <a href="https://scorecard.dev/viewer/?uri=github.com/zsltg/iq"><img src="https://api.securityscorecards.dev/projects/github.com/zsltg/iq/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://socket.dev/go/package/github.com/zsltg/iq"><img src="https://socket.dev/api/badge/go/package/github.com/zsltg/iq" alt="Socket"></a>
-  <a href="https://coderabbit.ai"><img src="https://img.shields.io/coderabbit/prs/github/zsltg/iq?utm_source=oss&utm_medium=github&utm_campaign=zsltg%2Fiq&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews" alt="CodeRabbit Reviews"></a>
   <!-- Fill in the project IDs after registering on bestpractices.dev and codescene.io:
   <a href="https://www.bestpractices.dev/projects/<ID>"><img src="https://www.bestpractices.dev/projects/<ID>/badge" alt="OpenSSF Best Practices"></a>
   <a href="https://codescene.io/projects/<ID>"><img src="https://codescene.io/projects/<ID>/status-badges/code-health" alt="CodeScene Code Health"></a>
   -->
+  &nbsp;
   <a href="https://github.com/zsltg/iq/releases"><img src="https://img.shields.io/github/v/release/zsltg/iq" alt="Release"></a>
-  <a href="https://codecov.io/gh/zsltg/iq"><img src="https://codecov.io/gh/zsltg/iq/branch/main/graph/badge.svg" alt="Coverage"></a>
-  <a href="https://github.com/zsltg/iq/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/zsltg/iq/badges/mutation.json" alt="Mutation score"></a>
-  <a href="https://github.com/zsltg/iq/blob/main/LICENSE"><img src="https://img.shields.io/github/license/zsltg/iq" alt="License: MIT"></a>
+  <a href="https://pkg.go.dev/github.com/zsltg/iq"><img src="https://pkg.go.dev/badge/github.com/zsltg/iq.svg" alt="Go Reference"></a>
   <img src="https://img.shields.io/github/go-mod/go-version/zsltg/iq" alt="Go version">
+  <a href="https://github.com/zsltg/iq/blob/main/LICENSE"><img src="https://img.shields.io/github/license/zsltg/iq" alt="License: MIT"></a>
 </p>
 
 # iq
