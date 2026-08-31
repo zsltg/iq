@@ -690,6 +690,120 @@
    "file": "internal/pushdown/pushdown.go",
    "mutator": "statement/return",
    "line": 166
+  },
+  {
+   "id": "8390730bca2c67847191a42ebd8b4a90",
+   "file": "drivers/dynamodb/dynamodb.go",
+   "mutator": "arithmetic/base",
+   "line": 411
+  },
+  {
+   "id": "ef1b2e4aead9c14e1deb0eab31192045",
+   "file": "drivers/dynamodb/dynamodb.go",
+   "mutator": "branch/if",
+   "line": 245
+  },
+  {
+   "id": "86aeab55ccdf60a8c57b260d950a79b1",
+   "file": "drivers/dynamodb/dynamodb.go",
+   "mutator": "expression/context-nil",
+   "line": 125
+  },
+  {
+   "id": "e37357b89d71f19ef606666ae954626c",
+   "file": "drivers/dynamodb/dynamodb.go",
+   "mutator": "numbers/decrementer",
+   "line": 244
+  },
+  {
+   "id": "8fa7cf9ddfc232ee066bf15e7d901da6",
+   "file": "drivers/dynamodb/dynamodb.go",
+   "mutator": "numbers/decrementer",
+   "line": 411
+  },
+  {
+   "id": "f0e52161b2820663ef00a46d2b244682",
+   "file": "drivers/dynamodb/dynamodb.go",
+   "mutator": "numbers/incrementer",
+   "line": 411
+  },
+  {
+   "id": "8fa37565c7127ec877718764fe038233",
+   "file": "drivers/dynamodb/dynamodb.go",
+   "mutator": "numbers/incrementer",
+   "line": 411
+  },
+  {
+   "id": "21e32368a191b718fbc19b867fc8d0a2",
+   "file": "drivers/dynamodb/filter.go",
+   "mutator": "expression/logical",
+   "line": 29
+  },
+  {
+   "id": "5b56a6bee3f7be39963668752a5d0fcd",
+   "file": "drivers/dynamodb/filter.go",
+   "mutator": "expression/remove",
+   "line": 29
+  },
+  {
+   "id": "500722b4e1c51b35fc16d5b6cc732f60",
+   "file": "drivers/dynamodb/filter.go",
+   "mutator": "numbers/decrementer",
+   "line": 138
+  },
+  {
+   "id": "ea04b88488efbbb39940f97da595cd5f",
+   "file": "drivers/dynamodb/filter.go",
+   "mutator": "numbers/incrementer",
+   "line": 192
+  },
+  {
+   "id": "8f40be339f598f2ff82cf2eedc3f51a3",
+   "file": "drivers/dynamodb/normalize.go",
+   "mutator": "numbers/decrementer",
+   "line": 93
+  },
+  {
+   "id": "c4a107b075b68a6af3a9749b439cc47b",
+   "file": "drivers/dynamodb/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 88
+  },
+  {
+   "id": "10cdb27c736ce44ee5012b4cb54422ce",
+   "file": "drivers/dynamodb/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 93
+  },
+  {
+   "id": "27719415840fab5cc1c1c95178cafa60",
+   "file": "drivers/dynamodb/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 295
+  },
+  {
+   "id": "cef917dc83163a2012ff9f1731e40987",
+   "file": "drivers/dynamodb/plan.go",
+   "mutator": "expression/logical",
+   "line": 25
+  },
+  {
+   "id": "dc7b703757d8953f2392aa9ec1a1dd83",
+   "file": "drivers/dynamodb/plan.go",
+   "mutator": "expression/remove",
+   "line": 25
+  },
+  {
+   "id": "007970fbff2655047d22c0a44a1fd690",
+   "file": "drivers/dynamodb/trace.go",
+   "mutator": "branch/if",
+   "line": 47
+  },
+  {
+   "id": "ee4f978b2ea5d131d577f489382eaf36",
+   "file": "drivers/dynamodb/trace.go",
+   "mutator": "expression/remove",
+   "line": 55
   }
  ]
 }

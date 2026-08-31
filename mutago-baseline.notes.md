@@ -252,3 +252,44 @@ above.
 - a14ba2b8f94c5a42201a396545db60b1 internal/pushdown/pushdown.go:166 statement/return — flip's `case predicate.Lt: return predicate.Gt` becomes `return 0`; Gt is the first iota of predicate.Op, so 0 IS Gt. The other three arms return non-zero operators and are killed by the reversed-comparison rows in TestCompilePushable.
 - 7d928d6fc391cca2558e457578feb8e8 internal/pushdown/pushdown.go:599 numbers/decrementer — `strconv.ParseFloat(t.Number, 64)` → bitSize 63; ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path, so the parsed float is identical (same reasoning as the drivers/mongo normalize.go:86 pair).
 - 0153fe57aa10de9180740096dab9718d internal/pushdown/pushdown.go:599 numbers/incrementer — the same site with bitSize 65, identical for the same reason.
+
+## drivers/dynamodb — full-scan equivalents (accepted 2026-08-31, test/dynamodb-mutation branch)
+First full scan of the package (only its diff lines had ever been gated): 85 escapes, 65 of
+them killed by new tests — the typed values the dump reader builds and every decode guard's
+own message and cause, the exact attribute value each pushed equality binds, the int64
+boundary and the exact-string presentation of an overflowing integer, the rendered table
+description entry by entry, the wrapped backend causes, a cancelled batch-get backoff, a
+callback error mid-scan, the write paths where a failure must not read as a skip or a silent
+drop, and what Open builds (its bounded ListTables probe driven through a local SDK stub,
+since the probe runs before the Store's injectable client exists). One further escape needed
+no test: Store.region was written by Open and read by nothing, so it was deleted as dead code
+and its mutant no longer exists. The update run surfaced nine more escapes that the new tests
+had turned from uncovered into covered (the `%w` wraps on the BOOL/NULL/L/SS/NS/BS decode
+paths and on Open's two failure paths); those were killed with errors.As assertions on the
+cause, not accepted, and their ids removed from the baseline before the closing run verified
+the remaining set. The 19 below survive because the mutation cannot change what the code
+does, in six classes: a guard the following statement re-derives; a conjunct the expression
+around it already implies; a base or bit size the standard library treats identically; the
+width of a random jitter, which is a distribution and not a value a test can pin; a reflect
+guard the invalid zero Value already satisfies; and a driver-context normalization. Each was
+verified by hand — the mutation applied to the real file, the whole package suite still green
+— before acceptance.
+- ef1b2e4aead9c14e1deb0eab31192045 drivers/dynamodb/dynamodb.go:245 branch/if — Get's `if len(keys) == 0 { return out, nil }` short-circuit cleared; the chunk loop that follows is then `for start := 0; start < 0`, which does not run, so the same allocated empty map is returned by the path below. The short-circuit saves nothing but a comparison, and the guard above it (no table selected) is killed by TestGetGuards.
+- e37357b89d71f19ef606666ae954626c drivers/dynamodb/dynamodb.go:244 numbers/decrementer — the same short-circuit's `== 0` made `== -1`, never true; equivalent for the same reason.
+- 86aeab55ccdf60a8c57b260d950a79b1 drivers/dynamodb/dynamodb.go:125 expression/context-nil — `config.LoadDefaultConfig(ctx, loadOpts...)` → nil ctx. The loader consults ctx only for remote resolution (IMDS region and credentials), which an explicit region plus either static dummy or lazily-resolved credentials never reaches, so the config and error it returns are identical.
+- 8390730bca2c67847191a42ebd8b4a90 drivers/dynamodb/dynamodb.go:411 arithmetic/base — `rand.Int63n(int64(base)/2+1)` → `*2+1`, widening the jitter window. TestBackoffGrowsAndCaps pins the wait's lower bound (the base) and its exponential cap, which is everything a timer can prove; the width of the random draw above the base is a distribution, and an assertion on it is a probability, not a verdict.
+- 8fa7cf9ddfc232ee066bf15e7d901da6 drivers/dynamodb/dynamodb.go:411 numbers/decrementer — the same site with `/1`, equivalent for the same reason.
+- f0e52161b2820663ef00a46d2b244682 drivers/dynamodb/dynamodb.go:411 numbers/incrementer — `/3`, narrowing the same window; same reason.
+- 8fa37565c7127ec877718764fe038233 drivers/dynamodb/dynamodb.go:411 numbers/incrementer — `+2` in place of `+1`, one nanosecond of extra jitter range; same reason.
+- 21e32368a191b718fbc19b867fc8d0a2 drivers/dynamodb/filter.go:29 expression/logical — `if f, ok := compile(pred); ok && f.expr != ""` → `||`. compile reports false only from a `return frag{}, false`, whose expr is "", so both forms are false on every failure and true on every success.
+- 5b56a6bee3f7be39963668752a5d0fcd drivers/dynamodb/filter.go:29 expression/remove — the same guard's `f.expr != ""` conjunct dropped; ok is true only for a fragment with a non-empty expr, so the conjunct is inert.
+- cef917dc83163a2012ff9f1731e40987 drivers/dynamodb/plan.go:25 expression/logical — the same pair on ExplainPlan's `ok && f.display != ""`, equivalent for the same reason (display, like expr, is non-empty exactly when ok).
+- dc7b703757d8953f2392aa9ec1a1dd83 drivers/dynamodb/plan.go:25 expression/remove — the dropped `f.display != ""` conjunct; same reason.
+- 500722b4e1c51b35fc16d5b6cc732f60 drivers/dynamodb/filter.go:138 numbers/decrementer — buildOr's `len(or) == 0` made `== -1`; an empty Or then reaches join, whose loop does not run and whose `len(exprs) == 0` check returns the identical `frag{}, false`. The incrementer at the same site, which would drop a one-branch Or, is killed by TestCompilePushable.
+- ea04b88488efbbb39940f97da595cd5f drivers/dynamodb/filter.go:192 numbers/incrementer — `strconv.FormatFloat(t, 'g', -1, 64)` → precision -2; strconv selects the shortest representation for any negative precision, so the bound N literal is byte-identical (same as drivers/file/neo4j.go:264).
+- 27719415840fab5cc1c1c95178cafa60 drivers/dynamodb/normalize.go:295 numbers/incrementer — the same FormatFloat identity on the write path.
+- 8f40be339f598f2ff82cf2eedc3f51a3 drivers/dynamodb/normalize.go:93 numbers/decrementer — `strconv.ParseFloat(s, 64)` → bitSize 63; ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path (same as drivers/mongo normalize.go:86).
+- 10cdb27c736ce44ee5012b4cb54422ce drivers/dynamodb/normalize.go:93 numbers/incrementer — the same site with bitSize 65.
+- c4a107b075b68a6af3a9749b439cc47b drivers/dynamodb/normalize.go:88 numbers/incrementer — `new(big.Int).SetString(s, 10)` → base 11; only the ok flag is read, and isIntLiteral has already restricted s to an optional sign and decimal digits, each a valid base-11 digit too. The base-9 sibling, where '9' is not, is killed by TestNumberValue.
+- 007970fbff2655047d22c0a44a1fd690 drivers/dynamodb/trace.go:47 branch/if — tableOf's `if rv.IsNil() { return "" }` cleared; Elem() of a nil pointer is the invalid zero Value, whose Kind is not Struct, so the guard below returns the same "".
+- ee4f978b2ea5d131d577f489382eaf36 drivers/dynamodb/trace.go:55 expression/remove — the `f.IsValid()` conjunct dropped from the TableName guard; an invalid Value's Kind is Invalid, never Pointer, so the conjunct beside it already rejects it. The `f.Kind() == reflect.Pointer` conjunct, whose removal makes IsNil panic on a non-pointer TableName field, is killed by TestTableOf.

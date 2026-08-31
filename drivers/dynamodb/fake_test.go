@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsdynamodb "github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/smithy-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -994,4 +995,7 @@ func TestOpenFailsFastOnARejectedProbe(t *testing.T) {
 	t.Cleanup(cancel)
 	_, err := Open(ctx, "dynamodb://us-east-1/?endpoint="+srv.URL, "", nil, numfmt.DecimalAuto)
 	require.ErrorContains(t, err, "connect dynamodb")
+	var apiErr smithy.APIError
+	require.ErrorAs(t, err, &apiErr) // the service's own error stays in the chain
+	require.Equal(t, "ValidationException", apiErr.ErrorCode())
 }

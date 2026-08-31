@@ -195,27 +195,48 @@ func TestParseItemTypedValues(t *testing.T) {
 // cause in the chain, so a caller can inspect it with errors.As rather than only
 // reading a rendered string.
 func TestParseItemErrorsUnwrap(t *testing.T) {
-	t.Run("attribute value is not a tagged object", func(t *testing.T) {
-		_, err := ParseItem([]byte(`{"a":"plain"}`))
-		var typeErr *json.UnmarshalTypeError
-		require.ErrorAs(t, err, &typeErr)
+	t.Run("json cause", func(t *testing.T) {
+		tests := []struct {
+			name string
+			raw  string
+		}{
+			{"item is not an object", `[1,2]`},
+			{"attribute value is not a tagged object", `{"a":"plain"}`},
+			{"string payload is not a string", `{"a":{"S":1}}`},
+			{"number payload is not a string", `{"a":{"N":1}}`},
+			{"binary payload is not a string", `{"a":{"B":1}}`},
+			{"bool payload is not a bool", `{"a":{"BOOL":"yes"}}`},
+			{"null payload is not a bool", `{"a":{"NULL":"yes"}}`},
+			{"map payload is not an object", `{"a":{"M":"x"}}`},
+			{"list payload is not an array", `{"a":{"L":"x"}}`},
+			{"list element is not a tagged object", `{"a":{"L":["plain"]}}`},
+			{"string set payload is not an array", `{"a":{"SS":"x"}}`},
+			{"number set payload is not an array", `{"a":{"NS":"x"}}`},
+			{"binary set payload is not an array", `{"a":{"BS":"x"}}`},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := ParseItem([]byte(tc.raw))
+				var typeErr *json.UnmarshalTypeError
+				require.ErrorAs(t, err, &typeErr)
+			})
+		}
 	})
 
-	t.Run("string payload is not a string", func(t *testing.T) {
-		_, err := ParseItem([]byte(`{"a":{"S":1}}`))
-		var typeErr *json.UnmarshalTypeError
-		require.ErrorAs(t, err, &typeErr)
-	})
-
-	t.Run("binary payload is not base64", func(t *testing.T) {
-		_, err := ParseItem([]byte(`{"a":{"B":"!!!"}}`))
-		var corrupt base64.CorruptInputError
-		require.ErrorAs(t, err, &corrupt)
-	})
-
-	t.Run("item is not an object", func(t *testing.T) {
-		_, err := ParseItem([]byte(`[1,2]`))
-		var typeErr *json.UnmarshalTypeError
-		require.ErrorAs(t, err, &typeErr)
+	t.Run("base64 cause", func(t *testing.T) {
+		tests := []struct {
+			name string
+			raw  string
+		}{
+			{"binary payload is not base64", `{"a":{"B":"!!!"}}`},
+			{"binary set element is not base64", `{"a":{"BS":["!!!"]}}`},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := ParseItem([]byte(tc.raw))
+				var corrupt base64.CorruptInputError
+				require.ErrorAs(t, err, &corrupt)
+			})
+		}
 	})
 }

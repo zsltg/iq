@@ -81,6 +81,8 @@ func TestOpenRejectsAMissingTable(t *testing.T) {
 	// Open rather than surfacing later as an empty scan.
 	_, err := Open(ctx, testURL(), "no-such-table", nil, numfmt.DecimalAuto)
 	require.ErrorContains(t, err, "describe table")
+	var notFound *types.ResourceNotFoundException
+	require.ErrorAs(t, err, &notFound) // the service's own error stays in the chain
 }
 
 func TestOpenAppliesTheDecimalMode(t *testing.T) {
