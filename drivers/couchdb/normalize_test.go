@@ -67,6 +67,20 @@ func TestDecodeDoc(t *testing.T) {
 }
 
 func TestDecodeDocInvalid(t *testing.T) {
-	_, err := decodeDoc(json.RawMessage(`{not json`), numfmt.DecimalAuto)
-	require.Error(t, err)
+	got, err := decodeDoc(json.RawMessage(`{not json`), numfmt.DecimalAuto)
+	require.Nil(t, got)
+	require.ErrorContains(t, err, "decode couchdb document")
+
+	// The decoder's own error is wrapped, not flattened to a string, so a caller
+	// can still inspect the cause.
+	var syntax *json.SyntaxError
+	require.ErrorAs(t, err, &syntax)
+}
+
+func TestDecodeDocRejectsANonObjectBody(t *testing.T) {
+	// A document body is always a JSON object; anything else is a decode failure
+	// rather than a silently empty document.
+	got, err := decodeDoc(json.RawMessage(`[1,2]`), numfmt.DecimalAuto)
+	require.Nil(t, got)
+	require.ErrorContains(t, err, "decode couchdb document")
 }
