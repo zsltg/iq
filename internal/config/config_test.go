@@ -187,6 +187,8 @@ func TestAdd(t *testing.T) {
 		{name: "empty name", handle: "", url: "redis://h", wantErr: config.ErrEmptyHandle},
 		{name: "space in name", handle: "a b", url: "redis://h", wantErr: config.ErrBadHandle},
 		{name: "trailing slash", handle: "a/", url: "redis://h", wantErr: config.ErrBadHandle},
+		{name: "leading slash", handle: "/a", url: "redis://h", wantErr: config.ErrBadHandle},
+		{name: "doubled slash", handle: "a//b", url: "redis://h", wantErr: config.ErrBadHandle},
 		{name: "empty url", handle: "books", url: "", wantErr: config.ErrEmptyURL},
 	}
 	for _, tt := range tests {
@@ -298,6 +300,20 @@ func TestMoveSource(t *testing.T) {
 		require.Contains(t, c.Sources, "prod/books")
 	})
 
+	t.Run("keeps an active group that still has members", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("prod/books", "redis://h"))
+		require.NoError(t, c.Add("prod/cache", "redis://h"))
+		require.NoError(t, c.SetGroup("prod"))
+		require.NoError(t, c.SetActive("prod/books"))
+
+		moved, err := c.Move("prod/books", "prod/library")
+		require.NoError(t, err)
+		require.Equal(t, []config.Rename{{Old: "prod/books", New: "prod/library"}}, moved)
+		require.Equal(t, "prod", c.Group, "prod/cache still belongs to the group")
+		require.Equal(t, "prod/library", c.Active)
+	})
+
 	t.Run("moving last member clears active group", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
 		require.NoError(t, c.Add("prod/books", "redis://h"))
@@ -349,7 +365,10 @@ func TestMoveGroup(t *testing.T) {
 
 		moved, err := c.Move("prod", "staging")
 		require.NoError(t, err)
-		require.Len(t, moved, 2)
+		require.ElementsMatch(t, []config.Rename{
+			{Old: "prod/books", New: "staging/books"},
+			{Old: "prod/cache", New: "staging/cache"},
+		}, moved)
 		require.Contains(t, c.Sources, "staging/books")
 		require.Contains(t, c.Sources, "staging/cache")
 		require.NotContains(t, c.Sources, "prod/books")
@@ -387,6 +406,24 @@ func TestMoveGroup(t *testing.T) {
 		_, err := c.Move("prod", "staging")
 		require.ErrorIs(t, err, config.ErrDuplicate)
 	})
+
+	t.Run("a target inside the moved group is not a collision", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("a/x", "redis://x"))
+		require.NoError(t, c.Add("a/b/x", "redis://bx"))
+
+		// Moving group "a" under "a/b" re-targets "a/x" onto the existing
+		// "a/b/x", which is itself part of the moved set and about to vacate
+		// the name, so it is not a duplicate. Which member lands where depends
+		// on map iteration order, so only order-independent facts are asserted.
+		moved, err := c.Move("a", "a/b")
+		require.NoError(t, err)
+		require.Len(t, moved, 2)
+		require.Contains(t, c.Sources, "a/b/b/x")
+		for _, m := range moved {
+			require.Equal(t, "a/b/", m.New[:4], "every member lands under the new prefix")
+		}
+	})
 }
 
 func TestRemoveAll(t *testing.T) {
@@ -402,7 +439,10 @@ func TestRemoveAll(t *testing.T) {
 		c := newCfg()
 		removed, err := c.RemoveAll([]string{"cache", "prod/books"})
 		require.NoError(t, err)
-		require.Len(t, removed, 2)
+		require.Equal(t, []config.Removed{
+			{Handle: "cache", Source: config.Source{URL: "redis://h"}},
+			{Handle: "prod/books", Source: config.Source{URL: "mongodb://h/db?collection=books"}},
+		}, removed)
 		require.NotContains(t, c.Sources, "cache")
 		require.NotContains(t, c.Sources, "prod/books")
 		require.Contains(t, c.Sources, "prod/cache")
@@ -545,6 +585,32 @@ func TestSetGroup(t *testing.T) {
 
 	require.NoError(t, c.SetGroup(""))
 	require.Empty(t, c.Group)
+}
+
+func TestResolveNamespacing(t *testing.T) {
+	t.Run("a name with a slash stays absolute under an active group", func(t *testing.T) {
+		c := &config.Config{
+			Group: "prod",
+			Sources: map[string]config.Source{
+				"eu/books":      {URL: "redis://top"},
+				"prod/eu/books": {URL: "redis://prod"},
+			},
+		}
+
+		s, full, ok := c.Resolve("eu/books")
+		require.True(t, ok)
+		require.Equal(t, "eu/books", full)
+		require.Equal(t, "redis://top", s.URL)
+	})
+
+	t.Run("no active group prepends no separator", func(t *testing.T) {
+		// A hand-written config file can hold a handle the API would reject;
+		// with no group active, a bare name must not reach it as "/name".
+		c := &config.Config{Sources: map[string]config.Source{"/books": {URL: "redis://h"}}}
+
+		_, _, ok := c.Resolve("books")
+		require.False(t, ok)
+	})
 }
 
 func TestResolve(t *testing.T) {
