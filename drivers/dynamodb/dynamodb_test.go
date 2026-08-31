@@ -57,13 +57,60 @@ func TestGetEmpty(t *testing.T) {
 func TestScanBatches(t *testing.T) {
 	st := seedBooks(t)
 	all := map[string]any{}
+	batches := 0
 	err := st.ScanBatches(context.Background(), func(batch map[string]any) error {
+		batches++
 		maps.Copy(all, batch)
 		return nil
 	})
 	require.NoError(t, err)
 	require.Len(t, all, 3)
 	require.ElementsMatch(t, []string{"1", "2", "3"}, keysOf(all))
+	// Three items are far under the page size, so a connected store streams them as a
+	// single page; a store opened without one would hand over a page per item.
+	require.Equal(t, 1, batches)
+}
+
+func TestOpenRejectsAMissingTable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping dynamodb integration test in -short mode")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	// The key schema is read at connect time, so a table that does not exist fails
+	// Open rather than surfacing later as an empty scan.
+	_, err := Open(ctx, testURL(), "no-such-table", nil, numfmt.DecimalAuto)
+	require.ErrorContains(t, err, "describe table")
+}
+
+func TestOpenAppliesTheDecimalMode(t *testing.T) {
+	ks, attrs := hashKey("id", types.ScalarAttributeTypeN)
+	seedTable(t, "decimals", ks, attrs, map[string]types.AttributeValue{
+		"id":     &types.AttributeValueMemberN{Value: "1"},
+		"amount": &types.AttributeValueMemberN{Value: "19.99"},
+	})
+	tests := []struct {
+		name string
+		mode numfmt.DecimalMode
+		want any
+	}{
+		{"auto keeps the exact decimal string", numfmt.DecimalAuto, "19.99"},
+		{"string mode keeps the exact decimal string", numfmt.DecimalString, "19.99"},
+		{"number mode presents a float", numfmt.DecimalNumber, 19.99},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			t.Cleanup(cancel)
+			st, err := Open(ctx, testURL(), "decimals", nil, tt.mode)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = st.Close() })
+
+			got, err := st.Get(ctx, []string{"1"})
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got["1"].(map[string]any)["amount"]) //nolint:testifylint // exact float+type intended: number mode must yield float64.
+		})
+	}
 }
 
 func TestScanFiltered(t *testing.T) {

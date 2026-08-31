@@ -87,7 +87,6 @@ type ddbAPI interface {
 // arbitrary PartiQL and needs no table.
 type Store struct {
 	client   ddbAPI
-	region   string
 	table    string
 	keys     []KeyAttr // primary key in schema order: partition key, then sort key
 	pageSize int
@@ -145,7 +144,6 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 
 	st := &Store{
 		client:   client,
-		region:   cc.region,
 		table:    cc.table,
 		pageSize: scanBatch,
 		decimal:  dec,

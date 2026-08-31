@@ -3,6 +3,9 @@ package dynamodb
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
@@ -12,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 )
@@ -950,4 +954,43 @@ func TestDropSurfacesTheDeleteTableError(t *testing.T) {
 	err := s.Drop(context.Background())
 	require.ErrorContains(t, err, "dynamodb delete table")
 	require.ErrorIs(t, err, errBoom)
+}
+
+// TestOpenProbeIsBounded pins the reachability probe Open issues: a ListTables capped
+// at one table, so connecting never pages a whole account's table list. The SDK is
+// pointed at a local stub rather than a fake client because the probe runs inside
+// Open, before the Store (and its injectable client) exists.
+func TestOpenProbeIsBounded(t *testing.T) {
+	var target string
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		target = r.Header.Get("X-Amz-Target")
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+		_, _ = w.Write([]byte(`{"TableNames":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	st, err := Open(ctx, "dynamodb://us-east-1/?endpoint="+srv.URL, "", nil, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	require.Contains(t, target, "ListTables")
+	require.JSONEq(t, `{"Limit":1}`, string(body))
+}
+
+func TestOpenFailsFastOnARejectedProbe(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"__type":"com.amazon.coral.validate#ValidationException","message":"nope"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	_, err := Open(ctx, "dynamodb://us-east-1/?endpoint="+srv.URL, "", nil, numfmt.DecimalAuto)
+	require.ErrorContains(t, err, "connect dynamodb")
 }
