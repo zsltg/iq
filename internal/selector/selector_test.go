@@ -68,6 +68,13 @@ func TestKeysScan(t *testing.T) {
 		{"map builtin", "map(.x)", false},
 		{"array collects iteration", "[ .[] ]", false},
 		{"iteration in a comma", ".[], .a", false},
+		{"function with an iteration suffix", "keys[]", false},
+		{"recurse with an iteration suffix", "..[]", false},
+		{"optional identity", ".?", false},
+		{"bracketed operator expression", `.["a" + "b"]`, false},
+		{"bracketed string carrying a func def", `.[def f: .; "book:1"]`, false},
+		{"bracketed format string", `.[@text "book:1"]`, false},
+		{"bracketed string with a suffix", `.["book:1"?]`, false},
 		{"variable index", ".[$k]", false},
 		{"computed index", ".[.a]", false},
 		{"slice index", ".[1:2]", false},
@@ -90,6 +97,77 @@ func TestKeysScan(t *testing.T) {
 			require.True(t, got.Scan, "expression must classify as a scan")
 			require.Equal(t, tt.streamable, got.Streamable, "streamable classification")
 			require.Empty(t, got.Keys)
+		})
+	}
+}
+
+// bracket wraps q as the subscript of a leading bracketed index, `.[q]`, which is
+// the only position constString is consulted from.
+func bracket(q *gojq.Query) *gojq.Query {
+	return &gojq.Query{Term: &gojq.Term{
+		Type:  gojq.TermTypeIndex,
+		Index: &gojq.Index{Start: q},
+	}}
+}
+
+func TestKeysMalformedAST(t *testing.T) {
+	str := func(s string) *gojq.Term {
+		return &gojq.Term{Type: gojq.TermTypeString, Str: &gojq.String{Str: s}}
+	}
+	tests := []struct {
+		name           string
+		query          *gojq.Query
+		wantScan       bool
+		wantStreamable bool
+		wantKeys       []string
+	}{
+		{
+			name:     "array term carrying no array",
+			query:    &gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeArray}},
+			wantScan: false,
+			wantKeys: nil,
+		},
+		{
+			name:     "bracketed subscript that is an empty query",
+			query:    bracket(&gojq.Query{}),
+			wantScan: true,
+		},
+		{
+			name: "bracketed subscript carrying both a term and an operator",
+			query: bracket(&gojq.Query{
+				Term:  str("book:1"),
+				Left:  &gojq.Query{Term: str("book")},
+				Right: &gojq.Query{Term: str("1")},
+				Op:    gojq.OpAdd,
+			}),
+			wantScan: true,
+		},
+		{
+			name:     "bracketed subscript that is a string term with no literal",
+			query:    bracket(&gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeString}}),
+			wantScan: true,
+		},
+		{
+			name: "iteration suffix that also carries an index",
+			query: &gojq.Query{Term: &gojq.Term{
+				Type: gojq.TermTypeIdentity,
+				SuffixList: []*gojq.Suffix{
+					{Iter: true, Index: &gojq.Index{Name: "a"}},
+				},
+			}},
+			wantScan:       true,
+			wantStreamable: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got selector.KeySet
+
+			require.NotPanics(t, func() { got = selector.Keys(tt.query) })
+
+			require.Equal(t, tt.wantScan, got.Scan, "scan classification")
+			require.Equal(t, tt.wantStreamable, got.Streamable, "streamable classification")
+			require.Equal(t, tt.wantKeys, got.Keys)
 		})
 	}
 }
