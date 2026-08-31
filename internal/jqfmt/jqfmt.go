@@ -528,15 +528,13 @@ func termNeedsBreak(t *gojq.Term) bool {
 	case gojq.TermTypeUnary:
 		return termNeedsBreak(t.Unary.Term)
 	case gojq.TermTypeIf:
-		if queryNeedsBreak(t.If.Cond) || queryNeedsBreak(t.If.Then) || (t.If.Else != nil && queryNeedsBreak(t.If.Else)) {
+		// An elif or an else clause breaks the form on its own, whatever those clauses
+		// hold, so their contents never need asking: only a bare if/then can stay inline,
+		// and only when neither of its two parts breaks.
+		if len(t.If.Elif) > 0 || t.If.Else != nil {
 			return true
 		}
-		for _, e := range t.If.Elif {
-			if queryNeedsBreak(e.Cond) || queryNeedsBreak(e.Then) {
-				return true
-			}
-		}
-		return len(t.If.Elif) > 0 || t.If.Else != nil
+		return queryNeedsBreak(t.If.Cond) || queryNeedsBreak(t.If.Then)
 	case gojq.TermTypeTry:
 		return queryNeedsBreak(t.Try.Body) || (t.Try.Catch != nil && queryNeedsBreak(t.Try.Catch))
 	case gojq.TermTypeReduce:
