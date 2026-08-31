@@ -1026,6 +1026,24 @@
    "file": "internal/render/json.go",
    "mutator": "statement/remove",
    "line": 67
+  },
+  {
+   "id": "b65de6a58f1ae86fedf8e6fc00a7d2cb",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "branch/case",
+   "line": 728
+  },
+  {
+   "id": "d0db686f2471e58afa0132a2be2f5b74",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "expression/error-guard",
+   "line": 608
+  },
+  {
+   "id": "3c63527171ee007923126445b6baa154",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "loop/break",
+   "line": 728
   }
  ]
 }

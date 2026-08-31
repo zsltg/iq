@@ -415,3 +415,18 @@ removed from the baseline before the closing run verified the one below. It surv
 call it removes only re-asserts the library default. It was verified by hand — the mutation applied
 to the real file, the whole package suite still green — before acceptance.
 - bed35ced74f680ddc78ea9611ec83eb3 internal/render/json.go:67 statement/remove — the colored branch's `enc.SetSortMapKeys(true)` call dropped. `jsoncolor.NewEncoder` constructs with `flags: EscapeHTML | SortMapKeys`, so the call sets a bit that is already set and removing it changes no byte of the output. The call stays as a deliberate pin against a library default change, and it is not unasserted: the `true`->`false` flip on the same line is killed by TestNewJSONEncoderColoredSortsMapKeys. (The `SetEscapeHTML(false)` call two lines above is the opposite case — it clears a default bit — and both its removal and its flip are killed.)
+
+## internal/rawpred — full-scan equivalents (accepted 2026-08-31, test/internal-mutation branch)
+First full scan of the package (only its diff lines had ever been gated): 6 escapes, 2 of them
+killed. isObject had never been called directly, so its arms were only ever reached through
+getField, where every false answer collapses to the same fieldAmbiguous the mutated one produces;
+a direct table now pins the arms apart, including an array and a string that each carry a `{`
+after the first byte. The regex dedup guard was asserted only by entry count, which a
+recompile-and-overwrite leaves unchanged, so the test now preps the same (pattern, flags) a second
+time and requires the stored *Regexp to be the same pointer. The three below survive because the
+mutation cannot change what the code does. Each was verified by hand — the mutation applied to the
+real file, the whole package suite still green — before acceptance. The fourth survivor,
+rawpred.go:52 statement/return, was already accepted on an earlier branch and is justified above.
+- b65de6a58f1ae86fedf8e6fc00a7d2cb internal/rawpred/rawpred.go:728 branch/case — isObject's `case ' ', '\t', '\n', '\r': continue` body cleared. The switch is the last statement in the range body, so falling out of an empty case and continuing the loop are the same control flow; the next byte is read either way.
+- 3c63527171ee007923126445b6baa154 internal/rawpred/rawpred.go:728 loop/break — the same arm's `continue` replaced by `break`. Inside a switch, `break` leaves the switch, not the loop, so it too falls to the end of the range body and reads the next byte. (The `default: return false` arm on line 732 is the opposite case — clearing it really does read on — and it is killed by the array and string rows of TestIsObject.)
+- d0db686f2471e58afa0132a2be2f5b74 internal/rawpred/rawpred.go:608 expression/error-guard — foldArray's `if cbErr != nil` guard cleared. jsonparser's ArrayEach returns on its own parse error before ever invoking the callback (`if e != nil { return offset, e }` guards the `cb(v, t, ..., e)` call in parser.go), so the error it hands the callback is always nil and the branch is unreachable for any input. The guard stays as the library's callback contract; the walk error it does not cover is the ArrayEach return value, whose guard is killed by the malformed-array rows.

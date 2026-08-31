@@ -507,6 +507,38 @@ func TestNewMatcherDeduplicatesAndDescendsCond(t *testing.T) {
 	require.True(t, ok)
 	_, ok = m.regexes[regexKey{pattern: "deep", flags: ""}]
 	require.True(t, ok, "a Regex under an ElemMatch Cond is compiled now that prepare descends")
+
+	// Dedup means reuse, not recompilation: preparing the same (pattern, flags)
+	// again must leave the stored pointer untouched, which a re-store of an equal
+	// but freshly compiled Regexp would not.
+	first := m.regexes[regexKey{pattern: "^h", flags: "i"}]
+	require.NotNil(t, first)
+
+	m.prepare(predicate.Regex{Path: []string{"w"}, Pattern: "^h", Flags: "i"})
+
+	require.Same(t, first, m.regexes[regexKey{pattern: "^h", flags: "i"}])
+	require.Len(t, m.regexes, 2, "a repeat pattern adds no entry")
+}
+
+func TestIsObject(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{"object", `{"a":1}`, true},
+		{"object behind whitespace", " \t\n\r{}", true},
+		{"empty", "", false},
+		{"whitespace only", " \t\n\r", false},
+		{"array holding an object", `[{"a":1}]`, false},
+		{"string holding a brace", `"x{"`, false},
+		{"number", "5", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isObject([]byte(tt.raw)))
+		})
+	}
 }
 
 func TestNumOrd(t *testing.T) {
