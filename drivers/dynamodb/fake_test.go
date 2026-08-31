@@ -450,8 +450,67 @@ func TestInspectTableMetadata(t *testing.T) {
 	require.Equal(t, int64(234), m["sizeBytes"])
 	require.Equal(t, "ACTIVE", m["status"])
 	require.Equal(t, string(types.BillingModeProvisioned), m["billingMode"]) // absent summary defaults to PROVISIONED
-	require.Len(t, m["keySchema"], 1)
+	// Each schema entry carries both its attribute name and its type, so a dropped
+	// field or a skipped loop body is visible, not just a length change.
+	require.Equal(t, []any{map[string]any{"attribute": "id", "keyType": "HASH"}}, m["keySchema"])
+	require.Equal(t, []any{map[string]any{"attribute": "id", "type": "N"}}, m["attributeDefinitions"])
 	require.NotContains(t, m, "globalSecondaryIndexes") // omitted when the table has none
+}
+
+func TestInspectTableBillingMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		summary *types.BillingModeSummary
+		want    string
+	}{
+		{"absent summary defaults to provisioned", nil, string(types.BillingModeProvisioned)},
+		{"on-demand", &types.BillingModeSummary{BillingMode: types.BillingModePayPerRequest}, "PAY_PER_REQUEST"},
+		{"provisioned", &types.BillingModeSummary{BillingMode: types.BillingModeProvisioned}, "PROVISIONED"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeDDB{describeFn: func(*awsdynamodb.DescribeTableInput) (*awsdynamodb.DescribeTableOutput, error) {
+				return &awsdynamodb.DescribeTableOutput{Table: &types.TableDescription{
+					TableName:          aws.String("t"),
+					BillingModeSummary: tt.summary,
+				}}, nil
+			}}
+			s := &Store{client: fake, table: "t"}
+			res, err := s.InspectTable(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, tt.want, res.(map[string]any)["billingMode"])
+		})
+	}
+}
+
+func TestInspectTableMultipleSchemaEntries(t *testing.T) {
+	// A composite table renders every key schema and attribute definition entry, so a
+	// loop that stops after the first is visible.
+	fake := &fakeDDB{describeFn: func(*awsdynamodb.DescribeTableInput) (*awsdynamodb.DescribeTableOutput, error) {
+		return &awsdynamodb.DescribeTableOutput{Table: &types.TableDescription{
+			TableName: aws.String("events"),
+			KeySchema: []types.KeySchemaElement{
+				{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
+				{AttributeName: aws.String("sk"), KeyType: types.KeyTypeRange},
+			},
+			AttributeDefinitions: []types.AttributeDefinition{
+				{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
+				{AttributeName: aws.String("sk"), AttributeType: types.ScalarAttributeTypeN},
+			},
+		}}, nil
+	}}
+	s := &Store{client: fake, table: "events"}
+	res, err := s.InspectTable(context.Background())
+	require.NoError(t, err)
+	m := res.(map[string]any)
+	require.Equal(t, []any{
+		map[string]any{"attribute": "pk", "keyType": "HASH"},
+		map[string]any{"attribute": "sk", "keyType": "RANGE"},
+	}, m["keySchema"])
+	require.Equal(t, []any{
+		map[string]any{"attribute": "pk", "type": "S"},
+		map[string]any{"attribute": "sk", "type": "N"},
+	}, m["attributeDefinitions"])
 }
 
 func TestInspectTableIncludesIndexes(t *testing.T) {
@@ -474,6 +533,12 @@ func TestTableOf(t *testing.T) {
 	require.Empty(t, tableOf((*awsdynamodb.ScanInput)(nil)))  // nil pointer
 	require.Empty(t, tableOf("not-a-struct"))                 // non-struct
 	require.Empty(t, tableOf(42))                             // non-pointer, non-struct
+	// A TableName field that is not a pointer is skipped, never dereferenced: IsNil
+	// panics on a non-nilable kind, so both guards before it must hold.
+	require.Empty(t, tableOf(struct{ TableName string }{TableName: "books"}))
+	require.Empty(t, tableOf(&struct{ TableName int }{TableName: 7}))
+	// A struct value (not a pointer) carrying a pointer TableName is still read.
+	require.Equal(t, "books", tableOf(struct{ TableName *string }{TableName: aws.String("books")}))
 }
 
 func TestFormatRawFallback(t *testing.T) {
@@ -621,4 +686,268 @@ func TestEstimateCountFromMetadata(t *testing.T) {
 	n, err := s.EstimateCount(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, int64(42), n)
+}
+
+// errBoom is the sentinel a fake returns when the test asserts the driver keeps the
+// backend's cause in the error chain.
+var errBoom = errors.New("boom")
+
+func TestGetGuards(t *testing.T) {
+	t.Run("no table selected", func(t *testing.T) {
+		// The guard fires before any key decoding, so an empty key list still reports
+		// the missing table rather than an empty result.
+		fake := &fakeDDB{}
+		s := &Store{client: fake, table: "t"}
+		_, err := s.Get(context.Background(), nil)
+		require.ErrorIs(t, err, errNoTable)
+		require.Zero(t, fake.batchGetCalls)
+	})
+
+	t.Run("empty keys return an allocated empty map", func(t *testing.T) {
+		fake := &fakeDDB{}
+		s := fakeStore(t, fake)
+		got, err := s.Get(context.Background(), nil)
+		require.NoError(t, err)
+		require.NotNil(t, got) // an allocated map, never a nil one
+		require.Empty(t, got)
+		require.Zero(t, fake.batchGetCalls) // no round-trip for an empty request
+	})
+}
+
+func TestGetWrapsBatchGetError(t *testing.T) {
+	fake := &fakeDDB{batchGetFn: func(*awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
+		return nil, errBoom
+	}}
+	s := fakeStore(t, fake)
+	_, err := s.Get(context.Background(), []string{"1"})
+	require.ErrorContains(t, err, "dynamodb batch get")
+	require.ErrorIs(t, err, errBoom) // the backend cause stays in the chain
+}
+
+func TestGetBackoffHonorsContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	fake := &fakeDDB{batchGetFn: func(in *awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
+		cancel() // cancel before the retry sleep
+		return &awsdynamodb.BatchGetItemOutput{UnprocessedKeys: in.RequestItems}, nil
+	}}
+	// Keep a real (tiny) backoff so the cancel is observed in the sleep.
+	prev := backoffUnit
+	backoffUnit = 50 * time.Millisecond
+	t.Cleanup(func() { backoffUnit = prev })
+	s := &Store{client: fake, table: "t", keys: []KeyAttr{{name: "id", typ: types.ScalarAttributeTypeN}}, pageSize: scanBatch}
+	_, err := s.Get(ctx, []string{"1"})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 1, fake.batchGetCalls) // the cancelled backoff stops the retry loop
+}
+
+func TestScanWrapsScanError(t *testing.T) {
+	fake := &fakeDDB{scanFn: func(*awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
+		return nil, errBoom
+	}}
+	s := fakeStore(t, fake)
+	err := s.ScanBatches(context.Background(), func(map[string]any) error { return nil })
+	require.ErrorContains(t, err, "dynamodb scan")
+	require.ErrorIs(t, err, errBoom) // the backend cause stays in the chain
+}
+
+func TestScanStopsOnCallbackError(t *testing.T) {
+	// 150 items fill one page mid-scan; the callback's error must abort the scan there,
+	// so the second (trailing) page is never handed over.
+	fake := &fakeDDB{scanFn: func(*awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
+		items := make([]map[string]types.AttributeValue, 0, 150)
+		for i := 1; i <= 150; i++ {
+			items = append(items, idItem(i))
+		}
+		return &awsdynamodb.ScanOutput{Items: items}, nil
+	}}
+	s := fakeStore(t, fake)
+	pages := 0
+	err := s.ScanBatches(context.Background(), func(map[string]any) error {
+		pages++
+		return errBoom
+	})
+	require.ErrorIs(t, err, errBoom)
+	require.Equal(t, 1, pages) // aborted at the first full page, not after the trailing one
+}
+
+func TestQueryRejectsEmptyStatement(t *testing.T) {
+	fake := &fakeDDB{}
+	s := fakeStore(t, fake)
+	_, err := s.Query(context.Background(), nil)
+	require.ErrorContains(t, err, "empty statement")
+	require.Zero(t, fake.execCalls) // never round-trips an empty statement
+}
+
+func TestEstimateCountMissingMetadata(t *testing.T) {
+	tests := []struct {
+		name  string
+		table *types.TableDescription
+	}{
+		{"nil table description", nil},
+		{"nil item count", &types.TableDescription{TableName: aws.String("t")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeDDB{describeFn: func(*awsdynamodb.DescribeTableInput) (*awsdynamodb.DescribeTableOutput, error) {
+				return &awsdynamodb.DescribeTableOutput{Table: tt.table}, nil
+			}}
+			s := fakeStore(t, fake)
+			// Both halves of the guard must be checked before the pointer is read, so
+			// missing metadata is a zero hint, never a panic.
+			n, err := s.EstimateCount(context.Background())
+			require.NoError(t, err)
+			require.Zero(t, n)
+		})
+	}
+}
+
+func TestBackoffGrowsAndCaps(t *testing.T) {
+	prev := backoffUnit
+	backoffUnit = 2 * time.Millisecond
+	t.Cleanup(func() { backoffUnit = prev })
+	// The wait is jittered upward by up to half the base, so the base is a hard lower
+	// bound and twice the base a hard upper one. maxWait is 0 where only the lower
+	// bound is meaningful (a short wait cannot be timed tightly from above).
+	tests := []struct {
+		name             string
+		attempt          int
+		minWait, maxWait time.Duration
+	}{
+		{"first attempt waits one unit", 0, 2 * time.Millisecond, 0},
+		{"second attempt doubles it", 1, 4 * time.Millisecond, 0},
+		{"growth is exponential up to the cap", 5, 64 * time.Millisecond, 128 * time.Millisecond},
+		{"past the cap the wait stops growing", 6, 64 * time.Millisecond, 128 * time.Millisecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A timer never fires early, so the lower bound holds for every sample. It
+			// can fire late under load, so the upper bound is asserted on the fastest
+			// of at most three samples, which no scheduling hiccup can inflate.
+			var fastest time.Duration
+			for i := range 3 {
+				start := time.Now()
+				require.NoError(t, backoff(context.Background(), tt.attempt))
+				elapsed := time.Since(start)
+				require.GreaterOrEqual(t, elapsed, tt.minWait)
+				if i == 0 || elapsed < fastest {
+					fastest = elapsed
+				}
+				if tt.maxWait == 0 || fastest < tt.maxWait {
+					break
+				}
+			}
+			if tt.maxWait > 0 {
+				require.Less(t, fastest, tt.maxWait)
+			}
+		})
+	}
+}
+
+func TestPutInsertOnlyContinuesPastASkip(t *testing.T) {
+	// The first record's key exists (a conditional-check failure); the rest of the
+	// batch must still be written, so the skip continues the loop rather than ending it.
+	calls := 0
+	fake := &fakeDDB{putFn: func(*awsdynamodb.PutItemInput) (*awsdynamodb.PutItemOutput, error) {
+		calls++
+		if calls == 1 {
+			return nil, &types.ConditionalCheckFailedException{}
+		}
+		return &awsdynamodb.PutItemOutput{}, nil
+	}}
+	s := fakeStore(t, fake)
+	stat, err := s.Put(context.Background(), []query.Record{
+		{Key: "1", Value: map[string]any{"id": 1}},
+		{Key: "2", Value: map[string]any{"id": 2}},
+		{Key: "3", Value: map[string]any{"id": 3}},
+	}, query.InsertOnly)
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{Skipped: 1, Written: 2}, stat)
+	require.Equal(t, 3, fake.putCalls)
+}
+
+func TestPutErrorsAreNotSilentSkips(t *testing.T) {
+	tests := []struct {
+		name string
+		mode query.WriteMode
+		err  error
+	}{
+		{"insert-only surfaces a non-conditional failure", query.InsertOnly, errBoom},
+		{"upsert surfaces a conditional failure", query.Upsert, &types.ConditionalCheckFailedException{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeDDB{putFn: func(*awsdynamodb.PutItemInput) (*awsdynamodb.PutItemOutput, error) {
+				return nil, tt.err
+			}}
+			s := fakeStore(t, fake)
+			stat, err := s.Put(context.Background(),
+				[]query.Record{{Key: "1", Value: map[string]any{"id": 1}}}, tt.mode)
+			require.ErrorContains(t, err, "dynamodb put")
+			require.ErrorIs(t, err, tt.err)
+			require.Equal(t, query.WriteStat{}, stat) // never counted as a skip
+		})
+	}
+}
+
+func TestPutUpsertSkipsTheKeylessRecordInThePreRead(t *testing.T) {
+	// A keyless record carries its key attributes in the object; it has no string key
+	// to pre-read, and sending an empty one would fail the numeric key decode.
+	fake := &fakeDDB{batchGetFn: func(*awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
+		return &awsdynamodb.BatchGetItemOutput{}, nil
+	}}
+	s := fakeStore(t, fake)
+	stat, err := s.Put(context.Background(),
+		[]query.Record{{Key: "", Value: map[string]any{"id": 5}}}, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{Written: 1}, stat)
+	require.Zero(t, fake.batchGetCalls) // nothing left to pre-read
+	require.Equal(t, 1, fake.putCalls)
+}
+
+func TestClearUnprocessedExhausted(t *testing.T) {
+	// The write batch never drains: after the bounded retries the leftovers must be
+	// reported, never silently dropped.
+	scanned := false
+	fake := &fakeDDB{
+		scanFn: func(*awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
+			if scanned {
+				return &awsdynamodb.ScanOutput{}, nil
+			}
+			scanned = true
+			return &awsdynamodb.ScanOutput{Items: []map[string]types.AttributeValue{idItem(1)}}, nil
+		},
+		batchWriteFn: func(in *awsdynamodb.BatchWriteItemInput) (*awsdynamodb.BatchWriteItemOutput, error) {
+			return &awsdynamodb.BatchWriteItemOutput{UnprocessedItems: in.RequestItems}, nil
+		},
+	}
+	s := fakeStore(t, fake)
+	err := s.Clear(context.Background())
+	require.ErrorContains(t, err, "unprocessed")
+	require.Equal(t, maxUnprocessed, fake.batchWriteCalls)
+}
+
+func TestDeleteSurfacesTheBatchWriteError(t *testing.T) {
+	fake := &fakeDDB{
+		batchGetFn: func(*awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
+			return &awsdynamodb.BatchGetItemOutput{}, nil
+		},
+		batchWriteFn: func(*awsdynamodb.BatchWriteItemInput) (*awsdynamodb.BatchWriteItemOutput, error) {
+			return nil, errBoom
+		},
+	}
+	s := fakeStore(t, fake)
+	stat, err := s.Delete(context.Background(), []string{"1"})
+	require.ErrorContains(t, err, "dynamodb batch write")
+	require.ErrorIs(t, err, errBoom)
+	require.Equal(t, query.DeleteStat{}, stat) // no accounting from a failed delete
+}
+
+func TestDropSurfacesTheDeleteTableError(t *testing.T) {
+	fake := &fakeDDB{deleteTableFn: func(*awsdynamodb.DeleteTableInput) (*awsdynamodb.DeleteTableOutput, error) {
+		return nil, errBoom
+	}}
+	s := fakeStore(t, fake)
+	err := s.Drop(context.Background())
+	require.ErrorContains(t, err, "dynamodb delete table")
+	require.ErrorIs(t, err, errBoom)
 }
