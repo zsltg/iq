@@ -108,6 +108,9 @@ func TestFormatGolden(t *testing.T) {
 		{`reduce .[] as $x ((.a|.b); 0)`, "reduce .[] as $x (\n  (\n    .a\n    | .b\n  );\n  0\n)"},
 		{`foreach .[] as $x (0; .a; (.b|.c))`, "foreach .[] as $x (\n  0;\n  .a;\n  (\n    .b\n    | .c\n  )\n)"},
 		{`foreach .[] as $x (0; . + $x; .)`, "foreach .[] as $x (0; . + $x; .)"},
+		// An inline foreach stays inline inside an array too: a present but simple
+		// extract clause must not report a break to the enclosing form.
+		{`[foreach .[] as $x (0; . + $x; .)]`, "[foreach .[] as $x (0; . + $x; .)]"},
 		// A func-def inside an argument breaks that argument.
 		{`select(def f: .; f)`, "select(\n  def f: .;\n  f\n)"},
 		// A binary composition breaks when either side does.
