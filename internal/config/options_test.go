@@ -111,6 +111,30 @@ func TestOptionList(t *testing.T) {
 	require.ErrorIs(t, err, config.ErrUnknownSource)
 }
 
+func TestOptionListSortsByKey(t *testing.T) {
+	c := &config.Config{Sources: map[string]config.Source{}}
+	// Inserted so that no rotation of the insertion order is already sorted.
+	for _, k := range []string{"beta", "alpha", "gamma", "delta", "epsilon"} {
+		require.NoError(t, c.SetOption("", k, k+"-value"))
+	}
+	want := []config.Option{
+		{Key: "alpha", Value: "alpha-value"},
+		{Key: "beta", Value: "beta-value"},
+		{Key: "delta", Value: "delta-value"},
+		{Key: "epsilon", Value: "epsilon-value"},
+		{Key: "gamma", Value: "gamma-value"},
+	}
+
+	// Map iteration order is randomized per range, so a comparison that never
+	// orders anything returns the keys in a different order each call; repeat
+	// until landing on the sorted one by chance is impossible.
+	for range 10 {
+		opts, err := c.OptionList("")
+		require.NoError(t, err)
+		require.Equal(t, want, opts)
+	}
+}
+
 func TestOptionsRoundTrip(t *testing.T) {
 	tempConfig(t)
 

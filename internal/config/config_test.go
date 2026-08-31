@@ -1,13 +1,16 @@
 package config_test
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/config"
@@ -50,6 +53,10 @@ func TestPathWithoutUserConfigDir(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "locate user config dir")
 	require.Empty(t, p)
+
+	_, want := os.UserConfigDir()
+	require.Error(t, want)
+	require.EqualError(t, errors.Unwrap(err), want.Error(), "the cause is wrapped, not flattened")
 }
 
 func TestLoadRejectsMalformedTOML(t *testing.T) {
@@ -61,6 +68,9 @@ func TestLoadRejectsMalformedTOML(t *testing.T) {
 	require.Nil(t, c)
 	require.ErrorContains(t, err, "parse config")
 	require.ErrorContains(t, err, p)
+
+	var decode *toml.DecodeError
+	require.ErrorAs(t, err, &decode, "the decoder's error is wrapped, not flattened")
 }
 
 func TestLoadMissing(t *testing.T) {
@@ -180,6 +190,10 @@ func TestSaveFailures(t *testing.T) {
 		err := (&config.Config{Sources: map[string]config.Source{}}).Save()
 		require.Error(t, err)
 		require.ErrorContains(t, err, "create config dir")
+
+		var pathErr *fs.PathError
+		require.ErrorAs(t, err, &pathErr, "the mkdir failure is wrapped, not flattened")
+		require.Equal(t, "mkdir", pathErr.Op)
 	})
 
 	t.Run("target path is a directory", func(t *testing.T) {
@@ -191,6 +205,10 @@ func TestSaveFailures(t *testing.T) {
 		err := (&config.Config{Sources: map[string]config.Source{}}).Save()
 		require.Error(t, err)
 		require.ErrorContains(t, err, "replace config")
+
+		var linkErr *os.LinkError
+		require.ErrorAs(t, err, &linkErr, "the rename failure is wrapped, not flattened")
+		require.Equal(t, target, linkErr.New)
 
 		leftovers, globErr := filepath.Glob(filepath.Join(base, "iq-*.toml"))
 		require.NoError(t, globErr)
