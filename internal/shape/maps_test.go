@@ -1,6 +1,7 @@
 package shape_test
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -231,5 +232,25 @@ func TestInferMapsFormatMerge(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, mapTypeOf(mapValues(tt.values), ".m{}"))
 		})
+	}
+}
+
+func TestInferMapsKeepsAFormatAcrossAValueThatSawNoString(t *testing.T) {
+	// Twenty id-keyed dates plus one null: the null side saw no string, so under
+	// the all-or-nothing rule it contributes nothing and the date format holds
+	// for the merged map value. Go randomises the merge order, so the corpus is
+	// re-inferred ten times; the null being merged first every pass is
+	// impossible, and merging it after any date is what the guard has to absorb.
+	const dates = 20
+	items := make(map[string]any, dates+1)
+	for i := range dates {
+		items[strconv.Itoa(i)] = map[string]any{
+			"m": map[string]any{"id" + strconv.Itoa(i): fmt.Sprintf("2020-01-%02d", i+1)},
+		}
+	}
+	items[strconv.Itoa(dates)] = map[string]any{"m": map[string]any{"idnull": nil}}
+
+	for pass := range 10 {
+		require.Equal(t, []any{"null", "string(date)"}, mapTypeOf(items, ".m{}"), "pass %d", pass)
 	}
 }
