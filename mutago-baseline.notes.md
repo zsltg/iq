@@ -238,3 +238,17 @@ into a covered one — so it was killed by a test and removed from the baseline,
 - fadcb92636adebbf9e7ca1372b57b3a2 drivers/file/rdb.go:93 expression/comparison — the score `<` runs only inside `if Score != Score`, so `<=` and `<` agree on every pair that branch can see.
 - 0a4fab84db634e38ce728550886ffef1 drivers/file/rdb.go:127 expression/comparison — the same guarded-by-!= identity for the stream's millisecond comparison.
 - f934ce4c8d9813c87d06db2abb53ebcf drivers/file/rdb.go:95 expression/comparison — the member tiebreak `<=` differs from `<` only for two entries with the same member, which one sorted set cannot hold; the sibling sequence tiebreak at :129, where a dump can repeat an id, is killed by TestStreamValueOrdering.
+
+## internal/pushdown — full-scan equivalents (accepted 2026-08-31, test/pushdown-mutation branch)
+First full scan of the package (only its diff lines had ever been gated): 70 escapes, 65 of them
+killed by the new guard tables (selectArg, extractPred's shape guards, isNot, isLength,
+intLiteral, constString, literalOf) plus the reversed-comparison, rejected-builtin and
+truncated-regex rows added to the Compile and portable-regex tables. The four below survive
+because the mutation cannot change what the function returns. Each was verified by hand — the
+mutation applied to the real file, the whole package suite still green — before acceptance. The
+fifth survivor, conjuncts.go:40, was already accepted on an earlier branch and is justified
+above.
+- 335919d487998a1402b76002b828e906 internal/pushdown/pushdown.go:405 branch/if — intLiteral's `if !ok { return 0, false }` guard cleared. Every false path of literalOf returns a nil value, so the mutant falls through to `f, ok := v.(float64)`, which fails on that same nil and returns the identical `0, false`. The guard is a readability shortcut, not a behavioural one; the two numeric mutations of the same return are killed by TestIntLiteral's non-literal row, which pins the zero.
+- a14ba2b8f94c5a42201a396545db60b1 internal/pushdown/pushdown.go:166 statement/return — flip's `case predicate.Lt: return predicate.Gt` becomes `return 0`; Gt is the first iota of predicate.Op, so 0 IS Gt. The other three arms return non-zero operators and are killed by the reversed-comparison rows in TestCompilePushable.
+- 7d928d6fc391cca2558e457578feb8e8 internal/pushdown/pushdown.go:599 numbers/decrementer — `strconv.ParseFloat(t.Number, 64)` → bitSize 63; ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path, so the parsed float is identical (same reasoning as the drivers/mongo normalize.go:86 pair).
+- 0153fe57aa10de9180740096dab9718d internal/pushdown/pushdown.go:599 numbers/incrementer — the same site with bitSize 65, identical for the same reason.

@@ -666,6 +666,30 @@
    "file": "drivers/file/rdb.go",
    "mutator": "expression/comparison",
    "line": 127
+  },
+  {
+   "id": "335919d487998a1402b76002b828e906",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/if",
+   "line": 405
+  },
+  {
+   "id": "7d928d6fc391cca2558e457578feb8e8",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "numbers/decrementer",
+   "line": 599
+  },
+  {
+   "id": "0153fe57aa10de9180740096dab9718d",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "numbers/incrementer",
+   "line": 599
+  },
+  {
+   "id": "a14ba2b8f94c5a42201a396545db60b1",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "statement/return",
+   "line": 166
   }
  ]
 }
