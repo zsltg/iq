@@ -479,11 +479,11 @@ func (c *Config) List() []Handle {
 // grouped source handle (so "a/b/c" contributes "a" and "a/b"). These are exactly
 // the names SetGroup accepts. A top-level source contributes no group.
 func (c *Config) Groups() []string {
-	seen := make(map[string]bool)
+	seen := make(map[string]struct{})
 	for h := range c.Sources {
 		parts := strings.Split(h, "/")
 		for i := 1; i < len(parts); i++ {
-			seen[strings.Join(parts[:i], "/")] = true
+			seen[strings.Join(parts[:i], "/")] = struct{}{}
 		}
 	}
 	groups := make([]string, 0, len(seen))

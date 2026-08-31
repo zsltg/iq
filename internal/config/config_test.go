@@ -1,9 +1,11 @@
 package config_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -91,6 +93,30 @@ func TestLoadMigratesLegacyCollection(t *testing.T) {
 		require.NoError(t, err)
 		require.NotContains(t, string(data), "collection = ")
 		require.Contains(t, string(data), "collection=orders")
+	})
+
+	t.Run("migrates every legacy source, whatever the map order", func(t *testing.T) {
+		p := tempConfig(t)
+		var raw strings.Builder
+		for i := range 4 {
+			fmt.Fprintf(&raw, "[sources.plain%d]\nurl = \"redis://h\"\n", i)
+			fmt.Fprintf(&raw, "[sources.legacy%d]\nurl = \"mongodb://h/db\"\ncollection = \"c%d\"\n", i, i)
+		}
+		require.NoError(t, os.WriteFile(p, []byte(raw.String()), 0o600))
+
+		// Map iteration order is randomized per range, so a migration that gave
+		// up at the first collection-less source instead of skipping it would
+		// only sometimes miss one; repeat until that is certain.
+		for range 10 {
+			c, err := config.Load()
+			require.NoError(t, err)
+			for i := range 4 {
+				got := c.Sources[fmt.Sprintf("legacy%d", i)]
+				require.Equal(t, fmt.Sprintf("mongodb://h/db?collection=c%d", i), got.URL)
+				require.Empty(t, got.Collection)
+				require.Equal(t, "redis://h", c.Sources[fmt.Sprintf("plain%d", i)].URL)
+			}
+		}
 	})
 
 	t.Run("leaves a url that already carries a collection", func(t *testing.T) {
