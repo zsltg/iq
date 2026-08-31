@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -123,10 +124,14 @@ func TestDynamoSourceFailures(t *testing.T) {
 	ignore := func([]query.Record) error { return nil }
 
 	t.Run("a non-array Items value is a decode failure", func(t *testing.T) {
-		require.ErrorContains(t, drain(t, `{"Items":5}`, pageSize, ignore), "decode dynamodb Items")
+		err := drain(t, `{"Items":5}`, pageSize, ignore)
+		require.ErrorContains(t, err, "decode dynamodb Items")
+		requireWrapped(t, err)
 	})
 	t.Run("a malformed dump is a decode failure", func(t *testing.T) {
-		require.ErrorContains(t, drain(t, `{"Item":`, pageSize, ignore), "decode dynamodb dump")
+		err := drain(t, `{"Item":`, pageSize, ignore)
+		require.ErrorContains(t, err, "decode dynamodb dump")
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	})
 	t.Run("a consumer error propagates from a full page", func(t *testing.T) {
 		boom := errors.New("consumer said no")

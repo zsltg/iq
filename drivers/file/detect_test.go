@@ -202,6 +202,7 @@ func TestDetectFormatFileErrors(t *testing.T) {
 		require.Error(t, err)
 		require.Equal(t, FormatUnknown, got)
 		require.Contains(t, err.Error(), "read dump head")
+		requireWrapped(t, err)
 	})
 }
 
@@ -233,6 +234,18 @@ func TestDetectSniffWindow(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+	t.Run("a buffer ending exactly one byte past the window is truncated", func(t *testing.T) {
+		// No trailing bytes: the buffer is exactly 513 long, the only length at which
+		// truncating at 512 and truncating at 513 differ.
+		got, err := detectBytes([]byte(typedObjectOfSize(t, 513)))
+		require.NoError(t, err)
+		require.Equal(t, FormatMongoexport, got)
+	})
+	t.Run("a buffer ending exactly on the window is decodable", func(t *testing.T) {
+		got, err := detectBytes([]byte(typedObjectOfSize(t, 512)))
+		require.NoError(t, err)
+		require.Equal(t, FormatJSONL, got)
+	})
 	t.Run("a short buffer is sniffed whole", func(t *testing.T) {
 		got, err := detectBytes([]byte(`{"key":"a","value":1}` + "\n"))
 		require.NoError(t, err)

@@ -143,10 +143,12 @@ func TestCassandraCSVFailures(t *testing.T) {
 	t.Run("an unparsable header is a header failure", func(t *testing.T) {
 		err := drain(t, "id,\"na\"me\nx,1\n", "format=cassandra-csv&keys=id", context.Background(), ignore)
 		require.ErrorContains(t, err, "read cassandra csv header")
+		requireWrapped(t, err)
 	})
 	t.Run("an unparsable row is a row failure", func(t *testing.T) {
 		err := drain(t, "id,name\nx,\"na\"me\n", "format=cassandra-csv&keys=id", context.Background(), ignore)
 		require.ErrorContains(t, err, "read cassandra csv row")
+		requireWrapped(t, err)
 	})
 	t.Run("a bad value keeps its parse cause", func(t *testing.T) {
 		err := drain(t, "id,age\nx,notanint\n", "format=cassandra-csv&keys=id&types=age=int", context.Background(), ignore)

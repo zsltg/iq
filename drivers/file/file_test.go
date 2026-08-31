@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -682,6 +683,7 @@ func TestMaybeGunzip(t *testing.T) {
 			r, err := maybeGunzip(bytes.NewReader(tt.in))
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
+				requireWrapped(t, err)
 				require.Nil(t, r)
 				return
 			}
@@ -692,8 +694,10 @@ func TestMaybeGunzip(t *testing.T) {
 		})
 	}
 	t.Run("a read failure is reported", func(t *testing.T) {
-		_, err := maybeGunzip(errReader{err: errors.New("disk gone")})
+		boom := errors.New("disk gone")
+		_, err := maybeGunzip(errReader{err: boom})
 		require.ErrorContains(t, err, "read dump head")
+		require.ErrorIs(t, err, boom)
 	})
 }
 
@@ -707,7 +711,8 @@ func TestGetWithNoKeysNeverTouchesTheDump(t *testing.T) {
 	require.Empty(t, got)
 
 	_, err = st.Get(context.Background(), []string{"a"})
-	require.Error(t, err, "a non-empty request really does open the dump")
+	require.ErrorContains(t, err, "open dump", "a non-empty request really does open the dump")
+	require.ErrorIs(t, err, fs.ErrNotExist)
 }
 
 // TestGetStopsOnceEveryKeyIsFound pins the early stop. The dump holds a full page of
@@ -875,12 +880,16 @@ func TestRDBSourceFailures(t *testing.T) {
 	})
 	t.Run("a consumer error stops the scan", func(t *testing.T) {
 		boom := errors.New("consumer said no")
-		err := rdbSource(bytes.NewReader(good), 1)(context.Background(), func([]query.Record) error { return boom })
+		// The consumer refuses only its first page, so a reader that dropped the
+		// error and let the trailing flush run would report success.
+		f := &failFirstCall{err: boom}
+		err := rdbSource(bytes.NewReader(good), 1)(context.Background(), f.accept)
 		require.ErrorIs(t, err, boom)
 	})
 	t.Run("an undecodable snapshot is a parse error", func(t *testing.T) {
 		err := rdbSource(bytes.NewReader(corruptBody(good)), pageSize)(context.Background(), func([]query.Record) error { return nil })
 		require.ErrorContains(t, err, "parse rdb")
+		requireWrapped(t, err)
 	})
 }
 
@@ -909,13 +918,19 @@ func TestBSONSourceFailures(t *testing.T) {
 		return bsonSource(r, pageSize, numfmt.DecimalAuto)(context.Background(), func([]query.Record) error { return nil })
 	}
 	t.Run("a truncated document is a read failure", func(t *testing.T) {
-		require.ErrorContains(t, drain(bytes.NewReader([]byte{20, 0, 0, 0, 1, 2, 3})), "read bson document")
+		err := drain(bytes.NewReader([]byte{20, 0, 0, 0, 1, 2, 3}))
+		require.ErrorContains(t, err, "read bson document")
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	})
 	t.Run("an undecodable document is a decode failure", func(t *testing.T) {
-		require.ErrorContains(t, drain(bytes.NewReader([]byte{6, 0, 0, 0, 0xff, 0x00})), "decode bson document")
+		err := drain(bytes.NewReader([]byte{6, 0, 0, 0, 0xff, 0x00}))
+		require.ErrorContains(t, err, "decode bson document")
+		requireWrapped(t, err)
 	})
 	t.Run("a truncated length frame is a length read failure", func(t *testing.T) {
-		require.ErrorContains(t, drain(bytes.NewReader([]byte{20, 0})), "read bson length")
+		err := drain(bytes.NewReader([]byte{20, 0}))
+		require.ErrorContains(t, err, "read bson length")
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	})
 	t.Run("a consumer error propagates", func(t *testing.T) {
 		d, err := bson.Marshal(bson.M{"_id": "k1"})
@@ -938,13 +953,17 @@ func TestExtJSONSourceFailures(t *testing.T) {
 	ignore := func([]query.Record) error { return nil }
 
 	t.Run("a malformed line is a decode failure", func(t *testing.T) {
-		require.ErrorContains(t, drain(`{"_id":1}`+"\n{oops\n", pageSize, ignore), "decode mongoexport json")
+		err := drain(`{"_id":1}`+"\n{oops\n", pageSize, ignore)
+		require.ErrorContains(t, err, "decode mongoexport json")
+		requireWrapped(t, err)
 	})
 	t.Run("a stray closing bracket is a decode failure", func(t *testing.T) {
 		require.ErrorContains(t, drain(`{"_id":1}`+"\n]\n", pageSize, ignore), "decode mongoexport json")
 	})
 	t.Run("an undecodable extended json document is refused", func(t *testing.T) {
-		require.ErrorContains(t, drain(`{"_id":{"$oid":"not-hex"}}`, pageSize, ignore), "decode extended json document")
+		err := drain(`{"_id":{"$oid":"not-hex"}}`, pageSize, ignore)
+		require.ErrorContains(t, err, "decode extended json document")
+		requireWrapped(t, err)
 	})
 	t.Run("a truncated array is a decode failure", func(t *testing.T) {
 		require.ErrorContains(t, drain(`[{"_id":1},`, pageSize, ignore), "decode mongoexport json")
@@ -956,6 +975,12 @@ func TestExtJSONSourceFailures(t *testing.T) {
 	})
 	t.Run("an empty dump yields nothing", func(t *testing.T) {
 		require.NoError(t, drain("", pageSize, ignore))
+	})
+	t.Run("a prologue read failure is reported as such", func(t *testing.T) {
+		boom := errors.New("disk gone")
+		err := extJSONSource(errReader{err: boom}, pageSize, numfmt.DecimalAuto)(context.Background(), ignore)
+		require.ErrorContains(t, err, "read mongoexport json")
+		require.ErrorIs(t, err, boom)
 	})
 }
 

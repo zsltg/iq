@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -80,6 +81,15 @@ func nRecords(n int) []query.Record {
 		out[i] = query.Record{Key: fmt.Sprintf("k%d", i), Type: "string", Value: fmt.Sprintf("v%d", i)}
 	}
 	return out
+}
+
+// requireWrapped asserts an error carries its cause: every boundary in this package
+// wraps with %w so a caller can still classify the failure with errors.Is/As, and a
+// message-only wrap would silently break that.
+func requireWrapped(t *testing.T, err error) {
+	t.Helper()
+	require.Error(t, err)
+	require.Error(t, errors.Unwrap(err), "the underlying cause must stay reachable")
 }
 
 // TestCacheMinSize pins the size floor's fallback: only a positive MinSize is a
@@ -252,6 +262,7 @@ func TestReadCacheStreamFailures(t *testing.T) {
 		path := plantCache(t, st, m, cacheBytes(t, h, nRecords(1), true, junk))
 		err = st.readCache(context.Background(), path, m, func([]query.Record) error { return nil })
 		require.ErrorContains(t, err, "decode cache record")
+		requireWrapped(t, err)
 	})
 	t.Run("a consumer error propagates from a full page", func(t *testing.T) {
 		st, m, h := cacheFixture(t)
@@ -284,6 +295,7 @@ func TestReadCacheStreamFailures(t *testing.T) {
 		st, m, _ := cacheFixture(t)
 		err := st.readCache(context.Background(), filepath.Join(t.TempDir(), "none.cbor"), m, func([]query.Record) error { return nil })
 		require.ErrorContains(t, err, "open cache")
+		require.ErrorIs(t, err, fs.ErrNotExist)
 	})
 }
 
@@ -336,20 +348,24 @@ func TestReadHeader(t *testing.T) {
 	binary.LittleEndian.PutUint32(badVersion[8:12], cacheVersion+1)
 
 	tests := []struct {
-		name string
-		in   []byte
-		want string
+		name    string
+		in      []byte
+		want    string
+		wrapped bool
 	}{
-		{name: "a truncated magic is a read failure", in: good[:3], want: "read cache magic"},
+		{name: "a truncated magic is a read failure", in: good[:3], want: "read cache magic", wrapped: true},
 		{name: "a foreign magic is refused", in: append(bytes.Repeat([]byte("X"), 8), good[8:]...), want: "not an iq cache file"},
-		{name: "a truncated version is a read failure", in: good[:10], want: "read cache version"},
+		{name: "a truncated version is a read failure", in: good[:10], want: "read cache version", wrapped: true},
 		{name: "a different layout version is refused", in: badVersion, want: "cache version mismatch"},
-		{name: "an undecodable header is a decode failure", in: append(bytes.Clone(good[:12]), 0xff, 0xff), want: "decode cache header"},
+		{name: "an undecodable header is a decode failure", in: append(bytes.Clone(good[:12]), 0x85), want: "decode cache header", wrapped: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h, dec, err := readHeader(bytes.NewReader(tt.in))
 			require.ErrorContains(t, err, tt.want)
+			if tt.wrapped {
+				requireWrapped(t, err)
+			}
 			require.Equal(t, cacheHeader{}, h)
 			require.Nil(t, dec)
 		})
@@ -384,13 +400,14 @@ func TestReadTrailer(t *testing.T) {
 		size    int64
 		want    int64
 		wantErr string
+		wrapped bool
 	}{
 		{name: "a file too small for a trailer is refused", data: make([]byte, 7), size: 7, wantErr: "too small for trailer"},
 		{name: "a trailer-only file records offset zero", data: trailerOver(8, 0), size: 8, want: 0},
 		{name: "an offset at the record region's end is in range", data: trailerOver(16, 8), size: 16, want: 8},
 		{name: "an offset one past the record region is refused", data: trailerOver(16, 9), size: 16, wantErr: "out of range"},
 		{name: "a negative stored offset is refused", data: trailerOver(16, ^uint64(0)), size: 16, wantErr: "out of range"},
-		{name: "a short read is reported", data: make([]byte, 4), size: 100, wantErr: "read trailer"},
+		{name: "a short read is reported", data: make([]byte, 4), size: 100, wantErr: "read trailer", wrapped: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -398,6 +415,9 @@ func TestReadTrailer(t *testing.T) {
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				require.Zero(t, got)
+				if tt.wrapped {
+					requireWrapped(t, err)
+				}
 				return
 			}
 			require.NoError(t, err)
@@ -425,6 +445,7 @@ func TestReadIndex(t *testing.T) {
 		// [indexOffset, size-trailerLen) span sees the truncation.
 		_, err := readIndex(bytes.NewReader(data), off, int64(off+len(blk)-1+trailerLen))
 		require.ErrorContains(t, err, "decode index")
+		requireWrapped(t, err)
 	})
 	t.Run("undecodable bytes are refused", func(t *testing.T) {
 		junk := append(append(make([]byte, off), 0xff, 0xff, 0xff), make([]byte, trailerLen)...)
@@ -612,6 +633,7 @@ func TestNewCacheWriterCannotCreateTheCacheDir(t *testing.T) {
 	st := &Store{cache: CacheConfig{Dir: filepath.Join(blocker, "cache"), Enabled: true, MinSize: 1}}
 	w, err := st.newCacheWriter(cacheMeta{path: "p", size: 1})
 	require.ErrorContains(t, err, "create cache dir")
+	requireWrapped(t, err)
 	require.Nil(t, w)
 }
 
@@ -745,8 +767,12 @@ func TestListCacheUnreadableDir(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 	_, err := ListCache(dir)
 	require.ErrorContains(t, err, "read cache dir")
-	_, err = RemoveCache(dir, "")
+	require.ErrorIs(t, err, fs.ErrPermission)
+
+	n, err := RemoveCache(dir, "")
 	require.ErrorContains(t, err, "read cache dir")
+	require.ErrorIs(t, err, fs.ErrPermission)
+	require.Zero(t, n, "nothing was removed")
 }
 
 // TestRemoveCacheResolvesARelativeDumpPath confirms `iq cache clear ./dump.rdb`
@@ -755,8 +781,8 @@ func TestListCacheUnreadableDir(t *testing.T) {
 func TestRemoveCacheResolvesARelativeDumpPath(t *testing.T) {
 	dir := t.TempDir()
 	dumpDir := t.TempDir()
-	plantNamedCache(t, dir, "a.cbor", filepath.Join(dumpDir, "d.rdb"))
-	plantNamedCache(t, dir, "b.cbor", "/elsewhere/other.rdb")
+	plantNamedCache(t, dir, "a.cbor", "/elsewhere/other.rdb") // read first, and not the target.
+	plantNamedCache(t, dir, "b.cbor", filepath.Join(dumpDir, "d.rdb"))
 
 	t.Chdir(dumpDir)
 	n, err := RemoveCache(dir, "d.rdb")
@@ -779,5 +805,25 @@ func TestRemoveCacheReportsARemoveFailure(t *testing.T) {
 
 	n, err := RemoveCache(dir, "")
 	require.ErrorContains(t, err, "remove cache")
+	require.ErrorIs(t, err, fs.ErrPermission)
 	require.Zero(t, n)
+}
+
+// TestGetUsesTheIndexWithoutDecodingTheCache proves the bounded read is really
+// answered from the page index rather than falling through to a streaming pass that
+// happens to agree. The planted cache ends in corrupt bytes, and the requested key is
+// one every page filter excludes: the index answers it without decoding a page, while
+// streaming the same file runs into the corruption.
+func TestGetUsesTheIndexWithoutDecodingTheCache(t *testing.T) {
+	st, m, h := cacheFixture(t)
+	junk, err := cborEnc.Marshal("not a record")
+	require.NoError(t, err)
+	plantCache(t, st, m, cacheBytes(t, h, nRecords(pageSize+1), true, junk))
+
+	got, err := st.Get(context.Background(), []string{"no-such-key"})
+	require.NoError(t, err)
+	require.Empty(t, got)
+
+	err = st.TypedScan(context.Background(), func([]query.Record) error { return nil })
+	require.ErrorContains(t, err, "decode cache record", "streaming the same cache does reach the corruption")
 }
