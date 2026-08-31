@@ -366,3 +366,35 @@ guard beside it already implies. Each was verified by hand — the mutation appl
 file, the whole package suite still green — before acceptance.
 - 7beb181f5718acd4619b4ffa114e7674 drivers/couchdb/couchdb.go:113 expression/remove — parseURL's path fallback `if p := strings.Trim(u.Path, "/"); p != "" && !strings.Contains(p, "/")` with the `p != ""` conjunct dropped. The block is reached only when `db == ""`, and the conjunct can only newly admit `p == ""`, whose body then runs `db = p`, assigning "" to a db that is already "". Both forms leave the same connConfig.
 - d02d70f46a0e4f06f96cdc0cb91ee619 drivers/couchdb/write.go:69 expression/remove — upsert's `if _, existed := revs[batch[i].Key]; existed && batch[i].Key != ""` with the key-non-empty conjunct dropped. revs comes from currentRevs, which sends only the batch's non-empty keys to _all_docs, and currentRevsForKeys stores a row only under the id the server echoed back, so `existed` is already false for every keyless record. The conjunct beside it decides every case.
+
+## internal/config — full-scan equivalents (accepted 2026-08-31, test/config-mutation branch)
+First full scan of the package (only its diff lines had ever been gated): 26 escapes, 19 of
+them killed by new tests. Most were plain assertion gaps: Path's user-config-dir failure and
+Load's TOML parse failure had never been produced, Save's error paths were only ever driven
+through the happy path, Move reported which handles it moved and RemoveAll which sources it
+deleted without either being read back, moveSource never had to keep a group that still had
+members, moveGroup never re-targeted a member onto another member, Resolve's group
+namespacing was never asked to leave a slashed name alone or to skip the prefix with no group
+active, and validateHandle's leading and doubled slash arms were unexercised. Two failures a
+hermetic test can produce were added rather than assumed away: a parent path that is a file
+(mkdir fails) and a target path that is a directory (rename fails). The migration and
+sorting escapes were map-order artefacts — `continue` turned to `break`, a dropped
+`sort.Strings` — so those fixtures now carry enough entries and repeat enough loads that
+landing on the passing order by chance is impossible. The update run surfaced five more
+escapes the new tests had turned from uncovered into covered — the `%w` wraps on the
+user-config-dir, TOML parse, mkdir and rename failures, and OptionList's comparison replaced
+by `return false`; those were killed with `errors.Unwrap`/`errors.As` assertions on the cause
+and a five-key sort read ten times, not accepted, and their ids removed from the baseline
+before the closing run verified the seven below. One non-test change came out of it: Groups'
+`seen` map held a bool nothing ever read, so it holds `struct{}` now and the set has no value
+left to mutate. The seven below survive because the mutation cannot change what the code does
+or because the syscall it guards cannot be made to fail in-process. Each was verified by
+hand — the mutation applied to the real file, the whole package suite still green — before
+acceptance.
+- 5986e10e44283e82ec27bdf8ec5c28c5 internal/config/config.go:166 expression/error-guard — Save's `if err := f.Chmod(0o600); err != nil` guard cleared. The mutation keeps the call and drops only its error branch, and fchmod on a temp file this process just created in a directory it owns fails only for EROFS or EPERM: a read-only or unwritable parent makes `os.CreateTemp` fail two lines earlier instead, so no hermetic test can reach the branch. Same class as the accepted drivers/file/cache.go:292 entry.
+- 061b6cb1bc1b16906b4432e09eb26d62 internal/config/config.go:170 expression/error-guard — the TOML encode guard. `toml.NewEncoder(f).Encode(c)` fails only when the writer fails: the encoder was probed with invalid UTF-8 in a key and a value, and with a NUL byte, and escaped all three rather than erroring, so no Config shape produces one. A write to a just-created private temp file then needs a full or quota-limited filesystem, which is the accepted drivers/file/cache.go:292 case.
+- 0df46f720e89d90f15fa3fdcc3304172 internal/config/config.go:174 expression/error-guard — the temp file's `f.Close()` guard. Every write has already returned by then, so close(2) on a local regular file reports an error only for a delayed-writeback EIO or ENOSPC, which no in-process test can arrange.
+- d227e4fa42331b2df7c5d87664e3b333 internal/config/config.go:250 expression/remove — moveSource's `if c.Group != "" && !c.hasGroup(c.Group)` with the non-empty conjunct dropped. The conjunct can only newly admit `c.Group == ""`, and `hasGroup("")` tests the prefix "/", which no stored handle carries, so the body then assigns "" to a Group that is already "". (With a hand-written "/x" handle `hasGroup("")` is true and the branch stays skipped either way.) Same class as the accepted drivers/couchdb/couchdb.go:113 entry.
+- 8727d6e6f7cd10c9cdd62603dce5379d internal/config/options.go:49 branch/if — GetOption's `if !ok { return "", false }` body cleared. optionsFor returns `ok == false` only together with a nil map, and the next statement indexes that same nil map, yielding the identical "" and false. The guard is a readability shortcut, not a behavioural one; same class as the accepted internal/pushdown/pushdown.go:405 entry.
+- 6e235b84704b53af98d39f9e0ab9dd94 internal/config/options.go:90 expression/comparison — OptionList's `sort.Slice` less function widened from `<` to `<=`. opts is built by ranging a map, so no two Key values are equal, and on distinct keys `<=` is the same predicate as `<`. That the call sorts at all is pinned by TestOptionListSortsByKey, which kills the `return false` mutant on the same line.
+- 5d5732b03749eec931d19cd8409094c7 internal/config/options.go:83 expression/remove — OptionList's `if handle != "" && !ok` with the non-empty conjunct dropped. optionsFor's first statement returns `ok == true` for every empty handle, so `!ok` is already false wherever the dropped conjunct would be, and the guard beside it decides every case. Same class as the accepted drivers/couchdb/write.go:69 entry.

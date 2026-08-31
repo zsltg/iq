@@ -978,6 +978,48 @@
    "file": "drivers/couchdb/write.go",
    "mutator": "expression/remove",
    "line": 69
+  },
+  {
+   "id": "5986e10e44283e82ec27bdf8ec5c28c5",
+   "file": "internal/config/config.go",
+   "mutator": "expression/error-guard",
+   "line": 166
+  },
+  {
+   "id": "061b6cb1bc1b16906b4432e09eb26d62",
+   "file": "internal/config/config.go",
+   "mutator": "expression/error-guard",
+   "line": 170
+  },
+  {
+   "id": "0df46f720e89d90f15fa3fdcc3304172",
+   "file": "internal/config/config.go",
+   "mutator": "expression/error-guard",
+   "line": 174
+  },
+  {
+   "id": "d227e4fa42331b2df7c5d87664e3b333",
+   "file": "internal/config/config.go",
+   "mutator": "expression/remove",
+   "line": 250
+  },
+  {
+   "id": "8727d6e6f7cd10c9cdd62603dce5379d",
+   "file": "internal/config/options.go",
+   "mutator": "branch/if",
+   "line": 49
+  },
+  {
+   "id": "6e235b84704b53af98d39f9e0ab9dd94",
+   "file": "internal/config/options.go",
+   "mutator": "expression/comparison",
+   "line": 90
+  },
+  {
+   "id": "5d5732b03749eec931d19cd8409094c7",
+   "file": "internal/config/options.go",
+   "mutator": "expression/remove",
+   "line": 83
   }
  ]
 }
