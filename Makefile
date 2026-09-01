@@ -28,7 +28,7 @@ GORELEASER         := github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 .DEFAULT_GOAL := build
 include scripts/demo/demo.mk
 
-.PHONY: build version changelog release release-tag tools tools-dev hooks check cover security sbom e2e bench docs docs-serve capabilities mutation ci man completions release-check release-snapshot
+.PHONY: build version changelog release release-tag tools tools-dev hooks check cover security sbom e2e bench fuzz docs docs-serve capabilities mutation ci man completions release-check release-snapshot
 
 # build compiles the binary with version metadata embedded, static and
 # trimmed exactly like a release artifact (goreleaser mirrors these flags).
@@ -107,6 +107,13 @@ e2e:
 #   make bench | tee new.txt; benchstat old.txt new.txt.
 bench:
 	go test -bench=. -benchmem -run='^$$' ./internal/query/... ./internal/numfmt/... ./drivers/redis/...
+
+# fuzz runs every Go native fuzz target over the parsers that read untrusted bytes,
+# one target at a time (no containers, no network). IQ_FUZZ_TIME sets the budget per
+# target (default 20s). A crasher lands in <pkg>/testdata/fuzz/<Name>/. Commit it
+# with the fix as the regression seed. Seed inputs also run under `go test -short`.
+fuzz:
+	bash scripts/fuzz.sh
 
 # docs builds the documentation site (Zensical) into docs/site/; needs uv.
 docs:

@@ -522,13 +522,33 @@ func TestExtJSONArray(t *testing.T) {
 }
 
 func TestBSONInvalidLength(t *testing.T) {
-	// A framed length of 4 is one below the empty-document minimum (5) — the
-	// boundary case — and is a hard error, not a silent skip.
-	u := writeDump(t, "bad.bson", []byte{0x04, 0x00, 0x00, 0x00}, "format=bson")
-	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
-	require.NoError(t, err)
-	err = st.TypedScan(context.Background(), func([]query.Record) error { return nil })
-	require.ErrorContains(t, err, "invalid bson document length")
+	// Both boundaries of the frame are a hard error, not a silent skip. The reader
+	// sizes its buffer from this length, so the upper bound is what stops a corrupt
+	// or hostile header from asking for gigabytes.
+	cases := []struct {
+		name    string
+		frame   []byte
+		wantErr string
+	}{
+		// 4 is one below the empty-document minimum of 5.
+		{"one below the minimum", []byte{0x04, 0x00, 0x00, 0x00}, "invalid bson document length"},
+		// 16 MiB + 1 is one above BSON's document cap.
+		{"one above the 16 MiB cap", []byte{0x01, 0x00, 0x00, 0x01}, "invalid bson document length"},
+		// The largest value the 4-byte frame can carry, 4 GiB - 1.
+		{"the largest length the frame can hold", []byte{0xff, 0xff, 0xff, 0xff}, "invalid bson document length"},
+		// Exactly 16 MiB is the largest legal document, so the length itself passes
+		// and the missing body is what fails. This pins the accepted side of the cap.
+		{"exactly at the 16 MiB cap", []byte{0x00, 0x00, 0x00, 0x01}, "read bson document"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			u := writeDump(t, "bad.bson", tt.frame, "format=bson")
+			st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+			require.NoError(t, err)
+			err = st.TypedScan(context.Background(), func([]query.Record) error { return nil })
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
 }
 
 func TestZSetTiebreakByMember(t *testing.T) {

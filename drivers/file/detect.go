@@ -240,14 +240,22 @@ func firstYAMLObject(head []byte) (map[string]any, bool) {
 	return obj, obj != nil
 }
 
+// A BSON document is framed by a 4-byte little-endian length, and the spec caps a
+// document at 16 MiB. bsonMinDoc is the empty document: the frame plus its
+// terminator. Both the sniffer and the reader take that frame from an untrusted
+// dump, so they share one bound.
+const (
+	bsonMinDoc = 5
+	bsonMaxDoc = 16 << 20
+)
+
 // looksLikeBSON reports whether head plausibly begins a BSON document: a 4-byte
 // little-endian length that is at least the empty-document size and no larger than
 // BSON's 16 MiB cap.
 func looksLikeBSON(head []byte) bool {
-	if len(head) < 5 {
+	if len(head) < bsonMinDoc {
 		return false
 	}
 	size := int(head[0]) | int(head[1])<<8 | int(head[2])<<16 | int(head[3])<<24
-	const minDoc, maxDoc = 5, 16 << 20
-	return size >= minDoc && size <= maxDoc
+	return size >= bsonMinDoc && size <= bsonMaxDoc
 }

@@ -36,8 +36,11 @@ func bsonSource(r io.Reader, size int, dec numfmt.DecimalMode) query.RecordSourc
 			if err != nil {
 				return fmt.Errorf("read bson length: %w", err)
 			}
+			// The frame comes from an untrusted dump, and the buffer below is sized
+			// from it. A length outside BSON's own limits is rejected before the
+			// allocation, so a corrupt or hostile header cannot ask for 4 GiB.
 			docLen := int(binary.LittleEndian.Uint32(lenBuf[:]))
-			if docLen < 5 {
+			if docLen < bsonMinDoc || docLen > bsonMaxDoc {
 				return fmt.Errorf("invalid bson document length %d", docLen)
 			}
 			doc := make([]byte, docLen)

@@ -75,6 +75,7 @@ make cover          # full suite + coverage floor
 make security       # govulncheck + osv-scanner + gitleaks (tree + git history) + zizmor, SBOMs to dist/
 make capabilities   # capslock capability drift (runs only when go.mod/go.sum moved)
 make mutation       # mutago mutation gate over the branch diff
+make fuzz           # Go native fuzz targets over the untrusted parsers
 make ci             # all of the above, in order; start the compose stack first
 make sbom           # SPDX + CycloneDX SBOMs only
 ```
@@ -195,6 +196,39 @@ duration` and is the expensive step, not the fixing. Work it in this order.
 Point a container-backed package at a running service (`IQ_<DRIVER>_URL`, see
 `.env.example`) before any of this, or every mutant pays for a fresh container.
 
+### Fuzz targets (`scripts/fuzz.sh`)
+
+Go native fuzzing over the parsers that read untrusted bytes, one target per
+`go test -fuzz` invocation because that is all the flag takes. Each target
+bounds its own work (it passes over an oversized input and caps how many
+records it drains), so the time budget is honest.
+
+- `internal/jqfmt`: `FuzzFormat`, the printer is idempotent and its output
+  re-parses, and the colored output matches the plain one once the ANSI
+  escapes are removed.
+- `internal/rawpred`: `FuzzMatch`, a filter compiled through `gojq.Parse` and
+  `pushdown.Compile` never drops a document the reference evaluator matches,
+  and the prepared `Matcher` agrees with the package-level `Match`.
+- `drivers/file`: `FuzzOpenReader` over every dump format, and `FuzzCBORRecord`
+  over the decode cache codec.
+- `internal/query`: `FuzzJSONLRoundTrip`, a typed dump is a fixpoint and both
+  readers read it the same.
+- `internal/numfmt`: `FuzzConvertNumber`, an integer is exact in every mode.
+- `internal/shape`: `FuzzInfer`, inference ignores the item keys and the order
+  they arrive in.
+- `internal/diff`: `FuzzPatch`, the tree walk and the RFC 6902 patch agree on
+  whether two documents differ.
+
+`IQ_FUZZ_TIME` sets the budget per target (default `20s`). The CI `fuzz` job
+uses the default on every change that touches code, and the weekly `deep-fuzz`
+job runs the same script with `IQ_FUZZ_TIME=5m`.
+
+Seed inputs and every committed crasher run as ordinary subtests under
+`go test -short`, so `make check` and `make cover` already cover them. A
+crasher is a real bug: Go writes the input to `<pkg>/testdata/fuzz/<Name>/`,
+so read it, fix the code at the layer that is responsible, and commit that
+file with the fix as the regression seed. Never delete it to make a run pass.
+
 ### Commit identity (`make hooks`)
 
 ```bash
@@ -254,10 +288,12 @@ the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
 (syft), `deadcode`, `secrets` (gitleaks, tree and history), `capabilities`
 (`scripts/capabilities.sh` against the PR base), `mutate-diff`
 (`scripts/mutation-gate.sh` against the PR base), `workflows` (zizmor over
-`.github/`) and `docs` (site build). The
+`.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target) and
+`docs` (site build). The
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
 workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
-(`deep-scan`) and run an incremental, sharded mutation scan. The stored result of
+(`deep-scan`), give every fuzz target five minutes instead of twenty seconds
+(`deep-fuzz`), and run an incremental, sharded mutation scan. The stored result of
 each package lives on the `badges` branch (`state/<slug>.json`, next to the
 badge endpoint `mutation.json`; `scripts/mutation-state.sh` reads and writes it,
 with the token in an HTTP header from the environment, never in a URI or an

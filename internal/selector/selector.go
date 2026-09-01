@@ -97,6 +97,14 @@ func (e *extractor) add(key string) {
 // left side the root; the right side navigates the left's output, so its leading
 // indices are not keys. Every other binary operator feeds both operands the root.
 func (e *extractor) visitQuery(q *gojq.Query) {
+	if q == nil {
+		// gojq parses a source with no expression in it — empty, whitespace, or a
+		// comment alone — into a query with no term and no operands. That filter
+		// names no key, so it is a scan. gojq.Compile rejects it later with
+		// "missing query", which is the message the user gets.
+		e.scan = true
+		return
+	}
 	if q.Term != nil {
 		e.visitTerm(q.Term)
 		return
