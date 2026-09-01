@@ -14,7 +14,9 @@ on:
     - cron: '32 6 * * 1' # Mondays 06:32 UTC
   workflow_dispatch:
 
-permissions: read-all
+# The analysis job below declares every permission it needs.
+permissions:
+  contents: read
 
 jobs:
   analysis:

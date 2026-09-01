@@ -65,6 +65,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
+          cache: false # a one-off `go install` needs no cache
       - name: go install
         run: |
           go install "github.com/zsltg/iq@$IQ_TAG"

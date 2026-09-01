@@ -60,6 +60,19 @@
     },
     {
       "customType": "regex",
+      "description": "zizmor is a PyPI release pinned as ZIZMOR_VERSION in the CI workflow env block and in scripts/security.sh; it carries no v prefix.",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/ci\\.yml$/",
+        "/^scripts/security\\.sh$/"
+      ],
+      "matchStrings": [
+        "ZIZMOR_VERSION[:=]\\s*(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "zizmor"
+    },
+    {
+      "customType": "regex",
       "description": "go install pins in the Makefile tool targets.",
       "managerFilePatterns": ["/^Makefile$/"],
       "matchStrings": [

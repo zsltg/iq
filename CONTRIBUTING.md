@@ -8,7 +8,8 @@
   and [golangci-lint](https://golangci-lint.run) v2.13+ (earlier releases bundle a
   staticcheck that panics on Go 1.27 syntax) on `PATH`: `make check` runs them,
   and `make tools-dev` does not install them
-- [uv](https://docs.astral.sh/uv/): docs site only; not needed to build or use `iq`
+- [uv](https://docs.astral.sh/uv/): the docs site and `make security` (which runs
+  zizmor through `uvx`); not needed to build or use `iq`
 
 ## Build
 
@@ -72,7 +73,7 @@ Local and layered: the quality gates run on your machine first, and
 ```bash
 make check          # fast offline gate: format, vet, build, lint, dead code, short tests
 make cover          # full suite + coverage floor
-make security       # govulncheck + osv-scanner + gitleaks (tree + git history), SBOMs to dist/
+make security       # govulncheck + osv-scanner + gitleaks (tree + git history) + zizmor, SBOMs to dist/
 make capabilities   # capslock capability drift (runs only when go.mod/go.sum moved)
 make mutation       # mutago mutation gate over the branch diff
 make ci             # all of the above, in order; start the compose stack first
@@ -145,9 +146,10 @@ the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
 `vuln` (govulncheck), `osv` (OSV plus the permissive license allowlist), `sbom`
 (syft), `deadcode`, `secrets` (gitleaks, tree and history), `capabilities`
 (`scripts/capabilities.sh` against the PR base), `mutate-diff`
-(`scripts/mutation-gate.sh` against the PR base) and `docs` (site build). The
+(`scripts/mutation-gate.sh` against the PR base), `workflows` (zizmor over
+`.github/`) and `docs` (site build). The
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
-workflow) re-run the vulnerability and secret scans against fresh data
+workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
 (`deep-scan`) and mutate the whole module one package per runner
 (`deep-enumerate` lists every package with Go sources, `deep-mutate` is a
 matrix over them, each a full package scan through the wrapper's package-arg
@@ -174,6 +176,16 @@ Posture and upkeep around the pipeline, all on GitHub:
   score behind the README badge. Every action in every workflow is pinned by
   commit SHA with the release in a trailing comment; keep it that way (a tag
   pin is a Scorecard deduction and a supply-chain gap).
+- [zizmor](https://docs.zizmor.sh) audits the workflow files themselves: unpinned
+  or impostor actions, credentials the checkout leaves on disk, cache poisoning on
+  the release paths, and template injection into a `run` block. The version is
+  pinned as `ZIZMOR_VERSION` in `ci.yml` and `scripts/security.sh`, and Renovate
+  tracks both. `make security` runs it locally, the `workflows` job runs it on
+  every push and pull request, and `deep-scan` re-runs it weekly against fresh
+  advisory data. There is no config file, so an accepted finding is an inline
+  `# zizmor: ignore[<audit>]` comment with a reason on the offending line. Two
+  exist, both in `ci.yml`: the `capabilities` and `mutate-diff` jobs keep the
+  checkout credential because they fetch the pull-request base branch.
 - `renovate.json` drives Renovate (the Mend GitHub App): one grouped PR a week
   for minor and patch bumps, one PR per major, Go toolchain bumps on their own,
   action digests refreshed, and the tool versions in `ci.yml`, the Makefile

@@ -11,7 +11,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write # create the GitHub Release and upload assets
+  contents: read
 
 env:
   GORELEASER_VERSION: v2.17.0
@@ -21,13 +21,17 @@ jobs:
     # Skip on the primary remote (it has no GitHub Releases / tap / bucket).
     if: startsWith(github.server_url, 'https://github.com')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release and upload assets
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0 # full history + tags so goreleaser can build the changelog
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false # a release build must not read a cache that another run wrote
       - name: Run GoReleaser
         env:
           # GITHUB_TOKEN publishes the Release on this repo; GORELEASER_TOKEN is a
