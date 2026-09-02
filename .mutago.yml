@@ -8,7 +8,9 @@
 #
 # Locked semantics, do not weaken. The gate is --fail-on-escaped against the committed
 # mutago-baseline.json: any escaped mutant not in the baseline fails it, and --coverage
-# keeps uncovered lines out of the escaped set — zero survivors on covered code. A
+# keeps uncovered lines out of the escaped set — zero survivors on covered code. One
+# exception: a full scan of cmd holds the covered-code MSI floor that
+# scripts/mutation-gate.sh sets. Diff-scoped runs stay zero-survivor for every package. A
 # genuine equivalent is accepted into the baseline with a justification line in
 # mutago-baseline.notes.md; it is never silenced as a mutator family.
 #

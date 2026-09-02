@@ -34,6 +34,19 @@
 # mutago-summary.json (--logger-summary-json), whose coveredCodeMsi the CI `deep` job
 # turns into the README mutation badge.
 #
+# Two gate policies. Every package is zero-survivor on covered code: --fail-on-escaped
+# against the committed baseline. One exception applies. A full scan of ./cmd holds a
+# covered-code MSI floor (cmd_covered_msi_floor below) in place of that flag. cmd holds
+# the composition root and the presentation code, and its critical paths move to internal
+# packages step by step. mutation-bar-tiering-plan.md records the decision and the
+# measurements. The diff-scoped form cannot carry a per-package table: it enumerates
+# several packages in one mutago invocation, and one invocation carries one flag set. The
+# diff form therefore stays zero-survivor, which keeps every pushed line on the
+# zero-survivor bar. For the same reason a target list that holds ./cmd together with
+# another package is a hard stop. The floor ignores the baseline. mutago's
+# checkCoveredMsiGate reads the report score only, so the cmd entries in
+# mutago-baseline.json become documentation of accepted equivalents.
+#
 # Accepted baseline entries are justified one-per-line in mutago-baseline.notes.md
 # (committed): consult it before re-litigating a refactor-resurfaced equivalent, and
 # add a line there whenever you extend mutago-baseline.json.
@@ -102,6 +115,12 @@ set -uo pipefail
 MUTAGO_VERSION=v2.7.7
 mutago_pkg=github.com/quality-gates/mutago/v2/cmd/mutago
 
+# Covered-code MSI floor for a full scan of ./cmd. The value comes from the finished cmd
+# scan, per mutation-bar-tiering-plan.md: the measured covered-code MSI, minus 2 points for
+# run-to-run noise, with a cap of 90. It is a committed policy literal. It is never an
+# environment variable and never a caller flag.
+cmd_covered_msi_floor=90
+
 # Per-mutant timeout, as a multiplier of the instrumented baseline. 5 is tight enough that
 # an infinite-loop mutant dies in minutes rather than tens of them; the errored-mutant check
 # after the run is what keeps that bound from hiding a legitimately slow suite. Raise it when
@@ -124,6 +143,38 @@ if [[ ! "$workers" =~ ^[1-9][0-9]*$ ]]; then
   exit 1
 fi
 
+# A package-path argument (one starting with . or /) selects a full scan of that
+# package: the git-diff flags are dropped so the whole package is mutated, not just
+# a diff. Otherwise the run is scoped to the branch diff via --git-diff-lines.
+has_path=0
+for arg in "$@"; do
+  [[ "$arg" == .* || "$arg" == /* ]] && has_path=1
+done
+
+# Gate policy. Every target keeps the zero-survivor contract on covered code
+# (--fail-on-escaped against the baseline). A full scan of ./cmd is the one exception: it
+# passes on the covered-code MSI floor above. The two policies cannot share a run, because
+# one mutago invocation carries one flag set, so a target list that mixes ./cmd with
+# another package stops here. This selection runs before the mutago install, so a bad
+# target list fails in a second and installs nothing.
+gate=(--fail-on-escaped)
+cmd_policy=0
+if [[ "$has_path" -eq 1 ]]; then
+  cmd_targets=0
+  for arg in "$@"; do
+    [[ "$arg" == "./cmd" || "$arg" == "./cmd/..." ]] && cmd_targets=$((cmd_targets + 1))
+  done
+  if [[ "$cmd_targets" -gt 0 && "$#" -gt 1 ]]; then
+    echo "mutation gate: ./cmd holds the covered-code MSI floor and every other target holds the zero-survivor policy; one mutago invocation carries one flag set, so the two policies cannot share a run. Scan ./cmd on its own." >&2
+    exit 1
+  fi
+  if [[ "$cmd_targets" -eq 1 ]]; then
+    gate=(--min-covered-msi "$cmd_covered_msi_floor")
+    cmd_policy=1
+    echo "mutation gate: policy for ./cmd is covered-code MSI >= ${cmd_covered_msi_floor} (full scans only; the diff gate stays zero-survivor)"
+  fi
+fi
+
 # Provision the pinned mutago into a throwaway GOBIN and run that binary directly, so the
 # gate needs no mutago on PATH and preserves exact exit codes (see header). Cleaned on any
 # exit. `go install pkg@version` is module-independent: it does not read or write go.mod.
@@ -143,14 +194,6 @@ if ! GOBIN="$mutago_bindir" go install "${mutago_pkg}@${MUTAGO_VERSION}"; then
   exit 1
 fi
 mutago="$mutago_bindir/mutago"
-
-# A package-path argument (one starting with . or /) selects a full scan of that
-# package: the git-diff flags are dropped so the whole package is mutated, not just
-# a diff. Otherwise the run is scoped to the branch diff via --git-diff-lines.
-has_path=0
-for arg in "$@"; do
-  [[ "$arg" == .* || "$arg" == /* ]] && has_path=1
-done
 
 scope=()
 diff_ref=""
@@ -267,7 +310,7 @@ fi
 "$mutago" \
   --config .mutago.yml \
   --coverage \
-  --fail-on-escaped \
+  "${gate[@]}" \
   --baseline mutago-baseline.json \
   --logger-agentic-json \
   --logger-summary-json \
@@ -374,7 +417,11 @@ if [[ "$status" -eq 0 ]]; then
   exit 0
 fi
 if [[ "$status" -eq 4 ]]; then
-  echo "mutation gate FAILED: a mutant escaped (see the diffs above); kill it or, if it is a genuine equivalent mutant, accept it with IQ_MUTATION_UPDATE_BASELINE=1" >&2
+  if [[ "$cmd_policy" -eq 1 ]]; then
+    echo "mutation gate FAILED: the covered-code MSI of ./cmd is below the floor of ${cmd_covered_msi_floor} (see the diffs above); kill escaped mutants until the score is above the floor. Never lower the floor." >&2
+  else
+    echo "mutation gate FAILED: a mutant escaped (see the diffs above); kill it or, if it is a genuine equivalent mutant, accept it with IQ_MUTATION_UPDATE_BASELINE=1" >&2
+  fi
   exit 1
 fi
 echo "mutation gate: mutago failed to run (exit $status)" >&2

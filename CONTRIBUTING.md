@@ -113,7 +113,11 @@ row in `capslock-baseline.notes.md`.
 `origin/main`, targets narrowed to the changed packages. The contract is zero
 survivors on covered code: an escaped covered mutant means a test asserts
 nothing, strengthen the test; an errored or timed-out mutant also fails
-(unverified, not killed). A genuine equivalent is accepted into
+(unverified, not killed). One exception: a full scan of `./cmd` passes on a
+covered-code MSI floor, a literal in the wrapper, because `cmd` holds the
+composition root and the presentation code and its critical paths are moving
+under `internal/`; every other target and every diff-scoped run stays
+zero-survivor. A genuine equivalent is accepted into
 `mutago-baseline.json` with a justification in `mutago-baseline.notes.md`.
 Run with the integration services up.
 
