@@ -103,12 +103,20 @@
 # right for a container-backed suite rerun per mutant; 2-3 is the useful range when the
 # run is already memory-bounded, e.g. inside a systemd-run MemoryHigh=10G unit.
 #
-# The suite provisions its own containers, but mutago reruns it per mutant, so start
-# a shared stack and point the tests at it to avoid per-mutant churn:
+# The suite provisions its own containers, but mutago reruns it per mutant, so with ONE
+# worker start a shared stack and point the tests at it to avoid per-mutant churn:
 #   docker compose up -d --wait
 #   export IQ_REDIS_URL=redis://localhost:6379/0 IQ_MONGO_URL=mongodb://localhost:27017/iq_test
 # The Redis integration tests pin themselves to reserved databases (14 and 15),
 # so a shared stack seeded on DB 0 by scripts/seed-redis.sh keeps its data through the run.
+#
+# A shared stack and parallel workers do not mix. The suites pin fixed state (the Redis
+# databases above, the mongo database iq_test), so two test processes on one stack fail on
+# each other's data, and mutago scores a failed suite as a kill. Measured 2026-09-03: 2 of 3
+# concurrent cmd suites fail, and a scan reported 0 escapes in 758 mutants that a serial run
+# had scored at about 9 percent. The wrapper therefore stops when IQ_MUTATION_WORKERS is above
+# 1 and any IQ_*_URL is set. For parallel workers unset the URLs; each test process then
+# starts its own containers, which costs about 8 s more per mutant and is isolated.
 set -uo pipefail
 
 # Pinned mutago version — keep in step with AGENTS.md and `make tools-dev` (Makefile).
@@ -141,6 +149,15 @@ workers="${IQ_MUTATION_WORKERS-1}"
 if [[ ! "$workers" =~ ^[1-9][0-9]*$ ]]; then
   echo "mutation gate: IQ_MUTATION_WORKERS must be a positive integer, got '$workers'" >&2
   exit 1
+fi
+# Parallel workers must not share a backend (see the header). A shared-stack URL with more
+# than one worker is a stop: the verdicts would be false kills, not a slower run.
+if [[ "$workers" -gt 1 ]]; then
+  shared_urls=$(env | grep -oE '^IQ_[A-Z0-9_]+_URL=' | tr -d '=' | paste -sd' ')
+  if [[ -n "$shared_urls" ]]; then
+    echo "mutation gate: IQ_MUTATION_WORKERS=$workers with a shared backend ($shared_urls) scores false kills; unset the URL(s) so each worker starts its own containers, or use 1 worker" >&2
+    exit 1
+  fi
 fi
 
 # A package-path argument (one starting with . or /) selects a full scan of that

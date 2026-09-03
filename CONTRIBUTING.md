@@ -124,7 +124,10 @@ Run with the integration services up.
 - `IQ_MUTATION_BASE`: base ref; empty for a full-module scan; a package arg
   (`bash scripts/mutation-gate.sh ./cmd`) full-scans that package
 - `IQ_MUTATION_WORKERS`: parallel mutants (default 1; raise to 2-3 only when
-  the run is already memory-bounded, e.g. inside a systemd-run MemoryHigh unit)
+  the run is already memory-bounded, e.g. inside a systemd-run MemoryHigh unit,
+  and only with every `IQ_<DRIVER>_URL` unset: parallel suites on one shared
+  backend fail on each other's data and mutago scores that as a kill, so the
+  wrapper refuses the combination)
 - `IQ_MUTATION_TIMEOUT_COEFFICIENT`: per-mutant timeout multiplier (default
   5; raise it for a legitimately slow package instead of letting mutants time out)
 - `IQ_MUTATION_UPDATE_BASELINE=1`: accept equivalents (append-only)
@@ -176,8 +179,8 @@ deliberate override, such as applying someone else's patch, passes
 
 check + cover + security + capabilities + mutation, in that order, the
 capability step sits before mutation so their memory peaks never overlap.
-Slowest target (mutago reruns the suite per mutant); start a shared stack
-first so the containers are reused.
+Slowest target (mutago reruns the suite per mutant); with one worker start a
+shared stack first so the containers are reused.
 
 ### Continuous integration
 
