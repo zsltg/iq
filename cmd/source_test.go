@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -106,6 +109,69 @@ func TestAddCommand(t *testing.T) {
 	// A driver-owned collection param is rejected for a backend that has none.
 	_, err = runCmd(t, newAddCmd(&config{}), "redis://h?collection=x", "--skip-verify")
 	require.ErrorContains(t, err, "no collections")
+}
+
+// TestAddRejectsExtraArgs pins the ExactArgs(1) bound: the URI is the only
+// positional, so a second word is a usage error, not ignored input.
+func TestAddRejectsExtraArgs(t *testing.T) {
+	seedConfig(t, newSeed())
+	_, err := runCmd(t, newAddCmd(&config{}), "mongodb://h/db", "extra", "--skip-verify")
+	require.ErrorContains(t, err, "accepts 1 arg(s), received 2")
+}
+
+// TestAddAcceptsAMatchingDriver is the other half of TestAddDriverMismatch: -d
+// must accept the driver the URI scheme names, not refuse every -d.
+func TestAddAcceptsAMatchingDriver(t *testing.T) {
+	seedConfig(t, newSeed())
+	out, err := runCmd(t, newAddCmd(&config{}), "-d", "mongo", "-n", "books", "mongodb://h/db?collection=books", "--skip-verify")
+	require.NoError(t, err)
+	require.Contains(t, out, "added source books")
+}
+
+// TestAddRefusesADuplicateHandle proves the add fails on a name in use and keeps
+// the source that holds the name.
+func TestAddRefusesADuplicateHandle(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("cache", "redis://first:6379/0"))
+	seedConfig(t, c)
+
+	_, err := runCmd(t, newAddCmd(&config{}), "-n", "cache", "redis://second:6379/0", "--skip-verify")
+	require.ErrorContains(t, err, "source already exists")
+
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	require.Equal(t, "redis://first:6379/0", cf.Sources["cache"].URL, "the stored source is untouched")
+}
+
+// TestAddReportsAKeyringFailure drives a keyring that refuses the write: the add
+// must fail and save nothing, so no source points at a password that is not there.
+func TestAddReportsAKeyringFailure(t *testing.T) {
+	seedConfig(t, newSeed())
+	fk := useFakeKeyring(t)
+	fk.setErr = errors.New("keyring locked")
+
+	c := newAddCmd(&config{})
+	c.SetIn(strings.NewReader("s3cret\n"))
+	_, err := runCmd(t, c, "-n", "cache", "redis://u@h:6379/0", "-p", "--store", "keyring", "--skip-verify")
+	require.ErrorContains(t, err, "keyring locked")
+
+	cf, lerr := iqconfig.Load()
+	require.NoError(t, lerr)
+	require.NotContains(t, cf.Sources, "cache", "a refused keyring write leaves no saved source")
+}
+
+// TestAddReportsASaveFailure makes the config write fail after every check has
+// passed: the add must report it, never claim a source it did not store.
+func TestAddReportsASaveFailure(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
+	require.NoError(t, newSeed().Save())
+	require.NoError(t, os.Chmod(dir, 0o500)) // readable and listable, but not writable.
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	out, err := runCmd(t, newAddCmd(&config{}), "-n", "cache", "redis://h:6379/0", "--skip-verify")
+	require.ErrorContains(t, err, "create temp config")
+	require.NotContains(t, out, "added source cache", "no success line for a source that was not stored")
 }
 
 func TestAddSuggestsHandle(t *testing.T) {

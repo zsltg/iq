@@ -12,11 +12,19 @@ import (
 )
 
 // fakeKeyring is an in-memory Keyring for tests; it never touches the OS store.
-type fakeKeyring struct{ m map[string]string }
+// setErr, when set, makes every Set fail, which is how a test drives the
+// keyring-write failure path of a command.
+type fakeKeyring struct {
+	m      map[string]string
+	setErr error
+}
 
 func newFakeKeyring() *fakeKeyring { return &fakeKeyring{m: map[string]string{}} }
 
 func (f *fakeKeyring) Set(handle, password string) error {
+	if f.setErr != nil {
+		return f.setErr
+	}
 	f.m[handle] = password
 	return nil
 }
