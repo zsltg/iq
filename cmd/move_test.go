@@ -56,6 +56,71 @@ func TestTypedDumpFormatsFromFileSource(t *testing.T) {
 	}
 }
 
+// moveObjectDump is a typed dump whose values are objects, so a --key,
+// --key-field or filter expression applies to every record.
+const moveObjectDump = `{"key":"a","type":"json","value":{"id":"x1","n":1}}
+{"key":"b","type":"json","value":{"id":"x2","n":2}}
+`
+
+// TestMoveFlagConflicts pins the two guards runMove applies before it builds a
+// transform or opens a store: --no-overwrite conflicts with --replace, and the
+// four write flags belong to --insert, not --typed. Each flag is asserted on its
+// own, so a guard that stopped reading one of them still fails.
+func TestMoveFlagConflicts(t *testing.T) {
+	t.Run("no-overwrite with replace", func(t *testing.T) {
+		seedFileSource(t, moveDump)
+		root, _ := newRootCmd()
+		_, err := runCmd(t, root, "--src", "snap", "--insert", "snap", "--no-overwrite", "--replace")
+		require.ErrorContains(t, err, "--no-overwrite and --replace are mutually exclusive")
+	})
+	for _, flag := range []string{"--no-overwrite", "--replace", "--force", "--dry-run"} {
+		t.Run("typed with "+flag, func(t *testing.T) {
+			seedFileSource(t, moveDump)
+			root, _ := newRootCmd()
+			_, err := runCmd(t, root, "--src", "snap", "--typed", flag)
+			require.ErrorContains(t, err, "apply to --insert, not --typed")
+		})
+	}
+}
+
+// TestTypedDumpAppliesEveryTransformOption asserts each transform option reaches
+// the records: the filter reshapes the value, --key and --key-field replace the
+// key, --key-prefix is prepended, and --type stamps a reshaped record.
+func TestTypedDumpAppliesEveryTransformOption(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		want    string
+		notWant string
+	}{
+		{"filter reshapes the value", []string{"{wrapped: .id}"}, `"value":{"wrapped":"x1"}`, `"value":{"id":"x1"`},
+		{"key comes from the value", []string{"--key", ".id"}, `"key":"x1"`, `"key":"a"`},
+		{"key-field names the key field", []string{"--key-field", "id"}, `"key":"x2"`, `"key":"b"`},
+		{"key-prefix is prepended", []string{"--key-prefix", "p:"}, `"key":"p:a"`, `"key":"a",`},
+		{"type stamps a reshaped record", []string{".", "--type", "hash"}, `"type":"hash"`, `"type":"json"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seedFileSource(t, moveObjectDump)
+			root, _ := newRootCmd()
+			out, err := runCmd(t, root, append([]string{"--src", "snap", "--typed"}, tt.args...)...)
+			require.NoError(t, err)
+			require.Contains(t, out, tt.want)
+			require.NotContains(t, out, tt.notWant)
+		})
+	}
+}
+
+// TestMoveRejectsABadKeyExpression proves the transform is built before anything
+// is read: a --key that does not parse stops the move and emits no record.
+func TestMoveRejectsABadKeyExpression(t *testing.T) {
+	seedFileSource(t, moveObjectDump)
+	root, _ := newRootCmd()
+	out, err := runCmd(t, root, "--src", "snap", "--typed", "--key", ".[")
+	require.ErrorContains(t, err, "parse --key")
+	require.Empty(t, out, "no record is dumped when the transform fails to build")
+}
+
 // TestTypedRejectsUnimportableFormats covers the renderings that cannot carry a
 // {key,type,value} record back through a file:// source. Both spellings of gron
 // are exercised: the shorthand once fell through to the jsonl default instead of
