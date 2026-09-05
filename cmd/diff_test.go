@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -355,6 +356,38 @@ func TestDiffDataRedisIntegration(t *testing.T) {
 
 	deltas := decodeData(t, out)
 	require.Equal(t, map[string]string{"k1": "remove", "k2": "add", "shared": "change"}, deltas)
+}
+
+// TestDiffStatsRunsOnlyThatLayerRedisIntegration proves --stats selects one
+// layer: the stats section is reported and the default data layer stays off, so
+// no keyspace is read for a run that asked for introspection.
+func TestDiffStatsRunsOnlyThatLayerRedisIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: needs a reachable Redis")
+	}
+	base := redisBaseURL()
+	urlA, err := withRedisDB(base, testRedisDB)
+	require.NoError(t, err)
+	urlB, err := withRedisDB(base, testRedisDBAlt)
+	require.NoError(t, err)
+	seedRedis(t, urlA, map[string]string{"only": "here"})
+	seedRedis(t, urlB, map[string]string{"different": "value"})
+
+	c := newSeed()
+	require.NoError(t, c.Add("a", urlA))
+	require.NoError(t, c.Add("b", urlB))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: 5 * time.Second}
+	out, err := runCmd(t, quietDiff(cfg), "a", "b", "--stats")
+	// The two databases hold different keys, so a data layer that ran would
+	// report them; the stats layer may or may not differ, so either exit is fine.
+	if err != nil {
+		require.ErrorIs(t, err, errQuietExit)
+	}
+	require.Contains(t, out, "# stats")
+	require.NotContains(t, out, "# data", "--stats chooses the layer; the data layer stays off")
+	require.NotContains(t, out, "only", "no keyspace is read for a stats diff")
 }
 
 func TestDiffExitCodeRedisIntegration(t *testing.T) {
@@ -884,6 +917,59 @@ func TestDiffSchemaSelfIsEmpty(t *testing.T) {
 	out, err := runCmd(t, newDiffCmd(cfg), "a", "a", "--schema")
 	require.NoError(t, err)
 	require.Contains(t, out, "no differences")
+	// --schema chooses the layer, so the data layer stays off: only the layer
+	// the user asked for is collected and reported.
+	require.Contains(t, out, "# schema")
+	require.NotContains(t, out, "# data", "the default data layer applies only when no layer is chosen")
+}
+
+// TestDiffArgCount pins the ExactArgs(2) bound: a diff needs two sides, so any
+// other count is a usage error rather than a run over the first two words.
+func TestDiffArgCount(t *testing.T) {
+	tests := []struct {
+		name, want string
+		args       []string
+	}{
+		{"one side", "accepts 2 arg(s), received 1", []string{"a"}},
+		{"three sides", "accepts 2 arg(s), received 3", []string{"a", "a", "a"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newSeed()
+			require.NoError(t, c.Add("a", fileSource(t, `{"key":"1","value":{"name":"a"}}`)))
+			seedConfig(t, c)
+
+			_, err := runCmd(t, newDiffCmd(&config{timeout: 5 * time.Second}), tt.args...)
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+// TestDiffReportsAConfigLoadFailure proves the config is read before the sides
+// are parsed: a config that does not parse stops the diff.
+func TestDiffReportsAConfigLoadFailure(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "iq.toml")
+	t.Setenv(iqconfig.EnvConfig, p)
+	require.NoError(t, os.WriteFile(p, []byte("this is = = not toml\n"), 0o600))
+
+	_, err := runCmd(t, newDiffCmd(&config{timeout: 5 * time.Second}), "a", "b")
+	require.ErrorContains(t, err, "parse config")
+}
+
+// TestDiffPropagatesARenderWriteError asserts the render result is returned: a
+// broken stdout must fail the run, not fall through to the exit-code decision.
+func TestDiffPropagatesARenderWriteError(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("a", fileSource(t, `{"key":"1","value":{"name":"a"}}`)))
+	seedConfig(t, c)
+
+	dc := quietDiff(&config{timeout: 5 * time.Second})
+	dc.SetOut(&errAfter{0})
+	dc.SetErr(io.Discard)
+	dc.SetArgs([]string{"a", "a"})
+	err := dc.Execute()
+	require.ErrorContains(t, err, "write failed")
+	require.NotErrorIs(t, err, errQuietExit, "a failed render is an error, not a difference")
 }
 
 func TestDiffCombinedLayersAllowed(t *testing.T) {
