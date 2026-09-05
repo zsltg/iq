@@ -1,14 +1,18 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/require"
 
+	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
@@ -229,4 +233,149 @@ func TestRootRegistersSourceCommands(t *testing.T) {
 	for _, name := range []string{"add", "ls", "rm", "mv", "src", "group", "ping", "inspect", "exec"} {
 		require.True(t, have[name], "root should register %q", name)
 	}
+}
+
+// TestRootTakesOneFilter pins the MaximumNArgs(1) bound: the filter is the only
+// positional, so a second word is a usage error rather than a silent drop.
+func TestRootTakesOneFilter(t *testing.T) {
+	configEnv(t)
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, ".a", "extra")
+	require.ErrorContains(t, err, "accepts at most 1 arg(s), received 2")
+}
+
+// TestRootConfigFlagRejectsABadPath drives the one failure os.Setenv has: a
+// value the C environment cannot hold. The run must stop with the wrapped
+// message, not fall back to the environment's config file.
+func TestRootConfigFlagRejectsABadPath(t *testing.T) {
+	configEnv(t)
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "--config", "bad\x00path", "config", "location")
+	require.ErrorContains(t, err, "apply --config")
+}
+
+// TestRootRejectsABadStoredOption proves PreRun stops the invocation when a
+// stored default does not apply, rather than running with the flag default.
+func TestRootRejectsABadStoredOption(t *testing.T) {
+	configEnv(t)
+	cf := &iqconfig.Config{
+		Sources: map[string]iqconfig.Source{},
+		Options: map[string]string{"timeout": "notaduration"},
+	}
+	require.NoError(t, cf.Save())
+
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "version")
+	require.ErrorContains(t, err, `stored option "timeout"`)
+}
+
+// TestRootMonochromeAloneIsAccepted is the other half of the -M/-C conflict:
+// only both together are refused.
+func TestRootMonochromeAloneIsAccepted(t *testing.T) {
+	configEnv(t)
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "-M", "version")
+	require.NoError(t, err)
+	require.False(t, colorOn(), "-M turns color off")
+
+	root2, _ := newRootCmd()
+	_, err = runCmd(t, root2, "-M", "-C", "version")
+	require.ErrorContains(t, err, "cannot use --monochrome with --color")
+}
+
+// TestRootResolvesColorForTheInvocation pins the PreRun color decision on a run
+// with no --output: -C turns color on for a captured buffer that is no terminal.
+func TestRootResolvesColorForTheInvocation(t *testing.T) {
+	configEnv(t)
+	color.NoColor = true // runCmd restores the prior value.
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "-C", "version")
+	require.NoError(t, err)
+	require.True(t, colorOn(), "-C forces color on for the whole invocation")
+}
+
+// TestRootOutputColorResolvedAgainstTheFile pins the second color decision: with
+// --output the destination is the file, so color follows the file and not the
+// terminal it replaced. A pty master stands in for the terminal.
+func TestRootOutputColorResolvedAgainstTheFile(t *testing.T) {
+	pty, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
+	if err != nil {
+		t.Skip("no pty available to act as a terminal")
+	}
+	t.Cleanup(func() { _ = pty.Close() })
+	configEnv(t)
+	orig := color.NoColor
+	t.Cleanup(func() { color.NoColor = orig })
+
+	path := filepath.Join(t.TempDir(), "out.txt")
+	root, cfg := newRootCmd()
+	closeResources(t, cfg)
+	root.SetOut(pty)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{"--output", path, "version"})
+	require.NoError(t, root.Execute())
+
+	require.NotNil(t, cfg.outClose, "the --output handle is kept for Execute to close")
+	require.False(t, colorOn(), "color follows the --output file, not the terminal")
+}
+
+// TestRootKeepsTheDiagnosticsHandles pins what PreRun hands to Execute's
+// finalize: the log file closer and the profile stopper. A handle left nil leaks
+// the resource, because nothing else closes it.
+func TestRootKeepsTheDiagnosticsHandles(t *testing.T) {
+	t.Run("log file", func(t *testing.T) {
+		configEnv(t)
+		path := filepath.Join(t.TempDir(), "iq.log")
+		root, cfg := newRootCmd()
+		_, err := runCmd(t, root, "--log", "--log.file", path, "version")
+		require.NoError(t, err)
+
+		require.NotNil(t, cfg.logClose, "the log file is closed by Execute, so PreRun keeps the closer")
+		require.NoError(t, cfg.logClose())
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		// The start record names the version and the command, so a run is
+		// identifiable in the log from its first line.
+		require.Contains(t, string(data), "iq start")
+		require.Contains(t, string(data), buildVersion())
+		require.Contains(t, string(data), "iq version")
+	})
+
+	t.Run("profile", func(t *testing.T) {
+		configEnv(t)
+		t.Chdir(t.TempDir())
+		root, cfg := newRootCmd()
+		closeResources(t, cfg)
+		_, err := runCmd(t, root, "--debug.pprof", "cpu", "version")
+		require.NoError(t, err)
+
+		require.NotNil(t, cfg.pprofStop, "the profile is written by Execute, so PreRun keeps the stopper")
+		cfg.pprofStop()
+		fi, err := os.Stat("cpu.pprof")
+		require.NoError(t, err)
+		require.Positive(t, fi.Size())
+	})
+}
+
+// TestRootBareRunPrintsHelp pins the discoverable entry point: `iq` with no
+// filter prints help instead of erroring or reading a filter that is not there.
+func TestRootBareRunPrintsHelp(t *testing.T) {
+	configEnv(t)
+	root, _ := newRootCmd()
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{})
+	require.NoError(t, root.Execute())
+	require.Contains(t, buf.String(), "jq for NoSQL databases")
+	require.Contains(t, buf.String(), "Usage:")
+}
+
+// TestRootInsertExcludesTyped pins the mutually exclusive pair: --insert writes
+// into a destination and --typed renders a dump, so one run cannot do both.
+func TestRootInsertExcludesTyped(t *testing.T) {
+	configEnv(t)
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "--insert", "dest", "--typed")
+	require.ErrorContains(t, err, "[insert typed] are set none of the others can be")
 }
