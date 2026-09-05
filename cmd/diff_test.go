@@ -983,6 +983,10 @@ func TestDiffCombinedLayersAllowed(t *testing.T) {
 	out, err := runCmd(t, newDiffCmd(cfg), "a", "a", "--data", "--schema")
 	require.NoError(t, err)
 	require.Contains(t, out, "no differences")
+	// Each chosen layer reports its own section, so a run that collects a layer
+	// but omits its heading cannot pass as an empty diff.
+	require.Contains(t, out, "# data")
+	require.Contains(t, out, "# schema")
 }
 
 func TestPatchLayerCanceledContext(t *testing.T) {
