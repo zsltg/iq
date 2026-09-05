@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -34,6 +35,40 @@ func TestConfigLocation(t *testing.T) {
 	out, err := runCmd(t, root, "config", "location")
 	require.NoError(t, err)
 	require.Equal(t, p, strings.TrimSpace(out))
+}
+
+// TestConfigLocationRejectsArgs pins the NoArgs guard: `location` prints one
+// path and takes none, so a stray argument is a usage error, not ignored input.
+func TestConfigLocationRejectsArgs(t *testing.T) {
+	configEnv(t)
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "config", "location", "extra")
+	require.ErrorContains(t, err, `unknown command "extra"`)
+}
+
+// TestConfigLocationReportsAPathFailure drives the one failure Path has: no
+// override and no home-like variable. The command must report it, not print an
+// empty line and exit clean.
+func TestConfigLocationReportsAPathFailure(t *testing.T) {
+	t.Setenv(iqconfig.EnvConfig, "")
+	t.Setenv("XDG_CONFIG_HOME", "") // unix
+	t.Setenv("HOME", "")            // unix and darwin
+	t.Setenv("AppData", "")         // windows
+
+	out, err := runCmd(t, newConfigLocationCmd())
+	require.ErrorContains(t, err, "locate user config dir")
+	require.NotContains(t, out, "iq.toml", "no path is printed when none resolves")
+}
+
+// TestConfigLocationPropagatesAWriteError asserts the print result is returned:
+// a closed or full stdout must fail the command, not pass silently.
+func TestConfigLocationPropagatesAWriteError(t *testing.T) {
+	configEnv(t)
+	c := newConfigLocationCmd()
+	c.SetOut(&errAfter{0})
+	c.SetErr(io.Discard)
+	c.SetArgs(nil)
+	require.ErrorContains(t, c.Execute(), "write failed")
 }
 
 func TestConfigSetGetBase(t *testing.T) {
@@ -108,6 +143,11 @@ func TestConfigSetRejects(t *testing.T) {
 		{"invalid log format", []string{"config", "set", "log.format", "xml"}, "invalid log.format"},
 		{"invalid decimal", []string{"config", "set", "format.decimal", "bogus"}, "decimal"},
 		{"unknown option", []string{"config", "set", "nope", "x"}, "unknown option"},
+		// A real root flag that is not on the persistable allowlist. `nope` above is
+		// no flag at all, so it is caught later, by the nil-flag branch; only a
+		// non-persistable flag exercises the allowlist guard itself. Stored, it
+		// would be applied at query time, which the guard exists to prevent.
+		{"non-persistable flag", []string{"config", "set", "force", "true"}, "unknown option"},
 		{"unknown source", []string{"config", "set", "--src", "ghost", "format", "yaml"}, "unknown source"},
 	}
 	for _, tt := range tests {
@@ -149,6 +189,61 @@ func TestConfigSetArgErrors(t *testing.T) {
 	root2, _ := newRootCmd()
 	_, err = runCmd(t, root2, "config", "set", "-D", "compact", "true")
 	require.ErrorContains(t, err, "no value")
+}
+
+// TestConfigSetArgCount pins the RangeArgs(1, 2) bound. Cobra must reject the
+// count before RunE reads args[0], so the message is cobra's, not the body's.
+func TestConfigSetArgCount(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"no args", []string{"config", "set"}},
+		{"three args", []string{"config", "set", "format", "yaml", "extra"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configEnv(t)
+			root, _ := newRootCmd()
+			_, err := runCmd(t, root, tt.args...)
+			require.ErrorContains(t, err, "accepts between 1 and 2 arg(s)")
+		})
+	}
+}
+
+// TestConfigSetReportsASaveFailure makes the write fail after the value
+// validates: an unwritable config dir must fail the command, so `set` never
+// reports a default it did not store.
+func TestConfigSetReportsASaveFailure(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "iq.toml")
+	t.Setenv(iqconfig.EnvConfig, p)
+	require.NoError(t, os.WriteFile(p, []byte("\n"), 0o600))
+	require.NoError(t, os.Chmod(dir, 0o500)) // readable and listable, but not writable.
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	root, _ := newRootCmd()
+	out, err := runCmd(t, root, "config", "set", "format", "yaml")
+	require.ErrorContains(t, err, "create temp config")
+	require.NotContains(t, out, "set format = yaml", "no success line for a store that failed")
+}
+
+// TestRunConfigSetPropagatesAWriteError asserts the confirmation line's write
+// result is returned, not dropped after a successful store.
+func TestRunConfigSetPropagatesAWriteError(t *testing.T) {
+	configEnv(t)
+	c := newConfigSetCmd(&config{})
+	c.SetOut(&errAfter{0})
+	require.ErrorContains(t, runConfigSet(c, &config{}, []string{"format", "yaml"}), "write failed")
+}
+
+// TestListAllOptionsPropagatesAWriteError asserts the per-option write result is
+// returned, so a broken stdout stops the listing instead of ending clean.
+func TestListAllOptionsPropagatesAWriteError(t *testing.T) {
+	configEnv(t)
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	require.ErrorContains(t, listAllOptions(&errAfter{0}, cf, ""), "write failed")
 }
 
 func TestConfigLs(t *testing.T) {
@@ -273,6 +368,22 @@ func TestApplyStoredOptions(t *testing.T) {
 		cfg.src = "prod.authors"
 		require.NoError(t, applyStoredOptions(root, cfg))
 		require.Equal(t, "jsonl", cfg.format)
+	})
+
+	t.Run("a stored value the flag rejects fails fast", func(t *testing.T) {
+		// The hand-edited config the function comment promises to catch: the value
+		// never went through `config set`, so the flag is the first to see it.
+		configEnv(t)
+		cf := &iqconfig.Config{
+			Sources: map[string]iqconfig.Source{},
+			Options: map[string]string{"timeout": "notaduration"},
+		}
+		require.NoError(t, cf.Save())
+
+		root, cfg := newRootCmd()
+		err := applyStoredOptions(root, cfg)
+		require.ErrorContains(t, err, `stored option "timeout"`)
+		require.ErrorContains(t, err, "notaduration", "the cause names the bad value")
 	})
 
 	t.Run("per-source persistent option (log.level) is applied", func(t *testing.T) {
