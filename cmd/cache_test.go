@@ -122,7 +122,11 @@ func TestCacheStatTotalsEveryEntry(t *testing.T) {
 
 	var buf bytes.Buffer
 	require.NoError(t, cacheStat(&buf, dir, false, false))
-	require.Contains(t, lineWith(t, buf.String(), "TOTAL"), humanBytes(want))
+	total := lineWith(t, buf.String(), "TOTAL")
+	require.Contains(t, total, humanBytes(want))
+	// The TOTAL row holds only the label and the size, so a minus sign there can
+	// only come from a subtracted total, which "contains" the same digits.
+	require.NotContains(t, total, "-", "the total adds the entries")
 }
 
 // TestCacheStatReportsAListFailure surfaces an unreadable cache dir as an error
