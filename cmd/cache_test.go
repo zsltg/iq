@@ -72,6 +72,72 @@ func TestCacheStatJSON(t *testing.T) {
 	require.Contains(t, buf.String(), string(quoted))
 }
 
+func TestCacheStatJSONFields(t *testing.T) {
+	dir := t.TempDir()
+	dump := seedCache(t, dir)
+
+	var buf bytes.Buffer
+	require.NoError(t, cacheStat(&buf, dir, true, false))
+
+	var rows []cacheStatRow
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &rows))
+	require.Len(t, rows, 1)
+	// Every column carries a value: a dropped field would serialize as an empty
+	// string or a zero size and still parse.
+	require.Equal(t, dump, rows[0].Dump)
+	require.Positive(t, rows[0].DumpBytes)
+	require.NotEmpty(t, rows[0].CacheFile)
+	require.Positive(t, rows[0].CacheByte)
+}
+
+// TestCacheStatYAML pins the second half of the structured gate: -y takes the
+// same path as -j and emits YAML, not the table.
+func TestCacheStatYAML(t *testing.T) {
+	dir := t.TempDir()
+	dump := seedCache(t, dir)
+
+	var buf bytes.Buffer
+	require.NoError(t, cacheStat(&buf, dir, false, true))
+	out := buf.String()
+	require.Contains(t, out, dump)
+	require.NotContains(t, out, "DUMP SIZE", "yaml output is not the table")
+	require.NotContains(t, out, "TOTAL", "yaml output is not the table")
+}
+
+// TestCacheStatTotalsEveryEntry asserts the TOTAL row is the sum over the
+// entries, not the last one and not zero.
+func TestCacheStatTotalsEveryEntry(t *testing.T) {
+	dir := t.TempDir()
+	seedCache(t, dir)
+	seedCache(t, dir)
+
+	entries, err := iqfile.ListCache(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+	var want int64
+	for _, e := range entries {
+		want += e.CacheSize
+	}
+	require.Greater(t, want, entries[0].CacheSize, "two entries total more than one")
+
+	var buf bytes.Buffer
+	require.NoError(t, cacheStat(&buf, dir, false, false))
+	require.Contains(t, lineWith(t, buf.String(), "TOTAL"), humanBytes(want))
+}
+
+// TestCacheStatReportsAListFailure surfaces an unreadable cache dir as an error
+// rather than an empty listing that reads as a clean, empty cache.
+func TestCacheStatReportsAListFailure(t *testing.T) {
+	dir := t.TempDir()
+	seedCache(t, dir)
+	require.NoError(t, os.Chmod(dir, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	var buf bytes.Buffer
+	require.ErrorContains(t, cacheStat(&buf, dir, false, false), "read cache dir")
+	require.Zero(t, buf.Len(), "nothing is rendered when the listing failed")
+}
+
 func TestCacheStatEmpty(t *testing.T) {
 	// A dir with nothing cached renders a header row and no total, no error.
 	var buf bytes.Buffer

@@ -241,6 +241,12 @@ func TestInspectMongoIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, collText, "collStats")
 
+	// Only collStats needs a collection: every other subcommand runs against a
+	// source that names none.
+	noCollText, err := runCmd(t, newInspectCmd(cfg), "nocoll", "--only", "dbStats")
+	require.NoError(t, err)
+	require.Contains(t, noCollText, "dbStats")
+
 	// No args runs every subcommand; the text output must show them all, not stop
 	// after the first.
 	allText, err := runCmd(t, newInspectCmd(cfg))

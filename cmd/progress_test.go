@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,24 @@ func TestNewProgressMeterGating(t *testing.T) {
 			require.Zero(t, buf.Len(), "a no-op meter writes nothing")
 		})
 	}
+}
+
+// TestNewProgressMeterOnATerminal is the other half of the gate: a terminal gets
+// a meter, but --no-progress still turns it off. A pty master is the terminal, so
+// the test needs no real console; it skips where none can be opened.
+func TestNewProgressMeterOnATerminal(t *testing.T) {
+	f, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
+	if err != nil {
+		t.Skip("no pty available to act as a terminal")
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	require.True(t, isTerminalWriter(f), "a pty master reports as a terminal")
+
+	require.Nil(t, newProgressMeter(f, true), "--no-progress turns the meter off even on a terminal")
+
+	m := newProgressMeter(f, false)
+	require.NotNil(t, m, "a terminal with progress on gets a meter")
+	m.Stop()
 }
 
 // TestProgressMeterDelaySuppressesSpinner asserts a scan that finishes before
@@ -111,6 +130,17 @@ func TestProgressMeterSetEstimate(t *testing.T) {
 		m.SetEstimate(0) // exactly the guard boundary: must not overwrite 50
 		m.Tick(2)
 		require.Equal(t, "2 scanned (~50 est)", m.label(), "a zero estimate must not wipe a real total")
+	})
+
+	t.Run("an estimate of one is kept", func(t *testing.T) {
+		// The smallest positive estimate is on the useful side of the guard: one
+		// item is still a total the label must show.
+		m := newMeter(&bytes.Buffer{}, time.Hour)
+		defer m.Stop()
+
+		m.SetEstimate(1)
+		m.Tick(1)
+		require.Equal(t, "1 scanned (~1 est)", m.label(), "an estimate of one is a real total")
 	})
 
 	t.Run("nil meter is safe", func(t *testing.T) {
