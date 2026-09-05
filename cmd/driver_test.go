@@ -175,6 +175,11 @@ func TestDriverLsVerbose(t *testing.T) {
 	require.Contains(t, lineWith(t, out, "cassandra-csv"), "?format=cassandra-csv")
 	require.Contains(t, lineWith(t, out, "cassandra-csv"), "cqlsh COPY TO CSV")
 
+	// A driver with no dump formats gets no caption and no empty block, so the
+	// verbose listing stays a catalogue of what exists.
+	require.NotContains(t, out, "redis dump formats")
+	require.NotContains(t, out, "mongo dump formats")
+
 	// The default (non-verbose) listing stays a clean one-row-per-driver overview.
 	plain, err := runCmd(t, newDriverCmd(&config{}), "ls")
 	require.NoError(t, err)
@@ -239,4 +244,13 @@ func TestAllAddressParams(t *testing.T) {
 	params := allAddressParams()
 	require.Equal(t, []string{"collection", "table", "database", "bucket", "label", "rel", "index"}, params,
 		"every keyspace spelling in the registry, deduped, in registry order")
+}
+
+// TestWriteDriverFormatsPropagatesACaptionWriteError asserts the caption's write
+// result is returned. failAt fails only the first write, so a dropped error
+// return shows up as a nil result when the table below still writes cleanly.
+func TestWriteDriverFormatsPropagatesACaptionWriteError(t *testing.T) {
+	d, ok := driverByName("file")
+	require.True(t, ok, "the file driver is the one with dump formats")
+	require.Error(t, writeDriverFormats(&failAt{at: 1}, d))
 }

@@ -299,6 +299,17 @@ func TestMCPErrorRedactsPassword(t *testing.T) {
 	}
 }
 
+// TestMCPExplainRejectsAnUnknownSource proves the explain tool resolves the
+// source before it builds a plan: an unknown handle is an error result, not a
+// plan that names no source.
+func TestMCPExplainRejectsAnUnknownSource(t *testing.T) {
+	seedMCP(t)
+	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
+
+	body := errorBodyOf(t, callMCP(t, cs, "iq_explain", map[string]any{"source": "nope", "filter": ".[]"}))
+	require.Contains(t, body.Error.Message, `unknown source "nope"`)
+}
+
 func TestMCPExplainStructuredPlan(t *testing.T) {
 	seedMCP(t)
 	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
