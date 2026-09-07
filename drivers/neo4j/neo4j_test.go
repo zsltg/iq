@@ -200,6 +200,15 @@ func TestRelationshipWritesDeferred(t *testing.T) {
 	require.ErrorIs(t, s.Clear(context.Background()), errRelWriteUnsupported)
 }
 
+func TestPutWithAnEmptyBatchMakesNoRequest(t *testing.T) {
+	// The store has no driver: an empty batch must return before a session opens. The
+	// key and the constraint are set, so nothing earlier can stop the write.
+	s := &Store{target: target{name: "Person", key: "id"}, keyBackedByConstraint: true}
+	stat, err := s.Put(context.Background(), nil, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{}, stat)
+}
+
 func TestTargetMatch(t *testing.T) {
 	require.Equal(t, "MATCH (n)", target{}.match())
 	require.Equal(t, "MATCH (n:`Person`)", target{name: "Person"}.match())
@@ -283,6 +292,13 @@ func TestRecordProps(t *testing.T) {
 		props, keyVal, err := recordProps(rec, "id")
 		require.NoError(t, err)
 		require.Equal(t, "42", keyVal)
+		require.Equal(t, "42", props["id"])
+	})
+	t.Run("falls back to record key when the property is null", func(t *testing.T) {
+		rec := query.Record{Key: "42", Value: map[string]any{"id": nil, "name": "Ada"}}
+		props, keyVal, err := recordProps(rec, "id")
+		require.NoError(t, err)
+		require.Equal(t, "42", keyVal, "a null property is no key, so the record key stands in")
 		require.Equal(t, "42", props["id"])
 	})
 	t.Run("non-object value errors", func(t *testing.T) {
