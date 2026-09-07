@@ -1,12 +1,15 @@
 package neo4j
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"maps"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -475,4 +478,154 @@ func TestIntegrationKeyIntegrity(t *testing.T) {
 		}
 		require.True(t, fellBack, "keyless node should be keyed by its elementId")
 	})
+}
+
+// TestIntegrationOpenReadsTheNamedDatabase pins which database a source addresses. A
+// keyed source reads its constraint metadata at Open, so a database the deployment
+// does not host fails Open. A store that ignored ?database= would read the default
+// database and open without a word.
+func TestIntegrationOpenReadsTheNamedDatabase(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	st, err := Open(ctx, testURL()+"?database=it_no_such_db&label=ItGhost&key=id", "", nil, numfmt.DecimalAuto)
+	require.ErrorContains(t, err, "it_no_such_db")
+	require.Nil(t, st)
+}
+
+// TestIntegrationOpenAppliesTheDecimalMode pins that Open keeps the decimal mode the
+// caller chose: in string mode a fractional property comes back as its exact text.
+func TestIntegrationOpenAppliesTheDecimalMode(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	exec(t, ctx, admin, "MATCH (n:ItDecimal) DETACH DELETE n")
+	exec(t, ctx, admin, "CREATE (:ItDecimal {id:'1', ratio: 3.5})")
+
+	st, err := Open(ctx, testURL()+"?label=ItDecimal&key=id", "", nil, numfmt.DecimalString)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	got, err := st.Get(ctx, []string{"1"})
+	require.NoError(t, err)
+	require.Equal(t, "3.5", got["1"].(map[string]any)["ratio"])
+}
+
+// TestIntegrationScanEndsOnAShortPage pins the keyset loop's exit and the trace writer
+// Open keeps: 99 nodes are one short page, so the scan runs exactly one statement and
+// spends no round trip on an empty page after it.
+func TestIntegrationScanEndsOnAShortPage(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	exec(t, ctx, admin, "MATCH (n:ItShort) DETACH DELETE n")
+	exec(t, ctx, admin, "UNWIND range(1, 99) AS i CREATE (:ItShort {n: i})")
+
+	var trace bytes.Buffer
+	st, err := Open(ctx, testURL()+"?label=ItShort", "", &trace, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	seen := 0
+	require.NoError(t, st.ScanBatches(ctx, func(p map[string]any) error {
+		seen += len(p)
+		return nil
+	}))
+	require.Equal(t, 99, seen)
+	require.Equal(t, 1, strings.Count(trace.String(), "cypher:"), "a short page ends the scan, so the trace holds one scan statement")
+}
+
+// TestIntegrationReadSessionRefusesAWrite pins the access mode the read paths ask for:
+// the server rejects a write on a read session, so no read path can change data.
+func TestIntegrationReadSessionRefusesAWrite(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	exec(t, ctx, admin, "MATCH (n:ItReadOnly) DETACH DELETE n")
+
+	st := openStore(t, ctx, "ItReadOnly", "")
+	sess := st.session(ctx, neo4j.AccessModeRead)
+	defer func() { _ = sess.Close(ctx) }()
+
+	_, err := st.run(ctx, sess, "CREATE (:ItReadOnly)", nil)
+	require.ErrorContains(t, err, "read access mode")
+
+	c, err := st.EstimateCount(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), c, "the refused write left the label empty")
+}
+
+// TestIntegrationRunErrorKeepsTheDriverError pins that a failed statement wraps the
+// driver's error, so a caller can still read its Neo4j code.
+func TestIntegrationRunErrorKeepsTheDriverError(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	st := openStore(t, ctx, "", "")
+	_, err := st.Query(ctx, []string{"THIS IS NOT CYPHER @@@"})
+	var dbErr *neo4j.Neo4jError
+	require.ErrorAs(t, err, &dbErr, "the run failure must wrap the driver error")
+	require.Contains(t, dbErr.Code, "Statement")
+}
+
+// TestIntegrationQueryBindsTheParameterArgument pins that the second exec argument is
+// the JSON parameters object and that its values reach the statement.
+func TestIntegrationQueryBindsTheParameterArgument(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	st := openStore(t, ctx, "", "")
+	rows, err := st.Query(ctx, []string{"RETURN $word AS word", `{"word": "bound"}`})
+	require.NoError(t, err)
+	require.Equal(t, []any{map[string]any{"word": "bound"}}, rows)
+}
+
+// TestIntegrationScanReportsAStreamingFailure pins that a failure the server raises
+// while a page streams stops the scan with an error. The key property here is a list,
+// which Cypher cannot render as a string, so the page fails part way through.
+func TestIntegrationScanReportsAStreamingFailure(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	exec(t, ctx, admin, "MATCH (n:ItBadKey) DETACH DELETE n")
+	exec(t, ctx, admin, "CREATE (:ItBadKey {id: ['a','b']})")
+
+	st := openStore(t, ctx, "ItBadKey", "id")
+	err := st.ScanBatches(ctx, func(map[string]any) error { return nil })
+	require.ErrorContains(t, err, "neo4j scan")
+}
+
+// TestIntegrationScanStopsOnACallbackError pins that the scan returns the caller's
+// error and reads no further page.
+func TestIntegrationScanStopsOnACallbackError(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	exec(t, ctx, admin, "MATCH (n:ItStop) DETACH DELETE n")
+	exec(t, ctx, admin, "CREATE (:ItStop {id:'1'}), (:ItStop {id:'2'})")
+
+	st := openStore(t, ctx, "ItStop", "id")
+	stop := errors.New("stop the scan")
+	pages := 0
+	err := st.ScanBatches(ctx, func(map[string]any) error {
+		pages++
+		return stop
+	})
+	require.ErrorIs(t, err, stop)
+	require.Equal(t, 1, pages)
+}
+
+// TestIntegrationCloseReleasesTheDriver pins that Close really closes the driver: the
+// store cannot run another statement after it.
+func TestIntegrationCloseReleasesTheDriver(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	st, err := Open(ctx, testURL(), "", nil, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	require.NoError(t, st.Close())
+
+	_, err = st.Query(ctx, []string{"RETURN 1 AS one"})
+	require.Error(t, err, "a closed store must not run another statement")
+}
+
+// TestIntegrationConstraintMustCoverTheKeyProperty pins which constraint backs a ?key=
+// write. A uniqueness constraint on another property of the same label does not make
+// the key unique, so the write stays refused.
+func TestIntegrationConstraintMustCoverTheKeyProperty(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	exec(t, ctx, admin, "CREATE CONSTRAINT itOther_code IF NOT EXISTS FOR (n:ItOtherProp) REQUIRE n.code IS UNIQUE")
+	exec(t, ctx, admin, "MATCH (n:ItOtherProp) DETACH DELETE n")
+
+	st := openStore(t, ctx, "ItOtherProp", "id")
+	_, err := st.Put(ctx, []query.Record{{Key: "1", Value: map[string]any{"id": "1"}}}, query.Upsert)
+	require.ErrorContains(t, err, "no uniqueness constraint")
 }

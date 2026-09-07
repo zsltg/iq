@@ -2,6 +2,7 @@ package neo4j
 
 import (
 	"context"
+	"encoding/json"
 	"math/big"
 	"strings"
 	"testing"
@@ -174,6 +175,24 @@ func TestParseURLRelTarget(t *testing.T) {
 	}
 }
 
+func TestOpenRejectsAnUnreachableServer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// Port 1 refuses the connection, so the connectivity probe in Open must fail. Open
+	// must report that failure, not hand back a store that cannot reach a server.
+	st, err := Open(ctx, "bolt://127.0.0.1:1/", "", nil, numfmt.DecimalAuto)
+	require.ErrorContains(t, err, "connect neo4j")
+	require.Nil(t, st)
+}
+
+func TestGetWithNoKeysMakesNoRequest(t *testing.T) {
+	// The store has no driver: an empty key list must return before a session opens.
+	s := &Store{}
+	got, err := s.Get(context.Background(), nil)
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
 func TestRelationshipWritesDeferred(t *testing.T) {
 	s := &Store{target: target{kind: relTarget, name: "KNOWS"}}
 	_, err := s.Put(context.Background(), []query.Record{{Key: "1", Value: map[string]any{}}}, query.Upsert)
@@ -288,6 +307,34 @@ func TestQueryArgValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := s.Query(context.Background(), tt.args)
 			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+func TestQueryParameterErrorWrapsTheJSONFailure(t *testing.T) {
+	s := &Store{} // never reaches the driver: the parameters fail to parse first.
+	_, err := s.Query(context.Background(), []string{"RETURN 1", "{not json"})
+	var syntax *json.SyntaxError
+	require.ErrorAs(t, err, &syntax, "the parse failure must wrap the json error, so a caller can inspect it")
+}
+
+func TestAnyIsSingleton(t *testing.T) {
+	tests := []struct {
+		name string
+		list any
+		want string
+		is   bool
+	}{
+		{name: "the one property the key names", list: []any{"id"}, want: "id", is: true},
+		{name: "not a list", list: "id", want: "id", is: false},
+		{name: "composite constraint holds more than one property", list: []any{"id", "tenant"}, want: "id", is: false},
+		{name: "one property, but another one", list: []any{"other"}, want: "id", is: false},
+		{name: "one element that is not a string", list: []any{42}, want: "", is: false},
+		{name: "empty list", list: []any{}, want: "id", is: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.is, anyIsSingleton(tt.list, tt.want))
 		})
 	}
 }
