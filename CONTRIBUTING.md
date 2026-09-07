@@ -131,7 +131,8 @@ Run with the integration services up.
 - `IQ_MUTATION_TIMEOUT_COEFFICIENT`: per-mutant timeout multiplier (default
   5; raise it for a legitimately slow package instead of letting mutants time out)
 - `IQ_MUTATION_UPDATE_BASELINE=1`: accept equivalents (append-only)
-- `IQ_MUTATION_MUTANT=<id>`: re-run one mutant as a diagnostic
+- `IQ_MUTATION_MUTANT=<id>`: re-run one mutant as a diagnostic; it can report
+  a false KILLED, so do not confirm a kill with it (see the hardening steps)
 - `IQ_MUTATION_DRYRUN=1`: mutant-count preview; scope it to one package
 
 Hardening a package that has never had a full scan is a different job from the
@@ -142,11 +143,18 @@ duration` and is the expensive step, not the fixing. Work it in this order.
 1. Take the escape list from the package's `deep-mutate` run rather than
    enumerating locally: download its `mutation-<package>` artifact and read
    `mutago-agentic.json`, which lists every escaped mutant with the stable id
-   `IQ_MUTATION_MUTANT` takes. A job log alone carries the diffs without the
-   ids, in which case replay each logged diff against the source and run the
-   suite to reproduce the list.
-2. Fix and verify one mutant at a time with `IQ_MUTATION_MUTANT=<id>`, which
-   costs about two suite runs instead of a scan.
+   `IQ_MUTATION_MUTANT` takes, and, more usefully, the diff of each one. A job
+   log alone carries the diffs without the ids, in which case replay each logged
+   diff against the source and run the suite to reproduce the list.
+2. Fix and verify one mutant at a time by ground truth: apply the mutant's own
+   `diff` field with `git apply`, run the package suite, then restore the file.
+   That costs one suite run, about 25 s for `cmd`. Do NOT use
+   `IQ_MUTATION_MUTANT=<id>` to confirm a kill: measured on 2026-09-05, the
+   diagnostic reported KILLED for three mutants that stayed alive when the same
+   mutation was applied by hand, and an id only resolves under the same
+   enumeration set that produced it (a scan run with `--match` gives ids that a
+   plain package run cannot find). Keep the diagnostic for probing whether an
+   order-dependent escape is flaky.
 3. Close with exactly two full scans: `IQ_MUTATION_UPDATE_BASELINE=1`, which
    doubles as the verification and prints exactly the survivors to justify, then
    a plain run for the verdict. The closing scan is also what catches a new test

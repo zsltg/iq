@@ -77,7 +77,11 @@
 # re-verify one survivor in seconds instead of rerunning the whole gate, and probe an
 # order-dependent escape for flakiness by running the same mutant a few times. mutago
 # suppresses the gate verdict and summary in this mode, so it is a diagnostic, not a
-# gate. Point it at the mutant's package (e.g. ./drivers/file) for a fast enumeration;
+# gate. It can also report a FALSE KILLED: measured on 2026-09-05, three mutants came
+# back killed from this mode while the same mutation, applied by hand, left the suite
+# green. Confirm a kill by ground truth instead, `git apply` of the mutant diff plus
+# the package suite. An id is also tied to the enumeration that produced it, so an id
+# from a `--match` scan does not resolve in a plain package run. Point it at the mutant's package (e.g. ./drivers/file) for a fast enumeration;
 # a whole-module ./... target still works but re-enumerates everything.
 #
 # IQ_MUTATION_DRYRUN=1 is a mutant-count preview whose cost depends on the form: a
