@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 )
 
@@ -87,6 +88,47 @@ func TestScanBatchesYieldsAllRows(t *testing.T) {
 			require.ElementsMatch(t, want, keys)
 		})
 	}
+}
+
+func TestOpenSetsScanPageSize(t *testing.T) {
+	// Open must give the Store the default scan page size. A scan of a table with
+	// fewer rows than that size therefore yields exactly one batch. Without the
+	// default the page size is zero, the flush test len(page) >= pageSize is true
+	// after every row, and the caller sees one batch per row instead.
+	inserts := make([]string, 3)
+	for i := range inserts {
+		inserts[i] = fmt.Sprintf("INSERT INTO pagedefault (id, v) VALUES (%d, 'v%d')", i+1, i+1)
+	}
+	st := seedTable(t, "pagedefault", "CREATE TABLE pagedefault (id int PRIMARY KEY, v text)", inserts...)
+	require.Equal(t, scanBatch, st.pageSize, "Open sets the default page size")
+
+	var pageSizes []int
+	err := st.ScanBatches(context.Background(), func(batch map[string]any) error {
+		pageSizes = append(pageSizes, len(batch))
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{3}, pageSizes, "three rows fit in one default-size page")
+}
+
+func TestOpenAppliesDecimalMode(t *testing.T) {
+	// Open must give the Store the decimal mode it was called with, because the
+	// mode decides what the filter computes on. Number mode renders a CQL decimal
+	// as a float64; every other mode keeps the exact literal as a string. A Store
+	// that lost the mode falls back to the zero value, DecimalAuto, and returns a
+	// string here.
+	seedTable(t, "decmode",
+		"CREATE TABLE decmode (id int PRIMARY KEY, amount decimal)",
+		"INSERT INTO decmode (id, amount) VALUES (1, 1.25)")
+	st := openIntegrationMode(t, "decmode", numfmt.DecimalNumber)
+
+	rows, err := st.Get(context.Background(), []string{"1"})
+	require.NoError(t, err)
+	fields, ok := rows["1"].(map[string]any)
+	require.True(t, ok, "the row is an object")
+	amount, ok := fields["amount"].(float64)
+	require.True(t, ok, "number mode yields a float64, not the exact literal as a string")
+	require.InDelta(t, 1.25, amount, 1e-9)
 }
 
 func TestScanFilteredReturnsMatching(t *testing.T) {

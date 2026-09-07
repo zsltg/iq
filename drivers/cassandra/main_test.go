@@ -125,6 +125,21 @@ func schemaStore(t *testing.T) *Store {
 	return st
 }
 
+// openIntegrationMode is openIntegration with an explicit decimal mode, for the
+// tests that assert the mode Open was given reaches the values it normalizes.
+func openIntegrationMode(t *testing.T, table string, dec numfmt.DecimalMode) *Store {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping cassandra integration test in -short mode")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	st, err := Open(ctx, testURL(), table, nil, dec)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	return st
+}
+
 // mustExec runs each CQL statement against st, failing the test on any error.
 func mustExec(t *testing.T, st *Store, stmts ...string) {
 	t.Helper()
