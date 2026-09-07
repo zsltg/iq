@@ -1212,6 +1212,108 @@
    "file": "drivers/hbase/write.go",
    "mutator": "expression/error-guard",
    "line": 45
+  },
+  {
+   "id": "298e2e7f0fd1fb9845bac5d8c284dd4d",
+   "file": "drivers/neo4j/filter.go",
+   "mutator": "branch/if",
+   "line": 26
+  },
+  {
+   "id": "dce9edc83ff61c97a206243ee0015234",
+   "file": "drivers/neo4j/inspect.go",
+   "mutator": "expression/context-nil",
+   "line": 66
+  },
+  {
+   "id": "478cf8fc2fb53c4d33b07c1ce9e04374",
+   "file": "drivers/neo4j/inspect.go",
+   "mutator": "expression/context-nil",
+   "line": 67
+  },
+  {
+   "id": "a9e25828b1be84d62366cdd519c5fed3",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/context-nil",
+   "line": 189
+  },
+  {
+   "id": "aeff47385385d4d61b1ad2a7f3346251",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/context-nil",
+   "line": 205
+  },
+  {
+   "id": "5f5f9808a15d113e86883c429ea2b0fb",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/context-nil",
+   "line": 261
+  },
+  {
+   "id": "d337011e0e53169a08882e5f038ad66a",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/context-nil",
+   "line": 443
+  },
+  {
+   "id": "811eef4ad362892a16888080cfd62d01",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/context-nil",
+   "line": 537
+  },
+  {
+   "id": "3804221283486b6225fcc6969342d4a1",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/remove",
+   "line": 311
+  },
+  {
+   "id": "f1996a65b72e580c7dbc4ad343fe2af8",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/remove",
+   "line": 518
+  },
+  {
+   "id": "413b18704336923c1f7c242b795d1f94",
+   "file": "drivers/neo4j/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 84
+  },
+  {
+   "id": "6ff99294550a67616b4207c48087c766",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "expression/error-guard",
+   "line": 199
+  },
+  {
+   "id": "acdc7481f2cf6f6c39a20cf18cef9276",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "expression/remove",
+   "line": 104
+  },
+  {
+   "id": "54c1a923120c4509f713c3cc8089b171",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "expression/remove",
+   "line": 181
+  },
+  {
+   "id": "7bf22d86ca3ec15be3c9d55b8c794c3f",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "statement/return",
+   "line": 34
+  },
+  {
+   "id": "556958714b0de87e4484c16f29561a93",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "statement/return",
+   "line": 43
+  },
+  {
+   "id": "cb38925ce60476663a9f97d2282c3546",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "statement/return",
+   "line": 47
   }
  ]
 }
