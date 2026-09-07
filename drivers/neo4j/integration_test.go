@@ -591,6 +591,8 @@ func TestIntegrationScanReportsAStreamingFailure(t *testing.T) {
 	st := openStore(t, ctx, "ItBadKey", "id")
 	err := st.ScanBatches(ctx, func(map[string]any) error { return nil })
 	require.ErrorContains(t, err, "neo4j scan")
+	var dbErr *neo4j.Neo4jError
+	require.ErrorAs(t, err, &dbErr, "the scan failure keeps the driver error it wraps")
 }
 
 // TestIntegrationScanStopsOnACallbackError pins that the scan returns the caller's
@@ -649,6 +651,8 @@ func TestIntegrationInspectServerReportsAFailedRead(t *testing.T) {
 
 	_, err = st.InspectServer(ctx)
 	require.ErrorContains(t, err, "neo4j server components")
+	var dbErr *neo4j.Neo4jError
+	require.ErrorAs(t, err, &dbErr, "the inspect failure keeps the driver error it wraps")
 }
 
 // TestIntegrationReadRowsReportsAStreamingFailure pins that the shared inspect helper

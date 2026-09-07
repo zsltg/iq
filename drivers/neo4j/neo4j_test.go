@@ -190,6 +190,7 @@ func TestGetWithNoKeysMakesNoRequest(t *testing.T) {
 	s := &Store{}
 	got, err := s.Get(context.Background(), nil)
 	require.NoError(t, err)
+	require.NotNil(t, got, "the caller receives an empty map to read from, never a nil one")
 	require.Empty(t, got)
 }
 
