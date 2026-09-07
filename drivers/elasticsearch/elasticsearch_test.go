@@ -230,13 +230,39 @@ func TestTypedScan(t *testing.T) {
 	require.Equal(t, "document", seen["1"].Type)
 }
 
+func TestOpenAppliesDecimalMode(t *testing.T) {
+	// Open must give the Store the decimal mode it was called with, because the
+	// mode decides what the filter computes on. String mode keeps the exact
+	// literal, which is the only mode a document read can tell apart: auto and
+	// number both give a float64. A Store that lost the mode falls back to the
+	// zero value, DecimalAuto, and returns that float64 instead.
+	seedIndex(t, map[string]any{"_id": "1", "amount": 1.25})
+	ctx := skipShort(t)
+
+	st, err := Open(ctx, testURL(), indexName(t), nil, numfmt.DecimalString)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	rows, err := st.Get(ctx, []string{"1"})
+	require.NoError(t, err)
+	fields, ok := rows["1"].(map[string]any)
+	require.True(t, ok, "the document is an object")
+	require.Equal(t, "1.25", fields["amount"], "string mode keeps the exact literal")
+}
+
 func TestInspect(t *testing.T) {
 	st := seedIndex(t, books()...)
 	ctx := skipShort(t)
 
 	server, err := st.InspectServer(ctx)
 	require.NoError(t, err)
-	require.NotEmpty(t, server.(map[string]any)["version"])
+	// Assert every field the report promises, not the version alone: a dropped
+	// field still leaves a usable map, so only a per-key check sees the loss.
+	info, ok := server.(map[string]any)
+	require.True(t, ok, "the server report is an object")
+	for _, key := range []string{"name", "cluster", "version", "luceneVersion", "tagline"} {
+		require.NotEmpty(t, info[key], "the server report holds %s", key)
+	}
 
 	indices, err := st.InspectIndices(ctx)
 	require.NoError(t, err)
