@@ -420,7 +420,15 @@ func TestIntegrationInspect(t *testing.T) {
 
 	server, err := st.InspectServer(ctx)
 	require.NoError(t, err)
-	require.NotEmpty(t, server)
+	rows, ok := server.([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, rows)
+	// Each row keeps the columns the statement yields, not an empty map.
+	first, ok := rows[0].(map[string]any)
+	require.True(t, ok)
+	require.Contains(t, first, "name")
+	require.Contains(t, first, "versions")
+	require.Contains(t, first, "edition")
 
 	dbs, err := st.InspectDatabases(ctx)
 	require.NoError(t, err)
@@ -628,4 +636,27 @@ func TestIntegrationConstraintMustCoverTheKeyProperty(t *testing.T) {
 	st := openStore(t, ctx, "ItOtherProp", "id")
 	_, err := st.Put(ctx, []query.Record{{Key: "1", Value: map[string]any{"id": "1"}}}, query.Upsert)
 	require.ErrorContains(t, err, "no uniqueness constraint")
+}
+
+// TestIntegrationInspectServerReportsAFailedRead pins that an inspect read reports the
+// failure with its own context instead of an empty answer. The source names a database
+// the deployment does not host, so the metadata read fails.
+func TestIntegrationInspectServerReportsAFailedRead(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	st, err := Open(ctx, testURL()+"?database=it_no_such_db", "", nil, numfmt.DecimalAuto)
+	require.NoError(t, err, "a keyless source reads no metadata at Open")
+	t.Cleanup(func() { _ = st.Close() })
+
+	_, err = st.InspectServer(ctx)
+	require.ErrorContains(t, err, "neo4j server components")
+}
+
+// TestIntegrationReadRowsReportsAStreamingFailure pins that the shared inspect helper
+// reports a failure the server raises while the rows stream. The statement divides by
+// zero on its second row, so the failure arrives after the read starts.
+func TestIntegrationReadRowsReportsAStreamingFailure(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	st := openStore(t, ctx, "", "")
+	_, err := st.readRows(ctx, "UNWIND [1, 0] AS x RETURN 1/x AS v")
+	require.ErrorContains(t, err, "by zero")
 }
