@@ -52,6 +52,23 @@ func TestTranslatePushdown(t *testing.T) {
 			wantNarrow: true,
 		},
 		{
+			name:       "and of only unpushable conjuncts does not narrow",
+			node:       predicate.And{predicate.Cmp{Path: []string{"a"}, Op: predicate.Gt, Value: 1.0}, predicate.Ne{Path: []string{"b"}, Value: 2.0}},
+			wantNarrow: false,
+		},
+		{
+			name:       "or of one equality",
+			node:       predicate.Or{predicate.Eq{Path: []string{"a"}, Value: 1.0}},
+			wantWhere:  "(n[$f0] = $f1)",
+			wantParams: map[string]any{"f0": "a", "f1": 1.0},
+			wantNarrow: true,
+		},
+		{
+			name:       "empty or does not narrow",
+			node:       predicate.Or{},
+			wantNarrow: false,
+		},
+		{
 			name:       "or of two equalities",
 			node:       predicate.Or{predicate.Eq{Path: []string{"a"}, Value: 1.0}, predicate.Eq{Path: []string{"b"}, Value: 2.0}},
 			wantWhere:  "(n[$f0] = $f1 OR n[$f2] = $f3)",

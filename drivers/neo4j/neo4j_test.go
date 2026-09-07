@@ -409,6 +409,39 @@ func TestExplainPlanMaterializesWhenUnbounded(t *testing.T) {
 	require.Contains(t, plan.Ops[1], "materialized")
 }
 
+func TestExplainPlanScanMode(t *testing.T) {
+	tests := []struct {
+		name      string
+		keys      selector.KeySet
+		unbounded bool
+		wantMode  string
+	}{
+		{
+			name:     "a streamable scan pages by keyset",
+			keys:     selector.KeySet{Scan: true, Streamable: true},
+			wantMode: "pages streamed in batches of 100 (keyset by elementId)",
+		},
+		{
+			name:     "a scan that cannot stream materializes",
+			keys:     selector.KeySet{Scan: true, Streamable: false},
+			wantMode: "whole result materialized in memory",
+		},
+		{
+			name:      "an unbounded scan materializes",
+			keys:      selector.KeySet{Scan: true, Streamable: true},
+			unbounded: true,
+			wantMode:  "whole result materialized in memory",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := ExplainPlan(tt.keys, nil, tt.unbounded)
+			require.Len(t, plan.Ops, 2)
+			require.Equal(t, tt.wantMode, plan.Ops[1])
+		})
+	}
+}
+
 func TestUniquenessConstraint(t *testing.T) {
 	tests := []struct {
 		typ  string
@@ -436,6 +469,7 @@ func TestExplainPlanBoundedVsScan(t *testing.T) {
 	bounded := ExplainPlan(selector.KeySet{Scan: false, Keys: []string{"1", "2"}}, nil, false)
 	require.Len(t, bounded.Ops, 1)
 	require.Contains(t, bounded.Ops[0], "fetch 2 requested key")
+	require.Equal(t, map[string]any{"keys": []string{"1", "2"}}, bounded.Filter, "the bounded plan shows the keys it fetches")
 
 	scan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false)
 	require.Contains(t, scan.Ops[0], "full-label scan")
