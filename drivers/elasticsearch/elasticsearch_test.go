@@ -53,7 +53,10 @@ func TestGetEmptyKeys(t *testing.T) {
 	ctx := skipShort(t)
 	got, err := st.Get(ctx, nil)
 	require.NoError(t, err)
-	require.Empty(t, got)
+	// An empty request short-circuits with no round-trip, but it still returns a usable
+	// empty map: a nil map would make the caller's write path panic.
+	require.Equal(t, map[string]any{}, got)
+	require.NotNil(t, got)
 }
 
 func TestScanBatches(t *testing.T) {
@@ -288,6 +291,7 @@ func TestErrorMessageSurfacesTypeAndReason(t *testing.T) {
 
 	_, err = st.Query(ctx, []string{`{"query":{"match_all":{}}}`})
 	require.Error(t, err)
+	require.ErrorContains(t, err, "elasticsearch search:", "the message names the backend and the operation")
 	require.ErrorContains(t, err, "index_not_found_exception")
 	require.ErrorContains(t, err, "no such index")
 }

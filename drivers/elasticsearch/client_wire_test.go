@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,11 +17,12 @@ import (
 // tests use it because the credentials and the close-point-in-time body only
 // become visible on the wire.
 type recorder struct {
-	srv    *httptest.Server
-	auth   string
-	body   string
-	path   string
-	method string
+	srv         *httptest.Server
+	auth        string
+	body        string
+	path        string
+	method      string
+	contentType string
 }
 
 // newRecorder starts a stub server that answers every request with an empty JSON
@@ -30,6 +32,7 @@ func newRecorder(t *testing.T) *recorder {
 	r := &recorder{}
 	r.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.auth = req.Header.Get("Authorization")
+		r.contentType = req.Header.Get("Content-Type")
 		r.method = req.Method
 		r.path = req.URL.Path
 		if req.Body != nil {
@@ -104,6 +107,186 @@ func TestClosePITSendsTheIdentifier(t *testing.T) {
 			require.Equal(t, http.MethodDelete, rec.method)
 			require.Equal(t, tt.wantPath, rec.path)
 			require.JSONEq(t, "{"+tt.wantKey+"}", rec.body, "the body names the point-in-time to release")
+			require.Equal(t, "application/json", rec.contentType,
+				"the server refuses a JSON body that comes with no content type")
+		})
+	}
+}
+
+func TestNewClientRejectsAnUnusableAddress(t *testing.T) {
+	// An address that is not a URL cannot make a client. Both flavors must report the
+	// failure and hand back no client, or the caller keeps a client that reaches
+	// nothing and fails much later.
+	tests := []struct {
+		name     string
+		flavor   flavor
+		wantWrap string
+	}{
+		{name: "elasticsearch", flavor: flavorES, wantWrap: "connect elasticsearch"},
+		{name: "opensearch", flavor: flavorOS, wantWrap: "connect opensearch"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := newClient(connConfig{flavor: tt.flavor, addr: "://nope"}, nil)
+			require.Nil(t, c, "a failed build hands back no client")
+			require.ErrorContains(t, err, tt.wantWrap)
+			require.ErrorContains(t, err, "missing protocol scheme")
+		})
+	}
+}
+
+func TestOpenPITRejectsAnUnusableIndexPath(t *testing.T) {
+	// The index name becomes part of the request path. A name a URL cannot hold must
+	// stop at the request build, for both flavors.
+	tests := []struct {
+		name   string
+		flavor flavor
+	}{
+		{name: "elasticsearch", flavor: flavorES},
+		{name: "opensearch", flavor: flavorOS},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := newRecorder(t)
+			c, err := newClient(connConfig{flavor: tt.flavor, addr: rec.srv.URL}, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = c.close() })
+
+			id, err := c.openPIT(t.Context(), "bad\x7findex")
+			require.Empty(t, id)
+			require.ErrorContains(t, err, "invalid control character in URL")
+			require.Empty(t, rec.method, "a request that cannot be built is never sent")
+		})
+	}
+}
+
+func TestOpenPITReportsTheServerRefusal(t *testing.T) {
+	// A refused point-in-time must carry the server's reason. A guard that ignores the
+	// refusal falls through to the empty-id check, which reports a different fault and
+	// hides the cause.
+	tests := []struct {
+		name   string
+		flavor flavor
+		label  string
+	}{
+		{name: "elasticsearch", flavor: flavorES, label: "elasticsearch"},
+		{name: "opensearch", flavor: flavorOS, label: "opensearch"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				esJSON(w, http.StatusNotFound, `{"error":{"type":"index_not_found_exception","reason":"no such index"}}`)
+			}))
+			t.Cleanup(srv.Close)
+			c, err := newClient(connConfig{flavor: tt.flavor, addr: srv.URL}, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = c.close() })
+
+			id, err := c.openPIT(t.Context(), "books")
+			require.Empty(t, id)
+			require.ErrorContains(t, err, tt.label+" open point-in-time: index_not_found_exception")
+			require.ErrorContains(t, err, "no such index")
+		})
+	}
+}
+
+func TestOpenPITRejectsAnEmptyIdentifier(t *testing.T) {
+	// A reply with no identifier is not a usable point-in-time, whatever its status.
+	tests := []struct {
+		name   string
+		flavor flavor
+		label  string
+	}{
+		{name: "elasticsearch", flavor: flavorES, label: "elasticsearch"},
+		{name: "opensearch", flavor: flavorOS, label: "opensearch"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				esJSON(w, http.StatusOK, `{}`)
+			}))
+			t.Cleanup(srv.Close)
+			c, err := newClient(connConfig{flavor: tt.flavor, addr: srv.URL}, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = c.close() })
+
+			id, err := c.openPIT(t.Context(), "books")
+			require.Empty(t, id)
+			require.ErrorContains(t, err, tt.label+" open point-in-time: empty pit id")
+		})
+	}
+}
+
+func TestDecodeIntoWrapsTheTransportFailure(t *testing.T) {
+	// A server that is not there gives a transport failure. The message must name the
+	// backend and the operation, and the cause must stay reachable, so a caller can
+	// tell a network fault from a refusal.
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	addr := srv.URL
+	srv.Close()
+
+	c, err := newClient(connConfig{flavor: flavorES, addr: addr}, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.close() })
+	st := &Store{client: c, index: "books", pageSize: scanBatch}
+
+	n, err := st.EstimateCount(t.Context())
+	require.Zero(t, n)
+	require.ErrorContains(t, err, "elasticsearch count:", "the message names the backend and the operation")
+	var netErr *net.OpError
+	require.ErrorAs(t, err, &netErr, "the cause stays reachable through the wrap")
+}
+
+func TestDecodeIntoReportsAMalformedBody(t *testing.T) {
+	// A success status with a body that is not JSON must fail, not leave the caller
+	// with the zero value and no error.
+	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
+		esJSON(w, http.StatusOK, `not-json`)
+	})
+	n, err := st.EstimateCount(t.Context())
+	require.Zero(t, n)
+	require.ErrorContains(t, err, "elasticsearch count: decode response")
+}
+
+func TestAPIErrorNamesTheTypeOrTheStatus(t *testing.T) {
+	// A refusal reports the type and reason the server gives. A reply that is not the
+	// error envelope has no type, so the message must name the status instead of
+	// reporting an empty type.
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{
+			name: "type and reason", status: http.StatusNotFound,
+			body: `{"error":{"type":"index_not_found_exception","reason":"no such index"}}`,
+			want: "elasticsearch count: index_not_found_exception: no such index",
+		},
+		{
+			name: "type without a reason", status: http.StatusBadRequest,
+			body: `{"error":{"type":"parsing_exception"}}`,
+			want: "elasticsearch count: parsing_exception",
+		},
+		{
+			name: "no error envelope", status: http.StatusBadRequest,
+			body: `{}`,
+			want: "elasticsearch count: unexpected status 400",
+		},
+		{
+			name: "body is not json", status: http.StatusConflict,
+			body: `<html>gateway</html>`,
+			want: "elasticsearch count: unexpected status 409",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
+				esJSON(w, tt.status, tt.body)
+			})
+			n, err := st.EstimateCount(t.Context())
+			require.Zero(t, n, "a failed count reports no documents")
+			require.EqualError(t, err, tt.want)
 		})
 	}
 }

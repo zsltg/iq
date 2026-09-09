@@ -69,6 +69,12 @@ func TestParseURL(t *testing.T) {
 			wantIdx:  "books",
 		},
 		{
+			name:     "multi-segment path names no index",
+			rawURL:   "elasticsearch://localhost:9200/books/authors",
+			wantAddr: "http://localhost:9200",
+			wantIdx:  "",
+		},
+		{
 			name:     "no index is allowed (raw/inspect-only)",
 			rawURL:   "elasticsearch://localhost:9200/",
 			wantAddr: "http://localhost:9200",
@@ -124,9 +130,11 @@ func TestValidateIndex(t *testing.T) {
 		{name: "comma multi-index", index: "a,b", wantErr: "invalid character"},
 		{name: "slash", index: "a/b", wantErr: "invalid character"},
 		{name: "space", index: "a b", wantErr: "invalid character"},
-		{name: "leading underscore", index: "_books", wantErr: "must not start"},
-		{name: "leading dash", index: "-books", wantErr: "must not start"},
-		{name: "dot", index: ".", wantErr: "is invalid"},
+		{name: "leading underscore", index: "_books", wantErr: `must not start with "_"`},
+		{name: "leading dash", index: "-books", wantErr: `must not start with "-"`},
+		{name: "leading plus", index: "+books", wantErr: `must not start with "+"`},
+		{name: "dot", index: ".", wantErr: `index name "." is invalid`},
+		{name: "dot dot", index: "..", wantErr: `index name ".." is invalid`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
