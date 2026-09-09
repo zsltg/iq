@@ -1,6 +1,7 @@
 package elasticsearch
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -122,6 +123,8 @@ func TestPutReportsAnUnencodableDocument(t *testing.T) {
 	stat, err := st.Put(t.Context(), batch, query.Upsert)
 	require.Equal(t, query.WriteStat{}, stat)
 	require.ErrorContains(t, err, "encode elasticsearch bulk line")
+	var unsupported *json.UnsupportedTypeError
+	require.ErrorAs(t, err, &unsupported, "the cause stays reachable through the wrap")
 	require.Zero(t, calls, "a batch that cannot be encoded is never sent")
 }
 

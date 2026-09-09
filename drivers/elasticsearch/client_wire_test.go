@@ -3,6 +3,7 @@ package elasticsearch
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -131,6 +132,7 @@ func TestNewClientRejectsAnUnusableAddress(t *testing.T) {
 			require.Nil(t, c, "a failed build hands back no client")
 			require.ErrorContains(t, err, tt.wantWrap)
 			require.ErrorContains(t, err, "missing protocol scheme")
+			require.Error(t, errors.Unwrap(err), "the cause stays reachable through the wrap")
 		})
 	}
 }
@@ -246,6 +248,8 @@ func TestDecodeIntoReportsAMalformedBody(t *testing.T) {
 	n, err := st.EstimateCount(t.Context())
 	require.Zero(t, n)
 	require.ErrorContains(t, err, "elasticsearch count: decode response")
+	var syntax *json.SyntaxError
+	require.ErrorAs(t, err, &syntax, "the cause stays reachable through the wrap")
 }
 
 func TestAPIErrorNamesTheTypeOrTheStatus(t *testing.T) {

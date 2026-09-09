@@ -64,6 +64,8 @@ func TestDecodeSourceRejectsANonObjectSource(t *testing.T) {
 			doc, err := decodeSource(json.RawMessage(tt.raw), "1", numfmt.DecimalAuto)
 			require.Nil(t, doc)
 			require.ErrorContains(t, err, "decode elasticsearch _source")
+			var typeErr *json.UnmarshalTypeError
+			require.ErrorAs(t, err, &typeErr, "the cause stays reachable through the wrap")
 		})
 	}
 }

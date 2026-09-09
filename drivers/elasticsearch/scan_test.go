@@ -117,6 +117,8 @@ func TestQueryRejectsAMalformedBody(t *testing.T) {
 	got, err := st.Query(t.Context(), []string{`{"term":`})
 	require.Nil(t, got)
 	require.ErrorContains(t, err, "parse search body")
+	var syntax *json.SyntaxError
+	require.ErrorAs(t, err, &syntax, "the cause stays reachable through the wrap")
 }
 
 func TestQueryReportsAMalformedReply(t *testing.T) {
@@ -128,6 +130,8 @@ func TestQueryReportsAMalformedReply(t *testing.T) {
 	got, err := st.Query(t.Context(), []string{`{"match_all":{}}`})
 	require.Nil(t, got)
 	require.ErrorContains(t, err, "elasticsearch search: decode response")
+	var syntax *json.SyntaxError
+	require.ErrorAs(t, err, &syntax, "the cause stays reachable through the wrap")
 }
 
 func TestCloseReportsTheClientFailure(t *testing.T) {
