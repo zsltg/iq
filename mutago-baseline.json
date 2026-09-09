@@ -1314,6 +1314,60 @@
    "file": "drivers/neo4j/write.go",
    "mutator": "statement/return",
    "line": 47
+  },
+  {
+   "id": "cfe6c6f5e179c0956aa53891e61aaad6",
+   "file": "drivers/elasticsearch/elasticsearch.go",
+   "line": 301,
+   "mutator": "branch/if"
+  },
+  {
+   "id": "808ba5da7eb543934244a0a380e73460",
+   "file": "drivers/elasticsearch/elasticsearch.go",
+   "line": 133,
+   "mutator": "expression/remove"
+  },
+  {
+   "id": "24b90a952906e8193eeaa058b4e6e130",
+   "file": "drivers/elasticsearch/elasticsearch.go",
+   "line": 300,
+   "mutator": "numbers/decrementer"
+  },
+  {
+   "id": "623005b05d81beb25bc45b14e310ada9",
+   "file": "drivers/elasticsearch/filter.go",
+   "line": 50,
+   "mutator": "composite/field-clear"
+  },
+  {
+   "id": "a012bb4171c8f10389864efbe5865517",
+   "file": "drivers/elasticsearch/filter.go",
+   "line": 59,
+   "mutator": "composite/field-clear"
+  },
+  {
+   "id": "2ff0f65b4bc4ad51c50759283b7b5f9f",
+   "file": "drivers/elasticsearch/filter.go",
+   "line": 273,
+   "mutator": "expression/remove"
+  },
+  {
+   "id": "edc0317f0eafe93f186cf96f5f0aed5e",
+   "file": "drivers/elasticsearch/inspect.go",
+   "line": 61,
+   "mutator": "expression/error-guard"
+  },
+  {
+   "id": "2cf1585dd1d3c631b2404c491783451c",
+   "file": "drivers/elasticsearch/write.go",
+   "line": 42,
+   "mutator": "expression/error-guard"
+  },
+  {
+   "id": "55272235d47f149d13bc11209a2a4669",
+   "file": "drivers/elasticsearch/write.go",
+   "line": 166,
+   "mutator": "expression/error-guard"
   }
  ]
 }

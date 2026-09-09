@@ -561,3 +561,19 @@ here, so re-check them when the SDK moves.
 - 7bf22d86ca3ec15be3c9d55b8c794c3f drivers/neo4j/write.go:34 statement/return — `return stat` where stat is still its zero value. Nothing writes to stat before this line, so the mutant returns the same value.
 - 556958714b0de87e4484c16f29561a93 drivers/neo4j/write.go:43 statement/return — the same zero-value return on the next early path.
 - cb38925ce60476663a9f97d2282c3546 drivers/neo4j/write.go:47 statement/return — the same zero-value return on the empty-batch path. The test asserts the exact value, and the mutant returns that value too.
+
+Elasticsearch, accepted 2026-09-09 after the first full scan of the package. Every entry below
+was confirmed by hand: apply the mutant diff, run the package tests, see them pass, restore.
+The closing run scored 599 killed, 9 equivalent and 90 not covered. Read the note on
+elasticsearch.go:133 before you touch that line: the site holds two operand variants and only
+one of them is equivalent.
+
+- cfe6c6f5e179c0956aa53891e61aaad6 drivers/elasticsearch/elasticsearch.go:301 branch/if — the body of that same early return, for the same reason.
+- 808ba5da7eb543934244a0a380e73460 drivers/elasticsearch/elasticsearch.go:133 expression/remove — the first conjunct of the lenient path-as-index rule, the test that the trimmed path is not empty. It only decides the empty case, and there the assignment sets index to the empty string it already holds. The sibling operand, the check that the path holds no slash, does change behaviour and a test kills it.
+- 24b90a952906e8193eeaa058b4e6e130 drivers/elasticsearch/elasticsearch.go:300 numbers/decrementer — the len(hits) == 0 early return. With no hits the copy loop runs zero times, len(page) > 0 is false so fn is never called, and the len(hits) < s.pageSize test returns on the same iteration. The two paths agree for every page size of one or more, and pageSize is scanBatch on every path that reaches here.
+- 623005b05d81beb25bc45b14e310ada9 drivers/elasticsearch/filter.go:50 composite/field-clear — the class: stringClass field of the keyword and ip case. stringClass is iota, so it is the zero value of fieldClass and clearing the field is a no-op.
+- a012bb4171c8f10389864efbe5865517 drivers/elasticsearch/filter.go:59 composite/field-clear — the same field on the text sub-field case, for the same reason.
+- 2ff0f65b4bc4ad51c50759283b7b5f9f drivers/elasticsearch/filter.go:273 expression/remove — the e.Value == nil disjunct of the push guard. matchesLiteral type-asserts a nil value against string, float64 and bool, returns false for each, and falls to false in the default, so a null literal never pushes either way.
+- edc0317f0eafe93f186cf96f5f0aed5e drivers/elasticsearch/inspect.go:61 expression/error-guard — the json.Unmarshal error guard. The argument is a json.RawMessage that a successful decode produced, so it is always valid JSON and an unmarshal into any cannot fail. The branch is unreachable.
+- 2cf1585dd1d3c631b2404c491783451c drivers/elasticsearch/write.go:42 expression/error-guard — a json.Marshal error guard over a map whose only values are strings, the bulk action line. json.Marshal cannot fail on that shape, so the branch is unreachable.
+- 55272235d47f149d13bc11209a2a4669 drivers/elasticsearch/write.go:166 expression/error-guard — the same guard over the delete action line. The sibling guard at write.go:45 marshals caller data, can fail, and a test kills it.
