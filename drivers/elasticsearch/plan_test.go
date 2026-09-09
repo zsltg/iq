@@ -49,6 +49,37 @@ func TestExplainPlan(t *testing.T) {
 		}}, plan.Filter)
 	})
 
+	t.Run("an equality with a null literal shows no filter", func(t *testing.T) {
+		// jq reads a missing field as null, so `== null` matches absent-or-null, which
+		// no term query reproduces. The plan must show the full walk, not a term on null.
+		pred := predicate.Eq{Path: []string{"a"}, Value: nil}
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
+		require.Contains(t, plan.Ops[0], "full-index scan")
+		require.Nil(t, plan.Filter)
+	})
+
+	t.Run("an equality on a nested path shows no filter", func(t *testing.T) {
+		// Only a single top-level field can back a term, so a nested path falls back.
+		pred := predicate.Eq{Path: []string{"a", "b"}, Value: "x"}
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
+		require.Contains(t, plan.Ops[0], "full-index scan")
+		require.Nil(t, plan.Filter)
+	})
+
+	t.Run("an empty or shows no filter", func(t *testing.T) {
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, predicate.Or{}, false)
+		require.Nil(t, plan.Filter)
+	})
+
+	t.Run("an or of one branch still shows a bool should", func(t *testing.T) {
+		pred := predicate.Or{predicate.Eq{Path: []string{"a"}, Value: "x"}}
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
+		require.Equal(t, map[string]any{"bool": map[string]any{
+			"should":               []any{map[string]any{"term": map[string]any{"a": "x"}}},
+			"minimum_should_match": 1,
+		}}, plan.Filter)
+	})
+
 	t.Run("an or with an unpushable branch falls back", func(t *testing.T) {
 		pred := predicate.Or{
 			predicate.Eq{Path: []string{"a"}, Value: "x"},
