@@ -47,3 +47,23 @@ func TestFormatRaw(t *testing.T) {
 	require.Contains(t, out, `"a"`)
 	require.Contains(t, out, "1")
 }
+
+func TestDecodeSourceRejectsANonObjectSource(t *testing.T) {
+	// A hit's _source must be a JSON object, because the document is the value. Anything
+	// else is a fault to report, not a document that carries only its id.
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "a bare number", raw: `7`},
+		{name: "an array", raw: `[1,2]`},
+		{name: "a string", raw: `"dune"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc, err := decodeSource(json.RawMessage(tt.raw), "1", numfmt.DecimalAuto)
+			require.Nil(t, doc)
+			require.ErrorContains(t, err, "decode elasticsearch _source")
+		})
+	}
+}

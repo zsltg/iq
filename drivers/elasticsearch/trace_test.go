@@ -28,4 +28,6 @@ func TestTraceTransport(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	require.Contains(t, buf.String(), "es> GET /books/_search")
+	require.True(t, rt.mu.TryLock(), "RoundTrip releases the lock it took to write the line")
+	rt.mu.Unlock()
 }

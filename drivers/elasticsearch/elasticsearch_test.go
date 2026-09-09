@@ -218,6 +218,23 @@ func TestDelete(t *testing.T) {
 	require.Equal(t, "Chapterhouse", got["keep"].(map[string]any)["title"])
 }
 
+func TestDeleteAddsUpEveryChunk(t *testing.T) {
+	// A long key list is chunked to the page size. Each chunk's counts must add to the
+	// batch totals: a delete that replaces them reports only the last chunk.
+	st := seedIndex(
+		t,
+		map[string]any{"_id": "d1", "title": "Dune"},
+		map[string]any{"_id": "d2", "title": "Neuromancer"},
+		map[string]any{"_id": "d3", "title": "Chapterhouse"},
+	)
+	ctx := skipShort(t)
+	st.pageSize = 2 // three chunks: [d1 d2] [d3 gone1] [gone2].
+
+	stat, err := st.Delete(ctx, []string{"d1", "d2", "d3", "gone1", "gone2"})
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Deleted: 3, Missing: 2}, stat)
+}
+
 func TestTypedScan(t *testing.T) {
 	st := seedIndex(t, books()...)
 	ctx := skipShort(t)

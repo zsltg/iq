@@ -1,6 +1,7 @@
 package elasticsearch
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -92,4 +93,58 @@ func TestDocumentBody(t *testing.T) {
 		_, err := documentBody(query.Record{Value: 42})
 		require.ErrorContains(t, err, "is not a JSON object")
 	})
+}
+
+func TestPutSkipsAnEmptyBatch(t *testing.T) {
+	// An empty batch has nothing to write. It must report an empty stat with no
+	// round-trip, because a _bulk request with an empty body is one the server refuses.
+	calls := 0
+	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		esJSON(w, http.StatusOK, `{"items":[]}`)
+	})
+	stat, err := st.Put(t.Context(), nil, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{}, stat)
+	require.Zero(t, calls, "an empty batch sends no request")
+}
+
+func TestPutReportsAnUnencodableDocument(t *testing.T) {
+	// A value the JSON encoder cannot write must stop the batch with a clear message.
+	// A batch that continues sends a bulk body with a missing document line, which the
+	// server then reads as a different set of actions.
+	calls := 0
+	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		esJSON(w, http.StatusOK, `{"items":[]}`)
+	})
+	batch := []query.Record{{Key: "1", Value: map[string]any{"bad": make(chan int)}}}
+	stat, err := st.Put(t.Context(), batch, query.Upsert)
+	require.Equal(t, query.WriteStat{}, stat)
+	require.ErrorContains(t, err, "encode elasticsearch bulk line")
+	require.Zero(t, calls, "a batch that cannot be encoded is never sent")
+}
+
+func TestPutReportsARefusedBulk(t *testing.T) {
+	// A refused _bulk must reach the caller. A write that ignores the refusal tallies an
+	// empty item list and reports a clean write of nothing.
+	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
+		esJSON(w, http.StatusForbidden, `{"error":{"type":"cluster_block_exception","reason":"index read-only"}}`)
+	})
+	batch := []query.Record{{Key: "1", Value: map[string]any{"title": "Dune"}}}
+	stat, err := st.Put(t.Context(), batch, query.Upsert)
+	require.Equal(t, query.WriteStat{}, stat)
+	require.ErrorContains(t, err, "elasticsearch bulk write: cluster_block_exception")
+	require.ErrorContains(t, err, "index read-only")
+}
+
+func TestDeleteReportsARefusedBulk(t *testing.T) {
+	// The same holds for a delete: a refusal must not read as "nothing was there".
+	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
+		esJSON(w, http.StatusForbidden, `{"error":{"type":"cluster_block_exception","reason":"index read-only"}}`)
+	})
+	stat, err := st.Delete(t.Context(), []string{"1"})
+	require.Equal(t, query.DeleteStat{}, stat)
+	require.ErrorContains(t, err, "elasticsearch bulk delete: cluster_block_exception")
+	require.ErrorContains(t, err, "index read-only")
 }
