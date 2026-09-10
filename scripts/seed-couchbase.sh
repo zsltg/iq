@@ -29,9 +29,12 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
   exit 1
 fi
 
-# Wait until the management port answers before provisioning.
+# Wait until the management port answers before provisioning. The probe sends the
+# admin credentials because /pools answers 401 after cluster-init: an unprovisioned
+# node accepts the request with or without them, but a restarted, already
+# provisioned container refuses the anonymous probe and the wait never completes.
 for _ in $(seq 1 30); do
-  if docker exec -i "$container" curl -fsS http://127.0.0.1:8091/pools >/dev/null 2>&1; then
+  if docker exec -i "$container" curl -fsS -u "$user:$pass" http://127.0.0.1:8091/pools >/dev/null 2>&1; then
     ready=1
     break
   fi
@@ -73,15 +76,49 @@ if [ "$seed_data" != "1" ]; then
   exit 0
 fi
 
-docker exec -i "$container" cbq -e http://127.0.0.1:8093 -u "$user" -p "$pass" -q=true --script="
-DELETE FROM \`${bucket}\`;
-UPSERT INTO \`${bucket}\` (KEY, VALUE) VALUES
+# Only the sample-data path reads a JSON response, so this check sits after the
+# provisioning-only exit. CI provisions with IQ_SEED_DATA=0 and must not need jq.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required to seed the Couchbase sample data." >&2
+  exit 1
+fi
+
+# Send one statement at a time to the query REST endpoint and read the status.
+# `cbq --script` does not divide the text on ";": it parses the two statements as one
+# and stops with `syntax error ... UPSERT (reserved word)`. It also exits 0 after that
+# fatal error, so `set -e` cannot see the failure, and the output went to /dev/null.
+# A seed that wrote no document therefore reported success.
+seed_query() {
+  local label="$1" stmt="$2" out
+  out=$(docker exec -i "$container" curl -s -u "$user:$pass" \
+    http://127.0.0.1:8093/query/service \
+    --data-urlencode "statement=$stmt" 2>/dev/null)
+  if [ "$(printf '%s' "$out" | jq -r '.status // "none"')" != "success" ]; then
+    echo "Seed ${label} failed: $(printf '%s' "$out" | jq -r '.errors[0].msg // "unknown error"')" >&2
+    exit 1
+  fi
+}
+
+seed_query delete "DELETE FROM \`${bucket}\`"
+seed_query upsert "UPSERT INTO \`${bucket}\` (KEY, VALUE) VALUES
   ('1', {'title': 'The Go Programming Language', 'author': 'Donovan and Kernighan', 'year': 2015, 'price': 39, 'tags': ['go', 'programming']}),
   ('2', {'title': 'Designing Data-Intensive Applications', 'author': 'Martin Kleppmann', 'year': 2017, 'price': 45, 'tags': ['data', 'architecture']}),
   ('3', {'title': 'A Philosophy of Software Design', 'author': 'John Ousterhout', 'year': 2018, 'price': 20, 'tags': ['design']}),
-  ('4', {'title': 'Clean Code', 'author': 'Robert C. Martin', 'year': 2008, 'price': 35, 'tags': ['craft', 'design']});
-" >/dev/null
+  ('4', {'title': 'Clean Code', 'author': 'Robert C. Martin', 'year': 2008, 'price': 35, 'tags': ['craft', 'design']})"
 
-count=$(docker exec -i "$container" cbq -e http://127.0.0.1:8093 -u "$user" -p "$pass" -q=true \
-  --script="SELECT RAW COUNT(*) FROM \`${bucket}\`;" 2>/dev/null | tr -dc '0-9')
+# Count through the query REST endpoint, not cbq: cbq writes one JSON object per
+# statement and colours its errors, so a parser that reads the whole stream can take
+# the wrong object. The endpoint answers with one JSON document. Ask for
+# request_plus, because a count through the primary index can otherwise read a stale
+# index and report fewer documents than the upsert wrote. The earlier
+# `tr -dc '0-9'` kept every digit of the response, the request id and the timings
+# included, so a failed insert still printed a long number that looked correct.
+count=$(docker exec -i "$container" curl -s -u "$user:$pass" \
+  http://127.0.0.1:8093/query/service \
+  --data-urlencode "statement=SELECT RAW COUNT(*) FROM \`${bucket}\`" \
+  --data-urlencode "scan_consistency=request_plus" 2>/dev/null | jq -r '.results[0] // "none"')
+if [ "$count" != "4" ]; then
+  echo "Seed verification failed: expected 4 documents in ${bucket}, found '${count}'." >&2
+  exit 1
+fi
 echo "Seeded example data: ${count} documents in ${bucket}. Try: iq add 'couchbase://${user}:${pass}@localhost/?bucket=${bucket}' -n books && iq --src books '.[\"2\"]'"
