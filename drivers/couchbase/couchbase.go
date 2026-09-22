@@ -108,12 +108,7 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 	if err != nil {
 		return nil, err
 	}
-	cluster, err := gocb.Connect(cc.connStr, gocb.ClusterOptions{
-		Authenticator: gocb.PasswordAuthenticator{Username: cc.username, Password: cc.password},
-		// App telemetry reports SDK metrics to the connected cluster by default since
-		// gocb v2.10; a read-only data tool has no business emitting it, so disable it.
-		AppTelemetryConfig: gocb.AppTelemetryConfig{Disabled: true},
-	})
+	cluster, err := gocb.Connect(cc.connStr, clusterOptions(cc))
 	if err != nil {
 		return nil, fmt.Errorf("connect couchbase: %w", err)
 	}
@@ -143,6 +138,18 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 		st.collection = bucket.Scope(cc.scope).Collection(cc.coll)
 	}
 	return st, nil
+}
+
+// clusterOptions builds the SDK options a parsed source connects with: the password
+// authenticator from the URL userinfo, and application telemetry off. App telemetry
+// reports SDK metrics to the connected cluster by default since gocb v2.10. A read-only
+// data tool must not emit it, and the zero value of the config leaves it on, so the flag
+// is set explicitly here and asserted by a test.
+func clusterOptions(cc connConfig) gocb.ClusterOptions {
+	return gocb.ClusterOptions{
+		Authenticator:      gocb.PasswordAuthenticator{Username: cc.username, Password: cc.password},
+		AppTelemetryConfig: gocb.AppTelemetryConfig{Disabled: true},
+	}
 }
 
 // parseURL splits a couchbase:// source URL into the gocb connection string, the
@@ -265,6 +272,21 @@ func (s *Store) keyspaceRef() string {
 	return fmt.Sprintf("`%s`.`%s`.`%s`", s.bucket, s.scope, s.coll)
 }
 
+// bulkDo runs a KV batch and refuses one the caller has already cancelled. gocb's core
+// KV provider reads BulkOpOptions.Timeout only and ignores BulkOpOptions.Context, which
+// the SDK marks UNCOMMITTED and honours on the protostellar path alone. A cancelled
+// context must therefore stop the batch here, or the read or the write completes and
+// reports no error. The SDK's own KV timeout still bounds the batch itself, and this code
+// does not override it: the caller's deadline is the longer of the two in normal use, so
+// converting it would loosen the bound rather than tighten it. Context stays set because
+// it is correct for a couchbase2:// connection.
+func (s *Store) bulkDo(ctx context.Context, ops []gocb.BulkOp, tc gocb.Transcoder) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.collection.Do(ops, &gocb.BulkOpOptions{Transcoder: tc, Context: ctx})
+}
+
 // Get fetches the documents whose ID matches one of keys and returns them keyed by ID.
 // A key with no document is absent from the map, per the KV contract. A non-JSON (binary)
 // document is rendered as a string. Empty keys short-circuit with no round-trip.
@@ -287,7 +309,7 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		ops = append(ops, op)
 	}
 	s.tracef("get %s", strings.Join(keys, " "))
-	if err := s.collection.Do(ops, &gocb.BulkOpOptions{Transcoder: rawTranscoder{}, Context: ctx}); err != nil {
+	if err := s.bulkDo(ctx, ops, rawTranscoder{}); err != nil {
 		return nil, fmt.Errorf("couchbase get: %w", err)
 	}
 	for _, op := range getOps {

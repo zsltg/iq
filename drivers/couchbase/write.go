@@ -93,7 +93,7 @@ func (s *Store) upsert(ctx context.Context, items []putItem) (query.WriteStat, e
 		ops[i] = op
 	}
 	s.tracef("upsert %d documents", len(items))
-	if err := s.collection.Do(ops, &gocb.BulkOpOptions{Context: ctx}); err != nil {
+	if err := s.bulkDo(ctx, ops, nil); err != nil {
 		return query.WriteStat{}, fmt.Errorf("couchbase upsert: %w", err)
 	}
 	var stat query.WriteStat
@@ -122,7 +122,7 @@ func (s *Store) insertOnly(ctx context.Context, items []putItem) (query.WriteSta
 		ops[i] = op
 	}
 	s.tracef("insert %d documents", len(items))
-	if err := s.collection.Do(ops, &gocb.BulkOpOptions{Context: ctx}); err != nil {
+	if err := s.bulkDo(ctx, ops, nil); err != nil {
 		return query.WriteStat{}, fmt.Errorf("couchbase insert: %w", err)
 	}
 	var stat query.WriteStat
@@ -154,7 +154,7 @@ func (s *Store) existingKeys(ctx context.Context, keys []string) (map[string]str
 		getOps = append(getOps, op)
 		ops = append(ops, op)
 	}
-	if err := s.collection.Do(ops, &gocb.BulkOpOptions{Context: ctx}); err != nil {
+	if err := s.bulkDo(ctx, ops, nil); err != nil {
 		return nil, fmt.Errorf("couchbase pre-read: %w", err)
 	}
 	for _, op := range getOps {
