@@ -147,9 +147,16 @@ func TestValidateKey(t *testing.T) {
 func TestValidateIdent(t *testing.T) {
 	require.NoError(t, validateIdent("bucket", "iq_test-1%"))
 	require.NoError(t, validateIdent("collection", "_default"))
+	require.NoError(t, validateIdent("bucket", "azAZ09"), "both ends of each accepted range are valid")
+	require.NoError(t, validateIdent("bucket", "has.dot"), "a dot is an accepted character")
 	require.NoError(t, validateIdent("bucket", strings.Repeat("a", maxIdentBytes)), "exactly at the limit is valid")
 	require.Error(t, validateIdent("bucket", ""))
 	require.Error(t, validateIdent("bucket", strings.Repeat("a", maxIdentBytes+1)), "one over the limit is rejected")
 	require.Error(t, validateIdent("bucket", "has`tick"))
 	require.Error(t, validateIdent("bucket", "has space"))
+	// The character directly above each accepted range. A range that reaches too far
+	// accepts one of these and lets an unexpected character into a keyspace name.
+	require.Error(t, validateIdent("bucket", "has{brace"), "the character above the lowercase range is rejected")
+	require.Error(t, validateIdent("bucket", "has[bracket"), "the character above the uppercase range is rejected")
+	require.Error(t, validateIdent("bucket", "has:colon"), "the character above the digit range is rejected")
 }

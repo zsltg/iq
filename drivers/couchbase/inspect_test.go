@@ -1,6 +1,8 @@
 package couchbase
 
 import (
+	"context"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,32 +23,109 @@ func TestInspect(t *testing.T) {
 		require.NotEmpty(t, nodes)
 	})
 
-	t.Run("buckets includes the shared bucket", func(t *testing.T) {
+	t.Run("buckets reports a name, a type and a quota", func(t *testing.T) {
 		res, err := st.InspectBuckets(ctx)
 		require.NoError(t, err)
 		var names []string
+		var shared map[string]any
 		for _, b := range res.(map[string]any)["buckets"].([]any) {
-			names = append(names, b.(map[string]any)["name"].(string))
+			entry := b.(map[string]any)
+			name := entry["name"].(string)
+			names = append(names, name)
+			if name == sharedBucket {
+				shared = entry
+			}
 		}
 		require.Contains(t, names, sharedBucket)
+		// The report is a contract: each of the three fields must be there and carry a
+		// value, and the buckets come back in name order.
+		require.Contains(t, shared, "type")
+		require.NotEmpty(t, shared["type"])
+		require.Contains(t, shared, "ramQuotaMB")
+		require.NotZero(t, shared["ramQuotaMB"])
+		require.True(t, sort.StringsAreSorted(names), "buckets are reported in name order")
 	})
 
-	t.Run("collections lists the default scope", func(t *testing.T) {
+	t.Run("collections lists the scope and its collections", func(t *testing.T) {
 		res, err := st.InspectCollections(ctx)
 		require.NoError(t, err)
 		require.Equal(t, sharedBucket, res.(map[string]any)["bucket"])
 		var scopes []string
+		var def map[string]any
 		for _, s := range res.(map[string]any)["scopes"].([]any) {
-			scopes = append(scopes, s.(map[string]any)["scope"].(string))
+			entry := s.(map[string]any)
+			scope := entry["scope"].(string)
+			scopes = append(scopes, scope)
+			if scope == defaultScope {
+				def = entry
+			}
 		}
 		require.Contains(t, scopes, defaultScope)
+		// The collection this test seeded lives in the default scope, so the scope's
+		// collection list must name it.
+		require.Contains(t, def, "collections")
+		require.Contains(t, def["collections"], st.coll)
 	})
 
-	t.Run("indexes lists the primary index", func(t *testing.T) {
+	t.Run("indexes lists the primary index of this bucket only", func(t *testing.T) {
 		res, err := st.InspectIndexes(ctx)
 		require.NoError(t, err)
-		require.NotEmpty(t, res.(map[string]any)["indexes"])
+		indexes := res.(map[string]any)["indexes"].([]any)
+		require.NotEmpty(t, indexes)
+		// A bucket-selected source reports its own bucket's indexes. An index of a
+		// bucket-level keyspace carries no bucket_id, so its keyspace_id names the bucket.
+		for _, row := range indexes {
+			idx := row.(map[string]any)
+			owner, ok := idx["bucket_id"]
+			if !ok {
+				owner = idx["keyspace_id"]
+			}
+			require.Equal(t, sharedBucket, owner, "a bucket-scoped index list is filtered to that bucket")
+		}
 	})
+}
+
+// TestInspectContextCancelled pins that the context each probe is handed reaches its
+// request: a context cancelled before the probe starts must surface the cancellation
+// instead of a completed read. It also pins that each probe names itself in the error.
+func TestInspectContextCancelled(t *testing.T) {
+	ctx := skipShort(t)
+	st := openIntegration(t, collName(t))
+	cctx, cancel := context.WithCancel(ctx)
+	cancel() // cancel before the first probe issues its request
+
+	tests := []struct {
+		name string
+		op   func() error
+		want string
+	}{
+		{
+			name: "cluster",
+			op:   func() error { _, err := st.InspectCluster(cctx); return err },
+			want: "couchbase inspect cluster",
+		},
+		{
+			name: "buckets",
+			op:   func() error { _, err := st.InspectBuckets(cctx); return err },
+			want: "couchbase inspect buckets",
+		},
+		{
+			name: "collections",
+			op:   func() error { _, err := st.InspectCollections(cctx); return err },
+			want: "couchbase inspect collections",
+		},
+		{
+			name: "indexes",
+			op:   func() error { _, err := st.InspectIndexes(cctx); return err },
+			want: "couchbase inspect indexes",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.ErrorContains(t, tt.op(), tt.want,
+				"a cancelled context must surface as an error, not a completed probe")
+		})
+	}
 }
 
 // TestInspectIndexesNoBucket confirms a bucket-less source lists the cluster's indexes

@@ -46,7 +46,10 @@ func TestRawTranscoder(t *testing.T) {
 		require.ErrorIs(t, rawTranscoder{}.Decode([]byte(`x`), 0, &out), errNonBytesTarget)
 	})
 	t.Run("encode is unsupported", func(t *testing.T) {
-		_, _, err := rawTranscoder{}.Encode("x")
+		out, flags, err := rawTranscoder{}.Encode("x")
 		require.ErrorIs(t, err, errEncodeUnsupported)
+		// A refusal encodes nothing, so it reports no bytes and no datatype flag.
+		require.Nil(t, out)
+		require.Zero(t, flags)
 	})
 }

@@ -208,6 +208,26 @@ func TestScanFilteredPrefilterEquivalence(t *testing.T) {
 	}
 }
 
+// TestScanFilteredSkipsMidPage pins that a row the prefilter drops only drops that row:
+// the walk must read the rows behind it in the same page. The equivalence test above
+// pages one row at a time, where dropping the row and ending the page have the same
+// result, so this case puts every document in one page and drops the first of them.
+func TestScanFilteredSkipsMidPage(t *testing.T) {
+	fixture := prefilterDocs()
+	st := seedCollection(t, fixture)
+	ctx := skipShort(t)
+	require.GreaterOrEqual(t, st.pageSize, len(fixture), "the whole corpus must land in one page")
+
+	// != 2015 drops document "1", the first by ID, and keeps the four behind it.
+	got := collectScan(ctx, t, func(c context.Context, fn func(map[string]any) error) error {
+		return st.ScanFiltered(c, predicate.Ne{Path: []string{"year"}, Value: 2015.0}, fn)
+	})
+	require.Equal(t, []string{"2", "3", "4", "5"}, sortedAnyKeys(got),
+		"the rows behind a dropped row must still be delivered")
+	require.Equal(t, len(fixture), st.prefilterChecked, "every row is evaluated")
+	require.Equal(t, 1, st.prefilterSkipped, "exactly the one provable non-match is dropped")
+}
+
 // collectScan drains a scan into one {key: value} map, asserting the driver never hands a
 // caller an empty batch — the guard that a page emptied by the prefilter is dropped.
 func collectScan(ctx context.Context, t *testing.T, scan func(context.Context, func(map[string]any) error) error) map[string]any {

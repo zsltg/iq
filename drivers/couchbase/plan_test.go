@@ -82,6 +82,13 @@ func TestExplainPlan(t *testing.T) {
 		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, true)
 		require.Contains(t, plan.Ops[1], "materialized")
 	})
+
+	t.Run("a non-streamable query materializes", func(t *testing.T) {
+		// Either condition materializes on its own: a bounded query whose shape the
+		// engine cannot stream holds the whole result in memory as well.
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: false}, nil, false)
+		require.Contains(t, plan.Ops[1], "materialized")
+	})
 }
 
 func TestExplainWrite(t *testing.T) {
@@ -113,6 +120,7 @@ func TestQueryErrorNoIndexHint(t *testing.T) {
 		qerr := &gocb.QueryError{Errors: []gocb.QueryErrorDesc{{Code: queryNoIndex, Message: "No index available"}}}
 		err := s.queryError("couchbase scan", qerr)
 		require.Contains(t, err.Error(), "CREATE PRIMARY INDEX ON `b`.`_default`.`orders`")
+		require.ErrorIs(t, err, qerr, "the hint adds context and keeps the cause reachable")
 	})
 
 	t.Run("other errors are wrapped without the hint", func(t *testing.T) {

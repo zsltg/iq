@@ -112,6 +112,16 @@ func TestToWhere(t *testing.T) {
 			wantNarrow: true,
 		},
 		{
+			// A null equality is not a value an IN list can hold: it widens to null-or-
+			// missing, which the general disjunction renders and the IN collapse must
+			// decline.
+			name:       "or with a null equality stays a disjunction",
+			node:       predicate.Or{predicate.Eq{Path: []string{"a"}, Value: nil}, predicate.Eq{Path: []string{"a"}, Value: 1}},
+			wantWhere:  "((`t`.`a` IS NULL OR `t`.`a` IS MISSING) OR `t`.`a` = $p0)",
+			wantParams: map[string]any{"p0": 1},
+			wantNarrow: true,
+		},
+		{
 			name:       "mixed or disjoins branches",
 			node:       predicate.Or{predicate.Eq{Path: []string{"a"}, Value: 1}, predicate.Exists{Path: []string{"b"}}},
 			wantWhere:  "(`t`.`a` = $p0 OR `t`.`b` IS NOT MISSING)",
