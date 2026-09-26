@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/url"
@@ -197,7 +198,11 @@ func TestClose(t *testing.T) {
 	require.NoError(t, st.Close(), "closing a healthy store returns no error")
 	// A second close finds the cluster already shut down. The SDK reports it, and the
 	// driver must pass that report on instead of hiding it.
-	require.ErrorContains(t, st.Close(), "close couchbase")
+	err = st.Close()
+	require.ErrorContains(t, err, "close couchbase")
+	// The message alone does not prove the wrap: %v and %w give the same text. The SDK
+	// error must stay reachable as the cause.
+	require.Error(t, errors.Unwrap(err), "close must keep the SDK error as its cause")
 }
 
 func TestQueryArgErrors(t *testing.T) {
@@ -330,6 +335,7 @@ func TestOpenMissingBucket(t *testing.T) {
 		_ = st.Close()
 	}
 	require.ErrorContains(t, err, "connect couchbase")
+	require.Error(t, errors.Unwrap(err), "open must keep the SDK error as its cause")
 	require.Less(t, time.Since(start), connectTimeout, "the caller's deadline must bound the bucket probe")
 }
 
@@ -488,7 +494,11 @@ func TestOpsAfterClose(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.ErrorContains(t, tt.op(), tt.want)
+			err := tt.op()
+			require.ErrorContains(t, err, tt.want)
+			// The message alone does not prove the wrap: %v and %w give the same text. The
+			// SDK error must stay reachable as the cause.
+			require.Error(t, errors.Unwrap(err), "the op must keep the SDK error as its cause")
 		})
 	}
 }

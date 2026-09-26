@@ -121,10 +121,13 @@ func TestParseURLErrors(t *testing.T) {
 		name    string
 		rawURL  string
 		address string
+		want    string
 	}{
 		{name: "wrong scheme", rawURL: "mongodb://localhost/?bucket=iq"},
 		{name: "no host", rawURL: "couchbase:///?bucket=iq"},
-		{name: "too many collection segments", rawURL: "couchbase://localhost/?bucket=iq&collection=a.b.c"},
+		// Each segment is a valid name, so only the segment-count check can reject this
+		// spec. The message pins that check: without it the name checks still fail.
+		{name: "too many collection segments", rawURL: "couchbase://localhost/?bucket=iq&collection=a.b.c", want: "must be collection or scope.collection"},
 		{name: "hostile bucket backtick", rawURL: "couchbase://localhost/?bucket=iq`drop"},
 		{name: "hostile collection space", rawURL: "couchbase://localhost/?bucket=iq&collection=a b"},
 		{name: "hostile scope quote", rawURL: "couchbase://localhost/?bucket=iq", address: "a'b.c"},
@@ -133,6 +136,9 @@ func TestParseURLErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := parseURL(tt.rawURL, tt.address)
 			require.Error(t, err)
+			if tt.want != "" {
+				require.ErrorContains(t, err, tt.want)
+			}
 		})
 	}
 }
