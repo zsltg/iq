@@ -338,6 +338,53 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 	return s.scan(ctx, "", nil, nil, fn)
 }
 
+// pageRows is the part of a query result that a scan page reads. *gocb.QueryResult
+// satisfies it. The interface lets a test drive the row-decode and stream-error paths,
+// which a live cluster cannot produce for the statement that scan builds.
+type pageRows interface {
+	Next() bool
+	Row(valuePtr any) error
+	Err() error
+	Close() error
+}
+
+// readPage reads one keyset page from rows and always closes rows. It returns the
+// decoded documents, the last ID read and the number of rows read. The count includes
+// rows that the prefilter drops, so the caller advances the cursor past them too.
+func (s *Store) readPage(rows pageRows, matcher *rawpred.Matcher) (map[string]any, string, int, error) {
+	defer func() { _ = rows.Close() }()
+	page := make(map[string]any, s.pageSize)
+	last := ""
+	n := 0
+	for rows.Next() {
+		var row struct {
+			K string          `json:"k"`
+			V json.RawMessage `json:"v"`
+		}
+		if err := rows.Row(&row); err != nil {
+			return nil, "", 0, fmt.Errorf("couchbase scan: %w", err)
+		}
+		// Advance the keyset cursor for every row read, dropped or kept, so a
+		// prefiltered-out document never stalls or rewinds the walk.
+		n++
+		last = row.K
+		if matcher != nil {
+			s.prefilterChecked++
+			if matcher.Match(row.V) == rawpred.CannotMatch {
+				s.prefilterSkipped++
+				continue
+			}
+		}
+		page[row.K] = decodeValue(row.V, s.decimal)
+	}
+	// The query service can answer HTTP 200 and report a failure in the streamed
+	// payload. That failure shows only here, after the loop.
+	if err := rows.Err(); err != nil {
+		return nil, "", 0, s.queryError("couchbase scan", err)
+	}
+	return page, last, n, nil
+}
+
 // scan runs the keyset walk shared by ScanBatches and ScanFiltered. where, when
 // non-empty, is an extra predicate ANDed into each page's WHERE (its named parameters
 // ride in params); it must never reference the reserved $after/$page names. Every
@@ -372,36 +419,10 @@ func (s *Store) scan(ctx context.Context, where string, params map[string]any, m
 		if err != nil {
 			return err
 		}
-		page := make(map[string]any, s.pageSize)
-		last := ""
-		n := 0
-		for rows.Next() {
-			var row struct {
-				K string          `json:"k"`
-				V json.RawMessage `json:"v"`
-			}
-			if err := rows.Row(&row); err != nil {
-				_ = rows.Close()
-				return fmt.Errorf("couchbase scan: %w", err)
-			}
-			// Advance the keyset cursor for every row read, dropped or kept, so a
-			// prefiltered-out document never stalls or rewinds the walk.
-			n++
-			last = row.K
-			if matcher != nil {
-				s.prefilterChecked++
-				if matcher.Match(row.V) == rawpred.CannotMatch {
-					s.prefilterSkipped++
-					continue
-				}
-			}
-			page[row.K] = decodeValue(row.V, s.decimal)
+		page, last, n, err := s.readPage(rows, matcher)
+		if err != nil {
+			return err
 		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return s.queryError("couchbase scan", err)
-		}
-		_ = rows.Close()
 
 		if len(page) > 0 {
 			if err := fn(page); err != nil {
