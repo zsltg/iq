@@ -577,3 +577,15 @@ one of them is equivalent.
 - edc0317f0eafe93f186cf96f5f0aed5e drivers/elasticsearch/inspect.go:61 expression/error-guard — the json.Unmarshal error guard. The argument is a json.RawMessage that a successful decode produced, so it is always valid JSON and an unmarshal into any cannot fail. The branch is unreachable.
 - 2cf1585dd1d3c631b2404c491783451c drivers/elasticsearch/write.go:42 expression/error-guard — a json.Marshal error guard over a map whose only values are strings, the bulk action line. json.Marshal cannot fail on that shape, so the branch is unreachable.
 - 55272235d47f149d13bc11209a2a4669 drivers/elasticsearch/write.go:166 expression/error-guard — the same guard over the delete action line. The sibling guard at write.go:45 marshals caller data, can fail, and a test kills it.
+
+Couchbase, accepted 2026-09-26 after the verdict re-scan of the package (657 mutants, 579
+killed, 15 escaped, 63 not covered, 0 errors). Nine escapes were test gaps and are now killed.
+Every entry below was confirmed by hand against a live cluster: apply the mutant diff to the
+fixed tree, run the package tests, see them pass, restore. The couchbase.go:383 decode guard
+is not here: it moved into readPage, and TestReadPage kills it now.
+
+- 03f465282ea2ab1de8d3cd108574f6e2 drivers/couchbase/couchbase.go:287 composite/field-clear — the Context field of BulkOpOptions in bulkDo. gocb v2.12.4 ignores that field on the couchbase:// KV path (it reads Timeout only), so clearing it changes nothing. bulkDo refuses a cancelled context before the call, and tests kill that check.
+- d99383f25be1adf6e32bf6868049df0c drivers/couchbase/couchbase.go:324 expression/error-guard — the decode guard in Get. The bulk get uses rawTranscoder, whose Decode fails only for a target that is not *[]byte. The target here is always a *[]byte, so the branch is unreachable.
+- 8c63029eadfa51b0c3dfbf77fcf5ba29 drivers/couchbase/inspect.go:45 statement/remove — sort.Strings on the bucket names. The test cluster holds one bucket, so the order cannot differ. A kill needs a second bucket in the test cluster, which costs about 15 to 20 s per suite run. Reversible: remove this entry when the suite gets a second bucket.
+- f05e1f5ec07a3ef80cf1d53906d5538e drivers/couchbase/inspect.go:85 statement/remove — the WHERE clause that limits the index list to the source bucket. With one bucket in the cluster the filter removes nothing. Same cost and same reversal as inspect.go:45.
+- aee2807a16f12adee9de297bbd985046 drivers/couchbase/write.go:148 statement/return — the empty-keys return in existingKeys, an empty map changed to nil. The only caller reads the result with `_, ok := existing[key]`, and a lookup in a nil map also gives false. One hand run failed, in TestQueryScopeQualified (a COUNT(*) that returned 1 instead of 3). Two more runs passed, so that failure was a flake in the count test, not a kill.

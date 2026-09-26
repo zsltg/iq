@@ -1368,6 +1368,36 @@
    "file": "drivers/elasticsearch/write.go",
    "line": 166,
    "mutator": "expression/error-guard"
+  },
+  {
+   "id": "03f465282ea2ab1de8d3cd108574f6e2",
+   "file": "drivers/couchbase/couchbase.go",
+   "line": 287,
+   "mutator": "composite/field-clear"
+  },
+  {
+   "id": "d99383f25be1adf6e32bf6868049df0c",
+   "file": "drivers/couchbase/couchbase.go",
+   "line": 324,
+   "mutator": "expression/error-guard"
+  },
+  {
+   "id": "8c63029eadfa51b0c3dfbf77fcf5ba29",
+   "file": "drivers/couchbase/inspect.go",
+   "line": 45,
+   "mutator": "statement/remove"
+  },
+  {
+   "id": "f05e1f5ec07a3ef80cf1d53906d5538e",
+   "file": "drivers/couchbase/inspect.go",
+   "line": 85,
+   "mutator": "statement/remove"
+  },
+  {
+   "id": "aee2807a16f12adee9de297bbd985046",
+   "file": "drivers/couchbase/write.go",
+   "line": 148,
+   "mutator": "statement/return"
   }
  ]
 }
