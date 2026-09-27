@@ -35,12 +35,14 @@ on:
 permissions:
   contents: read
 
-# The weekly scan reads and force-pushes the `badges` branch, so two scans must not
-# overlap: a scheduled run and a manual dispatch share one group and queue (a running scan
-# is never cancelled; GitHub keeps at most one run waiting in a group and cancels an older
-# waiting run). A push or pull request run gets a group of its own, so it never waits.
+# The weekly scan reads and force-pushes the `badges` branch, so two scans of one ref must
+# not overlap: scheduled runs and manual dispatches of the same ref share one group and
+# queue (a running scan is never cancelled; GitHub keeps at most one run waiting in a group
+# and cancels an older waiting run). The ref is in the key, so a dispatch on a branch never
+# replaces a waiting scan of main. A push or pull request run gets a group of its own, so
+# it never waits.
 concurrency:
-  group: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'deep-mutation-scan' || format('ci-{0}', github.run_id) }}
+  group: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('deep-mutation-scan-{0}', github.ref) || format('ci-{0}', github.run_id) }}
   cancel-in-progress: false
 
 env:

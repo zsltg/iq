@@ -36,6 +36,11 @@ else
   : "${GITHUB_TOKEN:?mutation-state: GITHUB_TOKEN is not set}"
   remote="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
   auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
+  # GitHub Actions masks the token, but not its base64 form. Register that value as a
+  # secret of the log before any use, like actions/checkout.
+  if [[ "${GITHUB_ACTIONS-}" == "true" ]]; then
+    echo "::add-mask::${auth}"
+  fi
   export GIT_CONFIG_COUNT=1
   export GIT_CONFIG_KEY_0="http.${GITHUB_SERVER_URL}/.extraheader"
   export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${auth}"
@@ -44,13 +49,14 @@ fi
 export GIT_TERMINAL_PROMPT=0
 
 # retry <description> <command...>: run the command up to three times. The exit status of
-# the last attempt is returned.
+# the last attempt is returned. The stderr of the command is discarded (git can print the
+# remote), but the messages of this function stay visible; they hold no token.
 retry() {
   local what="$1" attempt status
   shift
   for attempt in 1 2 3; do
     status=0
-    "$@" || status=$?
+    "$@" 2>/dev/null || status=$?
     [[ "$status" -eq 0 ]] && return 0
     [[ "$attempt" -eq 3 ]] && break
     echo "mutation-state: $what failed (attempt $attempt, exit $status); trying again" >&2
@@ -91,7 +97,7 @@ fetch)
     exit 1
   fi
   git init -q --bare "$work/repo"
-  if ! retry "fetch" git -C "$work/repo" fetch -q --depth=1 "$remote" "refs/heads/$branch" 2>/dev/null; then
+  if ! retry "fetch" git -C "$work/repo" fetch -q --depth=1 "$remote" "refs/heads/$branch"; then
     echo "mutation-state: cannot fetch the $branch branch" >&2
     exit 1
   fi
@@ -110,7 +116,7 @@ publish)
   git -C "$work/tree" config user.email ci@iq
   git -C "$work/tree" add -A
   git -C "$work/tree" commit -qm "ci: mutation state from ${GITHUB_SHA:-$(git rev-parse HEAD)}"
-  if ! retry "push" git -C "$work/tree" push -q --force "$remote" "$branch" 2>/dev/null; then
+  if ! retry "push" git -C "$work/tree" push -q --force "$remote" "$branch"; then
     echo "mutation-state: cannot push the $branch branch" >&2
     exit 1
   fi
