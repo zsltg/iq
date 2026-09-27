@@ -16,11 +16,11 @@ never changed by them.
 | --- | --- | --- |
 | `-v`, `--verbose` | off | print diagnostics (source resolved, store opened, query complete with scan count and elapsed) to stderr, plus the [query plan](query-plan.md) and a live backend command trace (disables the progress spinner) :material-earth:{ title="Global flag" } |
 | `--log` | off | enable logging to a file (also via `IQ_LOG`) :material-earth:{ title="Global flag" } |
-| `--log.file` | `<user cache dir>/iq/iq.log` | log file path; an empty value disables logging :material-earth:{ title="Global flag" } |
+| `--log.file` | `<user cache dir>/iq/iq.log` | log file path, an empty value disables logging :material-earth:{ title="Global flag" } |
 | `--log.level` | `DEBUG` | `DEBUG`, `INFO`, `WARN`, or `ERROR` :material-earth:{ title="Global flag" } |
 | `--log.format` | `text` | `text` or `json` :material-earth:{ title="Global flag" } |
 | `--error.format` | `text` | error output format: `text` or `json` :material-earth:{ title="Global flag" } |
-| `--error.stack` | off | print the wrapped error cause chain to stderr (may include backend internals; credentials stay redacted) :material-earth:{ title="Global flag" } |
+| `--error.stack` | off | print the wrapped error cause chain to stderr (can include backend internals, credentials stay redacted) :material-earth:{ title="Global flag" } |
 | `--no-progress` | off | disable the scan progress spinner (`-v` disables it too), see [Global flags](global-flags.md#global-flags) :material-earth:{ title="Global flag" } |
 | `--error.format.text.verbose` | on | for a jq syntax error in text format, draw a caret span under the offending token :material-earth:{ title="Global flag" } |
 | `--debug.pprof` | off | write a runtime profile of the whole run: `cpu`, `mem`, `block`, `mutex`, `goroutine`, `thread`, or `trace` :material-earth:{ title="Global flag" } |

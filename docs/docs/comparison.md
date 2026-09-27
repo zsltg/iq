@@ -5,7 +5,7 @@ icon: material/scale-balance
 # Comparison
 
 How `iq` relates to other query tools. Its niche is narrow, a single static binary that gives
-NoSQL stores one jq-based query surface, the filter running client-side over normalized JSON so
+NoSQL stores one jq-based query interface, the filter running client-side over normalized JSON so
 semantics are identical across backends.
 
 ## By job
@@ -49,17 +49,17 @@ what you run.
 | [MCP Toolbox for Databases](https://github.com/googleapis/genai-toolbox) | native per-backend, as MCP tools | ● | ● | — | per backend | server |
 
 Placement is by each tool's primary targets, several (Trino, Drill, OctoSQL, DuckDB) partially
-reach neighbouring columns via connectors or extensions, and `iq` reaches files the same way, a
+cover neighbouring columns via connectors or extensions, and `iq` covers files the same way, a
 read-only `file://` source over database dumps, not arbitrary files.
 
-`sq`, the tool `iq`'s command surface is modelled on, unifies relational databases and files,
-and never reaches NoSQL. Language specs and embedded libraries (PartiQL, SQL++ / N1QL, JSONiq,
+`sq`, the tool `iq`'s command set is modelled on, unifies relational databases and files,
+and never covers NoSQL. Language specs and embedded libraries (PartiQL, SQL++ / N1QL, JSONiq,
 Apache Calcite, GraphQL federation) span nested and tabular data too, but they are
 specifications or components inside an engine, not something anyone runs instead of a CLI.
 
 The takeaway is the NoSQL column paired with footprint, among these tools, `iq` is the only
-single binary that gives NoSQL stores one query language. What reaches further runs as a server
+single binary that gives NoSQL stores one query language. What covers more runs as a server
 (Trino, Drill, the virtualization platforms, the MCP Toolbox), and what is as light either
 speaks each backend's own dialect (usql, the universal clients) or targets files and relational
 stores instead (sq, DuckDB, dsq). Redpanda Connect is a single binary too, but Bloblang maps
-records through a pipeline, it is not a query surface you type at a shell.
+records through a pipeline, it is not a query language you type at a shell.

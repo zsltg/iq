@@ -63,7 +63,7 @@ iq --src books '.[]' --jsona | quicktype -l typescript --top-level Book -o book.
 
 The schema-fed variant (`iq schema … | quicktype -s schema`, see
 [Schema](sources.md#schema-schema)) types the whole inferred shape, this one
-types what a query actually returned, pipe a bounded result, not a scan of a
+types what a query returned, pipe a bounded result, not a scan of a
 huge keyspace.
 
 ## gron

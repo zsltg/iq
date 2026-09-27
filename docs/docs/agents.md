@@ -11,7 +11,7 @@ backends and their dump files, JSON in and JSON out (`--jsonl`, `--compact`,
 shell's formatting.
 
 `--explain` is a dry run that never connects, so a plan can be inspected before
-a single byte moves. `--dry-run` reports what a write would do without doing
+a single byte moves. `--dry-run` reports the effect of a write without doing
 it.
 
 The destructive commands are capability-gated, so one against a backend that
@@ -19,7 +19,7 @@ does not implement the port fails with a clear message instead of emulating it
 and every error is redacted, so a password in a source URI never reaches a
 transcript.
 
-Queries are read-only, and a filter that would materialize a whole keyspace is
+Queries are read-only, and a filter that must materialize a whole keyspace is
 refused unless `--unbounded` is passed.
 
 ## Skill
@@ -68,7 +68,7 @@ JSON-RPC over stdin and stdout.
 
 It is the CLI's operations as tools, over the same saved sources and the same
 engine, so an agent that cannot run shell commands still gets the whole
-surface. It targets the 2026-07-28 specification revision and negotiates back
+command set. It targets the 2026-07-28 specification revision and negotiates back
 to 2025-11-25 for an older client.
 
 ### Client configuration
@@ -158,7 +158,7 @@ Any other client that takes a stdio server block needs the same two facts, the
 command `iq` and the arguments `mcp --timeout 30s`.
 
 The server inherits the saved sources and the keyring of whoever starts it, so
-point an agent at a config holding only the sources it may reach rather than
+point an agent at a config holding only the sources it is allowed to use rather than
 your own:
 
 ```sh
@@ -166,7 +166,7 @@ iq mcp --config ~/.config/iq/agent.toml --timeout 30s
 ```
 
 Register that config's sources with the same `iq add --config
-~/.config/iq/agent.toml ...` you would use anywhere else.
+~/.config/iq/agent.toml ...` you use anywhere else.
 
 ### Safety model
 
@@ -178,11 +178,11 @@ Register that config's sources with the same `iq add --config
   `iq_data_delete` (and permits `iq_insert`'s `replace`). The flag is
   repeatable.
 - **Every result is bounded.** `--max-items` (200) and `--max-bytes` (256 KiB,
-  roughly 64k tokens) are hard caps. A per-call `max_items` or `max_bytes` may
+  roughly 64k tokens) are hard caps. A per-call `max_items` or `max_bytes` can
   only lower them, never raise them. A capped result comes back with
   `truncated: true` rather than an error, so the agent knows there was more.
 - **Every call is bounded.** The inherited `--timeout` bounds each call, and a
-  per-call `timeout` may only shorten it.
+  per-call `timeout` can only shorten it.
 - **Confirmations.** A destructive call without `confirm: true` does not
   proceed. Where the client can ask its user, the server returns an
   input-required result carrying the question and the client retries the call
@@ -198,19 +198,19 @@ Register that config's sources with the same `iq add --config
 ### Tools
 
 `readOnly` marks a tool that never modifies anything. `destructive` marks one
-that may. Every tool declares `openWorldHint: false`, the sources are a closed,
+that can. Every tool declares `openWorldHint: false`, the sources are a closed,
 configured set. The annotations are display hints, not the gate, `--allow` is.
 
 | Tool | Allowed by | Annotations | What it does |
 | --- | --- | --- | --- |
-| `iq_sources` | always | readOnly, idempotent | The handles this server may reach, with each URI's password redacted |
+| `iq_sources` | always | readOnly, idempotent | The handles this server can access, with each URI's password redacted |
 | `iq_ping` | always | readOnly, idempotent | Round-trip one cheap backend command and report the time |
 | `iq_explain` | always | readOnly, idempotent | The access plan for a filter, without connecting |
-| `iq_query` | always | readOnly, idempotent | Run a jq filter; returns `{items, count, truncated}` |
+| `iq_query` | always | readOnly, idempotent | Run a jq filter. Returns `{items, count, truncated}` |
 | `iq_inspect` | always | readOnly, idempotent | A backend's native introspection, optionally narrowed by `only` |
 | `iq_schema` | always | readOnly, idempotent | A draft 2020-12 JSON Schema inferred from a sample |
 | `iq_diff` | always | readOnly, idempotent | Compare two sources by data, stats, or inferred schema |
-| `iq_insert` | `--allow writes` | destructive, idempotent | Copy items into another source; `no_overwrite` defaults to true |
+| `iq_insert` | `--allow writes` | destructive, idempotent | Copy items into another source. `no_overwrite` defaults to true |
 | `iq_exec` | `--allow exec` | destructive | Forward a command to the backend verbatim |
 | `iq_data_clear` | `--allow destructive` | destructive, idempotent | Empty a container, keeping it |
 | `iq_data_drop` | `--allow destructive` | destructive, idempotent | Remove a container entirely |
@@ -219,7 +219,7 @@ configured set. The annotations are display hints, not the gate, `--allow` is.
 Every tool returns `structuredContent` against a declared `outputSchema`, plus
 the same JSON in a text block for a client that reads only unstructured content.
 `tools/list` is sorted by name and cacheable for an hour with a private scope,
-since only a restart can change it.
+because only a restart can change it.
 
 ### Limits
 

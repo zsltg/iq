@@ -9,8 +9,8 @@ once, then select by name or as the default.
 
 !!! note "Configuration"
 
-    Sources live in a TOML file at `<os user config dir>/iq/iq.toml` (e.g.
-    `~/.config/iq/iq.toml`), written `0600` because a URI may carry a password.
+    Sources live in a TOML file at `<os user config dir>/iq/iq.toml` (for example
+    `~/.config/iq/iq.toml`), written `0600` because a URI can carry a password.
     Override the path with `IQ_CONFIG`, or per run with the global
     `--config <path>` flag (which wins over `IQ_CONFIG`).
 
@@ -56,7 +56,7 @@ iq add -p 'mongodb://root@localhost:27018/iq?authSource=admin&collection=books'
 
 !!! tip "Escaping the source URI"
 
-    If the URI contains `?` (and `&`) your shell might interpret it as a
+    If the URI contains `?` (and `&`) your shell can interpret it as a
     wildcard, operator or separator, so you must escape it (for example `iq add
     'mongodb://localhost:27017/iq?collection=books'`).
 
@@ -157,7 +157,7 @@ With no arguments the active source is pinged, otherwise each argument is a
 source handle or a group (pinging every member). `--all` pings every saved
 source and takes no arguments.
 
-Each check is bounded by `--timeout`. Exits with a non-zero exit code if any
+`--timeout` bounds each check. Exits with a non-zero exit code if any
 source is unreachable.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
@@ -208,7 +208,7 @@ Show or set the active source.
 [Global flags](global-flags.md#global-flags).
 
 Once a source is active, every query runs against it. Select a different source for a single
-command with `--src`/`-s`, without changing the active one; address a MongoDB collection or a
+command with `--src`/`-s`, without changing the active one. Address a MongoDB collection or a
 Cassandra table with a dotted `handle.collection` / `handle.table` suffix. With no active source
 and no `--src` the command errors, there is no ambient URI or environment fallback.
 
@@ -267,7 +267,7 @@ iq inspect shop --only dbStats,serverStatus
 Compare two saved sources across the layers a schemaless store can meaningfully
 compare. Selecting no layer defaults to `--data`, layers combine.
 
-Each side may carry a `jq` filter, so a diff can be scoped to part of a
+Each side can carry a `jq` filter, so a diff can be scoped to part of a
 keyspace. Per side as `<source>=<jq>` or for both at once with `--filter`,
 a side's own filter takes precedence.
 
@@ -278,7 +278,7 @@ Exits non-zero when the sources differ and zero when they match
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
 | | `--data` | ✓ | diff items key by key (cross-driver allowed, for example MongoDB `_id` and Redis key) |
-| | `--filter <string>` | none | jq filter you root at `.[]`, scoping both sides; a spec's own `source=<jq>` overrides it for that side |
+| | `--filter <string>` | none | jq filter you root at `.[]`, scoping both sides, a spec's own `source=<jq>` overrides it for that side |
 | | `--patch` | ✗ | emit an RFC 6902 JSON Patch[^1] that transforms the left source into the right (single layer only, for `--data` the pointers read `/<key>/<field>` over the whole keyspace map, excludes `--json`/`--yaml`/`--set-arrays`) |
 | | `--schema` | ✗ | diff an inferred field/type shape (cross-driver allowed) based on a sample (use `--sample` to change the sample size) |
 | | `--sample <int>` | `1000` | max items sampled per side for --schema (0 = all) |
@@ -307,7 +307,7 @@ iq diff 'prod=.["orders:42"]' 'staging=.["orders:42"]'
 
     `iq diff prod staging --filter '.[] | select(.status == "new")'`
 
-    A filter may instead name a single key (`prod=.["orders:42"]`) to compare
+    A filter can instead name a single key (`prod=.["orders:42"]`) to compare
     one document, where an absent key reports as removed rather than as a
     change to null.
 
@@ -318,12 +318,12 @@ iq diff 'prod=.["orders:42"]' 'staging=.["orders:42"]'
 !!! warning "Data diff"
 
     `--data` without filtering reads both keyspaces fully into memory, so it
-    costs memory proportional to the two sources, a deliberate tradeoff, since
+    costs memory proportional to the two sources, a deliberate tradeoff, because
     an added/removed diff needs both key sets at once.
 
     A filter narrows that read, and a pushable one narrows it at the backend.
 
-    Cross driver could be useful for verifying a migration, but the identity
+    Cross driver can be useful for verifying a migration, but the identity
     match is only as meaningful as the keys lining up, a power-user tool, not a
     schema comparison.
 

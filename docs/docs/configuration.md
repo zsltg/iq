@@ -4,10 +4,10 @@ icon: material/cog-outline
 
 # Configuration `config`
 
-The config file lives at `<user_config_dir>/iq/iq.toml`; `IQ_CONFIG` points
+The config file lives at `<user_config_dir>/iq/iq.toml`. `IQ_CONFIG` points
 it elsewhere, and `--config` :material-earth:{ title="Global flag" } overrides both for one run (precedence:
 `--config` > `IQ_CONFIG` > default). It holds the saved sources and the stored option
-defaults below; `iq config location` prints the resolved path.
+defaults below. `iq config location` prints the resolved path.
 
 Inspect the config file and manage stored option defaults. Persist a flag's
 value once so you need not retype it. Set an option globally, or scope it to
@@ -38,7 +38,7 @@ iq -f json '.[]'
 
 !!! note "Persistable options"
 
-    Persistable options are the flags whose default you would reasonably
+    Persistable options are the flags whose default it is reasonable to
     persist:
 
     - `--format`, `--format.decimal`, `--compact`
@@ -156,7 +156,7 @@ iq config location
 
 ## List `ls`
 
-List the options set at that scope; `-v` lists every persistable option with
+List the options set at that scope. `-v` lists every persistable option with
 its effective value, built-in default, and help.
 
 ```sh
@@ -166,7 +166,7 @@ iq config ls [--src <name>]
 ## Set `set`
 
 Validate and store a value (base, or per source). The value is checked exactly
-as the flag would check it, so an invalid value is refused.
+as the flag checks it, so an invalid value is refused.
 
 ```sh
 iq config set [--src <name>] <option> <value>
@@ -180,7 +180,7 @@ iq config set -D/--delete [--src <name>] <option>
 
 ## View `view`
 
-Dump the whole config as TOML, source URLs redacted like `iq ls`.
+Dump the whole config as TOML, source URIs redacted like `iq ls`.
 
 ```sh
 iq config view [--reveal] [--expand]

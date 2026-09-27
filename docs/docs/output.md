@@ -104,7 +104,7 @@ iq '.[]' -A
     it is the analogue of `sq --json`.
 
     `sq --jsona` instead emits one JSON array *per row* with the keys dropped,
-    a columnar projection that a heterogeneous `jq` value stream has no honest
+    a columnar projection that a heterogeneous `jq` value stream has no exact
     analogue for, so `iq` keeps the `sq` flag name but its own behaviour.
 
 ### Raw `--raw`
@@ -184,7 +184,7 @@ json.year = 2017;
 
     A key that is an ASCII identifier(`^[A-Za-z_$][A-Za-z0-9_$]*$`) follows
     a bare dot (`json.name`), any other key is bracketed and JSON-quoted
-    (`json["odd key"]`), a deliberate ASCII subset of gron's rule, since
+    (`json["odd key"]`), a deliberate ASCII subset of gron's rule, because
     over-quoting stays ungron-safe.
 
     `--gron` repeats the `json` root for every result, so ungron[^1] is
@@ -281,7 +281,7 @@ print(table)
 !!! warning "Typed dumps are not supported"
 
     `--typed` dumps cannot use `parquet` (they carry a `{key,type,value}`
-    envelope); run the query without `--typed` to export a columnar file.
+    envelope). Run the query without `--typed` to export a columnar file.
 
 ## Compact `--compact`
 
@@ -330,7 +330,7 @@ from the backend is presented to the filter.
 !!! warning
 
     Because the `jq` filter runs client-side over the fetched value, this choice is
-    made at normalization time, it changes what the filter computes on, not just
+    made at normalization time, it changes what the filter computes on, not only
     how the result prints (unlike `sq`, where `jq` is not involved).
 
 !!! note
@@ -339,7 +339,7 @@ from the backend is presented to the filter.
     a big integer when they exceed 64 bits, so `.count + 1` stays exact rather than
     rounding through `float64`.
 
-    A backend may round before `iq` sees the value, RedisJSON, for example, stores
+    A backend can round before `iq` sees the value, RedisJSON, for example, stores
     an integer larger than 64 bits as a double, so it arrives already in scientific
     notation.
 
@@ -352,7 +352,7 @@ from the backend is presented to the filter.
 `--color` :material-earth:{ title="Global flag" }, shorthand `-C`, is global.
 
 Output is syntax-highlighted when `iq` writes to a terminal and left plain when
-it is piped or redirected, so captured output stays clean, TTY detection is
+it is piped or redirected, so captured output stays free of color codes, TTY detection is
 where capture safety comes from.
 
 ```bash title="Colored on a terminal, plain when piped"

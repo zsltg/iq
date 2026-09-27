@@ -29,7 +29,7 @@ iq '.["book:2"].price | tonumber + 5'
 !!! warning "Escaping"
 
     Always wrap the filter in single quotes. `jq` syntax is full of characters
-    the shell would otherwise expand or split, brackets (`[ ]`), whitespace,
+    the shell otherwise expands or splits, brackets (`[ ]`), whitespace,
     `|`, `*`, `$` and bracket-quoting a colon key like `.["book:1"]` reads as a
     glob to `zsh` (`no matches found`) or `bash` unless quoted.
 
@@ -45,10 +45,10 @@ source then combine, pick what the query needs.
 | Quoting | sub-filter is a quoted string inside the filter | each spec is its own argument |
 | Memory | each reduced result held until combine, plus a correlated `source()` re-runs per row | each reduced result held until combined |
 
-Reach for `source()` when a read depends on another source's values, or to keep
+Use `source()` when a read depends on another source's values, or to keep
 everything in one composable filter.
 
-Reach for `iq combine` for a straightforward join, union, or aggregate across a
+Use `iq combine` for a straightforward join, union, or aggregate across a
 few sources.
 
 ### Compose `source()`
@@ -57,7 +57,7 @@ few sources.
 and pushed down like any query) and yields its results as a stream, a
 one-argument `source("name")` yields the whole source.
 
-Both arguments of `source()` are strings, so they need to be quoted. It also
+Both arguments of `source()` are strings, so they must be quoted. It also
 yields a stream, collect it before indexing with `INDEX(source(…); .id)` or
 `[source(…)]`, not `source(…) | INDEX(.id)`.
 
@@ -108,12 +108,12 @@ any number of sources.
 
 Each source reduces at the source, and a pushable filter pushes down, so this
 never copies whole datasets to join them. A spec with no filter binds the whole
-keyspace, which is a holistic read, it needs `--unbounded`, exactly as the same
-expression would on a plain query.
+keyspace, which is a whole-keyspace read, it needs `--unbounded`, exactly as the same
+expression does on a plain query.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
-| | `--no-compile` | ✗ | disable server-side predicate pushdown; run each spec's filter client-side |
+| | `--no-compile` | ✗ | disable server-side predicate pushdown. Run each spec's filter client-side |
 | | `--with <string>` | required | final jq over the bound source results (each spec's results bound to $name), run over a null input |
 
 ```sh { title='Join users with orders on a shared id, across two sources' }

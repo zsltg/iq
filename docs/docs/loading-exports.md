@@ -7,7 +7,7 @@ icon: lucide/file-up
 `iq --jsonl` writes one JSON document per line (JSON Lines), the format every
 dataframe tool reads directly.
 
-Normalization is what makes that read clean, one canonical rendering per
+Normalization is what makes that read predictable, one canonical rendering per
 value, exact integers, decimal strings,
 [RFC3339Nano](https://pkg.go.dev/time#pkg-constants) UTC timestamps[^1], base64
 binary, and an explicit `null` for an absent field rather than a placeholder.
@@ -52,7 +52,7 @@ df.null_count()   # O(1) per column, tracked in the validity bitmap
 
 Polars has one missing value, `null`, uniform across every type. `NaN` is a float *value*, not
 missingness, and iq never emits `NaN` for an absent field, so `mean`, `min`, and `null_count` stay
-honest on iq output, a gap is a `null` that statistics skip, never a `NaN` that poisons the result.
+correct on iq output, a gap is a `null` that statistics skip, never a `NaN` that changes the result.
 
 ### DuckDB
 
@@ -66,7 +66,7 @@ SELECT * FROM read_json_auto('dump.jsonl');
 - **Timestamps need an explicit cast.** DuckDB's type sniffer accepts fractional seconds only to
   millisecond precision, so iq's nanosecond RFC3339Nano strings (`2026-07-18T12:34:56.123456789Z`)
   are inferred as `VARCHAR`, not `TIMESTAMP` (observed on DuckDB 1.5.4, verify in your version).
-  Cast to `TIMESTAMP_NS` to keep the nanoseconds; plain `TIMESTAMP` truncates to microseconds:
+  Cast to `TIMESTAMP_NS` to keep the nanoseconds. Plain `TIMESTAMP` truncates to microseconds:
 
   ```sql
   SELECT CAST(ts AS TIMESTAMP_NS) AS ts FROM read_json_auto('dump.jsonl');
@@ -95,8 +95,8 @@ iq '.[] | {unique_id: .id, name, dob: (.created_at | .[0:10])}' --src people --j
 ```
 
 For an entity-resolution consumer the choice between *omitting* a field and writing an explicit
-`null` is load-bearing, they are different inputs to the match. Export explicit nulls (a jq object
-constructor like `{name}` already writes `null` for a missing field); see
+`null` is significant, they are different inputs to the match. Export explicit nulls (a jq object
+constructor like `{name}` already writes `null` for a missing field). See
 [Null vs missing](how-it-works.md#null-vs-missing) for how iq draws that line at each layer.
 
 [^1]: RFC 3339 is the date and time format for use in Internet protocols, a profile of ISO 8601, and RFC3339Nano is Go's layout for it with nanosecond precision, so every timestamp renders the same way in every export. https://datatracker.ietf.org/doc/html/rfc3339

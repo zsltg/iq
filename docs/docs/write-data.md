@@ -17,7 +17,7 @@ preserved), so you do not write `.[]`, iteration over the source is implicit.
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
 | | `--insert <source>` | ✗ | write each item into this destination source (copy/restore/import) instead of rendering |
-| | `--typed` | ✗ | emit typed `{"key":…, "type":…, "value":…}` records, a re-importable dump (needed for Redis; a document store's plain output already restores) |
+| | `--typed` | ✗ | emit typed `{"key":…, "type":…, "value":…}` records, a re-importable dump (needed for Redis, a document store's plain output already restores) |
 
 ```sh { title='Source → Source, key/id preserving' }
 iq --src books --insert books2
@@ -54,7 +54,7 @@ iq --src books --insert books2 --explain
     Nothing can tell the two apart automatically (`.name` means the key named
     "name" keyspace-rooted and the field `name` per item) so they stay separate
     rather than guessing. Existing keys are overwritten (upsert) unless
-    `--no-overwrite` makes the run insert-only; `--replace` empties the
+    `--no-overwrite` makes the run insert-only. `--replace` empties the
     destination first (with confirmation, or `--force`).
 
     A document store (Mongo, CouchDB, Couchbase, Elasticsearch) stores each
@@ -74,7 +74,7 @@ iq --src books --insert books2 --explain
     A huge first record can defeat the content sniff, so a `.yaml`/`.yml` name
     or an explicit `?format=` / `--from-format` remains available as an
     override (`jsonl`, `yaml`, `mongoexport`, `bson`, `rdb`, `dynamodb-json`,
-    `cassandra-csv`, or `neo4j-json`; aliases like `json` are accepted).
+    `cassandra-csv`, or `neo4j-json`, aliases like `json` are accepted).
 
     The renderings that cannot carry a record back are rejected rather than
     written. `--raw` (a scalar cannot hold the envelope), `--format parquet`
@@ -92,8 +92,8 @@ takes it from an object field, `--key` computes it with a jq expression, and
 `--key-field`: a combine's results come out of one program over a null input,
 so no value has a key to inherit and the run is refused up front rather than
 failing partway through a copy. For the same reason `combine` has no
-`--typed`, a typed dump is a stream of `{key,type,value}` records and would
-need the same key. A write flag used without `--insert` is an error, never
+`--typed`, a typed dump is a stream of `{key,type,value}` records and
+needs the same key. A write flag used without `--insert` is an error, never
 silently ignored.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
@@ -119,8 +119,8 @@ iq '{t: .title}' --src books --insert kv --key '.t'
 
 A plain copy carries each item's native type along (a Redis hash lands as a
 hash), so no type flag is needed. A filter that reshapes the value drops that
-type, the output is just JSON, and `--type` names the native type the
-destination should store it as.
+type, the output is plain JSON, and `--type` names the native type the
+destination stores it as.
 
 Left unset, a typed destination infers it from the shape (Redis writes a scalar
 as a `string` and an object or array as `json`), so `--type` is only required
@@ -132,7 +132,7 @@ the same flag stamps the `type` field of each dump record instead.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
-| | `--type <string>` | none | native type stamped on each written value, e.g. hash, list, json (--insert/--typed) |
+| | `--type <string>` | none | native type stamped on each written value, for example hash, list, json (--insert/--typed) |
 
 ```sh { title='Reshape Mongo documents into Redis hashes' }
 iq '{title, year: (.year | tostring)}' --src books --insert cache --type hash
@@ -184,7 +184,7 @@ iq --src books --insert books2 --no-overwrite
 
 ## Lifecycle previews
 
-Every `iq data` subcommand (`delete`, `clear`, `drop`) shares two previews;
+Every `iq data` subcommand (`delete`, `clear`, `drop`) shares two previews.
 `clear` and `drop` also prompt before destroying data, `--force` skips the
 prompt.
 
@@ -211,7 +211,7 @@ per-key delete (HBase's `exec delete` verb, a Redis `DEL`).
 
 Each key uses the same spelling as a *Get*, a bare string (`book:1`) or a JSON
 array for a composite key (`["shop",42]`). A key already absent is not an error
-(delete is idempotent) and the report is honest about it
+(delete is idempotent) and the report states it
 (`deleted N key(s), M already absent`).
 
 Unlike `data clear`/`data drop` it does not prompt, the explicit key list you
