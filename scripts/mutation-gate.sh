@@ -31,8 +31,9 @@
 # Every gate run also writes mutago-agentic.json (--logger-agentic-json): enriched,
 # LLM-consumable data for each escaped mutant, including the stable id used below to
 # re-run one mutant. It is regenerated per run and gitignored next to report.json, as is
-# mutago-summary.json (--logger-summary-json), whose coveredCodeMsi the CI `deep` job
-# turns into the README mutation badge.
+# mutago-summary.json (--logger-summary-json). The CI `deep-mutate` shards upload these
+# files, and `deep-badge` merges them with scripts/mutation-verdict.sh into the stored
+# state and the README mutation badge.
 #
 # Two gate policies. Every package is zero-survivor on covered code: --fail-on-escaped
 # against the committed baseline. One exception applies. A full scan of ./cmd holds a
@@ -89,7 +90,9 @@
 # diff-scoped or whole-module (./...) dry run first runs the --coverage instrumented
 # test pass — whole-target, memory-heavy, buffered until exit — before counting. The
 # count is a whole-target upper bound either way. Scope dry runs to one package and
-# never launch one alongside a live gate — the two contend for memory (oomd kill).
+# never launch one alongside a live gate — the two contend for memory (oomd kill). A dry
+# run reads the same config as a real run (.mutago.yml, or the shard config), so the count
+# obeys skip_without_test and the shard mutators.
 #
 # IQ_MUTATION_UPDATE_BASELINE=1 records the current survivors into mutago-baseline.json
 # and exits 0 (accept genuine equivalent mutants deliberately, then commit the file
@@ -102,6 +105,28 @@
 # against mutago-baseline.notes.md before committing — an id with no justification line
 # is one to re-verify with IQ_MUTATION_MUTANT=<id> (order-dependent escapes are
 # flaky-killable) rather than accept.
+#
+# File targets. A path that ends in .go is a full-scan target, like a package path. mutago
+# mutates that one file and runs the tests of its package. The wrapper changes each file
+# target to an absolute path before it calls mutago: a target written as ./pkg/file.go gives
+# different mutant ids (upstream bug quality-gates/mutago#248), and those ids do not match
+# mutago-baseline.json. An absolute path gives the same ids as a package run.
+#
+# IQ_MUTATION_MUTATORS="a/b c/d" is shard mode. mutago then uses only the named mutators: the
+# wrapper writes a temporary config, .mutago.yml plus an enable_mutators list, and passes it
+# to --config. Shard mode needs a package or file argument. Each name must be a mutator that
+# `mutago --list-mutators` shows, or the wrapper stops. An empty value means all mutators.
+# A shard runs with no gate flag. mutago merges identical edits of different mutators into
+# one mutant, and the mutator it keeps, and thus the stable id, depends on the enabled set.
+# So a shard cannot compare its ids with mutago-baseline.json on its own. The merge of all
+# shards of a package is the gate (see scripts/mutation-verdict.sh). A file target of
+# ./cmd with all mutators also has no gate flag, because the floor needs the score of the
+# full package. The errored-mutant check stays on in both cases.
+#
+# IQ_MUTATION_INSTALL_DIR=<dir> only installs the pinned mutago into <dir> (with a bounded
+# retry) and prints the path of the binary. IQ_MUTATION_MUTAGO_BIN=<path> then gives that
+# binary to each gate run, so a caller that runs the gate many times installs once. The
+# wrapper accepts the path only for an executable file built from the pinned version.
 #
 # IQ_MUTATION_WORKERS overrides the serial default (1), forwarded to --workers. Serial is
 # right for a container-backed suite rerun per mutant; 2-3 is the useful range when the
@@ -167,54 +192,193 @@ fi
 # A package-path argument (one starting with . or /) selects a full scan of that
 # package: the git-diff flags are dropped so the whole package is mutated, not just
 # a diff. Otherwise the run is scoped to the branch diff via --git-diff-lines.
+#
+# A path that ends in .go is a file target. It is changed to an absolute path here (see the
+# header, mutago#248), and it must be a non-test Go file inside this repository.
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+  echo "mutation gate: run it inside the iq repository" >&2
+  exit 1
+}
 has_path=0
+normalized=()
+cmd_package=0
+cmd_files=0
+other_targets=0
 for arg in "$@"; do
+  if [[ "$arg" == *.go ]]; then
+    if [[ "$arg" == *_test.go || ! -f "$arg" ]]; then
+      echo "mutation gate: file target '$arg' must be an existing non-test .go file" >&2
+      exit 1
+    fi
+    abs="$(cd "$(dirname "$arg")" && pwd -P)/$(basename "$arg")"
+    rel="${abs#"$repo_root"/}"
+    if [[ "$rel" == "$abs" ]]; then
+      echo "mutation gate: file target '$arg' is not inside $repo_root" >&2
+      exit 1
+    fi
+    if [[ "$(dirname "$rel")" == "cmd" ]]; then
+      cmd_files=$((cmd_files + 1))
+    else
+      other_targets=$((other_targets + 1))
+    fi
+    normalized+=("$abs")
+    has_path=1
+    continue
+  fi
   [[ "$arg" == .* || "$arg" == /* ]] && has_path=1
+  if [[ "$arg" == "./cmd" || "$arg" == "./cmd/..." ]]; then
+    cmd_package=$((cmd_package + 1))
+  else
+    other_targets=$((other_targets + 1))
+  fi
+  normalized+=("$arg")
 done
+set -- "${normalized[@]}"
+
+# Shard mode (see the header). The names are examined here for their form, and again after
+# the mutago install against `mutago --list-mutators`. An empty value means all mutators.
+shard_mutators=()
+read -ra shard_mutators <<<"${IQ_MUTATION_MUTATORS-}"
+if [[ ${#shard_mutators[@]} -gt 0 ]]; then
+  if [[ "$has_path" -eq 0 ]]; then
+    echo "mutation gate: IQ_MUTATION_MUTATORS needs a package or file argument; a diff-scoped run cannot be a shard" >&2
+    exit 1
+  fi
+  for name in "${shard_mutators[@]}"; do
+    if [[ ! "$name" =~ ^[a-z_]+/[a-z_-]+$ ]]; then
+      echo "mutation gate: IQ_MUTATION_MUTATORS holds '$name', which is not a mutator name (family/name)" >&2
+      exit 1
+    fi
+  done
+  if grep -qE '^(enable|disable)_mutators:' .mutago.yml; then
+    echo "mutation gate: .mutago.yml sets a mutator list, so shard mode cannot add one" >&2
+    exit 1
+  fi
+fi
 
 # Gate policy. Every target keeps the zero-survivor contract on covered code
 # (--fail-on-escaped against the baseline). A full scan of ./cmd is the one exception: it
 # passes on the covered-code MSI floor above. The two policies cannot share a run, because
-# one mutago invocation carries one flag set, so a target list that mixes ./cmd with
-# another package stops here. This selection runs before the mutago install, so a bad
-# target list fails in a second and installs nothing.
+# one mutago invocation carries one flag set, so a target list that mixes ./cmd (or a file
+# under cmd/) with another target stops here. A part of ./cmd (a shard of the package, or
+# files under cmd/) cannot judge the floor, so it runs with no gate flag. This selection
+# runs before the mutago install, so a bad target list fails in a second and installs
+# nothing.
 gate=(--fail-on-escaped)
 cmd_policy=0
 if [[ "$has_path" -eq 1 ]]; then
-  cmd_targets=0
-  for arg in "$@"; do
-    [[ "$arg" == "./cmd" || "$arg" == "./cmd/..." ]] && cmd_targets=$((cmd_targets + 1))
-  done
-  if [[ "$cmd_targets" -gt 0 && "$#" -gt 1 ]]; then
+  cmd_targets=$((cmd_package + cmd_files))
+  if [[ "$cmd_targets" -gt 0 && "$other_targets" -gt 0 ]] || [[ "$cmd_package" -gt 1 ]] ||
+    [[ "$cmd_package" -gt 0 && "$cmd_files" -gt 0 ]]; then
     echo "mutation gate: ./cmd holds the covered-code MSI floor and every other target holds the zero-survivor policy; one mutago invocation carries one flag set, so the two policies cannot share a run. Scan ./cmd on its own." >&2
     exit 1
   fi
-  if [[ "$cmd_targets" -eq 1 ]]; then
+  if [[ "$cmd_package" -eq 1 && ${#shard_mutators[@]} -eq 0 ]]; then
     gate=(--min-covered-msi "$cmd_covered_msi_floor")
     cmd_policy=1
     echo "mutation gate: policy for ./cmd is covered-code MSI >= ${cmd_covered_msi_floor} (full scans only; the diff gate stays zero-survivor)"
+  elif [[ "$cmd_targets" -gt 0 ]]; then
+    gate=()
+    echo "mutation gate: this is a part of ./cmd, so it has no gate flag; the floor of ${cmd_covered_msi_floor} applies to the merged ./cmd shards (errored mutants still fail)"
   fi
+fi
+# A shard has no gate flag (see the header): the merge of all shards of a package decides.
+if [[ ${#shard_mutators[@]} -gt 0 ]]; then
+  gate=()
+  cmd_policy=0
+fi
+
+# Install the pinned mutago into the directory $1 with a bounded retry. The install reads
+# the module proxy, so a short network or DNS error must not stop a long shard job. Three
+# attempts, with a backoff of 10 s and 20 s plus up to 5 s of jitter. The install is
+# idempotent, so a retry is safe.
+install_mutago() {
+  local dir="$1" attempt
+  for attempt in 1 2 3; do
+    if GOBIN="$dir" go install "${mutago_pkg}@${MUTAGO_VERSION}"; then
+      return 0
+    fi
+    [[ "$attempt" -eq 3 ]] && break
+    echo "mutation gate: mutago install attempt $attempt failed; trying again" >&2
+    sleep $((attempt * 10 + RANDOM % 5))
+  done
+  echo "mutation gate: could not install mutago ${MUTAGO_VERSION}" >&2
+  return 1
+}
+
+# IQ_MUTATION_INSTALL_DIR=<dir> installs the pinned mutago into <dir>, prints the path of
+# the binary, and exits. A caller that runs the gate many times (the shard runner, the
+# shard plan) installs once and gives the path to each gate run in IQ_MUTATION_MUTAGO_BIN.
+if [[ -n "${IQ_MUTATION_INSTALL_DIR-}" ]]; then
+  mkdir -p "$IQ_MUTATION_INSTALL_DIR" || exit 1
+  install_mutago "$IQ_MUTATION_INSTALL_DIR" || exit 1
+  echo "$(cd "$IQ_MUTATION_INSTALL_DIR" && pwd -P)/mutago"
+  exit 0
 fi
 
 # Provision the pinned mutago into a throwaway GOBIN and run that binary directly, so the
 # gate needs no mutago on PATH and preserves exact exit codes (see header). Cleaned on any
 # exit. `go install pkg@version` is module-independent: it does not read or write go.mod.
+# IQ_MUTATION_MUTAGO_BIN names a binary that is already installed. The wrapper uses it only
+# when it is an executable file whose build information (`go version -m`) shows the pinned
+# module version. Any other value stops the run, so a stale binary never runs the gate.
 mutago_bindir=$(mktemp -d) || {
   echo "mutation gate: could not create temp dir" >&2
   exit 1
 }
 baseline_snapshot=""
+shard_config=""
 cleanup() {
   rm -rf "$mutago_bindir"
   [[ -n "$baseline_snapshot" ]] && rm -f "$baseline_snapshot"
+  [[ -n "$shard_config" ]] && rm -f "$shard_config"
   return 0
 }
 trap cleanup EXIT
-if ! GOBIN="$mutago_bindir" go install "${mutago_pkg}@${MUTAGO_VERSION}"; then
-  echo "mutation gate: could not install mutago ${MUTAGO_VERSION}" >&2
-  exit 1
+if [[ -n "${IQ_MUTATION_MUTAGO_BIN-}" ]]; then
+  if [[ ! -f "$IQ_MUTATION_MUTAGO_BIN" || ! -x "$IQ_MUTATION_MUTAGO_BIN" ]]; then
+    echo "mutation gate: IQ_MUTATION_MUTAGO_BIN='$IQ_MUTATION_MUTAGO_BIN' is not an executable file" >&2
+    exit 1
+  fi
+  built=$(go version -m "$IQ_MUTATION_MUTAGO_BIN" 2>/dev/null | awk '$1 == "mod" { print $2 " " $3 }')
+  if [[ "$built" != "github.com/quality-gates/mutago/v2 ${MUTAGO_VERSION}" ]]; then
+    echo "mutation gate: IQ_MUTATION_MUTAGO_BIN is not mutago ${MUTAGO_VERSION} (build information: '${built:-none}')" >&2
+    exit 1
+  fi
+  mutago="$IQ_MUTATION_MUTAGO_BIN"
+else
+  install_mutago "$mutago_bindir" || exit 1
+  mutago="$mutago_bindir/mutago"
 fi
-mutago="$mutago_bindir/mutago"
+
+# The config for this run: the committed .mutago.yml, or in shard mode a temporary copy
+# with an enable_mutators list (the same format as a chunk-NN.yml of the chunk scan). Each
+# name must be a mutator of the pinned mutago, so a typo stops the run here with a clear
+# message and never becomes a run with fewer mutants.
+config=.mutago.yml
+if [[ ${#shard_mutators[@]} -gt 0 ]]; then
+  known=$("$mutago" --list-mutators) || {
+    echo "mutation gate: could not list the mutators of mutago ${MUTAGO_VERSION}" >&2
+    exit 1
+  }
+  for name in "${shard_mutators[@]}"; do
+    if ! grep -qxF "$name" <<<"$known"; then
+      echo "mutation gate: '$name' is not a mutator of mutago ${MUTAGO_VERSION} (see mutago --list-mutators)" >&2
+      exit 1
+    fi
+  done
+  shard_config=$(mktemp --suffix=.yml) || {
+    echo "mutation gate: could not create temp file" >&2
+    exit 1
+  }
+  {
+    cat .mutago.yml
+    printf 'enable_mutators:\n'
+    for name in "${shard_mutators[@]}"; do printf '  - "%s"\n' "$name"; done
+  } >"$shard_config"
+  config="$shard_config"
+  echo "mutation gate: shard mode, mutators: ${shard_mutators[*]}"
+fi
 
 scope=()
 diff_ref=""
@@ -293,7 +457,8 @@ fi
 # runs the --coverage instrumented test pass (whole-target, memory-heavy, buffered)
 # before counting. The count is an upper bound. Since mutago v2.10.14 it applies
 # --git-diff-lines. The dry run must read .mutago.yml like the real run, because the
-# skip keys in that file change which source files mutago mutates. Scope dry runs to one
+# skip keys in that file change which source files mutago mutates. In shard mode it reads
+# the shard config, so the count obeys the shard mutators too. Scope dry runs to one
 # package and never run one beside a live gate.
 if [[ "${IQ_MUTATION_DRYRUN-}" == "1" ]]; then
   if [[ "$has_path" -eq 1 ]]; then
@@ -301,7 +466,7 @@ if [[ "${IQ_MUTATION_DRYRUN-}" == "1" ]]; then
   else
     echo "mutation gate: dry run (runs the --coverage instrumented pass first; whole-target, memory-heavy)"
   fi
-  "$mutago" --dry-run --config .mutago.yml "${scope[@]}" "${targets[@]}"
+  "$mutago" --dry-run --config "$config" "${scope[@]}" "${targets[@]}"
   exit $?
 fi
 
@@ -331,7 +496,7 @@ if [[ -n "${IQ_MUTATION_MUTANT-}" ]]; then
 fi
 
 "$mutago" \
-  --config .mutago.yml \
+  --config "$config" \
   --coverage \
   "${gate[@]}" \
   --baseline mutago-baseline.json \
@@ -436,7 +601,11 @@ fi
 # mutago exits 0 (gate passed), 4 (a mutant escaped), or another code for a run
 # error; --dry-run and --update-baseline always exit 0. Forward the verdict.
 if [[ "$status" -eq 0 ]]; then
-  [[ ${#mode[@]} -eq 0 ]] && echo "mutation gate passed: no new escaped mutants"
+  if [[ ${#mode[@]} -eq 0 && ${#gate[@]} -eq 0 ]]; then
+    echo "mutation gate: run finished with no gate flag; the merged verdict of all shards decides (scripts/mutation-verdict.sh)"
+  elif [[ ${#mode[@]} -eq 0 ]]; then
+    echo "mutation gate passed: no new escaped mutants"
+  fi
   exit 0
 fi
 if [[ "$status" -eq 4 ]]; then
