@@ -39,13 +39,15 @@ Display help on the command line for `iq`.
 
 ## Version `--version`
 
-Prints the bare version and exits, with no name or prefix, so a script can use
-it directly (`v=$(iq --version)`): `v1.2.3` for a release build, the
-git-describe form (`v1.2.3-14-gabc1234`) for an untagged build, and
-`dev+<commit>` only for a plain `go build` with no version metadata at all.
+Prints the bare version and exits, with no name or prefix. As a result, a script
+can use it directly (`v=$(iq --version)`). The version has one of these forms:
+
+- `v1.2.3` for a release build
+- The git-describe form (`v1.2.3-14-gabc1234`) for an untagged build
+- `dev+<commit>` only for a plain `go build` with no version metadata at all.
 
 It always writes to stdout, unaffected by `--output`. For the human form
-(version, commit, build date, Go version) run `iq version`.
+(version, commit, build date, Go version), run `iq version`.
 
 ## Not global
 

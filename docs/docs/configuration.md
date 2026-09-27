@@ -13,9 +13,9 @@ Inspect the config file and manage stored option defaults. Persist a flag's
 value once so you need not retype it. Set an option globally, or scope it to
 one source with `--src`.
 
-At query time the precedence is **explicit flag > per-source option > base
-option > built-in default**, so a saved default fills any flag you leave unset
-and an explicit flag on the command line always takes precedence.
+At query time, the precedence is **explicit flag > per-source option > base
+option > built-in default**. As a result, a saved default fills any flag you
+leave unset. An explicit flag on the command line always takes precedence.
 
 ```sh { title='Every query defaults to YAML output' }
 iq config set format yaml
@@ -61,9 +61,9 @@ iq -f json '.[]'
 
 !!! warning "Logging options"
 
-    The `log*` options are the one place a stored default and the environment
-    overlap, a stored `log*` value fills an unset flag, but an `$IQ_LOG*`
-    environment variable still wins over it (the `flag > env > default` chain
+    The `log*` options are the one place where a stored default and the
+    environment overlap. A stored `log*` value fills an unset flag. But an
+    `$IQ_LOG*` environment variable still wins over it (the `flag > env > default` chain
     for logging applies before a stored default is treated as "set").
 
     An explicit `--log*` flag beats both. No other option reads the
@@ -113,7 +113,7 @@ iq config keyring get <handle>
 ### Set `set`
 
 Write or update a secret (reads stdin/prompt when the value is omitted). A
-source with an inline password is left untouched, use `migrate` for it.
+source with an inline password is left untouched. Use `migrate` for it.
 
 ```sh
 iq config keyring set <handle> [value]

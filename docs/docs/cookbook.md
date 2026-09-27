@@ -4,7 +4,7 @@ icon: material/book-open-blank-variant-outline
 
 # Cookbook
 
-`iq` renders JSON-family formats only, no CSV and no tables, by design, its
+`iq` renders JSON-family formats only, no CSV and no tables, by design. Its
 output is meant to compose, so you can pipe it into other tools.
 
 ## Piped input
@@ -13,7 +13,7 @@ output is meant to compose, so you can pipe it into other tools.
 cat dump.jsonl | iq '.[]'
 ```
 
-Stdin becomes the source only when nothing else resolves, an active source wins
+Stdin becomes the source only when nothing else resolves. An active source wins
 over the pipe.
 
 `--from-format` forces the decode when the content cannot be sniffed (a gzipped
@@ -30,8 +30,8 @@ databases and files like CSV or Excel.
 sq -J @pg.actor | iq --insert cache --key-field actor_id
 ```
 
-`sq` emits one JSON object per row (`-J`), `iq` keys each by the named field,
-foreign JSON always needs `--key-field` or `--key` (see
+`sq` emits one JSON object per row (`-J`). `iq` keys each by the named field.
+Foreign JSON always needs `--key-field` or `--key` (see
 [Key mapping](write-data.md#key-mapping-key)).
 
 ### NoSQL → SQL
@@ -50,7 +50,7 @@ iq --src books '.[]' --jsonl | sq -C .data
 iq --src books '.[]' --jsonl | sq -x .data -o books.xlsx
 ```
 
-`iq` itself renders no CSV, sq is the tabular bridge.
+`iq` itself renders no CSV. sq is the tabular bridge.
 
 ## quicktype
 
@@ -62,8 +62,8 @@ iq --src books '.[]' --jsona | quicktype -l typescript --top-level Book -o book.
 ```
 
 The schema-fed variant (`iq schema … | quicktype -s schema`, see
-[Schema](sources.md#schema-schema)) types the whole inferred shape, this one
-types what a query returned, pipe a bounded result, not a scan of a
+[Schema](sources.md#schema-schema)) types the whole inferred shape. This one
+types what a query returned. Pipe a bounded result, not a scan of a
 huge keyspace.
 
 ## gron
@@ -77,7 +77,7 @@ iq --src books '.[]' -G | grep -i title | gron --ungron
 ```
 
 `-G` (grona) indexes results as `json[N]`, so
-[gron](https://github.com/tomnomnom/gron)'s `--ungron` rebuilds a JSON array,
+[gron](https://github.com/tomnomnom/gron)'s `--ungron` rebuilds a JSON array.
 `-g` roots every result at `json` and is for grepping only.
 
 ## Miller
@@ -98,5 +98,5 @@ iq --src books '.[]' --jsonl | mlr --ijsonl --ocsv cat
 iq diff prod.orders staging.orders --schema || echo "schema drift"
 ```
 
-`iq diff` follows diff(1), exit 0 when the sources match, 1 when they differ,
-so it slots into a cron job or a pre-deploy check as-is.
+`iq diff` follows diff(1): exit 0 when the sources match, 1 when they differ.
+As a result, it slots into a cron job or a pre-deploy check as-is.
