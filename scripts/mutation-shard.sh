@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Runs one shard of the weekly mutation scan: each (file, mutator) cell of the shard.
 #
-#   scripts/mutation-shard.sh <out-dir> <package> <slug> <shard> <shards> <cells-json>
+#   scripts/mutation-shard.sh <out-dir> <plan.json> <package> <shard>
 #
-# <cells-json> is the `cells` array of one entry of the scripts/mutation-plan.sh matrix,
-# [{"file": "internal/numfmt/decimal.go", "mutator": "branch/case", ...}, ...]. The CI
-# `deep-mutate` job gives each value through an environment variable.
+# <plan.json> is the full output of scripts/mutation-plan.sh. The runner reads the entry
+# of <package> and <shard> from it: the slug, the number of shards, and the cells,
+# [{"file": "internal/numfmt/decimal.go", "mutator": "branch/case", "mutants": 4}, ...].
+# The CI `deep-mutate` job downloads the plan as an artifact, because the cell lists of a
+# full plan are too large for a job output or an environment variable.
 #
 # The runner installs the pinned mutago one time (IQ_MUTATION_INSTALL_DIR, with a bounded
 # retry) and gives it to each gate run in IQ_MUTATION_MUTAGO_BIN. Each cell is one gate run
@@ -19,22 +21,35 @@
 #                                  the run (commit, mutago version, Go version, sha256 of
 #                                  .mutago.yml and mutago-baseline.json), the cells, and
 #                                  the number of failed cells
-#   <out-dir>/cells/NNN/           report.json (without the source copies), mutago-agentic.json,
-#                                  mutago-summary.json, cell.json and log for each cell
+#   <out-dir>/cells/NNN/           report.json (without the source copies and the test
+#                                  output), mutago-agentic.json, mutago-summary.json,
+#                                  cell.json and log for each cell
+#
+# Connection strings. The test output in a log can hold the value of an IQ_*_URL variable
+# (a URI with a password). Before the runner prints or keeps a log, it replaces each such
+# value with the name of its variable. The report keeps no test output.
 #
 # The runner does all cells, also after a failed cell, so that the artifact holds as much
-# data as possible. It exits 1 when a cell failed (a run error or an errored mutant).
+# data as possible. A cell fails on a run error, an errored mutant, or a report that the
+# runner cannot trim. The runner exits 1 when a cell failed.
 set -uo pipefail
 
 export LC_ALL=C
 
-usage="usage: mutation-shard.sh <out-dir> <package> <slug> <shard> <shards> <cells-json>"
+usage="usage: mutation-shard.sh <out-dir> <plan.json> <package> <shard>"
 out="${1:?$usage}"
-pkg="${2:?$usage}"
-slug="${3:?$usage}"
+plan="${2:?$usage}"
+pkg="${3:?$usage}"
 shard="${4:?$usage}"
-shards="${5:?$usage}"
-cells_json="${6:?$usage}"
+
+[[ -f "$plan" ]] || {
+  echo "mutation-shard: '$plan' is not a file" >&2
+  exit 1
+}
+plan=$(cd "$(dirname "$plan")" && pwd -P)/$(basename "$plan")
+out_parent=$(dirname "$out")
+mkdir -p "$out_parent" || exit 1
+out=$(cd "$out_parent" && pwd -P)/$(basename "$out")
 
 root=$(git rev-parse --show-toplevel) || exit 1
 cd "$root" || exit 1
@@ -43,11 +58,22 @@ if [[ "$pkg" != "." && ! "$pkg" =~ ^\./[A-Za-z0-9_][A-Za-z0-9_./-]*$ ]] || [[ "$
   echo "mutation-shard: '$pkg' is not a package path (. or ./dir)" >&2
   exit 1
 fi
+if [[ ! "$shard" =~ ^[1-9][0-9]*$ ]]; then
+  echo "mutation-shard: shard '$shard' is not a positive integer" >&2
+  exit 1
+fi
+if ! entry=$(jq -ce --arg p "$pkg" --argjson s "$shard" \
+  '[.[] | select(.package == $p and .shard == $s)] | if length == 1 then .[0] else error("not one entry") end' "$plan"); then
+  echo "mutation-shard: the plan has no single entry for $pkg shard $shard" >&2
+  exit 1
+fi
+slug=$(jq -r .slug <<<"$entry")
+shards=$(jq -r .shards <<<"$entry")
 if [[ ! "$slug" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
   echo "mutation-shard: '$slug' is not a slug" >&2
   exit 1
 fi
-if [[ ! "$shard" =~ ^[1-9][0-9]*$ || ! "$shards" =~ ^[1-9][0-9]*$ ]] || [[ "$shard" -gt "$shards" ]]; then
+if [[ ! "$shards" =~ ^[1-9][0-9]*$ ]] || [[ "$shard" -gt "$shards" ]]; then
   echo "mutation-shard: shard '$shard' of '$shards' is not valid" >&2
   exit 1
 fi
@@ -57,17 +83,38 @@ fi
 dir="${pkg#./}"
 [[ "$pkg" == "." ]] && dir="."
 if ! cells=$(jq -r --arg d "$dir" '
-    if type != "array" then error("cells is not an array") else . end
+    .cells
+    | if type != "array" then error("cells is not an array") else . end
     | .[]
     | if (.file | type) != "string" or (.mutator | type) != "string" then error("a cell needs file and mutator") else . end
     | if ((.file | split("/") | .[:-1] | join("/")) | if . == "" then "." else . end) != $d
         then error("\(.file) is not in the package directory \($d)") else . end
     | if (.mutator | test("^[a-z_]+/[a-z_-]+$") | not) then error("\(.mutator) is not a mutator name") else . end
     | if (.file | test("^[A-Za-z0-9_./-]+\\.go$") | not) or (.file | contains("..")) then error("\(.file) is not a Go file path") else . end
-    | "\(.file)\t\(.mutator)"' <<<"$cells_json"); then
-  echo "mutation-shard: the cells JSON is not valid" >&2
+    | "\(.file)\t\(.mutator)"' <<<"$entry"); then
+  echo "mutation-shard: the cells of the plan entry are not valid" >&2
   exit 1
 fi
+
+# redact <file>: replace the value of each IQ_*_URL variable in <file> with its name.
+redact() {
+  python3 - "$1" <<'PY'
+import os
+import sys
+
+path = sys.argv[1]
+secrets = sorted(
+    ((name, value) for name, value in os.environ.items()
+     if name.startswith("IQ_") and name.endswith("_URL") and value),
+    key=lambda item: -len(item[1]))
+with open(path, encoding="utf-8", errors="replace") as handle:
+    text = handle.read()
+for name, value in secrets:
+    text = text.replace(value, "<" + name + ">")
+with open(path, "w", encoding="utf-8") as handle:
+    handle.write(text)
+PY
+}
 
 start=$(date +%s)
 mkdir -p "$out/cells" || exit 1
@@ -92,14 +139,24 @@ while IFS=$'\t' read -r file mutator; do
   IQ_MUTATION_MUTAGO_BIN="$mutago_bin" IQ_MUTATION_MUTATORS="$mutator" \
     bash scripts/mutation-gate.sh "$root/$file" >"$cell/log" 2>&1
   status=$?
-  tail -n 5 "$cell/log"
+  if ! redact "$cell/log"; then
+    echo "mutation-shard: cell $index: could not redact the log; the log is removed" >&2
+    rm -f "$cell/log"
+    failed=$((failed + 1))
+  fi
+  [[ -f "$cell/log" ]] && tail -n 5 "$cell/log"
   if [[ "$status" -ne 0 || ! -f report.json ]]; then
     echo "mutation-shard: cell $index failed (exit $status); see $cell/log" >&2
     failed=$((failed + 1))
   fi
   # The source copies and the test output of each mutant make the report large, and the
-  # merge does not read them. The diffs and the ids stay.
-  [[ -f report.json ]] && jq 'del(.sources) | walk(if type == "object" then del(.processOutput) else . end)' report.json >"$cell/report.json"
+  # merge does not read them. The test output can also hold a connection string. The
+  # diffs and the ids stay.
+  if [[ -f report.json ]] && ! jq 'del(.sources) | walk(if type == "object" then del(.processOutput) else . end)' report.json >"$cell/report.json"; then
+    echo "mutation-shard: cell $index: could not trim report.json" >&2
+    rm -f "$cell/report.json"
+    failed=$((failed + 1))
+  fi
   [[ -f mutago-agentic.json ]] && mv mutago-agentic.json "$cell/"
   [[ -f mutago-summary.json ]] && mv mutago-summary.json "$cell/"
   rm -f report.json
@@ -115,7 +172,7 @@ jq -n \
   --arg go "$(go env GOVERSION)" \
   --arg config "$(sha .mutago.yml)" \
   --arg baseline "$(sha mutago-baseline.json)" \
-  --argjson cells "$(jq -c '[.[] | {file, mutator}]' <<<"$cells_json")" \
+  --argjson cells "$(jq -c '[.cells[] | {file, mutator}]' <<<"$entry")" \
   --argjson failed "$failed" \
   '{package: $package, slug: $slug, shard: $shard, shards: $shards, seconds: $seconds,
     identity: {commit: $commit, mutagoVersion: $mutago, goVersion: $go,

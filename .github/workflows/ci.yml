@@ -35,6 +35,14 @@ on:
 permissions:
   contents: read
 
+# The weekly scan reads and force-pushes the `badges` branch, so two scans must not
+# overlap: a scheduled run and a manual dispatch share one group and queue (a running scan
+# is never cancelled; GitHub keeps at most one run waiting in a group and cancels an older
+# waiting run). A push or pull request run gets a group of its own, so it never waits.
+concurrency:
+  group: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'deep-mutation-scan' || format('ci-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 env:
   GOLANGCI_LINT_VERSION: v2.13.1 # 2.12 and older bundle a staticcheck that panics on Go 1.27
   GOVULNCHECK_VERSION: v1.7.0
@@ -369,7 +377,6 @@ jobs:
     timeout-minutes: 30
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
-      packages: ${{ steps.plan.outputs.packages }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -377,31 +384,51 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      # Read-only: the token goes to the script, which does not store it and does
-      # not print the URI. A branch that does not exist yet gives an empty state.
+      # Read-only: the token goes to git as a header in the environment, never in a
+      # URI or an argument. A branch that does not exist yet gives an empty state.
       - name: Fetch the stored state (badges branch)
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/mutation-state.sh fetch badges
-      # Every package with a non-test Go file is the module list for the verdict.
+      # Every package with a non-test Go file is the module list for the verdict;
+      # an empty list stops here, so a `go list` error cannot remove all state.
       # The `packages` input limits the plan, not that list. Full mode comes from
       # the `full` input or from the first seven days of the month. The plan
-      # script examines each requested package.
+      # script cleans and examines each requested package. The full plan (with the
+      # cell lists) goes to the scan-plan artifact, because it is too large for an
+      # environment variable; the job output keeps only what the matrix needs.
       - id: plan
+        shell: bash
         env:
           EVENT: ${{ github.event_name }}
           INPUT_FULL: ${{ inputs.full }}
           INPUT_PACKAGES: ${{ inputs.packages }}
         run: |
-          all="$(go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./... \
-            | sed "s|^$(go list -m)|.|" | jq -R . | jq -sc .)"
+          mkdir -p plan
+          go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./... \
+            | sed "s|^$(go list -m)|.|" > plan/packages.txt
+          if [ ! -s plan/packages.txt ]; then
+            echo "::error::go list found no package; the plan stops"
+            exit 1
+          fi
           full=""
           if [ "$INPUT_FULL" = "true" ]; then full=1; fi
           if [ "$EVENT" = "schedule" ] && [ "$(date -u +%-d)" -le 7 ]; then full=1; fi
           read -r -a requested <<< "$INPUT_PACKAGES"
-          matrix="$(IQ_MUTATION_FULL="$full" bash scripts/mutation-plan.sh badges "${requested[@]}")"
+          IQ_MUTATION_FULL="$full" bash scripts/mutation-plan.sh badges "${requested[@]}" > plan/plan.json
+          matrix="$(jq -c 'map({package, slug, shard, shards})' plan/plan.json)"
+          echo "plan: $(wc -c < plan/plan.json) bytes, matrix output: ${#matrix} bytes"
+          if [ "${#matrix}" -gt 900000 ]; then
+            echo "::error::the matrix output is ${#matrix} bytes, near the 1 MB limit of a job output"
+            exit 1
+          fi
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-          echo "packages=$all" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scan-plan
+          path: plan
+          if-no-files-found: error
+          retention-days: 7
 
   deep-mutate:
     needs: deep-plan
@@ -421,6 +448,10 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: scan-plan
+          path: plan
       # Start the package's backing service(s) from compose ONCE and point the
       # IQ_*_URL override at them: with the env set, every per-mutant test run
       # reuses the running service instead of booting a fresh testcontainer,
@@ -467,49 +498,49 @@ jobs:
             IQ_SEED_BUCKET=iq_test IQ_SEED_DATA=0 bash scripts/seed-couchbase.sh
           fi
       # One gate run for each (file, mutator) cell of this shard, with no gate
-      # flag. The verdict comes from deep-badge, which merges all shards of the
-      # package. The runner installs mutago once, with a bounded retry.
+      # flag. The runner reads its cells from the plan artifact. The verdict comes
+      # from deep-badge, which merges all shards of the package. The runner installs
+      # mutago once, with a bounded retry, and removes the value of each IQ_*_URL
+      # from the logs before it prints or keeps them.
       - name: Mutation testing (shard)
         env:
           GOFLAGS: -p=1
           PKG: ${{ matrix.package }}
-          SLUG: ${{ matrix.slug }}
           SHARD: ${{ matrix.shard }}
-          SHARDS: ${{ matrix.shards }}
-          CELLS: ${{ toJSON(matrix.cells) }}
-        run: bash scripts/mutation-shard.sh shard-out "$PKG" "$SLUG" "$SHARD" "$SHARDS" "$CELLS"
+        run: bash scripts/mutation-shard.sh shard-out plan/plan.json "$PKG" "$SHARD"
       # shard.json and the cell reports feed deep-badge. mutago-agentic.json in
       # each cell carries each escaped mutant WITH its stable id, which is what
       # IQ_MUTATION_MUTANT takes, so hardening a package starts by downloading
       # these artifacts. They upload also when the shard fails, because a failed
-      # shard is the one to harden.
+      # shard is the one to harden. overwrite lets "Re-run failed jobs" replace
+      # the artifact of the failed attempt.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: success() || failure()
         with:
           name: mutation-${{ matrix.slug }}-${{ matrix.shard }}
           path: shard-out
           if-no-files-found: error
+          overwrite: true
           retention-days: 7
 
-  # The verdict and the badge. It runs also when deep-mutate was skipped (nothing
-  # to scan), and then reuses the stored state. A red shard skips it, so the
-  # previous state and badge stay. scripts/mutation-verdict.sh examines the shard
-  # reports, merges the shards of each package, applies the gate, and updates the
-  # state. It writes a new mutation.json (the shields.io endpoint the README reads
-  # via raw.githubusercontent.com) only when each package has current state. The
-  # push is guarded to main on the GitHub mirror, so a manual run on a branch
-  # gives a verdict and publishes nothing.
+  # The verdict. It runs when deep-mutate finished (success or failure) or was
+  # skipped (nothing to scan, the stored state is reused), not when it was
+  # cancelled. scripts/mutation-verdict.sh judges each package on its own: a
+  # package with a missing, failed or timed-out shard fails and keeps its previous
+  # state, and the packages that passed get new state. The job is red when any
+  # package failed. A new mutation.json (the shields.io endpoint the README reads
+  # via raw.githubusercontent.com) is written only when no package failed and each
+  # package has current state. This job can only read; deep-publish pushes.
   deep-badge:
     needs: [deep-plan, deep-mutate]
     if: >-
       always() && needs.deep-plan.result == 'success' &&
-      (needs.deep-mutate.result == 'success' || needs.deep-mutate.result == 'skipped')
+      (needs.deep-mutate.result == 'success' || needs.deep-mutate.result == 'failure' ||
+       needs.deep-mutate.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # contents: write lets the publish step force-push the `badges` branch with
-    # the standard GITHUB_TOKEN.
-    permissions:
-      contents: write
+    outputs:
+      publish: ${{ steps.verdict.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -522,21 +553,58 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/mutation-state.sh fetch badges
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        if: needs.deep-mutate.result == 'success'
+        with:
+          name: scan-plan
+          path: plan
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.deep-mutate.result != 'skipped'
         with:
           pattern: mutation-*
           path: shards
-      - name: Verdict
-        env:
-          MATRIX: ${{ needs.deep-plan.outputs.matrix }}
-          PACKAGES: ${{ needs.deep-plan.outputs.packages }}
+      # Exit 0: every package passed. Exit 1: a package failed, and the state of
+      # the others is written. Exit 2: the input cannot be used, nothing written.
+      # With 0 or 1 the new state goes to deep-publish; the step still ends red
+      # on 1.
+      - id: verdict
+        name: Verdict
+        shell: bash
         run: |
           mkdir -p shards
-          printf '%s\n' "$MATRIX" > matrix.json
-          printf '%s\n' "$PACKAGES" | jq -r '.[]' > packages.txt
-          bash scripts/mutation-verdict.sh shards badges matrix.json packages.txt
+          status=0
+          bash scripts/mutation-verdict.sh shards badges plan/plan.json plan/packages.txt || status=$?
+          if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+          exit "$status"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.verdict.outputs.publish == 'true'
+        with:
+          name: scan-state
+          path: badges
+          if-no-files-found: error
+          retention-days: 7
+
+  # Push the new state and badge to the `badges` branch. Only this job can write,
+  # and only on main on the GitHub mirror, so a manual run on a branch gives a
+  # verdict and publishes nothing.
+  deep-publish:
+    needs: deep-badge
+    if: >-
+      always() && needs.deep-badge.outputs.publish == 'true' &&
+      startsWith(github.server_url, 'https://github.com') && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: scan-state
+          path: badges
       - name: Publish the state and the badge
-        if: startsWith(github.server_url, 'https://github.com') && github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/mutation-state.sh publish badges
