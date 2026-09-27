@@ -213,13 +213,14 @@ verdict
 check "nothing to scan and no state: the gate passes, no badge" \
   '[[ $status -eq 0 && ! -f "$case_dir/badges/mutation.json" ]]'
 
-# The rate table of the plan. A package with no state uses its starting rate, a backend
-# package with no rate uses 180, any other package 15, and the state always has priority.
+# The rate table of the plan. A package with no state uses its starting rate, any other
+# package 15, and the state always has priority. Each backend package of the module has a
+# starting rate, so no package reaches the 180 s backend default today.
 case_dir="$work/rates"
 mkdir -p "$case_dir/state"
 rate() { bash scripts/mutation-plan.sh --rate "$case_dir" "$1"; }
 check "rate: no state, table rate (./drivers/couchbase 156)" '[[ "$(rate ./drivers/couchbase)" == 156 ]]'
-check "rate: no state, backend default (./drivers/redis 180)" '[[ "$(rate ./drivers/redis)" == 180 ]]'
+check "rate: no state, measured table rate (./drivers/hbase 26)" '[[ "$(rate ./drivers/hbase)" == 26 ]]'
 check "rate: no state, other default (./internal/numfmt 15)" '[[ "$(rate ./internal/numfmt)" == 15 ]]'
 echo '{"secondsPerMutant": 42.5}' >"$case_dir/state/drivers-couchbase.json"
 echo '{"secondsPerMutant": null}' >"$case_dir/state/cmd.json"

@@ -45,6 +45,11 @@ export LC_ALL=C
 #   ./drivers/elasticsearch  72  local: about 15 h for 733 mutants
 #   ./drivers/file            3  CI: 1417 mutants in 75 min
 #   ./internal/query          4  gate 1 of the shard design: 83 cells in about 30 min
+#   ./drivers/redis           8  local suite wall time 2026-09-27, doubled for build overhead and CI
+#   ./drivers/dynamodb        6  local suite wall time 2026-09-27, doubled for build overhead and CI
+#   ./drivers/hbase          26  local suite wall time 2026-09-27, doubled for build overhead and CI
+#   ./drivers/couchdb        12  local suite wall time 2026-09-27, doubled for build overhead and CI
+#   ./drivers/mongo           5  local suite wall time 2026-09-27, doubled for build overhead and CI
 declare -A start_rate=(
   [./drivers/couchbase]=156
   [./cmd]=25
@@ -53,6 +58,11 @@ declare -A start_rate=(
   [./drivers/elasticsearch]=72
   [./drivers/file]=3
   [./internal/query]=4
+  [./drivers/redis]=8
+  [./drivers/dynamodb]=6
+  [./drivers/hbase]=26
+  [./drivers/couchdb]=12
+  [./drivers/mongo]=5
 )
 
 # Packages that start a backend in the CI `deep-mutate` job. Keep this list in step with
