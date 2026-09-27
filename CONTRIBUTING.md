@@ -434,6 +434,31 @@ for ad-hoc use.
   trailer naming the model and version, e.g.
   `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 
+## AI-assisted contributions
+
+`iq` itself is built with AI assistance, so AI-assisted pull requests are
+welcome. They meet the same bar as any other change, and three rules apply:
+
+- Disclose it. Every commit that an AI tool helped with ends with the
+  `Co-Authored-By:` trailer above, and the pull request template asks for it.
+- Run the gates locally before you open the pull request: `make check`,
+  `make cover`, `make security`, `make e2e`, and `scripts/mutation-gate.sh`
+  (plus `scripts/capabilities.sh` when `go.mod` or `go.sum` changed). The
+  mutation gate is diff-scoped by default: it mutates only the lines you
+  changed, and a full package scan is not required. CI runs the gates again,
+  but a pull request that fails them locally wastes review time.
+- Own the diff. You can explain every line, why the tests prove it, and why a
+  surviving mutant is a real equivalent before it enters the baseline.
+
+A pull request that breaks one of these rules is closed with a pointer to this
+section, not reviewed line by line.
+
+Until the mutago v2.10.16 re-baseline is done, some accepted escapes in
+`mutago-baseline.json` carry IDs from the older version. The diff-scoped gate can
+then fail on a line you changed, even though the escape there was accepted
+before. Say so in the pull request, and the maintainer re-checks and handles the
+entry. This note goes away with the re-baseline.
+
 ## Releasing
 
 ```bash
