@@ -6,7 +6,7 @@ icon: lucide/palette
 
 Results print as pretty JSON by default. A single format flag selects another rendering.
 
-The flags are mutually exclusive and apply to the jq read path and to `iq combine`, but not to
+The flags are mutually exclusive. They apply to the jq read path and to `iq combine`, but not to
 `exec` (which prints the backend's native reply).
 
 ## Format flags
@@ -18,7 +18,7 @@ Shorthand flags are available for most formats.
 It is mutually exclusive
 with them, so `-f json --jsonl` is rejected.
 
-`parquet` has no shorthand flag, it is a binary columnar format, selected by name only.
+`parquet` has no shorthand flag. It is a binary columnar format, selected by name only.
 
 ### JSON `--json`
 
@@ -100,12 +100,13 @@ iq '.[]' -A
 
 !!! info "`iq --jsona` differs from `sq --jsona`"
 
-    `iq --jsona` wraps the whole result stream in one array (like `jq -s`),
-    it is the analogue of `sq --json`.
+    `iq --jsona` wraps the whole result stream in one array (like `jq -s`). It
+    is the analogue of `sq --json`.
 
-    `sq --jsona` instead emits one JSON array *per row* with the keys dropped,
-    a columnar projection that a heterogeneous `jq` value stream has no exact
-    analogue for, so `iq` keeps the `sq` flag name but its own behaviour.
+    `sq --jsona` instead emits one JSON array *per row* with the keys dropped.
+    This is a columnar projection that a heterogeneous `jq` value stream has no
+    exact analogue for. As a result, `iq` keeps the `sq` flag name but its own
+    behaviour.
 
 ### Raw `--raw`
 
@@ -151,7 +152,7 @@ year: 2017
 
 Flattened `json.path = value;` assignment statements, one per line. Shorthand `-g`.
 
-Greppable and reversible with `gron --ungron`[^1], each result rooted at a repeated `json`.
+It is greppable and reversible with `gron --ungron`[^1]. Each result is rooted at a repeated `json`.
 
 ```
 iq '.[]' -g
@@ -183,19 +184,19 @@ json.year = 2017;
     line, object keys sorted.
 
     A key that is an ASCII identifier(`^[A-Za-z_$][A-Za-z0-9_$]*$`) follows
-    a bare dot (`json.name`), any other key is bracketed and JSON-quoted
-    (`json["odd key"]`), a deliberate ASCII subset of gron's rule, because
-    over-quoting stays ungron-safe.
+    a bare dot (`json.name`). Any other key is bracketed and JSON-quoted
+    (`json["odd key"]`). This is a deliberate ASCII subset of gron's rule,
+    because over-quoting stays ungron-safe.
 
     `--gron` repeats the `json` root for every result, so ungron[^1] is
     last-write-wins across results.
 
 !!! warning "Typed dumps are not supported"
 
-    `--typed` rejects `--gron` and `--grona`: a flattened assignment stream is a
-    rendering to grep, not a dump, no source re-imports it. Drop `--typed` to
-    gron the value stream, or dump with `--jsonl` (default), `--json`, `--jsona`,
-    or `--yaml`.
+    `--typed` rejects `--gron` and `--grona`. A flattened assignment stream is
+    a rendering to grep, not a dump. No source re-imports it. To gron the value
+    stream, drop `--typed`. To dump instead, use `--jsonl` (default), `--json`,
+    `--jsona`, or `--yaml`.
 
 ### gron Array `--grona`
 
@@ -236,11 +237,11 @@ json[1].year = 2017;
 ### Parquet `--format parquet`
 
 Streams the result values to an [Apache Parquet](https://parquet.apache.org/)
-file ([Apache Arrow](https://arrow.apache.org/) columnar format), the bridge
-to [pandas](https://pandas.pydata.org/), [Polars](https://pola.rs/),
+file ([Apache Arrow](https://arrow.apache.org/) columnar format). Parquet is the
+bridge to [pandas](https://pandas.pydata.org/), [Polars](https://pola.rs/),
 [DuckDB](https://duckdb.org/), and the wider data-science ecosystem.
 
-Because it is binary, `iq` refuses to write it to a terminal. Redirect it or use `-o out.parquet`, a pipe or file is required.
+Because it is binary, `iq` refuses to write it to a terminal. Redirect it or use `-o out.parquet`. A pipe or file is required.
 
 ```
 iq '.[]' --format parquet -o out.parquet
@@ -258,21 +259,31 @@ print(table)
 
 !!! note "Schema"
 
-    The schema is inferred from the first 1000 result values (schema-inference sample) and
-    projected onto Arrow types: `integer→int64`, `number→float64`, `boolean→bool`, `string→utf8`,
-    a `date-time` string→`timestamp[ns, UTC]`, a `date` string→`date32`, `object→struct`,
-    `array→list`, an id-keyed map→`map<utf8, T>`. A column whose sampled shape is heterogeneous or
+    The schema is inferred from the first 1000 result values (schema-inference sample). It is
+    projected onto Arrow types:
+
+    - `integer→int64`
+    - `number→float64`
+    - `boolean→bool`
+    - `string→utf8`
+    - A `date-time` string→`timestamp[ns, UTC]`
+    - A `date` string→`date32`
+    - `object→struct`
+    - `array→list`
+    - An id-keyed map→`map<utf8, T>`.
+
+    A column whose sampled shape is heterogeneous or
     null-only falls back to the `arrow.json` canonical extension (utf8 storage holding byte-lossless
     canonical JSON), marked in field metadata.
 
     The Arrow schema is embedded in the file (`ARROW:schema`), so exact types survive a read-back.
-    A value that does not fit its inferred column type past the sample fails the export naming
-    the column, switch to `--format jsonl` for fully heterogeneous data rather than coercing.
+    A value that does not fit its inferred column type past the sample fails the export, naming
+    the column. For fully heterogeneous data, switch to `--format jsonl` rather than coercing.
 
 !!! info "Presence caveat"
 
     Arrow's validity bitmaps cannot distinguish a *missing* field from a field
-    present as `null`, both collapse to a null in the column.
+    present as `null`. Both collapse to a null in the column.
 
     `iq` preserves the distinction inferred from the sample in field metadata
     (`iq:presence` = `required` | `optional`), so it survives in the schema
@@ -295,13 +306,13 @@ It is a no-op for `--jsonl`, `--raw`, `--yaml`, `--gron`, `--grona`, and
 
 ## File `--output <file>`
 
-`--output` :material-earth:{ title="Global flag" } is global, every command honours it (for example
-`iq inspect -o report.json`), see [Global flags](global-flags.md#global-flags).
+`--output` :material-earth:{ title="Global flag" } is global. Every command honours it (for example
+`iq inspect -o report.json`). See [Global flags](global-flags.md#global-flags).
 
 Writes results to `<file>` instead of stdout, truncating an existing file, with the
 shorthand `-o`. It is orthogonal to the format flags.
 
-Color is off for a file unless you force it with `-C`, progress and errors
+Color is off for a file unless you force it with `-C`. Progress and errors
 still go to stderr.
 
 ## Numbers `--format.decimal`
@@ -313,9 +324,9 @@ from the backend is presented to the filter.
 
 | value | behavior |
 | --- | --- |
-| `auto` (default) | each backend keeps its faithful form: MongoDB `Decimal128` is an exact string, a Redis fractional number is a `float64` |
+| `auto` (default) | each backend keeps its faithful form. MongoDB `Decimal128` is an exact string. A Redis fractional number is a `float64` |
 | `number` | decimals become bare numbers (`float64`), convenient for arithmetic but lossy beyond `float64` |
-| `string` | decimals become their exact literal as a string, precision-safe, use `tonumber` to compute |
+| `string` | decimals become their exact literal as a string, precision-safe. Use `tonumber` to compute |
 
 ```bash { title='"19.99" — exact, precision-safe' }
 ./iq '.book.price' --format.decimal=string
@@ -330,29 +341,29 @@ from the backend is presented to the filter.
 !!! warning
 
     Because the `jq` filter runs client-side over the fetched value, this choice is
-    made at normalization time, it changes what the filter computes on, not only
+    made at normalization time. It changes what the filter computes on, not only
     how the result prints (unlike `sq`, where `jq` is not involved).
 
 !!! note
 
-    Integers are always exact regardless of the mode, they arrive as an `int` or
-    a big integer when they exceed 64 bits, so `.count + 1` stays exact rather than
-    rounding through `float64`.
+    Integers are always exact regardless of the mode. They arrive as an `int`, or
+    as a big integer when they exceed 64 bits. As a result, `.count + 1` stays
+    exact rather than rounding through `float64`.
 
-    A backend can round before `iq` sees the value, RedisJSON, for example, stores
+    A backend can round before `iq` sees the value. For example, RedisJSON stores
     an integer larger than 64 bits as a double, so it arrives already in scientific
     notation.
 
     A big integer renders as a bare number in the JSON formats but as a quoted
-    string under `--yaml` (a `yaml.v3` limitation), exactness is kept in preference
-    to YAML's numeric form.
+    string under `--yaml` (a `yaml.v3` limitation). Exactness is kept in
+    preference to YAML's numeric form.
 
 ## Color `--color`
 
 `--color` :material-earth:{ title="Global flag" }, shorthand `-C`, is global.
 
-Output is syntax-highlighted when `iq` writes to a terminal and left plain when
-it is piped or redirected, so captured output stays free of color codes, TTY detection is
+Output is syntax-highlighted when `iq` writes to a terminal. It is left plain when
+it is piped or redirected, so captured output stays free of color codes. TTY detection is
 where capture safety comes from.
 
 ```bash title="Colored on a terminal, plain when piped"
@@ -371,13 +382,15 @@ where capture safety comes from.
     `--jsona`, `--yaml`, `--raw`, `--gron`, `--grona`). Under `--raw`, strings
     and nulls still print bare and uncolored, keeping shell substitution exact.
 
-    The human commands color their signal too: `ping` shows `ok`/`error` in
-    green/red, `diff` shows additions green, removals red, and changes yellow,
-    and `ls`/`inspect` highlight the active source and section headers.
+    The human commands color their signal too:
+
+    - `ping` shows `ok`/`error` in green/red.
+    - `diff` shows additions green, removals red, and changes yellow.
+    - `ls`/`inspect` highlight the active source and section headers.
 
     The raw reply bodies from `exec` and `inspect` are colored in their native
-    form, for example JSON syntax highlighting for MongoDB, and redis-cli-style
-    value tokens for Redis.
+    form. For example, MongoDB gets JSON syntax highlighting, and Redis gets
+    redis-cli-style value tokens.
 
 ## No color `--monochrome`
 
@@ -390,4 +403,4 @@ Disable colored output. Color is on by default only when writing to a terminal.
     Colored output is also disabled if the `NO_COLOR` environment variable is
     set. `-C` forces colored output and overrides `NO_COLOR`.
 
-[^1]: `gron` flattens JSON into one `json.path = value;` assignment per line so it can be grepped, and `gron --ungron` reverses that, rebuilding the JSON from the assignments, which is what makes `--gron` output round-trippable. https://github.com/tomnomnom/gron#ungronning
+[^1]: `gron` flattens JSON into one `json.path = value;` assignment per line, so it can be grepped. `gron --ungron` reverses that and rebuilds the JSON from the assignments. This is what makes `--gron` output round-trippable. https://github.com/tomnomnom/gron#ungronning
