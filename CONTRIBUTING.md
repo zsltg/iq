@@ -235,9 +235,10 @@ scheduled run in the first seven days of the month, which catches effects
 across packages. The `packages` input (space-separated, for example
 `./internal/numfmt`) limits the plan for a manual test. The unit of work is a
 (file, mutator) cell from a dry run; the plan packs cells into shards of about
-150 min at the measured seconds per mutant (180 s for a package with a
-backend and 15 s otherwise until a scan measures it), and warns about a single
-cell over that budget. `deep-mutate` runs one shard per runner
+150 min at the measured seconds per mutant (a package with no stored result
+uses its starting rate from the table in the script, else 180 s with a backend
+and 15 s without; `bash scripts/mutation-plan.sh --rate <badges-dir> <package>`
+prints the rate), and warns about a single cell over that budget. `deep-mutate` runs one shard per runner
 (`scripts/mutation-shard.sh`: one ungated wrapper run per cell, mutago
 installed once, eight runners at a time; a driver job starts its compose
 service(s) once and sets the `IQ_*_URL` override, so per-mutant test runs

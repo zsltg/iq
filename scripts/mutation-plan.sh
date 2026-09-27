@@ -2,6 +2,7 @@
 # Plans the weekly mutation scan: which packages to scan, cut into shards.
 #
 #   scripts/mutation-plan.sh <badges-dir> [package...]
+#   scripts/mutation-plan.sh --rate <badges-dir> <package>   # print the seconds per mutant
 #
 # <badges-dir> holds the last published `badges` branch (state/<slug>.json for each
 # package). Without a package argument the plan covers every package with a non-test Go
@@ -24,14 +25,70 @@
 # Shard size. The budget of a shard is 150 min, which leaves 30 min of the 180 min job for
 # the setup. The cost of a cell is (mutants + 1) x seconds per mutant: each gate run also
 # does one coverage pass of the package tests. The seconds per mutant come from the state
-# of the last scan (secondsPerMutant). With no measurement, the value is 180 s for a
-# package that starts a backend in CI and 15 s for the other packages. The cells are
+# of the last scan (secondsPerMutant). A package with no state uses its starting rate from
+# the table below, else 180 s for a package that starts a backend in CI and 15 s for the
+# other packages. The cells are
 # packed largest first, each into the first shard that has room (first-fit decreasing). A
 # cell that is larger than the budget gets its own shard and a warning. A package with no
 # mutants gets one shard with no cells, so that the verdict still records its zero result.
 set -euo pipefail
 
 export LC_ALL=C
+
+# Starting rates in seconds per mutant. The plan uses a rate only for a package with no
+# state: the secondsPerMutant of the last scan always has priority. Each rate comes from
+# one measurement:
+#   ./drivers/couchbase     156  CI 2026-08-30: 69 mutants in 180 min
+#   ./cmd                    25  local full scans of ./cmd
+#   ./drivers/cassandra      20  local: about 4 h for 737 mutants
+#   ./drivers/neo4j          21  local: about 4 h for 687 mutants
+#   ./drivers/elasticsearch  72  local: about 15 h for 733 mutants
+#   ./drivers/file            3  CI: 1417 mutants in 75 min
+#   ./internal/query          4  gate 1 of the shard design: 83 cells in about 30 min
+declare -A start_rate=(
+  [./drivers/couchbase]=156
+  [./cmd]=25
+  [./drivers/cassandra]=20
+  [./drivers/neo4j]=21
+  [./drivers/elasticsearch]=72
+  [./drivers/file]=3
+  [./internal/query]=4
+)
+
+# Packages that start a backend in the CI `deep-mutate` job. Keep this list in step with
+# the case block of that job in .github/workflows/ci.yml. With no state and no starting
+# rate, such a package uses 180 s per mutant, and any other package 15 s.
+backend_packages=" ./cmd ./drivers/redis ./drivers/mongo ./drivers/cassandra ./drivers/dynamodb ./drivers/hbase ./drivers/couchdb ./drivers/couchbase ./drivers/neo4j ./drivers/elasticsearch "
+
+# rate <badges-dir> <package> <slug>: the seconds per mutant for the plan of a package.
+rate() {
+  local state="$1/state/$3.json" spm=""
+  [[ -f "$state" ]] && spm=$(jq -r '.secondsPerMutant // "" | tostring' "$state")
+  if [[ "$spm" =~ ^[0-9]+(\.[0-9]+)?$ ]] && [[ ! "$spm" =~ ^0+(\.0+)?$ ]]; then
+    echo "$spm"
+  elif [[ -n "${start_rate[$2]-}" ]]; then
+    echo "${start_rate[$2]}"
+  elif [[ "$backend_packages" == *" $2 "* ]]; then
+    echo 180
+  else
+    echo 15
+  fi
+}
+
+slug_of() {
+  local slug
+  slug=$(printf '%s' "$1" | tr '/.' '--' | sed 's/^-*//')
+  echo "${slug:-root}"
+}
+
+if [[ "${1-}" == "--rate" ]]; then
+  [[ $# -eq 3 ]] || {
+    echo "usage: mutation-plan.sh --rate <badges-dir> <package>" >&2
+    exit 1
+  }
+  rate "$2" "$3" "$(slug_of "$3")"
+  exit 0
+fi
 
 badges="${1:?usage: mutation-plan.sh <badges-dir> [package...]}"
 shift
@@ -58,10 +115,6 @@ for pkg in "${packages[@]}"; do
   fi
 done
 
-# Packages that start a backend in the CI `deep-mutate` job. Keep this list in step with
-# the case block of that job in .github/workflows/ci.yml.
-backend_packages=" ./cmd ./drivers/redis ./drivers/mongo ./drivers/cassandra ./drivers/dynamodb ./drivers/hbase ./drivers/couchdb ./drivers/couchbase ./drivers/neo4j ./drivers/elasticsearch "
-
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
@@ -70,8 +123,7 @@ mutago_bin=$(IQ_MUTATION_INSTALL_DIR="$work/bin" bash scripts/mutation-gate.sh |
 
 full="${IQ_MUTATION_FULL-}"
 for pkg in "${packages[@]}"; do
-  slug=$(printf '%s' "$pkg" | tr '/.' '--' | sed 's/^-*//')
-  [[ -n "$slug" ]] || slug=root
+  slug=$(slug_of "$pkg")
   fingerprint=$(bash scripts/mutation-fingerprint.sh "$pkg")
   state="$badges/state/$slug.json"
   reason=""
@@ -86,12 +138,7 @@ for pkg in "${packages[@]}"; do
     echo "mutation-plan: $pkg reuses its state" >&2
     continue
   fi
-  spm=""
-  [[ -f "$state" ]] && spm=$(jq -r '.secondsPerMutant // "" | tostring' "$state")
-  if [[ ! "$spm" =~ ^[0-9]+(\.[0-9]+)?$ ]] || [[ "$spm" =~ ^0+(\.0+)?$ ]]; then
-    spm=15
-    [[ "$backend_packages" == *" $pkg "* ]] && spm=180
-  fi
+  spm=$(rate "$badges" "$pkg" "$slug")
   if ! IQ_MUTATION_MUTAGO_BIN="$mutago_bin" IQ_MUTATION_DRYRUN=1 bash scripts/mutation-gate.sh "$pkg" >"$work/$slug.dry" 2>&1; then
     cat "$work/$slug.dry" >&2
     echo "mutation-plan: the dry run of $pkg failed" >&2
