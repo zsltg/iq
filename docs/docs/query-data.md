@@ -7,7 +7,7 @@ icon: material/magnify
 The default action, a `jq` filter run against the active source (see
 [Sources](sources.md)).
 
-The top-level paths name the keys to fetch, the result is printed as pretty
+The top-level paths name the keys to fetch. The result is printed as pretty
 JSON by default (see [Output formats](output.md))
 
 ```sh { title='Fetch the key "greeting"' }
@@ -29,14 +29,14 @@ iq '.["book:2"].price | tonumber + 5'
 !!! warning "Escaping"
 
     Always wrap the filter in single quotes. `jq` syntax is full of characters
-    the shell otherwise expands or splits, brackets (`[ ]`), whitespace,
-    `|`, `*`, `$` and bracket-quoting a colon key like `.["book:1"]` reads as a
+    that the shell otherwise expands or splits: brackets (`[ ]`), whitespace,
+    `|`, `*`, `$`. Bracket-quoting a colon key like `.["book:1"]` reads as a
     glob to `zsh` (`no matches found`) or `bash` unless quoted.
 
 ## Cross-source queries
 
 Both [Compose](#compose-source) and [Combine](#combine-combine) reduce per
-source then combine, pick what the query needs.
+source, then combine. Pick what the query needs.
 
 | | Compose `source()` | Combine `iq combine` |
 | --- | --- | --- |
@@ -54,16 +54,16 @@ few sources.
 ### Compose `source()`
 
 `source("name"; "<jq>")` runs `<jq>` against source `name` (reduced, streamed
-and pushed down like any query) and yields its results as a stream, a
+and pushed down like any query) and yields its results as a stream. A
 one-argument `source("name")` yields the whole source.
 
 Both arguments of `source()` are strings, so they must be quoted. It also
-yields a stream, collect it before indexing with `INDEX(source(…); .id)` or
+yields a stream. Collect it before indexing with `INDEX(source(…); .id)` or
 `[source(…)]`, not `source(…) | INDEX(.id)`.
 
-A filter that calls `source()` runs over a null input, every read is an
-explicit `source()` call and there is no implicit primary source, so it needs
-no active source. Names resolve through the registry like `--src`, active-group
+A filter that calls `source()` runs over a null input. Every read is an
+explicit `source()` call, and there is no implicit primary source. As a
+result, it needs no active source. Names resolve through the registry like `--src`, active-group
 namespacing included.
 
 ```sh { title='Join users and orders in a single filter (no active source needed)' }
@@ -74,8 +74,8 @@ iq 'INDEX(source("users"; ".[]"); .id) as $u
 
 !!! tip "Correlated lookups re-run"
 
-    A `source()` opened inside a stream runs its sub-filter once per element,
-    the connection is reused, but the sub-filter re-executes.
+    A `source()` opened inside a stream runs its sub-filter once per element.
+    The connection is reused, but the sub-filter re-executes.
 
     Hoist a constant lookup into a binding `INDEX(source("users"; ".[]"); .id)
     as $u | …` and index `$u` per element instead.
@@ -90,8 +90,8 @@ iq 'INDEX(source("users"; ".[]"); .id) as $u
     select(.total > 99)")`, not `source("orders"; ".[]")` filtered outside, so
     only the rows you need are held.
 
-    A bare `source("big")` over a large source buys no streaming benefit,
-    prefer `iq combine` when each side is large and independent.
+    A bare `source("big")` over a large source buys no streaming benefit.
+    When each side is large and independent, prefer `iq combine`.
 
 ### Combine `combine`
 
@@ -102,14 +102,14 @@ Query several sources and combine their results with one `jq` program.
 Each positional is a source spec (`<source>[=<jq>]`) reduced at the source
 (bounded reads, streaming scans, and predicate pushdown all still apply). The
 spec's results bind to a `jq` variable named after the source, with `/`, `.`
-and `-` becoming `_` (so `prod/books=.[]` binds `$prod_books`) and `--with` is
+and `-` becoming `_` (so `prod/books=.[]` binds `$prod_books`). `--with` is
 the final program, so it can join, union (`$a + $b`), aggregate, or fan across
 any number of sources.
 
-Each source reduces at the source, and a pushable filter pushes down, so this
-never copies whole datasets to join them. A spec with no filter binds the whole
-keyspace, which is a whole-keyspace read, it needs `--unbounded`, exactly as the same
-expression does on a plain query.
+Each source reduces at the source, and a pushable filter pushes down. As a
+result, this never copies whole datasets to join them. A spec with no filter
+binds the whole keyspace, which is a whole-keyspace read. It needs
+`--unbounded`, exactly as the same expression does on a plain query.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
@@ -124,9 +124,9 @@ iq combine 'users=.[] | {id, name}' \
 
 !!! tip "Reduce, then combine"
 
-    Each spec is evaluated independently and its (already reduced) result is
-    held in memory before `--with` runs, so keep a stage's output small with
-    `select`/projection/aggregation.
+    Each spec is evaluated independently. Its (already reduced) result is held
+    in memory before `--with` runs. For this reason, keep a stage's output
+    small with `select`/projection/aggregation.
 
     A spec that must materialize its whole source (`keys`, `.`, `map(...)`)
     still needs `--unbounded`, exactly like a single-source query. A
@@ -135,9 +135,9 @@ iq combine 'users=.[] | {id, name}' \
 ## Unbounded `--unbounded`
 
 Permit a filter that loads the whole dataset into memory. It also materializes a
-`.[]`-rooted filter instead of streaming it, so a filter that collapses the
-keyspace into one value (`keys`, `.`, `map(...)`) runs only with it, see
-[Read strategies](how-it-works.md#read-strategies).
+`.[]`-rooted filter instead of streaming it. As a result, a filter that
+collapses the keyspace into one value (`keys`, `.`, `map(...)`) runs only with
+it (see [Read strategies](how-it-works.md#read-strategies)).
 
 `iq combine` and `iq data` carry their own copies of the flag where they apply.
 
@@ -147,4 +147,4 @@ Disable pushdown.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
-| | `--no-compile` | ✗ | disable predicate pushdown, run the full `.[] | select()` filter client-side |
+| | `--no-compile` | ✗ | disable predicate pushdown. Run the full `.[] | select()` filter client-side |
