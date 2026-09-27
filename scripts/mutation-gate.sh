@@ -291,15 +291,17 @@ fi
 # Dry run is a mutant-count preview whose cost depends on the form. A package-arg dry
 # run is instant and runs no tests; a diff-scoped or whole-module (./...) dry run first
 # runs the --coverage instrumented test pass (whole-target, memory-heavy, buffered)
-# before counting. The count is a whole-target upper bound either way and ignores
-# --git-diff-lines. Scope dry runs to one package and never run one beside a live gate.
+# before counting. The count is an upper bound. Since mutago v2.10.14 it applies
+# --git-diff-lines. The dry run must read .mutago.yml like the real run, because the
+# skip keys in that file change which source files mutago mutates. Scope dry runs to one
+# package and never run one beside a live gate.
 if [[ "${IQ_MUTATION_DRYRUN-}" == "1" ]]; then
   if [[ "$has_path" -eq 1 ]]; then
     echo "mutation gate: dry run (instant mutant-count preview, no tests)"
   else
     echo "mutation gate: dry run (runs the --coverage instrumented pass first; whole-target, memory-heavy)"
   fi
-  "$mutago" --dry-run "${scope[@]}" "${targets[@]}"
+  "$mutago" --dry-run --config .mutago.yml "${scope[@]}" "${targets[@]}"
   exit $?
 fi
 
