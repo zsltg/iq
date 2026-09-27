@@ -472,8 +472,8 @@ iq --src snap --insert cache
 | `?format=cassandra-csv` | cqlsh COPY TO CSV |
 | `?format=neo4j-json` | Neo4j APOC JSON export |
 
-A bare name auto-detects (`file:///<file_path>`). You must pass the `?format=` form
-(`file:///<file_path>?format=<source_format>`). The
+A type with a bare name auto-detects (`file:///<file_path>`). For a type in the `?format=` rows,
+you must pass the `?format=` form (`file:///<file_path>?format=<source_format>`). The
 [Drivers page](https://zsltg.github.io/iq/drivers/#file-dumps) documents what produces each
 format, the options some of them need, and the round-trip caveats.
 

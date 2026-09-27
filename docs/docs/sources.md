@@ -279,7 +279,7 @@ Exits non-zero when the sources differ and zero when they match
 | --- | --- | --- | --- |
 | | `--data` | ✓ | diff items key by key (cross-driver allowed, for example MongoDB `_id` and Redis key) |
 | | `--filter <string>` | none | jq filter you root at `.[]`, scoping both sides. A spec's own `source=<jq>` overrides it for that side |
-| | `--patch` | ✗ | emit an RFC 6902 JSON Patch[^1] that transforms the left source into the right (single layer only). For `--data`, the pointers read `/<key>/<field>` over the whole keyspace map. It excludes `--json`/`--yaml`/`--set-arrays` |
+| | `--patch` | ✗ | emit an RFC 6902 JSON Patch[^1] that transforms the left source into the right (single layer only). For `--data`, the pointers read `/<key>/<field>` over the whole keyspace map. `--patch` excludes `--json`/`--yaml`/`--set-arrays` |
 | | `--schema` | ✗ | diff an inferred field/type shape (cross-driver allowed) based on a sample (use `--sample` to change the sample size) |
 | | `--sample <int>` | `1000` | max items sampled per side for --schema (0 = all) |
 | | `--stats` | ✗ | diff native introspection trees (same driver only). Use with `--section` to narrow it down |

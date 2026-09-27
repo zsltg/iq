@@ -961,9 +961,9 @@ Write nodes with `?label=`.
 ### Pushdown
 
 By default, the driver translates the **equality** and **existence** clauses of a
-`.[] | select(...)` filter into a Cypher `WHERE` clause. The clause uses dynamic `n[$prop]` access,
-so the property name is a parameter, never string-built. As a result, the server filters before
-nodes reach iq:
+`.[] | select(...)` filter into a Cypher `WHERE` clause. As a result, the server filters before
+nodes reach iq. The clause uses dynamic `n[$prop]` access, so the property name is a parameter,
+never string-built:
 
 | `select(...)` clause | Pushed | Cypher | Notes |
 | --- | :---: | --- | --- |
