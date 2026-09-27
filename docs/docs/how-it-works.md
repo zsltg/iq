@@ -5,11 +5,11 @@ icon: material/sitemap-outline
 # How it works
 
 A Go command-line tool that runs [jq](https://jqlang.github.io/jq/) filters
-against NoSQL databases. The backend is chosen by the URI scheme, and the query
+against NoSQL databases. The URI scheme chooses the backend, and the query
 core is driver-agnostic so further backends slot in behind the same port.
 
 The filter is both the transform and the key selector, its top-level paths
-name the keys to fetch, so a normal query reads a bounded set of keys; a
+name the keys to fetch, so a normal query reads a bounded set of keys. A
 `.[]`-rooted filter streams the keyspace in pages, and a filter that collapses
 it into one value materializes only behind `--unbounded`. Fetched values are
 normalized to JSON and the filter then runs entirely client-side, so its
@@ -18,16 +18,16 @@ semantics are identical for every backend.
 The CLI and `iq mcp` are two thin delivery mechanisms over that one core. The
 MCP server exposes the CLI's own operations as tools, resolves the same saved
 sources, and runs the same engine, so it adds no port and changes no
-classification; what it adds is its own bounds, a tool set fixed at startup by
+classification. What it adds is its own bounds, a tool set fixed at startup by
 `--allow`, per-result item and byte caps, and the CLI's redacted error shape.
 
 `iq` is inspired by [sq](https://github.com/neilotoole/sq), much of its command
-surface (the `<source>.<collection>` addressing along with many subcommands and
+set (the `<source>.<collection>` addressing along with many subcommands and
 flags) deliberately follows sq's to make the tool feel familiar.
 
-The `jq` semantics are identical for any future backend. `jq` is provided by
-[gojq](https://github.com/itchyny/gojq) (pure Go, no CGO), which keeps `iq` a
-single static binary and exposes the AST the key selector walks.
+The `jq` semantics are identical for any future backend.
+[gojq](https://github.com/itchyny/gojq) (pure Go, no CGO) provides `jq`, keeps `iq` a
+single static binary, and exposes the AST the key selector walks.
 
 ## Read strategies
 
@@ -35,9 +35,9 @@ The shape of the filter decides how much `iq` reads, every filter takes one of
 three routes.
 
 1. **Bounded reads** (with explicit keys) only read the specified subset of
-   items from the source, the cost is bounded by the keys you asked for, never
-   by the size of the database.
-2. **Streaming scans** (a filter rooted at `.[]`, eg. `.[]`, `.[] | select()`,
+   items from the source, the keys you asked for bound the cost, never
+   the size of the database.
+2. **Streaming scans** (a filter rooted at `.[]`, for example `.[]`, `.[] | select()`,
    `.[].title`) process each value independently, walking the keyspace in
    pages and running the filter page by page, emitting as it goes. Memory stays
    constant and results appear progressively.
@@ -72,7 +72,7 @@ full filter per page to drop the extra matches it admits.
 
 !!! note "Cost"
 
-    A *bounded filter* runs client-side over just the named keys, so its cost is
+    A *bounded filter* runs client-side over only the named keys, so its cost is
     `O(keys requested)`.
 
     A *streamable scan* runs in `O(page)` memory.
@@ -91,7 +91,7 @@ full filter per page to drop the extra matches it admits.
 !!! note "Streaming data"
 
     Streamed output is *best-effort*, values arrive in scan order (not
-    key-sorted), and an element may repeat if the keyspace is resized mid-scan,
+    key-sorted), and an element can repeat if the keyspace is resized mid-scan,
     the price of never holding more than one page.
 
     Use `--unbounded` when you need sorted, exactly-once output.
@@ -99,27 +99,27 @@ full filter per page to drop the extra matches it admits.
 
 !!! note "Progress"
 
-    A scan has no reliable upfront total (eg. Redis `SCAN`, Mongo cursor), so
+    A scan has no reliable upfront total (for example Redis `SCAN`, Mongo cursor), so
     `iq` shows an animated spinner with a running `N scanned` count on
     *stderr*, a sparse `.[] | select()` over a large keyspace is never
     silent.
 
-    When a backend can supply a cheap approximate total (eg. MongoDB's
+    When a backend can supply a cheap approximate total (for example MongoDB's
     `estimatedDocumentCount` for an unfiltered whole-collection scan, Redis's
     `DBSIZE` for its whole-keyspace `MATCH *` scan), the count is shown against
     it as `N scanned (~M est)`.
 
     The tilde marks it a hint, it comes from cached metadata and drifts under
-    concurrent writes, so the scan may exceed it and it never becomes a
+    concurrent writes, so the scan can exceed it and it never becomes a
     percentage bar.
 
     No total is shown for a pushed-down filtered scan (it walks a subset) or
-    for a cross-source scan (a per-source estimate would mislead the
+    for a cross-source scan (a per-source estimate misleads the
     aggregate).
 
 ## Query routes
 
-A jq filter is classified by the **selector**, a scan is optionally
+The **selector** classifies a jq filter, a scan is optionally
 **decomposed** into a native predicate, and each backend maps that predicate
 its own way.
 
@@ -197,14 +197,14 @@ distinct values.
 
 [PartiQL](https://partiql.org/) has both `NULL` and `MISSING`, and `MISSING`
 drops out of a projection where `NULL` is carried through.
-[SQL++](https://arxiv.org/abs/1405.3631) makes missing a first-class value and
+[SQL++](https://arxiv.org/abs/1405.3631) makes missing a value of its own and
 documents real divergence. The same path returns `null` in AsterixDB, `missing`
 in Couchbase, and an error in SQL.
 [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535) (JSONPath) models absence as
 `Nothing`, again distinct from `null`. `iq` takes a deliberate, layered
 position in that vocabulary rather than one blanket rule.
 
-- **The jq surface reads missing as `null`.** gojq evaluates entirely
+- **The jq layer reads missing as `null`.** gojq evaluates entirely
   client-side, so `.a` on a document without `a` yields `null`, the same on
   every backend. This is the uniform semantics the whole tool promises, a
   filter behaves identically whether the field is absent, stored as `null`, or
@@ -212,14 +212,14 @@ position in that vocabulary rather than one blanket rule.
 - **The schema layer preserves the distinction.** `iq schema` tracks
   *parent-relative presence*, a field observed on some documents but not others
   is optional, separate from a field that is present-and-nullable, so the
-  inferred shape measures logical structure, not the jq surface's collapse.
-- **Drivers decline pushes whose backend semantics would diverge.** A conjunct
+  inferred shape measures logical structure, not the jq layer's collapse.
+- **Drivers decline pushes whose backend semantics diverge.** A conjunct
   is pushed only when the backend reproduces `jq`'s answer for every input
-  including missing and null; Elasticsearch `== null` (which no single term
+  including missing and null. Elasticsearch `== null` (which no single term
   matches as absent-or-null) is declined and re-filtered client-side rather
   than pushed with the wrong meaning. The per-driver push/not-push tables
   record each call.
 
-So the collapse is a surface convenience, not a loss, the distinction is kept
+So the collapse is a query-layer convenience, not a loss, the distinction is kept
 where it carries information (schema inference, pushdown safety) and hidden
-where uniformity matters more (the query surface).
+where uniformity matters more (the query layer).

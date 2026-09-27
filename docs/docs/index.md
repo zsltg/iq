@@ -13,7 +13,7 @@ databases, and their dump files, from a single static binary. See
 Fetched values are normalized to JSON and the filter runs entirely client-side,
 so one filter means the same thing everywhere.
 
-The backend is chosen by the URI scheme[^4], and the filter is both the
+The URI scheme[^4] chooses the backend, and the filter is both the
 *transform* and the *key selector*, the selector walks the parsed `jq` AST[^ast]
 and, based on that, executes a *bounded read*, a *streaming scan* (with
 *pushdown*[^pushdown]), or a *materialized scan* (see
@@ -23,7 +23,7 @@ Typed dumps carry native types across stores, so a copy, a restore or a
 migration is one command instead of an export plus a conversion script.
 
 `iq` is inspired by [`sq`](https://sq.io "Command-line tool giving jq-style
-access to SQL databases and files like CSV or Excel"), whose command surface it
+access to SQL databases and files like CSV or Excel"), whose command set it
 deliberately follows.
 
 !!! note
@@ -195,7 +195,7 @@ backend verb and its operands.
 Every completion is offline, it reads your config file and nothing else, so a
 `<TAB>` never opens a connection, never reads the OS keyring[^keyring], and cannot hang.
 That is why a collection suffix does not complete, `iq --src shop.<TAB>` offers
-nothing, since listing collections would mean connecting.
+nothing, because listing collections needs a connection.
 
 ## Man page
 

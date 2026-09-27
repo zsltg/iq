@@ -46,7 +46,7 @@ reads only what it asks for (see [Architecture](#architecture)).
 Typed dumps carry native types across stores, so a copy, a restore or a
 migration is one command instead of an export plus a conversion script.
 
-`iq` is inspired by [sq](https://github.com/neilotoole/sq), whose command surface it
+`iq` is inspired by [sq](https://github.com/neilotoole/sq), whose command set it
 deliberately follows to make the tool feel familiar.
 
 > [!NOTE]
@@ -72,7 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/zsltg/iq/main/install.sh | sh
 ```
 
 The script downloads the release for your OS/arch, verifies its SHA-256 against the release
-checksums, and installs the binary; `IQ_VERSION` pins a version and `IQ_INSTALL_DIR` picks the
+checksums, and installs the binary. `IQ_VERSION` pins a version and `IQ_INSTALL_DIR` picks the
 target directory. Or grab a `.deb`, `.rpm`, `.apk`, or Arch `.pkg.tar.zst` from the
 [releases](https://github.com/zsltg/iq/releases).
 
@@ -215,8 +215,8 @@ there (and never falls back to filenames), nor do `iq exec`'s backend verb and i
 
 Every completion is offline: it reads your config file and nothing else, so a `<TAB>` never
 opens a connection, never reads the OS keyring, and cannot hang. That is why a collection
-suffix does not complete, `iq --src shop.<TAB>` offers nothing, since listing collections
-would mean connecting.
+suffix does not complete, `iq --src shop.<TAB>` offers nothing, because listing collections
+needs a connection.
 
 </details>
 
@@ -374,7 +374,7 @@ Check [Insert](https://zsltg.github.io/iq/write-data/#insert-insert) for more de
 `iq` picks the backend from a source's URI scheme, and the query core is driver-agnostic, so
 further backends slot in behind the same port. The
 [Drivers page](https://zsltg.github.io/iq/drivers/) documents each driver's keyspace mapping,
-value encoding, predicate pushdown, and raw-command escape hatch.
+value encoding, predicate pushdown, and raw commands.
 
 | Name | Database | Versions |
 | ---- | ----------- | -------- |
@@ -401,25 +401,25 @@ same contract:
 - **One URI, native nouns.** The URI scheme picks the driver, the keyspace rides in the URI as the
   backend's own noun (`?collection=`, `?table=`, `?database=`, `?label=`/`?rel=`, `?index=`) and a
   query overrides it per run with the dotted `handle.<keyspace>` suffix.
-- **One jq surface.** A bounded filter fetches exactly the named keys, a missing key reads as
-  `null`, never an error, a `.[]`-rooted filter streams the keyspace in bounded pages, a holistic
-  filter materializes only behind `--unbounded`.
+- **One jq interface.** A bounded filter fetches exactly the named keys, a missing key reads as
+  `null`, never an error, a `.[]`-rooted filter streams the keyspace in bounded pages, a filter
+  that collapses the keyspace into one value materializes only behind `--unbounded`.
 - **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter,
   server-side where the backend can filter, or a client-side raw-byte prefilter that drops a provable
   non-match before decode where it cannot (Redis, on RedisJSON values, Elasticsearch/OpenSearch and
-  Couchbase, over the residual their server-side query could not narrow). The full jq always re-runs
+  Couchbase, over the residual their server-side query cannot narrow). The full jq always re-runs
   client-side, so
   output is identical with or without it and `--explain` shows exactly
   what was pushed.
 - **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, drop and per-key
   delete are opt-in ports, a backend implements what its model supports and a command against a
   missing capability fails with a clear message instead of emulating it (Redis, whose DB index cannot
-  be removed, simply has no `drop`, the read-only file dump has no per-key `delete`).
+  be removed, has no `drop`, the read-only file dump has no per-key `delete`).
 - **Values round-trip.** Every value normalizes to JSON under a frozen per-backend encoding
   contract and a `--typed` dump restores through `--insert` losslessly.
-- **Bounded and redacted.** Every backend call is bounded by `--timeout` and a URI's password is
+- **Bounded and redacted.** `--timeout` bounds every backend call and a URI's password is
   redacted from every listing, log line and error.
-- **A native escape hatch.** `iq exec` speaks the backend's own language, verbatim where one exists
+- **Native commands.** `iq exec` speaks the backend's own language, verbatim where one exists
   (Redis commands, Mongo command documents, CQL, PartiQL, Cypher, Mango, the Elasticsearch DSL), a small
   fixed verb set where none does (HBase), see each driver's Raw commands section on the
   [Drivers page](https://zsltg.github.io/iq/drivers/). Every `iq` flag
@@ -462,24 +462,24 @@ format, the options some of them need, and the round-trip caveats.
 
 ## Architecture
 
-The backend is chosen by the URI scheme, and the query core is driver-agnostic, so further
+The URI scheme chooses the backend, and the query core is driver-agnostic, so further
 backends slot in behind the same port.
 
 The filter is both the transform and the key selector: its top-level paths name the keys to
-fetch, so a normal query reads a bounded set of keys; a `.[]`-rooted filter streams the
+fetch, so a normal query reads a bounded set of keys. A `.[]`-rooted filter streams the
 keyspace in pages, and a filter that collapses it into one value materializes only behind
 `--unbounded`. Fetched values are normalized to JSON and the filter then runs entirely
 client-side, so its semantics are identical for every backend.
 
 The CLI and `iq mcp` are two thin delivery mechanisms over that one core. The MCP server
 exposes the CLI's own operations as tools, resolves the same saved sources, and runs the same
-engine, so it adds no port and changes no classification; what it adds is its own bounds, a
+engine, so it adds no port and changes no classification. What it adds is its own bounds, a
 tool set fixed at startup by `--allow`, per-result item and byte caps, and the CLI's redacted
 error shape.
 
 ### Query routes
 
-A jq filter is classified by the **selector**, a scan is optionally
+The **selector** classifies a jq filter, a scan is optionally
 **decomposed** into a native predicate, and each backend maps that predicate
 its own way.
 
@@ -508,9 +508,9 @@ A scan emits per-page progress to a stderr spinner (CLI only, off unless
 attached to a terminal) and an unfiltered scan can fetch a cheap up-front total
 estimate (where the backend metadata makes it possible).
 
-A bounded filter runs client-side over just the named keys, so its cost is `O(keys requested)`; a
-streamable scan runs in `O(page)` memory. jq is provided by
-[gojq](https://github.com/itchyny/gojq) (pure Go, no cgo), which exposes the AST the key
+A bounded filter runs client-side over only the named keys, so its cost is `O(keys requested)`. A
+streamable scan runs in `O(page)` memory.
+[gojq](https://github.com/itchyny/gojq) (pure Go, no cgo) provides jq and exposes the AST the key
 selector walks.
 
 ### Write routes

@@ -8,7 +8,7 @@ icon: material/engine-outline
 driver-agnostic, so further backends slot in behind the same port.
 
 Each driver below documents its keyspace mapping, value encoding, predicate
-pushdown and raw-command escape hatch.
+pushdown and raw commands.
 
 ## Driver list `driver ls`
 
@@ -39,27 +39,27 @@ same contract:
 - **One URI, native nouns.** The URI scheme picks the driver, the keyspace rides in the URI as the
   backend's own noun (`?collection=`, `?table=`, `?database=`, `?label=`/`?rel=`, `?index=`) and a
   query overrides it per run with the dotted `handle.<keyspace>` suffix (see [Sources](sources.md)).
-- **One jq surface.** A bounded filter fetches exactly the named keys, a missing key reads as
-  `null`, never an error, a `.[]`-rooted filter streams the keyspace in bounded pages, a holistic
-  filter materializes only behind `--unbounded` (see
+- **One jq interface.** A bounded filter fetches exactly the named keys, a missing key reads as
+  `null`, never an error, a `.[]`-rooted filter streams the keyspace in bounded pages, a filter
+  that collapses the keyspace into one value materializes only behind `--unbounded` (see
   [Read strategies](how-it-works.md#read-strategies)).
 - **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter,
   server-side where the backend can filter, or a client-side raw-byte prefilter that drops a provable
   non-match before decode where it cannot (Redis, on RedisJSON values, Elasticsearch/OpenSearch and
-  Couchbase, over the residual their server-side query could not narrow). The full jq always re-runs
+  Couchbase, over the residual their server-side query cannot narrow). The full jq always re-runs
   client-side, so
   output is identical with or without it and [`--explain`](query-plan.md) shows exactly
   what was pushed.
 - **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, drop and per-key
   delete are opt-in ports, a backend implements what its model supports and a command against a
   missing capability fails with a clear message instead of emulating it (Redis, whose DB index cannot
-  be removed, simply has no `drop`, the read-only file dump has no per-key `delete`).
+  be removed, has no `drop`, the read-only file dump has no per-key `delete`).
 - **Values round-trip.** Every value normalizes to JSON under a frozen per-backend encoding
   contract and a `--typed` dump restores through `--insert` losslessly (see
   [Write data](write-data.md)).
-- **Bounded and redacted.** Every backend call is bounded by `--timeout` and a URI's password is
+- **Bounded and redacted.** `--timeout` bounds every backend call and a URI's password is
   redacted from every listing, log line and error.
-- **A native escape hatch.** `iq exec` speaks the backend's own language, verbatim where one exists
+- **Native commands.** `iq exec` speaks the backend's own language, verbatim where one exists
   (Redis commands, Mongo command documents, CQL, PartiQL, Cypher, Mango, the Elasticsearch DSL), a small
   fixed verb set where none does (HBase), see each driver's Raw commands section. Every `iq` flag
   must come before `exec`, everything after it is forwarded to the backend untouched.
@@ -86,7 +86,7 @@ with a clear message rather than emulating what the backend cannot do.
 `data delete` removes named keys, see [Write data](write-data.md#delete-data-delete).
 
 The count estimate is a cheap metadata total, never a second scan, so an unfiltered scan can
-show its progress against a rough total. It is a hint that may drift as the keyspace changes,
+show its progress against a rough total. It is a hint that can drift as the keyspace changes,
 and it is read only for an unfiltered scan, never for a pushed-down filtered one.
 
 
@@ -176,7 +176,7 @@ pre-filter. Pass `--no-compile` to stream the whole table and filter entirely cl
 
 ### Raw commands
 
-`iq exec` runs a CQL statement verbatim and prints the rows as JSON, the escape hatch for
+`iq exec` runs a CQL statement verbatim and prints the rows as JSON, the raw path for
 server-side queries, DDL and administration the jq read path does not cover:
 
 ```sh { title='Read the cluster version' }
@@ -237,7 +237,7 @@ a v1 follow-up.
 The document ID is KV metadata, not part of the value, so it is never injected
 into the document.
 
-A non-JSON (binary) document is surfaced as a string on a `.["k"]` lookup and
+A non-JSON (binary) document is returned as a string on a `.["k"]` lookup and
 skipped by a scan (the query service returns only JSON).
 
 A bounded `.["k"]` lookup is a KV get, a scan is a **SQL++ keyset walk ordered
@@ -256,7 +256,7 @@ reach iq:
 | `select(...)` clause | Pushed | SQL++ predicate | Notes |
 | --- | :---: | --- | --- |
 | `.a == x` | ✓ | `` `a` = $p `` | equality, a `null` literal widens to `` (`a` IS NULL OR `a` IS MISSING) `` |
-| `.a > x` / `.a <= x` | ✓ | `` (`a` > $p OR ISSTRING(`a`) OR …) `` | range, widened with `ISTYPE()` clauses so jq's cross-type ordering (null < bool < number < string < array < object) is reproduced — SQL++ comparison operators are type-restricted, so higher/lower-ranked types are re-included explicitly |
+| `.a > x` / `.a <= x` | ✓ | `` (`a` > $p OR ISSTRING(`a`) OR …) `` | range, widened with `ISTYPE()` clauses so jq's cross-type ordering (null < bool < number < string < array < object) is reproduced. SQL++ comparison operators are type-restricted, so higher/lower-ranked types are re-included explicitly |
 | `.a \| has` / `has("a")` | ✓ | `` `a` IS NOT MISSING `` | key presence, exact |
 | `has("a") \| not` | ✓ | `` `a` IS MISSING `` | key absence, exact |
 | `E1 and E2` | ✓ | `(… AND …)` | drops any conjunct it cannot push (widening) |
@@ -278,11 +278,11 @@ row it can prove the predicate rejects.
 
 So a fallback scan (a `!=`, a regex) or a partially-pushed scan (a dropped
 conjunct) skips the dominant `UseNumber` decode of the documents the query
-service could not exclude, the same trick as the Redis and Elasticsearch
+service cannot exclude, the same trick as the Redis and Elasticsearch
 prefilters, on the bytes the keyset scan already returned.
 
 It is byte-level and never changes results (the full jq still re-runs
-client-side), so it is bypassed in the one case where it would be wasted, when
+client-side), so it is bypassed in the one case where it is useless, when
 the `WHERE` already captured the predicate exactly (the query service returned
 only matches).
 
@@ -294,7 +294,7 @@ it.
 On Server 7.6+ a sequential scan answers index-free queries automatically, on
 7.0–7.5, or for large collections, create one,
 `CREATE PRIMARY INDEX ON \`bucket\`.\`scope\`.\`collection\``. A "no index
-available" error (code 4000) is surfaced with exactly that hint.
+available" error (code 4000) is reported with exactly that hint.
 
 ### Raw commands
 
@@ -323,7 +323,7 @@ database, where **the database is the keyspace, a document's `_id` is the key
 and the document is the value**.
 
 The host is the CouchDB server, the database rides in the URI's `?database=`
-(overridable per run with a dotted `handle.database`, since one server hosts
+(overridable per run with a dotted `handle.database`, because one server hosts
 many databases).
 
 Use `couchdbs://` for TLS. **Credentials travel in the URI userinfo** (HTTP
@@ -378,7 +378,7 @@ shorthands.
 
 An unescaped `.`, a negated class (`[^…]`, `\D`, `\W`, `\S`), any non-ASCII byte, or the
 `i` flag is declined and runs client-side, because over multi-byte text a byte engine and a rune
-engine would diverge. The subject string may be any Unicode, only the pattern is constrained.
+engine diverge. The subject string can be any Unicode, only the pattern is constrained.
 
 Pushdown never changes results, only speed, the full jq always re-runs client-side, so a pushed
 filter is a conservative pre-filter, `--explain` shows the selector and `--no-compile` streams the
@@ -496,7 +496,7 @@ table and filter entirely client-side.
 ### Raw commands
 
 `iq exec` runs a [PartiQL](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.html)
-statement verbatim and prints the items as JSON, the escape hatch for server-side queries and
+statement verbatim and prints the items as JSON, the raw path for server-side queries and
 writes the jq read path does not cover:
 
 ```sh { title='Fetch one item by key with PartiQL' }
@@ -519,7 +519,7 @@ Register an `elasticsearch://` (or `opensearch://`) source and the same jq inter
 index, where **the
 index is the keyspace, a document's `_id` is the key and its `_source` is the value**. The host is
 the server, the index rides in the URI's `?index=` (overridable per run with a dotted
-`handle.index`, since one server hosts many indices). Use `elasticsearch+s://` / `opensearch+s://` for
+`handle.index`, because one server hosts many indices). Use `elasticsearch+s://` / `opensearch+s://` for
 TLS.
 
 **Credentials,
@@ -529,8 +529,8 @@ moves the password to the OS keyring exactly as for the other backends.
 **OpenSearch is the same
 driver** behind the scheme (two `iq driver ls` entries, with their own supported version ranges,
 sharing one implementation), everything below applies to both, the only differences are internal (the
-[opensearch-go](https://github.com/opensearch-project/opensearch-go) client, since Elasticsearch's
-own client refuses non-Elasticsearch servers, OpenSearch's point-in-time endpoint and, since it
+[opensearch-go](https://github.com/opensearch-project/opensearch-go) client, because Elasticsearch's
+own client refuses non-Elasticsearch servers, OpenSearch's point-in-time endpoint and, because it
 predates Elasticsearch's `_shard_doc`, an `_id` keyset sort for scans).
 
 ```sh { title='Register an Elasticsearch source' }
@@ -567,7 +567,7 @@ from an offset.
 By default a `.[] | select(...)` filter's **equality** and **existence** clauses are translated into
 an Elasticsearch `bool` query so the cluster filters before documents reach iq. The index mapping is
 read once at connect, so an equality is pushed only onto a field whose type matches it exactly,
-never onto analyzed `text`, where a term could wrongly exclude a match:
+never onto analyzed `text`, where a term can wrongly exclude a match:
 
 | `select(...)` clause | Pushed | Elasticsearch query | Notes |
 | --- | :---: | --- | --- |
@@ -585,12 +585,12 @@ whole index and filters entirely client-side.
 Whatever the `bool` query leaves behind, a **client-side raw-byte prefilter** runs the full predicate
 over each hit's raw `_source` before it is decoded and drops any hit it can prove the predicate
 rejects. So a fallback scan (a range, an equality on an unmapped or analyzed field) or a
-partially-pushed scan skips the dominant `UseNumber` decode of the documents the cluster could not
+partially-pushed scan skips the dominant `UseNumber` decode of the documents the cluster cannot
 exclude, the same trick as the Redis prefilter, on the bytes `_search` already returned.
 
 It is
 byte-level and never changes results (the full jq still re-runs client-side), so it is bypassed in two
-cases where it would be wasted or wrong, when the `term` query already captured the predicate exactly
+cases where it is useless or wrong, when the `term` query already captured the predicate exactly
 (the cluster returned only matches) and when the predicate references the injected `_id` field, which
 the raw `_source` does not carry.
 
@@ -644,7 +644,7 @@ A row is a **nested object**: `{family: {qualifier: value}}`, so a cell is addre
 
 ### Value encoding
 
-HBase stores **no types**, every cell is raw bytes, so a value is presented **honestly** by
+HBase stores **no types**, every cell is raw bytes, so a value is presented **without a guess** by
 default and **exactly** when you declare its encoding:
 
 | Column | Read as | Written from |
@@ -657,7 +657,7 @@ default and **exactly** when you declare its encoding:
 | `?types=cf:q=bool` | `true` / `false` (1 byte) | a bool → one byte |
 
 The driver **never guesses** a numeric type from bytes (an 8-byte string is indistinguishable from a
-`long`), it either *knows* (you declared it) or is *honest* (text, else base64). Declared columns
+`long`), it either *knows* (you declared it) or *does not guess* (text, else base64). Declared columns
 round-trip losslessly in both directions. An undeclared column read back as base64 (non-UTF-8 bytes)
 does **not** round-trip through a write, declare it `bytes` for that.
 
@@ -718,7 +718,7 @@ iq --src books exec delete iq_books 5
 Structured writes go through `iq data` (`clear`/`drop`/`delete`, plus `--insert`) with write modes,
 stats and `--explain`, `iq data delete <table> <rowkey>…` is the typed, capability-gated per-key
 delete that formalizes the raw `delete` verb above. The raw `put`/`delete` verbs remain the
-lower-level escape hatch (a single cell, a column), mirroring the other drivers' raw paths. `iq
+lower-level raw path (a single cell, a column), mirroring the other drivers' raw paths. `iq
 inspect` lists the source namespace's tables (`tables`).
 
 ## MongoDB
@@ -774,13 +774,13 @@ it and stream the whole collection, filtering entirely client-side. What it can 
 | `.a == 1 or .a == 2` | ✓ | `{a: {$in: [1, 2]}}` | an `or` of equalities on one field |
 | `.a > n`, `>=`, `<`, `<=` | ✓ | native op + `$type` guards (an `$or`) | number/string literal, reproduces jq's cross-type order so the match is never a subset |
 | `.a \| test("re")` | ✓ | `{a: {$regex: "re", $options: "is"}}` | portable patterns only (below), jq's `i` and `m` flags, with jq's `m` (dot-matches-newline) mapped to PCRE's `s` |
-| `has("a")`, `.a \| has("k")` | ✓ | `{a: {$exists: true}}` | exact — key presence, like jq's `has()` |
+| `has("a")`, `.a \| has("k")` | ✓ | `{a: {$exists: true}}` | exact, key presence, like jq's `has()` |
 | `.a \| length == n` | ✓ | `{$size: n}` + `$type` guards (an `$or`) | jq `length` is polymorphic (array/string/object/number), so guards keep it a superset |
-| `.a \| any(cond)` | ✓ | `{a: {$elemMatch: cond}}` (an `$or` with an object guard) | an array element satisfying a pushable element predicate, `cond` may combine the rows above |
+| `.a \| any(cond)` | ✓ | `{a: {$elemMatch: cond}}` (an `$or` with an object guard) | an array element satisfying a pushable element predicate, `cond` can combine the rows above |
 | `.a != x` | ✓ | `{$or: [{a: {$ne: x}}, {a: {$type: "array"}}]}` | exact negation of equality (the guard keeps arrays, which jq never equates to a scalar) |
 | `has("a") \| not` | ✓ | `{a: {$exists: false}}` | exact negation of existence |
-| `.a \| any(.f == v) \| not` | ✓ | `{a: {$not: {$elemMatch: …}}}` | no array element matches — the element condition must be exact equality |
-| `E1 and E2`, `E1 or E2` | ✓ | `$and` / `$or` of the above | an `and` may push only its pushable parts and drop the rest |
+| `.a \| any(.f == v) \| not` | ✓ | `{a: {$not: {$elemMatch: …}}}` | no array element matches, the element condition must be exact equality |
+| `E1 and E2`, `E1 or E2` | ✓ | `$and` / `$or` of the above | an `and` can push only its pushable parts and drop the rest |
 | negated range/regex/`size` | — | — | their filters are supersets and a negated superset is a subset (unrecoverable) |
 | `.a > true`, `.a < null` | — | — | a range against bool/null has no clean superset |
 | non-portable regex | — | — | engine-specific construct (below) |
@@ -793,8 +793,8 @@ means the same, or a superset, in both, literals, anchors (`^` `$`), `.`, quanti
 shorthands and word boundaries (`\b`, `\B`).
 
 `\S` is the one shorthand held back: RE2's `\s` omits
-the vertical tab that PCRE's `\s` matches, so RE2's `\S` matches a vertical tab PCRE's does not and
-pushing it would drop a document jq keeps (`\s` diverges the other way, a superset the client-side
+the vertical tab that PCRE's `\s` matches, so RE2's `\S` matches a vertical tab PCRE's does not.
+If pushed, it drops a document jq keeps (`\s` diverges the other way, a superset the client-side
 re-run corrects).
 
 Flags follow the same rule, gojq accepts only `i`, `m`, `g` and iq pushes `i`
@@ -808,7 +808,7 @@ client-side, so the pushed set always equals jq's.
 ### Raw commands
 
 `iq exec` runs a single JSON command document with `runCommand` and prints the reply as
-JSON, the escape hatch for server-side queries, aggregation and administration:
+JSON, the raw path for server-side queries, aggregation and administration:
 
 ```sh { title='Run a native find command' }
 iq --src books exec '{"find":"books","filter":{"year":{"$gt":2015}}}'
@@ -861,7 +861,7 @@ iq --src graph.Book '.[]'
 Neo4j values map to JSON directly, integers keep exact precision, bytes become base64 and temporal
 and spatial values become their canonical ISO strings and `{x,y,srid}` objects. A scan pages the
 label with keyset pagination ordered by `elementId(n)`. Because a `?key=` property is not guaranteed unique
-(unlike a primary key), a scan falls back to a node's elementId whenever the key would collide
+(unlike a primary key), a scan falls back to a node's elementId whenever the key collides
 within a page, so no node is ever silently dropped, a bounded `.["v"]` lookup that matches more than
 one node is an error rather than an arbitrary pick.
 
@@ -916,7 +916,7 @@ streams the whole label and filters entirely client-side.
 A copy into a Neo4j label upserts each node with `MERGE (n:Label {key}) SET n += props`, so a re-run
 converges. **Writing needs a `?key=` property** (a MERGE key must be stable and the elementId is
 server-assigned) **and a uniqueness constraint on it** (`CREATE CONSTRAINT ... REQUIRE n.<key> IS
-UNIQUE`), without the constraint a MERGE could match and overwrite several nodes at once, so the
+UNIQUE`), without the constraint a MERGE can match and overwrite several nodes at once, so the
 write is refused up front rather than fanning out.
 
 `iq data clear` detach-deletes every node in the
@@ -992,12 +992,12 @@ raw-byte prefilter**: on a streaming scan, each RedisJSON value is tested agains
 its raw JSON.GET bytes and, when it provably cannot match, dropped before the (dominant) decode,
 every other type is decoded and included unchanged. The full jq always re-runs client-side, so
 output is identical with or without it, the prefilter only skips decoding documents the filter
-would reject. `--no-compile` turns it off.
+rejects. `--no-compile` turns it off.
 
 ### Raw commands
 
 `iq exec` forwards a command to the database verbatim and prints the reply in redis-cli style,
-the escape hatch for writes, administration and seeding the jq read path does not cover:
+the raw path for writes, administration and seeding the jq read path does not cover:
 
 ```sh { title='Set a key, replies "OK"' }
 iq --src cache exec SET greeting hello
@@ -1047,9 +1047,9 @@ iq --src snap --insert prod
 iq diff snap prod --data
 ```
 
-The format is detected from the file's content (or forced with a `?format=` query, e.g.
-`file:///d.bin?format=bson`). A gzipped dump is unwrapped transparently, a gzipped dump must
-pass `?format=` since its content is not sniffable through the compression. On Windows a drive
+The format is detected from the file's content (or forced with a `?format=` query, for example
+`file:///d.bin?format=bson`). A gzipped dump is unwrapped automatically, a gzipped dump must
+pass `?format=` because its content is not sniffable through the compression. On Windows a drive
 path takes the `file:///C:/path/to/dump.json` form (forward slashes, three slashes before the
 drive letter).
 
@@ -1062,7 +1062,7 @@ drive letter).
 | Mongo Extended JSON | `mongoexport` | one document per line, or a `--jsonArray` array |
 | DynamoDB JSON | S3 `export-table-to-point-in-time`, `aws dynamodb scan` | needs `?format=dynamodb-json` and a `?keys=pk[:S][,sk[:N]]` key schema (a dump carries items but not the table's key schema), export files are gzipped NDJSON |
 | Cassandra CSV | `cqlsh COPY … TO 'f.csv'` | needs `?format=cassandra-csv`, `?keys=col1[,col2]` naming the primary-key columns and `?types=col=cqltype,…` for the non-text columns (COPY writes every value as text), column names come from a `WITH HEADER=TRUE` row, else `?columns=`, scalar columns only |
-| Neo4j APOC JSON | `CALL apoc.export.json.all('g.json',{})` | needs `?format=neo4j-json` and a keyspace selector — `?label=<Label>` for its nodes or `?rel=<Type>` for its relationships (a dump holds the whole graph), JSON Lines or `ARRAY_JSON`, same `_id`/`_labels`/`_type`/`_start`/`_end` envelope as the live driver, `?key=<prop>` to key by a property, `_id` is APOC's numeric export id, not the live elementId, the binary `neo4j-admin database dump` and APOC's `useTypes`/`JSON_ID_AS_KEYS` variants are not supported |
+| Neo4j APOC JSON | `CALL apoc.export.json.all('g.json',{})` | needs `?format=neo4j-json` and a keyspace selector, either `?label=<Label>` for its nodes or `?rel=<Type>` for its relationships (a dump holds the whole graph), JSON Lines or `ARRAY_JSON`, same `_id`/`_labels`/`_type`/`_start`/`_end` envelope as the live driver, `?key=<prop>` to key by a property, `_id` is APOC's numeric export id, not the live elementId, the binary `neo4j-admin database dump` and APOC's `useTypes`/`JSON_ID_AS_KEYS` variants are not supported |
 
 The whole dump streams, a `file://` source never holds all values in memory (whole-dataset
 materialization is the core's, gated by `--unbounded`, exactly as for a live backend). **Restore
@@ -1089,18 +1089,18 @@ skipping the RDB/BSON/JSON decode (a warm scan of an 8 MiB dump runs several tim
 
 The
 cache lives under `<user cache dir>/iq/dumps`, keys on the dump's path, size and mtime, so
-editing the dump invalidates it automatically and is transparent, a stale or absent cache just
+editing the dump invalidates it automatically and needs no action from you, a stale or absent cache only
 means a full decode, never a wrong or failed query.
 
 Only full scans populate it (a bounded
 key read does not) and stdin is never cached.
 
 Alongside the records, a scan writes a **per-page key index** (a Bloom filter per page), so a
-later bounded read (`iq --src snap '.["id"]'`) decodes only the pages that may hold a wanted key
+later bounded read (`iq --src snap '.["id"]'`) decodes only the pages that can hold a wanted key
 instead of streaming the whole cache, a point lookup or a missing-key check stays fast even on a
 huge dump. The index is on by default and distribution-agnostic (it hashes keys, so random
 ids/UUIDs are fine). Skip it with `--no-cache-index` (the flat cache is still written, a bounded
-read just streams it) when a very large keyspace makes the index build memory unwelcome.
+read only streams it) when a very large keyspace makes the index build memory unwelcome.
 
 Manage the cache with `iq cache`, bypass it for one run with `--no-cache` :material-earth:{ title="Global flag" }, or set a default
 with `iq config set no-cache true` / `iq config set no-cache-index true` (`--no-cache-index` :material-earth:{ title="Global flag" }
@@ -1108,13 +1108,13 @@ too).
 
 - `iq cache location`: print the cache directory path.
 - `iq cache stat [-j/--json | -y/--yaml]`: list cached dumps with their sizes.
-- `iq cache clear [<source>|<path>]`: remove all cached dumps, or just one source's/path's.
+- `iq cache clear [<source>|<path>]`: remove all cached dumps, or only one source's/path's.
 
 **Prefilter.** A file source pushes no filter to a server (there is none), but on a streaming
 scan of an **uncached typed-JSONL** dump a compiled predicate drives a **client-side raw-byte
 prefilter**: each record's raw `value` bytes are tested against the predicate and a provable
 non-match is dropped before it is decoded, so the dominant JSON decode is skipped for records the
-filter would reject.
+filter rejects.
 
 Every other format (YAML, RDB, BSON, Extended JSON, DynamoDB JSON, Cassandra
 CSV, Neo4j APOC) and any scan served from a fresh decode cache (whose bytes are already-decoded
@@ -1122,5 +1122,5 @@ CBOR and already fast to stream), decodes in full and lets the client filter.
 
 The full jq always
 re-runs client-side, so output is identical with or without the prefilter, it only skips decoding
-dropped records, a prefiltered scan deliberately does not populate the decode cache (that would
-require decoding everything). `--no-compile` turns it off.
+dropped records, a prefiltered scan deliberately does not populate the decode cache (to populate
+it, the scan must decode everything). `--no-compile` turns it off.
