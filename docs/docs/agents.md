@@ -5,19 +5,19 @@ icon: material/robot-outline
 # AI agents
 
 An AI agent that has to read or move data across a polyglot estate is the
-reader `iq` is already shaped for, one binary and one language over ten
-backends and their dump files, JSON in and JSON out (`--jsonl`, `--compact`,
-`-M`, `--error.format json`), so nothing has to be scraped out of a native
-shell's formatting.
+reader `iq` is already shaped for. `iq` offers one binary and one language over
+ten backends and their dump files. It is JSON in and JSON out (`--jsonl`,
+`--compact`, `-M`, `--error.format json`), so nothing has to be scraped out of a
+native shell's formatting.
 
 `--explain` is a dry run that never connects, so a plan can be inspected before
 a single byte moves. `--dry-run` reports the effect of a write without doing
 it.
 
-The destructive commands are capability-gated, so one against a backend that
-does not implement the port fails with a clear message instead of emulating it
-and every error is redacted, so a password in a source URI never reaches a
-transcript.
+The destructive commands are capability-gated. As a result, one against a
+backend that does not implement the port fails with a clear message instead of
+emulating it. Every error is redacted, so a password in a source URI never
+reaches a transcript.
 
 Queries are read-only, and a filter that must materialize a whole keyspace is
 refused unless `--unbounded` is passed.
@@ -28,17 +28,20 @@ refused unless `--unbounded` is passed.
 [`skills/iq/SKILL.md`](https://github.com/zsltg/iq/blob/main/skills/iq/SKILL.md),
 that any agent reading the Agent Skills format can load.
 
-It teaches the workflow rather than the flag list, find the source before
-guessing at one, `--explain` before every scan, `--dry-run` before every write,
-the machine-readable output flags and the JSON error shape, which filters need
-`--unbounded` and why, and the rules around writes, so `--replace` and
-`iq data clear`, `iq data drop` and `iq data delete` run only on an explicit
-instruction.
+It teaches the workflow rather than the flag list:
+
+- Finding the source before guessing at one
+- `--explain` before every scan
+- `--dry-run` before every write
+- The machine-readable output flags and the JSON error shape
+- Which filters need `--unbounded` and why
+- The rules around writes, so `--replace` and `iq data clear`, `iq data drop`
+  and `iq data delete` run only on an explicit instruction.
 
 The per-backend detail stays in `iq --help`, `man iq` and this site, so the
 skill stays small enough to load beside the task.
 
-Install it with the cross-agent installer, which fetches once into
+Install it with the cross-agent installer. The installer fetches once into
 `~/.agents/skills` and links it into every agent's skills directory it detects:
 
 ```sh
@@ -67,8 +70,8 @@ curl -fsSL https://raw.githubusercontent.com/zsltg/iq/main/skills/iq/SKILL.md \
 JSON-RPC over stdin and stdout.
 
 It is the CLI's operations as tools, over the same saved sources and the same
-engine, so an agent that cannot run shell commands still gets the whole
-command set. It targets the 2026-07-28 specification revision and negotiates back
+engine. As a result, an agent that cannot run shell commands still gets the
+whole command set. It targets the 2026-07-28 specification revision and negotiates back
 to 2025-11-25 for an older client.
 
 ### Client configuration
@@ -85,14 +88,14 @@ claude mcp add iq -- iq mcp --timeout 30s
 ```
 
 [Codex CLI](https://openai.com/codex/) (the `--` separates the server command
-from Codex's own options, the same entry can be written by hand as
+from Codex's own options. The same entry can be written by hand as
 `[mcp_servers.iq]` in `~/.codex/config.toml`):
 
 ```sh
 codex mcp add iq -- iq mcp --timeout 30s
 ```
 
-[Gemini CLI](https://geminicli.com) (the `--` matters here too, a `--timeout`
+[Gemini CLI](https://geminicli.com) (the `--` matters here too. A `--timeout`
 before it is Gemini's own connection timeout in milliseconds, not iq's):
 
 ```sh
@@ -150,16 +153,16 @@ server `local` and takes the command as one array:
 }
 ```
 
-[pi.dev](https://pi.dev) ships no MCP client by design, it expects a CLI plus
-a skill, which is exactly what `iq` and the [Skill](#skill) above are, install
-the skill and pi drives the binary directly.
+[pi.dev](https://pi.dev) ships no MCP client by design. It expects a CLI plus
+a skill, which is exactly what `iq` and the [Skill](#skill) above are. Install
+the skill, and pi drives the binary directly.
 
-Any other client that takes a stdio server block needs the same two facts, the
+Any other client that takes a stdio server block needs the same two facts: the
 command `iq` and the arguments `mcp --timeout 30s`.
 
-The server inherits the saved sources and the keyring of whoever starts it, so
-point an agent at a config holding only the sources it is allowed to use rather than
-your own:
+The server inherits the saved sources and the keyring of whoever starts it.
+Thus, point an agent at a config with only the sources it is allowed to use,
+not your own:
 
 ```sh
 iq mcp --config ~/.config/iq/agent.toml --timeout 30s
@@ -171,9 +174,9 @@ Register that config's sources with the same `iq add --config
 ### Safety model
 
 - **Read-only by default.** The write, exec and lifecycle tools exist only
-  behind `--allow`, and a tool that is not allowed is never registered, it is
+  behind `--allow`. A tool that is not allowed is never registered. It is
   absent from `tools/list` and unknown to the server, so a client cannot call it
-  by name. `--allow writes` adds `iq_insert`, `--allow exec` adds `iq_exec` and
+  by name. `--allow writes` adds `iq_insert`, and `--allow exec` adds `iq_exec`.
   `--allow destructive` adds `iq_data_clear`, `iq_data_drop` and
   `iq_data_delete` (and permits `iq_insert`'s `replace`). The flag is
   repeatable.
@@ -185,21 +188,22 @@ Register that config's sources with the same `iq add --config
   per-call `timeout` can only shorten it.
 - **Confirmations.** A destructive call without `confirm: true` does not
   proceed. Where the client can ask its user, the server returns an
-  input-required result carrying the question and the client retries the call
+  input-required result carrying the question. The client then retries the call
   with the answer. Where it cannot, the call comes back refused, naming what to
-  pass. The CLI's `--force` has no counterpart here, a confirmed call is the
+  pass. The CLI's `--force` has no counterpart here. A confirmed call is the
   confirmation.
 - **`iq_explain` first.** It never connects, and it names the route and the
   pushed-down conjuncts, so a plan can be read before a scan runs.
 - **Errors are redacted.** Every failure is a tool result carrying the CLI's
-  `{"error":{"message","causes"}}` document with every connection URI redacted,
-  so no raw driver error and no stored password reaches a transcript.
+  `{"error":{"message","causes"}}` document with every connection URI redacted.
+  As a result, no raw driver error and no stored password reaches a transcript.
 
 ### Tools
 
 `readOnly` marks a tool that never modifies anything. `destructive` marks one
-that can. Every tool declares `openWorldHint: false`, the sources are a closed,
-configured set. The annotations are display hints, not the gate, `--allow` is.
+that can. Every tool declares `openWorldHint: false`. The sources are a closed,
+configured set. The annotations are display hints, not the gate. `--allow` is
+the gate.
 
 | Tool | Allowed by | Annotations | What it does |
 | --- | --- | --- | --- |
@@ -228,7 +232,7 @@ because only a restart can change it.
 - The tool set is fixed at process start. Changing `--allow` means restarting
   the server.
 - The server advertises the `tools` capability alone. Prompts, resources,
-  sampling, roots and protocol-level logging are not implemented, the last three
+  sampling, roots and protocol-level logging are not implemented. The last three
   are deprecated as of the 2026-07-28 revision. Diagnostics go to stderr, or to
   the `--log` file, never to stdout, which carries the protocol and nothing
   else.
