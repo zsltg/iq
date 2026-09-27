@@ -108,9 +108,13 @@ cd iq && make build
 
 `iq` ships an [Agent Skill](https://agentskills.io), a single Markdown file
 ([`skills/iq/SKILL.md`](skills/iq/SKILL.md)) that any agent reading the Agent Skills format
-can load. It covers finding a source, `--explain` before every scan, `--dry-run` before every
-write, the machine-readable output flags and the JSON error shape, and the rules around
-destructive commands.
+can load. It covers these topics:
+
+- Finding a source
+- `--explain` before every scan
+- `--dry-run` before every write
+- The machine-readable output flags and the JSON error shape
+- The rules around destructive commands.
 
 ```sh
 npx skills add zsltg/iq
@@ -121,9 +125,9 @@ npx skills add zsltg/iq
 For an agent that speaks [MCP](https://modelcontextprotocol.io), `iq mcp`
 serves the same core over stdio.
 
-It is read-only by default, `--allow writes|exec|destructive` opens the rest
-and a tool that is not allowed is never registered. Every result is capped,
-every error redacted, and every destructive call confirmed.
+It is read-only by default. `--allow writes|exec|destructive` opens the rest.
+A tool that is not allowed is never registered. Every result is capped, every
+error is redacted, and every destructive call is confirmed.
 
 Claude Code:
 ```sh
@@ -203,19 +207,23 @@ iq completion fish > ~/.config/fish/completions/iq.fish
 iq completion powershell >> $PROFILE
 ```
 
-Completions cover the commands, their sub-subcommands and flags, and, read live from your
-config, your saved source handles, groups, and config-option keys, so `iq --src <TAB>` offers
-the sources `iq ls` lists. A flag that takes a closed set completes its values (`--format`,
-`--from-format`, `--format.decimal`, `--log.level`, `--log.format`, `--error.format`,
-`--debug.pprof`, `iq add --driver/--store`, `iq schema --format`), and `iq config set <option>
-<TAB>` offers that option's own values. `iq inspect --only <TAB>` and `iq diff --section <TAB>`
-offer the introspection subcommands of the selected source's backend, worked out from its saved
-URI. The jq filter itself is a program, not a completable value, so `iq` offers no candidates
-there (and never falls back to filenames), nor do `iq exec`'s backend verb and its operands.
+Completions cover the commands, their sub-subcommands and flags. They also cover your saved
+source handles, groups, and config-option keys, which they read live from your config. As a
+result, `iq --src <TAB>` offers the sources `iq ls` lists.
 
-Every completion is offline: it reads your config file and nothing else, so a `<TAB>` never
-opens a connection, never reads the OS keyring, and cannot hang. That is why a collection
-suffix does not complete, `iq --src shop.<TAB>` offers nothing, because listing collections
+A flag that takes a closed set completes its values (`--format`, `--from-format`,
+`--format.decimal`, `--log.level`, `--log.format`, `--error.format`, `--debug.pprof`,
+`iq add --driver/--store`, `iq schema --format`). `iq config set <option> <TAB>` offers that
+option's own values. `iq inspect --only <TAB>` and `iq diff --section <TAB>` offer the
+introspection subcommands of the selected source's backend, worked out from its saved URI.
+
+The jq filter itself is a program, not a completable value. As a result, `iq` offers no
+candidates there (and never falls back to filenames). `iq` also offers no candidates for the
+backend verb of `iq exec` and its operands.
+
+Every completion is offline. It reads your config file and nothing else. As a result, a `<TAB>`
+never opens a connection, never reads the OS keyring, and cannot hang. That is why a collection
+suffix does not complete. `iq --src shop.<TAB>` offers nothing, because listing collections
 needs a connection.
 
 </details>
@@ -371,10 +379,14 @@ Check [Insert](https://zsltg.github.io/iq/write-data/#insert-insert) for more de
 
 ## Drivers
 
-`iq` picks the backend from a source's URI scheme, and the query core is driver-agnostic, so
+`iq` picks the backend from a source's URI scheme. The query core is driver-agnostic, so
 further backends slot in behind the same port. The
-[Drivers page](https://zsltg.github.io/iq/drivers/) documents each driver's keyspace mapping,
-value encoding, predicate pushdown, and raw commands.
+[Drivers page](https://zsltg.github.io/iq/drivers/) documents these topics for each driver:
+
+- Keyspace mapping
+- Value encoding
+- Predicate pushdown
+- Raw commands.
 
 | Name | Database | Versions |
 | ---- | ----------- | -------- |
@@ -426,10 +438,16 @@ same contract:
 
 ## Backups and dumps
 
-A `file://` source reads a database dump straight from disk, so a snapshot is queried,
-inspected for shape, diffed against a live source, and restored through the same jq
-interface, with no running server. It is read-only: a `file://` endpoint is never a copy
-destination, and `iq exec` and `iq inspect`, which need a live server, do not apply.
+A `file://` source reads a database dump straight from disk. As a result, you can do these
+operations on a snapshot through the same jq interface, with no running server:
+
+- Query it
+- Inspect it for shape
+- Diff it against a live source
+- Restore it.
+
+A `file://` source is read-only. A `file://` endpoint is never a copy destination. `iq exec` and
+`iq inspect`, which need a live server, do not apply.
 
 Register a dump like any other source:
 ```sh
@@ -454,7 +472,7 @@ iq --src snap --insert cache
 | `?format=cassandra-csv` | cqlsh COPY TO CSV |
 | `?format=neo4j-json` | Neo4j APOC JSON export |
 
-A bare name auto-detects (`file:///<file_path>`), the `?format=` form must be passed
+A bare name auto-detects (`file:///<file_path>`). You must pass the `?format=` form
 (`file:///<file_path>?format=<source_format>`). The
 [Drivers page](https://zsltg.github.io/iq/drivers/#file-dumps) documents what produces each
 format, the options some of them need, and the round-trip caveats.
