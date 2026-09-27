@@ -6,7 +6,6 @@ icon: material/link-variant
 
 Where `iq` sits among other tools, and the jq ecosystem its filter language carries over.
 
-- [Comparison](comparison.md): how `iq` relates to other tools, and what it is not.
 - [jq manual](https://jqlang.org/manual/): the language reference for the filters `iq` runs.
 - [awesome-jq](https://github.com/jqlang/awesome-jq): a curated list of jq tools, guides, and resources.
 - [sq](https://github.com/neilotoole/sq): jq-style queries over SQL databases and document files.
