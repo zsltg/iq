@@ -461,29 +461,28 @@ format, the options some of them need, and the round-trip caveats.
 
 ## Architecture
 
-The URI scheme chooses the backend, and the query core is driver-agnostic, so further
-backends slot in behind the same port.
+The URI scheme chooses the backend. The query core is driver-agnostic, so further backends
+slot in behind the same port.
 
-The filter is both the transform and the key selector: its top-level paths name the keys to
+The filter is both the transform and the key selector. Its top-level paths name the keys to
 fetch, so a normal query reads a bounded set of keys. A `.[]`-rooted filter streams the
-keyspace in pages, and a filter that collapses it into one value materializes only behind
-`--unbounded`. Fetched values are normalized to JSON and the filter then runs entirely
+keyspace in pages. A filter that collapses the keyspace into one value materializes only behind
+`--unbounded`. `iq` normalizes fetched values to JSON. The filter then runs entirely
 client-side, so its semantics are identical for every backend.
 
 The CLI and `iq mcp` are two thin delivery mechanisms over that one core. The MCP server
 exposes the CLI's own operations as tools, resolves the same saved sources, and runs the same
-engine, so it adds no port and changes no classification. What it adds is its own bounds, a
-tool set fixed at startup by `--allow`, per-result item and byte caps, and the CLI's redacted
+engine. As a result, it adds no port and changes no classification. It adds only its own bounds,
+a tool set fixed at startup by `--allow`, per-result item and byte caps, and the CLI's redacted
 error shape.
 
 ### Query routes
 
-The **selector** classifies a jq filter, a scan is optionally
-**decomposed** into a native predicate, and each backend maps that predicate
-its own way.
+The **selector** classifies a jq filter. `iq` optionally **decomposes** a scan
+into a native predicate. Each backend then maps that predicate its own way.
 
-Regardless of pushdown, the full jq re-runs client-side, so the pushed
-predicate is only ever a conservative pre-filter and results are identical with
+Regardless of pushdown, the full jq re-runs client-side. As a result, the pushed
+predicate is only ever a conservative pre-filter, and results are identical with
 or without it.
 
 ```mermaid
@@ -504,23 +503,24 @@ graph TD
 ```
 
 A scan emits per-page progress to a stderr spinner (CLI only, off unless
-attached to a terminal) and an unfiltered scan can fetch a cheap up-front total
+attached to a terminal). An unfiltered scan can also fetch a cheap up-front total
 estimate (where the backend metadata makes it possible).
 
 A bounded filter runs client-side over only the named keys, so its cost is `O(keys requested)`. A
 streamable scan runs in `O(page)` memory.
+
 [gojq](https://github.com/itchyny/gojq) (pure Go, no cgo) provides jq and exposes the AST the key
 selector walks.
 
 ### Write routes
 
-Writes ride the query command, there is no separate copy tool. Items arrive
-from `--src` (a live source or a `file://` dump) or piped stdin, and each is
-read as a typed record, so the native type survives the trip.
+Writes ride the query command. There is no separate copy tool. Items arrive
+from `--src` (a live source or a `file://` dump) or piped stdin. `iq` reads
+each item as a typed record, so the native type survives the trip.
 
-The `jq` filter transforms each item with its key preserved, this is the one
-place a filter runs per item rather than over the whole keyspace, iteration is
-implicit and you do not write `.[]`.
+The `jq` filter transforms each item with its key preserved. This transform is
+the one place where a filter runs per item rather than over the whole keyspace.
+Iteration is implicit, and you do not write `.[]`.
 
 ```mermaid
 graph TD
