@@ -84,7 +84,10 @@ make sbom           # SPDX + CycloneDX SBOMs only
 
 Format (`gofumpt` + `goimports`), `go vet`, `go build`, `golangci-lint`
 (gosec included), `deadcode`, the demo stamp gate ([Recorded demo](#recorded-demo)),
-and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
+the mutation verdict tests (`bash scripts/test/mutation-verdict.sh`: fixture shards
+from `scripts/test/mutation-verdict-fixtures.py` through `scripts/mutation-verdict.sh`
+and the rate table of `scripts/mutation-plan.sh`; no network, no container, no
+mutago run), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
 paths are a stale cache from a removed worktree; check clears the cache and
 retries once.
 

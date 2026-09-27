@@ -73,6 +73,11 @@ step "demo stamp"
 # months later. Re-record with `make demo`.
 bash scripts/demo/stamp.sh check || note_fail "demo stamp"
 
+step "mutation verdict tests"
+# The weekly mutation scan merges its shards in scripts/mutation-verdict.sh. The fixture
+# tests need no network, no container and no mutago run, and finish in seconds.
+bash scripts/test/mutation-verdict.sh || note_fail "mutation verdict tests"
+
 step "unit tests (-short) + coverage report"
 if go test -short -covermode=atomic -coverprofile=coverage.out ./...; then
   total="$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}')"
