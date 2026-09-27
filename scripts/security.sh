@@ -29,7 +29,10 @@ step "govulncheck (Go vulnerability audit, call-graph aware)"
 govulncheck ./... || { echo "security: govulncheck reported vulnerabilities" >&2; fail=1; }
 
 step "osv-scanner (OSV dependency scan)"
-osv-scanner scan source -r . || { echo "security: osv-scanner reported vulnerabilities" >&2; fail=1; }
+# Skip .claude: it holds local git worktrees of other branches, and their
+# older go.mod files are not part of this tree. Without the skip, a stale
+# worktree fails this scan on advisories that this tree has already fixed.
+osv-scanner scan source -r --experimental-exclude .claude . || { echo "security: osv-scanner reported vulnerabilities" >&2; fail=1; }
 
 step "gitleaks (secrets: working tree + git history)"
 gitleaks dir . --no-banner || { echo "security: gitleaks found secrets in the working tree" >&2; fail=1; }
