@@ -266,7 +266,7 @@ service filters before documents reach iq:
 | `has("a") \| not` | ✓ | `` `a` IS MISSING `` | key absence, exact |
 | `E1 and E2` | ✓ | `(… AND …)` | drops any conjunct it cannot push (widening) |
 | `E1 or E2` | ✓ | `(… OR …)` | pushed only when **every** branch is pushable. An all-equality OR over one field collapses to `` `a` IN $p `` |
-| `!=`, regex, `length`, `any`, nested-array tests | — | — | run client-side. The driver uses a plain keyset scan, because SQL++ semantics for these could wrongly exclude a document jq would keep |
+| `!=`, regex, `length`, `any`, nested-array tests | — | — | run client-side. The driver uses a plain keyset scan, because SQL++ semantics for these can wrongly exclude a document that jq keeps |
 
 Every value rides as a named parameter, never concatenated. The driver validates
 and backtick-quotes keyspace and field identifiers. As a result, nothing
@@ -378,12 +378,12 @@ As a result, the server filters before documents reach iq:
 | `.a \| length == n` | ✓ | `{"$or": [{"a": {"$size": n}}, {"a": {"$type": …}}, …]}` | jq `length` is polymorphic (array/string/object/number). As a result, per-type `$type` clauses widen the array `$size` to a superset. `n == 0` also matches null and a missing field |
 | `E1 and E2` | ✓ | `{"$and": […]}` | drops any conjunct it cannot push (widening) |
 | `E1 or E2` | ✓ | `{"$or": […]}` | pushed only when **every** branch is pushable |
-| `!=`, `any`, nested-array tests, a case-insensitive or non-byte-safe regex | — | — | run client-side. The driver uses a plain `_all_docs` scan, because Mango's semantics for these could wrongly exclude a document jq would keep |
+| `!=`, `any`, nested-array tests, a case-insensitive or non-byte-safe regex | — | — | run client-side. The driver uses a plain `_all_docs` scan, because Mango's semantics for these can wrongly exclude a document that jq keeps |
 
 **Byte-safe regex.** CouchDB's Mango `$regex` runs its Erlang engine over the document's raw UTF-8
 bytes with no unicode option. It skips a non-string field (an `is_binary` guard, exactly as jq's
 `test` over a non-string is false). A pattern is pushed only when it means the same byte-for-byte as
-gojq's RE2:
+gojq's RE2. The pattern can use only these constructs:
 
 - Pure-ASCII literals
 - Anchors
@@ -795,8 +795,8 @@ in constant memory, `keys`/`.`/`map` materialize and require the flag).
 
 ### Pushdown
 
-By default, the driver translates the **equality** clauses of a `.[] | select(...)` filter into a
-native Mongo query. As a result, the server does the filtering (and can use an index) before the
+By default, the driver translates the **equality**, **range**, **regex**, **existence**, **length** and
+**array** clauses of a `.[] | select(...)` filter into a native Mongo query. As a result, the server does the filtering (and can use an index) before the
 documents ever reach iq:
 
 ```sh { title='Pushed down: the server filters by author' }
@@ -830,7 +830,7 @@ it and stream the whole collection, filtering entirely client-side. What it can 
 
 **Portable regex.** iq's jq is [gojq](https://github.com/itchyny/gojq), which compiles a `test()`
 pattern with Go's RE2. MongoDB uses PCRE. A pattern is pushed only when every construct it uses
-means the same, or a superset, in both:
+means the same, or a superset, in both. These constructs qualify:
 
 - Literals
 - Anchors (`^` `$`)
@@ -972,7 +972,7 @@ never string-built:
 | `has("a") \| not` | ✓ | `n[$p] IS NULL` | key absence, exact |
 | `E1 and E2` | ✓ | `(… AND …)` | drops any conjunct it cannot push (widening) |
 | `E1 or E2` | ✓ | `(… OR …)` | pushed only when **every** branch is pushable |
-| `.a > x` / `.a <= x`, `!=`, `length`, regex, `any`, nested paths | — | — | run client-side. Cypher compares mismatched types as null rather than by jq's cross-type ordering. A nested path has no flat Neo4j property. As a result, pushing these could wrongly exclude a node jq would keep |
+| `.a > x` / `.a <= x`, `!=`, `length`, regex, `any`, nested paths | — | — | run client-side. Cypher compares mismatched types as null rather than by jq's cross-type ordering. A nested path has no flat Neo4j property. As a result, pushing these can wrongly exclude a node that jq keeps |
 
 Pushdown never changes results, only speed. The full jq always re-runs client-side, so a pushed
 filter is a conservative pre-filter. `--explain` shows the `WHERE` clause. `--no-compile`

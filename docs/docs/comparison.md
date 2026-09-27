@@ -20,8 +20,10 @@ semantics are identical across backends.
 
 ## What iq is not
 
-- Not an analytics engine. Pushdown covers equality and existence on every backend. It covers
-  ranges on MongoDB, CouchDB and Couchbase, and regex on MongoDB and CouchDB. Everything else runs
+- Not an analytics engine. Pushdown differs by backend. Every server-side backend pushes equality,
+  and all except Cassandra and HBase also push existence. Ranges push on MongoDB, CouchDB and
+  Couchbase, and regex on MongoDB and CouchDB. Redis and file dumps have no server-side filter, so a
+  client-side byte prefilter takes its place. Everything else runs
   as a client-side scan. An aggregate materializes the keyspace behind `--unbounded`. A heavy
   question belongs in the backend's own language through `iq exec`, or in a query engine.
 - Not a replacement for the native shell where the backend's own feature is the point:
