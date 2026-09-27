@@ -282,7 +282,7 @@ service cannot exclude, the same trick as the Redis and Elasticsearch
 prefilters, on the bytes the keyset scan already returned.
 
 It is byte-level and never changes results (the full jq still re-runs
-client-side), so it is bypassed in the one case where it is useless, when
+client-side), so it is bypassed in the one case where it gives no benefit, when
 the `WHERE` already captured the predicate exactly (the query service returned
 only matches).
 
@@ -590,7 +590,7 @@ exclude, the same trick as the Redis prefilter, on the bytes `_search` already r
 
 It is
 byte-level and never changes results (the full jq still re-runs client-side), so it is bypassed in two
-cases where it is useless or wrong, when the `term` query already captured the predicate exactly
+cases where it gives no benefit or is wrong, when the `term` query already captured the predicate exactly
 (the cluster returned only matches) and when the predicate references the injected `_id` field, which
 the raw `_source` does not carry.
 
