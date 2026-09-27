@@ -10,16 +10,16 @@ databases, and their dump files, from a single static binary. See
 
 <p align="center"><img src="assets/demo.svg" width="100%" alt="iq registers a MongoDB source, reads one document by key, filters a scan with a pushed-down predicate, explains the plan, and prints the result as gron"></p>
 
-Fetched values are normalized to JSON and the filter runs entirely client-side,
+`iq` normalizes fetched values to JSON. The filter runs entirely client-side,
 so one filter means the same thing everywhere.
 
-The URI scheme[^4] chooses the backend, and the filter is both the
-*transform* and the *key selector*, the selector walks the parsed `jq` AST[^ast]
-and, based on that, executes a *bounded read*, a *streaming scan* (with
+The URI scheme[^4] chooses the backend. The filter is both the *transform* and
+the *key selector*. The selector walks the parsed `jq` AST[^ast]. Based on the
+AST, the selector executes a *bounded read*, a *streaming scan* (with
 *pushdown*[^pushdown]), or a *materialized scan* (see
 [How it works](how-it-works.md#how-it-works)).
 
-Typed dumps carry native types across stores, so a copy, a restore or a
+Typed dumps carry native types across stores. As a result, a copy, a restore or a
 migration is one command instead of an export plus a conversion script.
 
 `iq` is inspired by [`sq`](https://sq.io "Command-line tool giving jq-style
@@ -53,7 +53,7 @@ deliberately follows.
     !!! note "Version & Location"
 
         The script downloads the release for your OS/arch, verifies its SHA-256[^6]
-        against the release checksums, and installs the binary, `IQ_VERSION`
+        against the release checksums, and installs the binary. `IQ_VERSION`
         pins a version and `IQ_INSTALL_DIR` picks the target directory.
 
         You can also download a `.deb`, `.rpm`, `.apk`, or Arch `.pkg.tar.zst` from the
@@ -89,7 +89,7 @@ cd iq && make build
 
 ## The basics
 
-Register a source for each store you work with, then make one of them active:
+Register a source for each store you work with. Then make one of them active:
 
 ```sh
 iq add -n orders 'mongodb://localhost:27017/shop?collection=orders'
@@ -179,23 +179,25 @@ command from its module path into GOPATH/bin") or source build,
     iq completion powershell >> $PROFILE
     ```
 
-Completions cover the commands, their sub-subcommands and flags, and read live
-from your config the saved source handles, groups, and config-option keys, so
-`iq --src <TAB>` offers the sources `iq ls` lists. A flag that takes a closed
+Completions cover the commands, their sub-subcommands and flags. They also cover
+the saved source handles, groups, and config-option keys, which they read live
+from your config. As a result, `iq --src <TAB>` offers the sources `iq ls` lists.
+A flag that takes a closed
 set offers that option's own values.
 
 `iq inspect --only <TAB>` and `iq diff --section <TAB>` offer the
 introspection subcommands of the selected source's backend, worked out from its
 saved URI.
 
-The `jq` filter itself is a program, not a completable value, so `iq` offers no
-candidates there (and never falls back to filenames), nor do `iq exec`'s
-backend verb and its operands.
+The `jq` filter itself is a program, not a completable value. As a result, `iq`
+offers no candidates there (and never falls back to filenames). `iq` also offers
+no candidates for the backend verb of `iq exec` and its operands.
 
-Every completion is offline, it reads your config file and nothing else, so a
-`<TAB>` never opens a connection, never reads the OS keyring[^keyring], and cannot hang.
-That is why a collection suffix does not complete, `iq --src shop.<TAB>` offers
-nothing, because listing collections needs a connection.
+Every completion is offline. It reads your config file and nothing else. As a
+result, a `<TAB>` never opens a connection, never reads the OS
+keyring[^keyring], and cannot hang. That is why a collection suffix does not
+complete. `iq --src shop.<TAB>` offers nothing, because listing collections
+needs a connection.
 
 ## Man page
 
@@ -209,6 +211,6 @@ iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
 [^4]: RFC3986 proposes a generic URI syntax and a process for resolving URI references that might be in relative form, along with guidelines and security considerations for the use of URIs on the Internet. https://datatracker.ietf.org/doc/html/rfc3986
 [^5]: Cgo enables the creation of Go packages that call C code. https://pkg.go.dev/cmd/cgo
 [^6]: SHA-256 is a Secure Hash Algorithm with a message digest size of 256. https://nvlpubs.nist.gov/nistpubs/fips/nist.fips.180-4.pdf
-[^ast]: An abstract syntax tree is the tree a parser builds from a program's source, here the parsed `jq` filter the key selector inspects to decide how to read (see [How it works](how-it-works.md#read-strategies)). https://en.wikipedia.org/wiki/Abstract_syntax_tree
-[^pushdown]: Predicate pushdown hands part of the filter to the database so it returns only matching items instead of everything for client-side filtering, each driver's page lists what it can push (see [Drivers](drivers.md#drivers)). https://en.wikipedia.org/wiki/Predicate_pushdown
+[^ast]: An abstract syntax tree is the tree that a parser builds from the source of a program. Here, it is the parsed `jq` filter that the key selector inspects to decide how to read (see [How it works](how-it-works.md#read-strategies)). https://en.wikipedia.org/wiki/Abstract_syntax_tree
+[^pushdown]: Predicate pushdown hands part of the filter to the database, so that the database returns only matching items instead of everything for client-side filtering. Each driver page lists what the driver can push (see [Drivers](drivers.md#drivers)). https://en.wikipedia.org/wiki/Predicate_pushdown
 [^keyring]: The operating system's credential store (macOS Keychain, Windows Credential Manager, the Secret Service on Linux), where `--store keyring` sources keep their secrets (see [Configuration](configuration.md#keyring-keyring)). https://pkg.go.dev/github.com/zalando/go-keyring

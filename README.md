@@ -37,13 +37,13 @@ across NoSQL databases, and their dump files, from a single static binary. See
 
 <p align="center"><img src="docs/docs/assets/demo.svg" width="100%" alt="iq registers a MongoDB source, reads one document by key, filters a scan with a pushed-down predicate, explains the plan, and prints the result as gron"></p>
 
-Fetched values are normalized to JSON and the filter runs entirely client-side,
+`iq` normalizes fetched values to JSON. The filter runs entirely client-side,
 so one filter means the same thing everywhere.
 
-The filter is also the key selector: its top-level paths name the keys to fetch, so a query
-reads only what it asks for (see [Architecture](#architecture)).
+The filter is also the key selector. Its top-level paths name the keys to fetch. As a result, a
+query reads only what it asks for (see [Architecture](#architecture)).
 
-Typed dumps carry native types across stores, so a copy, a restore or a
+Typed dumps carry native types across stores. As a result, a copy, a restore or a
 migration is one command instead of an export plus a conversion script.
 
 `iq` is inspired by [sq](https://github.com/neilotoole/sq), whose command set it
