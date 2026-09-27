@@ -217,7 +217,10 @@ couchbase provisioned by `scripts/seed-couchbase.sh` with `IQ_SEED_BUCKET` and
 `deep-badge` merges the per-package `mutago-summary.json` files with
 `scripts/mutation-summary.sh` (kills over covered mutants, summed, not a mean
 of ratios) and publishes the covered-code MSI as the README mutation badge on
-the one-file `badges` branch. Parallelism is across runners only: one container
+the one-file `badges` branch. The README keeps that badge commented out for now: the
+scan cannot finish a large package inside one job, and the mutago v2.10.16 bump
+left packages to re-harden, so the badge returns once the scan runs as shards and
+every package is green. Parallelism is across runners only: one container
 at a time per machine is what keeps the gate's timeouts honest.
 
 Containers run one at a time in CI: no `IQ_*_URL` is set, so each driver's

@@ -12,7 +12,10 @@
   only by showing a number that could be bad and that a stranger reads in one second. -->
   <a href="https://github.com/zsltg/iq/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zsltg/iq/ci.yml?branch=main" alt="CI"></a>
   <a href="https://codecov.io/gh/zsltg/iq"><img src="https://img.shields.io/codecov/c/github/zsltg/iq/main?label=coverage" alt="Coverage"></a>
+  <!-- The mutation badge stays hidden until the weekly scan can publish a real value. The scan
+  must first run as shards, and every package must be green on the current mutago version.
   <a href="https://github.com/zsltg/iq/blob/main/CONTRIBUTING.md#mutation-gate-scriptsmutation-gatesh"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/zsltg/iq/badges/mutation.json" alt="Mutation score"></a>
+  -->
   &nbsp;
   <a href="https://scorecard.dev/viewer/?uri=github.com/zsltg/iq"><img src="https://api.securityscorecards.dev/projects/github.com/zsltg/iq/badge" alt="OpenSSF Scorecard"></a>
   <!-- Fill in the project IDs after registering on bestpractices.dev and codescene.io:
