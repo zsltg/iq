@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# Plans the weekly mutation scan: which packages to scan, cut into shards.
+#
+#   scripts/mutation-plan.sh <badges-dir> [package...]
+#
+# <badges-dir> holds the last published `badges` branch (state/<slug>.json for each
+# package). Without a package argument the plan covers every package with a non-test Go
+# file. IQ_MUTATION_FULL=1 scans every package, whatever its state.
+#
+# Output: the shard matrix as one JSON array on stdout, for the CI `deep-mutate` job. Each
+# entry is {package, slug, shard, shards, cells}, and each cell is {file, mutator, mutants}.
+# The report of the plan goes to stderr.
+#
+# Stale packages. A package is scanned when the full mode is on, when it has no state, or
+# when its fingerprint (scripts/mutation-fingerprint.sh) differs from the stored one. The
+# other packages keep their stored result.
+#
+# Cells. mutago has no shard flag. The unit of work is a (file, mutator) cell, and one gate
+# run (scripts/mutation-gate.sh with IQ_MUTATION_MUTATORS and an absolute file target) does
+# one cell. The cells come from the per-file counts of a package dry run, which reads
+# .mutago.yml like a real run. A dry run count is an upper bound, so the plan is safe.
+# Cells with zero mutants are not in the plan.
+#
+# Shard size. The budget of a shard is 150 min, which leaves 30 min of the 180 min job for
+# the setup. The cost of a cell is (mutants + 1) x seconds per mutant: each gate run also
+# does one coverage pass of the package tests. The seconds per mutant come from the state
+# of the last scan (secondsPerMutant). With no measurement, the value is 180 s for a
+# package that starts a backend in CI and 15 s for the other packages. The cells are
+# packed largest first, each into the first shard that has room (first-fit decreasing). A
+# cell that is larger than the budget gets its own shard and a warning. A package with no
+# mutants gets one shard with no cells, so that the verdict still records its zero result.
+set -euo pipefail
+
+export LC_ALL=C
+
+badges="${1:?usage: mutation-plan.sh <badges-dir> [package...]}"
+shift
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+if [[ $# -gt 0 ]]; then
+  packages=("$@")
+else
+  mapfile -t packages < <(go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./... | sed "s|^$(go list -m)|.|")
+fi
+if [[ ${#packages[@]} -eq 0 ]]; then
+  echo "mutation-plan: no packages to plan" >&2
+  exit 1
+fi
+module=$(go list -m)
+for pkg in "${packages[@]}"; do
+  if [[ "$pkg" != "." && ! "$pkg" =~ ^\./[A-Za-z0-9_][A-Za-z0-9_./-]*$ ]] || [[ "$pkg" == *..* ]]; then
+    echo "mutation-plan: '$pkg' is not a package path (. or ./dir)" >&2
+    exit 1
+  fi
+  if ! resolved=$(go list -f '{{.ImportPath}}' "$pkg" 2>/dev/null) || [[ "$resolved" != "$module"* ]]; then
+    echo "mutation-plan: '$pkg' is not a package of $module" >&2
+    exit 1
+  fi
+done
+
+# Packages that start a backend in the CI `deep-mutate` job. Keep this list in step with
+# the case block of that job in .github/workflows/ci.yml.
+backend_packages=" ./cmd ./drivers/redis ./drivers/mongo ./drivers/cassandra ./drivers/dynamodb ./drivers/hbase ./drivers/couchdb ./drivers/couchbase ./drivers/neo4j ./drivers/elasticsearch "
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+# Install mutago once for all the dry runs.
+mutago_bin=$(IQ_MUTATION_INSTALL_DIR="$work/bin" bash scripts/mutation-gate.sh | tail -n 1)
+
+full="${IQ_MUTATION_FULL-}"
+for pkg in "${packages[@]}"; do
+  slug=$(printf '%s' "$pkg" | tr '/.' '--' | sed 's/^-*//')
+  [[ -n "$slug" ]] || slug=root
+  fingerprint=$(bash scripts/mutation-fingerprint.sh "$pkg")
+  state="$badges/state/$slug.json"
+  reason=""
+  if [[ "$full" == "1" ]]; then
+    reason="full scan"
+  elif [[ ! -f "$state" ]]; then
+    reason="no state"
+  elif [[ "$(jq -r '.fingerprint // ""' "$state")" != "$fingerprint" ]]; then
+    reason="fingerprint changed"
+  fi
+  if [[ -z "$reason" ]]; then
+    echo "mutation-plan: $pkg reuses its state" >&2
+    continue
+  fi
+  spm=""
+  [[ -f "$state" ]] && spm=$(jq -r '.secondsPerMutant // "" | tostring' "$state")
+  if [[ ! "$spm" =~ ^[0-9]+(\.[0-9]+)?$ ]] || [[ "$spm" =~ ^0+(\.0+)?$ ]]; then
+    spm=15
+    [[ "$backend_packages" == *" $pkg "* ]] && spm=180
+  fi
+  if ! IQ_MUTATION_MUTAGO_BIN="$mutago_bin" IQ_MUTATION_DRYRUN=1 bash scripts/mutation-gate.sh "$pkg" >"$work/$slug.dry" 2>&1; then
+    cat "$work/$slug.dry" >&2
+    echo "mutation-plan: the dry run of $pkg failed" >&2
+    exit 1
+  fi
+  printf '%s\t%s\t%s\t%s\n' "$pkg" "$slug" "$spm" "$reason" >>"$work/stale.tsv"
+done
+
+if [[ ! -f "$work/stale.tsv" ]]; then
+  echo "mutation-plan: every package reuses its state; nothing to scan" >&2
+  echo "[]"
+  exit 0
+fi
+
+python3 - "$work" <<'PY'
+import json
+import os
+import sys
+
+work = sys.argv[1]
+BUDGET = 150 * 60
+MAX_JOBS = 256  # the GitHub limit for one matrix
+
+matrix = []
+for row in open(os.path.join(work, "stale.tsv"), encoding="utf-8"):
+    package, slug, spm, reason = row.rstrip("\n").split("\t")
+    spm = float(spm)
+    cells = []
+    current = None
+    for line in open(os.path.join(work, slug + ".dry"), encoding="utf-8"):
+        line = line.rstrip("\n")
+        if line.startswith("Per-mutator totals"):
+            break
+        if line.endswith(".go:") and not line.startswith(("\t", " ")):
+            current = line[:-1]
+            continue
+        if line.startswith("\t") and current:
+            name, _, count = line.strip().rpartition(": ")
+            if not count.isdigit():
+                sys.exit("mutation-plan: cannot read the dry run line {!r} of {}".format(line, package))
+            if int(count) > 0:
+                cells.append({"file": current, "mutator": name, "mutants": int(count)})
+    for cell in cells:
+        if os.path.isabs(cell["file"]) or ".." in cell["file"].split("/"):
+            sys.exit("mutation-plan: the dry run of {} names the file {!r}".format(package, cell["file"]))
+
+    def cost(cell):
+        return (cell["mutants"] + 1) * spm
+
+    cells.sort(key=lambda c: (-cost(c), c["file"], c["mutator"]))
+    shards = []
+    for cell in cells:
+        size = cost(cell)
+        if size > BUDGET:
+            print("mutation-plan: WARNING {} {} x {} needs about {:.0f} min, more than the budget of {} min; it gets its own shard".format(
+                package, cell["file"], cell["mutator"], size / 60, BUDGET // 60), file=sys.stderr)
+            shards.append({"cells": [cell], "seconds": size})
+            continue
+        for shard in shards:
+            if shard["seconds"] + size <= BUDGET:
+                shard["cells"].append(cell)
+                shard["seconds"] += size
+                break
+        else:
+            shards.append({"cells": [cell], "seconds": size})
+    if not shards:
+        shards = [{"cells": [], "seconds": 0}]
+    mutants = sum(c["mutants"] for c in cells)
+    longest = max(s["seconds"] for s in shards) / 60
+    print("mutation-plan: {} ({}): {} mutants in {} cells, {} shard(s), longest about {:.0f} min at {:g} s per mutant".format(
+        package, reason, mutants, len(cells), len(shards), longest, spm), file=sys.stderr)
+    for index, shard in enumerate(shards, start=1):
+        matrix.append({
+            "package": package,
+            "slug": slug,
+            "shard": index,
+            "shards": len(shards),
+            "cells": sorted(shard["cells"], key=lambda c: (c["file"], c["mutator"])),
+        })
+
+if len(matrix) > MAX_JOBS:
+    sys.exit("mutation-plan: {} shard jobs is more than the GitHub matrix limit of {}".format(len(matrix), MAX_JOBS))
+print("mutation-plan: {} shard job(s)".format(len(matrix)), file=sys.stderr)
+json.dump(matrix, sys.stdout, separators=(",", ":"))
+sys.stdout.write("\n")
+PY
