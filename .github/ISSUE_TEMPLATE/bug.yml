@@ -1,0 +1,50 @@
+name: Bug report
+description: iq gives a wrong result, an error it should not give, or a crash.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste a connection string, a password or a token. Write the scheme and the host only, for example `mongodb://db.example:27017`.
+        For a security problem, use the private report in SECURITY.md, not an issue.
+  - type: input
+    id: version
+    attributes:
+      label: iq version
+      description: The output of `iq version`.
+    validations:
+      required: true
+  - type: input
+    id: backend
+    attributes:
+      label: Backend and its version
+      description: For example `MongoDB 8.0` or `a JSON dump file`.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The iq command that shows the problem, with the connection string removed.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: The output or the error message. Remove any credential.
+    validations:
+      required: true
+  - type: textarea
+    id: explain
+    attributes:
+      label: Plan (optional)
+      description: The output of the same command with `--explain`. It shows what iq sends to the backend.
+      render: text

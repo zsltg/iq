@@ -1,0 +1,44 @@
+name: Driver request
+description: Ask for support of a new NoSQL datastore.
+labels: ["driver"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A new driver must pass four gates before any adapter code is written (AGENTS.md, "Adding a driver"). A "no" on one gate stops the request. Answer what you know. "Not known" is a valid answer.
+  - type: input
+    id: datastore
+    attributes:
+      label: Datastore
+      description: Name and the version you use.
+    validations:
+      required: true
+  - type: textarea
+    id: image
+    attributes:
+      label: 1. Local test image
+      description: A container image or emulator that runs without an account, a license key or a cloud service. Give the image name.
+    validations:
+      required: true
+  - type: textarea
+    id: sdk
+    attributes:
+      label: 2. Go SDK
+      description: The Go driver, its license, and whether it sends telemetry or usage data by default.
+    validations:
+      required: true
+  - type: textarea
+    id: auth
+    attributes:
+      label: 3. Authentication
+      description: How a client connects and authenticates. A driver cannot need Kerberos, a native library, or a live cloud account.
+  - type: textarea
+    id: queries
+    attributes:
+      label: 4. Query model
+      description: How the datastore reads documents or rows by key and by filter, and any hard limits (for example a partition key that every query needs).
+  - type: textarea
+    id: use
+    attributes:
+      label: Use case
+      description: What you want to do with iq on this datastore.
