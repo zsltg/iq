@@ -186,7 +186,12 @@ func TestQueryScopeQualified(t *testing.T) {
 	// A bare (unqualified) collection name resolves only under a scope-qualified query
 	// (Scope.Query), never Cluster.Query — so this pins that a bucket-selected source
 	// runs statements against its scope.
-	rows, err := st.Query(ctx, []string{"SELECT RAW COUNT(*) FROM `" + collName(t) + "`"})
+	// The predicate is necessary. Without a WHERE clause the planner answers COUNT(*)
+	// with a CountScan, which reads the collection's KV document count. That count
+	// updates later than the upserts and ignores RequestPlus, so the test got 1 of 3
+	// documents about once in 15 runs. With the predicate the count goes through the
+	// primary index, and RequestPlus makes it wait for the seeded documents.
+	rows, err := st.Query(ctx, []string{"SELECT RAW COUNT(*) FROM `" + collName(t) + "` t WHERE t.year IS NOT MISSING"})
 	require.NoError(t, err)
 	require.Equal(t, []any{len(books())}, rows)
 }
