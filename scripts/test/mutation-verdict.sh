@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Fixture tests for scripts/mutation-verdict.sh and the rate table of
-# scripts/mutation-plan.sh.
+# Fixture tests for scripts/mutation-verdict.sh, for the parse, pack and rate steps of
+# scripts/mutation-plan.sh, and for scripts/mutation-fingerprint.sh.
 #
 #   bash scripts/test/mutation-verdict.sh
 #
@@ -77,7 +77,7 @@ prepare() {
 verdict() {
   rm -f mutago-summary.json
   bash scripts/mutation-verdict.sh "$case_dir/artifacts" "$case_dir/badges" \
-    "$case_dir/matrix.json" "$case_dir/packages.txt" >"$case_dir/out" 2>&1
+    "$case_dir/plan.json" "$case_dir/packages.txt" >"$case_dir/out" 2>&1
   status=$?
 }
 
@@ -125,18 +125,18 @@ check "two shards: the module summary has the same score" \
 
 prepare missing-shard "[$shard1]" $numfmt
 jq --argjson c "[$cell2]" \
-  '. + [{package: "./internal/numfmt", slug: "internal-numfmt", shard: 2, shards: 2, cells: ($c | map({file, mutator}))}]' \
-  "$case_dir/matrix.json" >"$case_dir/matrix.tmp" && mv "$case_dir/matrix.tmp" "$case_dir/matrix.json"
+  '. + [{package: "./internal/numfmt", slug: "internal-numfmt", shard: 2, shards: 2, cells: ($c | map({file, mutator, mutants: (.mutants | length)}))}]' \
+  "$case_dir/plan.json" >"$case_dir/plan.tmp" && mv "$case_dir/plan.tmp" "$case_dir/plan.json"
 verdict
 check "missing shard: the verdict fails" \
-  '[[ $status -eq 1 ]] && grep -q "no report for ./internal/numfmt shard 2" "$case_dir/out"'
+  '[[ $status -eq 1 ]] && grep -q "./internal/numfmt: no report for shard 2" "$case_dir/out"'
 check "missing shard: no state is written" '[[ ! -f "$case_dir/badges/state/$nslug.json" ]]'
 
 copy=$(shard a2 $numfmt $nslug 1 2 "[$cell1]" | jq -c '. + {not_in_matrix: true}')
 prepare duplicate-shard "[$shard1,$copy,$shard2]" $numfmt
 verdict
 check "duplicate shard: the verdict fails" \
-  '[[ $status -eq 1 ]] && grep -q "two reports for ./internal/numfmt shard 1" "$case_dir/out"'
+  '[[ $status -eq 1 ]] && grep -q "./internal/numfmt: 2 reports for shard 1" "$case_dir/out"'
 
 prepare identity-mismatch "[$shard1,$(jq -c '. + {identity_patch: {commit: "0000000"}}' <<<"$shard2")]" $numfmt
 verdict
@@ -149,7 +149,7 @@ check "other mutago version: the verdict fails" '[[ $status -eq 1 ]] && grep -q 
 extra=$(shard extra $numfmt $nslug 3 2 "[$cell2]" | jq -c '. + {not_in_matrix: true}')
 prepare extra-shard "[$shard1,$shard2,$extra]" $numfmt
 verdict
-check "shard not in the matrix: the verdict fails" '[[ $status -eq 1 ]] && grep -q "not in the matrix" "$case_dir/out"'
+check "shard not in the plan: the verdict fails" '[[ $status -eq 1 ]] && grep -q "not in the plan" "$case_dir/out"'
 
 prepare new-escape "[$(shard a $numfmt $nslug 1 1 "[$(cell $file statement/remove '[["n1","escaped","notinbaseline"]]')]")]" $numfmt
 verdict
@@ -212,6 +212,120 @@ prepare empty-matrix "[]" $numfmt
 verdict
 check "nothing to scan and no state: the gate passes, no badge" \
   '[[ $status -eq 0 && ! -f "$case_dir/badges/mutation.json" ]]'
+
+# F1: the mutants of each cell against the plan.
+cell_of() { cell $file statement/remove "$1" | jq -c ". + $2"; }
+prepare cell-more "[$(shard a $numfmt $nslug 1 1 "[$(cell_of '[["m1","killed",""],["m2","killed",""]]' '{planned: 1}')]")]" $numfmt
+verdict
+check "cell with more mutants than the plan: the verdict fails" \
+  '[[ $status -eq 1 ]] && grep -q "more than the 1 of the plan" "$case_dir/out"'
+prepare cell-empty "[$(shard a $numfmt $nslug 1 1 "[$(cell_of '[]' '{planned: 3}')]")]" $numfmt
+verdict
+check "cell with no mutants where the plan has some: the verdict fails" \
+  '[[ $status -eq 1 ]] && grep -q "the plan has 3 mutants, the report none" "$case_dir/out"'
+prepare cell-fewer "[$(shard a $numfmt $nslug 1 1 "[$(cell_of '[["f1","killed",""]]' '{planned: 2}')]")]" $numfmt
+verdict
+check "cell with fewer mutants than the plan (merged edits): the verdict passes" \
+  '[[ $status -eq 0 ]] && grep -q "fewer mutants than the dry run" "$case_dir/out"'
+prepare cell-stated "[$(shard a $numfmt $nslug 1 1 "[$(cell_of '[["s1","killed",""]]' '{stated: 5}')]")]" $numfmt
+verdict
+check "report that states another total than it lists: the verdict fails" \
+  '[[ $status -eq 1 ]] && grep -q "lists 1 mutants but states 5" "$case_dir/out"'
+prepare cell-no-report "[$shard1,$shard2]" $numfmt
+rm -f "$case_dir/artifacts/b/cells/001/report.json"
+verdict
+check "cell with no report: the verdict fails" '[[ $status -eq 1 ]] && grep -q "has no usable report" "$case_dir/out"'
+
+# F3: a merge result that is not valid fails the package.
+bad_merge="$work/bad-merge.sh"
+cat >"$bad_merge" <<'EOF'
+#!/usr/bin/env bash
+echo '{"totalMutantsCount":"x","killedCount":1,"escapedCount":0,"notCoveredCount":0,"skippedCount":0,"errorCount":0,"newEscapes":[],"conflicts":0,"score":1}'
+EOF
+prepare corrupt-merge "[$shard1,$shard2]" $numfmt
+IQ_MUTATION_MERGE_SCRIPT="$bad_merge" verdict
+check "merge result with a count that is not a number: the verdict fails" \
+  '[[ $status -eq 1 && ! -f "$case_dir/badges/state/$nslug.json" ]] && grep -q "merge result is not valid" "$case_dir/out"'
+printf '#!/usr/bin/env bash\necho "not json"\n' >"$bad_merge"
+prepare garbage-merge "[$shard1,$shard2]" $numfmt
+IQ_MUTATION_MERGE_SCRIPT="$bad_merge" verdict
+check "merge result that is not JSON: the verdict fails" '[[ $status -eq 1 ]] && grep -q "merge result is not valid" "$case_dir/out"'
+
+# E2: one red package does not discard the others.
+render=./internal/render
+rslug=internal-render
+rcell=$(cell internal/render/json.go statement/remove '[["r1","killed",""]]')
+prepare one-red "[$shard1,$(shard r $render $rslug 1 1 "[$rcell]")]" $numfmt $render
+jq --argjson c "[$cell2]" \
+  'map(if .package == "./internal/numfmt" then .shards = 2 else . end)
+   + [{package: "./internal/numfmt", slug: "internal-numfmt", shard: 2, shards: 2, cells: ($c | map({file, mutator, mutants: (.mutants | length)}))}]' \
+  "$case_dir/plan.json" >"$case_dir/plan.tmp" && mv "$case_dir/plan.tmp" "$case_dir/plan.json"
+verdict
+check "one red package: the verdict fails" '[[ $status -eq 1 ]] && grep -q "FAILED: ./internal/numfmt: no report for shard 2" "$case_dir/out"'
+check "one red package: the other package gets its state" '[[ -f "$case_dir/badges/state/$rslug.json" && ! -f "$case_dir/badges/state/$nslug.json" ]]'
+check "one red package: no badge" '[[ ! -f "$case_dir/badges/mutation.json" && ! -f mutago-summary.json ]]'
+
+prepare foreign-report "[$(shard a $numfmt $nslug 1 1 "[$cell1]"),$(shard x ./internal/shape internal-shape 1 1 "[]" | jq -c '. + {not_in_matrix: true}')]" $numfmt
+verdict
+check "report of a package that is not in the plan: the verdict stops, nothing written" \
+  '[[ $status -eq 2 && ! -f "$case_dir/badges/state/$nslug.json" ]]'
+
+# F2 and E2: the parse and pack steps of the plan, on prepared dry runs.
+pack_case() {
+  case_dir="$work/pack-$1"
+  mkdir -p "$case_dir"
+  printf './internal/numfmt\tinternal-numfmt\t%s\ttest\n' "$2" >"$case_dir/stale.tsv"
+  printf '%b' "$3" >"$case_dir/internal-numfmt.dry"
+  bash scripts/mutation-plan.sh --pack "$case_dir" >"$case_dir/plan.json" 2>"$case_dir/out"
+  status=$?
+}
+pack_case good 15 'internal/numfmt/a.go:\n\tbranch/if: 3\n\tstatement/return: 2\ninternal/numfmt/b.go:\n\tbranch/if: 1\n\nPer-mutator totals across all files:\n  branch/if 4\n  statement/return 2\n\nTotal: 6 mutation(s) would be generated.\n'
+check "pack: cells sum to the dry run Total" \
+  '[[ $status -eq 0 && "$(jq "[.[].cells[].mutants] | add" "$case_dir/plan.json")" == 6 ]]'
+pack_case mismatch 15 'internal/numfmt/a.go:\n\tbranch/if: 3\n\nTotal: 7 mutation(s) would be generated.\n'
+check "pack: cells that do not sum to the Total stop the plan" \
+  '[[ $status -ne 0 ]] && grep -q "hold 3 mutants, but the dry run Total is 7" "$case_dir/out"'
+pack_case no-cells 15 'something new\n\tbranch/if 3\n\nTotal: 3 mutation(s) would be generated.\n'
+check "pack: a Total with no parsed cells stops the plan" \
+  '[[ $status -ne 0 ]] && grep -q "has 3 mutants but no per-file cells" "$case_dir/out"'
+pack_case no-total 15 'internal/numfmt/a.go:\n\tbranch/if: 3\n'
+check "pack: a dry run with no Total line stops the plan" '[[ $status -ne 0 ]] && grep -q "has no Total line" "$case_dir/out"'
+pack_case zero 15 '\nTotal: 0 mutation(s) would be generated.\n'
+check "pack: no mutants gives one empty shard" '[[ $status -eq 0 && "$(jq -c "map(.cells | length)" "$case_dir/plan.json")" == "[0]" ]]'
+# (99 + 1) x 95 s is about 158 min: over the budget, under the job limit.
+pack_case over-budget 95 'internal/numfmt/a.go:\n\tbranch/if: 99\n\nTotal: 99 mutation(s) would be generated.\n'
+check "pack: a cell over the 150 min budget gets its own shard and a warning" \
+  '[[ $status -eq 0 ]] && grep -q "WARNING" "$case_dir/out"'
+# (99 + 1) x 100 s is about 167 min: over the job limit.
+pack_case over-limit 100 'internal/numfmt/a.go:\n\tbranch/if: 99\n\nTotal: 99 mutation(s) would be generated.\n'
+check "pack: a cell over the 165 min job limit stops the plan" \
+  '[[ $status -ne 0 ]] && grep -q "more than the job limit of 165 min" "$case_dir/out"'
+
+# F4: the fingerprint, in a small copy of the repository.
+case_dir="$work/fingerprint"
+mkdir -p "$case_dir"
+git ls-files -z -- go.mod go.sum .mutago.yml mutago-baseline.json scripts internal/numfmt internal/render |
+  tar --null -T - -cf - | tar -xf - -C "$case_dir"
+git -C "$case_dir" init -q
+git -C "$case_dir" add -A
+fp() { (cd "$case_dir" && bash scripts/mutation-fingerprint.sh ./internal/numfmt); }
+touch_file() { printf '\n' >>"$case_dir/$1"; }
+base=$(fp)
+check "fingerprint: the same value two times" '[[ "$(fp)" == "$base" ]]'
+for path in internal/numfmt/decimal.go internal/numfmt/decimal_test.go go.sum .mutago.yml \
+  scripts/mutation-gate.sh scripts/mutation-plan.sh scripts/mutation-shard.sh \
+  scripts/mutation-merge.sh scripts/mutation-verdict.sh scripts/mutation-summary.sh; do
+  before=$(fp)
+  touch_file "$path"
+  check "fingerprint: a change of $path changes it" '[[ "$(fp)" != "$before" ]]'
+done
+before=$(fp)
+touch_file internal/render/json.go
+check "fingerprint: a change of another package does not change it" '[[ "$(fp)" == "$before" ]]'
+before=$(fp)
+jq '.mutants |= map(if (.file | startswith("internal/numfmt/")) then .line += 1 else . end)' \
+  "$case_dir/mutago-baseline.json" >"$case_dir/b.tmp" && mv "$case_dir/b.tmp" "$case_dir/mutago-baseline.json"
+check "fingerprint: a baseline entry of the package changes it" '[[ "$(fp)" != "$before" ]]'
 
 # The rate table of the plan. A package with no state uses its starting rate, any other
 # package 15, and the state always has priority. Each backend package of the module has a

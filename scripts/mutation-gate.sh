@@ -90,7 +90,7 @@
 # diff-scoped or whole-module (./...) dry run first runs the --coverage instrumented
 # test pass — whole-target, memory-heavy, buffered until exit — before counting. The
 # count is a whole-target upper bound either way. Scope dry runs to one package and
-# never launch one alongside a live gate — the two contend for memory (oomd kill). A dry
+# never launch one alongside a live gate, because the two contend for memory (oomd kill). A dry
 # run reads the same config as a real run (.mutago.yml, or the shard config), so the count
 # obeys skip_without_test and the shard mutators.
 #

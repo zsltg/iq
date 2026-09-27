@@ -10,13 +10,14 @@
 #   - Each tracked file directly in the package directory, tests included, and each tracked
 #     file under its testdata directory. Subdirectories are other packages, so they are not
 #     part of it. For the root package (.) that is the files at the root of the repository.
-#   - The tooling that decides the verdict: go.mod, go.sum, .mutago.yml, and
-#     scripts/mutation-gate.sh (it holds MUTAGO_VERSION and the ./cmd floor).
+#   - The tooling that decides the verdict: go.mod, go.sum, .mutago.yml, and the mutation
+#     scripts (the gate holds MUTAGO_VERSION and the ./cmd floor; the plan, shard, merge,
+#     verdict and summary scripts decide how the result is made and judged).
 #   - The Go version (`go env GOVERSION`).
 #   - The entries of mutago-baseline.json for files of this package, sorted by id.
 #
-# A change in another package does not change the value (decision 1a of the plan). A
-# monthly full scan catches the effects across packages.
+# A change in another package does not change the value (decision 1a of the plan), and
+# neither does a change of a backend image. A monthly full scan catches that drift.
 set -euo pipefail
 
 export LC_ALL=C
@@ -56,7 +57,9 @@ manifest() {
     [[ -n "$dir" ]] && rest="${path#"$dir"/}"
     owned "$rest" && hash_file "$path"
   done < <(git ls-files -z -- ${dir:+"$dir"} | tr '\0' '\n' | sort -u)
-  for path in go.mod go.sum .mutago.yml scripts/mutation-gate.sh; do
+  for path in go.mod go.sum .mutago.yml scripts/mutation-gate.sh scripts/mutation-plan.sh \
+    scripts/mutation-shard.sh scripts/mutation-merge.sh scripts/mutation-verdict.sh \
+    scripts/mutation-summary.sh; do
     hash_file "$path"
   done
   printf 'goversion  %s\n' "$(go env GOVERSION)"
