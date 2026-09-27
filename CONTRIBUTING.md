@@ -85,9 +85,10 @@ make sbom           # SPDX + CycloneDX SBOMs only
 Format (`gofumpt` + `goimports`), `go vet`, `go build`, `golangci-lint`
 (gosec included), `deadcode`, the demo stamp gate ([Recorded demo](#recorded-demo)),
 the mutation verdict tests (`bash scripts/test/mutation-verdict.sh`: fixture shards
-from `scripts/test/mutation-verdict-fixtures.py` through `scripts/mutation-verdict.sh`
-and the rate table of `scripts/mutation-plan.sh`; no network, no container, no
-mutago run), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
+from `scripts/test/mutation-verdict-fixtures.py` through `scripts/mutation-verdict.sh`,
+the parse, pack and rate steps of `scripts/mutation-plan.sh` on prepared dry runs
+(`--pack`, `--rate`), and `scripts/mutation-fingerprint.sh` in a small copy of the
+repository; no network, no container, no mutago run), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
 paths are a stale cache from a removed worktree; check clears the cache and
 retries once.
 
@@ -151,6 +152,9 @@ Run with the integration services up.
   those whose stored result is current
 - `IQ_MUTATION_STATE_REMOTE=<uri>`: `scripts/mutation-state.sh` reads and writes
   this remote instead of the GitHub one (a local bare repository for a test)
+- `IQ_MUTATION_MERGE_SCRIPT=<path>`: `scripts/mutation-verdict.sh` calls this
+  script in place of `scripts/mutation-merge.sh` (the fixture tests give a
+  corrupt merge result with it)
 
 Hardening a package that has never had a full scan is a different job from the
 per-change gate, and the cost model decides the method: mutago reruns the whole
@@ -229,36 +233,63 @@ weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
 workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
 (`deep-scan`) and run an incremental, sharded mutation scan. The stored result of
 each package lives on the `badges` branch (`state/<slug>.json`, next to the
-badge endpoint `mutation.json`; `scripts/mutation-state.sh` reads and writes it).
+badge endpoint `mutation.json`; `scripts/mutation-state.sh` reads and writes it,
+with the token in an HTTP header from the environment, never in a URI or an
+argument, and three attempts for each network step). Scheduled and manual runs
+share one concurrency group, so two scans never overlap; a running scan is not
+cancelled.
+
 `deep-plan` (`scripts/mutation-plan.sh`) plans only the packages whose
-fingerprint (`scripts/mutation-fingerprint.sh`: the package's own files, its
-baseline entries, `go.mod`, `go.sum`, `.mutago.yml`, the wrapper and the Go
-version) changed, or every package on a forced run: the `full` input, or a
-scheduled run in the first seven days of the month, which catches effects
-across packages. The `packages` input (space-separated, for example
-`./internal/numfmt`) limits the plan for a manual test. The unit of work is a
-(file, mutator) cell from a dry run; the plan packs cells into shards of about
-150 min at the measured seconds per mutant (a package with no stored result
-uses its starting rate from the table in the script, else 180 s with a backend
-and 15 s without; `bash scripts/mutation-plan.sh --rate <badges-dir> <package>`
-prints the rate), and warns about a single cell over that budget. `deep-mutate` runs one shard per runner
-(`scripts/mutation-shard.sh`: one ungated wrapper run per cell, mutago
-installed once, eight runners at a time; a driver job starts its compose
-service(s) once and sets the `IQ_*_URL` override, so per-mutant test runs
-reuse the running service the way the local per-driver recipe does, couchbase
-provisioned by `scripts/seed-couchbase.sh` with `IQ_SEED_BUCKET` and
-`IQ_SEED_DATA=0`). `deep-badge` (`scripts/mutation-verdict.sh`) rejects a
-missing, duplicate or mismatched shard report (commit, mutago and Go version,
-`.mutago.yml` and baseline hashes), merges the shards of each package with
-`scripts/mutation-merge.sh` (each edit once, by checksum; an escape is new only
-when none of its ids is in the baseline; a kill in one shard and an escape in
-another prints a warning), fails on a new escape or an errored mutant, and
-holds `./cmd` to the wrapper's floor on its merged score. The score is killed
-/ (killed + escaped) on covered code, the same formula in
-`scripts/mutation-summary.sh`. On a pass it writes the state of each scanned
-package and removes the state of a package the module no longer has; it
-writes a new badge only when every package has current state, else the
-previous badge stays. Only a run on `main` pushes the branch.
+fingerprint changed, or every package on a forced run: the `full` input, or a
+scheduled run in the first seven days of the month. The fingerprint
+(`scripts/mutation-fingerprint.sh`) covers the package's own files, its tests
+and testdata, its baseline entries, `go.mod`, `go.sum`, `.mutago.yml`, the
+mutation scripts (gate, plan, shard, merge, verdict, summary) and the Go
+version. It does not cover the backend images or other packages; the monthly
+full run catches that drift. The `packages` input (space-separated, for example
+`./internal/numfmt`) limits the plan for a manual test; the plan removes a
+trailing slash and a duplicate, and stops on a path that is not a module
+package. The unit of work is a (file, mutator) cell from a dry run; the sum of
+the cells must equal the dry run total. The plan packs cells into shards of
+about 150 min at the measured seconds per mutant (a package with no stored
+result uses its starting rate from the table in the script, else 180 s with a
+backend and 15 s without; `bash scripts/mutation-plan.sh --rate <badges-dir>
+<package>` prints the rate). A cell over 150 min gets its own shard and a
+warning; a cell over 165 min stops the plan, because its job cannot finish. The
+full plan goes to the `scan-plan` artifact; the job output keeps only the
+package, slug and shard numbers that the matrix needs.
+
+`deep-mutate` runs one shard per runner (`scripts/mutation-shard.sh`: it reads
+its cells from the plan artifact, runs one ungated wrapper run per cell,
+installs mutago once, and removes the value of each `IQ_*_URL` from the cell
+logs; eight runners at a time; a driver job starts its compose service(s) once
+and sets the `IQ_*_URL` override, so per-mutant test runs reuse the running
+service the way the local per-driver recipe does, couchbase provisioned by
+`scripts/seed-couchbase.sh` with `IQ_SEED_BUCKET` and `IQ_SEED_DATA=0`). The
+shard artifact uploads also on failure and replaces the artifact of an earlier
+attempt of the same job.
+
+`deep-badge` (`scripts/mutation-verdict.sh`, read-only) runs when the shards
+finished, also when some failed. It judges each package on its own: a missing,
+duplicate, failed or timed-out shard, a report of another commit, mutago or Go
+version or other `.mutago.yml` or baseline hashes, a cell report with no
+mutants or with more mutants than the plan, or a merge result that is not valid
+fails that package, and the package keeps its previous state. It merges the
+shards of each package with `scripts/mutation-merge.sh` (each edit once, by
+checksum; an escape is new only when none of its ids is in the baseline; a
+kill in one shard and an escape in another prints a warning), fails a package
+on a new escape or an errored mutant, and holds `./cmd` to the wrapper's floor
+on its merged score. The score is killed / (killed + escaped) on covered code,
+the same formula in `scripts/mutation-summary.sh`. It writes the state of each
+package that passed and removes the state of a package the module no longer
+has; the job is red when any package failed. It writes a new badge only when
+no package failed and every package has current state, else the previous badge
+stays. `deep-publish`, the only job with write access, pushes the new state
+and badge from `main` only.
+
+Accepted risk: anyone who can push the `badges` branch can forge the stored
+state (a result or a fingerprint) and so skip a package's scan until the next
+monthly full run. The branch cannot be protected, because CI force-pushes it.
 Parallelism is across runners only: one container
 at a time per machine is what keeps the gate's timeouts honest.
 
