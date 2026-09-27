@@ -134,18 +134,36 @@ Run with the integration services up.
 - `IQ_MUTATION_MUTANT=<id>`: re-run one mutant as a diagnostic; it can report
   a false KILLED, so do not confirm a kill with it (see the hardening steps)
 - `IQ_MUTATION_DRYRUN=1`: mutant-count preview; scope it to one package
+- `IQ_MUTATION_MUTATORS="a/b c/d"`: shard mode, only these mutators (names from
+  `mutago --list-mutators`); needs a package or file argument and runs with no
+  gate flag, because the merge of all shards is the gate (see Continuous
+  integration). A file argument (`internal/numfmt/decimal.go`) mutates that one
+  file; the wrapper makes it absolute, since a `./`-prefixed file target gives
+  other mutant ids (mutago#248)
+- `IQ_MUTATION_INSTALL_DIR=<dir>`: only install the pinned mutago into `<dir>`
+  (three attempts with backoff) and print the binary path
+- `IQ_MUTATION_MUTAGO_BIN=<path>`: use that installed binary; accepted only for
+  an executable file built from the pinned version (`go version -m`)
+- `IQ_MUTATION_FULL=1`: `scripts/mutation-plan.sh` plans every package, also
+  those whose stored result is current
+- `IQ_MUTATION_STATE_REMOTE=<uri>`: `scripts/mutation-state.sh` reads and writes
+  this remote instead of the GitHub one (a local bare repository for a test)
 
 Hardening a package that has never had a full scan is a different job from the
 per-change gate, and the cost model decides the method: mutago reruns the whole
 package suite per covered mutant, so a full scan costs `mutants x suite
 duration` and is the expensive step, not the fixing. Work it in this order.
 
-1. Take the escape list from the package's `deep-mutate` run rather than
-   enumerating locally: download its `mutation-<package>` artifact and read
-   `mutago-agentic.json`, which lists every escaped mutant with the stable id
-   `IQ_MUTATION_MUTANT` takes, and, more usefully, the diff of each one. A job
-   log alone carries the diffs without the ids, in which case replay each logged
-   diff against the source and run the suite to reproduce the list.
+1. Take the escape list from the package's `deep-mutate` shards rather than
+   enumerating locally: download its `mutation-<slug>-<shard>` artifacts (for
+   example `mutation-drivers-couchbase-3`) and read the
+   `cells/NNN/mutago-agentic.json` files, which list every escaped mutant with
+   the stable id `IQ_MUTATION_MUTANT` takes, and, more usefully, the diff of
+   each one. The artifacts upload also when a shard fails. One edit can appear
+   in two cells under two mutators and so two ids; either id matches the
+   baseline. A job log alone carries the diffs without the ids, in which case
+   replay each logged diff against the source and run the suite to reproduce
+   the list.
 2. Fix and verify one mutant at a time by ground truth: apply the mutant's own
    `diff` field with `git apply`, run the package suite, then restore the file.
    That costs one suite run, about 25 s for `cmd`. Do NOT use
@@ -206,27 +224,45 @@ the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
 `.github/`) and `docs` (site build). The
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
 workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
-(`deep-scan`) and mutate the whole module one package per runner
-(`deep-enumerate` lists every package with Go sources, `deep-mutate` is a
-matrix over them, each a full package scan through the wrapper's package-arg
-form on its own machine, eight runners at a time; a driver job starts its
-compose service(s) once and sets the `IQ_*_URL` override, so per-mutant test
-runs reuse the running service the way the local per-driver recipe does,
-couchbase provisioned by `scripts/seed-couchbase.sh` with `IQ_SEED_BUCKET` and
-`IQ_SEED_DATA=0`), then
-`deep-badge` merges the per-package `mutago-summary.json` files with
-`scripts/mutation-summary.sh` (kills over covered mutants, summed, not a mean
-of ratios) and publishes the covered-code MSI as the README mutation badge on
-the one-file `badges` branch. The README keeps that badge commented out for now: the
-scan cannot finish a large package inside one job, and the mutago v2.10.16 bump
-left packages to re-harden, so the badge returns once the scan runs as shards and
-every package is green. Parallelism is across runners only: one container
+(`deep-scan`) and run an incremental, sharded mutation scan. The stored result of
+each package lives on the `badges` branch (`state/<slug>.json`, next to the
+badge endpoint `mutation.json`; `scripts/mutation-state.sh` reads and writes it).
+`deep-plan` (`scripts/mutation-plan.sh`) plans only the packages whose
+fingerprint (`scripts/mutation-fingerprint.sh`: the package's own files, its
+baseline entries, `go.mod`, `go.sum`, `.mutago.yml`, the wrapper and the Go
+version) changed, or every package on a forced run: the `full` input, or a
+scheduled run in the first seven days of the month, which catches effects
+across packages. The `packages` input (space-separated, for example
+`./internal/numfmt`) limits the plan for a manual test. The unit of work is a
+(file, mutator) cell from a dry run; the plan packs cells into shards of about
+150 min at the measured seconds per mutant (180 s for a package with a
+backend and 15 s otherwise until a scan measures it), and warns about a single
+cell over that budget. `deep-mutate` runs one shard per runner
+(`scripts/mutation-shard.sh`: one ungated wrapper run per cell, mutago
+installed once, eight runners at a time; a driver job starts its compose
+service(s) once and sets the `IQ_*_URL` override, so per-mutant test runs
+reuse the running service the way the local per-driver recipe does, couchbase
+provisioned by `scripts/seed-couchbase.sh` with `IQ_SEED_BUCKET` and
+`IQ_SEED_DATA=0`). `deep-badge` (`scripts/mutation-verdict.sh`) rejects a
+missing, duplicate or mismatched shard report (commit, mutago and Go version,
+`.mutago.yml` and baseline hashes), merges the shards of each package with
+`scripts/mutation-merge.sh` (each edit once, by checksum; an escape is new only
+when none of its ids is in the baseline; a kill in one shard and an escape in
+another prints a warning), fails on a new escape or an errored mutant, and
+holds `./cmd` to the wrapper's floor on its merged score. The score is killed
+/ (killed + escaped) on covered code, the same formula in
+`scripts/mutation-summary.sh`. On a pass it writes the state of each scanned
+package and removes the state of a package the module no longer has; it
+writes a new badge only when every package has current state, else the
+previous badge stays. Only a run on `main` pushes the branch.
+Parallelism is across runners only: one container
 at a time per machine is what keeps the gate's timeouts honest.
 
-Containers run one at a time in CI: no `IQ_*_URL` is set, so each driver's
-`TestMain` provisions its own testcontainer, `GOFLAGS=-p=1` serialises the
-package test binaries (coverage and mutation), and the e2e job brings up a
-single compose service per pass. HBase has no testcontainers path, so the
+Containers run one at a time in CI: the `coverage` and `mutate-diff` jobs set
+no `IQ_*_URL` except HBase's, so each driver's `TestMain` provisions its own testcontainer,
+`GOFLAGS=-p=1` serialises the package test binaries (coverage and mutation),
+the e2e job brings up a single compose service per pass, and a `deep-mutate`
+shard starts only the compose services of its own package. HBase has no testcontainers path, so the
 `coverage` job and the hbase `deep-mutate` job start its compose service (host
 networking) and set `IQ_HBASE_URL`; everywhere else it skips, as it does locally
 without `IQ_HBASE_URL`. The `test` job runs without

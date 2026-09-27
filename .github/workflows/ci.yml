@@ -13,15 +13,24 @@
 name: CI
 
 # push / pull_request drive the fast per-change gates. The weekly schedule and
-# manual dispatch drive the `deep-*` jobs (fresh CVE data, whole-repo mutation one
-# package per runner, the badge), gated off the fast jobs so a schedule run does
-# not re-lint.
+# manual dispatch drive the `deep-*` jobs (fresh CVE data, the sharded mutation
+# scan of the packages that changed, the badge), gated off the fast jobs so a
+# schedule run does not re-lint.
 on:
   push:
   pull_request:
   schedule:
     - cron: '17 5 * * 1' # Mondays 05:17 UTC
   workflow_dispatch:
+    inputs:
+      full:
+        description: Scan every package, also the packages whose stored result is current
+        type: boolean
+        default: false
+      packages:
+        description: Plan only these packages (space-separated, for example ./internal/numfmt); empty plans all
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -292,8 +301,8 @@ jobs:
   # BLOCKING: an escaped mutant on a changed covered line, or an errored/timed-out
   # mutant, fails the job; a genuine equivalent goes into mutago-baseline.json with
   # a note. Driver packages provision their testcontainer per test run, so with
-  # --workers 1 and -p=1 there is one container at a time. The `deep-*` jobs run
-  # the whole repo on a cadence, one package per runner.
+  # --workers 1 and -p=1 there is one container at a time. The `deep-*` jobs scan
+  # the changed packages weekly (all packages monthly), one shard per runner.
   mutate-diff:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -315,15 +324,18 @@ jobs:
 
   # Weekly + manual deep scan, four jobs gated to schedule/workflow_dispatch:
   # deep-scan re-runs the vulnerability scanners against fresh OSV/CVE data on
-  # unchanged code and the secret history; deep-enumerate lists every package
-  # with Go sources; deep-mutate runs the whole mutation gate for ONE package per
-  # runner (the package-arg form of the wrapper, a full scan of that package with
-  # its own containers on its own machine, so nothing is shared and the rule of
-  # one container at a time still holds per runner); deep-badge sums the
-  # per-package summaries into the module MSI and publishes the README badge.
-  # Parallelism is across runners, never inside one: a driver package boots a
-  # JVM-sized container per test run and a 16 GB runner cannot hold two of them
-  # without the timeouts the gate treats as failures.
+  # unchanged code and the secret history. The mutation scan is incremental and
+  # sharded (scripts/mutation-plan.sh has the details). deep-plan reads the stored
+  # state from the `badges` branch, finds the packages whose fingerprint changed,
+  # and cuts each into shards of (file, mutator) cells of about 150 min at most.
+  # deep-mutate runs ONE shard per runner, with its own containers on its own
+  # machine, so the rule of one container at a time still holds per runner.
+  # deep-badge merges the shards of each package, gives the verdict, and on main
+  # publishes the new state and the badge. The first seven days of each month
+  # scan every package, which catches effects across packages that a fingerprint
+  # of one package cannot see. Parallelism is across runners, never inside one: a
+  # driver package boots a JVM-sized container per test run and a 16 GB runner
+  # cannot hold two of them without the timeouts the gate treats as failures.
   deep-scan:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -351,12 +363,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: uvx "zizmor==$ZIZMOR_VERSION" .github/
 
-  deep-enumerate:
+  deep-plan:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     outputs:
-      packages: ${{ steps.list.outputs.packages }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      packages: ${{ steps.plan.outputs.packages }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -364,25 +377,43 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      # Every package with a non-test Go file, as the ./relative form the wrapper
-      # takes. A package with nothing to mutate (a doc.go, no tests) passes in a
-      # minute with a zero summary, so nothing is filtered by hand.
-      - id: list
+      # Read-only: the token goes to the script, which does not store it and does
+      # not print the URI. A branch that does not exist yet gives an empty state.
+      - name: Fetch the stored state (badges branch)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash scripts/mutation-state.sh fetch badges
+      # Every package with a non-test Go file is the module list for the verdict.
+      # The `packages` input limits the plan, not that list. Full mode comes from
+      # the `full` input or from the first seven days of the month. The plan
+      # script examines each requested package.
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_FULL: ${{ inputs.full }}
+          INPUT_PACKAGES: ${{ inputs.packages }}
         run: |
-          pkgs="$(go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./... \
+          all="$(go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./... \
             | sed "s|^$(go list -m)|.|" | jq -R . | jq -sc .)"
-          echo "packages=$pkgs" >> "$GITHUB_OUTPUT"
-          echo "$pkgs"
+          full=""
+          if [ "$INPUT_FULL" = "true" ]; then full=1; fi
+          if [ "$EVENT" = "schedule" ] && [ "$(date -u +%-d)" -le 7 ]; then full=1; fi
+          read -r -a requested <<< "$INPUT_PACKAGES"
+          matrix="$(IQ_MUTATION_FULL="$full" bash scripts/mutation-plan.sh badges "${requested[@]}")"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "packages=$all" >> "$GITHUB_OUTPUT"
 
   deep-mutate:
-    needs: deep-enumerate
+    needs: deep-plan
+    if: needs.deep-plan.outputs.matrix != '[]'
+    name: mutate ${{ matrix.package }} ${{ matrix.shard }}/${{ matrix.shards }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     strategy:
-      fail-fast: false # every package reports; one red package does not hide the others
+      fail-fast: false # every shard reports; one red shard does not hide the others
       max-parallel: 8
       matrix:
-        package: ${{ fromJSON(needs.deep-enumerate.outputs.packages) }}
+        include: ${{ fromJSON(needs.deep-plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -435,76 +466,80 @@ jobs:
           if [ "$PKG" = "./drivers/couchbase" ]; then
             IQ_SEED_BUCKET=iq_test IQ_SEED_DATA=0 bash scripts/seed-couchbase.sh
           fi
-      # The package-arg form drops the diff scoping: a full scan of this package
-      # against the committed baseline. The wrapper writes mutago-summary.json.
-      - name: Mutation testing (${{ matrix.package }})
+      # One gate run for each (file, mutator) cell of this shard, with no gate
+      # flag. The verdict comes from deep-badge, which merges all shards of the
+      # package. The runner installs mutago once, with a bounded retry.
+      - name: Mutation testing (shard)
         env:
           GOFLAGS: -p=1
           PKG: ${{ matrix.package }}
-        run: bash scripts/mutation-gate.sh "$PKG"
-      - name: Name the artifact after the package
-        id: name
-        env:
-          PKG: ${{ matrix.package }}
-        run: echo "slug=$(echo "$PKG" | tr '/.' '--' | sed 's/^-*//')" >> "$GITHUB_OUTPUT"
-      # mutago-summary.json feeds deep-badge; mutago-agentic.json carries each
-      # escaped mutant WITH its stable id, which is what IQ_MUTATION_MUTANT takes,
-      # so hardening a package starts by downloading this artifact rather than by
-      # re-deriving ids from a log.
+          SLUG: ${{ matrix.slug }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ matrix.shards }}
+          CELLS: ${{ toJSON(matrix.cells) }}
+        run: bash scripts/mutation-shard.sh shard-out "$PKG" "$SLUG" "$SHARD" "$SHARDS" "$CELLS"
+      # shard.json and the cell reports feed deep-badge. mutago-agentic.json in
+      # each cell carries each escaped mutant WITH its stable id, which is what
+      # IQ_MUTATION_MUTANT takes, so hardening a package starts by downloading
+      # these artifacts. They upload also when the shard fails, because a failed
+      # shard is the one to harden.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: success() || failure()
         with:
-          name: mutation-${{ steps.name.outputs.slug || 'root' }}
-          path: |
-            mutago-summary.json
-            mutago-agentic.json
+          name: mutation-${{ matrix.slug }}-${{ matrix.shard }}
+          path: shard-out
           if-no-files-found: error
           retention-days: 7
 
-  # Publish the covered-code MSI as a shields.io endpoint badge, force-pushed as
-  # the one-file `badges` branch of this same repo (README reads it via
-  # raw.githubusercontent.com). `needs` is the guard: a red package never reaches
-  # here, so the previous week's badge simply stays. Guarded to the GitHub mirror
-  # like the Codecov upload. The merged mutago-summary.json carries
-  # {..., "coveredCodeMsi": 0.97...} as a 0..1 fraction; the gate itself is
-  # zero-survivor on covered code, so the colour bands sit high.
+  # The verdict and the badge. It runs also when deep-mutate was skipped (nothing
+  # to scan), and then reuses the stored state. A red shard skips it, so the
+  # previous state and badge stay. scripts/mutation-verdict.sh examines the shard
+  # reports, merges the shards of each package, applies the gate, and updates the
+  # state. It writes a new mutation.json (the shields.io endpoint the README reads
+  # via raw.githubusercontent.com) only when each package has current state. The
+  # push is guarded to main on the GitHub mirror, so a manual run on a branch
+  # gives a verdict and publishes nothing.
   deep-badge:
-    needs: deep-mutate
+    needs: [deep-plan, deep-mutate]
+    if: >-
+      always() && needs.deep-plan.result == 'success' &&
+      (needs.deep-mutate.result == 'success' || needs.deep-mutate.result == 'skipped')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # contents: write lets the badge step force-push the one-file `badges`
-    # branch with the standard GITHUB_TOKEN.
+    timeout-minutes: 30
+    # contents: write lets the publish step force-push the `badges` branch with
+    # the standard GITHUB_TOKEN.
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Fetch the stored state (badges branch)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash scripts/mutation-state.sh fetch badges
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.deep-mutate.result == 'success'
         with:
           pattern: mutation-*
-          path: summaries
-      - name: Merge the per-package summaries
-        run: bash scripts/mutation-summary.sh summaries
-      - name: Publish mutation badge
-        if: startsWith(github.server_url, 'https://github.com')
+          path: shards
+      - name: Verdict
+        env:
+          MATRIX: ${{ needs.deep-plan.outputs.matrix }}
+          PACKAGES: ${{ needs.deep-plan.outputs.packages }}
+        run: |
+          mkdir -p shards
+          printf '%s\n' "$MATRIX" > matrix.json
+          printf '%s\n' "$PACKAGES" | jq -r '.[]' > packages.txt
+          bash scripts/mutation-verdict.sh shards badges matrix.json packages.txt
+      - name: Publish the state and the badge
+        if: startsWith(github.server_url, 'https://github.com') && github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          pct="$(jq -rn --argjson m "$(jq '.coveredCodeMsi' mutago-summary.json)" '($m * 1000 | round) / 10')"
-          color="$(jq -rn --argjson p "$pct" 'if $p < 90 then "red" elif $p < 95 then "yellow" else "brightgreen" end')"
-          tmp="$(mktemp -d)"
-          jq -n --argjson p "$pct" --arg c "$color" \
-            '{schemaVersion: 1, label: "mutation", message: "\($p)% covered", color: $c}' \
-            > "$tmp/mutation.json"
-          cd "$tmp"
-          git init -q -b badges
-          git config user.name  "ci"
-          git config user.email "ci@iq"
-          git add mutation.json
-          git commit -qm "ci: mutation badge from ${GITHUB_SHA}"
-          scheme="${GITHUB_SERVER_URL%%://*}"
-          host="${GITHUB_SERVER_URL#*://}"
-          git push --force "${scheme}://x-access-token:${GITHUB_TOKEN}@${host}/${GITHUB_REPOSITORY}.git" badges
+        run: bash scripts/mutation-state.sh publish badges
 
   # The README GIF is a recording of iq's output, and nothing in a build tells you when
   # the code it shows has moved on. The stamp is the hash of the sources it was
