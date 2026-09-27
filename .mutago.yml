@@ -3,7 +3,7 @@
 # policy. The wrapper keeps every flag that varies per run or is load-bearing enough to
 # stay visible there: --coverage, --fail-on-escaped, --git-diff-lines/--git-diff-base,
 # --workers, --timeout-coefficient, --logger-agentic-json. The baseline path stays a CLI
-# flag (--baseline mutago-baseline.json): mutago v2.7.7 has no config key for it and its
+# flag (--baseline mutago-baseline.json): mutago v2.10.16 has no config key for it and its
 # YAML decoder rejects unknown keys, so it cannot live here.
 #
 # Locked semantics, do not weaken. The gate is --fail-on-escaped against the committed
@@ -24,7 +24,14 @@
 # mutants as genuine test gaps, so numbers/* stays enabled here.
 #
 # json_output preserves the default report.json that passing --config would otherwise
-# suppress (v2.7.7 enables that report only when --config is unset or json_output is set).
+# suppress (mutago writes that report only when json_output is set).
 # silent_mode stays false so killed and skipped lines remain visible during a run.
+#
+# skip_without_test and skip_with_build_tags must stay false. Since v2.10.10 both default to
+# true when the config omits them. Then mutago does not mutate a source file that has no
+# test file with the same name, or whose test file has a build tag. In this tree that removes
+# about 20% of the mutants of drivers/couchbase and 16% of cmd, and the gate reports no change.
 json_output: true
 silent_mode: false
+skip_without_test: false
+skip_with_build_tags: false

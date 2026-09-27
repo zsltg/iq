@@ -56,7 +56,7 @@ tools:
 # tools-dev installs the quality and security toolchain into GOPATH/bin. gofumpt,
 # goimports, and golangci-lint are expected already (see CONTRIBUTING.md).
 tools-dev:
-	go install github.com/quality-gates/mutago/v2/cmd/mutago@v2.7.7
+	go install github.com/quality-gates/mutago/v2/cmd/mutago@v2.10.16
 	go install github.com/google/capslock/cmd/capslock@v0.3.3
 	go install golang.org/x/tools/cmd/deadcode@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest

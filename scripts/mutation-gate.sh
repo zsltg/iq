@@ -14,7 +14,7 @@
 #
 # Stable policy lives in the committed .mutago.yml (passed via --config on the gate
 # invocation); the invocation-varying and load-bearing flags stay on the command line
-# here. The baseline path stays a CLI flag because v2.7.7 has no config key for it.
+# here. The baseline path stays a CLI flag because mutago has no config key for it.
 #
 # What counts as a failure. --fail-on-escaped fails on any *escaped* mutant that is
 # not recorded in the baseline (mutago-baseline.json); an escaped mutant means a
@@ -124,7 +124,7 @@
 set -uo pipefail
 
 # Pinned mutago version — keep in step with AGENTS.md and `make tools-dev` (Makefile).
-MUTAGO_VERSION=v2.7.7
+MUTAGO_VERSION=v2.10.16
 mutago_pkg=github.com/quality-gates/mutago/v2/cmd/mutago
 
 # Covered-code MSI floor for a full scan of ./cmd. The value comes from the finished cmd
