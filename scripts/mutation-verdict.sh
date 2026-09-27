@@ -21,7 +21,9 @@
 #    from a dry run, which counts each mutation before mutago removes byte-identical edits
 #    (engine.go: recordOneMutation counts, and processMutation then drops a checksum that
 #    it saw before), so a real run can hold fewer mutants, never more. A missing, failed or
-#    timed-out shard fails its package.
+#    timed-out shard fails its package. An unreadable report, or a report of a package
+#    that is not in the plan, fails the package of its artifact directory
+#    (mutation-<slug>-<shard>); only when no package can be found does the verdict stop.
 # 2. The gate, for each package with good shards. scripts/mutation-merge.sh merges the
 #    cells of all its shards (each edit counts once; an escape is new only if none of its
 #    ids is in the baseline). An errored mutant fails the package. A new escape fails every
@@ -33,10 +35,13 @@
 #    merge; a value that is not a count fails the package.
 # 3. State. The script writes state/<slug>.json for each package that passed: package,
 #    slug, fingerprint, commit, scannedAt, secondsPerMutant (the wall seconds of its
-#    shards over its mutants), and summary. A failed package keeps its previous state.
+#    shards over its mutants), status "passed", and summary. A failed package gets a
+#    failure marker in place of its state: status "failed", the fingerprint and the commit,
+#    no summary. The plan always scans a package with a marker again, and the badge treats
+#    it as missing, so an old passing summary cannot hide a failure.
 # 4. Pruning. A state file of a package that is not in <packages.txt> is removed.
-# 5. Module summary. If no package failed and each package has state with its current
-#    fingerprint, the script sums the summaries with scripts/mutation-summary.sh
+# 5. Module summary. If no package failed and each package has passing state with its
+#    current fingerprint, the script sums the summaries with scripts/mutation-summary.sh
 #    (mutago-summary.json in the current directory) and writes <badges-dir>/mutation.json,
 #    the shields.io endpoint of the README badge. Otherwise it removes mutago-summary.json
 #    and keeps the previous mutation.json, so a partial or red scan never publishes a score.
@@ -115,6 +120,7 @@ fi
 python3 - "$artifacts" "$plan" "$work/identity.json" >"$work/scanned.tsv" <<'PY'
 import json
 import os
+import re
 import sys
 
 artifacts, plan_path, identity_path = sys.argv[1:4]
@@ -158,6 +164,15 @@ for entry in plan:
     expected[key] = {"slug": slug, "shards": shards, "cells": cells}
     packages.setdefault(key[0], {"slug": slug, "seconds": 0, "cells": [], "problems": []})
 
+by_slug = {item["slug"]: package for package, item in packages.items()}
+
+
+def owner(folder):
+    """The package of an artifact directory named mutation-<slug>-<shard>, or None."""
+    match = re.match(r"^mutation-(.+)-([1-9][0-9]*)$", os.path.basename(folder))
+    return by_slug.get(match.group(1)) if match else None
+
+
 reports = {}
 for folder, _, files in sorted(os.walk(artifacts)):
     if "shard.json" not in files:
@@ -166,9 +181,17 @@ for folder, _, files in sorted(os.walk(artifacts)):
         report = load(os.path.join(folder, "shard.json"))
         key = (report["package"], report["shard"])
     except (OSError, ValueError, KeyError, TypeError) as err:
-        stop("cannot read {}/shard.json: {}".format(folder, err))
+        package = owner(folder)
+        if package is None:
+            stop("cannot read {}/shard.json ({}), and its directory name gives no package of the plan".format(folder, err))
+        packages[package]["problems"].append("cannot read {}/shard.json: {}".format(folder, err))
+        continue
     if key[0] not in packages:
-        stop("{} holds a report of {}, which is not in the plan".format(folder, key[0]))
+        package = owner(folder)
+        if package is None:
+            stop("{} holds a report of {}, which is not in the plan".format(folder, key[0]))
+        packages[package]["problems"].append("{} holds a report of {}, which is not in the plan".format(folder, key[0]))
+        continue
     reports.setdefault(key, []).append((folder, report))
 
 fewer = 0
@@ -245,11 +268,13 @@ fi
 # Step 2: the gate, one merge for each package with good shards.
 failed_packages=()
 passed_rows=()
+declare -A slug_of_package=()
 mkdir -p "$work/merged"
 while IFS=$'\t' read -r -a row; do
   [[ ${#row[@]} -ge 4 ]] || continue
   pkg="${row[0]}"
   slug="${row[1]}"
+  slug_of_package[$pkg]="$slug"
   if [[ "${row[3]}" != "ok" ]]; then
     failed_packages+=("$pkg")
     continue
@@ -317,7 +342,7 @@ for line in "${passed_rows[@]}"; do
   fi
   if ! jq --arg package "$pkg" --arg slug "$slug" --arg fingerprint "$fingerprint" \
     --arg commit "$commit" --arg scannedAt "$scanned_at" --argjson seconds "$seconds" \
-    '{package: $package, slug: $slug, fingerprint: $fingerprint, commit: $commit,
+    '{package: $package, slug: $slug, status: "passed", fingerprint: $fingerprint, commit: $commit,
       scannedAt: $scannedAt,
       secondsPerMutant: (if .totalMutantsCount > 0 then ($seconds / .totalMutantsCount * 10 | round / 10) else null end),
       summary: {totalMutantsCount, killedCount, notCoveredCount, escapedCount, errorCount,
@@ -329,6 +354,30 @@ for line in "${passed_rows[@]}"; do
   fi
   mv "$work/state.json" "$badges/state/$slug.json"
   echo "mutation-verdict: $pkg passed; state written"
+done
+
+# Step 3b: a failure marker for each package that failed. The marker replaces a previous
+# passing result, so the plan scans the package again (a failed state is always stale) and
+# the badge treats it as missing. The marker has no summary, so an old passing summary
+# cannot hide the failure. It keeps the previous secondsPerMutant for the plan.
+for pkg in "${failed_packages[@]}"; do
+  slug="${slug_of_package[$pkg]-}"
+  [[ -n "$slug" ]] || continue
+  fingerprint=$(bash scripts/mutation-fingerprint.sh "$pkg" 2>/dev/null) || fingerprint=""
+  previous="$badges/state/$slug.json"
+  rate=null
+  if [[ -f "$previous" ]]; then
+    rate=$(jq -c '.secondsPerMutant | if type == "number" and . > 0 then . else null end' "$previous" 2>/dev/null) || rate=null
+  fi
+  if jq -n --arg package "$pkg" --arg slug "$slug" --arg fingerprint "$fingerprint" \
+    --arg commit "$commit" --arg scannedAt "$scanned_at" --argjson rate "${rate:-null}" \
+    '{package: $package, slug: $slug, status: "failed", fingerprint: $fingerprint,
+      commit: $commit, scannedAt: $scannedAt, secondsPerMutant: $rate}' >"$work/state.json"; then
+    mv "$work/state.json" "$previous"
+    echo "mutation-verdict: $pkg failed; failure marker written"
+  else
+    echo "mutation-verdict: $pkg failed; cannot write the failure marker" >&2
+  fi
 done
 
 # Step 4: remove the state of a package that the module no longer has.
@@ -347,7 +396,7 @@ done
 
 if [[ ${#failed_packages[@]} -gt 0 ]]; then
   rm -f mutago-summary.json
-  echo "mutation-verdict: FAILED: ${#failed_packages[@]} package(s) failed and keep their previous state; the badge keeps its previous value:" >&2
+  echo "mutation-verdict: FAILED: ${#failed_packages[@]} package(s) failed and got a failure marker; the badge keeps its previous value:" >&2
   printf '  %s\n' "${failed_packages[@]}" >&2
   exit 1
 fi
@@ -361,6 +410,10 @@ for pkg in "${module_packages[@]}"; do
   state="$badges/state/$slug.json"
   if [[ ! -f "$state" ]]; then
     missing+=("$pkg (no state)")
+    continue
+  fi
+  if [[ "$(jq -r '.status // "passed"' "$state" 2>/dev/null)" != "passed" ]]; then
+    missing+=("$pkg (the last scan failed)")
     continue
   fi
   stored=$(jq -r '.fingerprint // ""' "$state" 2>/dev/null) || stored=""

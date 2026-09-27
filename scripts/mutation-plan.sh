@@ -4,6 +4,7 @@
 #   scripts/mutation-plan.sh <badges-dir> [package...]
 #   scripts/mutation-plan.sh --rate <badges-dir> <package>   # print the seconds per mutant
 #   scripts/mutation-plan.sh --pack <work-dir>               # pack prepared dry runs (tests)
+#   scripts/mutation-plan.sh --stale <badges-dir> <package>  # print why it is planned (tests)
 #
 # <badges-dir> holds the last published `badges` branch (state/<slug>.json for each
 # package). Without a package argument the plan covers every package with a non-test Go
@@ -16,8 +17,9 @@
 # The report of the plan goes to stderr.
 #
 # Stale packages. A package is scanned when the full mode is on, when it has no state, or
-# when its fingerprint (scripts/mutation-fingerprint.sh) differs from the stored one. The
-# other packages keep their stored result.
+# when its fingerprint (scripts/mutation-fingerprint.sh) differs from the stored one, or
+# when its last scan failed (status "failed" in the state). The other packages keep their
+# stored result.
 #
 # Cells. mutago has no shard flag. The unit of work is a (file, mutator) cell, and one gate
 # run (scripts/mutation-gate.sh with IQ_MUTATION_MUTATORS and an absolute file target) does
@@ -216,6 +218,35 @@ if [[ "${1-}" == "--pack" ]]; then
   exit 0
 fi
 
+# stale_reason <badges-dir> <package> <slug> <full>: why the package must be scanned, or
+# nothing when it can reuse its stored result.
+stale_reason() {
+  local state="$1/state/$3.json" fingerprint
+  if [[ "$4" == "1" ]]; then
+    echo "full scan"
+  elif [[ ! -f "$state" ]]; then
+    echo "no state"
+  elif [[ "$(jq -r '.status // "passed"' "$state" 2>/dev/null)" != "passed" ]]; then
+    echo "the last scan failed"
+  else
+    fingerprint=$(bash scripts/mutation-fingerprint.sh "$2") || return 1
+    if [[ "$(jq -r '.fingerprint // ""' "$state" 2>/dev/null)" != "$fingerprint" ]]; then
+      echo "fingerprint changed"
+    fi
+  fi
+}
+
+if [[ "${1-}" == "--stale" ]]; then
+  [[ $# -eq 3 ]] || {
+    echo "usage: mutation-plan.sh --stale <badges-dir> <package>" >&2
+    exit 1
+  }
+  cd "$(git rev-parse --show-toplevel)" || exit 1
+  reason=$(stale_reason "$2" "$3" "$(slug_of "$3")" "${IQ_MUTATION_FULL-}") || exit 1
+  echo "${reason:-reuse}"
+  exit 0
+fi
+
 if [[ "${1-}" == "--rate" ]]; then
   [[ $# -eq 3 ]] || {
     echo "usage: mutation-plan.sh --rate <badges-dir> <package>" >&2
@@ -268,16 +299,7 @@ mutago_bin=$(IQ_MUTATION_INSTALL_DIR="$work/bin" bash scripts/mutation-gate.sh |
 full="${IQ_MUTATION_FULL-}"
 for pkg in "${packages[@]}"; do
   slug=$(slug_of "$pkg")
-  fingerprint=$(bash scripts/mutation-fingerprint.sh "$pkg")
-  state="$badges/state/$slug.json"
-  reason=""
-  if [[ "$full" == "1" ]]; then
-    reason="full scan"
-  elif [[ ! -f "$state" ]]; then
-    reason="no state"
-  elif [[ "$(jq -r '.fingerprint // ""' "$state")" != "$fingerprint" ]]; then
-    reason="fingerprint changed"
-  fi
+  reason=$(stale_reason "$badges" "$pkg" "$slug" "$full")
   if [[ -z "$reason" ]]; then
     echo "mutation-plan: $pkg reuses its state" >&2
     continue

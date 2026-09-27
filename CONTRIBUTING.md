@@ -87,7 +87,7 @@ Format (`gofumpt` + `goimports`), `go vet`, `go build`, `golangci-lint`
 the mutation verdict tests (`bash scripts/test/mutation-verdict.sh`: fixture shards
 from `scripts/test/mutation-verdict-fixtures.py` through `scripts/mutation-verdict.sh`,
 the parse, pack and rate steps of `scripts/mutation-plan.sh` on prepared dry runs
-(`--pack`, `--rate`), and `scripts/mutation-fingerprint.sh` in a small copy of the
+(`--pack`, `--rate`, `--stale`), and `scripts/mutation-fingerprint.sh` in a small copy of the
 repository; no network, no container, no mutago run), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
 paths are a stale cache from a removed worktree; check clears the cache and
 retries once.
@@ -236,11 +236,12 @@ each package lives on the `badges` branch (`state/<slug>.json`, next to the
 badge endpoint `mutation.json`; `scripts/mutation-state.sh` reads and writes it,
 with the token in an HTTP header from the environment, never in a URI or an
 argument, and three attempts for each network step). Scheduled and manual runs
-share one concurrency group, so two scans never overlap; a running scan is not
-cancelled.
+of one ref share one concurrency group, so two scans of that ref never overlap;
+a running scan is not cancelled, and a dispatch on a branch never replaces a
+waiting scan of `main`.
 
 `deep-plan` (`scripts/mutation-plan.sh`) plans only the packages whose
-fingerprint changed, or every package on a forced run: the `full` input, or a
+fingerprint changed or whose last scan failed, or every package on a forced run: the `full` input, or a
 scheduled run in the first seven days of the month. The fingerprint
 (`scripts/mutation-fingerprint.sh`) covers the package's own files, its tests
 and testdata, its baseline entries, `go.mod`, `go.sum`, `.mutago.yml`, the
@@ -274,7 +275,12 @@ finished, also when some failed. It judges each package on its own: a missing,
 duplicate, failed or timed-out shard, a report of another commit, mutago or Go
 version or other `.mutago.yml` or baseline hashes, a cell report with no
 mutants or with more mutants than the plan, or a merge result that is not valid
-fails that package, and the package keeps its previous state. It merges the
+fails that package, and the package gets a failure marker in place of its
+state (`status: "failed"`, no summary), so the next plan scans it again and no
+badge is published while the marker exists. An unreadable report or a report
+of a package outside the plan fails the package of its artifact directory
+(`mutation-<slug>-<shard>`); only when no package can be found does the verdict
+stop and write nothing. It merges the
 shards of each package with `scripts/mutation-merge.sh` (each edit once, by
 checksum; an escape is new only when none of its ids is in the baseline; a
 kill in one shard and an escape in another prints a warning), fails a package

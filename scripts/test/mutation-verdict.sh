@@ -130,7 +130,7 @@ jq --argjson c "[$cell2]" \
 verdict
 check "missing shard: the verdict fails" \
   '[[ $status -eq 1 ]] && grep -q "./internal/numfmt: no report for shard 2" "$case_dir/out"'
-check "missing shard: no state is written" '[[ ! -f "$case_dir/badges/state/$nslug.json" ]]'
+check "missing shard: only a failure marker is written" '[[ "$(jq -r .status "$case_dir/badges/state/$nslug.json")" == failed ]]'
 
 copy=$(shard a2 $numfmt $nslug 1 2 "[$cell1]" | jq -c '. + {not_in_matrix: true}')
 prepare duplicate-shard "[$shard1,$copy,$shard2]" $numfmt
@@ -245,7 +245,7 @@ EOF
 prepare corrupt-merge "[$shard1,$shard2]" $numfmt
 IQ_MUTATION_MERGE_SCRIPT="$bad_merge" verdict
 check "merge result with a count that is not a number: the verdict fails" \
-  '[[ $status -eq 1 && ! -f "$case_dir/badges/state/$nslug.json" ]] && grep -q "merge result is not valid" "$case_dir/out"'
+  '[[ $status -eq 1 ]] && [[ "$(jq -r .status "$case_dir/badges/state/$nslug.json")" == failed ]] && grep -q "merge result is not valid" "$case_dir/out"'
 printf '#!/usr/bin/env bash\necho "not json"\n' >"$bad_merge"
 prepare garbage-merge "[$shard1,$shard2]" $numfmt
 IQ_MUTATION_MERGE_SCRIPT="$bad_merge" verdict
@@ -262,8 +262,44 @@ jq --argjson c "[$cell2]" \
   "$case_dir/plan.json" >"$case_dir/plan.tmp" && mv "$case_dir/plan.tmp" "$case_dir/plan.json"
 verdict
 check "one red package: the verdict fails" '[[ $status -eq 1 ]] && grep -q "FAILED: ./internal/numfmt: no report for shard 2" "$case_dir/out"'
-check "one red package: the other package gets its state" '[[ -f "$case_dir/badges/state/$rslug.json" && ! -f "$case_dir/badges/state/$nslug.json" ]]'
+check "one red package: the other package gets its state, the red one a marker" \
+  '[[ "$(jq -r .status "$case_dir/badges/state/$rslug.json")" == passed ]] && [[ "$(jq -r .status "$case_dir/badges/state/$nslug.json")" == failed ]]'
 check "one red package: no badge" '[[ ! -f "$case_dir/badges/mutation.json" && ! -f mutago-summary.json ]]'
+
+# N1: a failed package gets a failure marker in place of its state.
+prepare marker "[$(shard a $numfmt $nslug 1 1 "[$(cell $file statement/remove '[["n1","escaped","notinbaseline"]]')]")]" $numfmt
+state_file $nslug $numfmt "$(bash scripts/mutation-fingerprint.sh $numfmt)"
+verdict
+check "failed package: a failure marker replaces the old passing state" \
+  '[[ $status -eq 1 ]] && [[ "$(jq -c "[.status, has(\"summary\")]" "$case_dir/badges/state/$nslug.json")" == "[\"failed\",false]" ]]'
+check "failed package: the next plan scans it again" \
+  '[[ "$(bash scripts/mutation-plan.sh --stale "$case_dir/badges" $numfmt)" == "the last scan failed" ]]'
+marked="$case_dir/badges"
+prepare marker-badge "[$(shard r $render $rslug 1 1 "[$rcell]")]" $render $numfmt
+cp "$marked/state/$nslug.json" "$case_dir/badges/state/"
+echo '{"old":true}' >"$case_dir/badges/mutation.json"
+verdict
+check "failure marker: no badge while it exists" \
+  '[[ $status -eq 0 && "$(jq -c . "$case_dir/badges/mutation.json")" == "{\"old\":true}" ]] && grep -q "internal/numfmt (the last scan failed)" "$case_dir/out"'
+prepare marker-pass "[$shard1,$shard2]" $numfmt
+cp "$marked/state/$nslug.json" "$case_dir/badges/state/"
+verdict
+check "failure marker: a later pass replaces it" \
+  '[[ $status -eq 0 && "$(jq -r .status "$case_dir/badges/state/$nslug.json")" == passed ]] &&
+   [[ "$(bash scripts/mutation-plan.sh --stale "$case_dir/badges" $numfmt)" == reuse ]]'
+
+# N3: an unreadable report fails only the package of its artifact directory.
+prepare unreadable "[$(shard mutation-internal-numfmt-1 $numfmt $nslug 1 1 "[$cell1]"),$(shard r $render $rslug 1 1 "[$rcell]")]" $numfmt $render
+echo 'not json' >"$case_dir/artifacts/mutation-internal-numfmt-1/shard.json"
+verdict
+check "unreadable report: only its package fails" \
+  '[[ $status -eq 1 && -f "$case_dir/badges/state/$rslug.json" ]] && grep -q "FAILED: ./internal/numfmt: cannot read" "$case_dir/out" &&
+   [[ "$(jq -r .status "$case_dir/badges/state/$nslug.json")" == failed ]]'
+prepare unreadable-anonymous "[$(shard a $numfmt $nslug 1 1 "[$cell1]")]" $numfmt
+echo 'not json' >"$case_dir/artifacts/a/shard.json"
+verdict
+check "unreadable report with no package in its directory name: the verdict stops" \
+  '[[ $status -eq 2 && ! -f "$case_dir/badges/state/$nslug.json" ]]'
 
 prepare foreign-report "[$(shard a $numfmt $nslug 1 1 "[$cell1]"),$(shard x ./internal/shape internal-shape 1 1 "[]" | jq -c '. + {not_in_matrix: true}')]" $numfmt
 verdict
