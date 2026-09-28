@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"strings"
 	"testing"
@@ -387,4 +388,24 @@ func TestJSONSourceRejectsTrailingGarbage(t *testing.T) {
 func TestJSONSourceReadsASingleByteDocument(t *testing.T) {
 	got := drainSource(t, query.JSONSource(strings.NewReader("1"), 10, true))
 	require.Equal(t, []query.Record{{Value: 1}}, got)
+}
+
+// TestTypedDumpKeepsNegativeZero pins that a typed record whose value is -0 reads
+// back as the float64 negative zero, so a dump of -0.0 is a fixpoint.
+func TestTypedDumpKeepsNegativeZero(t *testing.T) {
+	got := drainSource(t, query.JSONLSource(strings.NewReader(`{"key":"k","type":"","value":-0}`), 10, false))
+	require.Len(t, got, 1)
+	f, ok := got[0].Value.(float64)
+	require.Truef(t, ok, "-0 read as %T, not float64", got[0].Value)
+	require.Zero(t, f)
+	require.True(t, math.Signbit(f), "the sign of -0 is lost")
+}
+
+// TestTypedDumpKeepsAnOutOfRangeNumberAsText pins the last fallback of the
+// number rule: a number that float64 cannot hold (1e400) reads back as its
+// literal text, not as an empty string or an infinity.
+func TestTypedDumpKeepsAnOutOfRangeNumberAsText(t *testing.T) {
+	got := drainSource(t, query.JSONLSource(strings.NewReader(`{"key":"k","type":"","value":1e400}`), 10, false))
+	require.Len(t, got, 1)
+	require.Equal(t, "1e400", got[0].Value)
 }

@@ -2,6 +2,7 @@ package numfmt_test
 
 import (
 	"encoding/json"
+	"math"
 	"math/big"
 	"testing"
 
@@ -52,4 +53,17 @@ func TestConvertNumbers(t *testing.T) {
 		require.Equal(t, true, numfmt.ConvertNumbers(true, numfmt.DecimalAuto))
 		require.Nil(t, numfmt.ConvertNumbers(nil, numfmt.DecimalAuto))
 	})
+}
+
+// TestConvertNumberNegativeZero pins that the literal -0 becomes the float64
+// negative zero in every mode, not the int 0 (require.Equal cannot tell them
+// apart, so the sign bit is checked directly).
+func TestConvertNumberNegativeZero(t *testing.T) {
+	for _, mode := range []numfmt.DecimalMode{numfmt.DecimalAuto, numfmt.DecimalNumber, numfmt.DecimalString} {
+		got := numfmt.ConvertNumber(json.Number("-0"), mode)
+		f, ok := got.(float64)
+		require.Truef(t, ok, "mode %d: -0 converted to %T, not float64", mode, got)
+		require.Zero(t, f)
+		require.True(t, math.Signbit(f), "mode %d: the sign of -0 is lost", mode)
+	}
 }
