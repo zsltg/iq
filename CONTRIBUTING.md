@@ -334,9 +334,11 @@ Posture and upkeep around the pipeline, all on GitHub:
   tracks both. `make security` runs it locally, the `workflows` job runs it on
   every push and pull request, and `deep-scan` re-runs it weekly against fresh
   advisory data. There is no config file, so an accepted finding is an inline
-  `# zizmor: ignore[<audit>]` comment with a reason on the offending line. Two
-  exist, both in `ci.yml`: the `capabilities` and `mutate-diff` jobs keep the
-  checkout credential because they fetch the pull-request base branch.
+  `# zizmor: ignore[<audit>]` comment with a reason on the offending line. Three
+  exist. In `ci.yml`, the `capabilities` and `mutate-diff` jobs keep the
+  checkout credential because they fetch the pull-request base branch. In
+  `devin-review.yml`, the `pull_request_target` trigger is accepted because the
+  job checks out nothing and puts no pull request data into a shell command.
 - `renovate.json` drives Renovate (the Mend GitHub App): one grouped PR a week
   for minor and patch bumps, one PR per major, Go toolchain bumps on their own,
   action digests refreshed, and the tool versions in `ci.yml`, the Makefile
@@ -353,6 +355,10 @@ Posture and upkeep around the pipeline, all on GitHub:
 - `.coderabbit.yaml` configures CodeRabbit's pull-request review, with
   per-path instructions distilled from AGENTS.md; it reviews, it never
   approves or merges.
+- `.github/workflows/devin-review.yml` posts a link to the Devin Review
+  (`devinreview.com`) on each new pull request. The link gives Devin no access
+  to the repository, and a human opens it. Automatic Devin reviews need the
+  Devin GitHub App and paid credits, and are not used.
 - `socket.yml` configures the Socket GitHub App: on every pull request that
   moves `go.mod` or `go.sum` it reports what the new module versions do
   (install scripts, obfuscation, typosquats, maintainer changes), the
