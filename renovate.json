@@ -11,6 +11,7 @@
   "timezone": "Europe/Budapest",
   "labels": ["deps"],
   "rangeStrategy": "bump",
+  "rebaseWhen": "behind-base-branch",
   "postUpdateOptions": ["gomodTidy"],
   "packageRules": [
     {
