@@ -503,15 +503,28 @@ make changelog                      # regenerate CHANGELOG.md alone
 bash scripts/release.sh --dry-run   # preview, no changes
 make release-check                  # validate the goreleaser config
 make release-snapshot               # local snapshot build of every artifact, no tag
-make release                        # bump, regenerate CHANGELOG.md, commit, tag
-git push --follow-tags              # release.sh never pushes
+```
+
+`main` accepts only squash-merged pull requests, so a release has two steps:
+
+```bash
+git fetch github
+git worktree add -b chore/release-vX.Y.Z .claude/worktrees/release github/main
+make -C .claude/worktrees/release release     # regenerate CHANGELOG.md, commit on the branch
+git -C .claude/worktrees/release push github chore/release-vX.Y.Z
+# open the pull request, titled "chore(release): vX.Y.Z", and squash-merge it
+git pull --ff-only github main && git push origin main
+make release-tag                              # tag the release commit on main
+git push github vX.Y.Z && git push origin vX.Y.Z   # only this tag, never --tags
 ```
 
 Conventional Commits drive the bump (`feat` → minor, `fix` → patch,
-`!`/`BREAKING CHANGE` → major); `make release` must run on a clean `main`;
-with no tags yet the first release is `v0.1.0`. Publishing happens in the
-GitHub repository: the release workflow runs goreleaser when a `v*` tag
-reaches it.
+`!`/`BREAKING CHANGE` → major). With no tags yet the first release is
+`v0.1.0`. `make release` runs only on a clean `chore/release` branch.
+`make release-tag` runs only on a clean `main`, and tags HEAD only when HEAD is
+the squash-merged release commit of the version that `make version` prints.
+Neither step pushes. Publishing happens in the GitHub repository: the release
+workflow runs goreleaser when a `v*` tag reaches it.
 
 ## Architecture
 
