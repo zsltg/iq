@@ -470,6 +470,9 @@ for ad-hoc use.
 
 - Trunk-based: `main` always buildable; short-lived branches prefixed
   `feat/`, `fix/`, `chore/`, `test/`, `ci/`, `docs/`; one atomic task per branch.
+- Code follows the Coding Conventions in [AGENTS.md](AGENTS.md). `make check`
+  enforces formatting (`gofumpt`, `goimports`) and lint (`golangci-lint`), and
+  [REVIEW.md](REVIEW.md) lists what reviewers look for.
 - Open a pull request against `main`, fill in the template, and give it a
   Conventional Commits title: the pull request is squash-merged, and its title
   becomes the commit message on `main`. Push review fixes as new commits, do not

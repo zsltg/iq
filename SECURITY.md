@@ -6,7 +6,8 @@ Report vulnerabilities privately through GitHub: open
 [Security → Report a vulnerability](https://github.com/zsltg/iq/security/advisories/new)
 on the repository. Do not open a public issue or pull request for a security
 problem. You will get an acknowledgement within a week, and the report stays
-private until a fix is released.
+private until a fix is released. A fixed vulnerability is published as a GitHub
+security advisory and named, with its ID, in the release notes.
 
 ## Supported versions
 
