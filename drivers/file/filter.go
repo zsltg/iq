@@ -143,8 +143,8 @@ func scanFilteredJSON(ctx context.Context, r io.Reader, matcher *rawpred.Matcher
 		// The engine filters over the value, so the prefilter runs on the extracted raw
 		// `value` bytes. A value that cannot be extracted (a malformed or value-less line)
 		// is not evaluated — it is left for decodeTypedRecord, which reports the same error
-		// the plain scan would.
-		if val, _, _, gerr := jsonparser.Get(raw, "value"); gerr == nil {
+		// the plain scan would. So is an envelope that repeats `value`.
+		if val, ok := typedValue(raw); ok {
 			*checked++
 			if matcher.Match(val) == rawpred.CannotMatch {
 				*skipped++
@@ -163,6 +163,23 @@ func scanFilteredJSON(ctx context.Context, r io.Reader, matcher *rawpred.Matcher
 		}
 	}
 	return emit()
+}
+
+// typedValue returns the raw `value` of a typed record envelope, or ok=false when the
+// envelope is malformed, has no `value`, or repeats it. jsonparser.Get reads the first
+// `value` and encoding/json keeps the last, so a repeated one cannot be judged from
+// raw bytes and goes to the full decode.
+func typedValue(raw []byte) ([]byte, bool) {
+	var val []byte
+	count := 0
+	err := jsonparser.ObjectEach(raw, func(k, v []byte, _ jsonparser.ValueType, _ int) error {
+		if string(k) == "value" {
+			count++
+			val = v
+		}
+		return nil
+	})
+	return val, err == nil && count == 1
 }
 
 // startsJSONArray reports whether the first non-whitespace byte is '[' (a top-level

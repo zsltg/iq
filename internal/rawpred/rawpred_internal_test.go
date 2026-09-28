@@ -213,6 +213,10 @@ func TestEvalSize(t *testing.T) {
 		// Array: jq length is the element count.
 		{"array count matches", `{"a":[1,2,3]}`, a(3), definiteYes},
 		{"array count below drops", `{"a":[1,2,3]}`, a(2), definiteNo},
+		// Object with a repeated key: a decoder keeps one entry, so the raw count
+		// is not jq's length.
+		{"object with a repeated key is unknown", `{"a":{"k":1,"k":2}}`, a(1), unknown},
+		{"object with a repeated key is unknown for the raw count", `{"a":{"k":1,"k":2}}`, a(2), unknown},
 		{"array count above drops", `{"a":[1,2,3]}`, a(4), definiteNo},
 		{"empty array is zero", `{"a":[]}`, a(0), definiteYes},
 		{"empty array vs one drops", `{"a":[]}`, a(1), definiteNo},
@@ -342,6 +346,9 @@ func TestEvalNoneMatch(t *testing.T) {
 		// Array container.
 		{"array all fail holds", `{"xs":[{"k":2},{"k":3}]}`, xs(elemCondK), definiteYes},
 		{"array clean match drops", `{"xs":[{"k":1},{"k":2}]}`, xs(elemCondK), definiteNo},
+		// Object with a repeated key: the first value is shadowed after decoding,
+		// so a match in it proves nothing.
+		{"object with a repeated key is unknown", `{"xs":{"p":{"k":1},"p":{"k":2}}}`, xs(elemCondK), unknown},
 		// The load-bearing exactness case: a match beside an undecidable element must
 		// NOT drop, because jq's any short-circuits in order and may error first.
 		{"array match plus scalar keeps", `{"xs":[{"k":1},5]}`, xs(elemCondK), unknown},

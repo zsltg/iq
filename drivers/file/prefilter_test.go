@@ -498,3 +498,13 @@ func TestDecodeTypedRecord(t *testing.T) {
 	_, err = decodeTypedRecord([]byte(`{"type":"x","value":1}`))
 	require.ErrorContains(t, err, "record has no key")
 }
+
+// TestScanFilteredRepeatedValueEnvelope pins a typed record whose envelope repeats
+// the value field. jsonparser reads the first value and encoding/json keeps the
+// last, so the prefilter must not judge such a record: it goes to the full decode.
+func TestScanFilteredRepeatedValueEnvelope(t *testing.T) {
+	body := `{"key":"k","type":"document","value":{"a":1},"value":{"a":0}}` + "\n"
+	st := jsonlStore(t, body, CacheConfig{})
+	got := flatten(scanFilteredPages(t, st, predicate.Eq{Path: []string{"a"}, Value: 0.0}))
+	require.Equal(t, []string{"k"}, keysOf(got))
+}
