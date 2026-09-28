@@ -470,6 +470,9 @@ for ad-hoc use.
 
 - Trunk-based: `main` always buildable; short-lived branches prefixed
   `feat/`, `fix/`, `chore/`, `test/`, `ci/`, `docs/`; one atomic task per branch.
+- Code follows the Coding Conventions in [AGENTS.md](AGENTS.md). `make check`
+  enforces formatting (`gofumpt`, `goimports`) and lint (`golangci-lint`), and
+  [REVIEW.md](REVIEW.md) lists what reviewers look for.
 - Open a pull request against `main`, fill in the template, and give it a
   Conventional Commits title: the pull request is squash-merged, and its title
   becomes the commit message on `main`. Push review fixes as new commits, do not
@@ -536,6 +539,11 @@ Conventional Commits drive the bump (`feat` → minor, `fix` → patch,
 the squash-merged release commit of the version that `make version` prints.
 Neither step pushes. Publishing happens in the GitHub repository: the release
 workflow runs goreleaser when a `v*` tag reaches it.
+
+A release that fixes a vulnerability names its advisory ID. Put the ID
+(`GHSA-...`, and the CVE when one exists) in the title of the fix pull request,
+so the squash commit carries it into CHANGELOG.md. After the release is
+published, add the ID to the GitHub release text and publish the advisory.
 
 ## Architecture
 

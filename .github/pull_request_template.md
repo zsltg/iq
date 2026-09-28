@@ -11,6 +11,7 @@ Run these locally before you open the pull request (see CONTRIBUTING.md):
 - [ ] `make security`
 - [ ] `make e2e`
 - [ ] `scripts/mutation-gate.sh` (diff-scoped by default: it mutates only the lines you changed), with no new escaped mutant
+- [ ] Tests added or updated for the changed behavior; a bug fix includes a test that fails without the fix (CONTRIBUTING.md, Testing)
 - [ ] `scripts/capabilities.sh`, if `go.mod` or `go.sum` changed
 - [ ] Docs updated in the same change (CONTRIBUTING.md, the docs site, or the README)
 

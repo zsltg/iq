@@ -39,7 +39,8 @@ deliberately follows.
     see the [query plan](query-plan.md#query-plan) or `--dry-run` to report the
     effect of a write, without changing anything. `iq exec` has no dry run.
 
-    Feedback and bug reports are very welcome.
+    Feedback and bug reports are very welcome. Report security problems privately,
+    see the [security policy](https://github.com/zsltg/iq/security/policy).
 
 ## Installation
 
