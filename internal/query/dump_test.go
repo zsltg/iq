@@ -400,3 +400,12 @@ func TestTypedDumpKeepsNegativeZero(t *testing.T) {
 	require.Zero(t, f)
 	require.True(t, math.Signbit(f), "the sign of -0 is lost")
 }
+
+// TestTypedDumpKeepsAnOutOfRangeNumberAsText pins the last fallback of the
+// number rule: a number that float64 cannot hold (1e400) reads back as its
+// literal text, not as an empty string or an infinity.
+func TestTypedDumpKeepsAnOutOfRangeNumberAsText(t *testing.T) {
+	got := drainSource(t, query.JSONLSource(strings.NewReader(`{"key":"k","type":"","value":1e400}`), 10, false))
+	require.Len(t, got, 1)
+	require.Equal(t, "1e400", got[0].Value)
+}
