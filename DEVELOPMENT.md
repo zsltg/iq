@@ -10,7 +10,7 @@ commands. To contribute a change, start with [CONTRIBUTING.md](CONTRIBUTING.md).
 ```bash
 go build -o iq .   # plain build
 make build         # embeds version, commit, and build date via ldflags
-iq version         # check the result
+./iq version       # check the result
 ```
 
 A plain `go build` still reports a version recovered from Go's embedded build
@@ -56,8 +56,9 @@ docker compose down
 ```
 
 The stack runs under a fixed project name (`iq`) on a pinned `10.100.0.0/24`
-bridge, so compose behaves the same from any worktree and the subnet cannot
-collide with a LAN host. OpenSearch is published on 9201 to avoid
+bridge, so compose behaves the same from any worktree. If `10.100.0.0/24`
+overlaps a network on your machine (a LAN or a VPN), change the subnet in
+`compose.yaml`. OpenSearch is published on 9201 to avoid
 Elasticsearch on 9200, and HBase uses host networking (see `compose.yaml`).
 
 ## Quality gates
@@ -220,8 +221,10 @@ deliberate override, such as applying someone else's patch, passes
 
 check + cover + security + capabilities + mutation, in that order, the
 capability step sits before mutation so their memory peaks never overlap.
-Slowest target (mutago reruns the suite per mutant); with one worker start a
-shared stack first so the containers are reused.
+Slowest target (mutago reruns the suite per mutant). Start the compose stack and
+set the `IQ_<BACKEND>_URL` variables first (see `.env.example`), so the tests
+reuse the running services. Without the URLs, each package starts its own
+containers, and the run takes much longer.
 
 ## Continuous integration
 
