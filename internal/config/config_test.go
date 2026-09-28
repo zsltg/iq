@@ -738,6 +738,7 @@ func TestModeWarning(t *testing.T) {
 		{"others can execute only", inline, 0o601, true},
 		{"user without password", "[sources.a]\nurl = 'redis://u@h:6379/0'\n", 0o644, false},
 		{"no user info", "[sources.a]\nurl = 'redis://h:6379/0'\n", 0o644, false},
+		{"at sign in the path of a valid URL", "[sources.a]\nurl = 'redis://h:6379/a@b'\n", 0o644, false},
 		{"URL that does not parse, then a password", "[sources.a]\nurl = '://bad'\n[sources.b]\nurl = 'redis://u:p@h:6379/0'\n", 0o644, true},
 		{"password in a later source", "[sources.a]\nurl = 'redis://u@h:6379/0'\n[sources.z]\nurl = 'redis://u:p@h:6379/0'\n", 0o644, true},
 		{"malformed TOML", "[sources.a\n", 0o644, false},
