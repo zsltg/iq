@@ -53,15 +53,13 @@ locally costs review time.
 ```bash
 make check                      # format, vet, build, lint, dead code, short tests
 make cover                      # full suite and the coverage floor (needs Docker)
-make security                   # vulnerabilities, secrets, workflow audit, SBOM
+make security                   # vulnerabilities, licenses, secrets, workflow audit, SBOM
 make e2e                        # black-box tests
 bash scripts/mutation-gate.sh   # mutation gate on the lines you changed
 make capabilities               # only when go.mod or go.sum changed
 ```
 
-`make security` does not check licenses: the CI `osv` job applies the
-permissive license allowlist. The mutation gate mutates only the lines that
-your branch changed. If a mutant
+The mutation gate mutates only the lines that your branch changed. If a mutant
 survives, a test does not check that line: make the test stronger. What each
 gate does, and its settings, is in [DEVELOPMENT.md](DEVELOPMENT.md#quality-gates).
 
