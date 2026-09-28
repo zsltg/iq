@@ -9,7 +9,7 @@
 set -uo pipefail
 
 # Keep this pin in sync with ZIZMOR_VERSION in .github/workflows/ci.yml.
-ZIZMOR_VERSION=1.30.0
+ZIZMOR_VERSION=1.30.1
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
