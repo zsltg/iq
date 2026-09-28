@@ -34,9 +34,10 @@ deliberately follows.
     [CONTRIBUTING.md](https://github.com/zsltg/iq/blob/main/CONTRIBUTING.md)).
 
     Queries are read-only. `--insert`, `--replace`, `iq data clear`,
-    `iq data drop` and `iq data delete` write to the target. Use `--explain` to
+    `iq data drop` and `iq data delete` write to the target. `iq exec` forwards
+    a native command to the database, so it can write too. Use `--explain` to
     see the [query plan](query-plan.md#query-plan) or `--dry-run` to report the
-    effect, without changing anything.
+    effect of a write, without changing anything. `iq exec` has no dry run.
 
     Feedback and bug reports are very welcome.
 
