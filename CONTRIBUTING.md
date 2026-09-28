@@ -93,8 +93,8 @@ entry. This note goes away with the re-baseline.
   the project license, as the [DCO](https://developercertificate.org/) says. The
   email address in it must be the commit's author address. The CI `dco` job
   checks each commit of a pull request (`bash scripts/dco.sh origin/main HEAD`
-  runs the same check locally). Commits made before this rule (September 2026)
-  have no sign-off.
+  runs the same check locally). The check covers only the commits of a pull
+  request, so the older commits on `main`, from before this rule, need none.
 - [Conventional Commits](https://www.conventionalcommits.org/):
   `<type>(<scope>): <description>`, lowercase imperative.
 - If AI contributed to a commit, end its message with a `Co-Authored-By:`
