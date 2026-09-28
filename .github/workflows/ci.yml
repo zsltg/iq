@@ -12,12 +12,17 @@
 # e2e live flows bring up a single compose service each.
 name: CI
 
-# push / pull_request drive the fast per-change gates. The weekly schedule and
+# push / pull_request drive the fast per-change gates. The `changes` job decides
+# whether the change touches code. If it does not (for example docs or another
+# workflow only), the Go jobs are skipped: a job that its `if:` skips passes a
+# required check. Never use paths-ignore for this, because then the required checks
+# never report and the pull request cannot merge. The weekly schedule and
 # manual dispatch drive the `deep-*` jobs (fresh CVE data, the sharded mutation
 # scan of the packages that changed, the badge), gated off the fast jobs so a
 # schedule run does not re-lint.
 on:
   push:
+    branches: [main] # a pull request branch runs through pull_request only, not twice
   pull_request:
   schedule:
     - cron: '17 5 * * 1' # Mondays 05:17 UTC
@@ -58,8 +63,49 @@ env:
   LICENSE_ALLOWLIST: Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,MIT,MPL-2.0,Unlicense
 
 jobs:
-  lint:
+  # Sets code=false only when every changed file is on the list of files that no Go
+  # job reads. Any other file, an unknown base, or an error sets code=true, so an
+  # unexpected case runs everything. This job is a required check: if it fails, the
+  # jobs that need it are skipped, and the failed check blocks the merge.
+  changes:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          code=true
+          if files="$(git diff --name-only "$BASE...$HEAD")"; then
+            code=false
+            while IFS= read -r f; do
+              case "$f" in
+                '') ;;
+                .github/workflows/ci.yml) code=true ;;
+                docs/man/* | docs/completions/*) code=true ;; # drift tests read them
+                skills/*) code=true ;; # cmd/skill_test.go reads SKILL.md
+                *.md | docs/* | .github/* | .agents/* | LICENSE | .coderabbit.yaml | renovate.json | socket.yml | osv-scanner.toml) ;;
+                *) code=true ;;
+              esac
+            done <<<"$files"
+          else
+            echo "::warning::cannot diff $BASE...$HEAD, so every job runs"
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "changes: code=$code"
+          printf '%s\n' "$files"
+
+  lint:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -112,7 +158,8 @@ jobs:
   # -race is not on yet: cmd has an order-dependent data race under -race
   # (color.NoColor); enable it once that is fixed.
   test:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -140,7 +187,8 @@ jobs:
   # compose service with host networking. The "rest" group tests every package
   # that no other group names, so a new package is always in one group.
   coverage-group:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: coverage (${{ matrix.group }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -191,10 +239,11 @@ jobs:
           retention-days: 7
 
   # The required check. It runs also when a group fails, and then fails too, so
-  # a failed group can never show as a skipped (passing) coverage check.
+  # a failed group can never show as a skipped (passing) coverage check. When the
+  # change touches no code, it is skipped with the groups, which passes the check.
   coverage:
-    if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
-    needs: coverage-group
+    if: always() && needs.changes.outputs.code == 'true'
+    needs: [changes, coverage-group]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -240,7 +289,8 @@ jobs:
   # backend each and skip when its IQ_*_URL is unset, so they run in two passes with
   # a single compose service up at a time.
   e2e:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -262,7 +312,8 @@ jobs:
           docker compose stop mongo
 
   cross:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -279,7 +330,8 @@ jobs:
           done
 
   vuln:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -311,7 +363,8 @@ jobs:
   # Generation-only: proves the SBOMs build (same syft invocation as `make sbom`).
   # No artifact upload; actions/upload-artifact is not among the mirrored actions.
   sbom:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -328,7 +381,8 @@ jobs:
 
   # Whole-program dead code: a function reachable from neither main nor any test.
   deadcode:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -362,7 +416,8 @@ jobs:
   # The wrapper self-skips unless go.mod or go.sum moved against the base, so this
   # is usually a few seconds; a real run peaks around 7 GB RSS.
   capabilities:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -387,7 +442,8 @@ jobs:
   # --workers 1 and -p=1 there is one container at a time. The `deep-*` jobs scan
   # the changed packages weekly (all packages monthly), one shard per runner.
   mutate-diff:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:

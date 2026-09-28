@@ -226,7 +226,16 @@ shared stack first so the containers are reused.
 
 `.github/workflows/ci.yml` runs on the GitHub mirror only (the primary remote has
 Actions off; `docs.yml` deploys the site and `release.yml` publishes releases,
-both guarded the same way). Every push and pull request runs one job per gate:
+both guarded the same way). Every pull request and every push to `main` runs one
+job per gate. A pull request branch runs through `pull_request` only, not also
+through `push`. The first job, `changes`, decides whether the change touches code.
+It sets `code=false` only when every changed file is on a short list that no Go job
+reads (Markdown files outside `skills/`, `docs/` outside the man page and the
+completions, `.github/` except `ci.yml`, `.agents/`, and the app configs). Then the
+Go jobs are skipped, and a skipped job passes its required check, so a docs-only or
+workflow-only pull request takes about 2 minutes. Any other file, a change to
+`ci.yml` itself, or a diff that fails runs every job. `changes` is itself a required
+check. The jobs per gate:
 `lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
 Linux, macOS and Windows), `coverage` (four `coverage (<group>)` jobs each test a
 group of packages on their own runner, then `coverage` joins the partial profiles,
