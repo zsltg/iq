@@ -709,6 +709,12 @@ func getField(raw []byte, path []string) ([]byte, jsonparser.ValueType, fieldSta
 			}
 			return nil, jsonparser.Unknown, fieldAmbiguous
 		}
+		// A key that occurs twice in one object has no single value: a decoder
+		// that keeps the last occurrence (encoding/json) can disagree with the
+		// first occurrence jsonparser returns (FuzzMatch).
+		if duplicateKey(cur, key) {
+			return nil, jsonparser.Unknown, fieldAmbiguous
+		}
 		if i == len(path)-1 {
 			return val, typ, fieldFound
 		}
@@ -717,6 +723,22 @@ func getField(raw []byte, path []string) ([]byte, jsonparser.ValueType, fieldSta
 	// A field path from the pushdown compiler is never empty; an empty path has no
 	// field to resolve, so it is ambiguous rather than a clean absence.
 	return nil, jsonparser.Unknown, fieldAmbiguous
+}
+
+// duplicateKey reports whether key occurs more than once among the top-level keys
+// of the object obj. Keys compare after unescaping, as jsonparser.Get matches
+// them. An object that does not iterate cleanly reports true, so the caller
+// treats it as ambiguous.
+func duplicateKey(obj []byte, key string) bool {
+	seen := 0
+	err := jsonparser.ObjectEach(obj, func(k, _ []byte, _ jsonparser.ValueType, _ int) error {
+		name, err := jsonparser.ParseString(k)
+		if err != nil || name == key {
+			seen++
+		}
+		return nil
+	})
+	return err != nil || seen > 1
 }
 
 // isObject reports whether b's first non-whitespace byte opens a JSON object. Only

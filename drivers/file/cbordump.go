@@ -29,9 +29,13 @@ var cborEnc = mustEncMode(cbor.EncOptions{})
 // map[string]any; UTF8DecodeInvalid accepts the non-UTF-8 strings cborEnc
 // wrote, returning their bytes unchanged rather than erroring. Integers still
 // arrive as uint64/int64 — narrowInts converts them to int after decode.
+// TagsForbidden rejects any CBOR tag: the closed value set never encodes one,
+// so a tag means a corrupted cache. Without it, tag 1 decoded to a time.Time,
+// a value outside the set that re-encodes as something else (FuzzCBORRecord).
 var cborDec = mustDecMode(cbor.DecOptions{
 	DefaultMapType: reflect.TypeFor[map[string]any](),
 	UTF8:           cbor.UTF8DecodeInvalid,
+	TagsMd:         cbor.TagsForbidden,
 })
 
 // mustEncMode builds an immutable CBOR encode mode from static options. The

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -151,7 +150,7 @@ func FuzzCBORRecord(f *testing.F) {
 		if len(data) > maxFuzzInput {
 			t.Skip("input over the fuzz size bound")
 		}
-		rec, err := decodeRecord(cbor.NewDecoder(bytes.NewReader(data)))
+		rec, err := decodeRecord(cborDec.NewDecoder(bytes.NewReader(data)))
 		if err != nil {
 			return // a corrupted cache reports an error, which is the contract.
 		}
@@ -161,7 +160,7 @@ func FuzzCBORRecord(f *testing.F) {
 		b, err := encodeRecord(rec)
 		require.NoErrorf(t, err, "a decoded record must re-encode: %#v", rec)
 
-		again, err := decodeRecord(cbor.NewDecoder(bytes.NewReader(b)))
+		again, err := decodeRecord(cborDec.NewDecoder(bytes.NewReader(b)))
 		require.NoErrorf(t, err, "re-encoded record must decode: %#v", rec)
 		require.Equalf(t, rec, again, "the cache codec is not a round trip\n record: %#v", rec)
 	})
