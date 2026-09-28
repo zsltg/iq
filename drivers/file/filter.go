@@ -166,14 +166,15 @@ func scanFilteredJSON(ctx context.Context, r io.Reader, matcher *rawpred.Matcher
 }
 
 // typedValue returns the raw `value` of a typed record envelope, or ok=false when the
-// envelope is malformed, has no `value`, or repeats it. jsonparser.Get reads the first
-// `value` and encoding/json keeps the last, so a repeated one cannot be judged from
-// raw bytes and goes to the full decode.
+// envelope is malformed, has no `value`, or repeats it. encoding/json matches field
+// names without regard to case and keeps the last match, so `value`, `Value` and
+// `VALUE` all count, and a repeated one cannot be judged from raw bytes: it goes to
+// the full decode.
 func typedValue(raw []byte) ([]byte, bool) {
 	var val []byte
 	count := 0
 	err := jsonparser.ObjectEach(raw, func(k, v []byte, _ jsonparser.ValueType, _ int) error {
-		if string(k) == "value" {
+		if strings.EqualFold(string(k), "value") {
 			count++
 			val = v
 		}

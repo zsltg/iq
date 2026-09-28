@@ -521,6 +521,8 @@ func TestTypedValue(t *testing.T) {
 	}{
 		{"one value", `{"key":"k","value":{"a":1}}`, `{"a":1}`, true},
 		{"repeated value", `{"value":1,"value":2}`, "", false},
+		{"repeated value in another case", `{"value":{"a":1},"Value":{"a":0}}`, "", false},
+		{"one value in another case", `{"key":"k","VALUE":2}`, "2", true},
 		{"no value", `{"key":"k"}`, "", false},
 		{"value then a broken entry", `{"value":1,"x":}`, "", false},
 		{"not an object", `[{"value":1}]`, "", false},
