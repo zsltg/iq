@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -40,6 +41,9 @@ func TestNewProgressMeterGating(t *testing.T) {
 // a meter, but --no-progress still turns it off. A pty master is the terminal, so
 // the test needs no real console; it skips where none can be opened.
 func TestNewProgressMeterOnATerminal(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("macOS does not report a pty master as a terminal")
+	}
 	f, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
 	if err != nil {
 		t.Skip("no pty available to act as a terminal")

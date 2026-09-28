@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -132,6 +133,9 @@ func TestCacheStatTotalsEveryEntry(t *testing.T) {
 // TestCacheStatReportsAListFailure surfaces an unreadable cache dir as an error
 // rather than an empty listing that reads as a clean, empty cache.
 func TestCacheStatReportsAListFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
+	}
 	dir := t.TempDir()
 	seedCache(t, dir)
 	require.NoError(t, os.Chmod(dir, 0o000))

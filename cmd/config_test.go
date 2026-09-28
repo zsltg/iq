@@ -215,6 +215,9 @@ func TestConfigSetArgCount(t *testing.T) {
 // validates: an unwritable config dir must fail the command, so `set` never
 // reports a default it did not store.
 func TestConfigSetReportsASaveFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
+	}
 	dir := t.TempDir()
 	p := filepath.Join(dir, "iq.toml")
 	t.Setenv(iqconfig.EnvConfig, p)

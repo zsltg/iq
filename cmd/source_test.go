@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -163,6 +164,9 @@ func TestAddReportsAKeyringFailure(t *testing.T) {
 // TestAddReportsASaveFailure makes the config write fail after every check has
 // passed: the add must report it, never claim a source it did not store.
 func TestAddReportsASaveFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
+	}
 	dir := t.TempDir()
 	t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
 	require.NoError(t, newSeed().Save())

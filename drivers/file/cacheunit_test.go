@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -783,6 +784,9 @@ func TestListCacheTieBreaksByFileName(t *testing.T) {
 // TestListCacheUnreadableDir reports a dir that exists but cannot be read as an
 // error, distinct from the missing dir that simply means nothing is cached.
 func TestListCacheUnreadableDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
+	}
 	dir := t.TempDir()
 	require.NoError(t, os.Chmod(dir, 0o000))
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
@@ -819,6 +823,9 @@ func TestRemoveCacheResolvesARelativeDumpPath(t *testing.T) {
 // error with the count removed so far, rather than reporting a clear that never
 // happened.
 func TestRemoveCacheReportsARemoveFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
+	}
 	dir := t.TempDir()
 	plantNamedCache(t, dir, "a.cbor", "/dumps/one.rdb")
 	require.NoError(t, os.Chmod(dir, 0o500)) // readable and listable, but not writable.
