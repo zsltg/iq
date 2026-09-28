@@ -1,6 +1,6 @@
 # Install smoke test: proves a published release installs and runs through the
-# paths a user takes, on a fresh hosted runner with no checkout: the Homebrew
-# cask on macOS, the Scoop manifest on Windows, install.sh, the .deb and
+# paths a user takes, on a fresh hosted runner (only install.sh is checked out): the
+# Homebrew cask on macOS, the Scoop manifest on Windows, install.sh, the .deb and
 # `go install` on Linux. Every path ends in the same black-box check: the
 # binary reports the release tag, registers a dump as a source and queries it.
 # The Release workflow calls it after goreleaser (workflow_call). A release that
@@ -55,10 +55,16 @@ jobs:
           tag="${IQ_TAG:-$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)}"
           echo "IQ_TAG=$tag" >> "$GITHUB_ENV"
           echo "verifying $tag"
+      # install.sh comes from this commit through a sparse checkout, not from a
+      # download piped into sh: the script run is the one the commit holds.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: install.sh
+          sparse-checkout-cone-mode: false
       - name: install.sh
         run: |
-          curl -fsSL --proto '=https' --tlsv1.2 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh" \
-            | IQ_VERSION="$IQ_TAG" IQ_INSTALL_DIR="$HOME/.local/bin" sh
+          IQ_VERSION="$IQ_TAG" IQ_INSTALL_DIR="$HOME/.local/bin" sh ./install.sh
           "$HOME/.local/bin/iq" --version
           test "$("$HOME/.local/bin/iq" --version)" = "${IQ_TAG#v}"
           rm -f "$HOME/.local/bin/iq"
@@ -99,11 +105,15 @@ jobs:
           test "$(iq --version)" = "${IQ_TAG#v}"
       - name: Query a dump (brew)
         run: bash -c "$SMOKE"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: install.sh
+          sparse-checkout-cone-mode: false
       - name: install.sh
         run: |
           brew uninstall iq
-          curl -fsSL --proto '=https' --tlsv1.2 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh" \
-            | IQ_VERSION="$IQ_TAG" IQ_INSTALL_DIR="$HOME/.local/bin" sh
+          IQ_VERSION="$IQ_TAG" IQ_INSTALL_DIR="$HOME/.local/bin" sh ./install.sh
           test "$("$HOME/.local/bin/iq" --version)" = "${IQ_TAG#v}"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Query a dump (install.sh)

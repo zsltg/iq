@@ -32,13 +32,19 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false # a release build must not read a cache that another run wrote
+      # The official action installs the pinned GoReleaser release and verifies its
+      # checksum. OpenSSF Scorecard recognizes it as a packaging workflow.
       - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: ${{ env.GORELEASER_VERSION }}
+          args: release --clean
         env:
           # GITHUB_TOKEN publishes the Release on this repo; GORELEASER_TOKEN is a
           # PAT with write access to the shared homebrew-tap and scoop-bucket repos.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_TOKEN: ${{ secrets.GORELEASER_TOKEN }}
-        run: go run github.com/goreleaser/goreleaser/v2@${GORELEASER_VERSION} release --clean
 
   # goreleaser publishes the Release with GITHUB_TOKEN, and an event that this
   # token causes starts no other workflow. So the install smoke test is called
