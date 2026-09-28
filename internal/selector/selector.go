@@ -48,6 +48,10 @@ func Keys(q *gojq.Query) KeySet {
 // (`.`, `keys`, `map(...)`, an aggregate, or a top-level comma) is not
 // streamable and must be materialized.
 func streamable(q *gojq.Query) bool {
+	// A nil query names nothing to stream (Keys(nil) is a scan).
+	if q == nil {
+		return false
+	}
 	// Follow the leftmost stage of the pipe chain: `a | b | c` nests as
 	// ((a | b) | c), so the first stage is the deepest Left.
 	for q.Op == gojq.OpPipe {
@@ -97,6 +101,14 @@ func (e *extractor) add(key string) {
 // left side the root; the right side navigates the left's output, so its leading
 // indices are not keys. Every other binary operator feeds both operands the root.
 func (e *extractor) visitQuery(q *gojq.Query) {
+	if q == nil {
+		// gojq parses a source with no expression in it — empty, whitespace, or a
+		// comment alone — into a query with no term and no operands. That filter
+		// names no key, so it is a scan. gojq.Compile rejects it later with
+		// "missing query", which is the message the user gets.
+		e.scan = true
+		return
+	}
 	if q.Term != nil {
 		e.visitTerm(q.Term)
 		return

@@ -128,6 +128,20 @@ func TestKeysMalformedAST(t *testing.T) {
 			wantKeys: nil,
 		},
 		{
+			// gojq.Parse accepts a source with no expression in it (" ", a bare
+			// comment) and returns this shape: no term, no operands. FuzzMatch found
+			// it as a nil dereference in the walk.
+			name:     "empty query at the root",
+			query:    &gojq.Query{},
+			wantScan: true,
+		},
+		{
+			// A nil root is a scan, and a nil query names nothing to stream.
+			name:     "nil query",
+			query:    nil,
+			wantScan: true,
+		},
+		{
 			name:     "bracketed subscript that is an empty query",
 			query:    bracket(&gojq.Query{}),
 			wantScan: true,

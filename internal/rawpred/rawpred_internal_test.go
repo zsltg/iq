@@ -213,6 +213,10 @@ func TestEvalSize(t *testing.T) {
 		// Array: jq length is the element count.
 		{"array count matches", `{"a":[1,2,3]}`, a(3), definiteYes},
 		{"array count below drops", `{"a":[1,2,3]}`, a(2), definiteNo},
+		// Object with a repeated key: a decoder keeps one entry, so the raw count
+		// is not jq's length.
+		{"object with a repeated key is unknown", `{"a":{"k":1,"k":2}}`, a(1), unknown},
+		{"object with a repeated key is unknown for the raw count", `{"a":{"k":1,"k":2}}`, a(2), unknown},
 		{"array count above drops", `{"a":[1,2,3]}`, a(4), definiteNo},
 		{"empty array is zero", `{"a":[]}`, a(0), definiteYes},
 		{"empty array vs one drops", `{"a":[]}`, a(1), definiteNo},
@@ -342,6 +346,9 @@ func TestEvalNoneMatch(t *testing.T) {
 		// Array container.
 		{"array all fail holds", `{"xs":[{"k":2},{"k":3}]}`, xs(elemCondK), definiteYes},
 		{"array clean match drops", `{"xs":[{"k":1},{"k":2}]}`, xs(elemCondK), definiteNo},
+		// Object with a repeated key: the first value is shadowed after decoding,
+		// so a match in it proves nothing.
+		{"object with a repeated key is unknown", `{"xs":{"p":{"k":1},"p":{"k":2}}}`, xs(elemCondK), unknown},
 		// The load-bearing exactness case: a match beside an undecidable element must
 		// NOT drop, because jq's any short-circuits in order and may error first.
 		{"array match plus scalar keeps", `{"xs":[{"k":1},5]}`, xs(elemCondK), unknown},
@@ -599,6 +606,11 @@ func TestGetField(t *testing.T) {
 		{"ambiguous scalar intermediate", `{"n":5}`, []string{"n", "x"}, "", jsonparser.Unknown, fieldAmbiguous},
 		{"ambiguous malformed", `{"a":`, []string{"a"}, "", jsonparser.Unknown, fieldAmbiguous},
 		{"ambiguous empty path", `{"a":5}`, nil, "", jsonparser.Unknown, fieldAmbiguous},
+		{"ambiguous duplicate key", `{"a":1,"a":0}`, []string{"a"}, "", jsonparser.Unknown, fieldAmbiguous},
+		{"ambiguous duplicate intermediate", `{"n":{"x":1},"n":{"x":2}}`, []string{"n", "x"}, "", jsonparser.Unknown, fieldAmbiguous},
+		{"found beside another key", `{"a":1,"b":0}`, []string{"a"}, "1", jsonparser.Number, fieldFound},
+		{"ambiguous duplicate escaped key", `{"\\u0061":0,"\\u0061":1}`, []string{`\u0061`}, "", jsonparser.Unknown, fieldAmbiguous},
+		{"found unescaped key beside its escaped form", `{"\\u0061":0,"a":1}`, []string{"a"}, "1", jsonparser.Number, fieldFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

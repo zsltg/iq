@@ -477,17 +477,22 @@ func countElements(val []byte) (int, bool) {
 }
 
 // countKeys counts the keys of a JSON object, jq's length of an object, or ok=false
-// when jsonparser cannot walk it.
+// when jsonparser cannot walk it or a key occurs twice: a decoder keeps one entry
+// per name, so a raw count with a repeated key is not jq's length.
 func countKeys(val []byte) (int, bool) {
-	count := 0
-	err := jsonparser.ObjectEach(val, func(_, _ []byte, _ jsonparser.ValueType, _ int) error {
-		count++
+	seen := map[string]struct{}{}
+	repeated := false
+	err := jsonparser.ObjectEach(val, func(k, _ []byte, _ jsonparser.ValueType, _ int) error {
+		if _, dup := seen[string(k)]; dup {
+			repeated = true
+		}
+		seen[string(k)] = struct{}{}
 		return nil
 	})
-	if err != nil {
+	if err != nil || repeated {
 		return 0, false
 	}
-	return count, true
+	return len(seen), true
 }
 
 // sizeOfNumber decides `length == n` for a number field. jq's length of a number is
@@ -618,14 +623,21 @@ func (m *Matcher) foldArray(val []byte, cond predicate.Node) (anyState, bool) {
 }
 
 // foldObject evaluates Cond against every object value, folding the verdicts, since
-// jq's any iterates an object's values.
+// jq's any iterates an object's values. A key that occurs twice makes the fold unusable (ok=false): a decoder keeps only
+// one of the values, so a verdict from the shadowed one proves nothing.
 func (m *Matcher) foldObject(val []byte, cond predicate.Node) (anyState, bool) {
 	var s anyState
-	err := jsonparser.ObjectEach(val, func(_, v []byte, typ jsonparser.ValueType, _ int) error {
+	seen := map[string]struct{}{}
+	repeated := false
+	err := jsonparser.ObjectEach(val, func(k, v []byte, typ jsonparser.ValueType, _ int) error {
+		if _, dup := seen[string(k)]; dup {
+			repeated = true
+		}
+		seen[string(k)] = struct{}{}
 		s.add(m.evalElement(v, typ, cond))
 		return nil
 	})
-	if err != nil {
+	if err != nil || repeated {
 		return anyState{}, false
 	}
 	return s, true
@@ -709,6 +721,12 @@ func getField(raw []byte, path []string) ([]byte, jsonparser.ValueType, fieldSta
 			}
 			return nil, jsonparser.Unknown, fieldAmbiguous
 		}
+		// A key that occurs twice in one object has no single value: a decoder
+		// that keeps the last occurrence (encoding/json) can disagree with the
+		// first occurrence jsonparser returns (FuzzMatch).
+		if duplicateKey(cur, key) {
+			return nil, jsonparser.Unknown, fieldAmbiguous
+		}
 		if i == len(path)-1 {
 			return val, typ, fieldFound
 		}
@@ -717,6 +735,22 @@ func getField(raw []byte, path []string) ([]byte, jsonparser.ValueType, fieldSta
 	// A field path from the pushdown compiler is never empty; an empty path has no
 	// field to resolve, so it is ambiguous rather than a clean absence.
 	return nil, jsonparser.Unknown, fieldAmbiguous
+}
+
+// duplicateKey reports whether key occurs more than once among the top-level keys
+// of the object obj. ObjectEach hands over each key already unescaped, the form
+// jsonparser.Get matches, so it compares as is: unescaping it again would turn
+// the literal key \u0061 into "a" and miss its duplicate. An object that does
+// not iterate cleanly reports true, so the caller treats it as ambiguous.
+func duplicateKey(obj []byte, key string) bool {
+	seen := 0
+	err := jsonparser.ObjectEach(obj, func(k, _ []byte, _ jsonparser.ValueType, _ int) error {
+		if string(k) == key {
+			seen++
+		}
+		return nil
+	})
+	return err != nil || seen > 1
 }
 
 // isObject reports whether b's first non-whitespace byte opens a JSON object. Only

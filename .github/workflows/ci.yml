@@ -68,7 +68,7 @@ jobs:
   # this needs list, and the ruleset does not change.
   ci-ok:
     if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
-    needs: [changes, lint, workflows, test, coverage-group, coverage, e2e, cross, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, demo-check, docs]
+    needs: [changes, lint, workflows, test, coverage-group, coverage, e2e, cross, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, demo-check, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -491,7 +491,45 @@ jobs:
           git fetch --no-tags origin "$BASE"
           IQ_MUTATION_BASE="origin/$BASE" bash scripts/mutation-gate.sh
 
-  # Weekly + manual deep scan, four jobs gated to schedule/workflow_dispatch:
+  # Go native fuzzing over the parsers that read untrusted bytes (scripts/fuzz.sh),
+  # one target per invocation because that is what `go test -fuzz` takes. The budget
+  # here is the default 20s per target, enough to re-cover the committed corpus and
+  # explore a little; deep-fuzz gives each target 5m on the weekly run. A crasher
+  # fails the job, and the fix commits the input Go wrote as the regression seed.
+  fuzz:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Fuzz the untrusted parsers
+        run: bash scripts/fuzz.sh
+
+  # Eight targets at 5m each, plus the build, fits well inside the hour. The corpus
+  # grows on a cadence rather than on a pull request.
+  deep-fuzz:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Fuzz the untrusted parsers (long budget)
+        env:
+          IQ_FUZZ_TIME: 5m
+        run: bash scripts/fuzz.sh
+
+  # Weekly + manual deep scan, gated to schedule/workflow_dispatch:
   # deep-scan re-runs the vulnerability scanners against fresh OSV/CVE data on
   # unchanged code and the secret history. The mutation scan is incremental and
   # sharded (scripts/mutation-plan.sh has the details). deep-plan reads the stored

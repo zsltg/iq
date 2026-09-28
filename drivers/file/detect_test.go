@@ -256,3 +256,23 @@ func TestDetectSniffWindow(t *testing.T) {
 		require.ErrorContains(t, err, "dump is empty")
 	})
 }
+
+// TestValidFrame pins the BSON frame bounds at both edges: the empty document is
+// the smallest frame, and 16 MiB is the largest.
+func TestValidFrame(t *testing.T) {
+	tests := []struct {
+		name string
+		size int
+		want bool
+	}{
+		{"below the empty document", bsonMinDoc - 1, false},
+		{"the empty document", bsonMinDoc, true},
+		{"the 16 MiB cap", bsonMaxDoc, true},
+		{"above the cap", bsonMaxDoc + 1, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, validFrame(tt.size))
+		})
+	}
+}

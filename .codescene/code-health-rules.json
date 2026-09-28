@@ -1,0 +1,21 @@
+{
+  "usage": "CodeScene code health rules for iq. Go test code (table tests, fuzz targets and their reference evaluators) checks one invariant per branch, so it gets a higher complexity threshold and no nesting rule. Production code keeps the default rules.",
+  "rule_sets": [
+    {
+      "matching_content_path": "**/*_test.go",
+      "matching_content_path_doc": "Go test files anywhere in the repository.",
+      "rules": [
+        {
+          "name": "Bumpy Road Ahead",
+          "weight": 0.0
+        }
+      ],
+      "thresholds": [
+        {
+          "name": "function_cyclomatic_complexity_warning",
+          "value": 15
+        }
+      ]
+    }
+  ]
+}

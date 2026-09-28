@@ -498,3 +498,42 @@ func TestDecodeTypedRecord(t *testing.T) {
 	_, err = decodeTypedRecord([]byte(`{"type":"x","value":1}`))
 	require.ErrorContains(t, err, "record has no key")
 }
+
+// TestScanFilteredRepeatedValueEnvelope pins a typed record whose envelope repeats
+// the value field. jsonparser reads the first value and encoding/json keeps the
+// last, so the prefilter must not judge such a record: it goes to the full decode.
+func TestScanFilteredRepeatedValueEnvelope(t *testing.T) {
+	body := `{"key":"k","type":"document","value":{"a":1},"value":{"a":0}}` + "\n"
+	st := jsonlStore(t, body, CacheConfig{})
+	got := flatten(scanFilteredPages(t, st, predicate.Eq{Path: []string{"a"}, Value: 0.0}))
+	require.Equal(t, []string{"k"}, keysOf(got))
+}
+
+// TestTypedValue pins which envelopes hand their value to the prefilter: exactly one
+// value field in an object that parses to the end. A value followed by a broken
+// entry, a repeated value, a missing value and a non-object all go to the full decode.
+func TestTypedValue(t *testing.T) {
+	tests := []struct {
+		name   string
+		raw    string
+		want   string
+		wantOK bool
+	}{
+		{"one value", `{"key":"k","value":{"a":1}}`, `{"a":1}`, true},
+		{"repeated value", `{"value":1,"value":2}`, "", false},
+		{"repeated value in another case", `{"value":{"a":1},"Value":{"a":0}}`, "", false},
+		{"one value in another case", `{"key":"k","VALUE":2}`, "2", true},
+		{"no value", `{"key":"k"}`, "", false},
+		{"value then a broken entry", `{"value":1,"x":}`, "", false},
+		{"not an object", `[{"value":1}]`, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := typedValue([]byte(tt.raw))
+			require.Equal(t, tt.wantOK, ok)
+			if tt.wantOK {
+				require.Equal(t, tt.want, string(got))
+			}
+		})
+	}
+}
