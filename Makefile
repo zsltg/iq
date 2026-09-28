@@ -28,7 +28,7 @@ GORELEASER         := github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 .DEFAULT_GOAL := build
 include scripts/demo/demo.mk
 
-.PHONY: build version changelog release tools tools-dev hooks check cover security sbom e2e bench docs docs-serve capabilities mutation ci man completions release-check release-snapshot
+.PHONY: build version changelog release release-tag tools tools-dev hooks check cover security sbom e2e bench docs docs-serve capabilities mutation ci man completions release-check release-snapshot
 
 # build compiles the binary with version metadata embedded, static and
 # trimmed exactly like a release artifact (goreleaser mirrors these flags).
@@ -44,9 +44,13 @@ version:
 changelog:
 	bash scripts/release.sh --changelog-only
 
-# release bumps the version, regenerates the changelog, commits, and tags.
+# release regenerates the changelog and commits it on a chore/release branch, for
+# a pull request. release-tag tags the squash-merged release commit on main.
 release:
 	bash scripts/release.sh
+
+release-tag:
+	bash scripts/release.sh --tag
 
 # tools installs the release toolchain (svu, git-chglog) into GOPATH/bin.
 tools:
