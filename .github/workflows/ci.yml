@@ -68,7 +68,7 @@ jobs:
   # this needs list, and the ruleset does not change.
   ci-ok:
     if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
-    needs: [changes, lint, workflows, test, coverage-group, coverage, e2e, cross, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, demo-check, docs]
+    needs: [changes, lint, workflows, test, coverage-group, coverage, e2e, cross, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -427,6 +427,25 @@ jobs:
         run: |
           out="$(go run golang.org/x/tools/cmd/deadcode@${{ env.DEADCODE_VERSION }} -test ./...)"
           if [ -n "$out" ]; then echo "$out"; echo "::error::dead code: delete it or wire it up"; exit 1; fi
+
+  # Developer Certificate of Origin: every new commit of a pull request carries a
+  # Signed-off-by trailer for its author (scripts/dco.sh). It runs for every pull
+  # request, also one without code; on a push to main it is skipped, because the
+  # commits there already passed it as a pull request.
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check the sign-offs
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/dco.sh "$BASE" "$HEAD"
 
   secrets:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
