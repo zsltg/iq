@@ -133,9 +133,12 @@ func newMCPCmd(cfg *config) *cobra.Command {
 			"Read-only by default. --allow writes registers iq_insert, --allow exec\n" +
 			"registers iq_exec, and --allow destructive registers iq_data_clear,\n" +
 			"iq_data_drop and iq_data_delete (and permits iq_insert's replace). A tool that\n" +
-			"is not allowed is never registered, so a client cannot see it or call it. Every\n" +
-			"destructive call needs confirm: true, or the client's user answering the\n" +
-			"confirmation the server asks for.\n" +
+			"is not allowed is never registered, so a client cannot see it or call it. A\n" +
+			"real call to iq_data_clear, iq_data_drop, iq_data_delete or iq_insert's replace\n" +
+			"needs confirm: true, or the client's user answering the confirmation the\n" +
+			"server asks for. iq_exec has no preview and no confirmation: with --allow exec\n" +
+			"the agent can do anything the database account can do, so give the agent a\n" +
+			"read-only database user unless it must write.\n" +
 			"\n" +
 			"Every result is capped by --max-items and --max-bytes; a per-call max_items or\n" +
 			"max_bytes may lower them, never raise them. The persistent flags apply:\n" +

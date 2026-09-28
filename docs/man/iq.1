@@ -677,7 +677,7 @@ Serve the query core as an MCP server over stdio
 .PP
 Serve iq to an AI agent as a Model Context Protocol server, speaking JSON\-RPC over stdin and stdout. The tools are the CLI's own operations over the same core: iq_sources, iq_ping, iq_explain, iq_query, iq_inspect, iq_schema and iq_diff.
 .PP
-Read\-only by default. \-\-allow writes registers iq_insert, \-\-allow exec registers iq_exec, and \-\-allow destructive registers iq_data_clear, iq_data_drop and iq_data_delete (and permits iq_insert's replace). A tool that is not allowed is never registered, so a client cannot see it or call it. Every destructive call needs confirm: true, or the client's user answering the confirmation the server asks for.
+Read\-only by default. \-\-allow writes registers iq_insert, \-\-allow exec registers iq_exec, and \-\-allow destructive registers iq_data_clear, iq_data_drop and iq_data_delete (and permits iq_insert's replace). A tool that is not allowed is never registered, so a client cannot see it or call it. A real call to iq_data_clear, iq_data_drop, iq_data_delete or iq_insert's replace needs confirm: true, or the client's user answering the confirmation the server asks for. iq_exec has no preview and no confirmation: with \-\-allow exec the agent can do anything the database account can do, so give the agent a read\-only database user unless it must write.
 .PP
 Every result is capped by \-\-max\-items and \-\-max\-bytes; a per\-call max_items or max_bytes may lower them, never raise them. The persistent flags apply: \-\-timeout bounds every call (5s is short for a scan, so a client config should pass \-\-timeout 30s), \-\-config picks the source registry, and \-\-log* write diagnostics to a file. stdout carries the protocol and nothing else.
 .PP
