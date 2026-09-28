@@ -234,8 +234,12 @@ reads (Markdown files outside `skills/`, `docs/` outside the man page and the
 completions, `.github/` except `ci.yml`, `.agents/`, and the app configs). Then the
 Go jobs are skipped, and a skipped job passes its required check, so a docs-only or
 workflow-only pull request takes about 2 minutes. Any other file, a change to
-`ci.yml` itself, or a diff that fails runs every job. `changes` is itself a required
-check. The jobs per gate:
+`ci.yml` itself, or a diff that fails runs every job. The last job, `ci-ok`, is the
+only required check of the `main` ruleset: it needs every per-change job and fails
+when one of them failed or was cancelled (a skipped job passes). The per-job checks
+cannot be required themselves, because GitHub reports a skipped matrix job under
+its bare name. A new per-change job goes into the `needs` list of `ci-ok`. The jobs
+per gate:
 `lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
 Linux, macOS and Windows), `coverage` (four `coverage (<group>)` jobs each test a
 group of packages on their own runner, then `coverage` joins the partial profiles,
