@@ -7,7 +7,7 @@
 
 <p align="center">
   <!-- Three clusters, not a list. One: proof it works, escalating from "it builds" to
-  "the tests assert something". Two: third-party assessment (the placeholders join it once
+  "the tests assert something". Two: third-party assessment (the Best Practices placeholder joins it once
   go-public-checklist.md step 5 yields their IDs). Three: furniture. A badge earns a slot
   only by showing a number that could be bad and that a stranger reads in one second. -->
   <a href="https://github.com/zsltg/iq/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zsltg/iq/ci.yml?branch=main" alt="CI"></a>
@@ -18,10 +18,10 @@
   -->
   &nbsp;
   <a href="https://scorecard.dev/viewer/?uri=github.com/zsltg/iq"><img src="https://api.securityscorecards.dev/projects/github.com/zsltg/iq/badge" alt="OpenSSF Scorecard"></a>
-  <!-- Fill in the project IDs after registering on bestpractices.dev and codescene.io:
+  <!-- Fill in the project ID after registering on bestpractices.dev:
   <a href="https://www.bestpractices.dev/projects/<ID>"><img src="https://www.bestpractices.dev/projects/<ID>/badge" alt="OpenSSF Best Practices"></a>
-  <a href="https://codescene.io/projects/<ID>"><img src="https://codescene.io/projects/<ID>/status-badges/code-health" alt="CodeScene Code Health"></a>
   -->
+  <a href="https://codescene.io/projects/85289"><img src="https://codescene.io/projects/85289/status-badges/average-code-health" alt="CodeScene Code Health"></a>
   &nbsp;
   <a href="https://github.com/zsltg/iq/releases"><img src="https://img.shields.io/github/v/release/zsltg/iq" alt="Release"></a>
   <a href="https://pkg.go.dev/github.com/zsltg/iq"><img src="https://pkg.go.dev/badge/github.com/zsltg/iq.svg" alt="Go Reference"></a>
