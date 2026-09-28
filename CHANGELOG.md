@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.37.0 - 2026-09-28
+### Documentation
+- link the coding standard, the security policy and the test policy (#19) (9fc09f1)
+- state the test policy in contributing (#12) (ad44704)
+- add a review guide for all reviewers (#9) (a3708d9)
+- name iq exec as a write path in the note (#8) (758c007)
+- describe the pull request merge flow (#4) (4f12712)
+- **mcp:** say that --allow exec gives the database account's reach (#10) (4a5dda7)
+- **readme:** put each badge cluster on its own row (#18) (a210638)
+- **readme:** add the openssf best practices badge (#16) (e36d804)
+- **readme:** add the codescene code health badge (#14) (6ad1a2c)
+
+### Features
+- **config:** warn when other users can read an inline password (#11) (0829d56)
+
+### Bug Fixes
+- **deps:** bump grpc to v1.83.2 and x/crypto to v0.56.0 (519b39e)
+- **hooks:** skip published commits in pre-push (#6) (f566ec9)
+
+
 ## v0.36.0 - 2026-09-27
 ### Documentation
 - split long sentences in the architecture text (0b4f028)
