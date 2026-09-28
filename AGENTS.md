@@ -62,9 +62,9 @@ Never:
 - Hand-edit generated artifacts (`go generate` output, vendored code).
 - Strip, hide or bypass existing behaviour to shrink a diff or pass a test. Change behaviour deliberately and say so.
 - Weaken the mutation gate to pass. A surviving mutant means a test asserts nothing, so strengthen the test instead.
-- Build a query from unsanitized input, or log or print a credential, token or connection URI.
+- Build a query from unsanitized input, or log a credential, token or connection URI, or print one without an explicit `--reveal`.
 - Render a raw driver error, stack trace or database internal to the user. Clear, safe messages only.
-- Hardcode or commit secrets. Credentials come from environment or a secret store.
+- Hardcode or commit secrets. Credentials come from the environment, the OS keyring, or the user's config file (written `0600`), never from the repository.
 
 Only when asked:
 - Commit or push. Add or upgrade a dependency (trips supply-chain and licensing review). Run a destructive database operation the command did not request.
