@@ -3,12 +3,19 @@
 # cask on macOS, the Scoop manifest on Windows, install.sh, the .deb and
 # `go install` on Linux. Every path ends in the same black-box check: the
 # binary reports the release tag, registers a dump as a source and queries it.
-# Runs on demand (tag input, default latest) and when a Release is published;
-# it needs the repo, the tap and the bucket to be public, so it is a go-public
-# step, not a per-push gate. Actions are pinned by commit SHA (Scorecard).
+# The Release workflow calls it after goreleaser (workflow_call). A release that
+# GITHUB_TOKEN publishes starts no other workflow, so the release trigger below
+# fires only for a release that a person publishes. It also runs on demand (tag
+# input, default latest). It needs the repo, the tap and the bucket to be public. Actions are pinned by commit SHA (Scorecard).
 name: Install smoke
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to verify (e.g. v0.37.0)
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:

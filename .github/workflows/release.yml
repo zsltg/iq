@@ -39,3 +39,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_TOKEN: ${{ secrets.GORELEASER_TOKEN }}
         run: go run github.com/goreleaser/goreleaser/v2@${GORELEASER_VERSION} release --clean
+
+  # goreleaser publishes the Release with GITHUB_TOKEN, and an event that this
+  # token causes starts no other workflow. So the install smoke test is called
+  # here, after the publish, for the tag of this run.
+  smoke:
+    needs: goreleaser
+    permissions:
+      contents: read
+    uses: $/.github/workflows/install-smoke.yml
+    with:
+      tag: ${{ github.ref_name }}
