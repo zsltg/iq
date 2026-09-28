@@ -210,6 +210,9 @@ so it catches a `--author`, a `-c` override and a `GIT_AUTHOR_EMAIL` alike;
 `pre-push` re-checks author and committer across everything being published,
 which is what catches commits the hook never saw: a `--no-verify`, a tool that
 bypasses hooks, a replayed rebase, or history written before the hooks existed.
+`pre-push` skips a commit that a remote-tracking ref already holds, because it is
+already published. This lets a squash merge from GitHub, whose committer is
+`noreply@github.com`, reach `origin` and the next pull request branch.
 The address a repository publishes is the one in its config, and removing a
 different one from published history costs a force-push over every clone. A
 deliberate override, such as applying someone else's patch, passes
