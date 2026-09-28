@@ -508,3 +508,30 @@ func TestScanFilteredRepeatedValueEnvelope(t *testing.T) {
 	got := flatten(scanFilteredPages(t, st, predicate.Eq{Path: []string{"a"}, Value: 0.0}))
 	require.Equal(t, []string{"k"}, keysOf(got))
 }
+
+// TestTypedValue pins which envelopes hand their value to the prefilter: exactly one
+// value field in an object that parses to the end. A value followed by a broken
+// entry, a repeated value, a missing value and a non-object all go to the full decode.
+func TestTypedValue(t *testing.T) {
+	tests := []struct {
+		name   string
+		raw    string
+		want   string
+		wantOK bool
+	}{
+		{"one value", `{"key":"k","value":{"a":1}}`, `{"a":1}`, true},
+		{"repeated value", `{"value":1,"value":2}`, "", false},
+		{"no value", `{"key":"k"}`, "", false},
+		{"value then a broken entry", `{"value":1,"x":}`, "", false},
+		{"not an object", `[{"value":1}]`, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := typedValue([]byte(tt.raw))
+			require.Equal(t, tt.wantOK, ok)
+			if tt.wantOK {
+				require.Equal(t, tt.want, string(got))
+			}
+		})
+	}
+}
