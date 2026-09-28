@@ -6,20 +6,21 @@
 </p>
 
 <p align="center">
-  <!-- Three clusters, not a list. One: proof it works, escalating from "it builds" to
-  "the tests assert something". Two: third-party assessment. Three: furniture. A badge earns a slot
-  only by showing a number that could be bad and that a stranger reads in one second. -->
+  <!-- Three rows, one per cluster, so the grouping holds at any width. One: proof it works,
+  escalating from "it builds" to "the tests assert something". Two: third-party assessment.
+  Three: furniture. A badge earns a slot only by showing a number that could be bad and that a
+  stranger reads in one second. -->
   <a href="https://github.com/zsltg/iq/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zsltg/iq/ci.yml?branch=main" alt="CI"></a>
   <a href="https://codecov.io/gh/zsltg/iq"><img src="https://img.shields.io/codecov/c/github/zsltg/iq/main?label=coverage" alt="Coverage"></a>
   <!-- The mutation badge stays hidden until the weekly scan can publish a real value. The scan
   must first run as shards, and every package must be green on the current mutago version.
   <a href="https://github.com/zsltg/iq/blob/main/CONTRIBUTING.md#mutation-gate-scriptsmutation-gatesh"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/zsltg/iq/badges/mutation.json" alt="Mutation score"></a>
   -->
-  &nbsp;
+  <br>
   <a href="https://scorecard.dev/viewer/?uri=github.com/zsltg/iq"><img src="https://api.securityscorecards.dev/projects/github.com/zsltg/iq/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://www.bestpractices.dev/projects/14996"><img src="https://www.bestpractices.dev/projects/14996/badge" alt="OpenSSF Best Practices"></a>
   <a href="https://codescene.io/projects/85289"><img src="https://codescene.io/projects/85289/status-badges/average-code-health" alt="CodeScene Code Health"></a>
-  &nbsp;
+  <br>
   <a href="https://github.com/zsltg/iq/releases"><img src="https://img.shields.io/github/v/release/zsltg/iq" alt="Release"></a>
   <a href="https://pkg.go.dev/github.com/zsltg/iq"><img src="https://pkg.go.dev/badge/github.com/zsltg/iq.svg" alt="Go Reference"></a>
   <img src="https://img.shields.io/github/go-mod/go-version/zsltg/iq" alt="Go version">
