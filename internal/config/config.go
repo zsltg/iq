@@ -136,7 +136,13 @@ func ModeWarning() string {
 		return ""
 	}
 	return fmt.Sprintf("warning: the config file %s holds an inline password and other users can access it (mode %04o); run: chmod 600 %s",
-		p, info.Mode().Perm(), p)
+		p, info.Mode().Perm(), shellQuote(p))
+}
+
+// shellQuote returns s as one POSIX shell word, so a suggested command works for
+// a path with spaces (the default macOS config path has one) or quotes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // hasInlinePassword reports whether a source URL in the config file carries a
@@ -144,15 +150,35 @@ func ModeWarning() string {
 // map order.
 func (c *Config) hasInlinePassword() bool {
 	for _, h := range c.List() {
-		u, err := url.Parse(h.Source.URL)
-		if err != nil || u.User == nil {
-			continue
-		}
-		if _, ok := u.User.Password(); ok {
+		if hasPassword(h.Source.URL) {
 			return true
 		}
 	}
 	return false
+}
+
+// hasPassword reports whether raw has a password in its userinfo. A URL that
+// net/url rejects (a bad escape, for example) can still hold a password, so it
+// falls back to a plain scan: text before the last "@" of the authority part
+// that contains a ":". The fallback can report a password that is not there,
+// which only adds a warning, and it never misses one.
+func hasPassword(raw string) bool {
+	if u, err := url.Parse(raw); err == nil {
+		if u.User == nil {
+			return false
+		}
+		_, ok := u.User.Password()
+		return ok
+	}
+	_, rest, found := strings.Cut(raw, "://")
+	if !found {
+		return false
+	}
+	if i := strings.IndexAny(rest, "?#"); i >= 0 {
+		rest = rest[:i]
+	}
+	at := strings.LastIndex(rest, "@")
+	return at >= 0 && strings.Contains(rest[:at], ":")
 }
 
 // migrateCollections folds a legacy per-source `collection` field into the URL as

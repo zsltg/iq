@@ -740,6 +740,12 @@ func TestModeWarning(t *testing.T) {
 		{"URL that does not parse, then a password", "[sources.a]\nurl = '://bad'\n[sources.b]\nurl = 'redis://u:p@h:6379/0'\n", 0o644, true},
 		{"password in a later source", "[sources.a]\nurl = 'redis://u@h:6379/0'\n[sources.z]\nurl = 'redis://u:p@h:6379/0'\n", 0o644, true},
 		{"malformed TOML", "[sources.a\n", 0o644, false},
+		{"bad escape with a password", "[sources.a]\nurl = 'redis://u:p@h/%ZZ'\n", 0o644, true},
+		{"bad escape without user info", "[sources.a]\nurl = 'redis://h/%ZZ'\n", 0o644, false},
+		{"bad escape with a user only", "[sources.a]\nurl = 'redis://u@h/%ZZ'\n", 0o644, false},
+		{"bad escape, colon and at sign after the query", "[sources.a]\nurl = 'redis://h/%ZZ?x=a:b@c'\n", 0o644, false},
+		{"bad escape, colon and at sign after the fragment", "[sources.a]\nurl = 'redis://h/%ZZ#a:b@c'\n", 0o644, false},
+		{"bad escape, no scheme separator", "[sources.a]\nurl = 'u:p@h/%ZZ'\n", 0o644, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -753,7 +759,7 @@ func TestModeWarning(t *testing.T) {
 				require.Empty(t, got)
 				return
 			}
-			want := fmt.Sprintf("warning: the config file %s holds an inline password and other users can access it (mode %04o); run: chmod 600 %s", p, tt.mode, p)
+			want := fmt.Sprintf("warning: the config file %s holds an inline password and other users can access it (mode %04o); run: chmod 600 '%s'", p, tt.mode, p)
 			require.Equal(t, want, got)
 		})
 	}
@@ -764,4 +770,23 @@ func TestModeWarningMissingFile(t *testing.T) {
 	tempConfig(t)
 
 	require.Empty(t, config.ModeWarning())
+}
+
+// TestModeWarningQuotesThePath asserts the suggested chmod takes the path as one
+// shell word, also with a space and an apostrophe in it.
+func TestModeWarningQuotesThePath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no Unix mode bits, so ModeWarning never warns there")
+	}
+	dir := filepath.Join(t.TempDir(), "Application Support", "it's")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	p := filepath.Join(dir, "iq.toml")
+	t.Setenv(config.EnvConfig, p)
+	require.NoError(t, os.WriteFile(p, []byte("[sources.a]\nurl = 'redis://u:p@h:6379/0'\n"), 0o600))
+	require.NoError(t, os.Chmod(p, 0o644))
+
+	got := config.ModeWarning()
+
+	require.Contains(t, got, "run: chmod 600 '"+filepath.Dir(dir))
+	require.True(t, strings.HasSuffix(got, `/Application Support/it'\''s/iq.toml'`), got)
 }
