@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"strings"
 
@@ -124,6 +125,12 @@ func convertNumbers(v any) any {
 	switch t := v.(type) {
 	case json.Number:
 		s := t.String()
+		// -0 is the one integer literal an int cannot hold: keep it as the float64
+		// negative zero, so a dump of -0.0 reads back with its sign (numfmt does
+		// the same for the backend adapters).
+		if s == "-0" {
+			return math.Copysign(0, -1)
+		}
 		if !strings.ContainsAny(s, ".eE") {
 			if i, err := t.Int64(); err == nil && int64(int(i)) == i {
 				return int(i)
