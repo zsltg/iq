@@ -540,6 +540,11 @@ the squash-merged release commit of the version that `make version` prints.
 Neither step pushes. Publishing happens in the GitHub repository: the release
 workflow runs goreleaser when a `v*` tag reaches it.
 
+A release that fixes a vulnerability names its advisory ID. Put the ID
+(`GHSA-...`, and the CVE when one exists) in the title of the fix pull request,
+so the squash commit carries it into CHANGELOG.md. After the release is
+published, add the ID to the GitHub release text and publish the advisory.
+
 ## Architecture
 
 Ports and adapters: a driver-agnostic query core behind ports, backend
