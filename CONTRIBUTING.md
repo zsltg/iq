@@ -33,6 +33,12 @@ make e2e               # black-box tests that build and drive the iq binary
 make bench             # decode, filter, number-conversion, and dump I/O benchmarks; pair two runs with benchstat
 ```
 
+Test policy: a pull request that adds or changes behavior adds or updates the
+tests for it in the same pull request. A bug fix adds a test that fails without
+the fix. The mutation gate makes sure these tests assert the behavior: a
+surviving mutant on a changed line fails the pull request. Reviewers treat a
+behavior change without a test as a finding (see `REVIEW.md`).
+
 - The full suite starts ephemeral Redis, MongoDB, Cassandra, DynamoDB Local,
   CouchDB, Couchbase, Neo4j, Elasticsearch, and OpenSearch on random ports and
   tears them down afterwards, no manual compose needed. Cassandra takes
