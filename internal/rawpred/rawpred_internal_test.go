@@ -599,6 +599,9 @@ func TestGetField(t *testing.T) {
 		{"ambiguous scalar intermediate", `{"n":5}`, []string{"n", "x"}, "", jsonparser.Unknown, fieldAmbiguous},
 		{"ambiguous malformed", `{"a":`, []string{"a"}, "", jsonparser.Unknown, fieldAmbiguous},
 		{"ambiguous empty path", `{"a":5}`, nil, "", jsonparser.Unknown, fieldAmbiguous},
+		{"ambiguous duplicate key", `{"a":1,"a":0}`, []string{"a"}, "", jsonparser.Unknown, fieldAmbiguous},
+		{"ambiguous duplicate intermediate", `{"n":{"x":1},"n":{"x":2}}`, []string{"n", "x"}, "", jsonparser.Unknown, fieldAmbiguous},
+		{"found beside another key", `{"a":1,"b":0}`, []string{"a"}, "1", jsonparser.Number, fieldFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
