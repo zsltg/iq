@@ -58,9 +58,6 @@ env:
   DEADCODE_VERSION: v0.49.0 # golang.org/x/tools
   SYFT_VERSION: v1.45.1
   ZIZMOR_VERSION: 1.30.1 # PyPI, no v prefix
-  # Permissive licenses the dependency tree is allowed to carry (AGENTS.md Tech Stack).
-  # Unlicense is public domain (vbauerster/mpb, the progress bar).
-  LICENSE_ALLOWLIST: Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,MIT,MPL-2.0,Unlicense
 
 jobs:
   # The one required check of the main ruleset. GitHub reports a skipped matrix job
@@ -385,9 +382,13 @@ jobs:
         with:
           go-version-file: go.mod
       - name: OSV scan + license allowlist
+        # The allowlist is scripts/license-allowlist.txt, which make security reads too.
         run: |
+          allow="$(grep -Ev '^(#|$)' scripts/license-allowlist.txt | paste -sd, -)"
+          # An empty list turns --licenses into a summary with no verdict, so stop.
+          [ -n "$allow" ] || { echo "::error::scripts/license-allowlist.txt lists no license"; exit 1; }
           go run github.com/google/osv-scanner/v2/cmd/osv-scanner@${{ env.OSV_SCANNER_VERSION }} \
-            scan source --licenses=${{ env.LICENSE_ALLOWLIST }} -L go.mod
+            scan source --licenses="$allow" -L go.mod
 
   # Generation-only: proves the SBOMs build (same syft invocation as `make sbom`).
   # No artifact upload; actions/upload-artifact is not among the mirrored actions.
@@ -519,8 +520,11 @@ jobs:
       - name: Vulnerabilities (govulncheck + OSV, fresh data)
         run: |
           go run golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }} ./...
+          allow="$(grep -Ev '^(#|$)' scripts/license-allowlist.txt | paste -sd, -)"
+          # An empty list turns --licenses into a summary with no verdict, so stop.
+          [ -n "$allow" ] || { echo "::error::scripts/license-allowlist.txt lists no license"; exit 1; }
           go run github.com/google/osv-scanner/v2/cmd/osv-scanner@${{ env.OSV_SCANNER_VERSION }} \
-            scan source --licenses=${{ env.LICENSE_ALLOWLIST }} -L go.mod
+            scan source --licenses="$allow" -L go.mod
       - name: Secret history scan
         run: go run github.com/zricethezav/gitleaks/v8@${{ env.GITLEAKS_VERSION }} git --no-banner .
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
