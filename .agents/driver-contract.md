@@ -5,7 +5,7 @@ Cross-driver conventions every backend adapter and driver plan doc follows. Tele
 - Binds shipped adapters (`drivers/*`), the plan docs in the repo root, and every review of either; a plan that deviates states the deviation and why.
 ## URL contract
 - TLS scheme: the backend's official TLS scheme wins (`rediss`, `couchbases`, `valkeys`); otherwise mint a `+s` twin (`elasticsearch+s` precedent); `?tls=true` only when the URL feeds an SDK parser that owns the scheme (ferretdb).
-- Credentials ride in the URL userinfo, spliced from the keyring when the source is keyring-backed; every rendering of a location goes through the redaction helper; never log, print or trace a credential.
+- Credentials ride in the URL userinfo, spliced from the keyring when the source is keyring-backed; every rendering of a location goes through the redaction helper; never log or trace a credential, and print one only behind an explicit `--reveal`.
 - Exception by design: dynamodb-style backends take credentials from the SDK's default environment chain, never the URL.
 - Keyspace param uses the backend's native noun: `?collection=` `?table=` `?set=` `?type=` `?measurement=` `?label=` `?edge=` `?rel=` `?index=` `?bucket=`; a query overrides it with the dotted `handle.<keyspace>` suffix.
 - The driver registry entry lists its keyspace params in `addressParams`, most specific first; `iq add` names a source after the first one the URL sets, and a backend declaring none rejects every spelling.
