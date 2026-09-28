@@ -113,6 +113,13 @@ if [[ "$MODE" == "tag" ]]; then
     echo "release: tag $next exists already" >&2
     exit 1
   fi
+  # Tag only a commit that GitHub has, so the tag push starts the release of
+  # the merged commit and not of a local one.
+  git fetch -q github main
+  if ! git merge-base --is-ancestor HEAD github/main; then
+    echo "release: HEAD is not on github/main; pull the squash merge first" >&2
+    exit 1
+  fi
   git tag -a "$next" -m "$next"
   echo "release: tagged $next on $(git rev-parse --short HEAD)"
   echo "push only this tag: git push github $next && git push origin $next"
@@ -125,6 +132,12 @@ fi
 if [[ "$branch" != chore/release* ]]; then
   echo "release: run on a chore/release branch started from the latest main, on '$branch'" >&2
   echo "release: git worktree add -b chore/release-$next .claude/worktrees/release github/main" >&2
+  exit 1
+fi
+# A branch behind the published main misses commits in its changelog.
+git fetch -q github main
+if ! git merge-base --is-ancestor github/main HEAD; then
+  echo "release: $branch is behind github/main; start it again from the latest main" >&2
   exit 1
 fi
 regen CHANGELOG.md
