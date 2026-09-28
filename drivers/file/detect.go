@@ -249,6 +249,12 @@ const (
 	bsonMaxDoc = 16 << 20
 )
 
+// validFrame reports whether a BSON frame length is inside the spec's bounds: at
+// least the empty document and at most the 16 MiB cap.
+func validFrame(size int) bool {
+	return size >= bsonMinDoc && size <= bsonMaxDoc
+}
+
 // looksLikeBSON reports whether head plausibly begins a BSON document: a 4-byte
 // little-endian length that is at least the empty-document size and no larger than
 // BSON's 16 MiB cap.
@@ -257,5 +263,5 @@ func looksLikeBSON(head []byte) bool {
 		return false
 	}
 	size := int(head[0]) | int(head[1])<<8 | int(head[2])<<16 | int(head[3])<<24
-	return size >= bsonMinDoc && size <= bsonMaxDoc
+	return validFrame(size)
 }

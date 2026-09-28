@@ -411,6 +411,11 @@ Posture and upkeep around the pipeline, all on GitHub:
   priorities, the threat model, the critical areas and what not to flag. The
   coding rules stay in AGENTS.md. CodeRabbit and Devin Review both read the two
   files, so a review rule changes in `REVIEW.md` only.
+- `.codescene/code-health-rules.json` tunes the CodeScene code health review for
+  Go test files: a cyclomatic complexity threshold of 15 in place of 9, and no
+  "Bumpy Road Ahead" rule, because a table test or a fuzz target checks one
+  invariant per branch. Production code keeps the default rules. The CodeScene
+  review is not a required check.
 - `.coderabbit.yaml` holds CodeRabbit's settings only (profile, automatic
   review, linters). It reviews, it never approves or merges.
 - `.github/workflows/devin-review.yml` posts a link to the Devin Review
