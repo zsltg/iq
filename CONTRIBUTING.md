@@ -100,7 +100,8 @@ entry. This note goes away with the re-baseline.
 welcome. They meet the same bar as any other change, and three rules apply:
 
 - Disclose it. Every commit that an AI tool helped with ends with the
-  `Co-Authored-By:` trailer above, and the pull request template asks for it.
+  `Co-Authored-By:` trailer above. The squash merge keeps the trailers in the
+  commit on `main`.
 - Run the gates locally before you open the pull request (the list above). The
   mutation gate is diff-scoped by default, and a full package scan is not
   required.
