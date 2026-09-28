@@ -398,8 +398,10 @@ func TestGronFormatterPropagatesEncodeError(t *testing.T) {
 	}
 }
 
+// TestRootRejectsMutuallyExclusiveFormatFlags is not parallel: it runs the root
+// command, whose PreRun writes the process-wide color.NoColor, and parallel
+// formatter tests read that variable. The race detector reports the overlap.
 func TestRootRejectsMutuallyExclusiveFormatFlags(t *testing.T) {
-	t.Parallel()
 	// Cobra's MarkFlagsMutuallyExclusive rejects conflicting format flags during
 	// Execute, before any store I/O; the new gron/grona flags join that group.
 	tests := []struct {
@@ -412,7 +414,6 @@ func TestRootRejectsMutuallyExclusiveFormatFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			root, _ := newRootCmd()
 			_, err := runCmd(t, root, tt.args...)
 			require.ErrorContains(t, err, "none of the others can be")
