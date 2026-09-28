@@ -29,9 +29,11 @@ go test ./...          # full suite, the backends start in containers
 make e2e               # black-box tests of the built binary
 ```
 
-The full suite starts each backend in a throwaway container. To use a running
-server instead, set `IQ_<BACKEND>_URL` (see `.env.example` and
-[Test backends](DEVELOPMENT.md#test-backends)).
+The full suite starts each backend in a throwaway container. HBase is the
+exception: its tests run only when `IQ_HBASE_URL` points at the compose cluster
+(`docker compose up -d --wait hbase`), and they skip without it. To use a
+running server for any other backend, set `IQ_<BACKEND>_URL` (see
+`.env.example` and [Test backends](DEVELOPMENT.md#test-backends)).
 
 ## Testing
 
@@ -51,13 +53,15 @@ locally costs review time.
 ```bash
 make check                      # format, vet, build, lint, dead code, short tests
 make cover                      # full suite and the coverage floor (needs Docker)
-make security                   # vulnerabilities, licenses, secrets, workflow audit
+make security                   # vulnerabilities, secrets, workflow audit, SBOM
 make e2e                        # black-box tests
 bash scripts/mutation-gate.sh   # mutation gate on the lines you changed
 make capabilities               # only when go.mod or go.sum changed
 ```
 
-The mutation gate mutates only the lines that your branch changed. If a mutant
+`make security` does not check licenses: the CI `osv` job applies the
+permissive license allowlist. The mutation gate mutates only the lines that
+your branch changed. If a mutant
 survives, a test does not check that line: make the test stronger. What each
 gate does, and its settings, is in [DEVELOPMENT.md](DEVELOPMENT.md#quality-gates).
 

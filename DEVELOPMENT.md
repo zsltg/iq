@@ -37,6 +37,15 @@ build (the module version), and `dev+<commit>` for an untagged build.
 - Live e2e round-trips (`e2e/live_test.go`) run only when `IQ_REDIS_URL` /
   `IQ_MONGO_URL` are set, no localhost fallback.
 
+## Benchmarks
+
+```bash
+make bench   # decode, filter, number-conversion, and dump I/O benchmarks
+```
+
+No containers. To compare a change, run it before and after, and pair the two
+runs with `benchstat`.
+
 ## Local stack
 
 ```bash
