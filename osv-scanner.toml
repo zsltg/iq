@@ -1,6 +1,6 @@
 # osv-scanner configuration, read automatically for go.mod in this directory.
-# The CI osv job gates every dependency against the permissive allowlist in
-# .github/workflows/ci.yml; the overrides below correct deps.dev license data
+# make security and the CI osv job check every Go module against the permissive
+# allowlist in scripts/license-allowlist.txt; the overrides below correct deps.dev license data
 # where the code license is permissive and only the module's documentation
 # carries a Creative Commons license, plus the stdlib pseudo-package.
 
@@ -21,3 +21,11 @@ name = "stdlib"
 ecosystem = "Go"
 license.override = ["BSD-3-Clause"]
 reason = "The Go standard library, BSD-3-Clause; deps.dev reports it as UNKNOWN."
+
+# GO-2026-5932 marks golang.org/x/crypto/openpgp as unmaintained. No fixed version
+# exists, and iq does not import that package: x/crypto arrives through the MongoDB
+# driver for pbkdf2 (go mod why golang.org/x/crypto/openpgp: not needed). Look at
+# this again when the advisory gets a fix or iq starts to use openpgp.
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = "x/crypto/openpgp is not imported; the advisory has no fixed version (see the comment above)"
