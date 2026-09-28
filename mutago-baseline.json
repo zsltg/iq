@@ -1118,12 +1118,6 @@
    "line": 174
   },
   {
-   "id": "29ccef2f8744f6121dc99131ebd5d688",
-   "file": "internal/query/dump.go",
-   "mutator": "expression/remove",
-   "line": 128
-  },
-  {
    "id": "b2cd4944894a055379941789463c373e",
    "file": "internal/query/dump.go",
    "mutator": "expression/remove",
@@ -1412,10 +1406,16 @@
    "line": 46
   },
   {
-   "id": "ea009802aeedaafb3b2b8ab5a9a2ae52",
+   "id": "b56902b659d6f9f8e09226e3005cad2f",
+   "file": "internal/query/dump.go",
+   "mutator": "expression/remove",
+   "line": 155
+  },
+  {
+   "id": "5ab21f74bc541533b57a70b6d2c9ab31",
    "file": "internal/query/dump.go",
    "mutator": "numbers/incrementer",
-   "line": 132
+   "line": 152
   }
  ]
 }
