@@ -589,3 +589,7 @@ is not here: it moved into readPage, and TestReadPage kills it now.
 - 8c63029eadfa51b0c3dfbf77fcf5ba29 drivers/couchbase/inspect.go:45 statement/remove — sort.Strings on the bucket names. The test cluster holds one bucket, so the order cannot differ. A kill needs a second bucket in the test cluster, which costs about 15 to 20 s per suite run. Reversible: remove this entry when the suite gets a second bucket.
 - f05e1f5ec07a3ef80cf1d53906d5538e drivers/couchbase/inspect.go:85 statement/remove — the WHERE clause that limits the index list to the source bucket. With one bucket in the cluster the filter removes nothing. Same cost and same reversal as inspect.go:45.
 - aee2807a16f12adee9de297bbd985046 drivers/couchbase/write.go:148 statement/return — the empty-keys return in existingKeys, an empty map changed to nil. The only caller reads the result with `_, ok := existing[key]`, and a lookup in a nil map also gives false. One hand run failed, in TestQueryScopeQualified (a COUNT(*) that returned 1 instead of 3). Two more runs passed, so that failure was a flake in the count test, not a kill.
+
+Config mode warning, accepted 2026-09-28 in the pull request that adds the warning.
+
+- 0d9a7238636cc3a7370371551e2a6560 internal/config/modewarning.go:19 expression/error-guard — the Path error return in ModeWarning. When Path fails it returns "", and os.Stat("") on the next line fails too, which returns "" as well. The two paths agree for every input.

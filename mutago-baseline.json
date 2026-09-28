@@ -1398,6 +1398,12 @@
    "file": "drivers/couchbase/write.go",
    "line": 148,
    "mutator": "statement/return"
+  },
+  {
+   "id": "0d9a7238636cc3a7370371551e2a6560",
+   "file": "internal/config/modewarning.go",
+   "mutator": "expression/error-guard",
+   "line": 19
   }
  ]
 }
