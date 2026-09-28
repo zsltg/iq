@@ -279,7 +279,7 @@ cannot be required themselves, because GitHub reports a skipped matrix job under
 its bare name. A new per-change job goes into the `needs` list of `ci-ok`. The jobs
 per gate:
 `lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
-Linux, macOS and Windows), `coverage` (four `coverage (<group>)` jobs each test a
+Linux, macOS and Windows, with `-race` on Linux), `coverage` (four `coverage (<group>)` jobs each test a
 group of packages on their own runner, then `coverage` joins the partial profiles,
 makes sure that each package is in exactly one group, applies the floor, and does
 a reporting-only Codecov upload, `CODECOV_TOKEN` secret), `e2e` (redis pass, then
@@ -368,8 +368,10 @@ the e2e job brings up a single compose service per pass, and a `deep-mutate`
 shard starts only the compose services of its own package. HBase has no testcontainers path, so the
 `coverage (cassandra-neo4j-hbase)` job and the hbase `deep-mutate` job start its compose service (host
 networking) and set `IQ_HBASE_URL`; everywhere else it skips, as it does locally
-without `IQ_HBASE_URL`. The `test` job runs without
-`-race` until the order-dependent data race in `cmd` (`color.NoColor`) is fixed.
+without `IQ_HBASE_URL`. The Linux leg of the `test` job runs with `-race`; the
+macOS and Windows legs do not, because the race detector needs cgo there. The
+`cmd` tests that run the root command are not parallel: its PreRun writes the
+process-wide `color.NoColor`, which parallel formatter tests read.
 Tool versions are pinned in the workflow's `env` block; keep them in sync with
 the Makefile and `scripts/`.
 

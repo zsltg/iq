@@ -181,8 +181,8 @@ jobs:
 
   # -short is the dependency-free path: container-backed driver suites skip. The
   # committed man page and completions are drift-guarded by tests in this run.
-  # -race is not on yet: cmd has an order-dependent data race under -race
-  # (color.NoColor); enable it once that is fixed.
+  # The Linux leg runs with the race detector. The macOS and Windows legs do not:
+  # -race needs cgo and a C toolchain there.
   test:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -198,8 +198,10 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - name: Test (-short, shuffled)
-        run: go test -short -shuffle=on ./...
+      - name: Test (-short, shuffled, -race on Linux)
+        env:
+          RACE: ${{ matrix.os == 'ubuntu-latest' && '-race' || '' }}
+        run: go test -short -shuffle=on $RACE ./...
 
   # Full suite with -coverpkg=./... and the IQ_COVER_MIN floor, split across
   # runners. Each coverage-group job tests a set of packages on its own runner
