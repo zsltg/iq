@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -378,4 +379,29 @@ func TestRootInsertExcludesTyped(t *testing.T) {
 	root, _ := newRootCmd()
 	_, err := runCmd(t, root, "--insert", "dest", "--typed")
 	require.ErrorContains(t, err, "[insert typed] are set none of the others can be")
+}
+
+// TestRootWarnsOnAnOpenConfigFile asserts that the pre-run prints the config mode
+// warning to stderr only, and that the command still runs.
+func TestRootWarnsOnAnOpenConfigFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no Unix mode bits, so there is no warning to print")
+	}
+	orig := color.NoColor
+	t.Cleanup(func() { color.NoColor = orig })
+	p := filepath.Join(t.TempDir(), "iq.toml")
+	t.Setenv(iqconfig.EnvConfig, p)
+	require.NoError(t, os.WriteFile(p, []byte("[sources.a]\nurl = 'redis://u:p@h:6379/0'\n"), 0o600))
+	require.NoError(t, os.Chmod(p, 0o644))
+	root, _ := newRootCmd()
+	var out, errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	root.SetArgs([]string{"version"})
+
+	require.NoError(t, root.Execute())
+
+	require.NotEmpty(t, iqconfig.ModeWarning())
+	require.Equal(t, iqconfig.ModeWarning()+"\n", errOut.String())
+	require.NotContains(t, out.String(), "warning")
 }
