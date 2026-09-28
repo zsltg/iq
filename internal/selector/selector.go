@@ -48,6 +48,10 @@ func Keys(q *gojq.Query) KeySet {
 // (`.`, `keys`, `map(...)`, an aggregate, or a top-level comma) is not
 // streamable and must be materialized.
 func streamable(q *gojq.Query) bool {
+	// A nil query names nothing to stream (Keys(nil) is a scan).
+	if q == nil {
+		return false
+	}
 	// Follow the leftmost stage of the pipe chain: `a | b | c` nests as
 	// ((a | b) | c), so the first stage is the deepest Left.
 	for q.Op == gojq.OpPipe {

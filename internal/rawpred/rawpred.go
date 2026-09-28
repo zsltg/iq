@@ -726,14 +726,14 @@ func getField(raw []byte, path []string) ([]byte, jsonparser.ValueType, fieldSta
 }
 
 // duplicateKey reports whether key occurs more than once among the top-level keys
-// of the object obj. Keys compare after unescaping, as jsonparser.Get matches
-// them. An object that does not iterate cleanly reports true, so the caller
-// treats it as ambiguous.
+// of the object obj. ObjectEach hands over each key already unescaped, the form
+// jsonparser.Get matches, so it compares as is: unescaping it again would turn
+// the literal key \u0061 into "a" and miss its duplicate. An object that does
+// not iterate cleanly reports true, so the caller treats it as ambiguous.
 func duplicateKey(obj []byte, key string) bool {
 	seen := 0
 	err := jsonparser.ObjectEach(obj, func(k, _ []byte, _ jsonparser.ValueType, _ int) error {
-		name, err := jsonparser.ParseString(k)
-		if err != nil || name == key {
+		if string(k) == key {
 			seen++
 		}
 		return nil

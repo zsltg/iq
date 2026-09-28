@@ -75,8 +75,8 @@ make cover          # full suite + coverage floor
 make security       # govulncheck + osv-scanner (vulnerabilities, license allowlist) + gitleaks (tree + git history) + zizmor, SBOMs to dist/
 make capabilities   # capslock capability drift (runs only when go.mod/go.sum moved)
 make mutation       # mutago mutation gate over the branch diff
-make fuzz           # Go native fuzz targets over the untrusted parsers
 make ci             # all of the above, in order; start the compose stack first
+make fuzz           # Go native fuzz targets over the untrusted parsers (not part of make ci)
 make sbom           # SPDX + CycloneDX SBOMs only
 ```
 

@@ -602,6 +602,8 @@ func TestGetField(t *testing.T) {
 		{"ambiguous duplicate key", `{"a":1,"a":0}`, []string{"a"}, "", jsonparser.Unknown, fieldAmbiguous},
 		{"ambiguous duplicate intermediate", `{"n":{"x":1},"n":{"x":2}}`, []string{"n", "x"}, "", jsonparser.Unknown, fieldAmbiguous},
 		{"found beside another key", `{"a":1,"b":0}`, []string{"a"}, "1", jsonparser.Number, fieldFound},
+		{"ambiguous duplicate escaped key", `{"\\u0061":0,"\\u0061":1}`, []string{`\u0061`}, "", jsonparser.Unknown, fieldAmbiguous},
+		{"found unescaped key beside its escaped form", `{"\\u0061":0,"a":1}`, []string{"a"}, "1", jsonparser.Number, fieldFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

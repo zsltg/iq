@@ -136,6 +136,12 @@ func TestKeysMalformedAST(t *testing.T) {
 			wantScan: true,
 		},
 		{
+			// A nil root is a scan, and a nil query names nothing to stream.
+			name:     "nil query",
+			query:    nil,
+			wantScan: true,
+		},
+		{
 			name:     "bracketed subscript that is an empty query",
 			query:    bracket(&gojq.Query{}),
 			wantScan: true,
