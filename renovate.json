@@ -20,6 +20,20 @@
       "groupName": "minor and patch updates"
     },
     {
+      "description": "mutago changes the mutant IDs between versions, so a bump needs a mutation-gate run and a re-baseline in the same PR. Keep it out of the weekly group, in its own PR.",
+      "matchPackageNames": ["github.com/quality-gates/mutago/v2"],
+      "groupName": "mutago",
+      "addLabels": ["gate-tool"],
+      "prBodyNotes": ["mutago changes the mutant IDs between versions. Before the merge, run the mutation gate on this branch and re-baseline the equivalent mutants (CONTRIBUTING.md, Mutation gate)."]
+    },
+    {
+      "description": "A capslock bump can change the capability baseline, so it gets its own PR where the baseline is regenerated.",
+      "matchPackageNames": ["github.com/google/capslock"],
+      "groupName": "capslock",
+      "addLabels": ["gate-tool"],
+      "prBodyNotes": ["A new capslock can report different capabilities. Before the merge, run `IQ_CAPS_FORCE=1 make capabilities`; if it fails, regenerate the baseline with `IQ_CAPS_UPDATE_BASELINE=1` and justify new rows in capslock-baseline.notes.md."]
+    },
+    {
       "description": "Majors stay one PR each so the review reads one changelog.",
       "matchUpdateTypes": ["major"],
       "semanticCommitType": "build"
