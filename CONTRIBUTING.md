@@ -479,6 +479,12 @@ for ad-hoc use.
   force-push. Answer each review comment, with a fix commit or a reply. The pull
   request merges when the `ci-ok` check passes and every review thread is
   resolved.
+- A pull request from a fork: GitHub runs its CI only after a maintainer
+  approves the first run of a new contributor. After your first merged pull
+  request, CI starts by itself. A fork pull request runs with a read-only token
+  and no repository secrets, so the Codecov upload can fail for it without
+  failing CI. CodeRabbit reviews it, and a workflow posts the Devin Review link
+  as a comment. Only the maintainer merges.
 - [Conventional Commits](https://www.conventionalcommits.org/):
   `<type>(<scope>): <description>`, lowercase imperative.
 - If AI contributed to a commit, end its message with a `Co-Authored-By:`
