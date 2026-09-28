@@ -534,7 +534,12 @@ Conventional Commits drive the bump (`feat` → minor, `fix` → patch,
 `make release-tag` runs only on a clean `main`, and tags HEAD only when HEAD is
 the squash-merged release commit of the version that `make version` prints.
 Neither step pushes. Publishing happens in the GitHub repository: the release
-workflow runs goreleaser when a `v*` tag reaches it.
+workflow runs goreleaser when a `v*` tag reaches it. goreleaser signs
+`checksums.txt` with a keyless cosign signature (the workflow's GitHub OIDC
+identity, `checksums.txt.sigstore.json`), and a second job adds SLSA level 3 build
+provenance for every artifact (`slsa-github-generator`, `multiple.intoto.jsonl`).
+Then the install smoke test runs. How a user checks the signature and the
+provenance is on the docs home page, "Verify a release".
 
 A release that fixes a vulnerability names its advisory ID. Put the ID
 (`GHSA-...`, and the CVE when one exists) in the title of the fix pull request,
