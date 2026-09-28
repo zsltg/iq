@@ -102,6 +102,20 @@ checksum:
   name_template: checksums.txt
   algorithm: sha256
 
+# Keyless cosign signature of checksums.txt: the release workflow's GitHub OIDC
+# identity signs it through Sigstore, so there is no key to keep. The bundle
+# (certificate and signature) is a release asset. Verification steps are on the
+# docs home page, "Verify a release". Needs cosign on PATH and id-token: write.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - "sign-blob"
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot"
 

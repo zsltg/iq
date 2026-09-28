@@ -74,7 +74,8 @@ curl -fsSL https://raw.githubusercontent.com/zsltg/iq/main/install.sh | sh
 The script downloads the release for your OS/arch, verifies its SHA-256 against the release
 checksums, and installs the binary. `IQ_VERSION` pins a version and `IQ_INSTALL_DIR` picks the
 target directory. Or grab a `.deb`, `.rpm`, `.apk`, or Arch `.pkg.tar.zst` from the
-[releases](https://github.com/zsltg/iq/releases).
+[releases](https://github.com/zsltg/iq/releases). Each release carries a cosign signature
+and SLSA build provenance, see [Verify a release](https://zsltg.github.io/iq/#verify-a-release).
 
 ### macOS
 

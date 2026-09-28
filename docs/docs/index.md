@@ -82,6 +82,34 @@ deliberately follows.
     go install github.com/zsltg/iq@latest
     ```
 
+### Verify a release
+
+Every release signs `checksums.txt` with a keyless [cosign](https://docs.sigstore.dev/)
+signature from the release workflow, and carries SLSA build provenance for every
+artifact (`multiple.intoto.jsonl`). The install script checks the SHA-256 of the
+archive it downloads. To check a download yourself, first make sure that
+`checksums.txt` comes from the iq release workflow:
+
+```sh
+cosign verify-blob checksums.txt \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/zsltg/iq/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum --ignore-missing -c checksums.txt
+```
+
+To check the build provenance of an archive, use
+[slsa-verifier](https://github.com/slsa-framework/slsa-verifier):
+
+```sh
+slsa-verifier verify-artifact iq_0.37.1_linux_amd64.tar.gz \
+  --provenance-path multiple.intoto.jsonl \
+  --source-uri github.com/zsltg/iq --source-tag v0.37.1
+```
+
+Releases before v0.37.1 carry `checksums.txt` only, with no signature or
+provenance.
+
 ## Building from source
 
 ```sh
