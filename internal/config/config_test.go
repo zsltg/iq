@@ -735,6 +735,7 @@ func TestModeWarning(t *testing.T) {
 		{"group can read", inline, 0o640, true},
 		{"others can read", inline, 0o604, true},
 		{"group can write", inline, 0o620, true},
+		{"others can execute only", inline, 0o601, true},
 		{"user without password", "[sources.a]\nurl = 'redis://u@h:6379/0'\n", 0o644, false},
 		{"no user info", "[sources.a]\nurl = 'redis://h:6379/0'\n", 0o644, false},
 		{"URL that does not parse, then a password", "[sources.a]\nurl = '://bad'\n[sources.b]\nurl = 'redis://u:p@h:6379/0'\n", 0o644, true},
@@ -746,6 +747,8 @@ func TestModeWarning(t *testing.T) {
 		{"bad escape, colon and at sign after the query", "[sources.a]\nurl = 'redis://h/%ZZ?x=a:b@c'\n", 0o644, false},
 		{"bad escape, colon and at sign after the fragment", "[sources.a]\nurl = 'redis://h/%ZZ#a:b@c'\n", 0o644, false},
 		{"bad escape, no scheme separator", "[sources.a]\nurl = 'u:p@h/%ZZ'\n", 0o644, false},
+		{"bad escape in a fragment right after the scheme", "[sources.a]\nurl = 'redis://#a:b@c%ZZ'\n", 0o644, false},
+		{"bad escape, colon without an at sign", "[sources.a]\nurl = 'redis://:x/%ZZ'\n", 0o644, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
