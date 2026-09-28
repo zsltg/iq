@@ -368,9 +368,12 @@ Posture and upkeep around the pipeline, all on GitHub:
   code is permissive; each override names the LICENSE file it was read from.
   A new violation means reading the module's LICENSE, then either an override
   with a reason or a different dependency.
-- `.coderabbit.yaml` configures CodeRabbit's pull-request review, with
-  per-path instructions distilled from AGENTS.md; it reviews, it never
-  approves or merges.
+- `REVIEW.md` holds the review rules for every reviewer, human or AI: the
+  priorities, the threat model, the critical areas and what not to flag. The
+  coding rules stay in AGENTS.md. CodeRabbit and Devin Review both read the two
+  files, so a review rule changes in `REVIEW.md` only.
+- `.coderabbit.yaml` holds CodeRabbit's settings only (profile, automatic
+  review, linters). It reviews, it never approves or merges.
 - `.github/workflows/devin-review.yml` posts a link to the Devin Review
   (`devinreview.com`) on each new pull request. The link gives Devin no access
   to the repository, and a human opens it. Automatic Devin reviews need the
