@@ -451,7 +451,10 @@ for ad-hoc use.
 ## Commits
 
 - Trunk-based: `main` always buildable; short-lived branches prefixed
-  `feat/`, `fix/`, `chore/`, `test/`; one atomic task per branch.
+  `feat/`, `fix/`, `chore/`, `test/`, `ci/`, `docs/`; one atomic task per branch.
+- Open a pull request against `main` and fill in the template. The maintainer
+  merges it fast-forward after the required checks pass, so keep the branch
+  rebased on `main`. The merge button is not used.
 - [Conventional Commits](https://www.conventionalcommits.org/):
   `<type>(<scope>): <description>`, lowercase imperative.
 - If AI contributed to a commit, end its message with a `Co-Authored-By:`
