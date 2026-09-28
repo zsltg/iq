@@ -23,6 +23,8 @@ permissions:
 
 env:
   # The tag under test; resolved to the latest release below when empty.
+  # A release build prints the version without the v prefix (${IQ_TAG#v}).
+  # A go install build prints the module version, which keeps the v.
   IQ_TAG: ${{ inputs.tag || github.event.release.tag_name }}
   # The black-box check every install path ends in, run with bash -c "$SMOKE":
   # the installed binary registers a dump as a source and queries it.
@@ -51,7 +53,7 @@ jobs:
           curl -fsSL --proto '=https' --tlsv1.2 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh" \
             | IQ_VERSION="$IQ_TAG" IQ_INSTALL_DIR="$HOME/.local/bin" sh
           "$HOME/.local/bin/iq" --version
-          test "$("$HOME/.local/bin/iq" --version)" = "$IQ_TAG"
+          test "$("$HOME/.local/bin/iq" --version)" = "${IQ_TAG#v}"
           rm -f "$HOME/.local/bin/iq"
       - name: .deb package
         env:
@@ -59,7 +61,7 @@ jobs:
         run: |
           gh release download "$IQ_TAG" -R "$GITHUB_REPOSITORY" -p 'iq_*_linux_amd64.deb' -D pkg
           sudo dpkg -i pkg/iq_*_linux_amd64.deb
-          test "$(iq --version)" = "$IQ_TAG"
+          test "$(iq --version)" = "${IQ_TAG#v}"
           man -w iq
           sudo dpkg -r iq
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -87,7 +89,7 @@ jobs:
       - name: Homebrew cask
         run: |
           brew install zsltg/tap/iq
-          test "$(iq --version)" = "$IQ_TAG"
+          test "$(iq --version)" = "${IQ_TAG#v}"
       - name: Query a dump (brew)
         run: bash -c "$SMOKE"
       - name: install.sh
@@ -95,7 +97,7 @@ jobs:
           brew uninstall iq
           curl -fsSL --proto '=https' --tlsv1.2 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh" \
             | IQ_VERSION="$IQ_TAG" IQ_INSTALL_DIR="$HOME/.local/bin" sh
-          test "$("$HOME/.local/bin/iq" --version)" = "$IQ_TAG"
+          test "$("$HOME/.local/bin/iq" --version)" = "${IQ_TAG#v}"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Query a dump (install.sh)
         run: bash -c "$SMOKE"
@@ -120,7 +122,7 @@ jobs:
           scoop bucket add zsltg https://github.com/zsltg/scoop-bucket
           scoop install iq
           $v = (iq --version | Out-String).Trim()
-          if ($v -ne $env:IQ_TAG) { throw "iq --version printed '$v', expected '$env:IQ_TAG'" }
+          if ($v -ne $env:IQ_TAG.TrimStart('v')) { throw "iq --version printed '$v', expected '$($env:IQ_TAG.TrimStart('v'))'" }
           $shims >> $env:GITHUB_PATH
       - name: Query a dump
         shell: pwsh
