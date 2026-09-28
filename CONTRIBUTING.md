@@ -96,6 +96,13 @@ retries once.
 
 Full container-backed suite with `-coverpkg=./...`; fails below
 `IQ_COVER_MIN` (default 80). `IQ_COVER_SHORT=1` runs a fast report-only pass.
+CI splits the run across runners with two more variables. `IQ_COVER_PKGS` (a
+space-separated package list) tests only those packages and writes the partial
+profile to `coverage.out`, with no report and no floor. `IQ_COVER_MERGE` (a
+space-separated list of partial profiles) runs no tests: it joins the profiles
+into `coverage.out`, then gives the report and applies the floor. The join gives
+the same numbers as one full run, because every partial profile comes from
+`-coverpkg=./...`. Locally, `make cover` still runs the whole suite serially.
 
 ### Capability gate (`scripts/capabilities.sh`)
 
@@ -221,7 +228,9 @@ shared stack first so the containers are reused.
 Actions off; `docs.yml` deploys the site and `release.yml` publishes releases,
 both guarded the same way). Every push and pull request runs one job per gate:
 `lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
-Linux, macOS and Windows), `coverage` (`scripts/coverage.sh` with the floor, then
+Linux, macOS and Windows), `coverage` (four `coverage (<group>)` jobs each test a
+group of packages on their own runner, then `coverage` joins the partial profiles,
+makes sure that each package is in exactly one group, applies the floor, and does
 a reporting-only Codecov upload, `CODECOV_TOKEN` secret), `e2e` (redis pass, then
 the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
 `vuln` (govulncheck), `osv` (OSV plus the permissive license allowlist), `sbom`
@@ -299,12 +308,12 @@ monthly full run. The branch cannot be protected, because CI force-pushes it.
 Parallelism is across runners only: one container
 at a time per machine is what keeps the gate's timeouts honest.
 
-Containers run one at a time in CI: the `coverage` and `mutate-diff` jobs set
+Containers run one at a time per runner in CI: the `coverage (<group>)` and `mutate-diff` jobs set
 no `IQ_*_URL` except HBase's, so each driver's `TestMain` provisions its own testcontainer,
 `GOFLAGS=-p=1` serialises the package test binaries (coverage and mutation),
 the e2e job brings up a single compose service per pass, and a `deep-mutate`
 shard starts only the compose services of its own package. HBase has no testcontainers path, so the
-`coverage` job and the hbase `deep-mutate` job start its compose service (host
+`coverage (cassandra-neo4j-hbase)` job and the hbase `deep-mutate` job start its compose service (host
 networking) and set `IQ_HBASE_URL`; everywhere else it skips, as it does locally
 without `IQ_HBASE_URL`. The `test` job runs without
 `-race` until the order-dependent data race in `cmd` (`color.NoColor`) is fixed.

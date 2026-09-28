@@ -128,17 +128,36 @@ jobs:
       - name: Test (-short, shuffled)
         run: go test -short -shuffle=on ./...
 
-  # Full suite with -coverpkg=./... and the IQ_COVER_MIN floor (scripts/coverage.sh).
-  # No IQ_*_URL is set except HBase's, so every other driver's TestMain provisions
-  # its own testcontainer and -p=1 keeps that to one container at a time. HBase
-  # has no testcontainers path (native RPC needs the region server's advertised
-  # hostname), so its compose service runs with host networking for the whole
-  # run; it binds fixed host ports no testcontainer uses, and -p=1 means only its
-  # own package talks to it while it is the one container busy.
-  coverage:
+  # Full suite with -coverpkg=./... and the IQ_COVER_MIN floor, split across
+  # runners. Each coverage-group job tests a set of packages on its own runner
+  # and uploads a partial profile (IQ_COVER_PKGS in scripts/coverage.sh). The
+  # coverage job joins the partial profiles and applies the floor
+  # (IQ_COVER_MERGE). Locally, make cover still runs the whole suite on one
+  # machine. No IQ_*_URL is set except HBase's, so every other driver's
+  # TestMain provisions its own testcontainer, and -p=1 keeps that to one
+  # container at a time per runner. HBase has no testcontainers path (native
+  # RPC needs the region server's advertised hostname), so its group starts the
+  # compose service with host networking. The "rest" group tests every package
+  # that no other group names, so a new package is always in one group.
+  coverage-group:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
+    name: coverage (${{ matrix.group }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: couchbase
+            packages: ./drivers/couchbase
+          - group: elasticsearch
+            packages: ./drivers/elasticsearch
+          - group: cassandra-neo4j-hbase
+            packages: ./drivers/cassandra ./drivers/neo4j ./drivers/hbase
+            hbase: true
+          - group: rest
+            # Keep this list equal to the packages of the groups above.
+            exclude: drivers/(couchbase|elasticsearch|cassandra|neo4j|hbase)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -147,12 +166,66 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Start HBase (compose, host networking)
+        if: matrix.hbase
         run: docker compose up -d --wait hbase
-      - name: Test with coverage (one container at a time) + floor
+      - name: Test with coverage (one container at a time)
         env:
           GOFLAGS: -p=1
-          IQ_HBASE_URL: hbase://localhost:2181/
-        run: bash scripts/coverage.sh
+          IQ_HBASE_URL: ${{ matrix.hbase && 'hbase://localhost:2181/' || '' }}
+          PACKAGES: ${{ matrix.packages }}
+          EXCLUDE: ${{ matrix.exclude }}
+        run: |
+          if [ -n "$EXCLUDE" ]; then
+            PACKAGES="$(go list ./... | grep -vE "^github.com/zsltg/iq/($EXCLUDE)\$" | tr '\n' ' ')"
+          fi
+          mkdir -p partial
+          read -ra pkgs <<<"$PACKAGES"
+          go list "${pkgs[@]}" > partial/packages.txt
+          IQ_COVER_PKGS="$PACKAGES" bash scripts/coverage.sh
+          mv coverage.out partial/coverage.out
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-${{ matrix.group }}
+          path: partial
+          if-no-files-found: error
+          retention-days: 7
+
+  # The required check. It runs also when a group fails, and then fails too, so
+  # a failed group can never show as a skipped (passing) coverage check.
+  coverage:
+    if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
+    needs: coverage-group
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: All groups passed
+        env:
+          RESULT: ${{ needs.coverage-group.result }}
+        run: |
+          if [ "$RESULT" != success ]; then
+            echo "::error::a coverage group did not pass: $RESULT"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-*
+          path: partial
+      - name: Each package is in exactly one group
+        run: |
+          cat partial/*/packages.txt | sort > tested.txt
+          go list ./... | sort > all.txt
+          if ! diff all.txt tested.txt; then
+            echo "::error::the coverage groups do not test each package exactly once"
+            exit 1
+          fi
+      - name: Join the partial profiles + floor
+        run: IQ_COVER_MERGE="$(echo partial/*/coverage.out)" bash scripts/coverage.sh
       # Reporting only, the floor above is the gate. Guarded to the GitHub mirror:
       # marketplace actions beyond checkout/setup-go are not mirrored elsewhere.
       - name: Upload coverage to Codecov
