@@ -593,3 +593,8 @@ is not here: it moved into readPage, and TestReadPage kills it now.
 Config mode warning, accepted 2026-09-28 in the pull request that adds the warning.
 
 - 0d9a7238636cc3a7370371551e2a6560 internal/config/modewarning.go:19 expression/error-guard — the Path error return in ModeWarning. When Path fails it returns "", and os.Stat("") on the next line fails too, which returns "" as well. The two paths agree for every input.
+
+Negative zero, accepted 2026-09-28 in the pull request that keeps the sign of -0.
+
+- 7b8aaed0ceea6c187853a46f1fdba74f internal/numfmt/convert.go:46 numbers/incrementer — math.Copysign(0, -1) becomes math.Copysign(0, -2). Copysign takes only the sign of its second argument, so both return the same negative zero.
+- ea009802aeedaafb3b2b8ab5a9a2ae52 internal/query/dump.go:132 numbers/incrementer — the same Copysign(0, -1) to Copysign(0, -2) change in the typed dump reader, equivalent for the same reason.

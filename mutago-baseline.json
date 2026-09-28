@@ -1404,6 +1404,18 @@
    "file": "internal/config/modewarning.go",
    "mutator": "expression/error-guard",
    "line": 19
+  },
+  {
+   "id": "7b8aaed0ceea6c187853a46f1fdba74f",
+   "file": "internal/numfmt/convert.go",
+   "mutator": "numbers/incrementer",
+   "line": 46
+  },
+  {
+   "id": "ea009802aeedaafb3b2b8ab5a9a2ae52",
+   "file": "internal/query/dump.go",
+   "mutator": "numbers/incrementer",
+   "line": 132
   }
  ]
 }
