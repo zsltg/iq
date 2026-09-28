@@ -180,14 +180,19 @@ Register that config's sources with the same `iq add --config
   `--allow destructive` adds `iq_data_clear`, `iq_data_drop` and
   `iq_data_delete` (and permits `iq_insert`'s `replace`). The flag is
   repeatable.
+- **`--allow exec` is broad.** `iq_exec` forwards native commands verbatim, with
+  no preview and no confirmation. With `--allow exec`, the agent can do anything
+  that the database account can do, also write and delete. Give the agent a
+  read-only database user, unless it must write.
 - **Every result is bounded.** `--max-items` (200) and `--max-bytes` (256 KiB,
   roughly 64k tokens) are hard caps. A per-call `max_items` or `max_bytes` can
   only lower them, never raise them. A capped result comes back with
   `truncated: true` rather than an error, so the agent knows there was more.
 - **Every call is bounded.** The inherited `--timeout` bounds each call, and a
   per-call `timeout` can only shorten it.
-- **Confirmations.** A destructive call without `confirm: true` does not
-  proceed. Where the client can ask its user, the server returns an
+- **Confirmations.** A real call to `iq_data_clear`, `iq_data_drop`,
+  `iq_data_delete` or `iq_insert`'s `replace` without `confirm: true` does not
+  proceed. `iq_exec` asks for no confirmation. Where the client can ask its user, the server returns an
   input-required result carrying the question. The client then retries the call
   with the answer. Where it cannot, the call comes back refused, naming what to
   pass. The CLI's `--force` has no counterpart here. A confirmed call is the
