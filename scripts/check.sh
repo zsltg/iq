@@ -4,7 +4,7 @@
 # elsewhere: the container suite and coverage floor in scripts/coverage.sh, the
 # supply-chain/secrets/SBOM sweep in scripts/security.sh, and the mutation gate
 # in scripts/mutation-gate.sh. gofumpt, goimports, and golangci-lint must be on
-# PATH (make tools-dev does not install them; see CONTRIBUTING.md).
+# PATH (make tools-dev does not install them; see CONTRIBUTING.md, Before you start).
 set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 1

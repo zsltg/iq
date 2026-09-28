@@ -1,4 +1,4 @@
-# iq build and release automation. The developer command catalogue is CONTRIBUTING.md.
+# iq build and release automation. The developer command catalogue is DEVELOPMENT.md.
 # Release logic lives in scripts/release.sh; this Makefile is a thin wrapper and
 # the single source of truth for build-time version embedding.
 
@@ -58,7 +58,7 @@ tools:
 	go install github.com/git-chglog/git-chglog/cmd/git-chglog@latest
 
 # tools-dev installs the quality and security toolchain into GOPATH/bin. gofumpt,
-# goimports, and golangci-lint are expected already (see CONTRIBUTING.md).
+# goimports, and golangci-lint are expected already (see CONTRIBUTING.md, Before you start).
 tools-dev:
 	go install github.com/quality-gates/mutago/v2/cmd/mutago@v2.10.16
 	go install github.com/google/capslock/cmd/capslock@v0.3.3

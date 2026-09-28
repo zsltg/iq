@@ -24,7 +24,7 @@
       "matchPackageNames": ["github.com/quality-gates/mutago/v2"],
       "groupName": "mutago",
       "addLabels": ["gate-tool"],
-      "prBodyNotes": ["mutago changes the mutant IDs between versions. Before the merge, run the mutation gate on this branch and re-baseline the equivalent mutants (CONTRIBUTING.md, Mutation gate)."]
+      "prBodyNotes": ["mutago changes the mutant IDs between versions. Before the merge, run the mutation gate on this branch and re-baseline the equivalent mutants (DEVELOPMENT.md, Mutation gate)."]
     },
     {
       "description": "A capslock bump can change the capability baseline, so it gets its own PR where the baseline is regenerated.",

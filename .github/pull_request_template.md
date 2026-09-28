@@ -13,7 +13,7 @@ Run these locally before you open the pull request (see CONTRIBUTING.md):
 - [ ] `scripts/mutation-gate.sh` (diff-scoped by default: it mutates only the lines you changed), with no new escaped mutant
 - [ ] Tests added or updated for the changed behavior; a bug fix includes a test that fails without the fix (CONTRIBUTING.md, Testing)
 - [ ] `scripts/capabilities.sh`, if `go.mod` or `go.sum` changed
-- [ ] Docs updated in the same change (CONTRIBUTING.md, the docs site, or the README)
+- [ ] Docs updated in the same change (DEVELOPMENT.md, the docs site, or the README)
 
 <!-- Until the mutago v2.10.16 re-baseline is done, the mutation gate can fail on a line
 you changed only because an accepted escape there has a new ID. If you think that is the
