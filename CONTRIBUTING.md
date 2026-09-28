@@ -88,6 +88,13 @@ entry. This note goes away with the re-baseline.
   and no repository secrets, so the Codecov upload can fail for it without
   failing CI. CodeRabbit reviews it, and a workflow posts the Devin Review link
   as a comment. Only the maintainer merges.
+- Developer Certificate of Origin: sign off every commit with `git commit -s`.
+  The `Signed-off-by:` line certifies that you may contribute the change under
+  the project license, as the [DCO](https://developercertificate.org/) says. The
+  email address in it must be the commit's author address. The CI `dco` job
+  checks each commit of a pull request (`bash scripts/dco.sh origin/main HEAD`
+  runs the same check locally). The check covers only the commits of a pull
+  request, so the older commits on `main`, from before this rule, need none.
 - [Conventional Commits](https://www.conventionalcommits.org/):
   `<type>(<scope>): <description>`, lowercase imperative.
 - If AI contributed to a commit, end its message with a `Co-Authored-By:`

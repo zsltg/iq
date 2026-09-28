@@ -80,6 +80,7 @@ Always:
 - Merge: when `ci-ok` passes and every review thread is resolved, `gh pr merge <n> --squash`. Then `git pull --ff-only github main` and `git push origin main`, so both remotes hold the same commit (the pre-push hook skips commits a remote already holds, such as the GitHub squash commit). GitHub deletes the branch.
 - The `main` ruleset, with no bypass: pull request required, squash only, review threads resolved, `ci-ok` required, linear history, no force push, no deletion. `ci-ok` needs every per-change CI job, so a renamed or added job goes into its `needs` list, not into the ruleset.
 - Conventional Commits: `<type>(<scope>): <description>`, lowercase imperative. Types feat, fix, docs, style, refactor, perf, test, build, ci, chore. Agent-authored commits end with a `Co-Authored-By:` trailer.
+- DCO: every commit carries `Signed-off-by:` for its author (`git commit -s`), the CI `dco` job (`scripts/dco.sh`) checks each pull request commit, merge commits excepted.
 - Pre-merge: `make check` passing, `make cover` above floor, `make security` passing, `scripts/capabilities.sh` green (self-skips unless the dependency graph moved), `make e2e` passing, `scripts/mutation-gate.sh` green, `ci-ok` green on the pull request. 100% pass.
 ## Guidelines
 Distilled book files live in `.agents/books/`, referenced below by name. Adapted from ciembor/agent-rules-books (MIT), see `.agents/books/LICENSE`.

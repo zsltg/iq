@@ -288,7 +288,9 @@ the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
 (syft), `deadcode`, `secrets` (gitleaks, tree and history), `capabilities`
 (`scripts/capabilities.sh` against the PR base), `mutate-diff`
 (`scripts/mutation-gate.sh` against the PR base), `workflows` (zizmor over
-`.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target) and
+`.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target), `dco`
+(`scripts/dco.sh`, a `Signed-off-by:` for the author of each pull request commit,
+on pull requests only) and
 `docs` (site build). The
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
 workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
