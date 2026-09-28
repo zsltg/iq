@@ -56,6 +56,14 @@ func FuzzConvertNumber(f *testing.F) {
 			// number token and it degrades to text.
 			return
 		}
+		if s == "-0" {
+			// The one integer literal an int cannot hold: it stays the float64
+			// negative zero, which keeps its sign across a dump.
+			v, ok := got.(float64)
+			require.Truef(t, ok, "-0 converted to %T, not float64", got)
+			require.Truef(t, v == 0 && math.Signbit(v), "-0 converted to %v, not the negative zero", v)
+			return
+		}
 		if !strings.ContainsAny(s, ".eE") {
 			want, ok := new(big.Int).SetString(s, 10)
 			require.Truef(t, ok, "a JSON integer literal must parse as an integer: %q", s)
