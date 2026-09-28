@@ -34,6 +34,13 @@ step "osv-scanner (OSV dependency scan)"
 # worktree fails this scan on advisories that this tree has already fixed.
 osv-scanner scan source -r --experimental-exclude .claude . || { echo "security: osv-scanner reported vulnerabilities" >&2; fail=1; }
 
+step "osv-scanner (license allowlist, Go modules)"
+# The same check as the CI osv job: every Go module against the permissive
+# allowlist in scripts/license-allowlist.txt. Only go.mod, because the docs
+# site's Python lockfile is not part of the shipped binary.
+allow="$(grep -Ev '^(#|$)' scripts/license-allowlist.txt | paste -sd, -)"
+osv-scanner scan source --licenses="$allow" -L go.mod || { echo "security: osv-scanner found a license outside the allowlist" >&2; fail=1; }
+
 step "gitleaks (secrets: working tree + git history)"
 gitleaks dir . --no-banner || { echo "security: gitleaks found secrets in the working tree" >&2; fail=1; }
 gitleaks git . --no-banner || { echo "security: gitleaks found secrets in git history" >&2; fail=1; }

@@ -1,0 +1,11 @@
+# Permissive licenses that the Go dependency tree may carry (AGENTS.md, Tech
+# Stack). One SPDX ID per line. scripts/security.sh and the CI osv and
+# deep-scan jobs read this file, so the local and CI license checks agree.
+# Unlicense is public domain (vbauerster/mpb, the progress bar).
+Apache-2.0
+BSD-2-Clause
+BSD-3-Clause
+ISC
+MIT
+MPL-2.0
+Unlicense
