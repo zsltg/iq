@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -111,6 +112,47 @@ func Load() (*Config, error) {
 	}
 	c.migrateCollections()
 	return &c, nil
+}
+
+// ModeWarning returns a warning when the config file holds an inline password
+// and other users can access it (a mode wider than 0600), or "" when there is
+// nothing to report. Save writes the file with mode 0600, but an editor or a copy
+// can widen it. Windows has no such mode bits, so it never warns there. A file
+// that cannot be read or parsed gives no warning: Load reports that error.
+func ModeWarning() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	p, err := Path()
+	if err != nil {
+		return ""
+	}
+	info, err := os.Stat(p)
+	if err != nil || info.Mode().Perm()&0o077 == 0 {
+		return ""
+	}
+	c, err := Load()
+	if err != nil || !c.hasInlinePassword() {
+		return ""
+	}
+	return fmt.Sprintf("warning: the config file %s holds an inline password and other users can access it (mode %04o); run: chmod 600 %s",
+		p, info.Mode().Perm(), p)
+}
+
+// hasInlinePassword reports whether a source URL in the config file carries a
+// password. It walks the sources in handle order, so the result never depends on
+// map order.
+func (c *Config) hasInlinePassword() bool {
+	for _, h := range c.List() {
+		u, err := url.Parse(h.Source.URL)
+		if err != nil || u.User == nil {
+			continue
+		}
+		if _, ok := u.User.Password(); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // migrateCollections folds a legacy per-source `collection` field into the URL as

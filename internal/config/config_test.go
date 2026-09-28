@@ -717,3 +717,51 @@ func TestResolve(t *testing.T) {
 		require.False(t, ok)
 	})
 }
+
+// TestModeWarning asserts the warning appears only when the config file holds an
+// inline password and its mode is wider than 0600.
+func TestModeWarning(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no Unix mode bits, so ModeWarning never warns there")
+	}
+	const inline = "[sources.a]\nurl = 'redis://h:6379/0'\n[sources.b]\nurl = 'redis://u:p@h:6379/0'\n"
+	tests := []struct {
+		name string
+		body string
+		mode fs.FileMode
+		want bool
+	}{
+		{"owner only", inline, 0o600, false},
+		{"group can read", inline, 0o640, true},
+		{"others can read", inline, 0o604, true},
+		{"group can write", inline, 0o620, true},
+		{"user without password", "[sources.a]\nurl = 'redis://u@h:6379/0'\n", 0o644, false},
+		{"no user info", "[sources.a]\nurl = 'redis://h:6379/0'\n", 0o644, false},
+		{"URL that does not parse, then a password", "[sources.a]\nurl = '://bad'\n[sources.b]\nurl = 'redis://u:p@h:6379/0'\n", 0o644, true},
+		{"password in a later source", "[sources.a]\nurl = 'redis://u@h:6379/0'\n[sources.z]\nurl = 'redis://u:p@h:6379/0'\n", 0o644, true},
+		{"malformed TOML", "[sources.a\n", 0o644, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := tempConfig(t)
+			require.NoError(t, os.WriteFile(p, []byte(tt.body), 0o600))
+			require.NoError(t, os.Chmod(p, tt.mode))
+
+			got := config.ModeWarning()
+
+			if !tt.want {
+				require.Empty(t, got)
+				return
+			}
+			want := fmt.Sprintf("warning: the config file %s holds an inline password and other users can access it (mode %04o); run: chmod 600 %s", p, tt.mode, p)
+			require.Equal(t, want, got)
+		})
+	}
+}
+
+// TestModeWarningMissingFile asserts a missing config file gives no warning.
+func TestModeWarningMissingFile(t *testing.T) {
+	tempConfig(t)
+
+	require.Empty(t, config.ModeWarning())
+}

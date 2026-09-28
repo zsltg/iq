@@ -9,6 +9,14 @@ it elsewhere, and `--config` :material-earth:{ title="Global flag" } overrides b
 `--config` > `IQ_CONFIG` > default). It holds the saved sources and the stored option
 defaults below. `iq config location` prints the resolved path.
 
+iq writes the config file with mode `0600`, so only you can read it. A source
+saved with `--store inline` (the default) keeps its password in this file. If
+the file holds an inline password and other users can access it, for example
+after an edit or a copy, every command prints a warning to stderr with the fix
+(`chmod 600 <path>`) and then runs as usual. Windows has no such mode, so there
+is no warning there. `iq config keyring migrate` moves inline passwords into the
+OS keyring.
+
 Inspect the config file and manage stored option defaults. Persist a flag's
 value once so you need not retype it. Set an option globally, or scope it to
 one source with `--src`.

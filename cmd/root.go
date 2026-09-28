@@ -193,6 +193,12 @@ func newRootCmd() (*cobra.Command, *config) {
 					return fmt.Errorf("apply --config: %w", err)
 				}
 			}
+			// Warn, and continue, when the config file holds an inline password that
+			// other users can read. stderr only, so stdout stays clean for a pipe or
+			// for the MCP protocol.
+			if msg := iqconfig.ModeWarning(); msg != "" {
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), msg)
+			}
 			// Merge stored option defaults into the flags before anything reads them,
 			// so a saved default (base or per-source) fills any flag left unset.
 			if err := applyStoredOptions(cmd, cfg); err != nil {
