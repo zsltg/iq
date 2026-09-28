@@ -24,10 +24,15 @@ status=0
 
 while read -r _local_ref local_sha _remote_ref remote_sha; do
 	[ "$local_sha" = "$zero" ] && continue # branch deletion
+	# A commit that a remote-tracking ref already holds is published, so it is
+	# not examined again. A squash merge on GitHub is one example: its committer
+	# is noreply@github.com, and it reaches origin and the next pull request
+	# branch from github/main. Fetch first, so the remote-tracking refs are
+	# current.
 	if [ "$remote_sha" = "$zero" ]; then
 		range="$local_sha --not --remotes"
 	else
-		range="$remote_sha..$local_sha"
+		range="$remote_sha..$local_sha --not --remotes"
 	fi
 	# shellcheck disable=SC2086 # range is two or three deliberate arguments.
 	bad=$(git log --format='%h %ae %ce' $range | awk -v want="$configured" '$2 != want || $3 != want')
