@@ -18,8 +18,3 @@ Run these locally before you open the pull request (see CONTRIBUTING.md):
 <!-- Until the mutago v2.10.16 re-baseline is done, the mutation gate can fail on a line
 you changed only because an accepted escape there has a new ID. If you think that is the
 case, say so here, and the maintainer handles it. -->
-
-## AI assistance
-
-- [ ] No AI tool wrote part of this change.
-- [ ] An AI tool helped. Each commit that it helped with ends with a `Co-Authored-By:` trailer, and I can explain every line of the diff.
