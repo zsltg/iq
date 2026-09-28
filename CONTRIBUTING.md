@@ -458,7 +458,11 @@ for ad-hoc use.
 ## Commits
 
 - Trunk-based: `main` always buildable; short-lived branches prefixed
-  `feat/`, `fix/`, `chore/`, `test/`; one atomic task per branch.
+  `feat/`, `fix/`, `chore/`, `test/`, `ci/`, `docs/`; one atomic task per branch.
+- Open a pull request against `main`, fill in the template, and give it a
+  Conventional Commits title: the pull request is squash-merged, and its title
+  becomes the commit message on `main`. Push review fixes as new commits, do not
+  force-push. The pull request merges when the `ci-ok` check passes.
 - [Conventional Commits](https://www.conventionalcommits.org/):
   `<type>(<scope>): <description>`, lowercase imperative.
 - If AI contributed to a commit, end its message with a `Co-Authored-By:`

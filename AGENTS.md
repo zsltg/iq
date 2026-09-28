@@ -72,10 +72,13 @@ Only when asked:
 Always:
 - Validate untrusted input at the boundary and keep the query core independent of any specific driver.
 ## Source Control & Commits
-- Trunk-based: `main` always buildable. Short-lived branches, one atomic task each, prefixed `feat/`, `fix/`, `chore/`, `test/`. No unrelated changes bundled.
-- Never work on `main` unless explicitly asked. Start every task in its own git worktree branched from `origin/main`. Never switch branches in a shared checkout. Merge to `main` fast-forward-only, never paper over a conflict.
+- Trunk-based: `main` always buildable. Short-lived branches, one atomic task each, prefixed `feat/`, `fix/`, `chore/`, `test/`, `ci/`, `docs/`. No unrelated changes bundled.
+- Never work on `main` unless explicitly asked. Start every task in its own git worktree branched from `origin/main`. Never switch branches in a shared checkout. Every change reaches `main` through a GitHub pull request, squash-merged, never paper over a conflict.
+- Pull requests: push the branch to `github`, open a pull request with `.github/pull_request_template.md`, and a Conventional Commits title (it becomes the commit on `main`). Address review and CI findings with new commits on the branch, never amend and force-push. Take in a newer `main` with a merge, not a rebase.
+- Merge: when `ci-ok` passes and the CodeRabbit review is addressed, `gh pr merge <n> --squash`. Then `git pull --ff-only github main` and `git push origin main`, so both remotes hold the same commit (the pre-push hook skips commits a remote already holds, such as the GitHub squash commit). GitHub deletes the branch.
+- The `main` ruleset, with no bypass: pull request required, squash only, `ci-ok` required, linear history, no force push, no deletion. `ci-ok` needs every per-change CI job, so a renamed or added job goes into its `needs` list, not into the ruleset.
 - Conventional Commits: `<type>(<scope>): <description>`, lowercase imperative. Types feat, fix, docs, style, refactor, perf, test, build, ci, chore. Agent-authored commits end with a `Co-Authored-By:` trailer.
-- Pre-merge: `make check` passing, `make cover` above floor, `make security` passing, `scripts/capabilities.sh` green (self-skips unless the dependency graph moved), `make e2e` passing, `scripts/mutation-gate.sh` green. 100% pass.
+- Pre-merge: `make check` passing, `make cover` above floor, `make security` passing, `scripts/capabilities.sh` green (self-skips unless the dependency graph moved), `make e2e` passing, `scripts/mutation-gate.sh` green, `ci-ok` green on the pull request. 100% pass.
 ## Guidelines
 Distilled book files live in `.agents/books/`, referenced below by name. Adapted from ciembor/agent-rules-books (MIT), see `.agents/books/LICENSE`.
 
