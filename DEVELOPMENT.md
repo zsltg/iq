@@ -72,7 +72,7 @@ Local and layered: the quality gates run on your machine first, and
 ```bash
 make check          # fast offline gate: format, vet, build, lint, dead code, short tests
 make cover          # full suite + coverage floor
-make security       # govulncheck + osv-scanner + gitleaks (tree + git history) + zizmor, SBOMs to dist/
+make security       # govulncheck + osv-scanner (vulnerabilities, license allowlist) + gitleaks (tree + git history) + zizmor, SBOMs to dist/
 make capabilities   # capslock capability drift (runs only when go.mod/go.sum moved)
 make mutation       # mutago mutation gate over the branch diff
 make fuzz           # Go native fuzz targets over the untrusted parsers
@@ -398,9 +398,11 @@ Posture and upkeep around the pipeline, all on GitHub:
   and `scripts/` tracked through custom regex managers. A human merges; a PR
   that moves `go.mod` runs `make capabilities`, which is the review AGENTS.md
   asks for on a dependency change.
-- `osv-scanner.toml` carries the license overrides the CI `osv` job needs:
-  the job gates every dependency against the permissive allowlist in `ci.yml`
-  (`make security` scans for vulnerabilities only), and deps.dev reports a
+- `scripts/license-allowlist.txt` is the permissive license allowlist, one SPDX
+  ID per line. `make security`, the CI `osv` job and the weekly `deep-scan` read
+  it and check every Go module against it (`osv-scanner --licenses`, `go.mod`
+  only). `osv-scanner.toml` carries the license overrides that the check needs:
+  deps.dev reports a
   module's documentation license (CC-BY) or UNKNOWN for a few modules whose
   code is permissive; each override names the LICENSE file it was read from.
   A new violation means reading the module's LICENSE, then either an override
