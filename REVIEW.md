@@ -2,7 +2,7 @@
 
 This file tells a code reviewer (human or AI) what to look for in a pull request
 to iq. The coding rules are in AGENTS.md, and the developer commands are in
-CONTRIBUTING.md. This file does not repeat them. It gives the review priorities
+DEVELOPMENT.md. This file does not repeat them. It gives the review priorities
 and the areas that need the most care.
 
 ## Priorities
@@ -115,7 +115,7 @@ filters, dump file content, and every database response.
 
 ## Documentation that changes with the code
 
-- A new or changed command, flag or environment variable updates CONTRIBUTING.md
+- A new or changed command, flag or environment variable updates DEVELOPMENT.md
   or the docs site in the same pull request.
 - A change to the selector, the pushdown mapping or a core port updates the
   README Architecture diagram.
