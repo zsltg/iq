@@ -35,8 +35,10 @@ make bench             # decode, filter, number-conversion, and dump I/O benchma
 
 Test policy: a pull request that adds or changes behavior adds or updates the
 tests for it in the same pull request. A bug fix adds a test that fails without
-the fix. The mutation gate makes sure these tests assert the behavior: a
-surviving mutant on a changed line fails the pull request. Reviewers treat a
+the fix. The mutation gate checks that these tests assert the behavior on the
+changed lines that tests cover: a mutant that survives on such a line fails the
+pull request, unless it is an accepted equivalent in `mutago-baseline.json`. A
+changed line that no test covers is outside the gate, so reviewers treat a
 behavior change without a test as a finding (see `REVIEW.md`).
 
 - The full suite starts ephemeral Redis, MongoDB, Cassandra, DynamoDB Local,
