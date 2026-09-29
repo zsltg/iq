@@ -1,0 +1,9 @@
+{
+  "package": "./internal/pushdown",
+  "slug": "internal-pushdown",
+  "status": "failed",
+  "fingerprint": "45548b032a8c97419a2d33f3409b6e0c1ed4644e7067f04687fb6aef378c9278",
+  "commit": "f566ec9123e0330758575310abdea20fe06099b1",
+  "scannedAt": "2026-09-29T16:45:34Z",
+  "secondsPerMutant": null
+}

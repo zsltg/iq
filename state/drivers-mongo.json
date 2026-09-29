@@ -1,0 +1,9 @@
+{
+  "package": "./drivers/mongo",
+  "slug": "drivers-mongo",
+  "status": "failed",
+  "fingerprint": "a8c4ad13a025d678c88e15b9ffc65e74edea8c2350c1dfc4ea6f0dd47aaf12f7",
+  "commit": "f566ec9123e0330758575310abdea20fe06099b1",
+  "scannedAt": "2026-09-29T16:45:34Z",
+  "secondsPerMutant": null
+}

@@ -1,0 +1,9 @@
+{
+  "package": "./drivers/redis",
+  "slug": "drivers-redis",
+  "status": "failed",
+  "fingerprint": "ded1ef7d3b3ac5dab54d68616378e5b9e5f4ef74c567456155ee121c9ac6784d",
+  "commit": "f566ec9123e0330758575310abdea20fe06099b1",
+  "scannedAt": "2026-09-29T16:45:34Z",
+  "secondsPerMutant": null
+}

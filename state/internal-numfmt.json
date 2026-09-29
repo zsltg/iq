@@ -1,0 +1,9 @@
+{
+  "package": "./internal/numfmt",
+  "slug": "internal-numfmt",
+  "status": "failed",
+  "fingerprint": "091efa328c2f0af1bdb53a43994fc9cdb002bf3da3efa435e34a4fbe4de4bc5f",
+  "commit": "f566ec9123e0330758575310abdea20fe06099b1",
+  "scannedAt": "2026-09-29T16:45:34Z",
+  "secondsPerMutant": null
+}

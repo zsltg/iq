@@ -1,0 +1,9 @@
+{
+  "package": "./internal/query",
+  "slug": "internal-query",
+  "status": "failed",
+  "fingerprint": "1bc0ae755439e1ff01beac565719d3ca402a6dc9d928475129f433f932738d48",
+  "commit": "f566ec9123e0330758575310abdea20fe06099b1",
+  "scannedAt": "2026-09-29T16:45:34Z",
+  "secondsPerMutant": null
+}

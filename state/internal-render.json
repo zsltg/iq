@@ -1,0 +1,9 @@
+{
+  "package": "./internal/render",
+  "slug": "internal-render",
+  "status": "failed",
+  "fingerprint": "c32b0bf1b87d3e0742e8bb3c99fb0079db18a09ce389aa9b76fceb0819bcfdcd",
+  "commit": "f566ec9123e0330758575310abdea20fe06099b1",
+  "scannedAt": "2026-09-29T16:45:34Z",
+  "secondsPerMutant": null
+}

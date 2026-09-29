@@ -1,0 +1,9 @@
+{
+  "package": "./internal/rawpred",
+  "slug": "internal-rawpred",
+  "status": "failed",
+  "fingerprint": "7f6827a2c64f92c22199eab8db9dc9be44b9b97133f253f1ac62a0f9319be87e",
+  "commit": "f566ec9123e0330758575310abdea20fe06099b1",
+  "scannedAt": "2026-09-29T16:45:34Z",
+  "secondsPerMutant": null
+}
