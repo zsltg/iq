@@ -284,7 +284,8 @@ func TestAddStoreInline(t *testing.T) {
 // TestAddSaveFailureKeyringCleanup makes the config save fail at the end of an
 // add. A password that iq wrote to the keyring is deleted again, so the failed
 // add leaves no trace. After a fallback, iq wrote nothing to the keyring, so it
-// does not call the keyring again.
+// does not call the keyring again, and it prints no warning that the password
+// is in the config file.
 func TestAddSaveFailureKeyringCleanup(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
@@ -307,17 +308,18 @@ func TestAddSaveFailureKeyringCleanup(t *testing.T) {
 			fk := useFakeKeyring(t)
 			fk.setErr = tt.setErr
 
-			_, err := runCmd(t, newAddCmd(&config{}), "-n", "sec", "redis://u:secret@h:6379/0", "--skip-verify")
+			out, err := runCmd(t, newAddCmd(&config{}), "-n", "sec", "redis://u:secret@h:6379/0", "--skip-verify")
 
 			require.ErrorContains(t, err, "create temp config")
+			require.NotContains(t, out, "warning")
 			require.Equal(t, tt.wantDeleted, fk.deleted)
 			require.Empty(t, fk.m)
 		})
 	}
 }
 
-// TestAddRejectsAnUnparsableURI returns the parse error with or without
-// --store, so a password never stays in the config file without a message.
+// TestAddRejectsAnUnparsableURI returns the parse error for every store, so no
+// source is saved that cannot connect.
 func TestAddRejectsAnUnparsableURI(t *testing.T) {
 	tests := []struct {
 		name string
@@ -325,6 +327,7 @@ func TestAddRejectsAnUnparsableURI(t *testing.T) {
 	}{
 		{"default store", nil},
 		{"explicit keyring", []string{"--store", "keyring"}},
+		{"inline", []string{"--store", "inline"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

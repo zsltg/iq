@@ -118,16 +118,17 @@ func newAddCmd(cfg *config) *cobra.Command {
 			// requires it: a URI with no password or a failed keyring write is
 			// an error. Without --store, a URI with no password stays as it is,
 			// and a failed keyring write falls back to the config file. A URI
-			// that does not parse is an error in both cases, so a password is
-			// never kept inline without a message.
+			// that does not parse is an error for every store, so no source is
+			// saved that cannot connect.
 			explicitStore := cmd.Flags().Changed("store")
 			storedURL := rawURL
 			password := ""
+			stripped, pw, ok, err := splitPassword(rawURL)
+			if err != nil {
+				return err
+			}
 			if useKeyring {
-				stripped, pw, ok, err := splitPassword(rawURL)
 				switch {
-				case err != nil:
-					return err
 				case ok:
 					storedURL, password = stripped, pw
 				case explicitStore:
@@ -160,17 +161,28 @@ func newAddCmd(cfg *config) *cobra.Command {
 					return err
 				}
 			}
+			fellBack := false
 			if useKeyring {
-				useKeyring, err = keepPassword(cmd.ErrOrStderr(), cf, name, rawURL, password, explicitStore)
+				useKeyring, err = keepPassword(cf, name, rawURL, password, explicitStore)
 				if err != nil {
 					return err
 				}
+				fellBack = !useKeyring
 			}
 			if err := cf.Save(); err != nil {
 				if useKeyring {
 					_ = keyringStore.Delete(iqconfig.CleanHandle(name))
 				}
 				return err
+			}
+			if fellBack {
+				// Only after the save: the warning says where the password is.
+				// The keyring error can name library internals (a D-Bus object
+				// path), so the warning gives only what iq knows and the remedy.
+				h := iqconfig.CleanHandle(name)
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not write the password of %s to the OS keyring, so it is in the config file\n"+
+					"to move it later, unlock or set up the keyring and run: iq config keyring migrate %s\n"+
+					"to keep a password in the config file without this warning, add the source with --store inline\n", h, h)
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added source %s\n", strings.TrimPrefix(name, "@"))
 			return err
@@ -193,9 +205,9 @@ func newAddCmd(cfg *config) *cobra.Command {
 // marks the source keyring-backed, and reports whether the keyring holds it. It
 // does not replace an entry that it finds (see keyringFree). When the
 // keyring cannot be read or written and --store was not given (explicit false),
-// the source keeps rawURL, with its password, in the config file, and a warning
-// goes to stderr.
-func keepPassword(stderr io.Writer, cf *iqconfig.Config, name, rawURL, password string, explicit bool) (bool, error) {
+// the source keeps rawURL, with its password, in the config file, and the caller
+// prints a warning after the save.
+func keepPassword(cf *iqconfig.Config, name, rawURL, password string, explicit bool) (bool, error) {
 	h := iqconfig.CleanHandle(name)
 	err := keyringFree(h)
 	if errors.Is(err, errKeyringTaken) {
@@ -217,11 +229,6 @@ func keepPassword(stderr io.Writer, cf *iqconfig.Config, name, rawURL, password 
 	if err := cf.SetSourceURL(name, rawURL); err != nil {
 		return false, err
 	}
-	// The keyring error can name library internals (a D-Bus object path), so
-	// the warning gives only what iq knows and the remedy.
-	_, _ = fmt.Fprintf(stderr, "warning: could not write the password of %s to the OS keyring, so it is in the config file\n"+
-		"to move it later, unlock or set up the keyring and run: iq config keyring migrate %s\n"+
-		"to keep a password in the config file without this warning, add the source with --store inline\n", h, h)
 	return false, nil
 }
 
