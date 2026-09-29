@@ -1452,6 +1452,12 @@
    "file": "cmd/password.go",
    "mutator": "expression/error-guard",
    "line": 122
+  },
+  {
+   "id": "d0b761fc9d1e8678984a5fcac08b75c9",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 302
   }
  ]
 }
