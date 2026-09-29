@@ -21,6 +21,10 @@ jobs:
     permissions:
       pull-requests: write # post the comment
     steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - name: Post the Devin Review link
         env:
           GH_TOKEN: ${{ github.token }}
