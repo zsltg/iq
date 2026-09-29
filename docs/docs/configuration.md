@@ -9,8 +9,10 @@ it elsewhere, and `--config` :material-earth:{ title="Global flag" } overrides b
 `--config` > `IQ_CONFIG` > default). It holds the saved sources and the stored option
 defaults below. `iq config location` prints the resolved path.
 
-iq writes the config file with mode `0600`, so only you can read it. A source
-saved with `--store inline` (the default) keeps its password in this file. If
+iq writes the config file with mode `0600`, so only you can read it. `iq add`
+puts a password in the OS keyring by default. A source saved with
+`--store inline`, or saved when no keyring was available, keeps its password in
+this file. If
 the file holds an inline password and other users can access it, for example
 after an edit or a copy, every command prints a warning to stderr with the fix
 (`chmod 600 <path>`) and then runs as usual. Windows has no such mode, so there
@@ -95,7 +97,7 @@ iq config get [--src <name>] <option>
 
 ## Keyring `keyring`
 
-Manage the OS-keyring secrets that back `--store keyring` sources.
+Manage the OS-keyring secrets that back keyring sources.
 
 ```sh
 iq config keyring

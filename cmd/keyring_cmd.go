@@ -22,15 +22,15 @@ type keyringRow struct {
 type keyringStaged struct{ full, clean string }
 
 // newConfigKeyringCmd builds `iq config keyring`: manage the OS-keyring secrets
-// that back keyring-stored sources (added with `iq add --store keyring`). The
+// that back keyring-stored sources (`iq add` stores a password there by default). The
 // underlying keyring library cannot enumerate entries, so every listing and
 // pruning path is driven off the config's source list, never the keyring itself.
 func newConfigKeyringCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "keyring",
 		Short: "Manage the OS-keyring secrets backing keyring-stored sources",
-		Long: "Manage the OS-keyring secrets that back keyring-stored sources (see `iq add\n" +
-			"--store keyring`). `ls` lists keyring-backed sources and whether their secret is\n" +
+		Long: "Manage the OS-keyring secrets that back keyring-stored sources (see `iq add`).\n" +
+			"`ls` lists keyring-backed sources and whether their secret is\n" +
 			"present; `get`/`set`/`rm` read, write, and delete one secret; `migrate` moves an\n" +
 			"inline password into the keyring; `prune` deletes stale entries. The keyring\n" +
 			"library cannot enumerate entries, so these commands reason only about handles the\n" +

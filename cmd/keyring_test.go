@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"net/url"
 	"testing"
@@ -155,6 +157,67 @@ func TestAddStoreKeyring(t *testing.T) {
 	require.Equal(t, "redis://u@h:6379/0", s.URL)
 	require.NotContains(t, s.URL, "secret")
 	require.Equal(t, "secret", fk.m["sec"])
+}
+
+// TestAddDefaultStore drives `iq add` without --store: the password goes to the
+// keyring, a URI with no password stays as it is, and a keyring that refuses the
+// write leaves the password in the config file with one warning.
+func TestAddDefaultStore(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		setErr      error
+		wantURL     string
+		wantKeyring bool
+		wantStored  string
+		wantWarning string
+	}{
+		{"password goes to the keyring", "redis://u:secret@h:6379/0", nil, "redis://u@h:6379/0", true, "secret", ""},
+		{"no password stays inline", "redis://u@h:6379/0", nil, "redis://u@h:6379/0", false, "", ""},
+		{
+			"no keyring falls back to inline", "redis://u:secret@h:6379/0", errors.New("no secret service"), "redis://u:secret@h:6379/0", false, "",
+			"warning: the OS keyring is not available (no secret service), so the password of sec is in the config file; use --store inline to store it there without this warning\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seedConfig(t, newSeed())
+			fk := useFakeKeyring(t)
+			fk.setErr = tt.setErr
+			c := newAddCmd(&config{})
+			var stdout, stderr bytes.Buffer
+			c.SetOut(&stdout)
+			c.SetErr(&stderr)
+			c.SetArgs([]string{"-n", "sec", tt.url, "--skip-verify"})
+
+			require.NoError(t, c.Execute())
+
+			require.Equal(t, "added source sec\n", stdout.String())
+			require.Equal(t, tt.wantWarning, stderr.String())
+			cf, err := iqconfig.Load()
+			require.NoError(t, err)
+			require.Equal(t, tt.wantURL, cf.Sources["sec"].URL)
+			require.Equal(t, tt.wantKeyring, cf.Sources["sec"].Keyring)
+			require.Equal(t, tt.wantStored, fk.m["sec"])
+		})
+	}
+}
+
+// TestAddStoreInline keeps the password in the config file and never writes to
+// the keyring.
+func TestAddStoreInline(t *testing.T) {
+	seedConfig(t, newSeed())
+	fk := useFakeKeyring(t)
+
+	out, err := runCmd(t, newAddCmd(&config{}), "-n", "sec", "redis://u:secret@h:6379/0", "--store", "inline", "--skip-verify")
+	require.NoError(t, err)
+	require.Equal(t, "added source sec\n", out)
+
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	require.Equal(t, "redis://u:secret@h:6379/0", cf.Sources["sec"].URL)
+	require.False(t, cf.Sources["sec"].Keyring)
+	require.Empty(t, fk.m)
 }
 
 func TestAddStoreKeyringNoPassword(t *testing.T) {
