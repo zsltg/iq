@@ -76,7 +76,9 @@ func TestLiveRedisRoundTrip(t *testing.T) {
 	), 0o600))
 
 	// add echoes the URL, so its failure message must not; the rest carry only handles.
-	if _, stderr, code := run(t, env, "add", redisURL, "-n", "rlive"); code != 0 {
+	// --store inline: IQ_REDIS_URL and IQ_MONGO_URL can carry a password, and a test
+	// must not write it to the real OS keyring.
+	if _, stderr, code := run(t, env, "add", redisURL, "-n", "rlive", "--store", "inline"); code != 0 {
 		t.Fatalf("add rlive failed: %s", stderr)
 	}
 	if _, stderr, code := run(t, env, "add", iqfile.URL(dump), "-n", "rseed"); code != 0 {
@@ -131,7 +133,7 @@ func TestLiveMongoRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
 
-	if _, stderr, code := run(t, env, "add", mongoURL, "-n", "mlive"); code != 0 {
+	if _, stderr, code := run(t, env, "add", mongoURL, "-n", "mlive", "--store", "inline"); code != 0 {
 		t.Fatalf("add mlive failed: %s", stderr)
 	}
 	// Cleanup runs after t.Context() is canceled, so drop under a background context.

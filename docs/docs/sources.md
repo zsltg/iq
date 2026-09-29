@@ -14,8 +14,8 @@ once, then select by name or as the default.
     Override the path with `IQ_CONFIG`, or per run with the global
     `--config <path>` flag (which wins over `IQ_CONFIG`).
 
-    A source added with `--store keyring` keeps no password in this file. The
-    password lives in the OS keyring (Secret Service on Linux, Keychain on
+    By default, a source added with a password keeps no password in this file.
+    The password lives in the OS keyring (Secret Service on Linux, Keychain on
     macOS, Credential Manager on Windows). `iq` splices it back into the URI
     only when connecting.
 
@@ -36,7 +36,7 @@ Each driver supports a different set of URI parameters (see
 | `-n <string>` | `--handle <string>` | the keyspace the URI names | handle for the source, derived from the URI when omitted |
 | `-p` | `--password` | ✗ | prompt for the URI password or read it from stdin |
 | | `--skip-verify` | ✗ | skip the post-add reachability check |
-| | `--store <string>` | `inline` | where the URI's password is kept, `inline` (in the config file) or `keyring` (OS keyring) |
+| | `--store <string>` | `keyring` | where the URI's password is kept, `keyring` (OS keyring) or `inline` (in the config file) |
 
 ```sh { title='Add an inactive MongoDB source, defaults to handle "books"' }
 iq add mongodb://localhost:27017/books
@@ -53,6 +53,20 @@ iq add -p 'mongodb://iq@localhost:27018/iq?collection=books'
 ```sh { title='Add an inactive MongoDB source, prompts for the password for a user named "root" in the "admin" database, defaults to handle "books"' }
 iq add -p 'mongodb://root@localhost:27018/iq?authSource=admin&collection=books'
 ```
+
+When the URI has a password, `iq add` puts the password in the OS keyring and
+saves the URI without it. When no keyring is available, for example on a
+server with no Secret Service, `iq add` saves the password in the config file
+and prints a warning. Use `--store inline` to save the password in the config
+file without the warning. Use `--store keyring` to make a missing keyring an
+error.
+
+The keyring entry of a source is named by its handle only. If the keyring
+already holds a password for the handle, for example for a source with the same
+handle in another config file, `iq add` stops with an error and does not
+replace the password. Choose another handle with `-n`. The check and the write
+are two keyring calls, so two `iq add` commands that run at the same time with
+the same handle can both pass the check.
 
 !!! tip "Escaping the source URI"
 

@@ -598,3 +598,13 @@ Negative zero, accepted 2026-09-28 in the pull request that keeps the sign of -0
 
 - 7b8aaed0ceea6c187853a46f1fdba74f internal/numfmt/convert.go:46 numbers/incrementer — math.Copysign(0, -1) becomes math.Copysign(0, -2). Copysign takes only the sign of its second argument, so both return the same negative zero.
 - 5ab21f74bc541533b57a70b6d2c9ab31 internal/query/dump.go:152 numbers/incrementer — the same Copysign(0, -1) to Copysign(0, -2) change in the typed dump reader, equivalent for the same reason.
+
+Keyring default store, accepted 2026-09-29 in the pull request that makes the keyring the default store of `iq add`.
+
+- 9a221f56b0b51dedaf1de1918384b218 cmd/password.go:32 branch/case — the ErrNotFound case of keyringFree returns nil. The mutator replaces the case body with a zero-value return, which is `return nil` again, so the mutant is the same code.
+- 9aeae887cb1de5c888584aacb549d977 cmd/password.go:113 expression/error-guard — the UseKeyring error guard in keepPassword. The add command added the source to the config a few lines earlier with cf.Add, and UseKeyring fails only for an unknown source, so the branch cannot be reached. mutago scored the same guard KILLED in one earlier run; with the mutation applied by hand, the full cmd suite passes.
+- f47547a1950ba78bf71b5349ab4cb2b1 cmd/password.go:122 expression/error-guard — the SetSourceURL error guard in the fallback of keepPassword. The source exists and the raw URI passed the scheme and parse checks, so it is not blank. SetSourceURL fails only for an unknown source or a blank URL, so the branch cannot be reached.
+- a4302bede0d913e4708c747159c3f4ba cmd/password.go:122 conditional/negated — the same guard with `err == nil`. SetSourceURL returns nil, so the mutant returns `false, nil` from the guard, which is what the next line returns.
+- fc3ff1d05b4e76156483f3a0215e55cb cmd/keyring_cmd.go:286 expression/error-guard — the write error of a `would migrate` line under --dry-run. The output is the command's writer, and no test writer fails, so the branch cannot be reached in a test.
+- 15045794c5f126a17eda63f81545e7e0 cmd/keyring_cmd.go:298 expression/error-guard — the UseKeyring error guard in the migrate loop. migrateTargets resolved the source from the same config, so UseKeyring cannot fail for an unknown source.
+- d0b761fc9d1e8678984a5fcac08b75c9 cmd/keyring_cmd.go:302 expression/error-guard — the SetSourceURL error guard in the migrate loop. The source exists, and migrateSecret returned a stripped URL that is not blank, so SetSourceURL cannot fail. mutago scored it KILLED in one local run; with the mutation applied by hand, the full cmd suite passes.
