@@ -598,3 +598,8 @@ Negative zero, accepted 2026-09-28 in the pull request that keeps the sign of -0
 
 - 7b8aaed0ceea6c187853a46f1fdba74f internal/numfmt/convert.go:46 numbers/incrementer — math.Copysign(0, -1) becomes math.Copysign(0, -2). Copysign takes only the sign of its second argument, so both return the same negative zero.
 - 5ab21f74bc541533b57a70b6d2c9ab31 internal/query/dump.go:152 numbers/incrementer — the same Copysign(0, -1) to Copysign(0, -2) change in the typed dump reader, equivalent for the same reason.
+
+## internal/numfmt, mutago v2.10.16 re-baseline (accepted 2026-09-29, test/mutation-rebaseline-small branch)
+The mutago bump from v2.7.7 to v2.10.16 changed every mutant id. A full scan of the package found 3 escapes. One was a test gap: the `return s` fallback in ConvertNumber for a token that is not a valid integer literal. The new "malformed integer literal keeps its text" row of TestConvertNumber kills it. The two below are the same edits as the accepted dd0c601a1d63 and 939386efa8e1 entries above, with new ids. Each was applied by hand to the real file, and the full package suite passed.
+- 6a0dd0157ce2 internal/numfmt/decimal.go:37 branch/case — replaces dd0c601a1d63 (decimal.go:37 statement/return). The edit is the same, `return DecimalAuto, nil` becomes `return 0, nil`, and v2.10.16 now files it under branch/case. DecimalAuto is the first iota of DecimalMode, so 0 is DecimalAuto.
+- e0616ce792cb internal/numfmt/decimal.go:43 statement/return — replaces 939386efa8e1 (decimal.go:43 statement/return). The default arm returns 0 in place of DecimalAuto with the same error. The two values are identical for the same reason.
