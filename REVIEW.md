@@ -36,8 +36,14 @@ filters, dump file content, and every database response.
   command that prints a secret, must redact by default and reveal only with
   `--reveal`. `iq config edit` is direct access to the file, not a formatted
   display.
-- A password is stored in the OS keyring (`--store keyring`) or inline in the
-  config file (`--store inline`, the default). `Config.Save` writes the config
+- A password is stored in the OS keyring (`--store keyring`, the default) or
+  inline in the config file (`--store inline`). Without `--store`, `iq add`
+  falls back to the config file with a warning when no keyring is available.
+  `iq add` and `iq config keyring migrate` do not replace a keyring entry that
+  they find, because the entry is named by the handle only and can belong to a
+  source in another config file. The check and the write are two calls, so two
+  processes that run at the same time can both pass the check.
+  `Config.Save` writes the config
   file with mode `0600`. It creates a missing directory with mode `0700` (before
   the umask) and keeps the permissions of an existing directory. A change that
   writes the file with a wider mode, or that stores a password anywhere else, is

@@ -66,9 +66,11 @@ func newAddCmd(cfg *config) *cobra.Command {
 			"?index= (`elasticsearch://host:9200/?index=books`).\n" +
 			"\n" +
 			"Handles may be grouped with '/' (`iq add -n prod/books mongodb://…`). -p\n" +
-			"prompts for the URI password (or reads it from stdin); with --store keyring\n" +
-			"the password is moved to the OS keyring and stripped from the stored URI. -a\n" +
-			"makes the new source active. The source is pinged before it is saved unless\n" +
+			"prompts for the URI password (or reads it from stdin). The password goes to the\n" +
+			"OS keyring and is stripped from the stored URI. When no keyring is available,\n" +
+			"iq stores the password in the config file and prints a warning. --store inline\n" +
+			"keeps it in the config file, and --store keyring makes a missing keyring an\n" +
+			"error. -a makes the new source active. The source is pinged before it is saved unless\n" +
 			"--skip-verify is set. Note: `iq add` is this command, which shadows jq's\n" +
 			"built-in `add` filter: write the filter as `[ .a, .b ] | add`.",
 		Example: "  # Register a Redis source named \"cache\".\n" +
@@ -78,7 +80,7 @@ func newAddCmd(cfg *config) *cobra.Command {
 			"  $ iq add 'mongodb://localhost:27017/shop?collection=orders'\n" +
 			"\n" +
 			"  # A source needing auth, made active: prompt for the password, keep it in the keyring.\n" +
-			"  $ iq add -a -p --store keyring 'mongodb://user@localhost:27017/shop?collection=orders'",
+			"  $ iq add -a -p 'mongodb://user@localhost:27017/shop?collection=orders'",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rawURL := args[0]
@@ -112,17 +114,9 @@ func newAddCmd(cfg *config) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			storedURL := rawURL
-			password := ""
-			if useKeyring {
-				stripped, pw, ok, err := splitPassword(rawURL)
-				if err != nil {
-					return err
-				}
-				if !ok {
-					return errors.New("--store keyring: URI has no password to store")
-				}
-				storedURL, password = stripped, pw
+			plan, err := planPassword(rawURL, useKeyring, cmd.Flags().Changed("store"))
+			if err != nil {
+				return err
 			}
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -132,12 +126,12 @@ func newAddCmd(cfg *config) *cobra.Command {
 			if !cmd.Flags().Changed("handle") {
 				name = suggestHandle(cf, rawURL)
 			}
-			if err := cf.Add(name, storedURL); err != nil {
+			if err := cf.Add(name, plan.stored); err != nil {
 				return err
 			}
 			// Verify reachability before persisting so a failed add leaves no
-			// trace. rawURL still carries the password (stripped from storedURL for
-			// a keyring source), so it is what we dial.
+			// trace. rawURL still carries the password (stripped from plan.stored
+			// for a keyring source), so it is what we dial.
 			if !skipVerify {
 				if err := verifySource(cmd.Context(), rawURL, cfg.timeout); err != nil {
 					return fmt.Errorf("verify %s: %w (use --skip-verify to add it anyway)", strings.TrimPrefix(name, "@"), err)
@@ -148,18 +142,7 @@ func newAddCmd(cfg *config) *cobra.Command {
 					return err
 				}
 			}
-			if useKeyring {
-				if err := cf.UseKeyring(name); err != nil {
-					return err
-				}
-				if err := keyringStore.Set(iqconfig.CleanHandle(name), password); err != nil {
-					return err
-				}
-			}
-			if err := cf.Save(); err != nil {
-				if useKeyring {
-					_ = keyringStore.Delete(iqconfig.CleanHandle(name))
-				}
+			if err := saveSource(cmd.ErrOrStderr(), cf, name, plan); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added source %s\n", strings.TrimPrefix(name, "@"))
@@ -171,7 +154,7 @@ func newAddCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVarP(&active, "active", "a", false, "make the new source the active source")
 	c.Flags().BoolVarP(&passwordPrompt, "password", "p", false, "prompt for the URI password (or read it from stdin)")
 	c.Flags().BoolVar(&skipVerify, "skip-verify", false, "skip the post-add reachability check")
-	c.Flags().StringVar(&store, "store", "inline", "where the URI's password is kept: inline (in the config file) or keyring (the OS keyring)")
+	c.Flags().StringVar(&store, "store", "keyring", "where the URI's password is kept: keyring (the OS keyring) or inline (in the config file); without this flag, inline when no keyring is available")
 	// Both flags take a closed set; --driver's comes from the registry, so a new
 	// backend completes without a second edit.
 	_ = c.RegisterFlagCompletionFunc("driver", fixedValues(driverNameList()...))
@@ -303,7 +286,7 @@ func readPassword(cmd *cobra.Command) (string, error) {
 }
 
 // parseStore validates the --store value, returning whether the password should
-// go to the OS keyring. inline (the default) keeps it in the stored URL.
+// go to the OS keyring (the default). inline keeps it in the stored URL.
 func parseStore(store string) (keyring bool, err error) {
 	switch store {
 	case "inline":

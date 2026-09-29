@@ -142,10 +142,10 @@ func newRootCmd() (*cobra.Command, *config) {
 			"run `iq '<filter>' --explain` to see the plan. A filter can also read other\n" +
 			"sources inline with source(\"name\"; \"<jq>\"). The documentation site carries\n" +
 			"the full reference.",
-		Example: "  # Register a Redis source (active) and a Mongo source whose password is kept safe.\n" +
+		Example: "  # Register a Redis source (active) and a Mongo source whose password goes to the OS keyring.\n" +
 			"  # The Mongo URI sets a default collection with ?collection=orders.\n" +
 			"  $ iq add -a -n cache redis://localhost:6379/0\n" +
-			"  $ iq add -p --store keyring 'mongodb://user@localhost:27017/shop?collection=orders'\n" +
+			"  $ iq add -p 'mongodb://user@localhost:27017/shop?collection=orders'\n" +
 			"\n" +
 			"  # List saved sources (the active one marked *); check reachability; inspect metadata.\n" +
 			"  $ iq ls\n" +

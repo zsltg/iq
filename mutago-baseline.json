@@ -1416,6 +1416,96 @@
    "file": "internal/query/dump.go",
    "mutator": "numbers/incrementer",
    "line": 152
+  },
+  {
+   "id": "fc3ff1d05b4e76156483f3a0215e55cb",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 286
+  },
+  {
+   "id": "15045794c5f126a17eda63f81545e7e0",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 298
+  },
+  {
+   "id": "9a221f56b0b51dedaf1de1918384b218",
+   "file": "cmd/password.go",
+   "mutator": "branch/case",
+   "line": 32
+  },
+  {
+   "id": "9aeae887cb1de5c888584aacb549d977",
+   "file": "cmd/password.go",
+   "mutator": "expression/error-guard",
+   "line": 113
+  },
+  {
+   "id": "a4302bede0d913e4708c747159c3f4ba",
+   "file": "cmd/password.go",
+   "mutator": "conditional/negated",
+   "line": 122
+  },
+  {
+   "id": "f47547a1950ba78bf71b5349ab4cb2b1",
+   "file": "cmd/password.go",
+   "mutator": "expression/error-guard",
+   "line": 122
+  },
+  {
+   "id": "d0b761fc9d1e8678984a5fcac08b75c9",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 302
+  },
+  {
+   "id": "6a0dd0157ce27749c3c878b07fd6ea4f",
+   "file": "internal/numfmt/decimal.go",
+   "mutator": "branch/case",
+   "line": 37
+  },
+  {
+   "id": "e0616ce792cbab7a631614b1b54c078f",
+   "file": "internal/numfmt/decimal.go",
+   "mutator": "statement/return",
+   "line": 43
+  },
+  {
+   "id": "33f8933f85f20aabcb67df3b2045f55a",
+   "file": "internal/diff/diff.go",
+   "mutator": "arithmetic/base",
+   "line": 260
+  },
+  {
+   "id": "bbf28e84e5c26274879a4370ad8ae51b",
+   "file": "internal/diff/diff.go",
+   "mutator": "branch/case",
+   "line": 486
+  },
+  {
+   "id": "cba7aae52682f62296a6194b15b159a4",
+   "file": "internal/diff/diff.go",
+   "mutator": "branch/if",
+   "line": 467
+  },
+  {
+   "id": "e3b8b730e858edf57208484450471f76",
+   "file": "internal/diff/diff.go",
+   "mutator": "numbers/decrementer",
+   "line": 486
+  },
+  {
+   "id": "69a6bab3fd68079d7eafa6df4486e9f1",
+   "file": "internal/diff/patch.go",
+   "mutator": "expression/error-guard",
+   "line": 27
+  },
+  {
+   "id": "7d94bfbcfb47e0a09aa8c5339d445bc4",
+   "file": "internal/render/json.go",
+   "mutator": "statement/remove",
+   "line": 67
   }
  ]
 }

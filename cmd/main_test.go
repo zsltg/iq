@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/url"
@@ -24,6 +25,10 @@ func TestMain(m *testing.M) {
 
 func runTests(m *testing.M) int {
 	flag.Parse()
+	// `iq add` stores a password in the OS keyring by default. A test that does
+	// not swap in a fake with useFakeKeyring gets a keyring that refuses every
+	// write, so no test can write to the real keyring of the developer.
+	keyringStore = &fakeKeyring{m: map[string]string{}, setErr: errors.New("no OS keyring in tests")}
 	// Only stand up containers when integration tests will actually run and no
 	// external server was named; otherwise the env override or default stands in.
 	if !testing.Short() {
