@@ -141,7 +141,12 @@ Run with the integration services up.
   wrapper refuses the combination)
 - `IQ_MUTATION_TIMEOUT_COEFFICIENT`: per-mutant timeout multiplier (default
   5; raise it for a legitimately slow package instead of letting mutants time out)
-- `IQ_MUTATION_UPDATE_BASELINE=1`: accept equivalents (append-only)
+- `IQ_MUTATION_UPDATE_BASELINE=1`: accept equivalents (append-only). A gate
+  run that fails on an escape already prints the id of each new escape and
+  writes `mutago-baseline.candidate.json` (the committed baseline plus those
+  escapes, gitignored). Copy it over `mutago-baseline.json` only when every
+  escape in it is a genuine equivalent with its line in
+  `mutago-baseline.notes.md`. Kill the others first.
 - `IQ_MUTATION_MUTANT=<id>`: re-run one mutant as a diagnostic; it can report
   a false KILLED, so do not confirm a kill with it (see the hardening steps)
 - `IQ_MUTATION_DRYRUN=1`: mutant-count preview; scope it to one package
@@ -276,8 +281,16 @@ workflow-only pull request takes about 2 minutes. Any other file, a change to
 only required check of the `main` ruleset: it needs every per-change job and fails
 when one of them failed or was cancelled (a skipped job passes). The per-job checks
 cannot be required themselves, because GitHub reports a skipped matrix job under
-its bare name. A new per-change job goes into the `needs` list of `ci-ok`. The jobs
-per gate:
+its bare name. A new per-change job goes into the `needs` list of `ci-ok`.
+
+A draft pull request runs the fast jobs only. `changes` also sets `full=true`
+when `code=true` and the pull request is not a draft. The slow jobs (`test`, the
+coverage jobs, `e2e`, `cross`, `sbom`, `capabilities`, `mutate-diff` and `fuzz`)
+run only then, and `ci-ok` fails on a draft. Mark the pull request ready for
+review when the review rounds settle: the `ready_for_review` event starts the
+full run once. The runs of one pull request share a concurrency group, so a new
+push cancels the run of the previous push. A push to `main` is never cancelled.
+The jobs per gate:
 `lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
 Linux, macOS and Windows, with `-race` on Linux), `coverage` (four `coverage (<group>)` jobs each test a
 group of packages on their own runner, then `coverage` joins the partial profiles,
@@ -287,7 +300,10 @@ the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
 `vuln` (govulncheck), `osv` (OSV plus the permissive license allowlist), `sbom`
 (syft), `deadcode`, `secrets` (gitleaks, tree and history), `capabilities`
 (`scripts/capabilities.sh` against the PR base), `mutate-diff`
-(`scripts/mutation-gate.sh` against the PR base), `workflows` (zizmor over
+(`scripts/mutation-gate.sh` against the PR base; it uploads the artifact
+`mutate-diff` with `report.json`, `mutago-agentic.json` and, after a failure
+on an escape, `mutago-baseline.candidate.json`, so the ids of the escapes need
+no local re-run), `workflows` (zizmor over
 `.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target), `dco`
 (`scripts/dco.sh`, a `Signed-off-by:` for the author of each pull request commit,
 on pull requests only) and

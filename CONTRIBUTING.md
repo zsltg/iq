@@ -78,8 +78,10 @@ entry. This note goes away with the re-baseline.
   [REVIEW.md](REVIEW.md) lists what reviewers look for.
 - Open a pull request against `main`, fill in the template, and give it a
   Conventional Commits title: the pull request is squash-merged, and its title
-  becomes the commit message on `main`. Push review fixes as new commits, do not
-  force-push. Answer each review comment, with a fix commit or a reply. The pull
+  becomes the commit message on `main`. Open it as a draft: the reviews run, and
+  CI runs the fast checks only. Mark it ready for review when the review rounds
+  settle, which starts the full CI. Push review fixes as new commits, do not
+  force-push, and push the fixes of one review round together. Answer each review comment, with a fix commit or a reply. The pull
   request merges when the `ci-ok` check passes and every review thread is
   resolved.
 - A pull request from a fork: GitHub runs its CI only after a maintainer

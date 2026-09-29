@@ -24,6 +24,8 @@ on:
   push:
     branches: [main] # a pull request branch runs through pull_request only, not twice
   pull_request:
+    # ready_for_review starts the full run when a draft pull request is marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
   schedule:
     - cron: '17 5 * * 1' # Mondays 05:17 UTC
   workflow_dispatch:
@@ -44,11 +46,12 @@ permissions:
 # not overlap: scheduled runs and manual dispatches of the same ref share one group and
 # queue (a running scan is never cancelled; GitHub keeps at most one run waiting in a group
 # and cancels an older waiting run). The ref is in the key, so a dispatch on a branch never
-# replaces a waiting scan of main. A push or pull request run gets a group of its own, so
-# it never waits.
+# replaces a waiting scan of main. The runs of one pull request share a group, and a new
+# push cancels the run of the previous one, whose result nobody reads. A push to main
+# gets a group of its own, so it never waits and is never cancelled.
 concurrency:
-  group: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('deep-mutation-scan-{0}', github.ref) || format('ci-{0}', github.run_id) }}
-  cancel-in-progress: false
+  group: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('deep-mutation-scan-{0}', github.ref) || github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   GOLANGCI_LINT_VERSION: v2.13.1 # 2.12 and older bundle a staticcheck that panics on Go 1.27
@@ -65,7 +68,9 @@ jobs:
   # cannot be required when the changes job skips them. This job needs every
   # per-change job, runs also when one of them fails, and fails when one of them
   # failed or was cancelled. A skipped job passes. A new per-change job goes into
-  # this needs list, and the ruleset does not change.
+  # this needs list, and the ruleset does not change. On a draft pull request the
+  # slow jobs are skipped, so this job fails there: only the full run that starts
+  # when the pull request is marked ready can pass it.
   ci-ok:
     if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
     needs: [changes, lint, workflows, test, coverage-group, coverage, e2e, cross, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
@@ -76,8 +81,13 @@ jobs:
         env:
           CHANGES: ${{ needs.changes.result }}
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          DRAFT: ${{ github.event.pull_request.draft == true }}
         run: |
           echo "results: $RESULTS"
+          if [ "$DRAFT" = true ]; then
+            echo "::error::a draft pull request runs the fast jobs only; mark it ready for review to run everything"
+            exit 1
+          fi
           if [ "$CHANGES" != success ]; then
             echo "::error::the changes job did not pass: $CHANGES"
             exit 1
@@ -92,13 +102,17 @@ jobs:
   # Sets code=false only when every changed file is on the list of files that no Go
   # job reads. Any other file, an unknown base, or an error sets code=true, so an
   # unexpected case runs everything. If it fails, the jobs that need it are
-  # skipped, and ci-ok fails, which blocks the merge.
+  # skipped, and ci-ok fails, which blocks the merge. It also sets full=true when
+  # code=true and the pull request is not a draft: the slow jobs (the test matrix,
+  # coverage, e2e, cross builds, SBOM, capabilities, fuzzing and the mutation gate)
+  # run only then, so review rounds on a draft do not start them on every push.
   changes:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       code: ${{ steps.diff.outputs.code }}
+      full: ${{ steps.diff.outputs.code == 'true' && github.event.pull_request.draft != true }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -185,7 +199,7 @@ jobs:
   # -race needs cgo and a C toolchain there.
   test:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.full == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -216,7 +230,7 @@ jobs:
   # that no other group names, so a new package is always in one group.
   coverage-group:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.full == 'true'
     name: coverage (${{ matrix.group }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -270,7 +284,7 @@ jobs:
   # a failed group can never show as a skipped (passing) coverage check. When the
   # change touches no code, it is skipped with the groups, which passes the check.
   coverage:
-    if: always() && needs.changes.outputs.code == 'true'
+    if: always() && needs.changes.outputs.full == 'true'
     needs: [changes, coverage-group]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -318,7 +332,7 @@ jobs:
   # a single compose service up at a time.
   e2e:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -341,7 +355,7 @@ jobs:
 
   cross:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -396,7 +410,7 @@ jobs:
   # No artifact upload; actions/upload-artifact is not among the mirrored actions.
   sbom:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -468,7 +482,7 @@ jobs:
   # is usually a few seconds; a real run peaks around 7 GB RSS.
   capabilities:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -494,7 +508,7 @@ jobs:
   # the changed packages weekly (all packages monthly), one shard per runner.
   mutate-diff:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -511,6 +525,19 @@ jobs:
         run: |
           git fetch --no-tags origin "$BASE"
           IQ_MUTATION_BASE="origin/$BASE" bash scripts/mutation-gate.sh
+      # The ids of the escapes, for the baseline of an accepted equivalent, without a
+      # local re-run. The candidate file exists only when the gate failed on an escape.
+      - name: Upload the mutation reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutate-diff
+          path: |
+            report.json
+            mutago-agentic.json
+            mutago-baseline.candidate.json
+          if-no-files-found: ignore
+          retention-days: 14
 
   # Go native fuzzing over the parsers that read untrusted bytes (scripts/fuzz.sh),
   # one target per invocation because that is what `go test -fuzz` takes. The budget
@@ -519,7 +546,7 @@ jobs:
   # fails the job, and the fix commits the input Go wrote as the regression seed.
   fuzz:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
