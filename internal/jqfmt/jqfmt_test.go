@@ -128,6 +128,9 @@ func TestFormatGolden(t *testing.T) {
 		{`limit(3; .[])`, "limit(3; .[])"},
 		// Every suffix of a descended term is re-emitted, in order.
 		{`(.a | .b).c.d`, "(\n  .a\n  | .b\n).c.d"},
+		// A call that stays on one line keeps its suffixes too.
+		{`env.HOME`, "env.HOME"},
+		{`first(.a).b`, "first(.a).b"},
 		// Only a call literally named source with two string literals gets the
 		// nested-filter treatment; anything else takes the ordinary path.
 		{`foo("a"; "b")`, `foo("a"; "b")`},
@@ -297,6 +300,39 @@ func TestExplain(t *testing.T) {
 	}
 }
 
+func TestExplainBuiltinTable(t *testing.T) {
+	// Each builtin with a fixed note gets its own row, so a lost note fails here.
+	tests := []struct {
+		src  string
+		desc string
+	}{
+		{"length", "length"},
+		{"keys", "sorted keys"},
+		{"keys_unsorted", "keys"},
+		{"add", "sum / concatenate"},
+		{"sort", "sort"},
+		{"unique", "unique values"},
+		{"reverse", "reverse"},
+		{"flatten", "flatten nested arrays"},
+		{"to_entries", "to key/value pairs"},
+		{"from_entries", "from key/value pairs"},
+		{"type", "the value's type"},
+		{"tonumber", "parse as number"},
+		{"tostring", "convert to string"},
+		{"ascii_downcase", "lowercase"},
+		{"ascii_upcase", "uppercase"},
+		{"first", "first element"},
+		{"last", "last element"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.src, func(t *testing.T) {
+			stages := ExplainQuery(mustParse(t, tt.src), false)
+			require.Len(t, stages, 1)
+			require.Equal(t, tt.desc, stages[0].Desc)
+		})
+	}
+}
+
 func TestExplainStagesJoinToFormat(t *testing.T) {
 	// The stage Texts are the exact per-stage pretty print, so joining a pipe chain's
 	// stages with the printer's own "\n| " separator reproduces Format verbatim — the
@@ -319,6 +355,21 @@ func TestExplainStagesJoinToFormat(t *testing.T) {
 			whole, err := Format(src, false)
 			require.NoError(t, err)
 			require.Equal(t, whole, strings.Join(texts, "\n| "))
+		})
+	}
+}
+
+func TestExplainColoredStageText(t *testing.T) {
+	// A colored explain gives each stage the colored pretty print, not the plain one.
+	srcs := []string{`.a`, `length`, `{id, total}`}
+	for _, src := range srcs {
+		t.Run(src, func(t *testing.T) {
+			stages := ExplainQuery(mustParse(t, src), true)
+			require.Len(t, stages, 1)
+			want, err := Format(src, true)
+			require.NoError(t, err)
+			require.Contains(t, want, "\x1b[")
+			require.Equal(t, want, stages[0].Text)
 		})
 	}
 }

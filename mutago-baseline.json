@@ -1482,6 +1482,18 @@
    "file": "internal/rawpred/rawpred.go",
    "mutator": "numbers/incrementer",
    "line": 779
+  },
+  {
+   "id": "51bd6749f549a7af3c180a4e9c94f7aa",
+   "file": "internal/jqfmt/jqfmt.go",
+   "mutator": "branch/case",
+   "line": 546
+  },
+  {
+   "id": "28d4238337bf8a7e4f5709279bd22993",
+   "file": "internal/jqfmt/jqfmt.go",
+   "mutator": "branch/case",
+   "line": 726
   }
  ]
 }
