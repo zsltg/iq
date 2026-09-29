@@ -615,7 +615,6 @@ The mutago bump from v2.7.7 to v2.10.16 changed every mutant id. A full scan of 
 ## internal/render, mutago v2.10.16 re-baseline (accepted 2026-09-29, test/mutation-rebaseline-small branch)
 The mutago bump from v2.7.7 to v2.10.16 changed every mutant id. A full scan of the package found 9 escapes. Eight were a test gap: v2.10.16 adds a field-clear mutant for each of the eight fields of the jsonColors palette, and no test compared the exact colored bytes. TestNewJSONEncoderColorsEachRole now pins the output of each syntax role (key, string, number, bool, null, bytes, time and punctuation), and each of the eight clears fails it when applied by hand. The one below is the same edit as an accepted entry above, with a new id. It was applied by hand to the real file, and the full package suite passed.
 - 7d94bfbcfb47 internal/render/json.go:67 statement/remove — replaces bed35ced74f6 (json.go:67 statement/remove). The `enc.SetSortMapKeys(true)` call is removed. jsoncolor.NewEncoder v0.9.1 starts with `flags: EscapeHTML | SortMapKeys`, so the call sets a bit that is already set. The flip to `false` on the same line is killed by TestNewJSONEncoderColoredSortsMapKeys.
-||||||| 272b79b
 
 Keyring default store, accepted 2026-09-29 in the pull request that makes the keyring the default store of `iq add`.
 
