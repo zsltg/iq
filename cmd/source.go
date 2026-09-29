@@ -16,6 +16,7 @@ import (
 
 	iqfile "github.com/zsltg/iq/drivers/file"
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/secret"
 )
 
 // newAddCmd builds `iq add <url>`: register a source from a connection URL,
@@ -117,18 +118,20 @@ func newAddCmd(cfg *config) *cobra.Command {
 			// The keyring is the default store. An explicit --store keyring
 			// requires it: a URI with no password or a failed keyring write is
 			// an error. Without --store, a URI with no password stays as it is,
-			// and a failed keyring write falls back to the config file.
-			requireKeyring := useKeyring && cmd.Flags().Changed("store")
+			// and a failed keyring write falls back to the config file. A URI
+			// that does not parse is an error in both cases, so a password is
+			// never kept inline without a message.
+			explicitStore := cmd.Flags().Changed("store")
 			storedURL := rawURL
 			password := ""
 			if useKeyring {
 				stripped, pw, ok, err := splitPassword(rawURL)
 				switch {
-				case err != nil && requireKeyring:
+				case err != nil:
 					return err
-				case err == nil && ok:
+				case ok:
 					storedURL, password = stripped, pw
-				case requireKeyring:
+				case explicitStore:
 					return errors.New("--store keyring: URI has no password to store")
 				default:
 					useKeyring = false
@@ -159,18 +162,8 @@ func newAddCmd(cfg *config) *cobra.Command {
 				}
 			}
 			if useKeyring {
-				if err := keyringStore.Set(iqconfig.CleanHandle(name), password); err != nil {
-					if requireKeyring {
-						return err
-					}
-					if err := cf.SetSourceURL(name, rawURL); err != nil {
-						return err
-					}
-					useKeyring = false
-					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: the OS keyring is not available (%v), so the password of %s is in the config file; use --store inline to store it there without this warning\n",
-						err, strings.TrimPrefix(name, "@"))
-				} else if err := cf.UseKeyring(name); err != nil {
-					_ = keyringStore.Delete(iqconfig.CleanHandle(name))
+				useKeyring, err = keepPassword(cmd.ErrOrStderr(), cf, name, rawURL, password, explicitStore)
+				if err != nil {
 					return err
 				}
 			}
@@ -195,6 +188,43 @@ func newAddCmd(cfg *config) *cobra.Command {
 	_ = c.RegisterFlagCompletionFunc("driver", fixedValues(driverNameList()...))
 	_ = c.RegisterFlagCompletionFunc("store", fixedValues(passwordStoreNames...))
 	return c
+}
+
+// keepPassword writes the password of the source name to the OS keyring and
+// marks the source keyring-backed, and reports whether the keyring holds it. It
+// never replaces an entry: the keyring account is the handle alone, so an entry
+// that is already there can belong to a source in another config file. When the
+// keyring cannot be read or written and --store was not given (explicit false),
+// the source keeps rawURL, with its password, in the config file, and a warning
+// goes to stderr.
+func keepPassword(stderr io.Writer, cf *iqconfig.Config, name, rawURL, password string, explicit bool) (bool, error) {
+	h := iqconfig.CleanHandle(name)
+	_, err := keyringStore.Get(h)
+	if err == nil {
+		return false, fmt.Errorf("the OS keyring already holds a password for %s, and another config file can use the same handle; choose another handle with -n, or remove the entry: iq config keyring rm %s", h, h)
+	}
+	if errors.Is(err, secret.ErrNotFound) {
+		err = keyringStore.Set(h, password)
+	}
+	if err == nil {
+		if err := cf.UseKeyring(name); err != nil {
+			_ = keyringStore.Delete(h)
+			return false, err
+		}
+		return true, nil
+	}
+	if explicit {
+		return false, err
+	}
+	if err := cf.SetSourceURL(name, rawURL); err != nil {
+		return false, err
+	}
+	// The keyring error can name library internals (a D-Bus object path), so
+	// the warning gives only what iq knows and the remedy.
+	_, _ = fmt.Fprintf(stderr, "warning: could not write the password of %s to the OS keyring, so it is in the config file\n"+
+		"to move it later, unlock or set up the keyring and run: iq config keyring migrate %s\n"+
+		"to keep a password in the config file without this warning, add the source with --store inline\n", h, h)
+	return false, nil
 }
 
 // suggestHandle derives a source handle from rawURL when -n is omitted, mirroring

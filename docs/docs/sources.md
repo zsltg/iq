@@ -61,6 +61,12 @@ and prints a warning. Use `--store inline` to save the password in the config
 file without the warning. Use `--store keyring` to make a missing keyring an
 error.
 
+The keyring entry of a source is named by its handle only. If the keyring
+already holds a password for the handle, for example for a source with the same
+handle in another config file, `iq add` stops with an error and does not
+replace the password. Choose another handle with `-n`, or remove the entry
+with `iq config keyring rm <handle>`.
+
 !!! tip "Escaping the source URI"
 
     If the URI contains `?` (and `&`), your shell can interpret it as a
