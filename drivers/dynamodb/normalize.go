@@ -18,7 +18,7 @@ import (
 // scalar types map to their natural JSON form — a string stays a string, a boolean a
 // boolean, a binary value to its base64 string, a null to null. The single number
 // type N (which carries both integers and decimals as strings) follows dec: an integer
-// literal is an int (or its exact decimal string when it overflows int64, so precision
+// literal is an int (or its exact decimal string when it does not fit int, so precision
 // is never lost), a fractional literal keeps its exact string in auto and string mode
 // or a bare float64 in number mode. The three set types (SS, NS, BS) map to a []any,
 // so a filter reads them as a list. It is exported so a future dump reader produces the
