@@ -385,10 +385,10 @@ Posture and upkeep around the pipeline, all on GitHub:
   commit SHA with the release in a trailing comment; keep it that way (a tag
   pin is a Scorecard deduction and a supply-chain gap).
 - The repository Actions setting allows only actions made by GitHub, actions from
-  verified creators, and an allow-list: `astral-sh/setup-uv`,
-  `codecov/codecov-action`, `ossf/scorecard-action`,
-  `goreleaser/goreleaser-action`, `sigstore/cosign-installer`, `slsa-framework/*`
-  and `softprops/action-gh-release`. A reusable workflow from another repository
+  verified creators, and an allow-list with these exact patterns:
+  `astral-sh/setup-uv@*`, `codecov/codecov-action@*`, `ossf/scorecard-action@*`,
+  `goreleaser/goreleaser-action@*`, `sigstore/cosign-installer@*`,
+  `slsa-framework/*` and `softprops/action-gh-release@*`. A reusable workflow from another repository
   also runs the actions that it uses itself, and each of those must be allowed
   too. The SLSA generator uses four actions of its own repository and
   `softprops/action-gh-release`; allowing only its workflow file stopped the
