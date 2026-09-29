@@ -525,6 +525,19 @@ jobs:
         run: |
           git fetch --no-tags origin "$BASE"
           IQ_MUTATION_BASE="origin/$BASE" bash scripts/mutation-gate.sh
+      # The ids of the escapes, for the baseline of an accepted equivalent, without a
+      # local re-run. The candidate file exists only when the gate failed on an escape.
+      - name: Upload the mutation reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutate-diff
+          path: |
+            report.json
+            mutago-agentic.json
+            mutago-baseline.candidate.json
+          if-no-files-found: ignore
+          retention-days: 14
 
   # Go native fuzzing over the parsers that read untrusted bytes (scripts/fuzz.sh),
   # one target per invocation because that is what `go test -fuzz` takes. The budget
