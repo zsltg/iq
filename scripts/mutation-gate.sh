@@ -495,6 +495,10 @@ if [[ -n "${IQ_MUTATION_MUTANT-}" ]]; then
   mutant=(--run-mutant-id="${IQ_MUTATION_MUTANT}")
 fi
 
+# A candidate from an earlier run lists escapes that this run did not find, so remove it
+# before the run. Only a gate run that fails on an escape writes a new one (see below).
+rm -f mutago-baseline.candidate.json
+
 "$mutago" \
   --config "$config" \
   --coverage \
