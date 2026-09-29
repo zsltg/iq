@@ -173,6 +173,18 @@ func TestTree(t *testing.T) {
 			},
 		},
 		{
+			// A nested array that is a prefix of the other is not equal to it:
+			// the left inner array matches the first element of the right one,
+			// but the lengths differ, so they must not anchor.
+			name: "nested array anchoring compares lengths",
+			a:    []any{[]any{1}},
+			b:    []any{0, []any{1, 2}},
+			want: []diff.Change{
+				{Path: []string{"[0]"}, Op: diff.OpChange, Old: []any{1}, New: 0},
+				{Path: []string{"[1]"}, Op: diff.OpAdd, New: []any{1, 2}},
+			},
+		},
+		{
 			// The map analog: agreeing on one key is not enough to anchor.
 			name: "map anchoring compares every key",
 			a:    []any{map[string]any{"x": 1, "y": 2}},

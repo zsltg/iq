@@ -27,6 +27,9 @@ func TestConvertNumber(t *testing.T) {
 		{name: "fractional string mode is exact literal", in: "19.99", mode: numfmt.DecimalString, want: "19.99"},
 		{name: "exponent auto is float", in: "1e3", mode: numfmt.DecimalAuto, want: 1000.0},
 		{name: "exponent string mode keeps literal", in: "1e3", mode: numfmt.DecimalString, want: "1e3"},
+		// A token that is not a valid integer literal cannot become an int or a
+		// *big.Int. It is returned as its literal text, not lost.
+		{name: "malformed integer literal keeps its text", in: "12x", mode: numfmt.DecimalAuto, want: "12x"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
