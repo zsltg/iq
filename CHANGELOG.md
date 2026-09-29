@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.37.1 - 2026-09-28
+### Bug Fixes
+- keep the sign of a negative zero across a typed dump (#32) (37d9838)
+- fix four bugs found by new go native fuzz targets (#27) (ad220e0)
+
+### Documentation
+- drop the ai assistance section from the pull request template (#26) (7d63a31)
+- split contributing into a short guide and a development guide (#24) (538d468)
+- explain how a pull request from a fork runs (#23) (58481ec)
+- require an answer to every review thread before the merge (#21) (9fc9062)
+
+
 ## v0.37.0 - 2026-09-28
 ### Documentation
 - link the coding standard, the security policy and the test policy (#19) (9fc09f1)
