@@ -1494,6 +1494,72 @@
    "file": "internal/jqfmt/jqfmt.go",
    "mutator": "branch/case",
    "line": 726
+  },
+  {
+   "id": "2a0c1f51551bd4825a7b4e00cde6db95",
+   "file": "internal/config/config.go",
+   "mutator": "branch/case",
+   "line": 561
+  },
+  {
+   "id": "0e4e5234cdbd3d295eaa7a98a4f572d2",
+   "file": "internal/config/config.go",
+   "mutator": "expression/comparison",
+   "line": 474
+  },
+  {
+   "id": "641d1216c4734e490e5a1df9d8d20925",
+   "file": "internal/config/config.go",
+   "mutator": "expression/error-guard",
+   "line": 166
+  },
+  {
+   "id": "6efbb69d231f41d73176b205851d6caa",
+   "file": "internal/config/config.go",
+   "mutator": "expression/error-guard",
+   "line": 170
+  },
+  {
+   "id": "a482f07d6b5597aba42a7e522dbb7334",
+   "file": "internal/config/config.go",
+   "mutator": "expression/error-guard",
+   "line": 174
+  },
+  {
+   "id": "548bd8505d7b7978f8ade5879e64552e",
+   "file": "internal/config/config.go",
+   "mutator": "expression/remove",
+   "line": 250
+  },
+  {
+   "id": "548bd8505d7b7978f8ade5879e64552e",
+   "file": "internal/config/config.go",
+   "mutator": "expression/remove",
+   "line": 355
+  },
+  {
+   "id": "548bd8505d7b7978f8ade5879e64552e",
+   "file": "internal/config/config.go",
+   "mutator": "expression/remove",
+   "line": 412
+  },
+  {
+   "id": "50512d89433347106aaadafe18a600a8",
+   "file": "internal/config/options.go",
+   "mutator": "branch/if",
+   "line": 49
+  },
+  {
+   "id": "5422040feb4d0ded0dc08d5e63c2e83d",
+   "file": "internal/config/options.go",
+   "mutator": "expression/remove",
+   "line": 83
+  },
+  {
+   "id": "40e2d3779af287f6177dc18b2ac643b3",
+   "file": "internal/config/options.go",
+   "mutator": "statement/remove",
+   "line": 74
   }
  ]
 }
