@@ -78,6 +78,11 @@ step "mutation verdict tests"
 # tests need no network, no container and no mutago run, and finish in seconds.
 bash scripts/test/mutation-verdict.sh || note_fail "mutation verdict tests"
 
+step "dco tests"
+# The fixture tests of scripts/dco.sh make small git repositories in a temporary
+# directory. They need no network and finish in seconds.
+bash scripts/test/dco.sh || note_fail "dco tests"
+
 step "unit tests (-short) + coverage report"
 if go test -short -covermode=atomic -coverprofile=coverage.out ./...; then
   total="$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}')"

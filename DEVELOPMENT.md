@@ -404,13 +404,21 @@ Posture and upkeep around the pipeline, all on GitHub:
   verified creators, and an allow-list with these exact patterns:
   `astral-sh/setup-uv@*`, `codecov/codecov-action@*`, `ossf/scorecard-action@*`,
   `goreleaser/goreleaser-action@*`, `sigstore/cosign-installer@*`,
-  `slsa-framework/*` and `softprops/action-gh-release@*`. A reusable workflow from another repository
+  `slsa-framework/*`, `softprops/action-gh-release@*` and
+  `step-security/harden-runner@*`. A reusable workflow from another repository
   also runs the actions that it uses itself, and each of those must be allowed
   too. The SLSA generator uses four actions of its own repository and
   `softprops/action-gh-release`; allowing only its workflow file stopped the
   v0.37.1 release before its first job (`startup_failure`). Before a new
   third-party workflow or action goes into a workflow, read which actions it uses
   and add them to the allow-list in the same change.
+- Every job on a Linux runner starts with
+  [Harden-Runner](https://github.com/step-security/harden-runner) in audit mode
+  (`egress-policy: audit`). It records the network connections, file writes and
+  processes of the job, and the job summary links to the report. It blocks
+  nothing. After a week of reports, the plan is to list the endpoints each job
+  needs and switch to `egress-policy: block`. A job on a macOS or Windows runner
+  does not run it, because Harden-Runner supports Linux runners only.
 - `.github/workflows/codeql.yml` runs CodeQL (the `security-and-quality` queries
   over the Go code) on every pull request, every push to `main` and weekly, and
   uploads the results to the Security tab. It is not a required check:
