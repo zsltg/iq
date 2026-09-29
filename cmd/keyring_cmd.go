@@ -283,11 +283,8 @@ func newConfigKeyringMigrateCmd() *cobra.Command {
 					return fmt.Errorf("source %q has no inline password to migrate", full)
 				}
 				clean := iqconfig.CleanHandle(full)
-				if err := keyringFree(clean); err != nil {
+				if err := migrateFree(clean); err != nil {
 					migrateRollback(done)
-					if errors.Is(err, errKeyringTaken) {
-						return fmt.Errorf("%w; rename the source with iq mv, then migrate it", err)
-					}
 					return err
 				}
 				if dryRun {
@@ -332,6 +329,17 @@ func newConfigKeyringMigrateCmd() *cobra.Command {
 	c.Flags().BoolVar(&all, "all", false, "migrate every inline source that has a password")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be migrated without writing anything")
 	return c
+}
+
+// migrateFree returns nil when the keyring holds no password for handle. An
+// entry that is there can belong to a source in another config file, so a
+// migration does not replace it and tells the user to rename the source.
+func migrateFree(handle string) error {
+	err := keyringFree(handle)
+	if errors.Is(err, errKeyringTaken) {
+		return fmt.Errorf("%w; rename the source with iq mv, then migrate it", err)
+	}
+	return err
 }
 
 // migrateTargets resolves the source handles a migrate run should act on: the one
