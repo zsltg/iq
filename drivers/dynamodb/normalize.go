@@ -75,16 +75,18 @@ func Normalize(av types.AttributeValue, dec numfmt.DecimalMode) any {
 }
 
 // numberValue renders a DynamoDB N literal per the decimal mode. An integer literal
-// becomes an int when it fits int64, else its exact decimal string (so a value beyond
-// int64 survives without precision loss). A fractional literal keeps its exact string
-// in auto and string mode; in number mode it parses to a float64 (lossy beyond
-// float64), matching the Cassandra decimal presentation.
+// becomes an int when it fits int, else its exact decimal string (so a value beyond
+// int survives without precision loss). The parse uses strconv.IntSize, so a 32-bit
+// build keeps a value beyond int32 as a string and does not truncate it. A
+// fractional literal keeps its exact string in auto and string mode; in number mode
+// it parses to a float64 (lossy beyond float64), matching the Cassandra decimal
+// presentation.
 func numberValue(s string, mode numfmt.DecimalMode) any {
 	if isIntLiteral(s) {
-		if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+		if i, err := strconv.ParseInt(s, 10, strconv.IntSize); err == nil {
 			return int(i)
 		}
-		// A well-formed integer that overflows int64 keeps its exact decimal string.
+		// A well-formed integer that overflows int keeps its exact decimal string.
 		if _, ok := new(big.Int).SetString(s, 10); ok {
 			return s
 		}
