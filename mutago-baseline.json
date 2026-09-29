@@ -1418,22 +1418,40 @@
    "line": 152
   },
   {
-   "id": "4b55920e281c48e4c47e46966dd0bd08",
-   "file": "cmd/keyring.go",
+   "id": "fc3ff1d05b4e76156483f3a0215e55cb",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 286
+  },
+  {
+   "id": "15045794c5f126a17eda63f81545e7e0",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 298
+  },
+  {
+   "id": "9a221f56b0b51dedaf1de1918384b218",
+   "file": "cmd/password.go",
    "mutator": "branch/case",
-   "line": 33
+   "line": 32
   },
   {
-   "id": "21f0cf355aff2c581dd93741be1883df",
-   "file": "cmd/source.go",
+   "id": "9aeae887cb1de5c888584aacb549d977",
+   "file": "cmd/password.go",
    "mutator": "expression/error-guard",
-   "line": 208
+   "line": 113
   },
   {
-   "id": "bf32ad0c2edd16272d5677d35f8740d6",
-   "file": "cmd/source.go",
+   "id": "a4302bede0d913e4708c747159c3f4ba",
+   "file": "cmd/password.go",
+   "mutator": "conditional/negated",
+   "line": 122
+  },
+  {
+   "id": "f47547a1950ba78bf71b5349ab4cb2b1",
+   "file": "cmd/password.go",
    "mutator": "expression/error-guard",
-   "line": 217
+   "line": 122
   }
  ]
 }

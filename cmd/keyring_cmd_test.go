@@ -348,6 +348,23 @@ func TestConfigKeyringMigrateKeepsOtherEntries(t *testing.T) {
 		require.Empty(t, fk.m)
 	})
 
+	t.Run("a keyring write failure saves nothing", func(t *testing.T) {
+		configEnv(t)
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "sec", "redis://u:inline@h:6379/0", false, "")
+		seedConfig(t, c)
+		fk.setErr = errors.New("keyring locked")
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "sec")
+
+		require.EqualError(t, err, "keyring locked")
+		cf, err := iqconfig.Load()
+		require.NoError(t, err)
+		require.Equal(t, "redis://u:inline@h:6379/0", cf.Sources["sec"].URL)
+		require.False(t, cf.Sources["sec"].Keyring)
+	})
+
 	t.Run("a keyring read failure stops the migration", func(t *testing.T) {
 		configEnv(t)
 		c := newSeed()
