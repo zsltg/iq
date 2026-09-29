@@ -85,12 +85,12 @@ func selectArg(s *gojq.Query) (*gojq.Query, bool) {
 func extractPred(e *gojq.Query) (predicate.Node, bool) {
 	// Unwrap a parenthesized sub-expression, which a piped clause needs when
 	// combined (`.a == 1 and (.name | test("x"))`).
-	if e.Op == 0 && e.Term != nil && e.Term.Type == gojq.TermTypeQuery && len(e.Term.SuffixList) == 0 {
-		return extractPred(e.Term.Query)
+	if inner, ok := parenQuery(e); ok {
+		return extractPred(inner)
 	}
 	// A bare builtin fed the document itself, i.e. has("field").
-	if e.Op == 0 && e.Term != nil && e.Term.Func != nil && len(e.Term.SuffixList) == 0 {
-		return existsFrom(nil, e.Term.Func)
+	if f, ok := bareFunc(e); ok {
+		return existsFrom(nil, f)
 	}
 	// A trailing `| not` negates everything before it (pipes flatten to stages,
 	// so `.a | any(x) | not` is `not` applied to `.a | any(x)`).
@@ -142,17 +142,31 @@ func extractPred(e *gojq.Query) (predicate.Node, bool) {
 // right. Only number and string literals are pushed — a range against a boolean
 // or null has no useful type-order superset.
 func cmpAtom(op predicate.Op, a, b *gojq.Query) (predicate.Node, bool) {
+	path, v, flipped, ok := pathAndLiteral(a, b, rangeLiteral)
+	if !ok {
+		return nil, false
+	}
+	if flipped {
+		op = flip(op)
+	}
+	return predicate.Cmp{Path: path, Op: op, Value: v}, true
+}
+
+// pathAndLiteral matches a `path OP literal` operand pair in either order. It
+// tries `path OP literal` first, then `literal OP path`. lit reads the literal
+// operand. flipped is true when the path is on the right.
+func pathAndLiteral(a, b *gojq.Query, lit func(*gojq.Query) (any, bool)) (path []string, v any, flipped, ok bool) {
 	if path, ok := pathOf(a); ok {
-		if v, ok := rangeLiteral(b); ok {
-			return predicate.Cmp{Path: path, Op: op, Value: v}, true
+		if v, ok := lit(b); ok {
+			return path, v, false, true
 		}
 	}
 	if path, ok := pathOf(b); ok {
-		if v, ok := rangeLiteral(a); ok {
-			return predicate.Cmp{Path: path, Op: flip(op), Value: v}, true
+		if v, ok := lit(a); ok {
+			return path, v, true, true
 		}
 	}
-	return nil, false
+	return nil, nil, false, false
 }
 
 // flip reverses a comparison operator so a `literal OP path` reads as `path OP' literal`.
@@ -201,16 +215,17 @@ func pipeAtom(pathQ, rhs *gojq.Query) (predicate.Node, bool) {
 		return nil, false
 	}
 	// .path | test(re) / has(key)
-	if rhs.Op != 0 || rhs.Term == nil || rhs.Term.Func == nil || len(rhs.Term.SuffixList) != 0 {
+	f, ok := bareFunc(rhs)
+	if !ok {
 		return nil, false
 	}
-	switch rhs.Term.Func.Name {
+	switch f.Name {
 	case "test":
-		return regexFrom(path, rhs.Term.Func)
+		return regexFrom(path, f)
 	case "has":
-		return existsFrom(path, rhs.Term.Func)
+		return existsFrom(path, f)
 	case "any":
-		return elemMatchFrom(path, rhs.Term.Func)
+		return elemMatchFrom(path, f)
 	default:
 		return nil, false
 	}
@@ -271,23 +286,35 @@ func existsFrom(base []string, f *gojq.Func) (predicate.Node, bool) {
 
 // neAtom builds a Ne from a `path != literal` comparison in either order.
 func neAtom(a, b *gojq.Query) (predicate.Node, bool) {
-	if path, ok := pathOf(a); ok {
-		if v, ok := literalOf(b); ok {
-			return predicate.Ne{Path: path, Value: v}, true
-		}
+	path, v, _, ok := pathAndLiteral(a, b, literalOf)
+	if !ok {
+		return nil, false
 	}
-	if path, ok := pathOf(b); ok {
-		if v, ok := literalOf(a); ok {
-			return predicate.Ne{Path: path, Value: v}, true
-		}
-	}
-	return nil, false
+	return predicate.Ne{Path: path, Value: v}, true
 }
 
 // isNot reports whether q is the bare not builtin.
 func isNot(q *gojq.Query) bool {
-	return q.Op == 0 && q.Term != nil && q.Term.Func != nil &&
-		q.Term.Func.Name == "not" && len(q.Term.Func.Args) == 0 && len(q.Term.SuffixList) == 0
+	f, ok := bareFunc(q)
+	return ok && f.Name == "not" && len(f.Args) == 0
+}
+
+// bareFunc returns the function call of a query that is exactly one term with
+// no operator and no suffix, or ok=false otherwise.
+func bareFunc(q *gojq.Query) (*gojq.Func, bool) {
+	if q.Op != 0 || q.Term == nil || q.Term.Func == nil || len(q.Term.SuffixList) != 0 {
+		return nil, false
+	}
+	return q.Term.Func, true
+}
+
+// parenQuery returns the inner query of a parenthesized term with no operator
+// and no suffix, or ok=false otherwise.
+func parenQuery(q *gojq.Query) (*gojq.Query, bool) {
+	if q.Op != 0 || q.Term == nil || q.Term.Type != gojq.TermTypeQuery || len(q.Term.SuffixList) != 0 {
+		return nil, false
+	}
+	return q.Term.Query, true
 }
 
 // negate pushes `inner | not`. A negation cannot use the superset-and-re-run
@@ -320,12 +347,12 @@ func negate(inner *gojq.Query) (predicate.Node, bool) {
 // are exact; a range, regex, !=, size, or a widened `and` is not.
 func extractExact(e *gojq.Query) (predicate.Node, bool) {
 	// Unwrap a parenthesized sub-expression, matching extractPred.
-	if e.Op == 0 && e.Term != nil && e.Term.Type == gojq.TermTypeQuery && len(e.Term.SuffixList) == 0 {
-		return extractExact(e.Term.Query)
+	if inner, ok := parenQuery(e); ok {
+		return extractExact(inner)
 	}
 	// A bare has("field") fed the document itself.
-	if e.Op == 0 && e.Term != nil && e.Term.Func != nil && len(e.Term.SuffixList) == 0 {
-		return existsFrom(nil, e.Term.Func)
+	if f, ok := bareFunc(e); ok {
+		return existsFrom(nil, f)
 	}
 	switch e.Op {
 	case gojq.OpPipe:
@@ -359,10 +386,10 @@ func exactPipe(pathQ, rhs *gojq.Query) (predicate.Node, bool) {
 	if !ok {
 		return nil, false
 	}
-	if rhs.Op != 0 || rhs.Term == nil || rhs.Term.Func == nil || len(rhs.Term.SuffixList) != 0 {
+	f, ok := bareFunc(rhs)
+	if !ok {
 		return nil, false
 	}
-	f := rhs.Term.Func
 	switch f.Name {
 	case "has":
 		return existsFrom(path, f)
@@ -394,8 +421,8 @@ func lengthEq(a, b *gojq.Query) (int, bool) {
 
 // isLength reports whether q is the bare length builtin.
 func isLength(q *gojq.Query) bool {
-	return q.Op == 0 && q.Term != nil && q.Term.Func != nil &&
-		q.Term.Func.Name == "length" && len(q.Term.Func.Args) == 0 && len(q.Term.SuffixList) == 0
+	f, ok := bareFunc(q)
+	return ok && f.Name == "length" && len(f.Args) == 0
 }
 
 // intLiteral returns a non-negative integer literal.
@@ -501,17 +528,11 @@ func portableEscape(b byte) bool {
 
 // eqAtom builds an Eq from a `path == literal` comparison in either order.
 func eqAtom(a, b *gojq.Query) (predicate.Node, bool) {
-	if path, ok := pathOf(a); ok {
-		if v, ok := literalOf(b); ok {
-			return predicate.Eq{Path: path, Value: v}, true
-		}
+	path, v, _, ok := pathAndLiteral(a, b, literalOf)
+	if !ok {
+		return nil, false
 	}
-	if path, ok := pathOf(b); ok {
-		if v, ok := literalOf(a); ok {
-			return predicate.Eq{Path: path, Value: v}, true
-		}
-	}
-	return nil, false
+	return predicate.Eq{Path: path, Value: v}, true
 }
 
 // pathOf returns the field path of a plain relative index expression (`.a`,
