@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 
@@ -12,6 +13,28 @@ import (
 // variable so a test can swap in an in-memory fake and never touch the real OS
 // keyring; production wiring is the OS-backed store.
 var keyringStore secret.Keyring = secret.OSKeyring{}
+
+// errKeyringTaken reports that the OS keyring already holds a password for a
+// handle. The keyring account is the handle alone, so the entry can belong to a
+// source with the same handle in another config file.
+var errKeyringTaken = errors.New("the OS keyring already holds a password for this handle, and a source in another config file can use it")
+
+// keyringFree returns nil when the OS keyring holds no password for handle,
+// errKeyringTaken when it holds one, and the read error when it cannot be read.
+// A command calls it before it writes a new entry, so that it does not replace
+// the password of another source. The read and the write are two calls, so two
+// iq processes that add the same handle at the same time can both pass it.
+func keyringFree(handle string) error {
+	_, err := keyringStore.Get(handle)
+	switch {
+	case err == nil:
+		return fmt.Errorf("%s: %w", handle, errKeyringTaken)
+	case errors.Is(err, secret.ErrNotFound):
+		return nil
+	default:
+		return err
+	}
+}
 
 // effectiveURL returns the connection URL to open for src: src.URL as stored,
 // unless the source is keyring-backed, in which case the password is fetched

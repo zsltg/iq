@@ -239,7 +239,7 @@ func TestAddKeepsAnExistingKeyringEntry(t *testing.T) {
 
 			_, err := runCmd(t, newAddCmd(&config{}), args...)
 
-			require.EqualError(t, err, "the OS keyring already holds a password for sec, and another config file can use the same handle; choose another handle with -n, or remove the entry: iq config keyring rm sec")
+			require.EqualError(t, err, "sec: the OS keyring already holds a password for this handle, and a source in another config file can use it; choose another handle with -n")
 			require.Equal(t, "first", fk.m["sec"])
 			cf, err := iqconfig.Load()
 			require.NoError(t, err)

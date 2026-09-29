@@ -16,7 +16,6 @@ import (
 
 	iqfile "github.com/zsltg/iq/drivers/file"
 	iqconfig "github.com/zsltg/iq/internal/config"
-	"github.com/zsltg/iq/internal/secret"
 )
 
 // newAddCmd builds `iq add <url>`: register a source from a connection URL,
@@ -192,18 +191,17 @@ func newAddCmd(cfg *config) *cobra.Command {
 
 // keepPassword writes the password of the source name to the OS keyring and
 // marks the source keyring-backed, and reports whether the keyring holds it. It
-// never replaces an entry: the keyring account is the handle alone, so an entry
-// that is already there can belong to a source in another config file. When the
+// does not replace an entry that it finds (see keyringFree). When the
 // keyring cannot be read or written and --store was not given (explicit false),
 // the source keeps rawURL, with its password, in the config file, and a warning
 // goes to stderr.
 func keepPassword(stderr io.Writer, cf *iqconfig.Config, name, rawURL, password string, explicit bool) (bool, error) {
 	h := iqconfig.CleanHandle(name)
-	_, err := keyringStore.Get(h)
-	if err == nil {
-		return false, fmt.Errorf("the OS keyring already holds a password for %s, and another config file can use the same handle; choose another handle with -n, or remove the entry: iq config keyring rm %s", h, h)
+	err := keyringFree(h)
+	if errors.Is(err, errKeyringTaken) {
+		return false, fmt.Errorf("%w; choose another handle with -n", err)
 	}
-	if errors.Is(err, secret.ErrNotFound) {
+	if err == nil {
 		err = keyringStore.Set(h, password)
 	}
 	if err == nil {

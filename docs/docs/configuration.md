@@ -140,7 +140,10 @@ iq config keyring rm <handle>
 ### Migrate `migrate`
 
 Move an inline password into the keyring, rewriting the stored URI to its
-password-less form.
+password-less form. If the keyring already holds a password for the handle,
+for example for a source in another config file, the migration stops, undoes
+what it did, and does not replace that password. Rename the source with
+`iq mv`, then migrate it.
 
 ```sh
 iq config keyring migrate [<handle>] [--all] [--dry-run]

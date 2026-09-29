@@ -64,8 +64,9 @@ error.
 The keyring entry of a source is named by its handle only. If the keyring
 already holds a password for the handle, for example for a source with the same
 handle in another config file, `iq add` stops with an error and does not
-replace the password. Choose another handle with `-n`, or remove the entry
-with `iq config keyring rm <handle>`.
+replace the password. Choose another handle with `-n`. The check and the write
+are two keyring calls, so two `iq add` commands that run at the same time with
+the same handle can both pass the check.
 
 !!! tip "Escaping the source URI"
 

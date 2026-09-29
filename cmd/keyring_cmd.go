@@ -282,13 +282,20 @@ func newConfigKeyringMigrateCmd() *cobra.Command {
 					// Only reachable for an explicit handle; --all filters these out.
 					return fmt.Errorf("source %q has no inline password to migrate", full)
 				}
+				clean := iqconfig.CleanHandle(full)
+				if err := keyringFree(clean); err != nil {
+					migrateRollback(done)
+					if errors.Is(err, errKeyringTaken) {
+						return fmt.Errorf("%w; rename the source with iq mv, then migrate it", err)
+					}
+					return err
+				}
 				if dryRun {
 					if _, err := fmt.Fprintf(out, "would migrate %s\n", full); err != nil {
 						return err
 					}
 					continue
 				}
-				clean := iqconfig.CleanHandle(full)
 				if err := keyringStore.Set(clean, pw); err != nil {
 					migrateRollback(done)
 					return err

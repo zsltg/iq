@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -197,6 +198,42 @@ func TestConfigKeyringMigrate(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, cf.Sources["sec"].Keyring)
 		require.Equal(t, "redis://u@h:6379/0", cf.Sources["sec"].URL)
+	})
+
+	t.Run("keeps an existing keyring entry and rolls back", func(t *testing.T) {
+		configEnv(t)
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "a", "redis://u:pa@h:6379/0", false, "")
+		seedKeyringSource(t, c, fk, "b", "redis://u:pb@h:6379/1", false, "")
+		seedConfig(t, c)
+		fk.m["b"] = "other"
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all")
+
+		require.EqualError(t, err, "b: the OS keyring already holds a password for this handle, and a source in another config file can use it; rename the source with iq mv, then migrate it")
+		require.Equal(t, map[string]string{"b": "other"}, fk.m, "a is rolled back and b keeps its entry")
+		cf, err := iqconfig.Load()
+		require.NoError(t, err)
+		require.Equal(t, "redis://u:pa@h:6379/0", cf.Sources["a"].URL)
+		require.False(t, cf.Sources["a"].Keyring)
+	})
+
+	t.Run("a keyring read failure stops the migration", func(t *testing.T) {
+		configEnv(t)
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "sec", "redis://u:inline@h:6379/0", false, "")
+		seedConfig(t, c)
+		fk.getErr = errors.New("keyring locked")
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "sec")
+
+		require.EqualError(t, err, "keyring locked")
+		require.Empty(t, fk.m)
+		cf, err := iqconfig.Load()
+		require.NoError(t, err)
+		require.Equal(t, "redis://u:inline@h:6379/0", cf.Sources["sec"].URL)
 	})
 
 	t.Run("--all migrates every inline source with a password", func(t *testing.T) {
