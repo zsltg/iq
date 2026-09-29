@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -113,6 +114,37 @@ func TestJSONReportsAnEncodeFailure(t *testing.T) {
 			require.ErrorAs(t, err, &cause)
 			require.Equal(t, reflect.TypeFor[chan int](), cause.Type)
 			require.Empty(t, got)
+		})
+	}
+}
+
+func TestNewJSONEncoderColorsEachRole(t *testing.T) {
+	t.Parallel()
+	// Each row pins the exact bytes of one syntax role. A lost palette entry
+	// shows as a reset with no color code before the token.
+	tests := []struct {
+		name string
+		in   any
+		want string
+	}{
+		{"key", map[string]int{"k": 1}, "\x1b[2m{\x1b[0m\x1b[34;1m\"k\"\x1b[0m\x1b[2m:\x1b[0m\x1b[36m1\x1b[0m\x1b[2m}\x1b[0m\n"},
+		{"string", "s", "\x1b[32m\"s\"\x1b[0m\n"},
+		{"number", 7, "\x1b[36m7\x1b[0m\n"},
+		{"bool", true, "\x1b[1mtrue\x1b[0m\n"},
+		{"null", nil, "\x1b[2mnull\x1b[0m\n"},
+		{"bytes", []byte("hi"), "\x1b[2m\"aGk=\"\x1b[0m\n"},
+		{"time", time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), "\x1b[32;2m\"2026-01-02T03:04:05Z\"\x1b[0m\n"},
+		{"punctuation", []int{}, "\x1b[2m[\x1b[0m\x1b[2m]\x1b[0m\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+
+			err := render.NewJSONEncoder(&buf, "", "", true).Encode(tt.in)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, buf.String())
 		})
 	}
 }

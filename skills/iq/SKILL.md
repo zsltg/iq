@@ -16,7 +16,7 @@ Not for: relational databases (use the native client or `sq`), or heavy aggregat
 
 ## Workflow
 
-1. Find the source: `iq ls -v`. Address it as `<handle>` or `<handle>.<keyspace>` (collection, table, index, label, ...). Register a new one only when asked, `iq add -n <handle> --store keyring '<uri>'`, and never put a password in a command line or repeat a URI that carries one.
+1. Find the source: `iq ls -v`. Address it as `<handle>` or `<handle>.<keyspace>` (collection, table, index, label, ...). Register a new one only when asked, `iq add -n <handle> '<uri>'` (the password goes to the OS keyring), and never put a password in a command line or repeat a URI that carries one.
 2. Plan first: `iq --src <handle> --explain '<filter>'`. It never connects; it prints the route (bounded read, streaming scan, materialized scan) and which `select()` conjuncts the backend evaluates. Prefer bounded or streaming.
 3. Run machine-readable: `iq --src <handle> --jsonl -M --error.format json --timeout 30s '<filter>'`. Single-quote the filter. A missing key reads as `null`, never an error.
 4. Keep results small: project fields (`{id, total}`), put equality tests in `select()` so they push down, and send anything larger than a screen to a file (`--typed -o out.jsonl`) to read selectively.

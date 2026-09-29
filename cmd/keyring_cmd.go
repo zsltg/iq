@@ -22,15 +22,15 @@ type keyringRow struct {
 type keyringStaged struct{ full, clean string }
 
 // newConfigKeyringCmd builds `iq config keyring`: manage the OS-keyring secrets
-// that back keyring-stored sources (added with `iq add --store keyring`). The
+// that back keyring-stored sources (`iq add` stores a password there by default). The
 // underlying keyring library cannot enumerate entries, so every listing and
 // pruning path is driven off the config's source list, never the keyring itself.
 func newConfigKeyringCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "keyring",
 		Short: "Manage the OS-keyring secrets backing keyring-stored sources",
-		Long: "Manage the OS-keyring secrets that back keyring-stored sources (see `iq add\n" +
-			"--store keyring`). `ls` lists keyring-backed sources and whether their secret is\n" +
+		Long: "Manage the OS-keyring secrets that back keyring-stored sources (see `iq add`).\n" +
+			"`ls` lists keyring-backed sources and whether their secret is\n" +
 			"present; `get`/`set`/`rm` read, write, and delete one secret; `migrate` moves an\n" +
 			"inline password into the keyring; `prune` deletes stale entries. The keyring\n" +
 			"library cannot enumerate entries, so these commands reason only about handles the\n" +
@@ -271,40 +271,39 @@ func newConfigKeyringMigrateCmd() *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			done := make([]keyringStaged, 0, len(targets))
+			// Check every source before the first keyring write, so that a
+			// source that cannot move stops the run with nothing written.
+			items := make([]migrateItem, 0, len(targets))
 			for _, full := range targets {
-				src := cf.Sources[full]
-				stripped, pw, ok, err := splitPassword(src.URL)
+				it, err := migrateSecret(cf.Sources[full], full)
 				if err != nil {
 					return err
 				}
-				if !ok {
-					// Only reachable for an explicit handle; --all filters these out.
-					return fmt.Errorf("source %q has no inline password to migrate", full)
-				}
-				if dryRun {
-					if _, err := fmt.Fprintf(out, "would migrate %s\n", full); err != nil {
+				items = append(items, it)
+			}
+			if dryRun {
+				for _, it := range items {
+					if _, err := fmt.Fprintf(out, "would migrate %s\n", it.full); err != nil {
 						return err
 					}
-					continue
 				}
-				clean := iqconfig.CleanHandle(full)
-				if err := keyringStore.Set(clean, pw); err != nil {
+				return nil
+			}
+			done := make([]keyringStaged, 0, len(items))
+			for _, it := range items {
+				if err := keyringStore.Set(it.clean, it.password); err != nil {
 					migrateRollback(done)
 					return err
 				}
-				if err := cf.UseKeyring(full); err != nil {
-					migrateRollback(append(done, keyringStaged{full, clean}))
+				if err := cf.UseKeyring(it.full); err != nil {
+					migrateRollback(append(done, it.keyringStaged))
 					return err
 				}
-				if err := cf.SetSourceURL(full, stripped); err != nil {
-					migrateRollback(append(done, keyringStaged{full, clean}))
+				if err := cf.SetSourceURL(it.full, it.stripped); err != nil {
+					migrateRollback(append(done, it.keyringStaged))
 					return err
 				}
-				done = append(done, keyringStaged{full, clean})
-			}
-			if dryRun {
-				return nil
+				done = append(done, it.keyringStaged)
 			}
 			if len(done) == 0 {
 				_, err := fmt.Fprintln(out, "nothing to migrate")
@@ -325,6 +324,38 @@ func newConfigKeyringMigrateCmd() *cobra.Command {
 	c.Flags().BoolVar(&all, "all", false, "migrate every inline source that has a password")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be migrated without writing anything")
 	return c
+}
+
+// migrateItem is one source that a migration moves to the keyring: its handle,
+// its stored URL without the password, and the password.
+type migrateItem struct {
+	keyringStaged
+	stripped, password string
+}
+
+// migrateSecret returns the migrateItem of the source full when the source can
+// move to the keyring. It fails when the URL has no password (only for an
+// explicit handle, --all filters these out) or when the keyring already holds a
+// password for the handle. That entry can belong to a source in another config
+// file, so a migration does not replace it and tells the user to rename the
+// source.
+func migrateSecret(src iqconfig.Source, full string) (migrateItem, error) {
+	stripped, password, ok, err := splitPassword(src.URL)
+	if err != nil {
+		return migrateItem{}, err
+	}
+	if !ok {
+		return migrateItem{}, fmt.Errorf("source %q has no inline password to migrate", full)
+	}
+	clean := iqconfig.CleanHandle(full)
+	err = keyringFree(clean)
+	if errors.Is(err, errKeyringTaken) {
+		return migrateItem{}, fmt.Errorf("%w; rename the source with iq mv, then migrate it", err)
+	}
+	if err != nil {
+		return migrateItem{}, err
+	}
+	return migrateItem{keyringStaged{full, clean}, stripped, password}, nil
 }
 
 // migrateTargets resolves the source handles a migrate run should act on: the one
