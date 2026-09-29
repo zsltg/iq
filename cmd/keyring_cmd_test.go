@@ -312,9 +312,9 @@ func TestConfigKeyringPrune(t *testing.T) {
 
 // TestConfigKeyringMigrateKeepsOtherEntries drives a migration against a
 // keyring that holds an entry for the handle, or that cannot be read. The
-// migration stops, rolls back, and does not replace the entry.
+// migration stops before its first keyring write and does not replace the entry.
 func TestConfigKeyringMigrateKeepsOtherEntries(t *testing.T) {
-	t.Run("keeps an existing keyring entry and rolls back", func(t *testing.T) {
+	t.Run("keeps an existing keyring entry and writes nothing", func(t *testing.T) {
 		configEnv(t)
 		c := newSeed()
 		fk := useFakeKeyring(t)
@@ -327,7 +327,8 @@ func TestConfigKeyringMigrateKeepsOtherEntries(t *testing.T) {
 
 		require.EqualError(t, err, "b: the OS keyring already holds a password for this handle, and a source in another config file can use it; rename the source with iq mv, then migrate it")
 		require.ErrorIs(t, err, errKeyringTaken)
-		require.Equal(t, map[string]string{"b": "other"}, fk.m, "a is rolled back and b keeps its entry")
+		require.Equal(t, map[string]string{"b": "other"}, fk.m, "a is not written and b keeps its entry")
+		require.Empty(t, fk.deleted, "nothing to roll back")
 		cf, err := iqconfig.Load()
 		require.NoError(t, err)
 		require.Equal(t, "redis://u:pa@h:6379/0", cf.Sources["a"].URL)
