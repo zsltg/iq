@@ -102,13 +102,13 @@ func TestIsMongoInspectCmd(t *testing.T) {
 func TestInspectMongoRejectsUnknown(t *testing.T) {
 	// Validation happens before any store access, so a nil store is never used.
 	var buf bytes.Buffer
-	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, []string{"dropDatabase"}, false, false, false)
+	err := inspectMongo(context.Background(), inspectRequest{out: &buf, cfg: &config{url: "mongodb://h/db"}, only: []string{"dropDatabase"}})
 	require.ErrorContains(t, err, "unknown inspect subcommand")
 }
 
 func TestInspectMongoCollStatsNeedsCollection(t *testing.T) {
 	var buf bytes.Buffer
-	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, []string{"collStats"}, false, false, false)
+	err := inspectMongo(context.Background(), inspectRequest{out: &buf, cfg: &config{url: "mongodb://h/db"}, only: []string{"collStats"}})
 	require.ErrorContains(t, err, "needs a collection")
 }
 
@@ -116,7 +116,7 @@ func TestInspectMongoList(t *testing.T) {
 	// The list path prints the supported set and never touches the store, so a
 	// nil store proves it stays offline.
 	var buf bytes.Buffer
-	err := inspectMongo(context.Background(), &buf, nil, &config{url: "mongodb://h/db"}, nil, false, false, true)
+	err := inspectMongo(context.Background(), inspectRequest{out: &buf, cfg: &config{url: "mongodb://h/db"}, list: true})
 	require.NoError(t, err)
 	for _, sub := range mongoInspectCmds {
 		require.Contains(t, buf.String(), sub)
