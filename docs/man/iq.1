@@ -159,7 +159,7 @@ Register a source from a connection URI, like `sq add`. The URI is the only posi
 .PP
 Each driver reads its own URI options. MongoDB: a default collection as ?collection= (`mongodb://host/db?collection=orders`). Cassandra: a default table as ?table= (`cassandra://host/keyspace?table=orders`). DynamoDB: the region is the host, a default table as ?table= (`dynamodb://us\-east\-1/?table=orders`, credentials from the AWS default chain). HBase: the host is the ZooKeeper quorum, a default table as ?table= (`hbase://host:2181/?table=books`, cell encodings declared with ?types=cf:age=long). CouchDB: the host is the server, a default database as ?database= (`couchdb://host:5984/?database=orders`). Couchbase: the host is the cluster, a bucket as ?bucket= with an optional scope.collection as ?collection= (`couchbase://host/?bucket=iq&collection=sales.orders`). Neo4j: the host is the bolt server, a default node label as ?label= (or a relationship type as ?rel=). Elasticsearch and OpenSearch: a default index as ?index= (`elasticsearch://host:9200/?index=books`).
 .PP
-Handles may be grouped with '/' (`iq add \-n prod/books mongodb://...`). \-p prompts for the URI password (or reads it from stdin); with \-\-store keyring the password is moved to the OS keyring and stripped from the stored URI. \-a makes the new source active. The source is pinged before it is saved unless \-\-skip\-verify is set. Note: `iq add` is this command, which shadows jq's built\-in `add` filter: write the filter as `[ .a, .b ] | add`.
+Handles may be grouped with '/' (`iq add \-n prod/books mongodb://...`). \-p prompts for the URI password (or reads it from stdin). The password goes to the OS keyring and is stripped from the stored URI. When no keyring is available, iq stores the password in the config file and prints a warning. \-\-store inline keeps it in the config file, and \-\-store keyring makes a missing keyring an error. \-a makes the new source active. The source is pinged before it is saved unless \-\-skip\-verify is set. Note: `iq add` is this command, which shadows jq's built\-in `add` filter: write the filter as `[ .a, .b ] | add`.
 .PP
 \fBFlags:\fR
 .TP
@@ -179,7 +179,7 @@ prompt for the URI password (or read it from stdin)
 skip the post\-add reachability check
 .TP
 \fB\-\-store\fR
-where the URI's password is kept: inline (in the config file) or keyring (the OS keyring) (default inline)
+where the URI's password is kept: keyring (the OS keyring) or inline (in the config file); without this flag, inline when no keyring is available (default keyring)
 .PP
 \fBExamples:\fR
 .RS
@@ -191,7 +191,7 @@ where the URI's password is kept: inline (in the config file) or keyring (the OS
   $ iq add 'mongodb://localhost:27017/shop?collection=orders'
 
   # A source needing auth, made active: prompt for the password, keep it in the keyring.
-  $ iq add \-a \-p \-\-store keyring 'mongodb://user@localhost:27017/shop?collection=orders'
+  $ iq add \-a \-p 'mongodb://user@localhost:27017/shop?collection=orders'
 .fi
 .RE
 .SS iq group
@@ -824,7 +824,7 @@ Manage the OS\-keyring secrets backing keyring\-stored sources
 .PP
 \fBUsage:\fR iq config keyring
 .PP
-Manage the OS\-keyring secrets that back keyring\-stored sources (see `iq add \-\-store keyring`). `ls` lists keyring\-backed sources and whether their secret is present; `get`/`set`/`rm` read, write, and delete one secret; `migrate` moves an inline password into the keyring; `prune` deletes stale entries. The keyring library cannot enumerate entries, so these commands reason only about handles the config knows, a secret whose source was deleted is undetectable here.
+Manage the OS\-keyring secrets that back keyring\-stored sources (see `iq add`). `ls` lists keyring\-backed sources and whether their secret is present; `get`/`set`/`rm` read, write, and delete one secret; `migrate` moves an inline password into the keyring; `prune` deletes stale entries. The keyring library cannot enumerate entries, so these commands reason only about handles the config knows, a secret whose source was deleted is undetectable here.
 .PP
 \fBExamples:\fR
 .RS
@@ -1195,10 +1195,10 @@ disable completion descriptions
 .SH EXAMPLES
 .RS
 .nf
-  # Register a Redis source (active) and a Mongo source whose password is kept safe.
+  # Register a Redis source (active) and a Mongo source whose password goes to the OS keyring.
   # The Mongo URI sets a default collection with ?collection=orders.
   $ iq add \-a \-n cache redis://localhost:6379/0
-  $ iq add \-p \-\-store keyring 'mongodb://user@localhost:27017/shop?collection=orders'
+  $ iq add \-p 'mongodb://user@localhost:27017/shop?collection=orders'
 
   # List saved sources (the active one marked *); check reachability; inspect metadata.
   $ iq ls

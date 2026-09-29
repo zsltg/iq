@@ -211,7 +211,7 @@ defaults to `_default`). You can override it per run with a dotted
 Switching buckets is a different source. Use `couchbases://` for TLS.
 
 **Credentials travel in the URI userinfo** (SDK `PasswordAuthenticator`), so
-`--store keyring` moves the password to the OS keyring exactly as for the other
+`iq add` moves the password to the OS keyring exactly as for the other
 backends.
 
 The driver disables the SDK's application telemetry explicitly, so the tool
@@ -337,7 +337,7 @@ The host is the CouchDB server. The database rides in the URI's `?database=`
 many databases).
 
 Use `couchdbs://` for TLS. **Credentials travel in the URI userinfo** (HTTP
-basic auth), so `--store keyring` moves the password to the OS keyring exactly
+basic auth), so `iq add` moves the password to the OS keyring exactly
 as for the other backends.
 
 ```sh { title='Register a CouchDB source' }
@@ -549,7 +549,7 @@ TLS.
 
 **Credentials,
 when the cluster needs them, travel in the URI userinfo** (HTTP basic auth). As a result,
-`--store keyring` moves the password to the OS keyring exactly as for the other backends.
+`iq add` moves the password to the OS keyring exactly as for the other backends.
 
 **OpenSearch is the same
 driver** behind the scheme (two `iq driver ls` entries, with their own supported version ranges,
@@ -898,7 +898,7 @@ per run with a dotted `handle.label`). Neo4j is multi-database, and the database
 (default `neo4j`). Use `neo4j+s://` (or `bolt://` for a single instance, `+s`/`+ssc` for TLS).
 
 **Credentials
-travel in the URI userinfo** (bolt basic auth), so `--store keyring` moves the password to the OS
+travel in the URI userinfo** (bolt basic auth), so `iq add` moves the password to the OS
 keyring exactly as for the other backends.
 
 **The key is the elementId by default, or a property you name with `?key=`.** `elementId(n)` is
