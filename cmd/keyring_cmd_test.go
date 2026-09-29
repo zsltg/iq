@@ -212,6 +212,7 @@ func TestConfigKeyringMigrate(t *testing.T) {
 		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all")
 
 		require.EqualError(t, err, "b: the OS keyring already holds a password for this handle, and a source in another config file can use it; rename the source with iq mv, then migrate it")
+		require.ErrorIs(t, err, errKeyringTaken)
 		require.Equal(t, map[string]string{"b": "other"}, fk.m, "a is rolled back and b keeps its entry")
 		cf, err := iqconfig.Load()
 		require.NoError(t, err)

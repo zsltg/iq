@@ -1416,6 +1416,24 @@
    "file": "internal/query/dump.go",
    "mutator": "numbers/incrementer",
    "line": 152
+  },
+  {
+   "id": "4b55920e281c48e4c47e46966dd0bd08",
+   "file": "cmd/keyring.go",
+   "mutator": "branch/case",
+   "line": 33
+  },
+  {
+   "id": "21f0cf355aff2c581dd93741be1883df",
+   "file": "cmd/source.go",
+   "mutator": "expression/error-guard",
+   "line": 208
+  },
+  {
+   "id": "bf32ad0c2edd16272d5677d35f8740d6",
+   "file": "cmd/source.go",
+   "mutator": "expression/error-guard",
+   "line": 217
   }
  ]
 }
