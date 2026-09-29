@@ -334,6 +334,19 @@ func TestConfigKeyringMigrateKeepsOtherEntries(t *testing.T) {
 		require.False(t, cf.Sources["a"].Keyring)
 	})
 
+	t.Run("a URI that does not parse stops the migration", func(t *testing.T) {
+		configEnv(t)
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "sec", "redis://u:p%zz@h:6379/0", false, "")
+		seedConfig(t, c)
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "sec")
+
+		require.ErrorIs(t, err, errInvalidURI)
+		require.Empty(t, fk.m)
+	})
+
 	t.Run("a keyring read failure stops the migration", func(t *testing.T) {
 		configEnv(t)
 		c := newSeed()

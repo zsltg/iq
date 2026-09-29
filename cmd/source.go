@@ -114,28 +114,9 @@ func newAddCmd(cfg *config) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// The keyring is the default store. An explicit --store keyring
-			// requires it: a URI with no password or a failed keyring write is
-			// an error. Without --store, a URI with no password stays as it is,
-			// and a failed keyring write falls back to the config file. A URI
-			// that does not parse is an error for every store, so no source is
-			// saved that cannot connect.
-			explicitStore := cmd.Flags().Changed("store")
-			storedURL := rawURL
-			password := ""
-			stripped, pw, ok, err := splitPassword(rawURL)
+			plan, err := planPassword(rawURL, useKeyring, cmd.Flags().Changed("store"))
 			if err != nil {
 				return err
-			}
-			if useKeyring {
-				switch {
-				case ok:
-					storedURL, password = stripped, pw
-				case explicitStore:
-					return errors.New("--store keyring: URI has no password to store")
-				default:
-					useKeyring = false
-				}
 			}
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -145,12 +126,12 @@ func newAddCmd(cfg *config) *cobra.Command {
 			if !cmd.Flags().Changed("handle") {
 				name = suggestHandle(cf, rawURL)
 			}
-			if err := cf.Add(name, storedURL); err != nil {
+			if err := cf.Add(name, plan.stored); err != nil {
 				return err
 			}
 			// Verify reachability before persisting so a failed add leaves no
-			// trace. rawURL still carries the password (stripped from storedURL for
-			// a keyring source), so it is what we dial.
+			// trace. rawURL still carries the password (stripped from plan.stored
+			// for a keyring source), so it is what we dial.
 			if !skipVerify {
 				if err := verifySource(cmd.Context(), rawURL, cfg.timeout); err != nil {
 					return fmt.Errorf("verify %s: %w (use --skip-verify to add it anyway)", strings.TrimPrefix(name, "@"), err)
@@ -161,28 +142,8 @@ func newAddCmd(cfg *config) *cobra.Command {
 					return err
 				}
 			}
-			fellBack := false
-			if useKeyring {
-				useKeyring, err = keepPassword(cf, name, rawURL, password, explicitStore)
-				if err != nil {
-					return err
-				}
-				fellBack = !useKeyring
-			}
-			if err := cf.Save(); err != nil {
-				if useKeyring {
-					_ = keyringStore.Delete(iqconfig.CleanHandle(name))
-				}
+			if err := saveSource(cmd.ErrOrStderr(), cf, name, plan); err != nil {
 				return err
-			}
-			if fellBack {
-				// Only after the save: the warning says where the password is.
-				// The keyring error can name library internals (a D-Bus object
-				// path), so the warning gives only what iq knows and the remedy.
-				h := iqconfig.CleanHandle(name)
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not write the password of %s to the OS keyring, so it is in the config file\n"+
-					"to move it later, unlock or set up the keyring and run: iq config keyring migrate %s\n"+
-					"to keep a password in the config file without this warning, add the source with --store inline\n", h, h)
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added source %s\n", strings.TrimPrefix(name, "@"))
 			return err
@@ -199,37 +160,6 @@ func newAddCmd(cfg *config) *cobra.Command {
 	_ = c.RegisterFlagCompletionFunc("driver", fixedValues(driverNameList()...))
 	_ = c.RegisterFlagCompletionFunc("store", fixedValues(passwordStoreNames...))
 	return c
-}
-
-// keepPassword writes the password of the source name to the OS keyring and
-// marks the source keyring-backed, and reports whether the keyring holds it. It
-// does not replace an entry that it finds (see keyringFree). When the
-// keyring cannot be read or written and --store was not given (explicit false),
-// the source keeps rawURL, with its password, in the config file, and the caller
-// prints a warning after the save.
-func keepPassword(cf *iqconfig.Config, name, rawURL, password string, explicit bool) (bool, error) {
-	h := iqconfig.CleanHandle(name)
-	err := keyringFree(h)
-	if errors.Is(err, errKeyringTaken) {
-		return false, fmt.Errorf("%w; choose another handle with -n", err)
-	}
-	if err == nil {
-		err = keyringStore.Set(h, password)
-	}
-	if err == nil {
-		if err := cf.UseKeyring(name); err != nil {
-			_ = keyringStore.Delete(h)
-			return false, err
-		}
-		return true, nil
-	}
-	if explicit {
-		return false, err
-	}
-	if err := cf.SetSourceURL(name, rawURL); err != nil {
-		return false, err
-	}
-	return false, nil
 }
 
 // suggestHandle derives a source handle from rawURL when -n is omitted, mirroring
