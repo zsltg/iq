@@ -17,7 +17,7 @@ reviews:
   collapse_walkthrough: true
   auto_review:
     enabled: true
-    drafts: false
+    drafts: true
   tools:
     golangci-lint:
       enabled: true
