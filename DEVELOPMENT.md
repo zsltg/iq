@@ -416,8 +416,10 @@ Posture and upkeep around the pipeline, all on GitHub:
   [Harden-Runner](https://github.com/step-security/harden-runner) in audit mode
   (`egress-policy: audit`). It records the network connections, file writes and
   processes of the job, and the job summary links to the report. It blocks
-  nothing. After a week of reports, the plan is to list the endpoints each job
-  needs and switch to `egress-policy: block`. A job on a macOS or Windows runner
+  nothing. In audit mode it sends this data to StepSecurity, which builds the
+  report. After a week of reports, the plan is to list the endpoints each job
+  needs, switch to `egress-policy: block` and set `disable-telemetry: true`, so
+  that no data goes to StepSecurity after that. A job on a macOS or Windows runner
   does not run it, because Harden-Runner supports Linux runners only.
 - `.github/workflows/codeql.yml` runs CodeQL (the `security-and-quality` queries
   over the Go code) on every pull request, every push to `main` and weekly, and
