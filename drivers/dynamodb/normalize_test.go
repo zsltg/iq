@@ -3,6 +3,9 @@ package dynamodb
 import (
 	"encoding/base64"
 	"encoding/json"
+	"math"
+	"math/big"
+	"strconv"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -68,10 +71,13 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestNumberValue(t *testing.T) {
-	// The largest int64 must still parse as an int (a narrower parse would spill it to
-	// the big.Int path and present it as a string), and an integer beyond int64 must
+	// The largest int must still parse as an int (a narrower parse would spill it to
+	// the big.Int path and present it as a string), and an integer beyond int must
 	// keep its exact decimal string in every mode, number mode included, where the
-	// float path would round it.
+	// float path would round it. The int bounds come from math.MaxInt and
+	// math.MinInt, so the same rows are correct on 32-bit and 64-bit targets.
+	pastMax := new(big.Int).Add(big.NewInt(math.MaxInt), big.NewInt(1)).String()
+	pastMin := new(big.Int).Sub(big.NewInt(math.MinInt), big.NewInt(1)).String()
 	tests := []struct {
 		name string
 		in   string
@@ -80,8 +86,10 @@ func TestNumberValue(t *testing.T) {
 	}{
 		{"integer auto", "10", numfmt.DecimalAuto, 10},
 		{"integer number mode stays int", "10", numfmt.DecimalNumber, 10},
-		{"max int64 stays an int", "9223372036854775807", numfmt.DecimalAuto, 9223372036854775807},
-		{"min int64 stays an int", "-9223372036854775808", numfmt.DecimalAuto, -9223372036854775808},
+		{"max int stays an int", strconv.Itoa(math.MaxInt), numfmt.DecimalAuto, math.MaxInt},
+		{"min int stays an int", strconv.Itoa(math.MinInt), numfmt.DecimalAuto, math.MinInt},
+		{"one past max int keeps the exact string", pastMax, numfmt.DecimalAuto, pastMax},
+		{"one past min int keeps the exact string", pastMin, numfmt.DecimalAuto, pastMin},
 		{"decimal auto keeps the string", "1.5", numfmt.DecimalAuto, "1.5"},
 		{"decimal string mode keeps the string", "1.5", numfmt.DecimalString, "1.5"},
 		{"decimal number mode floats", "1.5", numfmt.DecimalNumber, 1.5},
