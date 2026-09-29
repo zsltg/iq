@@ -142,7 +142,7 @@ if ! git merge-base --is-ancestor github/main HEAD; then
 fi
 regen CHANGELOG.md
 git add CHANGELOG.md
-git commit -m "chore(release): $next"
+git commit -s -m "chore(release): $next"
 
 echo "release: committed CHANGELOG.md for $next on $branch"
 echo "next: git push github $branch, then open a pull request titled 'chore(release): $next'"
