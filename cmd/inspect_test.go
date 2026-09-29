@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -266,4 +267,512 @@ func TestInspectMongoIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, listOut, "dbStats")
 	require.Contains(t, listOut, "buildInfo")
+}
+
+// recordingInspector is a store that implements every driver-method inspector
+// port and the raw Query port. Each read records its name. A read returns the
+// error that errs sets for its name, else a value that is the name.
+type recordingInspector struct {
+	fakeInspectStore
+	calls []string
+	errs  map[string]error
+}
+
+func (r *recordingInspector) read(name string) (any, error) {
+	r.calls = append(r.calls, name)
+	if err := r.errs[name]; err != nil {
+		return nil, err
+	}
+	return name, nil
+}
+
+func (r *recordingInspector) Query(_ context.Context, args []string) (any, error) {
+	return r.read(args[0])
+}
+
+func (r *recordingInspector) InspectTables(context.Context) (any, error) {
+	return r.read("InspectTables")
+}
+
+func (r *recordingInspector) InspectTable(context.Context) (any, error) {
+	return r.read("InspectTable")
+}
+
+func (r *recordingInspector) InspectServer(context.Context) (any, error) {
+	return r.read("InspectServer")
+}
+
+func (r *recordingInspector) InspectDatabases(context.Context) (any, error) {
+	return r.read("InspectDatabases")
+}
+
+func (r *recordingInspector) InspectDBInfo(context.Context) (any, error) {
+	return r.read("InspectDBInfo")
+}
+
+func (r *recordingInspector) InspectIndexes(context.Context) (any, error) {
+	return r.read("InspectIndexes")
+}
+
+func (r *recordingInspector) InspectCluster(context.Context) (any, error) {
+	return r.read("InspectCluster")
+}
+
+func (r *recordingInspector) InspectBuckets(context.Context) (any, error) {
+	return r.read("InspectBuckets")
+}
+
+func (r *recordingInspector) InspectCollections(context.Context) (any, error) {
+	return r.read("InspectCollections")
+}
+
+func (r *recordingInspector) InspectIndices(context.Context) (any, error) {
+	return r.read("InspectIndices")
+}
+
+func (r *recordingInspector) InspectMapping(context.Context) (any, error) {
+	return r.read("InspectMapping")
+}
+
+func (r *recordingInspector) InspectAliases(context.Context) (any, error) {
+	return r.read("InspectAliases")
+}
+
+func (r *recordingInspector) InspectLabels(context.Context) (any, error) {
+	return r.read("InspectLabels")
+}
+
+func (r *recordingInspector) InspectRelationshipTypes(context.Context) (any, error) {
+	return r.read("InspectRelationshipTypes")
+}
+
+func (r *recordingInspector) InspectConstraints(context.Context) (any, error) {
+	return r.read("InspectConstraints")
+}
+
+// dispatchInspectText runs dispatchInspect with text output for a source URL and
+// returns the output without color escapes.
+func dispatchInspectText(t *testing.T, st store, url string, only []string, list bool) (string, error) {
+	t.Helper()
+	cfg := &config{url: url, source: iqconfig.Source{URL: url}, handle: "src"}
+	var buf bytes.Buffer
+	err := dispatchInspect(t.Context(), &buf, st, cfg, only, false, false, list)
+	return stripANSI(buf.String()), err
+}
+
+// TestDispatchInspectListComesFirst pins rule 1: with list, every inspector
+// returns its supported names before it uses the store and before it validates
+// a name. A nil store and an unknown name do not cause an error.
+func TestDispatchInspectListComesFirst(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"mongo", "mongodb://h/db", "dbStats\nserverStatus\nlistCollections\ncollStats\nbuildInfo\nhostInfo\n"},
+		{"cassandra", "cassandra://h/ks", "local\ntables\ncolumns\n"},
+		{"dynamodb", "dynamodb://h", "tables\ntable\n"},
+		{"hbase", "hbase://h", "tables\n"},
+		{"couchdb", "couchdb://h", "server\ndatabases\ndbinfo\nindexes\n"},
+		{"couchbase", "couchbase://h", "cluster\nbuckets\ncollections\nindexes\n"},
+		{"elasticsearch", "elasticsearch://h", "server\nindices\nmapping\naliases\n"},
+		{"opensearch", "opensearch://h", "server\nindices\nmapping\naliases\n"},
+		{"neo4j", "neo4j://h", "server\ndatabases\nlabels\nreltypes\nconstraints\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := dispatchInspectText(t, nil, tt.url, []string{"bogus"}, true)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, out)
+		})
+	}
+}
+
+// TestDispatchInspectStoreCheckBeforeValidation pins the order in the
+// driver-method inspectors: the store check comes before the name check, so a
+// store without the port reports that, even for an unknown name.
+func TestDispatchInspectStoreCheckBeforeValidation(t *testing.T) {
+	for _, url := range []string{"dynamodb://h", "hbase://h", "couchdb://h", "couchbase://h", "elasticsearch://h", "neo4j://h"} {
+		t.Run(url, func(t *testing.T) {
+			out, err := dispatchInspectText(t, nil, url, []string{"bogus"}, false)
+
+			require.EqualError(t, err, "inspect is not supported for this source")
+			require.Empty(t, out)
+		})
+	}
+}
+
+// TestDispatchInspectValidatesBeforeReads pins rule 2: an unknown name after a
+// valid name fails with the exact error text, and no read runs.
+func TestDispatchInspectValidatesBeforeReads(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		only    []string
+		wantErr string
+	}{
+		{"mongo", "mongodb://h/db", []string{"dbStats", "bogus"}, `unknown inspect subcommand "bogus"; want one of dbStats, serverStatus, listCollections, collStats, buildInfo, hostInfo`},
+		{"cassandra", "cassandra://h/ks", []string{"local", "bogus"}, `unknown inspect subcommand "bogus"; want one of local, tables, columns`},
+		{"dynamodb", "dynamodb://h", []string{"tables", "bogus"}, `unknown inspect subcommand "bogus"; want one of tables, table`},
+		{"hbase", "hbase://h", []string{"tables", "bogus"}, `unknown inspect subcommand "bogus"; want one of tables`},
+		{"couchdb", "couchdb://h", []string{"server", "bogus"}, `unknown inspect subcommand "bogus"; want one of server, databases, dbinfo, indexes`},
+		{"couchbase", "couchbase://h", []string{"cluster", "bogus"}, `unknown inspect subcommand "bogus"; want one of cluster, buckets, collections, indexes`},
+		{"elasticsearch", "elasticsearch://h", []string{"server", "bogus"}, `unknown inspect subcommand "bogus"; want one of server, indices, mapping, aliases`},
+		{"neo4j", "neo4j://h", []string{"server", "bogus"}, `unknown inspect subcommand "bogus"; want one of server, databases, labels, reltypes, constraints`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &recordingInspector{}
+
+			out, err := dispatchInspectText(t, st, tt.url, tt.only, false)
+
+			require.EqualError(t, err, tt.wantErr)
+			require.Empty(t, out)
+			require.Empty(t, st.calls)
+		})
+	}
+}
+
+// TestDispatchInspectRunsInRequestOrder pins rule 3: the reads run in the
+// order of the request, and a repeated name runs again.
+func TestDispatchInspectRunsInRequestOrder(t *testing.T) {
+	tests := []struct {
+		name      string
+		url       string
+		only      []string
+		wantCalls []string
+		wantOut   string
+	}{
+		{
+			"mongo",
+			"mongodb://h/db",
+			[]string{"buildInfo", "dbStats", "buildInfo"},
+			[]string{`{"buildInfo":1}`, `{"dbStats":1}`, `{"buildInfo":1}`},
+			"mongo  mongodb://h/db\n\n" +
+				"# buildInfo\n<{\"buildInfo\":1}>\n\n" +
+				"# dbStats\n<{\"dbStats\":1}>\n\n" +
+				"# buildInfo\n<{\"buildInfo\":1}>\n\n",
+		},
+		{
+			"cassandra",
+			"cassandra://h/ks",
+			[]string{"tables", "local", "tables"},
+			[]string{
+				"SELECT table_name FROM system_schema.tables WHERE keyspace_name = 'ks'",
+				"SELECT cluster_name, release_version, cql_version FROM system.local",
+				"SELECT table_name FROM system_schema.tables WHERE keyspace_name = 'ks'",
+			},
+			"cassandra  cassandra://h/ks\n\n" +
+				"# tables\n<SELECT table_name FROM system_schema.tables WHERE keyspace_name = 'ks'>\n\n" +
+				"# local\n<SELECT cluster_name, release_version, cql_version FROM system.local>\n\n" +
+				"# tables\n<SELECT table_name FROM system_schema.tables WHERE keyspace_name = 'ks'>\n\n",
+		},
+		{
+			"dynamodb",
+			"dynamodb://h",
+			[]string{"table", "tables", "table"},
+			[]string{"InspectTable", "InspectTables", "InspectTable"},
+			"dynamodb  dynamodb://h\n\n" +
+				"# table\n<InspectTable>\n\n" +
+				"# tables\n<InspectTables>\n\n" +
+				"# table\n<InspectTable>\n\n",
+		},
+		{
+			"hbase",
+			"hbase://h",
+			[]string{"tables", "tables"},
+			[]string{"InspectTables", "InspectTables"},
+			"hbase  hbase://h\n\n" +
+				"# tables\n<InspectTables>\n\n" +
+				"# tables\n<InspectTables>\n\n",
+		},
+		{
+			"couchdb",
+			"couchdb://h",
+			[]string{"indexes", "server", "indexes"},
+			[]string{"InspectIndexes", "InspectServer", "InspectIndexes"},
+			"couchdb  couchdb://h\n\n" +
+				"# indexes\n<InspectIndexes>\n\n" +
+				"# server\n<InspectServer>\n\n" +
+				"# indexes\n<InspectIndexes>\n\n",
+		},
+		{
+			"couchbase",
+			"couchbase://h",
+			[]string{"indexes", "cluster", "indexes"},
+			[]string{"InspectIndexes", "InspectCluster", "InspectIndexes"},
+			"couchbase  couchbase://h\n\n" +
+				"# indexes\n<InspectIndexes>\n\n" +
+				"# cluster\n<InspectCluster>\n\n" +
+				"# indexes\n<InspectIndexes>\n\n",
+		},
+		{
+			"elasticsearch",
+			"elasticsearch://h",
+			[]string{"aliases", "mapping", "aliases"},
+			[]string{"InspectAliases", "InspectMapping", "InspectAliases"},
+			"elasticsearch  elasticsearch://h\n\n" +
+				"# aliases\n<InspectAliases>\n\n" +
+				"# mapping\n<InspectMapping>\n\n" +
+				"# aliases\n<InspectAliases>\n\n",
+		},
+		{
+			"neo4j",
+			"neo4j://h",
+			[]string{"constraints", "reltypes", "constraints"},
+			[]string{"InspectConstraints", "InspectRelationshipTypes", "InspectConstraints"},
+			"neo4j  neo4j://h\n\n" +
+				"# constraints\n<InspectConstraints>\n\n" +
+				"# reltypes\n<InspectRelationshipTypes>\n\n" +
+				"# constraints\n<InspectConstraints>\n\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &recordingInspector{}
+
+			out, err := dispatchInspectText(t, st, tt.url, tt.only, false)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantCalls, st.calls)
+			require.Equal(t, tt.wantOut, out)
+		})
+	}
+}
+
+// TestDispatchInspectReadErrors pins rules 4 and 6 for the driver-method
+// inspectors. A scoped read always runs. In run-all mode, any error from it
+// skips the name. In explicit mode, the error object goes into the results. A
+// failed read that is not scoped records the error object in both modes.
+func TestDispatchInspectReadErrors(t *testing.T) {
+	denied := errors.New("permission denied")
+	tests := []struct {
+		name      string
+		url       string
+		only      []string
+		errs      map[string]error
+		wantCalls []string
+		wantOut   string
+	}{
+		{
+			"dynamodb table error skips in run-all",
+			"dynamodb://h",
+			nil,
+			map[string]error{"InspectTable": denied},
+			[]string{"InspectTables", "InspectTable"},
+			"dynamodb  dynamodb://h\n\n# tables\n<InspectTables>\n\n",
+		},
+		{
+			"dynamodb table error records when explicit",
+			"dynamodb://h",
+			[]string{"table"},
+			map[string]error{"InspectTable": denied},
+			[]string{"InspectTable"},
+			"dynamodb  dynamodb://h\n\n# table\n<map[error:permission denied]>\n\n",
+		},
+		{
+			"dynamodb tables error records in run-all",
+			"dynamodb://h",
+			nil,
+			map[string]error{"InspectTables": denied},
+			[]string{"InspectTables", "InspectTable"},
+			"dynamodb  dynamodb://h\n\n# tables\n<map[error:permission denied]>\n\n# table\n<InspectTable>\n\n",
+		},
+		{
+			"hbase tables error records in run-all",
+			"hbase://h",
+			nil,
+			map[string]error{"InspectTables": denied},
+			[]string{"InspectTables"},
+			"hbase  hbase://h\n\n# tables\n<map[error:permission denied]>\n\n",
+		},
+		{
+			"couchdb dbinfo and indexes errors skip in run-all",
+			"couchdb://h",
+			nil,
+			map[string]error{"InspectDBInfo": denied, "InspectIndexes": denied},
+			[]string{"InspectServer", "InspectDatabases", "InspectDBInfo", "InspectIndexes"},
+			"couchdb  couchdb://h\n\n# server\n<InspectServer>\n\n# databases\n<InspectDatabases>\n\n",
+		},
+		{
+			"couchdb dbinfo and indexes errors record when explicit",
+			"couchdb://h",
+			[]string{"dbinfo", "indexes"},
+			map[string]error{"InspectDBInfo": denied, "InspectIndexes": denied},
+			[]string{"InspectDBInfo", "InspectIndexes"},
+			"couchdb  couchdb://h\n\n# dbinfo\n<map[error:permission denied]>\n\n# indexes\n<map[error:permission denied]>\n\n",
+		},
+		{
+			"couchdb dbinfo error records redacted when explicit",
+			"couchdb://u:pw@h",
+			[]string{"dbinfo"},
+			map[string]error{"InspectDBInfo": errors.New("get couchdb://u:pw@h/db: denied")},
+			[]string{"InspectDBInfo"},
+			"couchdb  couchdb://u:xxxxx@h\n\n# dbinfo\n<map[error:get couchdb://u:xxxxx@h/db: denied]>\n\n",
+		},
+		{
+			"couchdb server error records in run-all",
+			"couchdb://h",
+			nil,
+			map[string]error{"InspectServer": denied},
+			[]string{"InspectServer", "InspectDatabases", "InspectDBInfo", "InspectIndexes"},
+			"couchdb  couchdb://h\n\n# server\n<map[error:permission denied]>\n\n# databases\n<InspectDatabases>\n\n" +
+				"# dbinfo\n<InspectDBInfo>\n\n# indexes\n<InspectIndexes>\n\n",
+		},
+		{
+			"couchbase collections error skips in run-all",
+			"couchbase://h",
+			nil,
+			map[string]error{"InspectCollections": denied},
+			[]string{"InspectCluster", "InspectBuckets", "InspectCollections", "InspectIndexes"},
+			"couchbase  couchbase://h\n\n# cluster\n<InspectCluster>\n\n# buckets\n<InspectBuckets>\n\n# indexes\n<InspectIndexes>\n\n",
+		},
+		{
+			"couchbase collections error records when explicit",
+			"couchbase://h",
+			[]string{"collections"},
+			map[string]error{"InspectCollections": denied},
+			[]string{"InspectCollections"},
+			"couchbase  couchbase://h\n\n# collections\n<map[error:permission denied]>\n\n",
+		},
+		{
+			"couchbase indexes error records in run-all",
+			"couchbase://h",
+			nil,
+			map[string]error{"InspectIndexes": denied},
+			[]string{"InspectCluster", "InspectBuckets", "InspectCollections", "InspectIndexes"},
+			"couchbase  couchbase://h\n\n# cluster\n<InspectCluster>\n\n# buckets\n<InspectBuckets>\n\n" +
+				"# collections\n<InspectCollections>\n\n# indexes\n<map[error:permission denied]>\n\n",
+		},
+		{
+			"elasticsearch mapping cancellation skips in run-all",
+			"elasticsearch://h",
+			nil,
+			map[string]error{"InspectMapping": context.Canceled},
+			[]string{"InspectServer", "InspectIndices", "InspectMapping", "InspectAliases"},
+			"elasticsearch  elasticsearch://h\n\n# server\n<InspectServer>\n\n# indices\n<InspectIndices>\n\n# aliases\n<InspectAliases>\n\n",
+		},
+		{
+			"elasticsearch mapping error records when explicit",
+			"elasticsearch://h",
+			[]string{"mapping"},
+			map[string]error{"InspectMapping": denied},
+			[]string{"InspectMapping"},
+			"elasticsearch  elasticsearch://h\n\n# mapping\n<map[error:permission denied]>\n\n",
+		},
+		{
+			"neo4j labels error records in run-all",
+			"neo4j://h",
+			nil,
+			map[string]error{"InspectLabels": denied},
+			[]string{"InspectServer", "InspectDatabases", "InspectLabels", "InspectRelationshipTypes", "InspectConstraints"},
+			"neo4j  neo4j://h\n\n# server\n<InspectServer>\n\n# databases\n<InspectDatabases>\n\n# labels\n<map[error:permission denied]>\n\n" +
+				"# reltypes\n<InspectRelationshipTypes>\n\n# constraints\n<InspectConstraints>\n\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &recordingInspector{errs: tt.errs}
+
+			out, err := dispatchInspectText(t, st, tt.url, tt.only, false)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantCalls, st.calls)
+			require.Equal(t, tt.wantOut, out)
+		})
+	}
+}
+
+// TestDispatchInspectStatementMissingTarget pins rule 5 for the statement
+// inspectors. In run-all mode, a name that needs a missing target is skipped.
+// In explicit mode, the run stops at that name: the reads before it run, their
+// results are discarded, nothing renders, and the error has one frame.
+func TestDispatchInspectStatementMissingTarget(t *testing.T) {
+	const (
+		collStatsErr = "collStats needs a collection; address it as handle.collection or set ?collection= on the source URI"
+		columnsErr   = "columns needs a table; address it as handle.table or set ?table= on the source URI"
+		localStmt    = "SELECT cluster_name, release_version, cql_version FROM system.local"
+		tablesStmt   = "SELECT table_name FROM system_schema.tables WHERE keyspace_name = 'ks'"
+	)
+	tests := []struct {
+		name      string
+		url       string
+		only      []string
+		wantCalls []string
+		wantOut   string
+		wantErr   string
+	}{
+		{
+			"mongo collStats with no collection stops when explicit",
+			"mongodb://h/db",
+			[]string{"dbStats", "collStats"},
+			[]string{`{"dbStats":1}`},
+			"",
+			collStatsErr,
+		},
+		{
+			"mongo collStats with no collection skips in run-all",
+			"mongodb://h/db",
+			nil,
+			[]string{`{"dbStats":1}`, `{"serverStatus":1}`, `{"listCollections":1}`, `{"buildInfo":1}`, `{"hostInfo":1}`},
+			"mongo  mongodb://h/db\n\n" +
+				"# dbStats\n<{\"dbStats\":1}>\n\n" +
+				"# serverStatus\n<{\"serverStatus\":1}>\n\n" +
+				"# listCollections\n<{\"listCollections\":1}>\n\n" +
+				"# buildInfo\n<{\"buildInfo\":1}>\n\n" +
+				"# hostInfo\n<{\"hostInfo\":1}>\n\n",
+			"",
+		},
+		{
+			"cassandra columns with no table stops when explicit",
+			"cassandra://h/ks",
+			[]string{"local", "columns"},
+			[]string{localStmt},
+			"",
+			columnsErr,
+		},
+		{
+			"cassandra columns with no table skips in run-all",
+			"cassandra://h/ks",
+			nil,
+			[]string{localStmt, tablesStmt},
+			"cassandra  cassandra://h/ks\n\n# local\n<" + localStmt + ">\n\n# tables\n<" + tablesStmt + ">\n\n",
+			"",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &recordingInspector{}
+
+			out, err := dispatchInspectText(t, st, tt.url, tt.only, false)
+
+			require.Equal(t, tt.wantCalls, st.calls)
+			require.Equal(t, tt.wantOut, out)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, tt.wantErr)
+			require.NoError(t, errors.Unwrap(err), "the error must wrap no cause")
+			require.Nil(t, stackFrames(err))
+			var rendered bytes.Buffer
+			renderErrorJSON(&rendered, err)
+			require.Equal(t, `{"error":{"message":"`+tt.wantErr+`"}}`+"\n", rendered.String())
+		})
+	}
+}
+
+// TestDispatchInspectStatementReadError pins rule 6 for the statement
+// inspectors: a failed read records the error object and the run continues.
+func TestDispatchInspectStatementReadError(t *testing.T) {
+	st := &recordingInspector{errs: map[string]error{`{"dbStats":1}`: errors.New("permission denied")}}
+
+	out, err := dispatchInspectText(t, st, "mongodb://h/db", []string{"dbStats", "buildInfo"}, false)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{`{"dbStats":1}`, `{"buildInfo":1}`}, st.calls)
+	require.Equal(t, "mongo  mongodb://h/db\n\n"+
+		"# dbStats\n<map[error:run query \"{\\\"dbStats\\\":1}\": permission denied]>\n\n"+
+		"# buildInfo\n<{\"buildInfo\":1}>\n\n", out)
 }
