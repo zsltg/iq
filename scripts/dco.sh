@@ -92,11 +92,13 @@ done
 if [ "$fail" -ne 0 ]; then
   cat >&2 <<EOF
 dco: add the sign-off in one of two ways (see CONTRIBUTING.md, Developer Certificate of Origin):
-dco:   1. sign off every commit again, then force-push the branch:
+dco:   1. when you are the author of every commit named above (your git user.email is
+dco:      their author email), sign off every commit again, then force-push the branch:
 dco:        git rebase --signoff $base
 dco:        git push --force-with-lease
-dco:   2. or add one empty commit for each commit named above, then push:
-dco:        git commit -s --allow-empty -m "DCO remediation" -m "I, <your name> <author email>, hereby add my Signed-off-by to this commit: <sha>"
+dco:   2. or add one empty commit for each commit named above, made and signed off by
+dco:      the author of that commit, then push:
+dco:        git commit -s --allow-empty -m "DCO remediation" -m "I, <name> <author email>, hereby add my Signed-off-by to this commit: <sha>"
 EOF
   exit 1
 fi

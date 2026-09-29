@@ -97,11 +97,13 @@ entry. This note goes away with the re-baseline.
   checks each commit of a pull request (`bash scripts/dco.sh origin/main HEAD`
   runs the same check locally). The check covers only the commits of a pull
   request, so the older commits on `main`, from before this rule, need none. If
-  a commit has no sign-off, fix it in one of two ways. Sign off every commit
-  again with `git rebase --signoff origin/main` and force-push the branch (the
-  one case where a force-push is correct). Or push a signed-off empty commit
-  with this line for each commit that has no sign-off:
-  `I, <your name> <author email>, hereby add my Signed-off-by to this commit: <sha>`.
+  a commit has no sign-off, fix it in one of two ways. When you are the author
+  of every such commit, sign off every commit again with
+  `git rebase --signoff origin/main` and force-push the branch (the one case
+  where a force-push is correct): the rebase signs off with your git identity.
+  Or, for each commit that has no sign-off, its author pushes a signed-off empty
+  commit with this line:
+  `I, <name> <author email>, hereby add my Signed-off-by to this commit: <sha>`.
   The failed `dco` job prints both commands.
 - [Conventional Commits](https://www.conventionalcommits.org/):
   `<type>(<scope>): <description>`, lowercase imperative.
