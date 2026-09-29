@@ -384,6 +384,17 @@ Posture and upkeep around the pipeline, all on GitHub:
   score behind the README badge. Every action in every workflow is pinned by
   commit SHA with the release in a trailing comment; keep it that way (a tag
   pin is a Scorecard deduction and a supply-chain gap).
+- The repository Actions setting allows only actions made by GitHub, actions from
+  verified creators, and an allow-list with these exact patterns:
+  `astral-sh/setup-uv@*`, `codecov/codecov-action@*`, `ossf/scorecard-action@*`,
+  `goreleaser/goreleaser-action@*`, `sigstore/cosign-installer@*`,
+  `slsa-framework/*` and `softprops/action-gh-release@*`. A reusable workflow from another repository
+  also runs the actions that it uses itself, and each of those must be allowed
+  too. The SLSA generator uses four actions of its own repository and
+  `softprops/action-gh-release`; allowing only its workflow file stopped the
+  v0.37.1 release before its first job (`startup_failure`). Before a new
+  third-party workflow or action goes into a workflow, read which actions it uses
+  and add them to the allow-list in the same change.
 - [zizmor](https://docs.zizmor.sh) audits the workflow files themselves: unpinned
   or impostor actions, credentials the checkout leaves on disk, cache poisoning on
   the release paths, and template injection into a `run` block. The version is
