@@ -598,6 +598,48 @@ PY
   fi
 fi
 
+# A gate run that fails on an escape names the id of each new escape, and writes
+# mutago-baseline.candidate.json: the committed baseline plus those escapes, in the
+# format an update run writes. The CI job uploads it with report.json and
+# mutago-agentic.json, so a failed run on CI gives the ids without a local re-run.
+# Copy the candidate over mutago-baseline.json only for escapes that are genuine
+# equivalents, each with its line in mutago-baseline.notes.md; kill the others.
+if [[ ${#mode[@]} -eq 0 && ${#mutant[@]} -eq 0 && "$status" -eq 4 && "$cmd_policy" -eq 0 ]]; then
+  if ! python3 - "$baseline_file" <<'PY'; then
+import json
+import sys
+
+baseline_path = sys.argv[1]
+try:
+    with open("mutago-agentic.json", encoding="utf-8") as handle:
+        escaped = json.load(handle).get("mutants") or []
+    with open(baseline_path, encoding="utf-8") as handle:
+        baseline = json.load(handle)
+except (OSError, ValueError) as err:
+    print("mutation gate: could not list the new escapes: {}".format(err), file=sys.stderr)
+    sys.exit(1)
+
+entries = list(baseline.get("mutants") or [])
+seen = {entry.get("id") for entry in entries}
+added = []
+for mutant in escaped:
+    if mutant.get("id") in seen:
+        continue
+    seen.add(mutant.get("id"))
+    added.append({key: mutant.get(key) for key in ("id", "file", "mutator", "line")})
+if not added:
+    sys.exit(0)
+baseline["mutants"] = entries + added
+with open("mutago-baseline.candidate.json", "w", encoding="utf-8") as handle:
+    handle.write(json.dumps(baseline, indent=1) + "\n")
+print("mutation gate: new escapes (id file:line mutator), also in mutago-baseline.candidate.json:")
+for entry in added:
+    print("  {} {}:{} {}".format(entry["id"], entry["file"], entry["line"], entry["mutator"]))
+PY
+    echo "mutation gate: could not write mutago-baseline.candidate.json" >&2
+  fi
+fi
+
 # mutago exits 0 (gate passed), 4 (a mutant escaped), or another code for a run
 # error; --dry-run and --update-baseline always exit 0. Forward the verdict.
 if [[ "$status" -eq 0 ]]; then
