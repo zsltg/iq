@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -90,13 +89,29 @@ func TestSplitPassword(t *testing.T) {
 	}
 }
 
-func TestSplitPasswordRejectsUnparseable(t *testing.T) {
-	_, _, _, err := splitPassword("redis://u:%zz@h")
-	require.ErrorContains(t, err, "parse URI")
-	// The cause stays unwrappable (%w, not %v), so a caller can errors.As to
-	// the parse failure underneath the context.
-	var uerr *url.Error
-	require.ErrorAs(t, err, &uerr)
+// TestParseURIHidesTheURI parses a URI that net/url rejects. The error wraps
+// errInvalidURI and quotes no part of the URI, because the part can be a
+// password.
+func TestParseURIHidesTheURI(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"bad percent escape", "redis://u:p%zzsecret@h", "parse URI: the URI is not valid: it has a percent sign that does not start a valid escape (write a literal % as %25)"},
+		{"bad port", "redis://u:secret@h:port/0", "parse URI: the URI is not valid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, _, splitErr := splitPassword(tt.in)
+			_, injectErr := injectPassword(tt.in, "x")
+
+			for _, err := range []error{splitErr, injectErr} {
+				require.EqualError(t, err, tt.want)
+				require.ErrorIs(t, err, errInvalidURI)
+			}
+		})
+	}
 }
 
 func TestInjectPassword(t *testing.T) {
@@ -337,7 +352,7 @@ func TestAddRejectsAnUnparsableURI(t *testing.T) {
 
 			_, err := runCmd(t, newAddCmd(&config{}), args...)
 
-			require.ErrorContains(t, err, "parse URI")
+			require.ErrorIs(t, err, errInvalidURI)
 			cf, err := iqconfig.Load()
 			require.NoError(t, err)
 			require.Empty(t, cf.Sources)

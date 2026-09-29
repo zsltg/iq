@@ -51,14 +51,31 @@ func effectiveURL(src iqconfig.Source, handle string) (string, error) {
 	return injectPassword(src.URL, pw)
 }
 
+// errInvalidURI reports a connection URI that net/url cannot parse.
+var errInvalidURI = errors.New("parse URI: the URI is not valid")
+
+// parseURI parses raw with net/url. The error does not quote raw or a part of
+// it: the url.Error carries the whole URI, and an EscapeError carries the bad
+// escape, both of which can hold a part of the password.
+func parseURI(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err == nil {
+		return u, nil
+	}
+	if _, ok := errors.AsType[url.EscapeError](err); ok {
+		return nil, fmt.Errorf("%w: it has a percent sign that does not start a valid escape (write a literal %% as %%25)", errInvalidURI)
+	}
+	return nil, errInvalidURI
+}
+
 // splitPassword returns raw with its password removed, the removed password, and
 // whether one was present. Empty userinfo is dropped so the stored URL stays
 // clean. It uses net/url like redactURL, which round-trips a multi-host Mongo
 // URI.
 func splitPassword(raw string) (stripped, password string, ok bool, err error) {
-	u, err := url.Parse(raw)
+	u, err := parseURI(raw)
 	if err != nil {
-		return "", "", false, fmt.Errorf("parse URI: %w", err)
+		return "", "", false, err
 	}
 	if u.User == nil {
 		return raw, "", false, nil
@@ -79,9 +96,9 @@ func splitPassword(raw string) (stripped, password string, ok bool, err error) {
 // username. A URL with no username becomes scheme://:password@host, valid for
 // Redis AUTH.
 func injectPassword(raw, password string) (string, error) {
-	u, err := url.Parse(raw)
+	u, err := parseURI(raw)
 	if err != nil {
-		return "", fmt.Errorf("parse URI: %w", err)
+		return "", err
 	}
 	name := ""
 	if u.User != nil {
