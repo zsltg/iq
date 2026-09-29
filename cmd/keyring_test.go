@@ -240,6 +240,7 @@ func TestAddKeepsAnExistingKeyringEntry(t *testing.T) {
 			_, err := runCmd(t, newAddCmd(&config{}), args...)
 
 			require.EqualError(t, err, "sec: the OS keyring already holds a password for this handle, and a source in another config file can use it; choose another handle with -n")
+			require.ErrorIs(t, err, errKeyringTaken)
 			require.Equal(t, "first", fk.m["sec"])
 			cf, err := iqconfig.Load()
 			require.NoError(t, err)
@@ -280,25 +281,39 @@ func TestAddStoreInline(t *testing.T) {
 	require.Empty(t, fk.m)
 }
 
-// TestAddFallbackSaveFailureKeepsKeyring makes the save fail after a keyring
-// that refused the write sent the password to the config file. iq wrote nothing
-// to the keyring, so it must not call the keyring again to delete an entry.
-func TestAddFallbackSaveFailureKeepsKeyring(t *testing.T) {
+// TestAddSaveFailureKeyringCleanup makes the config save fail at the end of an
+// add. A password that iq wrote to the keyring is deleted again, so the failed
+// add leaves no trace. After a fallback, iq wrote nothing to the keyring, so it
+// does not call the keyring again.
+func TestAddSaveFailureKeyringCleanup(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
 	}
-	dir := t.TempDir()
-	t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
-	require.NoError(t, newSeed().Save())
-	require.NoError(t, os.Chmod(dir, 0o500)) // readable and listable, but not writable.
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	fk := useFakeKeyring(t)
-	fk.setErr = errors.New("no secret service")
+	tests := []struct {
+		name        string
+		setErr      error
+		wantDeleted []string
+	}{
+		{"written password is deleted", nil, []string{"sec"}},
+		{"fallback leaves the keyring alone", errors.New("no secret service"), nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
+			require.NoError(t, newSeed().Save())
+			require.NoError(t, os.Chmod(dir, 0o500)) // readable and listable, but not writable.
+			t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+			fk := useFakeKeyring(t)
+			fk.setErr = tt.setErr
 
-	_, err := runCmd(t, newAddCmd(&config{}), "-n", "sec", "redis://u:secret@h:6379/0", "--skip-verify")
+			_, err := runCmd(t, newAddCmd(&config{}), "-n", "sec", "redis://u:secret@h:6379/0", "--skip-verify")
 
-	require.ErrorContains(t, err, "create temp config")
-	require.Empty(t, fk.deleted)
+			require.ErrorContains(t, err, "create temp config")
+			require.Equal(t, tt.wantDeleted, fk.deleted)
+			require.Empty(t, fk.m)
+		})
+	}
 }
 
 // TestAddRejectsAnUnparsableURI returns the parse error with or without

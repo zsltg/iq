@@ -598,3 +598,9 @@ Negative zero, accepted 2026-09-28 in the pull request that keeps the sign of -0
 
 - 7b8aaed0ceea6c187853a46f1fdba74f internal/numfmt/convert.go:46 numbers/incrementer — math.Copysign(0, -1) becomes math.Copysign(0, -2). Copysign takes only the sign of its second argument, so both return the same negative zero.
 - 5ab21f74bc541533b57a70b6d2c9ab31 internal/query/dump.go:152 numbers/incrementer — the same Copysign(0, -1) to Copysign(0, -2) change in the typed dump reader, equivalent for the same reason.
+
+Keyring default store, accepted 2026-09-29 in the pull request that makes the keyring the default store of `iq add`.
+
+- 4b55920e281c48e4c47e46966dd0bd08 cmd/keyring.go:33 branch/case — the ErrNotFound case of keyringFree returns nil. The mutator replaces the case body with a zero-value return, which is `return nil` again, so the mutant is the same code.
+- 21f0cf355aff2c581dd93741be1883df cmd/source.go:208 expression/error-guard — the UseKeyring error guard in keepPassword. The caller added the source to the config a few lines earlier with cf.Add, and UseKeyring fails only for an unknown source, so the branch cannot be reached.
+- bf32ad0c2edd16272d5677d35f8740d6 cmd/source.go:217 expression/error-guard — the SetSourceURL error guard in the fallback of keepPassword. The source was added a few lines earlier and rawURL passed the scheme check, so it is not blank. SetSourceURL fails only for an unknown source or a blank URL, so the branch cannot be reached.
