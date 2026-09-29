@@ -395,6 +395,11 @@ Posture and upkeep around the pipeline, all on GitHub:
   v0.37.1 release before its first job (`startup_failure`). Before a new
   third-party workflow or action goes into a workflow, read which actions it uses
   and add them to the allow-list in the same change.
+- `.github/workflows/codeql.yml` runs CodeQL (the `security-and-quality` queries
+  over the Go code) on every pull request, every push to `main` and weekly, and
+  uploads the results to the Security tab. It is not a required check:
+  golangci-lint with gosec and govulncheck stay the gates, and a CodeQL alert is
+  read and closed in the Security tab. OpenSSF Scorecard's SAST check counts it.
 - [zizmor](https://docs.zizmor.sh) audits the workflow files themselves: unpinned
   or impostor actions, credentials the checkout leaves on disk, cache poisoning on
   the release paths, and template injection into a `run` block. The version is
