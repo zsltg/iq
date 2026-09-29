@@ -1428,6 +1428,36 @@
    "file": "internal/numfmt/decimal.go",
    "mutator": "statement/return",
    "line": 43
+  },
+  {
+   "id": "33f8933f85f20aabcb67df3b2045f55a",
+   "file": "internal/diff/diff.go",
+   "mutator": "arithmetic/base",
+   "line": 260
+  },
+  {
+   "id": "bbf28e84e5c26274879a4370ad8ae51b",
+   "file": "internal/diff/diff.go",
+   "mutator": "branch/case",
+   "line": 486
+  },
+  {
+   "id": "cba7aae52682f62296a6194b15b159a4",
+   "file": "internal/diff/diff.go",
+   "mutator": "branch/if",
+   "line": 467
+  },
+  {
+   "id": "e3b8b730e858edf57208484450471f76",
+   "file": "internal/diff/diff.go",
+   "mutator": "numbers/decrementer",
+   "line": 486
+  },
+  {
+   "id": "69a6bab3fd68079d7eafa6df4486e9f1",
+   "file": "internal/diff/patch.go",
+   "mutator": "expression/error-guard",
+   "line": 27
   }
  ]
 }
