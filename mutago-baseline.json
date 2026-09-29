@@ -1458,6 +1458,12 @@
    "file": "internal/diff/patch.go",
    "mutator": "expression/error-guard",
    "line": 27
+  },
+  {
+   "id": "7d94bfbcfb47e0a09aa8c5339d445bc4",
+   "file": "internal/render/json.go",
+   "mutator": "statement/remove",
+   "line": 67
   }
  ]
 }
