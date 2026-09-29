@@ -235,6 +235,39 @@ func TestInferMapsFormatMerge(t *testing.T) {
 	}
 }
 
+// TestInferMapsFormatMergeOnePlain folds 40 format carriers and one plain string
+// through a map collapse. The plain string must drop the format in every merge
+// order. A merge that keeps only the first side, or only the last side, gives the
+// format of a carrier in most orders. Go randomizes the merge order, so the
+// corpus is inferred ten times.
+func TestInferMapsFormatMergeOnePlain(t *testing.T) {
+	onePlain := func(carrier string) map[string]any {
+		items := make(map[string]any, 41)
+		for i := range 40 {
+			s := strconv.Itoa(i)
+			items[s] = map[string]any{"m": map[string]any{"u" + s: carrier}}
+		}
+		items["plain"] = map[string]any{"m": map[string]any{"uplain": "plain"}}
+		return items
+	}
+	tests := []struct {
+		name    string
+		carrier string
+	}{
+		{"one plain string among date-times drops the format", "2020-01-02T03:04:05Z"},
+		{"one plain string among dates drops the format", "2020-01-02"},
+		{"one plain string among uuids drops the format", "12345678-1234-1234-1234-123456789abc"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := onePlain(tt.carrier)
+			for pass := range 10 {
+				require.Equal(t, []any{"string"}, mapTypeOf(items, ".m{}"), "pass %d", pass)
+			}
+		})
+	}
+}
+
 func TestInferMapsKeepsAFormatAcrossAValueThatSawNoString(t *testing.T) {
 	// Twenty id-keyed dates plus one null: the null side saw no string, so under
 	// the all-or-nothing rule it contributes nothing and the date format holds

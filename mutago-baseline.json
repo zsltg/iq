@@ -1506,6 +1506,54 @@
    "file": "internal/render/json.go",
    "mutator": "statement/remove",
    "line": 67
+  },
+  {
+   "id": "c8cef7cee018d6831fcd939a1ca0c00d",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/case",
+   "line": 461
+  },
+  {
+   "id": "d4b2f616e4ae89ff767d20f8d72a5b8c",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/case",
+   "line": 587
+  },
+  {
+   "id": "8028e5c64c634fb764de68ff858b6c85",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/if",
+   "line": 525
+  },
+  {
+   "id": "752c26a125ae05145528a737fc212c21",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/if",
+   "line": 577
+  },
+  {
+   "id": "9785c3f69ec553930c86c600da170ee9",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/if",
+   "line": 605
+  },
+  {
+   "id": "c40445fcd3288ac4a61b6e1174ba8ebf",
+   "file": "internal/shape/shape.go",
+   "mutator": "expression/remove",
+   "line": 308
+  },
+  {
+   "id": "957826442f6562ccb99155076c033351",
+   "file": "internal/shape/shape.go",
+   "mutator": "expression/remove",
+   "line": 620
+  },
+  {
+   "id": "bf24e4cb4666ad6165b31e81deeb167e",
+   "file": "internal/shape/shape.go",
+   "mutator": "statement/remove",
+   "line": 354
   }
  ]
 }
