@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -682,6 +683,32 @@ func TestBuildNoSinkDiscards(t *testing.T) {
 	logger.Info("x") // must not panic
 }
 
+// TestBuildLoggingOffDiscards checks that every option set with no active sink
+// returns the discard logger and no closer. A file target without enable does not
+// open a sink.
+func TestBuildLoggingOffDiscards(t *testing.T) {
+	tests := []struct {
+		name string
+		opts logOptions
+	}{
+		{"zero options", logOptions{}},
+		{"file target without enable", logOptions{file: "stderr", level: slog.LevelDebug, format: "json"}},
+		{"enable without a file target", logOptions{enable: true, level: slog.LevelDebug, format: "json"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr, stdout bytes.Buffer
+			logger, closer, err := tt.opts.build(&stderr, &stdout)
+			require.NoError(t, err)
+			require.Nil(t, closer)
+			require.Equal(t, slog.DiscardHandler, logger.Handler())
+			logger.Error("iq failed", "err", errors.New("dial redis://u:p@h:1/0"))
+			require.Empty(t, stderr.String())
+			require.Empty(t, stdout.String())
+		})
+	}
+}
+
 // TestBuildFileOpenError surfaces a file-open failure as an error, so PreRun
 // fails fast rather than silently dropping logs.
 func TestBuildFileOpenError(t *testing.T) {
@@ -826,4 +853,105 @@ func TestParseLogLevelErrorValue(t *testing.T) {
 	level, err := parseLogLevel("loud")
 	require.ErrorContains(t, err, `invalid --log.level "loud"`)
 	require.Zero(t, level)
+}
+
+// TestLogHandlersRedactErrors logs each redaction row as the err attribute
+// through the text and JSON structured sinks and the tint verbose sink. The
+// complete output must not show a credential, and a row with no credential keeps
+// its message.
+func TestLogHandlersRedactErrors(t *testing.T) {
+	sinks := []struct {
+		name string
+		opts logOptions
+	}{
+		{"text", logOptions{enable: true, file: "stderr", level: slog.LevelDebug, format: "text"}},
+		{"json", logOptions{enable: true, file: "stderr", level: slog.LevelDebug, format: "json"}},
+		{"tint", logOptions{verbose: true}},
+	}
+	for _, tc := range redactCases(t) {
+		for _, s := range sinks {
+			t.Run(tc.name+"/"+s.name, func(t *testing.T) {
+				var stderr bytes.Buffer
+				logger, closer, err := s.opts.build(&stderr, io.Discard)
+				require.NoError(t, err)
+				require.Nil(t, closer)
+
+				logger.Error("iq failed", "err", tc.err)
+				out := stderr.String()
+				if tc.secret != "" {
+					require.NotContains(t, out, tc.secret)
+				}
+				switch s.name {
+				case "json":
+					var rec map[string]any
+					require.NoError(t, json.Unmarshal([]byte(out), &rec))
+					require.Equal(t, tc.want, rec["err"])
+				case "text":
+					require.Contains(t, out, "err="+strconv.Quote(tc.want))
+				default:
+					require.NotContains(t, out, "time=")
+				}
+			})
+		}
+	}
+}
+
+// TestRedactAttr checks which attributes the log hook redacts. It redacts error
+// values, the err and error keys, and the top-level message. It does not
+// redact other string attributes, because they carry records, filters and
+// commands that a diagnostic needs.
+func TestRedactAttr(t *testing.T) {
+	const raw = "dial redis://u:hunter2@h:6379/0"
+	const masked = "dial redis://u:xxxxx@h:6379/0"
+	tests := []struct {
+		name   string
+		groups []string
+		in     slog.Attr
+		want   string
+	}{
+		{"error value", nil, slog.Any("cause", errors.New(raw)), masked},
+		{"error value in a group", []string{"g"}, slog.Any("cause", errors.New(raw)), masked},
+		{"err string", nil, slog.String("err", raw), masked},
+		{"error string", nil, slog.String("error", raw), masked},
+		{"top-level message", nil, slog.String(slog.MessageKey, raw), masked},
+		{"message key in a group", []string{"g"}, slog.String(slog.MessageKey, raw), raw},
+		{"other string attribute", nil, slog.String("cmd", raw), raw},
+		{"err key with a non-string value", nil, slog.Int("err", 7), "7"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := redactAttr(tt.groups, tt.in)
+			require.Equal(t, tt.in.Key, got.Key)
+			require.Equal(t, tt.in.Value.Kind(), got.Value.Kind())
+			require.Equal(t, tt.want, got.Value.String())
+		})
+	}
+
+	t.Run("an unchanged error keeps its value", func(t *testing.T) {
+		in := slog.Any("err", context.Canceled)
+		got := redactAttr(nil, in)
+		require.Same(t, context.Canceled, got.Value.Any())
+	})
+}
+
+// TestBuildRedactsMessage checks the message goes through the hook on each sink.
+func TestBuildRedactsMessage(t *testing.T) {
+	sinks := []struct {
+		name string
+		opts logOptions
+	}{
+		{"text", logOptions{enable: true, file: "stderr", level: slog.LevelDebug, format: "text"}},
+		{"json", logOptions{enable: true, file: "stderr", level: slog.LevelDebug, format: "json"}},
+		{"tint", logOptions{verbose: true}},
+	}
+	for _, s := range sinks {
+		t.Run(s.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			logger, _, err := s.opts.build(&stderr, io.Discard)
+			require.NoError(t, err)
+			logger.Info("dial redis://u:hunter2@h:6379/0")
+			require.NotContains(t, stderr.String(), "hunter2")
+			require.Contains(t, stderr.String(), "xxxxx")
+		})
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -87,7 +88,182 @@ func TestRenderErrorRedactsCredentials(t *testing.T) {
 	require.Contains(t, out, "xxxxx")
 }
 
-func TestRedactMessage(t *testing.T) {
+// redactCase is one input to the redaction tests. The redactor, log handler,
+// error render and MCP tests use the same rows, so each surface proves the same
+// guarantee.
+type redactCase struct {
+	name string
+	err  error
+	// secret is text that must not occur in any output. It is empty for a row
+	// with no credential, and such a row must not change.
+	secret string
+	// want is the redacted message of err.
+	want string
+}
+
+// parseURLErr returns the *url.Error that url.Parse gives for raw.
+func parseURLErr(t *testing.T, raw string) error {
+	t.Helper()
+	_, err := url.Parse(raw)
+	require.Error(t, err)
+	return err
+}
+
+// redactCases returns one row for each branch of the redactor.
+func redactCases(t *testing.T) []redactCase {
+	t.Helper()
+	const secret = "review-secret"
+	return []redactCase{
+		{
+			name:   "quoted password in a message",
+			err:    errors.New("dial redis://u:'review-secret'@host:bad/0 failed"),
+			secret: secret,
+			want:   "dial (unparseable URI) failed",
+		},
+		{
+			name:   "parse error for a password with a space",
+			err:    parseURLErr(t, "redis://u:x review-secret@host/0"),
+			secret: secret,
+			want:   `parse "(unparseable URI)": net/url: invalid userinfo`,
+		},
+		{
+			name:   "parse error for a password with a double quote",
+			err:    parseURLErr(t, `redis://u:a"review-secret@host/0`),
+			secret: secret,
+			want:   `parse "(unparseable URI)": net/url: invalid userinfo`,
+		},
+		{
+			name:   "wrapped parse error",
+			err:    fmt.Errorf("open source: %w", fmt.Errorf("parse redis url: %w", parseURLErr(t, "redis://u:a review-secret@host/0"))),
+			secret: secret,
+			want:   `open source: parse redis url: parse "(unparseable URI)": net/url: invalid userinfo`,
+		},
+		{
+			name:   "parse error inside a joined error",
+			err:    errors.Join(errors.New("first"), parseURLErr(t, "redis://u:x review-secret@host/0")),
+			secret: secret,
+			want:   "first\n" + `parse "(unparseable URI)": net/url: invalid userinfo`,
+		},
+		{
+			name:   "parse error for a bad port",
+			err:    parseURLErr(t, "redis://u:review-secret@host:bad/0"),
+			secret: secret,
+			want:   `parse "(unparseable URI)": invalid port ":bad" after host`,
+		},
+		{
+			name:   "url inside single quotes",
+			err:    errors.New("dial 'redis://u:review-secret@host/0' failed"),
+			secret: secret,
+			want:   "dial 'redis://u:xxxxx@host/0' failed",
+		},
+		{
+			name:   "quoted url in a driver error",
+			err:    errors.New(`connect "mongodb://review:review-secret@localhost:27017/db": context deadline exceeded`),
+			secret: secret,
+			want:   `connect "mongodb://review:xxxxx@localhost:27017/db": context deadline exceeded`,
+		},
+		{
+			name:   "url in a callback error",
+			err:    fmt.Errorf("scan batches: %w", errors.New("callback: dial redis://review:review-secret@localhost:6379/0")),
+			secret: secret,
+			want:   "scan batches: callback: dial redis://review:xxxxx@localhost:6379/0",
+		},
+		{
+			name: "parseable url error keeps its location",
+			err: &url.Error{
+				Op:  "Get",
+				URL: "https://u:review-secret@host/",
+				Err: errors.New("dial tcp: connection refused"),
+			},
+			secret: secret,
+			want:   `Get "https://u:xxxxx@host/": dial tcp: connection refused`,
+		},
+		{
+			name:   "percent-escaped password in a message",
+			err:    errors.New("dial redis://u:p%40ss%20w%22rd@host:6379/0 failed"),
+			secret: "p%40ss",
+			want:   "dial redis://u:xxxxx@host:6379/0 failed",
+		},
+		{
+			name:   "percent-escaped password in a parse error for a bad port",
+			err:    parseURLErr(t, "redis://u:p%40ss%20w%22rd@host:bad/0"),
+			secret: "p%40ss",
+			want:   `parse "(unparseable URI)": invalid port ":bad" after host`,
+		},
+		{
+			name:   "open-store error for a URI with a bad port",
+			err:    fmt.Errorf("open source %q: %w", "repro", parseURLErr(t, "redis://review:dummy-password@localhost:bad/0")),
+			secret: "dummy-password",
+			want:   `open source "repro": parse "(unparseable URI)": invalid port ":bad" after host`,
+		},
+		{
+			name: "credential-free url before an email address",
+			err:  errors.New("dial redis://localhost:6379/0 failed, mail ops@iq.dev"),
+			want: "dial redis://localhost:6379/0 failed, mail ops@iq.dev",
+		},
+		{
+			name: "file path that holds an at sign",
+			err:  fmt.Errorf("open source: %w", errors.New("open file:///tmp/a@b/dump.json: no such file or directory")),
+			want: "open source: open file:///tmp/a@b/dump.json: no such file or directory",
+		},
+	}
+}
+
+// TestRedactor checks the message and every cause frame of each row. A row with
+// a credential must not show it anywhere. A row with no credential must not
+// change.
+func TestRedactor(t *testing.T) {
+	for _, tc := range redactCases(t) {
+		t.Run(tc.name, func(t *testing.T) {
+			redact := newRedactor(tc.err)
+			got := redact(tc.err.Error())
+			require.Equal(t, tc.want, got)
+			for _, frame := range causeChain(tc.err) {
+				out := redact(frame)
+				if tc.secret == "" {
+					require.Equal(t, frame, out)
+					continue
+				}
+				require.NotContains(t, out, tc.secret)
+			}
+		})
+	}
+}
+
+// TestRenderErrorRedactsEveryRow renders each row as text, as text with the
+// stack, and as JSON with its causes. The complete output must not show a
+// credential, and a row with no credential keeps its message.
+func TestRenderErrorRedactsEveryRow(t *testing.T) {
+	cfgs := []struct {
+		name string
+		cfg  *config
+	}{
+		{"text", &config{errorFormat: "text"}},
+		{"text with stack", &config{errorFormat: "text", errorStack: true}},
+		{"json", &config{errorFormat: "json"}},
+	}
+	for _, tc := range redactCases(t) {
+		for _, c := range cfgs {
+			t.Run(tc.name+"/"+c.name, func(t *testing.T) {
+				var buf bytes.Buffer
+				renderError(&buf, c.cfg, tc.err)
+				out := buf.String()
+				if tc.secret != "" {
+					require.NotContains(t, out, tc.secret)
+				}
+				if c.cfg.errorFormat == "json" {
+					var got errorJSON
+					require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
+					require.Equal(t, tc.want, got.Error.Message)
+					return
+				}
+				require.True(t, strings.HasPrefix(out, "iq: "+tc.want+"\n"), out)
+			})
+		}
+	}
+}
+
+func TestRedactorPatternStep(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
@@ -114,6 +290,16 @@ func TestRedactMessage(t *testing.T) {
 			"neo4j://neo4j:xxxxx@host:7687/?key=id&label=Person timed out",
 		},
 		{
+			"a url inside single quotes keeps its location",
+			"dial 'redis://user:hunter2@host:6379' failed",
+			"dial 'redis://user:xxxxx@host:6379' failed",
+		},
+		{
+			"a quoted password masks the whole url",
+			"dial redis://user:'hunter2'@host:bad/0 failed",
+			"dial (unparseable URI) failed",
+		},
+		{
 			"a message with no url is unchanged",
 			"authentication failed for user admin",
 			"authentication failed for user admin",
@@ -135,7 +321,7 @@ func TestRedactMessage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := redactMessage(tt.in)
+			got := newRedactor(nil)(tt.in)
 			require.Equal(t, tt.want, got)
 			require.NotContains(t, got, "hunter2")
 		})

@@ -757,6 +757,22 @@ func TestMCPPingReportsReachability(t *testing.T) {
 	require.True(t, out.Results[0].OK, out.Results[0].Error)
 }
 
+// TestMCPPingRowRedactsPassword checks a per-source ping failure. The row error
+// must not show the password of a URI that does not parse.
+func TestMCPPingRowRedactsPassword(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("secret", "redis://u:'review-secret'@127.0.0.1:bad/0"))
+	seedConfig(t, c)
+	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
+
+	var out mcpPingOutput
+	structOf(t, callMCP(t, cs, "iq_ping", map[string]any{"source": "secret"}), &out)
+	require.Len(t, out.Results, 1)
+	require.False(t, out.Results[0].OK)
+	require.NotContains(t, out.Results[0].Error, "review-secret")
+	require.Contains(t, out.Results[0].Error, "(unparseable URI)")
+}
+
 // TestMCPToolListIsSortedAndCacheable pins the advertised list: sorted by name,
 // carrying the cache hint the revision expects.
 func TestMCPToolListIsSortedAndCacheable(t *testing.T) {
