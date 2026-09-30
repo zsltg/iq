@@ -1431,13 +1431,15 @@ func TestDiffStatsCrossDriverText(t *testing.T) {
 
 // ctxRecorder records the context of each open and each read, by source URI.
 // It also records each raw query and each scan page that a read takes. pages
-// sets how many one-item pages a scan offers; zero means one.
+// sets how many one-item pages a scan offers; zero means one. replies sets the
+// raw query reply for a source URI; no entry means {"ok": 1}.
 type ctxRecorder struct {
 	mu      sync.Mutex
 	ctxs    map[string][]context.Context
 	queries map[string][]string
 	scanned map[string]int
 	pages   int
+	replies map[string]any
 }
 
 func (r *ctxRecorder) query(url, q string) {
@@ -1480,6 +1482,9 @@ func (s ctxRecordingStore) ScanBatches(ctx context.Context, fn func(map[string]a
 func (s ctxRecordingStore) Query(ctx context.Context, args []string) (any, error) {
 	s.rec.add(s.url, ctx)
 	s.rec.query(s.url, args[0])
+	if reply, ok := s.rec.replies[s.url]; ok {
+		return reply, nil
+	}
 	return map[string]any{"ok": 1.0}, nil
 }
 
@@ -1626,6 +1631,47 @@ func TestDiffRunGivesOptionsToBothSides(t *testing.T) {
 
 			require.Equal(t, tt.wantQueries, rec.queries)
 			require.Equal(t, tt.wantScanned, rec.scanned)
+		})
+	}
+}
+
+// TestDiffStatsReportsTheChange proves that the stats layer puts its changes in
+// the report. Different introspection replies give the exact change and
+// errQuietExit. Equal replies give no change and no error.
+func TestDiffStatsReportsTheChange(t *testing.T) {
+	tests := []struct {
+		name    string
+		replyB  any
+		want    string
+		wantErr error
+	}{
+		{
+			"a changed reply",
+			map[string]any{"version": "8.0"},
+			"{\n  \"stats\": [\n    {\n      \"path\": [\n        \"buildInfo\",\n        \"version\"\n      ],\n" +
+				"      \"op\": \"change\",\n      \"old\": \"7.0\",\n      \"new\": \"8.0\"\n    }\n  ]\n}\n",
+			errQuietExit,
+		},
+		{
+			"an equal reply",
+			map[string]any{"version": "7.0"},
+			"{}\n",
+			nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := useCtxDriver(t)
+			rec.replies = map[string]any{"ctxrec://a": map[string]any{"version": "7.0"}, "ctxrec://b": tt.replyB}
+
+			out, err := runCmd(t, quietDiff(&config{timeout: time.Minute}), "a", "b", "--stats", "--section", "buildInfo", "--json")
+
+			if tt.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, tt.wantErr)
+			}
+			require.Equal(t, tt.want, out)
 		})
 	}
 }
