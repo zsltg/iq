@@ -40,11 +40,23 @@ func TestConjuncts(t *testing.T) {
 			},
 		},
 		{
-			// A non-select residual stage before the select must be skipped, not
-			// treated as the end of the scan: the loop `continue`s past it to reach
-			// the select. A `break` there would drop the later select entirely.
-			name:   "non-select stage before a select is skipped",
+			// A select after a stage that changes the element tests the derived
+			// value, not the element, so it gives no conjunct.
+			name:   "select after an element-changing stage gives no conjunct",
 			filter: `.[] | .x | select(.a == 1)`,
+			ok:     false,
+		},
+		{
+			// A select before the element-changing stage still tests the element.
+			name:   "select before an element-changing stage keeps its conjunct",
+			filter: `.[] | select(.a == 1) | .x | select(.b == 2)`,
+			ok:     true,
+			want:   []wantConjunct{{expr: ".a == 1", pushed: true}},
+		},
+		{
+			// An identity stage passes the element on unchanged.
+			name:   "identity stage before a select keeps its conjunct",
+			filter: `.[] | . | select(.a == 1)`,
 			ok:     true,
 			want:   []wantConjunct{{expr: ".a == 1", pushed: true}},
 		},
