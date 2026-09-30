@@ -1,6 +1,7 @@
 package pushdown
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/itchyny/gojq"
@@ -210,6 +211,31 @@ func TestUnwrapIsDepthBounded(t *testing.T) {
 	// topConjuncts drops an over-nested conjunct: it contributes nothing rather than
 	// hanging, and the client-side jq still filters it.
 	require.Nil(t, topConjuncts(wrapQuery(inner, maxNestDepth+1)))
+}
+
+// TestUnwrapDepthCap pins the cap to 512 wrappers with literal depths. The test
+// above reads the cap from maxNestDepth, so it cannot see a change of the
+// constant itself.
+func TestUnwrapDepthCap(t *testing.T) {
+	inner, err := gojq.Parse(".a == 1")
+	require.NoError(t, err)
+
+	tests := []struct {
+		depth int
+		ok    bool
+	}{
+		{512, true},
+		{513, false},
+	}
+	for _, tt := range tests {
+		t.Run(strconv.Itoa(tt.depth), func(t *testing.T) {
+			got, ok := unwrap(wrapQuery(inner, tt.depth))
+			require.Equal(t, tt.ok, ok)
+			if tt.ok {
+				require.Same(t, inner, got)
+			}
+		})
+	}
 }
 
 // TestUnwrapStopsAtNonWrapper drives unwrap directly with hand-built ASTs where

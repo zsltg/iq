@@ -164,6 +164,205 @@ func TestExtractPredShapeGuards(t *testing.T) {
 	}
 }
 
+// TestExtractExactShapeGuards gives extractExact, the negation-safe extractor,
+// the same shape guards as extractPred. A dropped guard there turns into a
+// wrong negated predicate, which drops matching documents.
+func TestExtractExactShapeGuards(t *testing.T) {
+	tests := []struct {
+		name  string
+		query func(t *testing.T) *gojq.Query
+		want  predicate.Node // nil means "not exact"
+	}{
+		{
+			"an expression with no term is not exact",
+			func(t *testing.T) *gojq.Query { return &gojq.Query{} },
+			nil,
+		},
+		{
+			"an operator wins over a parenthesized term",
+			func(t *testing.T) *gojq.Query {
+				return &gojq.Query{
+					Op:    gojq.OpEq,
+					Left:  mustParse(t, ".a"),
+					Right: mustParse(t, "1"),
+					Term:  mustTerm(t, "(.b == 2)"),
+				}
+			},
+			predicate.Eq{Path: []string{"a"}, Value: 1.0},
+		},
+		{
+			"an operator wins over a builtin term",
+			func(t *testing.T) *gojq.Query {
+				return &gojq.Query{
+					Op:    gojq.OpEq,
+					Left:  mustParse(t, ".a"),
+					Right: mustParse(t, "1"),
+					Term:  mustTerm(t, `has("z")`),
+				}
+			},
+			predicate.Eq{Path: []string{"a"}, Value: 1.0},
+		},
+		{
+			"a parenthesized expression with a suffix is not unwrapped",
+			func(t *testing.T) *gojq.Query { return mustParse(t, "(.a == 1)[]") },
+			nil,
+		},
+		{
+			"a builtin with a suffix is not a bare builtin",
+			func(t *testing.T) *gojq.Query { return mustParse(t, `has("a")[]`) },
+			nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := extractExact(tt.query(t))
+
+			if tt.want == nil {
+				require.False(t, ok, "expression should not be exact")
+				require.Nil(t, got)
+				return
+			}
+			require.True(t, ok, "expression should be exact")
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestPipeShapeGuards drives pipeAtom and exactPipe with the right side of a
+// `.a | rhs` pipe. Only a bare builtin with no suffix is read as a builtin. An
+// operator query wins over the term it carries, and a query with no term or
+// no function is not a builtin.
+func TestPipeShapeGuards(t *testing.T) {
+	tests := []struct {
+		name string
+		rhs  func(t *testing.T) *gojq.Query
+		want predicate.Node // nil means "not pushable"
+	}{
+		{
+			"a bare has builtin",
+			func(t *testing.T) *gojq.Query { return mustParse(t, `has("b")`) },
+			predicate.Exists{Path: []string{"a", "b"}},
+		},
+		{
+			"a query with no term",
+			func(t *testing.T) *gojq.Query { return &gojq.Query{} },
+			nil,
+		},
+		{
+			"an operator query carrying a has term",
+			func(t *testing.T) *gojq.Query {
+				return &gojq.Query{
+					Op:    gojq.OpAnd,
+					Left:  mustParse(t, ".x"),
+					Right: mustParse(t, ".y"),
+					Term:  mustTerm(t, `has("b")`),
+				}
+			},
+			nil,
+		},
+		{
+			"a path term carries no function",
+			func(t *testing.T) *gojq.Query { return mustParse(t, ".b") },
+			nil,
+		},
+		{
+			"a has builtin with a suffix",
+			func(t *testing.T) *gojq.Query { return mustParse(t, `has("b")[]`) },
+			nil,
+		},
+	}
+	extractors := []struct {
+		name string
+		fn   func(pathQ, rhs *gojq.Query) (predicate.Node, bool)
+	}{
+		{"pipeAtom", pipeAtom},
+		{"exactPipe", exactPipe},
+	}
+	for _, ex := range extractors {
+		for _, tt := range tests {
+			t.Run(ex.name+": "+tt.name, func(t *testing.T) {
+				got, ok := ex.fn(mustParse(t, ".a"), tt.rhs(t))
+
+				if tt.want == nil {
+					require.False(t, ok, "pipe should not push")
+					require.Nil(t, got)
+					return
+				}
+				require.True(t, ok, "pipe should push")
+				require.Equal(t, tt.want, got)
+			})
+		}
+	}
+}
+
+// TestPathOf pins the shape guards of pathOf. A path is pushed only when every
+// part of it is a plain field index. Each row sets exactly one guard.
+func TestPathOf(t *testing.T) {
+	tests := []struct {
+		name  string
+		query func(t *testing.T) *gojq.Query
+		want  []string // nil means "not a path"
+	}{
+		{"a nested field path", func(t *testing.T) *gojq.Query { return mustParse(t, ".a.b") }, []string{"a", "b"}},
+		{"a query with no term", func(t *testing.T) *gojq.Query { return &gojq.Query{} }, nil},
+		{
+			"an operator query carrying a path term",
+			func(t *testing.T) *gojq.Query {
+				return &gojq.Query{
+					Op:    gojq.OpEq,
+					Left:  mustParse(t, ".x"),
+					Right: mustParse(t, "1"),
+					Term:  mustTerm(t, ".a"),
+				}
+			},
+			nil,
+		},
+		{
+			"a query carrying function definitions",
+			func(t *testing.T) *gojq.Query {
+				q := mustParse(t, ".a")
+				q.FuncDefs = mustParse(t, "def f: 1; .").FuncDefs
+				return q
+			},
+			nil,
+		},
+		{
+			"a term that is not an index but carries one",
+			func(t *testing.T) *gojq.Query {
+				return &gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeIdentity, Index: &gojq.Index{Name: "a"}}}
+			},
+			nil,
+		},
+		{
+			"an index term with no index",
+			func(t *testing.T) *gojq.Query {
+				return &gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeIndex}}
+			},
+			nil,
+		},
+		{
+			"an iterating suffix that also carries an index",
+			func(t *testing.T) *gojq.Query {
+				return &gojq.Query{Term: &gojq.Term{
+					Type:       gojq.TermTypeIndex,
+					Index:      &gojq.Index{Name: "a"},
+					SuffixList: []*gojq.Suffix{{Iter: true, Index: &gojq.Index{Name: "b"}}},
+				}}
+			},
+			nil,
+		},
+		{"an optional suffix has no index", func(t *testing.T) *gojq.Query { return mustParse(t, ".a?") }, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := pathOf(tt.query(t))
+
+			require.Equal(t, tt.want != nil, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestIsNot(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -276,6 +475,21 @@ func TestConstString(t *testing.T) {
 			},
 			"", false,
 		},
+		{
+			"an operator query carrying a string term",
+			// Unreachable from the parser: the guard keeps an operator query from
+			// being read as the string it happens to carry.
+			func(t *testing.T) *gojq.Query {
+				return &gojq.Query{
+					Op:    gojq.OpEq,
+					Left:  mustParse(t, "1"),
+					Right: mustParse(t, "2"),
+					Term:  mustTerm(t, `"x"`),
+				}
+			},
+			"", false,
+		},
+		{"a query with no term", func(t *testing.T) *gojq.Query { return &gojq.Query{} }, "", false},
 		{
 			"a query carrying function definitions is not a literal",
 			func(t *testing.T) *gojq.Query { return mustParse(t, `def f: 1; "x"`) },

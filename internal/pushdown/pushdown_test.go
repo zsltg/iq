@@ -133,6 +133,16 @@ func TestCompilePushable(t *testing.T) {
 			},
 		},
 		{
+			// The identity stage passes each element on unchanged, so the select
+			// after it still tests the element.
+			"an identity stage between two selects",
+			".[] | select(.a == 1) | . | select(.b == 2)",
+			predicate.And{
+				predicate.Eq{Path: []string{"a"}, Value: 1.0},
+				predicate.Eq{Path: []string{"b"}, Value: 2.0},
+			},
+		},
+		{
 			"select then projection",
 			".[] | select(.a == 1) | .title",
 			predicate.Eq{Path: []string{"a"}, Value: 1.0},
@@ -213,6 +223,14 @@ func TestCompileNotPushable(t *testing.T) {
 		{"bare iteration", ".[]"},
 		{"not streamable (holistic)", "map(select(.a == 1))"},
 		{"not streamable (keys)", "keys"},
+		{"not streamable (whole-collection stage first)", "to_entries | .[] | select(.value == 1)"},
+		{"has with a suffix on a path", `.[] | select(.a | has("b")[])`},
+		{"a path piped into a path", ".[] | select(.a | .b)"},
+		{"negated parenthesized equality with a suffix", ".[] | select((.a == 1)[] | not)"},
+		{"negated has with a suffix", `.[] | select(has("a")[] | not)`},
+		{"negated has on a path with a suffix", `.[] | select(.a | has("b")[] | not)`},
+		{"negated path piped into a path", ".[] | select(.a | .b | not)"},
+		{"optional path", ".[] | select(.a? == 1)"},
 		{"bounded, not a scan", `.["book:1"]`},
 		{"iterating path atom", ".[] | select(.a[] == 1)"},
 	}
