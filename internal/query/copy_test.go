@@ -470,3 +470,30 @@ func TestTransformWithoutFilterKeepsSourceType(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []query.Record{{Key: "p:k", Type: "hash", Value: map[string]any{"f": "v"}}}, got)
 }
+
+// TestCopierReportsWhatItWroteBeforeTheLastFlushFails fails only the final flush,
+// after the first page landed. The copy returns the error and the stat of the
+// page that landed.
+func TestCopierReportsWhatItWroteBeforeTheLastFlushFails(t *testing.T) {
+	sentinel := errors.New("put boom")
+	dst := &capturePutter{err: sentinel, failFrom: 2}
+	c := query.Copier{Dst: dst, PageSize: 2}
+
+	stat, err := c.Copy(context.Background(), recordsSource(numberedRecords(3), 3), false)
+
+	require.ErrorIs(t, err, sentinel)
+	require.Equal(t, query.WriteStat{Written: 2}, stat, "the page that landed must be reported")
+}
+
+// TestTransformStopsOnAFilterRuntimeError pins that an item filter that fails on
+// a value stops the transform. The record is not dropped in silence.
+func TestTransformStopsOnAFilterRuntimeError(t *testing.T) {
+	tr, err := query.NewTransform(query.TransformOptions{Filter: `error("boom")`})
+	require.NoError(t, err)
+
+	out, err := tr(query.Record{Key: "k", Value: 1})
+
+	require.ErrorContains(t, err, "apply item filter")
+	require.Error(t, errors.Unwrap(err), "the filter error must stay unwrappable")
+	require.Nil(t, out)
+}

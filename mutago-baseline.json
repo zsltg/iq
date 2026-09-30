@@ -1830,6 +1830,18 @@
    "file": "internal/pushdown/pushdown.go",
    "mutator": "statement/return",
    "line": 166
+  },
+  {
+   "id": "5cb80d413e90f4c3b6fda9f26e64d728",
+   "file": "internal/query/dump.go",
+   "mutator": "expression/error-guard",
+   "line": 188
+  },
+  {
+   "id": "f005955aac26927d04ac19bd3760deaa",
+   "file": "internal/query/dump.go",
+   "mutator": "expression/error-guard",
+   "line": 236
   }
  ]
 }

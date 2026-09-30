@@ -409,3 +409,184 @@ func TestTypedDumpKeepsAnOutOfRangeNumberAsText(t *testing.T) {
 	require.Len(t, got, 1)
 	require.Equal(t, "1e400", got[0].Value)
 }
+
+// docSource names one of the two array-tolerant readers, so a table can run each
+// case through both of them.
+type docSource struct {
+	name string
+	join func(docs []string) string
+	src  func(r io.Reader, pageSize int, plain bool) query.RecordSource
+	doc  func(i int) string
+}
+
+// docSources returns JSONSource and YAMLSource with a typed document builder
+// for each.
+func docSources() []docSource {
+	return []docSource{
+		{
+			name: "json",
+			join: func(docs []string) string { return strings.Join(docs, "\n") },
+			src:  query.JSONSource,
+			doc:  func(i int) string { return fmt.Sprintf(`{"key":"k%d","type":"string","value":"v"}`, i) },
+		},
+		{
+			name: "yaml",
+			join: func(docs []string) string { return strings.Join(docs, "---\n") },
+			src:  query.YAMLSource,
+			doc:  func(i int) string { return fmt.Sprintf("key: k%d\ntype: string\nvalue: v\n", i) },
+		},
+	}
+}
+
+// TestDocSourcePageBoundaries pins the page sizes of JSONSource and YAMLSource.
+// A page size of zero or less selects 100, a full page goes out at once, and the
+// last page goes out only when it holds a record.
+func TestDocSourcePageBoundaries(t *testing.T) {
+	tests := []struct {
+		name     string
+		pageSize int
+		count    int
+		want     []int
+	}{
+		{name: "zero page size defaults to one hundred", pageSize: 0, count: 101, want: []int{100, 1}},
+		{name: "page size one delivers per record", pageSize: 1, count: 3, want: []int{1, 1, 1}},
+		{name: "a full page goes out before the last one", pageSize: 2, count: 3, want: []int{2, 1}},
+		{name: "an exact multiple gives no empty last page", pageSize: 2, count: 4, want: []int{2, 2}},
+		{name: "an empty input gives no page", pageSize: 2, count: 0, want: nil},
+	}
+	for _, s := range docSources() {
+		for _, tt := range tests {
+			t.Run(s.name+"/"+tt.name, func(t *testing.T) {
+				docs := make([]string, 0, tt.count)
+				for i := range tt.count {
+					docs = append(docs, s.doc(i))
+				}
+				var got []int
+				err := s.src(strings.NewReader(s.join(docs)), tt.pageSize, false)(
+					context.Background(), func(b []query.Record) error {
+						got = append(got, len(b))
+						return nil
+					},
+				)
+				require.NoError(t, err)
+				require.Equal(t, tt.want, got)
+			})
+		}
+	}
+}
+
+// TestDocSourceStopsOnContextCancellation pins that a cancelled context ends the
+// walk of JSONSource and YAMLSource before a page goes out.
+func TestDocSourceStopsOnContextCancellation(t *testing.T) {
+	for _, s := range docSources() {
+		t.Run(s.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			called := false
+			err := s.src(strings.NewReader(s.doc(0)), 10, false)(ctx, func([]query.Record) error {
+				called = true
+				return nil
+			})
+			require.ErrorIs(t, err, context.Canceled)
+			require.False(t, called)
+		})
+	}
+}
+
+// TestDocSourceRejectsAKeylessRecord pins that a typed record with no key is an
+// error in JSONSource and YAMLSource, not an empty record.
+func TestDocSourceRejectsAKeylessRecord(t *testing.T) {
+	inputs := map[string]string{
+		"json": `{"type":"string","value":1}`,
+		"yaml": "type: string\nvalue: 1\n",
+	}
+	for _, s := range docSources() {
+		t.Run(s.name, func(t *testing.T) {
+			got, err := drainSourceErr(s.src(strings.NewReader(inputs[s.name]), 10, false))
+			require.ErrorContains(t, err, "record has no key")
+			require.Empty(t, got)
+		})
+	}
+}
+
+// TestJSONSourceReportsAPrologueReadError gives JSONSource a reader that fails
+// before the first byte. The error names the first read, not a record decode.
+func TestJSONSourceReportsAPrologueReadError(t *testing.T) {
+	boom := errors.New("disk gone")
+	_, err := drainSourceErr(query.JSONSource(&errReader{err: boom}, 10, false))
+	require.ErrorContains(t, err, "read json: ")
+	require.ErrorIs(t, err, boom)
+}
+
+// TestJSONSourceReadsAnEmptyInput pins that an input with no value, or with only
+// white space, is an empty dump and not an error.
+func TestJSONSourceReadsAnEmptyInput(t *testing.T) {
+	for _, input := range []string{"", " \n\t"} {
+		got, err := drainSourceErr(query.JSONSource(strings.NewReader(input), 10, false))
+		require.NoError(t, err)
+		require.Empty(t, got)
+	}
+}
+
+// TestYAMLSourceReportsAMalformedDocument pins that a YAML syntax error is a
+// decode error whose cause stays reachable.
+func TestYAMLSourceReportsAMalformedDocument(t *testing.T) {
+	_, err := drainSourceErr(query.YAMLSource(strings.NewReader("key: [\n"), 10, false))
+	require.ErrorContains(t, err, "decode yaml record")
+	require.Error(t, errors.Unwrap(err), "the yaml error must stay unwrappable")
+}
+
+// TestJSONSourceReportsAnEOFReadErrorInsideAnArray gives JSONSource a reader
+// that fails inside a top-level array with an error that wraps io.EOF. An array
+// must end with its closing bracket, so the walk reports the error and does not
+// end in silence with a truncated array.
+func TestJSONSourceReportsAnEOFReadErrorInsideAnArray(t *testing.T) {
+	gone := fmt.Errorf("disk gone: %w", io.EOF)
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "after a comma", input: `[{"key":"a","type":"string","value":"x"},`},
+		{name: "after a record", input: `[{"key":"a","type":"string","value":"x"}`},
+		{name: "after the opening bracket", input: `[`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := drainSourceErr(query.JSONSource(&errReader{data: tt.input, err: gone}, 10, false))
+			require.ErrorContains(t, err, "decode json record")
+			require.ErrorIs(t, err, gone)
+		})
+	}
+}
+
+// TestDocSourceStopsWhenTheConsumerRefusesAPage gives JSONSource and YAMLSource a
+// consumer that refuses the first full page. The walk returns that error at once
+// and hands over no later page.
+func TestDocSourceStopsWhenTheConsumerRefusesAPage(t *testing.T) {
+	refused := errors.New("sink full")
+	for _, s := range docSources() {
+		t.Run(s.name, func(t *testing.T) {
+			docs := []string{s.doc(0), s.doc(1), s.doc(2)}
+			calls := 0
+			err := s.src(strings.NewReader(s.join(docs)), 2, false)(context.Background(), func([]query.Record) error {
+				calls++
+				return refused
+			})
+			require.ErrorIs(t, err, refused)
+			require.Equal(t, 1, calls, "no page goes out after a refusal")
+		})
+	}
+}
+
+// TestJSONSourceReadsAnArrayAfterLeadingWhiteSpace puts white space before a
+// top-level array. The array probe skips each white space byte and still finds
+// the array, so every record reads back.
+func TestJSONSourceReadsAnArrayAfterLeadingWhiteSpace(t *testing.T) {
+	input := " \n\t[" + `{"key":"a","type":"string","value":"x"},{"key":"b","type":"string","value":"y"}` + "]"
+	got, err := drainSourceErr(query.JSONSource(strings.NewReader(input), 10, false))
+	require.NoError(t, err)
+	require.Equal(t, []query.Record{
+		{Key: "a", Type: "string", Value: "x"},
+		{Key: "b", Type: "string", Value: "y"},
+	}, got)
+}

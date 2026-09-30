@@ -449,3 +449,27 @@ func TestJQEnginePropagatesRuntimeError(t *testing.T) {
 	require.ErrorContains(t, err, "run expression")
 	require.Error(t, errors.Unwrap(err), "the jq runtime error must stay unwrappable")
 }
+
+// TestJQEnginePropagatesCompileError gives Run a filter that parses but calls an
+// unknown function. The error names the compile step, and the store is not
+// touched.
+func TestJQEnginePropagatesCompileError(t *testing.T) {
+	store := &fakeKV{}
+
+	_, err := collect(t, store, ".[] | nosuchfunc", false)
+
+	require.ErrorContains(t, err, "compile expression")
+	require.Error(t, errors.Unwrap(err), "the compile error must stay unwrappable")
+	require.Zero(t, store.scanCalls)
+}
+
+// TestJQEnginePropagatesMaterializedScanError makes the scan of a holistic filter
+// fail. The error names the scan, and the store error stays reachable.
+func TestJQEnginePropagatesMaterializedScanError(t *testing.T) {
+	store := &fakeKV{scanErr: errors.New("scan boom")}
+
+	_, err := collect(t, store, "keys", true)
+
+	require.ErrorContains(t, err, "scan keys")
+	require.ErrorIs(t, err, store.scanErr, "the store error must stay unwrappable")
+}

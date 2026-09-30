@@ -229,5 +229,23 @@ func TestCrossEngineErrors(t *testing.T) {
 	t.Run("parse error", func(t *testing.T) {
 		_, err := runCross(opener, "@@@ not jq", query.RunOptions{})
 		require.ErrorContains(t, err, "parse expression")
+		require.Error(t, errors.Unwrap(err), "the parse error must stay unwrappable")
+	})
+
+	t.Run("compile error", func(t *testing.T) {
+		_, err := runCross(opener, "nosuchfunc", query.RunOptions{})
+		require.ErrorContains(t, err, "compile expression")
+		require.Error(t, errors.Unwrap(err), "the compile error must stay unwrappable")
+	})
+
+	t.Run("an emit error stops the run", func(t *testing.T) {
+		sentinel := errors.New("emit boom")
+		seen := 0
+		err := query.NewCrossEngine(opener).Run(context.Background(), "1, 2", query.RunOptions{}, func(any) error {
+			seen++
+			return sentinel
+		})
+		require.ErrorIs(t, err, sentinel)
+		require.Equal(t, 1, seen, "the run stops at the first refusal")
 	})
 }
