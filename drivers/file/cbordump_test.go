@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/query"
@@ -115,4 +116,25 @@ func TestNarrowInts(t *testing.T) {
 	require.Equal(t, "s", narrowInts("s"))
 	require.Equal(t, float64(1.5), narrowInts(float64(1.5))) //nolint:testifylint // exact float+type intended: a non-integer passes through untouched.
 	require.Nil(t, narrowInts(nil))
+}
+
+// TestEncodeRecordRefusesAnUnencodableValue gives the encoder a value outside the
+// CBOR data model. The error names the record, and the cause stays reachable.
+func TestEncodeRecordRefusesAnUnencodableValue(t *testing.T) {
+	b, err := encodeRecord(query.Record{Key: "k", Value: make(chan int)})
+	require.ErrorContains(t, err, `encode cache record "k"`)
+	requireWrapped(t, err)
+	require.Nil(t, b)
+}
+
+// TestCBORModeBuildersPanicOnBadOptions gives each mode builder an option value
+// outside its range. The builder stops with a panic that names the mode, so a
+// bad option list can never give a nil mode.
+func TestCBORModeBuildersPanicOnBadOptions(t *testing.T) {
+	require.PanicsWithValue(t,
+		"file: build cbor enc mode: cbor: invalid SortMode 99",
+		func() { mustEncMode(cbor.EncOptions{Sort: 99}) })
+	require.PanicsWithValue(t,
+		"file: build cbor dec mode: cbor: invalid DupMapKey 99",
+		func() { mustDecMode(cbor.DecOptions{DupMapKey: 99}) })
 }

@@ -123,6 +123,14 @@ func TestDynamoSourceFailures(t *testing.T) {
 	}
 	ignore := func([]query.Record) error { return nil }
 
+	t.Run("a malformed element of Items is refused", func(t *testing.T) {
+		err := drain(t, `{"Items":[{"pk":5}]}`, pageSize, ignore)
+		require.ErrorContains(t, err, `dynamodb: attribute "pk"`)
+	})
+	t.Run("a malformed Item is refused", func(t *testing.T) {
+		err := drain(t, `{"Item":{"pk":5}}`, pageSize, ignore)
+		require.ErrorContains(t, err, `dynamodb: attribute "pk"`)
+	})
 	t.Run("a non-array Items value is a decode failure", func(t *testing.T) {
 		err := drain(t, `{"Items":5}`, pageSize, ignore)
 		require.ErrorContains(t, err, "decode dynamodb Items")
@@ -146,4 +154,12 @@ func TestDynamoSourceFailures(t *testing.T) {
 		cancel()
 		require.ErrorIs(t, src(ctx, ignore), context.Canceled)
 	})
+}
+
+// TestDynamoSourceRejectsABadKeySchema gives a ?keys= hint with three attributes.
+// The source refuses it before it reads a record.
+func TestDynamoSourceRejectsABadKeySchema(t *testing.T) {
+	src, err := dynamoSource(strings.NewReader(`{"Items":[]}`), pageSize, numfmt.DecimalAuto, Hints{Keys: "a,b,c"})
+	require.ErrorContains(t, err, "want 1 (partition) or 2 (partition,sort)")
+	require.Nil(t, src)
 }

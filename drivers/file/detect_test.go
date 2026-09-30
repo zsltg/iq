@@ -109,6 +109,7 @@ func TestClassify(t *testing.T) {
 		{name: "yaml key without value is undetectable", head: "key: a\nother: b\n", wantErr: "cannot detect dump format"},
 		{name: "yaml value without key is undetectable", head: "value: 1\nother: b\n", wantErr: "cannot detect dump format"},
 		{name: "yaml sequence is undetectable", head: "- a\n- b\n", wantErr: "cannot detect dump format"},
+		{name: "yaml mapping that fails to decode is undetectable", head: "key: a\nvalue: 1\n[x]: y\n", wantErr: "cannot detect dump format"},
 		{name: "yaml null document is undetectable", head: "null\n", wantErr: "cannot detect dump format"},
 		{name: "plain text is undetectable", head: "hello there\n", wantErr: "cannot detect dump format"},
 	}

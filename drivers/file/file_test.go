@@ -453,7 +453,8 @@ func TestPagingRDB(t *testing.T) {
 	require.NoError(t, enc.WriteEnd())
 	st, err := Open(writeDump(t, "big.rdb", buf.Bytes(), ""), numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
-	require.Equal(t, []int{pageSize, bigCount - pageSize}, pageSizes(t, st))
+	// The literal 500 pins pageSize, the page that a scan holds in memory.
+	require.Equal(t, []int{500, 100}, pageSizes(t, st))
 }
 
 func TestPagingBSON(t *testing.T) {
@@ -942,6 +943,15 @@ func TestBSONSourceFailures(t *testing.T) {
 		require.ErrorContains(t, err, "read bson document")
 		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	})
+	t.Run("a cancelled scan stops", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		d := mustBSON(t, bson.M{"_id": "k1"})
+		called := false
+		err := bsonSource(bytes.NewReader(d), pageSize, numfmt.DecimalAuto)(ctx, func([]query.Record) error { called = true; return nil })
+		require.ErrorIs(t, err, context.Canceled)
+		require.False(t, called)
+	})
 	t.Run("an undecodable document is a decode failure", func(t *testing.T) {
 		err := drain(bytes.NewReader([]byte{6, 0, 0, 0, 0xff, 0x00}))
 		require.ErrorContains(t, err, "decode bson document")
@@ -996,6 +1006,22 @@ func TestExtJSONSourceFailures(t *testing.T) {
 	t.Run("an empty dump yields nothing", func(t *testing.T) {
 		require.NoError(t, drain("", pageSize, ignore))
 	})
+	t.Run("a cancelled scan stops", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		called := false
+		err := extJSONSource(strings.NewReader(`{"_id":1}`), pageSize, numfmt.DecimalAuto)(ctx, func([]query.Record) error { called = true; return nil })
+		require.ErrorIs(t, err, context.Canceled)
+		require.False(t, called)
+	})
+	t.Run("an empty array hands over no page", func(t *testing.T) {
+		called := false
+		require.NoError(t, drain("[]", pageSize, func([]query.Record) error { called = true; return nil }))
+		require.False(t, called)
+	})
+	t.Run("a one-byte malformed dump is a decode failure", func(t *testing.T) {
+		require.ErrorContains(t, drain("x", pageSize, ignore), "decode mongoexport json")
+	})
 	t.Run("a prologue read failure is reported as such", func(t *testing.T) {
 		boom := errors.New("disk gone")
 		err := extJSONSource(errReader{err: boom}, pageSize, numfmt.DecimalAuto)(context.Background(), ignore)
@@ -1023,4 +1049,68 @@ func TestExtJSONIsCanonical(t *testing.T) {
 	relaxed := `{"_id":"a","when":{"$date":"2020-01-01T00:00:00Z"}}` + "\n"
 	err := extJSONSource(strings.NewReader(relaxed), pageSize, numfmt.DecimalAuto)(context.Background(), collectInto)
 	require.ErrorContains(t, err, "decode extended json document")
+}
+
+// TestURLFailures pins the error that each entry point gives for a URL it cannot
+// use. The error names the real cause, not a later failure on an empty path.
+func TestURLFailures(t *testing.T) {
+	t.Run("Open refuses a non-file url", func(t *testing.T) {
+		st, err := Open("redis://h/0", numfmt.DecimalAuto, CacheConfig{})
+		require.ErrorContains(t, err, "not a file url")
+		require.Nil(t, st)
+	})
+	t.Run("Open refuses a dump whose format it cannot detect", func(t *testing.T) {
+		st, err := Open(writeDump(t, "notes.txt", []byte("hello there\n"), ""), numfmt.DecimalAuto, CacheConfig{})
+		require.ErrorContains(t, err, "cannot detect dump format")
+		require.Nil(t, st)
+	})
+	t.Run("DumpPath refuses a non-file url", func(t *testing.T) {
+		_, err := DumpPath("redis://h/0")
+		require.ErrorContains(t, err, "not a file url")
+	})
+	t.Run("an unparsable url is a parse error", func(t *testing.T) {
+		_, _, _, err := parseFileURL("file://%zz/x")
+		require.ErrorContains(t, err, "parse file url")
+		requireWrapped(t, err)
+	})
+	t.Run("OpenReader refuses an empty buffer", func(t *testing.T) {
+		st, err := OpenReader(nil, FormatUnknown, numfmt.DecimalAuto)
+		require.ErrorContains(t, err, "dump is empty")
+		require.Nil(t, st)
+	})
+}
+
+// TestBrokenGzipDumpIsAnError gives a dump that has the gzip magic but no gzip
+// header. The plain scan and the prefiltered scan both report it.
+func TestBrokenGzipDumpIsAnError(t *testing.T) {
+	st, err := OpenReader([]byte{0x1f, 0x8b}, FormatJSONL, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	err = st.TypedScan(context.Background(), func([]query.Record) error { return nil })
+	require.ErrorContains(t, err, "open gzip dump")
+	err = st.ScanFiltered(context.Background(), matchEverything, func(map[string]any) error { return nil })
+	require.ErrorContains(t, err, "open gzip dump")
+}
+
+// TestExtJSONSourceReportsAnEOFReadErrorInsideAnArray gives the mongoexport
+// reader a reader that fails inside a --jsonArray dump with an error that wraps
+// io.EOF. An array must end with its closing bracket, so the scan reports the
+// error and does not end in silence with a truncated array.
+func TestExtJSONSourceReportsAnEOFReadErrorInsideAnArray(t *testing.T) {
+	gone := fmt.Errorf("disk gone: %w", io.EOF)
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "after a comma", input: `[{"_id":"a"},`},
+		{name: "after a document", input: `[{"_id":"a"}`},
+		{name: "after the opening bracket", input: `[`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := extJSONSource(&dataThenErrReader{data: tt.input, err: gone}, pageSize, numfmt.DecimalAuto)
+			err := src(context.Background(), func([]query.Record) error { return nil })
+			require.ErrorContains(t, err, "decode mongoexport json")
+			require.ErrorIs(t, err, gone)
+		})
+	}
 }

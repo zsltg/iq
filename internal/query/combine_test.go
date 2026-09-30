@@ -81,3 +81,11 @@ func TestCombinerRun(t *testing.T) {
 func TestNewCombinerReturnsCombiner(t *testing.T) {
 	require.NotNil(t, query.NewCombiner())
 }
+
+// TestCombinerReportsACompileError binds a variable that the program does not
+// declare. The error names the compile step, and the cause stays reachable.
+func TestCombinerReportsACompileError(t *testing.T) {
+	_, err := runCombine("$b", []string{"$a"}, []any{1.0})
+	require.ErrorContains(t, err, "compile combine")
+	require.Error(t, errors.Unwrap(err), "the compile error must stay unwrappable")
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -106,6 +107,7 @@ func TestCacheMinSize(t *testing.T) {
 		{name: "negative selects the default floor", cfg: CacheConfig{MinSize: -1}, want: defaultCacheMinSize},
 		{name: "one byte is honored", cfg: CacheConfig{MinSize: 1}, want: 1},
 		{name: "an explicit floor is honored", cfg: CacheConfig{MinSize: 5 << 20}, want: 5 << 20},
+		{name: "the default floor is 4 MiB", cfg: CacheConfig{}, want: 4 << 20},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -297,6 +299,24 @@ func TestReadCacheStreamFailures(t *testing.T) {
 		err := st.readCache(context.Background(), filepath.Join(t.TempDir(), "none.cbor"), m, func([]query.Record) error { return nil })
 		require.ErrorContains(t, err, "open cache")
 		require.ErrorIs(t, err, fs.ErrNotExist)
+	})
+	t.Run("a trailer outside the file is a trailer error", func(t *testing.T) {
+		st, m, h := cacheFixture(t)
+		content := cacheBytes(t, h, nRecords(1), true, nil)
+		binary.LittleEndian.PutUint64(content[len(content)-trailerLen:], uint64(len(content)))
+		path := plantCache(t, st, m, content)
+		err := st.readCache(context.Background(), path, m, func([]query.Record) error { return nil })
+		require.ErrorContains(t, err, "read cache trailer")
+		requireWrapped(t, err)
+	})
+	t.Run("a record region shorter than the header is a header error", func(t *testing.T) {
+		st, m, h := cacheFixture(t)
+		content := cacheBytes(t, h, nRecords(1), true, nil)
+		binary.LittleEndian.PutUint64(content[len(content)-trailerLen:], 4)
+		path := plantCache(t, st, m, content)
+		err := st.readCache(context.Background(), path, m, func([]query.Record) error { return nil })
+		require.ErrorContains(t, err, "read cache header")
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	})
 }
 
@@ -644,6 +664,10 @@ func TestCacheWriterWriteReportsBytesWritten(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, n)
 	require.Equal(t, int64(7), w.pos)
+
+	require.NoError(t, f.Close())
+	_, err = w.Write([]byte("h"))
+	require.ErrorIs(t, err, os.ErrClosed, "a failed write reports its error")
 }
 
 // TestNewCacheWriterCannotCreateTheCacheDir names the failure that stops a cache
@@ -781,6 +805,31 @@ func TestListCacheTieBreaksByFileName(t *testing.T) {
 	require.Equal(t, []string{"1.cbor", "2.cbor", "3.cbor"}, []string{entries[0].File, entries[1].File, entries[2].File})
 }
 
+// TestListCacheTieBreaksByFileNameAtScale lists 40 caches of two dumps. sort.Slice
+// is not stable above 12 entries, so only the file name tiebreak keeps the caches
+// of one dump in file name order.
+func TestListCacheTieBreaksByFileNameAtScale(t *testing.T) {
+	dir := t.TempDir()
+	var wantA, wantB []string
+	for i := range 40 {
+		name := fmt.Sprintf("%02d.cbor", i)
+		if i%3 == 0 {
+			plantNamedCache(t, dir, name, "/dumps/b.rdb")
+			wantB = append(wantB, name)
+			continue
+		}
+		plantNamedCache(t, dir, name, "/dumps/a.rdb")
+		wantA = append(wantA, name)
+	}
+	entries, err := ListCache(dir)
+	require.NoError(t, err)
+	got := make([]string, 0, len(entries))
+	for _, e := range entries {
+		got = append(got, e.File)
+	}
+	require.Equal(t, append(wantA, wantB...), got)
+}
+
 // TestListCacheUnreadableDir reports a dir that exists but cannot be read as an
 // error, distinct from the missing dir that simply means nothing is cached.
 func TestListCacheUnreadableDir(t *testing.T) {
@@ -854,4 +903,127 @@ func TestGetUsesTheIndexWithoutDecodingTheCache(t *testing.T) {
 
 	err = st.TypedScan(context.Background(), func([]query.Record) error { return nil })
 	require.ErrorContains(t, err, "decode cache record", "streaming the same cache does reach the corruption")
+}
+
+// TestWriteHeaderPinsTheLayoutVersion reads the version field back from the bytes.
+// The version is part of the cache file format. A changed value makes every cache
+// that an earlier build wrote a miss, so a change must be deliberate.
+func TestWriteHeaderPinsTheLayoutVersion(t *testing.T) {
+	var buf bytes.Buffer
+	require.NoError(t, writeHeader(&buf, cacheHeader{Path: "p", Size: 1}))
+	require.Equal(t, cacheMagic[:], buf.Bytes()[:8])
+	require.Equal(t, uint32(2), binary.LittleEndian.Uint32(buf.Bytes()[8:12]))
+}
+
+// TestFileSizeReportsAStatFailure gives fileSize a closed file, so the stat fails
+// and the error names the cache.
+func TestFileSizeReportsAStatFailure(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "s-*.tmp")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	n, err := fileSize(f)
+	require.ErrorContains(t, err, "stat cache")
+	// The cause differs per platform (os.ErrClosed on Unix, a handle error on
+	// Windows), so check only that fileSize wraps it.
+	require.Error(t, errors.Unwrap(err), "the stat error is wrapped")
+	require.Zero(t, n)
+}
+
+// TestNewCacheWriterCreatesAPrivateDir makes sure that the cache directory is
+// readable only by its owner. The cache holds decoded records of the dump.
+func TestNewCacheWriterCreatesAPrivateDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not keep Unix permission bits")
+	}
+	dir := filepath.Join(t.TempDir(), "new", "cache")
+	st := &Store{cache: CacheConfig{Dir: dir, Enabled: true, MinSize: 1}}
+	w, err := st.newCacheWriter(cacheMeta{path: "p", size: 1})
+	require.NoError(t, err)
+	t.Cleanup(w.discard)
+	fi, err := os.Stat(dir)
+	require.NoError(t, err)
+	require.Equal(t, fs.FileMode(0o700), fi.Mode().Perm())
+}
+
+// TestNewCacheWriterCannotCreateTheTempFile uses a cache directory that exists
+// but is not writable. The temp file cannot be made, so newCacheWriter reports it
+// and returns no writer.
+func TestNewCacheWriterCannotCreateTheTempFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.Chmod(dir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	st := &Store{cache: CacheConfig{Dir: dir, Enabled: true, MinSize: 1}}
+	w, err := st.newCacheWriter(cacheMeta{path: "p", size: 1})
+	require.ErrorContains(t, err, "create temp cache")
+	require.ErrorIs(t, err, fs.ErrPermission)
+	require.Nil(t, w)
+}
+
+// cancelLaterCtx reports no error for its first ok calls to Err, and
+// context.Canceled after that. A test can so cancel a read at an exact step.
+type cancelLaterCtx struct {
+	context.Context
+	ok int
+}
+
+func (c *cancelLaterCtx) Err() error {
+	if c.ok > 0 {
+		c.ok--
+		return nil
+	}
+	return context.Canceled
+}
+
+// TestCacheGetKeepsAnAnswerFoundBeforeACancel finds the only wanted key on the
+// first of two pages. The bounded read then stops. A cancel that comes after the
+// answer is complete does not discard the answer.
+func TestCacheGetKeepsAnAnswerFoundBeforeACancel(t *testing.T) {
+	st, m, h := cacheFixture(t)
+	plantCache(t, st, m, cacheBytes(t, h, nRecords(pageSize+1), true, nil))
+	ctx := &cancelLaterCtx{Context: context.Background(), ok: 1}
+	out, ok := st.cacheGet(ctx, []string{"k0"})
+	require.True(t, ok)
+	require.Equal(t, map[string]any{"k0": "v0"}, out)
+}
+
+// TestCacheGetReadsOnlyTheCandidatePage puts a second record with the key k0 on
+// the second page. The bounded read decodes only the page that the filter selects,
+// so it gives the first value, as the streamed Get does.
+func TestCacheGetReadsOnlyTheCandidatePage(t *testing.T) {
+	st, m, h := cacheFixture(t)
+	recs := nRecords(pageSize + 1)
+	recs[pageSize] = query.Record{Key: "k0", Type: "string", Value: "late"}
+	plantCache(t, st, m, cacheBytes(t, h, recs, true, nil))
+
+	out, ok := st.cacheGet(context.Background(), []string{"k0"})
+	require.True(t, ok)
+	require.Equal(t, map[string]any{"k0": "v0"}, out)
+
+	st.cache.Index = false // the same cache, streamed.
+	streamed, err := st.Get(context.Background(), []string{"k0"})
+	require.NoError(t, err)
+	require.Equal(t, out, streamed)
+}
+
+// TestRemoveCacheSkipsDirsAndForeignFiles clears a cache dir that also holds a
+// directory with the .cbor extension and a valid cache file with another
+// extension. RemoveCache removes only the .cbor files. The last .cbor file comes
+// after the skipped entries, so a skip must not end the walk.
+func TestRemoveCacheSkipsDirsAndForeignFiles(t *testing.T) {
+	dir := t.TempDir()
+	plantNamedCache(t, dir, "a.cbor", "/dumps/one.rdb")
+	plantNamedCache(t, dir, "b.txt", "/dumps/one.rdb")
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "c.cbor"), 0o700))
+	plantNamedCache(t, dir, "d.cbor", "/dumps/one.rdb")
+
+	n, err := RemoveCache(dir, "")
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+	require.FileExists(t, filepath.Join(dir, "b.txt"))
+	require.DirExists(t, filepath.Join(dir, "c.cbor"))
+	require.NoFileExists(t, filepath.Join(dir, "a.cbor"))
+	require.NoFileExists(t, filepath.Join(dir, "d.cbor"))
 }

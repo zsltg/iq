@@ -81,6 +81,7 @@ func TestBloomSizing(t *testing.T) {
 		{name: "zero keys floors at one byte", n: 0, want: 1},
 		{name: "one key rounds ten bits up to two bytes", n: 1, want: 2},
 		{name: "four keys fill five bytes exactly", n: 4, want: 5},
+		{name: "a hundred keys take ten bits each", n: 100, want: 125},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -138,5 +139,7 @@ func TestBloomHashesForcesNonZeroSecondHash(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, bloomHashCount, set, "k distinct bits, so the stride did not collapse")
+	// The literal 7 pins bloomHashCount. The count is part of the cache file format,
+	// so a filter written with another count gives false negatives on read.
+	require.Equal(t, 7, set, "k distinct bits, so the stride did not collapse")
 }
