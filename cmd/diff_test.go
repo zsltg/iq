@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1425,4 +1426,126 @@ func TestDiffStatsCrossDriverText(t *testing.T) {
 			require.EqualError(t, err, want)
 		})
 	}
+}
+
+// ctxRecorder records the context of each open and each read, by source URI.
+type ctxRecorder struct {
+	mu   sync.Mutex
+	ctxs map[string][]context.Context
+}
+
+func (r *ctxRecorder) add(url string, ctx context.Context) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ctxs[url] = append(r.ctxs[url], ctx)
+}
+
+// ctxRecordingStore is a store with one item. Each scan and each raw query
+// records its context.
+type ctxRecordingStore struct {
+	fakeInspectStore
+	rec *ctxRecorder
+	url string
+}
+
+func (s ctxRecordingStore) ScanBatches(ctx context.Context, fn func(map[string]any) error) error {
+	s.rec.add(s.url, ctx)
+	return fn(map[string]any{"1": map[string]any{"n": 1.0}})
+}
+
+func (s ctxRecordingStore) Query(ctx context.Context, _ []string) (any, error) {
+	s.rec.add(s.url, ctx)
+	return map[string]any{"ok": 1.0}, nil
+}
+
+// useCtxDriver registers the ctxrec:// driver for the test, seeds the sources
+// "a" and "b" on it, and returns the recorder.
+func useCtxDriver(t *testing.T) *ctxRecorder {
+	t.Helper()
+	rec := &ctxRecorder{ctxs: map[string][]context.Context{}}
+	orig := drivers
+	t.Cleanup(func() { drivers = orig })
+	drivers = append(append([]driver{}, orig...), driver{
+		name:    "ctxrec",
+		schemes: []string{"ctxrec"},
+		open: func(ctx context.Context, cfg *config) (store, error) {
+			rec.add(cfg.url, ctx)
+			return ctxRecordingStore{rec: rec, url: cfg.url}, nil
+		},
+	})
+	c := newSeed()
+	require.NoError(t, c.Add("a", "ctxrec://a"))
+	require.NoError(t, c.Add("b", "ctxrec://b"))
+	seedConfig(t, c)
+	return rec
+}
+
+// requireSideContexts requires that each side opened and read at least once,
+// and that each check passes for every recorded context.
+func requireSideContexts(t *testing.T, rec *ctxRecorder, check func(t *testing.T, ctx context.Context)) {
+	t.Helper()
+	for _, url := range []string{"ctxrec://a", "ctxrec://b"} {
+		require.GreaterOrEqual(t, len(rec.ctxs[url]), 2, "%s must open and read", url)
+		for _, ctx := range rec.ctxs[url] {
+			require.NotNil(t, ctx, url)
+			check(t, ctx)
+		}
+	}
+}
+
+// diffCtxKey is the context key that marks the context of the caller.
+type diffCtxKey struct{}
+
+// TestDiffForwardsContextToBothSides proves that every layer, on the human path
+// and on the patch path, opens and reads both sides under the context of the
+// command, with the --timeout deadline.
+func TestDiffForwardsContextToBothSides(t *testing.T) {
+	for _, layer := range [][]string{{"--data"}, {"--stats"}, {"--schema"}, {"--data", "--patch"}, {"--stats", "--patch"}, {"--schema", "--patch"}} {
+		t.Run(strings.Join(layer, " "), func(t *testing.T) {
+			rec := useCtxDriver(t)
+			dc := quietDiff(&config{timeout: time.Minute})
+			dc.SetOut(io.Discard)
+			dc.SetErr(io.Discard)
+			dc.SetArgs(append([]string{"a", "b"}, layer...))
+
+			err := dc.ExecuteContext(context.WithValue(context.Background(), diffCtxKey{}, "marker"))
+
+			require.NoError(t, err)
+			requireSideContexts(t, rec, func(t *testing.T, ctx context.Context) {
+				require.Equal(t, "marker", ctx.Value(diffCtxKey{}))
+				_, ok := ctx.Deadline()
+				require.True(t, ok, "the read must run under the --timeout deadline")
+			})
+		})
+	}
+}
+
+// TestDiffDataTicksBothSides proves that the data layer and the patch data layer
+// tick the page callback once for each side.
+func TestDiffDataTicksBothSides(t *testing.T) {
+	useCtxDriver(t)
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	left, err := diffSpec(cf, "a")
+	require.NoError(t, err)
+	right, err := diffSpec(cf, "b")
+	require.NoError(t, err)
+
+	t.Run("data", func(t *testing.T) {
+		var pages []int
+
+		_, err := diffData(t.Context(), &config{}, left, right, func(n int) { pages = append(pages, n) }, diff.Options{})
+
+		require.NoError(t, err)
+		require.Equal(t, []int{1, 1}, pages)
+	})
+
+	t.Run("patch data", func(t *testing.T) {
+		var pages []int
+
+		_, err := patchLayer(t.Context(), &config{}, left, right, false, false, nil, 0, func(n int) { pages = append(pages, n) })
+
+		require.NoError(t, err)
+		require.Equal(t, []int{1, 1}, pages)
+	})
 }

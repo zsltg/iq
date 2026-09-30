@@ -2068,3 +2068,52 @@ func TestInsertRequestFrom(t *testing.T) {
 		})
 	}
 }
+
+// TestMCPDiffPassesSampleAndSection proves that the iq_diff tool gives its
+// sample to the schema layer and its section list to the stats layer.
+func TestMCPDiffPassesSampleAndSection(t *testing.T) {
+	seedDiffFiles(t, map[string][]string{
+		"wide":   {`{"key":"1","value":{"tags":["s",1]}}`},
+		"narrow": {`{"key":"1","value":{"tags":["s"]}}`},
+	})
+	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
+	const tags = ".[] | .tags[]"
+
+	t.Run("the default sample sees the second type", func(t *testing.T) {
+		var out mcpDiffOutput
+		structOf(t, callMCP(t, cs, "iq_diff", map[string]any{"a": "wide", "b": "narrow", "schema": true, "filter": tags}), &out)
+		require.True(t, out.Differ)
+	})
+
+	t.Run("a sample of one does not see the second type", func(t *testing.T) {
+		var out mcpDiffOutput
+		structOf(t, callMCP(t, cs, "iq_diff", map[string]any{"a": "wide", "b": "narrow", "schema": true, "filter": tags, "sample": 1}), &out)
+		require.False(t, out.Differ)
+		require.Empty(t, out.Schema)
+	})
+
+	t.Run("the section list reaches the stats layer", func(t *testing.T) {
+		body := errorBodyOf(t, callMCP(t, cs, "iq_diff", map[string]any{"a": "wide", "b": "narrow", "stats": true, "section": []string{"bogus"}}))
+		require.Equal(t, `unknown inspect subcommand "bogus"; want one of dbStats, serverStatus, listCollections, collStats, buildInfo, hostInfo`, body.Error.Message)
+	})
+}
+
+// TestMCPDiffForwardsContextToBothSides proves that every layer of the iq_diff
+// tool opens and reads both sides under the deadline of the call.
+func TestMCPDiffForwardsContextToBothSides(t *testing.T) {
+	for _, layer := range []string{"data", "stats", "schema"} {
+		t.Run(layer, func(t *testing.T) {
+			rec := useCtxDriver(t)
+			cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
+
+			var out mcpDiffOutput
+			structOf(t, callMCP(t, cs, "iq_diff", map[string]any{"a": "a", "b": "b", layer: true}), &out)
+
+			require.False(t, out.Differ)
+			requireSideContexts(t, rec, func(t *testing.T, ctx context.Context) {
+				_, ok := ctx.Deadline()
+				require.True(t, ok, "the read must run under the deadline of the call")
+			})
+		})
+	}
+}
