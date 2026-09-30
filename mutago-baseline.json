@@ -1554,6 +1554,30 @@
    "file": "internal/shape/shape.go",
    "mutator": "statement/remove",
    "line": 354
+  },
+  {
+   "id": "86a6546efa5e62a47e3515554b754a93",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "branch/case",
+   "line": 339
+  },
+  {
+   "id": "86a6546efa5e62a47e3515554b754a93",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "branch/case",
+   "line": 403
+  },
+  {
+   "id": "f422a8f89bf2111fbcb893c734be7452",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "expression/error-guard",
+   "line": 85
+  },
+  {
+   "id": "907b6d8fa48637f7b5836dc16c459de0",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "statement/remove",
+   "line": 94
   }
  ]
 }

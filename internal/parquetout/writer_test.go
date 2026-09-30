@@ -152,6 +152,35 @@ func TestWriterPostSampleMismatch(t *testing.T) {
 	require.Contains(t, err.Error(), "jsonl")
 }
 
+// TestWriterSampleSize pins the schema sample to the first 1000 values with
+// literal counts. A string in the sample makes the column arrow.json, so every
+// Add succeeds. A string after the sample meets an int64 column and fails.
+func TestWriterSampleSize(t *testing.T) {
+	tests := []struct {
+		name    string
+		ints    int
+		wantErr bool
+	}{
+		{"a string as value 1000 is in the sample", 999, false},
+		{"a string as value 1001 is after the sample", 1000, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pw := NewWriter(&bytes.Buffer{})
+			for range tt.ints {
+				require.NoError(t, pw.Add(map[string]any{"n": 1}))
+			}
+			err := pw.Add(map[string]any{"n": "s"})
+			if tt.wantErr {
+				require.ErrorContains(t, err, "int64")
+				return
+			}
+			require.NoError(t, err)
+			require.NoError(t, pw.Close())
+		})
+	}
+}
+
 // errSink is the sentinel a failAfterWriter returns, so tests can assert the
 // error survives wrapping (errors.Is), pinning the %w in the wrapping Errorf.
 var errSink = errors.New("sink boom")
