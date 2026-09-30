@@ -1,5 +1,5 @@
 {
-  "usage": "CodeScene code health rules for iq. Go test code (table tests, fuzz targets and their reference evaluators) checks one invariant per branch, so it gets a higher complexity threshold and no nesting rule. Production code keeps the default rules.",
+  "usage": "CodeScene code health rules for iq. Go test code (table tests, fuzz targets and their reference evaluators) checks one invariant per branch or per table row, so it gets a higher complexity threshold, a higher function length threshold (Large Method, 250 lines instead of the default 80) and no nesting rule. Production code keeps the default rules. The names come from CodeScene's default rules for Go (default-rules.zip, code-health-rules.go.json).",
   "rule_sets": [
     {
       "matching_content_path": "**/*_test.go",
@@ -14,6 +14,10 @@
         {
           "name": "function_cyclomatic_complexity_warning",
           "value": 15
+        },
+        {
+          "name": "function_lines_of_code_warning",
+          "value": 250
         }
       ]
     }
