@@ -70,7 +70,10 @@ jobs:
   # failed or was cancelled. A skipped job passes. A new per-change job goes into
   # this needs list, and the ruleset does not change. On a draft pull request the
   # slow jobs are skipped, so this job fails there: only the full run that starts
-  # when the pull request is marked ready can pass it.
+  # when the pull request is marked ready can pass it. It fails and does not skip
+  # on purpose. GitHub counts a skipped job as a pass for a required check, and
+  # the ready run creates its ci-ok check only after the jobs it needs end, so a
+  # skipped draft ci-ok would let the pull request merge before the tests finish.
   ci-ok:
     if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
     needs: [changes, lint, workflows, test, coverage-group, coverage, e2e, cross, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
@@ -85,7 +88,7 @@ jobs:
         env:
           CHANGES: ${{ needs.changes.result }}
           RESULTS: ${{ join(needs.*.result, ' ') }}
-          DRAFT: ${{ github.event.pull_request.draft == true }}
+          DRAFT: ${{ needs.changes.outputs.draft }}
         run: |
           echo "results: $RESULTS"
           if [ "$DRAFT" = true ]; then
@@ -114,14 +117,40 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # read the live draft state of the pull request
     outputs:
       code: ${{ steps.diff.outputs.code }}
-      full: ${{ steps.diff.outputs.code == 'true' && github.event.pull_request.draft != true }}
+      draft: ${{ steps.draft.outputs.draft }}
+      full: ${{ steps.diff.outputs.code == 'true' && steps.draft.outputs.draft != 'true' }}
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
+      # The draft flag in the event payload is fixed when the event fires. When a
+      # push and "ready for review" come close together, the run of the push can
+      # cancel the ready run and still see draft=true, so it skips the slow jobs.
+      # Read the live state instead. If the API call fails, use the payload.
+      - id: draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          PAYLOAD_DRAFT: ${{ github.event.pull_request.draft == true }}
+        run: |
+          draft=false
+          if [ -n "$NUMBER" ]; then
+            if live="$(gh api "repos/$REPO/pulls/$NUMBER" --jq .draft)"; then
+              draft=$live
+            else
+              echo "::warning::cannot read the draft state of pull request $NUMBER, so the event payload decides"
+              draft=$PAYLOAD_DRAFT
+            fi
+          fi
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+          echo "changes: draft=$draft"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
