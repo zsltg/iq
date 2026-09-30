@@ -192,9 +192,10 @@ func TestResolveDiffTargetUnknown(t *testing.T) {
 
 func TestDiffStatsRejectsCrossDriver(t *testing.T) {
 	// The scheme check happens before any store is opened, so no connection is made.
-	_, err := diffStats(context.Background(),
-		sourceSpec{handle: "a", driver: "redis"},
-		sourceSpec{handle: "b", driver: "mongo"}, nil, diff.Options{})
+	_, err := diffRun{
+		left:  sourceSpec{handle: "a", driver: "redis"},
+		right: sourceSpec{handle: "b", driver: "mongo"},
+	}.diffStats(context.Background())
 	require.ErrorContains(t, err, "same driver")
 }
 
@@ -1019,7 +1020,7 @@ func TestPatchLayerCanceledContext(t *testing.T) {
 			// The canceled context fails each arm's collector before any dial; an
 			// arm that drops the context would reach the network and fail
 			// differently.
-			_, err := patchLayer(ctx, &config{}, left, right, tt.statsMode, tt.schemaMode, nil, 0, nil)
+			_, err := diffRun{cfg: &config{}, left: left, right: right}.patchLayer(ctx, tt.statsMode, tt.schemaMode, nil)
 			require.ErrorIs(t, err, context.Canceled)
 		})
 	}
@@ -1154,7 +1155,7 @@ func TestDiffStatsCanceledContext(t *testing.T) {
 	// The already-canceled context fails the collectors before any dial; a
 	// collector that drops the context would reach the network and fail
 	// differently.
-	_, err = diffStats(ctx, left, right, nil, diff.Options{})
+	_, err = diffRun{left: left, right: right}.diffStats(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 }
 
@@ -1534,7 +1535,7 @@ func TestDiffDataTicksBothSides(t *testing.T) {
 	t.Run("data", func(t *testing.T) {
 		var pages []int
 
-		_, err := diffData(t.Context(), &config{}, left, right, func(n int) { pages = append(pages, n) }, diff.Options{})
+		_, err := diffRun{cfg: &config{}, left: left, right: right}.diffData(t.Context(), func(n int) { pages = append(pages, n) })
 
 		require.NoError(t, err)
 		require.Equal(t, []int{1, 1}, pages)
@@ -1543,7 +1544,7 @@ func TestDiffDataTicksBothSides(t *testing.T) {
 	t.Run("patch data", func(t *testing.T) {
 		var pages []int
 
-		_, err := patchLayer(t.Context(), &config{}, left, right, false, false, nil, 0, func(n int) { pages = append(pages, n) })
+		_, err := diffRun{cfg: &config{}, left: left, right: right}.patchLayer(t.Context(), false, false, func(n int) { pages = append(pages, n) })
 
 		require.NoError(t, err)
 		require.Equal(t, []int{1, 1}, pages)
