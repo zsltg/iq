@@ -288,7 +288,11 @@ when `code=true` and the pull request is not a draft. The slow jobs (`test`, the
 coverage jobs, `e2e`, `cross`, `sbom`, `capabilities`, `mutate-diff` and `fuzz`)
 run only then, and `ci-ok` fails on a draft. Mark the pull request ready for
 review when the review rounds settle: the `ready_for_review` event starts the
-full run once. The runs of one pull request share a concurrency group, so a new
+full run once. `changes` reads the draft state from the API, not from the event,
+so a push just before "ready for review" still gets the full run. `ci-ok` fails
+on a draft and does not skip, because GitHub counts a skipped required check as
+a pass, and a skipped draft `ci-ok` would let a pull request merge while its
+full run is still in progress. The runs of one pull request share a concurrency group, so a new
 push cancels the run of the previous push. A push to `main` is never cancelled.
 The jobs per gate:
 `lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
