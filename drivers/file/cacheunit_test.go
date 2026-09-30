@@ -923,7 +923,9 @@ func TestFileSizeReportsAStatFailure(t *testing.T) {
 	require.NoError(t, f.Close())
 	n, err := fileSize(f)
 	require.ErrorContains(t, err, "stat cache")
-	require.ErrorIs(t, err, os.ErrClosed)
+	// The cause differs per platform (os.ErrClosed on Unix, a handle error on
+	// Windows), so check only that fileSize wraps it.
+	require.Error(t, errors.Unwrap(err), "the stat error is wrapped")
 	require.Zero(t, n)
 }
 
