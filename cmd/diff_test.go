@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -1218,4 +1219,210 @@ func TestDiffSetArraysMongoIntegration(t *testing.T) {
 	// diff exits zero.
 	_, err = runCmd(t, newDiffCmd(cfg), "a", "b", "--data", "--set-arrays")
 	require.NoError(t, err)
+}
+
+// seedDiffFiles seeds one file source per handle, each from its own jsonl lines.
+func seedDiffFiles(t *testing.T, sources map[string][]string) {
+	t.Helper()
+	c := newSeed()
+	for handle, lines := range sources {
+		dump := filepath.Join(t.TempDir(), handle+".jsonl")
+		body := ""
+		for _, line := range lines {
+			body += line + "\n"
+		}
+		require.NoError(t, os.WriteFile(dump, []byte(body), 0o600))
+		require.NoError(t, c.Add(handle, iqfile.URL(dump)))
+	}
+	seedConfig(t, c)
+}
+
+// TestDiffValidationOrder pins the order of the checks in the diff command:
+// load the config, parse the left side, parse the right side, check --patch
+// against the layer count, then check --stats against a filter. Each row trips
+// two checks, and only the first one reports.
+func TestDiffValidationOrder(t *testing.T) {
+	const (
+		patchLayerErr  = "--patch renders one JSON Patch, so it needs a single layer; choose exactly one of --data, --stats, --schema"
+		statsFilterErr = "--stats diffs the backend's own introspection, which has no items to filter; drop the filter or diff --data/--schema"
+	)
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{"the left side parses before the right side", []string{"ghost1", "ghost2"}, "unknown source \"ghost1\"; run `iq ls` (register a dump with `iq add file:///path/to/dump.json` to read one)"},
+		{"the right side parses before the patch check", []string{"a", "ghost", "--data", "--schema", "--patch"}, "unknown source \"ghost\"; run `iq ls` (register a dump with `iq add file:///path/to/dump.json` to read one)"},
+		{"the patch check comes before the stats filter check", []string{"a=.[]", "b", "--stats", "--schema", "--patch"}, patchLayerErr},
+		{"the stats filter check", []string{"a", "b=.[]", "--stats"}, statsFilterErr},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seedDiffFiles(t, map[string][]string{"a": {`{"key":"1","value":{}}`}, "b": {`{"key":"1","value":{}}`}})
+
+			_, err := runCmd(t, quietDiff(&config{timeout: 5 * time.Second}), tt.args...)
+
+			require.EqualError(t, err, tt.wantErr)
+		})
+	}
+}
+
+// TestDiffReadsLeftBeforeRight pins the read order: when both sides fail, the
+// error names the left side, on every layer and on the patch path.
+func TestDiffReadsLeftBeforeRight(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("l", "file:///nonexistent-iq-test/l.jsonl"))
+	require.NoError(t, c.Add("r", "file:///nonexistent-iq-test/r.jsonl"))
+	seedConfig(t, c)
+
+	for _, layer := range [][]string{{"--data"}, {"--schema"}, {"--stats"}, {"--data", "--patch"}, {"--schema", "--patch"}, {"--stats", "--patch"}} {
+		t.Run(strings.Join(layer, " "), func(t *testing.T) {
+			args := append([]string{"l", "r"}, layer...)
+
+			_, err := runCmd(t, quietDiff(&config{timeout: 5 * time.Second}), args...)
+
+			require.EqualError(t, err, `open dump "/nonexistent-iq-test/l.jsonl": open /nonexistent-iq-test/l.jsonl: no such file or directory`)
+		})
+	}
+}
+
+// TestDiffOutputAndQuietExit pins the rendered delta and the exit contract of
+// the human path: the sources differ, so the output renders in full and the run
+// returns errQuietExit.
+func TestDiffOutputAndQuietExit(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"text", nil, "a (file)  →  b (file)\n\n# data\n~ 1\n    ~ name: \"a\" → \"b\"\n0 added, 0 removed, 1 changed\n\n"},
+		{
+			"json",
+			[]string{"--json"},
+			"{\n  \"data\": [\n    {\n      \"key\": \"1\",\n      \"op\": \"change\",\n      \"changes\": [\n        {\n" +
+				"          \"path\": [\n            \"name\"\n          ],\n          \"op\": \"change\",\n" +
+				"          \"old\": \"a\",\n          \"new\": \"b\"\n        }\n      ]\n    }\n  ]\n}\n",
+		},
+		{
+			"yaml",
+			[]string{"--yaml"},
+			"data:\n    - key: \"1\"\n      op: 2\n      changes:\n        - path:\n            - name\n          op: 2\n" +
+				"          old: a\n          new: b\n      old: null\n      new: null\nstats: []\nschema: []\n",
+		},
+		{"patch with no layer is the data layer", []string{"--patch"}, "[\n  {\n    \"op\": \"replace\",\n    \"path\": \"/1/name\",\n    \"value\": \"b\"\n  }\n]\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seedDiffFiles(t, map[string][]string{
+				"a": {`{"key":"1","value":{"name":"a"}}`},
+				"b": {`{"key":"1","value":{"name":"b"}}`},
+			})
+			args := append([]string{"a", "b"}, tt.args...)
+
+			out, err := runCmd(t, quietDiff(&config{timeout: 5 * time.Second}), args...)
+
+			require.ErrorIs(t, err, errQuietExit)
+			require.Equal(t, tt.want, stripANSI(out))
+		})
+	}
+}
+
+// TestDiffOptionsReachTheLayers proves that --set-arrays, --sample, and
+// --section reach the layer that uses them.
+func TestDiffOptionsReachTheLayers(t *testing.T) {
+	const unknownSection = `unknown inspect subcommand "bogus"; want one of dbStats, serverStatus, listCollections, collStats, buildInfo, hostInfo`
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string // "" means no error; "quiet" means errQuietExit
+	}{
+		{"arrays in another order differ", []string{"arr1", "arr2", "--data"}, "quiet"},
+		{"set-arrays ignores the order", []string{"arr1", "arr2", "--data", "--set-arrays"}, ""},
+		{"a full sample sees the second type", []string{"wide=.[] | .tags[]", "narrow=.[] | .tags[]", "--schema"}, "quiet"},
+		{"a sample of one does not see the second type", []string{"wide=.[] | .tags[]", "narrow=.[] | .tags[]", "--schema", "--sample", "1"}, ""},
+		{"a patch sample of one does not see the second type", []string{"wide=.[] | .tags[]", "narrow=.[] | .tags[]", "--schema", "--sample", "1", "--patch"}, ""},
+		{"a stats section reaches the collector", []string{"arr1", "arr2", "--stats", "--section", "bogus"}, unknownSection},
+		{"a patch stats section reaches the collector", []string{"arr1", "arr2", "--stats", "--section", "bogus", "--patch"}, unknownSection},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seedDiffFiles(t, map[string][]string{
+				"arr1":   {`{"key":"1","value":{"tags":["x","y"]}}`},
+				"arr2":   {`{"key":"1","value":{"tags":["y","x"]}}`},
+				"wide":   {`{"key":"1","value":{"tags":["s",1]}}`},
+				"narrow": {`{"key":"1","value":{"tags":["s"]}}`},
+			})
+
+			_, err := runCmd(t, quietDiff(&config{timeout: 5 * time.Second}), tt.args...)
+
+			switch tt.wantErr {
+			case "":
+				require.NoError(t, err)
+			case "quiet":
+				require.ErrorIs(t, err, errQuietExit)
+			default:
+				require.EqualError(t, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestDiffCommandForwardsContext proves that every layer, on the human path and
+// on the patch path, reads under the context of the command.
+func TestDiffCommandForwardsContext(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("a", "redis://127.0.0.1:1/0"))
+	require.NoError(t, c.Add("b", "redis://127.0.0.1:1/1"))
+	seedConfig(t, c)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for _, layer := range [][]string{{"--data"}, {"--stats"}, {"--schema"}, {"--data", "--patch"}, {"--stats", "--patch"}, {"--schema", "--patch"}} {
+		t.Run(strings.Join(layer, " "), func(t *testing.T) {
+			dc := quietDiff(&config{timeout: 5 * time.Second})
+			dc.SetOut(io.Discard)
+			dc.SetErr(io.Discard)
+			dc.SetArgs(append([]string{"a", "b"}, layer...))
+
+			err := dc.ExecuteContext(ctx)
+
+			require.ErrorIs(t, err, context.Canceled)
+		})
+	}
+}
+
+// TestDiffCommandAppliesTimeout proves that every layer, on the human path and
+// on the patch path, reads under the --timeout deadline.
+func TestDiffCommandAppliesTimeout(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("a", "redis://127.0.0.1:1/0"))
+	require.NoError(t, c.Add("b", "redis://127.0.0.1:1/1"))
+	seedConfig(t, c)
+
+	for _, layer := range [][]string{{"--data"}, {"--stats"}, {"--schema"}, {"--data", "--patch"}, {"--stats", "--patch"}, {"--schema", "--patch"}} {
+		t.Run(strings.Join(layer, " "), func(t *testing.T) {
+			_, err := runCmd(t, quietDiff(&config{timeout: time.Nanosecond}), append([]string{"a", "b"}, layer...)...)
+
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+		})
+	}
+}
+
+// TestDiffStatsCrossDriverText pins the exact text of the cross-driver error.
+// The check runs before either side opens, so the missing dump of the left side
+// does not report.
+func TestDiffStatsCrossDriverText(t *testing.T) {
+	const want = `stats diff needs two sources of the same driver; "f" is file and "r" is redis`
+	c := newSeed()
+	require.NoError(t, c.Add("f", "file:///nonexistent-iq-test/f.jsonl"))
+	require.NoError(t, c.Add("r", "redis://127.0.0.1:1/0"))
+	seedConfig(t, c)
+
+	for _, extra := range [][]string{{"--stats"}, {"--stats", "--patch"}} {
+		t.Run(strings.Join(extra, " "), func(t *testing.T) {
+			_, err := runCmd(t, quietDiff(&config{timeout: 5 * time.Second}), append([]string{"f", "r"}, extra...)...)
+
+			require.EqualError(t, err, want)
+		})
+	}
 }
