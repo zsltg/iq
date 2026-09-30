@@ -360,6 +360,17 @@ func TestNeo4jReadFailures(t *testing.T) {
 		require.ErrorContains(t, err, "decode neo4j json")
 		require.ErrorIs(t, err, boom)
 	})
+	t.Run("a stray closing bracket is a decode failure", func(t *testing.T) {
+		err := drain(strings.NewReader(`{"type":"node","id":"1","labels":["Person"],"properties":{}}` + "\n]\n"))
+		require.ErrorContains(t, err, "decode neo4j json")
+	})
+	t.Run("an empty array hands over no page", func(t *testing.T) {
+		src, err := neo4jSource(strings.NewReader("[]"), pageSize, numfmt.DecimalAuto, Hints{Label: "Person"})
+		require.NoError(t, err)
+		called := false
+		require.NoError(t, src(context.Background(), func([]query.Record) error { called = true; return nil }))
+		require.False(t, called)
+	})
 	t.Run("a cancelled scan stops", func(t *testing.T) {
 		src, err := neo4jSource(strings.NewReader(apocNodes), pageSize, numfmt.DecimalAuto, Hints{Label: "Person"})
 		require.NoError(t, err)
@@ -377,4 +388,30 @@ func TestNeo4jReadFailures(t *testing.T) {
 		consumer := &failFirstCall{err: boom}
 		require.ErrorIs(t, src(context.Background(), consumer.accept), boom)
 	})
+}
+
+// TestNeo4jSourceReportsAnEOFReadErrorInsideAnArray gives the APOC reader a
+// reader that fails inside a top-level array with an error that wraps io.EOF. An
+// array must end with its closing bracket, so the scan reports the error and does
+// not end in silence with a truncated array.
+func TestNeo4jSourceReportsAnEOFReadErrorInsideAnArray(t *testing.T) {
+	gone := fmt.Errorf("disk gone: %w", io.EOF)
+	node := `{"type":"node","id":"0","labels":["Person"],"properties":{"name":"Ada"}}`
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "after a comma", input: "[" + node + ","},
+		{name: "after an entry", input: "[" + node},
+		{name: "after the opening bracket", input: "["},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src, err := neo4jSource(&dataThenErrReader{data: tt.input, err: gone}, pageSize, numfmt.DecimalAuto, Hints{Label: "Person"})
+			require.NoError(t, err)
+			err = src(context.Background(), func([]query.Record) error { return nil })
+			require.ErrorContains(t, err, "decode neo4j json")
+			require.ErrorIs(t, err, gone)
+		})
+	}
 }
