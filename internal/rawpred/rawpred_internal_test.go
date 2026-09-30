@@ -305,6 +305,10 @@ func TestEvalElemMatch(t *testing.T) {
 		{"array of scalars unknown", `{"xs":[1,2]}`, xs(elemCondK), unknown},
 		{"array null element blocks drop", `{"xs":[null,{"k":2}]}`, xs(elemCondK), unknown},
 		{"array nested-array element match", `{"xs":[[1],{"k":1}]}`, xs(elemCondK), definiteYes},
+		// jsonparser hands a string element back without its quotes, so the
+		// string "{}" reads as an empty object. jq's .k errors on a string, so the
+		// element must stay unknown and must not fail the cond as an absent k.
+		{"string element that looks like an object unknown", `{"xs":["{}"]}`, xs(elemCondK), unknown},
 		// Object container: jq any iterates the values.
 		{"object value match", `{"xs":{"a":{"k":1},"b":{"k":2}}}`, xs(elemCondK), definiteYes},
 		{"object values all fail drops", `{"xs":{"a":{"k":2},"b":{"k":3}}}`, xs(elemCondK), definiteNo},
@@ -355,6 +359,7 @@ func TestEvalNoneMatch(t *testing.T) {
 		{"array fail plus scalar keeps", `{"xs":[{"k":2},5]}`, xs(elemCondK), unknown},
 		{"empty array holds", `{"xs":[]}`, xs(elemCondK), definiteYes},
 		{"array null element keeps", `{"xs":[null,{"k":1}]}`, xs(elemCondK), unknown},
+		{"string element that looks like an object keeps", `{"xs":["{}"]}`, xs(elemCondK), unknown},
 		// Object container.
 		{"object all fail holds", `{"xs":{"a":{"k":2}}}`, xs(elemCondK), definiteYes},
 		{"object clean match drops", `{"xs":{"a":{"k":1},"b":{"k":2}}}`, xs(elemCondK), definiteNo},
@@ -685,6 +690,10 @@ func TestRanks(t *testing.T) {
 			{jsonparser.Unknown, 0, false},
 			{jsonparser.NotExist, 0, false},
 		}
+		// No rank is the zero value, so a docRank that returns 0 is observably wrong.
+		for _, r := range []int{nullRank, boolRank, numberRank, stringRank, arrayRank, objectRank} {
+			require.NotZero(t, r)
+		}
 		// The ranks must be strictly ordered null<bool<number<string<array<object.
 		require.True(t, nullRank < boolRank && boolRank < numberRank &&
 			numberRank < stringRank && stringRank < arrayRank && arrayRank < objectRank)
@@ -701,11 +710,35 @@ func TestRanks(t *testing.T) {
 		r, ok = valueRank("x")
 		require.True(t, ok)
 		require.Equal(t, stringRank, r)
-		_, ok = valueRank(true)
+		r, ok = valueRank(true)
 		require.False(t, ok)
-		_, ok = valueRank(nil)
+		require.Zero(t, r)
+		r, ok = valueRank(nil)
 		require.False(t, ok)
+		require.Zero(t, r)
 	})
+}
+
+func TestCountKeys(t *testing.T) {
+	// A count that is not usable comes back as 0 with ok=false.
+	tests := []struct {
+		name      string
+		raw       string
+		wantCount int
+		wantOK    bool
+	}{
+		{"empty object", `{}`, 0, true},
+		{"two keys", `{"a":1,"b":2}`, 2, true},
+		{"repeated key", `{"a":1,"a":2}`, 0, false},
+		{"malformed object", `{"a":}`, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			count, ok := countKeys([]byte(tt.raw))
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.wantCount, count)
+		})
+	}
 }
 
 func TestMatchVerdict(t *testing.T) {
