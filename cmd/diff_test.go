@@ -1430,9 +1430,26 @@ func TestDiffStatsCrossDriverText(t *testing.T) {
 }
 
 // ctxRecorder records the context of each open and each read, by source URI.
+// It also records each raw query and each scan page that a read takes. pages
+// sets how many one-item pages a scan offers; zero means one.
 type ctxRecorder struct {
-	mu   sync.Mutex
-	ctxs map[string][]context.Context
+	mu      sync.Mutex
+	ctxs    map[string][]context.Context
+	queries map[string][]string
+	scanned map[string]int
+	pages   int
+}
+
+func (r *ctxRecorder) query(url, q string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.queries[url] = append(r.queries[url], q)
+}
+
+func (r *ctxRecorder) page(url string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.scanned[url]++
 }
 
 func (r *ctxRecorder) add(url string, ctx context.Context) {
@@ -1451,11 +1468,18 @@ type ctxRecordingStore struct {
 
 func (s ctxRecordingStore) ScanBatches(ctx context.Context, fn func(map[string]any) error) error {
 	s.rec.add(s.url, ctx)
-	return fn(map[string]any{"1": map[string]any{"n": 1.0}})
+	for i := range max(s.rec.pages, 1) {
+		s.rec.page(s.url)
+		if err := fn(map[string]any{strconv.Itoa(i + 1): map[string]any{"n": 1.0}}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (s ctxRecordingStore) Query(ctx context.Context, _ []string) (any, error) {
+func (s ctxRecordingStore) Query(ctx context.Context, args []string) (any, error) {
 	s.rec.add(s.url, ctx)
+	s.rec.query(s.url, args[0])
 	return map[string]any{"ok": 1.0}, nil
 }
 
@@ -1463,7 +1487,7 @@ func (s ctxRecordingStore) Query(ctx context.Context, _ []string) (any, error) {
 // "a" and "b" on it, and returns the recorder.
 func useCtxDriver(t *testing.T) *ctxRecorder {
 	t.Helper()
-	rec := &ctxRecorder{ctxs: map[string][]context.Context{}}
+	rec := &ctxRecorder{ctxs: map[string][]context.Context{}, queries: map[string][]string{}, scanned: map[string]int{}}
 	orig := drivers
 	t.Cleanup(func() { drivers = orig })
 	drivers = append(append([]driver{}, orig...), driver{
@@ -1549,4 +1573,59 @@ func TestDiffDataTicksBothSides(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []int{1, 1}, pages)
 	})
+}
+
+// TestDiffRunGivesOptionsToBothSides proves that the stats layer runs the
+// --section list on both sides, and that the schema layer samples both sides
+// with --sample, on the human path and on the patch path.
+func TestDiffRunGivesOptionsToBothSides(t *testing.T) {
+	tests := []struct {
+		name        string
+		run         func(r diffRun) error
+		wantQueries map[string][]string
+		wantScanned map[string]int
+	}{
+		{
+			"stats",
+			func(r diffRun) error { _, err := r.diffStats(t.Context()); return err },
+			map[string][]string{"ctxrec://a": {`{"buildInfo":1}`}, "ctxrec://b": {`{"buildInfo":1}`}},
+			map[string]int{},
+		},
+		{
+			"patch stats",
+			func(r diffRun) error { _, err := r.patchLayer(t.Context(), true, false, nil); return err },
+			map[string][]string{"ctxrec://a": {`{"buildInfo":1}`}, "ctxrec://b": {`{"buildInfo":1}`}},
+			map[string]int{},
+		},
+		{
+			"schema",
+			func(r diffRun) error { _, err := r.diffSchema(t.Context()); return err },
+			map[string][]string{},
+			map[string]int{"ctxrec://a": 1, "ctxrec://b": 1},
+		},
+		{
+			"patch schema",
+			func(r diffRun) error { _, err := r.patchLayer(t.Context(), false, true, nil); return err },
+			map[string][]string{},
+			map[string]int{"ctxrec://a": 1, "ctxrec://b": 1},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := useCtxDriver(t)
+			rec.pages = 2
+			cf, err := iqconfig.Load()
+			require.NoError(t, err)
+			left, err := diffSpec(cf, "a")
+			require.NoError(t, err)
+			right, err := diffSpec(cf, "b")
+			require.NoError(t, err)
+			r := diffRun{cfg: &config{}, left: left, right: right, sections: []string{"buildInfo"}, sample: 1}
+
+			require.NoError(t, tt.run(r))
+
+			require.Equal(t, tt.wantQueries, rec.queries)
+			require.Equal(t, tt.wantScanned, rec.scanned)
+		})
+	}
 }
