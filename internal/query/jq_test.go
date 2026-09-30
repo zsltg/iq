@@ -363,6 +363,24 @@ func TestJQEngineCompileFallsBackWhenNotPushable(t *testing.T) {
 	require.Equal(t, []any{map[string]any{"year": 2018}}, got)
 }
 
+func TestJQEngineCompileSkipsSelectOnDerivedValue(t *testing.T) {
+	// The select tests .b, not the element. A predicate on the element (.c == 2)
+	// would drop "1", whose .b.c is 2, so the engine must not push it.
+	store := &filterKV{
+		scanKeys: []string{"1", "2"},
+		values: map[string]any{
+			"1": map[string]any{"b": map[string]any{"c": 2}, "c": 9},
+			"2": map[string]any{"b": map[string]any{"c": 1}, "c": 2},
+		},
+	}
+
+	got, err := collectOpts(t, store, `.[] | .b | select(.c == 2)`, query.RunOptions{Compile: true})
+
+	require.NoError(t, err)
+	require.Zero(t, store.filterCalls, "a select on a derived value is not pushed")
+	require.Equal(t, []any{map[string]any{"c": 2}}, got)
+}
+
 func TestJQEngineCompileIgnoredWhenStoreCannotFilter(t *testing.T) {
 	// A plain fakeKV is not a FilteredScanner, so --compile is a no-op.
 	store := &fakeKV{

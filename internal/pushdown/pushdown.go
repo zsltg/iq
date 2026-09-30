@@ -20,19 +20,14 @@ import (
 // Compile returns a superset equality predicate for a streamable `.[]`-rooted
 // filter's select(...) stages, or ok=false when nothing can be pushed. Multiple
 // selects are ANDed; a select whose predicate cannot be compiled is dropped
-// (widening the result, still a superset).
+// (widening the result, still a superset). Only the selects that test the element
+// itself count (see elementSelects).
 func Compile(q *gojq.Query) (predicate.Node, bool) {
 	if !selector.Keys(q).Streamable {
 		return nil, false
 	}
-	stages := pipeStages(q)
 	var preds []predicate.Node
-	// stages[0] is the leading `.[]`; the rest are the per-element residual.
-	for _, s := range stages[1:] {
-		e, ok := selectArg(s)
-		if !ok {
-			continue
-		}
+	for _, e := range elementSelects(pipeStages(q)) {
 		if p, ok := extractPred(e); ok {
 			preds = append(preds, p)
 		}
@@ -45,6 +40,38 @@ func Compile(q *gojq.Query) (predicate.Node, bool) {
 	default:
 		return flattenAnd(preds...), true
 	}
+}
+
+// elementSelects returns the arguments of the select(...) stages that test the
+// element itself. stages[0] must be a bare `.[]` (or `.[]?`): a head such as
+// `.[].b` already hands a derived value to the next stage. The element reaches a
+// stage unchanged only through select(...) and identity (`.`) stages, so the walk
+// stops at the first other stage: a select after `.b`, `map(...)` or `{b: .a}`
+// tests a derived value, not the element, and a predicate on the element would
+// drop an element that the filter keeps. The selects before that stage still hold
+// for every element that reaches the output, so their predicates stay a superset.
+func elementSelects(stages []*gojq.Query) []*gojq.Query {
+	if head := stages[0].String(); head != ".[]" && head != ".[]?" {
+		return nil
+	}
+	var args []*gojq.Query
+	for _, s := range stages[1:] {
+		if isIdentity(s) {
+			continue
+		}
+		e, ok := selectArg(s)
+		if !ok {
+			break
+		}
+		args = append(args, e)
+	}
+	return args
+}
+
+// isIdentity reports whether a stage is exactly `.`, which passes the element on
+// unchanged.
+func isIdentity(s *gojq.Query) bool {
+	return s.Op == 0 && s.Term != nil && s.Term.Type == gojq.TermTypeIdentity && len(s.Term.SuffixList) == 0
 }
 
 // pipeStages flattens a pipe chain into its stages in order, so

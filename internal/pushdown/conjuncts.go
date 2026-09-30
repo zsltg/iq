@@ -22,8 +22,8 @@ type Conjunct struct {
 	Reason string
 }
 
-// Conjuncts splits a streamable `.[]`-rooted filter's select(...) predicates into
-// their top-level conjuncts and reports, per conjunct, whether the compiler could
+// Conjuncts splits the select(...) predicates of a streamable `.[]`-rooted filter
+// that test the element itself (see elementSelects) into their top-level conjuncts and reports, per conjunct, whether the compiler could
 // turn it into a pushable predicate and, when it could not, why. Multiple selects
 // contribute their conjuncts in order; a select whose argument is a top-level `and`
 // contributes each side separately, so the breakdown matches what Compile would
@@ -34,14 +34,8 @@ func Conjuncts(q *gojq.Query) ([]Conjunct, bool) {
 	if !selector.Keys(q).Streamable {
 		return nil, false
 	}
-	stages := pipeStages(q)
 	var out []Conjunct
-	// stages[0] is the leading `.[]`; the rest are the per-element residual.
-	for _, s := range stages[1:] {
-		arg, ok := selectArg(s)
-		if !ok {
-			continue
-		}
+	for _, arg := range elementSelects(pipeStages(q)) {
 		for _, c := range topConjuncts(arg) {
 			cj := Conjunct{Expr: c.String()}
 			if p, ok := extractPred(c); ok {

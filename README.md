@@ -504,6 +504,11 @@ Regardless of pushdown, the full jq re-runs client-side. As a result, the pushed
 predicate is only ever a conservative pre-filter, and results are identical with
 or without it.
 
+Pushdown reads only the `select()` stages that test each item itself: the stages
+after `.[]` up to the first stage that changes the item, such as `.b`, `map(...)`
+or an object construction. A `select()` after such a stage tests a derived value,
+so pushdown leaves it to the client-side filter.
+
 ```mermaid
 graph TD
   F["jq filter (CLI)"] --> SEL["selector.Keys<br/>(AST analysis)"]

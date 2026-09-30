@@ -54,6 +54,14 @@ func TestCompilePushable(t *testing.T) {
 		{"greater or equal", ".[] | select(.year >= 2015)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Ge, Value: 2015.0}},
 		{"less than", ".[] | select(.year < 2015)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Lt, Value: 2015.0}},
 		{"less or equal", ".[] | select(.year <= 2015)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Le, Value: 2015.0}},
+		// A select before a stage that changes the element still tests the element,
+		// so its predicate is pushed. The select after that stage is not.
+		{
+			"select before a field stage is pushed, the one after is not",
+			".[] | select(.a == 1) | .b | select(.c == 2)",
+			predicate.Eq{Path: []string{"a"}, Value: 1.0},
+		},
+		{"optional iterator head", ".[]? | select(.a == 1)", predicate.Eq{Path: []string{"a"}, Value: 1.0}},
 		{"string range", `.[] | select(.name > "m")`, predicate.Cmp{Path: []string{"name"}, Op: predicate.Gt, Value: "m"}},
 		{"literal on left flips operator", ".[] | select(2015 < .year)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Gt, Value: 2015.0}},
 		{"literal on left flips greater than", ".[] | select(2015 > .year)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Lt, Value: 2015.0}},
@@ -148,6 +156,14 @@ func TestCompileNotPushable(t *testing.T) {
 		name string
 		expr string
 	}{
+		// A select that tests a value derived from the element. A predicate on the
+		// element itself would drop an element that the filter keeps.
+		{"select after a field stage", `.[] | .b | select(.c == 2)`},
+		{"select after a field on the head", `.[].b | select(.c == 2)`},
+		{"select after a field on the head, compared to itself", `.[].a | select(. == 1)`},
+		{"select after map", `.[] | map(.x) | select(.[0] == 1)`},
+		{"select after an object construction", `.[] | {b: .a} | select(.b == 1)`},
+		{"select after an optional field stage", `.[]? | .b | select(.c == 2)`},
 		{"regex with lookahead", `.[] | select(.a | test("(?=x)"))`},
 		{"regex with backreference", `.[] | select(.a | test("(a)\\1"))`},
 		{"regex with unicode property", `.[] | select(.a | test("\\p{L}"))`},
