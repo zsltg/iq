@@ -275,79 +275,81 @@ func TestInspectMongoIntegration(t *testing.T) {
 type recordingInspector struct {
 	fakeInspectStore
 	calls []string
+	ctxs  []context.Context
 	errs  map[string]error
 }
 
-func (r *recordingInspector) read(name string) (any, error) {
+func (r *recordingInspector) read(ctx context.Context, name string) (any, error) {
 	r.calls = append(r.calls, name)
+	r.ctxs = append(r.ctxs, ctx)
 	if err := r.errs[name]; err != nil {
 		return nil, err
 	}
 	return name, nil
 }
 
-func (r *recordingInspector) Query(_ context.Context, args []string) (any, error) {
-	return r.read(args[0])
+func (r *recordingInspector) Query(ctx context.Context, args []string) (any, error) {
+	return r.read(ctx, args[0])
 }
 
-func (r *recordingInspector) InspectTables(context.Context) (any, error) {
-	return r.read("InspectTables")
+func (r *recordingInspector) InspectTables(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectTables")
 }
 
-func (r *recordingInspector) InspectTable(context.Context) (any, error) {
-	return r.read("InspectTable")
+func (r *recordingInspector) InspectTable(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectTable")
 }
 
-func (r *recordingInspector) InspectServer(context.Context) (any, error) {
-	return r.read("InspectServer")
+func (r *recordingInspector) InspectServer(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectServer")
 }
 
-func (r *recordingInspector) InspectDatabases(context.Context) (any, error) {
-	return r.read("InspectDatabases")
+func (r *recordingInspector) InspectDatabases(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectDatabases")
 }
 
-func (r *recordingInspector) InspectDBInfo(context.Context) (any, error) {
-	return r.read("InspectDBInfo")
+func (r *recordingInspector) InspectDBInfo(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectDBInfo")
 }
 
-func (r *recordingInspector) InspectIndexes(context.Context) (any, error) {
-	return r.read("InspectIndexes")
+func (r *recordingInspector) InspectIndexes(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectIndexes")
 }
 
-func (r *recordingInspector) InspectCluster(context.Context) (any, error) {
-	return r.read("InspectCluster")
+func (r *recordingInspector) InspectCluster(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectCluster")
 }
 
-func (r *recordingInspector) InspectBuckets(context.Context) (any, error) {
-	return r.read("InspectBuckets")
+func (r *recordingInspector) InspectBuckets(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectBuckets")
 }
 
-func (r *recordingInspector) InspectCollections(context.Context) (any, error) {
-	return r.read("InspectCollections")
+func (r *recordingInspector) InspectCollections(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectCollections")
 }
 
-func (r *recordingInspector) InspectIndices(context.Context) (any, error) {
-	return r.read("InspectIndices")
+func (r *recordingInspector) InspectIndices(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectIndices")
 }
 
-func (r *recordingInspector) InspectMapping(context.Context) (any, error) {
-	return r.read("InspectMapping")
+func (r *recordingInspector) InspectMapping(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectMapping")
 }
 
-func (r *recordingInspector) InspectAliases(context.Context) (any, error) {
-	return r.read("InspectAliases")
+func (r *recordingInspector) InspectAliases(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectAliases")
 }
 
-func (r *recordingInspector) InspectLabels(context.Context) (any, error) {
-	return r.read("InspectLabels")
+func (r *recordingInspector) InspectLabels(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectLabels")
 }
 
-func (r *recordingInspector) InspectRelationshipTypes(context.Context) (any, error) {
-	return r.read("InspectRelationshipTypes")
+func (r *recordingInspector) InspectRelationshipTypes(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectRelationshipTypes")
 }
 
-func (r *recordingInspector) InspectConstraints(context.Context) (any, error) {
-	return r.read("InspectConstraints")
+func (r *recordingInspector) InspectConstraints(ctx context.Context) (any, error) {
+	return r.read(ctx, "InspectConstraints")
 }
 
 // dispatchInspectText runs dispatchInspect with text output for a source URL and
@@ -775,4 +777,103 @@ func TestDispatchInspectStatementReadError(t *testing.T) {
 	require.Equal(t, "mongo  mongodb://h/db\n\n"+
 		"# dbStats\n<map[error:run query \"{\\\"dbStats\\\":1}\": permission denied]>\n\n"+
 		"# buildInfo\n<{\"buildInfo\":1}>\n\n", out)
+}
+
+// inspectCtxKey is the context key that TestDispatchInspectForwardsContextToReads
+// uses to mark the context of the caller.
+type inspectCtxKey struct{}
+
+// TestDispatchInspectForwardsContextToReads proves that every family gives the
+// context of the caller to each read, so a deadline or a cancellation reaches
+// the backend.
+func TestDispatchInspectForwardsContextToReads(t *testing.T) {
+	tests := []struct {
+		name      string
+		url       string
+		wantReads int
+	}{
+		{"redis", "redis://h:6379/0", 1},
+		{"mongo", "mongodb://h/db?collection=books", 6},
+		{"cassandra", "cassandra://h/ks?table=t", 3},
+		{"dynamodb", "dynamodb://h", 2},
+		{"hbase", "hbase://h", 1},
+		{"couchdb", "couchdb://h", 4},
+		{"couchbase", "couchbase://h", 4},
+		{"elasticsearch", "elasticsearch://h", 4},
+		{"neo4j", "neo4j://h", 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &recordingInspector{}
+			ctx := context.WithValue(context.Background(), inspectCtxKey{}, "marker")
+			cfg := &config{url: tt.url, source: iqconfig.Source{URL: tt.url}, handle: "src"}
+			var buf bytes.Buffer
+
+			err := dispatchInspect(ctx, &buf, st, cfg, nil, true, false, false)
+
+			require.NoError(t, err)
+			require.Len(t, st.ctxs, tt.wantReads)
+			for _, got := range st.ctxs {
+				require.NotNil(t, got)
+				require.Equal(t, "marker", got.Value(inspectCtxKey{}))
+			}
+		})
+	}
+}
+
+// TestDispatchInspectListYAML proves that dispatchInspect gives the yaml flag to
+// the inspector: the list comes out as a YAML sequence.
+func TestDispatchInspectListYAML(t *testing.T) {
+	cfg := &config{url: "dynamodb://h", source: iqconfig.Source{URL: "dynamodb://h"}}
+	var buf bytes.Buffer
+
+	err := dispatchInspect(t.Context(), &buf, nil, cfg, nil, false, true, true)
+
+	require.NoError(t, err)
+	require.Equal(t, "- tables\n- table\n", buf.String())
+}
+
+// redisInfoStore is a store whose Query returns a fixed INFO reply.
+type redisInfoStore struct {
+	fakeInspectStore
+	info string
+}
+
+func (s redisInfoStore) Query(context.Context, []string) (any, error) { return s.info, nil }
+
+// TestDispatchInspectRedisYAML proves that Redis INFO renders as YAML with
+// yamlOut and no list.
+func TestDispatchInspectRedisYAML(t *testing.T) {
+	st := redisInfoStore{info: "# Server\r\nredis_version:7.2.0\r\n\r\n# Memory\r\nused_memory:12345\r\n"}
+	cfg := &config{url: "redis://h:6379/0", source: iqconfig.Source{URL: "redis://h:6379/0"}}
+	var buf bytes.Buffer
+
+	err := dispatchInspect(t.Context(), &buf, st, cfg, nil, false, true, false)
+
+	require.NoError(t, err)
+	require.Equal(t, "Memory:\n    used_memory: \"12345\"\nServer:\n    redis_version: 7.2.0\n", buf.String())
+}
+
+// failingWriter fails every write and counts the writes.
+type failingWriter struct {
+	writes int
+	err    error
+}
+
+func (w *failingWriter) Write([]byte) (int, error) {
+	w.writes++
+	return 0, w.err
+}
+
+// TestDispatchInspectRedisHeaderWriteError proves that Redis stops and returns
+// the error when the header write fails.
+func TestDispatchInspectRedisHeaderWriteError(t *testing.T) {
+	st := redisInfoStore{info: "# Server\r\nredis_version:7.2.0\r\n"}
+	cfg := &config{url: "redis://h:6379/0", source: iqconfig.Source{URL: "redis://h:6379/0"}}
+	w := &failingWriter{err: errors.New("disk full")}
+
+	err := dispatchInspect(t.Context(), w, st, cfg, nil, false, false, false)
+
+	require.ErrorIs(t, err, w.err)
+	require.Equal(t, 1, w.writes)
 }
