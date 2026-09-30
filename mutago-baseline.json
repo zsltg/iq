@@ -1506,6 +1506,12 @@
    "file": "internal/render/json.go",
    "mutator": "statement/remove",
    "line": 67
+  },
+  {
+   "id": "e4dd7cceaed99e103693bed574cca5ae",
+   "file": "cmd/inspect.go",
+   "mutator": "loop/break",
+   "line": 411
   }
  ]
 }
