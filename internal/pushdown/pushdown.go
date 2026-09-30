@@ -69,9 +69,9 @@ func elementSelects(stages []*gojq.Query) []*gojq.Query {
 }
 
 // isIdentity reports whether a stage is exactly `.`, which passes the element on
-// unchanged.
+// unchanged. An operator stage, such as `.a, .b`, has no Term.
 func isIdentity(s *gojq.Query) bool {
-	return s.Op == 0 && s.Term != nil && s.Term.Type == gojq.TermTypeIdentity && len(s.Term.SuffixList) == 0
+	return s.Term != nil && s.Term.Type == gojq.TermTypeIdentity && len(s.Term.SuffixList) == 0
 }
 
 // pipeStages flattens a pipe chain into its stages in order, so
