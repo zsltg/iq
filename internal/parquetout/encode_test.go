@@ -210,9 +210,13 @@ func TestToFloat64(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// A value that is not a number returns 0 with ok false, so want is 0 there.
 			got, ok := toFloat64(tc.v)
 			require.Equal(t, tc.ok, ok)
+			if !ok {
+				// A value that is not a number returns exactly 0.
+				require.Zero(t, got)
+				return
+			}
 			require.InDelta(t, tc.want, got, 1e-9)
 		})
 	}
