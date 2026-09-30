@@ -1650,6 +1650,186 @@
    "file": "internal/config/options.go",
    "mutator": "statement/remove",
    "line": 74
+  },
+  {
+   "id": "c8cef7cee018d6831fcd939a1ca0c00d",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/case",
+   "line": 461
+  },
+  {
+   "id": "d4b2f616e4ae89ff767d20f8d72a5b8c",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/case",
+   "line": 587
+  },
+  {
+   "id": "8028e5c64c634fb764de68ff858b6c85",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/if",
+   "line": 525
+  },
+  {
+   "id": "752c26a125ae05145528a737fc212c21",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/if",
+   "line": 577
+  },
+  {
+   "id": "9785c3f69ec553930c86c600da170ee9",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/if",
+   "line": 605
+  },
+  {
+   "id": "c40445fcd3288ac4a61b6e1174ba8ebf",
+   "file": "internal/shape/shape.go",
+   "mutator": "expression/remove",
+   "line": 308
+  },
+  {
+   "id": "957826442f6562ccb99155076c033351",
+   "file": "internal/shape/shape.go",
+   "mutator": "expression/remove",
+   "line": 620
+  },
+  {
+   "id": "bf24e4cb4666ad6165b31e81deeb167e",
+   "file": "internal/shape/shape.go",
+   "mutator": "statement/remove",
+   "line": 354
+  },
+  {
+   "id": "86a6546efa5e62a47e3515554b754a93",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "branch/case",
+   "line": 339
+  },
+  {
+   "id": "86a6546efa5e62a47e3515554b754a93",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "branch/case",
+   "line": 403
+  },
+  {
+   "id": "f422a8f89bf2111fbcb893c734be7452",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "expression/error-guard",
+   "line": 85
+  },
+  {
+   "id": "907b6d8fa48637f7b5836dc16c459de0",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "statement/remove",
+   "line": 94
+  },
+  {
+   "id": "461a79b3c892a26ce3784c17fc74dfe6",
+   "file": "internal/pushdown/conjuncts.go",
+   "mutator": "branch/case",
+   "line": 154
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 42
+  },
+  {
+   "id": "137cc6c2630f65f10450f934678a3eaa",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 114
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 136
+  },
+  {
+   "id": "46d886441bcf19b208dc6f7b3e41c2ee",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 166
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 184
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 215
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 310
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 350
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 379
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 616
+  },
+  {
+   "id": "781445a762d462a4b14cf0d3c79d6d46",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/if",
+   "line": 300
+  },
+  {
+   "id": "5f0cba885491870f0dcc6816a159f185",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/if",
+   "line": 405
+  },
+  {
+   "id": "5616b72b9e59c286314dd16535ab0803",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/if",
+   "line": 422
+  },
+  {
+   "id": "6f1756a7fd023e281677d86aa2780504",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "expression/remove",
+   "line": 97
+  },
+  {
+   "id": "2941fe7fc0fb995c91fa7ea227ed1d8e",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "numbers/decrementer",
+   "line": 31
+  },
+  {
+   "id": "0280419b36e879f9208aaebea755d9a9",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "numbers/decrementer",
+   "line": 97
+  },
+  {
+   "id": "a8ff75800f75a2f8588456f8d34984b3",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "statement/return",
+   "line": 166
   }
  ]
 }
