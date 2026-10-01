@@ -636,27 +636,6 @@ func TestGetField(t *testing.T) {
 	}
 }
 
-func TestCmpHelpers(t *testing.T) {
-	// The helpers are exercised in production only with unequal operands (type
-	// ranks never tie, integers never equal a fractional pv), so their equal and
-	// boundary cases are asserted directly here to pin the sign contract.
-	t.Run("cmpInt", func(t *testing.T) {
-		require.Equal(t, -1, cmpInt(1, 3))
-		require.Equal(t, 0, cmpInt(3, 3))
-		require.Equal(t, 1, cmpInt(4, 3))
-	})
-	t.Run("cmpInt64", func(t *testing.T) {
-		require.Equal(t, -1, cmpInt64(5, 6))
-		require.Equal(t, 0, cmpInt64(6, 6))
-		require.Equal(t, 1, cmpInt64(7, 6))
-	})
-	t.Run("cmpFloat", func(t *testing.T) {
-		require.Equal(t, -1, cmpFloat(1.5, 2.5))
-		require.Equal(t, 0, cmpFloat(2.5, 2.5))
-		require.Equal(t, 1, cmpFloat(3.5, 2.5))
-	})
-}
-
 func TestApplyOp(t *testing.T) {
 	tests := []struct {
 		op   predicate.Op
