@@ -471,7 +471,7 @@ func TestIntLiteral(t *testing.T) {
 	}
 }
 
-func TestConstString(t *testing.T) {
+func TestStringLit(t *testing.T) {
 	tests := []struct {
 		name  string
 		query func(t *testing.T) *gojq.Query
@@ -531,7 +531,7 @@ func TestConstString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, ok := constString(tt.query(t))
+			s, ok := stringLit(tt.query(t))
 
 			require.Equal(t, tt.wantK, ok)
 			require.Equal(t, tt.wantS, s)
