@@ -1512,6 +1512,24 @@
    "file": "cmd/inspect.go",
    "mutator": "loop/break",
    "line": 411
+  },
+  {
+   "id": "a16d692b2fa184be4aad87122f92888a",
+   "file": "cmd/diff.go",
+   "mutator": "expression/remove",
+   "line": 174
+  },
+  {
+   "id": "78166f5f603a2e75640963621736ee78",
+   "file": "cmd/diff.go",
+   "mutator": "statement/remove",
+   "line": 201
+  },
+  {
+   "id": "ff1dc6972d154428ed50cdd5c399dc56",
+   "file": "cmd/diff.go",
+   "mutator": "statement/remove",
+   "line": 215
   }
  ]
 }
