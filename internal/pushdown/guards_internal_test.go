@@ -84,6 +84,17 @@ func TestSelectArg(t *testing.T) {
 			func(t *testing.T) *gojq.Query { return mustParse(t, ".a") },
 			"",
 		},
+		{
+			"a select that carries function definitions still yields its argument",
+			// selectArg does not check FuncDefs. The definitions stay in scope for
+			// the argument, and the client-side jq run keeps the result correct.
+			func(t *testing.T) *gojq.Query {
+				q := mustParse(t, "def f: .; select(.a == 1)")
+				require.NotEmpty(t, q.FuncDefs)
+				return q
+			},
+			".a == 1",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

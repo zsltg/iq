@@ -69,4 +69,10 @@ func TestPortableEscape(t *testing.T) {
 	for _, b := range []byte(`.*+?()[]{}^$|\/-`) {
 		require.True(t, portableEscape(b), "escaped punctuation should be portable: \\%c", b)
 	}
+	// The bytes next to each alphanumeric range edge are portable: '@' before 'A',
+	// '[' after 'Z', '`' before 'a', '{' after 'z', '/' before '0', ':' after '9'.
+	// A byte at 0x80 or above is not an ASCII letter or digit, so it is portable too.
+	for _, b := range []byte{'@', '[', '`', '{', '/', ':', 0x80} {
+		require.True(t, portableEscape(b), "range edge byte should be portable: %#x", b)
+	}
 }
