@@ -354,11 +354,11 @@ func (r *recordingInspector) InspectConstraints(ctx context.Context) (any, error
 
 // dispatchInspectText runs dispatchInspect with text output for a source URL and
 // returns the output without color escapes.
-func dispatchInspectText(t *testing.T, st store, url string, only []string, list bool) (string, error) {
+func dispatchInspectText(t *testing.T, st store, url string, only []string) (string, error) {
 	t.Helper()
 	cfg := &config{url: url, source: iqconfig.Source{URL: url}, handle: "src"}
 	var buf bytes.Buffer
-	err := dispatchInspect(t.Context(), &buf, st, cfg, only, false, false, list)
+	err := dispatchInspect(t.Context(), &buf, st, cfg, only, false, false, false)
 	return stripANSI(buf.String()), err
 }
 
@@ -383,7 +383,10 @@ func TestDispatchInspectListComesFirst(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out, err := dispatchInspectText(t, nil, tt.url, []string{"bogus"}, true)
+			cfg := &config{url: tt.url, source: iqconfig.Source{URL: tt.url}, handle: "src"}
+			var buf bytes.Buffer
+			err := dispatchInspect(t.Context(), &buf, nil, cfg, []string{"bogus"}, false, false, true)
+			out := stripANSI(buf.String())
 
 			require.NoError(t, err)
 			require.Equal(t, tt.want, out)
@@ -397,7 +400,7 @@ func TestDispatchInspectListComesFirst(t *testing.T) {
 func TestDispatchInspectStoreCheckBeforeValidation(t *testing.T) {
 	for _, url := range []string{"dynamodb://h", "hbase://h", "couchdb://h", "couchbase://h", "elasticsearch://h", "neo4j://h"} {
 		t.Run(url, func(t *testing.T) {
-			out, err := dispatchInspectText(t, nil, url, []string{"bogus"}, false)
+			out, err := dispatchInspectText(t, nil, url, []string{"bogus"})
 
 			require.EqualError(t, err, "inspect is not supported for this source")
 			require.Empty(t, out)
@@ -427,7 +430,7 @@ func TestDispatchInspectValidatesBeforeReads(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			st := &recordingInspector{}
 
-			out, err := dispatchInspectText(t, st, tt.url, tt.only, false)
+			out, err := dispatchInspectText(t, st, tt.url, tt.only)
 
 			require.EqualError(t, err, tt.wantErr)
 			require.Empty(t, out)
@@ -534,7 +537,7 @@ func TestDispatchInspectRunsInRequestOrder(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			st := &recordingInspector{}
 
-			out, err := dispatchInspectText(t, st, tt.url, tt.only, false)
+			out, err := dispatchInspectText(t, st, tt.url, tt.only)
 
 			require.NoError(t, err)
 			require.Equal(t, tt.wantCalls, st.calls)
@@ -677,7 +680,7 @@ func TestDispatchInspectReadErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			st := &recordingInspector{errs: tt.errs}
 
-			out, err := dispatchInspectText(t, st, tt.url, tt.only, false)
+			out, err := dispatchInspectText(t, st, tt.url, tt.only)
 
 			require.NoError(t, err)
 			require.Equal(t, tt.wantCalls, st.calls)
@@ -747,7 +750,7 @@ func TestDispatchInspectStatementMissingTarget(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			st := &recordingInspector{}
 
-			out, err := dispatchInspectText(t, st, tt.url, tt.only, false)
+			out, err := dispatchInspectText(t, st, tt.url, tt.only)
 
 			require.Equal(t, tt.wantCalls, st.calls)
 			require.Equal(t, tt.wantOut, out)
@@ -770,7 +773,7 @@ func TestDispatchInspectStatementMissingTarget(t *testing.T) {
 func TestDispatchInspectStatementReadError(t *testing.T) {
 	st := &recordingInspector{errs: map[string]error{`{"dbStats":1}`: errors.New("permission denied")}}
 
-	out, err := dispatchInspectText(t, st, "mongodb://h/db", []string{"dbStats", "buildInfo"}, false)
+	out, err := dispatchInspectText(t, st, "mongodb://h/db", []string{"dbStats", "buildInfo"})
 
 	require.NoError(t, err)
 	require.Equal(t, []string{`{"dbStats":1}`, `{"buildInfo":1}`}, st.calls)
