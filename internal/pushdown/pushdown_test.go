@@ -87,6 +87,7 @@ func TestCompilePushable(t *testing.T) {
 		},
 		{"inequality", ".[] | select(.status != 1)", predicate.Ne{Path: []string{"status"}, Value: 1.0}},
 		{"inequality with null", ".[] | select(.deleted != null)", predicate.Ne{Path: []string{"deleted"}, Value: nil}},
+		{"inequality with the literal on the left", ".[] | select(1 != .status)", predicate.Ne{Path: []string{"status"}, Value: 1.0}},
 		{"negated equality", ".[] | select(.a == 1 | not)", predicate.Ne{Path: []string{"a"}, Value: 1.0}},
 		{"negated parenthesized equality", ".[] | select((.a == 1) | not)", predicate.Ne{Path: []string{"a"}, Value: 1.0}},
 		{"negated has", `.[] | select(has("opt") | not)`, predicate.NotExists{Path: []string{"opt"}}},

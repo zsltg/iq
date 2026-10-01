@@ -155,31 +155,113 @@ func newInspectCmd(cfg *config) *cobra.Command {
 // writes the rendering to out. It is the one dispatch both `iq inspect` and the
 // MCP iq_inspect tool go through, so a new backend's inspector is wired once.
 func dispatchInspect(ctx context.Context, out io.Writer, st store, cfg *config, only []string, jsonOut, yamlOut, list bool) error {
+	req := inspectRequest{out: out, st: st, cfg: cfg, only: only, jsonOut: jsonOut, yamlOut: yamlOut, list: list}
 	switch driverName(cfg.url) {
 	case "redis":
-		return inspectRedis(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+		return inspectRedis(ctx, req)
 	case "cassandra":
-		return inspectCassandra(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+		return inspectCassandra(ctx, req)
 	case "dynamodb":
-		return inspectDynamo(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+		return inspectDynamo(ctx, req)
 	case "hbase":
-		return inspectHBase(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+		return inspectHBase(ctx, req)
 	case "couchdb":
-		return inspectCouch(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+		return inspectCouch(ctx, req)
 	case "couchbase":
-		return inspectCouchbase(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+		return inspectCouchbase(ctx, req)
 	case "neo4j":
-		return inspectNeo4j(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+		return inspectNeo4j(ctx, req)
 	case "elasticsearch", "opensearch":
-		return inspectElastic(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+		return inspectElastic(ctx, req)
 	case "file":
 		// inspect reports live server metadata; a dump file has none. Point the
 		// user at the operations that do work on a file source.
 		return errors.New("inspect reports live server metadata, and a file source has none; " +
 			"query it with a jq filter (`iq '.[]' --src <name>`) or compare it with `iq diff`")
 	default:
-		return inspectMongo(ctx, out, st, cfg, only, jsonOut, yamlOut, list)
+		return inspectMongo(ctx, req)
 	}
+}
+
+// inspectRequest holds the inputs of one inspect run: the output, the opened
+// store, the resolved source, the names from --only, and the output flags.
+type inspectRequest struct {
+	out     io.Writer
+	st      store
+	cfg     *config
+	only    []string
+	jsonOut bool
+	yamlOut bool
+	list    bool
+}
+
+// inspectRead runs one introspection read and returns its reply.
+type inspectRead func(ctx context.Context) (any, error)
+
+// inspectSpec describes the inspect subcommands of one driver for runInspect.
+type inspectSpec struct {
+	// names is the supported set, in run-all order.
+	names []string
+	// reads returns the read for each name. runInspect calls it after the list
+	// return and before name validation. It returns an error when the store has
+	// no introspection port. A name with no read has no target set.
+	reads func(st store) (map[string]inspectRead, error)
+	// scoped holds the names whose read needs a target. In run-all mode, an
+	// error from such a read skips the name.
+	scoped []string
+	// missing is the error for an explicit name that has no read, because its
+	// target is not set. Only the statement drivers use it.
+	missing error
+}
+
+// runInspect runs the inspect subcommands of one driver. With list, it writes
+// the supported names and does not touch the store. Else it gets the reads from
+// the store, validates every requested name, runs the reads in request order,
+// and renders the results. With no --only, it runs every supported name.
+func runInspect(ctx context.Context, req inspectRequest, spec inspectSpec) error {
+	if req.list {
+		return writeInspectList(req.out, spec.names, req.jsonOut, req.yamlOut)
+	}
+	reads, err := spec.reads(req.st)
+	if err != nil {
+		return err
+	}
+	explicit := len(req.only) > 0
+	which := req.only
+	if !explicit {
+		which = spec.names
+	}
+	for _, sub := range which {
+		if !slices.Contains(spec.names, sub) {
+			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(spec.names, ", "))
+		}
+	}
+
+	results := make([]inspectResult, 0, len(which))
+	for _, sub := range which {
+		read, ok := reads[sub]
+		if !ok {
+			if explicit {
+				return spec.missing
+			}
+			continue // skip in the run-all case
+		}
+		res, err := read(ctx)
+		if err != nil {
+			if !explicit && slices.Contains(spec.scoped, sub) {
+				continue // a source with no target selected skips a scoped read in run-all
+			}
+			res = map[string]any{"error": redactErr(err, req.cfg.url).Error()}
+		}
+		results = append(results, inspectResult{sub: sub, value: res})
+	}
+
+	return renderInspectResults(req.out, req.st, req.cfg, results, req.jsonOut, req.yamlOut)
+}
+
+// inspectUnsupported is the error for a store that has no introspection port.
+func inspectUnsupported() error {
+	return errors.New("inspect is not supported for this source")
 }
 
 // inspectResult pairs a subcommand/section name with its rendered reply, the
@@ -214,22 +296,22 @@ func renderInspectResults(out io.Writer, st store, cfg *config, results []inspec
 
 // inspectRedis runs INFO (narrowed to the given sections) and renders it. With
 // list, it prints the section names the reply exposes instead of the reply.
-func inspectRedis(ctx context.Context, out io.Writer, st store, cfg *config, sections []string, jsonOut, yamlOut, list bool) error {
-	res, err := query.NewRunner(st).Run(ctx, append([]string{"INFO"}, sections...))
+func inspectRedis(ctx context.Context, req inspectRequest) error {
+	res, err := query.NewRunner(req.st).Run(ctx, append([]string{"INFO"}, req.only...))
 	if err != nil {
-		return redactErr(err, cfg.url)
+		return redactErr(err, req.cfg.url)
 	}
 	info, _ := res.(string)
-	if list {
-		return writeInspectList(out, redisInfoSections(info), jsonOut, yamlOut)
+	if req.list {
+		return writeInspectList(req.out, redisInfoSections(info), req.jsonOut, req.yamlOut)
 	}
-	if jsonOut || yamlOut {
-		return writeStructured(out, parseRedisInfo(info), yamlOut)
+	if req.jsonOut || req.yamlOut {
+		return writeStructured(req.out, parseRedisInfo(info), req.yamlOut)
 	}
-	if err := inspectHeader(out, cfg); err != nil {
+	if err := inspectHeader(req.out, req.cfg); err != nil {
 		return err
 	}
-	_, err = io.WriteString(out, info)
+	_, err = io.WriteString(req.out, info)
 	return err
 }
 
@@ -273,38 +355,25 @@ func parseRedisInfo(info string) map[string]map[string]string {
 // inspectMongo runs the requested MongoDB diagnostic commands (all supported when
 // none are named) and renders each reply keyed by subcommand. With list, it prints
 // the supported subcommand names instead, without touching the store.
-func inspectMongo(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
-	if list {
-		return writeInspectList(out, mongoInspectCmds, jsonOut, yamlOut)
-	}
-	explicit := len(subs) > 0
-	which := subs
-	if !explicit {
-		which = mongoInspectCmds
-	}
-	for _, sub := range which {
-		if !isMongoInspectCmd(sub) {
-			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(mongoInspectCmds, ", "))
-		}
-	}
-
-	coll := mongoCollection(cfg)
-	results := make([]inspectResult, 0, len(which))
-	for _, sub := range which {
-		if sub == "collStats" && coll == "" {
-			if explicit {
-				return fmt.Errorf("collStats needs a collection; address it as handle.collection or set ?collection= on the source URI")
+func inspectMongo(ctx context.Context, req inspectRequest) error {
+	return runInspect(ctx, req, inspectSpec{
+		names: mongoInspectCmds,
+		reads: func(st store) (map[string]inspectRead, error) {
+			coll := mongoCollection(req.cfg)
+			reads := make(map[string]inspectRead, len(mongoInspectCmds))
+			for _, sub := range mongoInspectCmds {
+				if sub == "collStats" && coll == "" {
+					continue // collStats needs a collection
+				}
+				doc := mongoInspectDoc(sub, coll)
+				reads[sub] = func(ctx context.Context) (any, error) {
+					return query.NewRunner(st).Run(ctx, []string{doc})
+				}
 			}
-			continue // skip in the run-all case
-		}
-		res, err := query.NewRunner(st).Run(ctx, []string{mongoInspectDoc(sub, coll)})
-		if err != nil {
-			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
-		}
-		results = append(results, inspectResult{sub: sub, value: res})
-	}
-
-	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
+			return reads, nil
+		},
+		missing: errors.New("collStats needs a collection; address it as handle.collection or set ?collection= on the source URI"),
+	})
 }
 
 // mongoInspectDoc builds the JSON command document for a MongoDB diagnostic
@@ -330,39 +399,25 @@ var cassandraInspectCmds = []string{"local", "tables", "columns"}
 // coordinator's cluster and version row; "tables" lists the keyspace's tables;
 // "columns" describes the selected table's columns. With list, it prints the
 // supported names without touching the store.
-func inspectCassandra(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
-	if list {
-		return writeInspectList(out, cassandraInspectCmds, jsonOut, yamlOut)
-	}
-	explicit := len(subs) > 0
-	which := subs
-	if !explicit {
-		which = cassandraInspectCmds
-	}
-	for _, sub := range which {
-		if !isCassandraInspectCmd(sub) {
-			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(cassandraInspectCmds, ", "))
-		}
-	}
-
-	keyspace, table := cassandraTarget(cfg)
-	results := make([]inspectResult, 0, len(which))
-	for _, sub := range which {
-		stmt, ok := cassandraInspectStmt(sub, keyspace, table)
-		if !ok {
-			if explicit {
-				return fmt.Errorf("columns needs a table; address it as handle.table or set ?table= on the source URI")
+func inspectCassandra(ctx context.Context, req inspectRequest) error {
+	return runInspect(ctx, req, inspectSpec{
+		names: cassandraInspectCmds,
+		reads: func(st store) (map[string]inspectRead, error) {
+			keyspace, table := cassandraTarget(req.cfg)
+			reads := make(map[string]inspectRead, len(cassandraInspectCmds))
+			for _, sub := range cassandraInspectCmds {
+				stmt, ok := cassandraInspectStmt(sub, keyspace, table)
+				if !ok {
+					continue // columns needs a table
+				}
+				reads[sub] = func(ctx context.Context) (any, error) {
+					return query.NewRunner(st).Run(ctx, []string{stmt})
+				}
 			}
-			continue // skip in the run-all case
-		}
-		res, err := query.NewRunner(st).Run(ctx, []string{stmt})
-		if err != nil {
-			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
-		}
-		results = append(results, inspectResult{sub: sub, value: res})
-	}
-
-	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
+			return reads, nil
+		},
+		missing: errors.New("columns needs a table; address it as handle.table or set ?table= on the source URI"),
+	})
 }
 
 // cassandraInspectStmt builds the CQL for a Cassandra diagnostic subcommand, keyed
@@ -384,11 +439,6 @@ func cassandraInspectStmt(sub, keyspace, table string) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-// isCassandraInspectCmd reports whether sub is a supported diagnostic read.
-func isCassandraInspectCmd(sub string) bool {
-	return slices.Contains(cassandraInspectCmds, sub)
 }
 
 // cqlString renders s as a single-quoted CQL string literal, doubling an embedded
@@ -414,47 +464,21 @@ type dynamoInspector interface {
 // none are named) and renders each reply keyed by subcommand. "tables" lists the
 // region's tables; "table" describes the selected table's schema and size. With list,
 // it prints the supported names without touching the store.
-func inspectDynamo(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
-	if list {
-		return writeInspectList(out, dynamoInspectCmds, jsonOut, yamlOut)
-	}
-	di, ok := st.(dynamoInspector)
-	if !ok {
-		return errors.New("inspect is not supported for this source")
-	}
-	explicit := len(subs) > 0
-	which := subs
-	if !explicit {
-		which = dynamoInspectCmds
-	}
-	for _, sub := range which {
-		if sub != "tables" && sub != "table" {
-			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(dynamoInspectCmds, ", "))
-		}
-	}
-
-	results := make([]inspectResult, 0, len(which))
-	for _, sub := range which {
-		var (
-			res any
-			err error
-		)
-		switch sub {
-		case "tables":
-			res, err = di.InspectTables(ctx)
-		case "table":
-			res, err = di.InspectTable(ctx)
-			if err != nil && !explicit {
-				continue // a source with no table selected skips "table" in the run-all case
+func inspectDynamo(ctx context.Context, req inspectRequest) error {
+	return runInspect(ctx, req, inspectSpec{
+		names: dynamoInspectCmds,
+		reads: func(st store) (map[string]inspectRead, error) {
+			di, ok := st.(dynamoInspector)
+			if !ok {
+				return nil, inspectUnsupported()
 			}
-		}
-		if err != nil {
-			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
-		}
-		results = append(results, inspectResult{sub: sub, value: res})
-	}
-
-	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
+			return map[string]inspectRead{
+				"tables": di.InspectTables,
+				"table":  di.InspectTable,
+			}, nil
+		},
+		scoped: []string{"table"},
+	})
 }
 
 // hbaseInspectCmds is the supported set of HBase introspection reads inspect runs.
@@ -473,34 +497,17 @@ type hbaseInspector interface {
 // inspectHBase runs the HBase introspection reads (currently just "tables", which
 // lists the source namespace's tables) and renders each reply keyed by subcommand.
 // With list, it prints the supported names without touching the store.
-func inspectHBase(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
-	if list {
-		return writeInspectList(out, hbaseInspectCmds, jsonOut, yamlOut)
-	}
-	hi, ok := st.(hbaseInspector)
-	if !ok {
-		return errors.New("inspect is not supported for this source")
-	}
-	which := subs
-	if len(which) == 0 {
-		which = hbaseInspectCmds
-	}
-	for _, sub := range which {
-		if sub != "tables" {
-			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(hbaseInspectCmds, ", "))
-		}
-	}
-
-	results := make([]inspectResult, 0, len(which))
-	for _, sub := range which {
-		res, err := hi.InspectTables(ctx)
-		if err != nil {
-			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
-		}
-		results = append(results, inspectResult{sub: sub, value: res})
-	}
-
-	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
+func inspectHBase(ctx context.Context, req inspectRequest) error {
+	return runInspect(ctx, req, inspectSpec{
+		names: hbaseInspectCmds,
+		reads: func(st store) (map[string]inspectRead, error) {
+			hi, ok := st.(hbaseInspector)
+			if !ok {
+				return nil, inspectUnsupported()
+			}
+			return map[string]inspectRead{"tables": hi.InspectTables}, nil
+		},
+	})
 }
 
 // couchInspectCmds is the supported set of CouchDB introspection reads `inspect`
@@ -523,59 +530,23 @@ type couchInspector interface {
 // none are named) and renders each reply keyed by subcommand. "dbinfo" and "indexes"
 // need a database selected and are skipped in the run-all case when none is. With
 // list, it prints the supported names without touching the store.
-func inspectCouch(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
-	if list {
-		return writeInspectList(out, couchInspectCmds, jsonOut, yamlOut)
-	}
-	ci, ok := st.(couchInspector)
-	if !ok {
-		return errors.New("inspect is not supported for this source")
-	}
-	explicit := len(subs) > 0
-	which := subs
-	if !explicit {
-		which = couchInspectCmds
-	}
-	for _, sub := range which {
-		if !isCouchInspectCmd(sub) {
-			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(couchInspectCmds, ", "))
-		}
-	}
-
-	results := make([]inspectResult, 0, len(which))
-	for _, sub := range which {
-		var (
-			res any
-			err error
-		)
-		switch sub {
-		case "server":
-			res, err = ci.InspectServer(ctx)
-		case "databases":
-			res, err = ci.InspectDatabases(ctx)
-		case "dbinfo":
-			res, err = ci.InspectDBInfo(ctx)
-			if err != nil && !explicit {
-				continue // a source with no database selected skips "dbinfo" in run-all
+func inspectCouch(ctx context.Context, req inspectRequest) error {
+	return runInspect(ctx, req, inspectSpec{
+		names: couchInspectCmds,
+		reads: func(st store) (map[string]inspectRead, error) {
+			ci, ok := st.(couchInspector)
+			if !ok {
+				return nil, inspectUnsupported()
 			}
-		case "indexes":
-			res, err = ci.InspectIndexes(ctx)
-			if err != nil && !explicit {
-				continue // likewise "indexes"
-			}
-		}
-		if err != nil {
-			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
-		}
-		results = append(results, inspectResult{sub: sub, value: res})
-	}
-
-	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
-}
-
-// isCouchInspectCmd reports whether sub is a supported CouchDB inspect subcommand.
-func isCouchInspectCmd(sub string) bool {
-	return slices.Contains(couchInspectCmds, sub)
+			return map[string]inspectRead{
+				"server":    ci.InspectServer,
+				"databases": ci.InspectDatabases,
+				"dbinfo":    ci.InspectDBInfo,
+				"indexes":   ci.InspectIndexes,
+			}, nil
+		},
+		scoped: []string{"dbinfo", "indexes"},
+	})
 }
 
 // couchbaseInspectCmds is the supported set of Couchbase introspection reads `inspect`
@@ -597,56 +568,23 @@ type couchbaseInspector interface {
 // none are named) and renders each reply keyed by subcommand. "collections" needs a
 // bucket selected and is skipped in the run-all case when none is. With list, it prints
 // the supported names without touching the store.
-func inspectCouchbase(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
-	if list {
-		return writeInspectList(out, couchbaseInspectCmds, jsonOut, yamlOut)
-	}
-	ci, ok := st.(couchbaseInspector)
-	if !ok {
-		return errors.New("inspect is not supported for this source")
-	}
-	explicit := len(subs) > 0
-	which := subs
-	if !explicit {
-		which = couchbaseInspectCmds
-	}
-	for _, sub := range which {
-		if !isCouchbaseInspectCmd(sub) {
-			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(couchbaseInspectCmds, ", "))
-		}
-	}
-
-	results := make([]inspectResult, 0, len(which))
-	for _, sub := range which {
-		var (
-			res any
-			err error
-		)
-		switch sub {
-		case "cluster":
-			res, err = ci.InspectCluster(ctx)
-		case "buckets":
-			res, err = ci.InspectBuckets(ctx)
-		case "collections":
-			res, err = ci.InspectCollections(ctx)
-			if err != nil && !explicit {
-				continue // a source with no bucket selected skips "collections" in run-all
+func inspectCouchbase(ctx context.Context, req inspectRequest) error {
+	return runInspect(ctx, req, inspectSpec{
+		names: couchbaseInspectCmds,
+		reads: func(st store) (map[string]inspectRead, error) {
+			ci, ok := st.(couchbaseInspector)
+			if !ok {
+				return nil, inspectUnsupported()
 			}
-		case "indexes":
-			res, err = ci.InspectIndexes(ctx)
-		}
-		if err != nil {
-			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
-		}
-		results = append(results, inspectResult{sub: sub, value: res})
-	}
-
-	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
-}
-
-// isCouchbaseInspectCmd reports whether sub is a supported Couchbase inspect subcommand.
-func isCouchbaseInspectCmd(sub string) bool {
-	return slices.Contains(couchbaseInspectCmds, sub)
+			return map[string]inspectRead{
+				"cluster":     ci.InspectCluster,
+				"buckets":     ci.InspectBuckets,
+				"collections": ci.InspectCollections,
+				"indexes":     ci.InspectIndexes,
+			}, nil
+		},
+		scoped: []string{"collections"},
+	})
 }
 
 // elasticInspectCmds is the supported set of Elasticsearch introspection reads
@@ -669,56 +607,23 @@ type elasticInspector interface {
 // when none are named) and renders each reply keyed by subcommand. "mapping" needs an
 // index selected and is skipped in the run-all case when none is. With list, it
 // prints the supported names without touching the store.
-func inspectElastic(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
-	if list {
-		return writeInspectList(out, elasticInspectCmds, jsonOut, yamlOut)
-	}
-	ei, ok := st.(elasticInspector)
-	if !ok {
-		return errors.New("inspect is not supported for this source")
-	}
-	explicit := len(subs) > 0
-	which := subs
-	if !explicit {
-		which = elasticInspectCmds
-	}
-	for _, sub := range which {
-		if !isElasticInspectCmd(sub) {
-			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(elasticInspectCmds, ", "))
-		}
-	}
-
-	results := make([]inspectResult, 0, len(which))
-	for _, sub := range which {
-		var (
-			res any
-			err error
-		)
-		switch sub {
-		case "server":
-			res, err = ei.InspectServer(ctx)
-		case "indices":
-			res, err = ei.InspectIndices(ctx)
-		case "mapping":
-			res, err = ei.InspectMapping(ctx)
-			if err != nil && !explicit {
-				continue // a source with no index selected skips "mapping" in run-all
+func inspectElastic(ctx context.Context, req inspectRequest) error {
+	return runInspect(ctx, req, inspectSpec{
+		names: elasticInspectCmds,
+		reads: func(st store) (map[string]inspectRead, error) {
+			ei, ok := st.(elasticInspector)
+			if !ok {
+				return nil, inspectUnsupported()
 			}
-		case "aliases":
-			res, err = ei.InspectAliases(ctx)
-		}
-		if err != nil {
-			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
-		}
-		results = append(results, inspectResult{sub: sub, value: res})
-	}
-
-	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
-}
-
-// isElasticInspectCmd reports whether sub is a supported Elasticsearch inspect subcommand.
-func isElasticInspectCmd(sub string) bool {
-	return slices.Contains(elasticInspectCmds, sub)
+			return map[string]inspectRead{
+				"server":  ei.InspectServer,
+				"indices": ei.InspectIndices,
+				"mapping": ei.InspectMapping,
+				"aliases": ei.InspectAliases,
+			}, nil
+		},
+		scoped: []string{"mapping"},
+	})
 }
 
 // neo4jInspectCmds is the supported set of Neo4j introspection reads `inspect` runs.
@@ -742,54 +647,23 @@ type neo4jInspector interface {
 // are named) and renders each reply keyed by subcommand. Every read is database-level,
 // so none is skipped for a missing label. With list, it prints the supported names
 // without touching the store.
-func inspectNeo4j(ctx context.Context, out io.Writer, st store, cfg *config, subs []string, jsonOut, yamlOut, list bool) error {
-	if list {
-		return writeInspectList(out, neo4jInspectCmds, jsonOut, yamlOut)
-	}
-	ni, ok := st.(neo4jInspector)
-	if !ok {
-		return errors.New("inspect is not supported for this source")
-	}
-	which := subs
-	if len(which) == 0 {
-		which = neo4jInspectCmds
-	}
-	for _, sub := range which {
-		if !isNeo4jInspectCmd(sub) {
-			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(neo4jInspectCmds, ", "))
-		}
-	}
-
-	results := make([]inspectResult, 0, len(which))
-	for _, sub := range which {
-		var (
-			res any
-			err error
-		)
-		switch sub {
-		case "server":
-			res, err = ni.InspectServer(ctx)
-		case "databases":
-			res, err = ni.InspectDatabases(ctx)
-		case "labels":
-			res, err = ni.InspectLabels(ctx)
-		case "reltypes":
-			res, err = ni.InspectRelationshipTypes(ctx)
-		case "constraints":
-			res, err = ni.InspectConstraints(ctx)
-		}
-		if err != nil {
-			res = map[string]any{"error": redactErr(err, cfg.url).Error()}
-		}
-		results = append(results, inspectResult{sub: sub, value: res})
-	}
-
-	return renderInspectResults(out, st, cfg, results, jsonOut, yamlOut)
-}
-
-// isNeo4jInspectCmd reports whether sub is a supported Neo4j inspect subcommand.
-func isNeo4jInspectCmd(sub string) bool {
-	return slices.Contains(neo4jInspectCmds, sub)
+func inspectNeo4j(ctx context.Context, req inspectRequest) error {
+	return runInspect(ctx, req, inspectSpec{
+		names: neo4jInspectCmds,
+		reads: func(st store) (map[string]inspectRead, error) {
+			ni, ok := st.(neo4jInspector)
+			if !ok {
+				return nil, inspectUnsupported()
+			}
+			return map[string]inspectRead{
+				"server":      ni.InspectServer,
+				"databases":   ni.InspectDatabases,
+				"labels":      ni.InspectLabels,
+				"reltypes":    ni.InspectRelationshipTypes,
+				"constraints": ni.InspectConstraints,
+			}, nil
+		},
+	})
 }
 
 // writeInspectList renders the names --list emits: a JSON or YAML array with
