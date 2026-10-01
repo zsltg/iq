@@ -53,6 +53,8 @@ func TestDiffValidationOrder(t *testing.T) {
 		{"the right side parses before the patch check", []string{"a", "ghost", "--data", "--schema", "--patch"}, "unknown source \"ghost\"; run `iq ls` (register a dump with `iq add file:///path/to/dump.json` to read one)"},
 		{"the patch check comes before the stats filter check", []string{"a=.[]", "b", "--stats", "--schema", "--patch"}, patchLayerErr},
 		{"the stats filter check", []string{"a", "b=.[]", "--stats"}, statsFilterErr},
+		{"the stats filter check on the left side", []string{"a=.[]", "b", "--stats"}, statsFilterErr},
+		{"the stats filter check on the filter flag", []string{"a", "b", "--stats", "--filter", ".[]"}, statsFilterErr},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
