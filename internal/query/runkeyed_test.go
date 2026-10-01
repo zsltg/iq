@@ -2,6 +2,7 @@ package query_test
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"testing"
 
@@ -258,4 +259,68 @@ func TestRunKeyedPushesPredicate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{"a": map[string]any{"n": 1}}, got)
 	require.Equal(t, predicate.Eq{Path: []string{"n"}, Value: 1.0}, store.gotPred)
+}
+
+// TestRunKeyedFailures pins the errors of a keyed read. A parse or compile error
+// names its step and never reaches the store, and a store error on the bounded
+// route names the fetch. Each cause stays reachable through the wrap.
+func TestRunKeyedFailures(t *testing.T) {
+	t.Run("a parse error names the step", func(t *testing.T) {
+		store := &fakeKV{}
+		_, err := collectKeyed(t, store, ".[", query.RunOptions{})
+		require.ErrorContains(t, err, "parse expression")
+		require.Error(t, errors.Unwrap(err), "the parse error must stay unwrappable")
+		require.Nil(t, store.gotGetKeys)
+		require.Zero(t, store.scanCalls)
+	})
+	t.Run("a compile error names the step", func(t *testing.T) {
+		store := &fakeKV{}
+		_, err := collectKeyed(t, store, ".[] | nosuchfunc", query.RunOptions{})
+		require.ErrorContains(t, err, "compile expression")
+		require.Error(t, errors.Unwrap(err), "the compile error must stay unwrappable")
+		require.Zero(t, store.scanCalls)
+	})
+	t.Run("a store error on the bounded route names the fetch", func(t *testing.T) {
+		store := &fakeKV{getErr: errors.New("get boom")}
+		_, err := collectKeyed(t, store, `.["a"]`, query.RunOptions{})
+		require.ErrorContains(t, err, "fetch keys")
+		require.ErrorIs(t, err, store.getErr)
+	})
+}
+
+// TestRunKeyedEstimate pins the total that a keyed scan reports. An unfiltered
+// scan asks the store for its count with the caller's context. A pushed-down scan
+// walks a subset, so it asks for no total.
+func TestRunKeyedEstimate(t *testing.T) {
+	t.Run("an unfiltered scan reports the estimate", func(t *testing.T) {
+		store := &estimatorKV{
+			scanKeys: []string{"a"}, values: map[string]any{"a": 1},
+			estimate: 42,
+		}
+		ctx := context.WithValue(context.Background(), ctxMarker{}, "marker")
+		var got []int64
+		opts := query.RunOptions{OnEstimate: func(n int64) { got = append(got, n) }}
+
+		err := query.NewJQEngine(store).RunKeyed(ctx, ".[]", opts, func(string, any) error { return nil })
+
+		require.NoError(t, err)
+		require.Equal(t, []int64{42}, got)
+		require.NotNil(t, store.gotEstimateCtx, "EstimateCount must receive a non-nil context")
+		require.Equal(t, "marker", store.gotEstimateCtx.Value(ctxMarker{}), "the caller's context must reach EstimateCount")
+	})
+	t.Run("a pushed-down scan reports no estimate", func(t *testing.T) {
+		store := &filterEstimatorKV{
+			scanKeys: []string{"a"}, values: map[string]any{"a": map[string]any{"n": 1}},
+			estimate: 99,
+		}
+		var got []int64
+		opts := query.RunOptions{Compile: true, OnEstimate: func(n int64) { got = append(got, n) }}
+
+		_, err := collectKeyed(t, store, `.[] | select(.n == 1)`, opts)
+
+		require.NoError(t, err)
+		require.Equal(t, 1, store.filterCalls, "the scan was pushed down")
+		require.Zero(t, store.estimateCalls)
+		require.Nil(t, got)
+	})
 }

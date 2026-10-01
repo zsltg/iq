@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/big"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -94,6 +95,7 @@ func TestInferKinds(t *testing.T) {
 		{"json.Number integral literal is integer", []any{json.Number("42")}, []any{"integer"}},
 		{"json.Number fractional literal is number", []any{json.Number("4.2")}, []any{"number"}},
 		{"json.Number exponent integral is integer", []any{json.Number("1e3")}, []any{"integer"}},
+		{"json.Number integer literal past float64 range is integer", []any{json.Number(strings.Repeat("9", 400))}, []any{"integer"}},
 		{"bool is bool", []any{true}, []any{"bool"}},
 		{"null is null", []any{nil}, []any{"null"}},
 		{"integer with string keeps both", []any{int(1), "x"}, []any{"integer", "string"}},
@@ -102,6 +104,23 @@ func TestInferKinds(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, fieldTypes(tt.vals...))
 		})
+	}
+}
+
+func TestInferIntegerCollapseKeepsOtherKinds(t *testing.T) {
+	// The integer kind folds into number, and every other kind must stay. Go
+	// randomizes the order of the kind set, so the projection runs 20 times. A
+	// loop that stops at the integer kind loses the kinds after it in most passes.
+	s := shape.Infer(map[string]any{
+		"1": map[string]any{"f": 1},
+		"2": map[string]any{"f": 1.5},
+		"3": map[string]any{"f": "s"},
+		"4": map[string]any{"f": true},
+		"5": map[string]any{"f": nil},
+	})
+	for pass := range 20 {
+		got := s.Comparable()[".f"].(map[string]any)["types"]
+		require.Equal(t, []any{"bool", "null", "number", "string"}, got, "pass %d", pass)
 	}
 }
 

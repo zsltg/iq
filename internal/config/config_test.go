@@ -44,10 +44,7 @@ func TestPath(t *testing.T) {
 func TestPathWithoutUserConfigDir(t *testing.T) {
 	// With no override and no home-like variable on any platform, os.UserConfigDir
 	// fails and Path must surface that rather than join a relative fallback.
-	t.Setenv(config.EnvConfig, "")
-	t.Setenv("XDG_CONFIG_HOME", "") // unix
-	t.Setenv("HOME", "")            // unix and darwin
-	t.Setenv("AppData", "")         // windows
+	unsetConfigDir(t)
 
 	p, err := config.Path()
 	require.Error(t, err)
@@ -57,6 +54,44 @@ func TestPathWithoutUserConfigDir(t *testing.T) {
 	_, want := os.UserConfigDir()
 	require.Error(t, want)
 	require.EqualError(t, errors.Unwrap(err), want.Error(), "the cause is wrapped, not flattened")
+}
+
+// unsetConfigDir removes every variable that os.UserConfigDir reads, so Path fails.
+// It also moves the test into a temp dir: if a broken Path returned a relative
+// path, a save must not write into the source tree.
+func unsetConfigDir(t *testing.T) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	t.Setenv(config.EnvConfig, "")
+	t.Setenv("XDG_CONFIG_HOME", "") // unix
+	t.Setenv("HOME", "")            // unix and darwin
+	t.Setenv("AppData", "")         // windows
+}
+
+func TestLoadFailures(t *testing.T) {
+	t.Run("no user config dir", func(t *testing.T) {
+		unsetConfigDir(t)
+
+		c, err := config.Load()
+		require.Error(t, err)
+		require.Nil(t, c)
+		require.ErrorContains(t, err, "locate user config dir")
+	})
+
+	t.Run("path is a directory", func(t *testing.T) {
+		p := tempConfig(t)
+		require.NoError(t, os.Mkdir(p, 0o700))
+
+		c, err := config.Load()
+		require.Error(t, err)
+		require.Nil(t, c)
+		require.ErrorContains(t, err, "read config")
+		require.ErrorContains(t, err, p)
+
+		var pathErr *fs.PathError
+		require.ErrorAs(t, err, &pathErr, "the read failure is wrapped, not flattened")
+		require.Equal(t, p, pathErr.Path)
+	})
 }
 
 func TestLoadRejectsMalformedTOML(t *testing.T) {
@@ -178,9 +213,41 @@ func TestSaveCreatesDir(t *testing.T) {
 
 	_, err := os.Stat(nested)
 	require.NoError(t, err)
+
+	if runtime.GOOS != "windows" { // Windows keeps no Unix mode bits to assert on.
+		info, err := os.Stat(filepath.Dir(nested))
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "only the owner can enter the config dir")
+	}
 }
 
 func TestSaveFailures(t *testing.T) {
+	t.Run("no user config dir", func(t *testing.T) {
+		unsetConfigDir(t)
+
+		err := (&config.Config{Sources: map[string]config.Source{}}).Save()
+		require.Error(t, err)
+		require.ErrorContains(t, err, "locate user config dir")
+	})
+
+	t.Run("parent dir is not writable", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Windows has no Unix mode bits to deny the write")
+		}
+		if os.Geteuid() == 0 {
+			t.Skip("root writes to a read-only directory")
+		}
+		dir := filepath.Join(t.TempDir(), "ro")
+		require.NoError(t, os.Mkdir(dir, 0o500))
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+		t.Setenv(config.EnvConfig, filepath.Join(dir, "iq.toml"))
+
+		err := (&config.Config{Sources: map[string]config.Source{}}).Save()
+		require.Error(t, err)
+		require.ErrorContains(t, err, "create temp config")
+		require.ErrorIs(t, err, fs.ErrPermission)
+	})
+
 	t.Run("parent path is a file", func(t *testing.T) {
 		base := t.TempDir()
 		notADir := filepath.Join(base, "notadir")
@@ -535,6 +602,14 @@ func TestRemoveAll(t *testing.T) {
 		require.Empty(t, c.Group)
 	})
 
+	t.Run("keeps a group that still has members", func(t *testing.T) {
+		c := newCfg()
+		require.NoError(t, c.SetGroup("prod"))
+		_, err := c.RemoveAll([]string{"prod/books"})
+		require.NoError(t, err)
+		require.Equal(t, "prod", c.Group)
+	})
+
 	t.Run("clears active when the only removed source was active", func(t *testing.T) {
 		c := &config.Config{Sources: map[string]config.Source{}}
 		require.NoError(t, c.Add("only", "redis://h"))
@@ -625,6 +700,35 @@ func TestRemove(t *testing.T) {
 		require.NoError(t, c.Remove("prod/books"))
 		require.Empty(t, c.Group)
 	})
+
+	t.Run("keeps a group that still has members", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("prod/books", "redis://h"))
+		require.NoError(t, c.Add("prod/cache", "redis://h"))
+		require.NoError(t, c.SetGroup("prod"))
+		require.NoError(t, c.Remove("prod/books"))
+		require.Equal(t, "prod", c.Group)
+	})
+}
+
+func TestList(t *testing.T) {
+	// The sources are collected by ranging a map, whose iteration order is
+	// randomized per range, so an unsorted result would pass by chance now
+	// and then. Repeat until that is impossible.
+	for range 10 {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		for _, h := range []string{"b", "prod/a", "e", "a", "d", "c"} {
+			require.NoError(t, c.Add(h, "redis://"+h))
+		}
+
+		hs := c.List()
+		names := make([]string, 0, len(hs))
+		for _, h := range hs {
+			require.Equal(t, "redis://"+h.Name, h.Source.URL)
+			names = append(names, h.Name)
+		}
+		require.Equal(t, []string{"a", "b", "c", "d", "e", "prod/a"}, names)
+	}
 }
 
 func TestSetActive(t *testing.T) {

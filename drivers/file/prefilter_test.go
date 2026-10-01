@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"maps"
 	"math/big"
+	"os"
 	"strings"
 	"testing"
 
@@ -536,4 +539,75 @@ func TestTypedValue(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestScanFilteredStopsOnACancelledContext cancels the scan before it starts. The
+// loop returns the context error and hands over no page.
+func TestScanFilteredStopsOnACancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var checked, skipped int
+	called := false
+	err := scanFilteredJSON(
+		ctx, strings.NewReader(oneRecord()), rawpred.NewMatcher(matchEverything),
+		&checked, &skipped, func(map[string]any) error { called = true; return nil },
+	)
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, called)
+	require.Equal(t, 0, checked)
+}
+
+// dataThenErrReader gives its data in one Read, then fails every later Read with
+// err.
+type dataThenErrReader struct {
+	data string
+	err  error
+}
+
+func (r *dataThenErrReader) Read(p []byte) (int, error) {
+	if r.data == "" {
+		return 0, r.err
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+	return n, nil
+}
+
+// TestScanFilteredReportsAnEOFReadErrorInsideAnArray gives the prefilter a reader
+// that fails inside a top-level array with an error that wraps io.EOF. An array
+// must end with its closing bracket, so the scan reports the error. It must not
+// end in silence and hand over a truncated array as the whole dump.
+func TestScanFilteredReportsAnEOFReadErrorInsideAnArray(t *testing.T) {
+	gone := fmt.Errorf("disk gone: %w", io.EOF)
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "after a comma", input: `[{"key":"a","type":"string","value":"x"},`},
+		{name: "after a record", input: `[{"key":"a","type":"string","value":"x"}`},
+		{name: "after the opening bracket", input: `[`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var checked, skipped int
+			err := scanFilteredJSON(
+				context.Background(), &dataThenErrReader{data: tt.input, err: gone}, rawpred.NewMatcher(matchEverything),
+				&checked, &skipped, func(map[string]any) error { return nil },
+			)
+			require.ErrorContains(t, err, "decode json record")
+			require.ErrorIs(t, err, gone)
+		})
+	}
+}
+
+// TestScanFilteredReportsAMissingDump removes the dump after Open. The prefiltered
+// scan reports that it cannot open the dump, and it hands over no page.
+func TestScanFilteredReportsAMissingDump(t *testing.T) {
+	st := jsonlStore(t, oneRecord(), CacheConfig{})
+	require.NoError(t, os.Remove(st.path))
+	called := false
+	err := st.ScanFiltered(context.Background(), matchEverything, func(map[string]any) error { called = true; return nil })
+	require.ErrorContains(t, err, "open dump")
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	require.False(t, called)
 }

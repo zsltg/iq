@@ -64,6 +64,11 @@ to the driver. This shrinks how much data is transferred or decoded.
 The predicate is deliberately weaker than the filter, so the engine re-runs the
 full filter per page to drop the extra matches it admits.
 
+Pushdown reads only the `select()` stages that test each item itself: the stages
+after `.[]` up to the first stage that changes the item, such as `.b`, `map(...)`
+or an object construction. A `select()` after such a stage tests a derived value,
+so pushdown leaves it to the client-side filter.
+
 !!! tip "Check the strategy of a query"
 
     Before you execute a query, use `--explain` to see which strategy `iq`

@@ -224,3 +224,25 @@ func TestWriterCrossesPageBoundary(t *testing.T) {
 		})
 	}
 }
+
+// TestWriterPageSize pins the page size to 500 rows with literal counts. The
+// test above reads the page size from pageBatchSize, so it cannot see a change
+// of the constant itself.
+func TestWriterPageSize(t *testing.T) {
+	tests := []struct {
+		rows      int
+		rowGroups int
+	}{
+		{500, 1},
+		{501, 2},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d rows", tt.rows), func(t *testing.T) {
+			vals := make([]any, 0, tt.rows)
+			for i := range tt.rows {
+				vals = append(vals, map[string]any{"n": i})
+			}
+			require.Equal(t, tt.rowGroups, rowGroups(t, writeParquet(t, vals)))
+		})
+	}
+}

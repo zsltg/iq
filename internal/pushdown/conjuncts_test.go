@@ -1,6 +1,7 @@
 package pushdown
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/itchyny/gojq"
@@ -39,11 +40,23 @@ func TestConjuncts(t *testing.T) {
 			},
 		},
 		{
-			// A non-select residual stage before the select must be skipped, not
-			// treated as the end of the scan: the loop `continue`s past it to reach
-			// the select. A `break` there would drop the later select entirely.
-			name:   "non-select stage before a select is skipped",
+			// A select after a stage that changes the element tests the derived
+			// value, not the element, so it gives no conjunct.
+			name:   "select after an element-changing stage gives no conjunct",
 			filter: `.[] | .x | select(.a == 1)`,
+			ok:     false,
+		},
+		{
+			// A select before the element-changing stage still tests the element.
+			name:   "select before an element-changing stage keeps its conjunct",
+			filter: `.[] | select(.a == 1) | .x | select(.b == 2)`,
+			ok:     true,
+			want:   []wantConjunct{{expr: ".a == 1", pushed: true}},
+		},
+		{
+			// An identity stage passes the element on unchanged.
+			name:   "identity stage before a select keeps its conjunct",
+			filter: `.[] | . | select(.a == 1)`,
 			ok:     true,
 			want:   []wantConjunct{{expr: ".a == 1", pushed: true}},
 		},
@@ -198,6 +211,31 @@ func TestUnwrapIsDepthBounded(t *testing.T) {
 	// topConjuncts drops an over-nested conjunct: it contributes nothing rather than
 	// hanging, and the client-side jq still filters it.
 	require.Nil(t, topConjuncts(wrapQuery(inner, maxNestDepth+1)))
+}
+
+// TestUnwrapDepthCap pins the cap to 512 wrappers with literal depths. The test
+// above reads the cap from maxNestDepth, so it cannot see a change of the
+// constant itself.
+func TestUnwrapDepthCap(t *testing.T) {
+	inner, err := gojq.Parse(".a == 1")
+	require.NoError(t, err)
+
+	tests := []struct {
+		depth int
+		ok    bool
+	}{
+		{512, true},
+		{513, false},
+	}
+	for _, tt := range tests {
+		t.Run(strconv.Itoa(tt.depth), func(t *testing.T) {
+			got, ok := unwrap(wrapQuery(inner, tt.depth))
+			require.Equal(t, tt.ok, ok)
+			if tt.ok {
+				require.Same(t, inner, got)
+			}
+		})
+	}
 }
 
 // TestUnwrapStopsAtNonWrapper drives unwrap directly with hand-built ASTs where

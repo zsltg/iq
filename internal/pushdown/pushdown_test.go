@@ -54,6 +54,14 @@ func TestCompilePushable(t *testing.T) {
 		{"greater or equal", ".[] | select(.year >= 2015)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Ge, Value: 2015.0}},
 		{"less than", ".[] | select(.year < 2015)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Lt, Value: 2015.0}},
 		{"less or equal", ".[] | select(.year <= 2015)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Le, Value: 2015.0}},
+		// A select before a stage that changes the element still tests the element,
+		// so its predicate is pushed. The select after that stage is not.
+		{
+			"select before a field stage is pushed, the one after is not",
+			".[] | select(.a == 1) | .b | select(.c == 2)",
+			predicate.Eq{Path: []string{"a"}, Value: 1.0},
+		},
+		{"optional iterator head", ".[]? | select(.a == 1)", predicate.Eq{Path: []string{"a"}, Value: 1.0}},
 		{"string range", `.[] | select(.name > "m")`, predicate.Cmp{Path: []string{"name"}, Op: predicate.Gt, Value: "m"}},
 		{"literal on left flips operator", ".[] | select(2015 < .year)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Gt, Value: 2015.0}},
 		{"literal on left flips greater than", ".[] | select(2015 > .year)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Lt, Value: 2015.0}},
@@ -126,6 +134,16 @@ func TestCompilePushable(t *testing.T) {
 			},
 		},
 		{
+			// The identity stage passes each element on unchanged, so the select
+			// after it still tests the element.
+			"an identity stage between two selects",
+			".[] | select(.a == 1) | . | select(.b == 2)",
+			predicate.And{
+				predicate.Eq{Path: []string{"a"}, Value: 1.0},
+				predicate.Eq{Path: []string{"b"}, Value: 2.0},
+			},
+		},
+		{
 			"select then projection",
 			".[] | select(.a == 1) | .title",
 			predicate.Eq{Path: []string{"a"}, Value: 1.0},
@@ -149,6 +167,17 @@ func TestCompileNotPushable(t *testing.T) {
 		name string
 		expr string
 	}{
+		// A select that tests a value derived from the element. A predicate on the
+		// element itself would drop an element that the filter keeps.
+		{"select after a field stage", `.[] | .b | select(.c == 2)`},
+		{"select after a field on the head", `.[].b | select(.c == 2)`},
+		{"select after a field on the head, compared to itself", `.[].a | select(. == 1)`},
+		{"select after map", `.[] | map(.x) | select(.[0] == 1)`},
+		{"select after an object construction", `.[] | {b: .a} | select(.b == 1)`},
+		{"select after an optional field stage", `.[]? | .b | select(.c == 2)`},
+		{"select after a second iterator", `.[] | .[] | select(.a == 1)`},
+		{"select after a comma stage", `.[] | .a, .b | select(.c == 1)`},
+		{"select after an index stage", `.[] | .[0] | select(.c == 1)`},
 		{"regex with lookahead", `.[] | select(.a | test("(?=x)"))`},
 		{"regex with backreference", `.[] | select(.a | test("(a)\\1"))`},
 		{"regex with unicode property", `.[] | select(.a | test("\\p{L}"))`},
@@ -195,6 +224,14 @@ func TestCompileNotPushable(t *testing.T) {
 		{"bare iteration", ".[]"},
 		{"not streamable (holistic)", "map(select(.a == 1))"},
 		{"not streamable (keys)", "keys"},
+		{"not streamable (whole-collection stage first)", "to_entries | .[] | select(.value == 1)"},
+		{"has with a suffix on a path", `.[] | select(.a | has("b")[])`},
+		{"a path piped into a path", ".[] | select(.a | .b)"},
+		{"negated parenthesized equality with a suffix", ".[] | select((.a == 1)[] | not)"},
+		{"negated has with a suffix", `.[] | select(has("a")[] | not)`},
+		{"negated has on a path with a suffix", `.[] | select(.a | has("b")[] | not)`},
+		{"negated path piped into a path", ".[] | select(.a | .b | not)"},
+		{"optional path", ".[] | select(.a? == 1)"},
 		{"bounded, not a scan", `.["book:1"]`},
 		{"iterating path atom", ".[] | select(.a[] == 1)"},
 	}

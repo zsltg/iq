@@ -4,7 +4,16 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
-## v0.37.1 - 2026-09-28
+## v0.38.0 - 2026-09-30
+### Bug Fixes
+- **dynamodb:** parse integers at the size of int (#41) (854af85)
+- **pushdown:** push only the selects that test the element itself (#44) (9c1f2c5)
+
+### Features
+- **add:** store a source password in the os keyring by default (#36) (5530e8c)
+
+
+## v0.37.1 - 2026-09-29
 ### Bug Fixes
 - keep the sign of a negative zero across a typed dump (#32) (37d9838)
 - fix four bugs found by new go native fuzz targets (#27) (ad220e0)

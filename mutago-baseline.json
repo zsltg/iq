@@ -1530,6 +1530,588 @@
    "file": "cmd/diff.go",
    "mutator": "statement/remove",
    "line": 215
+  },
+  {
+   "id": "11979afff78230432fa121e15b4401ae",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "branch/case",
+   "line": 604
+  },
+  {
+   "id": "df7620fb7781b2a3ca61f8db99a3e928",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "branch/case",
+   "line": 762
+  },
+  {
+   "id": "744e052285de2d1b41c0d1b29673e032",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "branch/case",
+   "line": 804
+  },
+  {
+   "id": "744e052285de2d1b41c0d1b29673e032",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "branch/case",
+   "line": 817
+  },
+  {
+   "id": "2ae2e2a2c2520b5454e5d859e4a6b18d",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "branch/case",
+   "line": 829
+  },
+  {
+   "id": "2ae2e2a2c2520b5454e5d859e4a6b18d",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "branch/case",
+   "line": 892
+  },
+  {
+   "id": "2ae2e2a2c2520b5454e5d859e4a6b18d",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "branch/case",
+   "line": 905
+  },
+  {
+   "id": "a237d926ff2910c63a6520046a9ab25a",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "branch/if",
+   "line": 596
+  },
+  {
+   "id": "3e984136a4de464d29740dce59386498",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "expression/error-guard",
+   "line": 613
+  },
+  {
+   "id": "43d0f46332265a5b3353d95d3ae4e289",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "loop/break",
+   "line": 762
+  },
+  {
+   "id": "195c3ea271535c92d6235d2e4d1fc1ad",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "numbers/incrementer",
+   "line": 779
+  },
+  {
+   "id": "51bd6749f549a7af3c180a4e9c94f7aa",
+   "file": "internal/jqfmt/jqfmt.go",
+   "mutator": "branch/case",
+   "line": 546
+  },
+  {
+   "id": "28d4238337bf8a7e4f5709279bd22993",
+   "file": "internal/jqfmt/jqfmt.go",
+   "mutator": "branch/case",
+   "line": 726
+  },
+  {
+   "id": "2a0c1f51551bd4825a7b4e00cde6db95",
+   "file": "internal/config/config.go",
+   "mutator": "branch/case",
+   "line": 561
+  },
+  {
+   "id": "0e4e5234cdbd3d295eaa7a98a4f572d2",
+   "file": "internal/config/config.go",
+   "mutator": "expression/comparison",
+   "line": 474
+  },
+  {
+   "id": "641d1216c4734e490e5a1df9d8d20925",
+   "file": "internal/config/config.go",
+   "mutator": "expression/error-guard",
+   "line": 166
+  },
+  {
+   "id": "6efbb69d231f41d73176b205851d6caa",
+   "file": "internal/config/config.go",
+   "mutator": "expression/error-guard",
+   "line": 170
+  },
+  {
+   "id": "a482f07d6b5597aba42a7e522dbb7334",
+   "file": "internal/config/config.go",
+   "mutator": "expression/error-guard",
+   "line": 174
+  },
+  {
+   "id": "548bd8505d7b7978f8ade5879e64552e",
+   "file": "internal/config/config.go",
+   "mutator": "expression/remove",
+   "line": 250
+  },
+  {
+   "id": "548bd8505d7b7978f8ade5879e64552e",
+   "file": "internal/config/config.go",
+   "mutator": "expression/remove",
+   "line": 355
+  },
+  {
+   "id": "548bd8505d7b7978f8ade5879e64552e",
+   "file": "internal/config/config.go",
+   "mutator": "expression/remove",
+   "line": 412
+  },
+  {
+   "id": "50512d89433347106aaadafe18a600a8",
+   "file": "internal/config/options.go",
+   "mutator": "branch/if",
+   "line": 49
+  },
+  {
+   "id": "5422040feb4d0ded0dc08d5e63c2e83d",
+   "file": "internal/config/options.go",
+   "mutator": "expression/remove",
+   "line": 83
+  },
+  {
+   "id": "40e2d3779af287f6177dc18b2ac643b3",
+   "file": "internal/config/options.go",
+   "mutator": "statement/remove",
+   "line": 74
+  },
+  {
+   "id": "c8cef7cee018d6831fcd939a1ca0c00d",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/case",
+   "line": 461
+  },
+  {
+   "id": "d4b2f616e4ae89ff767d20f8d72a5b8c",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/case",
+   "line": 587
+  },
+  {
+   "id": "8028e5c64c634fb764de68ff858b6c85",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/if",
+   "line": 525
+  },
+  {
+   "id": "752c26a125ae05145528a737fc212c21",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/if",
+   "line": 577
+  },
+  {
+   "id": "9785c3f69ec553930c86c600da170ee9",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/if",
+   "line": 605
+  },
+  {
+   "id": "c40445fcd3288ac4a61b6e1174ba8ebf",
+   "file": "internal/shape/shape.go",
+   "mutator": "expression/remove",
+   "line": 308
+  },
+  {
+   "id": "957826442f6562ccb99155076c033351",
+   "file": "internal/shape/shape.go",
+   "mutator": "expression/remove",
+   "line": 620
+  },
+  {
+   "id": "bf24e4cb4666ad6165b31e81deeb167e",
+   "file": "internal/shape/shape.go",
+   "mutator": "statement/remove",
+   "line": 354
+  },
+  {
+   "id": "86a6546efa5e62a47e3515554b754a93",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "branch/case",
+   "line": 339
+  },
+  {
+   "id": "86a6546efa5e62a47e3515554b754a93",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "branch/case",
+   "line": 403
+  },
+  {
+   "id": "f422a8f89bf2111fbcb893c734be7452",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "expression/error-guard",
+   "line": 85
+  },
+  {
+   "id": "907b6d8fa48637f7b5836dc16c459de0",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "statement/remove",
+   "line": 94
+  },
+  {
+   "id": "461a79b3c892a26ce3784c17fc74dfe6",
+   "file": "internal/pushdown/conjuncts.go",
+   "mutator": "branch/case",
+   "line": 154
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 42
+  },
+  {
+   "id": "137cc6c2630f65f10450f934678a3eaa",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 114
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 136
+  },
+  {
+   "id": "46d886441bcf19b208dc6f7b3e41c2ee",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 166
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 184
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 215
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 310
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 350
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 379
+  },
+  {
+   "id": "bdbdd9ff2f20212d0176362849c1a12b",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 616
+  },
+  {
+   "id": "781445a762d462a4b14cf0d3c79d6d46",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/if",
+   "line": 300
+  },
+  {
+   "id": "5f0cba885491870f0dcc6816a159f185",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/if",
+   "line": 405
+  },
+  {
+   "id": "5616b72b9e59c286314dd16535ab0803",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/if",
+   "line": 422
+  },
+  {
+   "id": "6f1756a7fd023e281677d86aa2780504",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "expression/remove",
+   "line": 97
+  },
+  {
+   "id": "2941fe7fc0fb995c91fa7ea227ed1d8e",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "numbers/decrementer",
+   "line": 31
+  },
+  {
+   "id": "0280419b36e879f9208aaebea755d9a9",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "numbers/decrementer",
+   "line": 97
+  },
+  {
+   "id": "a8ff75800f75a2f8588456f8d34984b3",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "statement/return",
+   "line": 166
+  },
+  {
+   "id": "5cb80d413e90f4c3b6fda9f26e64d728",
+   "file": "internal/query/dump.go",
+   "mutator": "expression/error-guard",
+   "line": 188
+  },
+  {
+   "id": "f005955aac26927d04ac19bd3760deaa",
+   "file": "internal/query/dump.go",
+   "mutator": "expression/error-guard",
+   "line": 236
+  },
+  {
+   "id": "83e6e22888ec392b942f09e4d373f858",
+   "file": "drivers/file/cache.go",
+   "mutator": "branch/if",
+   "line": 165
+  },
+  {
+   "id": "83e6e22888ec392b942f09e4d373f858",
+   "file": "drivers/file/cache.go",
+   "mutator": "branch/if",
+   "line": 170
+  },
+  {
+   "id": "57437d498f41f514fadad03fa23d6e5d",
+   "file": "drivers/file/cache.go",
+   "mutator": "branch/if",
+   "line": 459
+  },
+  {
+   "id": "57437d498f41f514fadad03fa23d6e5d",
+   "file": "drivers/file/cache.go",
+   "mutator": "branch/if",
+   "line": 472
+  },
+  {
+   "id": "29af2feed21c5164239563f37d5bc4d0",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 122
+  },
+  {
+   "id": "c5cb81f8778b1039daeeca9f75d13778",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 164
+  },
+  {
+   "id": "c5cb81f8778b1039daeeca9f75d13778",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 169
+  },
+  {
+   "id": "0df8cf0a5627019d37800b6307e6d690",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 188
+  },
+  {
+   "id": "e85d315b99a7e89bf2529de46fd67d57",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 292
+  },
+  {
+   "id": "f250ccd3990dcb094aef745731cf3dd0",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 369
+  },
+  {
+   "id": "f3a87a7025906f5708a8cd657bd2237c",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 458
+  },
+  {
+   "id": "f3a87a7025906f5708a8cd657bd2237c",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 463
+  },
+  {
+   "id": "f3a87a7025906f5708a8cd657bd2237c",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 471
+  },
+  {
+   "id": "9dd45cbc07ee0a4c7a8d50910dac5631",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 625
+  },
+  {
+   "id": "5a6f23978e363d961b0f02b72e77d438",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/remove",
+   "line": 467
+  },
+  {
+   "id": "0e85f403fc969882eaa437f1286974d2",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/remove",
+   "line": 475
+  },
+  {
+   "id": "528540c71c54d2cc618bd42205544591",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/remove",
+   "line": 558
+  },
+  {
+   "id": "05d717019a071a2b7369ba1d40d2f977",
+   "file": "drivers/file/cache.go",
+   "mutator": "loop/break",
+   "line": 486
+  },
+  {
+   "id": "760492cbcbc3679402886ea952864505",
+   "file": "drivers/file/cache.go",
+   "mutator": "statement/return",
+   "line": 614
+  },
+  {
+   "id": "e69e4896a635899800a7371803484891",
+   "file": "drivers/file/cassandra.go",
+   "mutator": "branch/if",
+   "line": 99
+  },
+  {
+   "id": "634ae94e5f7388d7e5f0e6cb640c2bf5",
+   "file": "drivers/file/cassandra.go",
+   "mutator": "statement/remove",
+   "line": 39
+  },
+  {
+   "id": "aa284ba67a46689d1f7e97b3abf70654",
+   "file": "drivers/file/cassandra.go",
+   "mutator": "statement/remove",
+   "line": 99
+  },
+  {
+   "id": "8ec5648f8f933810fef49f744f188488",
+   "file": "drivers/file/detect.go",
+   "mutator": "branch/if",
+   "line": 206
+  },
+  {
+   "id": "954e3993f127fddfd19dd334dfe15b4b",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 99
+  },
+  {
+   "id": "5230a0adc71490ab617d8bbe68611322",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 145
+  },
+  {
+   "id": "786fa4d6df06bb5b47ad4ccbb844d37a",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 151
+  },
+  {
+   "id": "31a6ad8b6605f7ced2602812849439ed",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 196
+  },
+  {
+   "id": "8af963f6e1c42465b60d2c05a2ab6b00",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 170
+  },
+  {
+   "id": "63eecb02c775953712b5e1be1029e48e",
+   "file": "drivers/file/file.go",
+   "mutator": "expression/remove",
+   "line": 182
+  },
+  {
+   "id": "dafdbf3e95795efae61f439f8583b7fc",
+   "file": "drivers/file/file.go",
+   "mutator": "statement/remove",
+   "line": 190
+  },
+  {
+   "id": "42238f235be39acafe4ae051d82694f6",
+   "file": "drivers/file/file.go",
+   "mutator": "statement/return",
+   "line": 159
+  },
+  {
+   "id": "a962a06f156ab0b66e01ed89b8d4f2bd",
+   "file": "drivers/file/file.go",
+   "mutator": "statement/return",
+   "line": 173
+  },
+  {
+   "id": "5390488733d7c2ca91d37cb114985a8d",
+   "file": "drivers/file/file.go",
+   "mutator": "statement/return",
+   "line": 176
+  },
+  {
+   "id": "0e7102f7ee31acb1c148e11612810250",
+   "file": "drivers/file/file.go",
+   "mutator": "statement/return",
+   "line": 188
+  },
+  {
+   "id": "aa1f8c4c24315f44ed894f7d63ae1aeb",
+   "file": "drivers/file/file.go",
+   "mutator": "statement/return",
+   "line": 195
+  },
+  {
+   "id": "a4b4e3c598faa3fd24cdafc7ad6f01cc",
+   "file": "drivers/file/filter.go",
+   "mutator": "expression/error-guard",
+   "line": 113
+  },
+  {
+   "id": "a39ce3ac5c75bb52c6060940307ddacf",
+   "file": "drivers/file/filter.go",
+   "mutator": "expression/error-guard",
+   "line": 197
+  },
+  {
+   "id": "0dd5ade7ed6f2498d94d795791ce8d90",
+   "file": "drivers/file/mongo.go",
+   "mutator": "expression/error-guard",
+   "line": 96
+  },
+  {
+   "id": "3647f8ebf3128c2a6754d0403e2ed619",
+   "file": "drivers/file/mongo.go",
+   "mutator": "expression/error-guard",
+   "line": 139
+  },
+  {
+   "id": "8d8c1c16ad5acb4f3007e844b282fde2",
+   "file": "drivers/file/neo4j.go",
+   "mutator": "expression/error-guard",
+   "line": 56
+  },
+  {
+   "id": "eb55263f9e7b95bada8f036c222e0a5b",
+   "file": "drivers/file/neo4j.go",
+   "mutator": "statement/return",
+   "line": 110
   }
  ]
 }

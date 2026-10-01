@@ -195,3 +195,79 @@ func TestJSONSchemaEnumInMap(t *testing.T) {
 	require.Equal(t, "string", ap["type"])
 	require.Equal(t, []any{"active", "inactive"}, ap["enum"])
 }
+
+// mapEnumSchema infers field m as a one-key object per instance, so m collapses
+// to a map and every value folds into the map value through enumAcc.mergeFrom.
+// Instance i holds keys[i] with the string values[i]. It returns the
+// additionalProperties schema of m.
+func mapEnumSchema(keys, values []string) map[string]any {
+	items := make(map[string]any, len(keys))
+	for i := range keys {
+		items[strconv.Itoa(i)] = map[string]any{"m": map[string]any{keys[i]: values[i]}}
+	}
+	got := shape.Infer(items).JSONSchema("t")
+	return got["properties"].(map[string]any)["m"].(map[string]any)["additionalProperties"].(map[string]any)
+}
+
+// cycleVals returns n strings that cycle through v0..v(distinct-1).
+func cycleVals(distinct, n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = "v" + strconv.Itoa(i%distinct)
+	}
+	return out
+}
+
+// uniqueKeys returns the n keys u0..u(n-1).
+func uniqueKeys(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = "u" + strconv.Itoa(i)
+	}
+	return out
+}
+
+// TestJSONSchemaEnumMergeInMap pins the distinct ceiling of an enum that a map
+// collapse builds. The merge must keep the over state of a map value that saw
+// too many distinct strings. It must also set over when the union of the values
+// goes past the ceiling, although no single value did.
+func TestJSONSchemaEnumMergeInMap(t *testing.T) {
+	// Key "hot" is in nine instances with nine distinct strings, so its own enum
+	// is over. 23 unique keys follow, each with the string "x". The key ratio is
+	// 24 distinct keys over 32 slots, which is 0.75, so m collapses.
+	hotKeys := make([]string, 0, 32)
+	hotVals := make([]string, 0, 32)
+	for i := range 9 {
+		hotKeys = append(hotKeys, "hot")
+		hotVals = append(hotVals, "h"+strconv.Itoa(i))
+	}
+	for i := range 23 {
+		hotKeys = append(hotKeys, "k"+strconv.Itoa(i))
+		hotVals = append(hotVals, "x")
+	}
+
+	tests := []struct {
+		name     string
+		keys     []string
+		values   []string
+		wantEnum []any // nil means: no enum key expected
+	}{
+		{"a value that is over keeps the merged enum over", hotKeys, hotVals, nil},
+		{"nine distinct strings across the values are over", uniqueKeys(36), cycleVals(9, 36), nil},
+		{"eight distinct strings across the values qualify", uniqueKeys(32), cycleVals(8, 32), []any{"v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Go randomizes the merge order, so the corpus is inferred ten times.
+			for pass := range 10 {
+				got := mapEnumSchema(tt.keys, tt.values)
+				require.Equal(t, "string", got["type"], "pass %d", pass)
+				if tt.wantEnum == nil {
+					require.NotContains(t, got, "enum", "pass %d", pass)
+					continue
+				}
+				require.Equal(t, tt.wantEnum, got["enum"], "pass %d", pass)
+			}
+		})
+	}
+}

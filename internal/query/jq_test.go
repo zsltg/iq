@@ -363,6 +363,24 @@ func TestJQEngineCompileFallsBackWhenNotPushable(t *testing.T) {
 	require.Equal(t, []any{map[string]any{"year": 2018}}, got)
 }
 
+func TestJQEngineCompileSkipsSelectOnDerivedValue(t *testing.T) {
+	// The select tests .b, not the element. A predicate on the element (.c == 2)
+	// would drop "1", whose .b.c is 2, so the engine must not push it.
+	store := &filterKV{
+		scanKeys: []string{"1", "2"},
+		values: map[string]any{
+			"1": map[string]any{"b": map[string]any{"c": 2}, "c": 9},
+			"2": map[string]any{"b": map[string]any{"c": 1}, "c": 2},
+		},
+	}
+
+	got, err := collectOpts(t, store, `.[] | .b | select(.c == 2)`, query.RunOptions{Compile: true})
+
+	require.NoError(t, err)
+	require.Zero(t, store.filterCalls, "a select on a derived value is not pushed")
+	require.Equal(t, []any{map[string]any{"c": 2}}, got)
+}
+
 func TestJQEngineCompileIgnoredWhenStoreCannotFilter(t *testing.T) {
 	// A plain fakeKV is not a FilteredScanner, so --compile is a no-op.
 	store := &fakeKV{
@@ -430,4 +448,28 @@ func TestJQEnginePropagatesRuntimeError(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "run expression")
 	require.Error(t, errors.Unwrap(err), "the jq runtime error must stay unwrappable")
+}
+
+// TestJQEnginePropagatesCompileError gives Run a filter that parses but calls an
+// unknown function. The error names the compile step, and the store is not
+// touched.
+func TestJQEnginePropagatesCompileError(t *testing.T) {
+	store := &fakeKV{}
+
+	_, err := collect(t, store, ".[] | nosuchfunc", false)
+
+	require.ErrorContains(t, err, "compile expression")
+	require.Error(t, errors.Unwrap(err), "the compile error must stay unwrappable")
+	require.Zero(t, store.scanCalls)
+}
+
+// TestJQEnginePropagatesMaterializedScanError makes the scan of a holistic filter
+// fail. The error names the scan, and the store error stays reachable.
+func TestJQEnginePropagatesMaterializedScanError(t *testing.T) {
+	store := &fakeKV{scanErr: errors.New("scan boom")}
+
+	_, err := collect(t, store, "keys", true)
+
+	require.ErrorContains(t, err, "scan keys")
+	require.ErrorIs(t, err, store.scanErr, "the store error must stay unwrappable")
 }

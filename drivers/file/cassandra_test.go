@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -189,4 +190,12 @@ func TestCassandraCSVFailures(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, collect(t, st))
 	})
+}
+
+// TestCassandraCSVRejectsABadTypesHint gives a ?types= entry with no '='. The
+// source refuses it before it reads a row.
+func TestCassandraCSVRejectsABadTypesHint(t *testing.T) {
+	src, err := cassandraCSVSource(strings.NewReader("id\na\n"), pageSize, numfmt.DecimalAuto, Hints{Keys: "id", Types: "age"})
+	require.ErrorContains(t, err, "malformed ?types= entry")
+	require.Nil(t, src)
 }

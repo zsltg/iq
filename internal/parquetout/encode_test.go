@@ -150,6 +150,8 @@ func TestToInt64(t *testing.T) {
 		{"integral float", 5.0, 5, true},
 		{"fractional float", 5.5, 0, false},
 		{"min int64 as float", float64(math.MinInt64), math.MinInt64, true},
+		// float64(math.MaxInt64) rounds up to 2^63, one past the int64 range.
+		{"2^63 as float is out of range", float64(math.MaxInt64), 0, false},
 		{"large positive float out of range", 1e30, 0, false},
 		{"large negative float out of range", -1e30, 0, false},
 		{"positive infinity", math.Inf(1), 0, false},
@@ -168,11 +170,10 @@ func TestToInt64(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			// A value that does not fit returns 0 with ok false, so want is 0 there.
 			got, ok := toInt64(tc.v)
 			require.Equal(t, tc.ok, ok)
-			if tc.ok {
-				require.Equal(t, tc.want, got)
-			}
+			require.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -211,9 +212,12 @@ func TestToFloat64(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, ok := toFloat64(tc.v)
 			require.Equal(t, tc.ok, ok)
-			if tc.ok {
-				require.InDelta(t, tc.want, got, 1e-9)
+			if !ok {
+				// A value that is not a number returns exactly 0.
+				require.Zero(t, got)
+				return
 			}
+			require.InDelta(t, tc.want, got, 1e-9)
 		})
 	}
 }
