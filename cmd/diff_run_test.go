@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -71,6 +72,10 @@ func TestDiffReadsLeftBeforeRight(t *testing.T) {
 	require.NoError(t, c.Add("l", "file:///nonexistent-iq-test/l.jsonl"))
 	require.NoError(t, c.Add("r", "file:///nonexistent-iq-test/r.jsonl"))
 	seedConfig(t, c)
+	// The text of a missing-file error depends on the OS, so take it from the OS.
+	const leftDump = "/nonexistent-iq-test/l.jsonl"
+	_, openErr := os.Open(leftDump)
+	require.Error(t, openErr)
 
 	for _, layer := range [][]string{{"--data"}, {"--schema"}, {"--stats"}, {"--data", "--patch"}, {"--schema", "--patch"}, {"--stats", "--patch"}} {
 		t.Run(strings.Join(layer, " "), func(t *testing.T) {
@@ -78,7 +83,7 @@ func TestDiffReadsLeftBeforeRight(t *testing.T) {
 
 			_, err := runCmd(t, quietDiff(&config{timeout: 5 * time.Second}), args...)
 
-			require.EqualError(t, err, `open dump "/nonexistent-iq-test/l.jsonl": open /nonexistent-iq-test/l.jsonl: no such file or directory`)
+			require.EqualError(t, err, fmt.Sprintf("open dump %q: %v", leftDump, openErr))
 		})
 	}
 }
@@ -346,9 +351,11 @@ func TestDiffForwardsContextToBothSides(t *testing.T) {
 }
 
 // TestDiffDataTicksBothSides proves that the data layer and the patch data layer
-// tick the page callback once for each side.
+// tick the page callback once for each page of each side.
 func TestDiffDataTicksBothSides(t *testing.T) {
-	useCtxDriver(t)
+	rec := useCtxDriver(t)
+	// Two pages on each side give one callback for each page.
+	rec.pages = 2
 	cf, err := iqconfig.Load()
 	require.NoError(t, err)
 	left, err := diffSpec(cf, "a")
@@ -362,7 +369,7 @@ func TestDiffDataTicksBothSides(t *testing.T) {
 		_, err := diffRun{cfg: &config{}, left: left, right: right}.diffData(t.Context(), func(n int) { pages = append(pages, n) })
 
 		require.NoError(t, err)
-		require.Equal(t, []int{1, 1}, pages)
+		require.Equal(t, []int{1, 1, 1, 1}, pages)
 	})
 
 	t.Run("patch data", func(t *testing.T) {
@@ -371,7 +378,7 @@ func TestDiffDataTicksBothSides(t *testing.T) {
 		_, err := diffRun{cfg: &config{}, left: left, right: right}.patchLayer(t.Context(), false, false, func(n int) { pages = append(pages, n) })
 
 		require.NoError(t, err)
-		require.Equal(t, []int{1, 1}, pages)
+		require.Equal(t, []int{1, 1, 1, 1}, pages)
 	})
 }
 
