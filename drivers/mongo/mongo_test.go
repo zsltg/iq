@@ -74,14 +74,19 @@ func uriWithCollection(t *testing.T, collection string) string {
 // seedDocs replaces the collection's contents with docs.
 func seedDocs(t *testing.T, store *Store, docs []any) {
 	t.Helper()
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	coll := store.db.Collection(store.collection)
 	require.NoError(t, coll.Drop(ctx))
 	if len(docs) > 0 {
 		_, err := coll.InsertMany(ctx, docs)
 		require.NoError(t, err)
 	}
-	t.Cleanup(func() { _ = coll.Drop(ctx) })
+	t.Cleanup(func() {
+		cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanCancel()
+		_ = coll.Drop(cleanCtx)
+	})
 }
 
 func TestDatabaseFromURI(t *testing.T) {
