@@ -564,7 +564,7 @@ func (s *mcpServer) toolDiff(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	if !stats && !schema {
 		data = true
 	}
-	if stats && in.Filter != "" {
+	if stats && eitherFiltered(left, right) {
 		return nil, mcpDiffOutput{}, toolError(errors.New("the stats layer diffs the backend's own introspection, which has no items to filter; drop the filter or diff data/schema"))
 	}
 	cfg := s.callConfig()
@@ -572,23 +572,22 @@ func (s *mcpServer) toolDiff(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	defer cancel()
 
 	var out mcpDiffOutput
-	opts := diff.Options{}
 	if data {
-		deltas, err := diffData(cctx, cfg, left, right, func(int) {}, opts)
+		deltas, err := diffRun{cfg: cfg, left: left, right: right}.diffData(cctx, func(int) {})
 		if err != nil {
 			return nil, mcpDiffOutput{}, toolError(err)
 		}
 		out.Data = mcpItemDeltas(deltas)
 	}
 	if stats {
-		changes, err := diffStats(cctx, left, right, in.Section, opts)
+		changes, err := diffRun{left: left, right: right, sections: in.Section}.diffStats(cctx)
 		if err != nil {
 			return nil, mcpDiffOutput{}, toolError(err)
 		}
 		out.Stats = mcpChanges(changes)
 	}
 	if schema {
-		changes, err := diffSchema(cctx, cfg, left, right, sample, opts)
+		changes, err := diffRun{cfg: cfg, left: left, right: right, sample: sample}.diffSchema(cctx)
 		if err != nil {
 			return nil, mcpDiffOutput{}, toolError(err)
 		}

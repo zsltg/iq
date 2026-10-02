@@ -108,70 +108,23 @@ func newDiffCmd(cfg *config) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if patchOut && layerCount(dataMode, statsMode, schemaMode) > 1 {
-				return errors.New("--patch renders one JSON Patch, so it needs a single layer; choose exactly one of --data, --stats, --schema")
+			run := diffRun{
+				cfg:      cfg,
+				left:     left,
+				right:    right,
+				sections: sections,
+				sample:   sample,
+				opts:     diff.Options{SetArrays: setArrays},
 			}
-			if !dataMode && !statsMode && !schemaMode {
-				dataMode = true
+			modes := diffModes{
+				data:   dataMode,
+				stats:  statsMode,
+				schema: schemaMode,
+				json:   jsonOut,
+				yaml:   yamlOut,
+				patch:  patchOut,
 			}
-			// Guarded here rather than in the stats collector so both the human and
-			// the --patch paths are covered: --patch reaches statsTrees directly.
-			if statsMode && (left.filter != "" || right.filter != "") {
-				return errors.New("--stats diffs the backend's own introspection, which has no items to filter; drop the filter or diff --data/--schema")
-			}
-
-			ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
-			defer cancel()
-
-			if patchOut {
-				// The one chosen layer, rendered as an RFC 6902 patch. --data reads
-				// both keyspaces fully, so it carries the same spinner as the
-				// human path; stop it before the error check so the line clears.
-				meter := newProgressMeter(cmd.ErrOrStderr(), cfg.noProgress)
-				raw, err := patchLayer(ctx, cfg, left, right, statsMode, schemaMode, sections, sample, meter.Tick)
-				meter.Stop()
-				if err != nil {
-					return err
-				}
-				return renderPatch(cmd.OutOrStdout(), raw)
-			}
-
-			opts := diff.Options{SetArrays: setArrays}
-			rep := report{dataRun: dataMode, statsRun: statsMode, schemaRun: schemaMode}
-			if dataMode {
-				// --data reads both keyspaces fully with no output until the
-				// report renders, so a spinner fits cleanly. Stop it before the
-				// error check and before render, so the line clears either way.
-				meter := newProgressMeter(cmd.ErrOrStderr(), cfg.noProgress)
-				d, err := diffData(ctx, cfg, left, right, meter.Tick, opts)
-				meter.Stop()
-				if err != nil {
-					return err
-				}
-				rep.Data = d
-			}
-			if statsMode {
-				s, err := diffStats(ctx, left, right, sections, opts)
-				if err != nil {
-					return err
-				}
-				rep.Stats = s
-			}
-			if schemaMode {
-				s, err := diffSchema(ctx, cfg, left, right, sample, opts)
-				if err != nil {
-					return err
-				}
-				rep.Schema = s
-			}
-
-			if err := rep.render(cmd.OutOrStdout(), left, right, jsonOut, yamlOut); err != nil {
-				return err
-			}
-			if !rep.empty() {
-				return errQuietExit
-			}
-			return nil
+			return runDiff(cmd, run, modes)
 		},
 	}
 	c.Flags().BoolVar(&dataMode, "data", false, "diff items key by key (default when no layer is chosen; cross-driver allowed)")
@@ -193,24 +146,120 @@ func newDiffCmd(cfg *config) *cobra.Command {
 	return c
 }
 
+// diffRun holds the inputs that the diff layers share: the config, the two
+// sides, the --section names, the --sample size, and the diff options. The CLI
+// and the MCP tool both build it.
+type diffRun struct {
+	cfg      *config
+	left     sourceSpec
+	right    sourceSpec
+	sections []string
+	sample   int
+	opts     diff.Options
+}
+
+// diffModes holds the layer and output flags of the diff command.
+type diffModes struct {
+	data, stats, schema bool
+	json, yaml, patch   bool
+}
+
+// validate checks the flags of the diff command against the two sides, in
+// order. --patch needs one layer. No layer selects --data. --stats refuses a
+// filter on either side.
+func (m *diffModes) validate(left, right sourceSpec) error {
+	if m.patch && layerCount(m.data, m.stats, m.schema) > 1 {
+		return errors.New("--patch renders one JSON Patch, so it needs a single layer; choose exactly one of --data, --stats, --schema")
+	}
+	if !m.data && !m.stats && !m.schema {
+		m.data = true
+	}
+	// Guarded here rather than in the stats collector so both the human and
+	// the --patch paths are covered: --patch reaches statsTrees directly.
+	if m.stats && eitherFiltered(left, right) {
+		return errors.New("--stats diffs the backend's own introspection, which has no items to filter; drop the filter or diff --data/--schema")
+	}
+	return nil
+}
+
+// runDiff validates the modes, then runs the selected layers under one shared
+// --timeout and renders them. It returns errQuietExit when the sources differ.
+func runDiff(cmd *cobra.Command, run diffRun, modes diffModes) error {
+	if err := modes.validate(run.left, run.right); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(cmd.Context(), run.cfg.timeout)
+	defer cancel()
+
+	if modes.patch {
+		// The one chosen layer, rendered as an RFC 6902 patch. --data reads
+		// both keyspaces fully, so it carries the same spinner as the
+		// human path; stop it before the error check so the line clears.
+		meter := newProgressMeter(cmd.ErrOrStderr(), run.cfg.noProgress)
+		raw, err := run.patchLayer(ctx, modes.stats, modes.schema, meter.Tick)
+		meter.Stop()
+		if err != nil {
+			return err
+		}
+		return renderPatch(cmd.OutOrStdout(), raw)
+	}
+
+	rep := report{dataRun: modes.data, statsRun: modes.stats, schemaRun: modes.schema}
+	if modes.data {
+		// --data reads both keyspaces fully with no output until the
+		// report renders, so a spinner fits cleanly. Stop it before the
+		// error check and before render, so the line clears either way.
+		meter := newProgressMeter(cmd.ErrOrStderr(), run.cfg.noProgress)
+		d, err := run.diffData(ctx, meter.Tick)
+		meter.Stop()
+		if err != nil {
+			return err
+		}
+		rep.Data = d
+	}
+	if modes.stats {
+		s, err := run.diffStats(ctx)
+		if err != nil {
+			return err
+		}
+		rep.Stats = s
+	}
+	if modes.schema {
+		s, err := run.diffSchema(ctx)
+		if err != nil {
+			return err
+		}
+		rep.Schema = s
+	}
+
+	if err := rep.render(cmd.OutOrStdout(), run.left, run.right, modes.json, modes.yaml); err != nil {
+		return err
+	}
+	if !rep.empty() {
+		return errQuietExit
+	}
+	return nil
+}
+
 // diffData reads both sides and diffs them key by key under opts. Each side is
 // its whole keyspace unless its spec carries a filter.
-func diffData(ctx context.Context, cfg *config, left, right sourceSpec, onPage func(int), opts diff.Options) ([]diff.ItemDelta, error) {
-	a, b, err := readBoth(ctx, cfg, left, right, onPage)
+func (r diffRun) diffData(ctx context.Context, onPage func(int)) ([]diff.ItemDelta, error) {
+	a, b, err := r.readBoth(ctx, onPage)
 	if err != nil {
 		return nil, err
 	}
-	return diff.KeyedOpt(a, b, opts), nil
+	return diff.KeyedOpt(a, b, r.opts), nil
 }
 
 // readBoth materializes both sides, ticking onPage per page. It is the shared
 // collector behind the keyed data diff and the --patch data layer.
-func readBoth(ctx context.Context, cfg *config, left, right sourceSpec, onPage func(int)) (a, b map[string]any, err error) {
-	a, err = readAll(ctx, cfg, left, onPage)
+func (r diffRun) readBoth(ctx context.Context, onPage func(int)) (a, b map[string]any, err error) {
+	a, err = readAll(ctx, r.cfg, r.left, onPage)
 	if err != nil {
 		return nil, nil, err
 	}
-	b, err = readAll(ctx, cfg, right, onPage)
+	b, err = readAll(ctx, r.cfg, r.right, onPage)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -257,26 +306,26 @@ func readAll(ctx context.Context, cfg *config, t sourceSpec, onPage func(int)) (
 
 // diffStats runs the same native introspection against both sources and diffs the
 // replies under opts. Both sources must use the same driver.
-func diffStats(ctx context.Context, left, right sourceSpec, sections []string, opts diff.Options) ([]diff.Change, error) {
-	a, b, err := statsTrees(ctx, left, right, sections)
+func (r diffRun) diffStats(ctx context.Context) ([]diff.Change, error) {
+	a, b, err := r.statsTrees(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return diff.TreeOpt(a, b, opts), nil
+	return diff.TreeOpt(a, b, r.opts), nil
 }
 
 // statsTrees collects both sources' native introspection trees, rejecting a
 // cross-driver pair first. It is the shared collector behind the stats diff and
 // the --patch stats layer.
-func statsTrees(ctx context.Context, left, right sourceSpec, sections []string) (a, b map[string]any, err error) {
-	if left.driver != right.driver {
-		return nil, nil, fmt.Errorf("stats diff needs two sources of the same driver; %q is %s and %q is %s", left.handle, left.driver, right.handle, right.driver)
+func (r diffRun) statsTrees(ctx context.Context) (a, b map[string]any, err error) {
+	if r.left.driver != r.right.driver {
+		return nil, nil, fmt.Errorf("stats diff needs two sources of the same driver; %q is %s and %q is %s", r.left.handle, r.left.driver, r.right.handle, r.right.driver)
 	}
-	a, err = collectInspect(ctx, left, sections)
+	a, err = collectInspect(ctx, r.left, r.sections)
 	if err != nil {
 		return nil, nil, err
 	}
-	b, err = collectInspect(ctx, right, sections)
+	b, err = collectInspect(ctx, r.right, r.sections)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -344,22 +393,22 @@ func redisInfoTree(info string) map[string]any {
 // shape, not per-driver introspection, so two backends compare meaningfully. Two
 // backends that genuinely normalize a native type differently still diff — that
 // is the JSON each serves back, and the format tags make the row legible.
-func diffSchema(ctx context.Context, cfg *config, left, right sourceSpec, sample int, opts diff.Options) ([]diff.Change, error) {
-	a, b, err := schemaShapes(ctx, cfg, left, right, sample)
+func (r diffRun) diffSchema(ctx context.Context) ([]diff.Change, error) {
+	a, b, err := r.schemaShapes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return diff.TreeOpt(a, b, opts), nil
+	return diff.TreeOpt(a, b, r.opts), nil
 }
 
 // schemaShapes samples and infers both sources' comparable shapes. It is the
 // shared collector behind the schema diff and the --patch schema layer.
-func schemaShapes(ctx context.Context, cfg *config, left, right sourceSpec, sample int) (a, b map[string]any, err error) {
-	a, err = sampleShape(ctx, cfg, left, sample)
+func (r diffRun) schemaShapes(ctx context.Context) (a, b map[string]any, err error) {
+	a, err = sampleShape(ctx, r.cfg, r.left, r.sample)
 	if err != nil {
 		return nil, nil, err
 	}
-	b, err = sampleShape(ctx, cfg, right, sample)
+	b, err = sampleShape(ctx, r.cfg, r.right, r.sample)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -381,16 +430,16 @@ func layerCount(dataMode, statsMode, schemaMode bool) int {
 // as an RFC 6902 JSON Patch. With neither statsMode nor schemaMode it is the data
 // layer (the default), so onPage ticks the read spinner; the stats and schema
 // layers ignore onPage.
-func patchLayer(ctx context.Context, cfg *config, left, right sourceSpec, statsMode, schemaMode bool, sections []string, sample int, onPage func(int)) (json.RawMessage, error) {
+func (r diffRun) patchLayer(ctx context.Context, statsMode, schemaMode bool, onPage func(int)) (json.RawMessage, error) {
 	var a, b map[string]any
 	var err error
 	switch {
 	case statsMode:
-		a, b, err = statsTrees(ctx, left, right, sections)
+		a, b, err = r.statsTrees(ctx)
 	case schemaMode:
-		a, b, err = schemaShapes(ctx, cfg, left, right, sample)
+		a, b, err = r.schemaShapes(ctx)
 	default:
-		a, b, err = readBoth(ctx, cfg, left, right, onPage)
+		a, b, err = r.readBoth(ctx, onPage)
 	}
 	if err != nil {
 		return nil, err

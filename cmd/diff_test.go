@@ -190,9 +190,10 @@ func TestResolveDiffTargetUnknown(t *testing.T) {
 
 func TestDiffStatsRejectsCrossDriver(t *testing.T) {
 	// The scheme check happens before any store is opened, so no connection is made.
-	_, err := diffStats(context.Background(),
-		sourceSpec{handle: "a", driver: "redis"},
-		sourceSpec{handle: "b", driver: "mongo"}, nil, diff.Options{})
+	_, err := diffRun{
+		left:  sourceSpec{handle: "a", driver: "redis"},
+		right: sourceSpec{handle: "b", driver: "mongo"},
+	}.diffStats(context.Background())
 	require.ErrorContains(t, err, "same driver")
 }
 
@@ -1017,7 +1018,7 @@ func TestPatchLayerCanceledContext(t *testing.T) {
 			// The canceled context fails each arm's collector before any dial; an
 			// arm that drops the context would reach the network and fail
 			// differently.
-			_, err := patchLayer(ctx, &config{}, left, right, tt.statsMode, tt.schemaMode, nil, 0, nil)
+			_, err := diffRun{cfg: &config{}, left: left, right: right}.patchLayer(ctx, tt.statsMode, tt.schemaMode, nil)
 			require.ErrorIs(t, err, context.Canceled)
 		})
 	}
@@ -1152,7 +1153,7 @@ func TestDiffStatsCanceledContext(t *testing.T) {
 	// The already-canceled context fails the collectors before any dial; a
 	// collector that drops the context would reach the network and fail
 	// differently.
-	_, err = diffStats(ctx, left, right, nil, diff.Options{})
+	_, err = diffRun{left: left, right: right}.diffStats(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 }
 

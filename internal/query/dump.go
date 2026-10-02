@@ -2,6 +2,7 @@ package query
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -94,7 +95,13 @@ func decodeLine(raw string, plain bool) (Record, error) {
 		}
 		return Record{Value: v}, nil
 	}
-	dec := json.NewDecoder(strings.NewReader(raw))
+	return DecodeTypedRecord([]byte(raw))
+}
+
+// DecodeTypedRecord decodes one {key,type,value} record of a typed dump, with exact
+// integers and the sign of a negative zero kept.
+func DecodeTypedRecord(raw []byte) (Record, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var env dumpRecord
 	if err := dec.Decode(&env); err != nil {

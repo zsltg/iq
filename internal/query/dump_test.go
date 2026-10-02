@@ -590,3 +590,50 @@ func TestJSONSourceReadsAnArrayAfterLeadingWhiteSpace(t *testing.T) {
 		{Key: "b", Type: "string", Value: "y"},
 	}, got)
 }
+
+// TestDecodeTypedRecord pins the full Record contract of the typed decode: a valid
+// record keeps its key, type, and exact-number value, with the sign of a negative zero.
+// A non-object fails with the {key,type,value} hint and stays unwrappable to the
+// underlying decode error. A keyless record fails with the no-key hint.
+func TestDecodeTypedRecord(t *testing.T) {
+	const hint = "expected a {key,type,value} record (use --key-field for foreign JSON)"
+	tests := []struct {
+		name    string
+		raw     string
+		want    query.Record
+		wantErr string
+	}{
+		{
+			name: "valid record",
+			raw:  `{"key":"a","type":"document","value":{"n":1}}`,
+			want: query.Record{Key: "a", Type: "document", Value: map[string]any{"n": 1}},
+		},
+		{
+			name: "negative zero keeps its sign",
+			raw:  `{"key":"a","type":"document","value":{"n":-0}}`,
+			want: query.Record{Key: "a", Type: "document", Value: map[string]any{"n": math.Copysign(0, -1)}},
+		},
+		{name: "non-object", raw: `42`, wantErr: hint},
+		{name: "no key", raw: `{"type":"x","value":1}`, wantErr: "record has no key"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec, err := query.DecodeTypedRecord([]byte(tt.raw))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				if tt.name == "non-object" {
+					var ute *json.UnmarshalTypeError
+					require.ErrorAs(t, err, &ute, "the envelope-decode error must stay unwrappable")
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, rec)
+			if tt.name == "negative zero keeps its sign" {
+				n, ok := rec.Value.(map[string]any)["n"].(float64)
+				require.True(t, ok)
+				require.True(t, math.Signbit(n))
+			}
+		})
+	}
+}
