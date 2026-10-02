@@ -125,7 +125,7 @@ func (s infoStore) Query(ctx context.Context, args []string) (any, error) {
 
 // TestCollectRedisInfo pins the reply tree and the error path of the INFO read.
 func TestCollectRedisInfo(t *testing.T) {
-	spec := sourceSpec{endpoint: endpoint{handle: "r", url: "redis://h:6379/0"}}
+	spec := sourceSpec{handle: "r", url: "redis://h:6379/0"}
 
 	t.Run("the reply becomes a section tree", func(t *testing.T) {
 		st := infoStore{fakeStore: &fakeStore{}, reply: "# Server\r\nredis_version:7.0\r\n"}
