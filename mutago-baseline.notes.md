@@ -738,3 +738,7 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 - 3647f8ebf312 drivers/file/mongo.go:139 expression/error-guard — new in v2.10.16. The Discard(1) guard in startsArray, the same class as a39ce3ac5c75.
 - 8d8c1c16ad5a drivers/file/neo4j.go:56 expression/error-guard — replaces 3b80a9a0b928 (neo4j.go:56 expression/error-guard). The same Token guard as a4b4e3c598fa, probed the same way.
 - eb55263f9e7b drivers/file/neo4j.go:110 statement/return — replaces cef35d51bf2f (neo4j.go:110 statement/return). nodeKind is iota 0, so `return 0` is the same value.
+- a174143d50fd internal/parquetout/writer.go:366 numbers/decrementer — widenSigned returns 0 or -1 with ok=false, and both callers read the number only when ok is true.
+- cc6327719e12 internal/pushdown/pushdown.go:638 branch/case — the mutant changes only the indentation of `return false`, so the compiled code is the same.
+- 21f581b8a3e8 internal/rawpred/rawpred.go:305 branch/case — scalarType returns the type with ok=false, and eqFound reads the type only when ok is true.
+- 28263c0cb664 internal/rawpred/rawpred.go:305 statement/return — same as 21f581b8a3e8, `return 0, false` drops a type that no caller reads.
