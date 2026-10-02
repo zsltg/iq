@@ -42,16 +42,27 @@ func TestCompileUserDefinitionShadowsBuiltin(t *testing.T) {
 		{"shadow beside an unrelated definition", `def f: .; def select(f): .; .[] | select(.a == 1)`, nil},
 		{"has/1 defined in a parenthesis before a not", `.[] | select((.a | def has(k): true; has("b")) | not)`, nil},
 		{"select/1 defined in a middle stage", `.[] | def select(f): .; select(.a == 1) | .b`, nil},
-		{
-			"definition after the last select stage still pushes",
-			`.[] | select(.a == 1) | .b, def select(f): .; .c`,
-			predicate.Eq{Path: []string{"a"}, Value: 1.0},
-		},
-		{
-			"definition in a later operand of a stage still pushes",
-			`.[] | select(.a == 1) | (.b | def select(f): .; select(.c))`,
-			predicate.Eq{Path: []string{"a"}, Value: 1.0},
-		},
+		{"select/1 defined after the last select stage", `.[] | select(.a == 1) | .b, def select(f): .; .c`, nil},
+		{"select/1 defined in a later operand of a stage", `.[] | select(.a == 1) | (.b | def select(f): .; select(.c))`, nil},
+		{"has/1 defined before a trailing not", `.[] | select(.a | def has(k): true; has("b") | not)`, nil},
+		{"not/0 defined before a trailing not", `.[] | select(.a | def not: true; has("b") | not)`, nil},
+		{"any/1 defined before a trailing not", `.[] | select(.a | def any(f): true; any(.b == 1) | not)`, nil},
+		{"has/1 defined inside an object value", `.[] | select(.a == 1) | {x: (def has(k): true; .b)}`, nil},
+		{"select/1 defined inside a reduce", `.[] | select(.a == 1) | reduce .b[] as $i (0; def select(f): .; . + $i)`, nil},
+		{"test/1 defined inside a call argument", `.[] | select(.a == 1) | map(def test(re): true; .b)`, nil},
+		{"length/0 defined inside an if branch", `.[] | select(.a == 1) | if .b then (def length: 0; .c) else . end`, nil},
+		{"has/1 defined inside an array", `.[] | select(.a == 1) | [def has(k): true; .b]`, nil},
+		{"has/1 defined inside a try body", `.[] | select(.a == 1) | try (def has(k): true; .b)`, nil},
+		{"has/1 defined inside a catch body", `.[] | select(.a == 1) | try .b catch (def has(k): true; .c)`, nil},
+		{"has/1 defined inside a foreach update", `.[] | select(.a == 1) | foreach .b[] as $i (0; def has(k): true; . + $i)`, nil},
+		{"has/1 defined inside a label", `.[] | select(.a == 1) | label $out | (def has(k): true; .b)`, nil},
+		{"has/1 defined inside a string interpolation", `.[] | select(.a == 1) | "x\(def has(k): true; .b)"`, nil},
+		{"has/1 defined inside a slice bound", `.[] | select(.a == 1) | .b[(def has(k): true; 1):]`, nil},
+		{"has/1 defined inside an elif branch", `.[] | select(.a == 1) | if .b then 1 elif .c then (def has(k): true; 2) else 3 end`, nil},
+		{"has/1 defined inside an object key query", `.[] | select(.a == 1) | {(def has(k): true; "x"): 1}`, nil},
+		{"has/1 defined inside a pattern key query", `.[] | select(.a == 1) | . as {(def has(k): true; "x"): $v} | .b`, nil},
+		{"has/1 defined inside a negated term", `.[] | select(.a == 1) | -(def has(k): true; 1)`, nil},
+		{"has/1 defined in an and operand", `.[] | select(.a == 1 and (def has(k): true; .b))`, nil},
 		{
 			"unrelated name still pushes at the top",
 			`def f: .; .[] | select(.a == 1)`,
@@ -94,9 +105,8 @@ func TestCompileUserDefinitionShadowsBuiltin(t *testing.T) {
 }
 
 // Conjuncts feeds the explain breakdown, so it must agree with Compile: a
-// shadowed select yields no breakdown, a shadowed conjunct builtin is reported
-// as not pushed, and a definition that shadows nothing leaves the conjunct
-// pushed.
+// shadowing definition anywhere yields no breakdown, and a definition that
+// shadows nothing leaves the conjunct pushed.
 func TestConjunctsUserDefinitionShadowsBuiltin(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -105,11 +115,12 @@ func TestConjunctsUserDefinitionShadowsBuiltin(t *testing.T) {
 		wantOK bool
 	}{
 		{"select/1 defined at the top", `def select(f): .; .[] | select(.a == 1)`, nil, false},
+		{"has/1 defined in the select", `.[] | select(def has(k): true; has("a"))`, nil, false},
 		{
-			"has/1 defined in the select",
-			`.[] | select(def has(k): true; has("a"))`,
-			[]pushdown.Conjunct{{Expr: `def has(k): true; has("a")`, Reason: "not a pushable comparison"}},
-			true,
+			"has/1 defined in an and conjunct",
+			`.[] | select(def has(k): true; has("a") and .b == 1)`,
+			nil,
+			false,
 		},
 		{
 			"unrelated name still pushes",
