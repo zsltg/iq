@@ -127,6 +127,14 @@ func TestAppendValNullAndSuccess(t *testing.T) {
 }
 
 func TestToInt64(t *testing.T) {
+	// ^uint(0) is the target's largest uint: it overflows int64 on a 64-bit target
+	// and fits on a 32-bit one.
+	maxUint := ^uint(0)
+	maxUintFits := uint64(maxUint) <= math.MaxInt64
+	var maxUintInt64 int64
+	if maxUintFits {
+		maxUintInt64 = int64(maxUint)
+	}
 	tests := []struct {
 		name string
 		v    any
@@ -141,7 +149,7 @@ func TestToInt64(t *testing.T) {
 		{"int64", int64(9), 9, true},
 		{"min int64", int64(math.MinInt64), math.MinInt64, true},
 		{"uint", uint(4), 4, true},
-		{"uint overflow", uint(math.MaxUint64), 0, false},
+		{"uint max", maxUint, maxUintInt64, maxUintFits},
 		{"uint8", uint8(5), 5, true},
 		{"uint16", uint16(6), 6, true},
 		{"uint32", uint32(7), 7, true},
