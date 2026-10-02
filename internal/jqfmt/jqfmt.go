@@ -134,16 +134,7 @@ func (p *printer) query(q *gojq.Query) {
 func (p *printer) composed(q *gojq.Query) {
 	p.query(q.Left)
 	if q.Op == gojq.OpPipe {
-		for i, pat := range q.Patterns {
-			p.space()
-			if i == 0 {
-				p.tok(roleKeyword, "as")
-			} else {
-				p.tok(roleOp, "?//")
-			}
-			p.space()
-			p.tok(rolePath, pat.String())
-		}
+		p.bindings(q.Patterns)
 		p.nl()
 		p.tok(roleOp, "|")
 		p.space()
@@ -160,6 +151,21 @@ func (p *printer) composed(q *gojq.Query) {
 	p.tok(roleOp, q.Op.String())
 	p.space()
 	p.query(q.Right)
+}
+
+// bindings prints the `as <pat>` binding that rides on a pipe, with each
+// alternative pattern after `?//`.
+func (p *printer) bindings(pats []*gojq.Pattern) {
+	for i, pat := range pats {
+		p.space()
+		if i == 0 {
+			p.tok(roleKeyword, "as")
+		} else {
+			p.tok(roleOp, "?//")
+		}
+		p.space()
+		p.tok(rolePath, pat.String())
+	}
 }
 
 // funcDef prints `def name(args): body;`, breaking the body when it is complex.
@@ -256,28 +262,7 @@ func (p *printer) funcCall(f *gojq.Func) {
 	if len(f.Args) == 0 {
 		return
 	}
-	p.tok(rolePunc, "(")
-	brk := anyQueryBreaks(f.Args)
-	if brk {
-		p.indent++
-	}
-	for i, a := range f.Args {
-		if i > 0 {
-			p.tok(rolePunc, ";")
-			if !brk {
-				p.space()
-			}
-		}
-		if brk {
-			p.nl()
-		}
-		p.query(a)
-	}
-	if brk {
-		p.indent--
-		p.nl()
-	}
-	p.tok(rolePunc, ")")
+	p.parenClauses(f.Args...)
 }
 
 // object prints an object literal. An empty object stays `{}`; otherwise every
@@ -463,16 +448,7 @@ func (p *printer) suffixes(t *gojq.Term) {
 // is exactly that shape. A one-argument source("name") or a non-literal sub-filter
 // is left to the ordinary path.
 func (p *printer) sourceCall(t *gojq.Term) (string, bool) {
-	if t.Type != gojq.TermTypeFunc || t.Func == nil || t.Func.Name != "source" {
-		return "", false
-	}
-	if len(t.Func.Args) != 2 {
-		return "", false
-	}
-	if _, ok := stringLiteral(t.Func.Args[0]); !ok {
-		return "", false
-	}
-	sub, ok := stringLiteral(t.Func.Args[1])
+	name, sub, ok := sourceArgs(t)
 	if !ok {
 		return "", false
 	}
@@ -489,7 +465,7 @@ func (p *printer) sourceCall(t *gojq.Term) (string, bool) {
 	q.colored = p.colored
 	q.tok(roleFunc, "source")
 	q.tok(rolePunc, "(")
-	q.tok(roleString, t.Func.Args[0].String())
+	q.tok(roleString, name.String())
 	q.tok(rolePunc, ";")
 	q.b.WriteString("\n")
 	q.b.WriteString(sub)
@@ -498,14 +474,41 @@ func (p *printer) sourceCall(t *gojq.Term) (string, bool) {
 	return q.b.String(), true
 }
 
+// sourceArgs returns the name argument and the sub-filter text of a term that is
+// exactly a `source("name"; "<sub>")` call with two string literals, or ok=false
+// otherwise.
+func sourceArgs(t *gojq.Term) (name *gojq.Query, sub string, ok bool) {
+	if t.Type != gojq.TermTypeFunc || t.Func == nil {
+		return nil, "", false
+	}
+	if t.Func.Name != "source" || len(t.Func.Args) != 2 {
+		return nil, "", false
+	}
+	name = t.Func.Args[0]
+	if _, ok := stringLiteral(name); !ok {
+		return nil, "", false
+	}
+	sub, ok = stringLiteral(t.Func.Args[1])
+	if !ok {
+		return nil, "", false
+	}
+	return name, sub, true
+}
+
 // stringLiteral returns the value of a query that is exactly a plain (non-
 // interpolated) string literal, the form a static source() argument takes.
 func stringLiteral(q *gojq.Query) (string, bool) {
-	if q.Op != 0 || q.Term == nil || len(q.FuncDefs) != 0 {
+	if q.Op != 0 || q.Term == nil {
+		return "", false
+	}
+	if len(q.FuncDefs) != 0 {
 		return "", false
 	}
 	t := q.Term
-	if t.Type != gojq.TermTypeString || len(t.SuffixList) != 0 || t.Str == nil || t.Str.Queries != nil {
+	if t.Type != gojq.TermTypeString || len(t.SuffixList) != 0 {
+		return "", false
+	}
+	if t.Str == nil || t.Str.Queries != nil {
 		return "", false
 	}
 	return t.Str.Str, true
@@ -520,31 +523,58 @@ func termNeedsBreak(t *gojq.Term) bool {
 	case gojq.TermTypeObject:
 		return objectNeedsBreak(t.Object)
 	case gojq.TermTypeArray:
-		return t.Array.Query != nil && queryNeedsBreak(t.Array.Query)
+		return optBreaks(t.Array.Query)
 	case gojq.TermTypeQuery:
 		return queryNeedsBreak(t.Query)
 	case gojq.TermTypeFunc:
 		return anyQueryBreaks(t.Func.Args)
 	case gojq.TermTypeUnary:
 		return termNeedsBreak(t.Unary.Term)
-	case gojq.TermTypeIf:
-		// An elif or an else clause breaks the form on its own, whatever those clauses
-		// hold, so their contents never need asking: only a bare if/then can stay inline,
-		// and only when neither of its two parts breaks.
-		if len(t.If.Elif) > 0 || t.If.Else != nil {
-			return true
-		}
-		return queryNeedsBreak(t.If.Cond) || queryNeedsBreak(t.If.Then)
-	case gojq.TermTypeTry:
-		return queryNeedsBreak(t.Try.Body) || (t.Try.Catch != nil && queryNeedsBreak(t.Try.Catch))
-	case gojq.TermTypeReduce:
-		return queryNeedsBreak(t.Reduce.Start) || queryNeedsBreak(t.Reduce.Update)
-	case gojq.TermTypeForeach:
-		return queryNeedsBreak(t.Foreach.Start) || queryNeedsBreak(t.Foreach.Update) ||
-			(t.Foreach.Extract != nil && queryNeedsBreak(t.Foreach.Extract))
+	case gojq.TermTypeIf, gojq.TermTypeTry, gojq.TermTypeReduce, gojq.TermTypeForeach:
+		return controlNeedsBreak(t)
 	default:
 		return false
 	}
+}
+
+// controlNeedsBreak reports whether an if, try, reduce, or foreach term breaks:
+// when one of its clauses breaks, or for an if, when it has an elif or an else.
+func controlNeedsBreak(t *gojq.Term) bool {
+	switch t.Type {
+	case gojq.TermTypeIf:
+		return ifNeedsBreak(t.If)
+	case gojq.TermTypeTry:
+		return queryNeedsBreak(t.Try.Body) || optBreaks(t.Try.Catch)
+	case gojq.TermTypeReduce:
+		return queryNeedsBreak(t.Reduce.Start) || queryNeedsBreak(t.Reduce.Update)
+	case gojq.TermTypeForeach:
+		if queryNeedsBreak(t.Foreach.Start) || queryNeedsBreak(t.Foreach.Update) {
+			return true
+		}
+		return optBreaks(t.Foreach.Extract)
+	default:
+		return false
+	}
+}
+
+// ifNeedsBreak reports whether an if term breaks.
+func ifNeedsBreak(e *gojq.If) bool {
+	// An elif or an else clause breaks the form on its own, whatever those clauses
+	// hold, so their contents never need asking: only a bare if/then can stay inline,
+	// and only when neither of its two parts breaks.
+	if len(e.Elif) > 0 || e.Else != nil {
+		return true
+	}
+	return queryNeedsBreak(e.Cond) || queryNeedsBreak(e.Then)
+}
+
+// optBreaks reports whether an optional query needs breaking. A nil query never
+// breaks.
+func optBreaks(q *gojq.Query) bool {
+	if q == nil {
+		return false
+	}
+	return queryNeedsBreak(q)
 }
 
 // queryNeedsBreak reports whether a query would span multiple lines: a pipe always
@@ -573,10 +603,10 @@ func objectNeedsBreak(o *gojq.Object) bool {
 		return true
 	}
 	for _, kv := range o.KeyVals {
-		if kv.Val != nil && queryNeedsBreak(kv.Val) {
+		if optBreaks(kv.Val) {
 			return true
 		}
-		if kv.KeyQuery != nil && queryNeedsBreak(kv.KeyQuery) {
+		if optBreaks(kv.KeyQuery) {
 			return true
 		}
 	}
@@ -659,16 +689,7 @@ func stageText(q *gojq.Query, pats []*gojq.Pattern, colored bool) string {
 	// nothing, so there is no separate fast path to keep in sync.
 	p := &printer{colored: colored}
 	p.query(q)
-	for i, pat := range pats {
-		p.space()
-		if i == 0 {
-			p.tok(roleKeyword, "as")
-		} else {
-			p.tok(roleOp, "?//")
-		}
-		p.space()
-		p.tok(rolePath, pat.String())
-	}
+	p.bindings(pats)
 	return p.b.String()
 }
 
@@ -765,8 +786,58 @@ func describeObject(o *gojq.Object) string {
 	return "build an object (" + strings.Join(keys, ", ") + ")"
 }
 
+// argNote describes a builtin whose note renders its arguments inline.
+type argNote struct {
+	args   int    // the number of arguments the note renders
+	orMore bool   // true when more arguments than args are accepted
+	format string // a fmt format with one %s for each rendered argument
+}
+
+// argNotes maps each argument-taking builtin to its note. describeFunc consults it
+// before builtinDesc. The formats are constants: the user text goes in only as
+// %s arguments.
+var argNotes = map[string]argNote{
+	"select":     {args: 1, format: "keep inputs where %s"},
+	"map":        {args: 1, format: "apply %s to each element"},
+	"map_values": {args: 1, format: "map each value with %s"},
+	"sort_by":    {args: 1, format: "sort by %s"},
+	"group_by":   {args: 1, format: "group by %s"},
+	"unique_by":  {args: 1, format: "unique by %s"},
+	"min_by":     {args: 1, format: "minimum by %s"},
+	"max_by":     {args: 1, format: "maximum by %s"},
+	"has":        {args: 1, format: "has key %s"},
+	"contains":   {args: 1, format: "contains %s"},
+	"del":        {args: 1, format: "delete %s"},
+	"limit":      {args: 2, format: "first %s of %s"},
+	"split":      {args: 1, orMore: true, format: "split on %s"},
+	"join":       {args: 1, format: "join with %s"},
+	"test":       {args: 1, orMore: true, format: "regex test %s"},
+	"match":      {args: 1, orMore: true, format: "regex match %s"},
+	"startswith": {args: 1, format: "starts with %s"},
+	"endswith":   {args: 1, format: "ends with %s"},
+	"ltrimstr":   {args: 1, format: "trim prefix %s"},
+	"rtrimstr":   {args: 1, format: "trim suffix %s"},
+}
+
+// accepts reports whether a call with count arguments gets this note.
+func (n argNote) accepts(count int) bool {
+	if n.orMore {
+		return count >= n.args
+	}
+	return count == n.args
+}
+
+// render fills the note with the first n.args arguments, each on one line.
+func (n argNote) render(args []*gojq.Query) string {
+	parts := make([]any, n.args)
+	for i, a := range args[:n.args] {
+		parts[i] = inlineArg(a)
+	}
+	return fmt.Sprintf(n.format, parts...)
+}
+
 // builtinDesc maps a jq builtin to a static description. Builtins whose note needs
-// an argument rendered are handled in describeFunc before this table is consulted.
+// an argument rendered are in argNotes, which describeFunc consults first.
 var builtinDesc = map[string]string{
 	"length":         "length",
 	"keys":           "sorted keys",
@@ -791,87 +862,8 @@ var builtinDesc = map[string]string{
 // note renders the argument inline), then the static table, then a safe "call
 // <name>" fallback that is never misleading.
 func describeFunc(f *gojq.Func) string {
-	switch f.Name {
-	case "select":
-		if len(f.Args) == 1 {
-			return "keep inputs where " + inlineArg(f.Args[0])
-		}
-	case "map":
-		if len(f.Args) == 1 {
-			return "apply " + inlineArg(f.Args[0]) + " to each element"
-		}
-	case "map_values":
-		if len(f.Args) == 1 {
-			return "map each value with " + inlineArg(f.Args[0])
-		}
-	case "sort_by":
-		if len(f.Args) == 1 {
-			return "sort by " + inlineArg(f.Args[0])
-		}
-	case "group_by":
-		if len(f.Args) == 1 {
-			return "group by " + inlineArg(f.Args[0])
-		}
-	case "unique_by":
-		if len(f.Args) == 1 {
-			return "unique by " + inlineArg(f.Args[0])
-		}
-	case "min_by":
-		if len(f.Args) == 1 {
-			return "minimum by " + inlineArg(f.Args[0])
-		}
-	case "max_by":
-		if len(f.Args) == 1 {
-			return "maximum by " + inlineArg(f.Args[0])
-		}
-	case "has":
-		if len(f.Args) == 1 {
-			return "has key " + inlineArg(f.Args[0])
-		}
-	case "contains":
-		if len(f.Args) == 1 {
-			return "contains " + inlineArg(f.Args[0])
-		}
-	case "del":
-		if len(f.Args) == 1 {
-			return "delete " + inlineArg(f.Args[0])
-		}
-	case "limit":
-		if len(f.Args) == 2 {
-			return "first " + inlineArg(f.Args[0]) + " of " + inlineArg(f.Args[1])
-		}
-	case "split":
-		if len(f.Args) >= 1 {
-			return "split on " + inlineArg(f.Args[0])
-		}
-	case "join":
-		if len(f.Args) == 1 {
-			return "join with " + inlineArg(f.Args[0])
-		}
-	case "test":
-		if len(f.Args) >= 1 {
-			return "regex test " + inlineArg(f.Args[0])
-		}
-	case "match":
-		if len(f.Args) >= 1 {
-			return "regex match " + inlineArg(f.Args[0])
-		}
-	case "startswith":
-		if len(f.Args) == 1 {
-			return "starts with " + inlineArg(f.Args[0])
-		}
-	case "endswith":
-		if len(f.Args) == 1 {
-			return "ends with " + inlineArg(f.Args[0])
-		}
-	case "ltrimstr":
-		if len(f.Args) == 1 {
-			return "trim prefix " + inlineArg(f.Args[0])
-		}
-	case "rtrimstr":
-		if len(f.Args) == 1 {
-			return "trim suffix " + inlineArg(f.Args[0])
-		}
+	if n, ok := argNotes[f.Name]; ok && n.accepts(len(f.Args)) {
+		return n.render(f.Args)
 	}
 	if d, ok := builtinDesc[f.Name]; ok {
 		return d
