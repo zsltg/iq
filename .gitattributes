@@ -3,3 +3,6 @@
 * text=auto eol=lf
 # Upstream license text kept byte-exact.
 scripts/demo/demo-font.LICENSE -text
+# The demo SVG is generated and its diff lines are too long for the diff reader
+# of the mutation gate. Git reports it as one "Binary files differ" line instead.
+docs/docs/assets/demo.svg -diff
