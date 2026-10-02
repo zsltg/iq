@@ -2,6 +2,7 @@ package file
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -123,10 +124,18 @@ func TestCacheEntries(t *testing.T) {
 		require.Len(t, des, 1)
 		require.Equal(t, "a.cbor", des[0].Name())
 	})
-	t.Run("a path that is a file is a read error", func(t *testing.T) {
+	t.Run("a path that is a file follows the read-dir error of the os", func(t *testing.T) {
 		file := filepath.Join(t.TempDir(), "f")
 		require.NoError(t, os.WriteFile(file, nil, 0o600))
-		_, err := cacheEntries(file)
+		// Unix reports ENOTDIR, a real read error. Windows reports path not found,
+		// which matches fs.ErrNotExist and so means no cache.
+		_, osErr := os.ReadDir(file)
+		des, err := cacheEntries(file)
+		if osErr == nil || errors.Is(osErr, fs.ErrNotExist) {
+			require.NoError(t, err)
+			require.Empty(t, des)
+			return
+		}
 		require.ErrorContains(t, err, "read cache dir")
 		requireWrapped(t, err)
 	})
