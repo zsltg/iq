@@ -742,3 +742,7 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 - cc6327719e12 internal/pushdown/pushdown.go:638 branch/case — the mutant changes only the indentation of `return false`, so the compiled code is the same.
 - 21f581b8a3e8 internal/rawpred/rawpred.go:305 branch/case — scalarType returns the type with ok=false, and eqFound reads the type only when ok is true.
 - 28263c0cb664 internal/rawpred/rawpred.go:305 statement/return — same as 21f581b8a3e8, `return 0, false` drops a type that no caller reads.
+
+## drivers/hbase probe fallback (accepted 2026-10-02, fix/hbase-open-deadline branch)
+
+- 5dae232f8b73 drivers/hbase/hbase.go:184 numbers/incrementer. The probe goroutine sends exactly one value, so a buffer of 1 or 2 never blocks it. Applied by hand: the hbase package suite passes. The decrementer twin (buffer 0) is killed by TestProbeFallbackGoroutineEndsAfterTheContext.

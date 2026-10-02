@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,6 +41,7 @@ func TestProbe(t *testing.T) {
 		ctx     func(t *testing.T) context.Context
 		wantErr error
 		within  time.Duration
+		noCall  bool
 	}{
 		{
 			name:  "the cluster answers",
@@ -57,6 +59,7 @@ func TestProbe(t *testing.T) {
 			admin:   func(chan struct{}) *fakeAdmin { return &fakeAdmin{} },
 			ctx:     func(*testing.T) context.Context { return cancelled },
 			wantErr: context.Canceled,
+			noCall:  true,
 		},
 		{
 			name:  "the cluster never answers",
@@ -74,7 +77,8 @@ func TestProbe(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			block := make(chan struct{})
 			t.Cleanup(func() { close(block) })
-			st := newFakeStore(newFakeClient(), tt.admin(block), "", typeMap{}, ctAuto)
+			admin := tt.admin(block)
+			st := newFakeStore(newFakeClient(), admin, "", typeMap{}, ctAuto)
 			ctx := tt.ctx(t)
 
 			start := time.Now()
@@ -88,6 +92,10 @@ func TestProbe(t *testing.T) {
 			if tt.within > 0 {
 				require.Less(t, time.Since(start), tt.within)
 			}
+			if tt.noCall {
+				// The call runs in a goroutine, so watch for a late start.
+				require.Never(t, func() bool { return admin.clusterCalls.Load() > 0 }, 50*time.Millisecond, time.Millisecond)
+			}
 		})
 	}
 }
@@ -100,12 +108,64 @@ func TestGohbaseAdminClientSendsRPCs(t *testing.T) {
 	require.True(t, ok)
 }
 
+// lateEndContext reports no error until the select in probeCall reads Done. Done waits
+// until the fake has answered, so the answer and the ended context are both ready when
+// the select runs.
+type lateEndContext struct {
+	context.Context
+	admin *fakeAdmin
+	ended atomic.Bool
+}
+
+func (c *lateEndContext) Done() <-chan struct{} {
+	for c.admin.clusterCalls.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(5 * time.Millisecond)
+	c.ended.Store(true)
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+
+func (c *lateEndContext) Err() error {
+	if c.ended.Load() {
+		return context.Canceled
+	}
+	return nil
+}
+
 func TestProbeFallbackEndedContextWinsOverResult(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	admin := &fakeAdmin{clusterCancel: cancel}
+	// With the answer and the ended context both ready, select picks one at random.
+	// Repeat so that a missing check fails with near certainty.
+	for range 50 {
+		admin := &fakeAdmin{}
+		st := newFakeStore(newFakeClient(), admin, "", typeMap{}, ctAuto)
+
+		err := st.probe(&lateEndContext{Context: context.Background(), admin: admin})
+
+		require.ErrorIs(t, err, context.Canceled)
+	}
+}
+
+func TestProbeFallbackGoroutineEndsAfterTheContext(t *testing.T) {
+	block := make(chan struct{})
+	admin := &fakeAdmin{clusterBlock: block}
 	st := newFakeStore(newFakeClient(), admin, "", typeMap{}, ctAuto)
-	require.ErrorIs(t, st.probe(ctx), context.Canceled)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	t.Cleanup(cancel)
+	before := runtime.NumGoroutine()
+
+	require.ErrorIs(t, st.probe(ctx), context.DeadlineExceeded)
+	close(block)
+
+	// The call has to send its result without a reader, or its goroutine stays. Poll
+	// on this goroutine, because Eventually runs its condition on another one.
+	deadline := time.Now().Add(5 * time.Second)
+	for runtime.NumGoroutine() > before && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	require.LessOrEqual(t, runtime.NumGoroutine(), before)
 }
 
 func TestProbeRPC(t *testing.T) {
@@ -176,4 +236,16 @@ func TestProbeRPC(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProbeRPCDoesNotSendWithAnEndedContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	admin := &fakeRPCAdmin{send: func(hrpc.Call) (proto.Message, error) { return &pb.GetClusterStatusResponse{}, nil }}
+	st := newFakeStore(newFakeClient(), admin, "", typeMap{}, ctAuto)
+
+	err := st.probe(ctx)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Zero(t, admin.sendCalls.Load())
 }

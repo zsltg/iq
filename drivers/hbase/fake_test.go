@@ -5,6 +5,7 @@ import (
 	"io"
 	"maps"
 	"sort"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -276,24 +277,22 @@ type fakeAdmin struct {
 	clusterErr error
 	// clusterBlock, when set, holds ClusterStatus until the channel closes.
 	clusterBlock chan struct{}
-	// clusterCancel, when set, runs inside ClusterStatus before it returns.
-	clusterCancel func()
-	disabled      []string
-	deleted       []string
-	listErr       error
-	disableErr    error
-	deleteErr     error
-	listCalls     []rpcCall
-	disableCalls  []rpcCall
-	deleteCalls   []rpcCall
+	// clusterCalls counts the ClusterStatus calls.
+	clusterCalls atomic.Int32
+	disabled     []string
+	deleted      []string
+	listErr      error
+	disableErr   error
+	deleteErr    error
+	listCalls    []rpcCall
+	disableCalls []rpcCall
+	deleteCalls  []rpcCall
 }
 
 func (a *fakeAdmin) ClusterStatus() (*pb.ClusterStatus, error) {
+	a.clusterCalls.Add(1)
 	if a.clusterBlock != nil {
 		<-a.clusterBlock
-	}
-	if a.clusterCancel != nil {
-		a.clusterCancel()
 	}
 	return &pb.ClusterStatus{}, a.clusterErr
 }
@@ -303,9 +302,14 @@ func (a *fakeAdmin) ClusterStatus() (*pb.ClusterStatus, error) {
 type fakeRPCAdmin struct {
 	fakeAdmin
 	send func(hrpc.Call) (proto.Message, error)
+	// sendCalls counts the SendRPC calls.
+	sendCalls atomic.Int32
 }
 
-func (a *fakeRPCAdmin) SendRPC(c hrpc.Call) (proto.Message, error) { return a.send(c) }
+func (a *fakeRPCAdmin) SendRPC(c hrpc.Call) (proto.Message, error) {
+	a.sendCalls.Add(1)
+	return a.send(c)
+}
 
 func (a *fakeAdmin) ListTableNames(t *hrpc.ListTableNames) ([]*pb.TableName, error) {
 	a.listCalls = append(a.listCalls, recordCall(t))
