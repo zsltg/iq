@@ -775,3 +775,8 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 ## drivers/hbase probe fallback (accepted 2026-10-02, fix/hbase-open-deadline branch)
 
 - 5dae232f8b73 drivers/hbase/hbase.go:184 numbers/incrementer. The probe goroutine sends exactly one value, so a buffer of 1 or 2 never blocks it. Applied by hand: the hbase package suite passes. The decrementer twin (buffer 0) is killed by TestProbeFallbackGoroutineEndsAfterTheContext.
+
+## internal/rawpred surrogate escape guard (accepted 2026-10-02, fix/rawpred-invalid-utf8 branch)
+
+- 9562bb13dc8e internal/rawpred/rawpred.go:167 numbers/decrementer. The advance `b = b[i+2:]` becomes `b = b[i+1:]`. The next search then skips the `u` and finds the same following backslash, so the result does not change. Applied by hand: the rawpred suite passes.
+- 7ec1da62f278 internal/rawpred/rawpred.go:146 statement/return. In `Matcher.Match`, `return MayMatch` becomes `return 0`. MayMatch is the first `iota` value, so it is 0 and the program does not change. Applied by hand: the rawpred suite passes.
