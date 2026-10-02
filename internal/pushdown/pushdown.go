@@ -23,7 +23,7 @@ import (
 // (widening the result, still a superset). Only the selects that test the element
 // itself count (see elementSelects).
 func Compile(q *gojq.Query) (predicate.Node, bool) {
-	if !selector.Keys(q).Streamable {
+	if !selector.Keys(q).Streamable || shadowsAny(q) {
 		return nil, false
 	}
 	var preds []predicate.Node
