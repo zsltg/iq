@@ -114,7 +114,7 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, _ numfmt
 		pageSize:   scanBatch,
 		trace:      trace,
 	}
-	if _, err := st.admin.ClusterStatus(); err != nil {
+	if err := st.probe(ctx); err != nil {
 		_ = st.Close()
 		return nil, fmt.Errorf("connect hbase: %w", err)
 	}
@@ -125,6 +125,26 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, _ numfmt
 		}
 	}
 	return st, nil
+}
+
+// probe checks that the cluster answers. ClusterStatus takes no context and retries a
+// dead quorum or master without end, so the call runs in its own goroutine and ctx
+// ends the wait. The goroutine sends on a buffered channel, so it never blocks. After
+// ctx ends the call is not cancelled: gohbase gives the admin client no way to stop it,
+// and Close does not touch the admin client, so the call keeps retrying in the
+// background until the process exits. Nothing reads its result.
+func (s *Store) probe(ctx context.Context) error {
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.admin.ClusterStatus()
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Target returns the [namespace:]table an hbase:// source addresses: the address

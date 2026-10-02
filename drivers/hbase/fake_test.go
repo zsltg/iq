@@ -271,8 +271,10 @@ func (s *fakeScanner) GetScanMetrics() map[string]int64 { return nil }
 
 // fakeAdmin is an in-memory hbaseAdmin for the list, disable, and drop paths.
 type fakeAdmin struct {
-	tables       []*pb.TableName
-	clusterErr   error
+	tables     []*pb.TableName
+	clusterErr error
+	// clusterBlock, when set, holds ClusterStatus until the channel closes.
+	clusterBlock chan struct{}
 	disabled     []string
 	deleted      []string
 	listErr      error
@@ -284,6 +286,9 @@ type fakeAdmin struct {
 }
 
 func (a *fakeAdmin) ClusterStatus() (*pb.ClusterStatus, error) {
+	if a.clusterBlock != nil {
+		<-a.clusterBlock
+	}
 	return &pb.ClusterStatus{}, a.clusterErr
 }
 
