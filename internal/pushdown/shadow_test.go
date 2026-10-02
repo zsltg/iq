@@ -40,6 +40,18 @@ func TestCompileUserDefinitionShadowsBuiltin(t *testing.T) {
 		{"length/0 defined in the select", `.[] | select(def length: 0; .a | length == 2)`, nil},
 		{"length/0 defined in a parenthesis", `.[] | select((def length: 0; .a | length == 2))`, nil},
 		{"shadow beside an unrelated definition", `def f: .; def select(f): .; .[] | select(.a == 1)`, nil},
+		{"has/1 defined in a parenthesis before a not", `.[] | select((.a | def has(k): true; has("b")) | not)`, nil},
+		{"select/1 defined in a middle stage", `.[] | def select(f): .; select(.a == 1) | .b`, nil},
+		{
+			"definition after the last select stage still pushes",
+			`.[] | select(.a == 1) | .b, def select(f): .; .c`,
+			predicate.Eq{Path: []string{"a"}, Value: 1.0},
+		},
+		{
+			"definition in a later operand of a stage still pushes",
+			`.[] | select(.a == 1) | (.b | def select(f): .; select(.c))`,
+			predicate.Eq{Path: []string{"a"}, Value: 1.0},
+		},
 		{
 			"unrelated name still pushes at the top",
 			`def f: .; .[] | select(.a == 1)`,
@@ -82,15 +94,35 @@ func TestCompileUserDefinitionShadowsBuiltin(t *testing.T) {
 }
 
 // Conjuncts feeds the explain breakdown, so it must agree with Compile: a
-// shadowed select yields no breakdown, and a shadowed conjunct builtin is
-// reported as not pushed.
+// shadowed select yields no breakdown, a shadowed conjunct builtin is reported
+// as not pushed, and a definition that shadows nothing leaves the conjunct
+// pushed.
 func TestConjunctsUserDefinitionShadowsBuiltin(t *testing.T) {
 	tests := []struct {
-		name string
-		expr string
+		name   string
+		expr   string
+		want   []pushdown.Conjunct
+		wantOK bool
 	}{
-		{"select/1 defined at the top", `def select(f): .; .[] | select(.a == 1)`},
-		{"has/1 defined in the select", `.[] | select(def has(k): true; has("a"))`},
+		{"select/1 defined at the top", `def select(f): .; .[] | select(.a == 1)`, nil, false},
+		{
+			"has/1 defined in the select",
+			`.[] | select(def has(k): true; has("a"))`,
+			[]pushdown.Conjunct{{Expr: `def has(k): true; has("a")`, Reason: "not a pushable comparison"}},
+			true,
+		},
+		{
+			"unrelated name still pushes",
+			`def f: .; .[] | select(.a == 1)`,
+			[]pushdown.Conjunct{{Expr: ".a == 1", Pred: predicate.Eq{Path: []string{"a"}, Value: 1.0}}},
+			true,
+		},
+		{
+			"no definition pushes",
+			`.[] | select(.a == 1)`,
+			[]pushdown.Conjunct{{Expr: ".a == 1", Pred: predicate.Eq{Path: []string{"a"}, Value: 1.0}}},
+			true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -99,11 +131,8 @@ func TestConjunctsUserDefinitionShadowsBuiltin(t *testing.T) {
 
 			got, ok := pushdown.Conjuncts(q)
 
-			if ok {
-				for _, c := range got {
-					require.Nil(t, c.Pred, "conjunct %q must not push", c.Expr)
-				}
-			}
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
