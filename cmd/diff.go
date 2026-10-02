@@ -27,6 +27,60 @@ var errQuietExit = errors.New("differences found")
 // a control signal, never surfaced.
 var errStopSampling = errors.New("sample complete")
 
+// diffLong is the long help text of the diff command.
+const diffLong = "Compare two saved sources across the layers a schemaless store can meaningfully\n" +
+	"compare. Selecting no layer defaults to --data; layers combine.\n\n" +
+	"  --data    item-level diff: added / removed / changed, keyed by document _id\n" +
+	"            (MongoDB) or key (Redis). Unfiltered it reads both keyspaces fully\n" +
+	"            into memory, so it costs memory proportional to the two sources, a\n" +
+	"            deliberate tradeoff, since an added/removed diff needs both key sets\n" +
+	"            at once; a filter narrows that read, and a pushable one narrows it\n" +
+	"            at the backend.\n" +
+	"            Allowed across drivers (Mongo _id vs Redis key): useful for\n" +
+	"            verifying a migration, but the identity match is only as meaningful\n" +
+	"            as the keys lining up, a power-user tool, not a schema comparison.\n" +
+	"  --stats   diff native introspection trees (MongoDB diagnostic commands, Redis\n" +
+	"            INFO). Same driver only. --section narrows which sections, comma-\n" +
+	"            separated or repeated (`--section memory,server`).\n" +
+	"  --schema  diff an inferred field->type shape sampled from each source. Allowed\n" +
+	"            across drivers: the inferred vocabulary (integer/number/string(fmt)/\n" +
+	"            map/array + required/optional) measures logical shape, not per-driver\n" +
+	"            introspection. The shape is sampled (--sample) and inferred, never\n" +
+	"            declared, so a wider sample yields a truer shape.\n\n" +
+	"Use -j/--json or -y/--yaml for a machine-readable delta. diff exits non-zero when\n" +
+	"the sources differ and zero when they match (diff(1)-style), so scripts can branch\n" +
+	"on the exit status.\n\n" +
+	"Each side may carry a jq filter, so a diff can be scoped to part of a keyspace:\n" +
+	"per side as `<source>=<jq>`, or for both at once with --filter, a side's own\n" +
+	"filter winning. Write the filter `.[]`-rooted, as on a plain query (iteration\n" +
+	"is not implicit here, unlike --insert), because a keyed diff needs each item to\n" +
+	"keep its key:\n\n" +
+	"    iq diff prod staging --filter '.[] | select(.status == \"new\")'\n\n" +
+	"A filter may instead name a single key (prod=.[\"orders:42\"]) to compare one\n" +
+	"document. One that collapses the keyspace, or fans an item out into several\n" +
+	"values, is refused: neither leaves a key to match on. --stats takes no filter,\n" +
+	"it diffs the backend's own introspection, which has no items.\n\n" +
+	"--set-arrays compares every array order-insensitively as a multiset (duplicates\n" +
+	"counted), reporting membership deltas at the array's own path. --patch emits an\n" +
+	"RFC 6902 JSON Patch instead of the human/JSON delta; it renders exactly one layer\n" +
+	"(choose one of --data/--stats/--schema) and excludes --json, --yaml, and\n" +
+	"--set-arrays."
+
+// diffExample is the example text of the diff command.
+const diffExample = "  # Item-level diff (the default layer) of two collections in one source.\n" +
+	"  $ iq diff shop.orders shop.users\n" +
+	"\n" +
+	"  # Scope both sides to part of the keyspace, or each side separately.\n" +
+	"  $ iq diff prod staging --filter '.[] | select(.status == \"new\")'\n" +
+	"  $ iq diff 'prod=.[] | select(.type == \"order\")' 'staging=.[] | select(.kind == \"ORDER\")'\n" +
+	"  $ iq diff 'prod=.[\"orders:42\"]' 'staging=.[\"orders:42\"]'   # one document\n" +
+	"\n" +
+	"  # Across environments; compare shapes or native stats.\n" +
+	"  $ iq diff prod/shop staging/shop --schema\n" +
+	"  $ iq diff prod/shop staging/shop --stats\n" +
+	"  $ iq diff prod/shop staging/shop --stats --section memory,server\n" +
+	"  $ iq diff prod/shop staging/shop -j"
+
 // newDiffCmd builds `iq diff <a> <b>`: compare two saved sources. --data (the
 // default) diffs items key by key; --stats diffs native introspection; --schema
 // diffs an inferred field/type shape. Layers combine. Bounded by --timeout.
@@ -39,62 +93,13 @@ func newDiffCmd(cfg *config) *cobra.Command {
 		sample                          int
 		filter                          string
 	)
-	long := "Compare two saved sources across the layers a schemaless store can meaningfully\n" +
-		"compare. Selecting no layer defaults to --data; layers combine.\n\n" +
-		"  --data    item-level diff: added / removed / changed, keyed by document _id\n" +
-		"            (MongoDB) or key (Redis). Unfiltered it reads both keyspaces fully\n" +
-		"            into memory, so it costs memory proportional to the two sources, a\n" +
-		"            deliberate tradeoff, since an added/removed diff needs both key sets\n" +
-		"            at once; a filter narrows that read, and a pushable one narrows it\n" +
-		"            at the backend.\n" +
-		"            Allowed across drivers (Mongo _id vs Redis key): useful for\n" +
-		"            verifying a migration, but the identity match is only as meaningful\n" +
-		"            as the keys lining up, a power-user tool, not a schema comparison.\n" +
-		"  --stats   diff native introspection trees (MongoDB diagnostic commands, Redis\n" +
-		"            INFO). Same driver only. --section narrows which sections, comma-\n" +
-		"            separated or repeated (`--section memory,server`).\n" +
-		"  --schema  diff an inferred field->type shape sampled from each source. Allowed\n" +
-		"            across drivers: the inferred vocabulary (integer/number/string(fmt)/\n" +
-		"            map/array + required/optional) measures logical shape, not per-driver\n" +
-		"            introspection. The shape is sampled (--sample) and inferred, never\n" +
-		"            declared, so a wider sample yields a truer shape.\n\n" +
-		"Use -j/--json or -y/--yaml for a machine-readable delta. diff exits non-zero when\n" +
-		"the sources differ and zero when they match (diff(1)-style), so scripts can branch\n" +
-		"on the exit status.\n\n" +
-		"Each side may carry a jq filter, so a diff can be scoped to part of a keyspace:\n" +
-		"per side as `<source>=<jq>`, or for both at once with --filter, a side's own\n" +
-		"filter winning. Write the filter `.[]`-rooted, as on a plain query (iteration\n" +
-		"is not implicit here, unlike --insert), because a keyed diff needs each item to\n" +
-		"keep its key:\n\n" +
-		"    iq diff prod staging --filter '.[] | select(.status == \"new\")'\n\n" +
-		"A filter may instead name a single key (prod=.[\"orders:42\"]) to compare one\n" +
-		"document. One that collapses the keyspace, or fans an item out into several\n" +
-		"values, is refused: neither leaves a key to match on. --stats takes no filter,\n" +
-		"it diffs the backend's own introspection, which has no items.\n\n" +
-		"--set-arrays compares every array order-insensitively as a multiset (duplicates\n" +
-		"counted), reporting membership deltas at the array's own path. --patch emits an\n" +
-		"RFC 6902 JSON Patch instead of the human/JSON delta; it renders exactly one layer\n" +
-		"(choose one of --data/--stats/--schema) and excludes --json, --yaml, and\n" +
-		"--set-arrays."
 	c := &cobra.Command{
 		Use:               "diff <a>[=<jq>] <b>[=<jq>]",
 		ValidArgsFunction: completeSourceHandles,
 		Short:             "Compare two sources by data, stats, or inferred schema",
-		Long:              long,
-		Example: "  # Item-level diff (the default layer) of two collections in one source.\n" +
-			"  $ iq diff shop.orders shop.users\n" +
-			"\n" +
-			"  # Scope both sides to part of the keyspace, or each side separately.\n" +
-			"  $ iq diff prod staging --filter '.[] | select(.status == \"new\")'\n" +
-			"  $ iq diff 'prod=.[] | select(.type == \"order\")' 'staging=.[] | select(.kind == \"ORDER\")'\n" +
-			"  $ iq diff 'prod=.[\"orders:42\"]' 'staging=.[\"orders:42\"]'   # one document\n" +
-			"\n" +
-			"  # Across environments; compare shapes or native stats.\n" +
-			"  $ iq diff prod/shop staging/shop --schema\n" +
-			"  $ iq diff prod/shop staging/shop --stats\n" +
-			"  $ iq diff prod/shop staging/shop --stats --section memory,server\n" +
-			"  $ iq diff prod/shop staging/shop -j",
-		Args: cobra.ExactArgs(2),
+		Long:              diffLong,
+		Example:           diffExample,
+		Args:              cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cf, err := iqconfig.Load()
 			if err != nil {
@@ -171,7 +176,7 @@ func (m *diffModes) validate(left, right sourceSpec) error {
 	if m.patch && layerCount(m.data, m.stats, m.schema) > 1 {
 		return errors.New("--patch renders one JSON Patch, so it needs a single layer; choose exactly one of --data, --stats, --schema")
 	}
-	if !m.data && !m.stats && !m.schema {
+	if layerCount(m.data, m.stats, m.schema) == 0 {
 		m.data = true
 	}
 	// Guarded here rather than in the stats collector so both the human and
@@ -193,53 +198,69 @@ func runDiff(cmd *cobra.Command, run diffRun, modes diffModes) error {
 	defer cancel()
 
 	if modes.patch {
-		// The one chosen layer, rendered as an RFC 6902 patch. --data reads
-		// both keyspaces fully, so it carries the same spinner as the
-		// human path; stop it before the error check so the line clears.
-		meter := newProgressMeter(cmd.ErrOrStderr(), run.cfg.noProgress)
-		raw, err := run.patchLayer(ctx, modes.stats, modes.schema, meter.Tick)
-		meter.Stop()
-		if err != nil {
-			return err
-		}
-		return renderPatch(cmd.OutOrStdout(), raw)
+		return runPatch(ctx, cmd, run, modes)
 	}
 
-	rep := report{dataRun: modes.data, statsRun: modes.stats, schemaRun: modes.schema}
-	if modes.data {
-		// --data reads both keyspaces fully with no output until the
-		// report renders, so a spinner fits cleanly. Stop it before the
-		// error check and before render, so the line clears either way.
-		meter := newProgressMeter(cmd.ErrOrStderr(), run.cfg.noProgress)
-		d, err := run.diffData(ctx, meter.Tick)
-		meter.Stop()
-		if err != nil {
-			return err
-		}
-		rep.Data = d
+	rep, err := run.collect(ctx, modes, cmd.ErrOrStderr())
+	if err != nil {
+		return err
 	}
-	if modes.stats {
-		s, err := run.diffStats(ctx)
-		if err != nil {
-			return err
-		}
-		rep.Stats = s
-	}
-	if modes.schema {
-		s, err := run.diffSchema(ctx)
-		if err != nil {
-			return err
-		}
-		rep.Schema = s
-	}
-
-	if err := rep.render(cmd.OutOrStdout(), run.left, run.right, modes.json, modes.yaml); err != nil {
+	if err := rep.render(cmd.OutOrStdout(), run.left, run.right, modes); err != nil {
 		return err
 	}
 	if !rep.empty() {
 		return errQuietExit
 	}
 	return nil
+}
+
+// runPatch renders the one chosen layer as an RFC 6902 patch. --data reads both
+// keyspaces fully, so it carries the same spinner as the human path.
+func runPatch(ctx context.Context, cmd *cobra.Command, run diffRun, modes diffModes) error {
+	raw, err := metered(cmd.ErrOrStderr(), run.cfg.noProgress, func(onPage func(int)) (json.RawMessage, error) {
+		return run.patchLayer(ctx, modes.stats, modes.schema, onPage)
+	})
+	if err != nil {
+		return err
+	}
+	return renderPatch(cmd.OutOrStdout(), raw)
+}
+
+// collect runs the selected layers in order: data, stats, schema. The first
+// layer that fails stops the run, and its error returns unchanged.
+func (r diffRun) collect(ctx context.Context, modes diffModes, progress io.Writer) (report, error) {
+	rep := report{dataRun: modes.data, statsRun: modes.stats, schemaRun: modes.schema}
+	var err error
+	if modes.data {
+		rep.Data, err = metered(progress, r.cfg.noProgress, func(onPage func(int)) ([]diff.ItemDelta, error) {
+			return r.diffData(ctx, onPage)
+		})
+		if err != nil {
+			return report{}, err
+		}
+	}
+	if modes.stats {
+		if rep.Stats, err = r.diffStats(ctx); err != nil {
+			return report{}, err
+		}
+	}
+	if modes.schema {
+		if rep.Schema, err = r.diffSchema(ctx); err != nil {
+			return report{}, err
+		}
+	}
+	return rep, nil
+}
+
+// metered runs read under a progress meter that writes to w, and passes the
+// meter tick to read as the page callback. A read with no output until the end
+// fits a spinner. The meter stops before the caller checks the error, so the
+// line clears either way.
+func metered[T any](w io.Writer, noProgress bool, read func(onPage func(int)) (T, error)) (T, error) {
+	meter := newProgressMeter(w, noProgress)
+	v, err := read(meter.Tick)
+	meter.Stop()
+	return v, err
 }
 
 // diffData reads both sides and diffs them key by key under opts. Each side is
@@ -275,23 +296,33 @@ func readAll(ctx context.Context, cfg *config, t sourceSpec, onPage func(int)) (
 		return nil, redactErr(err, t.url)
 	}
 	defer func() { _ = st.Close() }()
-	all := map[string]any{}
 	if t.filter != "" {
-		// A filtered read keeps each surviving item under its own key, so the diff
-		// still matches by key; a pushable predicate narrows the scan at the store,
-		// making a scoped diff read less rather than merely report less.
 		opts := cfg.runOptions()
 		opts.OnPage = onPage
-		err = query.NewJQEngine(st).RunKeyed(ctx, t.filter, opts, func(k string, v any) error {
-			all[k] = v
-			return nil
-		})
-		if err != nil {
-			return nil, fmt.Errorf("read %q: %w", t.handle, redactErr(asSyntaxError(t.filter, err), t.url))
-		}
-		return all, nil
+		return readKeyed(ctx, st, t, opts)
 	}
-	err = st.ScanBatches(ctx, func(batch map[string]any) error {
+	return readScan(ctx, st, t, onPage)
+}
+
+// readKeyed keeps each surviving item under its own key, so the diff still
+// matches by key; a pushable predicate narrows the scan at the store, making a
+// scoped diff read less rather than merely report less.
+func readKeyed(ctx context.Context, st store, t sourceSpec, opts query.RunOptions) (map[string]any, error) {
+	all := map[string]any{}
+	err := query.NewJQEngine(st).RunKeyed(ctx, t.filter, opts, func(k string, v any) error {
+		all[k] = v
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read %q: %w", t.handle, redactErr(asSyntaxError(t.filter, err), t.url))
+	}
+	return all, nil
+}
+
+// readScan reads the whole keyspace, ticking onPage for each page.
+func readScan(ctx context.Context, st store, t sourceSpec, onPage func(int)) (map[string]any, error) {
+	all := map[string]any{}
+	err := st.ScanBatches(ctx, func(batch map[string]any) error {
 		if onPage != nil {
 			onPage(len(batch))
 		}
@@ -343,14 +374,25 @@ func collectInspect(ctx context.Context, t sourceSpec, sections []string) (map[s
 	defer func() { _ = st.Close() }()
 
 	if t.driver == "redis" {
-		res, err := query.NewRunner(st).Run(ctx, append([]string{"INFO"}, sections...))
-		if err != nil {
-			return nil, fmt.Errorf("inspect %q: %w", t.handle, redactErr(err, t.url))
-		}
-		info, _ := res.(string)
-		return redisInfoTree(info), nil
+		return collectRedisInfo(ctx, st, t, sections)
 	}
+	return collectMongoInspect(ctx, st, t, sections)
+}
 
+// collectRedisInfo runs one INFO with the sections as arguments and parses the
+// reply into section -> key -> value.
+func collectRedisInfo(ctx context.Context, st store, t sourceSpec, sections []string) (map[string]any, error) {
+	res, err := query.NewRunner(st).Run(ctx, append([]string{"INFO"}, sections...))
+	if err != nil {
+		return nil, fmt.Errorf("inspect %q: %w", t.handle, redactErr(err, t.url))
+	}
+	info, _ := res.(string)
+	return redisInfoTree(info), nil
+}
+
+// collectMongoInspect keys each diagnostic reply by subcommand. It checks each
+// section inside the read loop, so a valid section reads before an unknown one.
+func collectMongoInspect(ctx context.Context, st store, t sourceSpec, sections []string) (map[string]any, error) {
 	subs := sections
 	if len(subs) == 0 {
 		subs = mongoInspectCmds
@@ -472,7 +514,7 @@ func sampleShape(ctx context.Context, cfg *config, t sourceSpec, sample int) (ma
 		return nil, redactErr(err, t.url)
 	}
 	defer func() { _ = st.Close() }()
-	items, err := sampleItems(ctx, st, t.filter, sample, cfg.runOptions())
+	items, err := sampleItems(ctx, st, sampleRequest{filter: t.filter, sample: sample, opts: cfg.runOptions()})
 	if err != nil {
 		return nil, fmt.Errorf("sample %q: %w", t.handle, redactErr(asSyntaxError(t.filter, err), t.url))
 	}
@@ -489,23 +531,42 @@ func sampleShape(ctx context.Context, cfg *config, t sourceSpec, sample int) (ma
 // several values (`.[] | .tags[]`) is a perfectly good question here even though
 // a keyed read must refuse it. The emissions are collected under synthetic keys
 // only because the shape inferrer takes a map.
-func sampleItems(ctx context.Context, st store, filter string, sample int, opts query.RunOptions) (map[string]any, error) {
-	items := map[string]any{}
-	if filter != "" {
-		n := 0
-		err := query.NewJQEngine(st).Run(ctx, filter, opts, func(v any) error {
-			items[strconv.Itoa(n)] = v
-			n++
-			if sampleFull(n, sample) {
-				return errStopSampling
-			}
-			return nil
-		})
-		if err != nil && !errors.Is(err, errStopSampling) {
-			return nil, err
-		}
-		return items, nil
+func sampleItems(ctx context.Context, st store, req sampleRequest) (map[string]any, error) {
+	if req.filter != "" {
+		return sampleFiltered(ctx, st, req)
 	}
+	return sampleScan(ctx, st, req.sample)
+}
+
+// sampleRequest holds the inputs of sampleItems: an optional jq filter, the
+// sample cap, and the run options of the filtered read.
+type sampleRequest struct {
+	filter string
+	sample int
+	opts   query.RunOptions
+}
+
+// sampleFiltered collects the values that the filter emits, under synthetic keys.
+func sampleFiltered(ctx context.Context, st store, req sampleRequest) (map[string]any, error) {
+	items := map[string]any{}
+	n := 0
+	err := query.NewJQEngine(st).Run(ctx, req.filter, req.opts, func(v any) error {
+		items[strconv.Itoa(n)] = v
+		n++
+		if sampleFull(n, req.sample) {
+			return errStopSampling
+		}
+		return nil
+	})
+	if err := stopped(err); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// sampleScan collects items from a scan under the keys of the store.
+func sampleScan(ctx context.Context, st store, sample int) (map[string]any, error) {
+	items := map[string]any{}
 	err := st.ScanBatches(ctx, func(batch map[string]any) error {
 		for k, v := range batch {
 			items[k] = v
@@ -515,10 +576,18 @@ func sampleItems(ctx context.Context, st store, filter string, sample int, opts 
 		}
 		return nil
 	})
-	if err != nil && !errors.Is(err, errStopSampling) {
+	if err := stopped(err); err != nil {
 		return nil, err
 	}
 	return items, nil
+}
+
+// stopped turns the errStopSampling signal into nil and keeps every other error.
+func stopped(err error) error {
+	if errors.Is(err, errStopSampling) {
+		return nil
+	}
+	return err
 }
 
 // sampleFull reports whether count items reach the sample cap. A sample of zero
@@ -546,31 +615,40 @@ func (r report) empty() bool {
 	return len(r.Data) == 0 && len(r.Stats) == 0 && len(r.Schema) == 0
 }
 
-// render writes the report as JSON, YAML, or a human diff.
-func (r report) render(out io.Writer, left, right sourceSpec, jsonOut, yamlOut bool) error {
-	if jsonOut || yamlOut {
-		return writeStructured(out, r, yamlOut)
+// render writes the report as JSON, YAML, or a human diff. It reads the output
+// format from modes.
+func (r report) render(out io.Writer, left, right sourceSpec, modes diffModes) error {
+	if modes.json || modes.yaml {
+		return writeStructured(out, r, modes.yaml)
 	}
 	header := fmt.Sprintf("%s (%s)  →  %s (%s)", left.handle, left.driver, right.handle, right.driver)
 	if _, err := fmt.Fprintf(out, "%s\n\n", pal.header.Sprint(header)); err != nil {
 		return err
 	}
-	if r.dataRun {
-		if err := renderItems(out, "data", r.Data); err != nil {
-			return err
+	for _, layer := range r.layers() {
+		if !layer.on {
+			continue
 		}
-	}
-	if r.statsRun {
-		if err := renderChanges(out, "stats", r.Stats); err != nil {
-			return err
-		}
-	}
-	if r.schemaRun {
-		if err := renderChanges(out, "schema", r.Schema); err != nil {
+		if err := layer.render(out); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// reportLayer is one section of the human report.
+type reportLayer struct {
+	on     bool
+	render func(io.Writer) error
+}
+
+// layers lists the sections of the human report in order: data, stats, schema.
+func (r report) layers() []reportLayer {
+	return []reportLayer{
+		{r.dataRun, func(w io.Writer) error { return renderItems(w, "data", r.Data) }},
+		{r.statsRun, func(w io.Writer) error { return renderChanges(w, "stats", r.Stats) }},
+		{r.schemaRun, func(w io.Writer) error { return renderChanges(w, "schema", r.Schema) }},
+	}
 }
 
 // renderItems writes a keyed data diff under a section heading.
@@ -579,28 +657,34 @@ func renderItems(out io.Writer, title string, deltas []diff.ItemDelta) error {
 		return err
 	}
 	for _, d := range deltas {
-		switch d.Op {
-		case diff.OpChange:
-			// The item header (symbol + key) takes the change color; the nested
-			// field lines below color by their own op.
-			header := colorLine(d.Op, fmt.Sprintf("%s %s", d.Op.Symbol(), d.Key))
-			if _, err := fmt.Fprintf(out, "%s\n", header); err != nil {
-				return err
-			}
-			for _, ch := range d.Changes {
-				if err := renderChangeLine(out, "    ", ch); err != nil {
-					return err
-				}
-			}
-		default:
-			// An add or remove row takes its op's color across the whole line.
-			line := colorLine(d.Op, fmt.Sprintf("%s %s  %s", d.Op.Symbol(), d.Key, compact(sideValue(d.Op, d.Old, d.New))))
-			if _, err := fmt.Fprintf(out, "%s\n", line); err != nil {
-				return err
-			}
+		if err := renderItem(out, d); err != nil {
+			return err
 		}
 	}
 	return writeSummary(out, diff.SummarizeItems(deltas))
+}
+
+// renderItem writes one keyed delta: a change header with its nested field
+// lines, or a single add or remove row.
+func renderItem(out io.Writer, d diff.ItemDelta) error {
+	if d.Op != diff.OpChange {
+		// An add or remove row takes its op's color across the whole line.
+		line := colorLine(d.Op, fmt.Sprintf("%s %s  %s", d.Op.Symbol(), d.Key, compact(sideValue(d.Op, d.Old, d.New))))
+		_, err := fmt.Fprintf(out, "%s\n", line)
+		return err
+	}
+	// The item header (symbol + key) takes the change color; the nested
+	// field lines below color by their own op.
+	header := colorLine(d.Op, fmt.Sprintf("%s %s", d.Op.Symbol(), d.Key))
+	if _, err := fmt.Fprintf(out, "%s\n", header); err != nil {
+		return err
+	}
+	for _, ch := range d.Changes {
+		if err := renderChangeLine(out, "    ", ch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // renderChanges writes a tree diff (stats or schema) under a section heading.

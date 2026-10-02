@@ -136,7 +136,7 @@ func TestSchemaSampleCap(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			items, err := sampleItems(ctx, st, "", tt.sample, query.RunOptions{})
+			items, err := sampleItems(ctx, st, sampleRequest{sample: tt.sample})
 			require.NoError(t, err)
 			require.Len(t, items, tt.want)
 		})
@@ -177,7 +177,7 @@ func TestSchemaSampleCapFiltered(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			items, err := sampleItems(ctx, st, tt.filter, tt.sample, query.RunOptions{})
+			items, err := sampleItems(ctx, st, sampleRequest{filter: tt.filter, sample: tt.sample})
 
 			require.NoError(t, err, "the stop sentinel must never surface as an error")
 			require.Len(t, items, tt.want)
@@ -202,7 +202,7 @@ func TestSchemaSampleFilteredPropagatesError(t *testing.T) {
 
 	// A holistic filter needs the whole dataset materialized, which the options
 	// here do not permit, so the engine refuses before emitting anything.
-	_, err = sampleItems(ctx, st, "keys", 0, query.RunOptions{})
+	_, err = sampleItems(ctx, st, sampleRequest{filter: "keys"})
 
 	require.ErrorIs(t, err, query.ErrScanNotAllowed)
 }

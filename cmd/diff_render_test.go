@@ -26,7 +26,7 @@ func TestReportRenderHuman(t *testing.T) {
 	left := sourceSpec{handle: "a", driver: "redis"}
 	right := sourceSpec{handle: "b", driver: "redis"}
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, left, right, false, false))
+	require.NoError(t, rep.render(&buf, left, right, diffModes{}))
 	out := buf.String()
 
 	require.Contains(t, out, "a (redis)  →  b (redis)")
@@ -75,13 +75,13 @@ func TestReportRenderColoredStripsToPlain(t *testing.T) {
 
 	color.NoColor = true
 	var plainBuf bytes.Buffer
-	require.NoError(t, rep.render(&plainBuf, left, right, false, false))
+	require.NoError(t, rep.render(&plainBuf, left, right, diffModes{}))
 	plain := plainBuf.String()
 	require.NotContains(t, plain, "\x1b[", "color off must emit no escapes")
 
 	color.NoColor = false
 	var colorBuf bytes.Buffer
-	require.NoError(t, rep.render(&colorBuf, left, right, false, false))
+	require.NoError(t, rep.render(&colorBuf, left, right, diffModes{}))
 	got := colorBuf.String()
 	require.Contains(t, got, "\x1b[", "colored report must carry ANSI escapes")
 	require.Equal(t, plain, stripANSI(got), "stripANSI must equal the plain rendering")
@@ -98,7 +98,7 @@ func TestReportRenderColoredRoles(t *testing.T) {
 
 	rep := coloredDiffReport()
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, sourceSpec{handle: "a"}, sourceSpec{handle: "b"}, false, false))
+	require.NoError(t, rep.render(&buf, sourceSpec{handle: "a"}, sourceSpec{handle: "b"}, diffModes{}))
 	got := buf.String()
 
 	// Raw SGR codes for each role.
@@ -123,7 +123,7 @@ func TestReportRenderColoredRoles(t *testing.T) {
 func TestReportRenderNoDifferences(t *testing.T) {
 	rep := report{Data: []diff.ItemDelta{}, dataRun: true}
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, sourceSpec{handle: "a"}, sourceSpec{handle: "b"}, false, false))
+	require.NoError(t, rep.render(&buf, sourceSpec{handle: "a"}, sourceSpec{handle: "b"}, diffModes{}))
 	require.Contains(t, buf.String(), "no differences")
 }
 
@@ -133,7 +133,7 @@ func TestReportRenderJSON(t *testing.T) {
 		dataRun: true,
 	}
 	var buf bytes.Buffer
-	require.NoError(t, rep.render(&buf, sourceSpec{handle: "a"}, sourceSpec{handle: "b"}, true, false))
+	require.NoError(t, rep.render(&buf, sourceSpec{handle: "a"}, sourceSpec{handle: "b"}, diffModes{json: true}))
 
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
@@ -224,18 +224,18 @@ func TestRenderPropagatesWriteErrors(t *testing.T) {
 	})
 	t.Run("render header", func(t *testing.T) {
 		rep := report{dataRun: true}
-		require.Error(t, rep.render(&errAfter{0}, sourceSpec{}, sourceSpec{}, false, false))
+		require.Error(t, rep.render(&errAfter{0}, sourceSpec{}, sourceSpec{}, diffModes{}))
 	})
 	t.Run("render data section", func(t *testing.T) {
 		rep := report{Data: []diff.ItemDelta{item}, dataRun: true}
-		require.Error(t, rep.render(&errAfter{1}, sourceSpec{}, sourceSpec{}, false, false))
+		require.Error(t, rep.render(&errAfter{1}, sourceSpec{}, sourceSpec{}, diffModes{}))
 	})
 	t.Run("render stats section", func(t *testing.T) {
 		rep := report{Stats: []diff.Change{change}, statsRun: true}
-		require.Error(t, rep.render(&errAfter{1}, sourceSpec{}, sourceSpec{}, false, false))
+		require.Error(t, rep.render(&errAfter{1}, sourceSpec{}, sourceSpec{}, diffModes{}))
 	})
 	t.Run("render schema section", func(t *testing.T) {
 		rep := report{Schema: []diff.Change{change}, schemaRun: true}
-		require.Error(t, rep.render(&errAfter{1}, sourceSpec{}, sourceSpec{}, false, false))
+		require.Error(t, rep.render(&errAfter{1}, sourceSpec{}, sourceSpec{}, diffModes{}))
 	})
 }

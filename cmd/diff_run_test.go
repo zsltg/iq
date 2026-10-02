@@ -526,7 +526,7 @@ func TestSampleItemsPassesRunOptions(t *testing.T) {
 	var buf strings.Builder
 	opts := query.RunOptions{Logger: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}
 
-	_, err = sampleItems(t.Context(), st, ".[]", 0, opts)
+	_, err = sampleItems(t.Context(), st, sampleRequest{filter: ".[]", opts: opts})
 
 	require.NoError(t, err)
 	require.Contains(t, buf.String(), "scan strategy")

@@ -473,7 +473,7 @@ func (s *mcpServer) toolSchema(ctx context.Context, _ *mcp.CallToolRequest, in m
 		return nil, nil, toolError(redactErr(err, cfg.url))
 	}
 	defer func() { _ = st.Close() }()
-	items, err := sampleItems(cctx, st, in.Filter, sample, cfg.runOptions())
+	items, err := sampleItems(cctx, st, sampleRequest{filter: in.Filter, sample: sample, opts: cfg.runOptions()})
 	if err != nil {
 		return nil, nil, toolError(fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(in.Filter, err), cfg.url)))
 	}
