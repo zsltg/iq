@@ -327,13 +327,13 @@ func newLsCmd(cfg *config) *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if groups {
-				return listGroups(out, cf, cfg.verbose, jsonOut, yamlOut)
+				return listGroups(out, cf, lsOptions{verbose: cfg.verbose, jsonOut: jsonOut, yamlOut: yamlOut})
 			}
 			filter := ""
 			if len(args) == 1 {
 				filter = iqconfig.CleanHandle(args[0])
 			}
-			return listSources(out, cf, filter, cfg.verbose, cfg.reveal, jsonOut, yamlOut, cfg.expand)
+			return listSources(out, cf, lsOptions{filter: filter, verbose: cfg.verbose, reveal: cfg.reveal, expand: cfg.expand, jsonOut: jsonOut, yamlOut: yamlOut})
 		},
 	}
 	// -v is the global --verbose (registered on the root); `iq ls -v` reuses it

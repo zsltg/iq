@@ -176,7 +176,7 @@ func (s *mcpServer) toolSources(_ context.Context, _ *mcp.CallToolRequest, in mc
 		}
 		list = kept
 	}
-	return nil, mcpSourcesOutput{Sources: sourceRows(cf, list, true, false, false), Active: cf.Active}, nil
+	return nil, mcpSourcesOutput{Sources: sourceRows(cf, list, lsOptions{verbose: true}), Active: cf.Active}, nil
 }
 
 // mcpPingInput names the source, group, or nothing (the active source) to check.
