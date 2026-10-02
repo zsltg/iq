@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	iqfile "github.com/zsltg/iq/drivers/file"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/query"
 )
 
 // seedDiffFiles seeds one file source per handle, each from its own jsonl lines.
@@ -478,4 +480,54 @@ func TestDiffStatsReportsTheChange(t *testing.T) {
 			require.Equal(t, tt.want, out)
 		})
 	}
+}
+
+// TestDiffFirstFailingLayerWins pins the layer order: the stats layer runs
+// before the schema layer, and its error returns unchanged. A run that went on
+// to the schema layer would replace it with no error.
+func TestDiffFirstFailingLayerWins(t *testing.T) {
+	const unknownSection = `unknown inspect subcommand "bogus"; want one of dbStats, serverStatus, listCollections, collStats, buildInfo, hostInfo`
+	seedDiffFiles(t, map[string][]string{"a": {`{"key":"1","value":{}}`}, "b": {`{"key":"1","value":{}}`}})
+
+	_, err := runCmd(t, quietDiff(&config{timeout: 5 * time.Second}), "a", "b", "--stats", "--schema", "--section", "bogus")
+
+	require.EqualError(t, err, unknownSection)
+}
+
+// TestDiffStatsSectionLoop pins the Mongo section loop. It checks each section
+// inside the read loop, so a valid section before an unknown one reads first.
+// The collStats section needs a collection and is skipped without one.
+func TestDiffStatsSectionLoop(t *testing.T) {
+	seedDiffFiles(t, map[string][]string{"a": {`{"key":"1","value":{}}`}, "b": {`{"key":"1","value":{}}`}})
+
+	t.Run("a valid section reads before an unknown one", func(t *testing.T) {
+		_, err := runCmd(t, quietDiff(&config{timeout: 5 * time.Second}), "a", "b", "--stats", "--section", "dbStats,bogus")
+
+		require.ErrorContains(t, err, `inspect "a" dbStats: `)
+		require.NotContains(t, err.Error(), "unknown inspect subcommand")
+	})
+
+	t.Run("collStats without a collection is skipped", func(t *testing.T) {
+		out, err := runCmd(t, quietDiff(&config{timeout: 5 * time.Second}), "a", "b", "--stats", "--section", "collStats")
+
+		require.NoError(t, err)
+		require.Equal(t, "a (file)  →  b (file)\n\n# stats\nno differences\n\n", stripANSI(out))
+	})
+}
+
+// TestSampleItemsPassesRunOptions proves that the filtered sample reads under
+// the run options of the caller: the logger of the options receives the
+// scan strategy record.
+func TestSampleItemsPassesRunOptions(t *testing.T) {
+	path := writeJSONL(t, `{"key":"1","value":{"a":1}}`+"\n")
+	st, err := openStore(t.Context(), &config{url: iqfile.URL(path)})
+	require.NoError(t, err)
+	defer func() { _ = st.Close() }()
+	var buf strings.Builder
+	opts := query.RunOptions{Logger: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+
+	_, err = sampleItems(t.Context(), st, ".[]", 0, opts)
+
+	require.NoError(t, err)
+	require.Contains(t, buf.String(), "scan strategy")
 }
