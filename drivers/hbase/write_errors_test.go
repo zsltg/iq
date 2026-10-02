@@ -59,22 +59,23 @@ func TestPutRejectsABadRecordBeforeAnyRequest(t *testing.T) {
 		name  string
 		value any
 		want  string
+		mode  query.WriteMode
 	}{
-		{"a family that is not an object", map[string]any{"cf": "scalar"}, `family "cf" must map qualifiers to values`},
-		{"a cell value of the wrong type", map[string]any{"cf": map[string]any{"title": 7}}, "expected a string value"},
+		{"a family that is not an object, upsert", map[string]any{"cf": "scalar"}, `family "cf" must map qualifiers to values`, query.Upsert},
+		{"a family that is not an object, insert-only", map[string]any{"cf": "scalar"}, `family "cf" must map qualifiers to values`, query.InsertOnly},
+		{"a cell value of the wrong type, upsert", map[string]any{"cf": map[string]any{"title": 7}}, "expected a string value", query.Upsert},
+		{"a cell value of the wrong type, insert-only", map[string]any{"cf": map[string]any{"title": 7}}, "expected a string value", query.InsertOnly},
 	}
 	for _, tt := range tests {
-		for _, mode := range []query.WriteMode{query.Upsert, query.InsertOnly} {
-			t.Run(tt.name, func(t *testing.T) {
-				fc := newFakeClient()
-				st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
+		t.Run(tt.name, func(t *testing.T) {
+			fc := newFakeClient()
+			st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
 
-				_, err := st.Put(testCtx(), []query.Record{{Key: "1", Value: tt.value}}, mode)
+			_, err := st.Put(testCtx(), []query.Record{{Key: "1", Value: tt.value}}, tt.mode)
 
-				require.ErrorContains(t, err, tt.want)
-				require.Zero(t, fc.putCalls+fc.casCalls+len(fc.gets))
-			})
-		}
+			require.ErrorContains(t, err, tt.want)
+			require.Zero(t, fc.putCalls+fc.casCalls+len(fc.gets))
+		})
 	}
 }
 
