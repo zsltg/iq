@@ -108,10 +108,12 @@ type filterConstructor interface {
 // whatever a scan returns.
 type fakeClient struct {
 	rows       map[string]map[string]map[string][]byte
-	scanErr    error // when set, a scan's first Next returns this
+	scanErr    error // when set, a scan's Next returns this once scanFailAt rows are read
+	scanFailAt int   // rows a scan returns before scanErr shows; zero fails the first Next
 	getErr     error // when set, Get returns this
 	putErr     error // when set, Put returns this
 	delErr     error // when set, Delete returns this
+	casErr     error // when set, CheckAndPut returns this
 	putCalls   int
 	delCalls   int
 	casCalls   int
@@ -121,6 +123,7 @@ type fakeClient struct {
 	dels       []rpcCall
 	scans      []rpcCall
 	cas        []rpcCall
+	scanners   []*fakeScanner
 }
 
 func newFakeClient() *fakeClient {
@@ -173,6 +176,9 @@ func (f *fakeClient) Delete(d *hrpc.Mutate) (*hrpc.Result, error) {
 func (f *fakeClient) CheckAndPut(p *hrpc.Mutate, family, qualifier string, expectedValue []byte) (bool, error) {
 	f.casCalls++
 	f.cas = append(f.cas, recordCall(p))
+	if f.casErr != nil {
+		return false, f.casErr
+	}
 	// Only the put-if-absent form (expectedValue nil) is exercised by the Store.
 	if expectedValue == nil {
 		if row, ok := f.rows[string(p.Key())]; ok {
@@ -211,7 +217,9 @@ func (f *fakeClient) Scan(s *hrpc.Scan) hrpc.Scanner {
 		results = append(results, &hrpc.Result{Cells: cellsFor(k, f.rows[k])})
 	}
 	f.scans = append(f.scans, recordCall(s))
-	return &fakeScanner{results: results, err: f.scanErr}
+	sc := &fakeScanner{results: results, err: f.scanErr, failAt: f.scanFailAt}
+	f.scanners = append(f.scanners, sc)
+	return sc
 }
 
 func (f *fakeClient) Close() { f.closeCalls++ }
@@ -247,16 +255,18 @@ func cellsFor(key string, row map[string]map[string][]byte) []*hrpc.Cell {
 }
 
 // fakeScanner replays a fixed slice of results, returning io.EOF when drained, the
-// contract the Store's scan loops depend on.
+// contract the Store's scan loops depend on. It counts Close calls, and it returns
+// err once failAt rows are read.
 type fakeScanner struct {
 	results []*hrpc.Result
 	i       int
 	err     error
-	closed  bool
+	failAt  int
+	closes  int
 }
 
 func (s *fakeScanner) Next() (*hrpc.Result, error) {
-	if s.err != nil {
+	if s.err != nil && s.i >= s.failAt {
 		return nil, s.err
 	}
 	if s.i >= len(s.results) {
@@ -267,7 +277,7 @@ func (s *fakeScanner) Next() (*hrpc.Result, error) {
 	return r, nil
 }
 
-func (s *fakeScanner) Close() error { s.closed = true; return nil }
+func (s *fakeScanner) Close() error { s.closes++; return nil }
 
 func (s *fakeScanner) GetScanMetrics() map[string]int64 { return nil }
 
