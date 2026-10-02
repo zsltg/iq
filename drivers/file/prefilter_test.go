@@ -409,6 +409,12 @@ func keysOf(m map[string]any) []string {
 	return out
 }
 
+// everything is a recordFilter whose matcher keeps every record, and that counts into
+// checked and skipped.
+func everything(checked, skipped *int) recordFilter {
+	return recordFilter{matcher: rawpred.NewMatcher(matchEverything), checked: checked, skipped: skipped}
+}
+
 // errReader is an io.Reader whose every Read fails with a fixed non-EOF error, so a
 // test can drive scanFilteredJSON's prologue read failure directly — the one path the
 // corpus-backed tests cannot reach, since a bytes reader only ever ends in io.EOF.
@@ -418,16 +424,16 @@ func (e errReader) Read([]byte) (int, error) { return 0, e.err }
 
 // TestScanFilteredReadError pins the prologue read-failure path: a reader that fails
 // with a non-EOF error must surface as a "read json"-wrapped error before any record is
-// evaluated. It kills the mutants that swallow the startsJSONArray error (the EOF-branch
-// removal at the prologue) or drop it to nil (the startsJSONArray error return), both of
+// evaluated. It kills the mutants that swallow the query.NewJSONStream error (the EOF-branch
+// removal at the prologue) or drop it to nil (the query.NewJSONStream error return), both of
 // which would re-route the failure into the decode loop and mislabel it "decode json
 // record" instead.
 func TestScanFilteredReadError(t *testing.T) {
 	boom := errors.New("disk boom")
 	var checked, skipped int
 	err := scanFilteredJSON(
-		context.Background(), errReader{err: boom}, rawpred.NewMatcher(matchEverything),
-		&checked, &skipped, func(map[string]any) error { return nil },
+		context.Background(), errReader{err: boom}, everything(&checked, &skipped),
+		func(map[string]any) error { return nil },
 	)
 	require.ErrorContains(t, err, "read json")
 	require.ErrorIs(t, err, boom)
@@ -441,8 +447,8 @@ func TestScanFilteredEmptyInput(t *testing.T) {
 	var checked, skipped int
 	var pages int
 	err := scanFilteredJSON(
-		context.Background(), strings.NewReader(""), rawpred.NewMatcher(matchEverything),
-		&checked, &skipped, func(map[string]any) error { pages++; return nil },
+		context.Background(), strings.NewReader(""), everything(&checked, &skipped),
+		func(map[string]any) error { pages++; return nil },
 	)
 	require.NoError(t, err)
 	require.Equal(t, 0, pages)
@@ -450,7 +456,7 @@ func TestScanFilteredEmptyInput(t *testing.T) {
 }
 
 // TestScanFilteredLeadingWhitespaceArray drives the whitespace-skip loop of
-// startsJSONArray with a single leading space before a top-level array. Detecting the
+// query.NewJSONStream with a single leading space before a top-level array. Detecting the
 // array demands the loop discard exactly one byte and keep looping to the '['; a mutant
 // that bails after the first space (negated Discard guard) or over-discards the '[' too
 // (incremented Discard count) mis-reads the array as line mode and mangles the scan.
@@ -463,15 +469,15 @@ func TestScanFilteredLeadingWhitespaceArray(t *testing.T) {
 	require.ElementsMatch(t, []string{"a", "b"}, keysOf(got))
 }
 
-// TestScanFilteredSingleByteInput pins the Peek width in startsJSONArray: a one-byte,
+// TestScanFilteredSingleByteInput pins the Peek width in query.NewJSONStream: a one-byte,
 // malformed stream must reach the decode loop and fail there ("decode json record"),
 // exactly as the plain scan does. A mutant that peeks two bytes instead of one turns the
 // short read into an io.EOF and silently returns nil — masking the malformed input.
 func TestScanFilteredSingleByteInput(t *testing.T) {
 	var checked, skipped int
 	err := scanFilteredJSON(
-		context.Background(), strings.NewReader("{"), rawpred.NewMatcher(matchEverything),
-		&checked, &skipped, func(map[string]any) error { return nil },
+		context.Background(), strings.NewReader("{"), everything(&checked, &skipped),
+		func(map[string]any) error { return nil },
 	)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "decode json record")
@@ -587,8 +593,8 @@ func TestScanFilteredStopsOnACancelledContext(t *testing.T) {
 	var checked, skipped int
 	called := false
 	err := scanFilteredJSON(
-		ctx, strings.NewReader(oneRecord()), rawpred.NewMatcher(matchEverything),
-		&checked, &skipped, func(map[string]any) error { called = true; return nil },
+		ctx, strings.NewReader(oneRecord()), everything(&checked, &skipped),
+		func(map[string]any) error { called = true; return nil },
 	)
 	require.ErrorIs(t, err, context.Canceled)
 	require.False(t, called)
@@ -629,8 +635,8 @@ func TestScanFilteredReportsAnEOFReadErrorInsideAnArray(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var checked, skipped int
 			err := scanFilteredJSON(
-				context.Background(), &dataThenErrReader{data: tt.input, err: gone}, rawpred.NewMatcher(matchEverything),
-				&checked, &skipped, func(map[string]any) error { return nil },
+				context.Background(), &dataThenErrReader{data: tt.input, err: gone}, everything(&checked, &skipped),
+				func(map[string]any) error { return nil },
 			)
 			require.ErrorContains(t, err, "decode json record")
 			require.ErrorIs(t, err, gone)
@@ -677,8 +683,8 @@ func TestScanFilteredEndConditionsUnderACanceledContext(t *testing.T) {
 			var checked, skipped int
 			called := false
 			err := scanFilteredJSON(
-				ctx, tt.r, rawpred.NewMatcher(matchEverything),
-				&checked, &skipped, func(map[string]any) error { called = true; return nil },
+				ctx, tt.r, everything(&checked, &skipped),
+				func(map[string]any) error { called = true; return nil },
 			)
 			if tt.wantErr == nil {
 				require.NoError(t, err)
@@ -704,14 +710,14 @@ func TestScanFilteredEndsAnArrayOnTheClosingBracket(t *testing.T) {
 	fn := func(b map[string]any) error { seen += len(b); return nil }
 	err := scanFilteredJSON(
 		context.Background(), strings.NewReader("["+strings.TrimSpace(oneRecord())+"]\n{not json"),
-		rawpred.NewMatcher(matchEverything), &checked, &skipped, fn,
+		everything(&checked, &skipped), fn,
 	)
 	require.NoError(t, err)
 	require.Equal(t, 1, seen)
 
 	err = scanFilteredJSON(
 		context.Background(), strings.NewReader(oneRecord()+"{not json"),
-		rawpred.NewMatcher(matchEverything), &checked, &skipped, fn,
+		everything(&checked, &skipped), fn,
 	)
 	require.ErrorContains(t, err, "decode json record: ")
 }

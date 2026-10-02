@@ -1,11 +1,7 @@
 package file
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"strings"
 
@@ -69,10 +65,10 @@ func (s *Store) prefilterable() bool {
 
 // prefilterJSONL streams the dump's typed-JSONL bytes, dropping every record the
 // matcher proves cannot match before it is decoded, and hands the survivors to fn in
-// {key: value} pages. It mirrors query.JSONSource's array-tolerant line/RawMessage
-// loop exactly — the core has no pre-decode seam, so the driver duplicates the loop —
-// inserting one raw-byte check between reading a record's raw bytes and decoding it.
-// It never touches the decode cache, so a prefiltered scan leaves the cache unpopulated.
+// {key: value} pages. It reads the dump with the same query.JSONStream as
+// query.JSONSource, and puts one raw-byte check between reading a record's raw bytes
+// and decoding it. It never touches the decode cache, so a prefiltered scan leaves the
+// cache unpopulated.
 func (s *Store) prefilterJSONL(ctx context.Context, matcher *rawpred.Matcher, fn func(batch map[string]any) error) error {
 	r, closeR, err := s.reader()
 	if err != nil {
@@ -83,85 +79,84 @@ func (s *Store) prefilterJSONL(ctx context.Context, matcher *rawpred.Matcher, fn
 	if err != nil {
 		return err
 	}
-	return scanFilteredJSON(ctx, dr, matcher, &s.prefilterChecked, &s.prefilterSkipped, fn)
+	f := recordFilter{matcher: matcher, checked: &s.prefilterChecked, skipped: &s.prefilterSkipped}
+	return scanFilteredJSON(ctx, dr, f, fn)
 }
 
-// scanFilteredJSON is the driver-owned duplicate of query.JSONSource's scan loop with
-// a raw-byte prefilter spliced in. It reads either concatenated JSON objects (JSON
-// Lines) or a single top-level array, decodes each survivor with the same UseNumber +
-// exact-integer semantics as the core decodeLine, and flushes {key: value} pages of
-// pageSize records — the same page shape ScanBatches produces. checked and skipped
-// count every record the prefilter evaluated and the subset it dropped.
-//
-// For each record the matcher runs over the envelope's raw `value` bytes, never the
-// whole {key,type,value} line: the engine filters over the value, so matching the whole
-// envelope would evaluate the predicate's paths against the wrong object. A record whose
-// value the matcher proves the predicate rejects is skipped without decoding; every other
-// record is decoded exactly as the plain scan would and its key/value added to the page.
-func scanFilteredJSON(ctx context.Context, r io.Reader, matcher *rawpred.Matcher, checked, skipped *int, fn func(batch map[string]any) error) error {
-	br := bufio.NewReader(r)
-	array, err := startsJSONArray(br)
+// recordFilter drops a typed record whose raw value the matcher proves cannot
+// match, and counts what it evaluated and what it dropped.
+type recordFilter struct {
+	matcher          *rawpred.Matcher
+	checked, skipped *int
+}
+
+// drop reports whether the record in raw can be skipped without a decode. The matcher
+// runs over the envelope's raw `value` bytes, never the whole {key,type,value} line:
+// the engine filters over the value, so matching the whole envelope would evaluate the
+// predicate's paths against the wrong object. A value that cannot be extracted (a
+// malformed or value-less line) is not evaluated: it is left for
+// query.DecodeTypedRecord, which reports the same error the plain scan would. So is an
+// envelope that repeats `value`.
+func (f recordFilter) drop(raw []byte) bool {
+	val, ok := typedValue(raw)
+	if !ok {
+		return false
+	}
+	*f.checked++
+	if f.matcher.Match(val) != rawpred.CannotMatch {
+		return false
+	}
+	*f.skipped++
+	return true
+}
+
+// scanFilteredJSON scans a typed dump with a raw-byte prefilter spliced into the loop
+// of query.JSONSource. It reads either concatenated JSON objects (JSON Lines) or a
+// single top-level array, decodes each survivor with query.DecodeTypedRecord, and
+// flushes {key: value} pages of pageSize records, the same page shape ScanBatches
+// produces. The filter counts every record it evaluated and the subset it dropped.
+func scanFilteredJSON(ctx context.Context, r io.Reader, f recordFilter, fn func(batch map[string]any) error) error {
+	stream, err := query.NewJSONStream(r)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		return fmt.Errorf("read json: %w", err)
+		return err
 	}
-	dec := json.NewDecoder(br)
-	if array {
-		if _, err := dec.Token(); err != nil { // consume '['
-			return fmt.Errorf("read json array: %w", err)
-		}
+	if stream == nil {
+		return nil // empty input: no records, and no context check.
 	}
-	page := make([]query.Record, 0, pageSize)
-	emit := func() error {
-		if len(page) == 0 {
-			return nil
-		}
-		batch := make(map[string]any, len(page))
-		for _, rec := range page {
-			batch[rec.Key] = rec.Value
-		}
-		page = page[:0]
-		return fn(batch)
-	}
+	pg := newRecordPager(pageSize, func(recs []query.Record) error { return fn(recordBatch(recs)) })
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if array && !dec.More() {
+		raw, ok, err := stream.Next()
+		if err != nil {
+			return err
+		}
+		if !ok {
 			break
 		}
-		var raw json.RawMessage
-		if err := dec.Decode(&raw); err != nil {
-			if !array && errors.Is(err, io.EOF) {
-				break
-			}
-			return fmt.Errorf("decode json record: %w", err)
-		}
-		// The engine filters over the value, so the prefilter runs on the extracted raw
-		// `value` bytes. A value that cannot be extracted (a malformed or value-less line)
-		// is not evaluated — it is left for query.DecodeTypedRecord, which reports the same error
-		// the plain scan would. So is an envelope that repeats `value`.
-		if val, ok := typedValue(raw); ok {
-			*checked++
-			if matcher.Match(val) == rawpred.CannotMatch {
-				*skipped++
-				continue
-			}
+		if f.drop(raw) {
+			continue
 		}
 		rec, err := query.DecodeTypedRecord(raw)
 		if err != nil {
 			return err
 		}
-		page = append(page, rec)
-		if len(page) >= pageSize {
-			if err := emit(); err != nil {
-				return err
-			}
+		if err := pg.add(rec); err != nil {
+			return err
 		}
 	}
-	return emit()
+	return pg.flush()
+}
+
+// recordBatch folds a page of records into a {key: value} map. A key that repeats in
+// one page keeps its last value.
+func recordBatch(recs []query.Record) map[string]any {
+	batch := make(map[string]any, len(recs))
+	for _, r := range recs {
+		batch[r.Key] = r.Value
+	}
+	return batch
 }
 
 // typedValue returns the raw `value` of a typed record envelope, or ok=false when the
@@ -180,26 +175,4 @@ func typedValue(raw []byte) ([]byte, bool) {
 		return nil
 	})
 	return val, err == nil && count == 1
-}
-
-// startsJSONArray reports whether the first non-whitespace byte is '[' (a top-level
-// array), without consuming any value bytes. It duplicates query.startsJSONArray so the
-// driver's prefilter loop reads a dump exactly as the core JSONSource does.
-func startsJSONArray(br *bufio.Reader) (bool, error) {
-	for {
-		b, err := br.Peek(1)
-		if err != nil {
-			return false, err
-		}
-		switch b[0] {
-		case ' ', '\t', '\r', '\n':
-			if _, err := br.Discard(1); err != nil {
-				return false, err
-			}
-		case '[':
-			return true, nil
-		default:
-			return false, nil
-		}
-	}
 }

@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
@@ -31,6 +32,40 @@ import (
 // pageSize bounds how many records a scan buffers before handing a page to the
 // caller, so a stream holds only one page in memory.
 const pageSize = 500
+
+// recordPager hands records to fn in pages of size, reusing one slice. A caller of fn
+// must not keep the page.
+type recordPager struct {
+	page []query.Record
+	size int
+	fn   func([]query.Record) error
+}
+
+// newRecordPager returns a pager for fn.
+func newRecordPager(size int, fn func([]query.Record) error) *recordPager {
+	return &recordPager{page: make([]query.Record, 0, size), size: size, fn: fn}
+}
+
+// add appends r and hands a full page to fn.
+func (p *recordPager) add(r query.Record) error {
+	p.page = append(p.page, r)
+	if len(p.page) < p.size {
+		return nil
+	}
+	if err := p.fn(p.page); err != nil {
+		return err
+	}
+	p.page = p.page[:0]
+	return nil
+}
+
+// flush hands a non-empty tail to fn.
+func (p *recordPager) flush() error {
+	if len(p.page) == 0 {
+		return nil
+	}
+	return p.fn(p.page)
+}
 
 // ErrRawUnsupported reports that a raw backend command (Redis command, Mongo
 // runCommand) has no meaning for a file source. It is a sentinel so inspect/diff
@@ -136,10 +171,14 @@ func isDrivePath(p string) bool {
 // the native path starts at the drive letter. Every other path is returned as
 // is.
 func nativePath(goos, path string) string {
-	if goos != "windows" || path == "" || path[0] != '/' || !isDrivePath(path[1:]) {
+	if goos != "windows" {
 		return path
 	}
-	return filepath.FromSlash(path[1:])
+	rest, ok := strings.CutPrefix(path, "/")
+	if !ok || !isDrivePath(rest) {
+		return path
+	}
+	return filepath.FromSlash(rest)
 }
 
 // DumpPath returns the filesystem path a file:// URL refers to — the same path
@@ -175,15 +214,7 @@ func parseFileURL(raw string) (path string, format Format, hints Hints, err erro
 	if u.Scheme != "file" {
 		return "", FormatUnknown, Hints{}, fmt.Errorf("not a file url: %q", raw)
 	}
-	path = u.Path
-	if path == "" {
-		path = u.Opaque // file:relative form.
-	}
-	if u.Host != "" && u.Host != "localhost" {
-		// file://segment/... puts the first segment in Host; fold it back so a
-		// two-slash relative-looking url still names a path rather than being lost.
-		path = u.Host + path
-	}
+	path = urlPath(u)
 	if path == "" {
 		return "", FormatUnknown, Hints{}, errors.New("file url has no path")
 	}
@@ -195,7 +226,27 @@ func parseFileURL(raw string) (path string, format Format, hints Hints, err erro
 			return "", FormatUnknown, Hints{}, err
 		}
 	}
-	hints = Hints{
+	return path, format, hintsFrom(q), nil
+}
+
+// urlPath returns the path a parsed file:// URL names: its path, else its opaque
+// part (the file:relative form), with a host other than localhost folded back in.
+func urlPath(u *url.URL) string {
+	path := u.Path
+	if path == "" {
+		path = u.Opaque // file:relative form.
+	}
+	if u.Host != "" && u.Host != "localhost" {
+		// file://segment/... puts the first segment in Host; fold it back so a
+		// two-slash relative-looking url still names a path rather than being lost.
+		path = u.Host + path
+	}
+	return path
+}
+
+// hintsFrom reads the schema hints from the query of a file:// URL.
+func hintsFrom(q url.Values) Hints {
+	return Hints{
 		Types:   q.Get("types"),
 		Keys:    q.Get("keys"),
 		Columns: q.Get("columns"),
@@ -203,7 +254,6 @@ func parseFileURL(raw string) (path string, format Format, hints Hints, err erro
 		Rel:     q.Get("rel"),
 		Key:     q.Get("key"),
 	}
-	return path, format, hints, nil
 }
 
 // records is the cache-aware decode entry point every read path shares. When a
@@ -314,11 +364,7 @@ func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) err
 // the jq read path.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
 	return s.records(ctx, true, func(recs []query.Record) error {
-		batch := make(map[string]any, len(recs))
-		for _, r := range recs {
-			batch[r.Key] = r.Value
-		}
-		return fn(batch)
+		return fn(recordBatch(recs))
 	})
 }
 
@@ -334,23 +380,11 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	if out, ok := s.cacheGet(ctx, keys); ok {
 		return out, nil
 	}
-	want := make(map[string]struct{}, len(keys))
-	out := make(map[string]any, len(keys))
-	for _, k := range keys {
-		want[k] = struct{}{}
-	}
-	found := make(map[string]bool, len(keys))
+	l := newKeyLookup(keys)
 	err := s.records(ctx, false, func(recs []query.Record) error {
 		for _, r := range recs {
-			if _, ok := want[r.Key]; !ok {
-				continue
-			}
-			out[r.Key] = r.Value
-			if !found[r.Key] {
-				found[r.Key] = true
-				if len(found) == len(want) {
-					return errStopScan
-				}
+			if l.take(r) {
+				return errStopScan
 			}
 		}
 		return nil
@@ -358,7 +392,7 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	if err != nil && !errors.Is(err, errStopScan) {
 		return nil, err
 	}
-	return out, nil
+	return l.out, nil
 }
 
 // Query rejects raw commands: a file has no server to run one against. The sentinel

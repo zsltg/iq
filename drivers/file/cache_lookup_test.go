@@ -36,11 +36,13 @@ func TestPageMayHold(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.hold, pageMayHold(filter, tt.want, tt.found))
+			l := &keyLookup{want: tt.want, found: tt.found}
+			require.Equal(t, tt.hold, l.mayHold(filter))
 		})
 	}
 	t.Run("an empty filter admits nothing", func(t *testing.T) {
-		require.False(t, pageMayHold(nil, map[string]struct{}{"a": {}}, map[string]bool{}))
+		l := &keyLookup{want: map[string]struct{}{"a": {}}, found: map[string]bool{}}
+		require.False(t, l.mayHold(nil))
 	})
 }
 
@@ -54,17 +56,15 @@ func TestDecodePage(t *testing.T) {
 		require.NoError(t, err)
 		body.Write(b)
 	}
-	want := map[string]struct{}{"k0": {}, "k2": {}, "absent": {}}
-	out := map[string]any{}
-	found := map[string]bool{}
-	require.NoError(t, decodePage(bytes.NewReader(body.Bytes()), 0, int64(body.Len()), want, out, found))
-	require.Equal(t, map[string]any{"k0": "v0", "k2": "v2"}, out)
-	require.Equal(t, map[string]bool{"k0": true, "k2": true}, found)
+	l := newKeyLookup([]string{"k0", "k2", "absent"})
+	require.NoError(t, decodePage(bytes.NewReader(body.Bytes()), 0, int64(body.Len()), l))
+	require.Equal(t, map[string]any{"k0": "v0", "k2": "v2"}, l.out)
+	require.Equal(t, map[string]bool{"k0": true, "k2": true}, l.found)
 
 	t.Run("a corrupt record is reported", func(t *testing.T) {
 		junk, err := cborEnc.Marshal("not a record")
 		require.NoError(t, err)
-		err = decodePage(bytes.NewReader(junk), 0, int64(len(junk)), want, map[string]any{}, map[string]bool{})
+		err = decodePage(bytes.NewReader(junk), 0, int64(len(junk)), newKeyLookup([]string{"k0", "k2", "absent"}))
 		require.Error(t, err)
 	})
 }
@@ -82,12 +82,10 @@ func TestDecodePageKeepsTheLastValueOfARepeatedKey(t *testing.T) {
 		require.NoError(t, err)
 		body.Write(b)
 	}
-	want := map[string]struct{}{"a": {}}
-	out := map[string]any{}
-	found := map[string]bool{}
-	require.NoError(t, decodePage(bytes.NewReader(body.Bytes()), 0, int64(body.Len()), want, out, found))
-	require.Equal(t, map[string]any{"a": "last"}, out)
-	require.Equal(t, map[string]bool{"a": true}, found)
+	l := newKeyLookup([]string{"a"})
+	require.NoError(t, decodePage(bytes.NewReader(body.Bytes()), 0, int64(body.Len()), l))
+	require.Equal(t, map[string]any{"a": "last"}, l.out)
+	require.Equal(t, map[string]bool{"a": true}, l.found)
 }
 
 // TestDecodePageReadsToTheEndOfThePage puts a corrupt record after the only wanted
@@ -98,7 +96,7 @@ func TestDecodePageReadsToTheEndOfThePage(t *testing.T) {
 	junk, err := cborEnc.Marshal("not a record")
 	require.NoError(t, err)
 	body := append(first, junk...)
-	err = decodePage(bytes.NewReader(body), 0, int64(len(body)), map[string]struct{}{"a": {}}, map[string]any{}, map[string]bool{})
+	err = decodePage(bytes.NewReader(body), 0, int64(len(body)), newKeyLookup([]string{"a"}))
 	require.Error(t, err)
 }
 
