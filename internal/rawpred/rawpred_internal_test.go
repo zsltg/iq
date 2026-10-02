@@ -764,6 +764,19 @@ func TestMatchVerdict(t *testing.T) {
 		{"invalid utf8 string value eq kept", "{\"a\":\"\xff\"}", predicate.Eq{Path: []string{"a"}, Value: "\ufffd"}, MayMatch},
 		{"invalid utf8 string value cmp kept", "{\"a\":\"\xff\"}", predicate.Cmp{Path: []string{"a"}, Op: predicate.Lt, Value: "\ufffd"}, MayMatch},
 		{"invalid utf8 keys that collapse kept", "{\"o\":{\"\xff\":1,\"\xfe\":2}}", predicate.Size{Path: []string{"o"}, N: 1}, MayMatch},
+		{"surrogate escape key kept", "{\"\\ud800\":[]}", predicate.Exists{Path: []string{"\ufffd"}}, MayMatch},
+		{"upper case surrogate escape key kept", "{\"\\uDBFF\":[]}", predicate.Exists{Path: []string{"\ufffd"}}, MayMatch},
+		{"low surrogate escape key kept", "{\"\\udc00\":[]}", predicate.Exists{Path: []string{"\ufffd"}}, MayMatch},
+		{"high surrogate then plain escape key kept", "{\"\\ud800\\u0041\":[]}", predicate.Exists{Path: []string{"\ufffd"}}, MayMatch},
+		{"surrogate escape value eq kept", "{\"a\":\"\\ud800\"}", predicate.Eq{Path: []string{"a"}, Value: "\ufffd"}, MayMatch},
+		{"surrogate escape value cmp kept", "{\"a\":\"\\udfff\"}", predicate.Cmp{Path: []string{"a"}, Op: predicate.Lt, Value: "\ufffd"}, MayMatch},
+		{"surrogate escape keys that collapse kept", "{\"o\":{\"\\ud800\":1,\"\\udc00\":2}}", predicate.Size{Path: []string{"o"}, N: 1}, MayMatch},
+		{"surrogate escape after other escape kept", "{\"b\":\"\\u0041\",\"\\ud800\":[]}", predicate.Exists{Path: []string{"\ufffd"}}, MayMatch},
+		{"surrogate escape at end of input kept", "{\"b\":1,\"\\ud800", predicate.Exists{Path: []string{"\ufffd"}}, MayMatch},
+		{"non surrogate escape key still drops", "{\"\\ud7ff\":[]}", predicate.Exists{Path: []string{"\ufffd"}}, CannotMatch},
+		{"escape below d800 range still drops", "{\"\\uc800\":[]}", predicate.Exists{Path: []string{"\ufffd"}}, CannotMatch},
+		{"escape past dfff range still drops", "{\"\\ue000\":[]}", predicate.Exists{Path: []string{"\ufffd"}}, CannotMatch},
+		{"short escape still drops", "{\"b\":\"\\u\"}", predicate.Exists{Path: []string{"\ufffd"}}, CannotMatch},
 		{"valid replacement char key still drops", "{\"b\":1}", predicate.Exists{Path: []string{"\ufffd"}}, CannotMatch},
 		{"valid replacement char key still matches", "{\"\ufffd\":1}", predicate.Exists{Path: []string{"\ufffd"}}, MayMatch},
 		{"valid replacement char value still drops", "{\"a\":\"\ufffd\"}", predicate.Eq{Path: []string{"a"}, Value: "x"}, CannotMatch},
@@ -771,6 +784,40 @@ func TestMatchVerdict(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, Match([]byte(tt.raw), tt.pred))
+		})
+	}
+}
+
+func TestHasSurrogateEscape(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"empty", ``, false},
+		{"no escape", `abc`, false},
+		{"high surrogate", `\ud800`, true},
+		{"upper case", `\uDBFF`, true},
+		{"low surrogate", `\udfff`, true},
+		{"truncated at the digit", `\ud8`, true},
+		{"truncated before the digit", `\ud`, false},
+		{"digit 8", `\ud8zz`, true},
+		{"digit 9", `\ud9zz`, true},
+		{"digit a", `\udazz`, true},
+		{"digit f", `\udfzz`, true},
+		{"digit 7", `\ud7zz`, false},
+		{"digit g", `\udgzz`, false},
+		{"digit at sign", `\ud@zz`, false},
+		{"digit grave", "\\ud`zz", false},
+		{"other lead digit", `\uc800`, false},
+		{"lead digit past d", `\ue800`, false},
+		{"after another escape", `A\ud800`, true},
+		{"after a bare u escape", `\u\ud800`, true},
+		{"not a u escape", `\n\d800`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, hasSurrogateEscape([]byte(tt.in)))
 		})
 	}
 }
