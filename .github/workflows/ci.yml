@@ -598,7 +598,9 @@ jobs:
   # BLOCKING: an escaped mutant on a changed covered line, or an errored/timed-out
   # mutant, fails the job; a genuine equivalent goes into mutago-baseline.json with
   # a note. Driver packages provision their testcontainer per test run, so with
-  # --workers 1 and -p=1 there is one container at a time. The `deep-*` jobs scan
+  # --workers 1 and -p=1 there is one container at a time. The one exception is
+  # drivers/hbase: its tests run only against the compose service, so the HBase
+  # step below starts it when the change touches that driver. The `deep-*` jobs scan
   # the changed packages weekly (all packages monthly), one shard per runner.
   mutate-diff:
     needs: changes
@@ -616,12 +618,25 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # The HBase tests have no testcontainer. They run only against the compose
+      # service and skip without it. Without this step, a change to drivers/hbase
+      # would pass the gate with those lines untested, as "not covered".
+      - name: Start HBase when drivers/hbase changed (compose)
+        env:
+          BASE: ${{ github.base_ref || 'main' }} # PR target branch, else the trunk
+        run: |
+          git fetch --no-tags origin "$BASE"
+          if git diff --quiet "$(git merge-base "origin/$BASE" HEAD)" -- drivers/hbase; then
+            echo "drivers/hbase is unchanged, so the gate needs no HBase server"
+          else
+            docker compose up -d --wait hbase
+            echo "IQ_HBASE_URL=hbase://localhost:2181/" >> "$GITHUB_ENV"
+          fi
       - name: Mutation testing (scoped to the change, one container at a time)
         env:
           BASE: ${{ github.base_ref || 'main' }} # PR target branch, else the trunk
           GOFLAGS: -p=1
         run: |
-          git fetch --no-tags origin "$BASE"
           IQ_MUTATION_BASE="origin/$BASE" bash scripts/mutation-gate.sh
       # The ids of the escapes, for the baseline of an accepted equivalent, without a
       # local re-run. The candidate file exists only when the gate failed on an escape.
