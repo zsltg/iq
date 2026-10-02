@@ -242,37 +242,79 @@ func TestRenderPropagatesWriteErrors(t *testing.T) {
 }
 
 func TestRenderSectionOrder(t *testing.T) {
-	color.NoColor = true
-	var buf bytes.Buffer
-	body := func() error {
-		_, err := buf.WriteString("row\n")
-		return err
+	tests := []struct {
+		name  string
+		title string
+		sum   diff.Summary
+		want  string
+	}{
+		{"title, body, then summary", "mytitle", diff.Summary{Added: 2}, "# mytitle\nrow\n2 added, 0 removed, 0 changed\n\n"},
 	}
-	require.NoError(t, renderSection(&buf, "mytitle", diff.Summary{Added: 2}, body))
-	require.Equal(t, "# mytitle\nrow\n2 added, 0 removed, 0 changed\n\n", buf.String())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			color.NoColor = true
+			var buf bytes.Buffer
+			body := func() error {
+				_, err := buf.WriteString("row\n")
+				return err
+			}
+			require.NoError(t, renderSection(&buf, tt.title, tt.sum, body))
+			require.Equal(t, tt.want, buf.String())
+		})
+	}
 }
 
 func TestRenderSectionBodyErrorSkipsSummary(t *testing.T) {
-	color.NoColor = true
-	var buf bytes.Buffer
 	boom := errors.New("boom")
-	err := renderSection(&buf, "t", diff.Summary{Added: 2}, func() error { return boom })
-	require.ErrorIs(t, err, boom)
-	require.Equal(t, "# t\n", buf.String())
+	tests := []struct {
+		name string
+		body func() error
+		want string
+	}{
+		{"body error skips the summary", func() error { return boom }, "# t\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			color.NoColor = true
+			var buf bytes.Buffer
+			err := renderSection(&buf, "t", diff.Summary{Added: 2}, tt.body)
+			require.ErrorIs(t, err, boom)
+			require.Equal(t, tt.want, buf.String())
+		})
+	}
 }
 
 func TestBothSidesReadsLeftThenRight(t *testing.T) {
-	left := sourceSpec{filter: "left"}
-	right := sourceSpec{filter: "right"}
-	var order []string
-	a, b, err := bothSides(left, right, func(s sourceSpec) (map[string]any, error) {
-		order = append(order, s.filter)
-		return map[string]any{s.filter: 1}, nil
-	})
-	require.NoError(t, err)
-	require.Equal(t, []string{"left", "right"}, order)
-	require.Equal(t, map[string]any{"left": 1}, a)
-	require.Equal(t, map[string]any{"right": 1}, b)
+	tests := []struct {
+		name      string
+		left      sourceSpec
+		right     sourceSpec
+		wantOrder []string
+		wantLeft  map[string]any
+		wantRight map[string]any
+	}{
+		{
+			"left is read before right",
+			sourceSpec{filter: "left"},
+			sourceSpec{filter: "right"},
+			[]string{"left", "right"},
+			map[string]any{"left": 1},
+			map[string]any{"right": 1},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var order []string
+			a, b, err := bothSides(tt.left, tt.right, func(s sourceSpec) (map[string]any, error) {
+				order = append(order, s.filter)
+				return map[string]any{s.filter: 1}, nil
+			})
+			require.NoError(t, err)
+			require.Equal(t, tt.wantOrder, order)
+			require.Equal(t, tt.wantLeft, a)
+			require.Equal(t, tt.wantRight, b)
+		})
+	}
 }
 
 func TestBothSidesStopsAtTheFirstError(t *testing.T) {
