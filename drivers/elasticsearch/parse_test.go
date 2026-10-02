@@ -191,3 +191,11 @@ func TestParseURLIndexPrecedence(t *testing.T) {
 		})
 	}
 }
+
+func TestSchemeFlavorRejectsAnUnknownSchemeWithZeroValues(t *testing.T) {
+	scheme, fl, err := schemeFlavor("mongodb")
+
+	require.ErrorContains(t, err, `got "mongodb"`)
+	require.Empty(t, scheme)
+	require.Equal(t, flavor(0), fl, "an error carries the zero flavor")
+}

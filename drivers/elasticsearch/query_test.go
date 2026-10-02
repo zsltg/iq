@@ -2,6 +2,7 @@ package elasticsearch
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"testing"
@@ -103,4 +104,28 @@ func TestQueryDecodesNumbersExactly(t *testing.T) {
 	require.NoError(t, err)
 	out := st.FormatRaw(got, false)
 	require.Contains(t, out, "9007199254740993")
+}
+
+func TestQueryKeepsTheCauseOfATransportFailure(t *testing.T) {
+	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
+		esJSON(w, http.StatusOK, `{}`)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := st.Query(ctx, []string{`{"match_all":{}}`})
+
+	require.ErrorIs(t, err, context.Canceled, "the wrap keeps the cause for errors.Is")
+	require.ErrorContains(t, err, "elasticsearch search:")
+}
+
+func TestSearchBodyRejectsAnInvalidSearchAfter(t *testing.T) {
+	st := &Store{client: esFlavor{}, pageSize: 1}
+
+	raw, err := st.searchBody("PIT-1", nil, json.RawMessage(`{bad`))
+
+	require.Nil(t, raw)
+	require.ErrorContains(t, err, "encode search:")
+	var syntax *json.MarshalerError
+	require.ErrorAs(t, err, &syntax, "the wrap keeps the encoder error")
 }

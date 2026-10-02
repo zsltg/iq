@@ -1334,6 +1334,18 @@
    "mutator": "numbers/decrementer"
   },
   {
+   "id": "2caea306608e3d24aea0ce6532721adf",
+   "file": "drivers/elasticsearch/elasticsearch.go",
+   "mutator": "statement/return",
+   "line": 130
+  },
+  {
+   "id": "4fa7d370b448bb06ea859ebdb5dd08f4",
+   "file": "drivers/elasticsearch/elasticsearch.go",
+   "mutator": "statement/return",
+   "line": 132
+  },
+  {
    "id": "623005b05d81beb25bc45b14e310ada9",
    "file": "drivers/elasticsearch/filter.go",
    "line": 50,
