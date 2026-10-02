@@ -23,6 +23,7 @@
 package rawpred
 
 import (
+	"bytes"
 	"cmp"
 	"errors"
 	"math"
@@ -130,11 +131,47 @@ func (m *Matcher) prepareRegex(n predicate.Regex) {
 // Match reports whether raw can be dropped against the prepared predicate without
 // decoding it, reusing the patterns compiled at NewMatcher time. Like the package
 // Match it returns CannotMatch only on a provable non-match.
+//
+// A record that is not valid UTF-8 is never dropped. The JSON decoder replaces
+// each invalid byte in a key or string with U+FFFD, but this package compares the
+// raw bytes. The two forms can disagree for a key lookup, a duplicate-key test,
+// a string comparison and a regular expression. One check on the whole record
+// covers every site. Valid UTF-8, the usual case, takes the fast path.
+//
+// The same holds for a surrogate escape (\ud800 to \udfff). The decoder turns a
+// lone surrogate into U+FFFD, and the raw bytes are valid UTF-8, so the check
+// above does not see it. A record with such an escape is also never dropped.
 func (m *Matcher) Match(raw []byte) Verdict {
+	if !utf8.Valid(raw) || hasSurrogateEscape(raw) {
+		return MayMatch
+	}
 	if m.eval(raw, m.pred) == definiteNo {
 		return CannotMatch
 	}
 	return MayMatch
+}
+
+// hasSurrogateEscape reports whether b holds a \u escape in the range D800 to
+// DFFF, in any letter case. It also finds the text inside an escaped backslash,
+// which only makes the answer more cautious. A valid surrogate pair is found too,
+// and that record is decoded as well.
+func hasSurrogateEscape(b []byte) bool {
+	for {
+		i := bytes.Index(b, []byte(`\u`))
+		if i < 0 || len(b) < i+4 {
+			return false
+		}
+		if (b[i+2]|0x20) == 'd' && isSurrogateDigit(b[i+3]) {
+			return true
+		}
+		b = b[i+2:]
+	}
+}
+
+// isSurrogateDigit reports whether c is a hex digit from 8 to F, the third digit
+// of a surrogate escape.
+func isSurrogateDigit(c byte) bool {
+	return (c >= '8' && c <= '9') || ((c|0x20) >= 'a' && (c|0x20) <= 'f')
 }
 
 // compileRegex translates a jq test() pattern and flag string to a Go RE2 matcher,
