@@ -1,7 +1,6 @@
 package pushdown
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -63,26 +62,55 @@ func TestPortableEscape(t *testing.T) {
 	// portable: '@' before 'A', '[' after 'Z', '`' before 'a', '{' after 'z', '/'
 	// before '0', ':' after '9'. A byte at 0x80 or above is not an ASCII letter or
 	// digit, so it is portable too.
-	groups := []struct {
-		name  string
-		bytes []byte
-		want  bool
-	}{
-		{"whitelisted letters", []byte("dDwWsbBntrfv"), true},
-		{"not whitelisted letters and digits", []byte("SaAzZ09gh"), false},
-		{"escaped punctuation", []byte(`.*+?()[]{}^$|\/-`), true},
-		{"range edge bytes", []byte{'@', '[', '`', '{', '/', ':', 0x80}, true},
-	}
-	type escapeCase struct {
+	tests := []struct {
 		name string
 		b    byte
 		want bool
-	}
-	var tests []escapeCase
-	for _, g := range groups {
-		for _, b := range g.bytes {
-			tests = append(tests, escapeCase{fmt.Sprintf("%s %#x", g.name, b), b, g.want})
-		}
+	}{
+		{"whitelisted letter d", 'd', true},
+		{"whitelisted letter D", 'D', true},
+		{"whitelisted letter w", 'w', true},
+		{"whitelisted letter W", 'W', true},
+		{"whitelisted letter s", 's', true},
+		{"whitelisted letter b", 'b', true},
+		{"whitelisted letter B", 'B', true},
+		{"whitelisted letter n", 'n', true},
+		{"whitelisted letter t", 't', true},
+		{"whitelisted letter r", 'r', true},
+		{"whitelisted letter f", 'f', true},
+		{"whitelisted letter v", 'v', true},
+		{"not whitelisted letter or digit S", 'S', false},
+		{"not whitelisted letter or digit a", 'a', false},
+		{"not whitelisted letter or digit A", 'A', false},
+		{"not whitelisted letter or digit z", 'z', false},
+		{"not whitelisted letter or digit Z", 'Z', false},
+		{"not whitelisted letter or digit 0", '0', false},
+		{"not whitelisted letter or digit 9", '9', false},
+		{"not whitelisted letter or digit g", 'g', false},
+		{"not whitelisted letter or digit h", 'h', false},
+		{"escaped punctuation .", '.', true},
+		{"escaped punctuation *", '*', true},
+		{"escaped punctuation +", '+', true},
+		{"escaped punctuation ?", '?', true},
+		{"escaped punctuation (", '(', true},
+		{"escaped punctuation )", ')', true},
+		{"escaped punctuation [", '[', true},
+		{"escaped punctuation ]", ']', true},
+		{"escaped punctuation {", '{', true},
+		{"escaped punctuation }", '}', true},
+		{"escaped punctuation ^", '^', true},
+		{"escaped punctuation $", '$', true},
+		{"escaped punctuation |", '|', true},
+		{"escaped punctuation \\", '\\', true},
+		{"escaped punctuation /", '/', true},
+		{"escaped punctuation -", '-', true},
+		{"range edge @ before A", '@', true},
+		{"range edge [ after Z", '[', true},
+		{"range edge ` before a", '`', true},
+		{"range edge { after z", '{', true},
+		{"range edge / before 0", '/', true},
+		{"range edge : after 9", ':', true},
+		{"range edge 0x80 above ASCII", 0x80, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
