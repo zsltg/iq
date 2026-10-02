@@ -26,10 +26,6 @@ type scanCase struct {
 	wantCloses int
 }
 
-func failOn(err error) func(*Store) error {
-	return func(*Store) error { return err }
-}
-
 func scanBatchesWith(fn func(map[string]any) error) func(*Store) error {
 	return func(st *Store) error { return st.ScanBatches(context.Background(), fn) }
 }
