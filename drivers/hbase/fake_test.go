@@ -113,6 +113,7 @@ type fakeClient struct {
 	getErr     error // when set, Get returns this
 	putErr     error // when set, Put returns this
 	delErr     error // when set, Delete returns this
+	casErr     error // when set, CheckAndPut returns this
 	putCalls   int
 	delCalls   int
 	casCalls   int
@@ -175,6 +176,9 @@ func (f *fakeClient) Delete(d *hrpc.Mutate) (*hrpc.Result, error) {
 func (f *fakeClient) CheckAndPut(p *hrpc.Mutate, family, qualifier string, expectedValue []byte) (bool, error) {
 	f.casCalls++
 	f.cas = append(f.cas, recordCall(p))
+	if f.casErr != nil {
+		return false, f.casErr
+	}
 	// Only the put-if-absent form (expectedValue nil) is exercised by the Store.
 	if expectedValue == nil {
 		if row, ok := f.rows[string(p.Key())]; ok {

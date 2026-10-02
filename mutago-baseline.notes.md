@@ -774,3 +774,12 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 ## drivers/hbase probe fallback (accepted 2026-10-02, fix/hbase-open-deadline branch)
 
 - 5dae232f8b73 drivers/hbase/hbase.go:184 numbers/incrementer. The probe goroutine sends exactly one value, so a buffer of 1 or 2 never blocks it. Applied by hand: the hbase package suite passes. The decrementer twin (buffer 0) is killed by TestProbeFallbackGoroutineEndsAfterTheContext.
+
+## drivers/hbase write and column parse equivalents (accepted 2026-10-02, chore/codescene-hbase branch)
+
+- c8cdfa3f41d73640362c25eabc73b652 drivers/hbase/hbase.go:533 branch/if. The `return` in parseColumn's `!ok` branch is removed. Then `strings.Cut` has returned the whole column as family and "" as qualifier, so the next check, `qualifier == ""`, returns the same error with the same text. Applied by hand: the hbase package suite passes.
+- c1f39b268d560d67a93ac86870baccac drivers/hbase/write.go:86 and :108 expression/error-guard. The guard after `hrpc.NewPut` in insertRow and in upsertRow becomes `if false`. One id covers both sites, because the two guards have the same text. `hrpc.NewPut` fails only when an option function fails, and the call passes no option. No input reaches the branch. Same class as the filter.go:30 entry above.
+- c223f1d777dd1154a92d31aa9dbddfcb drivers/hbase/write.go:303 expression/error-guard. The guard after `hrpc.NewDel` in deleteRow becomes `if false`. `hrpc.NewDel` fails only for a failed option or for DeleteOneVersion on a whole-row delete, and the call passes no option. No input reaches the branch.
+- 5829bf7b397e273e2aefb4d79b516f53 drivers/hbase/write.go:96 and :117 statement/return. The final `return written, nil` of insertRow and of upsertRow becomes `return 0, nil`. `written` is the first iota of putOutcome, so 0 is `written`. The program does not change. Applied by hand: the hbase package suite passes.
+- 933de0cfb9d791e796db848c7da811be drivers/hbase/write.go:104 statement/return. The `return written, err` after the failed pre-read in upsertRow becomes `return 0, err`. The value is the same, as `written` is 0. Put also drops the outcome when the error is not nil.
+- c5432a3c1c564b9ec485207ff3207f92 drivers/hbase/write.go:112 statement/return. The `return written, ...` after the failed Put in upsertRow becomes `return 0, ...`. The value is the same, as `written` is 0.
