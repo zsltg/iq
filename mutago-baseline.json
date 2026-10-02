@@ -1190,6 +1190,18 @@
    "line": 533
   },
   {
+   "id": "5076340803d9daa6824c1241c59f8ad6",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "numbers/decrementer",
+   "line": 444
+  },
+  {
+   "id": "a3206d00a97184a0d84846f3d40175b1",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "numbers/incrementer",
+   "line": 444
+  },
+  {
    "id": "8f294e8c90fdcb1f13cb00b98a822f0a",
    "file": "drivers/hbase/normalize.go",
    "mutator": "numbers/decrementer",
@@ -1248,6 +1260,12 @@
    "file": "drivers/hbase/write.go",
    "mutator": "statement/return",
    "line": 112
+  },
+  {
+   "id": "ae4f777cff504ef6fb3ad390db46a154",
+   "file": "drivers/hbase/write.go",
+   "mutator": "statement/return",
+   "line": 91
   },
   {
    "id": "298e2e7f0fd1fb9845bac5d8c284dd4d",

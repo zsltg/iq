@@ -787,3 +787,9 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 
 - 9562bb13dc8e internal/rawpred/rawpred.go:167 numbers/decrementer. The advance `b = b[i+2:]` becomes `b = b[i+1:]`. The next search then skips the `u` and finds the same following backslash, so the result does not change. Applied by hand: the rawpred suite passes.
 - 7ec1da62f278 internal/rawpred/rawpred.go:146 statement/return. In `Matcher.Match`, `return MayMatch` becomes `return 0`. MayMatch is the first `iota` value, so it is 0 and the program does not change. Applied by hand: the rawpred suite passes.
+
+## drivers/hbase value beside an error (accepted 2026-10-02, chore/codescene-hbase branch)
+
+- 5076340803d9daa6824c1241c59f8ad6 drivers/hbase/hbase.go:444 numbers/decrementer. In `scanLimit`, `return 0, fmt.Errorf(...)` for a limit that is not a number becomes `return -1, ...`. The only caller, `execScan`, returns at once on a non-nil error and never reads the limit. Applied by hand: the hbase suite passes.
+- a3206d00a97184a0d84846f3d40175b1 drivers/hbase/hbase.go:444 numbers/incrementer. The same line becomes `return 1, ...`. The same caller ignores the value on error. Applied by hand: the hbase suite passes.
+- ae4f777cff504ef6fb3ad390db46a154 drivers/hbase/write.go:91 statement/return. In `insertRow`, `return written, fmt.Errorf(...)` after a failed CheckAndPut becomes `return 0, ...`. The only caller, the write loop in `Put`, returns at once on a non-nil error and never reads the outcome. `written` is 0 as the first `iota` value, so the value is the same. Applied by hand: the hbase suite passes.
