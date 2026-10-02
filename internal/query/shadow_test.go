@@ -13,12 +13,10 @@ import (
 // would drop the record with a = 2.
 func TestJQEngineShadowedSelectKeepsEveryRecord(t *testing.T) {
 	store := &filterKV{
-		fakeKV: fakeKV{
-			scanKeys: []string{"1", "2"},
-			values: map[string]any{
-				"1": map[string]any{"a": 1.0},
-				"2": map[string]any{"a": 2.0},
-			},
+		scanKeys: []string{"1", "2"},
+		values: map[string]any{
+			"1": map[string]any{"a": 1.0},
+			"2": map[string]any{"a": 2.0},
 		},
 	}
 
