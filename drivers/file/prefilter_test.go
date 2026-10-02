@@ -150,6 +150,32 @@ func TestPrefilterParityErrors(t *testing.T) {
 	}
 }
 
+// TestPrefilterEnvelopeFieldErrors pins the error of a record whose envelope field has
+// the wrong JSON type, on both scan paths. Both paths use the same wrapper text. Each
+// path names its own decode struct in the cause, so only the wrapper text is shared.
+func TestPrefilterEnvelopeFieldErrors(t *testing.T) {
+	const wrapper = "expected a {key,type,value} record (use --key-field for foreign JSON): "
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"numeric key", `{"key":7,"type":"document","value":{}}` + "\n"},
+		{"numeric type", `{"key":"a","type":7,"value":{}}` + "\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := jsonlStore(t, tt.body, CacheConfig{})
+			batchErr := st.ScanBatches(context.Background(), func(map[string]any) error { return nil })
+			filterErr := st.ScanFiltered(context.Background(), matchEverything, func(map[string]any) error { return nil })
+			require.ErrorContains(t, batchErr, wrapper)
+			require.ErrorContains(t, filterErr, wrapper)
+			var ute *json.UnmarshalTypeError
+			require.ErrorAs(t, batchErr, &ute)
+			require.ErrorAs(t, filterErr, &ute)
+		})
+	}
+}
+
 // TestPrefilterClasses pins the counters and the survivor set per predicate class: a
 // class rawpred can decide drops the exact provable non-matches (checked equals the
 // record count, skipped equals the dropped count, and the survivors are exactly the
