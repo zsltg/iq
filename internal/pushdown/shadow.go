@@ -73,20 +73,34 @@ func containerQueries(t *gojq.Term) []*gojq.Query {
 	if t.Func != nil {
 		qs = append(qs, t.Func.Args...)
 	}
-	if t.Object != nil {
-		for _, kv := range t.Object.KeyVals {
-			qs = append(qs, kv.KeyQuery, kv.Val)
-			qs = append(qs, stringQueries(kv.KeyString)...)
-		}
-	}
+	qs = append(qs, objectQueries(t.Object)...)
 	if t.Array != nil {
 		qs = append(qs, t.Array.Query)
 	}
-	if t.If != nil {
-		qs = append(qs, t.If.Cond, t.If.Then, t.If.Else)
-		for _, e := range t.If.Elif {
-			qs = append(qs, e.Cond, e.Then)
-		}
+	return append(qs, ifQueries(t.If)...)
+}
+
+// objectQueries returns the key and value queries of the object literal o.
+func objectQueries(o *gojq.Object) []*gojq.Query {
+	if o == nil {
+		return nil
+	}
+	var qs []*gojq.Query
+	for _, kv := range o.KeyVals {
+		qs = append(qs, kv.KeyQuery, kv.Val)
+		qs = append(qs, stringQueries(kv.KeyString)...)
+	}
+	return qs
+}
+
+// ifQueries returns the condition and branch queries of the if form f.
+func ifQueries(f *gojq.If) []*gojq.Query {
+	if f == nil {
+		return nil
+	}
+	qs := []*gojq.Query{f.Cond, f.Then, f.Else}
+	for _, e := range f.Elif {
+		qs = append(qs, e.Cond, e.Then)
 	}
 	return qs
 }
