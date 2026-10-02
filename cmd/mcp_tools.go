@@ -437,7 +437,7 @@ func (s *mcpServer) toolInspect(ctx context.Context, _ *mcp.CallToolRequest, in 
 	}
 	defer func() { _ = st.Close() }()
 	var b bytes.Buffer
-	if err := dispatchInspect(cctx, &b, st, cfg, in.Only, true, false, false); err != nil {
+	if err := dispatchInspect(cctx, inspectRequest{out: &b, st: st, cfg: cfg, only: in.Only, jsonOut: true}); err != nil {
 		return nil, nil, toolError(redactErr(err, cfg.url))
 	}
 	out, err := decodeJSONObject(b.Bytes())

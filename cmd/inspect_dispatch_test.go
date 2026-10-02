@@ -18,7 +18,7 @@ func listDispatch(t *testing.T, url string) []string {
 	cfg := &config{url: url, source: iqconfig.Source{URL: url}, handle: "src"}
 	var buf bytes.Buffer
 
-	err := dispatchInspect(t.Context(), &buf, nil, cfg, nil, false, false, true)
+	err := dispatchInspect(t.Context(), inspectRequest{out: &buf, cfg: cfg, list: true})
 
 	require.NoError(t, err)
 	return strings.Fields(stripANSI(buf.String()))
@@ -78,7 +78,7 @@ func TestDispatchInspectRedisRoutesToInfo(t *testing.T) {
 			cfg := &config{url: url, source: iqconfig.Source{URL: url}}
 			var buf bytes.Buffer
 
-			err := dispatchInspect(t.Context(), &buf, st, cfg, []string{"server", "memory"}, false, false, false)
+			err := dispatchInspect(t.Context(), inspectRequest{out: &buf, st: st, cfg: cfg, only: []string{"server", "memory"}})
 
 			require.NoError(t, err)
 			require.Equal(t, []string{"INFO", "server", "memory"}, st.gotQuery)
@@ -92,7 +92,7 @@ func TestDispatchInspectFileIsRefused(t *testing.T) {
 	cfg := &config{url: "file:///dump.jsonl"}
 	var buf bytes.Buffer
 
-	err := dispatchInspect(t.Context(), &buf, nil, cfg, nil, false, false, false)
+	err := dispatchInspect(t.Context(), inspectRequest{out: &buf, cfg: cfg})
 
 	require.EqualError(t, err, "inspect reports live server metadata, and a file source has none; "+
 		"query it with a jq filter (`iq '.[]' --src <name>`) or compare it with `iq diff`")

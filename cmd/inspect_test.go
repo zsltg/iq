@@ -36,7 +36,7 @@ func TestDispatchInspectForwardsContext(t *testing.T) {
 	ctx := t.Context()
 
 	var buf bytes.Buffer
-	require.NoError(t, dispatchInspect(ctx, &buf, st, cfg, []string{"dbStats"}, true, false, false))
+	require.NoError(t, dispatchInspect(ctx, inspectRequest{out: &buf, st: st, cfg: cfg, only: []string{"dbStats"}, jsonOut: true}))
 	require.Equal(t, ctx, st.gotCtx)
 	require.NotNil(t, st.gotCtx)
 }
@@ -60,7 +60,7 @@ func TestRenderInspectResults(t *testing.T) {
 	t.Run("text writes a header then each result in order", func(t *testing.T) {
 		var buf bytes.Buffer
 		cfg := &config{source: src, handle: "cache"}
-		require.NoError(t, renderInspectResults(&buf, fakeInspectStore{}, cfg, results, false, false))
+		require.NoError(t, renderInspectResults(inspectRequest{out: &buf, st: fakeInspectStore{}, cfg: cfg}, results))
 		out := buf.String()
 		require.Contains(t, out, "# alpha")
 		require.Contains(t, out, "<A>")
@@ -72,7 +72,7 @@ func TestRenderInspectResults(t *testing.T) {
 	t.Run("yaml emits a name-keyed structure without the header", func(t *testing.T) {
 		var buf bytes.Buffer
 		cfg := &config{source: src, handle: "cache"}
-		require.NoError(t, renderInspectResults(&buf, fakeInspectStore{}, cfg, results, false, true))
+		require.NoError(t, renderInspectResults(inspectRequest{out: &buf, st: fakeInspectStore{}, cfg: cfg, yamlOut: true}, results))
 		out := buf.String()
 		require.Contains(t, out, "alpha")
 		require.Contains(t, out, "beta")
@@ -358,7 +358,7 @@ func dispatchInspectText(t *testing.T, st store, url string, only []string) (str
 	t.Helper()
 	cfg := &config{url: url, source: iqconfig.Source{URL: url}, handle: "src"}
 	var buf bytes.Buffer
-	err := dispatchInspect(t.Context(), &buf, st, cfg, only, false, false, false)
+	err := dispatchInspect(t.Context(), inspectRequest{out: &buf, st: st, cfg: cfg, only: only})
 	return stripANSI(buf.String()), err
 }
 
@@ -385,7 +385,7 @@ func TestDispatchInspectListComesFirst(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &config{url: tt.url, source: iqconfig.Source{URL: tt.url}, handle: "src"}
 			var buf bytes.Buffer
-			err := dispatchInspect(t.Context(), &buf, nil, cfg, []string{"bogus"}, false, false, true)
+			err := dispatchInspect(t.Context(), inspectRequest{out: &buf, cfg: cfg, only: []string{"bogus"}, list: true})
 			out := stripANSI(buf.String())
 
 			require.NoError(t, err)
@@ -812,7 +812,7 @@ func TestDispatchInspectForwardsContextToReads(t *testing.T) {
 			cfg := &config{url: tt.url, source: iqconfig.Source{URL: tt.url}, handle: "src"}
 			var buf bytes.Buffer
 
-			err := dispatchInspect(ctx, &buf, st, cfg, nil, true, false, false)
+			err := dispatchInspect(ctx, inspectRequest{out: &buf, st: st, cfg: cfg, jsonOut: true})
 
 			require.NoError(t, err)
 			require.Len(t, st.ctxs, tt.wantReads)
@@ -830,7 +830,7 @@ func TestDispatchInspectListYAML(t *testing.T) {
 	cfg := &config{url: "dynamodb://h", source: iqconfig.Source{URL: "dynamodb://h"}}
 	var buf bytes.Buffer
 
-	err := dispatchInspect(t.Context(), &buf, nil, cfg, nil, false, true, true)
+	err := dispatchInspect(t.Context(), inspectRequest{out: &buf, cfg: cfg, yamlOut: true, list: true})
 
 	require.NoError(t, err)
 	require.Equal(t, "- tables\n- table\n", buf.String())
@@ -851,7 +851,7 @@ func TestDispatchInspectRedisYAML(t *testing.T) {
 	cfg := &config{url: "redis://h:6379/0", source: iqconfig.Source{URL: "redis://h:6379/0"}}
 	var buf bytes.Buffer
 
-	err := dispatchInspect(t.Context(), &buf, st, cfg, nil, false, true, false)
+	err := dispatchInspect(t.Context(), inspectRequest{out: &buf, st: st, cfg: cfg, yamlOut: true})
 
 	require.NoError(t, err)
 	require.Equal(t, "Memory:\n    used_memory: \"12345\"\nServer:\n    redis_version: 7.2.0\n", buf.String())
@@ -875,7 +875,7 @@ func TestDispatchInspectRedisHeaderWriteError(t *testing.T) {
 	cfg := &config{url: "redis://h:6379/0", source: iqconfig.Source{URL: "redis://h:6379/0"}}
 	w := &failingWriter{err: errors.New("disk full")}
 
-	err := dispatchInspect(t.Context(), w, st, cfg, nil, false, false, false)
+	err := dispatchInspect(t.Context(), inspectRequest{out: w, st: st, cfg: cfg})
 
 	require.ErrorIs(t, err, w.err)
 	require.Equal(t, 1, w.writes)
