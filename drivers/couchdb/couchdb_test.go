@@ -3,6 +3,7 @@ package couchdb
 import (
 	"bytes"
 	"context"
+	"errors"
 	"maps"
 	"sort"
 	"strings"
@@ -251,6 +252,31 @@ func TestOpenBadServerFailsFast(t *testing.T) {
 	_, err := Open(ctx, "couchdb://127.0.0.1:1/", "iq", nil, numfmt.DecimalAuto)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "connect couchdb")
+}
+
+func TestOpenWrapsThePingFailure(t *testing.T) {
+	// The ping that checks the connection uses the caller's context, and its
+	// cause stays in the chain of the returned error.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	st, err := Open(ctx, "couchdb://127.0.0.1:1/", "iq", nil, numfmt.DecimalAuto)
+
+	require.ErrorContains(t, err, "connect couchdb")
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, st)
+}
+
+func TestOpenRejectsAHostTheClientCannotParse(t *testing.T) {
+	// parseURL accepts a couchdb:// URL whose host has a second colon, but the
+	// http:// DSN made from it does not parse. Open returns that error before it
+	// sends a request.
+	st, err := Open(context.Background(), "couchdb://h:x:5984/", "iq", nil, numfmt.DecimalAuto)
+
+	require.ErrorContains(t, err, "connect couchdb")
+	require.ErrorContains(t, err, "invalid port")
+	require.Error(t, errors.Unwrap(err))
+	require.Nil(t, st)
 }
 
 func TestOpenCarriesTheDecimalMode(t *testing.T) {

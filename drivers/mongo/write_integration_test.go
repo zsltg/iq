@@ -5,6 +5,7 @@ import (
 	"maps"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -169,18 +170,34 @@ func TestPutEmptyBatchIsNoOp(t *testing.T) {
 	require.Equal(t, query.WriteStat{}, stat)
 }
 
-func TestPutUpsertRejectsNonObjectValue(t *testing.T) {
-	store := openIntegration(t, "put_scalar")
-	seedDocs(t, store, nil)
+// TestPutRejectsNonObjectValue proves both write modes reject a scalar value
+// before any write.
+func TestPutRejectsNonObjectValue(t *testing.T) {
+	tests := []struct {
+		name string
+		slug string
+		mode query.WriteMode
+	}{
+		{"upsert", "upsert", query.Upsert},
+		{"insert only", "insert_only", query.InsertOnly},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := openIntegration(t, "put_scalar_"+tt.slug)
+			seedDocs(t, store, nil)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-	_, err := store.Put(context.Background(), []query.Record{
-		{Key: "a", Value: "scalar"},
-	}, query.Upsert)
+			_, err := store.Put(ctx, []query.Record{
+				{Key: "a", Value: "scalar"},
+			}, tt.mode)
 
-	require.ErrorContains(t, err, "is not a JSON object", "the value is rejected before any write")
-	n, err := store.EstimateCount(context.Background())
-	require.NoError(t, err)
-	require.Zero(t, n, "nothing was written")
+			require.ErrorContains(t, err, "is not a JSON object", "the value is rejected before any write")
+			n, err := store.EstimateCount(ctx)
+			require.NoError(t, err)
+			require.Zero(t, n, "nothing was written")
+		})
+	}
 }
 
 // TestPutUpsertKeylessFirstMintsObjectID pins the keyless branch: a keyless record

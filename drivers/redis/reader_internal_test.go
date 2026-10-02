@@ -2,12 +2,14 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/rawpred"
 )
 
 // TestReaderPresence pins the presence half of every reader's contract, which a
@@ -117,6 +119,76 @@ func TestReaderRaceReadsAsAbsent(t *testing.T) {
 			v, present, err := tt.reader.normalize()
 
 			require.NoError(t, err, "a vanished key is not an error")
+			require.False(t, present)
+			require.Nil(t, v)
+		})
+	}
+}
+
+// TestReaderReportsReadError proves each reader returns the error of its reply,
+// so a failed read is not taken for an absent key.
+func TestReaderReportsReadError(t *testing.T) {
+	ctx := context.Background()
+	errRead := errors.New("read failed")
+
+	hc := goredis.NewMapStringStringCmd(ctx)
+	hc.SetErr(errRead)
+	lc := goredis.NewStringSliceCmd(ctx)
+	lc.SetErr(errRead)
+	sc := goredis.NewStringSliceCmd(ctx)
+	sc.SetErr(errRead)
+	zc := goredis.NewZSliceCmd(ctx)
+	zc.SetErr(errRead)
+	xc := goredis.NewXMessageSliceCmd(ctx)
+	xc.SetErr(errRead)
+	jc := &goredis.JSONCmd{}
+	jc.SetErr(errRead)
+	fc := &goredis.JSONCmd{}
+	fc.SetErr(errRead)
+
+	tests := []struct {
+		name   string
+		reader reader
+	}{
+		{"hash", hashReader{hc}},
+		{"list", listReader{lc}},
+		{"set", setReader{sc}},
+		{"sorted set", zsetReader{zc}},
+		{"stream", streamReader{xc}},
+		{"json", jsonReader{cmd: jc, decimal: numfmt.DecimalAuto}},
+		{"filtered json", filterJSONReader{cmd: fc, decimal: numfmt.DecimalAuto, matcher: rawpred.NewMatcher(nil)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v, present, err := tt.reader.normalize()
+
+			require.ErrorIs(t, err, errRead)
+			require.False(t, present)
+			require.Nil(t, v)
+		})
+	}
+}
+
+// TestReaderReportsMalformedJSON proves both RedisJSON readers return the decode
+// error of a reply that is not valid JSON, rather than a present null.
+func TestReaderReportsMalformedJSON(t *testing.T) {
+	jc := &goredis.JSONCmd{}
+	jc.SetVal("{")
+	fc := &goredis.JSONCmd{}
+	fc.SetVal("{")
+
+	tests := []struct {
+		name   string
+		reader reader
+	}{
+		{"json", jsonReader{cmd: jc, decimal: numfmt.DecimalAuto}},
+		{"filtered json", filterJSONReader{cmd: fc, decimal: numfmt.DecimalAuto, matcher: rawpred.NewMatcher(nil)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v, present, err := tt.reader.normalize()
+
+			require.ErrorContains(t, err, "decode redis json")
 			require.False(t, present)
 			require.Nil(t, v)
 		})
