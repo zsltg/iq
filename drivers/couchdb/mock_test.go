@@ -363,3 +363,315 @@ func TestInspectIndexesReportsEveryIndex(t *testing.T) {
 		},
 	}}, res)
 }
+
+func TestScanBatchesSurfacesARowFailure(t *testing.T) {
+	// Each failure on the _all_docs walk is returned with its own message, and no
+	// page reaches the caller. A row with an error fails at its id, a row with no
+	// body fails at the scan, and a body that is not an object fails at the decode.
+	boom := errors.New("row failed")
+	tests := []struct {
+		name    string
+		row     *driver.Row
+		wantErr string
+		wrapped bool
+	}{
+		{"row error", &driver.Row{ID: "1", Error: boom}, "couchdb row id", true},
+		{"row with no body", &driver.Row{ID: "1"}, "couchdb scan document", true},
+		{"body that is not an object", docRow("1", `[1,2]`), "decode couchdb document", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, _, mdb := newMockStore(t, 10, 1)
+			mdb.ExpectAllDocs().WillReturn(mockdb.NewRows().
+				AddRow(tt.row).
+				AddRow(docRow("2", `{"_id":"2"}`)))
+
+			pages := 0
+			err := st.ScanBatches(context.Background(), func(map[string]any) error {
+				pages++
+				return nil
+			})
+
+			require.ErrorContains(t, err, tt.wantErr)
+			if tt.wrapped {
+				require.Error(t, errors.Unwrap(err))
+			}
+			require.Zero(t, pages)
+		})
+	}
+}
+
+func TestScanBatchesSurfacesAnIterationFailure(t *testing.T) {
+	// A failure part way through _all_docs is returned, not reported as a finished
+	// walk, and the page read before it is not handed on.
+	st, _, mdb := newMockStore(t, 10, 1)
+	boom := errors.New("connection reset")
+	mdb.ExpectAllDocs().WillReturn(mockdb.NewRows().
+		AddRow(docRow("1", `{"_id":"1"}`)).
+		AddRowError(boom))
+
+	pages := 0
+	err := st.ScanBatches(context.Background(), func(map[string]any) error {
+		pages++
+		return nil
+	})
+
+	require.ErrorContains(t, err, "couchdb all_docs")
+	require.ErrorIs(t, err, boom)
+	require.Zero(t, pages)
+}
+
+func TestScanBatchesReadsPastADesignDocument(t *testing.T) {
+	// A design document is skipped, and the walk goes on to the documents after it.
+	st, _, mdb := newMockStore(t, 10, 1)
+	mdb.ExpectAllDocs().WillReturn(mockdb.NewRows().
+		AddRow(docRow("_design/idx", `{"_id":"_design/idx"}`)).
+		AddRow(docRow("1", `{"_id":"1","title":"one"}`)))
+
+	got := collect(t, func(fn func(map[string]any) error) error {
+		return st.ScanBatches(context.Background(), fn)
+	})
+
+	require.Equal(t, []string{"1"}, sortedKeys(got))
+}
+
+func TestEstimateCountSurfacesTheStatsFailure(t *testing.T) {
+	st, _, mdb := newMockStore(t, 10, 1)
+	boom := errors.New("not found")
+	mdb.ExpectStats().WillReturnError(boom)
+
+	n, err := st.EstimateCount(context.Background())
+
+	require.ErrorContains(t, err, "couchdb db stats")
+	require.ErrorIs(t, err, boom)
+	require.Zero(t, n)
+}
+
+func TestQuerySurfacesARowFailure(t *testing.T) {
+	// Each failure on the _find walk of a raw query is returned with its own
+	// message, and no partial reply is returned.
+	boom := errors.New("row failed")
+	tests := []struct {
+		name    string
+		rows    *mockdb.Rows
+		wantErr string
+		wrapped bool
+	}{
+		{"row error", mockdb.NewRows().AddRow(&driver.Row{ID: "1", Error: boom}), "couchdb scan document", true},
+		{"body that is not an object", mockdb.NewRows().AddRow(docRow("1", `[1,2]`)), "decode couchdb document", false},
+		{"iteration failure", mockdb.NewRows().AddRow(docRow("1", `{"_id":"1"}`)).AddRowError(boom), "couchdb find", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, _, mdb := newMockStore(t, 10, 1)
+			mdb.ExpectFind().WillReturn(tt.rows)
+
+			res, err := st.Query(context.Background(), []string{`{"a":1}`})
+
+			require.ErrorContains(t, err, tt.wantErr)
+			if tt.wrapped {
+				require.Error(t, errors.Unwrap(err))
+			}
+			require.Nil(t, res)
+		})
+	}
+}
+
+func TestInspectSurfacesTheServerFailure(t *testing.T) {
+	// Every inspect call returns the failure of its request with its own message.
+	boom := errors.New("unauthorized")
+	tests := []struct {
+		name    string
+		expect  func(mock *mockdb.Client, mdb *mockdb.DB)
+		dbCalls int
+		run     func(st *Store) (any, error)
+		wantErr string
+	}{
+		{
+			name:    "server",
+			expect:  func(mock *mockdb.Client, _ *mockdb.DB) { mock.ExpectVersion().WillReturnError(boom) },
+			run:     func(st *Store) (any, error) { return st.InspectServer(context.Background()) },
+			wantErr: "couchdb server version",
+		},
+		{
+			name:    "databases",
+			expect:  func(mock *mockdb.Client, _ *mockdb.DB) { mock.ExpectAllDBs().WillReturnError(boom) },
+			run:     func(st *Store) (any, error) { return st.InspectDatabases(context.Background()) },
+			wantErr: "couchdb list databases",
+		},
+		{
+			name:    "database info",
+			expect:  func(_ *mockdb.Client, mdb *mockdb.DB) { mdb.ExpectStats().WillReturnError(boom) },
+			dbCalls: 1,
+			run:     func(st *Store) (any, error) { return st.InspectDBInfo(context.Background()) },
+			wantErr: "couchdb db info",
+		},
+		{
+			name:    "indexes",
+			expect:  func(_ *mockdb.Client, mdb *mockdb.DB) { mdb.ExpectGetIndexes().WillReturnError(boom) },
+			dbCalls: 1,
+			run:     func(st *Store) (any, error) { return st.InspectIndexes(context.Background()) },
+			wantErr: "couchdb list indexes",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, mock, mdb := newMockStore(t, 10, tt.dbCalls)
+			tt.expect(mock, mdb)
+
+			res, err := tt.run(st)
+
+			require.ErrorContains(t, err, tt.wantErr)
+			require.ErrorIs(t, err, boom)
+			require.Nil(t, res)
+		})
+	}
+}
+
+func TestUpsertSurfacesTheRevisionReadFailure(t *testing.T) {
+	// When the read of the current revisions fails, nothing is written: the mock
+	// has no bulk write to answer.
+	st, _, mdb := newMockStore(t, 10, 2)
+	boom := errors.New("connection reset")
+	mdb.ExpectAllDocs().WillReturn(mockdb.NewRows().AddRowError(boom))
+
+	stat, err := st.Put(context.Background(),
+		[]query.Record{{Key: "1", Value: map[string]any{"title": "one"}}}, query.Upsert)
+
+	require.ErrorContains(t, err, "couchdb read revisions")
+	require.ErrorIs(t, err, boom)
+	require.Equal(t, query.WriteStat{}, stat)
+}
+
+func TestPutSurfacesTheBulkWriteFailure(t *testing.T) {
+	// A bulk write that fails as a request is returned under both write modes.
+	boom := errors.New("service unavailable")
+	tests := []struct {
+		name    string
+		mode    query.WriteMode
+		dbCalls int
+	}{
+		{"upsert", query.Upsert, 2},
+		{"insert only", query.InsertOnly, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, _, mdb := newMockStore(t, 10, tt.dbCalls)
+			mdb.ExpectAllDocs().WillReturn(mockdb.NewRows())
+			mdb.ExpectBulkDocs().WillReturnError(boom)
+
+			stat, err := st.Put(context.Background(),
+				[]query.Record{{Key: "1", Value: map[string]any{"title": "one"}}}, tt.mode)
+
+			require.ErrorContains(t, err, "couchdb bulk write")
+			require.ErrorIs(t, err, boom)
+			require.Equal(t, query.WriteStat{}, stat)
+		})
+	}
+}
+
+func TestInsertOnlyRejectsANonObjectValue(t *testing.T) {
+	// A scalar value is rejected before any request is sent.
+	st, mock, _ := newMockStore(t, 10, 0)
+
+	stat, err := st.Put(context.Background(),
+		[]query.Record{{Key: "1", Value: "scalar"}}, query.InsertOnly)
+
+	require.ErrorContains(t, err, `couchdb: value for key "1" is not a JSON object`)
+	require.Equal(t, query.WriteStat{}, stat)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeleteCountsARowWithNoRevisionAsMissing(t *testing.T) {
+	// A row with an id but no revision has no live document to tombstone, so the
+	// key is Missing. The rows after it are still read.
+	st, _, mdb := newMockStore(t, 10, 2)
+	mdb.ExpectAllDocs().WillReturn(mockdb.NewRows().
+		AddRow(&driver.Row{ID: "norev"}).
+		AddRow(revRow("live", "1-a")))
+	mdb.ExpectBulkDocs().WillReturn([]driver.BulkResult{{ID: "live", Rev: "2-b"}})
+
+	stat, err := st.Delete(context.Background(), []string{"norev", "live"})
+
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Deleted: 1, Missing: 1}, stat)
+}
+
+func TestDeleteDeletesTheKeysAfterAMissingOne(t *testing.T) {
+	// A missing key is counted, and the keys after it are still deleted.
+	st, _, mdb := newMockStore(t, 10, 2)
+	mdb.ExpectAllDocs().WillReturn(mockdb.NewRows().AddRow(revRow("live", "1-a")))
+	mdb.ExpectBulkDocs().WillReturn([]driver.BulkResult{{ID: "live", Rev: "2-b"}})
+
+	stat, err := st.Delete(context.Background(), []string{"gone", "live"})
+
+	require.NoError(t, err)
+	require.Equal(t, query.DeleteStat{Deleted: 1, Missing: 1}, stat)
+}
+
+func TestDeleteSurfacesARequestFailure(t *testing.T) {
+	// A failed revision read and a failed bulk delete are both returned with a zero
+	// count.
+	boom := errors.New("service unavailable")
+	tests := []struct {
+		name    string
+		expect  func(mdb *mockdb.DB)
+		wantErr string
+	}{
+		{
+			name:    "revision read",
+			expect:  func(mdb *mockdb.DB) { mdb.ExpectAllDocs().WillReturn(mockdb.NewRows().AddRowError(boom)) },
+			wantErr: "couchdb read revisions",
+		},
+		{
+			name: "bulk delete",
+			expect: func(mdb *mockdb.DB) {
+				mdb.ExpectAllDocs().WillReturn(mockdb.NewRows().AddRow(revRow("1", "1-a")))
+				mdb.ExpectBulkDocs().WillReturnError(boom)
+			},
+			wantErr: "couchdb bulk delete",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, _, mdb := newMockStore(t, 10, 2)
+			tt.expect(mdb)
+
+			stat, err := st.Delete(context.Background(), []string{"1"})
+
+			require.ErrorContains(t, err, tt.wantErr)
+			require.ErrorIs(t, err, boom)
+			require.Equal(t, query.DeleteStat{}, stat)
+		})
+	}
+}
+
+func TestScanDeletesSurfacesAReadFailure(t *testing.T) {
+	// A row error and an iteration failure on the _all_docs walk are both
+	// returned, and no batch reaches the caller.
+	boom := errors.New("row failed")
+	tests := []struct {
+		name    string
+		rows    *mockdb.Rows
+		wantErr string
+	}{
+		{"row error", mockdb.NewRows().AddRow(&driver.Row{ID: "1", Error: boom}).AddRow(revRow("2", "1-a")), "couchdb row id"},
+		{"iteration failure", mockdb.NewRows().AddRow(revRow("1", "1-a")).AddRowError(boom), "couchdb all_docs"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, _, mdb := newMockStore(t, 10, 1)
+			mdb.ExpectAllDocs().WillReturn(tt.rows)
+
+			batches := 0
+			err := st.scanDeletes(context.Background(), func([]any) error {
+				batches++
+				return nil
+			})
+
+			require.ErrorContains(t, err, tt.wantErr)
+			require.ErrorIs(t, err, boom)
+			require.Zero(t, batches)
+		})
+	}
+}

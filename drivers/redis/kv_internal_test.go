@@ -162,3 +162,92 @@ func (h beforePipelineHook) ProcessPipelineHook(next goredis.ProcessPipelineHook
 		return next(ctx, cmds)
 	}
 }
+
+// TestGetFailsFastOnTypeError proves Get stops when the TYPE pipeline fails. With
+// no type for each key it cannot choose a reader.
+func TestGetFailsFastOnTypeError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	dead, cancelDead := context.WithCancel(ctx)
+	cancelDead()
+
+	_, err := store.Get(dead, []string{"iq:test:gettype"})
+
+	require.ErrorContains(t, err, "redis type")
+	require.ErrorIs(t, err, context.Canceled, "the pipeline's cause survives the wrap")
+}
+
+// TestGetToleratesAVanishedKey stages the race on the plain read path: a key that
+// TYPE saw is deleted before the value pipeline runs, so the pipeline returns
+// redis.Nil. That is the absence of one key, and the other keys still arrive.
+func TestGetToleratesAVanishedKey(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	const key = "iq:test:getvanish"
+	const survivor = "iq:test:getsurvivor"
+	require.NoError(t, store.client.MSet(ctx, key, "gone", survivor, "here").Err())
+	store.client.AddHook(beforePipelineHook{before: func(cmds []goredis.Cmder) {
+		if len(cmds) > 0 && cmds[0].Name() == "get" {
+			require.NoError(t, store.client.Del(ctx, key).Err())
+		}
+	}})
+
+	got, err := store.Get(ctx, []string{key, survivor})
+
+	require.NoError(t, err, "a key that vanished mid-read is absence, not a read failure")
+	require.Equal(t, map[string]any{survivor: "here"}, got)
+}
+
+// TestGetSurfacesAFailedValuePipeline proves Get reports a value pipeline that
+// fails with a server error, and keeps that error in the chain. Here the key
+// becomes a list after TYPE, so its GET answers WRONGTYPE.
+func TestGetSurfacesAFailedValuePipeline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	const key = "iq:test:getretyped"
+	require.NoError(t, store.client.Set(ctx, key, "a", 0).Err())
+	store.client.AddHook(beforePipelineHook{before: func(cmds []goredis.Cmder) {
+		if len(cmds) == 0 || cmds[0].Name() != "get" {
+			return
+		}
+		require.NoError(t, store.client.Del(ctx, key).Err())
+		require.NoError(t, store.client.RPush(ctx, key, "x").Err())
+	}})
+
+	_, err := store.Get(ctx, []string{key})
+
+	require.ErrorContains(t, err, "redis read")
+	var redisErr goredis.Error
+	require.ErrorAs(t, err, &redisErr, "the server's cause survives the wrap")
+	require.ErrorContains(t, err, "WRONGTYPE")
+}
+
+// TestGetNamesTheKeyThatFailedToRead proves Get reports a read failure of one key
+// and names that key, also when the pipeline returned the redis.Nil of an
+// earlier key.
+func TestGetNamesTheKeyThatFailedToRead(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	const gone = "iq:test:getgone"
+	const retyped = "iq:test:getretyped2"
+	require.NoError(t, store.client.MSet(ctx, gone, "a", retyped, "b").Err())
+	store.client.AddHook(beforePipelineHook{before: func(cmds []goredis.Cmder) {
+		if len(cmds) == 0 || cmds[0].Name() != "get" {
+			return
+		}
+		// The first key vanishes (redis.Nil, tolerated) and the second becomes a
+		// list, so its GET fails with WRONGTYPE.
+		require.NoError(t, store.client.Del(ctx, gone, retyped).Err())
+		require.NoError(t, store.client.RPush(ctx, retyped, "x").Err())
+	}})
+
+	_, err := store.Get(ctx, []string{gone, retyped})
+
+	require.ErrorContains(t, err, `read key "`+retyped+`"`)
+	var redisErr goredis.Error
+	require.ErrorAs(t, err, &redisErr, "the server's cause survives the wrap")
+}

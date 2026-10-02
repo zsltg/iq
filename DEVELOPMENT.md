@@ -40,7 +40,7 @@ build (the module version), and `dev+<commit>` for an untagged build.
 ## Benchmarks
 
 ```bash
-make bench   # decode, filter, number-conversion, and dump I/O benchmarks
+make bench   # decode, filter, raw-byte prefilter, number-conversion, and dump I/O benchmarks
 ```
 
 No containers. To compare a change, run it before and after, and pair the two

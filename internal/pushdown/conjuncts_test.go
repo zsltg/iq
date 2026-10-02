@@ -94,6 +94,21 @@ func TestConjuncts(t *testing.T) {
 			want:   []wantConjunct{{expr: ".active | not", pushed: false, reason: "negation is not exactly expressible"}},
 		},
 		{
+			// The inner regex is not exact, so its negation is declined. The
+			// negation reason comes before the regex reason.
+			name:   "declined negation of a regex test",
+			filter: `.[] | select(.a | test("x") | not)`,
+			ok:     true,
+			want:   []wantConjunct{{expr: `.a | test("x") | not`, pushed: false, reason: "negation is not exactly expressible"}},
+		},
+		{
+			// The inner equality is exact, so its negation is pushed.
+			name:   "pushed negation of an exact equality",
+			filter: `.[] | select((.a == 1) | not)`,
+			ok:     true,
+			want:   []wantConjunct{{expr: "(.a == 1) | not", pushed: true}},
+		},
+		{
 			name:   "declined non-portable regex",
 			filter: `.[] | select(.name | test("(?i)abc"))`,
 			ok:     true,

@@ -234,6 +234,8 @@ func TestByteSafeRegex(t *testing.T) {
 		{"anchors and quantifier", "^ab+c$", true},
 		{"escaped dot is a literal", `a\.c`, true},
 		{"escaped letter then literal", `\wa`, true},
+		{"escaped letter then unescaped dot", `\wa.`, false},
+		{"DEL is an ascii byte", "a\x7fb", true},
 		{"ascii shorthand classes", `\d\w\s`, true},
 		{"positive class", "[abc]", true},
 		{"caret before a class is not negation", "^[a]", true},

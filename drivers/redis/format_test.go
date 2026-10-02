@@ -19,9 +19,9 @@ func TestFormatReplyScalars(t *testing.T) {
 
 func TestFormatReplyQuotingEscapes(t *testing.T) {
 	// Covers the symbolic escapes, a printable that must stay raw, and the \xHH
-	// fallback for a low control char and DEL.
-	in := "a b\"\\\n\r\t" + string([]byte{0x01, 0x7f})
-	require.Equal(t, `"a b\"\\\n\r\t\x01\x7f"`, iqredis.FormatReply(in, false))
+	// fallback for a low control char, the highest control char and DEL.
+	in := "a b\"\\\n\r\t" + string([]byte{0x01, 0x1f, 0x7f})
+	require.Equal(t, `"a b\"\\\n\r\t\x01\x1f\x7f"`, iqredis.FormatReply(in, false))
 }
 
 func TestFormatReplyEmptyArray(t *testing.T) {
