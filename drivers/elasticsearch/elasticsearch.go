@@ -102,30 +102,48 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	if err != nil {
 		return connConfig{}, fmt.Errorf("parse source url: %w", err)
 	}
-	var (
-		scheme string
-		fl     flavor
-	)
-	switch u.Scheme {
-	case "elasticsearch":
-		scheme, fl = "http", flavorES
-	case "elasticsearch+s":
-		scheme, fl = "https", flavorES
-	case "opensearch":
-		scheme, fl = "http", flavorOS
-	case "opensearch+s":
-		scheme, fl = "https", flavorOS
-	default:
-		return connConfig{}, fmt.Errorf("url must use elasticsearch://, elasticsearch+s://, opensearch://, or opensearch+s://, got %q", u.Scheme)
+	scheme, fl, err := schemeFlavor(u.Scheme)
+	if err != nil {
+		return connConfig{}, err
 	}
 	if u.Host == "" {
 		return connConfig{}, fmt.Errorf("url must name a host, e.g. elasticsearch://localhost:9200/?index=books")
 	}
+	index, err := resolveIndex(address, u)
+	if err != nil {
+		return connConfig{}, err
+	}
 
-	q := u.Query()
+	cc := connConfig{flavor: fl, addr: (&url.URL{Scheme: scheme, Host: u.Host}).String(), index: index}
+	if u.User != nil {
+		cc.username = u.User.Username()
+		cc.password, _ = u.User.Password()
+	}
+	return cc, nil
+}
+
+// schemeFlavor maps a source URL scheme to the HTTP scheme of the server address and
+// the wire flavor. The +s variants use https.
+func schemeFlavor(scheme string) (string, flavor, error) {
+	switch scheme {
+	case "elasticsearch":
+		return "http", flavorES, nil
+	case "elasticsearch+s":
+		return "https", flavorES, nil
+	case "opensearch":
+		return "http", flavorOS, nil
+	case "opensearch+s":
+		return "https", flavorOS, nil
+	}
+	return "", 0, fmt.Errorf("url must use elasticsearch://, elasticsearch+s://, opensearch://, or opensearch+s://, got %q", scheme)
+}
+
+// resolveIndex picks the index: the dotted address override, else ?index=, else a
+// single-segment path. A name it finds must pass validateIndex. No index is allowed.
+func resolveIndex(address string, u *url.URL) (string, error) {
 	index := address
 	if index == "" {
-		index = q.Get("index")
+		index = u.Query().Get("index")
 	}
 	if index == "" {
 		// Lenient: accept the index in the path too (elasticsearch://host/books), as
@@ -136,16 +154,10 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	}
 	if index != "" {
 		if err := validateIndex(index); err != nil {
-			return connConfig{}, err
+			return "", err
 		}
 	}
-
-	cc := connConfig{flavor: fl, addr: (&url.URL{Scheme: scheme, Host: u.Host}).String(), index: index}
-	if u.User != nil {
-		cc.username = u.User.Username()
-		cc.password, _ = u.User.Password()
-	}
-	return cc, nil
+	return index, nil
 }
 
 // badIndexChars are the bytes Elasticsearch and OpenSearch forbid in an index name;
@@ -235,12 +247,16 @@ type searchResponse struct {
 		Total struct {
 			Value int64 `json:"value"`
 		} `json:"total"`
-		Hits []struct {
-			ID     string          `json:"_id"`
-			Source json.RawMessage `json:"_source"`
-			Sort   json.RawMessage `json:"sort"`
-		} `json:"hits"`
+		Hits []searchHit `json:"hits"`
 	} `json:"hits"`
+}
+
+// searchHit is one hit of a _search reply: the document id, its raw _source, and its
+// sort values.
+type searchHit struct {
+	ID     string          `json:"_id"`
+	Source json.RawMessage `json:"_source"`
+	Sort   json.RawMessage `json:"sort"`
 }
 
 // pagedSearch pages a _search over an optional query, handing fn each page of
@@ -273,21 +289,9 @@ func (s *Store) pagedSearch(ctx context.Context, query map[string]any, prefilter
 
 	var after json.RawMessage
 	for {
-		body := map[string]any{
-			"size":             s.pageSize,
-			"track_total_hits": false,
-			"sort":             s.client.scanSort(),
-			"pit":              map[string]any{"id": pit, "keep_alive": keepAlive},
-		}
-		if query != nil {
-			body["query"] = query
-		}
-		if after != nil {
-			body["search_after"] = after
-		}
-		raw, err := json.Marshal(body)
+		raw, err := s.searchBody(pit, query, after)
 		if err != nil {
-			return fmt.Errorf("encode search: %w", err)
+			return err
 		}
 		var sr searchResponse
 		if err := s.request(ctx, "search", http.MethodPost, "/_search", raw, &sr); err != nil {
@@ -300,23 +304,10 @@ func (s *Store) pagedSearch(ctx context.Context, query map[string]any, prefilter
 		if len(hits) == 0 {
 			return nil
 		}
-		page := make(map[string]any, len(hits))
-		for _, h := range hits {
-			// Advance the cursor for every hit, skipped or kept, so a prefiltered-out
-			// document never stalls or rewinds the keyset walk.
-			after = h.Sort
-			if prefilter != nil {
-				s.prefilterChecked++
-				if prefilter.Match(h.Source) == rawpred.CannotMatch {
-					s.prefilterSkipped++
-					continue
-				}
-			}
-			doc, err := decodeSource(h.Source, h.ID, s.decimal)
-			if err != nil {
-				return err
-			}
-			page[h.ID] = doc
+		var page map[string]any
+		page, after, err = s.pageOf(hits, prefilter)
+		if err != nil {
+			return err
 		}
 		// A page the prefilter emptied is never handed to fn: a scan never yields an
 		// empty batch.
@@ -330,6 +321,63 @@ func (s *Store) pagedSearch(ctx context.Context, query map[string]any, prefilter
 			return nil
 		}
 	}
+}
+
+// searchBody encodes one page request: the page size, the flavor sort, and the
+// point-in-time. The query is present only for a filtered scan, and search_after only
+// after the first page.
+func (s *Store) searchBody(pit string, query map[string]any, after json.RawMessage) ([]byte, error) {
+	body := map[string]any{
+		"size":             s.pageSize,
+		"track_total_hits": false,
+		"sort":             s.client.scanSort(),
+		"pit":              map[string]any{"id": pit, "keep_alive": keepAlive},
+	}
+	if query != nil {
+		body["query"] = query
+	}
+	if after != nil {
+		body["search_after"] = after
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode search: %w", err)
+	}
+	return raw, nil
+}
+
+// pageOf decodes the hits the prefilter keeps into a page of {_id: document}. It also
+// returns the sort values of the last hit, kept or skipped, so a prefiltered-out
+// document never stalls or rewinds the keyset walk.
+func (s *Store) pageOf(hits []searchHit, prefilter *rawpred.Matcher) (map[string]any, json.RawMessage, error) {
+	page := make(map[string]any, len(hits))
+	var after json.RawMessage
+	for _, h := range hits {
+		after = h.Sort
+		if !s.keep(h, prefilter) {
+			continue
+		}
+		doc, err := decodeSource(h.Source, h.ID, s.decimal)
+		if err != nil {
+			return nil, nil, err
+		}
+		page[h.ID] = doc
+	}
+	return page, after, nil
+}
+
+// keep reports whether a hit goes on to the decode. With a matcher, it counts the hit
+// as checked, and as skipped when the matcher proves the predicate rejects it.
+func (s *Store) keep(h searchHit, prefilter *rawpred.Matcher) bool {
+	if prefilter == nil {
+		return true
+	}
+	s.prefilterChecked++
+	if prefilter.Match(h.Source) == rawpred.CannotMatch {
+		s.prefilterSkipped++
+		return false
+	}
+	return true
 }
 
 // EstimateCount returns the index's document count (GET /{index}/_count), a cheap
@@ -363,8 +411,23 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if len(args) != 1 {
 		return nil, errors.New("raw exec expects one JSON search body")
 	}
+	raw, err := searchRequest(args[0])
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.do(ctx, http.MethodPost, "/"+s.index+"/_search", "application/json", raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s search: %w", s.client.label(), err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	return s.decodeReply(res)
+}
+
+// searchRequest parses a raw search argument and encodes the request body. A bare
+// query object is wrapped as {"query":...}.
+func searchRequest(arg string) ([]byte, error) {
 	var body map[string]any
-	if err := json.Unmarshal([]byte(args[0]), &body); err != nil {
+	if err := json.Unmarshal([]byte(arg), &body); err != nil {
 		return nil, fmt.Errorf("parse search body: %w", err)
 	}
 	if _, ok := body["query"]; !ok {
@@ -374,11 +437,12 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode search body: %w", err)
 	}
-	res, err := s.do(ctx, http.MethodPost, "/"+s.index+"/_search", "application/json", raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s search: %w", s.client.label(), err)
-	}
-	defer func() { _ = res.Body.Close() }()
+	return raw, nil
+}
+
+// decodeReply turns a _search reply into a value with exact numbers. The caller closes
+// the body. A non-2xx status becomes the labelled API error.
+func (s *Store) decodeReply(res *http.Response) (any, error) {
 	if res.StatusCode/100 != 2 {
 		return nil, apiError(res, s.client.label(), "search")
 	}
