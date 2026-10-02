@@ -419,6 +419,7 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s search: %w", s.client.label(), err)
 	}
+	defer func() { _ = res.Body.Close() }()
 	return s.decodeReply(res)
 }
 
@@ -439,10 +440,9 @@ func searchRequest(arg string) ([]byte, error) {
 	return raw, nil
 }
 
-// decodeReply turns a _search reply into a value with exact numbers, and closes the
-// body. A non-2xx status becomes the labelled API error.
+// decodeReply turns a _search reply into a value with exact numbers. The caller closes
+// the body. A non-2xx status becomes the labelled API error.
 func (s *Store) decodeReply(res *http.Response) (any, error) {
-	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode/100 != 2 {
 		return nil, apiError(res, s.client.label(), "search")
 	}
