@@ -234,32 +234,55 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 func (s *Store) pageScan(req *hrpc.Scan, fn func(batch map[string]any) error) error {
 	scanner := s.client.Scan(req)
 	page := make(map[string]any, s.pageSize)
-	for {
-		res, err := scanner.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			_ = scanner.Close()
-			return fmt.Errorf("hbase scan: %w", err)
-		}
-		if len(res.Cells) == 0 {
-			continue
-		}
+	err := eachRow(scanner, "hbase scan", func(res *hrpc.Result) (bool, error) {
 		key := rowKeyString(s.rowkeyType, res.Cells[0].Row)
 		page[key] = rowFromCells(res.Cells, s.types)
-		if len(page) >= s.pageSize {
-			if err := fn(page); err != nil {
-				_ = scanner.Close()
-				return err
-			}
-			page = make(map[string]any, s.pageSize)
+		if len(page) < s.pageSize {
+			return false, nil
 		}
+		if err := fn(page); err != nil {
+			return false, err
+		}
+		page = make(map[string]any, s.pageSize)
+		return false, nil
+	})
+	if err != nil {
+		return err
 	}
+	// The final partial page runs after the scanner returned io.EOF, so a failure
+	// here does not close the scanner.
 	if len(page) > 0 {
 		return fn(page)
 	}
 	return nil
+}
+
+// eachRow drives scanner to io.EOF, calling fn for each row that has cells.
+// It closes the scanner when Next fails, when fn fails, or when fn stops it.
+// A Next error is wrapped with op. An fn error is returned as it is.
+func eachRow(scanner hrpc.Scanner, op string, fn func(res *hrpc.Result) (stop bool, err error)) error {
+	for {
+		res, err := scanner.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			_ = scanner.Close()
+			return fmt.Errorf("%s: %w", op, err)
+		}
+		if len(res.Cells) == 0 {
+			continue
+		}
+		stop, err := fn(res)
+		if err != nil {
+			_ = scanner.Close()
+			return err
+		}
+		if stop {
+			_ = scanner.Close()
+			return nil
+		}
+	}
 }
 
 // Query runs a raw HBase verb: HBase has no query language, so this is a small,
@@ -319,39 +342,36 @@ func (s *Store) execScan(ctx context.Context, args []string) (any, error) {
 	if len(args) < 1 || len(args) > 2 {
 		return nil, fmt.Errorf("hbase: scan needs <table> [limit]")
 	}
-	limit := 0
-	if len(args) == 2 {
-		n, err := strconv.Atoi(args[1])
-		if err != nil {
-			return nil, fmt.Errorf("hbase: scan limit %q is not a number", args[1])
-		}
-		limit = n
+	limit, err := scanLimit(args)
+	if err != nil {
+		return nil, err
 	}
 	req, err := hrpc.NewScanStr(ctx, args[0], hrpc.MaxVersions(1))
 	if err != nil {
 		return nil, fmt.Errorf("hbase scan: %w", err)
 	}
 	rows := map[string]any{}
-	scanner := s.client.Scan(req)
-	for {
-		res, err := scanner.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			_ = scanner.Close()
-			return nil, fmt.Errorf("hbase scan: %w", err)
-		}
-		if len(res.Cells) == 0 {
-			continue
-		}
+	err = eachRow(s.client.Scan(req), "hbase scan", func(res *hrpc.Result) (bool, error) {
 		rows[rowKeyString(s.rowkeyType, res.Cells[0].Row)] = rowFromCells(res.Cells, s.types)
-		if limit > 0 && len(rows) >= limit {
-			_ = scanner.Close()
-			break
-		}
+		return limit > 0 && len(rows) >= limit, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return rows, nil
+}
+
+// scanLimit reads the optional limit of `scan <table> [limit]`. An absent limit is 0,
+// which scans the whole table.
+func scanLimit(args []string) (int, error) {
+	if len(args) < 2 {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(args[1])
+	if err != nil {
+		return 0, fmt.Errorf("hbase: scan limit %q is not a number", args[1])
+	}
+	return n, nil
 }
 
 // execCount runs `count <table>`, returning the number of rows. It scans key-only
@@ -365,19 +385,12 @@ func (s *Store) execCount(ctx context.Context, args []string) (any, error) {
 		return nil, fmt.Errorf("hbase count: %w", err)
 	}
 	count := 0
-	scanner := s.client.Scan(req)
-	for {
-		res, err := scanner.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			_ = scanner.Close()
-			return nil, fmt.Errorf("hbase count: %w", err)
-		}
-		if len(res.Cells) > 0 {
-			count++
-		}
+	err = eachRow(s.client.Scan(req), "hbase count", func(*hrpc.Result) (bool, error) {
+		count++
+		return false, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return count, nil
 }
@@ -389,9 +402,9 @@ func (s *Store) execPut(ctx context.Context, args []string) (any, error) {
 		return nil, fmt.Errorf("hbase: put needs <table> <rowkey> <family:qualifier> <value>")
 	}
 	table, key, column, value := args[0], args[1], args[2], args[3]
-	family, qualifier, ok := strings.Cut(column, ":")
-	if !ok || family == "" || qualifier == "" {
-		return nil, fmt.Errorf("hbase: column %q must be family:qualifier", column)
+	family, qualifier, err := parseColumn(column)
+	if err != nil {
+		return nil, err
 	}
 	rk, err := encodeRowKey(s.rowkeyType, key)
 	if err != nil {
@@ -425,9 +438,9 @@ func (s *Store) execDelete(ctx context.Context, args []string) (any, error) {
 	}
 	var values map[string]map[string][]byte
 	if len(args) == 3 {
-		family, qualifier, ok := strings.Cut(args[2], ":")
-		if !ok || family == "" || qualifier == "" {
-			return nil, fmt.Errorf("hbase: column %q must be family:qualifier", args[2])
+		family, qualifier, err := parseColumn(args[2])
+		if err != nil {
+			return nil, err
 		}
 		values = map[string]map[string][]byte{family: {qualifier: nil}}
 	}
@@ -439,6 +452,18 @@ func (s *Store) execDelete(ctx context.Context, args []string) (any, error) {
 		return nil, fmt.Errorf("hbase delete: %w", err)
 	}
 	return map[string]any{"ok": true}, nil
+}
+
+// parseColumn splits a family:qualifier column argument. Both parts must be present.
+func parseColumn(column string) (family, qualifier string, err error) {
+	family, qualifier, ok := strings.Cut(column, ":")
+	if !ok {
+		return "", "", fmt.Errorf("hbase: column %q must be family:qualifier", column)
+	}
+	if family == "" || qualifier == "" {
+		return "", "", fmt.Errorf("hbase: column %q must be family:qualifier", column)
+	}
+	return family, qualifier, nil
 }
 
 // rawValue coerces a raw CLI string argument to the value shape encodeCell expects

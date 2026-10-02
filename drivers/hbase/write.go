@@ -2,9 +2,7 @@ package hbase
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"sort"
 
 	"github.com/tsuna/gohbase/filter"
@@ -175,30 +173,16 @@ func (s *Store) Clear(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("hbase clear: %w", err)
 	}
-	scanner := s.client.Scan(req)
-	for {
-		res, err := scanner.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			_ = scanner.Close()
-			return fmt.Errorf("hbase clear scan: %w", err)
-		}
-		if len(res.Cells) == 0 {
-			continue
-		}
+	return eachRow(s.client.Scan(req), "hbase clear scan", func(res *hrpc.Result) (bool, error) {
 		del, err := hrpc.NewDel(ctx, []byte(s.table), res.Cells[0].Row, nil)
 		if err != nil {
-			_ = scanner.Close()
-			return fmt.Errorf("hbase clear: %w", err)
+			return false, fmt.Errorf("hbase clear: %w", err)
 		}
 		if _, err := s.client.Delete(del); err != nil {
-			_ = scanner.Close()
-			return fmt.Errorf("hbase clear delete: %w", err)
+			return false, fmt.Errorf("hbase clear delete: %w", err)
 		}
-	}
-	return nil
+		return false, nil
+	})
 }
 
 // Drop removes the table entirely — its rows and schema (the `iq data drop`
