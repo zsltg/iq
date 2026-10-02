@@ -670,7 +670,7 @@ func TestJSONSourceEndConditionsUnderACanceledContext(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.ErrorIs(t, err, tt.wantErr)
-				if tt.wantErr != context.Canceled {
+				if !errors.Is(tt.wantErr, context.Canceled) {
 					require.NotErrorIs(t, err, context.Canceled)
 					require.ErrorContains(t, err, "read json: ")
 				}
@@ -723,4 +723,50 @@ func TestSourcesReuseThePageSlice(t *testing.T) {
 			require.Same(t, firsts[0], firsts[2])
 		})
 	}
+}
+
+// TestJSONStream reads both layouts through the exported stream. A stream of values
+// and an array give the same raw records, empty input gives no stream, and the
+// errors name the step that failed.
+func TestJSONStream(t *testing.T) {
+	t.Run("empty input gives no stream", func(t *testing.T) {
+		s, err := query.NewJSONStream(strings.NewReader(" \n"))
+		require.NoError(t, err)
+		require.Nil(t, s)
+	})
+	for name, input := range map[string]string{
+		"concatenated values": `{"a":1} {"b":2}`,
+		"an array":            ` [{"a":1}, {"b":2}] `,
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, err := query.NewJSONStream(strings.NewReader(input))
+			require.NoError(t, err)
+			require.NotNil(t, s)
+			var got []string
+			for {
+				raw, ok, err := s.Next()
+				require.NoError(t, err)
+				if !ok {
+					break
+				}
+				got = append(got, string(raw))
+			}
+			require.Equal(t, []string{`{"a":1}`, `{"b":2}`}, got)
+			_, ok, err := s.Next()
+			require.NoError(t, err)
+			require.False(t, ok, "an ended stream stays ended")
+		})
+	}
+	t.Run("a prologue read error", func(t *testing.T) {
+		boom := errors.New("disk gone")
+		_, err := query.NewJSONStream(&errReader{err: boom})
+		require.ErrorContains(t, err, "read json: ")
+		require.ErrorIs(t, err, boom)
+	})
+	t.Run("a malformed record", func(t *testing.T) {
+		s, err := query.NewJSONStream(strings.NewReader(`{bad`))
+		require.NoError(t, err)
+		_, _, err = s.Next()
+		require.ErrorContains(t, err, "decode json record: ")
+	})
 }

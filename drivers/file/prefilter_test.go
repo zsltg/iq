@@ -684,7 +684,7 @@ func TestScanFilteredEndConditionsUnderACanceledContext(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.ErrorIs(t, err, tt.wantErr)
-				if tt.wantErr != context.Canceled {
+				if !errors.Is(tt.wantErr, context.Canceled) {
 					require.NotErrorIs(t, err, context.Canceled)
 					require.ErrorContains(t, err, "read json: ")
 				}
