@@ -320,10 +320,11 @@ func mismatch(path, arrowType string, v any) error {
 // fits. A fractional float, an out-of-range big.Int, or a non-number does not
 // fit — the caller then fails the export.
 func toInt64(v any) (int64, bool) {
-	if n, ok := widenSigned(v); ok {
+	n, u, kind := widenInteger(v)
+	switch kind {
+	case signedInt:
 		return n, true
-	}
-	if u, ok := widenUnsigned(v); ok {
+	case unsignedInt:
 		return uintToInt64(u)
 	}
 	if f, ok := widenFloat(v); ok {
@@ -348,41 +349,42 @@ func toInt64(v any) (int64, bool) {
 	}
 }
 
-// widenSigned returns a signed integer value (int, int8, int16, int32, int64) as
-// an int64, or ok=false for any other type.
-func widenSigned(v any) (int64, bool) {
+// intKind says which result of widenInteger holds the value.
+type intKind int
+
+const (
+	notInteger intKind = iota
+	signedInt
+	unsignedInt
+)
+
+// widenInteger widens any Go integer type to int64 (kind signedInt) or uint64
+// (kind unsignedInt). The other result is zero. A value of any other type gives
+// notInteger.
+func widenInteger(v any) (int64, uint64, intKind) {
 	switch t := v.(type) {
 	case int:
-		return int64(t), true
+		return int64(t), 0, signedInt
 	case int8:
-		return int64(t), true
+		return int64(t), 0, signedInt
 	case int16:
-		return int64(t), true
+		return int64(t), 0, signedInt
 	case int32:
-		return int64(t), true
+		return int64(t), 0, signedInt
 	case int64:
-		return t, true
-	default:
-		return 0, false
-	}
-}
-
-// widenUnsigned returns an unsigned integer value (uint to uint64) as a uint64,
-// or ok=false for any other type.
-func widenUnsigned(v any) (uint64, bool) {
-	switch t := v.(type) {
+		return t, 0, signedInt
 	case uint:
-		return uint64(t), true
+		return 0, uint64(t), unsignedInt
 	case uint8:
-		return uint64(t), true
+		return 0, uint64(t), unsignedInt
 	case uint16:
-		return uint64(t), true
+		return 0, uint64(t), unsignedInt
 	case uint32:
-		return uint64(t), true
+		return 0, uint64(t), unsignedInt
 	case uint64:
-		return t, true
+		return 0, t, unsignedInt
 	default:
-		return 0, false
+		return 0, 0, notInteger
 	}
 }
 
@@ -424,10 +426,11 @@ func floatToInt64(f float64) (int64, bool) {
 // toFloat64 converts any normalized number to float64, reporting whether v was a
 // number at all.
 func toFloat64(v any) (float64, bool) {
-	if n, ok := widenSigned(v); ok {
+	n, u, kind := widenInteger(v)
+	switch kind {
+	case signedInt:
 		return float64(n), true
-	}
-	if u, ok := widenUnsigned(v); ok {
+	case unsignedInt:
 		return float64(u), true
 	}
 	if f, ok := widenFloat(v); ok {
