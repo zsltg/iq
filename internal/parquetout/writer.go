@@ -359,33 +359,32 @@ const (
 )
 
 // widenInteger widens any Go integer type to int64 (kind signedInt) or uint64
-// (kind unsignedInt). The other result is zero. A value of any other type gives
-// notInteger.
-func widenInteger(v any) (int64, uint64, intKind) {
+// (kind unsignedInt). The result the kind does not name stays zero. A value of
+// any other type gives notInteger.
+func widenInteger(v any) (n int64, u uint64, kind intKind) {
 	switch t := v.(type) {
 	case int:
-		return int64(t), 0, signedInt
+		n, kind = int64(t), signedInt
 	case int8:
-		return int64(t), 0, signedInt
+		n, kind = int64(t), signedInt
 	case int16:
-		return int64(t), 0, signedInt
+		n, kind = int64(t), signedInt
 	case int32:
-		return int64(t), 0, signedInt
+		n, kind = int64(t), signedInt
 	case int64:
-		return t, 0, signedInt
+		n, kind = t, signedInt
 	case uint:
-		return 0, uint64(t), unsignedInt
+		u, kind = uint64(t), unsignedInt
 	case uint8:
-		return 0, uint64(t), unsignedInt
+		u, kind = uint64(t), unsignedInt
 	case uint16:
-		return 0, uint64(t), unsignedInt
+		u, kind = uint64(t), unsignedInt
 	case uint32:
-		return 0, uint64(t), unsignedInt
+		u, kind = uint64(t), unsignedInt
 	case uint64:
-		return 0, t, unsignedInt
-	default:
-		return 0, 0, notInteger
+		u, kind = t, unsignedInt
 	}
+	return n, u, kind
 }
 
 // widenFloat returns a float32 or float64 value as a float64, or ok=false for
