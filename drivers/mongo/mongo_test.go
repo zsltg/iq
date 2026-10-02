@@ -74,14 +74,19 @@ func uriWithCollection(t *testing.T, collection string) string {
 // seedDocs replaces the collection's contents with docs.
 func seedDocs(t *testing.T, store *Store, docs []any) {
 	t.Helper()
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	coll := store.db.Collection(store.collection)
 	require.NoError(t, coll.Drop(ctx))
+	t.Cleanup(func() {
+		cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanCancel()
+		_ = coll.Drop(cleanCtx)
+	})
 	if len(docs) > 0 {
 		_, err := coll.InsertMany(ctx, docs)
 		require.NoError(t, err)
 	}
-	t.Cleanup(func() { _ = coll.Drop(ctx) })
 }
 
 func TestDatabaseFromURI(t *testing.T) {
@@ -97,6 +102,7 @@ func TestDatabaseFromURI(t *testing.T) {
 		{"no database", "mongodb://localhost:27017", "", "must name a database"},
 		{"trailing slash only", "mongodb://localhost:27017/", "", "must name a database"},
 		{"extra path segment", "mongodb://localhost:27017/iq/books", "", "must name a database"},
+		{"unparsable uri", "mongodb://localhost:27017/%zz", "", "parse mongodb uri"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -576,7 +582,38 @@ func TestOpenWithCanceledContextFails(t *testing.T) {
 	store, err := Open(ctx, testURI(), "canceled_open_docs", nil, numfmt.DecimalAuto)
 
 	require.ErrorContains(t, err, "connect mongodb")
+	require.ErrorIs(t, err, context.Canceled, "the ping error is wrapped, not flattened")
 	require.Nil(t, store)
+}
+
+// TestOpenRejectsBadURI proves Open stops at the first bad part of the URI and
+// returns that error, before it pings any server. An error from a library keeps
+// its cause in the chain.
+func TestOpenRejectsBadURI(t *testing.T) {
+	tests := []struct {
+		name      string
+		uri       string
+		wantErr   string
+		wantCause bool
+	}{
+		{"no database", "mongodb://localhost:27017", "must name a database", false},
+		{"unparsable uri", "mongodb://localhost:27017/%zz", "parse mongodb uri", true},
+		{"bad client option", "mongodb://localhost:27017/iq_test?connectTimeoutMS=soon", "connect mongodb", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			t.Cleanup(cancel)
+
+			store, err := Open(ctx, tt.uri, "docs", nil, numfmt.DecimalAuto)
+
+			require.ErrorContains(t, err, tt.wantErr)
+			if tt.wantCause {
+				require.Error(t, errors.Unwrap(err), "the cause stays in the chain")
+			}
+			require.Nil(t, store)
+		})
+	}
 }
 
 // TestOperationsHonorCanceledContext proves every outbound call is bound by the
@@ -825,4 +862,44 @@ func TestCommandMonitorSerializesWrites(t *testing.T) {
 	wg.Wait()
 
 	require.Zero(t, overlaps.Load(), "the writer is never entered concurrently")
+}
+
+// TestCommandMonitorSkipsHandshakeCommands proves the trace omits each handshake,
+// auth and session command, and still writes a query command.
+func TestCommandMonitorSkipsHandshakeCommands(t *testing.T) {
+	raw, err := bson.Marshal(bson.M{"x": 1})
+	require.NoError(t, err)
+
+	tests := []struct {
+		command string
+		traced  bool
+	}{
+		{"hello", false},
+		{"ismaster", false},
+		{"isMaster", false},
+		{"saslStart", false},
+		{"saslContinue", false},
+		{"authenticate", false},
+		{"getnonce", false},
+		{"ping", false},
+		{"endSessions", false},
+		{"find", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			var buf bytes.Buffer
+			monitor := newCommandMonitor(&buf)
+
+			monitor.Started(context.Background(), &event.CommandStartedEvent{
+				CommandName: tt.command,
+				Command:     bson.Raw(raw),
+			})
+
+			if tt.traced {
+				require.Equal(t, "mongo> "+tt.command+" {\"x\": {\"$numberInt\":\"1\"}}\n", buf.String())
+				return
+			}
+			require.Empty(t, buf.String())
+		})
+	}
 }

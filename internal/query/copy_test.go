@@ -497,3 +497,141 @@ func TestTransformStopsOnAFilterRuntimeError(t *testing.T) {
 	require.Error(t, errors.Unwrap(err), "the filter error must stay unwrappable")
 	require.Nil(t, out)
 }
+
+// modesPutter records the write mode of every page it receives.
+type modesPutter struct{ modes []query.WriteMode }
+
+func (p *modesPutter) Put(_ context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
+	p.modes = append(p.modes, mode)
+	return query.WriteStat{Written: len(batch)}, nil
+}
+
+// TestCopierPassesTheModeToPut sets InsertOnly, which is not the zero mode. A full
+// page and the last page both reach Put with it, so a copy that drops the mode
+// fails here, where an Upsert test cannot see it.
+func TestCopierPassesTheModeToPut(t *testing.T) {
+	dst := &modesPutter{}
+	c := query.Copier{Dst: dst, Mode: query.InsertOnly, PageSize: 2}
+
+	_, err := c.Copy(context.Background(), recordsSource(numberedRecords(3), 3), false)
+
+	require.NoError(t, err)
+	require.Equal(t, []query.WriteMode{query.InsertOnly, query.InsertOnly}, dst.modes)
+}
+
+// fanOut is a transform that emits n records for each source record.
+func fanOut(n int) func(query.Record) ([]query.Record, error) {
+	return func(r query.Record) ([]query.Record, error) {
+		out := make([]query.Record, 0, n)
+		for i := range n {
+			out = append(out, query.Record{Key: fmt.Sprintf("%s.%d", r.Key, i), Value: r.Value})
+		}
+		return out, nil
+	}
+}
+
+// TestCopierDryRunCountsAFannedOutTransform emits two records for each source record.
+// A dry run counts both of them, and it sends none to the putter.
+func TestCopierDryRunCountsAFannedOutTransform(t *testing.T) {
+	dst := &capturePutter{}
+	c := query.Copier{Dst: dst, PageSize: 4, Transform: fanOut(2)}
+
+	stat, err := c.Copy(context.Background(), recordsSource(numberedRecords(3), 3), true)
+
+	require.NoError(t, err)
+	require.Equal(t, query.WriteStat{Written: 6}, stat)
+	require.Empty(t, dst.batches)
+}
+
+// TestCopierPagesAFannedOutTransform emits three records for one source record. The
+// page limit counts the records that the transform emits, so the page boundary falls
+// inside the output of one source record.
+func TestCopierPagesAFannedOutTransform(t *testing.T) {
+	dst := &capturePutter{}
+	c := query.Copier{Dst: dst, PageSize: 2, Transform: fanOut(3)}
+
+	stat, err := c.Copy(context.Background(), recordsSource(numberedRecords(1), 1), false)
+
+	require.NoError(t, err)
+	require.Equal(t, 3, stat.Written)
+	require.Equal(t, []int{2, 1}, dst.batchSizes())
+}
+
+// statErrPutter reports a non-zero stat together with an error, as a store does when
+// part of a page landed before it failed.
+type statErrPutter struct {
+	stat query.WriteStat
+	err  error
+}
+
+func (p statErrPutter) Put(context.Context, []query.Record, query.WriteMode) (query.WriteStat, error) {
+	return p.stat, p.err
+}
+
+// TestCopierAddsTheStatOfAFailedPut fails a page after part of it landed. The copy
+// returns the error, and its total holds the stat that the failed Put reported.
+func TestCopierAddsTheStatOfAFailedPut(t *testing.T) {
+	sentinel := errors.New("put boom")
+	dst := statErrPutter{stat: query.WriteStat{Written: 1, Overwritten: 2, Skipped: 3}, err: sentinel}
+	c := query.Copier{Dst: dst, PageSize: 2}
+
+	stat, err := c.Copy(context.Background(), recordsSource(numberedRecords(2), 2), false)
+
+	require.ErrorIs(t, err, sentinel)
+	require.Equal(t, dst.stat, stat)
+}
+
+// TestTransformKeyPriority sets the key expression and the key field together, and
+// checks which one names the key. The key expression wins over the key field, the key
+// field wins over the source key, and the prefix goes on every derived key. A key
+// field names a key for each of many outputs, which the source key cannot do.
+func TestTransformKeyPriority(t *testing.T) {
+	in := query.Record{Key: "src", Type: "hash", Value: map[string]any{"id": "7", "alt": "x"}}
+	tests := []struct {
+		name string
+		opts query.TransformOptions
+		want []string
+	}{
+		{name: "key expression over key field", opts: query.TransformOptions{Key: ".alt", KeyField: "id"}, want: []string{"x"}},
+		{name: "key field over source key", opts: query.TransformOptions{KeyField: "id"}, want: []string{"7"}},
+		{name: "prefix on a key expression", opts: query.TransformOptions{Key: ".alt", KeyPrefix: "p:"}, want: []string{"p:x"}},
+		{name: "prefix on a key field", opts: query.TransformOptions{KeyField: "id", KeyPrefix: "p:"}, want: []string{"p:7"}},
+		{name: "key field names each of many outputs", opts: query.TransformOptions{Filter: ".,.", KeyField: "id"}, want: []string{"7", "7"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fn, err := query.NewTransform(tt.opts)
+			require.NoError(t, err)
+			got, err := fn(in)
+			require.NoError(t, err)
+			keys := make([]string, 0, len(got))
+			for _, r := range got {
+				keys = append(keys, r.Key)
+			}
+			require.Equal(t, tt.want, keys)
+		})
+	}
+}
+
+// TestTransformEmptyKeyIsNoKey derives an empty key by each route. Each gives the
+// ErrNoKey sentinel itself, and the prefix does not turn an empty key into a key.
+func TestTransformEmptyKeyIsNoKey(t *testing.T) {
+	tests := []struct {
+		name  string
+		opts  query.TransformOptions
+		value any
+	}{
+		{name: "key expression", opts: query.TransformOptions{Key: `""`, KeyPrefix: "p:"}, value: map[string]any{}},
+		{name: "key field", opts: query.TransformOptions{KeyField: "id", KeyPrefix: "p:"}, value: map[string]any{"id": ""}},
+		{name: "source key", opts: query.TransformOptions{KeyPrefix: "p:"}, value: map[string]any{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fn, err := query.NewTransform(tt.opts)
+			require.NoError(t, err)
+			_, err = fn(query.Record{Key: "", Value: tt.value})
+			require.ErrorIs(t, err, query.ErrNoKey)
+			require.EqualError(t, err, query.ErrNoKey.Error())
+		})
+	}
+}

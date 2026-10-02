@@ -31,7 +31,7 @@ type Conjunct struct {
 // not a streamable scan or has no select conjunct to analyse — nothing is ever
 // pushed then, so the caller shows no breakdown.
 func Conjuncts(q *gojq.Query) ([]Conjunct, bool) {
-	if !selector.Keys(q).Streamable {
+	if !selector.Keys(q).Streamable || shadowsAny(q) {
 		return nil, false
 	}
 	var out []Conjunct

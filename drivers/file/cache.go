@@ -51,6 +51,11 @@ type CacheConfig struct {
 	MinSize int64
 }
 
+// active reports whether the policy turns caching on: it is enabled and names a dir.
+func (c CacheConfig) active() bool {
+	return c.Enabled && c.Dir != ""
+}
+
 // minSize returns the effective size floor.
 func (c CacheConfig) minSize() int64 {
 	if c.MinSize > 0 {
@@ -84,6 +89,23 @@ type cacheHeader struct {
 	Decimal   int
 }
 
+// cacheKey is the part of a cache header that must match the dump. The recorded path
+// is not part of it: the cache file name already depends on the path.
+type cacheKey struct {
+	size, mtime     int64
+	format, decimal int
+}
+
+// key returns the freshness key the header recorded.
+func (h cacheHeader) key() cacheKey {
+	return cacheKey{size: h.Size, mtime: h.MTimeNano, format: h.Format, decimal: h.Decimal}
+}
+
+// keyFor returns the freshness key a cache of the dump m must carry.
+func (s *Store) keyFor(m cacheMeta) cacheKey {
+	return cacheKey{size: m.size, mtime: m.mtime, format: int(s.format), decimal: int(s.dec)}
+}
+
 // trailerLen is the fixed width of the index-offset trailer at a cache file's end.
 const trailerLen = 8
 
@@ -115,7 +137,7 @@ type cacheMeta struct {
 // all: never for stdin (no stable path), a disabled policy, an unstattable path,
 // or a dump below the size floor.
 func (s *Store) cacheable() (cacheMeta, bool) {
-	if s.data != nil || !s.cache.Enabled || s.cache.Dir == "" {
+	if s.data != nil || !s.cache.active() {
 		return cacheMeta{}, false
 	}
 	abs, err := filepath.Abs(s.path)
@@ -123,7 +145,10 @@ func (s *Store) cacheable() (cacheMeta, bool) {
 		return cacheMeta{}, false
 	}
 	fi, err := os.Stat(abs)
-	if err != nil || fi.IsDir() || fi.Size() < s.cache.minSize() {
+	if err != nil {
+		return cacheMeta{}, false
+	}
+	if fi.IsDir() || fi.Size() < s.cache.minSize() {
 		return cacheMeta{}, false
 	}
 	return cacheMeta{path: abs, size: fi.Size(), mtime: fi.ModTime().UnixNano()}, true
@@ -169,8 +194,7 @@ func (s *Store) cacheFresh(path string, m cacheMeta) bool {
 	if err != nil {
 		return false
 	}
-	return h.Size == m.size && h.MTimeNano == m.mtime &&
-		h.Format == int(s.format) && h.Decimal == int(s.dec)
+	return h.key() == s.keyFor(m)
 }
 
 // readCache streams a validated cache file's record region as pages, stopping at
@@ -199,10 +223,16 @@ func (s *Store) readCache(ctx context.Context, path string, m cacheMeta, fn func
 	if err != nil {
 		return fmt.Errorf("read cache header %q: %w", path, err)
 	}
-	if h.Size != m.size || h.MTimeNano != m.mtime || h.Format != int(s.format) || h.Decimal != int(s.dec) {
+	if h.key() != s.keyFor(m) {
 		return fmt.Errorf("cache %q no longer matches its dump", path)
 	}
-	page := make([]query.Record, 0, pageSize)
+	return streamRecords(ctx, dec, path, fn)
+}
+
+// streamRecords decodes records from dec until it ends and hands them to fn in pages.
+// It checks the context before each record.
+func streamRecords(ctx context.Context, dec *cbor.Decoder, path string, fn func(batch []query.Record) error) error {
+	pg := newRecordPager(pageSize, fn)
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -214,18 +244,11 @@ func (s *Store) readCache(ctx context.Context, path string, m cacheMeta, fn func
 		if err != nil {
 			return fmt.Errorf("decode cache record %q: %w", path, err)
 		}
-		page = append(page, rec)
-		if len(page) >= pageSize {
-			if err := fn(page); err != nil {
-				return err
-			}
-			page = page[:0]
+		if err := pg.add(rec); err != nil {
+			return err
 		}
 	}
-	if len(page) > 0 {
-		return fn(page)
-	}
-	return nil
+	return pg.flush()
 }
 
 // populate decodes the original dump once, teeing each record into a temp cache
@@ -459,63 +482,126 @@ func (s *Store) cacheGet(ctx context.Context, keys []string) (map[string]any, bo
 		return nil, false
 	}
 	defer func() { _ = f.Close() }()
-	size, err := fileSize(f)
-	if err != nil {
+	ix, ok := s.openIndex(f, m)
+	if !ok {
 		return nil, false
 	}
-	h, _, err := readHeader(f)
-	if err != nil || h.Size != m.size || h.MTimeNano != m.mtime || h.Format != int(s.format) || h.Decimal != int(s.dec) {
+	l := newKeyLookup(keys)
+	if !lookupPages(ctx, f, ix, l) {
 		return nil, false
+	}
+	return l.out, true
+}
+
+// cacheIndex is the page index of a cache file and the offset where its records end.
+type cacheIndex struct {
+	pages []pageIndex
+	end   int64
+}
+
+// pageEnd returns the offset where page i ends: where the next page starts, or the
+// end of the record region for the last page.
+func (ix cacheIndex) pageEnd(i int) int64 {
+	if i+1 < len(ix.pages) {
+		return ix.pages[i+1].Offset
+	}
+	return ix.end
+}
+
+// openIndex checks the header of the open cache file f against the dump m and reads
+// its page index. It reports false for a stale header, an unreadable file, or a flat
+// cache (or an empty one), which the caller streams instead.
+func (s *Store) openIndex(f *os.File, m cacheMeta) (cacheIndex, bool) {
+	size, err := fileSize(f)
+	if err != nil {
+		return cacheIndex{}, false
+	}
+	h, _, err := readHeader(f)
+	if err != nil || h.key() != s.keyFor(m) {
+		return cacheIndex{}, false
 	}
 	indexOffset, err := readTrailer(f, size)
 	if err != nil {
-		return nil, false
+		return cacheIndex{}, false
 	}
 	idx, err := readIndex(f, indexOffset, size)
 	if err != nil || len(idx.Pages) == 0 {
-		return nil, false // flat cache (or empty): let the caller stream it.
+		return cacheIndex{}, false
 	}
-	want := make(map[string]struct{}, len(keys))
-	out := make(map[string]any, len(keys))
-	for _, k := range keys {
-		want[k] = struct{}{}
-	}
-	found := make(map[string]bool, len(keys))
-	for i := range idx.Pages {
-		if len(found) == len(want) {
+	return cacheIndex{pages: idx.Pages, end: indexOffset}, true
+}
+
+// lookupPages decodes the pages whose filter may hold a wanted key into l. It checks
+// for completion between pages, never inside one, and the context before each page.
+// It reports false when the context ends or a page fails to decode.
+func lookupPages(ctx context.Context, r io.ReaderAt, ix cacheIndex, l *keyLookup) bool {
+	for i, p := range ix.pages {
+		if l.done() {
 			break
 		}
 		if err := ctx.Err(); err != nil {
-			return nil, false
+			return false
 		}
-		if !pageMayHold(idx.Pages[i].Filter, want, found) {
+		if !l.mayHold(p.Filter) {
 			continue
 		}
-		end := indexOffset
-		if i+1 < len(idx.Pages) {
-			end = idx.Pages[i+1].Offset
-		}
-		if err := decodePage(f, idx.Pages[i].Offset, end, want, out, found); err != nil {
-			return nil, false
+		if err := decodePage(r, p.Offset, ix.pageEnd(i), l); err != nil {
+			return false
 		}
 	}
-	return out, true
+	return true
 }
 
-// pageMayHold reports whether a page's filter may contain any still-unfound key,
-// so a page relevant to no outstanding key is skipped without a decode.
-func pageMayHold(filter []byte, want map[string]struct{}, found map[string]bool) bool {
-	for k := range want {
-		if !found[k] && bloomHas(filter, k) {
+// keyLookup collects the values of wanted keys and tracks which are found.
+type keyLookup struct {
+	want  map[string]struct{}
+	found map[string]bool
+	out   map[string]any
+}
+
+// newKeyLookup returns a lookup for keys. A repeated key counts once.
+func newKeyLookup(keys []string) *keyLookup {
+	l := &keyLookup{
+		want:  make(map[string]struct{}, len(keys)),
+		found: make(map[string]bool, len(keys)),
+		out:   make(map[string]any, len(keys)),
+	}
+	for _, k := range keys {
+		l.want[k] = struct{}{}
+	}
+	return l
+}
+
+// take stores r when its key is wanted, replacing an earlier value of the same key,
+// and reports whether every wanted key is found.
+func (l *keyLookup) take(r query.Record) (done bool) {
+	if _, ok := l.want[r.Key]; !ok {
+		return false
+	}
+	l.out[r.Key] = r.Value
+	l.found[r.Key] = true
+	return l.done()
+}
+
+// done reports whether every wanted key is found.
+func (l *keyLookup) done() bool {
+	return len(l.found) == len(l.want)
+}
+
+// mayHold reports whether a page's filter may contain any still-unfound key, so a
+// page relevant to no outstanding key is skipped without a decode.
+func (l *keyLookup) mayHold(filter []byte) bool {
+	for k := range l.want {
+		if !l.found[k] && bloomHas(filter, k) {
 			return true
 		}
 	}
 	return false
 }
 
-// decodePage decodes the records in [offset, end) and copies any whose key is
-// wanted into out, marking it found.
-func decodePage(r io.ReaderAt, offset, end int64, want map[string]struct{}, out map[string]any, found map[string]bool) error {
+// decodePage decodes the records in [offset, end) and stores the wanted ones in l.
+// It reads to the end of the page, even when every key is found.
+func decodePage(r io.ReaderAt, offset, end int64, l *keyLookup) error {
 	sec := io.NewSectionReader(r, offset, end-offset)
 	dec := cborDec.NewDecoder(sec)
 	for {
@@ -526,10 +612,7 @@ func decodePage(r io.ReaderAt, offset, end int64, want map[string]struct{}, out 
 		if err != nil {
 			return err
 		}
-		if _, ok := want[rec.Key]; ok {
-			out[rec.Key] = rec.Value
-			found[rec.Key] = true
-		}
+		l.take(rec)
 	}
 }
 
@@ -546,18 +629,12 @@ type CacheEntry struct {
 // that does not exist yields no entries and no error (nothing cached yet); an
 // unreadable or foreign file in it is skipped, not fatal.
 func ListCache(dir string) ([]CacheEntry, error) {
-	des, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
+	des, err := cacheEntries(dir)
 	if err != nil {
-		return nil, fmt.Errorf("read cache dir %q: %w", dir, err)
+		return nil, err
 	}
 	var out []CacheEntry
 	for _, de := range des {
-		if de.IsDir() || filepath.Ext(de.Name()) != ".cbor" {
-			continue
-		}
 		path := filepath.Join(dir, de.Name())
 		h, ok := headerOf(path)
 		if !ok {
@@ -583,26 +660,16 @@ func ListCache(dir string) ([]CacheEntry, error) {
 // absolute path). It returns how many files it removed. A missing dir is not an
 // error (nothing to remove).
 func RemoveCache(dir, dumpPath string) (int, error) {
-	des, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
-	}
+	des, err := cacheEntries(dir)
 	if err != nil {
-		return 0, fmt.Errorf("read cache dir %q: %w", dir, err)
+		return 0, err
 	}
 	var want string
 	if dumpPath != "" {
-		if abs, err := filepath.Abs(dumpPath); err == nil {
-			want = abs
-		} else {
-			want = dumpPath
-		}
+		want = absOrSelf(dumpPath)
 	}
 	removed := 0
 	for _, de := range des {
-		if de.IsDir() || filepath.Ext(de.Name()) != ".cbor" {
-			continue
-		}
 		path := filepath.Join(dir, de.Name())
 		if want != "" {
 			h, ok := headerOf(path)
@@ -616,6 +683,35 @@ func RemoveCache(dir, dumpPath string) (int, error) {
 		removed++
 	}
 	return removed, nil
+}
+
+// cacheEntries lists the cache files in dir: the entries that are not directories and
+// carry the .cbor extension. A dir that does not exist yields no entries and no error.
+func cacheEntries(dir string) ([]os.DirEntry, error) {
+	des, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read cache dir %q: %w", dir, err)
+	}
+	var out []os.DirEntry
+	for _, de := range des {
+		if de.IsDir() || filepath.Ext(de.Name()) != ".cbor" {
+			continue
+		}
+		out = append(out, de)
+	}
+	return out, nil
+}
+
+// absOrSelf returns the absolute form of path, or path itself when that fails.
+func absOrSelf(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return abs
 }
 
 // headerOf reads a cache file's header, reporting false for any file that is not
