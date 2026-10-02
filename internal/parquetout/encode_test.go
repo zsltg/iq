@@ -127,6 +127,14 @@ func TestAppendValNullAndSuccess(t *testing.T) {
 }
 
 func TestToInt64(t *testing.T) {
+	// ^uint(0) is the target's largest uint: it overflows int64 on a 64-bit target
+	// and fits on a 32-bit one.
+	maxUint := ^uint(0)
+	maxUintFits := uint64(maxUint) <= math.MaxInt64
+	var maxUintInt64 int64
+	if maxUintFits {
+		maxUintInt64 = int64(maxUint)
+	}
 	tests := []struct {
 		name string
 		v    any
@@ -135,10 +143,13 @@ func TestToInt64(t *testing.T) {
 	}{
 		{"int", 7, 7, true},
 		{"int8", int8(1), 1, true},
+		{"negative int8", int8(-1), -1, true},
 		{"int16", int16(2), 2, true},
 		{"int32", int32(3), 3, true},
 		{"int64", int64(9), 9, true},
+		{"min int64", int64(math.MinInt64), math.MinInt64, true},
 		{"uint", uint(4), 4, true},
+		{"uint max", maxUint, maxUintInt64, maxUintFits},
 		{"uint8", uint8(5), 5, true},
 		{"uint16", uint16(6), 6, true},
 		{"uint32", uint32(7), 7, true},
@@ -147,6 +158,8 @@ func TestToInt64(t *testing.T) {
 		{"uint64 one past max int64", uint64(math.MaxInt64) + 1, 0, false},
 		{"uint64 overflow", uint64(math.MaxUint64), 0, false},
 		{"integral float32", float32(8), 8, true},
+		{"fractional float32", float32(1.5), 0, false},
+		{"float32 NaN", float32(math.NaN()), 0, false},
 		{"integral float", 5.0, 5, true},
 		{"fractional float", 5.5, 0, false},
 		{"min int64 as float", float64(math.MinInt64), math.MinInt64, true},
@@ -193,6 +206,7 @@ func TestToFloat64(t *testing.T) {
 	}{
 		{"int", 7, 7, true},
 		{"int8", int8(1), 1, true},
+		{"negative int8", int8(-1), -1, true},
 		{"int16", int16(2), 2, true},
 		{"int32", int32(3), 3, true},
 		{"int64", int64(4), 4, true},
@@ -201,6 +215,7 @@ func TestToFloat64(t *testing.T) {
 		{"uint16", uint16(7), 7, true},
 		{"uint32", uint32(8), 8, true},
 		{"uint64", uint64(9), 9, true},
+		{"uint64 max", uint64(math.MaxUint64), float64(math.MaxUint64), true},
 		{"float32", float32(1.5), 1.5, true},
 		{"float64", 2.5, 2.5, true},
 		{"big.Int", big.NewInt(42), 42, true},
