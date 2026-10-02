@@ -564,7 +564,7 @@ func (s *mcpServer) toolDiff(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	if !stats && !schema {
 		data = true
 	}
-	if stats && in.Filter != "" {
+	if stats && eitherFiltered(left, right) {
 		return nil, mcpDiffOutput{}, toolError(errors.New("the stats layer diffs the backend's own introspection, which has no items to filter; drop the filter or diff data/schema"))
 	}
 	cfg := s.callConfig()

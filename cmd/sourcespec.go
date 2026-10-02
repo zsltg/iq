@@ -31,6 +31,12 @@ func (s sourceSpec) collection() string {
 	return iqmongo.CollectionFromURI(s.url)
 }
 
+// eitherFiltered reports whether either side of a diff carries a jq filter,
+// from --filter or from its own spec.
+func eitherFiltered(left, right sourceSpec) bool {
+	return left.filter != "" || right.filter != ""
+}
+
 // runConfig builds the per-source config a read of this spec runs under. It
 // carries the run-wide settings forward — decimal mode above all, which changes
 // what the filter computes on — so one spec string means the same thing in `iq`

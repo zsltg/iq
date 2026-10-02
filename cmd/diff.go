@@ -176,7 +176,7 @@ func (m *diffModes) validate(left, right sourceSpec) error {
 	}
 	// Guarded here rather than in the stats collector so both the human and
 	// the --patch paths are covered: --patch reaches statsTrees directly.
-	if m.stats && (left.filter != "" || right.filter != "") {
+	if m.stats && eitherFiltered(left, right) {
 		return errors.New("--stats diffs the backend's own introspection, which has no items to filter; drop the filter or diff --data/--schema")
 	}
 	return nil
