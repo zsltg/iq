@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -306,4 +307,129 @@ func TestLsGroupsJSON(t *testing.T) {
 	require.Len(t, rows, 1)
 	require.Equal(t, "prod", rows[0].Group)
 	require.Equal(t, 2, rows[0].Sources)
+}
+
+// lsRowsByHandle decodes the JSON listing into rows keyed by handle.
+func lsRowsByHandle(t *testing.T, out string) map[string]sourceRow {
+	t.Helper()
+	var rows []sourceRow
+	require.NoError(t, json.Unmarshal([]byte(out), &rows))
+	byHandle := make(map[string]sourceRow, len(rows))
+	for _, r := range rows {
+		byHandle[r.Handle] = r
+	}
+	return byHandle
+}
+
+// seedKeyringLs seeds one keyring source and returns the fake keyring.
+func seedKeyringLs(t *testing.T) *fakeKeyring {
+	t.Helper()
+	c := newSeed()
+	require.NoError(t, c.Add("sec", "redis://u@h:6379/0"))
+	require.NoError(t, c.UseKeyring("sec"))
+	seedConfig(t, c)
+	fk := useFakeKeyring(t)
+	require.NoError(t, fk.Set("sec", "secret"))
+	return fk
+}
+
+// TestLsJSONGroupFilter proves that the group filter applies to the JSON and
+// YAML output, and that a group name matches only a whole path segment.
+func TestLsJSONGroupFilter(t *testing.T) {
+	seedLs(t)
+
+	out, err := runCmd(t, newLsCmd(&config{}), "prod", "-j")
+	require.NoError(t, err)
+	byHandle := lsRowsByHandle(t, out)
+	require.Len(t, byHandle, 2)
+	require.Contains(t, byHandle, "prod/books")
+	require.Contains(t, byHandle, "prod/cache")
+
+	yamlOut, err := runCmd(t, newLsCmd(&config{}), "prod", "-y")
+	require.NoError(t, err)
+	require.Contains(t, yamlOut, "handle: prod/books")
+	require.NotContains(t, yamlOut, "handle: cache")
+
+	none, err := runCmd(t, newLsCmd(&config{}), "pro", "-j")
+	require.NoError(t, err)
+	require.Equal(t, "[]\n", none)
+}
+
+// TestLsJSONReveal proves that --reveal reaches the JSON location, with and
+// without -v.
+func TestLsJSONReveal(t *testing.T) {
+	seedLs(t)
+	tests := []struct {
+		name    string
+		verbose bool
+		args    []string
+		want    string
+	}{
+		{"redacted by default", false, []string{"-j"}, "redis://u:xxxxx@h:6379/0"},
+		{"reveal", false, []string{"-j", "--reveal"}, "redis://u:secret@h:6379/0"},
+		{"verbose reveal", true, []string{"-j", "--reveal"}, "redis://u:secret@h:6379/0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := runCmd(t, newLsCmd(&config{verbose: tt.verbose}), tt.args...)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, lsRowsByHandle(t, out)["cache"].Location)
+		})
+	}
+}
+
+// TestLsExpandKeyring pins --expand for a keyring source on every output. A
+// resolved password is redacted unless --reveal is set. A failed lookup keeps
+// the stored URL, and --reveal then prints that URL.
+func TestLsExpandKeyring(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		lookupErr error
+		want      string
+	}{
+		{"expand redacts", []string{"--expand"}, nil, "redis://u:xxxxx@h:6379/0"},
+		{"expand and reveal print", []string{"--expand", "--reveal"}, nil, "redis://u:secret@h:6379/0"},
+		{"failed lookup keeps the stored URL", []string{"--expand"}, errors.New("keyring locked"), "redis://u@h:6379/0"},
+		{"failed lookup with reveal keeps the stored URL", []string{"--expand", "--reveal"}, errors.New("keyring locked"), "redis://u@h:6379/0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fk := seedKeyringLs(t)
+			fk.getErr = tt.lookupErr
+
+			text, err := runCmd(t, newLsCmd(&config{verbose: true}), tt.args...)
+			require.NoError(t, err)
+			require.Contains(t, text, tt.want+" [keyring]")
+
+			out, err := runCmd(t, newLsCmd(&config{}), append(tt.args, "-j")...)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, lsRowsByHandle(t, out)["sec"].Location)
+		})
+	}
+}
+
+// TestLsGroupsVerbose proves that -v adds the source count to the group
+// listing, and that the plain listing has none.
+func TestLsGroupsVerbose(t *testing.T) {
+	seedLs(t)
+
+	verbose, err := runCmd(t, newLsCmd(&config{verbose: true}), "-g")
+	require.NoError(t, err)
+	require.Contains(t, verbose, "prod  2 sources")
+
+	plain, err := runCmd(t, newLsCmd(&config{}), "-g")
+	require.NoError(t, err)
+	require.NotContains(t, plain, "sources")
+}
+
+// TestLsGroupsYAML proves that -y reaches the group listing.
+func TestLsGroupsYAML(t *testing.T) {
+	seedLs(t)
+
+	out, err := runCmd(t, newLsCmd(&config{}), "-g", "-y")
+
+	require.NoError(t, err)
+	require.Equal(t, "- group: prod\n  sources: 2\n", out)
 }
