@@ -11,6 +11,7 @@ import (
 	"github.com/tsuna/gohbase/hrpc"
 	"github.com/tsuna/gohbase/pb"
 	"github.com/tsuna/gohbase/region"
+	"google.golang.org/protobuf/proto"
 )
 
 // ctxKey is the type of the marker a test context carries. A request assertion reads
@@ -275,22 +276,36 @@ type fakeAdmin struct {
 	clusterErr error
 	// clusterBlock, when set, holds ClusterStatus until the channel closes.
 	clusterBlock chan struct{}
-	disabled     []string
-	deleted      []string
-	listErr      error
-	disableErr   error
-	deleteErr    error
-	listCalls    []rpcCall
-	disableCalls []rpcCall
-	deleteCalls  []rpcCall
+	// clusterCancel, when set, runs inside ClusterStatus before it returns.
+	clusterCancel func()
+	disabled      []string
+	deleted       []string
+	listErr       error
+	disableErr    error
+	deleteErr     error
+	listCalls     []rpcCall
+	disableCalls  []rpcCall
+	deleteCalls   []rpcCall
 }
 
 func (a *fakeAdmin) ClusterStatus() (*pb.ClusterStatus, error) {
 	if a.clusterBlock != nil {
 		<-a.clusterBlock
 	}
+	if a.clusterCancel != nil {
+		a.clusterCancel()
+	}
 	return &pb.ClusterStatus{}, a.clusterErr
 }
+
+// fakeRPCAdmin is a fakeAdmin that also implements SendRPC, so the probe takes the
+// request path.
+type fakeRPCAdmin struct {
+	fakeAdmin
+	send func(hrpc.Call) (proto.Message, error)
+}
+
+func (a *fakeRPCAdmin) SendRPC(c hrpc.Call) (proto.Message, error) { return a.send(c) }
 
 func (a *fakeAdmin) ListTableNames(t *hrpc.ListTableNames) ([]*pb.TableName, error) {
 	a.listCalls = append(a.listCalls, recordCall(t))
