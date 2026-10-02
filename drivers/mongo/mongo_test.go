@@ -78,15 +78,15 @@ func seedDocs(t *testing.T, store *Store, docs []any) {
 	defer cancel()
 	coll := store.db.Collection(store.collection)
 	require.NoError(t, coll.Drop(ctx))
-	if len(docs) > 0 {
-		_, err := coll.InsertMany(ctx, docs)
-		require.NoError(t, err)
-	}
 	t.Cleanup(func() {
 		cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cleanCancel()
 		_ = coll.Drop(cleanCtx)
 	})
+	if len(docs) > 0 {
+		_, err := coll.InsertMany(ctx, docs)
+		require.NoError(t, err)
+	}
 }
 
 func TestDatabaseFromURI(t *testing.T) {
