@@ -252,6 +252,8 @@ func TestRenderSectionOrder(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			orig := color.NoColor
+			t.Cleanup(func() { color.NoColor = orig })
 			color.NoColor = true
 			var buf bytes.Buffer
 			body := func() error {
@@ -275,6 +277,8 @@ func TestRenderSectionBodyErrorSkipsSummary(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			orig := color.NoColor
+			t.Cleanup(func() { color.NoColor = orig })
 			color.NoColor = true
 			var buf bytes.Buffer
 			err := renderSection(&buf, "t", diff.Summary{Added: 2}, tt.body)
