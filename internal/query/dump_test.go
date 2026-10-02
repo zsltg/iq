@@ -637,3 +637,90 @@ func TestDecodeTypedRecord(t *testing.T) {
 		})
 	}
 }
+
+// TestJSONSourceEndConditionsUnderACanceledContext runs JSONSource over a canceled
+// context. An input with no value ends before the first context check, so it gives
+// no error. An input with a value, or with only the brackets of an array, reaches the
+// check and gives context.Canceled. A read error in the prologue wins over the context.
+func TestJSONSourceEndConditionsUnderACanceledContext(t *testing.T) {
+	boom := errors.New("disk gone")
+	tests := []struct {
+		name    string
+		r       io.Reader
+		wantErr error
+	}{
+		{name: "empty input", r: strings.NewReader("")},
+		{name: "white space only", r: strings.NewReader(" \n\t\r")},
+		{name: "an empty array", r: strings.NewReader("[]"), wantErr: context.Canceled},
+		{name: "an empty array after white space", r: strings.NewReader(" \n[ ]"), wantErr: context.Canceled},
+		{name: "an open bracket", r: strings.NewReader("["), wantErr: context.Canceled},
+		{name: "one record", r: strings.NewReader(`{"key":"a","type":"","value":1}`), wantErr: context.Canceled},
+		{name: "a prologue read error", r: &errReader{err: boom}, wantErr: boom},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			called := false
+			err := query.JSONSource(tt.r, 10, false)(ctx, func([]query.Record) error {
+				called = true
+				return nil
+			})
+			if tt.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, tt.wantErr)
+				if tt.wantErr != context.Canceled {
+					require.NotErrorIs(t, err, context.Canceled)
+					require.ErrorContains(t, err, "read json: ")
+				}
+			}
+			require.False(t, called)
+		})
+	}
+}
+
+// TestJSONSourceEndsAnArrayOnTheClosingBracket pins the two ways a stream ends. An
+// array ends at its closing bracket, so a value after the bracket is never read. A
+// stream of concatenated values ends at end of input.
+func TestJSONSourceEndsAnArrayOnTheClosingBracket(t *testing.T) {
+	rec := `{"key":"a","type":"","value":1}`
+	got := drainSource(t, query.JSONSource(strings.NewReader("["+rec+"]\n{not json"), 10, false))
+	require.Len(t, got, 1)
+
+	_, err := drainSourceErr(query.JSONSource(strings.NewReader(rec+"\n{not json"), 10, false))
+	require.ErrorContains(t, err, "decode json record: ")
+}
+
+// TestSourcesReuseThePageSlice gives the consumer each page and compares the
+// backing array. Every source hands out pages from one slice, so a caller must copy
+// what it keeps.
+func TestSourcesReuseThePageSlice(t *testing.T) {
+	sources := append(docSources(), docSource{
+		name: "jsonl",
+		join: func(docs []string) string { return strings.Join(docs, "\n") },
+		src:  query.JSONLSource,
+		doc:  func(i int) string { return fmt.Sprintf(`{"key":"k%d","type":"string","value":"v"}`, i) },
+	})
+	for _, s := range sources {
+		t.Run(s.name, func(t *testing.T) {
+			docs := make([]string, 0, 5)
+			for i := range 5 {
+				docs = append(docs, s.doc(i))
+			}
+			var firsts []*query.Record
+			var sizes []int
+			err := s.src(strings.NewReader(s.join(docs)), 2, false)(
+				context.Background(), func(b []query.Record) error {
+					firsts = append(firsts, &b[0])
+					sizes = append(sizes, len(b))
+					return nil
+				},
+			)
+			require.NoError(t, err)
+			require.Equal(t, []int{2, 2, 1}, sizes)
+			require.Same(t, firsts[0], firsts[1])
+			require.Same(t, firsts[0], firsts[2])
+		})
+	}
+}

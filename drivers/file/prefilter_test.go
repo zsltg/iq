@@ -649,3 +649,86 @@ func TestScanFilteredReportsAMissingDump(t *testing.T) {
 	require.ErrorIs(t, err, fs.ErrNotExist)
 	require.False(t, called)
 }
+
+// TestScanFilteredEndConditionsUnderACanceledContext runs the prefiltered scan over a
+// canceled context. An input with no value ends before the first context check, so it
+// gives no error. An input with a value, or with only the brackets of an array,
+// reaches the check and gives context.Canceled. A read error in the prologue wins
+// over the context.
+func TestScanFilteredEndConditionsUnderACanceledContext(t *testing.T) {
+	boom := errors.New("disk gone")
+	tests := []struct {
+		name    string
+		r       io.Reader
+		wantErr error
+	}{
+		{name: "empty input", r: strings.NewReader("")},
+		{name: "white space only", r: strings.NewReader(" \n\t\r")},
+		{name: "an empty array", r: strings.NewReader("[]"), wantErr: context.Canceled},
+		{name: "an empty array after white space", r: strings.NewReader(" \n[ ]"), wantErr: context.Canceled},
+		{name: "an open bracket", r: strings.NewReader("["), wantErr: context.Canceled},
+		{name: "one record", r: strings.NewReader(oneRecord()), wantErr: context.Canceled},
+		{name: "a prologue read error", r: errReader{err: boom}, wantErr: boom},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			var checked, skipped int
+			called := false
+			err := scanFilteredJSON(
+				ctx, tt.r, rawpred.NewMatcher(matchEverything),
+				&checked, &skipped, func(map[string]any) error { called = true; return nil },
+			)
+			if tt.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, tt.wantErr)
+				if tt.wantErr != context.Canceled {
+					require.NotErrorIs(t, err, context.Canceled)
+					require.ErrorContains(t, err, "read json: ")
+				}
+			}
+			require.False(t, called)
+			require.Zero(t, checked)
+		})
+	}
+}
+
+// TestScanFilteredEndsAnArrayOnTheClosingBracket pins the two ways a stream ends. An
+// array ends at its closing bracket, so a value after the bracket is never read. A
+// stream of concatenated values ends at end of input.
+func TestScanFilteredEndsAnArrayOnTheClosingBracket(t *testing.T) {
+	var checked, skipped int
+	var seen int
+	fn := func(b map[string]any) error { seen += len(b); return nil }
+	err := scanFilteredJSON(
+		context.Background(), strings.NewReader("["+strings.TrimSpace(oneRecord())+"]\n{not json"),
+		rawpred.NewMatcher(matchEverything), &checked, &skipped, fn,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, seen)
+
+	err = scanFilteredJSON(
+		context.Background(), strings.NewReader(oneRecord()+"{not json"),
+		rawpred.NewMatcher(matchEverything), &checked, &skipped, fn,
+	)
+	require.ErrorContains(t, err, "decode json record: ")
+}
+
+// TestScanFilteredCountsARepeatedKeyTowardTheBatchSize reads a dump of one key repeated
+// past a page. A page holds pageSize records, and a key that repeats inside a page
+// folds into one map entry, so every batch holds a single entry.
+func TestScanFilteredCountsARepeatedKeyTowardTheBatchSize(t *testing.T) {
+	var b strings.Builder
+	for range pageSize + 1 {
+		b.WriteString(oneRecord())
+	}
+	st := jsonlStore(t, b.String(), CacheConfig{})
+	pages := scanFilteredPages(t, st, matchEverything)
+	require.Len(t, pages, 2)
+	require.Len(t, pages[0], 1)
+	require.Len(t, pages[1], 1)
+	plain := scanBatchesPages(t, st)
+	require.Equal(t, pages, plain)
+}
