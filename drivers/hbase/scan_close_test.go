@@ -196,54 +196,58 @@ func TestCallbackErrorReturnsUnwrapped(t *testing.T) {
 // TestEmptyRowsAreSkipped pins that a row with no cells between two rows is skipped by
 // every scan loop: it is not counted, paged, returned, or deleted.
 func TestEmptyRowsAreSkipped(t *testing.T) {
-	seed := func() (*fakeClient, *Store) {
-		fc := newFakeClient()
-		fc.seed("1", cell("cf", "n", "1"))
-		fc.seed("2", map[string]map[string][]byte{})
-		fc.seed("3", cell("cf", "n", "3"))
-		return fc, newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
+	tests := []struct {
+		name string
+		run  func(t *testing.T, fc *fakeClient, st *Store)
+	}{
+		{"exec count counts the rows with cells", func(t *testing.T, _ *fakeClient, st *Store) {
+			got, err := st.Query(context.Background(), []string{"count", "books"})
+			require.NoError(t, err)
+			require.Equal(t, 2, got)
+		}},
+		{"ScanBatches pages the rows with cells", func(t *testing.T, _ *fakeClient, st *Store) {
+			var pages [][]string
+			err := st.ScanBatches(context.Background(), func(b map[string]any) error {
+				var keys []string
+				for k := range b {
+					keys = append(keys, k)
+				}
+				pages = append(pages, keys)
+				return nil
+			})
+			require.NoError(t, err)
+			require.Len(t, pages, 1)
+			require.ElementsMatch(t, []string{"1", "3"}, pages[0])
+		}},
+		{"exec scan returns the rows with cells and counts them toward the limit", func(t *testing.T, _ *fakeClient, st *Store) {
+			got, err := st.Query(context.Background(), []string{"scan", "books", "2"})
+			require.NoError(t, err)
+			rows, ok := got.(map[string]any)
+			require.True(t, ok)
+			require.Len(t, rows, 2)
+			require.Contains(t, rows, "1")
+			require.Contains(t, rows, "3")
+		}},
+		{"Clear deletes the rows with cells", func(t *testing.T, fc *fakeClient, st *Store) {
+			require.NoError(t, st.Clear(context.Background()))
+			require.Len(t, fc.dels, 2)
+			require.Equal(t, 2, fc.delCalls)
+			require.Contains(t, fc.rows, "2")
+			require.NotContains(t, fc.rows, "1")
+			require.NotContains(t, fc.rows, "3")
+		}},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fc := newFakeClient()
+			fc.seed("1", cell("cf", "n", "1"))
+			fc.seed("2", map[string]map[string][]byte{})
+			fc.seed("3", cell("cf", "n", "3"))
+			st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
 
-	t.Run("exec count counts the rows with cells", func(t *testing.T) {
-		_, st := seed()
-		got, err := st.Query(context.Background(), []string{"count", "books"})
-		require.NoError(t, err)
-		require.Equal(t, 2, got)
-	})
-	t.Run("ScanBatches pages the rows with cells", func(t *testing.T) {
-		_, st := seed()
-		var pages [][]string
-		err := st.ScanBatches(context.Background(), func(b map[string]any) error {
-			var keys []string
-			for k := range b {
-				keys = append(keys, k)
-			}
-			pages = append(pages, keys)
-			return nil
+			tt.run(t, fc, st)
 		})
-		require.NoError(t, err)
-		require.Len(t, pages, 1)
-		require.ElementsMatch(t, []string{"1", "3"}, pages[0])
-	})
-	t.Run("exec scan returns the rows with cells and counts them toward the limit", func(t *testing.T) {
-		_, st := seed()
-		got, err := st.Query(context.Background(), []string{"scan", "books", "2"})
-		require.NoError(t, err)
-		rows, ok := got.(map[string]any)
-		require.True(t, ok)
-		require.Len(t, rows, 2)
-		require.Contains(t, rows, "1")
-		require.Contains(t, rows, "3")
-	})
-	t.Run("Clear deletes the rows with cells", func(t *testing.T) {
-		fc, st := seed()
-		require.NoError(t, st.Clear(context.Background()))
-		require.Len(t, fc.dels, 2)
-		require.Equal(t, 2, fc.delCalls)
-		require.Contains(t, fc.rows, "2")
-		require.NotContains(t, fc.rows, "1")
-		require.NotContains(t, fc.rows, "3")
-	})
+	}
 }
 
 // TestPutValueErrorWinsOverKeyError pins that Put checks the value before the row key,
