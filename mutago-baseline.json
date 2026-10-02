@@ -2492,6 +2492,12 @@
    "line": 192
   },
   {
+   "id": "42d4957c9fd894b729a942a802acc0d4",
+   "file": "drivers/hbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 240
+  },
+  {
    "id": "0965b67f4ad4d1d1f585006605778732",
    "file": "drivers/hbase/write.go",
    "mutator": "expression/error-guard",
