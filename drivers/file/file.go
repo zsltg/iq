@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -382,10 +383,8 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	}
 	l := newKeyLookup(keys)
 	err := s.records(ctx, false, func(recs []query.Record) error {
-		for _, r := range recs {
-			if l.take(r) {
-				return errStopScan
-			}
+		if slices.ContainsFunc(recs, l.take) {
+			return errStopScan
 		}
 		return nil
 	})
