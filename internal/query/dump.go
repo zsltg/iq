@@ -42,9 +42,6 @@ func WriteJSONL(w io.Writer, recs []Record) error {
 // key or type, leaving the caller's transform to key it. Numbers decode
 // precisely: an integer stays exact (int or *big.Int), never a lossy float.
 func JSONLSource(r io.Reader, pageSize int, plain bool) RecordSource {
-	if pageSize <= 0 {
-		pageSize = 100
-	}
 	return func(ctx context.Context, fn func(batch []Record) error) error {
 		sc := bufio.NewScanner(r)
 		// A JSONL line can be a large document; raise the scanner's line cap well
@@ -52,7 +49,7 @@ func JSONLSource(r io.Reader, pageSize int, plain bool) RecordSource {
 		// value each, not a product.
 		const initBuf, maxLine = 64 << 10, 16 << 20
 		sc.Buffer(make([]byte, 0, initBuf), maxLine)
-		page := make([]Record, 0, pageSize)
+		pg := newPager(pageSize, fn)
 		line := 0
 		for sc.Scan() {
 			if err := ctx.Err(); err != nil {
@@ -67,21 +64,14 @@ func JSONLSource(r io.Reader, pageSize int, plain bool) RecordSource {
 			if err != nil {
 				return fmt.Errorf("line %d: %w", line, err)
 			}
-			page = append(page, rec)
-			if len(page) >= pageSize {
-				if err := fn(page); err != nil {
-					return err
-				}
-				page = page[:0]
+			if err := pg.add(rec); err != nil {
+				return err
 			}
 		}
 		if err := sc.Err(); err != nil {
 			return fmt.Errorf("read jsonl: %w", err)
 		}
-		if len(page) > 0 {
-			return fn(page)
-		}
-		return nil
+		return pg.flush()
 	}
 }
 
@@ -178,56 +168,78 @@ func convertNumber(t json.Number) any {
 // --typed dump written as --jsonl or --jsona both re-import. Integers stay
 // exact.
 func JSONSource(r io.Reader, pageSize int, plain bool) RecordSource {
-	if pageSize <= 0 {
-		pageSize = 100
-	}
 	return func(ctx context.Context, fn func(batch []Record) error) error {
-		br := bufio.NewReader(r)
-		array, err := startsJSONArray(br)
+		stream, err := NewJSONStream(r)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return fmt.Errorf("read json: %w", err)
+			return err
 		}
-		dec := json.NewDecoder(br)
-		if array {
-			if _, err := dec.Token(); err != nil { // consume '['
-				return fmt.Errorf("read json array: %w", err)
-			}
+		if stream == nil {
+			return nil // empty input: no records, and no context check.
 		}
-		page := make([]Record, 0, pageSize)
+		pg := newPager(pageSize, fn)
 		for {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if array && !dec.More() {
-				break
+			raw, ok, err := stream.Next()
+			if err != nil {
+				return err
 			}
-			var raw json.RawMessage
-			if err := dec.Decode(&raw); err != nil {
-				if !array && errors.Is(err, io.EOF) {
-					break
-				}
-				return fmt.Errorf("decode json record: %w", err)
+			if !ok {
+				break
 			}
 			rec, err := decodeLine(string(raw), plain)
 			if err != nil {
 				return err
 			}
-			page = append(page, rec)
-			if len(page) >= pageSize {
-				if err := fn(page); err != nil {
-					return err
-				}
-				page = page[:0]
+			if err := pg.add(rec); err != nil {
+				return err
 			}
 		}
-		if len(page) > 0 {
-			return fn(page)
-		}
-		return nil
+		return pg.flush()
 	}
+}
+
+// JSONStream reads JSON records from concatenated values or from one top-level
+// array, the two layouts a JSON dump can have.
+type JSONStream struct {
+	dec   *json.Decoder
+	array bool
+}
+
+// NewJSONStream reads the layout prologue of r. Empty or whitespace-only input
+// gives a nil stream and no error.
+func NewJSONStream(r io.Reader) (*JSONStream, error) {
+	br := bufio.NewReader(r)
+	array, err := startsJSONArray(br)
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read json: %w", err)
+	}
+	dec := json.NewDecoder(br)
+	if array {
+		if _, err := dec.Token(); err != nil { // consume '['
+			return nil, fmt.Errorf("read json array: %w", err)
+		}
+	}
+	return &JSONStream{dec: dec, array: array}, nil
+}
+
+// Next returns the raw bytes of the next record, or ok=false at the end. An array
+// ends at its closing bracket, and a stream of values ends at end of input.
+func (s *JSONStream) Next() (raw json.RawMessage, ok bool, err error) {
+	if s.array && !s.dec.More() {
+		return nil, false, nil
+	}
+	if err := s.dec.Decode(&raw); err != nil {
+		if !s.array && errors.Is(err, io.EOF) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("decode json record: %w", err)
+	}
+	return raw, true, nil
 }
 
 // startsJSONArray reports whether the first non-whitespace byte is '[' (a top-level
@@ -254,12 +266,9 @@ func startsJSONArray(br *bufio.Reader) (bool, error) {
 // YAMLSource streams typed {key,type,value} records (or, in plain mode, whole
 // values) from a multi-document YAML reader, so a --typed --yaml dump re-imports.
 func YAMLSource(r io.Reader, pageSize int, plain bool) RecordSource {
-	if pageSize <= 0 {
-		pageSize = 100
-	}
 	return func(ctx context.Context, fn func(batch []Record) error) error {
 		dec := yaml.NewDecoder(r)
-		page := make([]Record, 0, pageSize)
+		pg := newPager(pageSize, fn)
 		for {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -276,19 +285,49 @@ func YAMLSource(r io.Reader, pageSize int, plain bool) RecordSource {
 			if err != nil {
 				return err
 			}
-			page = append(page, rec)
-			if len(page) >= pageSize {
-				if err := fn(page); err != nil {
-					return err
-				}
-				page = page[:0]
+			if err := pg.add(rec); err != nil {
+				return err
 			}
 		}
-		if len(page) > 0 {
-			return fn(page)
-		}
+		return pg.flush()
+	}
+}
+
+// pager hands records to fn in pages of size, reusing one slice. A caller of fn
+// must not keep the page.
+type pager struct {
+	page []Record
+	size int
+	fn   func([]Record) error
+}
+
+// newPager returns a pager for fn. A size of 0 or less selects 100.
+func newPager(size int, fn func([]Record) error) *pager {
+	if size <= 0 {
+		size = 100
+	}
+	return &pager{page: make([]Record, 0, size), size: size, fn: fn}
+}
+
+// add appends r and hands a full page to fn.
+func (p *pager) add(r Record) error {
+	p.page = append(p.page, r)
+	if len(p.page) < p.size {
 		return nil
 	}
+	if err := p.fn(p.page); err != nil {
+		return err
+	}
+	p.page = p.page[:0]
+	return nil
+}
+
+// flush hands a non-empty tail to fn.
+func (p *pager) flush() error {
+	if len(p.page) == 0 {
+		return nil
+	}
+	return p.fn(p.page)
 }
 
 // recordFromDecoded turns an already-decoded value (a YAML document) into a Record:

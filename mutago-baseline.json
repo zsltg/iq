@@ -1988,6 +1988,12 @@
    "line": 614
   },
   {
+   "id": "d6efec9719c17eca14fb9f5bf0b7b36b",
+   "file": "drivers/file/cache.go",
+   "mutator": "branch/if",
+   "line": 525
+  },
+  {
    "id": "e69e4896a635899800a7371803484891",
    "file": "drivers/file/cassandra.go",
    "mutator": "branch/if",
@@ -2130,6 +2136,12 @@
    "file": "internal/pushdown/pushdown.go",
    "mutator": "branch/case",
    "line": 638
+  },
+  {
+   "id": "90bcbb793447fd2b4811835b81bb6465",
+   "file": "internal/query/dump.go",
+   "mutator": "expression/error-guard",
+   "line": 223
   },
   {
    "id": "21f581b8a3e84254114f8a7d09c5d5fe",

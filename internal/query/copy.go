@@ -39,63 +39,85 @@ type Copier struct {
 // still read and transformed (so the reported counts are real), but every batch
 // is counted as would-be writes instead of being sent to Dst.
 func (c *Copier) Copy(ctx context.Context, src RecordSource, dry bool) (WriteStat, error) {
-	page := c.PageSize
-	if page <= 0 {
-		page = 100
+	size := c.PageSize
+	if size <= 0 {
+		size = 100
 	}
-	var total WriteStat
-	buf := make([]Record, 0, page)
-
-	flush := func() error {
-		if len(buf) == 0 {
-			return nil
-		}
-		if dry {
-			// A dry run reports what would be written without touching the store; it
-			// cannot know overwrite-vs-insert without writing, so it counts intent.
-			total.Written += len(buf)
-			buf = buf[:0]
-			return nil
-		}
-		st, err := c.Dst.Put(ctx, buf, c.Mode)
-		total.add(st)
-		buf = buf[:0]
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-
+	pages := &copyPages{dst: c.Dst, mode: c.Mode, dry: dry, size: size, buf: make([]Record, 0, size)}
 	err := src(ctx, func(batch []Record) error {
 		for _, r := range batch {
-			outs := []Record{r}
-			if c.Transform != nil {
-				var terr error
-				if outs, terr = c.Transform(r); terr != nil {
-					return terr
-				}
+			outs, err := c.transform(r)
+			if err != nil {
+				return err
 			}
-			for _, o := range outs {
-				// A keyless record is not rejected here: a schemaless destination
-				// (MongoDB) can mint an identity, while a keyed one (Redis) rejects it
-				// at its own Put. The Copier stays driver-agnostic.
-				buf = append(buf, o)
-				if len(buf) >= page {
-					if err := flush(); err != nil {
-						return err
-					}
-				}
+			// A keyless record is not rejected here: a schemaless destination
+			// (MongoDB) can mint an identity, while a keyed one (Redis) rejects it
+			// at its own Put. The Copier stays driver-agnostic.
+			if err := pages.add(ctx, outs); err != nil {
+				return err
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		return total, err
+		return pages.total, err
 	}
-	if err := flush(); err != nil {
-		return total, err
+	if err := pages.flush(ctx); err != nil {
+		return pages.total, err
 	}
-	return total, nil
+	return pages.total, nil
+}
+
+// transform maps one source record to its destination records. A nil Transform is
+// the identity.
+func (c *Copier) transform(r Record) ([]Record, error) {
+	if c.Transform == nil {
+		return []Record{r}, nil
+	}
+	return c.Transform(r)
+}
+
+// copyPages buffers records into pages and writes each full page to dst, or only
+// counts it in a dry run.
+type copyPages struct {
+	dst   Putter
+	mode  WriteMode
+	dry   bool
+	size  int
+	buf   []Record
+	total WriteStat
+}
+
+// add buffers recs and writes each page that fills up.
+func (p *copyPages) add(ctx context.Context, recs []Record) error {
+	for _, r := range recs {
+		p.buf = append(p.buf, r)
+		if len(p.buf) >= p.size {
+			if err := p.flush(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// flush writes the buffered page. The stat of a failed Put still counts, and the
+// buffer is empty when the error returns.
+func (p *copyPages) flush(ctx context.Context) error {
+	if len(p.buf) == 0 {
+		return nil
+	}
+	if p.dry {
+		// A dry run reports what would be written without touching the store; it
+		// cannot know overwrite-vs-insert without writing, so it counts intent.
+		p.total.Written += len(p.buf)
+		p.buf = p.buf[:0]
+		return nil
+	}
+	st, err := p.dst.Put(ctx, p.buf, p.mode)
+	p.total.add(st)
+	p.buf = p.buf[:0]
+	return err
 }
 
 // TransformOptions configures a per-record transform for a copy. All fields are
@@ -129,46 +151,62 @@ func NewTransform(opts TransformOptions) (func(Record) ([]Record, error), error)
 	if opts.empty() {
 		return nil, nil
 	}
-	var filterCode, keyCode *gojq.Code
-	if opts.Filter != "" {
-		q, err := gojq.Parse(opts.Filter)
-		if err != nil {
-			return nil, fmt.Errorf("parse item filter: %w", err)
-		}
-		if filterCode, err = gojq.Compile(q); err != nil {
-			return nil, fmt.Errorf("compile item filter: %w", err)
-		}
+	filter, err := compileJQ(opts.Filter, "item filter")
+	if err != nil {
+		return nil, err
 	}
-	if opts.Key != "" {
-		q, err := gojq.Parse(opts.Key)
-		if err != nil {
-			return nil, fmt.Errorf("parse --key: %w", err)
-		}
-		if keyCode, err = gojq.Compile(q); err != nil {
-			return nil, fmt.Errorf("compile --key: %w", err)
-		}
+	key, err := compileJQ(opts.Key, "--key")
+	if err != nil {
+		return nil, err
 	}
+	return transform{opts: opts, filter: filter, key: key}.apply, nil
+}
 
-	return func(r Record) ([]Record, error) {
-		values, err := applyFilter(filterCode, r.Value)
+// compileJQ parses and compiles one jq expression. An empty source gives a nil
+// program. label names the expression in the error.
+func compileJQ(src, label string) (*gojq.Code, error) {
+	if src == "" {
+		return nil, nil
+	}
+	q, err := gojq.Parse(src)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", label, err)
+	}
+	code, err := gojq.Compile(q)
+	if err != nil {
+		return nil, fmt.Errorf("compile %s: %w", label, err)
+	}
+	return code, nil
+}
+
+// transform is a compiled TransformOptions: the item filter and the key expression,
+// each nil when its option is empty.
+type transform struct {
+	opts   TransformOptions
+	filter *gojq.Code
+	key    *gojq.Code
+}
+
+// apply maps one source record to its destination records.
+func (t transform) apply(r Record) ([]Record, error) {
+	values, err := applyFilter(t.filter, r.Value)
+	if err != nil {
+		return nil, err
+	}
+	reshaped := t.filter != nil
+	out := make([]Record, 0, len(values))
+	for _, v := range values {
+		key, err := t.keyFor(r.Key, v, len(values) == 1)
 		if err != nil {
 			return nil, err
 		}
-		reshaped := filterCode != nil
-		out := make([]Record, 0, len(values))
-		for _, v := range values {
-			key, err := deriveKey(opts, keyCode, r.Key, v, len(values) == 1)
-			if err != nil {
-				return nil, err
-			}
-			rec := Record{Key: key, Value: v, Type: r.Type}
-			if reshaped {
-				rec.Type = opts.Type // a reshaped value's original type no longer applies.
-			}
-			out = append(out, rec)
+		rec := Record{Key: key, Value: v, Type: r.Type}
+		if reshaped {
+			rec.Type = t.opts.Type // a reshaped value's original type no longer applies.
 		}
-		return out, nil
-	}, nil
+		out = append(out, rec)
+	}
+	return out, nil
 }
 
 // applyFilter runs code over one value and collects its outputs. A nil code is
@@ -192,32 +230,33 @@ func applyFilter(code *gojq.Code, value any) ([]any, error) {
 	}
 }
 
-// deriveKey resolves the destination key for one output value under the keying
+// keyFor resolves the destination key for one output value under the keying
 // rules. single reports whether the value is the sole output of its source item,
 // which is what lets a 1:1 transform inherit the source key.
-func deriveKey(opts TransformOptions, keyCode *gojq.Code, sourceKey string, value any, single bool) (string, error) {
+func (t transform) keyFor(sourceKey string, value any, single bool) (string, error) {
 	var key string
-	if keyCode != nil {
-		k, err := runKey(keyCode, value)
+	switch {
+	case t.key != nil:
+		k, err := runKey(t.key, value)
 		if err != nil {
 			return "", err
 		}
 		key = k
-	} else if opts.KeyField != "" {
-		k, err := keyFromField(value, opts.KeyField)
+	case t.opts.KeyField != "":
+		k, err := keyFromField(value, t.opts.KeyField)
 		if err != nil {
 			return "", err
 		}
 		key = k
-	} else if single {
+	case single:
 		key = sourceKey
-	} else {
+	default:
 		return "", fmt.Errorf("%w: the item filter emits multiple values per item; add --key or --key-field", ErrNoKey)
 	}
 	if key == "" {
 		return "", ErrNoKey
 	}
-	return opts.KeyPrefix + key, nil
+	return t.opts.KeyPrefix + key, nil
 }
 
 // runKey evaluates a --key expression over one output value, requiring exactly

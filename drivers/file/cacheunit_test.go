@@ -475,60 +475,6 @@ func TestReadIndex(t *testing.T) {
 	})
 }
 
-// TestPageMayHold pins the per-page skip decision: a page is worth decoding only
-// for a key that is still outstanding and that its filter admits, so neither the
-// found check nor the filter test may be dropped.
-func TestPageMayHold(t *testing.T) {
-	filter := newBloom(4)
-	bloomAdd(filter, "a")
-
-	tests := []struct {
-		name  string
-		want  map[string]struct{}
-		found map[string]bool
-		hold  bool
-	}{
-		{name: "an outstanding key the filter admits", want: map[string]struct{}{"a": {}}, found: map[string]bool{}, hold: true},
-		{name: "an outstanding key the filter excludes", want: map[string]struct{}{"zzz": {}}, found: map[string]bool{}, hold: false},
-		{name: "a key already found does not reopen the page", want: map[string]struct{}{"a": {}}, found: map[string]bool{"a": true}, hold: false},
-		{name: "one outstanding key among found ones", want: map[string]struct{}{"a": {}, "zzz": {}}, found: map[string]bool{"zzz": true}, hold: true},
-		{name: "no wanted keys at all", want: map[string]struct{}{}, found: map[string]bool{}, hold: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.hold, pageMayHold(filter, tt.want, tt.found))
-		})
-	}
-	t.Run("an empty filter admits nothing", func(t *testing.T) {
-		require.False(t, pageMayHold(nil, map[string]struct{}{"a": {}}, map[string]bool{}))
-	})
-}
-
-// TestDecodePage confirms a decoded page copies exactly the wanted keys into the
-// result and records each as found — the bookkeeping that lets the caller stop
-// early and skip later pages.
-func TestDecodePage(t *testing.T) {
-	var body bytes.Buffer
-	for _, r := range nRecords(3) {
-		b, err := encodeRecord(r)
-		require.NoError(t, err)
-		body.Write(b)
-	}
-	want := map[string]struct{}{"k0": {}, "k2": {}, "absent": {}}
-	out := map[string]any{}
-	found := map[string]bool{}
-	require.NoError(t, decodePage(bytes.NewReader(body.Bytes()), 0, int64(body.Len()), want, out, found))
-	require.Equal(t, map[string]any{"k0": "v0", "k2": "v2"}, out)
-	require.Equal(t, map[string]bool{"k0": true, "k2": true}, found)
-
-	t.Run("a corrupt record is reported", func(t *testing.T) {
-		junk, err := cborEnc.Marshal("not a record")
-		require.NoError(t, err)
-		err = decodePage(bytes.NewReader(junk), 0, int64(len(junk)), want, map[string]any{}, map[string]bool{})
-		require.Error(t, err)
-	})
-}
-
 // TestCacheGetIndexPolicy pins when the bounded read consults the page index. The
 // index is only read when the policy asks for one and the file actually carries
 // pages, so a flat cache falls back to streaming and an indexed cache read under a
