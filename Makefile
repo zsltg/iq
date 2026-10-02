@@ -106,7 +106,7 @@ e2e:
 # two runs through benchstat to compare before/after a change:
 #   make bench | tee new.txt; benchstat old.txt new.txt.
 bench:
-	go test -bench=. -benchmem -run='^$$' ./internal/query/... ./internal/numfmt/... ./drivers/redis/...
+	go test -bench=. -benchmem -run='^$$' ./internal/query/... ./internal/numfmt/... ./internal/rawpred/... ./drivers/redis/...
 
 # fuzz runs every Go native fuzz target over the parsers that read untrusted bytes,
 # one target at a time (no containers, no network). IQ_FUZZ_TIME sets the budget per
