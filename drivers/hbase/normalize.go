@@ -83,28 +83,41 @@ func decodeCell(t colType, b []byte) any {
 	case ctBytes:
 		return base64.StdEncoding.EncodeToString(b)
 	case ctInt:
-		if len(b) != 4 {
-			return decodeAuto(b)
-		}
-		return int(int32(binary.BigEndian.Uint32(b))) //nolint:gosec // G115: decodes a stored 4-byte int column, deliberate 2's-complement.
+		return fixedWidth(b, 4, decodeInt32)
 	case ctLong:
-		if len(b) != 8 {
-			return decodeAuto(b)
-		}
-		return int(int64(binary.BigEndian.Uint64(b))) //nolint:gosec // G115: decodes a stored 8-byte long column, deliberate reinterpretation.
+		return fixedWidth(b, 8, decodeInt64)
 	case ctDouble:
-		if len(b) != 8 {
-			return decodeAuto(b)
-		}
-		return math.Float64frombits(binary.BigEndian.Uint64(b))
+		return fixedWidth(b, 8, decodeDouble)
 	case ctBool:
-		if len(b) != 1 {
-			return decodeAuto(b)
-		}
-		return b[0] != 0
+		return fixedWidth(b, 1, decodeBool)
 	default:
 		return decodeAuto(b)
 	}
+}
+
+// fixedWidth decodes b with decode when it holds exactly n bytes. Any other width
+// falls back to the untyped rendering.
+func fixedWidth(b []byte, n int, decode func([]byte) any) any {
+	if len(b) != n {
+		return decodeAuto(b)
+	}
+	return decode(b)
+}
+
+func decodeInt32(b []byte) any {
+	return int(int32(binary.BigEndian.Uint32(b))) //nolint:gosec // G115: decodes a stored 4-byte int column, deliberate 2's-complement.
+}
+
+func decodeInt64(b []byte) any {
+	return int(int64(binary.BigEndian.Uint64(b))) //nolint:gosec // G115: decodes a stored 8-byte long column, deliberate reinterpretation.
+}
+
+func decodeDouble(b []byte) any {
+	return math.Float64frombits(binary.BigEndian.Uint64(b))
+}
+
+func decodeBool(b []byte) any {
+	return b[0] != 0
 }
 
 // decodeAuto is the untyped rendering: valid UTF-8 becomes a bare string, anything
@@ -124,60 +137,84 @@ func decodeAuto(b []byte) any {
 func encodeCell(t colType, v any) ([]byte, error) {
 	switch t {
 	case ctAuto, ctText:
-		s, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("hbase: expected a string value, got %T", v)
-		}
-		return []byte(s), nil
+		return encodeText(v)
 	case ctBytes:
-		s, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("hbase: expected a base64 string for a bytes column, got %T", v)
-		}
-		b, err := base64.StdEncoding.DecodeString(s)
-		if err != nil {
-			return nil, fmt.Errorf("hbase: value is not valid base64 for a bytes column: %w", err)
-		}
-		return b, nil
+		return encodeBase64(v)
 	case ctInt:
-		n, err := toInt64(v)
-		if err != nil {
-			return nil, err
-		}
-		if n < math.MinInt32 || n > math.MaxInt32 {
-			return nil, fmt.Errorf("hbase: value %d out of range for a 4-byte int column", n)
-		}
-		b := make([]byte, 4)
-		binary.BigEndian.PutUint32(b, uint32(int32(n))) //nolint:gosec // G115: 2's-complement encoding of the bounds-checked int32 above.
-		return b, nil
+		return encodeInt32(v)
 	case ctLong:
-		n, err := toInt64(v)
-		if err != nil {
-			return nil, err
-		}
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, uint64(n)) //nolint:gosec // G115: encodes an int64 as 8 bytes; the read path reverses it exactly.
-		return b, nil
+		return encodeInt64(v)
 	case ctDouble:
-		f, err := toFloat64(v)
-		if err != nil {
-			return nil, err
-		}
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, math.Float64bits(f))
-		return b, nil
+		return encodeDouble(v)
 	case ctBool:
-		bv, ok := v.(bool)
-		if !ok {
-			return nil, fmt.Errorf("hbase: expected a bool value, got %T", v)
-		}
-		if bv {
-			return []byte{1}, nil
-		}
-		return []byte{0}, nil
+		return encodeBool(v)
 	default:
 		return nil, fmt.Errorf("hbase: unknown column type %d", t)
 	}
+}
+
+func encodeText(v any) ([]byte, error) {
+	s, ok := v.(string)
+	if !ok {
+		return nil, fmt.Errorf("hbase: expected a string value, got %T", v)
+	}
+	return []byte(s), nil
+}
+
+func encodeBase64(v any) ([]byte, error) {
+	s, ok := v.(string)
+	if !ok {
+		return nil, fmt.Errorf("hbase: expected a base64 string for a bytes column, got %T", v)
+	}
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("hbase: value is not valid base64 for a bytes column: %w", err)
+	}
+	return b, nil
+}
+
+func encodeInt32(v any) ([]byte, error) {
+	n, err := toInt64(v)
+	if err != nil {
+		return nil, err
+	}
+	if n < math.MinInt32 || n > math.MaxInt32 {
+		return nil, fmt.Errorf("hbase: value %d out of range for a 4-byte int column", n)
+	}
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, uint32(int32(n))) //nolint:gosec // G115: 2's-complement encoding of the bounds-checked int32 above.
+	return b, nil
+}
+
+func encodeInt64(v any) ([]byte, error) {
+	n, err := toInt64(v)
+	if err != nil {
+		return nil, err
+	}
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, uint64(n)) //nolint:gosec // G115: encodes an int64 as 8 bytes; the read path reverses it exactly.
+	return b, nil
+}
+
+func encodeDouble(v any) ([]byte, error) {
+	f, err := toFloat64(v)
+	if err != nil {
+		return nil, err
+	}
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, math.Float64bits(f))
+	return b, nil
+}
+
+func encodeBool(v any) ([]byte, error) {
+	bv, ok := v.(bool)
+	if !ok {
+		return nil, fmt.Errorf("hbase: expected a bool value, got %T", v)
+	}
+	if bv {
+		return []byte{1}, nil
+	}
+	return []byte{0}, nil
 }
 
 // toInt64 coerces a JSON scalar to an int64 for an int/long column. It accepts the

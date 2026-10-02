@@ -1184,6 +1184,24 @@
    "line": 106
   },
   {
+   "id": "c8cdfa3f41d73640362c25eabc73b652",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "branch/if",
+   "line": 533
+  },
+  {
+   "id": "5076340803d9daa6824c1241c59f8ad6",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "numbers/decrementer",
+   "line": 444
+  },
+  {
+   "id": "a3206d00a97184a0d84846f3d40175b1",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "numbers/incrementer",
+   "line": 444
+  },
+  {
    "id": "8f294e8c90fdcb1f13cb00b98a822f0a",
    "file": "drivers/hbase/normalize.go",
    "mutator": "numbers/decrementer",
@@ -1212,6 +1230,42 @@
    "file": "drivers/hbase/write.go",
    "mutator": "expression/error-guard",
    "line": 45
+  },
+  {
+   "id": "c1f39b268d560d67a93ac86870baccac",
+   "file": "drivers/hbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 86
+  },
+  {
+   "id": "c223f1d777dd1154a92d31aa9dbddfcb",
+   "file": "drivers/hbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 303
+  },
+  {
+   "id": "5829bf7b397e273e2aefb4d79b516f53",
+   "file": "drivers/hbase/write.go",
+   "mutator": "statement/return",
+   "line": 96
+  },
+  {
+   "id": "933de0cfb9d791e796db848c7da811be",
+   "file": "drivers/hbase/write.go",
+   "mutator": "statement/return",
+   "line": 104
+  },
+  {
+   "id": "c5432a3c1c564b9ec485207ff3207f92",
+   "file": "drivers/hbase/write.go",
+   "mutator": "statement/return",
+   "line": 112
+  },
+  {
+   "id": "ae4f777cff504ef6fb3ad390db46a154",
+   "file": "drivers/hbase/write.go",
+   "mutator": "statement/return",
+   "line": 91
   },
   {
    "id": "298e2e7f0fd1fb9845bac5d8c284dd4d",

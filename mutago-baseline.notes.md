@@ -775,7 +775,21 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 
 - 5dae232f8b73 drivers/hbase/hbase.go:184 numbers/incrementer. The probe goroutine sends exactly one value, so a buffer of 1 or 2 never blocks it. Applied by hand: the hbase package suite passes. The decrementer twin (buffer 0) is killed by TestProbeFallbackGoroutineEndsAfterTheContext.
 
+## drivers/hbase write and column parse equivalents (accepted 2026-10-02, chore/codescene-hbase branch)
+
+- c8cdfa3f41d73640362c25eabc73b652 drivers/hbase/hbase.go:533 branch/if. The `return` in parseColumn's `!ok` branch is removed. Then `strings.Cut` has returned the whole column as family and "" as qualifier, so the next check, `qualifier == ""`, returns the same error with the same text. Applied by hand: the hbase package suite passes.
+- c1f39b268d560d67a93ac86870baccac drivers/hbase/write.go:86 and :108 expression/error-guard. The guard after `hrpc.NewPut` in insertRow and in upsertRow becomes `if false`. One id covers both sites, because the two guards have the same text. `hrpc.NewPut` fails only when an option function fails, and the call passes no option. No input reaches the branch. Same class as the filter.go:30 entry above.
+- c223f1d777dd1154a92d31aa9dbddfcb drivers/hbase/write.go:303 expression/error-guard. The guard after `hrpc.NewDel` in deleteRow becomes `if false`. `hrpc.NewDel` fails only for a failed option or for DeleteOneVersion on a whole-row delete, and the call passes no option. No input reaches the branch.
+- 5829bf7b397e273e2aefb4d79b516f53 drivers/hbase/write.go:96 and :117 statement/return. The final `return written, nil` of insertRow and of upsertRow becomes `return 0, nil`. `written` is the first iota of putOutcome, so 0 is `written`. The program does not change. Applied by hand: the hbase package suite passes.
+- 933de0cfb9d791e796db848c7da811be drivers/hbase/write.go:104 statement/return. The `return written, err` after the failed pre-read in upsertRow becomes `return 0, err`. The value is the same, as `written` is 0. Put also drops the outcome when the error is not nil.
+- c5432a3c1c564b9ec485207ff3207f92 drivers/hbase/write.go:112 statement/return. The `return written, ...` after the failed Put in upsertRow becomes `return 0, ...`. The value is the same, as `written` is 0.
 ## internal/rawpred surrogate escape guard (accepted 2026-10-02, fix/rawpred-invalid-utf8 branch)
 
 - 9562bb13dc8e internal/rawpred/rawpred.go:167 numbers/decrementer. The advance `b = b[i+2:]` becomes `b = b[i+1:]`. The next search then skips the `u` and finds the same following backslash, so the result does not change. Applied by hand: the rawpred suite passes.
 - 7ec1da62f278 internal/rawpred/rawpred.go:146 statement/return. In `Matcher.Match`, `return MayMatch` becomes `return 0`. MayMatch is the first `iota` value, so it is 0 and the program does not change. Applied by hand: the rawpred suite passes.
+
+## drivers/hbase value beside an error (accepted 2026-10-02, chore/codescene-hbase branch)
+
+- 5076340803d9daa6824c1241c59f8ad6 drivers/hbase/hbase.go:444 numbers/decrementer. In `scanLimit`, `return 0, fmt.Errorf(...)` for a limit that is not a number becomes `return -1, ...`. The only caller, `execScan`, returns at once on a non-nil error and never reads the limit. Applied by hand: the hbase suite passes.
+- a3206d00a97184a0d84846f3d40175b1 drivers/hbase/hbase.go:444 numbers/incrementer. The same line becomes `return 1, ...`. The same caller ignores the value on error. Applied by hand: the hbase suite passes.
+- ae4f777cff504ef6fb3ad390db46a154 drivers/hbase/write.go:91 statement/return. In `insertRow`, `return written, fmt.Errorf(...)` after a failed CheckAndPut becomes `return 0, ...`. The only caller, the write loop in `Put`, returns at once on a non-nil error and never reads the outcome. `written` is 0 as the first `iota` value, so the value is the same. Applied by hand: the hbase suite passes.
