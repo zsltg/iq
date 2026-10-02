@@ -1,6 +1,7 @@
 package pushdown
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/itchyny/gojq"
@@ -30,15 +31,7 @@ func shadowsAny(q *gojq.Query) bool {
 	if q == nil {
 		return false
 	}
-	if shadowingDef(q.FuncDefs) {
-		return true
-	}
-	for _, c := range queryChildren(q) {
-		if shadowsAny(c) {
-			return true
-		}
-	}
-	return false
+	return shadowingDef(q.FuncDefs) || slices.ContainsFunc(queryChildren(q), shadowsAny)
 }
 
 // queryChildren returns the queries that q holds directly: its operands, its
@@ -58,12 +51,10 @@ func queryChildren(q *gojq.Query) []*gojq.Query {
 // shadowingDef reports whether one of defs has the name and arity of a matched
 // builtin.
 func shadowingDef(defs []*gojq.FuncDef) bool {
-	for _, d := range defs {
-		if _, ok := matchedBuiltins[d.Name+"/"+strconv.Itoa(len(d.Args))]; ok {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(defs, func(d *gojq.FuncDef) bool {
+		_, ok := matchedBuiltins[d.Name+"/"+strconv.Itoa(len(d.Args))]
+		return ok
+	})
 }
 
 // termQueries returns the queries that t holds, in any of its parts.
