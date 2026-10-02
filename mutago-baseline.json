@@ -2268,6 +2268,18 @@
    "file": "drivers/couchdb/filter.go",
    "mutator": "branch/case",
    "line": 272
+  },
+  {
+   "id": "9562bb13dc8eacd4800d1d320ca4d772",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "numbers/decrementer",
+   "line": 167
+  },
+  {
+   "id": "7ec1da62f2781f2911b144846466802b",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "statement/return",
+   "line": 146
   }
  ]
 }

@@ -783,3 +783,7 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 - 5829bf7b397e273e2aefb4d79b516f53 drivers/hbase/write.go:96 and :117 statement/return. The final `return written, nil` of insertRow and of upsertRow becomes `return 0, nil`. `written` is the first iota of putOutcome, so 0 is `written`. The program does not change. Applied by hand: the hbase package suite passes.
 - 933de0cfb9d791e796db848c7da811be drivers/hbase/write.go:104 statement/return. The `return written, err` after the failed pre-read in upsertRow becomes `return 0, err`. The value is the same, as `written` is 0. Put also drops the outcome when the error is not nil.
 - c5432a3c1c564b9ec485207ff3207f92 drivers/hbase/write.go:112 statement/return. The `return written, ...` after the failed Put in upsertRow becomes `return 0, ...`. The value is the same, as `written` is 0.
+## internal/rawpred surrogate escape guard (accepted 2026-10-02, fix/rawpred-invalid-utf8 branch)
+
+- 9562bb13dc8e internal/rawpred/rawpred.go:167 numbers/decrementer. The advance `b = b[i+2:]` becomes `b = b[i+1:]`. The next search then skips the `u` and finds the same following backslash, so the result does not change. Applied by hand: the rawpred suite passes.
+- 7ec1da62f278 internal/rawpred/rawpred.go:146 statement/return. In `Matcher.Match`, `return MayMatch` becomes `return 0`. MayMatch is the first `iota` value, so it is 0 and the program does not change. Applied by hand: the rawpred suite passes.
