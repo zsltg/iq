@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"strings"
 
 	"github.com/buger/jsonparser"
@@ -142,7 +141,7 @@ func scanFilteredJSON(ctx context.Context, r io.Reader, matcher *rawpred.Matcher
 		}
 		// The engine filters over the value, so the prefilter runs on the extracted raw
 		// `value` bytes. A value that cannot be extracted (a malformed or value-less line)
-		// is not evaluated — it is left for decodeTypedRecord, which reports the same error
+		// is not evaluated — it is left for query.DecodeTypedRecord, which reports the same error
 		// the plain scan would. So is an envelope that repeats `value`.
 		if val, ok := typedValue(raw); ok {
 			*checked++
@@ -151,7 +150,7 @@ func scanFilteredJSON(ctx context.Context, r io.Reader, matcher *rawpred.Matcher
 				continue
 			}
 		}
-		rec, err := decodeTypedRecord(raw)
+		rec, err := query.DecodeTypedRecord(raw)
 		if err != nil {
 			return err
 		}
@@ -202,66 +201,5 @@ func startsJSONArray(br *bufio.Reader) (bool, error) {
 		default:
 			return false, nil
 		}
-	}
-}
-
-// typedEnvelope is the on-disk {key,type,value} record, the driver's copy of query's
-// dumpRecord, so a survivor decodes to exactly the Record the plain scan would build.
-type typedEnvelope struct {
-	Key   string `json:"key"`
-	Type  string `json:"type"`
-	Value any    `json:"value"`
-}
-
-// decodeTypedRecord decodes one typed-JSONL record's raw bytes into a Record, matching
-// query.decodeLine's typed branch byte-for-byte: UseNumber preserves exact integers, a
-// missing key is the same hinted error, and the value's numbers are converted with the
-// same exact-integer rule. The differential parity test proves this stays identical to
-// the core decode across the whole corpus.
-func decodeTypedRecord(raw []byte) (query.Record, error) {
-	dec := json.NewDecoder(strings.NewReader(string(raw)))
-	dec.UseNumber()
-	var env typedEnvelope
-	if err := dec.Decode(&env); err != nil {
-		return query.Record{}, fmt.Errorf("expected a {key,type,value} record (use --key-field for foreign JSON): %w", err)
-	}
-	if env.Key == "" {
-		return query.Record{}, fmt.Errorf("record has no key (use --key-field for foreign JSON)")
-	}
-	return query.Record{Key: env.Key, Type: env.Type, Value: convertNumbers(env.Value)}, nil
-}
-
-// convertNumbers walks a decoded value turning each json.Number into an exact Go number
-// (an integer becomes an int or *big.Int, a fractional number a float64), the driver's
-// copy of query.convertNumbers so a survivor's value keeps the exact precision the plain
-// scan gives it. The differential parity test is the backstop against drift from the core.
-func convertNumbers(v any) any {
-	switch t := v.(type) {
-	case json.Number:
-		s := t.String()
-		if !strings.ContainsAny(s, ".eE") {
-			if i, err := t.Int64(); err == nil && int64(int(i)) == i {
-				return int(i)
-			}
-			if bi, ok := new(big.Int).SetString(s, 10); ok {
-				return bi
-			}
-		}
-		if f, err := t.Float64(); err == nil {
-			return f
-		}
-		return s
-	case map[string]any:
-		for k, e := range t {
-			t[k] = convertNumbers(e)
-		}
-		return t
-	case []any:
-		for i, e := range t {
-			t[i] = convertNumbers(e)
-		}
-		return t
-	default:
-		return t
 	}
 }

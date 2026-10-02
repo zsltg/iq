@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"math"
 	"math/big"
 	"os"
 	"strings"
@@ -68,6 +69,8 @@ func TestPrefilterParity(t *testing.T) {
 		`{"key":"novalue","type":"document"}`, // value absent -> nil, not an error.
 	}, "\n") + "\n"
 
+	negZeroLine := `{"key":"nz","type":"document","value":{"x":1,"n":-0,"f":-0.0}}` + "\n"
+
 	arrayForm := `[
 		{"key":"a","type":"string","value":"x"},
 		{"key":"b","type":"document","value":{"n":1}}
@@ -95,6 +98,7 @@ func TestPrefilterParity(t *testing.T) {
 		{"typed lines", func(t *testing.T) *Store { return jsonlStore(t, typedLines, CacheConfig{}) }},
 		{"array form", func(t *testing.T) *Store { return jsonlStore(t, arrayForm, CacheConfig{}) }},
 		{"blank lines", func(t *testing.T) *Store { return jsonlStore(t, blankLines, CacheConfig{}) }},
+		{"negative zero", func(t *testing.T) *Store { return jsonlStore(t, negZeroLine, CacheConfig{}) }},
 		{"large record", func(t *testing.T) *Store { return jsonlStore(t, bigRecord, CacheConfig{}) }},
 		{"multi page", func(t *testing.T) *Store { return jsonlStore(t, multi.String(), CacheConfig{}) }},
 		{"empty dump", func(t *testing.T) *Store { return jsonlStore(t, "", CacheConfig{}) }},
@@ -126,6 +130,21 @@ func TestPrefilterParity(t *testing.T) {
 	}
 }
 
+// TestScanFilteredKeepsNegativeZero pins the sign of a negative zero on the prefiltered
+// path. An equality check cannot tell -0 from 0 for a float, so the test reads the sign
+// bit of each decoded value.
+func TestScanFilteredKeepsNegativeZero(t *testing.T) {
+	st := jsonlStore(t, `{"key":"nz","type":"document","value":{"x":1,"n":-0,"f":-0.0}}`+"\n", CacheConfig{})
+	got := flatten(scanFilteredPages(t, st, matchEverything))
+	val, ok := got["nz"].(map[string]any)
+	require.True(t, ok)
+	for _, field := range []string{"n", "f"} {
+		f, ok := val[field].(float64)
+		require.True(t, ok, "%s must decode to a float64", field)
+		require.True(t, math.Signbit(f), "%s must keep the sign of a negative zero", field)
+	}
+}
+
 // TestPrefilterParityErrors pins that the prefilter path reports the same error, with
 // the same message, as the plain scan on a malformed dump — the raw reader must never
 // mask or reword a decode failure the plain scan would raise.
@@ -146,6 +165,48 @@ func TestPrefilterParityErrors(t *testing.T) {
 			require.Error(t, batchErr)
 			require.Error(t, filterErr)
 			require.Equal(t, batchErr.Error(), filterErr.Error())
+		})
+	}
+}
+
+// TestPrefilterEnvelopeFieldErrors pins the error of a record whose envelope field has
+// the wrong JSON type. Both scan paths decode through the core decoder, so both give the
+// same full text and the same cause fields.
+func TestPrefilterEnvelopeFieldErrors(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		wantText  string
+		wantField string
+		wantValue string
+	}{
+		{
+			"numeric key", `{"key":7,"type":"document","value":{}}` + "\n",
+			"expected a {key,type,value} record (use --key-field for foreign JSON): " +
+				"json: cannot unmarshal number into Go struct field dumpRecord.key of type string",
+			"key", "number",
+		},
+		{
+			"numeric type", `{"key":"a","type":7,"value":{}}` + "\n",
+			"expected a {key,type,value} record (use --key-field for foreign JSON): " +
+				"json: cannot unmarshal number into Go struct field dumpRecord.type of type string",
+			"type", "number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := jsonlStore(t, tt.body, CacheConfig{})
+			batchErr := st.ScanBatches(context.Background(), func(map[string]any) error { return nil })
+			filterErr := st.ScanFiltered(context.Background(), matchEverything, func(map[string]any) error { return nil })
+			for _, err := range []error{batchErr, filterErr} {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.wantText)
+				var ute *json.UnmarshalTypeError
+				require.ErrorAs(t, err, &ute)
+				require.Equal(t, "dumpRecord", ute.Struct)
+				require.Equal(t, tt.wantField, ute.Field)
+				require.Equal(t, tt.wantValue, ute.Value)
+			}
 		})
 	}
 }
@@ -477,29 +538,6 @@ func TestScanFilteredDropAllEmitsNoPage(t *testing.T) {
 	require.Equal(t, 0, calls, "a drop-everything scan emits no page")
 	require.Equal(t, 5, st.prefilterChecked)
 	require.Equal(t, 5, st.prefilterSkipped)
-}
-
-// TestDecodeTypedRecord pins decodeTypedRecord's full Record contract: a valid record
-// keeps its key, type, and exact-number value; a non-object raw fails with the {key,
-// type,value} hint and stays unwrappable to the underlying decode error; a keyless record
-// fails with the no-key hint. It kills the mutant that clears the Type field (invisible
-// through the value-only page), the mutant that skips the struct-decode error guard (which
-// would mislabel a non-object as keyless), and — via the ErrorAs assertion — the mutant
-// that downgrades the envelope-decode wrap from %w to %v and flattens the chain.
-func TestDecodeTypedRecord(t *testing.T) {
-	rec, err := decodeTypedRecord([]byte(`{"key":"a","type":"document","value":{"n":1}}`))
-	require.NoError(t, err)
-	require.Equal(t, "a", rec.Key)
-	require.Equal(t, "document", rec.Type)
-	require.Equal(t, map[string]any{"n": 1}, rec.Value)
-
-	_, err = decodeTypedRecord([]byte(`42`))
-	require.ErrorContains(t, err, "expected a {key,type,value} record")
-	var ute *json.UnmarshalTypeError
-	require.ErrorAs(t, err, &ute, "the envelope-decode error must stay unwrappable to *json.UnmarshalTypeError")
-
-	_, err = decodeTypedRecord([]byte(`{"type":"x","value":1}`))
-	require.ErrorContains(t, err, "record has no key")
 }
 
 // TestScanFilteredRepeatedValueEnvelope pins a typed record whose envelope repeats
