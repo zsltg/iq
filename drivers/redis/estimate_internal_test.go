@@ -41,3 +41,19 @@ func TestEstimateCountReflectsDBSize(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(6), n, "estimate tracks a newly added key")
 }
+
+// TestEstimateCountSurfacesTheDBSizeError proves a failed DBSIZE is reported with
+// a zero count, not read as an empty keyspace.
+func TestEstimateCountSurfacesTheDBSizeError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	dead, cancelDead := context.WithCancel(ctx)
+	cancelDead()
+
+	n, err := store.EstimateCount(dead)
+
+	require.ErrorContains(t, err, "redis dbsize")
+	require.ErrorIs(t, err, context.Canceled, "the command's cause survives the wrap")
+	require.Zero(t, n)
+}
