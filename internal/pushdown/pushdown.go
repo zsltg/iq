@@ -110,6 +110,11 @@ func extractPred(e *gojq.Query) (predicate.Node, bool) {
 	if shadows(e.FuncDefs) {
 		return nil, false
 	}
+	return extractPredNode(e)
+}
+
+// extractPredNode is extractPred once e is known to shadow no matched builtin.
+func extractPredNode(e *gojq.Query) (predicate.Node, bool) {
 	// Unwrap a parenthesized sub-expression, which a piped clause needs when
 	// combined (`.a == 1 and (.name | test("x"))`).
 	if inner, ok := parenQuery(e); ok {
@@ -277,6 +282,11 @@ func pipeAtom(pathQ, rhs *gojq.Query) (predicate.Node, bool) {
 	if shadows(rhs.FuncDefs) {
 		return nil, false
 	}
+	return pipeAtomNode(pathQ, rhs)
+}
+
+// pipeAtomNode is pipeAtom once rhs is known to shadow no matched builtin.
+func pipeAtomNode(pathQ, rhs *gojq.Query) (predicate.Node, bool) {
 	path, ok := pathOf(pathQ)
 	if !ok {
 		return nil, false
@@ -473,6 +483,11 @@ func extractExact(e *gojq.Query) (predicate.Node, bool) {
 	if shadows(e.FuncDefs) {
 		return nil, false
 	}
+	return extractExactNode(e)
+}
+
+// extractExactNode is extractExact once e is known to shadow no matched builtin.
+func extractExactNode(e *gojq.Query) (predicate.Node, bool) {
 	// Unwrap a parenthesized sub-expression, matching extractPred.
 	if inner, ok := parenQuery(e); ok {
 		return extractExact(inner)
