@@ -134,6 +134,9 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, _ numfmt
 // and Close does not touch the admin client, so the call keeps retrying in the
 // background until the process exits. Nothing reads its result.
 func (s *Store) probe(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	done := make(chan error, 1)
 	go func() {
 		_, err := s.admin.ClusterStatus()
@@ -141,6 +144,11 @@ func (s *Store) probe(ctx context.Context) error {
 	}()
 	select {
 	case err := <-done:
+		// When both cases are ready, select picks one at random, so an ended ctx
+		// must win over the result here.
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
 		return err
 	case <-ctx.Done():
 		return ctx.Err()
