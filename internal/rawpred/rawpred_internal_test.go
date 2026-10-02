@@ -756,6 +756,17 @@ func TestMatchVerdict(t *testing.T) {
 			predicate.Eq{Path: []string{"a"}, Value: 5.0},
 			predicate.Eq{Path: []string{"b"}, Value: 2.0},
 		}, CannotMatch},
+		// The decoder turns each invalid UTF-8 byte into U+FFFD, so a record that is
+		// not valid UTF-8 is never dropped on a raw byte comparison.
+		{"invalid utf8 key vs replacement char key kept", "{\"\xff\":[]}", predicate.Exists{Path: []string{"\ufffd"}}, MayMatch},
+		{"invalid utf8 key c0 vs replacement char key kept", "{\"\xc0\":[]}", predicate.Exists{Path: []string{"\ufffd"}}, MayMatch},
+		{"invalid utf8 key vs same raw key kept", "{\"\xff\":[]}", predicate.Exists{Path: []string{"\xff"}}, MayMatch},
+		{"invalid utf8 string value eq kept", "{\"a\":\"\xff\"}", predicate.Eq{Path: []string{"a"}, Value: "\ufffd"}, MayMatch},
+		{"invalid utf8 string value cmp kept", "{\"a\":\"\xff\"}", predicate.Cmp{Path: []string{"a"}, Op: predicate.Lt, Value: "\ufffd"}, MayMatch},
+		{"invalid utf8 keys that collapse kept", "{\"o\":{\"\xff\":1,\"\xfe\":2}}", predicate.Size{Path: []string{"o"}, N: 1}, MayMatch},
+		{"valid replacement char key still drops", "{\"b\":1}", predicate.Exists{Path: []string{"\ufffd"}}, CannotMatch},
+		{"valid replacement char key still matches", "{\"\ufffd\":1}", predicate.Exists{Path: []string{"\ufffd"}}, MayMatch},
+		{"valid replacement char value still drops", "{\"a\":\"\ufffd\"}", predicate.Eq{Path: []string{"a"}, Value: "x"}, CannotMatch},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

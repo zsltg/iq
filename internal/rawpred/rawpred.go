@@ -130,7 +130,16 @@ func (m *Matcher) prepareRegex(n predicate.Regex) {
 // Match reports whether raw can be dropped against the prepared predicate without
 // decoding it, reusing the patterns compiled at NewMatcher time. Like the package
 // Match it returns CannotMatch only on a provable non-match.
+//
+// A record that is not valid UTF-8 is never dropped. The JSON decoder replaces
+// each invalid byte in a key or string with U+FFFD, but this package compares the
+// raw bytes. The two forms can disagree for a key lookup, a duplicate-key test,
+// a string comparison and a regular expression. One check on the whole record
+// covers every site. Valid UTF-8, the usual case, takes the fast path.
 func (m *Matcher) Match(raw []byte) Verdict {
+	if !utf8.Valid(raw) {
+		return MayMatch
+	}
 	if m.eval(raw, m.pred) == definiteNo {
 		return CannotMatch
 	}
