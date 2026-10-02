@@ -41,6 +41,16 @@ func TestCompilePushable(t *testing.T) {
 			},
 		},
 		{
+			// A positive or extracts each side as a superset, so a range side
+			// compiles. Only an exact extraction rejects a range.
+			"or of an equality and a range",
+			".[] | select(.a == 1 or .b > 2)",
+			predicate.Or{
+				predicate.Eq{Path: []string{"a"}, Value: 1.0},
+				predicate.Cmp{Path: []string{"b"}, Op: predicate.Gt, Value: 2.0},
+			},
+		},
+		{
 			"partial and drops the uncompilable (left compiles)",
 			".[] | select(.a == 1 and .b == .c)",
 			predicate.Eq{Path: []string{"a"}, Value: 1.0},
@@ -197,6 +207,7 @@ func TestCompileNotPushable(t *testing.T) {
 		{"negated widened and, uncompilable first", ".[] | select((.a == .c and .b == 2) | not)"},
 		{"negated any over a widened and is not exact", ".[] | select(.items | any(.a == 1 and .b == .c) | not)"},
 		{"negated exact and is not pushed", ".[] | select((.a == 1 and .b == 2) | not)"},
+		{"negated any over an or with a range is not exact", ".[] | select(.items | any(.a == 1 or .b > 2) | not)"},
 		{"any with two arguments", ".[] | select(.items | any(.p > 5; .q == 1))"},
 		{"all is not any", ".[] | select(.items | all(.p > 5))"},
 		{"any over a scalar element", ".[] | select(.items | any(. > 5))"},

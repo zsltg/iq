@@ -23,6 +23,7 @@
 package rawpred
 
 import (
+	"cmp"
 	"errors"
 	"math"
 	"regexp"
@@ -92,19 +93,7 @@ func NewMatcher(pred predicate.Node) *Matcher {
 func (m *Matcher) prepare(node predicate.Node) {
 	switch n := node.(type) {
 	case predicate.Regex:
-		key := regexKey{pattern: n.Pattern, flags: n.Flags}
-		if _, seen := m.regexes[key]; seen {
-			return
-		}
-		re, ok := compileRegex(n.Pattern, n.Flags)
-		if !ok {
-			// A pattern portableRegex passed but Go's RE2 rejects: leave it
-			// uncompiled so evalRegex reads the missing key as unknown and the
-			// document is decoded. The failure is deliberately not surfaced as an
-			// error — a prefilter that cannot evaluate a node keeps the document.
-			return
-		}
-		m.regexes[key] = re
+		m.prepareRegex(n)
 	case predicate.And:
 		for _, c := range n {
 			m.prepare(c)
@@ -118,6 +107,24 @@ func (m *Matcher) prepare(node predicate.Node) {
 	case predicate.NoneMatch:
 		m.prepare(n.Cond)
 	}
+}
+
+// prepareRegex compiles the pattern of one Regex node, once for each (pattern,
+// flags) pair.
+func (m *Matcher) prepareRegex(n predicate.Regex) {
+	key := regexKey{pattern: n.Pattern, flags: n.Flags}
+	if _, seen := m.regexes[key]; seen {
+		return
+	}
+	re, ok := compileRegex(n.Pattern, n.Flags)
+	if !ok {
+		// A pattern portableRegex passed but Go's RE2 rejects: leave it
+		// uncompiled so evalRegex reads the missing key as unknown and the
+		// document is decoded. The failure is deliberately not surfaced as an
+		// error — a prefilter that cannot evaluate a node keeps the document.
+		return
+	}
+	m.regexes[key] = re
 }
 
 // Match reports whether raw can be dropped against the prepared predicate without
@@ -177,17 +184,17 @@ const (
 func (m *Matcher) eval(raw []byte, node predicate.Node) triple {
 	switch n := node.(type) {
 	case predicate.Eq:
-		return evalEq(raw, n.Path, n.Value)
+		return evalEq(raw, n)
 	case predicate.Ne:
 		// Ne is the exact negation of Eq: it provably fails only when the field
 		// provably equals Value, and provably holds only when it provably differs.
-		return negate(evalEq(raw, n.Path, n.Value))
+		return negate(evalEq(raw, predicate.Eq(n)))
 	case predicate.Exists:
 		return evalExists(raw, n.Path, true)
 	case predicate.NotExists:
 		return evalExists(raw, n.Path, false)
 	case predicate.Cmp:
-		return evalCmp(raw, n.Path, n.Op, n.Value)
+		return evalCmp(raw, n)
 	case predicate.Regex:
 		return m.evalRegex(raw, n)
 	case predicate.Size:
@@ -250,14 +257,14 @@ func negate(t triple) triple {
 // evalEq decides `field == value`. A cleanly-absent field is jq's null, so it
 // equals a nil (null) value and differs from any scalar; a found value is compared
 // by type and, for numbers, by the numeric rule.
-func evalEq(raw []byte, path []string, value any) triple {
-	val, typ, st := getField(raw, path)
+func evalEq(raw []byte, n predicate.Eq) triple {
+	val, typ, st := getField(raw, n.Path)
 	switch st {
 	case fieldFound:
-		return eqFound(val, typ, value)
+		return eqFound(val, typ, n.Value)
 	case fieldAbsent:
 		// Missing field is null in jq: it equals null, nothing else.
-		if value == nil {
+		if n.Value == nil {
 			return definiteYes
 		}
 		return definiteNo
@@ -272,31 +279,53 @@ func evalEq(raw []byte, path []string, value any) triple {
 // decided exactly, except a number the numeric rule cannot pin down, which is
 // unknown.
 func eqFound(val []byte, typ jsonparser.ValueType, value any) triple {
+	want, ok := scalarType(value)
+	if !ok {
+		return unknown
+	}
+	if typ != want {
+		return definiteNo
+	}
+	return eqSameType(val, value)
+}
+
+// scalarType returns the jsonparser type of a scalar pred value, or ok=false for a
+// Go type that the pushdown compiler never emits.
+func scalarType(value any) (jsonparser.ValueType, bool) {
+	switch value.(type) {
+	case nil:
+		return jsonparser.Null, true
+	case bool:
+		return jsonparser.Boolean, true
+	case string:
+		return jsonparser.String, true
+	case float64:
+		return jsonparser.Number, true
+	default:
+		return jsonparser.Unknown, false
+	}
+}
+
+// eqSameType compares a present value to a pred value of the same type. A null
+// equals null. A value that does not parse, or a number the numeric rule cannot
+// pin down, is unknown.
+func eqSameType(val []byte, value any) triple {
 	switch v := value.(type) {
 	case nil:
-		return boolTriple(typ == jsonparser.Null)
+		return definiteYes
 	case bool:
-		if typ != jsonparser.Boolean {
-			return definiteNo
-		}
 		b, err := jsonparser.ParseBoolean(val)
 		if err != nil {
 			return unknown
 		}
 		return boolTriple(b == v)
 	case string:
-		if typ != jsonparser.String {
-			return definiteNo
-		}
 		s, err := jsonparser.ParseString(val)
 		if err != nil {
 			return unknown
 		}
 		return boolTriple(s == v)
 	case float64:
-		if typ != jsonparser.Number {
-			return definiteNo
-		}
 		ord, ok := numOrd(val, v)
 		if !ok {
 			return unknown
@@ -324,18 +353,18 @@ func evalExists(raw []byte, path []string, want bool) triple {
 // evalCmp decides `field OP value` under jq's total type ordering. A cleanly-absent
 // field is null, the least value, so it ranks below every number and string
 // value; a found value is ranked by type, then compared within a type.
-func evalCmp(raw []byte, path []string, op predicate.Op, value any) triple {
-	vr, ok := valueRank(value)
+func evalCmp(raw []byte, n predicate.Cmp) triple {
+	vr, ok := valueRank(n.Value)
 	if !ok {
 		return unknown
 	}
-	val, typ, st := getField(raw, path)
+	val, typ, st := getField(raw, n.Path)
 	switch st {
 	case fieldFound:
-		return cmpFound(val, typ, op, value, vr)
+		return cmpFound(val, typ, n, vr)
 	case fieldAbsent:
 		// Missing field is null (rank 0), below any number or string value.
-		return applyOp(op, cmpInt(nullRank, vr))
+		return applyOp(n.Op, cmp.Compare(nullRank, vr))
 	default:
 		// fieldAmbiguous: the path did not resolve cleanly, so decode to know.
 		return unknown
@@ -346,27 +375,27 @@ func evalCmp(raw []byte, path []string, op predicate.Op, value any) triple {
 // ordering. A cross-type comparison is settled by type rank alone; a same-type
 // comparison is settled within the type — numbers by the numeric rule (unknown
 // when it cannot decide), strings by their unescaped bytes.
-func cmpFound(val []byte, typ jsonparser.ValueType, op predicate.Op, value any, vr int) triple {
+func cmpFound(val []byte, typ jsonparser.ValueType, n predicate.Cmp, vr int) triple {
 	dr, ok := docRank(typ)
 	if !ok {
 		return unknown
 	}
 	if dr != vr {
-		return applyOp(op, cmpInt(dr, vr))
+		return applyOp(n.Op, cmp.Compare(dr, vr))
 	}
-	switch v := value.(type) {
+	switch v := n.Value.(type) {
 	case float64:
 		ord, ok := numOrd(val, v)
 		if !ok {
 			return unknown
 		}
-		return applyOp(op, ord)
+		return applyOp(n.Op, ord)
 	case string:
 		s, err := jsonparser.ParseString(val)
 		if err != nil {
 			return unknown
 		}
-		return applyOp(op, strings.Compare(s, v))
+		return applyOp(n.Op, strings.Compare(s, v))
 	default:
 		return unknown
 	}
@@ -433,16 +462,10 @@ func sizeFound(val []byte, typ jsonparser.ValueType, n int) triple {
 	switch typ {
 	case jsonparser.Array:
 		c, ok := countElements(val)
-		if !ok {
-			return unknown
-		}
-		return boolTriple(c == n)
+		return countIs(c, ok, n)
 	case jsonparser.Object:
 		c, ok := countKeys(val)
-		if !ok {
-			return unknown
-		}
-		return boolTriple(c == n)
+		return countIs(c, ok, n)
 	case jsonparser.String:
 		s, err := jsonparser.ParseString(val)
 		if err != nil {
@@ -460,6 +483,15 @@ func sizeFound(val []byte, typ jsonparser.ValueType, n int) triple {
 		// unknown/malformed type is unknown too.
 		return unknown
 	}
+}
+
+// countIs decides `length == n` for a container count: unknown when the count is
+// not usable, else whether it equals n.
+func countIs(c int, ok bool, n int) triple {
+	if !ok {
+		return unknown
+	}
+	return boolTriple(c == n)
 }
 
 // countElements counts the elements of a JSON array, jq's length of an array, or
@@ -480,19 +512,29 @@ func countElements(val []byte) (int, bool) {
 // when jsonparser cannot walk it or a key occurs twice: a decoder keeps one entry
 // per name, so a raw count with a repeated key is not jq's length.
 func countKeys(val []byte) (int, bool) {
+	count := 0
+	if !walkObject(val, func([]byte, jsonparser.ValueType) { count++ }) {
+		return 0, false
+	}
+	return count, true
+}
+
+// walkObject calls fn with each value of the JSON object val and its type. It
+// reports false when jsonparser cannot walk the object or a key occurs twice,
+// after it has visited every value: a decoder keeps one entry per name, so a walk
+// over a repeated key does not see the decoded object.
+func walkObject(val []byte, fn func(v []byte, typ jsonparser.ValueType)) bool {
 	seen := map[string]struct{}{}
 	repeated := false
-	err := jsonparser.ObjectEach(val, func(k, _ []byte, _ jsonparser.ValueType, _ int) error {
+	err := jsonparser.ObjectEach(val, func(k, v []byte, typ jsonparser.ValueType, _ int) error {
 		if _, dup := seen[string(k)]; dup {
 			repeated = true
 		}
 		seen[string(k)] = struct{}{}
+		fn(v, typ)
 		return nil
 	})
-	if err != nil || repeated {
-		return 0, false
-	}
-	return len(seen), true
+	return err == nil && !repeated
 }
 
 // sizeOfNumber decides `length == n` for a number field. jq's length of a number is
@@ -627,17 +669,10 @@ func (m *Matcher) foldArray(val []byte, cond predicate.Node) (anyState, bool) {
 // one of the values, so a verdict from the shadowed one proves nothing.
 func (m *Matcher) foldObject(val []byte, cond predicate.Node) (anyState, bool) {
 	var s anyState
-	seen := map[string]struct{}{}
-	repeated := false
-	err := jsonparser.ObjectEach(val, func(k, v []byte, typ jsonparser.ValueType, _ int) error {
-		if _, dup := seen[string(k)]; dup {
-			repeated = true
-		}
-		seen[string(k)] = struct{}{}
+	ok := walkObject(val, func(v []byte, typ jsonparser.ValueType) {
 		s.add(m.evalElement(v, typ, cond))
-		return nil
 	})
-	if err != nil || repeated {
+	if !ok {
 		return anyState{}, false
 	}
 	return s, true
@@ -818,18 +853,6 @@ func valueRank(value any) (int, bool) {
 	}
 }
 
-// cmpInt returns the sign of a-b: -1, 0, or +1.
-func cmpInt(a, b int) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	default:
-		return 0
-	}
-}
-
 // maxExactInt is 2^53, the largest magnitude for which every integer is exactly
 // representable as a float64. Beyond it a float64 rounds, so a pred value or a
 // document integer past it cannot be compared exactly against the other side.
@@ -874,34 +897,10 @@ func numOrd(raw []byte, pv float64) (int, bool) {
 		if iv < -maxExactInt || iv > maxExactInt {
 			return 0, false
 		}
-		return cmpInt64(iv, int64(pv)), true
+		return cmp.Compare(iv, int64(pv)), true
 	}
 	// Fractional pred value: gojq compares by promoting the document integer to
 	// float64, exactly as this does, so the ordering matches even when iv rounds.
-	return cmpFloat(float64(iv), pv), true
-}
-
-// cmpInt64 returns the sign of a-b: -1, 0, or +1.
-func cmpInt64(a, b int64) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	default:
-		return 0
-	}
-}
-
-// cmpFloat returns the sign of a-b: -1, 0, or +1. Neither operand is NaN at its
-// call sites, so the ordering is total.
-func cmpFloat(a, b float64) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	default:
-		return 0
-	}
+	// Neither operand is NaN here, so the ordering is total.
+	return cmp.Compare(float64(iv), pv), true
 }
