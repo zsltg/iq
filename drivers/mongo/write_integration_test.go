@@ -169,18 +169,31 @@ func TestPutEmptyBatchIsNoOp(t *testing.T) {
 	require.Equal(t, query.WriteStat{}, stat)
 }
 
-func TestPutUpsertRejectsNonObjectValue(t *testing.T) {
+// TestPutRejectsNonObjectValue proves both write modes reject a scalar value
+// before any write.
+func TestPutRejectsNonObjectValue(t *testing.T) {
 	store := openIntegration(t, "put_scalar")
 	seedDocs(t, store, nil)
 
-	_, err := store.Put(context.Background(), []query.Record{
-		{Key: "a", Value: "scalar"},
-	}, query.Upsert)
+	tests := []struct {
+		name string
+		mode query.WriteMode
+	}{
+		{"upsert", query.Upsert},
+		{"insert only", query.InsertOnly},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := store.Put(context.Background(), []query.Record{
+				{Key: "a", Value: "scalar"},
+			}, tt.mode)
 
-	require.ErrorContains(t, err, "is not a JSON object", "the value is rejected before any write")
-	n, err := store.EstimateCount(context.Background())
-	require.NoError(t, err)
-	require.Zero(t, n, "nothing was written")
+			require.ErrorContains(t, err, "is not a JSON object", "the value is rejected before any write")
+			n, err := store.EstimateCount(context.Background())
+			require.NoError(t, err)
+			require.Zero(t, n, "nothing was written")
+		})
+	}
 }
 
 // TestPutUpsertKeylessFirstMintsObjectID pins the keyless branch: a keyless record

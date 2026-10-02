@@ -2088,6 +2088,18 @@
    "file": "drivers/file/neo4j.go",
    "mutator": "statement/return",
    "line": 110
+  },
+  {
+   "id": "e009479610d0fa145fece96e1ed2b2cb",
+   "file": "drivers/mongo/mongo.go",
+   "mutator": "expression/error-guard",
+   "line": 146
+  },
+  {
+   "id": "26963a4db9237c1e02e53a2b39122b17",
+   "file": "drivers/mongo/mongo.go",
+   "mutator": "expression/error-guard",
+   "line": 188
   }
  ]
 }
