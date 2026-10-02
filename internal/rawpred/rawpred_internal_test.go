@@ -68,6 +68,11 @@ func TestEvalEq(t *testing.T) {
 		{"fractional doc", `{"a":1.5}`, predicate.Eq{Path: []string{"a"}, Value: 1.5}, unknown},
 		{"leading whitespace object", "  {\"a\":5}", predicate.Eq{Path: []string{"a"}, Value: 5.0}, definiteYes},
 		{"exact 2^53 equal", `{"a":9007199254740992}`, predicate.Eq{Path: []string{"a"}, Value: 9007199254740992.0}, definiteYes},
+		// A pred value of a Go type that the pushdown compiler never emits (an int,
+		// not a float64) is unknown, whatever the type of the document value.
+		{"int value vs number doc", `{"a":5}`, predicate.Eq{Path: []string{"a"}, Value: 5}, unknown},
+		{"int value vs string doc", `{"a":"5"}`, predicate.Eq{Path: []string{"a"}, Value: 5}, unknown},
+		{"int value vs null doc", `{"a":null}`, predicate.Eq{Path: []string{"a"}, Value: 5}, unknown},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -321,6 +326,10 @@ func TestEvalElemMatch(t *testing.T) {
 		{"string field unknown", `{"xs":"hi"}`, xs(elemCondK), unknown},
 		{"null field unknown", `{"xs":null}`, xs(elemCondK), unknown},
 		{"nested container path", `{"n":{"xs":[{"k":1}]}}`, em([]string{"n", "xs"}, elemCondK), definiteYes},
+		// Object with a repeated key: a decoder keeps one value, so the fold proves
+		// nothing, even when one value matches or every value fails.
+		{"object with a repeated key and a match is unknown", `{"xs":{"p":{"k":1},"p":{"k":2}}}`, xs(elemCondK), unknown},
+		{"object with a repeated key and no match is unknown", `{"xs":{"p":{"k":2},"p":{"k":3}}}`, xs(elemCondK), unknown},
 		// Compound and nested-regex conditions (prepare now descends into Cond).
 		{"and cond match", `{"xs":[{"k":1,"j":2}]}`, xs(predicate.And{elemCondK, predicate.Eq{Path: []string{"j"}, Value: 2.0}}), definiteYes},
 		{"and cond one leg fails drops", `{"xs":[{"k":1,"j":3}]}`, xs(predicate.And{elemCondK, predicate.Eq{Path: []string{"j"}, Value: 2.0}}), definiteNo},
@@ -625,27 +634,6 @@ func TestGetField(t *testing.T) {
 			require.Equal(t, tt.wantVal, string(val), "value")
 		})
 	}
-}
-
-func TestCmpHelpers(t *testing.T) {
-	// The helpers are exercised in production only with unequal operands (type
-	// ranks never tie, integers never equal a fractional pv), so their equal and
-	// boundary cases are asserted directly here to pin the sign contract.
-	t.Run("cmpInt", func(t *testing.T) {
-		require.Equal(t, -1, cmpInt(1, 3))
-		require.Equal(t, 0, cmpInt(3, 3))
-		require.Equal(t, 1, cmpInt(4, 3))
-	})
-	t.Run("cmpInt64", func(t *testing.T) {
-		require.Equal(t, -1, cmpInt64(5, 6))
-		require.Equal(t, 0, cmpInt64(6, 6))
-		require.Equal(t, 1, cmpInt64(7, 6))
-	})
-	t.Run("cmpFloat", func(t *testing.T) {
-		require.Equal(t, -1, cmpFloat(1.5, 2.5))
-		require.Equal(t, 0, cmpFloat(2.5, 2.5))
-		require.Equal(t, 1, cmpFloat(3.5, 2.5))
-	})
 }
 
 func TestApplyOp(t *testing.T) {

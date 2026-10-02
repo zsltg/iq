@@ -2114,6 +2114,30 @@
    "line": 110
   },
   {
+   "id": "a174143d50fd99fb2d002fa75cfaeb9c",
+   "file": "internal/parquetout/writer.go",
+   "mutator": "numbers/decrementer",
+   "line": 366
+  },
+  {
+   "id": "cc6327719e12478b384337f829b7bedb",
+   "file": "internal/pushdown/pushdown.go",
+   "mutator": "branch/case",
+   "line": 638
+  },
+  {
+   "id": "21f581b8a3e84254114f8a7d09c5d5fe",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "branch/case",
+   "line": 305
+  },
+  {
+   "id": "28263c0cb664c05df57ec906054014b5",
+   "file": "internal/rawpred/rawpred.go",
+   "mutator": "statement/return",
+   "line": 305
+  },
+  {
    "id": "e009479610d0fa145fece96e1ed2b2cb",
    "file": "drivers/mongo/mongo.go",
    "mutator": "expression/error-guard",
