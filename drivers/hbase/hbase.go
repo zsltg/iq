@@ -29,6 +29,7 @@ import (
 	"github.com/tsuna/gohbase/filter"
 	"github.com/tsuna/gohbase/hrpc"
 	"github.com/tsuna/gohbase/pb"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/render"
@@ -114,7 +115,7 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, _ numfmt
 		pageSize:   scanBatch,
 		trace:      trace,
 	}
-	if _, err := st.admin.ClusterStatus(); err != nil {
+	if err := st.probe(ctx); err != nil {
 		_ = st.Close()
 		return nil, fmt.Errorf("connect hbase: %w", err)
 	}
@@ -125,6 +126,77 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, _ numfmt
 		}
 	}
 	return st, nil
+}
+
+// rpcSender is the part of the concrete gohbase admin client that sends one RPC
+// under the context of that RPC. The AdminClient interface does not list it.
+type rpcSender interface {
+	SendRPC(hrpc.Call) (proto.Message, error)
+}
+
+// ctxClusterStatus is a cluster status request that carries the caller's context.
+// hrpc.NewClusterStatus hard-codes context.Background, so the request type itself
+// cannot be stopped.
+type ctxClusterStatus struct {
+	*hrpc.ClusterStatus
+	ctx context.Context //nolint:containedctx // The RPC interface reads its context from the value.
+}
+
+// Context returns the caller's context, which SendRPC watches in its retry loop.
+func (c ctxClusterStatus) Context() context.Context { return c.ctx }
+
+// probe checks that the cluster answers. AdminClient.ClusterStatus takes no context
+// and retries a dead quorum or master without end, because it builds its request
+// with context.Background. So probe sends the request itself through SendRPC with the
+// caller's context, and the retry loop stops when ctx ends. If the admin client has no
+// SendRPC (a fake, or a gohbase upgrade that drops it), probe falls back to
+// ClusterStatus in a goroutine and ctx ends the wait only. The call then keeps
+// retrying in the background until the process exits. An ended ctx always wins over
+// the result.
+func (s *Store) probe(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if sender, ok := s.admin.(rpcSender); ok {
+		return probeRPC(ctx, sender)
+	}
+	return s.probeCall(ctx)
+}
+
+// probeRPC sends the cluster status request under ctx.
+func probeRPC(ctx context.Context, sender rpcSender) error {
+	msg, err := sender.SendRPC(ctxClusterStatus{ClusterStatus: hrpc.NewClusterStatus(), ctx: ctx})
+	if cerr := ctx.Err(); cerr != nil {
+		return cerr
+	}
+	if err != nil {
+		return err
+	}
+	if _, ok := msg.(*pb.GetClusterStatusResponse); !ok {
+		return errors.New("cluster status: unexpected response type")
+	}
+	return nil
+}
+
+// probeCall runs ClusterStatus in its own goroutine and stops waiting when ctx ends.
+// The goroutine sends on a buffered channel, so it never blocks.
+func (s *Store) probeCall(ctx context.Context) error {
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.admin.ClusterStatus()
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		// When both cases are ready, select picks one at random, so an ended ctx
+		// must win over the result here.
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Target returns the [namespace:]table an hbase:// source addresses: the address

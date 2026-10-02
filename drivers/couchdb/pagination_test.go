@@ -52,6 +52,16 @@ func TestScanBatchesPageStructure(t *testing.T) {
 	require.Len(t, keys, 5)
 }
 
+func TestScanBatchesPagesAtTheDefaultSize(t *testing.T) {
+	// An opened Store pages a scan at the default page size of 100 documents.
+	st := seedDB(t, kindDocs(101)...)
+	ctx := skipShort(t)
+
+	sizes, keys := scanPages(t, func(fn func(map[string]any) error) error { return st.ScanBatches(ctx, fn) })
+	require.Equal(t, []int{100, 1}, sizes)
+	require.Len(t, keys, 101)
+}
+
 func TestScanBatchesExactMultiple(t *testing.T) {
 	st := seedDB(t, kindDocs(4)...)
 	st.pageSize = 2

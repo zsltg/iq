@@ -5,12 +5,14 @@ import (
 	"io"
 	"maps"
 	"sort"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/tsuna/gohbase/hrpc"
 	"github.com/tsuna/gohbase/pb"
 	"github.com/tsuna/gohbase/region"
+	"google.golang.org/protobuf/proto"
 )
 
 // ctxKey is the type of the marker a test context carries. A request assertion reads
@@ -277,8 +279,12 @@ func (s *fakeScanner) GetScanMetrics() map[string]int64 { return nil }
 
 // fakeAdmin is an in-memory hbaseAdmin for the list, disable, and drop paths.
 type fakeAdmin struct {
-	tables       []*pb.TableName
-	clusterErr   error
+	tables     []*pb.TableName
+	clusterErr error
+	// clusterBlock, when set, holds ClusterStatus until the channel closes.
+	clusterBlock chan struct{}
+	// clusterCalls counts the ClusterStatus calls.
+	clusterCalls atomic.Int32
 	disabled     []string
 	deleted      []string
 	listErr      error
@@ -290,7 +296,25 @@ type fakeAdmin struct {
 }
 
 func (a *fakeAdmin) ClusterStatus() (*pb.ClusterStatus, error) {
+	a.clusterCalls.Add(1)
+	if a.clusterBlock != nil {
+		<-a.clusterBlock
+	}
 	return &pb.ClusterStatus{}, a.clusterErr
+}
+
+// fakeRPCAdmin is a fakeAdmin that also implements SendRPC, so the probe takes the
+// request path.
+type fakeRPCAdmin struct {
+	fakeAdmin
+	send func(hrpc.Call) (proto.Message, error)
+	// sendCalls counts the SendRPC calls.
+	sendCalls atomic.Int32
+}
+
+func (a *fakeRPCAdmin) SendRPC(c hrpc.Call) (proto.Message, error) {
+	a.sendCalls.Add(1)
+	return a.send(c)
 }
 
 func (a *fakeAdmin) ListTableNames(t *hrpc.ListTableNames) ([]*pb.TableName, error) {
