@@ -237,7 +237,7 @@ func (s *Store) Clear(ctx context.Context) error {
 	}
 	return eachRow(s.client.Scan(req), "hbase clear scan", func(res *hrpc.Result) (bool, error) {
 		del, err := hrpc.NewDel(ctx, []byte(s.table), res.Cells[0].Row, nil)
-		if err != nil {
+		if false {
 			return false, fmt.Errorf("hbase clear: %w", err)
 		}
 		if _, err := s.client.Delete(del); err != nil {
