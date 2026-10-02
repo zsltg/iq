@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -154,18 +155,35 @@ func TestProbeFallbackGoroutineEndsAfterTheContext(t *testing.T) {
 	st := newFakeStore(newFakeClient(), admin, "", typeMap{}, ctAuto)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	t.Cleanup(cancel)
-	before := runtime.NumGoroutine()
 
 	require.ErrorIs(t, st.probe(ctx), context.DeadlineExceeded)
+	// The call goroutine is blocked in the fake now. Check that the frame name is
+	// right, so that a rename cannot make the wait below pass with nothing to wait for.
+	require.True(t, probeGoroutineRuns(), "no goroutine runs %s while the fake blocks", probeFrame)
 	close(block)
 
 	// The call has to send its result without a reader, or its goroutine stays. Poll
 	// on this goroutine, because Eventually runs its condition on another one.
 	deadline := time.Now().Add(5 * time.Second)
-	for runtime.NumGoroutine() > before && time.Now().Before(deadline) {
+	for probeGoroutineRuns() && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	require.LessOrEqual(t, runtime.NumGoroutine(), before)
+	require.False(t, probeGoroutineRuns(), "the goroutine of %s did not end after the fake returned", probeFrame)
+}
+
+// probeFrame is the function of the goroutine that probeCall starts.
+const probeFrame = "hbase.(*Store).probeCall.func1"
+
+// probeGoroutineRuns reports whether any goroutine stack holds probeFrame.
+func probeGoroutineRuns() bool {
+	buf := make([]byte, 1<<16)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			return strings.Contains(string(buf[:n]), probeFrame)
+		}
+		buf = make([]byte, 2*len(buf))
+	}
 }
 
 func TestProbeRPC(t *testing.T) {
