@@ -2142,6 +2142,30 @@
    "file": "drivers/redis/write.go",
    "mutator": "numbers/decrementer",
    "line": 23
+  },
+  {
+   "id": "db9a7a275cd0fc97c2afe22baa4d6d3c",
+   "file": "drivers/couchdb/couchdb.go",
+   "mutator": "expression/error-guard",
+   "line": 149
+  },
+  {
+   "id": "f07d39503f42a350edb48c6c345e1634",
+   "file": "drivers/couchdb/couchdb.go",
+   "mutator": "expression/remove",
+   "line": 113
+  },
+  {
+   "id": "68c285503c1b16868c125ae4183c3d57",
+   "file": "drivers/couchdb/filter.go",
+   "mutator": "branch/case",
+   "line": 133
+  },
+  {
+   "id": "522cc819bc3ab07f8e35cb97d6947eb7",
+   "file": "drivers/couchdb/filter.go",
+   "mutator": "branch/case",
+   "line": 272
   }
  ]
 }
