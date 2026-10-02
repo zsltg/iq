@@ -147,3 +147,47 @@ func TestValidateIndex(t *testing.T) {
 		})
 	}
 }
+
+func TestParseURLErrorOrder(t *testing.T) {
+	// The checks run in a fixed order: the URL parse, the scheme, the host, then the
+	// index. A source with several faults reports the first one.
+	tests := []struct {
+		name    string
+		rawURL  string
+		address string
+		wantErr string
+	}{
+		{"url parse before scheme", "ht!tp://%zz", "", "parse source url"},
+		{"scheme before host", "http:///?index=Books", "", "must use elasticsearch://"},
+		{"host before index", "elasticsearch:///?index=Books", "", "must name a host"},
+		{"bad address index", "elasticsearch://localhost:9200/?index=books", "Bad", "must be lowercase"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseURL(tt.rawURL, tt.address)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestParseURLIndexPrecedence(t *testing.T) {
+	// The index comes from the address, else ?index=, else a single-segment path.
+	tests := []struct {
+		name    string
+		rawURL  string
+		address string
+		want    string
+	}{
+		{"address beats query and path", "elasticsearch://h:9200/path?index=query", "addr", "addr"},
+		{"query beats path", "elasticsearch://h:9200/path?index=query", "", "query"},
+		{"path alone", "elasticsearch://h:9200/path", "", "path"},
+		{"path with a trailing slash", "elasticsearch://h:9200/path/", "", "path"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cc, err := parseURL(tt.rawURL, tt.address)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, cc.index)
+		})
+	}
+}
