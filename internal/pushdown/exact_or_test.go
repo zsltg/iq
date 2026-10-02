@@ -11,15 +11,30 @@ import (
 )
 
 func TestCompileNegatedAnyOverExactOr(t *testing.T) {
-	// An or of equalities is exact, so a negated any() over it pushes as NoneMatch.
-	q, err := gojq.Parse(".[] | select(.items | any(.a == 1 or .b == 2) | not)")
-	require.NoError(t, err)
+	tests := []struct {
+		name   string
+		filter string
+		want   predicate.Node
+	}{
+		{
+			// An or of equalities is exact, so a negated any() over it pushes as NoneMatch.
+			"negated any over an or of equalities",
+			".[] | select(.items | any(.a == 1 or .b == 2) | not)",
+			predicate.NoneMatch{Path: []string{"items"}, Cond: predicate.Or{
+				predicate.Eq{Path: []string{"a"}, Value: 1.0},
+				predicate.Eq{Path: []string{"b"}, Value: 2.0},
+			}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, err := gojq.Parse(tt.filter)
+			require.NoError(t, err)
 
-	got, ok := pushdown.Compile(q)
+			got, ok := pushdown.Compile(q)
 
-	require.True(t, ok)
-	require.Equal(t, predicate.NoneMatch{Path: []string{"items"}, Cond: predicate.Or{
-		predicate.Eq{Path: []string{"a"}, Value: 1.0},
-		predicate.Eq{Path: []string{"b"}, Value: 2.0},
-	}}, got)
+			require.True(t, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }
