@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -221,4 +222,213 @@ func TestClearSurfacesTheFlushError(t *testing.T) {
 
 	require.ErrorContains(t, err, "redis flushdb")
 	require.ErrorIs(t, err, context.Canceled, "the command's cause survives the wrap")
+}
+
+// TestQueueWriteRejectsANonScalarPart proves queueWrite rejects a value whose
+// parts do not have the shape of the type, before it queues a command, and keeps
+// the cause of the rejection in the chain. Each case puts an object where the
+// type needs a scalar or a number.
+func TestQueueWriteRejectsANonScalarPart(t *testing.T) {
+	obj := map[string]any{"a": 1}
+	tests := []struct {
+		name    string
+		record  query.Record
+		wantErr string
+	}{
+		{"string value", query.Record{Key: "k", Type: "string", Value: obj}, `key "k": value map[string]interface {} is not a scalar`},
+		{"hash field", query.Record{Key: "k", Type: "hash", Value: map[string]any{"f": obj}}, `key "k" field "f": value`},
+		{"list element", query.Record{Key: "k", Type: "list", Value: []any{obj}}, `key "k": value`},
+		{"set member", query.Record{Key: "k", Type: "set", Value: []any{obj}}, `key "k": value`},
+		{"zset member", query.Record{Key: "k", Type: "zset", Value: []any{map[string]any{"member": obj, "score": 1.0}}}, `key "k": zset member: value`},
+		{"zset score", query.Record{Key: "k", Type: "zset", Value: []any{map[string]any{"member": "m", "score": "high"}}}, `key "k": zset score: score string is not a number`},
+		{"stream id", query.Record{Key: "k", Type: "stream", Value: []any{map[string]any{"id": obj, "fields": map[string]any{}}}}, `key "k": stream id: value`},
+		{"stream field", query.Record{Key: "k", Type: "stream", Value: []any{map[string]any{"id": "1-0", "fields": map[string]any{"f": obj}}}}, `key "k" field "f": value`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The pipeline only queues, so the client never dials the address.
+			client := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
+			t.Cleanup(func() { _ = client.Close() })
+			p := client.Pipeline()
+
+			err := queueWrite(context.Background(), p, tt.record)
+
+			require.ErrorContains(t, err, tt.wantErr)
+			require.Error(t, errors.Unwrap(err), "the cause stays in the chain")
+			require.Zero(t, p.Len(), "nothing is queued for a rejected record")
+		})
+	}
+}
+
+// TestPutInsertOnlyRejectsABadRecord proves the insert-only path stops at a
+// record that queueWrite rejects, and writes nothing.
+func TestPutInsertOnlyRejectsABadRecord(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+
+	stat, err := store.Put(ctx, []query.Record{
+		{Key: "iq:test:good", Type: "string", Value: "v"},
+		{Key: "iq:test:bad", Type: "hash", Value: "not an object"},
+	}, query.InsertOnly)
+
+	require.ErrorContains(t, err, `key "iq:test:bad": hash value is not an object`)
+	require.Zero(t, stat)
+	n, err := store.client.Exists(ctx, "iq:test:good").Result()
+	require.NoError(t, err)
+	require.Zero(t, n, "the pipeline did not run")
+}
+
+// TestPutInsertOnlySurfacesAFailedWrite proves the insert-only path reports a
+// write that the server refuses. XADD refuses the entry id 0-0.
+func TestPutInsertOnlySurfacesAFailedWrite(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+
+	stat, err := store.Put(ctx, []query.Record{{
+		Key:   "iq:test:badstream",
+		Type:  "stream",
+		Value: []any{map[string]any{"id": "0-0", "fields": map[string]any{"f": "v"}}},
+	}}, query.InsertOnly)
+
+	require.ErrorContains(t, err, "redis write")
+	var redisErr goredis.Error
+	require.ErrorAs(t, err, &redisErr, "the server's cause survives the wrap")
+	require.Zero(t, stat)
+}
+
+// TestDeleteSurfacesTheDelError proves a failed DEL is reported with a zero
+// count, not read as a delete of keys that were missing.
+func TestDeleteSurfacesTheDelError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	dead, cancelDead := context.WithCancel(ctx)
+	cancelDead()
+
+	stat, err := store.Delete(dead, []string{"iq:test:k"})
+
+	require.ErrorContains(t, err, "redis del")
+	require.ErrorIs(t, err, context.Canceled, "the command's cause survives the wrap")
+	require.Zero(t, stat)
+}
+
+// TestTypedScanWalksEveryCursorRound proves TypedScan is a cursor loop under the
+// caller's context. With more keys than the SCAN COUNT hint, it must fetch more
+// rounds and deliver every key once.
+func TestTypedScanWalksEveryCursorRound(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	const n = 3 * scanCount
+	seedStrings(t, ctx, store, "iq:test:tround:", n)
+
+	seen := map[string]struct{}{}
+	err := store.TypedScan(ctx, func(batch []query.Record) error {
+		for _, r := range batch {
+			seen[r.Key] = struct{}{}
+		}
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.Len(t, seen, n, "every key of every cursor round is delivered")
+}
+
+// TestTypedScanSkipsAnEmptyKeyspace proves TypedScan never calls fn when the
+// keyspace has no keys, so a caller never gets an empty batch.
+func TestTypedScanSkipsAnEmptyKeyspace(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+
+	calls := 0
+	err := store.TypedScan(ctx, func([]query.Record) error {
+		calls++
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.Zero(t, calls)
+}
+
+// TestTypedScanStopsAtTheFirstPageError proves a page failure stops the walk. A
+// later page that succeeds must not hide it.
+func TestTypedScanStopsAtTheFirstPageError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	seedStrings(t, ctx, store, "iq:test:tpageerr:", 5)
+	store.pageSize = 2
+
+	sentinel := errors.New("stop")
+	pages := 0
+	err := store.TypedScan(ctx, func([]query.Record) error {
+		pages++
+		if pages == 1 {
+			return sentinel
+		}
+		return nil
+	})
+
+	require.ErrorIs(t, err, sentinel)
+	require.Equal(t, 1, pages, "the walk stops at the first failing page")
+}
+
+// TestTypedScanSurfacesTheScanError proves TypedScan reports a failed SCAN, so a
+// cut keyspace is not taken for a complete one.
+func TestTypedScanSurfacesTheScanError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	dead, cancelDead := context.WithCancel(ctx)
+	cancelDead()
+
+	err := store.TypedScan(dead, func([]query.Record) error { return nil })
+
+	require.ErrorContains(t, err, "redis scan")
+	require.ErrorIs(t, err, context.Canceled, "the cursor's cause survives the wrap")
+}
+
+// TestTypedScanSurfacesAReadFailure proves TypedScan reports a page whose value
+// pipeline fails. Here the key becomes a list after TYPE, so its GET answers
+// WRONGTYPE.
+func TestTypedScanSurfacesAReadFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	const key = "iq:test:tretyped"
+	require.NoError(t, store.client.Set(ctx, key, "a", 0).Err())
+	store.client.AddHook(beforePipelineHook{before: func(cmds []goredis.Cmder) {
+		if len(cmds) == 0 || cmds[0].Name() != "get" {
+			return
+		}
+		require.NoError(t, store.client.Del(ctx, key).Err())
+		require.NoError(t, store.client.RPush(ctx, key, "x").Err())
+	}})
+
+	calls := 0
+	err := store.TypedScan(ctx, func([]query.Record) error {
+		calls++
+		return nil
+	})
+
+	require.ErrorContains(t, err, "redis read")
+	require.Zero(t, calls, "the failed page is not delivered")
+}
+
+// TestTypedGetFailsFastOnTypeError proves typedGet stops when the TYPE pipeline
+// fails. With no type for each key it cannot choose a reader.
+func TestTypedGetFailsFastOnTypeError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	store := openOnDB(t, ctx, numfmt.DecimalAuto)
+	dead, cancelDead := context.WithCancel(ctx)
+	cancelDead()
+
+	_, err := store.typedGet(dead, []string{"iq:test:ttype"})
+
+	require.ErrorContains(t, err, "redis type")
+	require.ErrorIs(t, err, context.Canceled, "the pipeline's cause survives the wrap")
 }
