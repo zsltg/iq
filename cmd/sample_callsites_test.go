@@ -137,11 +137,13 @@ func TestCollectRedisInfo(t *testing.T) {
 	})
 
 	t.Run("a failed query returns the error", func(t *testing.T) {
-		st := infoStore{fakeStore: &fakeStore{err: errors.New("down")}}
+		down := errors.New("down")
+		st := infoStore{fakeStore: &fakeStore{err: down}}
 
 		tree, err := collectRedisInfo(t.Context(), st, spec, nil)
 
 		require.ErrorContains(t, err, `inspect "r"`)
+		require.ErrorIs(t, err, down)
 		require.Nil(t, tree)
 	})
 }
