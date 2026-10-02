@@ -742,3 +742,5 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 - cc6327719e12 internal/pushdown/pushdown.go:638 branch/case — the mutant changes only the indentation of `return false`, so the compiled code is the same.
 - 21f581b8a3e8 internal/rawpred/rawpred.go:305 branch/case — scalarType returns the type with ok=false, and eqFound reads the type only when ok is true.
 - 28263c0cb664 internal/rawpred/rawpred.go:305 statement/return — same as 21f581b8a3e8, `return 0, false` drops a type that no caller reads.
+- d6efec9719c17eca14fb9f5bf0b7b36b drivers/file/cache.go:525 branch/if — drops the return after a failed readTrailer, which leaves the offset at 0; readIndex then decodes from the magic bytes, a CBOR byte string that cannot fill the index array, so it fails and the next guard returns the same `cacheIndex{}, false`.
+- 90bcbb793447fd2b4811835b81bb6465 internal/query/dump.go:223 expression/error-guard — dec.Token reads the `[` that startsJSONArray peeked just before, so it cannot fail at that point and the guard never fires.
