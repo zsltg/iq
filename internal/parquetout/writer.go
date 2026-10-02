@@ -101,27 +101,32 @@ func (pw *Writer) start() error {
 }
 
 // encodeRow appends one value as a row and flushes the page when it is full.
-// A single-value plan appends the whole value to the one column; otherwise each
-// column reads its field from the value, which must be an object.
 func (pw *Writer) encodeRow(v any) error {
-	if pw.plan.singleValue {
-		if err := appendVal(pw.rb.Field(0), pw.plan.columns[0].enc, v, pw.plan.columns[0].name); err != nil {
-			return err
-		}
-	} else {
-		obj, ok := v.(map[string]any)
-		if !ok {
-			return fmt.Errorf("parquet: expected an object row but got %s; use --format jsonl for heterogeneous data", jsonTypeName(v))
-		}
-		for i, col := range pw.plan.columns {
-			if err := appendVal(pw.rb.Field(i), col.enc, obj[col.name], col.name); err != nil {
-				return err
-			}
-		}
+	if err := pw.appendRow(v); err != nil {
+		return err
 	}
 	pw.rows++
 	if pw.rows >= pageBatchSize {
 		return pw.flushPage()
+	}
+	return nil
+}
+
+// appendRow appends one value to the column builders. A single-value plan
+// appends the whole value to the one column; otherwise each column reads its
+// field from the value, which must be an object.
+func (pw *Writer) appendRow(v any) error {
+	if pw.plan.singleValue {
+		return appendVal(pw.rb.Field(0), pw.plan.columns[0].enc, v, pw.plan.columns[0].name)
+	}
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return fmt.Errorf("parquet: expected an object row but got %s; use --format jsonl for heterogeneous data", jsonTypeName(v))
+	}
+	for i, col := range pw.plan.columns {
+		if err := appendVal(pw.rb.Field(i), col.enc, obj[col.name], col.name); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -151,6 +156,30 @@ func appendVal(b array.Builder, e *enc, v any, path string) error {
 		b.AppendNull()
 		return nil
 	}
+	switch e.kind {
+	case encStruct, encList, encMap:
+		return appendNested(b, e, v, path)
+	default:
+		return appendScalar(b, e, v, path)
+	}
+}
+
+// appendNested appends a struct, list, or map value, which descends into its
+// child plans.
+func appendNested(b array.Builder, e *enc, v any, path string) error {
+	switch e.kind {
+	case encStruct:
+		return appendStruct(b, e, v, path)
+	case encList:
+		return appendList(b, e, v, path)
+	default: // encMap
+		return appendMap(b, e, v, path)
+	}
+}
+
+// appendScalar appends a non-nil value of a leaf column. A kind with no leaf
+// encoder is a mismatch.
+func appendScalar(b array.Builder, e *enc, v any, path string) error {
 	switch e.kind {
 	case encJSON:
 		s, err := canonicalJSON(v)
@@ -187,12 +216,6 @@ func appendVal(b array.Builder, e *enc, v any, path string) error {
 		return appendTimestamp(b, v, path)
 	case encDate:
 		return appendDate(b, v, path)
-	case encStruct:
-		return appendStruct(b, e, v, path)
-	case encList:
-		return appendList(b, e, v, path)
-	case encMap:
-		return appendMap(b, e, v, path)
 	default:
 		return mismatch(path, "unknown", v)
 	}
@@ -297,31 +320,16 @@ func mismatch(path, arrowType string, v any) error {
 // fits. A fractional float, an out-of-range big.Int, or a non-number does not
 // fit — the caller then fails the export.
 func toInt64(v any) (int64, bool) {
+	if n, ok := widenSigned(v); ok {
+		return n, true
+	}
+	if u, ok := widenUnsigned(v); ok {
+		return uintToInt64(u)
+	}
+	if f, ok := widenFloat(v); ok {
+		return floatToInt64(f)
+	}
 	switch t := v.(type) {
-	case int:
-		return int64(t), true
-	case int8:
-		return int64(t), true
-	case int16:
-		return int64(t), true
-	case int32:
-		return int64(t), true
-	case int64:
-		return t, true
-	case uint:
-		return uintToInt64(uint64(t))
-	case uint8:
-		return int64(t), true
-	case uint16:
-		return int64(t), true
-	case uint32:
-		return int64(t), true
-	case uint64:
-		return uintToInt64(t)
-	case float32:
-		return floatToInt64(float64(t))
-	case float64:
-		return floatToInt64(t)
 	case *big.Int:
 		if t.IsInt64() {
 			return t.Int64(), true
@@ -335,6 +343,57 @@ func toInt64(v any) (int64, bool) {
 			return floatToInt64(f)
 		}
 		return 0, false
+	default:
+		return 0, false
+	}
+}
+
+// widenSigned returns a signed integer value (int, int8, int16, int32, int64) as
+// an int64, or ok=false for any other type.
+func widenSigned(v any) (int64, bool) {
+	switch t := v.(type) {
+	case int:
+		return int64(t), true
+	case int8:
+		return int64(t), true
+	case int16:
+		return int64(t), true
+	case int32:
+		return int64(t), true
+	case int64:
+		return t, true
+	default:
+		return 0, false
+	}
+}
+
+// widenUnsigned returns an unsigned integer value (uint to uint64) as a uint64,
+// or ok=false for any other type.
+func widenUnsigned(v any) (uint64, bool) {
+	switch t := v.(type) {
+	case uint:
+		return uint64(t), true
+	case uint8:
+		return uint64(t), true
+	case uint16:
+		return uint64(t), true
+	case uint32:
+		return uint64(t), true
+	case uint64:
+		return t, true
+	default:
+		return 0, false
+	}
+}
+
+// widenFloat returns a float32 or float64 value as a float64, or ok=false for
+// any other type.
+func widenFloat(v any) (float64, bool) {
+	switch t := v.(type) {
+	case float32:
+		return float64(t), true
+	case float64:
+		return t, true
 	default:
 		return 0, false
 	}
@@ -365,31 +424,16 @@ func floatToInt64(f float64) (int64, bool) {
 // toFloat64 converts any normalized number to float64, reporting whether v was a
 // number at all.
 func toFloat64(v any) (float64, bool) {
+	if n, ok := widenSigned(v); ok {
+		return float64(n), true
+	}
+	if u, ok := widenUnsigned(v); ok {
+		return float64(u), true
+	}
+	if f, ok := widenFloat(v); ok {
+		return f, true
+	}
 	switch t := v.(type) {
-	case int:
-		return float64(t), true
-	case int8:
-		return float64(t), true
-	case int16:
-		return float64(t), true
-	case int32:
-		return float64(t), true
-	case int64:
-		return float64(t), true
-	case uint:
-		return float64(t), true
-	case uint8:
-		return float64(t), true
-	case uint16:
-		return float64(t), true
-	case uint32:
-		return float64(t), true
-	case uint64:
-		return float64(t), true
-	case float32:
-		return float64(t), true
-	case float64:
-		return t, true
 	case *big.Int:
 		f := new(big.Float).SetInt(t)
 		out, _ := f.Float64()
