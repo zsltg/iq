@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/rawpred"
 )
