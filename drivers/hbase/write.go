@@ -29,52 +29,104 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 	}
 	var stat query.WriteStat
 	for _, r := range batch {
-		values, guardFamily, guardQualifier, err := s.columnsFor(r)
+		w, err := s.rowWrite(r)
 		if err != nil {
 			return query.WriteStat{}, err
 		}
-		rk, err := encodeRowKey(s.rowkeyType, r.Key)
-		if err != nil {
-			return query.WriteStat{}, err
-		}
+		var outcome putOutcome
 		if mode == query.InsertOnly {
-			s.traceOp("put %s", s.table)
-			req, err := hrpc.NewPut(ctx, []byte(s.table), rk, values)
-			if err != nil {
-				return query.WriteStat{}, fmt.Errorf("hbase put: %w", err)
-			}
-			applied, err := s.client.CheckAndPut(req, guardFamily, guardQualifier, nil)
-			if err != nil {
-				return query.WriteStat{}, fmt.Errorf("hbase check-and-put: %w", err)
-			}
-			if applied {
-				stat.Written++
-			} else {
-				stat.Skipped++
-			}
-			continue
+			outcome, err = s.insertRow(ctx, w)
+		} else {
+			outcome, err = s.upsertRow(ctx, w)
 		}
-		// Upsert: pre-read whether the row exists so a plain Put can be counted as an
-		// overwrite, then write it.
-		existed, err := s.rowExists(ctx, rk)
 		if err != nil {
 			return query.WriteStat{}, err
 		}
-		s.traceOp("put %s", s.table)
-		req, err := hrpc.NewPut(ctx, []byte(s.table), rk, values)
-		if err != nil {
-			return query.WriteStat{}, fmt.Errorf("hbase put: %w", err)
-		}
-		if _, err := s.client.Put(req); err != nil {
-			return query.WriteStat{}, fmt.Errorf("hbase put: %w", err)
-		}
-		if existed {
-			stat.Overwritten++
-		} else {
-			stat.Written++
-		}
+		tally(&stat, outcome)
 	}
 	return stat, nil
+}
+
+// rowWrite is one record ready to write: its row key, its cells, and the guard cell
+// an insert-only write checks.
+type rowWrite struct {
+	key                         []byte
+	values                      map[string]map[string][]byte
+	guardFamily, guardQualifier string
+}
+
+// putOutcome is what one row write did to the table.
+type putOutcome int
+
+const (
+	written     putOutcome = iota // The row was new, or an insert-only write applied.
+	skipped                       // An insert-only write found its guard cell.
+	overwritten                   // An upsert replaced an existing row.
+)
+
+// rowWrite encodes a record. It checks the value before the row key, so a bad value
+// wins over a bad key.
+func (s *Store) rowWrite(r query.Record) (rowWrite, error) {
+	values, guardFamily, guardQualifier, err := s.columnsFor(r)
+	if err != nil {
+		return rowWrite{}, err
+	}
+	rk, err := encodeRowKey(s.rowkeyType, r.Key)
+	if err != nil {
+		return rowWrite{}, err
+	}
+	return rowWrite{key: rk, values: values, guardFamily: guardFamily, guardQualifier: guardQualifier}, nil
+}
+
+// insertRow writes a row with an atomic CheckAndPut on the guard cell. It reads
+// nothing first.
+func (s *Store) insertRow(ctx context.Context, w rowWrite) (putOutcome, error) {
+	s.traceOp("put %s", s.table)
+	req, err := hrpc.NewPut(ctx, []byte(s.table), w.key, w.values)
+	if err != nil {
+		return written, fmt.Errorf("hbase put: %w", err)
+	}
+	applied, err := s.client.CheckAndPut(req, w.guardFamily, w.guardQualifier, nil)
+	if err != nil {
+		return written, fmt.Errorf("hbase check-and-put: %w", err)
+	}
+	if !applied {
+		return skipped, nil
+	}
+	return written, nil
+}
+
+// upsertRow pre-reads whether the row exists, so a plain Put can be counted as an
+// overwrite, then writes it.
+func (s *Store) upsertRow(ctx context.Context, w rowWrite) (putOutcome, error) {
+	existed, err := s.rowExists(ctx, w.key)
+	if err != nil {
+		return written, err
+	}
+	s.traceOp("put %s", s.table)
+	req, err := hrpc.NewPut(ctx, []byte(s.table), w.key, w.values)
+	if err != nil {
+		return written, fmt.Errorf("hbase put: %w", err)
+	}
+	if _, err := s.client.Put(req); err != nil {
+		return written, fmt.Errorf("hbase put: %w", err)
+	}
+	if existed {
+		return overwritten, nil
+	}
+	return written, nil
+}
+
+// tally adds one row outcome to stat.
+func tally(stat *query.WriteStat, o putOutcome) {
+	switch o {
+	case skipped:
+		stat.Skipped++
+	case overwritten:
+		stat.Overwritten++
+	default:
+		stat.Written++
+	}
 }
 
 // rowExists reports whether a row already has any cell, the existence check an upsert
@@ -114,17 +166,9 @@ func (s *Store) columnsFor(r query.Record) (values map[string]map[string][]byte,
 	}
 	values = make(map[string]map[string][]byte, len(obj))
 	for family, cols := range obj {
-		colObj, ok := cols.(map[string]any)
-		if !ok {
-			return nil, "", "", fmt.Errorf("hbase: family %q must map qualifiers to values, got %T", family, cols)
-		}
-		qualifiers := make(map[string][]byte, len(colObj))
-		for qualifier, v := range colObj {
-			b, err := encodeCell(colTypeFor(s.types, family, qualifier), v)
-			if err != nil {
-				return nil, "", "", err
-			}
-			qualifiers[qualifier] = b
+		qualifiers, err := s.familyCells(family, cols)
+		if err != nil {
+			return nil, "", "", err
 		}
 		if len(qualifiers) > 0 {
 			values[family] = qualifiers
@@ -135,6 +179,24 @@ func (s *Store) columnsFor(r query.Record) (values map[string]map[string][]byte,
 		return nil, "", "", fmt.Errorf("hbase: record %q has no cells to write", r.Key)
 	}
 	return values, guardFamily, guardQualifier, nil
+}
+
+// familyCells encodes the qualifier→value object of one family, each cell through its
+// column's declared type.
+func (s *Store) familyCells(family string, cols any) (map[string][]byte, error) {
+	colObj, ok := cols.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("hbase: family %q must map qualifiers to values, got %T", family, cols)
+	}
+	qualifiers := make(map[string][]byte, len(colObj))
+	for qualifier, v := range colObj {
+		b, err := encodeCell(colTypeFor(s.types, family, qualifier), v)
+		if err != nil {
+			return nil, err
+		}
+		qualifiers[qualifier] = b
+	}
+	return qualifiers, nil
 }
 
 // guardCell returns the lexicographically smallest family:qualifier in a values map,
@@ -217,17 +279,9 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 		if err != nil {
 			return query.DeleteStat{}, err
 		}
-		existed, err := s.rowExists(ctx, rk)
+		existed, err := s.deleteRow(ctx, rk)
 		if err != nil {
 			return query.DeleteStat{}, err
-		}
-		s.traceOp("delete %s", s.table)
-		del, err := hrpc.NewDel(ctx, []byte(s.table), rk, nil)
-		if err != nil {
-			return query.DeleteStat{}, fmt.Errorf("hbase delete: %w", err)
-		}
-		if _, err := s.client.Delete(del); err != nil {
-			return query.DeleteStat{}, fmt.Errorf("hbase delete: %w", err)
 		}
 		if existed {
 			stat.Deleted++
@@ -236,6 +290,23 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 		}
 	}
 	return stat, nil
+}
+
+// deleteRow removes one row whole and reports whether it existed before.
+func (s *Store) deleteRow(ctx context.Context, rk []byte) (existed bool, err error) {
+	existed, err = s.rowExists(ctx, rk)
+	if err != nil {
+		return false, err
+	}
+	s.traceOp("delete %s", s.table)
+	del, err := hrpc.NewDel(ctx, []byte(s.table), rk, nil)
+	if err != nil {
+		return false, fmt.Errorf("hbase delete: %w", err)
+	}
+	if _, err := s.client.Delete(del); err != nil {
+		return false, fmt.Errorf("hbase delete: %w", err)
+	}
+	return existed, nil
 }
 
 // TypedScan streams the whole table as typed records, reusing the ScanBatches pager.
