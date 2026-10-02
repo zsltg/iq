@@ -768,3 +768,7 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 - f07d39503f42 drivers/couchdb/couchdb.go:113 expression/remove — a second id for the line of 7beb181f5718. The old reason holds: the dropped `p != ""` conjunct can only admit `p == ""`, and then `db = p` assigns "" to a db that is already "".
 - 68c285503c1b drivers/couchdb/filter.go:133 branch/case — new in v2.10.16. The `default` arm of the selector switch gets its own `return nil, false` back with a different indentation, so the program does not change.
 - 522cc819bc3a drivers/couchdb/filter.go:272 branch/case — new in v2.10.16. The `case 0` arm gets its own `return nil, false` back with a different indentation, so the program does not change.
+
+## drivers/hbase probe fallback (accepted 2026-10-02, fix/hbase-open-deadline branch)
+
+- 5dae232f8b73 drivers/hbase/hbase.go:184 numbers/incrementer. The probe goroutine sends exactly one value, so a buffer of 1 or 2 never blocks it. Applied by hand: the hbase package suite passes. The decrementer twin (buffer 0) is killed by TestProbeFallbackGoroutineEndsAfterTheContext.
