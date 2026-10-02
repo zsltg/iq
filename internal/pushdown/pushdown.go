@@ -23,7 +23,7 @@ import (
 // (widening the result, still a superset). Only the selects that test the element
 // itself count (see elementSelects).
 func Compile(q *gojq.Query) (predicate.Node, bool) {
-	if !selector.Keys(q).Streamable {
+	if !selector.Keys(q).Streamable || shadowedChain(q) {
 		return nil, false
 	}
 	var preds []predicate.Node
@@ -107,6 +107,9 @@ func selectArg(s *gojq.Query) (*gojq.Query, bool) {
 // ok=false when it is not one we push. An and may drop an uncompilable conjunct
 // (widening); an or must compile every branch (dropping one would lose matches).
 func extractPred(e *gojq.Query) (predicate.Node, bool) {
+	if shadows(e.FuncDefs) {
+		return nil, false
+	}
 	// Unwrap a parenthesized sub-expression, which a piped clause needs when
 	// combined (`.a == 1 and (.name | test("x"))`).
 	if inner, ok := parenQuery(e); ok {
@@ -271,6 +274,9 @@ func rangeLiteral(q *gojq.Query) (any, bool) {
 // path piped into test(re) (regex), has(key) ($exists), or a length == n
 // comparison ($size). Anything else is not pushed.
 func pipeAtom(pathQ, rhs *gojq.Query) (predicate.Node, bool) {
+	if shadows(rhs.FuncDefs) {
+		return nil, false
+	}
 	path, ok := pathOf(pathQ)
 	if !ok {
 		return nil, false
@@ -369,7 +375,7 @@ func isNot(q *gojq.Query) bool {
 
 // soleTerm returns the term of a query that has no operator.
 func soleTerm(q *gojq.Query) (*gojq.Term, bool) {
-	if q.Op != 0 {
+	if q.Op != 0 || shadows(q.FuncDefs) {
 		return nil, false
 	}
 	return q.Term, q.Term != nil
@@ -464,6 +470,9 @@ func negate(inner *gojq.Query) (predicate.Node, bool) {
 // equality, existence, an any() over an exact condition, and an and/or of those
 // are exact; a range, regex, !=, size, or a widened `and` is not.
 func extractExact(e *gojq.Query) (predicate.Node, bool) {
+	if shadows(e.FuncDefs) {
+		return nil, false
+	}
 	// Unwrap a parenthesized sub-expression, matching extractPred.
 	if inner, ok := parenQuery(e); ok {
 		return extractExact(inner)
@@ -829,4 +838,45 @@ func flattenOr(nodes ...predicate.Node) predicate.Or {
 		}
 	}
 	return out
+}
+
+// matchedBuiltins lists the gojq builtins, as name/arity, that the compiler
+// recognizes by name. A user definition with one of these signatures replaces
+// the builtin, so a predicate read from the call would not match what the
+// query does.
+var matchedBuiltins = map[string]struct{}{
+	"select/1": {},
+	"not/0":    {},
+	"has/1":    {},
+	"test/1":   {},
+	"test/2":   {},
+	"any/1":    {},
+	"length/0": {},
+}
+
+// shadows reports whether one of defs replaces a builtin that the compiler
+// matches. A definition with another name or arity leaves the builtins alone.
+func shadows(defs []*gojq.FuncDef) bool {
+	for _, d := range defs {
+		if _, ok := matchedBuiltins[d.Name+"/"+strconv.Itoa(len(d.Args))]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// shadowedChain reports whether a definition on the top-level pipe chain of q
+// shadows a matched builtin. The definitions of a query stay in scope for every
+// stage to its right, so the chain nodes carry the enclosing definitions of the
+// stages that elementSelects reads.
+func shadowedChain(q *gojq.Query) bool {
+	for ; q != nil; q = q.Right {
+		if shadows(q.FuncDefs) {
+			return true
+		}
+		if q.Op != gojq.OpPipe {
+			return false
+		}
+	}
+	return false
 }
