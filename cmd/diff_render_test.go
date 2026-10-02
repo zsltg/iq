@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -238,4 +239,67 @@ func TestRenderPropagatesWriteErrors(t *testing.T) {
 		rep := report{Schema: []diff.Change{change}, schemaRun: true}
 		require.Error(t, rep.render(&errAfter{1}, sourceSpec{}, sourceSpec{}, diffModes{}))
 	})
+}
+
+func TestRenderSectionOrder(t *testing.T) {
+	color.NoColor = true
+	var buf bytes.Buffer
+	body := func() error {
+		_, err := buf.WriteString("row\n")
+		return err
+	}
+	require.NoError(t, renderSection(&buf, "mytitle", diff.Summary{Added: 2}, body))
+	require.Equal(t, "# mytitle\nrow\n2 added, 0 removed, 0 changed\n\n", buf.String())
+}
+
+func TestRenderSectionBodyErrorSkipsSummary(t *testing.T) {
+	color.NoColor = true
+	var buf bytes.Buffer
+	boom := errors.New("boom")
+	err := renderSection(&buf, "t", diff.Summary{Added: 2}, func() error { return boom })
+	require.ErrorIs(t, err, boom)
+	require.Equal(t, "# t\n", buf.String())
+}
+
+func TestBothSidesReadsLeftThenRight(t *testing.T) {
+	left := sourceSpec{filter: "left"}
+	right := sourceSpec{filter: "right"}
+	var order []string
+	a, b, err := bothSides(left, right, func(s sourceSpec) (map[string]any, error) {
+		order = append(order, s.filter)
+		return map[string]any{s.filter: 1}, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"left", "right"}, order)
+	require.Equal(t, map[string]any{"left": 1}, a)
+	require.Equal(t, map[string]any{"right": 1}, b)
+}
+
+func TestBothSidesStopsAtTheFirstError(t *testing.T) {
+	boom := errors.New("boom")
+	tests := []struct {
+		name  string
+		fail  string
+		calls int
+	}{
+		{"left fails", "left", 1},
+		{"right fails", "right", 2},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			a, b, err := bothSides(sourceSpec{filter: "left"}, sourceSpec{filter: "right"},
+				func(s sourceSpec) (map[string]any, error) {
+					calls++
+					if s.filter == tc.fail {
+						return nil, boom
+					}
+					return map[string]any{}, nil
+				})
+			require.ErrorIs(t, err, boom)
+			require.Nil(t, a)
+			require.Nil(t, b)
+			require.Equal(t, tc.calls, calls)
+		})
+	}
 }

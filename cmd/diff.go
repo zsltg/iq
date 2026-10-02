@@ -276,11 +276,19 @@ func (r diffRun) diffData(ctx context.Context, onPage func(int)) ([]diff.ItemDel
 // readBoth materializes both sides, ticking onPage per page. It is the shared
 // collector behind the keyed data diff and the --patch data layer.
 func (r diffRun) readBoth(ctx context.Context, onPage func(int)) (a, b map[string]any, err error) {
-	a, err = readAll(ctx, r.cfg, r.left, onPage)
+	return bothSides(r.left, r.right, func(t sourceSpec) (map[string]any, error) {
+		return readAll(ctx, r.cfg, t, onPage)
+	})
+}
+
+// bothSides runs read on the left spec, then on the right spec, and stops at
+// the first error. The left side always runs first.
+func bothSides(left, right sourceSpec, read func(sourceSpec) (map[string]any, error)) (a, b map[string]any, err error) {
+	a, err = read(left)
 	if err != nil {
 		return nil, nil, err
 	}
-	b, err = readAll(ctx, r.cfg, r.right, onPage)
+	b, err = read(right)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -446,15 +454,9 @@ func (r diffRun) diffSchema(ctx context.Context) ([]diff.Change, error) {
 // schemaShapes samples and infers both sources' comparable shapes. It is the
 // shared collector behind the schema diff and the --patch schema layer.
 func (r diffRun) schemaShapes(ctx context.Context) (a, b map[string]any, err error) {
-	a, err = sampleShape(ctx, r.cfg, r.left, r.sample)
-	if err != nil {
-		return nil, nil, err
-	}
-	b, err = sampleShape(ctx, r.cfg, r.right, r.sample)
-	if err != nil {
-		return nil, nil, err
-	}
-	return a, b, nil
+	return bothSides(r.left, r.right, func(t sourceSpec) (map[string]any, error) {
+		return sampleShape(ctx, r.cfg, t, r.sample)
+	})
 }
 
 // layerCount counts how many of the three diff layers are selected.
@@ -653,15 +655,26 @@ func (r report) layers() []reportLayer {
 
 // renderItems writes a keyed data diff under a section heading.
 func renderItems(out io.Writer, title string, deltas []diff.ItemDelta) error {
+	return renderSection(out, title, diff.SummarizeItems(deltas), func() error {
+		for _, d := range deltas {
+			if err := renderItem(out, d); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// renderSection writes the section heading, then the body rows, then the
+// summary footer. It stops at the first error.
+func renderSection(out io.Writer, title string, sum diff.Summary, body func() error) error {
 	if _, err := fmt.Fprintf(out, "%s\n", pal.header.Sprint("# "+title)); err != nil {
 		return err
 	}
-	for _, d := range deltas {
-		if err := renderItem(out, d); err != nil {
-			return err
-		}
+	if err := body(); err != nil {
+		return err
 	}
-	return writeSummary(out, diff.SummarizeItems(deltas))
+	return writeSummary(out, sum)
 }
 
 // renderItem writes one keyed delta: a change header with its nested field
@@ -689,15 +702,14 @@ func renderItem(out io.Writer, d diff.ItemDelta) error {
 
 // renderChanges writes a tree diff (stats or schema) under a section heading.
 func renderChanges(out io.Writer, title string, changes []diff.Change) error {
-	if _, err := fmt.Fprintf(out, "%s\n", pal.header.Sprint("# "+title)); err != nil {
-		return err
-	}
-	for _, ch := range changes {
-		if err := renderChangeLine(out, "", ch); err != nil {
-			return err
+	return renderSection(out, title, diff.SummarizeChanges(changes), func() error {
+		for _, ch := range changes {
+			if err := renderChangeLine(out, "", ch); err != nil {
+				return err
+			}
 		}
-	}
-	return writeSummary(out, diff.SummarizeChanges(changes))
+		return nil
+	})
 }
 
 // renderChangeLine writes one structural change, indented by prefix.
