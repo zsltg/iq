@@ -84,10 +84,11 @@ func topConjuncts(e *gojq.Query) []*gojq.Query {
 // declines rather than loops forever.
 func unwrap(e *gojq.Query) (*gojq.Query, bool) {
 	for depth := 0; depth <= maxNestDepth; depth++ {
-		if e.Op != 0 || e.Term == nil || e.Term.Type != gojq.TermTypeQuery || len(e.Term.SuffixList) != 0 {
+		inner, ok := parenQuery(e)
+		if !ok {
 			return e, true
 		}
-		e = e.Term.Query
+		e = inner
 	}
 	return nil, false
 }
@@ -102,7 +103,7 @@ func declineReason(e *gojq.Query) string {
 	// e arrives already unwrapped from topConjuncts, so it is inspected directly.
 	// A trailing `| not` the compiler could not extract exactly (a negation cannot
 	// widen, so an inexact inner predicate is dropped entirely).
-	if stages := pipeStages(e); len(stages) >= 2 && isNot(stages[len(stages)-1]) {
+	if _, ok := negatedPipe(e); ok {
 		return "negation is not exactly expressible"
 	}
 	// A `.path | test(re)` whose pattern or flags are not portable across engines.
@@ -122,11 +123,11 @@ func isTestPipe(e *gojq.Query) bool {
 	if e.Op != gojq.OpPipe {
 		return false
 	}
-	rhs := e.Right
-	if rhs.Op != 0 || rhs.Term == nil || rhs.Term.Func == nil || len(rhs.Term.SuffixList) != 0 {
+	f, ok := bareFunc(e.Right)
+	if !ok {
 		return false
 	}
-	return rhs.Term.Func.Name == "test"
+	return f.Name == "test"
 }
 
 // unsafeFieldName returns the first field name in a comparison or membership
@@ -159,34 +160,4 @@ func firstUnsafeComponent(q *gojq.Query) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// rawPath returns the field path of a plain relative index expression, like pathOf
-// but without the safeField gate, so declineReason can name the exact component
-// that made the path unsafe. It returns nil for anything with iteration, a computed
-// index, or extra operators.
-func rawPath(q *gojq.Query) []string {
-	if q.Op != 0 || q.Term == nil || len(q.FuncDefs) != 0 {
-		return nil
-	}
-	t := q.Term
-	if t.Type != gojq.TermTypeIndex || t.Index == nil {
-		return nil
-	}
-	name, ok := indexName(t.Index)
-	if !ok {
-		return nil
-	}
-	path := []string{name}
-	for _, s := range t.SuffixList {
-		if s.Iter || s.Index == nil {
-			return nil
-		}
-		name, ok := indexName(s.Index)
-		if !ok {
-			return nil
-		}
-		path = append(path, name)
-	}
-	return path
 }

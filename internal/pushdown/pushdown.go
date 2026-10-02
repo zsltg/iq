@@ -96,11 +96,8 @@ func joinPipe(stages []*gojq.Query) *gojq.Query {
 
 // selectArg returns the argument of a stage that is exactly a select(E) call.
 func selectArg(s *gojq.Query) (*gojq.Query, bool) {
-	if s.Op != 0 || s.Term == nil || len(s.Term.SuffixList) != 0 {
-		return nil, false
-	}
-	f := s.Term.Func
-	if f == nil || f.Name != "select" || len(f.Args) != 1 {
+	f, ok := namedCall(s, "select", 1)
+	if !ok {
 		return nil, false
 	}
 	return f.Args[0], true
@@ -121,32 +118,76 @@ func extractPred(e *gojq.Query) (predicate.Node, bool) {
 	}
 	// A trailing `| not` negates everything before it (pipes flatten to stages,
 	// so `.a | any(x) | not` is `not` applied to `.a | any(x)`).
-	if stages := pipeStages(e); len(stages) >= 2 && isNot(stages[len(stages)-1]) {
-		return negate(joinPipe(stages[:len(stages)-1]))
+	if inner, ok := negatedPipe(e); ok {
+		return negate(inner)
 	}
 	switch e.Op {
 	case gojq.OpPipe:
 		return pipeAtom(e.Left, e.Right)
 	case gojq.OpAnd:
-		l, lok := extractPred(e.Left)
-		r, rok := extractPred(e.Right)
-		switch {
-		case lok && rok:
-			return flattenAnd(l, r), true
-		case lok:
-			return l, true
-		case rok:
-			return r, true
-		default:
+		return widenAnd(e)
+	case gojq.OpOr:
+		l, r, ok := both(extractPred, e)
+		if !ok {
 			return nil, false
 		}
-	case gojq.OpOr:
-		l, lok := extractPred(e.Left)
-		r, rok := extractPred(e.Right)
-		if lok && rok {
-			return flattenOr(l, r), true
-		}
+		return flattenOr(l, r), true
+	default:
+		return compareAtom(e)
+	}
+}
+
+// negatedPipe returns the pipe before a trailing `| not` stage, or ok=false when
+// e does not end in a `not` stage after at least one other stage.
+func negatedPipe(e *gojq.Query) (*gojq.Query, bool) {
+	stages := pipeStages(e)
+	n := len(stages)
+	if n < 2 {
 		return nil, false
+	}
+	if !isNot(stages[n-1]) {
+		return nil, false
+	}
+	return joinPipe(stages[:n-1]), true
+}
+
+// widenAnd builds the superset predicate of a positive `and`. A side that does not
+// compile is dropped (widening), which is safe because the client re-runs jq. It
+// stays separate from both on purpose: the exact `and` of extractExact needs both
+// sides.
+func widenAnd(e *gojq.Query) (predicate.Node, bool) {
+	l, lok := extractPred(e.Left)
+	r, rok := extractPred(e.Right)
+	switch {
+	case lok && rok:
+		return flattenAnd(l, r), true
+	case lok:
+		return l, true
+	case rok:
+		return r, true
+	default:
+		return nil, false
+	}
+}
+
+// extractFunc extracts a predicate from a query, as extractPred and extractExact do.
+type extractFunc func(*gojq.Query) (predicate.Node, bool)
+
+// both extracts the two operands of e with f, or returns ok=false when either
+// side does not compile.
+func both(f extractFunc, e *gojq.Query) (l, r predicate.Node, ok bool) {
+	l, lok := f(e.Left)
+	r, rok := f(e.Right)
+	if lok && rok {
+		return l, r, true
+	}
+	return nil, nil, false
+}
+
+// compareAtom builds a predicate from a `path OP literal` comparison, or
+// ok=false for any other operator.
+func compareAtom(e *gojq.Query) (predicate.Node, bool) {
+	switch e.Op {
 	case gojq.OpEq:
 		return eqAtom(e.Left, e.Right)
 	case gojq.OpNe:
@@ -322,26 +363,76 @@ func neAtom(a, b *gojq.Query) (predicate.Node, bool) {
 
 // isNot reports whether q is the bare not builtin.
 func isNot(q *gojq.Query) bool {
-	f, ok := bareFunc(q)
-	return ok && f.Name == "not" && len(f.Args) == 0
+	_, ok := namedCall(q, "not", 0)
+	return ok
+}
+
+// soleTerm returns the term of a query that has no operator.
+func soleTerm(q *gojq.Query) (*gojq.Term, bool) {
+	if q.Op != 0 {
+		return nil, false
+	}
+	return q.Term, q.Term != nil
+}
+
+// bareTerm returns the term of a query that has no operator and no suffix.
+func bareTerm(q *gojq.Query) (*gojq.Term, bool) {
+	t, ok := soleTerm(q)
+	if !ok {
+		return nil, false
+	}
+	if len(t.SuffixList) != 0 {
+		return nil, false
+	}
+	return t, true
+}
+
+// closedTerm returns the term of a query that has no operator and no function
+// definitions.
+func closedTerm(q *gojq.Query) (*gojq.Term, bool) {
+	if len(q.FuncDefs) != 0 {
+		return nil, false
+	}
+	return soleTerm(q)
 }
 
 // bareFunc returns the function call of a query that is exactly one term with
 // no operator and no suffix, or ok=false otherwise.
 func bareFunc(q *gojq.Query) (*gojq.Func, bool) {
-	if q.Op != 0 || q.Term == nil || q.Term.Func == nil || len(q.Term.SuffixList) != 0 {
+	t, ok := bareTerm(q)
+	if !ok {
 		return nil, false
 	}
-	return q.Term.Func, true
+	return t.Func, t.Func != nil
+}
+
+// namedCall returns the function call of a bare query that calls name with
+// exactly arity arguments, or ok=false otherwise.
+func namedCall(q *gojq.Query, name string, arity int) (*gojq.Func, bool) {
+	f, ok := bareFunc(q)
+	if !ok {
+		return nil, false
+	}
+	if f.Name != name {
+		return nil, false
+	}
+	if len(f.Args) != arity {
+		return nil, false
+	}
+	return f, true
 }
 
 // parenQuery returns the inner query of a parenthesized term with no operator
 // and no suffix, or ok=false otherwise.
 func parenQuery(q *gojq.Query) (*gojq.Query, bool) {
-	if q.Op != 0 || q.Term == nil || q.Term.Type != gojq.TermTypeQuery || len(q.Term.SuffixList) != 0 {
+	t, ok := bareTerm(q)
+	if !ok {
 		return nil, false
 	}
-	return q.Term.Query, true
+	if t.Type != gojq.TermTypeQuery {
+		return nil, false
+	}
+	return t.Query, true
 }
 
 // negate pushes `inner | not`. A negation cannot use the superset-and-re-run
@@ -385,19 +476,17 @@ func extractExact(e *gojq.Query) (predicate.Node, bool) {
 	case gojq.OpPipe:
 		return exactPipe(e.Left, e.Right)
 	case gojq.OpAnd:
-		l, lok := extractExact(e.Left)
-		r, rok := extractExact(e.Right)
-		if lok && rok {
-			return flattenAnd(l, r), true
+		l, r, ok := both(extractExact, e)
+		if !ok {
+			return nil, false
 		}
-		return nil, false
+		return flattenAnd(l, r), true
 	case gojq.OpOr:
-		l, lok := extractExact(e.Left)
-		r, rok := extractExact(e.Right)
-		if lok && rok {
-			return flattenOr(l, r), true
+		l, r, ok := both(extractExact, e)
+		if !ok {
+			return nil, false
 		}
-		return nil, false
+		return flattenOr(l, r), true
 	case gojq.OpEq:
 		return eqAtom(e.Left, e.Right)
 	default:
@@ -448,8 +537,8 @@ func lengthEq(a, b *gojq.Query) (int, bool) {
 
 // isLength reports whether q is the bare length builtin.
 func isLength(q *gojq.Query) bool {
-	f, ok := bareFunc(q)
-	return ok && f.Name == "length" && len(f.Args) == 0
+	_, ok := namedCall(q, "length", 0)
+	return ok
 }
 
 // intLiteral returns a non-negative integer literal.
@@ -505,32 +594,49 @@ func portableFlags(flags string) bool {
 func portableRegex(p string) bool {
 	i := 0
 	for i < len(p) {
-		switch c := p[i]; c {
-		case '\\':
+		if p[i] == '\\' {
 			// A backslash must be followed by a portable escape; the pair is
 			// consumed together. Explicit advancement (rather than a loop-post
 			// increment) keeps a bad index step a panic, not an infinite loop.
-			if i+1 >= len(p) || !portableEscape(p[i+1]) {
+			if !escapeOK(p, i) {
 				return false
 			}
 			i += 2
 			continue
-		case '(':
-			if i+1 < len(p) && p[i+1] == '?' {
-				return false
-			}
-		case '[':
-			if i+1 < len(p) && p[i+1] == '[' {
-				return false
-			}
-		case '*', '+', '?', '}':
-			if i+1 < len(p) && p[i+1] == '+' {
-				return false
-			}
+		}
+		if badPair(p, i) {
+			return false
 		}
 		i++
 	}
 	return true
+}
+
+// escapeOK reports whether the backslash at p[i] is followed by a portable escape.
+func escapeOK(p string, i int) bool {
+	if i+1 >= len(p) {
+		return false
+	}
+	return portableEscape(p[i+1])
+}
+
+// badPair reports whether p[i] and the byte after it form a rejected construct:
+// a group extension `(?`, a POSIX class `[[`, or a possessive quantifier.
+func badPair(p string, i int) bool {
+	if i+1 >= len(p) {
+		return false
+	}
+	next := p[i+1]
+	switch p[i] {
+	case '(':
+		return next == '?'
+	case '[':
+		return next == '['
+	case '*', '+', '?', '}':
+		return next == '+'
+	default:
+		return false
+	}
 }
 
 // portableEscape reports whether a backslash escape means the same, or a
@@ -547,10 +653,21 @@ func portableEscape(b byte) bool {
 	case 'd', 'D', 'w', 'W', 's', 'b', 'B', 'n', 't', 'r', 'f', 'v':
 		return true
 	}
-	if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') {
+	return !isASCIIAlnum(b)
+}
+
+// isASCIIAlnum reports whether b is an ASCII letter or digit.
+func isASCIIAlnum(b byte) bool {
+	switch {
+	case b >= 'a' && b <= 'z':
+		return true
+	case b >= 'A' && b <= 'Z':
+		return true
+	case b >= '0' && b <= '9':
+		return true
+	default:
 		return false
 	}
-	return true
 }
 
 // eqAtom builds an Eq from a `path == literal` comparison in either order.
@@ -566,27 +683,9 @@ func eqAtom(a, b *gojq.Query) (predicate.Node, bool) {
 // `.a.b`, `.["a"]`), or ok=false for anything with iteration, a computed index,
 // or extra operators.
 func pathOf(q *gojq.Query) ([]string, bool) {
-	if q.Op != 0 || q.Term == nil || len(q.FuncDefs) != 0 {
+	path := rawPath(q)
+	if path == nil {
 		return nil, false
-	}
-	t := q.Term
-	if t.Type != gojq.TermTypeIndex || t.Index == nil {
-		return nil, false
-	}
-	name, ok := indexName(t.Index)
-	if !ok {
-		return nil, false
-	}
-	path := []string{name}
-	for _, s := range t.SuffixList {
-		if s.Iter || s.Index == nil {
-			return nil, false
-		}
-		name, ok := indexName(s.Index)
-		if !ok {
-			return nil, false
-		}
-		path = append(path, name)
 	}
 	for _, c := range path {
 		if !safeField(c) {
@@ -594,6 +693,45 @@ func pathOf(q *gojq.Query) ([]string, bool) {
 		}
 	}
 	return path, true
+}
+
+// rawPath returns the field path of a plain relative index expression, like pathOf
+// but without the safeField gate, so declineReason can name the exact component
+// that made the path unsafe. It returns nil for anything with iteration, a computed
+// index, or extra operators.
+func rawPath(q *gojq.Query) []string {
+	t, ok := closedTerm(q)
+	if !ok {
+		return nil
+	}
+	if t.Type != gojq.TermTypeIndex || t.Index == nil {
+		return nil
+	}
+	name, ok := indexName(t.Index)
+	if !ok {
+		return nil
+	}
+	path := []string{name}
+	for _, s := range t.SuffixList {
+		name, ok := suffixName(s)
+		if !ok {
+			return nil
+		}
+		path = append(path, name)
+	}
+	return path
+}
+
+// suffixName returns the literal field name of a path suffix, or ok=false for an
+// iterating, computed, slice, or interpolated suffix.
+func suffixName(s *gojq.Suffix) (string, bool) {
+	if s.Iter {
+		return "", false
+	}
+	if s.Index == nil {
+		return "", false
+	}
+	return indexName(s.Index)
 }
 
 // safeField reports whether a field name is safe to push as a backend path
@@ -615,33 +753,35 @@ func indexName(idx *gojq.Index) (string, bool) {
 		return idx.Name, true
 	case idx.Str != nil && len(idx.Str.Queries) == 0:
 		return idx.Str.Str, true
-	case !idx.IsSlice && idx.End == nil && idx.Start != nil:
-		return constString(idx.Start)
+	case isKeyIndex(idx):
+		return stringLit(idx.Start)
 	default:
 		return "", false
 	}
 }
 
-// constString returns the value of a query that is exactly a plain string
-// literal (how a bracket index like `.["foo"]` carries its key).
-func constString(q *gojq.Query) (string, bool) {
-	if q.Op != 0 || q.Term == nil || len(q.FuncDefs) != 0 {
-		return "", false
+// isKeyIndex reports whether an index is a bracket key (`.["foo"]` carries its
+// key in Start), not a slice and not an open index.
+func isKeyIndex(idx *gojq.Index) bool {
+	if idx.IsSlice {
+		return false
 	}
-	t := q.Term
-	if t.Type != gojq.TermTypeString || len(t.SuffixList) != 0 || t.Str == nil || len(t.Str.Queries) != 0 {
-		return "", false
+	if idx.End != nil {
+		return false
 	}
-	return t.Str.Str, true
+	return idx.Start != nil
 }
 
 // literalOf returns the JSON scalar value of a query that is exactly a number,
 // string, boolean, or null literal, or ok=false otherwise.
 func literalOf(q *gojq.Query) (any, bool) {
-	if q.Op != 0 || q.Term == nil || len(q.FuncDefs) != 0 || len(q.Term.SuffixList) != 0 {
+	t, ok := closedTerm(q)
+	if !ok {
 		return nil, false
 	}
-	t := q.Term
+	if len(t.SuffixList) != 0 {
+		return nil, false
+	}
 	switch t.Type {
 	case gojq.TermTypeNumber:
 		f, err := strconv.ParseFloat(t.Number, 64)
