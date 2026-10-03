@@ -1,6 +1,7 @@
 package elasticsearch
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -9,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -37,6 +39,15 @@ func TestOpenReportsAnUnusableURL(t *testing.T) {
 	}
 }
 
+// boundedCtx returns a context that ends after 10 seconds or when the test ends, so a
+// stalled stub fails the test instead of hanging it.
+func boundedCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	t.Cleanup(cancel)
+	return ctx
+}
+
 func TestParseURLKeepsTheParseCauseInTheChain(t *testing.T) {
 	// The wrap must keep the cause, so a caller can tell a malformed URL from a bad
 	// scheme.
@@ -53,7 +64,7 @@ func TestScanAsksForAFullPage(t *testing.T) {
 	stub := &pitStub{pages: []string{`{"pit_id":"PIT-1","hits":{"hits":[]}}`}}
 	st := newStubStore(t, "books", stub.handler)
 
-	require.NoError(t, st.ScanBatches(t.Context(), func(map[string]any) error { return nil }))
+	require.NoError(t, st.ScanBatches(boundedCtx(t), func(map[string]any) error { return nil }))
 	require.Len(t, stub.searches, 1)
 	var body map[string]any
 	require.NoError(t, json.Unmarshal([]byte(stub.searches[0]), &body))
@@ -67,7 +78,7 @@ func TestOpenSetsTheDefaultPageSize(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	rawURL := "elasticsearch://" + srv.Listener.Addr().String() + "/"
-	st, err := Open(t.Context(), rawURL, "", nil, numfmt.DecimalAuto)
+	st, err := Open(boundedCtx(t), rawURL, "", nil, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	require.Equal(t, 100, st.pageSize)
@@ -80,7 +91,7 @@ func TestSuccessStatusRangeEndsAt299(t *testing.T) {
 		st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
 			esJSON(w, 299, `{"count":7}`)
 		})
-		n, err := st.EstimateCount(t.Context())
+		n, err := st.EstimateCount(boundedCtx(t))
 		require.NoError(t, err)
 		require.EqualValues(t, 7, n)
 	})
@@ -88,7 +99,7 @@ func TestSuccessStatusRangeEndsAt299(t *testing.T) {
 		st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
 			esJSON(w, 299, `{"hits":{"hits":[]}}`)
 		})
-		got, err := st.Query(t.Context(), []string{`{"match_all":{}}`})
+		got, err := st.Query(boundedCtx(t), []string{`{"match_all":{}}`})
 		require.NoError(t, err)
 		require.NotNil(t, got)
 	})
@@ -102,7 +113,7 @@ func TestRequestReportsABadMethod(t *testing.T) {
 		calls++
 		esJSON(w, http.StatusOK, `{}`)
 	})
-	err := st.request(t.Context(), "probe", "BAD METHOD", "/", nil, nil)
+	err := st.request(boundedCtx(t), "probe", "BAD METHOD", "/", nil, nil)
 	require.ErrorContains(t, err, "build request")
 	require.Error(t, errors.Unwrap(errors.Unwrap(err)), "the cause stays reachable through both wraps")
 	require.Zero(t, calls, "a request that cannot be built is never sent")
@@ -115,7 +126,7 @@ func TestScanReportsAnUnencodableQuery(t *testing.T) {
 	st := newStubStore(t, "books", stub.handler)
 
 	pages := 0
-	err := st.pagedSearch(t.Context(), map[string]any{"bad": math.NaN()}, nil, func(map[string]any) error { pages++; return nil })
+	err := st.pagedSearch(boundedCtx(t), map[string]any{"bad": math.NaN()}, nil, func(map[string]any) error { pages++; return nil })
 	require.ErrorContains(t, err, "encode search")
 	var unsupported *json.UnsupportedValueError
 	require.ErrorAs(t, err, &unsupported, "the cause stays reachable through the wrap")
@@ -136,7 +147,7 @@ func TestScanReportsAPointInTimeRefusal(t *testing.T) {
 		esJSON(w, http.StatusForbidden, `{"error":{"type":"security_exception","reason":"denied"}}`)
 	})
 
-	err := st.ScanBatches(t.Context(), func(map[string]any) error { return nil })
+	err := st.ScanBatches(boundedCtx(t), func(map[string]any) error { return nil })
 	require.ErrorContains(t, err, "elasticsearch open point-in-time: security_exception")
 	require.Zero(t, searches, "no search goes out without a point-in-time")
 }
@@ -147,7 +158,7 @@ func TestGetReportsAnUndecodableSource(t *testing.T) {
 	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
 		esJSON(w, http.StatusOK, `{"docs":[{"_id":"1","found":true,"_source":42}]}`)
 	})
-	got, err := st.Get(t.Context(), []string{"1"})
+	got, err := st.Get(boundedCtx(t), []string{"1"})
 	require.Nil(t, got)
 	require.ErrorContains(t, err, "decode elasticsearch _source")
 }
@@ -162,7 +173,7 @@ func TestQueryWrapsTheTransportFailure(t *testing.T) {
 	t.Cleanup(func() { _ = c.close() })
 	st := &Store{client: c, index: "books", pageSize: scanBatch}
 
-	got, err := st.Query(t.Context(), []string{`{"match_all":{}}`})
+	got, err := st.Query(boundedCtx(t), []string{`{"match_all":{}}`})
 	require.Nil(t, got)
 	require.ErrorContains(t, err, "elasticsearch search:")
 	var netErr *net.OpError
@@ -177,7 +188,7 @@ func TestPutRejectsAScalarValue(t *testing.T) {
 		calls++
 		esJSON(w, http.StatusOK, `{"items":[]}`)
 	})
-	stat, err := st.Put(t.Context(), []query.Record{{Key: "1", Value: "scalar"}}, query.Upsert)
+	stat, err := st.Put(boundedCtx(t), []query.Record{{Key: "1", Value: "scalar"}}, query.Upsert)
 	require.Equal(t, query.WriteStat{}, stat)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "elasticsearch")
@@ -190,7 +201,7 @@ func TestDeleteReportsAFailedItem(t *testing.T) {
 	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
 		esJSON(w, http.StatusOK, `{"items":[{"delete":{"status":400,"error":{"type":"mapper_exception","reason":"bad id"}}}]}`)
 	})
-	stat, err := st.Delete(t.Context(), []string{"1"})
+	stat, err := st.Delete(boundedCtx(t), []string{"1"})
 	require.Equal(t, query.DeleteStat{}, stat)
 	require.ErrorContains(t, err, "elasticsearch bulk delete: mapper_exception: bad id")
 }

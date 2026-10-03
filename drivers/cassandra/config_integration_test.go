@@ -2,11 +2,12 @@ package cassandra
 
 import (
 	"context"
+	"net/url"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
+	gocql "github.com/apache/cassandra-gocql-driver/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -22,14 +23,21 @@ func TestOpenSetsTheClusterConfig(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	t.Cleanup(cancel)
-	rawURL := strings.Replace(testURL(), "cassandra://", "cassandra://alice:s3cret@", 1)
+	rawURL := urlWithUser(t, url.UserPassword("alice", "s3cret"))
 	st, err := Open(ctx, rawURL, "", nil, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 
 	cfg := reflect.ValueOf(st.session).Elem().FieldByName("cfg")
 	require.True(t, cfg.IsValid(), "the driver session keeps a cluster config")
+	// The config field is unexported, so Interface would panic. Read the strings
+	// through reflection instead.
 	require.False(t, cfg.FieldByName("Authenticator").IsNil(), "a URL with a user name sets the authenticator")
+	auth := cfg.FieldByName("Authenticator").Elem()
+	require.Equal(t, reflect.TypeFor[gocql.PasswordAuthenticator](), auth.Type(),
+		"a URL with a user name sets a password authenticator")
+	require.Equal(t, "alice", auth.FieldByName("Username").String())
+	require.Equal(t, "s3cret", auth.FieldByName("Password").String())
 	for _, name := range []string{"ConnectTimeout", "Timeout"} {
 		d := time.Duration(cfg.FieldByName(name).Int())
 		require.Greater(t, d, 30*time.Second, "%s follows the deadline of the caller", name)
@@ -37,8 +45,25 @@ func TestOpenSetsTheClusterConfig(t *testing.T) {
 	}
 }
 
+// urlWithUser returns the test cluster URL with its own user info replaced by user,
+// or removed when user is nil.
+func urlWithUser(t *testing.T, user *url.Userinfo) string {
+	t.Helper()
+	u, err := url.Parse(testURL())
+	require.NoError(t, err)
+	u.User = user
+	return u.String()
+}
+
 func TestOpenWithoutUserLeavesTheAuthenticatorEmpty(t *testing.T) {
-	st := schemaStore(t)
+	if testing.Short() {
+		t.Skip("skipping cassandra integration test in -short mode")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	t.Cleanup(cancel)
+	st, err := Open(ctx, urlWithUser(t, nil), "", nil, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
 	cfg := reflect.ValueOf(st.session).Elem().FieldByName("cfg")
 	require.True(t, cfg.FieldByName("Authenticator").IsNil())
 }
