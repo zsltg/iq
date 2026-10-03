@@ -117,7 +117,11 @@ jobs:
           RUN: ${{ inputs.run }}
         run: |
           set -uo pipefail
-          args=(-count=1 -p=1)
+          if ! go test -count=1 -vet=off -run '^$' "$PKG"; then
+            echo "Mutant DID NOT COMPILE: the package $PKG or its tests failed to build with the mutant at $MUTANT_FILE line $MUTANT_LINE. This is not a kill." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          args=(-count=1 -p=1 -vet=off)
           if [ -n "$RUN" ]; then
             args+=(-run "$RUN")
           fi

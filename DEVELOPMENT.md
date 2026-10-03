@@ -220,6 +220,17 @@ gh workflow run mutant-proof.yml --ref <branch> \
   -f run='^TestScan'                # optional go test -run regex
 ```
 
+The `diff` fields in `mutago-agentic.json` use `--- Original` and `+++ New`
+headers. `git apply` needs `a/<path>` and `b/<path>` headers, so rewrite them
+first, with `<path>` the repo-relative path of the file:
+
+```sh
+sed -e 's|^--- Original|--- a/<path>|' -e 's|^+++ New|+++ b/<path>|' mutant.diff > fixed.diff
+```
+
+A patch from `git diff` needs no change. The run uses `-vet=off`, as mutation
+testing does, so a vet finding never reads as a kill.
+
 The inputs:
 
 - `package`: `./cmd`, or `./drivers/<name>`, or `./internal/<name>`.
@@ -233,6 +244,8 @@ How to read the verdict:
   This proves a kill.
 - Job green, summary `Mutant SURVIVED`: the suite passed with the mutant
   applied. This proves an equivalent mutant, or a missing test.
+- Job red, summary `Mutant DID NOT COMPILE`: the mutant breaks the build. This
+  is not a kill.
 - Job red before the test step: an input check failed, read the error line.
 
 The summary names the package, the file and the first changed line. The log
