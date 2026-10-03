@@ -2,6 +2,7 @@ package couchbase
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"testing"
 
@@ -122,8 +123,11 @@ func TestInspectContextCancelled(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.ErrorContains(t, tt.op(), tt.want,
+			err := tt.op()
+			require.ErrorContains(t, err, tt.want,
 				"a cancelled context must surface as an error, not a completed probe")
+			// The message alone cannot tell %w from %v. The SDK cause must stay in the chain.
+			require.Error(t, errors.Unwrap(err), "the SDK cause must stay reachable through the wrap")
 		})
 	}
 }

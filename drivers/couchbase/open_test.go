@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 )
 
 // The tests in this file open a source that no server answers. They need no cluster.
@@ -19,6 +20,32 @@ import (
 // constant.
 func TestConnectTimeoutIsLiteral(t *testing.T) {
 	require.Equal(t, 15*time.Second, connectTimeout)
+}
+
+// TestNoBucketStore pins the guard that each keyspace operation runs first. A store with
+// no collection refuses the call before it touches the cluster, so no server is needed.
+func TestNoBucketStore(t *testing.T) {
+	ctx := context.Background()
+	st := &Store{}
+	tests := []struct {
+		name string
+		op   func() error
+	}{
+		{name: "get", op: func() error { _, err := st.Get(ctx, []string{"1"}); return err }},
+		{name: "scan", op: func() error { return st.ScanBatches(ctx, func(map[string]any) error { return nil }) }},
+		{name: "put", op: func() error {
+			_, err := st.Put(ctx, []query.Record{{Key: "1", Value: map[string]any{}}}, query.Upsert)
+			return err
+		}},
+		{name: "clear", op: func() error { return st.Clear(ctx) }},
+		{name: "drop", op: func() error { return st.Drop(ctx) }},
+		{name: "typed scan", op: func() error { return st.TypedScan(ctx, func([]query.Record) error { return nil }) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.ErrorIs(t, tt.op(), errNoBucket)
+		})
+	}
 }
 
 // TestOpenRejectsABadConnectionOption pins that Open stops when the SDK refuses the
