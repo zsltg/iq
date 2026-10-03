@@ -62,6 +62,8 @@ make capabilities               # only when go.mod or go.sum changed
 The mutation gate mutates only the lines that your branch changed. If a mutant
 survives, a test does not check that line: make the test stronger. What each
 gate does, and its settings, is in [DEVELOPMENT.md](DEVELOPMENT.md#quality-gates).
+To prove on CI that a test kills a mutant, use the manual `mutant-proof`
+workflow, see [DEVELOPMENT.md](DEVELOPMENT.md#prove-one-mutant-on-ci).
 
 Until the mutago v2.10.16 re-baseline is done, some accepted escapes in
 `mutago-baseline.json` carry IDs from the older version. The diff-scoped gate can

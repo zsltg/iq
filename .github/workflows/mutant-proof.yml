@@ -1,0 +1,129 @@
+# Prove one mutant on CI. Run it by hand with workflow_dispatch, see the
+# "Prove one mutant on CI" section of DEVELOPMENT.md.
+# The job applies the patch of ONE mutant to the checkout and runs the test
+# suite of one package against its real backend. The job fails if a test
+# fails: the suite kills the mutant. The job passes if all tests pass: the
+# mutant survives, which proves an equivalent mutant or a gap in the tests.
+name: Mutant proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to test, for example ./drivers/cassandra
+        type: string
+        required: true
+      patch:
+        description: Unified diff of ONE mutant, base64-encoded (base64 -w0)
+        type: string
+        required: true
+      run:
+        description: Optional go test -run regex. Empty runs the whole package suite
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+# One group for each run, so a proof run never cancels another proof run.
+concurrency:
+  group: mutant-proof-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  proof:
+    name: prove ${{ inputs.package }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Check every input before it is used. The patch is data, so the step
+      # decodes it to a file and never puts it on a command line.
+      - name: Validate the inputs
+        env:
+          PKG: ${{ inputs.package }}
+          RUN: ${{ inputs.run }}
+          PATCH_B64: ${{ inputs.patch }}
+        run: |
+          set -euo pipefail
+          if [ "$PKG" != "./cmd" ] && ! printf '%s' "$PKG" | grep -Eq '^\./(drivers|internal)/[a-z0-9]+(/[a-z0-9]+)*$'; then
+            echo "::error::package must be ./cmd or match ./(drivers|internal)/<name>"
+            exit 1
+          fi
+          if [ -n "$RUN" ] && ! printf '%s' "$RUN" | grep -Eq '^[A-Za-z0-9_/|^$.*()-]+$'; then
+            echo "::error::run has a character that a go test -run regex must not have here"
+            exit 1
+          fi
+          if ! printf '%s' "$PATCH_B64" | base64 -d > "$RUNNER_TEMP/mutant.patch"; then
+            echo "::error::patch is not valid base64"
+            exit 1
+          fi
+          size=$(wc -c < "$RUNNER_TEMP/mutant.patch")
+          if [ "$size" -eq 0 ] || [ "$size" -gt 65536 ]; then
+            echo "::error::the decoded patch is $size bytes, it must be 1 to 65536 bytes"
+            exit 1
+          fi
+      # The patch must change exactly one file: a non-test .go file that sits
+      # in the directory of the package under test.
+      - name: Apply the mutant
+        env:
+          PKG: ${{ inputs.package }}
+        run: |
+          set -euo pipefail
+          patch="$RUNNER_TEMP/mutant.patch"
+          git apply --check "$patch"
+          git apply --numstat "$patch" > "$RUNNER_TEMP/numstat.txt"
+          if [ "$(wc -l < "$RUNNER_TEMP/numstat.txt")" -ne 1 ]; then
+            echo "::error::the patch must change exactly one file"
+            cat "$RUNNER_TEMP/numstat.txt"
+            exit 1
+          fi
+          file=$(cut -f3 "$RUNNER_TEMP/numstat.txt")
+          pkgdir="${PKG#./}"
+          if ! printf '%s' "$file" | grep -Eq '^[A-Za-z0-9_./-]+\.go$' \
+            || [[ "$file" == *_test.go ]] \
+            || [ "$(dirname "$file")" != "$pkgdir" ]; then
+            echo "::error::the patch must change one non-test .go file in $pkgdir, it changes $file"
+            exit 1
+          fi
+          # The line of the first changed row: the hunk start plus the context rows before it.
+          line=$(awk '
+            /^@@/ { split($3, p, /[+,]/); n = p[2]; found = 0; next }
+            n != "" && !found && /^[-+]/ { print n; found = 1; exit }
+            n != "" && !found && /^ / { n++ }
+          ' "$patch")
+          echo "MUTANT_FILE=$file" >> "$GITHUB_ENV"
+          echo "MUTANT_LINE=${line:-unknown}" >> "$GITHUB_ENV"
+          git apply "$patch"
+          git diff
+      # Twin of the deep-mutate step in ci.yml: both call the same script.
+      - name: Start the package's backend (compose)
+        env:
+          PKG: ${{ inputs.package }}
+        run: bash scripts/ci-backend.sh "$PKG"
+      - name: Run the package suite
+        env:
+          PKG: ${{ inputs.package }}
+          RUN: ${{ inputs.run }}
+        run: |
+          set -uo pipefail
+          args=(-count=1 -p=1)
+          if [ -n "$RUN" ]; then
+            args+=(-run "$RUN")
+          fi
+          if go test "${args[@]}" "$PKG"; then
+            echo "Mutant SURVIVED: the suite of $PKG passed with the mutant at $MUTANT_FILE line $MUTANT_LINE. The mutant is equivalent, or a test is missing." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Mutant KILLED: the suite of $PKG failed with the mutant at $MUTANT_FILE line $MUTANT_LINE." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

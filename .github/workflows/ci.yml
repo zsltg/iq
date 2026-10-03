@@ -841,45 +841,12 @@ jobs:
       # which is what lets a driver package finish inside the job timeout (the
       # 8.17/2.17 JVM pairs cost ~a minute per boot). This mirrors the local
       # per-driver recipe; only this package's services run on this runner.
-      # Couchbase ships unprovisioned, so the seed script's idempotent
-      # cluster-init/bucket/index runs with the integration bucket and no
-      # sample data. HBase needs host networking (native RPC hands back the
-      # region server's advertised hostname).
+      # The package-to-service mapping lives in scripts/ci-backend.sh, which
+      # the mutant-proof workflow shares.
       - name: Start the package's backend (compose)
         env:
           PKG: ${{ matrix.package }}
-        run: |
-          case "$PKG" in
-            ./cmd)                   svcs="redis mongo"
-              echo "IQ_REDIS_URL=redis://localhost:6379/0" >> "$GITHUB_ENV"
-              echo "IQ_MONGO_URL=mongodb://localhost:27017/iq_test" >> "$GITHUB_ENV" ;;
-            ./drivers/redis)         svcs="redis"
-              echo "IQ_REDIS_URL=redis://localhost:6379/0" >> "$GITHUB_ENV" ;;
-            ./drivers/mongo)         svcs="mongo"
-              echo "IQ_MONGO_URL=mongodb://localhost:27017/iq_test" >> "$GITHUB_ENV" ;;
-            ./drivers/cassandra)     svcs="cassandra"
-              echo "IQ_CASSANDRA_URL=cassandra://localhost:9042/iq_test" >> "$GITHUB_ENV" ;;
-            ./drivers/dynamodb)      svcs="dynamodb"
-              echo "IQ_DYNAMODB_URL=dynamodb://us-east-1/?endpoint=http://localhost:8000" >> "$GITHUB_ENV" ;;
-            ./drivers/hbase)         svcs="hbase"
-              echo "IQ_HBASE_URL=hbase://localhost:2181/" >> "$GITHUB_ENV" ;;
-            ./drivers/couchdb)       svcs="couchdb"
-              echo "IQ_COUCHDB_URL=couchdb://admin:password@localhost:5984/" >> "$GITHUB_ENV" ;;
-            ./drivers/couchbase)     svcs="couchbase"
-              echo "IQ_COUCHBASE_URL=couchbase://Administrator:password@localhost/?bucket=iq_test" >> "$GITHUB_ENV" ;;
-            ./drivers/neo4j)         svcs="neo4j"
-              echo "IQ_NEO4J_URL=neo4j://neo4j:password@localhost:7687/" >> "$GITHUB_ENV" ;;
-            ./drivers/elasticsearch) svcs="elasticsearch opensearch"
-              echo "IQ_ELASTICSEARCH_URL=elasticsearch://localhost:9200/" >> "$GITHUB_ENV"
-              echo "IQ_OPENSEARCH_URL=opensearch://localhost:9201/" >> "$GITHUB_ENV" ;;
-            *)                       svcs="" ;;
-          esac
-          if [ -n "$svcs" ]; then
-            docker compose up -d --wait $svcs
-          fi
-          if [ "$PKG" = "./drivers/couchbase" ]; then
-            IQ_SEED_BUCKET=iq_test IQ_SEED_DATA=0 bash scripts/seed-couchbase.sh
-          fi
+        run: bash scripts/ci-backend.sh "$PKG"
       # One gate run for each (file, mutator) cell of this shard, with no gate
       # flag. The runner reads its cells from the plan artifact. The verdict comes
       # from deep-badge, which merges all shards of the package. The runner installs

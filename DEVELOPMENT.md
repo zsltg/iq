@@ -201,6 +201,43 @@ duration` and is the expensive step, not the fixing. Work it in this order.
 Point a container-backed package at a running service (`IQ_<DRIVER>_URL`, see
 `.env.example`) before any of this, or every mutant pays for a fresh container.
 
+### Prove one mutant on CI
+
+The workflow `.github/workflows/mutant-proof.yml` is manual. A hand proof needs the full package suite against a real backend. For the JVM
+backends (hbase, cassandra) a local run is too heavy, so this manual workflow
+runs the proof on GitHub. It applies the patch of ONE mutant, starts the
+backend of the package with `scripts/ci-backend.sh` (the same script that the
+`deep-mutate` job calls), and runs `go test -count=1 -p=1` on the package.
+
+The workflow file must be on `main` before `gh workflow run` can dispatch it.
+After that, `--ref` picks the branch whose code the run tests.
+
+```sh
+git diff -U3 > /tmp/mutant.diff   # or the `diff` field of a mutago-agentic.json entry
+gh workflow run mutant-proof.yml --ref <branch> \
+  -f package=./drivers/cassandra \
+  -f patch="$(base64 -w0 /tmp/mutant.diff)" \
+  -f run='^TestScan'                # optional go test -run regex
+```
+
+The inputs:
+
+- `package`: `./cmd`, or `./drivers/<name>`, or `./internal/<name>`.
+- `patch`: a unified diff of exactly one non-test `.go` file in that package
+  directory, at most 64 KB after decoding.
+- `run`: an optional `go test -run` regex. An empty value runs the whole suite.
+
+How to read the verdict:
+
+- Job red, summary `Mutant KILLED`: the suite failed with the mutant applied.
+  This proves a kill.
+- Job green, summary `Mutant SURVIVED`: the suite passed with the mutant
+  applied. This proves an equivalent mutant, or a missing test.
+- Job red before the test step: an input check failed, read the error line.
+
+The summary names the package, the file and the first changed line. The log
+prints the applied `git diff`.
+
 ### Fuzz targets (`scripts/fuzz.sh`)
 
 Go native fuzzing over the parsers that read untrusted bytes, one target per
