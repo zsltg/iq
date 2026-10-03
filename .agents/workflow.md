@@ -8,7 +8,8 @@ Existing user authorization persists across turns. A request for a local draft e
 
 - Keep `main` buildable. Use one short-lived branch per atomic task.
 - Use a `feat/`, `fix/`, `chore/`, `test/`, `ci/`, or `docs/` prefix.
-- Before edits, create or reuse an isolated task worktree branched from `origin/main`.
+- Before edits, create or reuse an isolated task worktree branched from `origin/main`, except for release work.
+- For release work, branch from `github/main` as described in [the release procedure](../DEVELOPMENT.md#releasing).
 - Never switch branches in a shared checkout. Never edit `main` unless the user explicitly requests it.
 - Read-only investigation needs no worktree.
 - Before an authorized commit, run formatters and fix all findings from `make check`.
@@ -54,7 +55,7 @@ An unresolved thread blocks merge.
 Before an authorized merge, all local gates must pass and the pull request must pass `ci-ok`.
 Every review thread must be resolved.
 
-1. Run `gh pr merge <n> --squash`. GitHub deletes the branch.
+1. Run `gh pr merge <n> --squash`. Repository settings enable GitHub to delete the remote branch automatically.
 2. In the clean `main` checkout, run `git pull --ff-only github main`, then `git push origin main`.
 
 Both remotes must hold the same commit. The pre-push hook skips commits that a remote already holds.

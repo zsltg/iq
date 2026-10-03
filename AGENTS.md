@@ -5,7 +5,8 @@ These rules bind all work in this repository. Read the linked policies when thei
 ## Scope and authorization
 
 - Read-only investigation needs no worktree. Trace the relevant behavior, callers, tests, and documentation before you edit.
-- Before edits, create or reuse an isolated task worktree branched from `origin/main`.
+- Before edits, create or reuse an isolated task worktree branched from `origin/main`, except for release work.
+- For release work, branch from `github/main` as described in [the release procedure](DEVELOPMENT.md#releasing).
 - Never switch branches in a shared checkout. Never edit `main` unless the user explicitly requests it.
 - Use one short-lived branch per atomic task, with a `feat/`, `fix/`, `chore/`, `test/`, `ci/`, or `docs/` prefix.
 - An implementation request authorizes local edits and the checks that the work needs.
