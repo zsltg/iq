@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -184,6 +185,7 @@ func TestLsJSONKeyringFlag(t *testing.T) {
 	require.Len(t, rows, 2)
 	byHandle := map[string]sourceRow{}
 	for _, r := range rows {
+		require.NotContains(t, byHandle, r.Handle)
 		byHandle[r.Handle] = r
 	}
 	require.True(t, byHandle["kr"].Keyring)
@@ -227,6 +229,7 @@ func TestLsJSON(t *testing.T) {
 
 	byHandle := map[string]sourceRow{}
 	for _, r := range rows {
+		require.NotContains(t, byHandle, r.Handle)
 		byHandle[r.Handle] = r
 	}
 	require.Equal(t, "redis", byHandle["cache"].Driver)
@@ -306,4 +309,144 @@ func TestLsGroupsJSON(t *testing.T) {
 	require.Len(t, rows, 1)
 	require.Equal(t, "prod", rows[0].Group)
 	require.Equal(t, 2, rows[0].Sources)
+}
+
+// lsRowsByHandle decodes the JSON listing into rows keyed by handle.
+func lsRowsByHandle(t *testing.T, out string) map[string]sourceRow {
+	t.Helper()
+	var rows []sourceRow
+	require.NoError(t, json.Unmarshal([]byte(out), &rows))
+	byHandle := make(map[string]sourceRow, len(rows))
+	for _, r := range rows {
+		require.NotContains(t, byHandle, r.Handle)
+		byHandle[r.Handle] = r
+	}
+	return byHandle
+}
+
+// TestLsJSONGroupFilter proves that the group filter applies to the JSON and
+// YAML output, and that a group name matches only a whole path segment.
+func TestLsJSONGroupFilter(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		// check asserts on the command output.
+		check func(t *testing.T, out string)
+	}{
+		{"json keeps the whole group", []string{"prod", "-j"}, func(t *testing.T, out string) {
+			byHandle := lsRowsByHandle(t, out)
+			require.Len(t, byHandle, 2)
+			require.Contains(t, byHandle, "prod/books")
+			require.Contains(t, byHandle, "prod/cache")
+		}},
+		{"yaml keeps the whole group", []string{"prod", "-y"}, func(t *testing.T, out string) {
+			require.Contains(t, out, "handle: prod/books")
+			require.NotContains(t, out, "handle: cache")
+		}},
+		{"a partial segment matches nothing", []string{"pro", "-j"}, func(t *testing.T, out string) {
+			require.Equal(t, "[]\n", out)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seedLs(t)
+
+			out, err := runCmd(t, newLsCmd(&config{}), tt.args...)
+
+			require.NoError(t, err)
+			tt.check(t, out)
+		})
+	}
+}
+
+// TestLsJSONReveal proves that --reveal reaches the JSON location, with and
+// without -v.
+func TestLsJSONReveal(t *testing.T) {
+	seedLs(t)
+	tests := []struct {
+		name    string
+		verbose bool
+		args    []string
+		want    string
+	}{
+		{"redacted by default", false, []string{"-j"}, "redis://u:xxxxx@h:6379/0"},
+		{"reveal", false, []string{"-j", "--reveal"}, "redis://u:secret@h:6379/0"},
+		{"verbose reveal", true, []string{"-j", "--reveal"}, "redis://u:secret@h:6379/0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := runCmd(t, newLsCmd(&config{verbose: tt.verbose}), tt.args...)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, lsRowsByHandle(t, out)["cache"].Location)
+		})
+	}
+}
+
+// TestLsExpandKeyring pins --expand for a keyring source on every output. A
+// resolved password is redacted unless --reveal is set. A failed lookup keeps
+// the stored URL, and --reveal then prints that URL.
+func TestLsExpandKeyring(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		lookupErr error
+		want      string
+	}{
+		{"expand redacts", []string{"--expand"}, nil, "redis://u:xxxxx@h:6379/0"},
+		{"expand and reveal print", []string{"--expand", "--reveal"}, nil, "redis://u:secret@h:6379/0"},
+		{"failed lookup keeps the stored URL", []string{"--expand"}, errors.New("keyring locked"), "redis://u@h:6379/0"},
+		{"failed lookup with reveal keeps the stored URL", []string{"--expand", "--reveal"}, errors.New("keyring locked"), "redis://u@h:6379/0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newSeed()
+			require.NoError(t, c.Add("sec", "redis://u@h:6379/0"))
+			require.NoError(t, c.UseKeyring("sec"))
+			seedConfig(t, c)
+			fk := useFakeKeyring(t)
+			require.NoError(t, fk.Set("sec", "secret"))
+			fk.getErr = tt.lookupErr
+
+			text, err := runCmd(t, newLsCmd(&config{verbose: true}), tt.args...)
+			require.NoError(t, err)
+			require.Contains(t, text, tt.want+" [keyring]")
+
+			out, err := runCmd(t, newLsCmd(&config{}), append(tt.args, "-j")...)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, lsRowsByHandle(t, out)["sec"].Location)
+		})
+	}
+}
+
+// TestLsGroupsOutput proves that -v adds the source count to the group
+// listing, that the plain listing has none, and that -y reaches the listing.
+func TestLsGroupsOutput(t *testing.T) {
+	tests := []struct {
+		name    string
+		verbose bool
+		args    []string
+		// check asserts on the command output.
+		check func(t *testing.T, out string)
+	}{
+		{"verbose adds the source count", true, []string{"-g"}, func(t *testing.T, out string) {
+			require.Contains(t, out, "prod  2 sources")
+		}},
+		{"plain has no count", false, []string{"-g"}, func(t *testing.T, out string) {
+			require.NotContains(t, out, "sources")
+		}},
+		{"yaml lists the group", false, []string{"-g", "-y"}, func(t *testing.T, out string) {
+			require.Equal(t, "- group: prod\n  sources: 2\n", out)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seedLs(t)
+
+			out, err := runCmd(t, newLsCmd(&config{verbose: tt.verbose}), tt.args...)
+
+			require.NoError(t, err)
+			tt.check(t, out)
+		})
+	}
 }

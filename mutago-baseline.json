@@ -1604,6 +1604,12 @@
    "line": 215
   },
   {
+   "id": "e1c81375bec9e0cb1043c2e2146bd3d0",
+   "file": "cmd/diff.go",
+   "mutator": "statement/remove",
+   "line": 262
+  },
+  {
    "id": "11979afff78230432fa121e15b4401ae",
    "file": "internal/rawpred/rawpred.go",
    "mutator": "branch/case",
