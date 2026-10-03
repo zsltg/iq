@@ -386,11 +386,11 @@ full run catches that drift. The `packages` input (space-separated, for example
 trailing slash and a duplicate, and stops on a path that is not a module
 package. The unit of work is a (file, mutator) cell from a dry run; the sum of
 the cells must equal the dry run total. The plan packs cells into shards of
-about 150 min at the measured seconds per mutant (a package with no stored
+about 120 min at the measured seconds per mutant (a package with no stored
 result uses its starting rate from the table in the script, else 180 s with a
 backend and 15 s without; `bash scripts/mutation-plan.sh --rate <badges-dir>
-<package>` prints the rate). A cell over 150 min gets its own shard and a
-warning; a cell over 165 min stops the plan, because its job cannot finish. The
+<package>` prints the rate). A cell over 120 min gets its own shard and a
+warning; a cell over 285 min stops the plan, because its job cannot finish. The
 full plan goes to the `scan-plan` artifact; the job output keeps only the
 package, slug and shard numbers that the matrix needs.
 

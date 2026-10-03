@@ -132,6 +132,14 @@ check "missing shard: the verdict fails" \
   '[[ $status -eq 1 ]] && grep -q "./internal/numfmt: no report for shard 2" "$case_dir/out"'
 check "missing shard: only a failure marker is written" '[[ "$(jq -r .status "$case_dir/badges/state/$nslug.json")" == failed ]]'
 
+# A timed-out shard uploads its finished cells but no shard.json (the runner writes it last).
+prepare partial-shard "[$shard1,$shard2]" $numfmt
+find "$case_dir/artifacts" -name shard.json | sort | tail -n 1 | xargs rm -f
+verdict
+check "partial shard (cells, no shard.json): the verdict fails" \
+  '[[ $status -eq 1 ]] && grep -q "FAILED: ./internal/numfmt: no report for shard" "$case_dir/out"'
+check "partial shard: only a failure marker is written" '[[ "$(jq -r .status "$case_dir/badges/state/$nslug.json")" == failed ]]'
+
 copy=$(shard a2 $numfmt $nslug 1 2 "[$cell1]" | jq -c '. + {not_in_matrix: true}')
 prepare duplicate-shard "[$shard1,$copy,$shard2]" $numfmt
 verdict
@@ -330,12 +338,12 @@ pack_case zero 15 '\nTotal: 0 mutation(s) would be generated.\n'
 check "pack: no mutants gives one empty shard" '[[ $status -eq 0 && "$(jq -c "map(.cells | length)" "$case_dir/plan.json")" == "[0]" ]]'
 # (99 + 1) x 95 s is about 158 min: over the budget, under the job limit.
 pack_case over-budget 95 'internal/numfmt/a.go:\n\tbranch/if: 99\n\nTotal: 99 mutation(s) would be generated.\n'
-check "pack: a cell over the 150 min budget gets its own shard and a warning" \
+check "pack: a cell over the 120 min budget gets its own shard and a warning" \
   '[[ $status -eq 0 ]] && grep -q "WARNING" "$case_dir/out"'
-# (99 + 1) x 100 s is about 167 min: over the job limit.
-pack_case over-limit 100 'internal/numfmt/a.go:\n\tbranch/if: 99\n\nTotal: 99 mutation(s) would be generated.\n'
-check "pack: a cell over the 165 min job limit stops the plan" \
-  '[[ $status -ne 0 ]] && grep -q "more than the job limit of 165 min" "$case_dir/out"'
+# (99 + 1) x 175 s is about 292 min: over the job limit.
+pack_case over-limit 175 'internal/numfmt/a.go:\n\tbranch/if: 99\n\nTotal: 99 mutation(s) would be generated.\n'
+check "pack: a cell over the 285 min job limit stops the plan" \
+  '[[ $status -ne 0 ]] && grep -q "more than the job limit of 285 min" "$case_dir/out"'
 
 # F4: the fingerprint, in a small copy of the repository.
 case_dir="$work/fingerprint"
