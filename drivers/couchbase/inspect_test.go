@@ -143,6 +143,21 @@ func TestInspectIndexesNoBucket(t *testing.T) {
 	require.NotEmpty(t, res.(map[string]any)["indexes"])
 }
 
+// TestInspectIndexesFilterDropsOtherBuckets pins the bucket filter with a store that
+// names a bucket the cluster does not have. The test cluster holds one bucket, so a
+// filter that removes nothing cannot show on the real name. The cluster does hold an
+// index, and none of it belongs to the missing bucket, so the list must be empty.
+func TestInspectIndexesFilterDropsOtherBuckets(t *testing.T) {
+	st := seedCollection(t, books()) // creates a primary index that lives for the test
+	ctx := skipShort(t)
+
+	other := *st
+	other.bucket = "iq_no_such_bucket"
+	res, err := other.InspectIndexes(ctx)
+	require.NoError(t, err)
+	require.Empty(t, res.(map[string]any)["indexes"], "an index of another bucket must not appear")
+}
+
 // TestInspectCollectionsNoBucket confirms the bucket-scoped probe reports a missing
 // bucket rather than panicking.
 func TestInspectCollectionsNoBucket(t *testing.T) {

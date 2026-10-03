@@ -102,6 +102,41 @@ func TestScanBatches(t *testing.T) {
 	require.Equal(t, fixture["2"], got["2"])
 }
 
+// TestScanBatchesCallbackError pins that an error from the page callback stops the scan
+// and reaches the caller unchanged.
+func TestScanBatchesCallbackError(t *testing.T) {
+	st := seedCollection(t, books())
+	ctx := skipShort(t)
+	errStop := errors.New("stop the scan")
+
+	calls := 0
+	err := st.ScanBatches(ctx, func(map[string]any) error {
+		calls++
+		return errStop
+	})
+	require.ErrorIs(t, err, errStop)
+	require.Equal(t, 1, calls, "the scan must stop at the first callback error")
+}
+
+// TestQueryRequestErrors pins the two ways a raw query fails before it streams a row: the
+// service refuses the statement, and the context ends before the call.
+func TestQueryRequestErrors(t *testing.T) {
+	st := seedCollection(t, books())
+	ctx := skipShort(t)
+
+	t.Run("a statement with a syntax error", func(t *testing.T) {
+		_, err := st.Query(ctx, []string{"SELEKT 1"})
+		require.Error(t, err)
+	})
+
+	t.Run("a cancelled context", func(t *testing.T) {
+		cctx, cancel := context.WithCancel(ctx)
+		cancel()
+		_, err := st.Query(cctx, []string{"SELECT 1"})
+		require.ErrorIs(t, err, gocb.ErrRequestCanceled, "Query must pass its context on to the SDK")
+	})
+}
+
 // TestScanBatchesContextCancelled pins that the context ScanBatches is handed flows all
 // the way into the gocb query execution: a context cancelled before the scan starts must
 // surface the cancellation instead of being ignored. It uses an explicit Cancel (never a

@@ -63,6 +63,31 @@ func TestPutInsertOnly(t *testing.T) {
 	require.Equal(t, query.WriteStat{Written: 1, Skipped: 1}, stat)
 }
 
+// TestPutEncodeError pins that a document the SDK cannot encode fails the batch in both
+// write modes. The SDK reports the failure on the single operation, and the batch call
+// itself succeeds, so a Put that reads only the batch result counts the document as
+// written.
+func TestPutEncodeError(t *testing.T) {
+	st := seedCollectionKV(t, nil)
+	ctx := skipShort(t)
+
+	tests := []struct {
+		name string
+		mode query.WriteMode
+		want string
+	}{
+		{name: "upsert", mode: query.Upsert, want: "couchbase upsert"},
+		{name: "insert only", mode: query.InsertOnly, want: "couchbase insert"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bad := map[string]any{"c": make(chan int)} // JSON cannot encode a channel
+			_, err := st.Put(ctx, []query.Record{{Key: "bad", Value: bad}}, tt.mode)
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
 func TestPutKeylessMintsID(t *testing.T) {
 	st := seedCollection(t, nil)
 	ctx := skipShort(t)

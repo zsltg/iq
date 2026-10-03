@@ -123,6 +123,9 @@ func TestParseURLErrors(t *testing.T) {
 		address string
 		want    string
 	}{
+		// An invalid percent escape makes url.Parse fail. Without the guard the next line
+		// reads a nil URL and panics, so the test also proves the failure is an error.
+		{name: "malformed url", rawURL: "couchbase://localhost/%zz?bucket=iq", want: "parse couchbase url"},
 		{name: "wrong scheme", rawURL: "mongodb://localhost/?bucket=iq"},
 		{name: "no host", rawURL: "couchbase:///?bucket=iq"},
 		// Each segment is a valid name, so only the segment-count check can reject this
@@ -139,6 +142,34 @@ func TestParseURLErrors(t *testing.T) {
 			if tt.want != "" {
 				require.ErrorContains(t, err, tt.want)
 			}
+		})
+	}
+}
+
+// TestNameLimitsAreLiteral pins the documented Couchbase limits with literal numbers. The
+// other limit tests build their input from the constants, so a changed constant moves the
+// input with it and the test still passes.
+func TestNameLimitsAreLiteral(t *testing.T) {
+	ident := func(s string) error { return validateIdent("bucket", s) }
+	tests := []struct {
+		name    string
+		check   func(string) error
+		length  int
+		wantErr bool
+	}{
+		{name: "identifier of 251 bytes", check: ident, length: 251},
+		{name: "identifier of 252 bytes", check: ident, length: 252, wantErr: true},
+		{name: "key of 250 bytes", check: validateKey, length: 250},
+		{name: "key of 251 bytes", check: validateKey, length: 251, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.check(strings.Repeat("a", tt.length))
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }
