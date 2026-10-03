@@ -117,7 +117,9 @@ jobs:
           RUN: ${{ inputs.run }}
         run: |
           set -uo pipefail
-          if ! go test -count=1 -vet=off -run '^$' "$PKG"; then
+          # Build the package and its test binary without running it. Running it,
+          # even with -run '^$', starts TestMain, which connects to the backend.
+          if ! go test -vet=off -c -o "$RUNNER_TEMP/pkg.test" "$PKG"; then
             echo "Mutant DID NOT COMPILE: the package $PKG or its tests failed to build with the mutant at $MUTANT_FILE line $MUTANT_LINE. This is not a kill." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
