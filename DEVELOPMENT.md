@@ -208,7 +208,6 @@ The package holds composition and presentation code, and its critical paths are
 moving under `internal/`. Every other target and every diff-scoped run stays
 zero-survivor. A genuine equivalent is accepted into
 `mutago-baseline.json` with a justification in `mutago-baseline.notes.md`.
-Run with the integration services up.
 
 The wrapper installs `github.com/quality-gates/mutago/v2/cmd/mutago@v2.10.16`
 into a temporary `GOBIN` and runs that binary directly.
@@ -233,10 +232,17 @@ A package argument removes diff scope and scans that entire package.
 
 The worker count and timeout coefficient must be positive integers.
 The default is `--workers 1 --timeout-coefficient 5`.
+For serial scans, set `IQ_<DRIVER>_URL` to reuse a running service and avoid a fresh container for each mutant.
+See `.env.example` for backend configuration.
+
+For parallel scans, leave every `IQ_<DRIVER>_URL` unset so supported suites start isolated containers.
 Raise workers to 2 or 3 only within an existing memory bound, such as
-`systemd-run MemoryHigh=10G`, and with every `IQ_<DRIVER>_URL` unset.
+`systemd-run MemoryHigh=10G`.
 Parallel tests against a shared backend corrupt each other's fixtures and produce
 false kills. The wrapper rejects that combination.
+
+For HBase integration coverage, use one worker and set `IQ_HBASE_URL` to a running cluster.
+Without that variable, HBase integration tests skip. They do not start isolated containers.
 
 Baseline IDs do not depend on line numbers. An update must preserve accepted
 entries outside the diff. The wrapper saves the committed baseline and merges
@@ -316,8 +322,7 @@ duration` and is the expensive step, not the fixing. Work it in this order.
    slowing the suite enough to push other mutants into timeout, which a
    single-mutant run cannot see.
 
-Point a container-backed package at a running service (`IQ_<DRIVER>_URL`, see
-`.env.example`) before any of this, or every mutant pays for a fresh container.
+Apply the worker and backend rules above to these steps.
 
 ### Prove one mutant on CI
 
