@@ -852,7 +852,10 @@ jobs:
       # from deep-badge, which merges all shards of the package. The runner installs
       # mutago once, with a bounded retry, and removes the value of each IQ_*_URL
       # from the logs before it prints or keeps them.
+      # The step limit is below the job limit of 300 min. A step that times out
+      # fails, and the upload that follows still has time to keep the finished cells.
       - name: Mutation testing (shard)
+        timeout-minutes: 285
         env:
           GOFLAGS: -p=1
           PKG: ${{ matrix.package }}
