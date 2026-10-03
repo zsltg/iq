@@ -703,7 +703,7 @@ jobs:
   # unchanged code and the secret history. The mutation scan is incremental and
   # sharded (scripts/mutation-plan.sh has the details). deep-plan reads the stored
   # state from the `badges` branch, finds the packages whose fingerprint changed,
-  # and cuts each into shards of (file, mutator) cells of about 150 min at most.
+  # and cuts each into shards of (file, mutator) cells of about 120 min at most.
   # deep-mutate runs ONE shard per runner, with its own containers on its own
   # machine, so the rule of one container at a time still holds per runner.
   # deep-badge merges the shards of each package, gives the verdict, and on main
@@ -814,7 +814,7 @@ jobs:
     if: needs.deep-plan.outputs.matrix != '[]'
     name: mutate ${{ matrix.package }} ${{ matrix.shard }}/${{ matrix.shards }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 300
     strategy:
       fail-fast: false # every shard reports; one red shard does not hide the others
       max-parallel: 8
@@ -862,10 +862,12 @@ jobs:
       # each cell carries each escaped mutant WITH its stable id, which is what
       # IQ_MUTATION_MUTANT takes, so hardening a package starts by downloading
       # these artifacts. They upload also when the shard fails, because a failed
-      # shard is the one to harden. overwrite lets "Re-run failed jobs" replace
-      # the artifact of the failed attempt.
+      # shard is the one to harden. They also upload when the job times out or is
+      # cancelled, so the finished cells of that shard are kept. Such a shard has
+      # no shard.json (the runner writes it last), so the verdict fails its package.
+      # overwrite lets "Re-run failed jobs" replace the artifact of the failed attempt.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: success() || failure()
+        if: always()
         with:
           name: mutation-${{ matrix.slug }}-${{ matrix.shard }}
           path: shard-out
