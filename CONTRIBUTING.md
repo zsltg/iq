@@ -54,14 +54,18 @@ locally costs review time.
 make check                      # format, vet, build, lint, dead code, short tests
 make cover                      # full suite and the coverage floor (needs Docker)
 make security                   # vulnerabilities, licenses, secrets, workflow audit, SBOM
-make e2e                        # black-box tests
+make e2e                        # focused black-box run (full make cover includes e2e)
 bash scripts/mutation-gate.sh   # mutation gate on the lines you changed
 make capabilities               # only when go.mod or go.sum changed
 ```
 
-The mutation gate mutates only the lines that your branch changed. If a mutant
-survives, a test does not check that line: make the test stronger. What each
-gate does, and its settings, is in [DEVELOPMENT.md](DEVELOPMENT.md#quality-gates).
+Full `make cover` includes the end-to-end suite. On an unchanged tree, that pass
+satisfies the local end-to-end requirement without a second `make e2e` run.
+
+The mutation gate mutates only the lines that your branch changed.
+Investigate each survivor. Strengthen tests for real behavior gaps.
+Accept only a genuine equivalent with a baseline entry and a written reason.
+Gate procedures and settings are in [DEVELOPMENT.md](DEVELOPMENT.md#quality-gates).
 
 Until the mutago v2.10.16 re-baseline is done, some accepted escapes in
 `mutago-baseline.json` carry IDs from the older version. The diff-scoped gate can
@@ -105,11 +109,17 @@ entry. This note goes away with the re-baseline.
   commit with this line:
   `I, <name> <author email>, hereby add my Signed-off-by to this commit: <sha>`.
   The failed `dco` job prints both commands.
+  Agents use the signed-off empty corrective commit by default.
+  Agents need explicit authorization for the author-only rebase and force-push
+  exception. It does not apply to review fixes or newer `main`.
 - [Conventional Commits](https://www.conventionalcommits.org/):
   `<type>(<scope>): <description>`, lowercase imperative.
 - If AI contributed to a commit, end its message with a `Co-Authored-By:`
   trailer naming the model and version, for example
   `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
+
+The maintainer process is in [the workflow policy](.agents/workflow.md).
+That process does not grant permission to commit, publish, merge, or release.
 
 ## AI-assisted contributions
 

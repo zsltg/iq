@@ -1,99 +1,135 @@
-# AGENTS.md
-Telegraph style, every line binds. Root rules and policies only. Per-book depth in the distilled guideline files listed under Guidelines.
-## Project
-A Go command-line tool that connects to NoSQL databases and runs queries. Single static binary. The CLI is a thin delivery mechanism over a driver-agnostic query core.
-## Tech Stack
-Key picks only, every pick permissive-licensed, dependency-light, no telemetry or PII.
-- Language: Go, built to a single static binary (CGO off).
-- CLI: cobra + pflag. jq: gojq (pure Go, exposes the AST the selector walks). Config: TOML store in `internal/config`. Secrets: OS keyring port in `internal/secret`.
-- Backends: one permissive SDK per driver under `drivers/` (ten backends, OpenSearch shares the Elasticsearch adapter). Parquet export: Apache Arrow, contained in `internal/parquetout`.
-## Commands
-Standard Go toolchain. `DEVELOPMENT.md` is the developer-facing command catalogue, `CONTRIBUTING.md` the short on-ramp for contributors. The docs site under `docs/docs/` is the user-facing documentation.
-- Build: `go build ./...`.
-- Test, scoped to your diff by default: `go test ./<pkg>/...`, full run `go test ./...`, skip container-backed integration tests with `go test -short ./...`, 100% pass.
-- Vet and lint: `go vet ./...`, `golangci-lint run`. Fix every reported issue before committing, do not wait to be asked. golangci-lint's cache outlives the worktree that filled it, so a removed sibling worktree can show its findings again as issues in `../<worktree>/...` paths that this tree does not contain, `make check` detects that shape (a reported path outside the repo), clears the cache and retries once rather than clearing unconditionally, which trades a ~3s warm lint for a ~65s cold one on every run. Atop the v2 defaults (`staticcheck`, `unused`, among others) the config enables `godot` (comments end with a period), `gosec` (the Go SAST, excluded from `_test.go` fixtures), `errorlint`, `testifylint`, `bodyclose`, `noctx`, `misspell`, and `modernize` (the gopls modernizer as a linter: `slices`/`maps` helpers, `range n`, `strings.SplitSeq`, `errors.AsType`, fixable with `golangci-lint run --fix`).
-- Format, canonical and deterministic, run before lint and commit: `gofumpt -w .` (stricter gofmt superset) then `goimports -w .` for import grouping.
-- Vulnerabilities and supply chain: `govulncheck ./...` before adding or upgrading a dependency. The full scan `make security` (`scripts/security.sh`) adds `osv-scanner` (vulnerabilities, and every Go module against the license allowlist in `scripts/license-allowlist.txt`, the same file the CI `osv` job reads), `gitleaks` secret-scanning over the tree and history, `zizmor` over `.github/` (pinned by `ZIZMOR_VERSION`, run through `uvx`, offline audits alone unless `GH_TOKEN` is set, an accepted finding is an inline `# zizmor: ignore[...]` with a reason), and an `syft` SBOM written to `dist/`. Needs the network.
-- Mutation gate: `scripts/mutation-gate.sh` (also `make mutation`). The wrapper provisions the pinned mutago itself (`go install github.com/quality-gates/mutago/v2/cmd/mutago@v2.10.16` into a throwaway GOBIN, run directly, no PATH dependency, no go.mod change, `make tools-dev` still installs it for ad-hoc use). Stable policy sits in the committed `.mutago.yml` (`--config`), invocation-varying and essential flags stay on the command line. mutago exit-code-enforces via `--fail-on-escaped`, the wrapper shapes scope and forwards the verdict, running serially (`--workers 1`, override with `IQ_MUTATION_WORKERS`, a positive integer, raise to 2-3 only when the run is already memory-bounded, for example inside a `systemd-run MemoryHigh=10G` unit, and only with every `IQ_<DRIVER>_URL` unset, because parallel suites on one shared backend fail on each other's data and score false kills, the wrapper refuses that pairing) with a bounded `--timeout-coefficient` (5, raise it for a legitimately slow package via `IQ_MUTATION_TIMEOUT_COEFFICIENT`, a positive integer). An escaped covered mutant fails it (a covered test that asserts nothing, strengthen the test), `--coverage` keeps uncovered lines out of the escaped set (zero-survivor on covered code), one exception, a full scan of `./cmd` passes on the covered-code MSI floor committed in the wrapper (`--min-covered-msi`), every other target and every diff-scoped run stays zero-survivor, an errored or timed-out mutant fails it too, mutago scores an error as a kill and does not gate it, so the wrapper reads `report.json` and fails on `stats.errorCount > 0`, naming each one (an errored mutant is unverified, not killed). By default scopes to the branch diff against `origin/main` via the merge-base commit (`--git-diff-lines --git-diff-base`), so it works from a linked worktree and tolerates a drifted local base, and enumerates only the packages holding a changed non-test `.go` file instead of `./...` (changed lines ⊆ changed files ⊆ changed packages, so the mutant set is identical and only the memory-dominant enumeration shrinks. A package whose diff is all `_test.go` adds no mutants and kills nothing outside itself, so it is dropped, this keeps `./e2e`, whose `TestMain` rebuilds the binary, from charging every mutant for it. A test-only diff still enumerates only those packages, a diff with no `.go` file at all passes immediately with nothing to mutate, and any other empty derivation falls back to `./...`). A change is gated only on lines it touched, override the base with `IQ_MUTATION_BASE` (empty for a full scan) or pass a package path for a full scan of that package (a path drops the diff-scoping flags). A genuine equivalent mutant is accepted into the committed `mutago-baseline.json` via `IQ_MUTATION_UPDATE_BASELINE=1` (line-independent IDs, only new escapes then fail, this records accepted equivalents, it does not weaken the gate) with a one-line justification added to the committed `mutago-baseline.notes.md`. mutago replaces the baseline with the run's survivors, which under diff scoping drops every accepted entry outside the diff, so the wrapper snapshots the committed file and merges it back, an update is always an append, and the ids it prints are exactly what the run accepted. Strengthen tests first, then one update run doubles as the verification, and commit only when that printed list matches the equivalents you justified in the notes, an unexpected id is re-verified with `IQ_MUTATION_MUTANT=<id>` (order-dependent escapes are flaky-killable) before it is accepted, never committed unexamined. Every run writes the gitignored `mutago-agentic.json` (LLM-consumable escaped-mutant data), a gate run that fails on an escape prints the id of each new escape and writes the gitignored `mutago-baseline.candidate.json` (the committed baseline plus those escapes, copy it in only for justified equivalents), and the CI `mutate-diff` job uploads both with `report.json` as its artifact, so CI escapes need no local re-run, and `IQ_MUTATION_MUTANT=<id>` re-runs one mutant by that id as a fast diagnostic (re-verify a survivor or probe an order-dependent escape). `IQ_MUTATION_DRYRUN=1` is a mutant-count preview: package-arg form is an instant count with no tests, diff-scoped or `./...` form first runs the `--coverage` instrumented pass (whole-target, memory-heavy), scope dry runs to one package, never beside a live gate. Run with the integration services up so backend adapters are covered. The weekly CI scan is incremental and sharded, `scripts/mutation-plan.sh` re-scans only packages whose fingerprint changed (all packages the first week of a month), cuts them into (file, mutator) cells run ungated via `IQ_MUTATION_MUTATORS` by `scripts/mutation-shard.sh`, and `scripts/mutation-verdict.sh` merges each package's cells by checksum (`scripts/mutation-merge.sh`, escape new only if none of its ids is in the baseline, score killed / (killed + escaped)) and keeps per-package state on the `badges` branch, see `DEVELOPMENT.md`.
-- Fuzz: `make fuzz` (`scripts/fuzz.sh`) runs the Go native fuzz targets over the parsers that read untrusted bytes, one target per `go test -fuzz` invocation (all the flag takes), no containers and no network. The eight targets sit beside their package tests in `fuzz_test.go` (`internal/jqfmt` printer idempotence, `internal/rawpred` drop invariant against the reference evaluator, `drivers/file` dump readers plus the CBOR cache codec, `internal/query` typed-dump fixpoint, `internal/numfmt` integer exactness, `internal/shape` key and order independence, `internal/diff` tree-versus-patch agreement), each bounding its own work (an oversized input is skipped, a drain is capped) so the budget is honest. `IQ_FUZZ_TIME` sets the budget per target (default `20s`, the weekly `deep-fuzz` job uses `5m`). Seed inputs and every committed crasher run as ordinary subtests under `go test -short`, so `make check` and `make cover` pick them up unchanged. A crasher is a real bug: Go writes the input to `<pkg>/testdata/fuzz/<Name>/`, fix the code at the responsible layer and commit that file with the fix as the regression seed, never delete it to go green.
-- Capability gate: `scripts/capabilities.sh` (also `make capabilities`) runs `google/capslock` over `./...` and asks what the dependency tree can *do*, the question `make security` does not ask. The wrapper provisions the pinned capslock itself (`go install github.com/google/capslock/cmd/capslock@v0.3.3` into a throwaway GOBIN, run directly, no PATH dependency, no go.mod change, exact exit codes preserved where `go run` collapses them, `make tools-dev` still installs it for ad-hoc use). capslock exit-code-enforces via `-granularity=package -output=compare capslock-baseline.json` (0 clean, 1 drift, 2 run error, kept distinct, a build failure is not a capability regression), scope is plain `./...` because capslock loads no test files, so `./e2e` and testcontainers are never in the graph. The analysis costs ~7.3 GB peak RSS and ~39 s, so it is conditional, it runs only when `go.mod` or `go.sum` differ from the merge-base with `IQ_CAPS_BASE` (default `origin/main`, so it works from a linked worktree and tolerates a drifted local base) and otherwise prints the reason and exits 0, with `IQ_CAPS_FORCE=1` to run regardless. That trigger matches the tool's detection strength, because a dependency bump is what produces a new `(package, capability)` pair while a first-party exec or network addition is already caught by `gosec` in `make check`. Two limits are accepted deliberately, package granularity compares capability *sets* only, so a package that already holds a capability gains new call paths into it invisibly (the tree is saturated: `drivers/redis` alone carries `ARBITRARY_EXECUTION`, and function granularity costs ~37× the rows and changes on every rename), and the comparison is bidirectional, so a benign bump that *drops* a capability fails it too. Either way read the printed call paths, then record the new set with `IQ_CAPS_UPDATE_BASELINE=1` (regenerates the committed `capslock-baseline.json` via `-omit_paths -output=json` trimmed to the `capabilityInfo` array with `jq`, the only part `compare` reads, and prints every row gained or lost) and justify each new `EXEC` / `ARBITRARY_EXECUTION` / `MODIFY_SYSTEM_STATE` / `SYSTEM_CALLS` row in the committed `capslock-baseline.notes.md`, which also records the known false positives (`internal/render` → `NETWORK` is `io.Writer` interface dispatch) so they are not argued again, bulk rows stay unannotated. The baseline is linux-only, `IQ_CAPS_GOOS=linux|darwin|windows` re-runs another shipped target as a review aid that is *expected* to differ (evidence, not a verdict. A value outside the whitelist is a fatal error, and a non-linux run must not regenerate the baseline). A Go toolchain bump changes the baseline tree-wide and can require bumping the pinned capslock version alongside the regeneration.
-- Aggregate gate: `make check` (`scripts/check.sh`) is the fast offline gate, format, `go vet`, `go build ./...`, lint, dead code, the mutation verdict fixture tests (`scripts/test/mutation-verdict.sh`), and `go test -short` with a coverage report. `make ci` runs check, cover, security, capabilities, and the mutation gate together (capabilities sits between security and mutation so its analysis never overlaps the mutation gate's memory, and usually skips. The mutation step reruns the suite per mutant, so it is the slowest. Start a shared stack first).
-- Coverage: `make cover` (`scripts/coverage.sh`) runs the full suite with `-coverpkg=./...` (so cross-package coverage counts and a testless package still enters the denominator) and fails below the floor (`IQ_COVER_MIN`, default 80). `IQ_COVER_SHORT=1` for a report-only run. Needs the integration services up, because `-short` understates the drivers.
-- End-to-end: `make e2e` builds the binary and drives it black-box through `os/exec` (package `e2e`, skips under `-short`).
-- Dead code: `deadcode -test ./...` (whole-program), wired into `make check`.
-- Docs site: `make docs` (build, `docs/site/`), `make docs-serve` (0.0.0.0:8000). Zensical under `docs/`, uv-managed. Site pages under `docs/docs/` are hand-maintained and nothing regenerates them from the README, which stays the user-facing overview and the Architecture source of truth.
-- Toolchain: `make tools-dev` installs the quality and security tools (mutago, capslock, deadcode, govulncheck, osv-scanner, gitleaks, syft) into GOPATH/bin. gofumpt, goimports and golangci-lint are expected on PATH.
-- Benchmarks: `make bench` (decode, filter, number conversion, dump I/O, no containers). SBOMs alone: `make sbom`.
-- Generated artifacts: `make man` and `make completions` regenerate the committed man page and shell completions. Drift-guarded by tests, so any command or help change regenerates them in the same commit.
-- Recorded demo: `docs/docs/assets/demo.svg` is an animated SVG recording of iq's own output (vector text with an embedded Source Code Pro subset, so it scales to the README and docs columns without blur and the cursor stays on the grid in every browser. `make demo-font` regenerates the subset from the pinned OFL release when the glyph list in `scripts/demo/font.sh` changes), committed with `docs/demo.stamp`, the hash of the sources it was recorded from. `make demo` re-records it when they diverge (needs expect, asciinema 3+, the Go toolchain for the pinned termsvg it provisions itself, and the `mongo` compose service), `make demo-check` gates it in `make check` and CI (needs git and sha256sum only). A diverged stamp means the SVG shows output iq no longer prints, so re-record it, never hand-edit the stamp, and commit the SVG and the stamp together. The recording asserts every screen it narrates and aborts rather than depict output that is not there, so a reshaped seed dataset (`scripts/seed-mongo.sh`) is a stale demo to fix, not a failure to route around. `cmd/demo_test.go` resolves every command line the recording types against the cobra tree, so a renamed flag fails the unit suite first.
-- Release: `make release` (`scripts/release.sh`, needs `svu` and `git-chglog`: `make tools`). Computes the next semver from Conventional Commits, regenerates `CHANGELOG.md`, and commits it on a clean `chore/release` branch for a pull request. After the squash merge, `make release-tag` on clean `main` tags the release commit. Never pushes, push only that tag. Preview with `bash scripts/release.sh --dry-run`. Version metadata is embedded by `make build` via ldflags.
-## Coding Conventions
-Plain, linear, readable code.
-- Compose OSS, reinvent last: standard library, then a maintained permissive library, then hand-roll only for a genuine determinism, size or license gap.
-- Keep the query core driver-agnostic: domain and query logic never import a specific NoSQL driver or the CLI framework. Backend adapters and the CLI are outer details behind ports wired at a composition root.
-- Cross boundaries with plain types: pass request and response structs across the core boundary, never a driver row, framework context or raw flag struct. Backend adapters translate at the edge.
-- Fail fast on hostile input: validate at function entry and return immediately. Treat args, config, connection URIs, query fragments and database responses as untrusted.
-- Never build a query from unsanitized input: parameterize every query and filter. No string concatenation or templating of user input into a query.
-- Errors are values: wrap every error with context at the boundary it crosses so the message anchors at our caller not deep in an external library, via `fmt.Errorf("...: %w", err)`. Handle at a boundary, never ignore a returned error, never leak internals to the user.
-- Wrap stdlib and third-party errors at the point they enter our code. Package-level sentinels stay `errors.New` for `errors.Is`/`errors.As` and get wrapped with context where they are returned. When call-site stack traces become worth it, adopt a tracing error library (for example github.com/cockroachdb/errors) rather than scattering stackless errors.
-- Bound every outbound call: pass a context with an explicit timeout or deadline, never an infinite wait. Bound retries with backoff and jitter. Retry only idempotent operations, never validation or permanent failures.
-- Stream large results: paginate or stream result sets rather than loading whole into memory. Do not hold a connection across a slow call. Release every resource on success and failure paths.
-- No dead code: delete unused files, exports and dependencies. `go vet`, `staticcheck` and `deadcode` catch what review misses, `deadcode` runs in `make check`.
-- Make impossible states unrepresentable: closed types over sentinel strings or parallel nullable fields. One source of truth per fact.
-- Tests table-driven and flat: one behaviour per case, a `t.Run` subtest per row, arrange-act-assert, no factories or shared mutable fixtures. Keep functions pure and isolatable.
-- Prefer testify assertions with `require` (fails fast, the default) over `assert` (continues). Use `assert` only to report several independent failures in one run.
-- Container-backed integration tests call `testing.Short()` and skip under `go test -short`. `go test -short ./...` is the fast dependency-free path, full `go test ./...` needs the containers up.
-- Simplest mechanism that fits: no plugin frameworks, code generation or heavy patterns unless asked.
-- Resolve uncertainty deliberately: costly to reverse and unclear, ask. Cheap, proceed on the most reasonable reading and record the assumption. Unsure it works, run a small experiment and report.
-- Push back when it matters: raise real risks and deviations, skip style nits.
-- Definition of Done: scoped tests, `make check` passing (format, vet, build, lint, dead code), coverage floor met (`make cover`), security scan passing (`make security`), capability gate green (`make capabilities`, which self-skips unless `go.mod`/`go.sum` moved), `make e2e` passing, mutation gate green (zero surviving mutants on covered code, except a full scan of `./cmd`, which holds the wrapper's covered-code MSI floor), edge cases, updated docs, accurate closeout of what was skipped, assumed or left.
-## Adding a driver
-The port is trivially thin (`Store.Query`). The cost is around the adapter, and the gates below enforce it. Gate every candidate datastore, especially an enterprise or cloud-managed one, on all four before writing adapter code. A No on any one is a stop, not a workaround. A datastore that passes gets its adapter and plan doc designed against [driver-contract](.agents/driver-contract.md). Its registry (option spellings, host ports, exec families) binds.
-- Hermetic test image: a freely-runnable local image or emulator that `testcontainers` can drive, no EULA-gated pull, no live cloud account, no CI credentials. Without it the coverage floor and the mutation gate cannot go green on the driver's covered code, so it fails the Definition of Done. DynamoDB Local passes. DataStax/Couchbase/Oracle Enterprise images and the flaky Cosmos emulator do not, target the open-source edition, which shares the driver.
-- Permissive, telemetry-free SDK: the Go driver is permissive-licensed and emits no telemetry or usage metrics by default. A proprietary or non-permissive driver is a stop, and every new SDK widens the `govulncheck`/`osv-scanner`/SBOM scan scope. The adapter introduces no capability beyond `NETWORK`/`FILES`/`REFLECT`/`UNSAFE_POINTER`/`RUNTIME` without a justified line in `capslock-baseline.notes.md`, `make capabilities` names the new `(package, capability)` rows and prints a call path for each, and `IQ_CAPS_GOOS=darwin|windows` re-runs it for the other shipped targets, whose secret-handling paths differ. Read that as evidence, not proof: capslock cannot decide telemetry-free, because a phone-home and a legitimate query are both `NETWORK`, it shows you that the SDK *can* execute a command, touch the filesystem or make a syscall, and the vendor claim still has to be read.
-- Auth fits the connection contract: authentication reduces to config the composition root injects, with no native dependency (Kerberos/GSSAPI) and no live-account requirement. Token refresh and rotation obey the secret rules, never log a credential, release every resource, bound every outbound call.
-- Query semantics fit the model: the datastore's query shape maps onto the selector's classification and the pushdown-to-predicate mapping. A backend with hard constraints (partition-key-required, per-request cost units, row-key-range-only) that forces a redesign or defeats pushdown is a design decision to raise first, and updates the README Architecture Mermaid in the same change.
-## Docs stay current
-- `DEVELOPMENT.md` in the root is the catalogue of developer-facing commands, and `CONTRIBUTING.md` is the short on-ramp that links to it (keep it short: what a contributor needs to get a change merged). The docs site under `docs/docs/` is the user-facing documentation, spread across topic pages. README carries no command catalogue (its starter blocks of illustrative one-liners stay, a per-flag reference never returns), so never add one back to it. Update `DEVELOPMENT.md` in the same change that adds or alters a developer-facing command, dependency or environment variable, and the docs page that covers a user-facing one. Environment variables also update `.env.example`, except gate-control variables (`IQ_MUTATION_*`, `IQ_COVER_*`, `IQ_CAPS_*`, `IQ_FUZZ_*`), which are documented in `DEVELOPMENT.md` only.
-- A change to the system's shape (a new datastore target, a new delivery mechanism, a changed connection contract) updates the README Architecture section in the same change.
-- A change to the selector's classification, the pushdown-to-predicate mapping, or a core port updates the README Architecture Mermaid diagram in the same change. The diagrams are port-level, so a backend-adapter change updates the Architecture prose and the driver table instead, never the diagram. Keep the committed diagram in sync, never redraw it from scratch.
-- Deliberately duplicated sections stay in sync, both copies in the same change: README head (the intro paragraphs, the NOTE) ↔ `docs/docs/index.md`, README Architecture prose and diagrams ↔ `docs/docs/how-it-works.md`, README Guarantees ↔ `docs/docs/drivers.md`, README See also ↔ `docs/docs/see-also.md`.
-## Boundaries
-Never:
-- Hand-edit generated artifacts (`go generate` output, vendored code).
-- Strip, hide or bypass existing behaviour to shrink a diff or pass a test. Change behaviour deliberately and say so.
-- Weaken the mutation gate to pass. A surviving mutant means a test asserts nothing, so strengthen the test instead.
-- Build a query from unsanitized input, or log a credential, token or connection URI, or print one without an explicit `--reveal`.
-- Render a raw driver error, stack trace or database internal to the user. Clear, safe messages only.
-- Hardcode or commit secrets. Credentials come from the environment, the OS keyring, or the user's config file (written `0600`), never from the repository.
+# iq
 
-Only when asked:
-- Commit or push. Add or upgrade a dependency (trips supply-chain and licensing review). Run a destructive database operation the command did not request.
+These rules bind all work in this repository. Read the linked policies when their task conditions apply.
 
-Always:
-- Validate untrusted input at the boundary and keep the query core independent of any specific driver.
-## Source Control & Commits
-- Trunk-based: `main` always buildable. Short-lived branches, one atomic task each, prefixed `feat/`, `fix/`, `chore/`, `test/`, `ci/`, `docs/`. No unrelated changes bundled.
-- Never work on `main` unless explicitly asked. Start every task in its own git worktree branched from `origin/main`. Never switch branches in a shared checkout. Every change reaches `main` through a GitHub pull request, squash-merged, never paper over a conflict.
-- Pull requests: push the branch to `github`, open a draft pull request (`gh pr create --draft`) with `.github/pull_request_template.md`, and a Conventional Commits title (it becomes the commit on `main`). Address review and CI findings with new commits on the branch, never amend and force-push. Collect the fixes of one review round and push them once, not one push per fix. Take in a newer `main` with a merge, not a rebase.
-- Drafts: a draft runs the reviews and the fast CI jobs only, and `ci-ok` fails on a draft. When the review rounds settle, `gh pr ready <n>` starts the full CI once. A new push cancels the run of the previous push of the same pull request.
-- Review threads: before the merge, read every review comment and thread, inline and summary, from bots and humans. Answer each one with a fix commit, or a reply that gives the reason not to, then resolve the thread (CodeRabbit resolves its own after a confirmed fix). The ruleset blocks a merge with an unresolved thread.
-- Merge: when `ci-ok` passes and every review thread is resolved, `gh pr merge <n> --squash`. Then `git pull --ff-only github main` and `git push origin main`, so both remotes hold the same commit (the pre-push hook skips commits a remote already holds, such as the GitHub squash commit). GitHub deletes the branch.
-- The `main` ruleset, with no bypass: pull request required, squash only, review threads resolved, `ci-ok` required, linear history, no force push, no deletion. `ci-ok` needs every per-change CI job, so a renamed or added job goes into its `needs` list, not into the ruleset.
-- Conventional Commits: `<type>(<scope>): <description>`, lowercase imperative. Types feat, fix, docs, style, refactor, perf, test, build, ci, chore. Agent-authored commits end with a `Co-Authored-By:` trailer.
-- DCO: every commit carries `Signed-off-by:` for its author (`git commit -s`), the CI `dco` job (`scripts/dco.sh`) checks each pull request commit, merge commits excepted.
-- Pre-merge: `make check` passing, `make cover` above floor, `make security` passing, `scripts/capabilities.sh` green (self-skips unless the dependency graph moved), `make e2e` passing, `scripts/mutation-gate.sh` green, `ci-ok` green on the pull request. 100% pass.
-## Guidelines
-Distilled book files live in `.agents/books/`, referenced below by name. Adapted from ciembor/agent-rules-books (MIT), see `.agents/books/LICENSE`.
+## Scope and authorization
 
-Generic doctrine, always loaded:
-- [clean-code.mini](.agents/books/clean-code.mini.md): naming, functions, types, errors, test hygiene.
-- [a-philosophy-of-software-design.mini](.agents/books/a-philosophy-of-software-design.mini.md): module shape, deep modules, complexity budget.
-- [clean-architecture.mini](.agents/books/clean-architecture.mini.md): dependency direction, ports and adapters, driver-agnostic core.
-- [the-pragmatic-programmer.mini](.agents/books/the-pragmatic-programmer.mini.md): one source of truth, orthogonality, reversible choices, tracer bullets, automation.
+- Read-only investigation needs no worktree. Trace the relevant behavior, callers, tests, and documentation before you edit.
+- Before edits, create or reuse an isolated task worktree branched from `origin/main`.
+- Never switch branches in a shared checkout. Never edit `main` unless the user explicitly requests it.
+- Use one short-lived branch per atomic task, with a `feat/`, `fix/`, `chore/`, `test/`, `ci/`, or `docs/` prefix.
+- An implementation request authorizes local edits and the checks that the work needs.
+- A local draft authorizes local edits and needed checks. It ends with a reviewable local diff.
+- Commit, push, and publish a pull request only when the user requests those actions.
+- Merge and release only within explicit authorization for those actions.
+- Existing authorization persists across turns. Workflow instructions describe authorized actions and do not grant authorization.
+- Read [the maintainer workflow](.agents/workflow.md) before source-control writes, publication, review fixes, merges, or releases.
+- Ask before adding or upgrading a dependency or running a destructive database operation that the command did not request.
+- If a choice is unclear and costly to reverse, ask. Otherwise, record a reasonable assumption and proceed.
+- Use a small experiment to resolve uncertain behavior. Raise real risks and deviations.
 
-Specific doctrine, read on demand:
-- [designing-data-intensive-applications.mini](.agents/books/designing-data-intensive-applications.mini.md): writing the query, data-model or connection layer. NoSQL consistency, staleness, partitioning, schema evolution, idempotency.
-- [release-it.mini](.agents/books/release-it.mini.md): writing database or network calls. Timeouts, bounded retries, result-set limits, validating responses, failing fast.
-- [refactoring.mini](.agents/books/refactoring.mini.md): restructuring existing code without changing behaviour.
-- [driver-contract](.agents/driver-contract.md): designing or changing a backend adapter or its plan doc. URI and option registry, key and value shape, reads, pushdown, writes, admin ports, exec families, safety, test infra, host-port table.
+## Project and invariants
+
+`iq` is a Go command-line tool for NoSQL queries, built as one static binary with CGO disabled.
+The CLI is a thin delivery layer over a query core that has no dependency on a specific driver.
+The jq path uses `KVStore` and optional capability ports. `Store.Query` serves native queries through `iq exec`.
+Concrete adapters are wired at the composition root.
+
+Preserve these invariants:
+
+- Pushdown returns a conservative superset of the jq matches. Run the full jq filter again on the client.
+- Stream or paginate large results. Loading the full result into memory requires explicit opt-in.
+- Keep a missing key distinct from a stored null. A missing key is absent from the returned map.
+- A successful write stores the value exactly as supplied. Reject values that the backend cannot store exactly.
+- Use permissive licenses, few dependencies, and no telemetry or collection of personal data.
+- Use cobra and pflag for the CLI, gojq for jq, and TOML in `internal/config` for configuration.
+- Use the OS keyring port in `internal/secret`. Keep one permissive SDK per driver under `drivers/`. Keep Apache Arrow under `internal/parquetout`.
+- OpenSearch shares the Elasticsearch adapter.
+
+## Code and safety
+
+- Keep code plain, linear, and readable. Reuse fitting code and dependencies before choosing the standard library or a maintained permissive library.
+- Write custom code only for a real gap in determinism, size, or licensing.
+- Do not add frameworks, code generation, or heavy patterns unless asked.
+- Keep one source of truth per fact. Use closed types instead of sentinel strings or parallel nullable fields.
+- Delete unused files, exports, and dependencies.
+- Keep domain and query logic independent of drivers and the CLI framework.
+- Cross core boundaries with plain request and response structs, never driver rows, framework contexts, or raw flag structs.
+- Translate backend types at the adapter boundary.
+- Treat arguments, configuration, connection URIs, query fragments, and database responses as untrusted.
+- Make sure that input meets the contract at function entry. Reject invalid input immediately.
+- Use query parameters or structured builders for values. Allow dynamic identifiers only through explicit character or name whitelists.
+- Never interpolate unchecked input into query text.
+- Give every outbound call a context with an explicit timeout or deadline.
+- Bound retries with backoff and jitter. Retry only idempotent operations, never invalid input or permanent failures.
+- Do not hold a connection across a slow call. Release resources on success and failure.
+- Wrap standard-library and third-party errors with context where they enter our code, using `fmt.Errorf("...: %w", err)`.
+- Wrap errors at the boundaries that they cross. Never ignore a returned error.
+- Keep package sentinels as `errors.New` for `errors.Is` and `errors.As`, and wrap them where they are returned.
+- Handle errors at a boundary. Show clear, safe messages, never raw driver errors, stack traces, or database internals.
+- Never log credentials, tokens, or connection URIs. Print them only with an explicit `--reveal`.
+- Never hardcode or commit secrets. Read credentials from the environment, OS keyring, or a user configuration file written with mode `0600`.
+- Never hand-edit generated artifacts or vendored code.
+- Never strip, hide, or bypass behavior to shrink a diff or pass a test. State deliberate behavior changes.
+
+## Tests and gates
+
+- For repeated cases, prefer flat table-driven tests with one behavior and one `t.Run` per row.
+- Direct tests are allowed for isolated cases. Keep arrange, act, and assertions clear, without factories or shared mutable fixtures.
+- Keep functions pure and easy to isolate. Prefer testify `require`.
+- Use `assert` only to report several independent failures in one run.
+- Add or update tests for changed behavior. A bug fix needs a test that fails without the fix.
+- Before refactoring core boundaries, persisted data or keys, query classification, or connections, identify tests that record current behavior.
+- Add characterization tests for gaps before changing that behavior.
+- Container-backed tests must call `testing.Short()` and skip in short mode.
+- Run tests scoped to the diff first: `go test ./<pkg>/...`.
+- Use `go test -short ./...` for the dependency-free suite. The full suite needs the backend services.
+- Run `gofumpt -w .`, then `goimports -w .`, before lint and commit.
+- Run `make check` for format, vet, build, lint, dead code, and short tests. Fix every reported issue before committing.
+- Before running or diagnosing a gate, read its procedure, settings, and prerequisites in [DEVELOPMENT.md](DEVELOPMENT.md#quality-gates).
+
+Before publication and before merge, all required checks must pass:
+
+- Scoped tests and `make check`.
+- `make cover`, above the coverage floor, with the integration services available.
+- `make security` and `make capabilities`. The capability gate skips itself when the dependency graph is unchanged.
+- The end-to-end tests. Full `make cover` includes `e2e`, so an unchanged tree needs no second run solely for this list.
+- `scripts/mutation-gate.sh`, with no new surviving mutants on covered code.
+- `make ci` runs check, cover, security, capabilities, and mutation in order. Start the shared stack first.
+- The mutation floor exception applies only to a full scan of `./cmd`, as defined in the wrapper.
+- Errors and timeouts fail the mutation gate. Investigate survivors and strengthen tests for real behavior gaps.
+- Accept only genuine equivalent mutants, with a justification in `mutago-baseline.notes.md` and the committed baseline.
+- Never weaken the gate to pass. Follow the diagnostic and closing-scan rules in `DEVELOPMENT.md`.
+- Run `govulncheck ./...` before an authorized dependency addition or upgrade.
+- Report checks that were skipped or failed, assumptions, remaining work, and edge cases accurately.
+
+## Documentation and artifacts
+
+- Keep `DEVELOPMENT.md` as the developer command catalogue and `CONTRIBUTING.md` as the short contributor on-ramp.
+- Keep user documentation under `docs/docs/`. Do not add a command catalogue or per-flag reference to the README.
+- Update `DEVELOPMENT.md` for changed developer commands, dependencies, and environment variables.
+- Update the relevant docs page for user-facing changes.
+- Update `.env.example` for environment variables, except `IQ_MUTATION_*`, `IQ_COVER_*`, `IQ_CAPS_*`, and `IQ_FUZZ_*`.
+- Document those gate controls only in `DEVELOPMENT.md`.
+- For changes to commands or help, run `make man` and `make completions` in the same change.
+- If the recorded demo becomes stale, run `make demo` and include both the SVG and `docs/demo.stamp`.
+- Never hand-edit the stamp or bypass the recording assertions. Read [the demo procedure](DEVELOPMENT.md#recorded-demo).
+- For docs site changes, run `make docs`.
+- For a new datastore, delivery mechanism, or connection contract, update the README Architecture section.
+- For selector classification, pushdown-to-predicate mapping, or core port changes, update the existing Architecture Mermaid diagram.
+- For adapter-only changes, update Architecture prose and the driver table, not the diagram.
+
+Keep these pairs synchronized in the same change:
+
+- README intro paragraphs and NOTE with `docs/docs/index.md`.
+- README Architecture prose and diagrams with `docs/docs/how-it-works.md`.
+- README Guarantees with `docs/docs/drivers.md`.
+- README See also with `docs/docs/see-also.md`.
+
+## Task-specific reading
+
+- Read [the driver contract](.agents/driver-contract.md) before designing, changing, or reviewing a backend adapter or driver plan document.
+- A new datastore must pass all four admission gates there before adapter code starts. A failed gate stops the work.
+- The registry rules for options, host ports, and exec families bind adapters and plans.
+
+Read the applicable books before the related work:
+
+- For substantial code or test redesign, read [Clean Code](.agents/books/clean-code.mini.md).
+- For interfaces, module boundaries, or substantial decomposition, read [A Philosophy of Software Design](.agents/books/a-philosophy-of-software-design.mini.md).
+- For dependencies, ports, adapters, or composition, read [Clean Architecture](.agents/books/clean-architecture.mini.md).
+- For debugging, automation, shared state, or duplicated facts, read [The Pragmatic Programmer](.agents/books/the-pragmatic-programmer.mini.md).
+- For queries, data models, or connections, read [Designing Data-Intensive Applications](.agents/books/designing-data-intensive-applications.mini.md).
+- For database or network calls, read [Release It!](.agents/books/release-it.mini.md).
+- Before restructuring code without a behavior change, read [Refactoring](.agents/books/refactoring.mini.md).
+
+The books are adapted from ciembor/agent-rules-books under MIT. Keep the attribution in [.agents/books/LICENSE](.agents/books/LICENSE).

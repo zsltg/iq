@@ -90,7 +90,34 @@ the parse, pack and rate steps of `scripts/mutation-plan.sh` on prepared dry run
 (`--pack`, `--rate`, `--stale`), and `scripts/mutation-fingerprint.sh` in a small copy of the
 repository; no network, no container, no mutago run), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
 paths are a stale cache from a removed worktree; check clears the cache and
-retries once.
+retries once. Do not clear the cache unconditionally. A warm lint run takes about
+3 seconds, compared with about 65 seconds after a cache clear.
+
+Run `gofumpt -w .`, then `goimports -w .`, before lint or commit.
+The lint configuration extends the v2 defaults, including `staticcheck` and
+`unused`. It enables `godot`, `gosec`, `errorlint`, `testifylint`, `bodyclose`,
+`noctx`, `misspell`, and `modernize`. Comments must end with a period.
+The security analyzer `gosec` excludes `_test.go` fixtures.
+The modernizer proposes current Go forms, including `slices`, `maps`, `range n`,
+`strings.SplitSeq`, and `errors.AsType`. Use `golangci-lint run --fix` for its fixes.
+The dead-code command is `deadcode -test ./...`, which analyzes the whole program.
+Fix every reported issue before committing.
+
+### Security gate (`scripts/security.sh`)
+
+Run `govulncheck ./...` before an authorized dependency addition or upgrade.
+`make security` needs network access and runs these tools:
+
+- `govulncheck` finds vulnerabilities in reachable Go code.
+- `osv-scanner` scans vulnerabilities and every Go module against
+  `scripts/license-allowlist.txt`. The CI `osv` job reads the same allowlist.
+- `gitleaks` scans the working tree and Git history for secrets.
+- `zizmor` audits `.github/` through `uvx`, with the version pinned by
+  `ZIZMOR_VERSION`. Without `GH_TOKEN` or `GITHUB_TOKEN`, it runs only offline audits.
+- `syft` writes a software bill of materials (SBOM) to `dist/`.
+
+For an accepted zizmor finding, add an inline `# zizmor: ignore[...]` with a reason.
+Run `make sbom` when only the SBOM artifacts are needed.
 
 ### make cover
 
@@ -103,15 +130,55 @@ space-separated list of partial profiles) runs no tests: it joins the profiles
 into `coverage.out`, then gives the report and applies the floor. The join gives
 the same numbers as one full run, because every partial profile comes from
 `-coverpkg=./...`. Locally, `make cover` still runs the whole suite serially.
+Cross-package coverage counts, and packages without their own tests still enter
+the denominator. Short mode understates driver coverage and does not satisfy
+the full coverage gate.
+
+Full `make cover` includes the `e2e` package and its binary build.
+On an unchanged tree, that pass satisfies the local end-to-end requirement.
+Do not repeat `make e2e` solely to satisfy the same checklist.
+Use `make e2e` for a focused black-box run through `os/exec`, or after relevant changes.
+The `e2e` package skips under `-short`. Configure live backends as described in
+[Test backends](#test-backends) to cover the optional live flows.
 
 ### Capability gate (`scripts/capabilities.sh`)
 
-Asks what the dependency tree can *do* ([capslock](https://github.com/google/capslock)),
-compared against the committed `capslock-baseline.json`. Conditional: runs
-only when `go.mod`/`go.sum` differ from the merge-base with the base ref
-(~7.3 GB peak RSS when it runs). On drift, read the printed call paths,
-regenerate with `IQ_CAPS_UPDATE_BASELINE=1`, and justify each new high-risk
-row in `capslock-baseline.notes.md`.
+[Capslock](https://github.com/google/capslock) reports what the dependency tree can do.
+The gate compares that report against the committed `capslock-baseline.json`.
+It runs only when `go.mod` or `go.sum` differ from the merge-base with `IQ_CAPS_BASE`.
+On drift, read the call paths before recording a new baseline with `IQ_CAPS_UPDATE_BASELINE=1`.
+
+The wrapper installs `github.com/google/capslock/cmd/capslock@v0.3.3` into a
+temporary `GOBIN`. It runs the binary directly, with no `PATH` or `go.mod` change.
+It preserves exit codes: 0 means no drift, 1 means drift, and 2 means a run error.
+A build failure is not a capability regression.
+
+The command uses `-granularity=package -output=compare capslock-baseline.json`
+over `./...`. Capslock reads no test files, so `e2e` and testcontainers are outside
+the graph. The run takes about 39 seconds and peaks at about 7.3 GB of memory.
+`make ci` runs it before mutation so those memory peaks do not overlap.
+Without a dependency change, the wrapper prints the reason and exits 0.
+First-party execution and network additions remain subject to `gosec` in `make check`.
+
+Package-level comparison detects capability sets, not new paths to an existing
+capability. For example, `drivers/redis` already holds `ARBITRARY_EXECUTION`.
+Function-level comparison costs about 37 times as many rows and changes on renames.
+The comparison also fails when a dependency drops a capability.
+Read the printed call paths for both gains and losses.
+
+An update uses `-omit_paths -output=json` and `jq` to keep only the
+`capabilityInfo` array that comparison reads. It prints every row gained or lost.
+Justify each new `EXEC`, `ARBITRARY_EXECUTION`, `MODIFY_SYSTEM_STATE`, or
+`SYSTEM_CALLS` row in `capslock-baseline.notes.md`.
+Read the recorded false positives before reopening them. For example,
+`internal/render` reports `NETWORK` through `io.Writer` interface dispatch.
+Other rows need no individual note under this policy.
+
+The committed baseline is Linux-only. A non-Linux run must not regenerate it.
+`IQ_CAPS_GOOS` accepts only `linux`, `darwin`, or `windows` and rejects other values.
+A Darwin or Windows run provides review evidence and is expected to differ.
+A Go toolchain bump can change the baseline across the tree and require a new
+pinned capslock version when the baseline is regenerated.
 
 - `IQ_CAPS_BASE`: base ref (default `origin/main`)
 - `IQ_CAPS_FORCE=1`: run regardless
@@ -122,31 +189,73 @@ row in `capslock-baseline.notes.md`.
 
 [mutago](https://github.com/quality-gates/mutago) over the branch diff vs
 `origin/main`, targets narrowed to the changed packages. The contract is zero
-survivors on covered code: an escaped covered mutant means a test asserts
-nothing, strengthen the test; an errored or timed-out mutant also fails
-(unverified, not killed). One exception: a full scan of `./cmd` passes on a
-covered-code MSI floor, a literal in the wrapper, because `cmd` holds the
-composition root and the presentation code and its critical paths are moving
-under `internal/`; every other target and every diff-scoped run stays
+new survivors on covered code. Investigate each escaped covered mutant.
+Strengthen tests for a real behavior gap. A surviving mutant can also be a
+genuine equivalent, which needs the justification below.
+An errored or timed-out mutant also fails because it is unverified, not killed.
+One exception applies only to a full scan of `./cmd`.
+It uses the covered-code mutation score (MSI) floor committed in the wrapper.
+The package holds composition and presentation code, and its critical paths are
+moving under `internal/`. Every other target and every diff-scoped run stays
 zero-survivor. A genuine equivalent is accepted into
 `mutago-baseline.json` with a justification in `mutago-baseline.notes.md`.
 Run with the integration services up.
 
+The wrapper installs `github.com/quality-gates/mutago/v2/cmd/mutago@v2.10.16`
+into a temporary `GOBIN` and runs that binary directly.
+It needs neither a `PATH` entry nor a `go.mod` change.
+Stable policy lives in `.mutago.yml`, passed with `--config`.
+Required and invocation-specific flags stay on the command line.
+`--fail-on-escaped` enforces the verdict, and `--coverage` excludes uncovered lines
+from the survivor set. The wrapper returns that verdict.
+Mutago counts errors as kills, so the wrapper also reads `report.json`.
+It fails when `stats.errorCount > 0` and names each errored mutant.
+
+Diff scope uses the merge-base commit and `--git-diff-lines --git-diff-base`.
+It works from linked worktrees and tolerates a local base that moved.
+The wrapper narrows enumeration to packages with changed non-test `.go` files.
+This preserves the mutant set while reducing memory use during enumeration.
+It drops test-only packages when production packages changed.
+In particular, `e2e` does not charge its binary rebuild to every mutant.
+A test-only diff still enumerates the changed test packages.
+A diff without Go files exits successfully with nothing to mutate.
+Any other empty scope derivation falls back to `./...`.
+A package argument removes diff scope and scans that entire package.
+
+The worker count and timeout coefficient must be positive integers.
+The default is `--workers 1 --timeout-coefficient 5`.
+Raise workers to 2 or 3 only within an existing memory bound, such as
+`systemd-run MemoryHigh=10G`, and with every `IQ_<DRIVER>_URL` unset.
+Parallel tests against a shared backend corrupt each other's fixtures and produce
+false kills. The wrapper rejects that combination.
+
+Baseline IDs do not depend on line numbers. An update must preserve accepted
+entries outside the diff. The wrapper saves the committed baseline and merges
+those entries back because mutago replaces its baseline with the run's survivors.
+The update is append-only and prints exactly the IDs that it accepts.
+Accept an ID only when it matches an examined equivalent and its note.
+Investigate unexpected IDs before acceptance. A single-mutant diagnostic cannot
+prove a kill, as the hardening procedure below explains.
+
+Every run writes the gitignored `mutago-agentic.json` with escaped-mutant data.
+A failed gate prints each new escape ID and writes the gitignored
+`mutago-baseline.candidate.json`. That candidate contains the committed baseline
+plus the new escapes. Accept only justified equivalents from it.
+The CI `mutate-diff` artifact includes those files and `report.json`, so CI
+escape analysis needs no local rerun just to obtain their IDs.
+
+A package dry run counts mutants without tests. A diff or `./...` dry run first
+runs the whole-target instrumented coverage pass and can use substantial memory.
+Scope dry runs to one package. Never run a dry run beside a live mutation gate.
+
 - `IQ_MUTATION_BASE`: base ref; empty for a full-module scan; a package arg
   (`bash scripts/mutation-gate.sh ./cmd`) full-scans that package
-- `IQ_MUTATION_WORKERS`: parallel mutants (default 1; raise to 2-3 only when
-  the run is already memory-bounded, e.g. inside a systemd-run MemoryHigh unit,
-  and only with every `IQ_<DRIVER>_URL` unset: parallel suites on one shared
-  backend fail on each other's data and mutago scores that as a kill, so the
-  wrapper refuses the combination)
+- `IQ_MUTATION_WORKERS`: parallel mutants, default 1, subject to the memory and backend constraints above
 - `IQ_MUTATION_TIMEOUT_COEFFICIENT`: per-mutant timeout multiplier (default
   5; raise it for a legitimately slow package instead of letting mutants time out)
-- `IQ_MUTATION_UPDATE_BASELINE=1`: accept equivalents (append-only). A gate
-  run that fails on an escape already prints the id of each new escape and
-  writes `mutago-baseline.candidate.json` (the committed baseline plus those
-  escapes, gitignored). Copy it over `mutago-baseline.json` only when every
-  escape in it is a genuine equivalent with its line in
-  `mutago-baseline.notes.md`. Kill the others first.
+- `IQ_MUTATION_UPDATE_BASELINE=1`: accept examined equivalents with notes through an append-only update.
+  Copy the candidate over the baseline only when every escape is a justified
+  equivalent. Kill the other survivors first.
 - `IQ_MUTATION_MUTANT=<id>`: re-run one mutant as a diagnostic; it can report
   a false KILLED, so do not confirm a kill with it (see the hardening steps)
 - `IQ_MUTATION_DRYRUN=1`: mutant-count preview; scope it to one package
@@ -207,6 +316,8 @@ Go native fuzzing over the parsers that read untrusted bytes, one target per
 `go test -fuzz` invocation because that is all the flag takes. Each target
 bounds its own work (it passes over an oversized input and caps how many
 records it drains), so the time budget is honest.
+The eight targets live beside package tests in `fuzz_test.go`.
+They need no containers or network.
 
 - `internal/jqfmt`: `FuzzFormat`, the printer is idempotent and its output
   re-parses, and the colored output matches the plain one once the ANSI
@@ -549,8 +660,9 @@ make tools-dev   # mutago, capslock, deadcode, govulncheck, osv-scanner, gitleak
 make tools       # release tools: svu, git-chglog
 ```
 
-The gates provision their own pinned mutago and capslock; `make tools-dev` is
-for ad-hoc use.
+The gates provision their own pinned mutago and capslock.
+`make tools-dev` installs the listed tools into `GOPATH/bin` for ad-hoc use.
+Keep `gofumpt`, `goimports`, and `golangci-lint` on `PATH`.
 
 ## Releasing
 
