@@ -860,3 +860,44 @@ The mutago bump from v2.7.7 to v2.10.16 changed every mutant id. The seed scan o
 - 7f0f2b267ee0 drivers/neo4j/write.go:54 statement/return — new in v2.10.16. The recordProps error return in Put becomes `return query.WriteStat{}, err`. Nothing has written to `stat` before this loop, so it is still the zero value and the two returns are the same.
 - fdc773b99d52 drivers/neo4j/write.go:69 statement/return — new in v2.10.16. The `s.run` error return in Put, the same zero-value reason.
 - 3036ab815721 drivers/neo4j/write.go:196 expression/error-guard — new in v2.10.16. The guard after the second `s.run` of Delete (the DETACH DELETE). It shares its id with the guard at write.go:172, which TestIntegrationAMissingDatabaseFailsEveryOperation kills. This second guard is unreachable in a test: a missing database already fails the first `s.run`, and the server has no other way to refuse a statement that the first one just ran on the same session. The package suite passes with it set to `if false`.
+
+## drivers/elasticsearch, mutago v2.10.16 re-baseline (accepted 2026-10-02, test/mutation-rebaseline-7 branch)
+
+The mutago bump from v2.7.7 to v2.10.16 changed every mutant id. The CI scan of the package on 21e3ee6 found 27 new ids (29 lines). Twelve were a test gap, and `errorpath_test.go` kills them. The tests check the default page size of 100 on the wire and in Open, the status range up to 299 on both reply paths, a request that cannot be built, an unparsable URL, a query the encoder cannot write, a refused point-in-time, an undecodable `_source` in Get, a transport failure in Query, a scalar value in Put, and a failed item in a bulk delete. Each kill was proved by hand: the mutant applied to a copy of the file makes the package suite fail.
+Each entry below was applied by hand to a copy of the file, and the whole package suite passes against the compose Elasticsearch and OpenSearch.
+- f04c23496233 drivers/elasticsearch/elasticsearch.go:78 expression/error-guard. The guard on the newClient error in Open. Both client constructors fail only on an address that does not parse or on a transport option that Open never sets. parseURL builds the address from a scheme and a host that url.Parse already accepted, so the constructor cannot fail. The byte-identical guard on the parseURL error at line 74 is killed by TestOpenReportsAnUnusableURL.
+- 3a1bb75ef107 drivers/elasticsearch/elasticsearch.go:301 branch/if. Replaces cfe6c6f5e179. The old reason holds: with no hits the loop copies nothing, fn is not called, and the `len(hits) < s.pageSize` test returns on the same pass. The byte-identical `return nil` of that last-page test at line 330 is equivalent too. The scan then asks for one more page, which is empty and ends the scan.
+- ed3662c4589d elasticsearch.go:300 numbers/decrementer. Replaces 24b90a952906. The old reason holds: `len(hits) == -1` is never true, and an empty page leaves the scan through the last-page test with the same result.
+- fda29052c4f1 elasticsearch.go:133 expression/remove. Replaces 808ba5da7eb5. The old reason holds: the dropped `p != ""` operand only decides the empty case, and there `index = p` assigns the empty string that index already holds.
+- 7b6f31fe97c1 drivers/elasticsearch/filter.go:273 expression/remove. Replaces 2ff0f65b4bc4. The old reason holds: matchesLiteral returns false for a nil value in every class, so a null literal never pushes.
+- 1a8d2283dbb5 drivers/elasticsearch/inspect.go:61 expression/error-guard. Replaces edc0317f0eaf. The old reason holds: the input is a json.RawMessage that a successful decode produced, so it is valid JSON and the unmarshal cannot fail.
+- a7c7a76d4c1e drivers/elasticsearch/write.go:42 expression/error-guard. Replaces 2cf1585dd1d3. The old reason holds: the action line is a map of strings, and json.Marshal cannot fail on it.
+- b18b4785fd2c drivers/elasticsearch/write.go:166 expression/error-guard. Replaces 55272235d47f. The same reason, for the delete action line.
+- 95eb99737aa4 drivers/elasticsearch/elasticsearch.go:374 expression/error-guard. The marshal of the search body in Query. The body comes from json.Unmarshal of the argument, and every value that decode produces can be encoded again, so the marshal cannot fail.
+- bdcf812d0f28 elasticsearch.go:195 expression/error-guard. The marshal of `{"ids": keys}` in Get. A slice of strings always encodes, so the marshal cannot fail.
+- 5ed05b8d4680 drivers/elasticsearch/write.go:136 expression/error-guard. The marshal of the constant match-all query in Clear. A constant map of maps always encodes, so the marshal cannot fail.
+- 19af9d472c08 drivers/elasticsearch/filter.go:173 branch/case. The `default` arm of exactPush gets its own `return false` back with a different indentation, so the program does not change.
+- a8fd0ac6d4ce drivers/elasticsearch/filter.go:264 branch/case. The `default` arm of toQuery gets its own `return nil, false` back with a different indentation, so the program does not change.
+- 053b362dccb4 drivers/elasticsearch/filter.go:320 branch/case. The same for the `default` arm of matchesLiteral.
+- 24a897f31448 drivers/elasticsearch/plan.go:85 branch/case. The same for the `default` arm of explainQuery.
+
+## drivers/cassandra, mutago v2.10.16 re-baseline (accepted 2026-10-03, test/mutation-rebaseline-7 branch)
+
+Each id below is accepted as equivalent. The CI deep scan run 37104978614 ran the whole suite against a real cluster with the mutant applied, and it passed.
+
+- 7e5f822f4c0e drivers/cassandra/cassandra.go:194 statement/return. withPort returns "" for the host "", so a bare `return ""` gives the same value.
+- e3fbe0439463 cassandra.go:218 branch/case. gocql.Any is 0, so the mutated `return 0, nil` gives the same value as the Any arm.
+- d06006f320db cassandra.go:218 statement/return. The same reason as e3fbe0439463.
+- 6e13daad3a93 drivers/cassandra/dump.go:90 statement/return. gocql.TypeCustom is 0, so `return 0, err` gives the same value.
+- 3aee2298976b drivers/cassandra/filter.go:25 expression/logical. `ok` is true only when the where clause is not empty, so `ok || where != ""` equals `ok`.
+- b9d63085d8c0 filter.go:25 expression/remove. For the same reason, `ok && true` equals `ok`.
+- 709c562b7db9 filter.go:58 branch/case. The `default` arm gets its own return back with a different indentation, so the program does not change.
+- 942beb070798 drivers/cassandra/normalize.go:33 branch/case. The same for the nil arm.
+- b08bd25f067a normalize.go:114 numbers/incrementer. strconv.ParseFloat treats every bit size other than 32 as 64.
+- 9a092cf8f039 normalize.go:114 numbers/decrementer. The same reason.
+- 89501b5f5cda normalize.go:275 numbers/incrementer. The same reason.
+- adc6b59ebec0 normalize.go:275 numbers/decrementer. The same reason.
+- 213f869f6c6a normalize.go:524 numbers/incrementer. strconv.FormatFloat treats every negative precision as the shortest form.
+- ba7aa88733c7 drivers/cassandra/plan.go:26 expression/remove. The same reason as filter.go:25, in ExplainPlan.
+- f337b662f270 plan.go:26 expression/logical. The same reason as filter.go:25, in ExplainPlan.
+- 36ed252c4e81 drivers/cassandra/write.go:206 expression/error-guard. The pre-read in Delete already decoded every key, so the second decode cannot fail.
