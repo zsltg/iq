@@ -176,7 +176,7 @@ func (s *mcpServer) toolSources(_ context.Context, _ *mcp.CallToolRequest, in mc
 		}
 		list = kept
 	}
-	return nil, mcpSourcesOutput{Sources: sourceRows(cf, list, true, false, false), Active: cf.Active}, nil
+	return nil, mcpSourcesOutput{Sources: sourceRows(cf, list, lsOptions{verbose: true}), Active: cf.Active}, nil
 }
 
 // mcpPingInput names the source, group, or nothing (the active source) to check.
@@ -437,7 +437,7 @@ func (s *mcpServer) toolInspect(ctx context.Context, _ *mcp.CallToolRequest, in 
 	}
 	defer func() { _ = st.Close() }()
 	var b bytes.Buffer
-	if err := dispatchInspect(cctx, &b, st, cfg, in.Only, true, false, false); err != nil {
+	if err := dispatchInspect(cctx, inspectRequest{out: &b, st: st, cfg: cfg, only: in.Only, jsonOut: true}); err != nil {
 		return nil, nil, toolError(redactErr(err, cfg.url))
 	}
 	out, err := decodeJSONObject(b.Bytes())
@@ -473,7 +473,7 @@ func (s *mcpServer) toolSchema(ctx context.Context, _ *mcp.CallToolRequest, in m
 		return nil, nil, toolError(redactErr(err, cfg.url))
 	}
 	defer func() { _ = st.Close() }()
-	items, err := sampleItems(cctx, st, in.Filter, sample, cfg.runOptions())
+	items, err := sampleItems(cctx, st, sampleRequest{filter: in.Filter, sample: sample, opts: cfg.runOptions()})
 	if err != nil {
 		return nil, nil, toolError(fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(in.Filter, err), cfg.url)))
 	}

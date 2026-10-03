@@ -24,47 +24,40 @@ var mongoInspectCmds = []string{"dbStats", "serverStatus", "listCollections", "c
 // it backs only the long help and --only completion, never validation.
 var redisInfoCommonSections = []string{"server", "clients", "memory", "persistence", "stats", "replication", "cpu", "keyspace"}
 
-// inspectSubcommands returns the --only candidates for a driver, mirroring the
-// dispatch in newInspectCmd's RunE. It takes the canonical driver name so the
-// caller can resolve it offline from a source URL, and returns nil for a driver
-// with no introspection (file) or an unknown one.
-func inspectSubcommands(driver string) []string {
-	switch driver {
-	case "mongo":
-		return mongoInspectCmds
-	case "redis":
-		return redisInfoCommonSections
-	case "cassandra":
-		return cassandraInspectCmds
-	case "dynamodb":
-		return dynamoInspectCmds
-	case "hbase":
-		return hbaseInspectCmds
-	case "couchdb":
-		return couchInspectCmds
-	case "couchbase":
-		return couchbaseInspectCmds
-	case "neo4j":
-		return neo4jInspectCmds
-	case "elasticsearch", "opensearch":
-		return elasticInspectCmds
-	default:
-		return nil
-	}
+// inspectDriver is the inspect entry of one driver: the names --only and
+// completion offer, and the inspector that runs them.
+type inspectDriver struct {
+	names []string
+	run   func(ctx context.Context, req inspectRequest) error
 }
 
-// newInspectCmd builds `iq inspect [source]`: show a source's native
-// server/database introspection. The positional names the source (sq-style
-// `<source>.<collection>` addressing); with none it uses --src or the active
-// source. --only narrows the output. Bounded by --timeout.
-func newInspectCmd(cfg *config) *cobra.Command {
-	var (
-		jsonOut bool
-		yamlOut bool
-		list    bool
-		only    []string
-	)
-	long := "Show a source's native server/database introspection.\n\n" +
+// inspectDrivers maps a canonical driver name to its inspect entry. It is the
+// one source for the dispatch and the completion names. A driver with no entry
+// has no introspection of its own: the dispatch falls back to the mongo entry.
+var inspectDrivers = map[string]inspectDriver{
+	"mongo":         {mongoInspectCmds, inspectMongo},
+	"redis":         {redisInfoCommonSections, inspectRedis},
+	"cassandra":     {cassandraInspectCmds, inspectCassandra},
+	"dynamodb":      {dynamoInspectCmds, inspectDynamo},
+	"hbase":         {hbaseInspectCmds, inspectHBase},
+	"couchdb":       {couchInspectCmds, inspectCouch},
+	"couchbase":     {couchbaseInspectCmds, inspectCouchbase},
+	"neo4j":         {neo4jInspectCmds, inspectNeo4j},
+	"elasticsearch": {elasticInspectCmds, inspectElastic},
+	"opensearch":    {elasticInspectCmds, inspectElastic},
+}
+
+// inspectSubcommands returns the --only candidates for a driver, from the
+// inspectDrivers table. It takes the canonical driver name so the caller can
+// resolve it offline from a source URL, and returns nil for a driver with no
+// introspection (file) or an unknown one.
+func inspectSubcommands(driver string) []string {
+	return inspectDrivers[driver].names
+}
+
+// inspectLong builds the long help text of the inspect command.
+func inspectLong() string {
+	return "Show a source's native server/database introspection.\n\n" +
 		"The positional argument names the source, like `iq inspect prod`; with none it\n" +
 		"uses --src or the active source. MongoDB, Cassandra, DynamoDB, HBase, CouchDB,\n" +
 		"Couchbase, and Neo4j sources accept sq-style `<source>.<collection>` / `<source>.<table>` /\n" +
@@ -108,11 +101,24 @@ func newInspectCmd(cfg *config) *cobra.Command {
 		"Use -j/--json or -y/--yaml for machine-readable output, or --list to print the\n" +
 		"subcommands/sections available for the source. The location header is redacted by\n" +
 		"default: --reveal prints an inline password verbatim, --expand resolves a keyring-backed one."
+}
+
+// newInspectCmd builds `iq inspect [source]`: show a source's native
+// server/database introspection. The positional names the source (sq-style
+// `<source>.<collection>` addressing); with none it uses --src or the active
+// source. --only narrows the output. Bounded by --timeout.
+func newInspectCmd(cfg *config) *cobra.Command {
+	var (
+		jsonOut bool
+		yamlOut bool
+		list    bool
+		only    []string
+	)
 	c := &cobra.Command{
 		Use:               "inspect [source]",
 		ValidArgsFunction: completeSourceHandles,
 		Short:             "Show a source's native server/database introspection",
-		Long:              long,
+		Long:              inspectLong(),
 		Example: "  $ iq inspect                     # active source, database-level\n" +
 			"  $ iq inspect shop                # a named source, database-level\n" +
 			"  $ iq inspect shop.orders -j      # one collection (sq-style handle.collection)\n" +
@@ -134,7 +140,7 @@ func newInspectCmd(cfg *config) *cobra.Command {
 			}
 			defer func() { _ = st.Close() }()
 
-			return dispatchInspect(ctx, cmd.OutOrStdout(), st, cfg, only, jsonOut, yamlOut, list)
+			return dispatchInspect(ctx, inspectRequest{out: cmd.OutOrStdout(), st: st, cfg: cfg, only: only, jsonOut: jsonOut, yamlOut: yamlOut, list: list})
 		},
 	}
 	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
@@ -154,33 +160,19 @@ func newInspectCmd(cfg *config) *cobra.Command {
 // dispatchInspect routes a resolved, opened source to its driver's inspector and
 // writes the rendering to out. It is the one dispatch both `iq inspect` and the
 // MCP iq_inspect tool go through, so a new backend's inspector is wired once.
-func dispatchInspect(ctx context.Context, out io.Writer, st store, cfg *config, only []string, jsonOut, yamlOut, list bool) error {
-	req := inspectRequest{out: out, st: st, cfg: cfg, only: only, jsonOut: jsonOut, yamlOut: yamlOut, list: list}
-	switch driverName(cfg.url) {
-	case "redis":
-		return inspectRedis(ctx, req)
-	case "cassandra":
-		return inspectCassandra(ctx, req)
-	case "dynamodb":
-		return inspectDynamo(ctx, req)
-	case "hbase":
-		return inspectHBase(ctx, req)
-	case "couchdb":
-		return inspectCouch(ctx, req)
-	case "couchbase":
-		return inspectCouchbase(ctx, req)
-	case "neo4j":
-		return inspectNeo4j(ctx, req)
-	case "elasticsearch", "opensearch":
-		return inspectElastic(ctx, req)
-	case "file":
+func dispatchInspect(ctx context.Context, req inspectRequest) error {
+	name := driverName(req.cfg.url)
+	if name == "file" {
 		// inspect reports live server metadata; a dump file has none. Point the
 		// user at the operations that do work on a file source.
 		return errors.New("inspect reports live server metadata, and a file source has none; " +
 			"query it with a jq filter (`iq '.[]' --src <name>`) or compare it with `iq diff`")
-	default:
-		return inspectMongo(ctx, req)
 	}
+	d, ok := inspectDrivers[name]
+	if !ok {
+		d = inspectDrivers["mongo"]
+	}
+	return d.run(ctx, req)
 }
 
 // inspectRequest holds the inputs of one inspect run: the output, the opened
@@ -226,37 +218,79 @@ func runInspect(ctx context.Context, req inspectRequest, spec inspectSpec) error
 	if err != nil {
 		return err
 	}
-	explicit := len(req.only) > 0
-	which := req.only
-	if !explicit {
-		which = spec.names
+	which, err := spec.requested(req.only)
+	if err != nil {
+		return err
 	}
-	for _, sub := range which {
-		if !slices.Contains(spec.names, sub) {
-			return fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(spec.names, ", "))
+	results, err := spec.collect(ctx, req, reads, which)
+	if err != nil {
+		return err
+	}
+	return renderInspectResults(req, results)
+}
+
+// explicit reports whether --only named the subcommands, as opposed to a
+// run-all.
+func (r inspectRequest) explicit() bool {
+	return len(r.only) > 0
+}
+
+// requested returns the names to run: the whole supported set when only is
+// empty, else only, after it checks every name against the supported set.
+func (s inspectSpec) requested(only []string) ([]string, error) {
+	if len(only) == 0 {
+		return s.names, nil
+	}
+	for _, sub := range only {
+		if !slices.Contains(s.names, sub) {
+			return nil, fmt.Errorf("unknown inspect subcommand %q; want one of %s", sub, strings.Join(s.names, ", "))
 		}
 	}
+	return only, nil
+}
 
+// collect runs the reads of the named subcommands in order. A name with no
+// read is an error for an explicit request, and skipped in a run-all.
+func (s inspectSpec) collect(ctx context.Context, req inspectRequest, reads map[string]inspectRead, which []string) ([]inspectResult, error) {
 	results := make([]inspectResult, 0, len(which))
 	for _, sub := range which {
 		read, ok := reads[sub]
 		if !ok {
-			if explicit {
-				return spec.missing
+			if req.explicit() {
+				return nil, s.missing
 			}
 			continue // skip in the run-all case
 		}
-		res, err := read(ctx)
-		if err != nil {
-			if !explicit && slices.Contains(spec.scoped, sub) {
-				continue // a source with no target selected skips a scoped read in run-all
-			}
-			res = map[string]any{"error": redactErr(err, req.cfg.url).Error()}
+		if res, keep := s.readOne(ctx, req, sub, read); keep {
+			results = append(results, inspectResult{sub: sub, value: res})
 		}
-		results = append(results, inspectResult{sub: sub, value: res})
 	}
+	return results, nil
+}
 
-	return renderInspectResults(req.out, req.st, req.cfg, results, req.jsonOut, req.yamlOut)
+// readOne runs one read. It returns false only when it skips a scoped name in
+// run-all mode. Else it returns the reply, or the redacted error as an object.
+func (s inspectSpec) readOne(ctx context.Context, req inspectRequest, sub string, read inspectRead) (any, bool) {
+	res, err := read(ctx)
+	if err == nil {
+		return res, true
+	}
+	if !req.explicit() && slices.Contains(s.scoped, sub) {
+		return nil, false // a source with no target selected skips a scoped read in run-all
+	}
+	return map[string]any{"error": redactErr(err, req.cfg.url).Error()}, true
+}
+
+// methodReads builds the reads of a driver-method family: it asserts the
+// store's introspection port once, then maps each name to a port method.
+func methodReads[T any](reads func(T) map[string]inspectRead) func(st store) (map[string]inspectRead, error) {
+	return func(st store) (map[string]inspectRead, error) {
+		port, ok := st.(T)
+		if !ok {
+			return nil, inspectUnsupported()
+		}
+		return reads(port), nil
+	}
 }
 
 // inspectUnsupported is the error for a store that has no introspection port.
@@ -275,19 +309,19 @@ type inspectResult struct {
 // -j/-y, else the redacted location header followed by each reply in the store's
 // native form. It is the shared tail of every non-Redis inspector, so a new
 // backend's inspector only assembles its results and calls this.
-func renderInspectResults(out io.Writer, st store, cfg *config, results []inspectResult, jsonOut, yamlOut bool) error {
-	if jsonOut || yamlOut {
+func renderInspectResults(req inspectRequest, results []inspectResult) error {
+	if req.jsonOut || req.yamlOut {
 		byName := make(map[string]any, len(results))
 		for _, r := range results {
 			byName[r.sub] = r.value
 		}
-		return writeStructured(out, byName, yamlOut)
+		return writeStructured(req.out, byName, req.yamlOut)
 	}
-	if err := inspectHeader(out, cfg); err != nil {
+	if err := inspectHeader(req.out, req.cfg); err != nil {
 		return err
 	}
 	for _, r := range results {
-		if _, err := fmt.Fprintf(out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), st.FormatRaw(r.value, colorOn())); err != nil {
+		if _, err := fmt.Fprintf(req.out, "%s\n%s\n\n", pal.header.Sprint("# "+r.sub), req.st.FormatRaw(r.value, colorOn())); err != nil {
 			return err
 		}
 	}
@@ -467,16 +501,12 @@ type dynamoInspector interface {
 func inspectDynamo(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
 		names: dynamoInspectCmds,
-		reads: func(st store) (map[string]inspectRead, error) {
-			di, ok := st.(dynamoInspector)
-			if !ok {
-				return nil, inspectUnsupported()
-			}
+		reads: methodReads(func(di dynamoInspector) map[string]inspectRead {
 			return map[string]inspectRead{
 				"tables": di.InspectTables,
 				"table":  di.InspectTable,
-			}, nil
-		},
+			}
+		}),
 		scoped: []string{"table"},
 	})
 }
@@ -500,13 +530,9 @@ type hbaseInspector interface {
 func inspectHBase(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
 		names: hbaseInspectCmds,
-		reads: func(st store) (map[string]inspectRead, error) {
-			hi, ok := st.(hbaseInspector)
-			if !ok {
-				return nil, inspectUnsupported()
-			}
-			return map[string]inspectRead{"tables": hi.InspectTables}, nil
-		},
+		reads: methodReads(func(hi hbaseInspector) map[string]inspectRead {
+			return map[string]inspectRead{"tables": hi.InspectTables}
+		}),
 	})
 }
 
@@ -533,18 +559,14 @@ type couchInspector interface {
 func inspectCouch(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
 		names: couchInspectCmds,
-		reads: func(st store) (map[string]inspectRead, error) {
-			ci, ok := st.(couchInspector)
-			if !ok {
-				return nil, inspectUnsupported()
-			}
+		reads: methodReads(func(ci couchInspector) map[string]inspectRead {
 			return map[string]inspectRead{
 				"server":    ci.InspectServer,
 				"databases": ci.InspectDatabases,
 				"dbinfo":    ci.InspectDBInfo,
 				"indexes":   ci.InspectIndexes,
-			}, nil
-		},
+			}
+		}),
 		scoped: []string{"dbinfo", "indexes"},
 	})
 }
@@ -571,18 +593,14 @@ type couchbaseInspector interface {
 func inspectCouchbase(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
 		names: couchbaseInspectCmds,
-		reads: func(st store) (map[string]inspectRead, error) {
-			ci, ok := st.(couchbaseInspector)
-			if !ok {
-				return nil, inspectUnsupported()
-			}
+		reads: methodReads(func(ci couchbaseInspector) map[string]inspectRead {
 			return map[string]inspectRead{
 				"cluster":     ci.InspectCluster,
 				"buckets":     ci.InspectBuckets,
 				"collections": ci.InspectCollections,
 				"indexes":     ci.InspectIndexes,
-			}, nil
-		},
+			}
+		}),
 		scoped: []string{"collections"},
 	})
 }
@@ -610,18 +628,14 @@ type elasticInspector interface {
 func inspectElastic(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
 		names: elasticInspectCmds,
-		reads: func(st store) (map[string]inspectRead, error) {
-			ei, ok := st.(elasticInspector)
-			if !ok {
-				return nil, inspectUnsupported()
-			}
+		reads: methodReads(func(ei elasticInspector) map[string]inspectRead {
 			return map[string]inspectRead{
 				"server":  ei.InspectServer,
 				"indices": ei.InspectIndices,
 				"mapping": ei.InspectMapping,
 				"aliases": ei.InspectAliases,
-			}, nil
-		},
+			}
+		}),
 		scoped: []string{"mapping"},
 	})
 }
@@ -650,19 +664,15 @@ type neo4jInspector interface {
 func inspectNeo4j(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
 		names: neo4jInspectCmds,
-		reads: func(st store) (map[string]inspectRead, error) {
-			ni, ok := st.(neo4jInspector)
-			if !ok {
-				return nil, inspectUnsupported()
-			}
+		reads: methodReads(func(ni neo4jInspector) map[string]inspectRead {
 			return map[string]inspectRead{
 				"server":      ni.InspectServer,
 				"databases":   ni.InspectDatabases,
 				"labels":      ni.InspectLabels,
 				"reltypes":    ni.InspectRelationshipTypes,
 				"constraints": ni.InspectConstraints,
-			}, nil
-		},
+			}
+		}),
 	})
 }
 

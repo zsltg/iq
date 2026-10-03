@@ -1604,6 +1604,12 @@
    "line": 215
   },
   {
+   "id": "e1c81375bec9e0cb1043c2e2146bd3d0",
+   "file": "cmd/diff.go",
+   "mutator": "statement/remove",
+   "line": 262
+  },
+  {
    "id": "11979afff78230432fa121e15b4401ae",
    "file": "internal/rawpred/rawpred.go",
    "mutator": "branch/case",
@@ -2640,6 +2646,192 @@
    "file": "drivers/neo4j/write.go",
    "mutator": "expression/error-guard",
    "line": 196
+  },
+  {
+   "id": "f04c23496233b65997b2cd2e3374bb6a",
+   "file": "drivers/elasticsearch/elasticsearch.go",
+   "mutator": "expression/error-guard",
+   "line": 78
+  },
+  {
+   "id": "3a1bb75ef107c8cd42e0d89b12849c7f",
+   "file": "drivers/elasticsearch/elasticsearch.go",
+   "mutator": "branch/if",
+   "line": 301
+  },
+  {
+   "id": "ed3662c4589d28d1edf7ae96ee0bc516",
+   "file": "drivers/elasticsearch/elasticsearch.go",
+   "mutator": "numbers/decrementer",
+   "line": 300
+  },
+  {
+   "id": "fda29052c4f1bb2528daa5898888a800",
+   "file": "drivers/elasticsearch/elasticsearch.go",
+   "mutator": "expression/remove",
+   "line": 133
+  },
+  {
+   "id": "7b6f31fe97c18ed6beb36b0384a4b112",
+   "file": "drivers/elasticsearch/filter.go",
+   "mutator": "expression/remove",
+   "line": 273
+  },
+  {
+   "id": "1a8d2283dbb5f4f2d54cd89c6a61ec7d",
+   "file": "drivers/elasticsearch/inspect.go",
+   "mutator": "expression/error-guard",
+   "line": 61
+  },
+  {
+   "id": "a7c7a76d4c1ecd854ca3e165ec1a9526",
+   "file": "drivers/elasticsearch/write.go",
+   "mutator": "expression/error-guard",
+   "line": 42
+  },
+  {
+   "id": "b18b4785fd2c0d443fbe7f4b848dbeda",
+   "file": "drivers/elasticsearch/write.go",
+   "mutator": "expression/error-guard",
+   "line": 166
+  },
+  {
+   "id": "95eb99737aa49d5bdceafc8e5f3bda05",
+   "file": "drivers/elasticsearch/elasticsearch.go",
+   "mutator": "expression/error-guard",
+   "line": 374
+  },
+  {
+   "id": "bdcf812d0f2823456a008bab8e3ee5ea",
+   "file": "drivers/elasticsearch/elasticsearch.go",
+   "mutator": "expression/error-guard",
+   "line": 195
+  },
+  {
+   "id": "5ed05b8d468095a38a2fc0434b9e6aa8",
+   "file": "drivers/elasticsearch/write.go",
+   "mutator": "expression/error-guard",
+   "line": 136
+  },
+  {
+   "id": "19af9d472c08170cbf784aac0fb9bf72",
+   "file": "drivers/elasticsearch/filter.go",
+   "mutator": "branch/case",
+   "line": 173
+  },
+  {
+   "id": "a8fd0ac6d4ce5e90973112fe126460c1",
+   "file": "drivers/elasticsearch/filter.go",
+   "mutator": "branch/case",
+   "line": 264
+  },
+  {
+   "id": "053b362dccb4e1345f29b01538545569",
+   "file": "drivers/elasticsearch/filter.go",
+   "mutator": "branch/case",
+   "line": 320
+  },
+  {
+   "id": "24a897f31448c4a7d73d3e46bea3584b",
+   "file": "drivers/elasticsearch/plan.go",
+   "mutator": "branch/case",
+   "line": 85
+  },
+  {
+   "id": "7e5f822f4c0ecdbd9e12a220cbd743b0",
+   "file": "drivers/cassandra/cassandra.go",
+   "mutator": "statement/return",
+   "line": 194
+  },
+  {
+   "id": "e3fbe043946338ab554d7e386109d72d",
+   "file": "drivers/cassandra/cassandra.go",
+   "mutator": "branch/case",
+   "line": 218
+  },
+  {
+   "id": "d06006f320dbd606c17c39b4b87fd373",
+   "file": "drivers/cassandra/cassandra.go",
+   "mutator": "statement/return",
+   "line": 218
+  },
+  {
+   "id": "6e13daad3a93fdf4d0908232502294b4",
+   "file": "drivers/cassandra/dump.go",
+   "mutator": "statement/return",
+   "line": 90
+  },
+  {
+   "id": "3aee2298976b6f0d9587a8725f200d3b",
+   "file": "drivers/cassandra/filter.go",
+   "mutator": "expression/logical",
+   "line": 25
+  },
+  {
+   "id": "b9d63085d8c09ee4e405943b830137de",
+   "file": "drivers/cassandra/filter.go",
+   "mutator": "expression/remove",
+   "line": 25
+  },
+  {
+   "id": "709c562b7db9cd1328ac61783df8a9da",
+   "file": "drivers/cassandra/filter.go",
+   "mutator": "branch/case",
+   "line": 58
+  },
+  {
+   "id": "942beb070798b7158fc70946cf1a0532",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "branch/case",
+   "line": 33
+  },
+  {
+   "id": "b08bd25f067a5a4d9ac3278212efdf23",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 114
+  },
+  {
+   "id": "9a092cf8f039f2b4c307a82ca44488d6",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "numbers/decrementer",
+   "line": 114
+  },
+  {
+   "id": "89501b5f5cda81dd4f8148e1808b0386",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 275
+  },
+  {
+   "id": "adc6b59ebec021cffb88cd5488d4a6fa",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "numbers/decrementer",
+   "line": 275
+  },
+  {
+   "id": "213f869f6c6a3f83ba9db0bc07e2d24c",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 524
+  },
+  {
+   "id": "ba7aa88733c782a23c6dfdb20d453055",
+   "file": "drivers/cassandra/plan.go",
+   "mutator": "expression/remove",
+   "line": 26
+  },
+  {
+   "id": "f337b662f2709337c7bcb641c977fa6d",
+   "file": "drivers/cassandra/plan.go",
+   "mutator": "expression/logical",
+   "line": 26
+  },
+  {
+   "id": "36ed252c4e81af367edc94ba547e471b",
+   "file": "drivers/cassandra/write.go",
+   "mutator": "expression/error-guard",
+   "line": 206
   }
  ]
 }

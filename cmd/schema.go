@@ -91,7 +91,7 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 				return redactErr(err, cfg.url)
 			}
 			defer func() { _ = st.Close() }()
-			items, err := sampleItems(ctx, st, filter, sample, cfg.runOptions())
+			items, err := sampleItems(ctx, st, sampleRequest{filter: filter, sample: sample, opts: cfg.runOptions()})
 			if err != nil {
 				return fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(filter, err), cfg.url))
 			}
