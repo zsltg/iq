@@ -3,6 +3,7 @@ package couchbase
 import (
 	"bytes"
 	"context"
+	"errors"
 	"maps"
 	"strings"
 	"testing"
@@ -84,6 +85,8 @@ func TestPutEncodeError(t *testing.T) {
 			bad := map[string]any{"c": make(chan int)} // JSON cannot encode a channel
 			_, err := st.Put(ctx, []query.Record{{Key: "bad", Value: bad}}, tt.mode)
 			require.ErrorContains(t, err, tt.want)
+			// The message alone cannot tell %w from %v. The SDK cause must stay in the chain.
+			require.Error(t, errors.Unwrap(err), "the encode cause must stay reachable through the wrap")
 		})
 	}
 }

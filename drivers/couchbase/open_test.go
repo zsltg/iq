@@ -2,6 +2,7 @@ package couchbase
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -27,6 +28,8 @@ func TestOpenRejectsABadConnectionOption(t *testing.T) {
 	_, err := Open(context.Background(), "couchbase://127.0.0.1:1/?kv_timeout=abc", "", nil, numfmt.DecimalAuto)
 	require.ErrorContains(t, err, "connect couchbase")
 	require.ErrorContains(t, err, "kv_timeout")
+	// The message alone cannot tell %w from %v. The SDK error must stay in the chain.
+	require.Error(t, errors.Unwrap(err), "the SDK cause must stay reachable through the wrap")
 }
 
 // TestOpenKeepsTheReadinessCause pins that the readiness failure stays reachable through

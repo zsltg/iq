@@ -1,6 +1,7 @@
 package couchbase
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
@@ -172,6 +173,14 @@ func TestNameLimitsAreLiteral(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// TestParseURLKeepsTheParseCause pins that the url.Parse failure stays in the error chain.
+// The message alone cannot tell %w from %v.
+func TestParseURLKeepsTheParseCause(t *testing.T) {
+	_, err := parseURL("couchbase://localhost/%zz?bucket=iq", "")
+	var urlErr *url.Error
+	require.ErrorAs(t, err, &urlErr)
 }
 
 func TestValidateKey(t *testing.T) {
