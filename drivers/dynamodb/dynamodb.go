@@ -404,11 +404,15 @@ func (s *Store) normalizeItem(item map[string]types.AttributeValue) map[string]a
 // to make the retry loops run without real sleeps.
 var backoffUnit = 20 * time.Millisecond
 
+// randInt63n draws the backoff jitter. It is a variable so a test can see the bound it
+// is given.
+var randInt63n = rand.Int63n
+
 // backoff sleeps before retrying a throttled batch leftover, with exponential growth
 // and jitter, bounded by ctx so it never waits past the caller's deadline.
 func backoff(ctx context.Context, attempt int) error {
 	base := backoffUnit * time.Duration(1<<min(attempt, 5))
-	wait := base + time.Duration(rand.Int63n(int64(base)/2+1))
+	wait := base + time.Duration(randInt63n(int64(base)/2+1))
 	select {
 	case <-time.After(wait):
 		return nil

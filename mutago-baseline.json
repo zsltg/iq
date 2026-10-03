@@ -2316,6 +2316,336 @@
    "file": "internal/rawpred/rawpred.go",
    "mutator": "statement/return",
    "line": 146
+  },
+  {
+   "id": "c39f055cdfefb4922c932c220fa295c3",
+   "file": "drivers/dynamodb/dynamodb.go",
+   "mutator": "numbers/decrementer",
+   "line": 244
+  },
+  {
+   "id": "698cc489431c3e8722e2e2181d9c204d",
+   "file": "drivers/dynamodb/dynamodb.go",
+   "mutator": "branch/if",
+   "line": 245
+  },
+  {
+   "id": "0be71c824c9a97043e8e4a2829db9966",
+   "file": "drivers/dynamodb/filter.go",
+   "mutator": "branch/case",
+   "line": 82
+  },
+  {
+   "id": "dc1673858b27608d34570c84020c1083",
+   "file": "drivers/dynamodb/filter.go",
+   "mutator": "numbers/decrementer",
+   "line": 138
+  },
+  {
+   "id": "8605c87ec5fcabef04fe12b58617f679",
+   "file": "drivers/dynamodb/filter.go",
+   "mutator": "branch/if",
+   "line": 139
+  },
+  {
+   "id": "f2aa482d00e11c8dab85d63858c854fb",
+   "file": "drivers/dynamodb/filter.go",
+   "mutator": "branch/case",
+   "line": 198
+  },
+  {
+   "id": "dbf71b5517dd0530fea2e0326a6a8197",
+   "file": "drivers/dynamodb/normalize.go",
+   "mutator": "branch/case",
+   "line": 29
+  },
+  {
+   "id": "866d3431d8c8410b2fbf30cf062a8ee2",
+   "file": "drivers/dynamodb/trace.go",
+   "mutator": "branch/if",
+   "line": 47
+  },
+  {
+   "id": "ce4131049a00dcf0f7e41af87f31e0be",
+   "file": "drivers/dynamodb/trace.go",
+   "mutator": "expression/remove",
+   "line": 55
+  },
+  {
+   "id": "8a05b55045e96455612550597e444eee",
+   "file": "drivers/dynamodb/write.go",
+   "mutator": "expression/error-guard",
+   "line": 239
+  },
+  {
+   "id": "e2dcbf5b273c42acedff2e2d72c80a3d",
+   "file": "drivers/hbase/filter.go",
+   "mutator": "branch/case",
+   "line": 52
+  },
+  {
+   "id": "9e33d5ad5a2c2eb8e9dd71d7fc491328",
+   "file": "drivers/hbase/filter.go",
+   "mutator": "expression/error-guard",
+   "line": 30
+  },
+  {
+   "id": "92b7be31c500d7ccbbed8334efc75e19",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "branch/if",
+   "line": 105
+  },
+  {
+   "id": "96f694f86d7482d548c34c63f3185e1d",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "statement/remove",
+   "line": 106
+  },
+  {
+   "id": "176e29d6dfc870a6a96482ba5fad01e2",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "expression/error-guard",
+   "line": 162
+  },
+  {
+   "id": "b66e8322a9e1f2173ba7032e73c5763e",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "expression/error-guard",
+   "line": 199
+  },
+  {
+   "id": "513d9019c6a9492b5afe6f9b9b451a2a",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "expression/error-guard",
+   "line": 224
+  },
+  {
+   "id": "29c134f7c741373b53526eec9ffceccb",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "expression/error-guard",
+   "line": 303
+  },
+  {
+   "id": "b36dbf578de7c1b6afa718d3a0bcbaf5",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "expression/error-guard",
+   "line": 331
+  },
+  {
+   "id": "14a3d957e56d74fb1e0da10127558736",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "expression/error-guard",
+   "line": 364
+  },
+  {
+   "id": "7a1fcf072122cbc0d894d98155165650",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "expression/error-guard",
+   "line": 406
+  },
+  {
+   "id": "005fad56f1aeb537ec24a8f3f8d8e62a",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "expression/error-guard",
+   "line": 435
+  },
+  {
+   "id": "f6f8931e586e8e4b993aed591a7f04f1",
+   "file": "drivers/hbase/hbase.go",
+   "mutator": "numbers/decrementer",
+   "line": 322
+  },
+  {
+   "id": "2ae6ad4db5ccda1d8608baf5776107e1",
+   "file": "drivers/hbase/normalize.go",
+   "mutator": "statement/return",
+   "line": 71
+  },
+  {
+   "id": "a6395147e7eb80bc9b2484412a87b115",
+   "file": "drivers/hbase/normalize.go",
+   "mutator": "branch/if",
+   "line": 261
+  },
+  {
+   "id": "95c381b70969a90639fe2b78bd859f6c",
+   "file": "drivers/hbase/parse.go",
+   "mutator": "branch/if",
+   "line": 117
+  },
+  {
+   "id": "e7a0b91cec6d4c68adf23ecdc7a25202",
+   "file": "drivers/hbase/parse.go",
+   "mutator": "expression/remove",
+   "line": 129
+  },
+  {
+   "id": "554a02124a429661738aea679625a103",
+   "file": "drivers/hbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 45
+  },
+  {
+   "id": "f35114793f505e1494d8074a027dd606",
+   "file": "drivers/hbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 67
+  },
+  {
+   "id": "359112adf9a9c2567c832f72b9bab5ec",
+   "file": "drivers/hbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 93
+  },
+  {
+   "id": "19b61554aeb1923211ed5aff1a9a8a95",
+   "file": "drivers/hbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 175
+  },
+  {
+   "id": "a8d7bd9f01b52b9404410a5bd4369d6a",
+   "file": "drivers/hbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 192
+  },
+  {
+   "id": "42d4957c9fd894b729a942a802acc0d4",
+   "file": "drivers/hbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 240
+  },
+  {
+   "id": "0965b67f4ad4d1d1f585006605778732",
+   "file": "drivers/hbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 242
+  },
+  {
+   "id": "d41537a3e6f06617d08821a79dc70453",
+   "file": "drivers/neo4j/filter.go",
+   "mutator": "branch/if",
+   "line": 26
+  },
+  {
+   "id": "2c99ed30892c6831371de3020bc552e6",
+   "file": "drivers/neo4j/filter.go",
+   "mutator": "branch/case",
+   "line": 87
+  },
+  {
+   "id": "f2a1426ab6fabac26610ff31a4a151d5",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/error-guard",
+   "line": 185
+  },
+  {
+   "id": "3c940ca2e3008f935c809474aa8af849",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/error-guard",
+   "line": 418
+  },
+  {
+   "id": "cd76a50a5bec2b76c1fed654cf9e8294",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/error-guard",
+   "line": 486
+  },
+  {
+   "id": "7a5af99bc6af9e4348ca6a7da1437693",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/context-nil",
+   "line": 288
+  },
+  {
+   "id": "3792d440b998a188362145185186f52c",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/context-nil",
+   "line": 342
+  },
+  {
+   "id": "e4360d945dae58971e588f1450af2244",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "expression/context-nil",
+   "line": 59
+  },
+  {
+   "id": "db6ebc3fa992bf5e462bfb40156cb6f6",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "expression/context-nil",
+   "line": 60
+  },
+  {
+   "id": "6190739a858a86457a2e6c45034e854c",
+   "file": "drivers/neo4j/neo4j.go",
+   "mutator": "expression/remove",
+   "line": 518
+  },
+  {
+   "id": "61612fd1d1bcf8b1e8a63cb07327f1fd",
+   "file": "drivers/neo4j/normalize.go",
+   "mutator": "branch/case",
+   "line": 77
+  },
+  {
+   "id": "212eefa8dcfa09d1bb78de69212f571a",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "statement/return",
+   "line": 34
+  },
+  {
+   "id": "89d25a612abe07b1e67a34413e889a22",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "statement/return",
+   "line": 43
+  },
+  {
+   "id": "0ba92daf02c8102ab6bbdc3d82d21d0f",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "statement/return",
+   "line": 47
+  },
+  {
+   "id": "ce994a0aab32fa4bc6f036f1f528667c",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "expression/error-guard",
+   "line": 72
+  },
+  {
+   "id": "43ade25089e7ed498190d2f552462f8f",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "expression/remove",
+   "line": 104
+  },
+  {
+   "id": "be4477090eaa0f0e6e3c32aff7a68971",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "expression/error-guard",
+   "line": 132
+  },
+  {
+   "id": "baf69e35e4a97a5a9ef20a8cafba9577",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "expression/error-guard",
+   "line": 199
+  },
+  {
+   "id": "7f0f2b267ee0ca52199ca20e58a20869",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "statement/return",
+   "line": 54
+  },
+  {
+   "id": "fdc773b99d524549d8faefca06140618",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "statement/return",
+   "line": 69
+  },
+  {
+   "id": "3036ab815721713332d191540ff4b31b",
+   "file": "drivers/neo4j/write.go",
+   "mutator": "expression/error-guard",
+   "line": 196
   }
  ]
 }
