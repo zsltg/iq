@@ -29,15 +29,15 @@
 # "Total: N" line of the dry run, so a line that the parser does not know stops the plan
 # instead of dropping mutants.
 #
-# Shard size. The budget of a shard is 150 min, which leaves 30 min of the 180 min job for
-# the setup. The cost of a cell is (mutants + 1) x seconds per mutant: each gate run also
+# Shard size. The budget of a shard is 120 min. The job runs for 300 min, so the margin of 180 min
+# covers a slow suite, a slow backend start and the setup. The cost of a cell is (mutants + 1) x seconds per mutant: each gate run also
 # does one coverage pass of the package tests. The seconds per mutant come from the state
 # of the last scan (secondsPerMutant). A package with no state uses its starting rate from
 # the table below, else 180 s for a package that starts a backend in CI and 15 s for the
 # other packages. The cells are
 # packed largest first, each into the first shard that has room (first-fit decreasing). A
 # cell that is larger than the budget gets its own shard and a warning. A cell that is
-# larger than 165 min (the 180 min job less the setup) stops the plan, because its shard
+# larger than 285 min (the 300 min job less the setup) stops the plan, because its shard
 # cannot finish. A package with no mutants gets one shard with no cells, so that the
 # verdict still records its zero result.
 #
@@ -114,8 +114,8 @@ import re
 import sys
 
 work = sys.argv[1]
-BUDGET = 150 * 60
-JOB_LIMIT = 165 * 60  # the 180 min job less the setup
+BUDGET = 120 * 60
+JOB_LIMIT = 285 * 60  # the 300 min job less the setup
 MAX_JOBS = 256  # the GitHub limit for one matrix
 
 matrix = []
