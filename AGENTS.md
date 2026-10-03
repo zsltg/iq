@@ -8,6 +8,7 @@ These rules bind all work in this repository. Read the linked policies when thei
 - Before edits, create or reuse an isolated task worktree branched from `origin/main`, except for release work.
 - For release work, branch from `github/main` as described in [the release procedure](DEVELOPMENT.md#releasing).
 - Never switch branches in a shared checkout. Never edit `main` unless the user explicitly requests it.
+- Keep `main` buildable.
 - Use one short-lived branch per atomic task, with a `feat/`, `fix/`, `chore/`, `test/`, `ci/`, or `docs/` prefix.
 - An implementation request authorizes local edits and the checks that the work needs.
 - A local draft authorizes local edits and needed checks. It ends with a reviewable local diff.
@@ -17,7 +18,7 @@ These rules bind all work in this repository. Read the linked policies when thei
 - Read [the maintainer workflow](.agents/workflow.md) before source-control writes, publication, review fixes, merges, or releases.
 - Ask before adding or upgrading a dependency or running a destructive database operation that the command did not request.
 - If a choice is unclear and costly to reverse, ask. Otherwise, record a reasonable assumption and proceed.
-- Use a small experiment to resolve uncertain behavior. Raise real risks and deviations.
+- Use a small experiment to resolve uncertain behavior. Raise real risks and deviations. Skip style nits.
 
 ## Project and invariants
 
@@ -39,7 +40,8 @@ Preserve these invariants:
 
 ## Code and safety
 
-- Keep code plain, linear, and readable. Reuse fitting code and dependencies before choosing the standard library or a maintained permissive library.
+- Keep code plain, linear, and readable. Reuse fitting repository code and installed dependencies.
+- For new implementations, prefer the standard library, then a maintained permissive library.
 - Write custom code only for a real gap in determinism, size, or licensing.
 - Do not add frameworks, code generation, or heavy patterns unless asked.
 - Keep one source of truth per fact. Use closed types instead of sentinel strings or parallel nullable fields.
@@ -84,8 +86,10 @@ Before publication and before merge, all required checks must pass:
 - Scoped tests and `make check`.
 - `make cover`, above the coverage floor, with the integration services available.
 - `make security` and `make capabilities`. The capability gate skips itself when the dependency graph is unchanged.
-- The end-to-end tests. Full `make cover` includes `e2e`, so an unchanged tree needs no second run solely for this list.
+- The end-to-end tests on the current tree, through full `make cover` or `make e2e`.
+  Follow [the end-to-end prerequisites](DEVELOPMENT.md#end-to-end-validation) and report skipped live flows.
 - `scripts/mutation-gate.sh`, with no new surviving mutants on covered code.
+- Before merge, require passing `ci-ok` and resolved review threads.
 - `make ci` runs check, cover, security, capabilities, and mutation in order. Start the shared stack first.
 - The mutation floor exception applies only to a full scan of `./cmd`, as defined in the wrapper.
 - Errors and timeouts fail the mutation gate. Investigate survivors and strengthen tests for real behavior gaps.

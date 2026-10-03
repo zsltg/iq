@@ -9,10 +9,8 @@ This contract binds backend adapters, driver plan documents, and reviews of eith
 
 - Assess every candidate datastore against all four gates before writing adapter code.
 - A failed gate stops the work. Do not work around it.
-
-The jq path uses `KVStore` and optional capability ports. `Store.Query` serves native exec queries.
-
-- The adapter must fit those contracts and the registry rules below.
+- Fit the adapter to the query ports and registry rules below.
+  The jq path uses `KVStore` and optional capability ports. `Store.Query` serves native exec queries.
 
 ### Local test image
 

@@ -82,6 +82,8 @@ make sbom           # SPDX + CycloneDX SBOMs only
 
 ### make check
 
+`make check` runs `scripts/check.sh`.
+
 Format (`gofumpt` + `goimports`), `go vet`, `go build`, `golangci-lint`
 (gosec included), `deadcode`, the demo stamp gate ([Recorded demo](#recorded-demo)),
 the mutation verdict tests (`bash scripts/test/mutation-verdict.sh`: fixture shards
@@ -121,6 +123,8 @@ Run `make sbom` when only the SBOM artifacts are needed.
 
 ### make cover
 
+`make cover` runs `scripts/coverage.sh`.
+
 Full container-backed suite with `-coverpkg=./...`; fails below
 `IQ_COVER_MIN` (default 80). `IQ_COVER_SHORT=1` runs a fast report-only pass.
 CI splits the run across runners with two more variables. `IQ_COVER_PKGS` (a
@@ -134,12 +138,17 @@ Cross-package coverage counts, and packages without their own tests still enter
 the denominator. Short mode understates driver coverage and does not satisfy
 the full coverage gate.
 
+### End-to-end validation
+
 Full `make cover` includes the `e2e` package and its binary build.
-On an unchanged tree, that pass satisfies the local end-to-end requirement.
-Do not repeat `make e2e` solely to satisfy the same checklist.
-Use `make e2e` for a focused black-box run through `os/exec`, or after relevant changes.
-The `e2e` package skips under `-short`. Configure live backends as described in
-[Test backends](#test-backends) to cover the optional live flows.
+`make e2e` runs that package alone. Both commands test the binary through `os/exec`.
+Run either command after relevant changes.
+On the same tree with the same backend configuration, a passing full `make cover` needs no separate `make e2e` run.
+
+The optional live flows need `IQ_REDIS_URL` and `IQ_MONGO_URL` to point at running backends.
+Each flow skips when its variable is unset. There is no localhost fallback.
+For live coverage, configure both variables as described in [Test backends](#test-backends) before either command.
+Report any skipped live flows. The entire `e2e` package skips under `-short`.
 
 ### Capability gate (`scripts/capabilities.sh`)
 
@@ -194,7 +203,7 @@ Strengthen tests for a real behavior gap. A surviving mutant can also be a
 genuine equivalent, which needs the justification below.
 An errored or timed-out mutant also fails because it is unverified, not killed.
 One exception applies only to a full scan of `./cmd`.
-It uses the covered-code mutation score (MSI) floor committed in the wrapper.
+It uses `--min-covered-msi` with the covered-code mutation score (MSI) floor committed in the wrapper.
 The package holds composition and presentation code, and its critical paths are
 moving under `internal/`. Every other target and every diff-scoped run stays
 zero-survivor. A genuine equivalent is accepted into

@@ -59,8 +59,9 @@ bash scripts/mutation-gate.sh   # mutation gate on the lines you changed
 make capabilities               # only when go.mod or go.sum changed
 ```
 
-Full `make cover` includes the end-to-end suite. On an unchanged tree, that pass
-satisfies the local end-to-end requirement without a second `make e2e` run.
+Run full `make cover` or `make e2e` after relevant changes.
+With the same tree and backend configuration, a passing full `make cover` needs no separate `make e2e` run.
+Follow [the end-to-end prerequisites](DEVELOPMENT.md#end-to-end-validation) and report skipped live flows.
 
 The mutation gate mutates only the lines that your branch changed.
 Investigate each survivor. Strengthen tests for real behavior gaps.
