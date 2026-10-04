@@ -112,7 +112,7 @@ entry. This note goes away with the re-baseline.
   commit with this line:
   `I, <name> <author email>, hereby add my Signed-off-by to this commit: <sha>`.
   The failed `dco` job prints both commands.
-  Agents use the signed-off empty corrective commit by default.
+  When authorized to commit, agents use the signed-off empty corrective commit by default.
   Agents need explicit authorization for the author-only rebase and force-push
   exception. It does not apply to review fixes or newer `main`.
 - [Conventional Commits](https://www.conventionalcommits.org/):

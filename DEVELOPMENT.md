@@ -95,6 +95,9 @@ paths are a stale cache from a removed worktree; check clears the cache and
 retries once. Do not clear the cache unconditionally. A warm lint run takes about
 3 seconds, compared with about 65 seconds after a cache clear.
 
+`make check` also runs the capability wrapper tests (`bash scripts/test/capabilities.sh`).
+These tests use simulated Go and Capslock commands. They need no network or containers.
+
 Run `gofumpt -w .`, then `goimports -w .`, before lint or commit.
 The lint configuration extends the v2 defaults, including `staticcheck` and
 `unused`. It enables `godot`, `gosec`, `errorlint`, `testifylint`, `bodyclose`,
@@ -159,8 +162,9 @@ On drift, read the call paths before recording a new baseline with `IQ_CAPS_UPDA
 
 The wrapper installs `github.com/google/capslock/cmd/capslock@v0.3.3` into a
 temporary `GOBIN`. It runs the binary directly, with no `PATH` or `go.mod` change.
-It preserves exit codes: 0 means no drift, 1 means drift, and 2 means a run error.
-A build failure is not a capability regression.
+The wrapper exits 0 when there is no drift. It exits 1 for drift and run errors,
+including Capslock status 2. The run-error message states that no capability
+verdict was reached. A build failure is not a capability regression.
 
 The command uses `-granularity=package -output=compare capslock-baseline.json`
 over `./...`. Capslock reads no test files, so `e2e` and testcontainers are outside
@@ -183,7 +187,9 @@ Read the recorded false positives before reopening them. For example,
 `internal/render` reports `NETWORK` through `io.Writer` interface dispatch.
 Other rows need no individual note under this policy.
 
-The committed baseline is Linux-only. A non-Linux run must not regenerate it.
+The committed baseline is Linux-only. The wrapper rejects updates for non-Linux targets.
+When `IQ_CAPS_GOOS` is unset, the update guard reads the target from `go env GOOS`.
+Set `IQ_CAPS_GOOS=linux` to update the baseline from another host.
 `IQ_CAPS_GOOS` accepts only `linux`, `darwin`, or `windows` and rejects other values.
 A Darwin or Windows run provides review evidence and is expected to differ.
 A Go toolchain bump can change the baseline across the tree and require a new
