@@ -90,7 +90,9 @@ the mutation verdict tests (`bash scripts/test/mutation-verdict.sh`: fixture sha
 from `scripts/test/mutation-verdict-fixtures.py` through `scripts/mutation-verdict.sh`,
 the parse, pack and rate steps of `scripts/mutation-plan.sh` on prepared dry runs
 (`--pack`, `--rate`, `--stale`), and `scripts/mutation-fingerprint.sh` in a small copy of the
-repository; no network, no container, no mutago run), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
+repository; no network, no container, no mutago run), the capability wrapper tests
+(`bash scripts/test/capabilities.sh`: simulated Go and Capslock commands, needs `jq`,
+no network, no container), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
 paths are a stale cache from a removed worktree; check clears the cache and
 retries once. Do not clear the cache unconditionally. A warm lint run takes about
 3 seconds, compared with about 65 seconds after a cache clear.
@@ -184,7 +186,9 @@ Read the recorded false positives before reopening them. For example,
 `internal/render` reports `NETWORK` through `io.Writer` interface dispatch.
 Other rows need no individual note under this policy.
 
-The committed baseline is Linux-only. A non-Linux run must not regenerate it.
+The committed baseline is Linux-only. The wrapper rejects updates for non-Linux targets.
+When `IQ_CAPS_GOOS` is unset, the update guard reads the target from `go env GOOS`.
+Set `IQ_CAPS_GOOS=linux` to update the baseline from another host.
 `IQ_CAPS_GOOS` accepts only `linux`, `darwin`, or `windows` and rejects other values.
 A Darwin or Windows run provides review evidence and is expected to differ.
 A Go toolchain bump can change the baseline across the tree and require a new
