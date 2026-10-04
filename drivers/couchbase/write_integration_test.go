@@ -3,6 +3,7 @@ package couchbase
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"maps"
 	"strings"
 	"testing"
@@ -61,6 +62,34 @@ func TestPutInsertOnly(t *testing.T) {
 	}, query.InsertOnly)
 	require.NoError(t, err)
 	require.Equal(t, query.WriteStat{Written: 1, Skipped: 1}, stat)
+}
+
+// TestPutEncodeError pins that a document the SDK cannot encode fails the batch in both
+// write modes. The SDK reports the failure on the single operation, and the batch call
+// itself succeeds, so a Put that reads only the batch result counts the document as
+// written.
+func TestPutEncodeError(t *testing.T) {
+	st := seedCollectionKV(t, nil)
+	ctx := tightCtx(t, skipShort(t))
+
+	tests := []struct {
+		name string
+		mode query.WriteMode
+		want string
+	}{
+		{name: "upsert", mode: query.Upsert, want: "couchbase upsert"},
+		{name: "insert only", mode: query.InsertOnly, want: "couchbase insert"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bad := map[string]any{"c": make(chan int)} // JSON cannot encode a channel
+			_, err := st.Put(ctx, []query.Record{{Key: "bad", Value: bad}}, tt.mode)
+			require.ErrorContains(t, err, tt.want)
+			// The message alone cannot tell %w from %v. The SDK cause must stay in the chain.
+			var encodeErr *json.UnsupportedTypeError
+			require.ErrorAs(t, err, &encodeErr, "the encode cause must stay reachable through the wrap")
+		})
+	}
 }
 
 func TestPutKeylessMintsID(t *testing.T) {
