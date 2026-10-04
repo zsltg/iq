@@ -138,14 +138,17 @@ while IFS=$'\t' read -r file mutator; do
   rm -f report.json mutago-agentic.json mutago-summary.json
   # A mutant can turn a write loop into an endless one, and a test that logs to a file
   # then fills the disk in seconds. A full disk shuts the runner down before any timeout
-  # fires, and the artifact upload is lost. The limit is 2 GiB (bash counts blocks of
-  # 1024 bytes). The subshell keeps it off the artifact writes. A write over the limit
-  # ends the test process with SIGXFSZ, a test failure, so mutago scores the mutant KILLED.
+  # fires, and the artifact upload is lost. The limit is 2 GiB per file (bash counts
+  # blocks of 1024 bytes) for the gate and every process it starts. Go ignores SIGXFSZ,
+  # so a write over the limit fails with EFBIG ("file too large"): the test fails, or a
+  # loop that ignores the error runs until the mutago timeout. The disk stays bounded.
+  # The log goes through cat outside the subshell, so the limit does not cut the log,
+  # and pipefail keeps the exit status of the gate.
   (
     ulimit -f 2097152 || exit 1
     IQ_MUTATION_MUTAGO_BIN="$mutago_bin" IQ_MUTATION_MUTATORS="$mutator" \
-      exec bash scripts/mutation-gate.sh "$root/$file" >"$cell/log" 2>&1
-  )
+      exec bash scripts/mutation-gate.sh "$root/$file" 2>&1
+  ) | cat >"$cell/log"
   status=$?
   if ! redact "$cell/log"; then
     echo "mutation-shard: cell $index: could not redact the log; the log is removed" >&2

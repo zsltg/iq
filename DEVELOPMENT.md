@@ -403,9 +403,11 @@ service the way the local per-driver recipe does, couchbase provisioned by
 `scripts/seed-couchbase.sh` with `IQ_SEED_BUCKET` and `IQ_SEED_DATA=0`). The
 shard artifact uploads also on failure and replaces the artifact of an earlier
 attempt of the same job. Each cell runs under a file-size limit of 2 GiB
-(`ulimit -f`), because a mutant can turn a write loop into an endless one and a
-full disk shuts the runner down before any timeout fires. A write over the limit
-kills the test process, so mutago scores the mutant KILLED.
+per file (`ulimit -f`), because a mutant can turn a write loop into an endless one
+and a full disk shuts the runner down before any timeout fires. Go ignores SIGXFSZ,
+so a write over the limit fails with EFBIG ("file too large"): the test fails, or a
+loop that ignores the error runs until the mutago timeout. The cell log is written
+outside the limit.
 
 `deep-badge` (`scripts/mutation-verdict.sh`, read-only) runs when the shards
 finished, also when some failed. It judges each package on its own: a missing,
