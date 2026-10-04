@@ -126,7 +126,8 @@ func TestQueryRequestErrors(t *testing.T) {
 
 	t.Run("a statement with a syntax error", func(t *testing.T) {
 		_, err := st.Query(ctx, []string{"SELEKT 1"})
-		require.Error(t, err)
+		// The query service answers error code 3000, which the SDK maps to ErrParsingFailure.
+		require.ErrorIs(t, err, gocb.ErrParsingFailure)
 	})
 
 	t.Run("a cancelled context", func(t *testing.T) {

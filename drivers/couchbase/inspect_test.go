@@ -2,10 +2,10 @@ package couchbase
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"testing"
 
+	"github.com/couchbase/gocb/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -126,8 +126,9 @@ func TestInspectContextCancelled(t *testing.T) {
 			err := tt.op()
 			require.ErrorContains(t, err, tt.want,
 				"a cancelled context must surface as an error, not a completed probe")
-			// The message alone cannot tell %w from %v. The SDK cause must stay in the chain.
-			require.Error(t, errors.Unwrap(err), "the SDK cause must stay reachable through the wrap")
+			// The message alone cannot tell %w from %v. The context ended before the call,
+			// so the SDK cause must stay in the chain.
+			require.ErrorIs(t, err, gocb.ErrRequestCanceled, "the SDK cause must stay reachable through the wrap")
 		})
 	}
 }
