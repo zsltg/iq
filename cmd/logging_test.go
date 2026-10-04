@@ -459,7 +459,12 @@ func TestBuildStreamTarget(t *testing.T) {
 // lines.
 func TestTraceLogWriter(t *testing.T) {
 	var buf bytes.Buffer
-	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	var seen []string
+	lg := slog.New(cappedHandler{
+		Handler: slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}),
+		recs:    &seen,
+		max:     100,
+	})
 	w := &traceLogWriter{lg: lg}
 
 	// Write reports the full byte count it consumed, even for a partial line.
@@ -535,6 +540,86 @@ func TestTraceLogWriterHoldsLockWhileEmitting(t *testing.T) {
 	_, err := io.WriteString(w, "redis> PING\n")
 	require.NoError(t, err)
 	require.False(t, freeSeen, "the buffer lock must be held while a record is emitted")
+}
+
+// cappedHandler collects the records it receives and panics once their count passes
+// max. A Write loop that fails to consume its buffer logs one record per pass, so
+// the cap turns an endless loop into a fast failure instead of a full disk.
+type cappedHandler struct {
+	slog.Handler // optional, receives every record the cap lets through.
+	recs         *[]string
+	max          int
+}
+
+func (cappedHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h cappedHandler) Handle(_ context.Context, r slog.Record) error {
+	var driver, cmd string
+	r.Attrs(func(a slog.Attr) bool {
+		switch a.Key {
+		case "driver":
+			driver = a.Value.String()
+		case "cmd":
+			cmd = a.Value.String()
+		}
+		return true
+	})
+	*h.recs = append(*h.recs, driver+"|"+cmd)
+	if len(*h.recs) > h.max {
+		panic("traceLogWriter.Write logged more records than its input holds")
+	}
+	if h.Handler != nil {
+		return h.Handler.Handle(context.Background(), r)
+	}
+	return nil
+}
+
+func (h cappedHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h cappedHandler) WithGroup(string) slog.Handler      { return h }
+
+// TestTraceLogWriterDrainsBuffer checks that one Write consumes every complete
+// line exactly once, in order, and keeps the trailing partial line. The handler
+// caps the record count, so a loop that does not advance past a line fails in
+// milliseconds instead of running without end.
+func TestTraceLogWriterDrainsBuffer(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+		rest  string
+	}{
+		{
+			name:  "three lines",
+			input: "redis> GET a\nmongo> find {}\nplain\n",
+			want:  []string{"redis|GET a", "mongo|find {}", "|plain"},
+		},
+		{
+			name:  "crlf line ends",
+			input: "a> one\r\ntwo\n",
+			want:  []string{"a|one", "|two"},
+		},
+		{
+			name:  "partial tail kept",
+			input: "x> done\nx> half",
+			want:  []string{"x|done"},
+			rest:  "x> half",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var recs []string
+			w := &traceLogWriter{lg: slog.New(cappedHandler{recs: &recs, max: 20})}
+
+			require.NotPanics(t, func() {
+				n, err := io.WriteString(w, tt.input)
+				require.NoError(t, err)
+				require.Equal(t, len(tt.input), n)
+			})
+
+			require.Equal(t, tt.want, recs)
+			require.Equal(t, tt.rest, string(w.buf))
+		})
+	}
 }
 
 // TestTraceSinkGating checks traceSink returns the input unchanged when no DEBUG
