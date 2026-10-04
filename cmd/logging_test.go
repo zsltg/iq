@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -690,4 +691,129 @@ func TestBuildFileOpenError(t *testing.T) {
 
 	_, _, err := o.build(io.Discard, io.Discard)
 	require.Error(t, err)
+}
+
+// ctxProbe is a slog handler that records whether the contexts it received carry
+// the test marker, so a test can prove a wrapper forwards the caller's context.
+type ctxProbe struct {
+	enabledMarked, handledMarked *bool
+}
+
+func (p ctxProbe) Enabled(ctx context.Context, _ slog.Level) bool {
+	*p.enabledMarked = ctx != nil && ctx.Value(ctxKey{}) != nil
+	return true
+}
+
+func (p ctxProbe) Handle(ctx context.Context, _ slog.Record) error {
+	*p.handledMarked = ctx != nil && ctx.Value(ctxKey{}) != nil
+	return nil
+}
+
+func (p ctxProbe) WithAttrs([]slog.Attr) slog.Handler { return p }
+func (p ctxProbe) WithGroup(string) slog.Handler      { return p }
+
+// TestFanoutForwardsTheContext checks Enabled and Handle pass the caller's
+// context on to each child.
+func TestFanoutForwardsTheContext(t *testing.T) {
+	var enabledMarked, handledMarked bool
+	h := newFanout(ctxProbe{&enabledMarked, &handledMarked})
+	ctx := markedCtx()
+
+	require.True(t, h.Enabled(ctx, slog.LevelInfo))
+	require.True(t, enabledMarked, "Enabled must forward the context")
+
+	enabledMarked = false
+	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "m", 0)
+	require.NoError(t, h.Handle(ctx, rec))
+	require.True(t, enabledMarked, "Handle checks the child's level with the context")
+	require.True(t, handledMarked, "Handle must forward the context")
+}
+
+// TestDropTimeAttr checks only the top-level time attribute is removed.
+func TestDropTimeAttr(t *testing.T) {
+	timeAttr := slog.Time(slog.TimeKey, time.Unix(0, 0))
+	tests := []struct {
+		name   string
+		groups []string
+		attr   slog.Attr
+		want   slog.Attr
+	}{
+		{name: "top-level time is dropped", attr: timeAttr, want: slog.Attr{}},
+		{name: "grouped time is kept", groups: []string{"g"}, attr: timeAttr, want: timeAttr},
+		{name: "other key is kept", attr: slog.String("msg", "x"), want: slog.String("msg", "x")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dropTimeAttr(tt.groups, tt.attr)
+			require.True(t, got.Equal(tt.want), "got %v, want %v", got, tt.want)
+		})
+	}
+}
+
+// TestVerboseSinkOmitsTheTimestamp checks the stderr sink prints no wall clock.
+func TestVerboseSinkOmitsTheTimestamp(t *testing.T) {
+	var stderr bytes.Buffer
+	o := logOptions{verbose: true}
+	logger, _, err := o.build(&stderr, io.Discard)
+	require.NoError(t, err)
+	logger.Info("hello")
+
+	line := strings.TrimSpace(stderr.String())
+	require.True(t, strings.HasPrefix(line, "INF hello"), "line %q starts with the level", line)
+}
+
+// TestBuildReportsAnUnusableLogFile checks a log path whose parent is a file
+// fails with an error and still returns a usable logger and no closer.
+func TestBuildReportsAnUnusableLogFile(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	require.NoError(t, os.WriteFile(blocker, nil, 0o600))
+
+	o := logOptions{enable: true, file: filepath.Join(blocker, "iq.log"), level: slog.LevelInfo, format: "text"}
+	logger, closer, err := o.build(io.Discard, io.Discard)
+	require.ErrorContains(t, err, "create log dir")
+	require.NotNil(t, logger)
+	require.Nil(t, closer)
+	require.NotPanics(t, func() { logger.Info("still safe") })
+}
+
+// TestOpenLogFileErrors checks both failure wraps keep their cause, and that a
+// new directory is private.
+func TestOpenLogFileErrors(t *testing.T) {
+	t.Run("parent is a file", func(t *testing.T) {
+		blocker := filepath.Join(t.TempDir(), "blocker")
+		require.NoError(t, os.WriteFile(blocker, nil, 0o600))
+		_, err := openLogFile(filepath.Join(blocker, "iq.log"))
+		require.ErrorContains(t, err, "create log dir")
+		var pe *fs.PathError
+		require.ErrorAs(t, err, &pe)
+	})
+
+	t.Run("target is a directory", func(t *testing.T) {
+		_, err := openLogFile(t.TempDir())
+		require.ErrorContains(t, err, "open log file")
+		var pe *fs.PathError
+		require.ErrorAs(t, err, &pe)
+	})
+
+	t.Run("a new directory is private", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("windows has no unix permission bits")
+		}
+		dir := filepath.Join(t.TempDir(), "logs")
+		f, err := openLogFile(filepath.Join(dir, "iq.log"))
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+		info, err := os.Stat(dir)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+	})
+}
+
+// TestParseLogLevelErrorValue checks a rejected level comes back as the zero
+// level beside the error.
+func TestParseLogLevelErrorValue(t *testing.T) {
+	level, err := parseLogLevel("loud")
+	require.ErrorContains(t, err, `invalid --log.level "loud"`)
+	require.Zero(t, level)
 }

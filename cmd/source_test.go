@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -442,4 +443,296 @@ func TestRmAtomicOnUnknown(t *testing.T) {
 	cf, err := iqconfig.Load()
 	require.NoError(t, err)
 	require.Contains(t, cf.Sources, "cache", "nothing removed when a name is unknown")
+}
+
+// lockConfigDir saves cf at a fresh config path and then makes its directory
+// read-only, so the next Save fails. It skips where chmod cannot stop a write.
+func lockConfigDir(t *testing.T, cf *iqconfig.Config) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
+	}
+	dir := t.TempDir()
+	t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
+	require.NoError(t, cf.Save())
+	require.NoError(t, os.Chmod(dir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+}
+
+// TestSourceCommandsArgCounts pins the argument bounds of the source commands.
+func TestSourceCommandsArgCounts(t *testing.T) {
+	tests := []struct {
+		name  string
+		build func() *cobra.Command
+		args  []string
+	}{
+		{name: "ls two args", build: func() *cobra.Command { return newLsCmd(&config{}) }, args: []string{"a", "b"}},
+		{name: "rm no args", build: newRmCmd},
+		{name: "mv one arg", build: newMvCmd, args: []string{"a"}},
+		{name: "mv three args", build: newMvCmd, args: []string{"a", "b", "c"}},
+		{name: "src two args", build: newSrcCmd, args: []string{"a", "b"}},
+		{name: "group two args", build: newGroupCmd, args: []string{"a", "b"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seedConfig(t, newSeed())
+			_, err := runCmd(t, tt.build(), tt.args...)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "arg(s)")
+		})
+	}
+}
+
+// TestSrcAndGroupFailures drives the load, update, save and write failures of
+// `iq src` and `iq group`.
+func TestSrcAndGroupFailures(t *testing.T) {
+	seeded := func() *iqconfig.Config {
+		cf := newSeed()
+		require.NoError(t, cf.Add("prod/books", "mongodb://h/db?collection=books"))
+		require.NoError(t, cf.Add("snap", "redis://h:6379/0"))
+		return cf
+	}
+	tests := []struct {
+		name    string
+		prep    func(t *testing.T)
+		build   func() *cobra.Command
+		args    []string
+		out     io.Writer
+		wantErr string
+	}{
+		{
+			name: "src with a corrupt config",
+			prep: func(t *testing.T) {
+				p := configEnv(t)
+				require.NoError(t, os.WriteFile(p, []byte("not = [valid toml\n"), 0o600))
+			},
+			build:   newSrcCmd,
+			wantErr: "parse config",
+		},
+		{
+			name: "group with a corrupt config",
+			prep: func(t *testing.T) {
+				p := configEnv(t)
+				require.NoError(t, os.WriteFile(p, []byte("not = [valid toml\n"), 0o600))
+			},
+			build:   newGroupCmd,
+			wantErr: "parse config",
+		},
+		{
+			name:    "src of an unknown source",
+			prep:    func(t *testing.T) { seedConfig(t, seeded()) },
+			build:   newSrcCmd,
+			args:    []string{"nosuch"},
+			wantErr: "nosuch",
+		},
+		{
+			name:    "group of an unknown group",
+			prep:    func(t *testing.T) { seedConfig(t, seeded()) },
+			build:   newGroupCmd,
+			args:    []string{"nosuch"},
+			wantErr: "nosuch",
+		},
+		{
+			name:    "src save fails",
+			prep:    func(t *testing.T) { lockConfigDir(t, seeded()) },
+			build:   newSrcCmd,
+			args:    []string{"snap"},
+			wantErr: "create temp config",
+		},
+		{
+			name:    "group set save fails",
+			prep:    func(t *testing.T) { lockConfigDir(t, seeded()) },
+			build:   newGroupCmd,
+			args:    []string{"prod"},
+			wantErr: "create temp config",
+		},
+		{
+			name:    "group clear save fails",
+			prep:    func(t *testing.T) { lockConfigDir(t, seeded()) },
+			build:   newGroupCmd,
+			args:    []string{"--clear"},
+			wantErr: "create temp config",
+		},
+		{
+			name:    "src show write fails",
+			prep:    func(t *testing.T) { seedConfig(t, seeded()) },
+			build:   newSrcCmd,
+			out:     &errAfter{0},
+			wantErr: "write failed",
+		},
+		{
+			name:    "src set write fails",
+			prep:    func(t *testing.T) { seedConfig(t, seeded()) },
+			build:   newSrcCmd,
+			args:    []string{"snap"},
+			out:     &errAfter{0},
+			wantErr: "write failed",
+		},
+		{
+			name:    "group show write fails",
+			prep:    func(t *testing.T) { seedConfig(t, seeded()) },
+			build:   newGroupCmd,
+			out:     &errAfter{0},
+			wantErr: "write failed",
+		},
+		{
+			name:    "group set write fails",
+			prep:    func(t *testing.T) { seedConfig(t, seeded()) },
+			build:   newGroupCmd,
+			args:    []string{"prod"},
+			out:     &errAfter{0},
+			wantErr: "write failed",
+		},
+		{
+			name:    "group clear write fails",
+			prep:    func(t *testing.T) { seedConfig(t, seeded()) },
+			build:   newGroupCmd,
+			args:    []string{"--clear"},
+			out:     &errAfter{0},
+			wantErr: "write failed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.prep(t)
+			c := tt.build()
+			if tt.out == nil {
+				_, err := runCmd(t, c, tt.args...)
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			c.SetOut(tt.out)
+			c.SetErr(io.Discard)
+			c.SetArgs(tt.args)
+			require.ErrorContains(t, c.Execute(), tt.wantErr)
+		})
+	}
+}
+
+// TestRmReportsAWriteError checks the removal line's write error comes back.
+func TestRmReportsAWriteError(t *testing.T) {
+	cf := newSeed()
+	require.NoError(t, cf.Add("snap", "redis://h:6379/0"))
+	seedConfig(t, cf)
+	c := newRmCmd()
+	c.SetOut(&errAfter{0})
+	c.SetErr(io.Discard)
+	c.SetArgs([]string{"snap"})
+	require.ErrorContains(t, c.Execute(), "write failed")
+}
+
+// TestMvEdgeCases covers the keyring and save branches of `iq mv`.
+func TestMvEdgeCases(t *testing.T) {
+	t.Run("a source without a keyring flag leaves a stale entry alone", func(t *testing.T) {
+		cf := newSeed()
+		require.NoError(t, cf.Add("plain", "redis://h:6379/0"))
+		seedConfig(t, cf)
+		fk := useFakeKeyring(t)
+		require.NoError(t, fk.Set("plain", "stale"))
+
+		_, err := runCmd(t, newMvCmd(), "plain", "renamed")
+		require.NoError(t, err)
+		_, copied := fk.m["renamed"]
+		require.False(t, copied, "only keyring-backed sources move a credential")
+	})
+
+	t.Run("a keyring source with no stored credential still moves", func(t *testing.T) {
+		cf := newSeed()
+		require.NoError(t, cf.Add("sec", "redis://u@h:6379/0"))
+		require.NoError(t, cf.UseKeyring("sec"))
+		seedConfig(t, cf)
+		useFakeKeyring(t)
+
+		out, err := runCmd(t, newMvCmd(), "sec", "renamed")
+		require.NoError(t, err)
+		require.Contains(t, out, "moved sec to renamed")
+		saved, err := iqconfig.Load()
+		require.NoError(t, err)
+		require.Contains(t, saved.Sources, "renamed", "the move is saved")
+		require.NotContains(t, saved.Sources, "sec")
+	})
+
+	t.Run("a keyring write failure stops the move and keeps the old handle", func(t *testing.T) {
+		cf := newSeed()
+		require.NoError(t, cf.Add("sec", "redis://u@h:6379/0"))
+		require.NoError(t, cf.UseKeyring("sec"))
+		seedConfig(t, cf)
+		fk := useFakeKeyring(t)
+		require.NoError(t, fk.Set("sec", "secret"))
+		fk.setErr = errors.New("keyring locked")
+
+		_, err := runCmd(t, newMvCmd(), "sec", "renamed")
+		require.ErrorContains(t, err, "keyring locked")
+		saved, loadErr := iqconfig.Load()
+		require.NoError(t, loadErr)
+		require.Contains(t, saved.Sources, "sec")
+	})
+
+	t.Run("a save failure rolls back the staged credential", func(t *testing.T) {
+		cf := newSeed()
+		require.NoError(t, cf.Add("sec", "redis://u@h:6379/0"))
+		require.NoError(t, cf.UseKeyring("sec"))
+		lockConfigDir(t, cf)
+		fk := useFakeKeyring(t)
+		require.NoError(t, fk.Set("sec", "secret"))
+
+		_, err := runCmd(t, newMvCmd(), "sec", "renamed")
+		require.ErrorContains(t, err, "create temp config")
+		_, staged := fk.m["renamed"]
+		require.False(t, staged, "the new credential is removed again")
+		require.Equal(t, "secret", fk.m["sec"], "the old credential stays")
+	})
+
+	t.Run("a move write failure is returned", func(t *testing.T) {
+		cf := newSeed()
+		require.NoError(t, cf.Add("snap", "redis://h:6379/0"))
+		seedConfig(t, cf)
+		c := newMvCmd()
+		c.SetOut(&errAfter{0})
+		c.SetErr(io.Discard)
+		c.SetArgs([]string{"snap", "renamed"})
+		require.ErrorContains(t, c.Execute(), "write failed")
+	})
+}
+
+// TestIsAllDigits checks the digit test one rune class at a time.
+func TestIsAllDigits(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"0", true},
+		{"0123456789", true},
+		{"", false},
+		{"12a", false},
+		{"1-2", false},
+		{"+1", false},
+		{"1/2", false},
+		{"1:2", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			require.Equal(t, tt.want, isAllDigits(tt.in))
+		})
+	}
+}
+
+// TestReadPasswordFromAPipe checks a piped stdin (a file that is not a terminal)
+// is read as a line, without a prompt.
+func TestReadPasswordFromAPipe(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	_, err = w.WriteString("s3cret\n")
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	c := &cobra.Command{}
+	c.SetIn(r)
+	var stderr bytes.Buffer
+	c.SetErr(&stderr)
+	got, err := readPassword(c)
+	require.NoError(t, err)
+	require.Equal(t, "s3cret", got)
+	require.Empty(t, stderr.String(), "no prompt for a piped password")
 }

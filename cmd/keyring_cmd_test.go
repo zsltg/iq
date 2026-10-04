@@ -3,6 +3,8 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -380,5 +382,290 @@ func TestConfigKeyringMigrateKeepsOtherEntries(t *testing.T) {
 		cf, err := iqconfig.Load()
 		require.NoError(t, err)
 		require.Equal(t, "redis://u:inline@h:6379/0", cf.Sources["sec"].URL)
+	})
+}
+
+// secondSetFails wraps a fake keyring so that its second Set call fails, which
+// leaves the first secret written when a multi-source migrate stops.
+type secondSetFails struct {
+	*fakeKeyring
+	sets int
+}
+
+func (k *secondSetFails) Set(handle, password string) error {
+	k.sets++
+	if k.sets == 2 {
+		return errors.New("keyring locked")
+	}
+	return k.fakeKeyring.Set(handle, password)
+}
+
+// deleteFails wraps a fake keyring so every Delete fails.
+type deleteFails struct{ *fakeKeyring }
+
+func (deleteFails) Delete(string) error { return errors.New("keyring locked") }
+
+// TestConfigKeyringArgCounts pins the argument bounds of each keyring command.
+func TestConfigKeyringArgCounts(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "ls takes none", args: []string{"ls", "extra"}},
+		{name: "get needs one", args: []string{"get"}},
+		{name: "get takes one", args: []string{"get", "a", "b"}},
+		{name: "set needs one", args: []string{"set"}},
+		{name: "set takes two", args: []string{"set", "a", "b", "c"}},
+		{name: "rm needs one", args: []string{"rm"}},
+		{name: "rm takes one", args: []string{"rm", "a", "b"}},
+		{name: "migrate takes one", args: []string{"migrate", "a", "b"}},
+		{name: "prune takes none", args: []string{"prune", "extra"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newSeed()
+			fk := useFakeKeyring(t)
+			seedKeyringSource(t, c, fk, "a", "redis://u@h:6379/0", true, "secret")
+			seedConfig(t, c)
+			_, err := runCmd(t, newConfigKeyringCmd(&config{}), tt.args...)
+			require.Error(t, err)
+		})
+	}
+}
+
+// TestConfigKeyringCorruptConfig checks each command stops on a config it cannot
+// parse, before it touches the keyring.
+func TestConfigKeyringCorruptConfig(t *testing.T) {
+	for _, args := range [][]string{
+		{"ls"}, {"get", "a"}, {"set", "a", "v"}, {"rm", "a"}, {"migrate", "a"}, {"prune"},
+	} {
+		t.Run(args[0], func(t *testing.T) {
+			p := configEnv(t)
+			require.NoError(t, os.WriteFile(p, []byte("not = [valid toml\n"), 0o600))
+			fk := useFakeKeyring(t)
+			_, err := runCmd(t, newConfigKeyringCmd(&config{}), args...)
+			require.ErrorContains(t, err, "parse config")
+			require.Empty(t, fk.m)
+		})
+	}
+}
+
+// TestConfigKeyringOutputFailures fails the write of each report line and expects
+// the error back.
+func TestConfigKeyringOutputFailures(t *testing.T) {
+	seed := func(t *testing.T) {
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "kr", "redis://u@h:6379/0", true, "secret")
+		seedKeyringSource(t, c, fk, "inline", "redis://u:pw@h:6379/1", false, "")
+		seedKeyringSource(t, c, fk, "plain", "redis://h:6379/2", false, "")
+		seedKeyringSource(t, c, fk, "stale", "redis://h:6379/3", false, "old")
+		seedConfig(t, c)
+	}
+	tests := []struct {
+		name   string
+		args   []string
+		stderr bool
+	}{
+		{name: "ls table", args: []string{"ls"}},
+		{name: "ls json", args: []string{"ls", "-j"}},
+		{name: "ls yaml", args: []string{"ls", "-y"}},
+		{name: "get", args: []string{"get", "kr"}},
+		{name: "set", args: []string{"set", "kr", "v"}},
+		{name: "rm", args: []string{"rm", "kr"}},
+		{name: "migrate", args: []string{"migrate", "inline"}},
+		{name: "migrate dry run", args: []string{"migrate", "inline", "--dry-run"}},
+		{name: "prune", args: []string{"prune"}},
+		{name: "prune dry run", args: []string{"prune", "--dry-run"}},
+		{name: "prune note", args: []string{"prune"}, stderr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seed(t)
+			c := newConfigKeyringCmd(&config{})
+			if tt.stderr {
+				c.SetOut(io.Discard)
+				c.SetErr(&errAfter{0})
+			} else {
+				c.SetOut(&errAfter{0})
+				c.SetErr(io.Discard)
+			}
+			c.SetArgs(tt.args)
+			require.ErrorContains(t, c.Execute(), "write failed")
+		})
+	}
+}
+
+// TestConfigKeyringPruneNoStale checks the empty report and its write error.
+func TestConfigKeyringPruneNoStale(t *testing.T) {
+	c := newSeed()
+	fk := useFakeKeyring(t)
+	seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
+	seedConfig(t, c)
+
+	out, err := runCmd(t, newConfigKeyringCmd(&config{}), "prune")
+	require.NoError(t, err)
+	require.Contains(t, out, "no stale keyring entries")
+
+	cmd := newConfigKeyringCmd(&config{})
+	cmd.SetOut(&errAfter{0})
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"prune"})
+	require.ErrorContains(t, cmd.Execute(), "write failed")
+}
+
+// TestConfigKeyringPruneSkipsMissingEntries checks a source with no entry does not
+// stop the scan: a stale entry on a later source is still pruned.
+func TestConfigKeyringPruneSkipsMissingEntries(t *testing.T) {
+	c := newSeed()
+	fk := useFakeKeyring(t)
+	seedKeyringSource(t, c, fk, "a-clean", "redis://h:6379/0", false, "")
+	seedKeyringSource(t, c, fk, "b-stale", "redis://h:6379/1", false, "old")
+	seedConfig(t, c)
+
+	out, err := runCmd(t, newConfigKeyringCmd(&config{}), "prune")
+	require.NoError(t, err)
+	require.Contains(t, out, "deleted stale keyring entry for b-stale")
+	require.NotContains(t, fk.m, "b-stale")
+}
+
+// TestConfigKeyringPruneReportsADeleteFailure checks the delete error comes back
+// and no success line is printed for the entry.
+func TestConfigKeyringPruneReportsADeleteFailure(t *testing.T) {
+	c := newSeed()
+	fk := newFakeKeyring()
+	prev := keyringStore
+	keyringStore = deleteFails{fk}
+	t.Cleanup(func() { keyringStore = prev })
+	seedKeyringSource(t, c, fk, "stale", "redis://h:6379/0", false, "old")
+	seedConfig(t, c)
+
+	out, err := runCmd(t, newConfigKeyringCmd(&config{}), "prune")
+	require.ErrorContains(t, err, "keyring locked")
+	require.NotContains(t, out, "deleted stale")
+}
+
+// TestConfigKeyringGetRefusals checks the unknown and non-keyring refusals.
+func TestConfigKeyringGetRefusals(t *testing.T) {
+	c := newSeed()
+	fk := useFakeKeyring(t)
+	seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
+	seedConfig(t, c)
+
+	_, err := runCmd(t, newConfigKeyringCmd(&config{}), "get", "plain")
+	require.ErrorContains(t, err, "is not keyring-backed")
+	_, err = runCmd(t, newConfigKeyringCmd(&config{}), "get", "nosuch")
+	require.ErrorContains(t, err, "unknown source")
+}
+
+// TestConfigKeyringLsYAML checks -y alone selects the structured form.
+func TestConfigKeyringLsYAML(t *testing.T) {
+	c := newSeed()
+	fk := useFakeKeyring(t)
+	seedKeyringSource(t, c, fk, "kr", "redis://u@h:6379/0", true, "secret")
+	seedConfig(t, c)
+
+	out, err := runCmd(t, newConfigKeyringCmd(&config{}), "ls", "-y")
+	require.NoError(t, err)
+	require.Contains(t, out, "status: present")
+
+	_, err = runCmd(t, newConfigKeyringCmd(&config{}), "ls", "-j", "-y")
+	require.ErrorContains(t, err, "none of the others can be")
+}
+
+// TestConfigKeyringSetFailures covers the keyring write and config save failures
+// of `set` and the save failure of `rm`.
+func TestConfigKeyringSetFailures(t *testing.T) {
+	t.Run("a keyring write failure changes nothing", func(t *testing.T) {
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
+		seedConfig(t, c)
+		fk.setErr = errors.New("keyring locked")
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "set", "plain", "v")
+		require.ErrorContains(t, err, "keyring locked")
+		saved, loadErr := iqconfig.Load()
+		require.NoError(t, loadErr)
+		require.False(t, saved.Sources["plain"].Keyring)
+	})
+
+	t.Run("a save failure removes the new entry again", func(t *testing.T) {
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
+		lockConfigDir(t, c)
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "set", "plain", "v")
+		require.ErrorContains(t, err, "create temp config")
+		require.NotContains(t, fk.m, "plain")
+	})
+
+	t.Run("rm keeps the secret when the save fails", func(t *testing.T) {
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "kr", "redis://u@h:6379/0", true, "secret")
+		lockConfigDir(t, c)
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "rm", "kr")
+		require.ErrorContains(t, err, "create temp config")
+		require.Equal(t, "secret", fk.m["kr"])
+	})
+}
+
+// TestConfigKeyringMigrateEdges covers the empty run, the scan past a keyring
+// source, the save failure and the partial write rollback.
+func TestConfigKeyringMigrateEdges(t *testing.T) {
+	t.Run("all with nothing inline reports nothing to migrate", func(t *testing.T) {
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
+		seedConfig(t, c)
+
+		out, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all")
+		require.NoError(t, err)
+		require.Contains(t, out, "nothing to migrate")
+	})
+
+	t.Run("all goes past a keyring source to later inline ones", func(t *testing.T) {
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "a-kr", "redis://u@h:6379/0", true, "secret")
+		seedKeyringSource(t, c, fk, "b-inline", "redis://u:pw@h:6379/1", false, "")
+		seedConfig(t, c)
+
+		out, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all")
+		require.NoError(t, err)
+		require.Contains(t, out, "migrated b-inline to the keyring")
+		require.Equal(t, "pw", fk.m["b-inline"])
+	})
+
+	t.Run("a save failure rolls the secrets back", func(t *testing.T) {
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "inline", "redis://u:pw@h:6379/1", false, "")
+		lockConfigDir(t, c)
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "inline")
+		require.ErrorContains(t, err, "create temp config")
+		require.NotContains(t, fk.m, "inline")
+	})
+
+	t.Run("a failed second write removes the first secret", func(t *testing.T) {
+		c := newSeed()
+		fk := newFakeKeyring()
+		prev := keyringStore
+		keyringStore = &secondSetFails{fakeKeyring: fk}
+		t.Cleanup(func() { keyringStore = prev })
+		seedKeyringSource(t, c, fk, "a-inline", "redis://u:pw@h:6379/0", false, "")
+		seedKeyringSource(t, c, fk, "b-inline", "redis://u:pw@h:6379/1", false, "")
+		seedConfig(t, c)
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all")
+		require.ErrorContains(t, err, "keyring locked")
+		require.Empty(t, fk.m, "no secret is left behind")
+		saved, loadErr := iqconfig.Load()
+		require.NoError(t, loadErr)
+		require.False(t, saved.Sources["a-inline"].Keyring)
 	})
 }
