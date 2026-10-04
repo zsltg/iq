@@ -2832,6 +2832,96 @@
    "file": "drivers/cassandra/write.go",
    "mutator": "expression/error-guard",
    "line": 206
+  },
+  {
+   "id": "262ecd91cde550657ce1dcdf6228d1f2",
+   "file": "drivers/couchbase/couchbase.go",
+   "mutator": "expression/error-guard",
+   "line": 324
+  },
+  {
+   "id": "c6b3294bc91b085d00ef0d3d9a5d7879",
+   "file": "drivers/couchbase/couchbase.go",
+   "mutator": "expression/error-guard",
+   "line": 423
+  },
+  {
+   "id": "2e5c697a03c1c7349286823291d3d0ea",
+   "file": "drivers/couchbase/couchbase.go",
+   "mutator": "expression/error-guard",
+   "line": 468
+  },
+  {
+   "id": "be449d0d9f11dfeb2780fd10e29bab63",
+   "file": "drivers/couchbase/filter.go",
+   "mutator": "branch/case",
+   "line": 83
+  },
+  {
+   "id": "219f1bac9602784d88143101f8ec5c65",
+   "file": "drivers/couchbase/filter.go",
+   "mutator": "branch/case",
+   "line": 180
+  },
+  {
+   "id": "cd56dc039c95db3235f8be65e55ff354",
+   "file": "drivers/couchbase/filter.go",
+   "mutator": "branch/case",
+   "line": 243
+  },
+  {
+   "id": "b951dc94ce1ef1ed088c6626e5d635e0",
+   "file": "drivers/couchbase/inspect.go",
+   "mutator": "statement/defer-remove",
+   "line": 19
+  },
+  {
+   "id": "b754003e7d688012bcde4a4edc5d1f24",
+   "file": "drivers/couchbase/inspect.go",
+   "mutator": "expression/error-guard",
+   "line": 23
+  },
+  {
+   "id": "bf328d47003980962075c816654fd40b",
+   "file": "drivers/couchbase/inspect.go",
+   "mutator": "expression/error-guard",
+   "line": 28
+  },
+  {
+   "id": "9e5c7b01507b22f79d3830018fa100ca",
+   "file": "drivers/couchbase/inspect.go",
+   "mutator": "statement/remove",
+   "line": 45
+  },
+  {
+   "id": "60824250c30799bce5ebbdbbc2147f6e",
+   "file": "drivers/couchbase/inspect.go",
+   "mutator": "expression/error-guard",
+   "line": 96
+  },
+  {
+   "id": "09431de6600ad633122f4be5d73a4618",
+   "file": "drivers/couchbase/inspect.go",
+   "mutator": "expression/error-guard",
+   "line": 101
+  },
+  {
+   "id": "9b4997ade86c9cc7e466b5239cc04f78",
+   "file": "drivers/couchbase/write.go",
+   "mutator": "statement/return",
+   "line": 148
+  },
+  {
+   "id": "f08fa040ecb117cbe882998b2df0f6ee",
+   "file": "drivers/couchbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 187
+  },
+  {
+   "id": "65ed89eaa46726195e5bf0473bc2951c",
+   "file": "drivers/couchbase/write.go",
+   "mutator": "expression/error-guard",
+   "line": 191
   }
  ]
 }

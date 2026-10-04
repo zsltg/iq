@@ -102,6 +102,42 @@ func TestScanBatches(t *testing.T) {
 	require.Equal(t, fixture["2"], got["2"])
 }
 
+// TestScanBatchesCallbackError pins that an error from the page callback stops the scan
+// and reaches the caller unchanged.
+func TestScanBatchesCallbackError(t *testing.T) {
+	st := seedCollection(t, books())
+	ctx := tightCtx(t, skipShort(t))
+	errStop := errors.New("stop the scan")
+
+	calls := 0
+	err := st.ScanBatches(ctx, func(map[string]any) error {
+		calls++
+		return errStop
+	})
+	require.ErrorIs(t, err, errStop)
+	require.Equal(t, 1, calls, "the scan must stop at the first callback error")
+}
+
+// TestQueryRequestErrors pins the two ways a raw query fails before it streams a row: the
+// service refuses the statement, and the context ends before the call.
+func TestQueryRequestErrors(t *testing.T) {
+	st := seedCollection(t, books())
+	ctx := tightCtx(t, skipShort(t))
+
+	t.Run("a statement with a syntax error", func(t *testing.T) {
+		_, err := st.Query(ctx, []string{"SELEKT 1"})
+		// The query service answers error code 3000, which the SDK maps to ErrParsingFailure.
+		require.ErrorIs(t, err, gocb.ErrParsingFailure)
+	})
+
+	t.Run("a cancelled context", func(t *testing.T) {
+		cctx, cancel := context.WithCancel(ctx)
+		cancel()
+		_, err := st.Query(cctx, []string{"SELECT 1"})
+		require.ErrorIs(t, err, gocb.ErrRequestCanceled, "Query must pass its context on to the SDK")
+	})
+}
+
 // TestScanBatchesContextCancelled pins that the context ScanBatches is handed flows all
 // the way into the gocb query execution: a context cancelled before the scan starts must
 // surface the cancellation instead of being ignored. It uses an explicit Cancel (never a
@@ -288,7 +324,7 @@ func TestOpenNoBucket(t *testing.T) {
 func TestOpenBadScheme(t *testing.T) {
 	// The parse failure must stop Open there. A later failure reports a connection
 	// problem, which hides the real cause from the user.
-	_, err := Open(context.Background(), "mongodb://localhost/?bucket=iq", "", nil, numfmt.DecimalAuto)
+	_, err := Open(boundedCtx(t), "mongodb://localhost/?bucket=iq", "", nil, numfmt.DecimalAuto)
 	require.ErrorContains(t, err, "must use couchbase://")
 }
 

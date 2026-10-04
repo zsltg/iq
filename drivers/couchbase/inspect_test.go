@@ -2,9 +2,11 @@ package couchbase
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"testing"
 
+	"github.com/couchbase/gocb/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -95,35 +97,48 @@ func TestInspectContextCancelled(t *testing.T) {
 	cancel() // cancel before the first probe issues its request
 
 	tests := []struct {
-		name string
-		op   func() error
-		want string
+		name        string
+		op          func() error
+		want        string
+		namesCancel bool // whether gocb puts ErrRequestCanceled in the error chain
 	}{
 		{
-			name: "cluster",
-			op:   func() error { _, err := st.InspectCluster(cctx); return err },
-			want: "couchbase inspect cluster",
+			name:        "cluster",
+			op:          func() error { _, err := st.InspectCluster(cctx); return err },
+			want:        "couchbase inspect cluster",
+			namesCancel: true,
 		},
 		{
-			name: "buckets",
-			op:   func() error { _, err := st.InspectBuckets(cctx); return err },
-			want: "couchbase inspect buckets",
+			name:        "buckets",
+			op:          func() error { _, err := st.InspectBuckets(cctx); return err },
+			want:        "couchbase inspect buckets",
+			namesCancel: true,
 		},
 		{
+			// The gocb scope manager does not put ErrRequestCanceled in the chain for a
+			// cancelled context, so this row checks only that a cause stays in the chain.
 			name: "collections",
 			op:   func() error { _, err := st.InspectCollections(cctx); return err },
 			want: "couchbase inspect collections",
 		},
 		{
-			name: "indexes",
-			op:   func() error { _, err := st.InspectIndexes(cctx); return err },
-			want: "couchbase inspect indexes",
+			name:        "indexes",
+			op:          func() error { _, err := st.InspectIndexes(cctx); return err },
+			want:        "couchbase inspect indexes",
+			namesCancel: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.ErrorContains(t, tt.op(), tt.want,
+			err := tt.op()
+			require.ErrorContains(t, err, tt.want,
 				"a cancelled context must surface as an error, not a completed probe")
+			// The message alone cannot tell %w from %v. The SDK cause must stay in the chain.
+			if tt.namesCancel {
+				require.ErrorIs(t, err, gocb.ErrRequestCanceled, "the SDK cause must stay reachable through the wrap")
+				return
+			}
+			require.Error(t, errors.Unwrap(err), "the SDK cause must stay reachable through the wrap")
 		})
 	}
 }
@@ -141,6 +156,21 @@ func TestInspectIndexesNoBucket(t *testing.T) {
 	res, err := nb.InspectIndexes(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.(map[string]any)["indexes"])
+}
+
+// TestInspectIndexesFilterDropsOtherBuckets pins the bucket filter with a store that
+// names a bucket the cluster does not have. The test cluster holds one bucket, so a
+// filter that removes nothing cannot show on the real name. The cluster does hold an
+// index, and none of it belongs to the missing bucket, so the list must be empty.
+func TestInspectIndexesFilterDropsOtherBuckets(t *testing.T) {
+	st := seedCollection(t, books()) // creates a primary index that lives for the test
+	ctx := tightCtx(t, skipShort(t))
+
+	other := *st
+	other.bucket = "iq_no_such_bucket"
+	res, err := other.InspectIndexes(ctx)
+	require.NoError(t, err)
+	require.Empty(t, res.(map[string]any)["indexes"], "an index of another bucket must not appear")
 }
 
 // TestInspectCollectionsNoBucket confirms the bucket-scoped probe reports a missing

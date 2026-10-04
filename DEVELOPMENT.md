@@ -512,11 +512,11 @@ full run catches that drift. The `packages` input (space-separated, for example
 trailing slash and a duplicate, and stops on a path that is not a module
 package. The unit of work is a (file, mutator) cell from a dry run; the sum of
 the cells must equal the dry run total. The plan packs cells into shards of
-about 150 min at the measured seconds per mutant (a package with no stored
+about 120 min at the measured seconds per mutant (a package with no stored
 result uses its starting rate from the table in the script, else 180 s with a
 backend and 15 s without; `bash scripts/mutation-plan.sh --rate <badges-dir>
-<package>` prints the rate). A cell over 150 min gets its own shard and a
-warning; a cell over 165 min stops the plan, because its job cannot finish. The
+<package>` prints the rate). A cell over 120 min gets its own shard and a
+warning; a cell over 285 min stops the plan, because its job cannot finish. The
 full plan goes to the `scan-plan` artifact; the job output keeps only the
 package, slug and shard numbers that the matrix needs.
 
@@ -528,7 +528,12 @@ and sets the `IQ_*_URL` override, so per-mutant test runs reuse the running
 service the way the local per-driver recipe does, couchbase provisioned by
 `scripts/seed-couchbase.sh` with `IQ_SEED_BUCKET` and `IQ_SEED_DATA=0`). The
 shard artifact uploads also on failure and replaces the artifact of an earlier
-attempt of the same job.
+attempt of the same job. Each cell runs under a file-size limit of 2 GiB
+per file (`ulimit -f`), because a mutant can turn a write loop into an endless one
+and a full disk shuts the runner down before any timeout fires. Go ignores SIGXFSZ,
+so a write over the limit fails with EFBIG ("file too large"): the test fails, or a
+loop that ignores the error runs until the mutago timeout. The cell log is written
+outside the limit.
 
 `deep-badge` (`scripts/mutation-verdict.sh`, read-only) runs when the shards
 finished, also when some failed. It judges each package on its own: a missing,
