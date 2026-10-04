@@ -88,7 +88,9 @@ the mutation verdict tests (`bash scripts/test/mutation-verdict.sh`: fixture sha
 from `scripts/test/mutation-verdict-fixtures.py` through `scripts/mutation-verdict.sh`,
 the parse, pack and rate steps of `scripts/mutation-plan.sh` on prepared dry runs
 (`--pack`, `--rate`, `--stale`), and `scripts/mutation-fingerprint.sh` in a small copy of the
-repository; no network, no container, no mutago run), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
+repository; no network, no container, no mutago run), the capability wrapper tests
+(`bash scripts/test/capabilities.sh`: simulated Go and Capslock commands, needs `jq`,
+no network, no container), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
 paths are a stale cache from a removed worktree; check clears the cache and
 retries once.
 
