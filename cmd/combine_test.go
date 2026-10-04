@@ -332,7 +332,7 @@ func TestCombineVerboseWritesThePlanToStderr(t *testing.T) {
 	require.Contains(t, out, "$users  <-  users (redis)")
 }
 
-// combDriver registers the comb:// driver for the test: an addressable backend
+// useCombDriver registers the comb:// driver for the test: an addressable backend
 // whose store serves one page, and which records the config each open received.
 // The bad:// scheme fails every open with errCombineDown.
 func useCombDriver(t *testing.T) *[]config {

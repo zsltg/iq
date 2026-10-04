@@ -491,7 +491,7 @@ func TestResolveEditor(t *testing.T) {
 			}
 			gotCmd, gotArgs := resolveEditor()
 			require.Equal(t, tt.wantCmd, gotCmd)
-			require.Equal(t, len(tt.wantArgs), len(gotArgs))
+			require.Len(t, gotArgs, len(tt.wantArgs))
 			for i, want := range tt.wantArgs {
 				require.Equal(t, want, gotArgs[i])
 			}
