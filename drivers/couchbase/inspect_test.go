@@ -2,6 +2,7 @@ package couchbase
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"testing"
 
@@ -96,29 +97,35 @@ func TestInspectContextCancelled(t *testing.T) {
 	cancel() // cancel before the first probe issues its request
 
 	tests := []struct {
-		name string
-		op   func() error
-		want string
+		name        string
+		op          func() error
+		want        string
+		namesCancel bool // whether gocb puts ErrRequestCanceled in the error chain
 	}{
 		{
-			name: "cluster",
-			op:   func() error { _, err := st.InspectCluster(cctx); return err },
-			want: "couchbase inspect cluster",
+			name:        "cluster",
+			op:          func() error { _, err := st.InspectCluster(cctx); return err },
+			want:        "couchbase inspect cluster",
+			namesCancel: true,
 		},
 		{
-			name: "buckets",
-			op:   func() error { _, err := st.InspectBuckets(cctx); return err },
-			want: "couchbase inspect buckets",
+			name:        "buckets",
+			op:          func() error { _, err := st.InspectBuckets(cctx); return err },
+			want:        "couchbase inspect buckets",
+			namesCancel: true,
 		},
 		{
+			// The gocb scope manager does not put ErrRequestCanceled in the chain for a
+			// cancelled context, so this row checks only that a cause stays in the chain.
 			name: "collections",
 			op:   func() error { _, err := st.InspectCollections(cctx); return err },
 			want: "couchbase inspect collections",
 		},
 		{
-			name: "indexes",
-			op:   func() error { _, err := st.InspectIndexes(cctx); return err },
-			want: "couchbase inspect indexes",
+			name:        "indexes",
+			op:          func() error { _, err := st.InspectIndexes(cctx); return err },
+			want:        "couchbase inspect indexes",
+			namesCancel: true,
 		},
 	}
 	for _, tt := range tests {
@@ -126,9 +133,12 @@ func TestInspectContextCancelled(t *testing.T) {
 			err := tt.op()
 			require.ErrorContains(t, err, tt.want,
 				"a cancelled context must surface as an error, not a completed probe")
-			// The message alone cannot tell %w from %v. The context ended before the call,
-			// so the SDK cause must stay in the chain.
-			require.ErrorIs(t, err, gocb.ErrRequestCanceled, "the SDK cause must stay reachable through the wrap")
+			// The message alone cannot tell %w from %v. The SDK cause must stay in the chain.
+			if tt.namesCancel {
+				require.ErrorIs(t, err, gocb.ErrRequestCanceled, "the SDK cause must stay reachable through the wrap")
+				return
+			}
+			require.Error(t, errors.Unwrap(err), "the SDK cause must stay reachable through the wrap")
 		})
 	}
 }
