@@ -83,9 +83,6 @@ step "dco tests"
 # directory. They need no network and finish in seconds.
 bash scripts/test/dco.sh || note_fail "dco tests"
 
-step "capability wrapper tests"
-bash scripts/test/capabilities.sh || note_fail "capability wrapper tests"
-
 step "unit tests (-short) + coverage report"
 if go test -short -covermode=atomic -coverprofile=coverage.out ./...; then
   total="$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}')"

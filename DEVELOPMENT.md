@@ -95,9 +95,6 @@ paths are a stale cache from a removed worktree; check clears the cache and
 retries once. Do not clear the cache unconditionally. A warm lint run takes about
 3 seconds, compared with about 65 seconds after a cache clear.
 
-`make check` also runs the capability wrapper tests (`bash scripts/test/capabilities.sh`).
-These tests use simulated Go and Capslock commands. They need no network or containers.
-
 Run `gofumpt -w .`, then `goimports -w .`, before lint or commit.
 The lint configuration extends the v2 defaults, including `staticcheck` and
 `unused`. It enables `godot`, `gosec`, `errorlint`, `testifylint`, `bodyclose`,
@@ -187,9 +184,7 @@ Read the recorded false positives before reopening them. For example,
 `internal/render` reports `NETWORK` through `io.Writer` interface dispatch.
 Other rows need no individual note under this policy.
 
-The committed baseline is Linux-only. The wrapper rejects updates for non-Linux targets.
-When `IQ_CAPS_GOOS` is unset, the update guard reads the target from `go env GOOS`.
-Set `IQ_CAPS_GOOS=linux` to update the baseline from another host.
+The committed baseline is Linux-only. A non-Linux run must not regenerate it.
 `IQ_CAPS_GOOS` accepts only `linux`, `darwin`, or `windows` and rejects other values.
 A Darwin or Windows run provides review evidence and is expected to differ.
 A Go toolchain bump can change the baseline across the tree and require a new
