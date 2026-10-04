@@ -136,8 +136,16 @@ while IFS=$'\t' read -r file mutator; do
   jq -n --arg file "$file" --arg mutator "$mutator" '{file: $file, mutator: $mutator}' >"$cell/cell.json"
   echo "mutation-shard: cell $index: $file x $mutator"
   rm -f report.json mutago-agentic.json mutago-summary.json
-  IQ_MUTATION_MUTAGO_BIN="$mutago_bin" IQ_MUTATION_MUTATORS="$mutator" \
-    bash scripts/mutation-gate.sh "$root/$file" >"$cell/log" 2>&1
+  # A mutant can turn a write loop into an endless one, and a test that logs to a file
+  # then fills the disk in seconds. A full disk shuts the runner down before any timeout
+  # fires, and the artifact upload is lost. The limit is 2 GiB (bash counts blocks of
+  # 1024 bytes). The subshell keeps it off the artifact writes. A write over the limit
+  # ends the test process with SIGXFSZ, a test failure, so mutago scores the mutant KILLED.
+  (
+    ulimit -f 2097152 || exit 1
+    IQ_MUTATION_MUTAGO_BIN="$mutago_bin" IQ_MUTATION_MUTATORS="$mutator" \
+      exec bash scripts/mutation-gate.sh "$root/$file" >"$cell/log" 2>&1
+  )
   status=$?
   if ! redact "$cell/log"; then
     echo "mutation-shard: cell $index: could not redact the log; the log is removed" >&2
