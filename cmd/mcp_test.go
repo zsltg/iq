@@ -2117,3 +2117,140 @@ func TestMCPDiffForwardsContextToBothSides(t *testing.T) {
 		})
 	}
 }
+
+// TestMCPToolsReportFailures drives the failure branches of the read and write
+// tools through the protocol: each must come back as an error result that names
+// the cause, never as a success with an empty body.
+func TestMCPToolsReportFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		prep    func(t *testing.T, data string)
+		tool    string
+		args    map[string]any
+		allow   []string
+		wantMsg string
+	}{
+		{
+			name:    "sources with a corrupt config",
+			prep:    corruptConfig,
+			tool:    "iq_sources",
+			args:    map[string]any{},
+			wantMsg: "parse config",
+		},
+		{
+			name:    "ping with a corrupt config",
+			prep:    corruptConfig,
+			tool:    "iq_ping",
+			args:    map[string]any{"source": "snap"},
+			wantMsg: "parse config",
+		},
+		{
+			name:    "ping an unknown source",
+			tool:    "iq_ping",
+			args:    map[string]any{"source": "nosuch"},
+			wantMsg: "nosuch",
+		},
+		{
+			name:    "schema with a negative sample",
+			tool:    "iq_schema",
+			args:    map[string]any{"source": "snap", "sample": -1},
+			wantMsg: "sample",
+		},
+		{
+			name:    "schema of an unknown source",
+			tool:    "iq_schema",
+			args:    map[string]any{"source": "nosuch"},
+			wantMsg: "nosuch",
+		},
+		{
+			name:    "schema of an unreachable source",
+			prep:    addDeadSource,
+			tool:    "iq_schema",
+			args:    map[string]any{"source": "dead"},
+			wantMsg: "redis",
+		},
+		{
+			name:    "schema with a broken filter",
+			tool:    "iq_schema",
+			args:    map[string]any{"source": "snap", "filter": ".[ |"},
+			wantMsg: "sample",
+		},
+		{
+			name:    "diff with an unknown left source",
+			tool:    "iq_diff",
+			args:    map[string]any{"a": "nosuch", "b": "snap"},
+			wantMsg: "nosuch",
+		},
+		{
+			name:    "diff with an unknown right source",
+			tool:    "iq_diff",
+			args:    map[string]any{"a": "snap", "b": "nosuch"},
+			wantMsg: "nosuch",
+		},
+		{
+			name:    "insert from an unknown source",
+			tool:    "iq_insert",
+			allow:   []string{allowWrites},
+			args:    map[string]any{"source": "nosuch", "destination": "snap"},
+			wantMsg: "nosuch",
+		},
+		{
+			name:    "insert from an unreachable source",
+			prep:    addDeadSource,
+			tool:    "iq_insert",
+			allow:   []string{allowWrites},
+			args:    map[string]any{"source": "dead", "destination": "snap"},
+			wantMsg: "redis",
+		},
+		{
+			name:    "insert with a broken transform",
+			tool:    "iq_insert",
+			allow:   []string{allowWrites},
+			args:    map[string]any{"source": "snap", "destination": "snap", "filter": ".[ |"},
+			wantMsg: "filter",
+		},
+		{
+			name:    "delete from a corrupt config",
+			prep:    corruptConfig,
+			tool:    "iq_data_delete",
+			allow:   []string{allowDestructive},
+			args:    map[string]any{"source": "snap", "keys": []string{"a"}, "dry_run": true},
+			wantMsg: "parse config",
+		},
+		{
+			name:    "delete from an unknown source",
+			tool:    "iq_data_delete",
+			allow:   []string{allowDestructive},
+			args:    map[string]any{"source": "nosuch", "keys": []string{"a"}, "dry_run": true},
+			wantMsg: "nosuch",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := seedMCP(t)
+			cs := connectMCP(t, newTestMCPServer(tt.allow, 200, 256*1024), nil)
+			if tt.prep != nil {
+				tt.prep(t, data)
+			}
+			body := errorBodyOf(t, callMCP(t, cs, tt.tool, tt.args))
+			require.Contains(t, body.Error.Message, tt.wantMsg)
+		})
+	}
+}
+
+// corruptConfig overwrites the registry with text that is not TOML.
+func corruptConfig(t *testing.T, _ string) {
+	t.Helper()
+	p, err := iqconfig.Path()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(p, []byte("not = [valid toml\n"), 0o600))
+}
+
+// addDeadSource registers a Redis source that nothing listens on.
+func addDeadSource(t *testing.T, _ string) {
+	t.Helper()
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	require.NoError(t, cf.Add("dead", "redis://127.0.0.1:1/0"))
+	require.NoError(t, cf.Save())
+}
