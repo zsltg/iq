@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -253,4 +254,137 @@ func TestWriteDriverFormatsPropagatesACaptionWriteError(t *testing.T) {
 	d, ok := driverByName("file")
 	require.True(t, ok, "the file driver is the one with dump formats")
 	require.Error(t, writeDriverFormats(&failAt{at: 1}, d))
+}
+
+// TestDriverRegistryCapabilities pins each backend's capability flags and the
+// write-side explain describers it registers. A flag or describer that drops out
+// of the registry changes what `--explain`, `iq ping` and `iq add` do for that
+// backend, so each row is one backend's contract.
+func TestDriverRegistryCapabilities(t *testing.T) {
+	tests := []struct {
+		name           string
+		addressable    bool
+		addressParams  []string
+		verifiesOnOpen bool
+		filtersScan    bool
+		write, clear   bool
+		drop, del      bool
+	}{
+		{name: "mongo", addressable: true, addressParams: []string{"collection"}, filtersScan: true, write: true, clear: true, drop: true, del: true},
+		{name: "cassandra", addressable: true, addressParams: []string{"table"}, filtersScan: true, write: true, clear: true, drop: true, del: true},
+		{name: "dynamodb", addressable: true, addressParams: []string{"table"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
+		{name: "hbase", addressable: true, addressParams: []string{"table"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
+		{name: "couchdb", addressable: true, addressParams: []string{"database"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
+		{name: "couchbase", addressable: true, addressParams: []string{"collection", "bucket"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true},
+		{name: "neo4j", addressable: true, addressParams: []string{"label", "rel", "database"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
+		{name: "elasticsearch", addressable: true, addressParams: []string{"index"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
+		{name: "opensearch", addressable: true, addressParams: []string{"index"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
+		{name: "redis", filtersScan: true, write: true, clear: true, drop: true, del: true},
+		{name: "file"},
+	}
+	require.Len(t, drivers, len(tests), "every registered driver needs a row")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var d driver
+			for _, c := range drivers {
+				if c.name == tt.name {
+					d = c
+				}
+			}
+			require.Equal(t, tt.name, d.name)
+			require.Equal(t, tt.addressable, d.addressable)
+			require.Equal(t, tt.addressParams, d.addressParams)
+			require.Equal(t, tt.verifiesOnOpen, d.verifiesOnOpen)
+			require.Equal(t, tt.filtersScan, d.filtersScan)
+			require.NotNil(t, d.explainPlan)
+			require.Equal(t, tt.write, d.explainWrite != nil)
+			require.Equal(t, tt.clear, d.explainClear != nil)
+			require.Equal(t, tt.drop, d.explainDrop != nil)
+			require.Equal(t, tt.del, d.explainDelete != nil)
+		})
+	}
+}
+
+// TestDriverOpenHonoursContext checks each connectable backend gets the caller's
+// context. A cancelled context must make Open fail fast with a context error, so a
+// registry opener that drops the context (and so could wait without a bound)
+// fails here instead of hanging a real run.
+func TestDriverOpenHonoursContext(t *testing.T) {
+	urls := map[string]string{
+		"mongo":         "mongodb://127.0.0.1:1/db",
+		"cassandra":     "cassandra://127.0.0.1:1/ks",
+		"dynamodb":      "dynamodb://127.0.0.1:1/?region=us-east-1",
+		"hbase":         "hbase://127.0.0.1:1/",
+		"couchdb":       "couchdb://127.0.0.1:1/",
+		"couchbase":     "couchbase://127.0.0.1:1/",
+		"neo4j":         "neo4j://127.0.0.1:1/",
+		"elasticsearch": "elasticsearch://127.0.0.1:1/",
+		"opensearch":    "opensearch://127.0.0.1:1/",
+		"redis":         "redis://127.0.0.1:1/0",
+	}
+	for _, d := range drivers {
+		if d.readOnly {
+			continue
+		}
+		t.Run(d.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			_, err := d.open(ctx, &config{url: urls[d.name]})
+			require.Error(t, err)
+			if d.name != "cassandra" { // gocql dials before it reads the context.
+				require.Contains(t, err.Error(), "cancel")
+			}
+		})
+	}
+}
+
+// countingWriter counts the Write calls that reach it.
+type countingWriter struct{ n int }
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.n++
+	return len(p), nil
+}
+
+// TestListDriversPropagatesWriteErrors fails one write at a time: the table body,
+// then the first write after the table, which is the verbose format caption.
+func TestListDriversPropagatesWriteErrors(t *testing.T) {
+	var cw countingWriter
+	require.NoError(t, listDrivers(&cw, false, false, false))
+	require.Positive(t, cw.n)
+
+	tests := []struct {
+		name    string
+		failAt  int
+		verbose bool
+	}{
+		{name: "table", failAt: 1},
+		{name: "format block after the table", failAt: cw.n + 1, verbose: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := listDrivers(&failAt{at: tt.failAt}, tt.verbose, false, false)
+			require.ErrorContains(t, err, "write failed")
+		})
+	}
+}
+
+// TestDriverLsFlags checks the command's argument and flag contract: no
+// positional argument, -j and -y exclude each other, and -y alone selects the
+// structured form.
+func TestDriverLsFlags(t *testing.T) {
+	t.Run("rejects a positional argument", func(t *testing.T) {
+		_, err := runCmd(t, newDriverCmd(&config{}), "ls", "extra")
+		require.Error(t, err)
+	})
+	t.Run("rejects json with yaml", func(t *testing.T) {
+		_, err := runCmd(t, newDriverCmd(&config{}), "ls", "-j", "-y")
+		require.ErrorContains(t, err, "none of the others can be")
+	})
+	t.Run("yaml alone is structured", func(t *testing.T) {
+		out, err := runCmd(t, newDriverCmd(&config{}), "ls", "-y")
+		require.NoError(t, err)
+		require.Contains(t, out, "driver: mongo")
+		require.NotContains(t, out, "DRIVER")
+	})
 }
