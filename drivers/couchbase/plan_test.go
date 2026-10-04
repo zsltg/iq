@@ -21,6 +21,13 @@ func TestExplainPlan(t *testing.T) {
 		require.Equal(t, []string{"1", "2"}, plan.Filter["keys"])
 	})
 
+	t.Run("scan page size is 100", func(t *testing.T) {
+		// The plan prints the page size the scan uses. A literal pins the number.
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false)
+		require.Contains(t, plan.Ops[0], "pages of 100 ")
+		require.Contains(t, plan.Ops[1], "batches of 100")
+	})
+
 	t.Run("unfiltered scan streams in pages", func(t *testing.T) {
 		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false)
 		require.Contains(t, plan.Ops[0], "keyset scan")
@@ -122,6 +129,23 @@ func TestQueryErrorNoIndexHint(t *testing.T) {
 		require.Contains(t, err.Error(), "CREATE PRIMARY INDEX ON `b`.`_default`.`orders`")
 		require.ErrorIs(t, err, qerr, "the hint adds context and keeps the cause reachable")
 	})
+
+	// The first row above builds its code from the constant, so these rows pin the number.
+	for _, tt := range []struct {
+		name     string
+		code     uint32
+		wantHint bool
+	}{
+		{name: "code 4000 is the no-index code", code: 4000, wantHint: true},
+		{name: "code 3999 is another error", code: 3999},
+		{name: "code 4001 is another error", code: 4001},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			qerr := &gocb.QueryError{Errors: []gocb.QueryErrorDesc{{Code: tt.code, Message: "boom"}}}
+			err := s.queryError("couchbase scan", qerr)
+			require.Equal(t, tt.wantHint, strings.Contains(err.Error(), "CREATE PRIMARY INDEX"))
+		})
+	}
 
 	t.Run("other errors are wrapped without the hint", func(t *testing.T) {
 		err := s.queryError("couchbase scan", errors.New("boom"))

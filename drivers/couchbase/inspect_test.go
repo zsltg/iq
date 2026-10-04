@@ -2,6 +2,7 @@ package couchbase
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"testing"
 
@@ -122,8 +123,11 @@ func TestInspectContextCancelled(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.ErrorContains(t, tt.op(), tt.want,
+			err := tt.op()
+			require.ErrorContains(t, err, tt.want,
 				"a cancelled context must surface as an error, not a completed probe")
+			// The message alone cannot tell %w from %v. The SDK cause must stay in the chain.
+			require.Error(t, errors.Unwrap(err), "the SDK cause must stay reachable through the wrap")
 		})
 	}
 }
@@ -141,6 +145,21 @@ func TestInspectIndexesNoBucket(t *testing.T) {
 	res, err := nb.InspectIndexes(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.(map[string]any)["indexes"])
+}
+
+// TestInspectIndexesFilterDropsOtherBuckets pins the bucket filter with a store that
+// names a bucket the cluster does not have. The test cluster holds one bucket, so a
+// filter that removes nothing cannot show on the real name. The cluster does hold an
+// index, and none of it belongs to the missing bucket, so the list must be empty.
+func TestInspectIndexesFilterDropsOtherBuckets(t *testing.T) {
+	st := seedCollection(t, books()) // creates a primary index that lives for the test
+	ctx := tightCtx(t, skipShort(t))
+
+	other := *st
+	other.bucket = "iq_no_such_bucket"
+	res, err := other.InspectIndexes(ctx)
+	require.NoError(t, err)
+	require.Empty(t, res.(map[string]any)["indexes"], "an index of another bucket must not appear")
 }
 
 // TestInspectCollectionsNoBucket confirms the bucket-scoped probe reports a missing
