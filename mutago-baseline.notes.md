@@ -901,3 +901,25 @@ Each id below is accepted as equivalent. The CI deep scan run 37104978614 ran th
 - ba7aa88733c7 drivers/cassandra/plan.go:26 expression/remove. The same reason as filter.go:25, in ExplainPlan.
 - f337b662f270 plan.go:26 expression/logical. The same reason as filter.go:25, in ExplainPlan.
 - 36ed252c4e81 drivers/cassandra/write.go:206 expression/error-guard. The pre-read in Delete already decoded every key, so the second decode cannot fail.
+
+## drivers/couchbase, mutago v2.10.16 re-baseline (accepted 2026-10-04, test/mutation-rebaseline-8 branch)
+
+Each id below is accepted as equivalent. The CI deep scan run 37183581854 ran the whole suite against a real cluster with the mutant applied, and it passed.
+
+- 262ecd91cde5 drivers/couchbase/couchbase.go:324 expression/error-guard. rawTranscoder Decode fails only for a target that is not *[]byte, and the target in Get is always *[]byte, so the guard cannot fire. Reused from the v2.7.7 id d99383f2.
+- c6b3294bc91b couchbase.go:423 expression/error-guard. the scan statement cannot fail mid-stream on a live cluster, so the readPage error guard cannot fire. TestReadPage covers readPage with a fake.
+- 2e5c697a03c1 couchbase.go:468 expression/error-guard. gocb Row into *json.RawMessage copies the bytes and cannot fail.
+- be449d0d9f11 filter.go:83 branch/case. mutago replaces the default case body with the same zero-value return, so the program does not change.
+- 219f1bac9602 filter.go:180 branch/case. the same reason as be449d0d, in the where builder.
+- cd56dc039c95 filter.go:243 branch/case. the same reason as be449d0d, for the empty case of and.
+- b951dc94ce1e inspect.go:19 statement/defer-remove. QueryResult.Next does not close the stream, so a missing deferred Close only leaks a response body. No result differs.
+- b754003e7d68 inspect.go:23 expression/error-guard. gocb Row into *json.RawMessage cannot fail, the same reason as 2e5c697a.
+- bf328d470039 inspect.go:28 expression/error-guard. nothing makes a system:nodes query fail while it streams, so the rows.Err guard cannot fire.
+- 9e5c7b01507b inspect.go:45 statement/remove. sort.Strings on the bucket names. The test cluster holds one bucket, so the order cannot differ. Reused from the v2.7.7 id 8c63029e.
+- 60824250c307 inspect.go:96 expression/error-guard. gocb Row into *json.RawMessage cannot fail, the same reason as 2e5c697a.
+- 09431de6600a inspect.go:101 expression/error-guard. nothing makes a system:indexes query fail while it streams, so the rows.Err guard cannot fire.
+- 9b4997ade86c write.go:148 statement/return. the empty-keys return in existingKeys gives nil instead of an empty map, and the only caller does a lookup. Reused from the v2.7.7 id aee2807a.
+- f08fa040ecb1 write.go:187 expression/error-guard. a DELETE cannot be made to fail while it streams, so the rows.Err guard in Clear cannot fire.
+- 65ed89eaa467 write.go:191 expression/error-guard. rows.Close returns only the stream error that rows.Err already returned, so the Close guard in Clear cannot fire.
+
+Some ids share their text with other lines of the same file, so mutago tests one copy per scan. The ids 262ecd91, c6b3294b, 2e5c697a, b951dc94, b754003e, bf328d47, 60824250, 09431de6, 9b4997ad and f08fa040 each belong to a group that mixes a covered copy with an unreachable one. A scan that picks the covered copy kills the mutant, which is harmless.
