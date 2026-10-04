@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Capability gate. Runs github.com/google/capslock over the module and lets it
-# exit-code-enforce against a committed baseline: -output=compare exits 0 when the
-# capability set matches, 1 on drift, and 2 on a run error, so this wrapper only decides
-# whether a run is warranted, shapes the scope, and forwards the verdict. No output
-# parsing. It answers the one question the rest of the sweep does not: govulncheck and
+# Capability gate. Runs github.com/google/capslock over the module against a committed
+# baseline. Capslock returns 0 when the capability set matches, 1 on drift, and 2 on
+# a run error. The wrapper selects the scope and decides whether a run is needed.
+# It exits 1 for drift and run errors, with a distinct message for each.
+# It does not parse output. It answers the one question the rest of the sweep does not: govulncheck and
 # osv-scanner ask whether a dependency is known-vulnerable and gitleaks whether we leaked
 # a secret, while this asks what a dependency can actually *do* — a bump that gains a new
 # capability is invisible in a 295-module go.sum diff.
@@ -13,9 +13,9 @@
 # executed directly, exactly as scripts/mutation-gate.sh provisions mutago: the gate needs
 # no capslock on PATH (`make tools-dev` installs it only for ad-hoc use) and never touches
 # this module's go.mod. Direct execution is deliberate over `go run`, which collapses any
-# non-zero program exit to 1 and would make a drift verdict (exit 1) indistinguishable
-# from a run error (exit 2); the installed binary preserves capslock's exact exit codes
-# and streams its output live.
+# non-zero program exit to 1. The wrapper reads Capslock's exact status to distinguish
+# drift from a run error in its message, then exits 1 for either case.
+# The installed binary streams its output live.
 #
 # When it runs. The analysis costs ~7.3 GB peak RSS and ~39 s, so the gate is conditional
 # rather than unconditional: it runs only when go.mod or go.sum differ from the merge-base
@@ -89,7 +89,7 @@ force="${IQ_CAPS_FORCE-}"
 
 # Target GOOS. Validated before any work against a strict whitelist: a typo must stop the
 # run, never fall back to the host GOOS and report differences that are an artifact of the
-# fallback. Empty means the host target, which is what the committed baseline records.
+# fallback. An empty value uses the target selected by Go.
 goos="${IQ_CAPS_GOOS-}"
 goos_flag=()
 if [[ -n "$goos" ]]; then
@@ -101,8 +101,14 @@ fi
 
 # The committed baseline is linux-only, so a non-linux analysis cannot be allowed to
 # overwrite it: that would silently retarget the gate for every later run.
-if [[ "$update" == "1" && -n "$goos" && "$goos" != "linux" ]]; then
-  fail "refusing to regenerate $baseline_file from a ${goos} analysis; the committed baseline is linux-only (drop IQ_CAPS_GOOS)"
+if [[ "$update" == "1" ]]; then
+  update_goos="$goos"
+  if [[ -z "$update_goos" ]]; then
+    update_goos=$(go env GOOS) || fail "could not read the Go target for the baseline update"
+  fi
+  if [[ "$update_goos" != "linux" ]]; then
+    fail "cannot regenerate $baseline_file for ${update_goos}. The committed baseline supports Linux only. Set IQ_CAPS_GOOS=linux."
+  fi
 fi
 
 # Trigger. The gate is warranted by a dependency-graph change, so unless it is forced (or
@@ -127,7 +133,7 @@ if [[ "$update" != "1" && "$force" != "1" ]]; then
 fi
 
 # Provision the pinned capslock into a throwaway GOBIN and run that binary directly, so
-# the gate needs no capslock on PATH and preserves its exact exit codes (see header).
+# the gate needs no capslock on PATH and can distinguish its statuses (see header).
 # Cleaned on any exit. `go install pkg@version` is module-independent: it neither reads
 # nor writes this module's go.mod.
 capslock_bindir=$(mktemp -d) || fail "could not create temp dir"
@@ -188,8 +194,8 @@ step "capslock ${CAPSLOCK_VERSION} (capability drift vs ${baseline_file}; ~7.3 G
 status=$?
 
 # capslock exits 0 (the capability set matches the baseline), 1 (drift, in either
-# direction) or 2 (a run error). Keep the three apart: collapsing 2 into 1 would report a
-# build failure as a capability regression and send the reader to the baseline flow.
+# direction) or 2 (a run error). Use distinct messages for drift and run errors.
+# Both failures return 1, but a run error must not suggest a baseline update.
 if [[ "$status" -eq 0 ]]; then
   echo "capabilities: passed, no capability drift against $baseline_file"
   exit 0
