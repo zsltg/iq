@@ -204,3 +204,119 @@ func cacheFilesIn(t *testing.T, dir string) []string {
 	}
 	return out
 }
+
+// useCacheHome points the user cache dir at a fresh temp dir and returns the
+// decode cache dir under it.
+func useCacheHome(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("the cache dir override uses XDG_CACHE_HOME, which only linux reads")
+	}
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	dir := cacheDir()
+	require.NotEmpty(t, dir)
+	return dir
+}
+
+// TestCacheCommands runs the cache subcommands against a seeded cache.
+func TestCacheCommands(t *testing.T) {
+	t.Run("location prints the cache dir", func(t *testing.T) {
+		dir := useCacheHome(t)
+		out, err := runCmd(t, newCacheCmd(), "location")
+		require.NoError(t, err)
+		require.Equal(t, dir, strings.TrimSpace(out))
+	})
+
+	t.Run("stat lists a cached dump", func(t *testing.T) {
+		dir := useCacheHome(t)
+		dump := seedCache(t, dir)
+		out, err := runCmd(t, newCacheCmd(), "stat")
+		require.NoError(t, err)
+		require.Contains(t, out, dump)
+	})
+
+	t.Run("clear removes everything", func(t *testing.T) {
+		dir := useCacheHome(t)
+		seedCache(t, dir)
+		out, err := runCmd(t, newCacheCmd(), "clear")
+		require.NoError(t, err)
+		require.Contains(t, out, "removed 1 cache file(s)")
+		require.Empty(t, cacheFilesIn(t, dir))
+	})
+
+	t.Run("clear by a saved file source removes only its entry", func(t *testing.T) {
+		dir := useCacheHome(t)
+		dump := seedCache(t, dir)
+		seedCache(t, dir)
+		c := newSeed()
+		require.NoError(t, c.Add("snap", iqfile.URL(dump)))
+		seedConfig(t, c)
+
+		out, err := runCmd(t, newCacheCmd(), "clear", "snap")
+		require.NoError(t, err)
+		require.Contains(t, out, "removed 1 cache file(s)")
+		require.Len(t, cacheFilesIn(t, dir), 1, "the other dump's entry stays")
+	})
+
+	t.Run("clear by a dump path removes only its entry", func(t *testing.T) {
+		dir := useCacheHome(t)
+		dump := seedCache(t, dir)
+		seedCache(t, dir)
+		seedConfig(t, newSeed())
+
+		out, err := runCmd(t, newCacheCmd(), "clear", dump)
+		require.NoError(t, err)
+		require.Contains(t, out, "removed 1 cache file(s)")
+		require.Len(t, cacheFilesIn(t, dir), 1)
+	})
+
+	t.Run("a non-file source name is taken as a path", func(t *testing.T) {
+		dir := useCacheHome(t)
+		seedCache(t, dir)
+		c := newSeed()
+		require.NoError(t, c.Add("cache", "redis://h:6379/0"))
+		seedConfig(t, c)
+
+		out, err := runCmd(t, newCacheCmd(), "clear", "cache")
+		require.NoError(t, err)
+		require.Contains(t, out, "removed 0 cache file(s)")
+		require.Len(t, cacheFilesIn(t, dir), 1)
+	})
+}
+
+// TestCacheCommandArgs pins each cache subcommand's argument and flag rules.
+func TestCacheCommandArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "location takes none", args: []string{"location", "extra"}},
+		{name: "stat takes none", args: []string{"stat", "extra"}},
+		{name: "stat json with yaml", args: []string{"stat", "-j", "-y"}},
+		{name: "clear takes one", args: []string{"clear", "a", "b"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useCacheHome(t)
+			_, err := runCmd(t, newCacheCmd(), tt.args...)
+			require.Error(t, err)
+		})
+	}
+}
+
+// TestCacheCommandsWithoutACacheDir checks each subcommand reports a missing
+// cache dir instead of acting on an empty path.
+func TestCacheCommandsWithoutACacheDir(t *testing.T) {
+	for _, sub := range []string{"location", "stat", "clear"} {
+		t.Run(sub, func(t *testing.T) {
+			t.Setenv("XDG_CACHE_HOME", "")
+			t.Setenv("HOME", "")
+			if cacheDir() != "" {
+				t.Skip("this platform locates a cache dir without those variables")
+			}
+			out, err := runCmd(t, newCacheCmd(), sub)
+			require.ErrorContains(t, err, "cannot locate the user cache directory")
+			require.NotContains(t, out, "removed")
+		})
+	}
+}

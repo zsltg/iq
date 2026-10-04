@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"math/big"
 	"testing"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -492,4 +494,84 @@ func TestRunRejectsConflictingFormat(t *testing.T) {
 		require.ErrorContains(t, err, "mutually exclusive")
 		require.Empty(t, out.String())
 	})
+}
+
+// withColor sets the global color mode for one test and restores it afterwards.
+func withColor(t *testing.T, on bool) {
+	t.Helper()
+	orig := color.NoColor
+	color.NoColor = !on
+	t.Cleanup(func() { color.NoColor = orig })
+}
+
+// TestFormatterEncodeErrors feeds each formatter a value no encoder can render and
+// expects a wrapped "encode result" error that keeps its cause.
+func TestFormatterEncodeErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		format  outputFormat
+		compact bool
+		color   bool
+	}{
+		{name: "json", format: formatJSON},
+		{name: "jsonl", format: formatJSONL},
+		{name: "jsona pretty", format: formatJSONArray},
+		{name: "jsona compact", format: formatJSONArray, compact: true},
+		{name: "values", format: formatValues},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withColor(t, tt.color)
+			f := newFormatter(tt.format, io.Discard, tt.compact)
+			err := f.emit(make(chan int))
+			require.ErrorContains(t, err, "encode result")
+			require.Error(t, errors.Unwrap(err), "the cause stays reachable")
+		})
+	}
+}
+
+// TestFormatterWriteErrors fails the destination and expects each formatter to
+// report it.
+func TestFormatterWriteErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		format  outputFormat
+		compact bool
+		color   bool
+		step    string // "emit" or "flush": where the failure must surface.
+		want    string
+	}{
+		{name: "json", format: formatJSON, step: "emit", want: "encode result"},
+		{name: "jsonl", format: formatJSONL, step: "emit", want: "encode result"},
+		{name: "jsona emit", format: formatJSONArray, step: "emit", want: "write result"},
+		{name: "jsona flush", format: formatJSONArray, step: "flush", want: "write result"},
+		{name: "jsona compact flush", format: formatJSONArray, compact: true, step: "flush", want: "write result"},
+		{name: "values", format: formatValues, step: "emit", want: "write result"},
+		{name: "yaml", format: formatYAML, step: "emit", want: "encode result"},
+		{name: "yaml color", format: formatYAML, color: true, step: "emit", want: "write result"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withColor(t, tt.color)
+			f := newFormatter(tt.format, &errAfter{0}, tt.compact)
+			var err error
+			if tt.step == "emit" {
+				err = f.emit("x")
+			} else {
+				err = f.flush()
+			}
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+// TestYAMLFormatterFlushError checks the encoder close error is reported when the
+// destination fails only once the buffered document is written.
+func TestYAMLFormatterFlushError(t *testing.T) {
+	withColor(t, false)
+	f := newFormatter(formatYAML, &errAfter{0}, false)
+	emitErr := f.emit("x")
+	if emitErr == nil {
+		require.ErrorContains(t, f.flush(), "close yaml")
+	}
 }
