@@ -532,12 +532,14 @@ and sets the `IQ_*_URL` override, so per-mutant test runs reuse the running
 service the way the local per-driver recipe does, couchbase provisioned by
 `scripts/seed-couchbase.sh` with `IQ_SEED_BUCKET` and `IQ_SEED_DATA=0`). The
 shard artifact uploads also on failure and replaces the artifact of an earlier
-attempt of the same job. Each cell runs under a file-size limit of 2 GiB
-per file (`ulimit -f`), because a mutant can turn a write loop into an endless one
-and a full disk shuts the runner down before any timeout fires. Go ignores SIGXFSZ,
-so a write over the limit fails with EFBIG ("file too large"): the test fails, or a
-loop that ignores the error runs until the mutago timeout. The cell log is written
-outside the limit.
+attempt of the same job. Each cell runs under two limits: 2 GiB per file (`ulimit -f`) and 8 GiB of
+virtual memory (`ulimit -v`). A mutant can turn a write loop into an endless one,
+and the output goes to a file or to memory. A full disk or an exhausted memory shuts
+the runner down before any timeout fires. Go ignores SIGXFSZ, so a write over the
+file limit fails with EFBIG ("file too large"), and an allocation over the memory
+limit is a fatal out-of-memory error. In both cases the test fails. The limits cover
+the gate process tree only, not the backend containers. The cell log is written
+outside the limits.
 
 `deep-badge` (`scripts/mutation-verdict.sh`, read-only) runs when the shards
 finished, also when some failed. It judges each package on its own: a missing,

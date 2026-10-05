@@ -136,16 +136,18 @@ while IFS=$'\t' read -r file mutator; do
   jq -n --arg file "$file" --arg mutator "$mutator" '{file: $file, mutator: $mutator}' >"$cell/cell.json"
   echo "mutation-shard: cell $index: $file x $mutator"
   rm -f report.json mutago-agentic.json mutago-summary.json
-  # A mutant can turn a write loop into an endless one, and a test that logs to a file
-  # then fills the disk in seconds. A full disk shuts the runner down before any timeout
-  # fires, and the artifact upload is lost. The limit is 2 GiB per file (bash counts
-  # blocks of 1024 bytes) for the gate and every process it starts. Go ignores SIGXFSZ,
-  # so a write over the limit fails with EFBIG ("file too large"): the test fails, or a
-  # loop that ignores the error runs until the mutago timeout. The disk stays bounded.
-  # The log goes through cat outside the subshell, so the limit does not cut the log,
-  # and pipefail keeps the exit status of the gate.
+  # A mutant can turn a write loop into an endless one. The output goes to a file or to
+  # memory. A full disk or an exhausted memory shuts the runner down before any timeout
+  # fires, and the artifact upload is lost. So the gate and every process it starts run
+  # under two limits (bash counts blocks of 1024 bytes): 2 GiB per file and 8 GiB of
+  # virtual memory. Go ignores SIGXFSZ, so a write over the file limit fails with EFBIG
+  # ("file too large"). An allocation over the memory limit is a fatal out-of-memory
+  # error. In both cases the test fails. The limits do not cover backend containers,
+  # which run outside this process tree. The log goes through cat outside the subshell,
+  # so the limit does not cut the log, and pipefail keeps the exit status of the gate.
   (
     ulimit -f 2097152 || exit 1
+    ulimit -v 8388608 || exit 1
     IQ_MUTATION_MUTAGO_BIN="$mutago_bin" IQ_MUTATION_MUTATORS="$mutator" \
       exec bash scripts/mutation-gate.sh "$root/$file" 2>&1
   ) | cat >"$cell/log"
