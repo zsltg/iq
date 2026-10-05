@@ -130,12 +130,12 @@ func TestDataLifecycleCommands(t *testing.T) {
 			wantLine: "cleared a",
 			check:    func(t *testing.T, st *lifeStore) { require.True(t, st.cleared) },
 		},
+		// The command misspells "dropped" today. A follow-up fix(cmd) change
+		// corrects the output and updates this row with it.
 		{
 			name:     "drop",
 			build:    newDataDropCmd,
 			args:     []string{"a", "--force"},
-			// The command misspells "dropped" today. A follow-up fix(cmd)
-			// change corrects the output and updates this row with it.
 			wantLine: "droped a",
 			check:    func(t *testing.T, st *lifeStore) { require.True(t, st.dropped) },
 		},
