@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -389,7 +390,7 @@ func TestTraceTeeLogsBackendCmdIntegration(t *testing.T) {
 	seedConfig(t, c)
 
 	root, _ := newRootCmd()
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr cappedBuffer
 	root.SetOut(&stdout)
 	root.SetErr(&stderr)
 	root.SetArgs([]string{"--src", "live", "--timeout", "5s", "--log.file=stderr", "--log.format=json", ".[]"})
@@ -440,7 +441,7 @@ func TestRunJQWiresRunOptionsFileSource(t *testing.T) {
 		`{"key":"b","type":"hash","value":{"total":10}}`+"\n")
 
 	root, _ := newRootCmd()
-	var out, errb bytes.Buffer
+	var out, errb cappedBuffer
 	root.SetOut(&out)
 	root.SetErr(&errb)
 	root.SetArgs([]string{"--src", "snap", "--log.file=stderr", "--log.format=json", ".[] | select(.total > 99)"})
@@ -498,7 +499,7 @@ func TestBareVerbosePlanNotDuplicated(t *testing.T) {
 		`{"key":"b","type":"hash","value":{"total":10}}`+"\n")
 
 	root, _ := newRootCmd()
-	var out, errb bytes.Buffer
+	var out, errb cappedBuffer
 	root.SetOut(&out)
 	root.SetErr(&errb)
 	root.SetArgs([]string{"--src", "snap", "-v", ".[]"})
@@ -524,7 +525,7 @@ func TestVerbosePlusStderrStructuredPlanOnce(t *testing.T) {
 		`{"key":"b","type":"hash","value":{"total":10}}`+"\n")
 
 	root, _ := newRootCmd()
-	var out, errb bytes.Buffer
+	var out, errb cappedBuffer
 	root.SetOut(&out)
 	root.SetErr(&errb)
 	root.SetArgs([]string{"--src", "snap", "-v", "--log.file=stderr", "--log.format=json", ".[]"})
@@ -563,7 +564,7 @@ func TestRunJQWiresUnboundedFileSource(t *testing.T) {
 		`{"key":"b","type":"string","value":2}`+"\n")
 
 	root, _ := newRootCmd()
-	var out, errb bytes.Buffer
+	var out, errb cappedBuffer
 	root.SetOut(&out)
 	root.SetErr(&errb)
 	root.SetArgs([]string{"--src", "snap", "--unbounded", "keys"})
@@ -591,4 +592,57 @@ func TestSchemeOf(t *testing.T) {
 			require.Equal(t, tt.want, schemeOf(tt.url))
 		})
 	}
+}
+
+// maxCapturedOutput bounds what a test may capture from a command. A defect that
+// logs the same record forever would otherwise grow the buffer until the process
+// runs out of memory.
+const maxCapturedOutput = 1 << 20
+
+// cappedBuffer is a bytes.Buffer that panics once more than maxCapturedOutput
+// bytes arrive. A panic is safe from any goroutine and ends the test binary at
+// once, which stops an endless logging loop before it exhausts memory.
+type cappedBuffer struct{ bytes.Buffer }
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	if b.Len()+len(p) > maxCapturedOutput {
+		panic("captured command output passed 1 MiB: an endless loop is writing it")
+	}
+	return b.Buffer.Write(p)
+}
+
+// TestCappedBufferStopsRunaway checks the capture buffer ends a test that writes
+// without bound, and keeps ordinary output.
+func TestCappedBufferStopsRunaway(t *testing.T) {
+	var b cappedBuffer
+	n, err := b.Write([]byte("ok"))
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+	require.Equal(t, "ok", b.String())
+	require.Panics(t, func() { _, _ = b.Write(make([]byte, maxCapturedOutput)) })
+}
+
+// TestTraceTeeLogsDriverCommands runs a query whose driver writes to the wire
+// trace and checks one record per line reaches the log. Under the endless-loop
+// mutant of traceLogWriter.Write, the capped capture buffer ends the run.
+func TestTraceTeeLogsDriverCommands(t *testing.T) {
+	useCombDriver(t)
+	orig := drivers
+	t.Cleanup(func() { drivers = orig })
+	for i := range drivers {
+		if drivers[i].name == "comb" {
+			open := drivers[i].open
+			drivers[i].open = func(ctx context.Context, cfg *config) (store, error) {
+				if cfg.trace != nil {
+					_, _ = io.WriteString(cfg.trace, "comb> PING\ncomb> GET k\n")
+				}
+				return open(ctx, cfg)
+			}
+		}
+	}
+	root, _ := newRootCmd()
+	out, err := runCmd(t, root, "--src", "a", "--log.file", "stderr", "--log.level", "debug", "--log.format", "json", ".[]")
+	require.NoError(t, err)
+	require.Equal(t, 1, strings.Count(out, `"cmd":"PING"`))
+	require.Equal(t, 1, strings.Count(out, `"cmd":"GET k"`))
 }

@@ -41,7 +41,7 @@ func runCmd(t *testing.T, c *cobra.Command, args ...string) (string, error) {
 	t.Helper()
 	orig := color.NoColor
 	t.Cleanup(func() { color.NoColor = orig })
-	var buf bytes.Buffer
+	var buf cappedBuffer
 	c.SetOut(&buf)
 	c.SetErr(&buf)
 	c.SetArgs(args)
