@@ -281,8 +281,8 @@ features = [
 # option in the "theme" subsection. The logo must be a relative path to a file
 # in your "docs_dir", e.g., to use `docs/assets/logo.png` you would set:
 # ----------------------------------------------------------------------------
-# The black mark suits the light header; stylesheets/extra.css inverts it for the
-# slate scheme, so one file serves both themes and follows the theme toggle.
+# The black logo serves the light theme. stylesheets/extra.css selects the white
+# logo for the slate theme in both the header and drawer.
 logo = "assets/iq-logo.svg"
 
 # ----------------------------------------------------------------------------

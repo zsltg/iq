@@ -1,14 +1,5 @@
-<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img">
-  <title>IQ logo — magnifying glass with letter I</title>
-  <desc>IQ mark: magnifying glass, handle fused seamlessly into the ring pointing bottom right, serif I centered in the lens with flush stem.</desc>
-  <g stroke="#000" fill="none">
-    <circle cx="27" cy="27" r="20" stroke-width="6"/>
-    <!-- Handle: starts inside the ring stroke band so it fuses with the border -->
-    <path d="M41 41 L55 55" stroke-width="9" stroke-linecap="butt"/>
-    <circle cx="55" cy="55" r="4.5" fill="#000" stroke="none"/>
-    <!-- I: stem has butt ends hidden inside the serif strokes -->
-    <path d="M21 17.5 h12" stroke-width="5" stroke-linecap="round"/>
-    <path d="M21 36.5 h12" stroke-width="5" stroke-linecap="round"/>
-    <path d="M27 17.5 v19" stroke-width="6" stroke-linecap="butt"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="64" height="64" role="img" aria-labelledby="title desc">
+  <title id="title">iq logo</title>
+  <desc id="desc">A capital I cut from a solid Q.</desc>
+  <path fill="#000" fill-rule="evenodd" d="M120 24A96 96 0 1 0 175.62 198.25L204.69 227.31L227.31 204.69L198.25 175.62A96 96 0 0 0 120 24Z M80 64H160V92H136V148H160V176H80V148H104V92H80Z"/>
 </svg>

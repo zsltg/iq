@@ -1,11 +1,7 @@
-/* The logo is a black line drawing, so it reads on the light header but would
-   disappear on the dark one. The theme renders it as an <img>, which cannot
-   inherit currentColor, so invert it for the slate scheme instead of shipping a
-   second file — keying on the scheme attribute means it follows the theme
-   toggle, not just the OS preference. Covers both placements: the header button
-   and the drawer nav on small screens. */
+/* Use the white logo for the dark theme. The file has a slightly wider I cutout
+   to balance its weight on dark backgrounds. Apply it to the header and drawer. */
 [data-md-color-scheme="slate"] .md-logo img {
-  filter: invert(1);
+  content: url("../assets/iq-logo-white.svg");
 }
 
 /* Prevent line wrapping for inline code blocks */
