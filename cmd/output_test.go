@@ -565,13 +565,12 @@ func TestFormatterWriteErrors(t *testing.T) {
 	}
 }
 
-// TestYAMLFormatterFlushError checks the encoder close error is reported when the
-// destination fails only once the buffered document is written.
+// TestYAMLFormatterFlushError checks the encoder close error is reported. yaml.v3
+// writes each document during Encode, so a failing destination fails the emit
+// first, and the close then reports the same write error.
 func TestYAMLFormatterFlushError(t *testing.T) {
 	withColor(t, false)
 	f := newFormatter(formatYAML, &errAfter{0}, false)
-	emitErr := f.emit("x")
-	if emitErr == nil {
-		require.ErrorContains(t, f.flush(), "close yaml")
-	}
+	require.ErrorContains(t, f.emit("x"), "encode result")
+	require.ErrorContains(t, f.flush(), "close yaml")
 }

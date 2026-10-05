@@ -109,7 +109,7 @@ func runLife(t *testing.T, build func(*config, *dataFlags) *cobra.Command, args 
 	c.SetOut(&out)
 	c.SetErr(&errb)
 	c.SetArgs(args)
-	err = c.Execute()
+	err = c.ExecuteContext(markedCtx())
 	return out.String(), errb.String(), err
 }
 
@@ -120,13 +120,11 @@ func TestDataLifecycleCommands(t *testing.T) {
 		name     string
 		build    func(*config, *dataFlags) *cobra.Command
 		args     []string
-		verb     string
 		wantLine string
 		check    func(t *testing.T, st *lifeStore)
 	}{
 		{
 			name:     "clear",
-			verb:     "cleared",
 			build:    newDataClearCmd,
 			args:     []string{"a", "--force"},
 			wantLine: "cleared a",
@@ -134,10 +132,9 @@ func TestDataLifecycleCommands(t *testing.T) {
 		},
 		{
 			name:     "drop",
-			verb:     "drop",
 			build:    newDataDropCmd,
 			args:     []string{"a", "--force"},
-			wantLine: "a",
+			wantLine: "droped a",
 			check:    func(t *testing.T, st *lifeStore) { require.True(t, st.dropped) },
 		},
 		{
@@ -168,11 +165,11 @@ func TestDataLifecycleCommands(t *testing.T) {
 			_, stderr, err := runLife(t, tt.build, tt.args...)
 			require.NoError(t, err)
 			require.Contains(t, stderr, tt.wantLine)
-			require.Contains(t, stderr, tt.verb)
 			tt.check(t, st)
 			require.True(t, st.closed, "the store is closed after the command")
+			require.NotEmpty(t, st.ctxs, "the backend was opened")
 			for _, ctx := range st.ctxs {
-				require.NotNil(t, ctx, "the backend must get the caller's context")
+				require.NotNil(t, ctx.Value(ctxKey{}), "the backend must get the caller's context")
 			}
 		})
 	}

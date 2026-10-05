@@ -599,17 +599,20 @@ func TestSchemeOf(t *testing.T) {
 // runs out of memory.
 const maxCapturedOutput = 1 << 20
 
-// cappedBuffer is a bytes.Buffer that panics once more than maxCapturedOutput
+// cappedBuffer is a capture buffer that panics once more than maxCapturedOutput
 // bytes arrive. A panic is safe from any goroutine and ends the test binary at
-// once, which stops an endless logging loop before it exhausts memory.
-type cappedBuffer struct{ bytes.Buffer }
+// once, which stops an endless logging loop before it exhausts memory. The buffer
+// is a private field, so every write goes through Write and its limit.
+type cappedBuffer struct{ buf bytes.Buffer }
 
 func (b *cappedBuffer) Write(p []byte) (int, error) {
-	if b.Len()+len(p) > maxCapturedOutput {
+	if b.buf.Len()+len(p) > maxCapturedOutput {
 		panic("captured command output passed 1 MiB: an endless loop is writing it")
 	}
-	return b.Buffer.Write(p)
+	return b.buf.Write(p)
 }
+
+func (b *cappedBuffer) String() string { return b.buf.String() }
 
 // TestCappedBufferStopsRunaway checks the capture buffer ends a test that writes
 // without bound, and keeps ordinary output.
@@ -620,6 +623,10 @@ func TestCappedBufferStopsRunaway(t *testing.T) {
 	require.Equal(t, 2, n)
 	require.Equal(t, "ok", b.String())
 	require.Panics(t, func() { _, _ = b.Write(make([]byte, maxCapturedOutput)) })
+
+	var s cappedBuffer
+	require.Panics(t, func() { _, _ = io.WriteString(&s, strings.Repeat("x", maxCapturedOutput+1)) },
+		"io.WriteString must also hit the limit")
 }
 
 // TestTraceTeeLogsDriverCommands runs a query whose driver writes to the wire

@@ -79,15 +79,13 @@ func TestLookupName(t *testing.T) {
 // TestStartProfileFailures covers a profile file that cannot be created and a
 // profiler that is already running.
 func TestStartProfileFailures(t *testing.T) {
-	t.Run("an unwritable directory", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
-		}
+	t.Run("a directory in place of the profile file", func(t *testing.T) {
 		for _, mode := range []string{"cpu", "trace", "mem", "mutex"} {
 			t.Run(mode, func(t *testing.T) {
+				// A directory at the file name makes the create fail for every
+				// user, root included, unlike a read-only directory.
 				dir := t.TempDir()
-				require.NoError(t, os.Chmod(dir, 0o500))
-				t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+				require.NoError(t, os.Mkdir(filepath.Join(dir, profileFilename(mode)), 0o700))
 				t.Chdir(dir)
 				stop, err := startProfile(mode, io.Discard)
 				require.ErrorContains(t, err, "create profile file")

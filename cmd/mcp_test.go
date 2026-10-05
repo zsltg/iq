@@ -2123,12 +2123,13 @@ func TestMCPDiffForwardsContextToBothSides(t *testing.T) {
 // the cause, never as a success with an empty body.
 func TestMCPToolsReportFailures(t *testing.T) {
 	tests := []struct {
-		name    string
-		prep    func(t *testing.T, data string)
-		tool    string
-		args    map[string]any
-		allow   []string
-		wantMsg string
+		name      string
+		prep      func(t *testing.T, data string)
+		tool      string
+		args      map[string]any
+		allow     []string
+		wantMsg   string
+		wantToken string
 	}{
 		{
 			name:    "sources with a corrupt config",
@@ -2167,13 +2168,14 @@ func TestMCPToolsReportFailures(t *testing.T) {
 			prep:    addDeadSource,
 			tool:    "iq_schema",
 			args:    map[string]any{"source": "dead"},
-			wantMsg: "redis",
+			wantMsg: "connect redis",
 		},
 		{
-			name:    "schema with a broken filter",
-			tool:    "iq_schema",
-			args:    map[string]any{"source": "snap", "filter": ".[ |"},
-			wantMsg: "sample",
+			name:      "schema with a broken filter",
+			tool:      "iq_schema",
+			args:      map[string]any{"source": "snap", "filter": ".[ |"},
+			wantMsg:   "parse expression",
+			wantToken: "|",
 		},
 		{
 			name:    "diff with an unknown left source",
@@ -2200,14 +2202,14 @@ func TestMCPToolsReportFailures(t *testing.T) {
 			tool:    "iq_insert",
 			allow:   []string{allowWrites},
 			args:    map[string]any{"source": "dead", "destination": "snap"},
-			wantMsg: "redis",
+			wantMsg: "connect redis",
 		},
 		{
 			name:    "insert with a broken transform",
 			tool:    "iq_insert",
 			allow:   []string{allowWrites},
 			args:    map[string]any{"source": "snap", "destination": "snap", "filter": ".[ |"},
-			wantMsg: "filter",
+			wantMsg: "parse item filter",
 		},
 		{
 			name:    "delete from a corrupt config",
@@ -2234,6 +2236,10 @@ func TestMCPToolsReportFailures(t *testing.T) {
 			}
 			body := errorBodyOf(t, callMCP(t, cs, tt.tool, tt.args))
 			require.Contains(t, body.Error.Message, tt.wantMsg)
+			if tt.wantToken != "" {
+				require.Equal(t, tt.wantToken, body.Error.Token, "a syntax error names its token")
+				require.NotNil(t, body.Error.Offset, "a syntax error carries its offset")
+			}
 		})
 	}
 }

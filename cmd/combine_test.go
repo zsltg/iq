@@ -349,7 +349,9 @@ func useCombDriver(t *testing.T) *[]config {
 			filtersScan:   false,
 			open: func(_ context.Context, cfg *config) (store, error) {
 				opened = append(opened, *cfg)
-				return &fakeStore{pages: []map[string]any{{"k1": map[string]any{"n": 1.0}}}}, nil
+				// Each source serves its own marker, so a test can tell the stages apart.
+				mark := "data-of-" + strings.TrimPrefix(cfg.url, "comb://")
+				return &fakeStore{pages: []map[string]any{{"k1": map[string]any{"n": 1.0, "mark": mark}}}}, nil
 			},
 			explainPlan: func(selector.KeySet, predicate.Node, bool) query.AccessPlan {
 				return query.AccessPlan{Ops: []string{"SCAN comb"}}
@@ -383,8 +385,8 @@ func TestCombineRunsEveryStage(t *testing.T) {
 		"--log.file", "stderr", "--log.level", "debug", "--log.format", "json")
 	require.NoError(t, err)
 
-	require.Contains(t, out, `"a"`)
-	require.Contains(t, out, `"b"`)
+	require.Contains(t, out, `"data-of-a"`, "the first stage's result is in the output")
+	require.Contains(t, out, `"data-of-b"`, "the second stage's result is in the output")
 	require.Len(t, *opened, 2, "both stages open their source")
 	first, second := (*opened)[0], (*opened)[1]
 	require.Equal(t, "comb://a", first.url)

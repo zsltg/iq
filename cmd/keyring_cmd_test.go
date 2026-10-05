@@ -445,7 +445,7 @@ func TestConfigKeyringCorruptConfig(t *testing.T) {
 			fk := useFakeKeyring(t)
 			_, err := runCmd(t, newConfigKeyringCmd(&config{}), args...)
 			require.ErrorContains(t, err, "parse config")
-			require.Empty(t, fk.m)
+			require.Empty(t, fk.calls, "no keyring call before the config parses")
 		})
 	}
 }
@@ -498,20 +498,29 @@ func TestConfigKeyringOutputFailures(t *testing.T) {
 
 // TestConfigKeyringPruneNoStale checks the empty report and its write error.
 func TestConfigKeyringPruneNoStale(t *testing.T) {
-	c := newSeed()
-	fk := useFakeKeyring(t)
-	seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
-	seedConfig(t, c)
+	seed := func(t *testing.T) {
+		t.Helper()
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
+		seedConfig(t, c)
+	}
 
-	out, err := runCmd(t, newConfigKeyringCmd(&config{}), "prune")
-	require.NoError(t, err)
-	require.Contains(t, out, "no stale keyring entries")
+	t.Run("reports no stale entries", func(t *testing.T) {
+		seed(t)
+		out, err := runCmd(t, newConfigKeyringCmd(&config{}), "prune")
+		require.NoError(t, err)
+		require.Contains(t, out, "no stale keyring entries")
+	})
 
-	cmd := newConfigKeyringCmd(&config{})
-	cmd.SetOut(&errAfter{0})
-	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"prune"})
-	require.ErrorContains(t, cmd.Execute(), "write failed")
+	t.Run("returns the report write error", func(t *testing.T) {
+		seed(t)
+		cmd := newConfigKeyringCmd(&config{})
+		cmd.SetOut(&errAfter{0})
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs([]string{"prune"})
+		require.ErrorContains(t, cmd.Execute(), "write failed")
+	})
 }
 
 // TestConfigKeyringPruneSkipsMissingEntries checks a source with no entry does not
@@ -547,30 +556,54 @@ func TestConfigKeyringPruneReportsADeleteFailure(t *testing.T) {
 
 // TestConfigKeyringGetRefusals checks the unknown and non-keyring refusals.
 func TestConfigKeyringGetRefusals(t *testing.T) {
-	c := newSeed()
-	fk := useFakeKeyring(t)
-	seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
-	seedConfig(t, c)
+	tests := []struct {
+		name    string
+		source  string
+		wantErr string
+	}{
+		{name: "a source without a keyring entry", source: "plain", wantErr: "is not keyring-backed"},
+		{name: "an unknown source", source: "nosuch", wantErr: "unknown source"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newSeed()
+			fk := useFakeKeyring(t)
+			seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
+			seedConfig(t, c)
 
-	_, err := runCmd(t, newConfigKeyringCmd(&config{}), "get", "plain")
-	require.ErrorContains(t, err, "is not keyring-backed")
-	_, err = runCmd(t, newConfigKeyringCmd(&config{}), "get", "nosuch")
-	require.ErrorContains(t, err, "unknown source")
+			_, err := runCmd(t, newConfigKeyringCmd(&config{}), "get", tt.source)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
 }
 
 // TestConfigKeyringLsYAML checks -y alone selects the structured form.
 func TestConfigKeyringLsYAML(t *testing.T) {
-	c := newSeed()
-	fk := useFakeKeyring(t)
-	seedKeyringSource(t, c, fk, "kr", "redis://u@h:6379/0", true, "secret")
-	seedConfig(t, c)
+	tests := []struct {
+		name    string
+		args    []string
+		wantOut string
+		wantErr string
+	}{
+		{name: "-y alone prints YAML", args: []string{"ls", "-y"}, wantOut: "status: present"},
+		{name: "-y with -j is refused", args: []string{"ls", "-j", "-y"}, wantErr: "none of the others can be"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newSeed()
+			fk := useFakeKeyring(t)
+			seedKeyringSource(t, c, fk, "kr", "redis://u@h:6379/0", true, "secret")
+			seedConfig(t, c)
 
-	out, err := runCmd(t, newConfigKeyringCmd(&config{}), "ls", "-y")
-	require.NoError(t, err)
-	require.Contains(t, out, "status: present")
-
-	_, err = runCmd(t, newConfigKeyringCmd(&config{}), "ls", "-j", "-y")
-	require.ErrorContains(t, err, "none of the others can be")
+			out, err := runCmd(t, newConfigKeyringCmd(&config{}), tt.args...)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Contains(t, out, tt.wantOut)
+		})
+	}
 }
 
 // TestConfigKeyringSetFailures covers the keyring write and config save failures

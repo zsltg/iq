@@ -327,9 +327,11 @@ func TestDriverOpenHonoursContext(t *testing.T) {
 			continue
 		}
 		t.Run(d.name, func(t *testing.T) {
+			url, ok := urls[d.name]
+			require.True(t, ok, "add a URL row for the connectable driver %q", d.name)
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
-			_, err := d.open(ctx, &config{url: urls[d.name]})
+			_, err := d.open(ctx, &config{url: url})
 			require.Error(t, err)
 			if d.name != "cassandra" { // gocql dials before it reads the context.
 				require.Contains(t, err.Error(), "cancel")

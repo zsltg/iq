@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"io"
 	"strings"
 	"testing"
 
@@ -9,16 +10,30 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
+// countingReader counts the Read calls on its reader, so a test can prove that a
+// command left stdin unread.
+type countingReader struct {
+	r     io.Reader
+	reads int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	c.reads++
+	return c.r.Read(p)
+}
+
 // runWithStdin runs the root command with the given stdin text and returns the
-// combined output.
-func runWithStdin(t *testing.T, stdin string, args ...string) (string, error) {
+// combined output and the number of reads on stdin.
+func runWithStdin(t *testing.T, stdin string, args ...string) (string, int, error) {
 	t.Helper()
 	orig := stdinIsTerminal
 	stdinIsTerminal = func() bool { return false }
 	t.Cleanup(func() { stdinIsTerminal = orig })
 	root, _ := newRootCmd()
-	root.SetIn(strings.NewReader(stdin))
-	return runCmd(t, root, args...)
+	in := &countingReader{r: strings.NewReader(stdin)}
+	root.SetIn(in)
+	out, err := runCmd(t, root, args...)
+	return out, in.reads, err
 }
 
 // TestQueryReadsPipedStdin checks a query with no source reads a piped dump and
@@ -39,10 +54,11 @@ func TestQueryReadsPipedStdin(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			args := append(append([]string{}, tt.flags...), ".[]")
-			out, err := runWithStdin(t, dump, args...)
+			out, reads, err := runWithStdin(t, dump, args...)
 			require.NoError(t, err)
 			require.Equal(t, tt.wantPlan, strings.Contains(out, "decode stdin dump"), out)
 			require.Equal(t, tt.wantData, strings.Contains(out, `"n"`), out)
+			require.Equal(t, tt.wantData, reads > 0, "stdin is read only when the query runs")
 		})
 	}
 }
@@ -102,6 +118,7 @@ func TestQueryLogsTracesAndHints(t *testing.T) {
 // exist is an error even when input is piped.
 func TestQueryWithAnUnknownSourceDoesNotReadStdin(t *testing.T) {
 	configEnv(t)
-	_, err := runWithStdin(t, `{"key":"a","value":{"n":1}}`+"\n", "--src", "nosuch", ".[]")
+	_, reads, err := runWithStdin(t, `{"key":"a","value":{"n":1}}`+"\n", "--src", "nosuch", ".[]")
 	require.ErrorContains(t, err, "nosuch")
+	require.Zero(t, reads, "stdin stays unread")
 }

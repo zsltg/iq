@@ -446,17 +446,21 @@ func TestRmAtomicOnUnknown(t *testing.T) {
 }
 
 // lockConfigDir saves cf at a fresh config path and then makes its directory
-// read-only, so the next Save fails. It skips where chmod cannot stop a write.
+// read-only, so the next Save fails. It skips where chmod cannot stop a write:
+// on Windows, and for a user such as root that bypasses directory permissions.
 func lockConfigDir(t *testing.T, cf *iqconfig.Config) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
-	}
 	dir := t.TempDir()
 	t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
 	require.NoError(t, cf.Save())
 	require.NoError(t, os.Chmod(dir, 0o500))
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	probe, err := os.CreateTemp(dir, "probe")
+	if err == nil {
+		require.NoError(t, probe.Close())
+		require.NoError(t, os.Remove(probe.Name()))
+		t.Skip("the read-only directory still accepts writes, so a save failure cannot be forced")
+	}
 }
 
 // TestSourceCommandsArgCounts pins the argument bounds of the source commands.

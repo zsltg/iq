@@ -695,38 +695,48 @@ func TestBuildFileOpenError(t *testing.T) {
 
 // ctxProbe is a slog handler that records whether the contexts it received carry
 // the test marker, so a test can prove a wrapper forwards the caller's context.
+// enabled is the answer that Enabled gives.
 type ctxProbe struct {
-	enabledMarked, handledMarked *bool
+	enabled                      bool
+	enabledMarked, handledMarked bool
 }
 
-func (p ctxProbe) Enabled(ctx context.Context, _ slog.Level) bool {
-	*p.enabledMarked = ctx != nil && ctx.Value(ctxKey{}) != nil
-	return true
+func (p *ctxProbe) Enabled(ctx context.Context, _ slog.Level) bool {
+	p.enabledMarked = ctx != nil && ctx.Value(ctxKey{}) != nil
+	return p.enabled
 }
 
-func (p ctxProbe) Handle(ctx context.Context, _ slog.Record) error {
-	*p.handledMarked = ctx != nil && ctx.Value(ctxKey{}) != nil
+func (p *ctxProbe) Handle(ctx context.Context, _ slog.Record) error {
+	p.handledMarked = ctx != nil && ctx.Value(ctxKey{}) != nil
 	return nil
 }
 
-func (p ctxProbe) WithAttrs([]slog.Attr) slog.Handler { return p }
-func (p ctxProbe) WithGroup(string) slog.Handler      { return p }
+func (p *ctxProbe) WithAttrs([]slog.Attr) slog.Handler { return p }
+func (p *ctxProbe) WithGroup(string) slog.Handler      { return p }
 
 // TestFanoutForwardsTheContext checks Enabled and Handle pass the caller's
-// context on to each child.
+// context on to each child, not only to the first one.
 func TestFanoutForwardsTheContext(t *testing.T) {
-	var enabledMarked, handledMarked bool
-	h := newFanout(ctxProbe{&enabledMarked, &handledMarked})
-	ctx := markedCtx()
+	t.Run("Enabled asks a later child with the context", func(t *testing.T) {
+		first, second := &ctxProbe{enabled: false}, &ctxProbe{enabled: true}
+		h := newFanout(first, second)
 
-	require.True(t, h.Enabled(ctx, slog.LevelInfo))
-	require.True(t, enabledMarked, "Enabled must forward the context")
+		require.True(t, h.Enabled(markedCtx(), slog.LevelInfo))
+		require.True(t, first.enabledMarked, "the first child gets the context")
+		require.True(t, second.enabledMarked, "the second child gets the context")
+	})
 
-	enabledMarked = false
-	rec := slog.NewRecord(time.Now(), slog.LevelInfo, "m", 0)
-	require.NoError(t, h.Handle(ctx, rec))
-	require.True(t, enabledMarked, "Handle checks the child's level with the context")
-	require.True(t, handledMarked, "Handle must forward the context")
+	t.Run("Handle passes the context to every child", func(t *testing.T) {
+		first, second := &ctxProbe{enabled: true}, &ctxProbe{enabled: true}
+		h := newFanout(first, second)
+
+		rec := slog.NewRecord(time.Now(), slog.LevelInfo, "m", 0)
+		require.NoError(t, h.Handle(markedCtx(), rec))
+		for i, p := range []*ctxProbe{first, second} {
+			require.True(t, p.enabledMarked, "child %d checks its level with the context", i)
+			require.True(t, p.handledMarked, "child %d handles the record with the context", i)
+		}
+	})
 }
 
 // TestDropTimeAttr checks only the top-level time attribute is removed.

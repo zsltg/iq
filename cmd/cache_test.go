@@ -39,8 +39,13 @@ func TestHumanBytes(t *testing.T) {
 // returns the dump path, so a cache-command test has something to list and clear.
 func seedCache(t *testing.T, cacheDir string) string {
 	t.Helper()
+	return seedCacheAt(t, cacheDir, filepath.Join(t.TempDir(), "dump.jsonl"))
+}
+
+// seedCacheAt writes a dump at the given path and caches it in cacheDir.
+func seedCacheAt(t *testing.T, cacheDir, dump string) string {
+	t.Helper()
 	// A typed-JSONL dump is the simplest to hand-write and caches like any other.
-	dump := filepath.Join(t.TempDir(), "dump.jsonl")
 	require.NoError(t, os.WriteFile(dump, []byte("{\"key\":\"a\",\"type\":\"string\",\"value\":\"x\"}\n"), 0o600))
 	st, err := iqfile.Open(iqfile.URL(dump)+"?format=jsonl", numfmt.DecimalAuto,
 		iqfile.CacheConfig{Dir: cacheDir, Enabled: true, MinSize: 1})
@@ -272,6 +277,9 @@ func TestCacheCommands(t *testing.T) {
 
 	t.Run("a non-file source name is taken as a path", func(t *testing.T) {
 		dir := useCacheHome(t)
+		wd := t.TempDir()
+		t.Chdir(wd)
+		seedCacheAt(t, dir, filepath.Join(wd, "cache"))
 		seedCache(t, dir)
 		c := newSeed()
 		require.NoError(t, c.Add("cache", "redis://h:6379/0"))
@@ -279,8 +287,8 @@ func TestCacheCommands(t *testing.T) {
 
 		out, err := runCmd(t, newCacheCmd(), "clear", "cache")
 		require.NoError(t, err)
-		require.Contains(t, out, "removed 0 cache file(s)")
-		require.Len(t, cacheFilesIn(t, dir), 1)
+		require.Contains(t, out, "removed 1 cache file(s)", "the dump at ./cache is removed")
+		require.Len(t, cacheFilesIn(t, dir), 1, "the other dump's entry stays")
 	})
 }
 
