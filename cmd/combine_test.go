@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
+	"github.com/zsltg/iq/internal/selector"
 )
 
 func TestVarName(t *testing.T) {
@@ -326,4 +330,134 @@ func TestCombineVerboseWritesThePlanToStderr(t *testing.T) {
 
 	require.Contains(t, out, "query plan")
 	require.Contains(t, out, "$users  <-  users (redis)")
+}
+
+// useCombDriver registers the comb:// driver for the test: an addressable backend
+// whose store serves one page, and which records the config each open received.
+// The bad:// scheme fails every open with errCombineDown.
+func useCombDriver(t *testing.T) *[]config {
+	t.Helper()
+	var opened []config
+	orig := drivers
+	t.Cleanup(func() { drivers = orig })
+	drivers = append(append([]driver{}, orig...),
+		driver{
+			name:          "comb",
+			schemes:       []string{"comb"},
+			addressable:   true,
+			addressParams: []string{"collection"},
+			filtersScan:   false,
+			open: func(_ context.Context, cfg *config) (store, error) {
+				opened = append(opened, *cfg)
+				// Each source serves its own marker, so a test can tell the stages apart.
+				mark := "data-of-" + strings.TrimPrefix(cfg.url, "comb://")
+				return &fakeStore{pages: []map[string]any{{"k1": map[string]any{"n": 1.0, "mark": mark}}}}, nil
+			},
+			explainPlan: func(selector.KeySet, predicate.Node, bool) query.AccessPlan {
+				return query.AccessPlan{Ops: []string{"SCAN comb"}}
+			},
+		},
+		driver{
+			name:    "bad",
+			schemes: []string{"bad"},
+			open: func(context.Context, *config) (store, error) {
+				return nil, errCombineDown
+			},
+		},
+	)
+	c := newSeed()
+	require.NoError(t, c.Add("a", "comb://a"))
+	require.NoError(t, c.Add("b", "comb://b"))
+	require.NoError(t, c.Add("down", "bad://x"))
+	seedConfig(t, c)
+	return &opened
+}
+
+var errCombineDown = errors.New("backend down")
+
+// TestCombineRunsEveryStage checks that each stage reads its own source, that the
+// run settings reach each stage's config, and that the run logs its steps.
+func TestCombineRunsEveryStage(t *testing.T) {
+	opened := useCombDriver(t)
+	root, _ := newRootCmd()
+	out, err := runCmd(t, root, "combine", "a.shop=.[]", "b=.[]", "--with", "{a: $a_shop, b: $b}",
+		"--verbose", "--format.decimal", "string",
+		"--log.file", "stderr", "--log.level", "debug", "--log.format", "json")
+	require.NoError(t, err)
+
+	require.Contains(t, out, `"data-of-a"`, "the first stage's result is in the output")
+	require.Contains(t, out, `"data-of-b"`, "the second stage's result is in the output")
+	require.Len(t, *opened, 2, "both stages open their source")
+	first, second := (*opened)[0], (*opened)[1]
+	require.Equal(t, "comb://a", first.url)
+	require.Equal(t, "shop", first.address)
+	require.Equal(t, "comb://b", second.url)
+	for _, c := range *opened {
+		require.NotNil(t, c.trace, "--verbose reaches the stage")
+		require.Equal(t, numfmt.DecimalString, c.decimalMode)
+		require.NotNil(t, c.logger, "the stage carries the run logger")
+	}
+
+	for _, msg := range []string{"combine start", "from source", "query plan", "combine complete"} {
+		require.Contains(t, out, `"msg":"`+msg+`"`)
+	}
+	require.Equal(t, 2, strings.Count(out, `"msg":"from source"`), "one record per stage")
+	require.Equal(t, 2, strings.Count(out, `"msg":"query plan"`), "one plan record per stage")
+}
+
+// TestCombineStageFailures covers the errors a stage reports.
+func TestCombineStageFailures(t *testing.T) {
+	t.Run("an open failure names the source and keeps the cause", func(t *testing.T) {
+		useCombDriver(t)
+		root, _ := newRootCmd()
+		_, err := runCmd(t, root, "combine", "down=.[]", "--with", "$down")
+		require.ErrorIs(t, err, errCombineDown)
+		require.ErrorContains(t, err, `source "down": open source:`)
+	})
+
+	t.Run("a whole-keyspace read needs --unbounded", func(t *testing.T) {
+		useCombDriver(t)
+		root, _ := newRootCmd()
+		_, err := runCmd(t, root, "combine", "a", "--with", "$a")
+		require.ErrorIs(t, err, query.ErrScanNotAllowed)
+		require.ErrorContains(t, err, "add --unbounded")
+
+		root2, _ := newRootCmd()
+		out, err := runCmd(t, root2, "combine", "a", "--with", "$a", "--unbounded")
+		require.NoError(t, err)
+		require.Contains(t, out, `"n"`)
+	})
+
+	t.Run("a stage that stops the run leaves the later stages unopened", func(t *testing.T) {
+		opened := useCombDriver(t)
+		root, _ := newRootCmd()
+		_, err := runCmd(t, root, "combine", "down=.[]", "a=.[]", "--with", "[$down, $a]")
+		require.ErrorIs(t, err, errCombineDown)
+		require.Empty(t, *opened)
+	})
+}
+
+// TestCombineTraceSources checks the stage trace is on for --verbose alone and for
+// logging alone, and is off when neither asks for it.
+func TestCombineTraceSources(t *testing.T) {
+	tests := []struct {
+		name      string
+		flags     []string
+		wantTrace bool
+	}{
+		{name: "verbose alone", flags: []string{"--verbose"}, wantTrace: true},
+		{name: "logging alone", flags: []string{"--log.file", "stderr", "--log.level", "debug"}, wantTrace: true},
+		{name: "neither", wantTrace: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opened := useCombDriver(t)
+			root, _ := newRootCmd()
+			args := append([]string{"combine", "a=.[]", "--with", "$a"}, tt.flags...)
+			_, err := runCmd(t, root, args...)
+			require.NoError(t, err)
+			require.Len(t, *opened, 1)
+			require.Equal(t, tt.wantTrace, (*opened)[0].trace != nil)
+		})
+	}
 }

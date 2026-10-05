@@ -18,17 +18,20 @@ import (
 // fakeKeyring is an in-memory Keyring for tests; it never touches the OS store.
 // setErr, when set, makes every Set fail, and getErr every Get, which is how a
 // test drives the keyring failure paths of a command. deleted records each
-// Delete call, so a test can assert that a command left the keyring alone.
+// Delete call. calls records every Get, Set and Delete as "op handle", so a test
+// can assert that a command left the keyring alone.
 type fakeKeyring struct {
 	m       map[string]string
 	setErr  error
 	getErr  error
 	deleted []string
+	calls   []string
 }
 
 func newFakeKeyring() *fakeKeyring { return &fakeKeyring{m: map[string]string{}} }
 
 func (f *fakeKeyring) Set(handle, password string) error {
+	f.calls = append(f.calls, "set "+handle)
 	if f.setErr != nil {
 		return f.setErr
 	}
@@ -37,6 +40,7 @@ func (f *fakeKeyring) Set(handle, password string) error {
 }
 
 func (f *fakeKeyring) Get(handle string) (string, error) {
+	f.calls = append(f.calls, "get "+handle)
 	if f.getErr != nil {
 		return "", f.getErr
 	}
@@ -48,6 +52,7 @@ func (f *fakeKeyring) Get(handle string) (string, error) {
 }
 
 func (f *fakeKeyring) Delete(handle string) error {
+	f.calls = append(f.calls, "delete "+handle)
 	f.deleted = append(f.deleted, handle)
 	delete(f.m, handle)
 	return nil

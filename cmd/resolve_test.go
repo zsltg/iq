@@ -224,6 +224,8 @@ func TestURLAddressUnsupported(t *testing.T) {
 		{"redis rejects an index param", "redis://h:6379/0?index=books", "no collections; drop the ?index="},
 		{"file rejects a collection param", "file:///dumps/books.json?collection=orders", "no collections; drop the ?collection="},
 		{"file keeps its own hint params", "file:///dumps/graph.json?label=Movie&rel=KNOWS", ""},
+		{"file still rejects a foreign param after its own hint param", "file:///dumps/graph.json?label=Movie&index=books", "no collections; drop the ?index="},
+		{"mongo ignores a table param owned by another backend", "mongodb://h/shop?table=orders", ""},
 		{"redis without a keyspace param passes", "redis://h:6379/0", ""},
 		{"mongo owns its collection param", "mongodb://h/shop?collection=orders", ""},
 		{"couchbase keeps a stray connstr param", "couchbase://h/?bucket=iq&kv_timeout=5s", ""},

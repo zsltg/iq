@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -459,7 +460,12 @@ func TestBuildStreamTarget(t *testing.T) {
 // lines.
 func TestTraceLogWriter(t *testing.T) {
 	var buf bytes.Buffer
-	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	var seen []string
+	lg := slog.New(cappedHandler{
+		Handler: slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}),
+		recs:    &seen,
+		max:     100,
+	})
 	w := &traceLogWriter{lg: lg}
 
 	// Write reports the full byte count it consumed, even for a partial line.
@@ -537,6 +543,86 @@ func TestTraceLogWriterHoldsLockWhileEmitting(t *testing.T) {
 	require.False(t, freeSeen, "the buffer lock must be held while a record is emitted")
 }
 
+// cappedHandler collects the records it receives and panics once their count passes
+// max. A Write loop that fails to consume its buffer logs one record per pass, so
+// the cap turns an endless loop into a fast failure instead of a full disk.
+type cappedHandler struct {
+	slog.Handler // optional, receives every record the cap lets through.
+	recs         *[]string
+	max          int
+}
+
+func (cappedHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h cappedHandler) Handle(_ context.Context, r slog.Record) error {
+	var driver, cmd string
+	r.Attrs(func(a slog.Attr) bool {
+		switch a.Key {
+		case "driver":
+			driver = a.Value.String()
+		case "cmd":
+			cmd = a.Value.String()
+		}
+		return true
+	})
+	*h.recs = append(*h.recs, driver+"|"+cmd)
+	if len(*h.recs) > h.max {
+		panic("traceLogWriter.Write logged more records than its input holds")
+	}
+	if h.Handler != nil {
+		return h.Handler.Handle(context.Background(), r)
+	}
+	return nil
+}
+
+func (h cappedHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h cappedHandler) WithGroup(string) slog.Handler      { return h }
+
+// TestTraceLogWriterDrainsBuffer checks that one Write consumes every complete
+// line exactly once, in order, and keeps the trailing partial line. The handler
+// caps the record count, so a loop that does not advance past a line fails in
+// milliseconds instead of running without end.
+func TestTraceLogWriterDrainsBuffer(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+		rest  string
+	}{
+		{
+			name:  "three lines",
+			input: "redis> GET a\nmongo> find {}\nplain\n",
+			want:  []string{"redis|GET a", "mongo|find {}", "|plain"},
+		},
+		{
+			name:  "crlf line ends",
+			input: "a> one\r\ntwo\n",
+			want:  []string{"a|one", "|two"},
+		},
+		{
+			name:  "partial tail kept",
+			input: "x> done\nx> half",
+			want:  []string{"x|done"},
+			rest:  "x> half",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var recs []string
+			w := &traceLogWriter{lg: slog.New(cappedHandler{recs: &recs, max: 20})}
+
+			require.NotPanics(t, func() {
+				n, err := io.WriteString(w, tt.input)
+				require.NoError(t, err)
+				require.Equal(t, len(tt.input), n)
+			})
+
+			require.Equal(t, tt.want, recs)
+			require.Equal(t, tt.rest, string(w.buf))
+		})
+	}
+}
+
 // TestTraceSinkGating checks traceSink returns the input unchanged when no DEBUG
 // sink is listening, and, when one is, a working tee that carries the caller's
 // context to the Enabled gate. It writes through each returned writer so a broken
@@ -605,4 +691,139 @@ func TestBuildFileOpenError(t *testing.T) {
 
 	_, _, err := o.build(io.Discard, io.Discard)
 	require.Error(t, err)
+}
+
+// ctxProbe is a slog handler that records whether the contexts it received carry
+// the test marker, so a test can prove a wrapper forwards the caller's context.
+// enabled is the answer that Enabled gives.
+type ctxProbe struct {
+	enabled                      bool
+	enabledMarked, handledMarked bool
+}
+
+func (p *ctxProbe) Enabled(ctx context.Context, _ slog.Level) bool {
+	p.enabledMarked = ctx != nil && ctx.Value(ctxKey{}) != nil
+	return p.enabled
+}
+
+func (p *ctxProbe) Handle(ctx context.Context, _ slog.Record) error {
+	p.handledMarked = ctx != nil && ctx.Value(ctxKey{}) != nil
+	return nil
+}
+
+func (p *ctxProbe) WithAttrs([]slog.Attr) slog.Handler { return p }
+func (p *ctxProbe) WithGroup(string) slog.Handler      { return p }
+
+// TestFanoutForwardsTheContext checks Enabled and Handle pass the caller's
+// context on to each child, not only to the first one.
+func TestFanoutForwardsTheContext(t *testing.T) {
+	t.Run("Enabled asks a later child with the context", func(t *testing.T) {
+		first, second := &ctxProbe{enabled: false}, &ctxProbe{enabled: true}
+		h := newFanout(first, second)
+
+		require.True(t, h.Enabled(markedCtx(), slog.LevelInfo))
+		require.True(t, first.enabledMarked, "the first child gets the context")
+		require.True(t, second.enabledMarked, "the second child gets the context")
+	})
+
+	t.Run("Handle passes the context to every child", func(t *testing.T) {
+		first, second := &ctxProbe{enabled: true}, &ctxProbe{enabled: true}
+		h := newFanout(first, second)
+
+		rec := slog.NewRecord(time.Now(), slog.LevelInfo, "m", 0)
+		require.NoError(t, h.Handle(markedCtx(), rec))
+		for i, p := range []*ctxProbe{first, second} {
+			require.True(t, p.enabledMarked, "child %d checks its level with the context", i)
+			require.True(t, p.handledMarked, "child %d handles the record with the context", i)
+		}
+	})
+}
+
+// TestDropTimeAttr checks only the top-level time attribute is removed.
+func TestDropTimeAttr(t *testing.T) {
+	timeAttr := slog.Time(slog.TimeKey, time.Unix(0, 0))
+	tests := []struct {
+		name   string
+		groups []string
+		attr   slog.Attr
+		want   slog.Attr
+	}{
+		{name: "top-level time is dropped", attr: timeAttr, want: slog.Attr{}},
+		{name: "grouped time is kept", groups: []string{"g"}, attr: timeAttr, want: timeAttr},
+		{name: "other key is kept", attr: slog.String("msg", "x"), want: slog.String("msg", "x")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dropTimeAttr(tt.groups, tt.attr)
+			require.True(t, got.Equal(tt.want), "got %v, want %v", got, tt.want)
+		})
+	}
+}
+
+// TestVerboseSinkOmitsTheTimestamp checks the stderr sink prints no wall clock.
+func TestVerboseSinkOmitsTheTimestamp(t *testing.T) {
+	var stderr bytes.Buffer
+	o := logOptions{verbose: true}
+	logger, _, err := o.build(&stderr, io.Discard)
+	require.NoError(t, err)
+	logger.Info("hello")
+
+	line := strings.TrimSpace(stderr.String())
+	require.True(t, strings.HasPrefix(line, "INF hello"), "line %q starts with the level", line)
+}
+
+// TestBuildReportsAnUnusableLogFile checks a log path whose parent is a file
+// fails with an error and still returns a usable logger and no closer.
+func TestBuildReportsAnUnusableLogFile(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	require.NoError(t, os.WriteFile(blocker, nil, 0o600))
+
+	o := logOptions{enable: true, file: filepath.Join(blocker, "iq.log"), level: slog.LevelInfo, format: "text"}
+	logger, closer, err := o.build(io.Discard, io.Discard)
+	require.ErrorContains(t, err, "create log dir")
+	require.NotNil(t, logger)
+	require.Nil(t, closer)
+	require.NotPanics(t, func() { logger.Info("still safe") })
+}
+
+// TestOpenLogFileErrors checks both failure wraps keep their cause, and that a
+// new directory is private.
+func TestOpenLogFileErrors(t *testing.T) {
+	t.Run("parent is a file", func(t *testing.T) {
+		blocker := filepath.Join(t.TempDir(), "blocker")
+		require.NoError(t, os.WriteFile(blocker, nil, 0o600))
+		_, err := openLogFile(filepath.Join(blocker, "iq.log"))
+		require.ErrorContains(t, err, "create log dir")
+		var pe *fs.PathError
+		require.ErrorAs(t, err, &pe)
+	})
+
+	t.Run("target is a directory", func(t *testing.T) {
+		_, err := openLogFile(t.TempDir())
+		require.ErrorContains(t, err, "open log file")
+		var pe *fs.PathError
+		require.ErrorAs(t, err, &pe)
+	})
+
+	t.Run("a new directory is private", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("windows has no unix permission bits")
+		}
+		dir := filepath.Join(t.TempDir(), "logs")
+		f, err := openLogFile(filepath.Join(dir, "iq.log"))
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+		info, err := os.Stat(dir)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+	})
+}
+
+// TestParseLogLevelErrorValue checks a rejected level comes back as the zero
+// level beside the error.
+func TestParseLogLevelErrorValue(t *testing.T) {
+	level, err := parseLogLevel("loud")
+	require.ErrorContains(t, err, `invalid --log.level "loud"`)
+	require.Zero(t, level)
 }

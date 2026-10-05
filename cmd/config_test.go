@@ -5,8 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/stretchr/testify/require"
 
@@ -401,4 +404,312 @@ func TestApplyStoredOptions(t *testing.T) {
 		require.NoError(t, applyStoredOptions(root, cfg))
 		require.Equal(t, "WARN", cfg.logLevel)
 	})
+}
+
+// TestApplyStoredOptionsUsesTheActiveSource checks that, with no --src, the
+// active source's option is the one applied.
+func TestApplyStoredOptionsUsesTheActiveSource(t *testing.T) {
+	configEnv(t)
+	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
+	require.NoError(t, cf.Add("prod", "mongodb://h/db?collection=books"))
+	require.NoError(t, cf.SetOption("", "format", "yaml"))
+	require.NoError(t, cf.SetOption("prod", "format", "jsonl"))
+	cf.Active = "prod"
+	require.NoError(t, cf.Save())
+
+	root, cfg := newRootCmd()
+	require.NoError(t, applyStoredOptions(root, cfg))
+	require.Equal(t, "jsonl", cfg.format)
+}
+
+// TestApplyStoredOptionsKeepsTheCause pins that a rejected stored value stays
+// reachable through errors.Is, so a caller can still match the parse failure.
+func TestApplyStoredOptionsKeepsTheCause(t *testing.T) {
+	configEnv(t)
+	cf := &iqconfig.Config{
+		Sources: map[string]iqconfig.Source{},
+		Options: map[string]string{"compact": "maybe"},
+	}
+	require.NoError(t, cf.Save())
+
+	root, cfg := newRootCmd()
+	err := applyStoredOptions(root, cfg)
+	require.ErrorIs(t, err, strconv.ErrSyntax)
+}
+
+// TestCanonicalOptionValueKeepsTheCause pins the same wrap for `config set`.
+func TestCanonicalOptionValueKeepsTheCause(t *testing.T) {
+	_, err := canonicalOptionValue("compact", "maybe")
+	require.ErrorIs(t, err, strconv.ErrSyntax)
+	require.ErrorContains(t, err, `invalid value for "compact"`)
+}
+
+// TestValidateLogFormat checks the log.format rule one value at a time.
+func TestValidateLogFormat(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{name: "text", value: "text"},
+		{name: "json", value: "json"},
+		{name: "upper case", value: "JSON"},
+		{name: "padded", value: " text "},
+		{name: "xml", value: "xml", wantErr: true},
+		{name: "empty", value: "", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateOptionSemantics("log.format", tt.value)
+			if tt.wantErr {
+				require.ErrorContains(t, err, "want text or json")
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+// TestResolveEditor checks the editor lookup order and the argument split.
+func TestResolveEditor(t *testing.T) {
+	tests := []struct {
+		name     string
+		env      map[string]string
+		wantCmd  string
+		wantArgs []string
+	}{
+		{name: "fallback", wantCmd: "vi"},
+		{name: "arguments are split off", env: map[string]string{"IQ_EDITOR": "code --wait -n"}, wantCmd: "code", wantArgs: []string{"--wait", "-n"}},
+		{name: "IQ_EDITOR beats VISUAL", env: map[string]string{"IQ_EDITOR": "a", "VISUAL": "b", "EDITOR": "c"}, wantCmd: "a"},
+		{name: "VISUAL beats EDITOR", env: map[string]string{"VISUAL": "b", "EDITOR": "c"}, wantCmd: "b"},
+		{name: "EDITOR last", env: map[string]string{"EDITOR": "c"}, wantCmd: "c"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, k := range []string{"IQ_EDITOR", "VISUAL", "EDITOR"} {
+				t.Setenv(k, tt.env[k])
+			}
+			gotCmd, gotArgs := resolveEditor()
+			require.Equal(t, tt.wantCmd, gotCmd)
+			require.Len(t, gotArgs, len(tt.wantArgs))
+			for i, want := range tt.wantArgs {
+				require.Equal(t, want, gotArgs[i])
+			}
+		})
+	}
+}
+
+// TestConfigSubcommandsRejectArgs pins the NoArgs guard of each subcommand that
+// takes no argument.
+func TestConfigSubcommandsRejectArgs(t *testing.T) {
+	for _, sub := range []string{"ls", "view", "edit"} {
+		t.Run(sub, func(t *testing.T) {
+			configEnv(t)
+			// A mutant that drops the guard would run the editor, so give it one
+			// that returns at once instead of waiting on a terminal.
+			t.Setenv("IQ_EDITOR", "true")
+			root, _ := newRootCmd()
+			_, err := runCmd(t, root, "config", sub, "extra")
+			require.ErrorContains(t, err, `unknown command "extra"`)
+		})
+	}
+}
+
+// TestConfigCommandsReportACorruptConfig checks that each command which reads the
+// config file stops with the load error. The commands run without the root, whose
+// pre-run step would hit the same parse error first.
+func TestConfigCommandsReportACorruptConfig(t *testing.T) {
+	tests := []struct {
+		name  string
+		build func() *cobra.Command
+		args  []string
+	}{
+		{name: "get", build: func() *cobra.Command { return newConfigGetCmd(&config{}) }, args: []string{"format"}},
+		{name: "set", build: func() *cobra.Command { return newConfigSetCmd(&config{}) }, args: []string{"format", "yaml"}},
+		{name: "delete", build: func() *cobra.Command { return newConfigSetCmd(&config{}) }, args: []string{"-D", "format"}},
+		{name: "ls", build: func() *cobra.Command { return newConfigLsCmd(&config{}) }},
+		{name: "view", build: func() *cobra.Command { return newConfigViewCmd(&config{}) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := configEnv(t)
+			require.NoError(t, os.WriteFile(p, []byte("not = [valid toml\n"), 0o600))
+			_, err := runCmd(t, tt.build(), tt.args...)
+			require.ErrorContains(t, err, "parse config")
+		})
+	}
+}
+
+// TestConfigUnknownSource checks the scoped commands name an unknown --src.
+func TestConfigUnknownSource(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "get", args: []string{"--src", "nosuch", "config", "get", "format"}},
+		{name: "ls", args: []string{"--src", "nosuch", "config", "ls"}},
+		{name: "delete", args: []string{"--src", "nosuch", "config", "set", "-D", "format"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configEnv(t)
+			root, _ := newRootCmd()
+			_, err := runCmd(t, root, tt.args...)
+			require.ErrorContains(t, err, "nosuch")
+		})
+	}
+}
+
+// TestConfigWriteErrors fails the confirmation or listing write of each config
+// command and expects the error back.
+func TestConfigWriteErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		seed  func(t *testing.T)
+		build func() *cobra.Command
+		args  []string
+	}{
+		{
+			name:  "get",
+			build: func() *cobra.Command { return newConfigGetCmd(&config{}) },
+			args:  []string{"format"},
+		},
+		{
+			name: "ls",
+			seed: func(t *testing.T) {
+				cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
+				require.NoError(t, cf.SetOption("", "format", "yaml"))
+				require.NoError(t, cf.Save())
+			},
+			build: func() *cobra.Command { return newConfigLsCmd(&config{}) },
+		},
+		{
+			name:  "view",
+			build: func() *cobra.Command { return newConfigViewCmd(&config{}) },
+		},
+		{
+			name:  "delete of an unset option",
+			build: func() *cobra.Command { return newConfigSetCmd(&config{}) },
+			args:  []string{"-D", "format"},
+		},
+		{
+			name: "delete of a stored option",
+			seed: func(t *testing.T) {
+				cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
+				require.NoError(t, cf.SetOption("", "format", "yaml"))
+				require.NoError(t, cf.Save())
+			},
+			build: func() *cobra.Command { return newConfigSetCmd(&config{}) },
+			args:  []string{"-D", "format"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configEnv(t)
+			if tt.seed != nil {
+				tt.seed(t)
+			}
+			c := tt.build()
+			c.SetOut(&errAfter{0})
+			c.SetErr(io.Discard)
+			c.SetArgs(tt.args)
+			require.ErrorContains(t, c.Execute(), "write failed")
+		})
+	}
+}
+
+// TestConfigDeleteReportsASaveFailure makes the save after a delete fail: the
+// command must say so instead of reporting an option it did not remove.
+func TestConfigDeleteReportsASaveFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "iq.toml")
+	t.Setenv(iqconfig.EnvConfig, p)
+	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
+	require.NoError(t, cf.SetOption("", "format", "yaml"))
+	require.NoError(t, cf.Save())
+	require.NoError(t, os.Chmod(dir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	root, _ := newRootCmd()
+	out, err := runCmd(t, root, "config", "set", "-D", "format")
+	require.ErrorContains(t, err, "create temp config")
+	require.NotContains(t, out, "unset format")
+}
+
+// TestConfigEditRunsTheEditor checks the editor gets its own arguments and then
+// the config path, and that its output reaches the command's stdout.
+func TestConfigEditRunsTheEditor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the editor stub is a shell script")
+	}
+	p := configEnv(t)
+	dir := t.TempDir()
+	script := filepath.Join(dir, "ed.sh")
+	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\necho \"args: $*\"\n"), 0o755))
+	t.Setenv("IQ_EDITOR", script+" --wait")
+
+	root, _ := newRootCmd()
+	out, err := runCmd(t, root, "config", "edit")
+	require.NoError(t, err)
+	require.Contains(t, out, "args: --wait "+p)
+}
+
+// TestConfigEditReportsAFailingEditor checks a non-zero editor exit fails the
+// command and names the editor.
+func TestConfigEditReportsAFailingEditor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the editor stub is a shell script")
+	}
+	configEnv(t)
+	script := filepath.Join(t.TempDir(), "ed.sh")
+	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\nexit 3\n"), 0o755))
+	t.Setenv("IQ_EDITOR", script)
+
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "config", "edit")
+	require.ErrorContains(t, err, "run editor")
+}
+
+// TestConfigEditReportsASaveFailure checks that a config file that cannot be
+// created stops `edit` before the editor starts.
+func TestConfigEditReportsASaveFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
+	}
+	dir := t.TempDir()
+	t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
+	require.NoError(t, os.Chmod(dir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	marker := filepath.Join(t.TempDir(), "ran")
+	script := filepath.Join(t.TempDir(), "ed.sh")
+	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\ntouch '"+marker+"'\n"), 0o755))
+	t.Setenv("IQ_EDITOR", script)
+
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "config", "edit")
+	require.Error(t, err)
+	require.NoFileExists(t, marker, "the editor must not start")
+}
+
+// TestConfigViewKeepsEverySection checks the redacted copy keeps the active
+// source, the groups and the stored options, and prints nothing for an empty
+// source table.
+func TestConfigViewKeepsEverySection(t *testing.T) {
+	configEnv(t)
+	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
+	require.NoError(t, cf.Add("a", "mongodb://h/db?collection=books"))
+	require.NoError(t, cf.SetOption("", "format", "yaml"))
+	cf.Active = "a"
+	cf.Group = "all"
+	require.NoError(t, cf.Save())
+
+	root, _ := newRootCmd()
+	out, err := runCmd(t, root, "config", "view")
+	require.NoError(t, err)
+	require.Contains(t, out, "active = 'a'")
+	require.Contains(t, out, "group = 'all'")
+	require.Contains(t, out, "format = 'yaml'")
 }
