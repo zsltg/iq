@@ -22,10 +22,10 @@ func TestRef(t *testing.T) {
 		want    string
 		wantErr string
 	}{
-		{name: "known service", content: ptr(valid), service: "redis", want: "redis:8.10.2@sha256:abc"},
-		{name: "unknown service", content: ptr(valid), service: "mongo", wantErr: `service "mongo" is not in`},
-		{name: "service without image", content: ptr(valid), service: "bare", wantErr: `service "bare"`},
-		{name: "invalid yaml", content: ptr("services: [unclosed"), service: "redis", wantErr: "parse"},
+		{name: "known service", content: new(valid), service: "redis", want: "redis:8.10.2@sha256:abc"},
+		{name: "unknown service", content: new(valid), service: "mongo", wantErr: `service "mongo" is not in`},
+		{name: "service without image", content: new(valid), service: "bare", wantErr: `service "bare"`},
+		{name: "invalid yaml", content: new("services: [unclosed"), service: "redis", wantErr: "parse"},
 		{name: "missing file", content: nil, service: "redis", wantErr: "read"},
 	}
 	for _, tt := range tests {
@@ -60,5 +60,3 @@ func TestRefRejectsEmptyService(t *testing.T) {
 
 	require.Error(t, err)
 }
-
-func ptr(s string) *string { return &s }

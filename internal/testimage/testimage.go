@@ -48,7 +48,7 @@ type compose struct {
 
 // ref reads the compose file at path and returns the image of the named service.
 func ref(path, service string) (string, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: reads compose.yaml of the module root, or a test fixture.
 	if err != nil {
 		return "", fmt.Errorf("testimage: read %s: %w", path, err)
 	}
