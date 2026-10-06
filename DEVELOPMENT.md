@@ -118,15 +118,19 @@ Fix every reported issue before committing.
 
 ### Security gate (`scripts/security.sh`)
 
-Run `govulncheck ./...` before an authorized dependency addition or upgrade.
-`make security` needs network access and runs these tools:
+Before an authorized dependency addition or upgrade, run `make security`, or run
+`govulncheck` alone with the pinned version:
+`. scripts/tool-versions.env && go run golang.org/x/vuln/cmd/govulncheck@"$GOVULNCHECK_VERSION" ./...`.
+`make security` needs network access. It runs these tools through `go run` at the
+versions in `scripts/tool-versions.env`, so the first run fetches them from the
+module proxy:
 
 - `govulncheck` finds vulnerabilities in reachable Go code.
 - `osv-scanner` scans vulnerabilities and every Go module against
   `scripts/license-allowlist.txt`. The CI `osv` job reads the same allowlist.
 - `gitleaks` scans the working tree and Git history for secrets.
 - `zizmor` audits `.github/` through `uvx`, with the version pinned by
-  `ZIZMOR_VERSION`. Without `GH_TOKEN` or `GITHUB_TOKEN`, it runs only offline audits.
+  `ZIZMOR_VERSION` in `scripts/tool-versions.env`. Without `GH_TOKEN` or `GITHUB_TOKEN`, it runs only offline audits.
 - `syft` writes a software bill of materials (SBOM) to `dist/`.
 
 For an accepted zizmor finding, add an inline `# zizmor: ignore[...]` with a reason.
@@ -168,8 +172,8 @@ The gate compares that report against the committed `capslock-baseline.json`.
 It runs only when `go.mod` or `go.sum` differ from the merge-base with `IQ_CAPS_BASE`.
 On drift, read the call paths before recording a new baseline with `IQ_CAPS_UPDATE_BASELINE=1`.
 
-The wrapper installs `github.com/google/capslock/cmd/capslock@v0.3.3` into a
-temporary `GOBIN`. It runs the binary directly, with no `PATH` or `go.mod` change.
+The wrapper installs `github.com/google/capslock/cmd/capslock` at the version of
+`CAPSLOCK_VERSION` in `scripts/capabilities.sh` into a temporary `GOBIN`. It runs the binary directly, with no `PATH` or `go.mod` change.
 The wrapper exits 0 when there is no drift. It exits 1 for drift and run errors,
 including Capslock status 2. The run-error message states that no capability
 verdict was reached. A build failure is not a capability regression.
@@ -223,8 +227,9 @@ moving under `internal/`. Every other target and every diff-scoped run stays
 zero-survivor. A genuine equivalent is accepted into
 `mutago-baseline.json` with a justification in `mutago-baseline.notes.md`.
 
-The wrapper installs `github.com/quality-gates/mutago/v2/cmd/mutago@v2.10.16`
-into a temporary `GOBIN` and runs that binary directly.
+The wrapper installs `github.com/quality-gates/mutago/v2/cmd/mutago` at the version
+of `MUTAGO_VERSION` in `scripts/mutation-gate.sh` into a temporary `GOBIN` and runs
+that binary directly.
 It needs neither a `PATH` entry nor a `go.mod` change.
 Stable policy lives in `.mutago.yml`, passed with `--config`.
 Required and invocation-specific flags stay on the command line.
@@ -590,8 +595,9 @@ without `IQ_HBASE_URL`. The Linux leg of the `test` job runs with `-race`; the
 macOS and Windows legs do not, because the race detector needs cgo there. The
 `cmd` tests that run the root command are not parallel: its PreRun writes the
 process-wide `color.NoColor`, which parallel formatter tests read.
-Tool versions are pinned in the workflow's `env` block; keep them in sync with
-the Makefile and `scripts/`.
+Tool versions are pinned once in `scripts/tool-versions.env`. Each workflow step
+that runs a tool reads that file first. The pins of mutago and capslock stay in
+`scripts/mutation-gate.sh` and `scripts/capabilities.sh`.
 
 Posture and upkeep around the pipeline, all on GitHub:
 
@@ -629,8 +635,8 @@ Posture and upkeep around the pipeline, all on GitHub:
 - [zizmor](https://docs.zizmor.sh) audits the workflow files themselves: unpinned
   or impostor actions, credentials the checkout leaves on disk, cache poisoning on
   the release paths, and template injection into a `run` block. The version is
-  pinned as `ZIZMOR_VERSION` in `ci.yml` and `scripts/security.sh`, and Renovate
-  tracks both. `make security` runs it locally, the `workflows` job runs it on
+  pinned once as `ZIZMOR_VERSION` in `scripts/tool-versions.env`, and Renovate
+  tracks it. `make security` runs it locally, the `workflows` job runs it on
   every push and pull request, and `deep-scan` re-runs it weekly against fresh
   advisory data. There is no config file, so an accepted finding is an inline
   `# zizmor: ignore[<audit>]` comment with a reason on the offending line. Three
@@ -638,12 +644,27 @@ Posture and upkeep around the pipeline, all on GitHub:
   checkout credential because they fetch the pull-request base branch. In
   `devin-review.yml`, the `pull_request_target` trigger is accepted because the
   job checks out nothing and puts no pull request data into a shell command.
-- `renovate.json` drives Renovate (the Mend GitHub App): one grouped PR a week
-  for minor and patch bumps, one PR per major, Go toolchain bumps on their own,
-  action digests refreshed, and the tool versions in `ci.yml`, the Makefile
-  and `scripts/` tracked through custom regex managers. A human merges; a PR
-  that moves `go.mod` runs `make capabilities`, which is the review AGENTS.md
-  asks for on a dependency change.
+- `renovate.json` drives Renovate (the Mend GitHub App). It updates these items:
+  the Go modules, the GitHub Actions (pinned by digest), the Go toolchain, the
+  tool pins, the test images in `compose.yaml`, and the docs tooling in
+  `docs/pyproject.toml` (`python` and `zensical`). A human merges every PR.
+  A PR that moves `go.mod` runs `make capabilities`, which is the review that
+  AGENTS.md asks for on a dependency change.
+- Renovate sends minor and patch updates as one grouped PR on Monday.
+  A breaking update arrives as a draft PR with the `breaking` label. Three
+  kinds count as breaking: a major, a minor of a version below 1.0, and a Go
+  toolchain update. To skip a breaking update, close its draft. Renovate then
+  does not propose that update again. To adopt it, finish the work on the
+  branch and mark the PR ready.
+- Renovate waits three days after a release before it proposes the release.
+  Security updates do not wait. Security PRs depend on the Dependabot alerts of
+  the repository, so keep the alerts and the dependency graph on. Dependabot
+  security updates can stay off.
+- The tool pins live in `scripts/tool-versions.env`, `scripts/mutation-gate.sh`,
+  and `scripts/capabilities.sh`. One custom manager reads them. Each pin needs a
+  line directly above it in this form: `# renovate: datasource=go depName=<package>`.
+  Use `datasource=pypi` for a PyPI tool. Without that line, Renovate does not
+  see the pin.
 - `scripts/license-allowlist.txt` is the permissive license allowlist, one SPDX
   ID per line. `make security`, the CI `osv` job and the weekly `deep-scan` read
   it and check every Go module against it (`osv-scanner --licenses`, `go.mod`
@@ -740,25 +761,25 @@ change to a command, flag, or help string regenerates them in the same commit.
 
 ## Toolchain
 
-```bash
-make tools-dev   # mutago, capslock, deadcode, govulncheck, osv-scanner, gitleaks, syft
-make tools       # release tools: svu, git-chglog
-```
-
-The gates provision their own pinned mutago and capslock.
-`make tools-dev` installs the listed tools into `GOPATH/bin` for ad-hoc use.
 Keep `gofumpt`, `goimports`, and `golangci-lint` on `PATH`.
+Nothing else needs an install step. The scripts and the Makefile run every other
+tool through `go run <package>@<version>`, or through `uvx` for zizmor. The versions
+are in `scripts/tool-versions.env`, the same versions that CI runs. The first run
+of each tool needs network access to the module proxy, and later runs use the
+module cache. The gates provision their own pinned mutago and capslock.
 
 ## Releasing
 
 ```bash
-make tools                          # one-time: svu + git-chglog
 make version                        # print the version the next release would take
 make changelog                      # regenerate CHANGELOG.md alone
 bash scripts/release.sh --dry-run   # preview, no changes
 make release-check                  # validate the goreleaser config
 make release-snapshot               # local snapshot build of every artifact, no tag
 ```
+
+The release scripts run `svu` and `git-chglog` through `go run` at the versions in
+`scripts/tool-versions.env`. You install nothing, but the first run needs network access.
 
 `main` accepts only squash-merged pull requests, so a release has two steps:
 

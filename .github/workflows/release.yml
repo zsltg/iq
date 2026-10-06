@@ -2,7 +2,7 @@
 # .github/workflows/ too, so the job is guarded to run only on the GitHub mirror
 # (goreleaser publishes to GitHub Releases and pushes the Homebrew/Scoop manifests
 # to the tap/bucket repos — none of which exist on the primary remote). Triggered by a v* tag
-# pushed to the `github` remote. Keep GORELEASER_VERSION in sync with the Makefile.
+# pushed to the `github` remote. The GoReleaser version comes from scripts/tool-versions.env.
 name: Release
 
 on:
@@ -12,9 +12,6 @@ on:
 
 permissions:
   contents: read
-
-env:
-  GORELEASER_VERSION: v2.17.0
 
 jobs:
   goreleaser:
@@ -35,6 +32,13 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # full history + tags so goreleaser can build the changelog
+      # The action takes its version as an input, and an input cannot read a file.
+      # This step reads the pin from the file and passes it on as an output.
+      - name: Read the tool pins
+        id: pins
+        run: |
+          . scripts/tool-versions.env
+          echo "goreleaser=$GORELEASER_VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -48,7 +52,7 @@ jobs:
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
-          version: ${{ env.GORELEASER_VERSION }}
+          version: ${{ steps.pins.outputs.goreleaser }}
           args: release --clean
         env:
           # GITHUB_TOKEN publishes the Release on this repo; GORELEASER_TOKEN is a

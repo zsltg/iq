@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
-# Fast, offline pre-merge gate: format, vet, build, lint, dead code, and the unit
-# suite with a coverage report. No Docker, no network — the slower tiers live
-# elsewhere: the container suite and coverage floor in scripts/coverage.sh, the
-# supply-chain/secrets/SBOM sweep in scripts/security.sh, and the mutation gate
-# in scripts/mutation-gate.sh. gofumpt, goimports, and golangci-lint must be on
-# PATH (make tools-dev does not install them; see CONTRIBUTING.md, Before you start).
+# Fast pre-merge gate: format, vet, build, lint, dead code, and the unit suite with
+# a coverage report. No Docker. The first run needs network access, because deadcode
+# runs through `go run` and the Go toolchain fetches it from the module proxy once.
+# The slower tiers live elsewhere: the container suite and coverage floor in
+# scripts/coverage.sh, the supply-chain/secrets/SBOM sweep in scripts/security.sh,
+# and the mutation gate in scripts/mutation-gate.sh. gofumpt, goimports, and
+# golangci-lint must be on PATH (see CONTRIBUTING.md, Before you start).
 set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
-# deadcode has no ubiquitous binary; prefer an installed one, else run it from the
-# module cache. Everything else is expected on PATH (see `make tools-dev`).
-if command -v deadcode >/dev/null 2>&1; then
-  deadcode=(deadcode)
-else
-  deadcode=(go run golang.org/x/tools/cmd/deadcode@latest)
-fi
+# deadcode runs at the version in scripts/tool-versions.env, the version that CI runs.
+# A deadcode binary on PATH is not used, because its version can differ from CI.
+. scripts/tool-versions.env
+deadcode=(go run "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION")
 
 fail=0
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }

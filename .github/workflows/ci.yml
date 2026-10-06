@@ -4,7 +4,8 @@
 # installs via `go install`, and every other tool runs via
 # `go run <module>@<version>` or through the repo's own wrappers (which provision
 # their pinned mutago/capslock into a throwaway GOBIN), so nothing touches go.mod.
-# Keep the versions below in sync with the Makefile and scripts/.
+# The tool versions live in scripts/tool-versions.env. Each step that runs a tool
+# sources that file first.
 #
 # Integration tests and gates that need a datastore run ONE CONTAINER AT A TIME:
 # GOFLAGS=-p=1 serialises package test binaries, so each driver's testcontainer
@@ -52,15 +53,6 @@ permissions:
 concurrency:
   group: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('deep-mutation-scan-{0}', github.ref) || github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-env:
-  GOLANGCI_LINT_VERSION: v2.13.1 # 2.12 and older bundle a staticcheck that panics on Go 1.27
-  GOVULNCHECK_VERSION: v1.7.0
-  GITLEAKS_VERSION: v8.30.1
-  OSV_SCANNER_VERSION: v2.6.0
-  DEADCODE_VERSION: v0.49.0 # golang.org/x/tools
-  SYFT_VERSION: v1.45.1
-  ZIZMOR_VERSION: 1.30.1 # PyPI, no v prefix
 
 jobs:
   # The one required check of the main ruleset. GitHub reports a skipped matrix job
@@ -200,6 +192,7 @@ jobs:
       # release tarball against a checksums file and has failed on a mismatch.
       - name: Install golangci-lint
         run: |
+          . scripts/tool-versions.env
           go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       # .golangci.yml enables the gofumpt + goimports formatters, so `fmt` is the
@@ -236,7 +229,9 @@ jobs:
       - name: zizmor (GitHub Actions workflow audit)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: uvx "zizmor==$ZIZMOR_VERSION" .github/
+        run: |
+          . scripts/tool-versions.env
+          uvx "zizmor==$ZIZMOR_VERSION" .github/
 
   # -short is the dependency-free path: container-backed driver suites skip. The
   # committed man page and completions are drift-guarded by tests in this run.
@@ -453,7 +448,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }} ./...
+        run: |
+          . scripts/tool-versions.env
+          go run golang.org/x/vuln/cmd/govulncheck@"$GOVULNCHECK_VERSION" ./...
 
   # OSV complements govulncheck: the whole dependency graph regardless of symbol
   # reachability, and --licenses gates every dependency against the allowlist.
@@ -474,10 +471,11 @@ jobs:
       - name: OSV scan + license allowlist
         # The allowlist is scripts/license-allowlist.txt, which make security reads too.
         run: |
+          . scripts/tool-versions.env
           allow="$(grep -Ev '^(#|$)' scripts/license-allowlist.txt | paste -sd, -)"
           # An empty list turns --licenses into a summary with no verdict, so stop.
           [ -n "$allow" ] || { echo "::error::scripts/license-allowlist.txt lists no license"; exit 1; }
-          go run github.com/google/osv-scanner/v2/cmd/osv-scanner@${{ env.OSV_SCANNER_VERSION }} \
+          go run github.com/google/osv-scanner/v2/cmd/osv-scanner@"$OSV_SCANNER_VERSION" \
             scan source --licenses="$allow" -L go.mod
 
   # Generation-only: proves the SBOMs build (same syft invocation as `make sbom`).
@@ -499,8 +497,9 @@ jobs:
           go-version-file: go.mod
       - name: Generate SBOMs (syft, SPDX + CycloneDX)
         run: |
+          . scripts/tool-versions.env
           mkdir -p dist
-          go run github.com/anchore/syft/cmd/syft@${{ env.SYFT_VERSION }} scan dir:. -q \
+          go run github.com/anchore/syft/cmd/syft@"$SYFT_VERSION" scan dir:. -q \
             -o spdx-json=dist/sbom.spdx.json -o cyclonedx-json=dist/sbom.cdx.json
 
   # Whole-program dead code: a function reachable from neither main nor any test.
@@ -521,7 +520,8 @@ jobs:
           go-version-file: go.mod
       - name: Dead code (whole program)
         run: |
-          out="$(go run golang.org/x/tools/cmd/deadcode@${{ env.DEADCODE_VERSION }} -test ./...)"
+          . scripts/tool-versions.env
+          out="$(go run golang.org/x/tools/cmd/deadcode@"$DEADCODE_VERSION" -test ./...)"
           if [ -n "$out" ]; then echo "$out"; echo "::error::dead code: delete it or wire it up"; exit 1; fi
 
   # Developer Certificate of Origin: every new commit of a pull request carries a
@@ -564,8 +564,9 @@ jobs:
           go-version-file: go.mod
       - name: gitleaks (working tree + history)
         run: |
-          go run github.com/zricethezav/gitleaks/v8@${{ env.GITLEAKS_VERSION }} dir --no-banner .
-          go run github.com/zricethezav/gitleaks/v8@${{ env.GITLEAKS_VERSION }} git --no-banner .
+          . scripts/tool-versions.env
+          go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" dir --no-banner .
+          go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" git --no-banner .
 
   # What the dependency tree can *do* (google/capslock, scripts/capabilities.sh).
   # The wrapper self-skips unless go.mod or go.sum moved against the base, so this
@@ -730,21 +731,26 @@ jobs:
           go-version-file: go.mod
       - name: Vulnerabilities (govulncheck + OSV, fresh data)
         run: |
-          go run golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }} ./...
+          . scripts/tool-versions.env
+          go run golang.org/x/vuln/cmd/govulncheck@"$GOVULNCHECK_VERSION" ./...
           allow="$(grep -Ev '^(#|$)' scripts/license-allowlist.txt | paste -sd, -)"
           # An empty list turns --licenses into a summary with no verdict, so stop.
           [ -n "$allow" ] || { echo "::error::scripts/license-allowlist.txt lists no license"; exit 1; }
-          go run github.com/google/osv-scanner/v2/cmd/osv-scanner@${{ env.OSV_SCANNER_VERSION }} \
+          go run github.com/google/osv-scanner/v2/cmd/osv-scanner@"$OSV_SCANNER_VERSION" \
             scan source --licenses="$allow" -L go.mod
       - name: Secret history scan
-        run: go run github.com/zricethezav/gitleaks/v8@${{ env.GITLEAKS_VERSION }} git --no-banner .
+        run: |
+          . scripts/tool-versions.env
+          go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" git --no-banner .
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       # The online audits read the advisory data of GitHub, so a re-run on
       # unchanged workflows finds a newly vulnerable or yanked action.
       - name: zizmor (GitHub Actions workflow audit, fresh data)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: uvx "zizmor==$ZIZMOR_VERSION" .github/
+        run: |
+          . scripts/tool-versions.env
+          uvx "zizmor==$ZIZMOR_VERSION" .github/
 
   deep-plan:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

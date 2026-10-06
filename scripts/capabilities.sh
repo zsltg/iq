@@ -11,9 +11,8 @@
 # Version-hermetic invocation. capslock is pinned by CAPSLOCK_VERSION (below) and
 # provisioned per run into a throwaway GOBIN via `go install <pinned>@version`, then
 # executed directly, exactly as scripts/mutation-gate.sh provisions mutago: the gate needs
-# no capslock on PATH (`make tools-dev` installs it only for ad-hoc use) and never touches
-# this module's go.mod. Direct execution is deliberate over `go run`, which collapses any
-# non-zero program exit to 1. The wrapper reads Capslock's exact status to distinguish
+# no capslock on PATH and never touches this module's go.mod. Direct execution is
+# deliberate over `go run`, which collapses any non-zero program exit to 1. The wrapper reads Capslock's exact status to distinguish
 # drift from a run error in its message, then exits 1 for either case.
 # The installed binary streams its output live.
 #
@@ -71,7 +70,8 @@
 # unannotated by design. Consult that file before re-litigating a known false positive.
 set -uo pipefail
 
-# Pinned capslock version — keep in step with AGENTS.md and `make tools-dev` (Makefile).
+# Pinned capslock version. Renovate reads the line below.
+# renovate: datasource=go depName=github.com/google/capslock
 CAPSLOCK_VERSION=v0.3.3
 capslock_pkg=github.com/google/capslock/cmd/capslock
 
