@@ -490,10 +490,10 @@ its bare name. A new per-change job goes into the `needs` list of `ci-ok`.
 
 A draft pull request runs the fast jobs only. `changes` also sets `full=true`
 when `code=true` and the pull request is not a draft. The slow jobs (`test`, the
-coverage jobs, `e2e`, `cross`, `sbom`, `capabilities`, `mutate-diff` and `fuzz`)
-run only then, and `ci-ok` fails on a draft. Mark the pull request ready for
-review when the review rounds settle: the `ready_for_review` event starts the
-full run once. `changes` reads the draft state from the API, not from the event,
+coverage jobs, `e2e`, `cross`, `release-snapshot`, `sbom`, `capabilities`,
+`mutate-diff` and `fuzz`) run only then, and `ci-ok` fails on a draft. Mark the
+pull request ready for review when the review rounds settle: the
+`ready_for_review` event starts the full run once. `changes` reads the draft state from the API, not from the event,
 so a push just before "ready for review" still gets the full run. `ci-ok` fails
 on a draft and does not skip, because GitHub counts a skipped required check as
 a pass, and a skipped draft `ci-ok` would let a pull request merge while its
@@ -506,6 +506,8 @@ group of packages on their own runner, then `coverage` joins the partial profile
 makes sure that each package is in exactly one group, applies the floor, and does
 a reporting-only Codecov upload, `CODECOV_TOKEN` secret), `e2e` (redis pass, then
 the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
+`release-snapshot` (a goreleaser snapshot with no publish and no signature, then
+a check of the third-party license texts in the archives and the `.deb`),
 `vuln` (govulncheck), `osv` (OSV plus the permissive license allowlist), `sbom`
 (syft), `deadcode`, `secrets` (gitleaks, tree and history), `capabilities`
 (`scripts/capabilities.sh` against the PR base), `mutate-diff`
@@ -835,6 +837,21 @@ identity, `checksums.txt.sigstore.json`), and a second job adds SLSA level 3 bui
 provenance for every artifact (`slsa-github-generator`, `multiple.intoto.jsonl`).
 Then the install smoke test runs. How a user checks the signature and the
 provenance is on the docs home page, "Verify a release".
+
+Each binary archive and each Linux package carries the license texts of every
+linked module. The source archive does not, because goreleaser makes it from the
+Git tree. goreleaser runs `scripts/third-party-licenses.sh` before the build.
+The script runs `go list -deps` for the six release targets. For each module, it
+copies the license and notice files into `third-party-licenses/`, with the Go
+runtime license in `third-party-licenses/go/`. The script exits with an error if
+a module has no license file. A NOTICE or PATENTS file alone does not count. The
+script sets mode 0755 on each directory of the tree, so every user can read the
+installed texts. `make security` runs it too. The CI `release-snapshot` job
+builds the release as a snapshot, with no publish and no signature. Then it
+checks that each binary archive and the `.deb` package carry the same files as
+the tree, and that the `.deb` directories have mode 0755. A pull request thus
+fails early. The license policy stays in `scripts/license-allowlist.txt`. The
+script only collects texts.
 
 A release that fixes a vulnerability names its advisory ID. Put the ID
 (`GHSA-...`, and the CVE when one exists) in the title of the fix pull request,
