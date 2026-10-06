@@ -637,9 +637,9 @@ Posture and upkeep around the pipeline, all on GitHub:
   job (`coverage-group`, `deep-mutate`, `mutant-proof`) has one list for all legs,
   so add the host there. When a new tool or compose image enters a job, add its
   hosts in the same change. Do not add a host that you did not check.
-  Every job that runs `actions/setup-go` also allows `go.dev` and
-  `dl.google.com`. The action downloads Go from there when the Go version is
-  not yet in the runner cache or in the GitHub version manifest.
+  Every job that runs `actions/setup-go` also allows `go.dev:443` and
+  `dl.google.com:443`. The action downloads Go from there when the Go version
+  is not yet in the runner cache or in the GitHub version manifest.
 - `.github/workflows/codeql.yml` runs CodeQL (the `security-and-quality` queries
   over the Go code) on every pull request, every push to `main` and weekly, and
   uploads the results to the Security tab. It is not a required check:
