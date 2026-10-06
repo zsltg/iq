@@ -79,7 +79,7 @@ Local and layered: the quality gates run on your machine first, and
 [CONTRIBUTING.md](CONTRIBUTING.md#before-you-open-a-pull-request).
 
 ```bash
-make check          # fast offline gate: format, vet, build, lint, dead code, short tests
+make check          # fast offline gate: format, vet, build, lint, workflow lint, dead code, short tests
 make cover          # full suite + coverage floor
 make security       # govulncheck + osv-scanner (vulnerabilities, license allowlist) + gitleaks (tree + git history) + zizmor, SBOMs to dist/
 make capabilities   # capslock capability drift (runs only when go.mod/go.sum moved)
@@ -94,7 +94,7 @@ make sbom           # SPDX + CycloneDX SBOMs only
 `make check` runs `scripts/check.sh`.
 
 Format (`gofumpt` + `goimports`), `go vet`, `go build`, `golangci-lint`
-(gosec included), `deadcode`, the demo stamp gate ([Recorded demo](#recorded-demo)),
+(gosec included), `actionlint`, `deadcode`, the demo stamp gate ([Recorded demo](#recorded-demo)),
 the mutation verdict tests (`bash scripts/test/mutation-verdict.sh`: fixture shards
 from `scripts/test/mutation-verdict-fixtures.py` through `scripts/mutation-verdict.sh`,
 the parse, pack and rate steps of `scripts/mutation-plan.sh` on prepared dry runs
@@ -105,6 +105,13 @@ no network, no container), and `go test -short` with a coverage report. Lint fin
 paths are a stale cache from a removed worktree; check clears the cache and
 retries once. Do not clear the cache unconditionally. A warm lint run takes about
 3 seconds, compared with about 65 seconds after a cache clear.
+
+`actionlint` checks the workflow files in `.github/workflows/`, at the version in
+`ACTIONLINT_VERSION`. It runs `shellcheck` on the `run:` blocks only when
+`shellcheck` is on `PATH`. For an accepted shellcheck finding, add an inline
+`# shellcheck disable=SC<number>` line with a reason inside the `run:` block. For a
+finding with no inline form, add an `ignore` regex with a reason to
+`.github/actionlint.yaml`, scoped to one workflow file.
 
 Run `gofumpt -w .`, then `goimports -w .`, before lint or commit.
 The lint configuration extends the v2 defaults, including `staticcheck` and
@@ -501,7 +508,7 @@ the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
 (`scripts/mutation-gate.sh` against the PR base; it uploads the artifact
 `mutate-diff` with `report.json`, `mutago-agentic.json` and, after a failure
 on an escape, `mutago-baseline.candidate.json`, so the ids of the escapes need
-no local re-run), `workflows` (zizmor over
+no local re-run), `workflows` (zizmor and actionlint over
 `.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target), `dco`
 (`scripts/dco.sh`, a `Signed-off-by:` for the author of each pull request commit,
 on pull requests only) and
@@ -644,6 +651,17 @@ Posture and upkeep around the pipeline, all on GitHub:
   checkout credential because they fetch the pull-request base branch. In
   `devin-review.yml`, the `pull_request_target` trigger is accepted because the
   job checks out nothing and puts no pull request data into a shell command.
+- [actionlint](https://github.com/rhysd/actionlint) checks that the workflow files
+  are correct: the schema, the types in `${{ }}` expressions, `needs` and `outputs`
+  references, action inputs, and the `run` blocks through `shellcheck`. The version
+  is pinned once as `ACTIONLINT_VERSION` in `scripts/tool-versions.env`, and
+  Renovate tracks it. `make check` runs it locally, and the `workflows` job runs it
+  on every push and pull request, next to zizmor. Two findings are accepted. In
+  `ci.yml`, the `test` job leaves `$RACE` unquoted on purpose, because it is empty
+  off Linux and must disappear from the command. It has an inline
+  `# shellcheck disable=SC2086` line. In `release.yml`, the `smoke` job calls
+  `install-smoke.yml` as `$/.github/...`, which zizmor asks for and actionlint
+  does not know. `.github/actionlint.yaml` ignores that one message.
 - `renovate.json` drives Renovate (the Mend GitHub App). It updates these items:
   the Go modules, the GitHub Actions (pinned by digest), the Go toolchain, the
   tool pins, the test images in `compose.yaml`, and the docs tooling in

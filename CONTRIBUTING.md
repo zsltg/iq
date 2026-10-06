@@ -16,6 +16,8 @@ the architecture) is [DEVELOPMENT.md](DEVELOPMENT.md).
 - [gofumpt](https://github.com/mvdan/gofumpt),
   [goimports](https://pkg.go.dev/golang.org/x/tools/cmd/goimports) and
   [golangci-lint](https://golangci-lint.run) v2.13 or newer on `PATH`.
+- [shellcheck](https://www.shellcheck.net), optional. `make check` uses it to lint
+  the `run:` blocks of the workflow files when it is on `PATH`.
 - [uv](https://docs.astral.sh/uv/), only for the docs site and `make security`.
 - Run `make hooks` once in your checkout. The hooks make sure that your commits
   carry the email address that is set in your git config.
@@ -51,7 +53,7 @@ Run the gates locally. CI runs them again, but a pull request that fails them
 locally costs review time.
 
 ```bash
-make check                      # format, vet, build, lint, dead code, short tests
+make check                      # format, vet, build, lint, workflow lint, dead code, short tests
 make cover                      # full suite and the coverage floor (needs Docker)
 make security                   # vulnerabilities, licenses, secrets, workflow audit, SBOM
 make e2e                        # focused black-box run (full make cover includes e2e)
