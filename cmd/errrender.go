@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/itchyny/gojq"
@@ -84,14 +86,15 @@ func renderError(w io.Writer, cfg *config, err error) {
 // wrapped cause chain. Every printed string is redacted so a wrapped driver
 // error cannot leak a credential.
 func renderErrorText(w io.Writer, cfg *config, err error) {
-	_, _ = fmt.Fprintln(w, "iq: "+redactMessage(err.Error()))
+	redact := newRedactor(err)
+	_, _ = fmt.Fprintln(w, "iq: "+redact(err.Error()))
 	var se *filterSyntaxError
 	if cfg.errorTextVerbose && errors.As(err, &se) {
 		_, _ = fmt.Fprint(w, se.report())
 	}
 	if cfg.errorStack {
 		for _, frame := range stackFrames(err) {
-			_, _ = fmt.Fprintln(w, "  - "+redactMessage(frame))
+			_, _ = fmt.Fprintln(w, "  - "+redact(frame))
 		}
 	}
 }
@@ -114,9 +117,10 @@ type errorBody struct {
 // renderErrorJSON writes the error as a JSON object. The cause chain is always
 // present; a syntax error also carries its byte offset and token.
 func renderErrorJSON(w io.Writer, err error) {
-	body := errorBody{Message: redactMessage(err.Error())}
+	redact := newRedactor(err)
+	body := errorBody{Message: redact(err.Error())}
 	for _, frame := range stackFrames(err) {
-		body.Causes = append(body.Causes, redactMessage(frame))
+		body.Causes = append(body.Causes, redact(frame))
 	}
 	if se, ok := errors.AsType[*filterSyntaxError](err); ok {
 		off := se.offset
@@ -163,49 +167,74 @@ func causeChain(err error) []string {
 	return frames
 }
 
-// urlLike matches a scheme://... substring so redactMessage can scrub a
-// connection URL embedded in a wrapped driver error before it is printed. The
-// stop set excludes whitespace and quotes; trailing prose punctuation the class
-// still admits (a URL inside parentheses or before a comma) is split off in
-// redactMessage before parsing.
-var urlLike = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"']+`)
+// urlLike matches a scheme://... substring so the pattern step of newRedactor
+// can scrub a connection URI in an error before iq prints it. The stop set is
+// whitespace and the double quote. A single quote is valid in the userinfo
+// (RFC 3986 sub-delims), so the match continues past it. If the match stopped
+// there, a quoted password would pass through unmasked. Trailing punctuation
+// that the class admits (a URI in parentheses, before a comma or inside single
+// quotes) is split off before the parse.
+var urlLike = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"]+`)
 
-// trailingDelims is what a URL match may pick up when it is embedded in a
-// sentence: prose punctuation, and the backtick that closes a code span in our
-// own advice strings. redactMessage trims it before url.Parse. A backtick is
-// never part of a URL, so trimming one can only sharpen the match: left on, it
-// lands in the host and fails the parse outright, or in the path and survives as
-// a %60 the URL never had.
+// trailingDelims is what a URI match can pick up when it is in a sentence:
+// prose punctuation, the single quote that closes a quoted URI, and the backtick
+// that closes a code span in our own advice strings. The pattern step trims it
+// before url.Parse. If the closing single quote or backtick stays on, it goes
+// into the port or the host and the parse fails, or it goes into the path and
+// stays as an escape that the URI did not have.
 //
-// The trim is a run, not a single byte, because a URL can close a parenthetical
-// and a sentence at once ("(mongodb://host/db)."). The cost is that a URL truly
-// ending in one of these loses it — an elided "scheme://..." keeps no ellipsis —
-// so a message iq writes itself spells its example URL out in full.
-const trailingDelims = ".,;:!?)]}>`"
+// The trim is a run, not a single byte, because a URI can close a parenthetical
+// and a sentence at once ("(mongodb://host/db)."). The cost is that a URI that
+// ends in one of these bytes loses it. An elided "scheme://..." keeps no
+// ellipsis, so a message that iq writes spells its example URI out in full.
+const trailingDelims = ".,;:!?)]}>`'"
 
-// redactMessage redacts any connection-URL substring in msg, so --error.stack
-// and --error.format json (which surface the whole wrapped cause chain, raw leaf
-// driver errors included) never print a credential.
+// newRedactor returns a function that removes the connection password from a
+// message about err. The error render, the log hook, the MCP error rows and
+// redactErr use it, so iq never prints or logs a credential.
 //
-// This is the top-level backstop of a two-layer scheme. The first layer,
-// redactErr, replaces the exact URL iq dialed wherever a driver echoes it, at
-// each command boundary; this layer catches any scheme://… URL by shape, even
-// one iq did not itself construct. The only secret iq handles is the connection
-// password, which always rides in the URL userinfo (scheme://user:pass@host) —
-// the keyring form is spliced back into that same shape before connecting — so
-// url.Redacted, which masks the userinfo password, covers the entire secret
-// surface. A parse failure is redacted to a placeholder rather than passed
-// through, so the fallback is always safe (it over-redacts, never leaks).
-// Query parameters are deliberately left intact: they carry no secret today
-// (neo4j's ?key= is a property name, not a credential), so a source that ever
-// puts a secret outside the userinfo must extend redactURL rather than rely here.
-func redactMessage(msg string) string {
-	return urlLike.ReplaceAllStringFunc(msg, func(m string) string {
-		// Split off the trailing delimiters so url.Parse sees a clean URL and masks
-		// its password, instead of failing on the stray byte and collapsing the
-		// whole span to "(unparseable URI)". The password is masked either way;
-		// this only keeps the surrounding message readable.
-		u := strings.TrimRight(m, trailingDelims)
-		return redactURL(u) + m[len(u):]
-	})
+// The only secret that iq handles is the connection password. It is always in
+// the URI userinfo (scheme://user:pass@host). The keyring form is put back into
+// that shape before iq connects. The function has two steps:
+//
+//  1. The typed step. It finds each *url.Error in the unwrap chain of err and
+//     replaces the quoted URI in its message with the redacted form. This step
+//     is necessary because url.Parse puts the full input in its error, and a
+//     URI that does not parse can hold a password with a space or a double
+//     quote that the pattern step cannot find.
+//  2. The pattern step. It finds each scheme://... substring and replaces it
+//     with redactURL of that substring. A URI that does not parse becomes a
+//     placeholder, so the step can remove too much but it never leaks.
+//
+// Query parameters stay unchanged. No driver puts a secret in them today (the
+// neo4j ?key= is a property name, not a credential). A source that puts a
+// secret outside the userinfo must extend redactURL.
+//
+// err can be nil. Then only the pattern step runs.
+func newRedactor(err error) func(string) string {
+	var pairs []string
+	for stack := []error{err}; len(stack) > 0; {
+		e := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if ue, ok := e.(*url.Error); ok { //nolint:errorlint // The loop walks the chain itself, to find every *url.Error.
+			pairs = append(pairs, strconv.Quote(ue.URL), strconv.Quote(redactURL(ue.URL)))
+		}
+		switch u := e.(type) { //nolint:errorlint // The loop walks the chain itself, to find every *url.Error.
+		case interface{ Unwrap() error }:
+			stack = append(stack, u.Unwrap())
+		case interface{ Unwrap() []error }:
+			stack = append(stack, u.Unwrap()...)
+		}
+	}
+	typed := strings.NewReplacer(pairs...)
+	return func(msg string) string {
+		return urlLike.ReplaceAllStringFunc(typed.Replace(msg), func(m string) string {
+			// Split off the trailing delimiters so url.Parse sees a clean URI and
+			// masks its password. Without the trim, the parse fails on the stray
+			// byte and the whole span becomes "(unparseable URI)". The password is
+			// masked in both cases. The trim only keeps the message readable.
+			u := strings.TrimRight(m, trailingDelims)
+			return redactURL(u) + m[len(u):]
+		})
+	}
 }

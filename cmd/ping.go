@@ -188,14 +188,22 @@ func healthArgs(rawURL string) []string {
 	}
 }
 
-// redactErr returns err with any occurrence of the raw connection URL replaced by
-// its redacted form, so a driver error that echoes the URL cannot leak a password.
+// redactErr returns err with the connection password removed from its message,
+// so a driver error cannot leak it. It first replaces each occurrence of the raw
+// connection URI with its redacted form, then applies newRedactor. rawURL can be
+// empty. It returns err itself when the message does not change, so errors.Is
+// and errors.As still see the chain.
 func redactErr(err error, rawURL string) error {
 	msg := err.Error()
-	if rawURL != "" && strings.Contains(msg, rawURL) {
-		return errors.New(strings.ReplaceAll(msg, rawURL, redactURL(rawURL)))
+	out := msg
+	if rawURL != "" {
+		out = strings.ReplaceAll(out, rawURL, redactURL(rawURL))
 	}
-	return err
+	out = newRedactor(err)(out)
+	if out == msg {
+		return err
+	}
+	return errors.New(out)
 }
 
 // oneLine collapses an error message to a single line for tabular output.

@@ -398,6 +398,16 @@ func openOutputFile(path string) (*os.File, error) {
 	return f, nil
 }
 
+// logFailure writes the terminal error of a run to the log at ERROR level. It
+// writes nothing when err is nil or errQuietExit, which is a status with no
+// message. It also writes nothing when cfg.logger is nil, which happens only
+// when a flag-parse error stopped the run before PersistentPreRunE.
+func logFailure(cfg *config, err error) {
+	if err != nil && !errors.Is(err, errQuietExit) && cfg.logger != nil {
+		cfg.logger.Error("iq failed", "err", err)
+	}
+}
+
 // Execute runs the CLI. It is the composition root: it builds a signal-aware
 // context, runs the root command, finalizes the diagnostics resources opened in
 // PersistentPreRunE (on both success and error paths), and maps any error to a
@@ -407,11 +417,8 @@ func Execute() {
 	defer stop()
 	root, cfg := newRootCmd()
 	err := root.ExecuteContext(ctx)
-	// Record the terminal error before the log file closes. cfg.logger is nil
-	// only when a flag-parse error aborted before PersistentPreRunE ran.
-	if err != nil && !errors.Is(err, errQuietExit) && cfg.logger != nil {
-		cfg.logger.Error("iq failed", "err", err)
-	}
+	// Record the terminal error before the log file closes.
+	logFailure(cfg, err)
 	// Finalize in a fixed order: stop/write the profile, then close the log file,
 	// then render the error. Each handle is nil when its resource never opened.
 	if cfg.pprofStop != nil {

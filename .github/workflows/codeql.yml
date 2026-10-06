@@ -26,10 +26,24 @@ jobs:
       security-events: write # upload the results to code scanning
       actions: read # read the workflow run for the upload
     steps:
-      - name: Harden the runner (audit egress)
+      - name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-telemetry: true
+          allowed-endpoints: >-
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            api.github.com:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            proxy.golang.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            uploads.github.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
