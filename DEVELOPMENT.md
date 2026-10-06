@@ -652,6 +652,9 @@ Posture and upkeep around the pipeline, all on GitHub:
   the Go modules, the GitHub Actions (pinned by digest), the Go toolchain, the
   tool pins, the test images in `compose.yaml`, and the docs tooling in
   `docs/pyproject.toml` (`python` and `zensical`). A human merges every PR.
+  The `:gitSignOff` preset makes Renovate sign off each commit that it makes.
+  If a person adds a commit to a Renovate PR, that commit also needs a
+  sign-off, or the `dco` job fails.
   A PR that moves `go.mod` runs `make capabilities`, which is the review that
   AGENTS.md asks for on a dependency change.
 - Renovate sends minor and patch updates as one grouped PR on Monday.

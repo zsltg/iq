@@ -5,7 +5,8 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests",
     ":semanticCommits",
-    ":semanticCommitTypeAll(fix)"
+    ":semanticCommitTypeAll(fix)",
+    ":gitSignOff"
   ],
   "schedule": ["on monday"],
   "timezone": "Europe/Budapest",
