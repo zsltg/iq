@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -81,6 +82,11 @@ func TestRefWithoutModuleRoot(t *testing.T) {
 }
 
 func TestRefWorkingDirectoryGone(t *testing.T) {
+	// Only Linux reports an error for a removed working directory. macOS still returns
+	// its path, and Windows does not remove a directory that is in use.
+	if runtime.GOOS != "linux" {
+		t.Skip("needs a removable working directory that os.Getwd then rejects")
+	}
 	dir := filepath.Join(t.TempDir(), "gone")
 	require.NoError(t, os.Mkdir(dir, 0o700))
 	t.Chdir(dir)

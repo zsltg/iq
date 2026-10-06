@@ -4,8 +4,10 @@
 name: iq
 
 # This file is the one source of the test images. Each image is a version tag plus the
-# digest of its multi-arch index. The Go tests read the image through internal/testimage.
-# To change a version, change the tag and the digest together.
+# digest of its multi-arch index. HBase is the exception: its image publishes no patch
+# tags and no index, so its digest names a linux/amd64 manifest. The Go tests read the
+# image through internal/testimage. To change a version, change the tag and the digest
+# together.
 
 services:
   redis:

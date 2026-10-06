@@ -63,9 +63,10 @@ Elasticsearch on 9200, and HBase uses host networking (see `compose.yaml`).
 
 `compose.yaml` is the one source of the test images. Each image is pinned to a
 version tag plus the digest of its multi-arch index, for example
-`redis:8.10.2@sha256:...`. The Go tests that start a container read the image
-through `internal/testimage`, so the tests and the local stack run the same
-images. To change a version, change the tag and the digest in `compose.yaml`
+`redis:8.10.2@sha256:...`. HBase is the exception. Its image has no patch
+tags and no multi-arch index, so its digest names a linux/amd64 manifest. The Go
+tests that start a container read the image through `internal/testimage`, so the
+tests and the local stack run the same images. To change a version, change the tag and the digest in `compose.yaml`
 together. Run `docker buildx imagetools inspect <image>` to read the index
 digest of a tag.
 
