@@ -179,9 +179,9 @@ jobs:
             release=false
             while IFS= read -r f; do
               # The files that can alter the build or the packaging of the
-              # release. The release also copies LICENSE, README.md, the
-              # man page and the completions, but by fixed names, so a change to
-              # their content cannot break it.
+              # release. The release also copies LICENSE, README.md, the man
+              # page and the completions by fixed names, so only a deletion or a
+              # rename of one of them can break it. The loop below finds those.
               case "$f" in
                 .goreleaser.yaml | go.mod | go.sum | scripts/third-party-licenses.sh) release=true ;;
                 scripts/tool-versions.env | .github/workflows/ci.yml) release=true ;;
@@ -195,6 +195,17 @@ jobs:
                 *) code=true ;;
               esac
             done <<<"$files"
+            # With --no-renames, a rename shows as a deletion of the old path.
+            if deleted="$(git diff --name-only --no-renames --diff-filter=D "$BASE...$HEAD")"; then
+              while IFS= read -r f; do
+                case "$f" in
+                  LICENSE | README.md | docs/man/* | docs/completions/*) release=true ;;
+                esac
+              done <<<"$deleted"
+            else
+              echo "::warning::cannot list the deleted files of $BASE...$HEAD, so the release snapshot runs"
+              release=true
+            fi
           else
             echo "::warning::cannot diff $BASE...$HEAD, so every job runs"
           fi

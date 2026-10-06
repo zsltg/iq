@@ -494,17 +494,18 @@ coverage jobs, `e2e`, `cross`, `sbom`, `capabilities`, `mutate-diff` and `fuzz`)
 run only then, and `ci-ok` fails on a draft. `changes` sets `snapshot=true` when
 the pull request is not a draft and the diff changes `.goreleaser.yaml`,
 `go.mod`, `go.sum`, `scripts/third-party-licenses.sh`,
-`scripts/tool-versions.env` or `ci.yml`. `release-snapshot` runs only then,
-because it takes about 11 minutes. The release also copies `LICENSE`,
-`README.md`, the man page and the completions, but by fixed names, so a change
-to their content cannot break it. Mark the pull request ready for review when
-the review rounds settle: the `ready_for_review` event starts the full run once.
-`changes` reads the draft state from the API, not from the event, so a push just
-before "ready for review" still gets the full run. `ci-ok` fails on a draft and
-does not skip, because GitHub counts a skipped required check as a pass, and a
-skipped draft `ci-ok` would let a pull request merge while its full run is still
-in progress. The runs of one pull request share a concurrency group, so a new
-push cancels the run of the previous push. A push to `main` is never cancelled.
+`scripts/tool-versions.env` or `ci.yml`, or deletes or renames `LICENSE`,
+`README.md`, the man page or a completion file. `release-snapshot` runs only
+then, because it takes about 11 minutes. The release copies those four kinds of
+files by fixed names, so a change to their content cannot break it. Mark the
+pull request ready for review when the review rounds settle: the
+`ready_for_review` event starts the full run once. `changes` reads the draft
+state from the API, not from the event, so a push just before "ready for review"
+still gets the full run. `ci-ok` fails on a draft and does not skip, because
+GitHub counts a skipped required check as a pass, and a skipped draft `ci-ok`
+would let a pull request merge while its full run is still in progress. The runs
+of one pull request share a concurrency group, so a new push cancels the run of
+the previous push. A push to `main` is never cancelled.
 The jobs per gate:
 `lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
 Linux, macOS and Windows, with `-race` on Linux), `coverage` (four `coverage (<group>)` jobs each test a
