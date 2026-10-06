@@ -1,26 +1,24 @@
 #!/usr/bin/env bash
 # Security sweep: dependency audit, OSV scan, secret scan, workflow audit, and
-# SBOM generation. Touches the network (vulnerability databases). Install the
-# tools with `make tools-dev`. A real vulnerability, a leaked secret, or a zizmor
-# workflow finding fails the gate; the SBOMs are written to dist/ (gitignored) and
-# never fail it. zizmor runs the offline audits alone. If GH_TOKEN or GITHUB_TOKEN
+# SBOM generation. Touches the network (vulnerability databases). The Go tools run
+# through `go run` at the versions in scripts/tool-versions.env, the versions that CI
+# runs. The first run fetches them from the module proxy. zizmor runs through `uvx`,
+# so the `uv` tool must be installed. A real vulnerability, a leaked secret, or a
+# zizmor workflow finding fails the gate; the SBOMs are written to dist/ (gitignored)
+# and never fail it. zizmor runs the offline audits alone. If GH_TOKEN or GITHUB_TOKEN
 # is set, zizmor adds the online audits. gosec (Go SAST) runs separately via
 # golangci-lint in scripts/check.sh, not here.
 set -uo pipefail
 
-# Keep this pin in sync with ZIZMOR_VERSION in .github/workflows/ci.yml.
-ZIZMOR_VERSION=1.30.1
-
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
-missing=0
-require() { command -v "$1" >/dev/null 2>&1 || { echo "security: $1 not found; run 'make tools-dev'" >&2; missing=1; }; }
-require govulncheck
-require osv-scanner
-require gitleaks
-require syft
-command -v uvx >/dev/null 2>&1 || { echo "security: uvx not found; install uv" >&2; missing=1; }
-[[ "$missing" -eq 1 ]] && exit 1
+. scripts/tool-versions.env
+govulncheck() { go run "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION" "$@"; }
+osv-scanner() { go run "github.com/google/osv-scanner/v2/cmd/osv-scanner@$OSV_SCANNER_VERSION" "$@"; }
+gitleaks() { go run "github.com/zricethezav/gitleaks/v8@$GITLEAKS_VERSION" "$@"; }
+syft() { go run "github.com/anchore/syft/cmd/syft@$SYFT_VERSION" "$@"; }
+
+command -v uvx >/dev/null 2>&1 || { echo "security: uvx not found; install uv" >&2; exit 1; }
 
 fail=0
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }

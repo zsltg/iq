@@ -1,15 +1,20 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Weekly grouped dependency updates: Go modules, GitHub Actions pinned by digest, and the tool versions pinned in the workflow, Makefile and scripts. A human merges; make capabilities runs on every PR that moves go.mod.",
+  "description": "Dependency updates: Go modules, GitHub Actions pinned by digest, the Go toolchain, the tool pins in scripts/, and the test images in compose.yaml. Minor and patch updates arrive in one batch on Monday. A breaking update (a major, a minor below 1.0, or a Go toolchain update) arrives as a draft. A human merges every PR. make capabilities runs on every PR that moves go.mod.",
   "extends": [
     "config:recommended",
     "helpers:pinGitHubActionDigests",
     ":semanticCommits",
     ":semanticCommitTypeAll(fix)"
   ],
-  "schedule": ["before 6am on monday"],
+  "schedule": ["on monday"],
   "timezone": "Europe/Budapest",
   "labels": ["deps"],
+  "minimumReleaseAge": "3 days",
+  "dependencyDashboardOSVVulnerabilitySummary": "all",
+  "vulnerabilityAlerts": {
+    "addLabels": ["security"]
+  },
   "rangeStrategy": "bump",
   "rebaseWhen": "behind-base-branch",
   "postUpdateOptions": ["gomodTidy"],
@@ -31,69 +36,64 @@
       "matchPackageNames": ["github.com/google/capslock"],
       "groupName": "capslock",
       "addLabels": ["gate-tool"],
-      "prBodyNotes": ["A new capslock can report different capabilities. Before the merge, run `IQ_CAPS_FORCE=1 make capabilities`; if it fails, regenerate the baseline with `IQ_CAPS_UPDATE_BASELINE=1` and justify new rows in capslock-baseline.notes.md."]
+      "prBodyNotes": ["A new capslock can report different capabilities. Before the merge, run `IQ_CAPS_FORCE=1 make capabilities`. If it fails, regenerate the baseline with `IQ_CAPS_UPDATE_BASELINE=1` and justify new rows in capslock-baseline.notes.md."]
     },
     {
-      "description": "Majors stay one PR each so the review reads one changelog.",
+      "description": "Majors stay one PR each so the review reads one changelog. A major is a breaking update, so it arrives as a draft.",
       "matchUpdateTypes": ["major"],
-      "semanticCommitType": "build"
+      "semanticCommitType": "build",
+      "draftPR": true,
+      "addLabels": ["breaking"]
     },
     {
-      "description": "Go toolchain bumps churn every tool and the capslock baseline, keep them separate.",
+      "description": "Go toolchain bumps churn every tool and the capslock baseline, so they stay separate and arrive as a draft.",
       "matchDatasources": ["golang-version"],
       "groupName": "go toolchain",
-      "semanticCommitType": "build"
+      "semanticCommitType": "build",
+      "draftPR": true,
+      "addLabels": ["breaking"],
+      "prBodyNotes": ["A new Go release can break golangci-lint and capslock. Before the merge, make sure that both support this release. A capslock bump can need a regenerated capslock-baseline.json. Run `IQ_CAPS_FORCE=1 make capabilities`."]
     },
     {
       "description": "GitHub Actions are pinned by commit digest with the version in a trailing comment.",
       "matchManagers": ["github-actions"],
       "pinDigests": true
+    },
+    {
+      "description": "A minor update of a version below 1.0 can break the API, so it is a breaking update. It gets its own draft PR and leaves the weekly group and the capslock group. A patch update stays in its group.",
+      "matchCurrentVersion": "/^v?0\\./",
+      "matchUpdateTypes": ["minor"],
+      "groupName": null,
+      "draftPR": true,
+      "addLabels": ["breaking"]
+    },
+    {
+      "description": "The test images in compose.yaml go in their own group, so one bad image does not block the library updates of the week. Each image is pinned to a tag and a digest. A major image update keeps its own draft PR.",
+      "matchManagers": ["docker-compose"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "pinDigests": true,
+      "groupName": "test stack",
+      "addLabels": ["test-stack"],
+      "prBodyNotes": ["This PR moves the images of the test stack. The full test suite must pass before the merge. CI runs it, because compose.yaml counts as code."]
+    },
+    {
+      "description": "Renovate cannot read the Couchbase tag community-7.6.2 as a version. This rule teaches it the form.",
+      "matchPackageNames": ["couchbase"],
+      "versioning": "regex:^community-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"
     }
   ],
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Tool versions pinned as KEY_VERSION: vX.Y.Z in the CI workflow env block, and as KEY_VERSION=vX.Y.Z / := vX.Y.Z in scripts and the Makefile.",
+      "description": "Tool pins. Each pin has a '# renovate: datasource=... depName=...' comment on the line above and a NAME_VERSION=value line.",
       "managerFilePatterns": [
-        "/^\\.github/workflows/ci\\.yml$/",
-        "/^Makefile$/",
-        "/^scripts/[^/]+\\.sh$/"
+        "/^scripts/tool-versions\\.env$/",
+        "/^scripts/mutation-gate\\.sh$/",
+        "/^scripts/capabilities\\.sh$/"
       ],
       "matchStrings": [
-        "GOLANGCI_LINT_VERSION:\\s*(?<currentValue>v[0-9.]+)",
-        "GOVULNCHECK_VERSION:\\s*(?<currentValue>v[0-9.]+)",
-        "GITLEAKS_VERSION:\\s*(?<currentValue>v[0-9.]+)",
-        "OSV_SCANNER_VERSION:\\s*(?<currentValue>v[0-9.]+)",
-        "DEADCODE_VERSION:\\s*(?<currentValue>v[0-9.]+)",
-        "SYFT_VERSION:\\s*(?<currentValue>v[0-9.]+)",
-        "MUTAGO_VERSION=(?<currentValue>v[0-9.]+)",
-        "CAPSLOCK_VERSION=(?<currentValue>v[0-9.]+)",
-        "GORELEASER_VERSION\\s*:=\\s*(?<currentValue>v[0-9.]+)"
-      ],
-      "datasourceTemplate": "go",
-      "depNameTemplate": "{{#if (containsString matchString 'GOLANGCI_LINT')}}github.com/golangci/golangci-lint/v2{{else if (containsString matchString 'GOVULNCHECK')}}golang.org/x/vuln{{else if (containsString matchString 'GITLEAKS')}}github.com/zricethezav/gitleaks/v8{{else if (containsString matchString 'OSV_SCANNER')}}github.com/google/osv-scanner/v2{{else if (containsString matchString 'DEADCODE')}}golang.org/x/tools{{else if (containsString matchString 'SYFT')}}github.com/anchore/syft{{else if (containsString matchString 'MUTAGO')}}github.com/quality-gates/mutago/v2{{else if (containsString matchString 'CAPSLOCK')}}github.com/google/capslock{{else}}github.com/goreleaser/goreleaser/v2{{/if}}"
-    },
-    {
-      "customType": "regex",
-      "description": "zizmor is a PyPI release pinned as ZIZMOR_VERSION in the CI workflow env block and in scripts/security.sh; it carries no v prefix.",
-      "managerFilePatterns": [
-        "/^\\.github/workflows/ci\\.yml$/",
-        "/^scripts/security\\.sh$/"
-      ],
-      "matchStrings": [
-        "ZIZMOR_VERSION[:=]\\s*(?<currentValue>[0-9.]+)"
-      ],
-      "datasourceTemplate": "pypi",
-      "depNameTemplate": "zizmor"
-    },
-    {
-      "customType": "regex",
-      "description": "go install pins in the Makefile tool targets.",
-      "managerFilePatterns": ["/^Makefile$/"],
-      "matchStrings": [
-        "go install (?<depName>[^@\\s]+)/cmd/[^@\\s]+@(?<currentValue>v[0-9.]+)"
-      ],
-      "datasourceTemplate": "go"
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\s+[A-Z_]+_VERSION=(?<currentValue>[^\\s#]+)"
+      ]
     }
   ]
 }

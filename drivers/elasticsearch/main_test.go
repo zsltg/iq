@@ -14,14 +14,7 @@ import (
 
 	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/query"
-)
-
-// esImage and osImage are the pinned Elasticsearch and OpenSearch images the
-// integration tests run against, generic containers (there is no dedicated
-// testcontainers module in use, and a generic one adds no new module dependency).
-const (
-	esImage = "docker.elastic.co/elasticsearch/elasticsearch:8.17.4"
-	osImage = "opensearchproject/opensearch:2.17.1"
+	"github.com/zsltg/iq/internal/testimage"
 )
 
 // sharedURL and sharedOSURL are the base server URLs (no index) the integration tests
@@ -46,7 +39,12 @@ func runTests(m *testing.M) int {
 	// container. Security is disabled so the client connects over plain HTTP.
 	esBase := os.Getenv("IQ_ELASTICSEARCH_URL")
 	if esBase == "" {
-		url, terminate, err := startContainer(esImage, "elasticsearch", map[string]string{
+		image, err := testimage.Ref("elasticsearch")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "elasticsearch image: %v\n", err)
+			return 1
+		}
+		url, terminate, err := startContainer(image, "elasticsearch", map[string]string{
 			"discovery.type":         "single-node",
 			"xpack.security.enabled": "false",
 			"ES_JAVA_OPTS":           "-Xms512m -Xmx512m",
@@ -67,7 +65,12 @@ func runTests(m *testing.M) int {
 	// OpenSearch backend: likewise, with the security plugin disabled.
 	osBase := os.Getenv("IQ_OPENSEARCH_URL")
 	if osBase == "" {
-		url, terminate, err := startContainer(osImage, "opensearch", map[string]string{
+		image, err := testimage.Ref("opensearch")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "opensearch image: %v\n", err)
+			return 1
+		}
+		url, terminate, err := startContainer(image, "opensearch", map[string]string{
 			"discovery.type":          "single-node",
 			"DISABLE_SECURITY_PLUGIN": "true",
 			"OPENSEARCH_JAVA_OPTS":    "-Xms512m -Xmx512m",
@@ -86,7 +89,7 @@ func runTests(m *testing.M) int {
 	return m.Run()
 }
 
-// startContainer starts an Elasticsearch- or OpenSearch-compatible container that
+// startContainer starts a generic Elasticsearch- or OpenSearch-compatible container that
 // exposes 9200 and answers /_cluster/health, and returns the base URL (with the given
 // scheme) plus a terminate func.
 func startContainer(image, scheme string, env map[string]string) (string, func(), error) {

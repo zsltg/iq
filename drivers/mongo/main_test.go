@@ -10,6 +10,8 @@ import (
 
 	"github.com/testcontainers/testcontainers-go"
 	tcmongo "github.com/testcontainers/testcontainers-go/modules/mongodb"
+
+	"github.com/zsltg/iq/internal/testimage"
 )
 
 // sharedURI is the MongoDB URI the integration tests connect to: an ephemeral
@@ -31,7 +33,12 @@ func runTests(m *testing.M) int {
 	// stands in.
 	if !testing.Short() && os.Getenv("IQ_MONGO_URL") == "" {
 		ctx := context.Background()
-		container, err := tcmongo.Run(ctx, "mongo:8")
+		image, err := testimage.Ref("mongo")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "mongodb image: %v\n", err)
+			return 1
+		}
+		container, err := tcmongo.Run(ctx, image)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "start mongodb container: %v\n", err)
 			return 1

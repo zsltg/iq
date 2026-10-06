@@ -95,7 +95,7 @@ Before publication and before merge, all required checks must pass:
 - Errors and timeouts fail the mutation gate. Investigate survivors and strengthen tests for real behavior gaps.
 - Accept only genuine equivalent mutants, with a justification in `mutago-baseline.notes.md` and the committed baseline.
 - Never weaken the gate to pass. Follow the diagnostic and closing-scan rules in `DEVELOPMENT.md`.
-- Run `govulncheck ./...` before an authorized dependency addition or upgrade.
+- Run `make security`, which includes govulncheck, before an authorized dependency addition or upgrade.
 - Report checks that were skipped or failed, assumptions, remaining work, and edge cases accurately.
 
 ## Documentation and artifacts
