@@ -643,11 +643,9 @@ Posture and upkeep around the pipeline, all on GitHub:
   tracks it. `make security` runs it locally, the `workflows` job runs it on
   every push and pull request, and `deep-scan` re-runs it weekly against fresh
   advisory data. There is no config file, so an accepted finding is an inline
-  `# zizmor: ignore[<audit>]` comment with a reason on the offending line. Three
+  `# zizmor: ignore[<audit>]` comment with a reason on the offending line. Two
   exist. In `ci.yml`, the `capabilities` and `mutate-diff` jobs keep the
-  checkout credential because they fetch the pull-request base branch. In
-  `devin-review.yml`, the `pull_request_target` trigger is accepted because the
-  job checks out nothing and puts no pull request data into a shell command.
+  checkout credential because they fetch the pull-request base branch.
 - `renovate.json` drives Renovate (the Mend GitHub App). It updates these items:
   the Go modules, the GitHub Actions (pinned by digest), the Go toolchain, the
   tool pins, the test images in `compose.yaml`, and the docs tooling in
@@ -684,8 +682,8 @@ Posture and upkeep around the pipeline, all on GitHub:
   with a reason or a different dependency.
 - `REVIEW.md` holds the review rules for every reviewer, human or AI: the
   priorities, the threat model, the critical areas and what not to flag. The
-  coding rules stay in AGENTS.md. CodeRabbit and Devin Review both read the two
-  files, so a review rule changes in `REVIEW.md` only.
+  coding rules stay in AGENTS.md. CodeRabbit reads both files, so a review
+  rule changes in `REVIEW.md` only.
 - `.codescene/code-health-rules.json` tunes the CodeScene code health review for
   Go test files: a cyclomatic complexity threshold of 15 in place of 9, and no
   "Bumpy Road Ahead" rule, because a table test or a fuzz target checks one
@@ -693,10 +691,6 @@ Posture and upkeep around the pipeline, all on GitHub:
   review is not a required check.
 - `.coderabbit.yaml` holds CodeRabbit's settings only (profile, automatic
   review, linters). It reviews, it never approves or merges.
-- `.github/workflows/devin-review.yml` posts a link to the Devin Review
-  (`devinreview.com`) on each new pull request. The link gives Devin no access
-  to the repository, and a human opens it. Automatic Devin reviews need the
-  Devin GitHub App and paid credits, and are not used.
 - `socket.yml` configures the Socket GitHub App: on every pull request that
   moves `go.mod` or `go.sum` it reports what the new module versions do
   (install scripts, obfuscation, typosquats, maintainer changes), the

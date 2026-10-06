@@ -73,7 +73,8 @@ jobs:
   # SLSA level 3 build provenance for every artifact in checksums.txt, uploaded to
   # the release as multiple.intoto.jsonl. The generator must be referenced by tag,
   # not by commit SHA: it verifies its own identity from the tag (slsa-verifier
-  # checks it), and OpenSSF Scorecard accepts this one exception to pinning.
+  # checks it). OpenSSF Scorecard reports this line as not pinned by hash, and
+  # the project accepts that finding.
   provenance:
     needs: goreleaser
     permissions:
