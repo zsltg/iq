@@ -11,11 +11,13 @@ LDFLAGS := -X github.com/zsltg/iq/cmd.version=$(VERSION) \
            -X github.com/zsltg/iq/cmd.commit=$(COMMIT) \
            -X github.com/zsltg/iq/cmd.date=$(DATE)
 
+# The tool versions (GoReleaser, svu, and the rest) live in one file, which bash and
+# the workflows read too. Every tool runs through `go run`, so none enters go.mod.
+include scripts/tool-versions.env
+
 # GoReleaser builds and publishes the cross-platform release artifacts (see
-# .goreleaser.yaml). Run via `go run`, so it never enters go.mod; pinned here and
-# in .github/workflows/release.yml, kept in sync.
-GORELEASER_VERSION := v2.17.0
-GORELEASER         := github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
+# .goreleaser.yaml).
+GORELEASER := github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 
 # The README demo (docs/docs/assets/demo.svg) is recorded by expect + asciinema + termsvg.
 # Its knobs and recipes live beside the scripts they drive, because every value in
@@ -28,7 +30,7 @@ GORELEASER         := github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 .DEFAULT_GOAL := build
 include scripts/demo/demo.mk
 
-.PHONY: build version changelog release release-tag tools tools-dev hooks check cover security sbom e2e bench fuzz docs docs-serve capabilities mutation ci man completions release-check release-snapshot
+.PHONY: build version changelog release release-tag hooks check cover security sbom e2e bench fuzz docs docs-serve capabilities mutation ci man completions release-check release-snapshot
 
 # build compiles the binary with version metadata embedded, static and
 # trimmed exactly like a release artifact (goreleaser mirrors these flags).
@@ -37,7 +39,7 @@ build:
 
 # version prints the version the next release would take.
 version:
-	@svu next
+	@go run github.com/caarlos0/svu@$(SVU_VERSION) next
 
 # changelog regenerates CHANGELOG.md in place (no bump, commit, or tag),
 # including any unreleased commits under the next version.
@@ -51,22 +53,6 @@ release:
 
 release-tag:
 	bash scripts/release.sh --tag
-
-# tools installs the release toolchain (svu, git-chglog) into GOPATH/bin.
-tools:
-	go install github.com/caarlos0/svu@latest
-	go install github.com/git-chglog/git-chglog/cmd/git-chglog@latest
-
-# tools-dev installs the quality and security toolchain into GOPATH/bin. gofumpt,
-# goimports, and golangci-lint are expected already (see CONTRIBUTING.md, Before you start).
-tools-dev:
-	go install github.com/quality-gates/mutago/v2/cmd/mutago@v2.10.16
-	go install github.com/google/capslock/cmd/capslock@v0.3.3
-	go install golang.org/x/tools/cmd/deadcode@latest
-	go install golang.org/x/vuln/cmd/govulncheck@latest
-	go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest
-	go install github.com/zricethezav/gitleaks/v8@latest
-	go install github.com/anchore/syft/cmd/syft@latest
 
 # hooks points core.hooksPath at the committed .githooks, which guard the commit
 # identity: the address a repository publishes is the one in its git config, and
@@ -95,7 +81,7 @@ security:
 # sbom writes SPDX + CycloneDX SBOMs of the module to dist/.
 sbom:
 	@mkdir -p dist
-	syft scan dir:. -q -o spdx-json=dist/sbom.spdx.json -o cyclonedx-json=dist/sbom.cdx.json
+	go run github.com/anchore/syft/cmd/syft@$(SYFT_VERSION) scan dir:. -q -o spdx-json=dist/sbom.spdx.json -o cyclonedx-json=dist/sbom.cdx.json
 	@echo "wrote dist/sbom.spdx.json and dist/sbom.cdx.json"
 
 # e2e runs the black-box smoke tests that build and drive the iq binary.
