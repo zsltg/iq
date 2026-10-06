@@ -661,7 +661,8 @@ Posture and upkeep around the pipeline, all on GitHub:
   does not propose that update again. To adopt it, finish the work on the
   branch and mark the PR ready.
 - Renovate waits three days after a release before it proposes the release.
-  Security updates do not wait. Security PRs depend on the Dependabot alerts of
+  The Elasticsearch image does not wait, because its registry gives no release
+  dates. Security updates do not wait. Security PRs depend on the Dependabot alerts of
   the repository, so keep the alerts and the dependency graph on. Dependabot
   security updates can stay off.
 - The tool pins live in `scripts/tool-versions.env`, `scripts/mutation-gate.sh`,

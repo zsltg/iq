@@ -60,12 +60,25 @@
       "pinDigests": true
     },
     {
+      "description": "The SLSA generator must be referenced by tag. It does not work when it is pinned by digest, so Renovate keeps the tag (see release.yml).",
+      "matchPackageNames": ["slsa-framework/slsa-github-generator"],
+      "pinDigests": false
+    },
+    {
       "description": "A minor update of a version below 1.0 can break the API, so it is a breaking update. It gets its own draft PR and leaves the weekly group and the capslock group. A patch update stays in its group.",
       "matchCurrentVersion": "/^v?0\\./",
       "matchUpdateTypes": ["minor"],
       "groupName": null,
       "draftPR": true,
       "addLabels": ["breaking"]
+    },
+    {
+      "description": "The testcontainers modules release together, and each module requires the core module of the same version. They move in one PR. This rule comes after the rule for versions below 1.0, so a minor update is still a draft with the breaking label.",
+      "matchPackageNames": [
+        "github.com/testcontainers/testcontainers-go",
+        "github.com/testcontainers/testcontainers-go/**"
+      ],
+      "groupName": "testcontainers"
     },
     {
       "description": "The test images in compose.yaml go in their own group, so one bad image does not block the library updates of the week. Each image is pinned to a tag and a digest. A major image update keeps its own draft PR.",
@@ -75,6 +88,12 @@
       "groupName": "test stack",
       "addLabels": ["test-stack"],
       "prBodyNotes": ["This PR moves the images of the test stack. The full test suite must pass before the merge. CI runs it, because compose.yaml counts as code."]
+    },
+    {
+      "description": "The Elastic registry gives no release dates. Without a date, Renovate holds an update until the minimum release age passes, which never happens. So the Elasticsearch image has no minimum release age.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["docker.elastic.co/**"],
+      "minimumReleaseAge": null
     },
     {
       "description": "Renovate cannot read the Couchbase tag community-7.6.2 as a version. This rule teaches it the form.",
