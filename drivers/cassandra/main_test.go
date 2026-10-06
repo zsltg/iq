@@ -14,6 +14,7 @@ import (
 	tccassandra "github.com/testcontainers/testcontainers-go/modules/cassandra"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/testimage"
 )
 
 // testKeyspace is the keyspace the integration tests run against, created once so
@@ -41,7 +42,12 @@ func runTests(m *testing.M) int {
 	base := os.Getenv("IQ_CASSANDRA_URL")
 	if base == "" {
 		ctx := context.Background()
-		container, err := tccassandra.Run(ctx, "cassandra:5")
+		image, err := testimage.Ref("cassandra")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cassandra image: %v\n", err)
+			return 1
+		}
+		container, err := tccassandra.Run(ctx, image)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "start cassandra container: %v\n", err)
 			return 1

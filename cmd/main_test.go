@@ -12,6 +12,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tcmongo "github.com/testcontainers/testcontainers-go/modules/mongodb"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
+
+	"github.com/zsltg/iq/internal/testimage"
 )
 
 // TestMain provisions the Redis and MongoDB the cmd integration tests connect to:
@@ -34,7 +36,12 @@ func runTests(m *testing.M) int {
 	if !testing.Short() {
 		ctx := context.Background()
 		if os.Getenv("IQ_REDIS_URL") == "" {
-			container, err := tcredis.Run(ctx, "redis:8")
+			image, err := testimage.Ref("redis")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "redis image: %v\n", err)
+				return 1
+			}
+			container, err := tcredis.Run(ctx, image)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "start redis container: %v\n", err)
 				return 1
@@ -48,7 +55,12 @@ func runTests(m *testing.M) int {
 			_ = os.Setenv("IQ_REDIS_URL", redisURL)
 		}
 		if os.Getenv("IQ_MONGO_URL") == "" {
-			container, err := tcmongo.Run(ctx, "mongo:8")
+			image, err := testimage.Ref("mongo")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "mongodb image: %v\n", err)
+				return 1
+			}
+			container, err := tcmongo.Run(ctx, image)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "start mongodb container: %v\n", err)
 				return 1

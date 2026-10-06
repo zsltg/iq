@@ -3,9 +3,13 @@
 # throwaway `<name>_default` networks that exhaust Docker's address pool. Pin it to one stack.
 name: iq
 
+# This file is the one source of the test images. Each image is a version tag plus the
+# digest of its multi-arch index. The Go tests read the image through internal/testimage.
+# To change a version, change the tag and the digest together.
+
 services:
   redis:
-    image: redis:8
+    image: redis:8.10.2@sha256:c94085d298b738be22c9ccdc0ac3761fa6649df7dd82ad1d42367f3cb9714935
     container_name: iq-redis
     ports:
       - "6379:6379"
@@ -18,7 +22,7 @@ services:
       retries: 5
 
   mongo:
-    image: mongo:8
+    image: mongo:8.3.11@sha256:d731d77bfd7afd66bd487bdf627b5bf7ce4c3602ec461d635977021db529ebbc
     container_name: iq-mongo
     ports:
       - "27017:27017"
@@ -31,7 +35,7 @@ services:
       retries: 5
 
   cassandra:
-    image: cassandra:5
+    image: cassandra:5.0.9@sha256:618a493bcf1f817ea2f07288a46fa76fb2d9c4dfd5a04c28227336405782889c
     container_name: iq-cassandra
     ports:
       - "9042:9042"
@@ -45,7 +49,7 @@ services:
       start_period: 60s
 
   dynamodb:
-    image: amazon/dynamodb-local:2.5.2
+    image: amazon/dynamodb-local:2.5.2@sha256:d7ebddeb60fa418bcda218a6c6a402a58441b2a20d54c9cb1d85fd5194341753
     container_name: iq-dynamodb
     ports:
       - "8000:8000"
@@ -56,7 +60,7 @@ services:
     # reachability check with the AWS CLI before seeding.
 
   hbase:
-    image: harisekhon/hbase:2.1
+    image: harisekhon/hbase:2.1@sha256:c65ce56799f59fab86eb8995a628c878c28c03189c0fd27285c6ebef4cb016fa
     container_name: iq-hbase
     # Native HBase RPC hands the client the region server's *advertised* hostname, so
     # the client must reach the server by that name. Host networking makes ZooKeeper,
@@ -75,7 +79,7 @@ services:
       start_period: 90s
 
   couchdb:
-    image: couchdb:3
+    image: couchdb:3.5.2.1@sha256:5fc596110eac7f412173a7d9de14f70aa5d3e816790fb6e70642755d4a4cf464
     container_name: iq-couchdb
     ports:
       - "5984:5984"
@@ -92,7 +96,7 @@ services:
       retries: 15
 
   couchbase:
-    image: couchbase:community-7.6.2
+    image: couchbase:community-7.6.2@sha256:b189eeb7bebb141e5122064e6112e8178b459e2d639f37ffe97823d7a31ded81
     container_name: iq-couchbase
     ports:
       # 8091-8096 are the cluster/management + service REST ports; 11210 is the KV
@@ -114,7 +118,7 @@ services:
       start_period: 20s
 
   neo4j:
-    image: neo4j:5
+    image: neo4j:5.26.31@sha256:c7d25c0eeebfe125718d58b72ed5d663c85d0479047733845eb2237c67ce8069
     container_name: iq-neo4j
     ports:
       - "7687:7687"
@@ -132,7 +136,7 @@ services:
       start_period: 30s
 
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.4
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.4@sha256:413d8df69823e9f41f6008f025fcbaf31a5849ab9c74894731d7ded65543cd56
     container_name: iq-elasticsearch
     ports:
       - "9200:9200"
@@ -155,7 +159,7 @@ services:
       start_period: 60s
 
   opensearch:
-    image: opensearchproject/opensearch:2.17.1
+    image: opensearchproject/opensearch:2.17.1@sha256:1193b7c29c5d63028523728243cc4da047ac49f697a8f8105e5aeee2f89bcc4c
     container_name: iq-opensearch
     ports:
       - "9201:9200"

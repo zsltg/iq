@@ -15,12 +15,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/testimage"
 )
-
-// couchImage is the pinned CouchDB image the integration tests run against, a generic
-// container (there is no dedicated testcontainers module, and a generic one adds no
-// new module dependency).
-const couchImage = "couchdb:3"
 
 // couchAuth is the admin credential the container is configured with; it also puts
 // CouchDB into single-node mode.
@@ -44,8 +40,14 @@ func runTests(m *testing.M) int {
 	base := os.Getenv("IQ_COUCHDB_URL")
 	if base == "" {
 		ctx := context.Background()
+		image, err := testimage.Ref("couchdb")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "couchdb image: %v\n", err)
+			return 1
+		}
+		// A generic container, because there is no dedicated testcontainers module.
 		container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-			Image:        couchImage,
+			Image:        image,
 			ExposedPorts: []string{"5984/tcp"},
 			Env: map[string]string{
 				"COUCHDB_USER":     couchUser,

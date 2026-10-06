@@ -10,11 +10,9 @@ import (
 
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
-)
 
-// neo4jImage is the pinned Neo4j image the integration tests run against, a generic
-// container (a generic one adds no new module dependency, matching the CouchDB tests).
-const neo4jImage = "neo4j:5"
+	"github.com/zsltg/iq/internal/testimage"
+)
 
 // neo4jUser / neo4jPassword is the admin credential the container is configured with
 // via NEO4J_AUTH (which also disables the forced first-run password change).
@@ -38,8 +36,14 @@ func runTests(m *testing.M) int {
 	base := os.Getenv("IQ_NEO4J_URL")
 	if base == "" {
 		ctx := context.Background()
+		image, err := testimage.Ref("neo4j")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "neo4j image: %v\n", err)
+			return 1
+		}
+		// A generic container, because there is no dedicated testcontainers module.
 		container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-			Image:        neo4jImage,
+			Image:        image,
 			ExposedPorts: []string{"7687/tcp", "7474/tcp"},
 			Env:          map[string]string{"NEO4J_AUTH": neo4jUser + "/" + neo4jPassword},
 			WaitingFor:   wait.ForHTTP("/").WithPort("7474/tcp").WithStartupTimeout(180 * time.Second),
