@@ -490,14 +490,19 @@ its bare name. A new per-change job goes into the `needs` list of `ci-ok`.
 
 A draft pull request runs the fast jobs only. `changes` also sets `full=true`
 when `code=true` and the pull request is not a draft. The slow jobs (`test`, the
-coverage jobs, `e2e`, `cross`, `release-snapshot`, `sbom`, `capabilities`,
-`mutate-diff` and `fuzz`) run only then, and `ci-ok` fails on a draft. Mark the
-pull request ready for review when the review rounds settle: the
-`ready_for_review` event starts the full run once. `changes` reads the draft state from the API, not from the event,
-so a push just before "ready for review" still gets the full run. `ci-ok` fails
-on a draft and does not skip, because GitHub counts a skipped required check as
-a pass, and a skipped draft `ci-ok` would let a pull request merge while its
-full run is still in progress. The runs of one pull request share a concurrency group, so a new
+coverage jobs, `e2e`, `cross`, `sbom`, `capabilities`, `mutate-diff` and `fuzz`)
+run only then, and `ci-ok` fails on a draft. `changes` sets `snapshot=true` when
+`full=true` and the diff changes a file that the release reads:
+`.goreleaser.yaml`, `go.mod`, `go.sum`, `scripts/third-party-licenses.sh`,
+`scripts/tool-versions.env`, `LICENSE`, `README.md`, `docs/man/`,
+`docs/completions/` or `ci.yml`. `release-snapshot` runs only then, because it
+takes about 11 minutes. Mark the pull request ready for review when the review
+rounds settle: the `ready_for_review` event starts the full run once. `changes`
+reads the draft state from the API, not from the event, so a push just before
+"ready for review" still gets the full run. `ci-ok` fails on a draft and does
+not skip, because GitHub counts a skipped required check as a pass, and a
+skipped draft `ci-ok` would let a pull request merge while its full run is still
+in progress. The runs of one pull request share a concurrency group, so a new
 push cancels the run of the previous push. A push to `main` is never cancelled.
 The jobs per gate:
 `lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
@@ -508,8 +513,9 @@ a reporting-only Codecov upload, `CODECOV_TOKEN` secret), `e2e` (redis pass, the
 the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
 `release-snapshot` (a goreleaser snapshot with no publish and no signature, then
 a check of the third-party license texts in the archives and the `.deb`),
-`vuln` (govulncheck), `osv` (OSV plus the permissive license allowlist), `sbom`
-(syft), `deadcode`, `secrets` (gitleaks, tree and history), `capabilities`
+`vuln` (govulncheck), `osv` (OSV plus the permissive license allowlist, then
+`scripts/third-party-licenses.sh` on every change), `sbom` (syft), `deadcode`,
+`secrets` (gitleaks, tree and history), `capabilities`
 (`scripts/capabilities.sh` against the PR base), `mutate-diff`
 (`scripts/mutation-gate.sh` against the PR base; it uploads the artifact
 `mutate-diff` with `report.json`, `mutago-agentic.json` and, after a failure
@@ -846,12 +852,14 @@ copies the license and notice files into `third-party-licenses/`, with the Go
 runtime license in `third-party-licenses/go/`. The script exits with an error if
 a module has no license file. A NOTICE or PATENTS file alone does not count. The
 script sets mode 0755 on each directory of the tree, so every user can read the
-installed texts. `make security` runs it too. The CI `release-snapshot` job
+installed texts. `make security` and the CI `osv` job run it too, so a module
+without a license file fails every pull request. The CI `release-snapshot` job
 builds the release as a snapshot, with no publish and no signature. Then it
 checks that each binary archive and the `.deb` package carry the same files as
-the tree, and that the `.deb` directories have mode 0755. A pull request thus
-fails early. The license policy stays in `scripts/license-allowlist.txt`. The
-script only collects texts.
+the tree, and that the `.deb` directories have mode 0755. It runs only when a
+file that the release reads changes. A code change alters only which license
+texts go in the tree, and the `osv` job checks those. The license policy stays
+in `scripts/license-allowlist.txt`. The script only collects texts.
 
 A release that fixes a vulnerability names its advisory ID. Put the ID
 (`GHSA-...`, and the CVE when one exists) in the title of the fix pull request,
