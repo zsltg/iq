@@ -15,12 +15,8 @@ import (
 	tccouchbase "github.com/testcontainers/testcontainers-go/modules/couchbase"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/testimage"
 )
-
-// couchbaseImage is the pinned Couchbase Community Edition image the integration tests
-// run against. The testcontainers couchbase module detects CE, rejects EE-only
-// services, and provisions the cluster, bucket, and primary index.
-const couchbaseImage = "couchbase:community-7.6.2"
 
 // sharedBucketName is the one bucket the integration tests share; buckets are
 // expensive, so per-test isolation is a fresh collection inside it, not a fresh bucket.
@@ -55,12 +51,20 @@ func runTests(m *testing.M) int {
 	}
 
 	ctx := context.Background()
+	image, err := testimage.Ref("couchbase")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "couchbase image: %v\n", err)
+		return 1
+	}
+	// The testcontainers couchbase module detects the edition through the REST API of the
+	// server, rejects EE-only services, and provisions the cluster, bucket, and primary
+	// index.
 	bucket := tccouchbase.NewBucket(sharedBucketName).
 		WithQuota(100).
 		WithReplicas(0).
 		WithFlushEnabled(true).
 		WithPrimaryIndex(true)
-	container, err := tccouchbase.Run(ctx, couchbaseImage, tccouchbase.WithBuckets(bucket))
+	container, err := tccouchbase.Run(ctx, image, tccouchbase.WithBuckets(bucket))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "start couchbase container: %v\n", err)
 		return 1

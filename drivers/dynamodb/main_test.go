@@ -18,12 +18,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/testimage"
 )
-
-// dynamoImage is the pinned DynamoDB Local image the integration tests run against, a
-// generic container (there is no dedicated testcontainers module, and a generic one
-// adds no new module dependency).
-const dynamoImage = "amazon/dynamodb-local:2.5.2"
 
 // sharedURL is the base dynamodb:// URL (region + endpoint, no table) the integration
 // tests connect to: an ephemeral DynamoDB Local container started once for the whole
@@ -46,8 +42,14 @@ func runTests(m *testing.M) int {
 	base := os.Getenv("IQ_DYNAMODB_URL")
 	if base == "" {
 		ctx := context.Background()
+		image, err := testimage.Ref("dynamodb")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "dynamodb image: %v\n", err)
+			return 1
+		}
+		// A generic container, because there is no dedicated testcontainers module.
 		container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-			Image:        dynamoImage,
+			Image:        image,
 			ExposedPorts: []string{"8000/tcp"},
 			WaitingFor:   wait.ForListeningPort("8000/tcp"),
 			Started:      true,
