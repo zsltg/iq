@@ -579,7 +579,8 @@ jobs:
   # Builds the release as a snapshot, with no publish and no signature, so that a
   # broken .goreleaser.yaml fails a pull request and not the release. Then checks
   # that each archive and the .deb package carry every file of the
-  # third-party-licenses/ tree that the before hook wrote.
+  # third-party-licenses/ tree that the before hook wrote. The source archive
+  # (iq-<version>.tar.gz) is a git archive, so the check skips it.
   release-snapshot:
     needs: changes
     if: needs.changes.outputs.full == 'true'
@@ -624,13 +625,13 @@ jobs:
             echo "$1: $2"
           }
           fail=0
-          for f in dist/*.tar.gz; do
+          for f in dist/iq_*.tar.gz; do
             check "$f" "$(tar -tzf "$f" | grep -c '^third-party-licenses/.*[^/]$')"
           done
-          for f in dist/*.zip; do
+          for f in dist/iq_*.zip; do
             check "$f" "$(unzip -Z1 "$f" | grep -c '^third-party-licenses/.*[^/]$')"
           done
-          for f in dist/*.deb; do
+          for f in dist/iq_*.deb; do
             check "$f" "$(dpkg-deb -c "$f" | awk '$1 ~ /^-/ && $6 ~ /^\.\/usr\/share\/licenses\/iq\/third-party\//' | wc -l)"
           done
           exit "$fail"
