@@ -34,8 +34,13 @@ query results.
     `IQ_LOG`, `IQ_LOG_FILE`, `IQ_LOG_LEVEL`, `IQ_LOG_FORMAT`.
 
     `--log` writes structured records to a file (down to the chosen level,
-    always plain, never tinted). A source location is always redacted before
-    it is logged, so a stored credential never reaches a log file.
+    always plain, never tinted).
+
+    iq removes the connection password from each log record before it writes
+    the record to the file or to the `-v` stream. This applies to the source
+    location, to the message, and to each error, also when the URI does not
+    parse. The error that iq prints on stderr gets the same redaction. iq does
+    not filter other record data, for example query text and returned values.
 
 !!! note "Verbose"
 

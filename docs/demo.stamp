@@ -7,7 +7,7 @@
 #
 # sha256 of each file's bytes (CR stripped), sorted by path.
 c362b3204fb8284c6c3f793b35d2f042581174e84d79cf773a0471c3441987d8  cmd/color.go
-1c0646534f78f78f4bef5ca48b2488c0b9264b6a489b7055a35b0aae0beddcd0  cmd/errrender.go
+5470cf5597e39a6d68606a2f652911e4d9dd39e9bb8af48e66a14762489bebdc  cmd/errrender.go
 2e826b616a4df5f99f617bf783af8b49050e91ef05ac5be9dcdb57603c6a33e8  cmd/explain.go
 2b744fc441ff2c21f1f43bad84086f8720d861f27727164b3092ec8317491087  cmd/gron.go
 eb3b0bc2b2847abf019d044c9d5314a4aaa363196a609141ef02fdf1fd880e84  cmd/output.go
