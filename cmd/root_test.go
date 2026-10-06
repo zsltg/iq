@@ -2,7 +2,11 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -404,4 +408,62 @@ func TestRootWarnsOnAnOpenConfigFile(t *testing.T) {
 	require.NotEmpty(t, iqconfig.ModeWarning())
 	require.Equal(t, iqconfig.ModeWarning()+"\n", errOut.String())
 	require.NotContains(t, out.String(), "warning")
+}
+
+// TestLogFailure checks the terminal-error record. A nil error, errQuietExit and
+// a nil logger write nothing. An error that wraps a parse error writes one
+// "iq failed" ERROR record, and the record does not show the password.
+func TestLogFailure(t *testing.T) {
+	const secret = "dummy-password"
+	parseErr := fmt.Errorf("open source %q: %w", "repro", parseURLErr(t, "redis://review:dummy-password@localhost:bad/0"))
+	sinks := []struct {
+		name string
+		opts logOptions
+	}{
+		{"json", logOptions{enable: true, file: "stderr", level: slog.LevelDebug, format: "json"}},
+		{"text", logOptions{enable: true, file: "stderr", level: slog.LevelDebug, format: "text"}},
+		{"tint", logOptions{verbose: true}},
+	}
+	tests := []struct {
+		name      string
+		err       error
+		noLogger  bool
+		wantLines int
+	}{
+		{name: "nil error", err: nil, wantLines: 0},
+		{name: "quiet exit", err: errQuietExit, wantLines: 0},
+		{name: "wrapped quiet exit", err: fmt.Errorf("diff: %w", errQuietExit), wantLines: 0},
+		{name: "nil logger", err: errors.New("boom"), noLogger: true, wantLines: 0},
+		{name: "error with a parse error", err: parseErr, wantLines: 1},
+	}
+	for _, tt := range tests {
+		for _, s := range sinks {
+			t.Run(tt.name+"/"+s.name, func(t *testing.T) {
+				var stderr bytes.Buffer
+				logger, _, err := s.opts.build(&stderr, io.Discard)
+				require.NoError(t, err)
+				cfg := &config{logger: logger}
+				if tt.noLogger {
+					cfg.logger = nil
+				}
+
+				logFailure(cfg, tt.err)
+
+				out := stderr.String()
+				require.NotContains(t, out, secret)
+				require.Equal(t, tt.wantLines, strings.Count(out, "\n"))
+				if tt.wantLines == 0 {
+					return
+				}
+				require.Contains(t, out, "iq failed")
+				require.Contains(t, out, "ERR")
+				if s.name == "json" {
+					var rec map[string]any
+					require.NoError(t, json.Unmarshal([]byte(out), &rec))
+					require.Equal(t, "ERROR", rec["level"])
+					require.Equal(t, "iq failed", rec["msg"])
+				}
+			})
+		}
+	}
 }

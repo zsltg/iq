@@ -150,6 +150,8 @@ func TestRedactErr(t *testing.T) {
 		{"uri in message is masked", fmt.Errorf("dial redis://u:hunter2@h:6379/0: %w", sentinel), "redis://u:hunter2@h:6379/0", "dial redis://u:xxxxx@h:6379/0: boom", false},
 		{"uri absent keeps the error", fmt.Errorf("dial: %w", sentinel), "redis://u:hunter2@h:6379/0", "dial: boom", true},
 		{"empty uri keeps the chain", fmt.Errorf("dial: %w", sentinel), "", "dial: boom", true},
+		{"empty uri still masks a uri in the message", fmt.Errorf("dial redis://u:hunter2@h:6379/0: %w", sentinel), "", "dial redis://u:xxxxx@h:6379/0: boom", false},
+		{"uri that does not parse is masked whole", fmt.Errorf("dial redis://u:pa ss@h:6379/0: %w", sentinel), "redis://u:pa ss@h:6379/0", "dial (unparseable URI): boom", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -109,8 +109,12 @@ retries once. Do not clear the cache unconditionally. A warm lint run takes abou
 Run `gofumpt -w .`, then `goimports -w .`, before lint or commit.
 The lint configuration extends the v2 defaults, including `staticcheck` and
 `unused`. It enables `godot`, `gosec`, `errorlint`, `testifylint`, `bodyclose`,
-`noctx`, `misspell`, and `modernize`. Comments must end with a period.
+`noctx`, `misspell`, `modernize`, and `gocognit`. Comments must end with a period.
 The security analyzer `gosec` excludes `_test.go` fixtures.
+The linter `gocognit` fails a function with a cognitive complexity above 30.
+Exclusions in `.golangci.yml` keep the functions that scored above 30 when the linter was added.
+Remove an exclusion when a pull request refactors its function below 30.
+Never add an exclusion for new code.
 The modernizer proposes current Go forms, including `slices`, `maps`, `range n`,
 `strings.SplitSeq`, and `errors.AsType`. Use `golangci-lint run --fix` for its fixes.
 The dead-code command is `deadcode -test ./...`, which analyzes the whole program.
@@ -648,15 +652,16 @@ Posture and upkeep around the pipeline, all on GitHub:
   tracks it. `make security` runs it locally, the `workflows` job runs it on
   every push and pull request, and `deep-scan` re-runs it weekly against fresh
   advisory data. There is no config file, so an accepted finding is an inline
-  `# zizmor: ignore[<audit>]` comment with a reason on the offending line. Three
+  `# zizmor: ignore[<audit>]` comment with a reason on the offending line. Two
   exist. In `ci.yml`, the `capabilities` and `mutate-diff` jobs keep the
-  checkout credential because they fetch the pull-request base branch. In
-  `devin-review.yml`, the `pull_request_target` trigger is accepted because the
-  job checks out nothing and puts no pull request data into a shell command.
+  checkout credential because they fetch the pull-request base branch.
 - `renovate.json` drives Renovate (the Mend GitHub App). It updates these items:
   the Go modules, the GitHub Actions (pinned by digest), the Go toolchain, the
   tool pins, the test images in `compose.yaml`, and the docs tooling in
   `docs/pyproject.toml` (`python` and `zensical`). A human merges every PR.
+  The `:gitSignOff` preset makes Renovate sign off each commit that it makes.
+  If a person adds a commit to a Renovate PR, that commit also needs a
+  sign-off, or the `dco` job fails.
   A PR that moves `go.mod` runs `make capabilities`, which is the review that
   AGENTS.md asks for on a dependency change.
 - Renovate sends minor and patch updates as one grouped PR on Monday.
@@ -666,7 +671,8 @@ Posture and upkeep around the pipeline, all on GitHub:
   does not propose that update again. To adopt it, finish the work on the
   branch and mark the PR ready.
 - Renovate waits three days after a release before it proposes the release.
-  Security updates do not wait. Security PRs depend on the Dependabot alerts of
+  The Elasticsearch image does not wait, because its registry gives no release
+  dates. Security updates do not wait. Security PRs depend on the Dependabot alerts of
   the repository, so keep the alerts and the dependency graph on. Dependabot
   security updates can stay off.
 - The tool pins live in `scripts/tool-versions.env`, `scripts/mutation-gate.sh`,
@@ -685,8 +691,8 @@ Posture and upkeep around the pipeline, all on GitHub:
   with a reason or a different dependency.
 - `REVIEW.md` holds the review rules for every reviewer, human or AI: the
   priorities, the threat model, the critical areas and what not to flag. The
-  coding rules stay in AGENTS.md. CodeRabbit and Devin Review both read the two
-  files, so a review rule changes in `REVIEW.md` only.
+  coding rules stay in AGENTS.md. CodeRabbit reads both files, so a review
+  rule changes in `REVIEW.md` only.
 - `.codescene/code-health-rules.json` tunes the CodeScene code health review for
   Go test files: a cyclomatic complexity threshold of 15 in place of 9, and no
   "Bumpy Road Ahead" rule, because a table test or a fuzz target checks one
@@ -694,10 +700,6 @@ Posture and upkeep around the pipeline, all on GitHub:
   review is not a required check.
 - `.coderabbit.yaml` holds CodeRabbit's settings only (profile, automatic
   review, linters). It reviews, it never approves or merges.
-- `.github/workflows/devin-review.yml` posts a link to the Devin Review
-  (`devinreview.com`) on each new pull request. The link gives Devin no access
-  to the repository, and a human opens it. Automatic Devin reviews need the
-  Devin GitHub App and paid credits, and are not used.
 - `socket.yml` configures the Socket GitHub App: on every pull request that
   moves `go.mod` or `go.sum` it reports what the new module versions do
   (install scripts, obfuscation, typosquats, maintainer changes), the

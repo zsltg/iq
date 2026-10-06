@@ -2,7 +2,7 @@
 # CodeRabbit review configuration: settings only. The review rules live in
 # REVIEW.md and the coding rules in AGENTS.md. CodeRabbit reads both as code
 # guidelines (the default file patterns include **/REVIEW.md and **/AGENTS.md),
-# so they are not repeated here. Devin Review reads the same two files.
+# so they are not repeated here.
 language: en-US
 knowledge_base:
   code_guidelines:
