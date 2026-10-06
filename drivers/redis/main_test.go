@@ -9,6 +9,8 @@ import (
 
 	"github.com/testcontainers/testcontainers-go"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
+
+	"github.com/zsltg/iq/internal/testimage"
 )
 
 // TestMain provisions the test Redis before the suite runs. flag.Parse must run
@@ -25,7 +27,12 @@ func runTests(m *testing.M) int {
 		// Use the named external server, else stand up an ephemeral container.
 		url := os.Getenv("IQ_REDIS_URL")
 		if url == "" {
-			container, err := tcredis.Run(ctx, "redis:8")
+			image, err := testimage.Ref("redis")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "redis image: %v\n", err)
+				return 1
+			}
+			container, err := tcredis.Run(ctx, image)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "start redis container: %v\n", err)
 				return 1
