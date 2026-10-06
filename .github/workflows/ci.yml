@@ -72,7 +72,7 @@ jobs:
   # skipped draft ci-ok would let the pull request merge before the tests finish.
   ci-ok:
     if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
-    needs: [changes, lint, workflows, test, coverage-group, coverage, e2e, cross, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
+    needs: [changes, lint, workflows, test, coverage-group, coverage, e2e, cross, release-snapshot, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -114,8 +114,9 @@ jobs:
   # unexpected case runs everything. If it fails, the jobs that need it are
   # skipped, and ci-ok fails, which blocks the merge. It also sets full=true when
   # code=true and the pull request is not a draft: the slow jobs (the test matrix,
-  # coverage, e2e, cross builds, SBOM, capabilities, fuzzing and the mutation gate)
-  # run only then, so review rounds on a draft do not start them on every push.
+  # coverage, e2e, cross builds, the release snapshot, SBOM, capabilities, fuzzing
+  # and the mutation gate) run only then, so review rounds on a draft do not start
+  # them on every push.
   changes:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -574,6 +575,65 @@ jobs:
             echo "== GOOS=$os CGO_ENABLED=0 =="
             CGO_ENABLED=0 GOOS="$os" go build -trimpath ./...
           done
+
+  # Builds the release as a snapshot, with no publish and no signature, so that a
+  # broken .goreleaser.yaml fails a pull request and not the release. Then checks
+  # that each archive and the .deb package carry every file of the
+  # third-party-licenses/ tree that the before hook wrote.
+  release-snapshot:
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Harden the runner (block egress)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          disable-telemetry: true
+          allowed-endpoints: >-
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            api.github.com:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            proxy.golang.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # goreleaser reads the tags to set the snapshot version
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Release snapshot
+        run: |
+          . scripts/tool-versions.env
+          go run github.com/goreleaser/goreleaser/v2@"$GORELEASER_VERSION" \
+            release --snapshot --clean --skip=publish,sign
+      - name: Each archive and package carries the license texts
+        run: |
+          want="$(find third-party-licenses -type f | wc -l)"
+          [ "$want" -gt 0 ] || { echo "::error::the before hook wrote no license file"; exit 1; }
+          check() {
+            [ "$2" -eq "$want" ] || { echo "::error::$1 has $2 license files, want $want"; fail=1; }
+            echo "$1: $2"
+          }
+          fail=0
+          for f in dist/*.tar.gz; do
+            check "$f" "$(tar -tzf "$f" | grep -c '^third-party-licenses/.*[^/]$')"
+          done
+          for f in dist/*.zip; do
+            check "$f" "$(unzip -Z1 "$f" | grep -c '^third-party-licenses/.*[^/]$')"
+          done
+          for f in dist/*.deb; do
+            check "$f" "$(dpkg-deb -c "$f" | awk '$1 ~ /^-/ && $6 ~ /^\.\/usr\/share\/licenses\/iq\/third-party\//' | wc -l)"
+          done
+          exit "$fail"
 
   vuln:
     needs: changes

@@ -95,6 +95,8 @@ jobs:
           sudo dpkg -i pkg/iq_*_linux_amd64.deb
           test "$(iq --version)" = "${IQ_TAG#v}"
           man -w iq
+          test -f /usr/share/licenses/iq/LICENSE
+          test -f /usr/share/licenses/iq/third-party/go/LICENSE
           sudo dpkg -r iq
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

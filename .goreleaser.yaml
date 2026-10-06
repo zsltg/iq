@@ -11,9 +11,12 @@ project_name: iq
 # `release.extra_files` below. A single authoritative SBOM avoids the per-binary
 # artifact-name collisions goreleaser's `sboms:` stanza hits when several targets
 # share the binary name. `make security`'s syft SBOM is unchanged and separate.
+# The second hook collects the license and notice texts of every linked module
+# into third-party-licenses/. The archives and the packages ship that tree.
 before:
   hooks:
     - go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.10.0 mod -json -licenses -output iq.cdx.json
+    - bash scripts/third-party-licenses.sh
 
 builds:
   - id: iq
@@ -50,6 +53,7 @@ archives:
       - README.md
       - docs/man/iq.1
       - docs/completions/*
+      - third-party-licenses/**/*
 
 # Linux packages, built by the pure-Go nfpm (no dpkg/rpmbuild/apk toolchains needed).
 nfpms:
@@ -91,6 +95,16 @@ nfpms:
           mode: 0o644
       - src: docs/completions/iq.fish
         dst: /usr/share/fish/vendor_completions.d/iq.fish
+        file_info:
+          mode: 0o644
+      # The license of iq and the texts of the linked third-party modules.
+      - src: LICENSE
+        dst: /usr/share/licenses/iq/LICENSE
+        file_info:
+          mode: 0o644
+      - src: third-party-licenses
+        dst: /usr/share/licenses/iq/third-party
+        type: tree
         file_info:
           mode: 0o644
 

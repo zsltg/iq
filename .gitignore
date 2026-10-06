@@ -9,6 +9,9 @@
 # Release: the goreleaser CycloneDX module SBOM (regenerated per release).
 /iq.cdx.json
 
+# Release: the license texts of the linked modules (regenerated per release).
+/third-party-licenses/
+
 # Mutation gate (mutago) run output; the baseline is tracked, these are not.
 /report.json
 /mutago-report.html

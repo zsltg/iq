@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Security sweep: dependency audit, OSV scan, secret scan, workflow audit, and
-# SBOM generation. Touches the network (vulnerability databases). The Go tools run
-# through `go run` at the versions in scripts/tool-versions.env, the versions that CI
-# runs. The first run fetches them from the module proxy. zizmor runs through `uvx`,
-# so the `uv` tool must be installed. A real vulnerability, a leaked secret, or a
-# zizmor workflow finding fails the gate; the SBOMs are written to dist/ (gitignored)
-# and never fail it. zizmor runs the offline audits alone. If GH_TOKEN or GITHUB_TOKEN
-# is set, zizmor adds the online audits. gosec (Go SAST) runs separately via
-# golangci-lint in scripts/check.sh, not here.
+# Security sweep: dependency audit, OSV scan, third-party license texts, secret
+# scan, workflow audit, and SBOM generation. Touches the network (vulnerability
+# databases). The Go tools run through `go run` at the versions in
+# scripts/tool-versions.env, the versions that CI runs. The first run fetches
+# them from the module proxy. zizmor runs through `uvx`, so the `uv` tool must
+# be installed. A real vulnerability, a leaked secret, a module without a license
+# file, or a zizmor workflow finding fails the gate; the SBOMs are written to
+# dist/ (gitignored) and never fail it. zizmor runs the offline audits alone. If
+# GH_TOKEN or GITHUB_TOKEN is set, zizmor adds the online audits. gosec (Go SAST)
+# runs separately via golangci-lint in scripts/check.sh, not here.
 set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
@@ -40,6 +41,12 @@ allow="$(grep -Ev '^(#|$)' scripts/license-allowlist.txt | paste -sd, -)"
 # An empty list turns --licenses into a summary with no verdict, so stop.
 [ -n "$allow" ] || { echo "security: scripts/license-allowlist.txt lists no license" >&2; exit 1; }
 osv-scanner scan source --licenses="$allow" -L go.mod || { echo "security: osv-scanner found a license outside the allowlist" >&2; fail=1; }
+
+step "third-party licenses (texts of every linked module)"
+# The release ships these texts. Run it here so that a module without a license
+# file fails a pull request and not the release. The output is discarded.
+bash scripts/third-party-licenses.sh || { echo "security: the third-party license collection failed" >&2; fail=1; }
+rm -rf third-party-licenses
 
 step "gitleaks (secrets: working tree + git history)"
 gitleaks dir . --no-banner || { echo "security: gitleaks found secrets in the working tree" >&2; fail=1; }
