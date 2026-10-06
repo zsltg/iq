@@ -137,10 +137,12 @@ func (o logOptions) build(stderr, stdout io.Writer) (*slog.Logger, func() error,
 	structuredActive := o.fileActive()
 	suppressVerbose := structuredActive && o.file == "stderr"
 	if o.verbose && !suppressVerbose {
+		// tint.Options.Level is nil, so tint uses its default level, INFO.
 		handlers = append(handlers, tint.NewHandler(stderr, &tint.Options{
-			Level:       slog.LevelInfo,
-			NoColor:     !o.color,
-			ReplaceAttr: dropTimeAttr,
+			NoColor: !o.color,
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				return redactAttr(groups, dropTimeAttr(groups, a))
+			},
 		}))
 	}
 	var closer func() error
@@ -150,7 +152,7 @@ func (o logOptions) build(stderr, stdout io.Writer) (*slog.Logger, func() error,
 			return slog.New(slog.DiscardHandler), nil, err
 		}
 		closer = c
-		opts := &slog.HandlerOptions{Level: o.level}
+		opts := &slog.HandlerOptions{Level: o.level, ReplaceAttr: redactAttr}
 		if o.format == "json" {
 			handlers = append(handlers, slog.NewJSONHandler(sink, opts))
 		} else {
@@ -192,6 +194,45 @@ func dropTimeAttr(groups []string, a slog.Attr) slog.Attr {
 		return slog.Attr{}
 	}
 	return a
+}
+
+// redactAttr is the log hook that removes the connection password from a log
+// record. It applies newRedactor to an attribute with an error value and to a
+// string attribute with the key err or error. It also applies newRedactor to the
+// top-level message, as defense in depth: log messages in cmd are fixed
+// literals. Other string attributes do not change, because they carry records,
+// filters and commands that a diagnostic needs. A changed error stays an error
+// value, so the tint handler still shows it as an error.
+func redactAttr(groups []string, a slog.Attr) slog.Attr {
+	switch a.Value.Kind() {
+	case slog.KindAny:
+		err, ok := a.Value.Any().(error)
+		if !ok {
+			return a
+		}
+		msg := err.Error()
+		if out := newRedactor(err)(msg); out != msg {
+			return slog.Any(a.Key, errors.New(out))
+		}
+	case slog.KindString:
+		if redactsString(groups, a.Key) {
+			return slog.String(a.Key, newRedactor(nil)(a.Value.String()))
+		}
+	}
+	return a
+}
+
+// redactsString reports whether redactAttr redacts a string attribute. It
+// redacts the err and error keys in any group, and the message only at the top
+// level.
+func redactsString(groups []string, key string) bool {
+	switch key {
+	case "err", "error":
+		return true
+	case slog.MessageKey:
+		return len(groups) == 0
+	}
+	return false
 }
 
 // parseLogLevel maps a case-insensitive level name to an slog.Level, erroring on

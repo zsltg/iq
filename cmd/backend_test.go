@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -332,6 +333,108 @@ func TestLoggingStorePropagatesErrors(t *testing.T) {
 		require.ErrorIs(t, err, fnBoom, "the fn's error must propagate out")
 		require.Equal(t, 1, calls, "the scan must stop after the first fn error")
 	})
+}
+
+// TestLoggingStoreRedactsErrorRecord checks the err attribute of the "store call"
+// record. The record must not show the connection password, and the caller must
+// get the original error back unchanged.
+func TestLoggingStoreRedactsErrorRecord(t *testing.T) {
+	const secret = "dummy-password"
+	const uri = "redis://review:dummy-password@localhost:6379/0"
+	dialErr := fmt.Errorf("dial %s: %w", uri, io.EOF)
+	parseErr := fmt.Errorf("open source %q: %w", "repro", parseURLErr(t, "redis://review:dummy-password@localhost:bad/0"))
+	plainErr := errors.New("backend down")
+	page := []map[string]any{{"a": 1}}
+	scan := func(w store) error {
+		return w.ScanBatches(markedCtx(), func(map[string]any) error { return nil })
+	}
+	scanWithCallback := func(cbErr error) func(w store) error {
+		return func(w store) error {
+			return w.ScanBatches(markedCtx(), func(map[string]any) error { return cbErr })
+		}
+	}
+	tests := []struct {
+		name string
+		op   string
+		st   *fakeStore
+		call func(w store) error
+		err  error
+		// want is the err attribute of the record.
+		want string
+	}{
+		{
+			name: "Get error with a URI",
+			op:   "Get",
+			st:   &fakeStore{err: dialErr},
+			call: func(w store) error { _, err := w.Get(markedCtx(), []string{"k"}); return err },
+			err:  dialErr,
+			want: "dial redis://review:xxxxx@localhost:6379/0: EOF",
+		},
+		{
+			name: "Query error with a URI",
+			op:   "Query",
+			st:   &fakeStore{err: dialErr},
+			call: func(w store) error { _, err := w.Query(markedCtx(), []string{"GET", "k"}); return err },
+			err:  dialErr,
+			want: "dial redis://review:xxxxx@localhost:6379/0: EOF",
+		},
+		{
+			name: "ScanBatches store error with a URI",
+			op:   "ScanBatches",
+			st:   &fakeStore{pages: page, scanErr: dialErr},
+			call: scan,
+			err:  dialErr,
+			want: "dial redis://review:xxxxx@localhost:6379/0: EOF",
+		},
+		{
+			name: "ScanBatches callback error with a URI",
+			op:   "ScanBatches",
+			st:   &fakeStore{pages: page},
+			call: scanWithCallback(dialErr),
+			err:  dialErr,
+			want: "dial redis://review:xxxxx@localhost:6379/0: EOF",
+		},
+		{
+			name: "Get error that wraps a parse error",
+			op:   "Get",
+			st:   &fakeStore{err: parseErr},
+			call: func(w store) error { _, err := w.Get(markedCtx(), []string{"k"}); return err },
+			err:  parseErr,
+			want: `open source "repro": parse "(unparseable URI)": invalid port ":bad" after host`,
+		},
+		{
+			name: "ScanBatches callback error that wraps a parse error",
+			op:   "ScanBatches",
+			st:   &fakeStore{pages: page},
+			call: scanWithCallback(parseErr),
+			err:  parseErr,
+			want: `open source "repro": parse "(unparseable URI)": invalid port ":bad" after host`,
+		},
+		{
+			name: "Get error without a credential",
+			op:   "Get",
+			st:   &fakeStore{err: plainErr},
+			call: func(w store) error { _, err := w.Get(markedCtx(), []string{"k"}); return err },
+			err:  plainErr,
+			want: "backend down",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger, closer, err := logOptions{enable: true, file: "stderr", level: slog.LevelDebug, format: "json"}.build(&buf, io.Discard)
+			require.NoError(t, err)
+			require.Nil(t, closer)
+			w := newLoggingStore(tt.st, logger)
+
+			got := tt.call(w)
+
+			require.Same(t, tt.err, got, "the caller must get the original error")
+			require.NotContains(t, buf.String(), secret)
+			rec := findRecord(t, &buf, "store call", "op", tt.op)
+			require.Equal(t, tt.want, rec["err"])
+		})
+	}
 }
 
 // gateHandler enables a level only when the record's context is non-nil, so a

@@ -220,7 +220,7 @@ func (s *mcpServer) toolPing(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	for _, t := range targets {
 		row := mcpPingResult{Handle: t.handle, Driver: driverName(t.source.URL)}
 		if d, perr := pingOne(ctx, t, s.cfg.timeout); perr != nil {
-			row.Error = redactMessage(oneLine(perr))
+			row.Error = oneLine(redactErr(perr, ""))
 		} else {
 			row.OK = true
 			row.ElapsedMs = float64(d) / float64(time.Millisecond)
