@@ -492,15 +492,16 @@ A draft pull request runs the fast jobs only. `changes` also sets `full=true`
 when `code=true` and the pull request is not a draft. The slow jobs (`test`, the
 coverage jobs, `e2e`, `cross`, `sbom`, `capabilities`, `mutate-diff` and `fuzz`)
 run only then, and `ci-ok` fails on a draft. `changes` sets `snapshot=true` when
-`full=true` and the diff changes a file that the release reads:
-`.goreleaser.yaml`, `go.mod`, `go.sum`, `scripts/third-party-licenses.sh`,
-`scripts/tool-versions.env`, `LICENSE`, `README.md`, `docs/man/`,
-`docs/completions/` or `ci.yml`. `release-snapshot` runs only then, because it
-takes about 11 minutes. Mark the pull request ready for review when the review
-rounds settle: the `ready_for_review` event starts the full run once. `changes`
-reads the draft state from the API, not from the event, so a push just before
-"ready for review" still gets the full run. `ci-ok` fails on a draft and does
-not skip, because GitHub counts a skipped required check as a pass, and a
+the pull request is not a draft and the diff changes `.goreleaser.yaml`,
+`go.mod`, `go.sum`, `scripts/third-party-licenses.sh`,
+`scripts/tool-versions.env` or `ci.yml`. `release-snapshot` runs only then,
+because it takes about 11 minutes. The release also copies `LICENSE`,
+`README.md`, the man page and the completions, but by fixed names, so a change
+to their content cannot break it. Mark the pull request ready for review when
+the review rounds settle: the `ready_for_review` event starts the full run once.
+`changes` reads the draft state from the API, not from the event, so a push just
+before "ready for review" still gets the full run. `ci-ok` fails on a draft and
+does not skip, because GitHub counts a skipped required check as a pass, and a
 skipped draft `ci-ok` would let a pull request merge while its full run is still
 in progress. The runs of one pull request share a concurrency group, so a new
 push cancels the run of the previous push. A push to `main` is never cancelled.
@@ -857,9 +858,10 @@ without a license file fails every pull request. The CI `release-snapshot` job
 builds the release as a snapshot, with no publish and no signature. Then it
 checks that each binary archive and the `.deb` package carry the same files as
 the tree, and that the `.deb` directories have mode 0755. It runs only when a
-file that the release reads changes. A code change alters only which license
-texts go in the tree, and the `osv` job checks those. The license policy stays
-in `scripts/license-allowlist.txt`. The script only collects texts.
+file changes that can alter the build or the packaging. A code change alters
+only which license texts go in the tree, and the `osv` job checks those. The
+license policy stays in `scripts/license-allowlist.txt`. The script only
+collects texts.
 
 A release that fixes a vulnerability names its advisory ID. Put the ID
 (`GHSA-...`, and the CVE when one exists) in the title of the fix pull request,

@@ -128,7 +128,7 @@ jobs:
       code: ${{ steps.diff.outputs.code }}
       draft: ${{ steps.draft.outputs.draft }}
       full: ${{ steps.diff.outputs.code == 'true' && steps.draft.outputs.draft != 'true' }}
-      snapshot: ${{ steps.diff.outputs.code == 'true' && steps.diff.outputs.release == 'true' && steps.draft.outputs.draft != 'true' }}
+      snapshot: ${{ steps.diff.outputs.release == 'true' && steps.draft.outputs.draft != 'true' }}
     steps:
       - name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -178,10 +178,13 @@ jobs:
             code=false
             release=false
             while IFS= read -r f; do
-              # The files that the release snapshot reads. Only these can break it.
+              # The files that can alter the build or the packaging of the
+              # release. The release also copies LICENSE, README.md, the
+              # man page and the completions, but by fixed names, so a change to
+              # their content cannot break it.
               case "$f" in
-                .goreleaser.yaml | go.mod | go.sum | scripts/third-party-licenses.sh | scripts/tool-versions.env) release=true ;;
-                LICENSE | README.md | docs/man/* | docs/completions/* | .github/workflows/ci.yml) release=true ;;
+                .goreleaser.yaml | go.mod | go.sum | scripts/third-party-licenses.sh) release=true ;;
+                scripts/tool-versions.env | .github/workflows/ci.yml) release=true ;;
               esac
               case "$f" in
                 '') ;;
@@ -590,9 +593,10 @@ jobs:
   # that each archive and the .deb package carry the same files as the
   # third-party-licenses/ tree that the before hook wrote. The source archive
   # (iq-<version>.tar.gz) is a git archive, so the check skips it. The job takes
-  # about 11 minutes, so it runs only when a file that the release reads changes
-  # (snapshot=true from the changes job). A code change alters only which license
-  # texts go in the tree, and the osv job checks those on every change.
+  # about 11 minutes, so it runs only when a file changes that can alter the build
+  # or the packaging (snapshot=true from the changes job). A code change alters
+  # only which license texts go in the tree, and the osv job checks those on
+  # every change.
   release-snapshot:
     needs: changes
     if: needs.changes.outputs.snapshot == 'true'
