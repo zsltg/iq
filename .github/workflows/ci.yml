@@ -243,6 +243,11 @@ jobs:
   # one command in both places. The marketplace action is not used, because it adds
   # a mirrored action for no gain. An accepted finding gets an inline
   # `# zizmor: ignore[<audit>]` comment with a reason.
+  # actionlint checks correctness: the workflow schema, the types in `${{ }}`
+  # expressions, `needs` and `outputs` references, action inputs, and the `run`
+  # blocks through shellcheck. An accepted shellcheck finding gets an inline
+  # `# shellcheck disable=` line with a reason. A finding with no inline form goes
+  # into .github/actionlint.yaml.
   workflows:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -257,12 +262,17 @@ jobs:
             *.blob.core.windows.net:443
             *.githubapp.com:443
             api.github.com:443
+            dl.google.com:443
             files.pythonhosted.org:443
             github.com:443
+            go.dev:443
+            proxy.golang.org:443
             pypi.org:443
             raw.githubusercontent.com:443
             release-assets.githubusercontent.com:443
             releases.astral.sh:443
+            storage.googleapis.com:443
+            sum.golang.org:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -275,6 +285,14 @@ jobs:
         run: |
           . scripts/tool-versions.env
           uvx "zizmor==$ZIZMOR_VERSION" .github/
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # The runner has shellcheck, so actionlint also checks the run blocks.
+      - name: actionlint (GitHub Actions workflow lint)
+        run: |
+          . scripts/tool-versions.env
+          go run "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION"
 
   # -short is the dependency-free path: container-backed driver suites skip. The
   # committed man page and completions are drift-guarded by tests in this run.
@@ -316,7 +334,9 @@ jobs:
       - name: Test (-short, shuffled, -race on Linux)
         env:
           RACE: ${{ matrix.os == 'ubuntu-latest' && '-race' || '' }}
-        run: go test -short -shuffle=on $RACE ./...
+        run: |
+          # shellcheck disable=SC2086 # RACE is empty off Linux and must disappear from the command.
+          go test -short -shuffle=on $RACE ./...
 
   # Full suite with -coverpkg=./... and the IQ_COVER_MIN floor, split across
   # runners. Each coverage-group job tests a set of packages on its own runner

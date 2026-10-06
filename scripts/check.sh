@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Fast pre-merge gate: format, vet, build, lint, dead code, and the unit suite with
-# a coverage report. No Docker. The first run needs network access, because deadcode
-# runs through `go run` and the Go toolchain fetches it from the module proxy once.
+# Fast pre-merge gate: format, vet, build, lint, workflow lint, dead code, and the
+# unit suite with a coverage report. No Docker. The first run needs network access,
+# because actionlint and deadcode run through `go run` and the Go toolchain fetches
+# them from the module proxy once.
 # The slower tiers live elsewhere: the container suite and coverage floor in
 # scripts/coverage.sh, the supply-chain/secrets/SBOM sweep in scripts/security.sh,
 # and the mutation gate in scripts/mutation-gate.sh. gofumpt, goimports, and
@@ -10,9 +11,11 @@ set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
-# deadcode runs at the version in scripts/tool-versions.env, the version that CI runs.
-# A deadcode binary on PATH is not used, because its version can differ from CI.
+# actionlint and deadcode run at the versions in scripts/tool-versions.env, the
+# versions that CI runs. A binary on PATH is not used, because its version can
+# differ from CI.
 . scripts/tool-versions.env
+actionlint=(go run "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION")
 deadcode=(go run "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION")
 
 fail=0
@@ -56,6 +59,10 @@ fi
 if [[ "$lint_status" -ne 0 ]]; then
   note_fail "lint"
 fi
+
+step "actionlint (workflow lint)"
+# actionlint runs shellcheck on the run blocks only when shellcheck is on PATH.
+"${actionlint[@]}" || note_fail "actionlint"
 
 step "deadcode"
 dead="$("${deadcode[@]}" -test ./... 2>&1)"
