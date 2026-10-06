@@ -109,8 +109,12 @@ retries once. Do not clear the cache unconditionally. A warm lint run takes abou
 Run `gofumpt -w .`, then `goimports -w .`, before lint or commit.
 The lint configuration extends the v2 defaults, including `staticcheck` and
 `unused`. It enables `godot`, `gosec`, `errorlint`, `testifylint`, `bodyclose`,
-`noctx`, `misspell`, and `modernize`. Comments must end with a period.
+`noctx`, `misspell`, `modernize`, and `gocognit`. Comments must end with a period.
 The security analyzer `gosec` excludes `_test.go` fixtures.
+The linter `gocognit` fails a function with a cognitive complexity above 30.
+Exclusions in `.golangci.yml` keep the functions that scored above 30 when the linter was added.
+Remove an exclusion when a pull request refactors its function below 30.
+Never add an exclusion for new code.
 The modernizer proposes current Go forms, including `slices`, `maps`, `range n`,
 `strings.SplitSeq`, and `errors.AsType`. Use `golangci-lint run --fix` for its fixes.
 The dead-code command is `deadcode -test ./...`, which analyzes the whole program.
@@ -646,6 +650,9 @@ Posture and upkeep around the pipeline, all on GitHub:
   the Go modules, the GitHub Actions (pinned by digest), the Go toolchain, the
   tool pins, the test images in `compose.yaml`, and the docs tooling in
   `docs/pyproject.toml` (`python` and `zensical`). A human merges every PR.
+  The `:gitSignOff` preset makes Renovate sign off each commit that it makes.
+  If a person adds a commit to a Renovate PR, that commit also needs a
+  sign-off, or the `dco` job fails.
   A PR that moves `go.mod` runs `make capabilities`, which is the review that
   AGENTS.md asks for on a dependency change.
 - Renovate sends minor and patch updates as one grouped PR on Monday.
@@ -655,7 +662,8 @@ Posture and upkeep around the pipeline, all on GitHub:
   does not propose that update again. To adopt it, finish the work on the
   branch and mark the PR ready.
 - Renovate waits three days after a release before it proposes the release.
-  Security updates do not wait. Security PRs depend on the Dependabot alerts of
+  The Elasticsearch image does not wait, because its registry gives no release
+  dates. Security updates do not wait. Security PRs depend on the Dependabot alerts of
   the repository, so keep the alerts and the dependency graph on. Dependabot
   security updates can stay off.
 - The tool pins live in `scripts/tool-versions.env`, `scripts/mutation-gate.sh`,
