@@ -110,8 +110,10 @@ slsa-verifier verify-artifact iq_0.37.1_linux_amd64.tar.gz \
 Releases before v0.37.1 carry `checksums.txt` only, with no signature or
 provenance.
 
-Each archive and each Linux package carries a `third-party-licenses/` tree with
-the license and notice texts of every module that iq links.
+Each binary archive carries a `third-party-licenses/` tree with the license and
+notice texts of every module that iq links. Each Linux package installs the
+same texts in `/usr/share/licenses/iq/third-party/`. The source archive does not
+contain these texts.
 
 ## Building from source
 

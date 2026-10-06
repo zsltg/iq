@@ -104,9 +104,9 @@ nfpms:
           mode: 0o644
       - src: third-party-licenses
         dst: /usr/share/licenses/iq/third-party
+        # No mode override: nfpm applies it to the directories too. The script
+        # sets 0755 on each directory and 0644 on each file.
         type: tree
-        file_info:
-          mode: 0o644
 
 # The source-code tarball, attached to the release alongside the binaries.
 source:

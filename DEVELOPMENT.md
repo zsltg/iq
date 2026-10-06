@@ -838,16 +838,20 @@ provenance for every artifact (`slsa-github-generator`, `multiple.intoto.jsonl`)
 Then the install smoke test runs. How a user checks the signature and the
 provenance is on the docs home page, "Verify a release".
 
-Each archive and each Linux package carries the license texts of every linked
-module. goreleaser runs `scripts/third-party-licenses.sh` before the build. The
-script runs `go list -deps` for the six release targets. For each module, it
+Each binary archive and each Linux package carries the license texts of every
+linked module. The source archive does not, because goreleaser makes it from the
+Git tree. goreleaser runs `scripts/third-party-licenses.sh` before the build.
+The script runs `go list -deps` for the six release targets. For each module, it
 copies the license and notice files into `third-party-licenses/`, with the Go
 runtime license in `third-party-licenses/go/`. The script exits with an error if
-a module has no license file. `make security` runs it too. The CI
-`release-snapshot` job builds the release as a snapshot, with no publish and no
-signature, and checks that each archive and the `.deb` package have every file of
-the tree. A pull request thus fails early. The license policy stays in
-`scripts/license-allowlist.txt`. The script only collects texts.
+a module has no license file. A NOTICE or PATENTS file alone does not count. The
+script sets mode 0755 on each directory of the tree, so every user can read the
+installed texts. `make security` runs it too. The CI `release-snapshot` job
+builds the release as a snapshot, with no publish and no signature. Then it
+checks that each binary archive and the `.deb` package carry the same files as
+the tree, and that the `.deb` directories have mode 0755. A pull request thus
+fails early. The license policy stays in `scripts/license-allowlist.txt`. The
+script only collects texts.
 
 A release that fixes a vulnerability names its advisory ID. Put the ID
 (`GHSA-...`, and the CVE when one exists) in the title of the fix pull request,

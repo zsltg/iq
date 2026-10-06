@@ -27,17 +27,22 @@ done | LC_ALL=C sort -u >"$work/packages.txt"
 
 [[ -s "$work/packages.txt" ]] || { echo "third-party-licenses: go list found no third-party package" >&2; exit 1; }
 
-# A license file starts with one of these words, in any case, with any suffix.
-# Source files such as copyright_test.go do not match.
+# A license or notice file starts with one of these words, in any case, with any
+# suffix. Source files such as copyright_test.go do not match. Only the first
+# group of words names a license text. NOTICE and PATENTS files go with it.
 is_license_file() {
   local name="${1,,}"
-  [[ "$name" != *.go ]] && [[ "$name" =~ ^(licen[cs]e|copying|notice|unlicense|patents) ]]
+  [[ "$name" != *.go ]] && [[ "$name" =~ ^(licen[cs]e|copying|unlicense|notice|patents) ]]
+}
+is_license_text() {
+  [[ "${1,,}" =~ ^(licen[cs]e|copying|unlicense) ]]
 }
 
 # For each package, look in its directory and in every parent directory up to
 # the module root. A package can carry its own license file below the root.
 mkdir -p "$work/tree"
 declare -A seen_module=()
+declare -A has_license=()
 while IFS='|' read -r pkgdir modpath moddir; do
   seen_module["$modpath"]=1
   dir="$pkgdir"
@@ -47,6 +52,7 @@ while IFS='|' read -r pkgdir modpath moddir; do
       is_license_file "${f##*/}" || continue
       rel="${f#"$moddir"/}"
       install -m 0644 -D "$f" "$work/tree/$modpath/$rel"
+      is_license_text "${f##*/}" && has_license["$modpath"]=1
     done
     [[ "$dir" == "$moddir" ]] && break
     dir="$(dirname "$dir")"
@@ -55,9 +61,10 @@ while IFS='|' read -r pkgdir modpath moddir; do
   done
 done <"$work/packages.txt"
 
-# Every shipped module must carry at least one license file.
+# Every shipped module must carry a license text. A NOTICE or PATENTS file
+# alone is not enough.
 for modpath in "${!seen_module[@]}"; do
-  [[ -n "$(find "$work/tree/$modpath" -type f -print -quit 2>/dev/null)" ]] || {
+  [[ -n "${has_license[$modpath]:-}" ]] || {
     echo "third-party-licenses: $modpath has no license file" >&2
     exit 1
   }
@@ -67,6 +74,10 @@ done
 goroot="$(go env GOROOT)"
 install -m 0644 -D "$goroot/LICENSE" "$work/tree/go/LICENSE"
 [[ -f "$goroot/PATENTS" ]] && install -m 0644 -D "$goroot/PATENTS" "$work/tree/go/PATENTS"
+
+# The archives and the Linux packages keep these modes. Set them here so that
+# they do not depend on the umask: every user must be able to read the tree.
+find "$work/tree" -type d -exec chmod 0755 {} +
 
 # Replace the old output only now, so a failed run leaves no partial tree.
 [[ -e "$out" ]] && { chmod -R u+w "$out"; rm -rf "$out"; }
