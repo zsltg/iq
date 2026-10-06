@@ -4,6 +4,29 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.38.1 - 2026-10-06
+### Bug Fixes
+- **capabilities:** refuse non-linux baseline updates from the host target (#71) (65bd8e3)
+- **cmd:** redact the connection password in log records and errors (GHSA-46m6-qx4m-5xj6) (#75) (4a7f98e)
+- **file:** keep the sign of a negative zero in the prefiltered scan (#52) (dea4b08)
+- **hbase:** stop Open at the caller's deadline (#58) (3f199d1)
+- **mcp:** refuse a filter in a side spec on the stats layer (#50) (9b8534d)
+- **pushdown:** refuse a pushdown that a user definition shadows (#60) (ffe19ac)
+- **rawpred:** keep records whose bytes decode to U+FFFD (#62) (21e3ee6)
+
+### Documentation
+- replace the logo and favicon (#74) (86b2884)
+- **agents:** separate core rules from task procedures (#65) (d0680cf)
+
+### Refactoring
+- raise the code health of the diff, inspect and ls commands (#55) (6c86e1a)
+- raise the code health of the elasticsearch driver (#59) (90ea2f2)
+- raise the code health of the hbase driver (#61) (e2900ea)
+- raise the code health of the file driver and the query core (#56) (db25583)
+- raise the code health of the pure query packages (#53) (fdb8dca)
+- raise the code health of pushdown, inspect and diff (#49) (809b77d)
+
+
 ## v0.38.0 - 2026-09-30
 ### Bug Fixes
 - **dynamodb:** parse integers at the size of int (#41) (854af85)
