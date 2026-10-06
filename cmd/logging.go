@@ -215,11 +215,25 @@ func redactAttr(groups []string, a slog.Attr) slog.Attr {
 			return slog.Any(a.Key, errors.New(out))
 		}
 	case slog.KindString:
-		if a.Key == "err" || a.Key == "error" || (len(groups) == 0 && a.Key == slog.MessageKey) {
+		if redactsString(groups, a.Key) {
 			return slog.String(a.Key, newRedactor(nil)(a.Value.String()))
 		}
 	}
 	return a
+}
+
+// redactsString reports whether redactAttr redacts a string attribute. It
+// redacts the err and error keys in any group, and the message only at the top
+// level.
+func redactsString(groups []string, key string) bool {
+	switch key {
+	case "err", "error":
+		return true
+	case slog.MessageKey:
+		return len(groups) == 0
+	default:
+		return false
+	}
 }
 
 // parseLogLevel maps a case-insensitive level name to an slog.Level, erroring on

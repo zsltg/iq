@@ -913,6 +913,7 @@ func TestRedactAttr(t *testing.T) {
 		{"error value in a group", []string{"g"}, slog.Any("cause", errors.New(raw)), masked},
 		{"err string", nil, slog.String("err", raw), masked},
 		{"error string", nil, slog.String("error", raw), masked},
+		{"err string in a group", []string{"g"}, slog.String("err", raw), masked},
 		{"top-level message", nil, slog.String(slog.MessageKey, raw), masked},
 		{"message key in a group", []string{"g"}, slog.String(slog.MessageKey, raw), raw},
 		{"other string attribute", nil, slog.String("cmd", raw), raw},
