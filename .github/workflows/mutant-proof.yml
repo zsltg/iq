@@ -49,9 +49,11 @@ jobs:
             *.r2.cloudflarestorage.com:443
             api.github.com:443
             auth.docker.io:443
+            dl.google.com:443
             docker-auth.elastic.co:443
             docker.elastic.co:443
             github.com:443
+            go.dev:443
             production.cloudflare.docker.com:443
             production.cloudfront.docker.com:443
             proxy.golang.org:443
