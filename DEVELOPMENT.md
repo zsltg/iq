@@ -623,14 +623,23 @@ Posture and upkeep around the pipeline, all on GitHub:
   third-party workflow or action goes into a workflow, read which actions it uses
   and add them to the allow-list in the same change.
 - Every job on a Linux runner starts with
-  [Harden-Runner](https://github.com/step-security/harden-runner) in audit mode
-  (`egress-policy: audit`). It records the network connections, file writes and
-  processes of the job, and the job summary links to the report. It blocks
-  nothing. In audit mode it sends this data to StepSecurity, which builds the
-  report. After a week of reports, the plan is to list the endpoints each job
-  needs, switch to `egress-policy: block` and set `disable-telemetry: true`, so
-  that no data goes to StepSecurity after that. A job on a macOS or Windows runner
-  does not run it, because Harden-Runner supports Linux runners only.
+  [Harden-Runner](https://github.com/step-security/harden-runner) in block mode
+  (`egress-policy: block`) with `disable-telemetry: true`, so no data goes to
+  StepSecurity. The `allowed-endpoints` input of each job lists every host and
+  port that the job calls, sorted. All other outbound traffic fails, also the
+  traffic of Docker containers. The lists come from the audit logs of the first
+  week and of the release runs, and from the steps of each job. A job on a macOS
+  or Windows runner
+  does not run Harden-Runner, because block mode supports Linux runners only.
+- When a job fails because of a blocked call, open the job log. The annotation
+  names the blocked domain. Make sure that the call is expected, then add
+  `host:443` to the `allowed-endpoints` list of that job in sorted order. A matrix
+  job (`coverage-group`, `deep-mutate`, `mutant-proof`) has one list for all legs,
+  so add the host there. When a new tool or compose image enters a job, add its
+  hosts in the same change. Do not add a host that you did not check.
+  Every job that runs `actions/setup-go` also allows `go.dev:443` and
+  `dl.google.com:443`. The action downloads Go from there when the Go version
+  is not yet in the runner cache or in the GitHub version manifest.
 - `.github/workflows/codeql.yml` runs CodeQL (the `security-and-quality` queries
   over the Go code) on every pull request, every push to `main` and weekly, and
   uploads the results to the Security tab. It is not a required check:
