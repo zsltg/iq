@@ -6,9 +6,8 @@
 #
 # Version-hermetic invocation. mutago is pinned by MUTAGO_VERSION (below) and provisioned
 # per run into a throwaway GOBIN via `go install <pinned>@version`, then executed
-# directly. This removes any dependency on a mutago binary on PATH (the gate no longer
-# needs `make tools-dev`) and never touches this module's go.mod. Direct execution is
-# deliberate over `go run`: `go run` collapses a non-zero program exit to 1, which would
+# directly. This removes any dependency on a mutago binary on PATH and never touches
+# this module's go.mod. Direct execution is deliberate over `go run`: `go run` collapses a non-zero program exit to 1, which would
 # make an escaped-mutant verdict (exit 4) indistinguishable from a run error, whereas the
 # installed binary preserves mutago's exact exit codes and streams output live.
 #
@@ -148,7 +147,10 @@
 # starts its own containers, which costs about 8 s more per mutant and is isolated.
 set -uo pipefail
 
-# Pinned mutago version — keep in step with AGENTS.md and `make tools-dev` (Makefile).
+# Pinned mutago version. Renovate reads the line below. mutago stays here and not in
+# scripts/tool-versions.env, because scripts/mutation-shard.sh and mutation-verdict.sh
+# read this exact line.
+# renovate: datasource=go depName=github.com/quality-gates/mutago/v2
 MUTAGO_VERSION=v2.10.16
 mutago_pkg=github.com/quality-gates/mutago/v2/cmd/mutago
 

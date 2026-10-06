@@ -14,7 +14,8 @@
 #   --dry-run          preview the next version and CHANGELOG.md diff; no changes
 #   --changelog-only   regenerate CHANGELOG.md in place; no commit, tag, or checks
 #
-# Tools: install with `make tools` (svu, git-chglog).
+# Tools: svu and git-chglog run through `go run` at the versions in
+# scripts/tool-versions.env. The first run needs network access to the module proxy.
 set -euo pipefail
 
 MODE=release
@@ -27,14 +28,12 @@ for arg in "$@"; do
   esac
 done
 
-for tool in svu git-chglog; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "release: $tool not found on PATH; run 'make tools'" >&2
-    exit 1
-  fi
-done
-
 cd "$(git rev-parse --show-toplevel)"
+
+# The pinned versions of svu and git-chglog.
+. scripts/tool-versions.env
+svu() { go run "github.com/caarlos0/svu@$SVU_VERSION" "$@"; }
+git-chglog() { go run "github.com/git-chglog/git-chglog/cmd/git-chglog@$GIT_CHGLOG_VERSION" "$@"; }
 
 current="$(svu current)"
 next="$(svu next)"
