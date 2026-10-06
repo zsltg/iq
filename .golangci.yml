@@ -4,7 +4,8 @@ linters:
   # unused). Each maps to an AGENTS.md rule: gosec is the SAST, errorlint guards
   # the %w wrapping scheme, testifylint the testify idioms, bodyclose + noctx the
   # bounded/closed outbound calls, misspell + godot the comment hygiene, modernize
-  # the Go 1.21+ idioms (slices, maps, range-over-int, SplitSeq, AsType).
+  # the Go 1.21+ idioms (slices, maps, range-over-int, SplitSeq, AsType), gocognit
+  # the "plain, linear, readable" rule (it scores nesting, not flat switches).
   enable:
     - godot
     - gosec
@@ -14,7 +15,10 @@ linters:
     - noctx
     - misspell
     - modernize
+    - gocognit
   settings:
+    gocognit:
+      min-complexity: 30
     gosec:
       # G404: the sole math/rand use is non-cryptographic retry-backoff jitter
       # (drivers/dynamodb). Excluded here rather than with an inline //nolint so the
@@ -29,6 +33,38 @@ linters:
       - path: _test\.go
         linters:
           - gosec
+      # Existing debt. Each function listed here scored above 30 when gocognit was
+      # enabled. An exclusion keeps its lines byte-identical to main. Remove the
+      # exclusion in the pull request that refactors the function below 30.
+      # Never add an exclusion for new code.
+      - path: drivers/file/neo4j\.go
+        linters:
+          - gocognit
+        text: "of func `neo4jSource` "
+      - path: drivers/file/mongo\.go
+        linters:
+          - gocognit
+        text: "of func `extJSONSource` "
+      - path: cmd/source\.go
+        linters:
+          - gocognit
+        text: "of func `newAddCmd` "
+      - path: cmd/keyring_cmd\.go
+        linters:
+          - gocognit
+        text: "of func `newConfigKeyringMigrateCmd` "
+      - path: cmd/root\.go
+        linters:
+          - gocognit
+        text: "of func `newRootCmd` "
+      - path: drivers/file/cassandra\.go
+        linters:
+          - gocognit
+        text: "of func `cassandraCSVSource` "
+      - path: drivers/dynamodb/dump\.go
+        linters:
+          - gocognit
+        text: "of func `decodeTagged` "
 formatters:
   enable:
     - gofumpt
