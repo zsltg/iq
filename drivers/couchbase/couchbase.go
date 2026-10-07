@@ -305,35 +305,55 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	if len(keys) == 0 {
 		return out, nil
 	}
-	ops := make([]gocb.BulkOp, 0, len(keys))
-	getOps := make([]*gocb.GetOp, 0, len(keys))
-	for _, k := range keys {
-		if err := validateKey(k); err != nil {
-			return nil, err
-		}
-		op := &gocb.GetOp{ID: k}
-		getOps = append(getOps, op)
+	getOps, err := newGetOps(keys)
+	if err != nil {
+		return nil, err
+	}
+	ops := make([]gocb.BulkOp, 0, len(getOps))
+	for _, op := range getOps {
 		ops = append(ops, op)
 	}
 	s.tracef("get %s", strings.Join(keys, " "))
 	if err := s.bulkDo(ctx, ops, rawTranscoder{}); err != nil {
 		return nil, fmt.Errorf("couchbase get: %w", err)
 	}
+	if err := s.collectGets(getOps, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// newGetOps validates keys and returns one GetOp for each, in order. It stops at the
+// first invalid key, before any network call.
+func newGetOps(keys []string) ([]*gocb.GetOp, error) {
+	getOps := make([]*gocb.GetOp, 0, len(keys))
+	for _, k := range keys {
+		if err := validateKey(k); err != nil {
+			return nil, err
+		}
+		getOps = append(getOps, &gocb.GetOp{ID: k})
+	}
+	return getOps, nil
+}
+
+// collectGets decodes the finished get ops into out, keyed by document ID. A missing
+// document is skipped. Any other op error ends the walk.
+func (s *Store) collectGets(getOps []*gocb.GetOp, out map[string]any) error {
 	for _, op := range getOps {
 		key := op.ID
 		if op.Err != nil {
 			if errors.Is(op.Err, gocb.ErrDocumentNotFound) {
 				continue
 			}
-			return nil, fmt.Errorf("couchbase get: %w", op.Err)
+			return fmt.Errorf("couchbase get: %w", op.Err)
 		}
 		var raw []byte
 		if err := op.Result.Content(&raw); err != nil {
-			return nil, fmt.Errorf("couchbase get: decode %q: %w", key, err)
+			return fmt.Errorf("couchbase get: decode %q: %w", key, err)
 		}
 		out[key] = decodeValue(raw, s.decimal)
 	}
-	return out, nil
+	return nil
 }
 
 // ScanBatches streams the whole collection, handing the caller each page of
