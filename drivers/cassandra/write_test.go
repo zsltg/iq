@@ -140,3 +140,22 @@ func TestColumnsFor(t *testing.T) {
 		})
 	}
 }
+
+func TestInsertCQL(t *testing.T) {
+	s := &Store{keyspace: "ks", table: "t"}
+	tests := []struct {
+		name string
+		s    *Store
+		cols []string
+		want string
+	}{
+		{"one column", s, []string{"id"}, `INSERT INTO "ks"."t" ("id") VALUES (?)`},
+		{"columns keep the given order", s, []string{"b", "a", "c"}, `INSERT INTO "ks"."t" ("b", "a", "c") VALUES (?, ?, ?)`},
+		{"identifiers are quoted", &Store{keyspace: `k"s`, table: "t t"}, []string{`a"b`}, `INSERT INTO "k""s"."t t" ("a""b") VALUES (?)`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.s.insertCQL(tt.cols))
+		})
+	}
+}
