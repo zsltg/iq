@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.38.2 - 2026-10-07
+### Bug Fixes
+- **cassandra:** split the userinfo at the last @ and decode it (GHSA-67pr-hcv5-v9hp) (#93) (aef36b8)
+- **couchbase:** do not push a field name that holds a backslash (GHSA-q2ww-49v8-p2r5) (#96) (b9fe9ab)
+- **deps:** use the zsltg/rdb fork to stop a fatal OOM on a crafted RDB (GHSA-v26p-9927-qf6x) (#98) (1230c4f)
+- **file:** read back every record that the decode cache writes (GHSA-j9g3-4x25-72vp) (#95) (bec1feb)
+- **redis:** return a fixed error when the connection URI does not parse (GHSA-hj6f-gr69-77vj) (#94) (f3b6010)
+
+### Documentation
+- add a security index for agents (#90) (3329727)
+
+
 ## v0.38.1 - 2026-10-06
 ### Bug Fixes
 - **capabilities:** refuse non-linux baseline updates from the host target (#71) (65bd8e3)
