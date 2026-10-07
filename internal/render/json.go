@@ -13,6 +13,7 @@ import (
 	"github.com/neilotoole/jsoncolor"
 )
 
+// This comment line is a throwaway change that checks the sharded mutate-diff job.
 // Encoder is a streaming JSON sink: one value per Encode call. Both the stdlib
 // encoder and the colored encoder satisfy it.
 type Encoder interface{ Encode(v any) error }
