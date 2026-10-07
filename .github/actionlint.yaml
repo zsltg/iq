@@ -7,3 +7,15 @@ paths:
       # zizmor asks for this self-repository form, and the v0.37.1 release ran with
       # it. actionlint does not know the form, so it reports a bad format.
       - 'reusable workflow call "\$/\.github/workflows/install-smoke\.yml" .* not following the format'
+  # These three files call the shared action with the form `$/.github/...`.
+  # zizmor asks for this form, and actionlint reports a missing ref. Remove the
+  # three entries when an actionlint release accepts the form (rhysd/actionlint#732).
+  .github/workflows/ci.yml:
+    ignore:
+      - 'specifying action "\$/\.github/actions/setup-go" in invalid format because ref is missing\..*'
+  .github/workflows/codeql.yml:
+    ignore:
+      - 'specifying action "\$/\.github/actions/setup-go" in invalid format because ref is missing\..*'
+  .github/workflows/mutant-proof.yml:
+    ignore:
+      - 'specifying action "\$/\.github/actions/setup-go" in invalid format because ref is missing\..*'
