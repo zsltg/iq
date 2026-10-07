@@ -17,6 +17,12 @@ license.override = ["Apache-2.0"]
 reason = "Code is Apache-2.0 per its LICENSE; CC-BY-SA-4.0 in LICENSE.docs covers the documentation only."
 
 [[PackageOverrides]]
+name = "github.com/zsltg/rdb"
+ecosystem = "Go"
+license.override = ["Apache-2.0"]
+reason = "The fork of github.com/hdt3213/rdb that go.mod replaces it with. Code is Apache-2.0 per its LICENSE, the same as upstream; deps.dev has no license data for the fork."
+
+[[PackageOverrides]]
 name = "stdlib"
 ecosystem = "Go"
 license.override = ["BSD-3-Clause"]

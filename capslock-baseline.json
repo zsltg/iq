@@ -134,6 +134,13 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "testimage",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/internal/testimage",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
       "packageName": "main",
       "capabilityName": "NETWORK",
       "capability": "CAPABILITY_NETWORK",
@@ -519,6 +526,13 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "testimage",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/testimage",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
       "packageName": "main",
       "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
@@ -534,28 +548,28 @@
     },
     {
       "packageName": "cmd",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/cmd",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "cmd",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/cmd",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "cassandra",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/cassandra",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "cassandra",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/cassandra",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
@@ -618,28 +632,28 @@
     },
     {
       "packageName": "file",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/file",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "file",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/file",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "hbase",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/hbase",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "hbase",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/hbase",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
@@ -702,14 +716,14 @@
     },
     {
       "packageName": "jqfmt",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/jqfmt",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "jqfmt",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/jqfmt",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
@@ -730,14 +744,14 @@
     },
     {
       "packageName": "query",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/query",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "query",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/query",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
@@ -1287,6 +1301,13 @@
       "capability": "CAPABILITY_UNANALYZED",
       "packageDir": "github.com/zsltg/iq/internal/secret",
       "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "testimage",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/internal/testimage",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "main",
@@ -1450,6 +1471,13 @@
       "capabilityType": "CAPABILITY_TYPE_DIRECT"
     },
     {
+      "packageName": "testimage",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/testimage",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "main",
       "capabilityName": "REFLECT",
       "capability": "CAPABILITY_REFLECT",
@@ -1580,6 +1608,13 @@
       "capabilityName": "REFLECT",
       "capability": "CAPABILITY_REFLECT",
       "packageDir": "github.com/zsltg/iq/internal/secret",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "testimage",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/internal/testimage",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {

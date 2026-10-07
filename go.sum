@@ -153,8 +153,6 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed h1:5upAirOpQc1Q53c0bnx2ufif5kANL7bfZWcc6VJWJd8=
 github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed/go.mod h1:tMWxXQ9wFIaZeTI9F+hmhFiGpFmhOHzyShyFUhRm0H4=
-github.com/hdt3213/rdb v1.3.2 h1:Dk6lUbQY2d8izSVG1I3Uhtan53dNxj/J+dVH7OVSvTU=
-github.com/hdt3213/rdb v1.3.2/go.mod h1:DB7fVcqhNuPsX4lcv0AOOHKQE6mXhaIcxZvbVIfalAU=
 github.com/icza/dyno v0.0.0-20230330125955-09f820a8d9c0 h1:nHoRIX8iXob3Y2kdt9KsjyIb7iApSvb3vgsd93xb5Ow=
 github.com/icza/dyno v0.0.0-20230330125955-09f820a8d9c0/go.mod h1:c1tRKs5Tx7E2+uHGSyyncziFjvGpgv4H2HrqXeUQ/Uk=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
@@ -316,6 +314,8 @@ github.com/zeebo/assert v1.3.0 h1:g7C04CbJuIDKNPFHmsk4hwZDO5O+kntRxzaUoNXj+IQ=
 github.com/zeebo/assert v1.3.0/go.mod h1:Pq9JiuJQpG8JLJdtkwrJESF0Foym2/D9XMU5ciN/wJ0=
 github.com/zeebo/xxh3 v1.1.0 h1:s7DLGDK45Dyfg7++yxI0khrfwq9661w9EN78eP/UZVs=
 github.com/zeebo/xxh3 v1.1.0/go.mod h1:IisAie1LELR4xhVinxWS5+zf1lA4p0MW4T+w+W07F5s=
+github.com/zsltg/rdb v1.3.3-0.20261007123221-a273eef08475 h1:+/BNWsuUbfNkXwUlZgd5u4pn44RJHYf2vLXGjNG3a6U=
+github.com/zsltg/rdb v1.3.3-0.20261007123221-a273eef08475/go.mod h1:DB7fVcqhNuPsX4lcv0AOOHKQE6mXhaIcxZvbVIfalAU=
 gitlab.com/flimzy/testy v0.15.0 h1:69TL12IpxqGUyL8NuRV3Z5OhIDszXLNqLtfBDhOV3ys=
 gitlab.com/flimzy/testy v0.15.0/go.mod h1:KbAJWCwB++0hEFzeeQRbC7vdZYP/yEha94s4X1wVFrw=
 go.mongodb.org/mongo-driver/v2 v2.7.0 h1:RO+zqavD2/GCL3cxOMyZhx6R9Irzr8/6gsoqx5tcY/c=
