@@ -11,8 +11,10 @@
 # module cache and the build cache). The order matters, because the cache key
 # hashes files of the workspace. Only the go-cache job saves the cache, on a push
 # to main. The key holds the OS, the architecture and a hash of go.mod, go.sum,
-# the tool versions, this file and the action. When no entry matches the key, a
-# job restores the newest entry of the same runner. The go-cache job never does
+# the tool versions, the script scripts/ci-warm-cache.sh and the action. Go's
+# build cache is content-addressed, so if the build flags of a job stop matching
+# that script, the job misses the cache and compiles, with no wrong result. When
+# no entry matches the key, a job restores the newest entry of the same runner. The go-cache job never does
 # that, so a new entry starts clean and does not keep old module versions.
 # The cache has one entry for each runner OS. The Linux entry holds the variants
 # and the shared tools. The macOS and Windows entries hold the no-cgo build and
@@ -37,8 +39,9 @@ name: CI
 # change, so each pushed tree was tested as a pull request. A push to main therefore
 # runs only the coverage jobs, which keep the Codecov baseline of main, and the
 # go-cache job, which saves the Go cache. The weekly schedule and
-# manual dispatch drive the `deep-*` jobs (fresh CVE data, the sharded mutation
-# scan of the packages that changed, the badge), gated off the fast jobs so a
+# manual dispatch drive the `deep-*` jobs (fresh CVE data, long fuzzing, the full suite
+# with the race detector, the sharded mutation scan of the packages that changed, the
+# badge), gated off the fast jobs so a
 # schedule run does not re-lint.
 on:
   push:
@@ -216,19 +219,27 @@ jobs:
             docs=false
             makefile=false
             # A push always builds the cache. A pull request builds it only when
-            # the change can alter the cache key or the build steps.
+            # the change can alter the build steps: the warm-up script and the
+            # shared action. A change to go.mod, go.sum or the tool versions
+            # alters the key but not the steps, so the next push to main builds
+            # the new entry.
             if [ "$EVENT" != push ]; then cache=false; fi
             while IFS= read -r f; do
               # The files that can alter the build or the packaging of the
               # release. The release also copies LICENSE, README.md, the man
               # page and the completions by fixed names, so only a deletion or a
               # rename of one of them can break it. The loop below finds those.
+              # This list holds no workflow file and no shared action. The real
+              # release runs release.yml, which does not use the shared action.
+              # The next pull request that changes a release input tests an edit
+              # to the steps of release-snapshot. Renovate changes go.mod and
+              # go.sum every week.
               case "$f" in
                 .goreleaser.yaml | go.mod | go.sum | scripts/third-party-licenses.sh) release=true ;;
-                scripts/tool-versions.env | .github/workflows/ci.yml | .github/actions/*) release=true ;;
+                scripts/tool-versions.env) release=true ;;
               esac
               case "$f" in
-                .github/workflows/ci.yml | .github/actions/*) cache=true ;;
+                scripts/ci-warm-cache.sh | .github/actions/*) cache=true ;;
               esac
               # The docs job builds the site, so it reads docs/ and, for the
               # workflow steps that build it, this file.
@@ -276,7 +287,9 @@ jobs:
   # Builds the Go cache that the other jobs restore (see the comment at the top of
   # this file). On a push to main it saves one entry for each runner, unless the
   # exact key exists. On a pull request it builds and saves nothing, so a mistake
-  # in a build step fails the pull request and not main. A draft skips it, so the
+  # in a build step fails the pull request and not main. A pull request starts it
+  # only when the diff changes scripts/ci-warm-cache.sh or the shared action.
+  # That script holds the build commands. A draft skips it, so the
   # review rounds do not start three cold builds. It never restores the fallback
   # entry, because that entry carries every old module version into the new one,
   # and Go never trims the module cache. The Linux leg compiles every variant that
@@ -337,53 +350,15 @@ jobs:
           if [ "$EVENT" = pull_request ] || [ "$CACHE_HIT" != true ]; then build=true; fi
           echo "build=$build" >> "$GITHUB_OUTPUT"
           echo "go-cache: build=$build cache-hit=$CACHE_HIT"
-      - name: Download the modules
+      # The script holds the build commands. The cache key hashes it.
+      - name: Build the cache (Linux)
         if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        run: go mod download
-      - name: Build
-        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        run: go build ./...
-      - name: Build without cgo, with trimpath
-        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        run: CGO_ENABLED=0 go build -trimpath ./...
-      # go test -c -o <dir>/ fails when two packages have the same last path
-      # element. No package has one now. The three variants match the test job
-      # (-race), the coverage groups (-covermode and -coverpkg) and a plain run.
-      - name: Compile the test binaries (plain, race, cover)
-        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        run: |
-          go test -c -o "$RUNNER_TEMP/plain/" ./...
-          go test -race -c -o "$RUNNER_TEMP/race/" ./...
-          go test -covermode=atomic -coverpkg=./... -c -o "$RUNNER_TEMP/cover/" ./...
-      # A crasher in the seed corpus fails this job. Then the job saves nothing, and
-      # the fuzz job of the next pull request reports the same crasher.
-      - name: Compile the fuzz targets
-        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        env:
-          IQ_FUZZ_TIME: 1x
-        run: bash scripts/fuzz.sh
-      # go install compiles each tool and does not run it. A version command can
-      # call the network. For example govulncheck -version contacts vuln.go.dev,
-      # and the host list of this job blocks that host. A later go run takes the
-      # compiled packages from the cache and only links the tool again.
-      - name: Compile the pinned tools
-        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        run: |
-          . scripts/tool-versions.env
-          export GOBIN="$RUNNER_TEMP/bin"
-          go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"
-          go install "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION"
-          go install "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION"
-          go install "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION"
-      - name: Build and compile the tests (no cgo)
+        shell: bash
+        run: bash scripts/ci-warm-cache.sh linux
+      - name: Build the cache (no cgo)
         if: steps.plan.outputs.build == 'true' && runner.os != 'Linux'
         shell: bash
-        env:
-          CGO_ENABLED: '0'
-        run: |
-          go mod download
-          go build -trimpath ./...
-          go test -c -o "$RUNNER_TEMP/plain/" ./...
+        run: bash scripts/ci-warm-cache.sh other
       - name: Save the Go cache
         if: github.event_name == 'push' && steps.go.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1031,8 +1006,14 @@ jobs:
   # Go native fuzzing over the parsers that read untrusted bytes (scripts/fuzz.sh),
   # one target per invocation because that is what `go test -fuzz` takes. The budget
   # here is the default 20s per target, enough to re-cover the committed corpus and
-  # explore a little; deep-fuzz gives each target 5m on the weekly run. A crasher
-  # fails the job, and the fix commits the input Go wrote as the regression seed.
+  # explore a little. The job fuzzes only when the change can affect a target: a
+  # non-test file in a package that the fuzz packages import, a test file or a seed
+  # in a fuzz package, scripts/fuzz.sh, go.mod or go.sum. Otherwise it passes and
+  # prints a notice, because ci-ok needs the job. The seeds and crashers run in
+  # every `go test -short` anyway, and deep-fuzz explores every target each week.
+  # The job needs the base commit, so it fetches the full history. A failed diff
+  # or `go list` makes the fuzzing run. A crasher fails the job, and the fix
+  # commits the input Go wrote as the regression seed.
   fuzz:
     needs: changes
     if: needs.changes.outputs.full == 'true'
@@ -1040,9 +1021,27 @@ jobs:
     timeout-minutes: 20
     steps:
       - *harden-go
-      - *checkout
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the diff needs the base commit
       - uses: ./.github/actions/setup-go
+      - id: affected
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! result="$(bash scripts/fuzz.sh --affected "$BASE" "$HEAD")"; then
+            result=true
+          fi
+          if [ "$result" = true ]; then
+            echo "fuzz: the change can affect a fuzz target, so the job fuzzes"
+          else
+            echo "::notice::no file in the change can affect a fuzz target, so the job skips the fuzzing"
+          fi
+          echo "run=$result" >> "$GITHUB_OUTPUT"
       - name: Fuzz the untrusted parsers
+        if: steps.affected.outputs.run != 'false'
         run: bash scripts/fuzz.sh
 
   # Eight targets at 5m each, plus the build, fits well inside the hour. The corpus
@@ -1059,6 +1058,55 @@ jobs:
         env:
           IQ_FUZZ_TIME: 5m
         run: bash scripts/fuzz.sh
+
+  # The race detector never runs on the container-backed driver tests in the per-change
+  # jobs. The Linux leg of `test` uses -short, which skips them. The timing tests are
+  # also too slow under -race to gate every pull request. This weekly job runs the full
+  # suite with -race and reports only: a data race or a failed test fails the job, but
+  # no merge waits for it, so it is not in the needs list of ci-ok. It uses the group
+  # layout of coverage-group (the same packages, the same one-container-at-a-time rule
+  # and the same HBase service), so each package runs exactly once. Keep both matrices
+  # equal. A manual dispatch also runs this job. The race detector slows the tests by 2
+  # to 10 times, so a leg gets 120 minutes, where a coverage group gets 45. There is
+  # no coverage profile. -timeout is per test binary, as in scripts/coverage.sh.
+  deep-race:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: race (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: couchbase
+            packages: ./drivers/couchbase
+          - group: elasticsearch
+            packages: ./drivers/elasticsearch
+          - group: cassandra-neo4j-hbase
+            packages: ./drivers/cassandra ./drivers/neo4j ./drivers/hbase
+            hbase: true
+          - group: rest
+            # Keep this list equal to the packages of the groups above.
+            exclude: drivers/(couchbase|elasticsearch|cassandra|neo4j|hbase)
+    steps:
+      - *harden-docker-elastic
+      - *checkout
+      - uses: ./.github/actions/setup-go
+      - name: Start HBase (compose, host networking)
+        if: matrix.hbase
+        run: docker compose up -d --wait hbase
+      - name: Test with the race detector (one container at a time)
+        env:
+          GOFLAGS: -p=1
+          IQ_HBASE_URL: ${{ matrix.hbase && 'hbase://localhost:2181/' || '' }}
+          PACKAGES: ${{ matrix.packages }}
+          EXCLUDE: ${{ matrix.exclude }}
+        run: |
+          if [ -n "$EXCLUDE" ]; then
+            PACKAGES="$(go list ./... | grep -vE "^github.com/zsltg/iq/($EXCLUDE)\$" | tr '\n' ' ')"
+          fi
+          read -ra pkgs <<<"$PACKAGES"
+          go test -race -shuffle=on -timeout 30m "${pkgs[@]}"
 
   # Weekly + manual deep scan, gated to schedule/workflow_dispatch:
   # deep-scan re-runs the vulnerability scanners against fresh OSV/CVE data on
