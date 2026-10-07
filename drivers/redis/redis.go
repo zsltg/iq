@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
+	"strings"
 
 	goredis "github.com/redis/go-redis/v9"
 
@@ -36,17 +38,32 @@ type Store struct {
 }
 
 // ErrInvalidURI reports a connection URI that go-redis cannot parse.
-var ErrInvalidURI = errors.New("parse redis url: the connection URI is not valid (percent-encode special characters in the password)")
+var ErrInvalidURI = errors.New("parse redis url: the connection URI is not valid")
 
 // parseURL parses a redis:// connection URI. The go-redis parse error can quote
 // a part of the password, for example after an unescaped slash. So this function
-// drops that error text and returns ErrInvalidURI.
+// drops that error text and returns ErrInvalidURI. It adds a hint about
+// percent-encoding only when the URI seems to hold a password that was not read
+// as userinfo.
 func parseURL(uri string) (*goredis.Options, error) {
 	opts, err := goredis.ParseURL(uri)
 	if err != nil {
+		if looksLikeUnreadPassword(uri) {
+			return nil, fmt.Errorf("%w (percent-encode special characters in the password)", ErrInvalidURI)
+		}
 		return nil, ErrInvalidURI
 	}
 	return opts, nil
+}
+
+// looksLikeUnreadPassword reports whether the URI holds an "@" that net/url did
+// not read as userinfo. A password with an unescaped special character causes this.
+func looksLikeUnreadPassword(uri string) bool {
+	if !strings.Contains(uri, "@") {
+		return false
+	}
+	u, err := url.Parse(uri)
+	return err != nil || u.User == nil
 }
 
 // Open connects to the Redis server named by a redis:// URL. It verifies the
