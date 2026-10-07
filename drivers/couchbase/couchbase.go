@@ -242,14 +242,21 @@ func validateIdent(kind, name string) error {
 		return fmt.Errorf("couchbase %s name exceeds %d bytes", kind, maxIdentBytes)
 	}
 	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case r == '_' || r == '-' || r == '%' || r == '.':
-		default:
+		if !isIdentRune(r) {
 			return fmt.Errorf("couchbase %s name %q has an invalid character", kind, name)
 		}
 	}
 	return nil
+}
+
+// isIdentRune reports whether r is allowed in a bucket, scope or collection name: an
+// ASCII letter or digit, or one of _ - % .
+func isIdentRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return true
+	}
+	return strings.ContainsRune("_-%.", r)
 }
 
 // validateKey rejects a document key that is empty or over Couchbase's 250-byte limit,
