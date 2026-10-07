@@ -74,7 +74,7 @@ No scanner checks these rules. A review does.
 ## Gates
 
 - `make check` runs gosec through golangci-lint.
-- `make security` runs govulncheck, the osv-scanner dependency scan, the osv-scanner license allowlist, the collection of third-party license texts, gitleaks, and zizmor. It writes SPDX and CycloneDX SBOMs to `dist/` with syft. The release SBOM is a separate file that cyclonedx-gomod makes.
+- `make security` runs govulncheck, the osv-scanner dependency scan, the osv-scanner license allowlist, the collection of third-party license texts, gitleaks, and zizmor. It writes SPDX and CycloneDX SBOMs to `dist/` with syft. These SBOMs list the Go module graph only. The release SBOM is a separate file that cyclonedx-gomod makes.
 - `make capabilities` runs the capslock drift gate.
 - CI also runs CodeQL and OpenSSF Scorecard, and Socket reviews each dependency change.
 

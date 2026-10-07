@@ -142,7 +142,8 @@ module proxy:
 - `gitleaks` scans the working tree and Git history for secrets.
 - `zizmor` audits `.github/` through `uvx`, with the version pinned by
   `ZIZMOR_VERSION` in `scripts/tool-versions.env`. Without `GH_TOKEN` or `GITHUB_TOKEN`, it runs only offline audits.
-- `syft` writes a software bill of materials (SBOM) to `dist/`.
+- `syft` writes a software bill of materials (SBOM) to `dist/`. The SBOM lists the Go module graph only.
+  It runs `make sbom`, which holds the syft options.
 
 For an accepted zizmor finding, add an inline `# zizmor: ignore[...]` with a reason.
 Run `make sbom` when only the SBOM artifacts are needed.
@@ -508,7 +509,7 @@ pull request that changes only a Markdown file outside `docs/` runs the fast
 jobs only, and it takes about 2 minutes. A pull request that changes a file
 under `docs/` also builds the site. Any other file, a change to `ci.yml` or to a
 shared action in `.github/actions/`, or a diff that fails runs every job. The
-`code`, `full`, `sbom`, `snapshot` and `docs` outputs of `changes` are true only on a
+`code`, `full`, `snapshot` and `docs` outputs of `changes` are true only on a
 pull request. The `coverage` output ignores the event, so a push to `main` with
 code changes runs the coverage jobs. The last job, `ci-ok`, runs on pull
 requests only. It is the
@@ -526,11 +527,9 @@ the pull request is not a draft and the diff changes `.goreleaser.yaml`,
 `scripts/tool-versions.env`, `ci.yml` or a file in `.github/actions/`, or deletes or renames `LICENSE`,
 `README.md`, the man page or a completion file. `release-snapshot` runs only
 then, because it takes about 11 minutes. The release copies those four kinds of
-files by fixed names, so a change to their content cannot break it. `changes`
-sets `sbom=true` in the same cases and also when the diff changes
-`docs/pyproject.toml` or `docs/uv.lock`, because `syft scan dir:.` reads the Go
-module graph and the Python files of the docs site. The `sbom` job runs only
-then. Mark the
+files by fixed names, so a change to their content cannot break it. The `sbom`
+job also runs only when `snapshot=true`. It runs `make sbom`, and the SBOM lists
+the Go module graph only, so the files of the docs site do not start it. Mark the
 pull request ready for review when the review rounds settle: the
 `ready_for_review` event starts the full run once. `changes` reads the draft
 state from the API, not from the event, so a push just before "ready for review"

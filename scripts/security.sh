@@ -17,7 +17,6 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 govulncheck() { go run "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION" "$@"; }
 osv-scanner() { go run "github.com/google/osv-scanner/v2/cmd/osv-scanner@$OSV_SCANNER_VERSION" "$@"; }
 gitleaks() { go run "github.com/zricethezav/gitleaks/v8@$GITLEAKS_VERSION" "$@"; }
-syft() { go run "github.com/anchore/syft/cmd/syft@$SYFT_VERSION" "$@"; }
 
 command -v uvx >/dev/null 2>&1 || { echo "security: uvx not found; install uv" >&2; exit 1; }
 
@@ -56,10 +55,8 @@ step "zizmor (GitHub Actions workflow audit)"
 uvx "zizmor==$ZIZMOR_VERSION" .github/ || { echo "security: zizmor reported workflow findings" >&2; fail=1; }
 
 step "syft (SBOM -> dist/)"
-mkdir -p dist
-if syft scan dir:. -q -o "spdx-json=dist/sbom.spdx.json" -o "cyclonedx-json=dist/sbom.cdx.json"; then
-  echo "wrote dist/sbom.spdx.json and dist/sbom.cdx.json"
-else
+# The Makefile target sbom holds the syft options. It lists the Go module graph only.
+if ! make --no-print-directory sbom; then
   echo "security: syft failed to generate an SBOM (non-fatal)" >&2
 fi
 
