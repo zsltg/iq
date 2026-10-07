@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.38.3 - 2026-10-07
+### Bug Fixes
+- **deps:** import the zsltg/rdb fork without a replace directive (#103) (51f893d)
+
+
 ## v0.38.2 - 2026-10-07
 ### Bug Fixes
 - **cassandra:** split the userinfo at the last @ and decode it (GHSA-67pr-hcv5-v9hp) (#93) (aef36b8)
