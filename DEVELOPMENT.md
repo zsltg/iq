@@ -528,8 +528,9 @@ the pull request is not a draft and the diff changes `.goreleaser.yaml`,
 `README.md`, the man page or a completion file. `release-snapshot` runs only
 then, because it takes about 11 minutes. The release copies those four kinds of
 files by fixed names, so a change to their content cannot break it. The `sbom`
-job also runs only when `snapshot=true`. It runs `make sbom`, and the SBOM lists
-the Go module graph only, so the files of the docs site do not start it. Mark the
+job runs when `snapshot=true` or when the diff changes `Makefile` (the `sbom`
+output of `changes`). It runs `make sbom`, which holds the syft options. The SBOM
+lists the Go module graph only, so the files of the docs site do not start it. Mark the
 pull request ready for review when the review rounds settle: the
 `ready_for_review` event starts the full run once. `changes` reads the draft
 state from the API, not from the event, so a push just before "ready for review"

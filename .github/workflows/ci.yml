@@ -152,8 +152,9 @@ jobs:
   # matrix, e2e, the release snapshot, capabilities, fuzzing and the mutation gate)
   # run only then, so review rounds on a draft do not start them on every push. The
   # coverage output is the same without the pull request condition, and a draft
-  # does not run the coverage jobs either. The sbom job reads the output snapshot,
-  # because syft lists the Go module graph only. The sbom job does not read full.
+  # does not run the coverage jobs either. The output sbom is true when snapshot is
+  # true or the Makefile changed, because the Makefile target sbom holds the syft
+  # options. The sbom job does not read full.
   changes:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -168,6 +169,7 @@ jobs:
       docs: ${{ github.event_name == 'pull_request' && steps.diff.outputs.docs == 'true' }}
       draft: ${{ steps.draft.outputs.draft }}
       full: ${{ github.event_name == 'pull_request' && steps.diff.outputs.code == 'true' && steps.draft.outputs.draft != 'true' }}
+      sbom: ${{ github.event_name == 'pull_request' && (steps.diff.outputs.release == 'true' || steps.diff.outputs.makefile == 'true') && steps.draft.outputs.draft != 'true' }}
       snapshot: ${{ github.event_name == 'pull_request' && steps.diff.outputs.release == 'true' && steps.draft.outputs.draft != 'true' }}
     steps:
       - *harden-base
@@ -207,10 +209,12 @@ jobs:
           release=true
           cache=true
           docs=true
+          makefile=true
           if files="$(git diff --name-only "$BASE...$HEAD")"; then
             code=false
             release=false
             docs=false
+            makefile=false
             # A push always builds the cache. A pull request builds it only when
             # the change can alter the cache key or the build steps.
             if [ "$EVENT" != push ]; then cache=false; fi
@@ -230,6 +234,11 @@ jobs:
               # workflow steps that build it, this file.
               case "$f" in
                 docs/* | .github/workflows/ci.yml) docs=true ;;
+              esac
+              # The Makefile target sbom holds the syft options, and the sbom
+              # job runs it. goreleaser does not read the Makefile.
+              case "$f" in
+                Makefile) makefile=true ;;
               esac
               case "$f" in
                 '') ;;
@@ -258,9 +267,10 @@ jobs:
             echo "cache=$cache"
             echo "code=$code"
             echo "docs=$docs"
+            echo "makefile=$makefile"
             echo "release=$release"
           } >> "$GITHUB_OUTPUT"
-          echo "changes: code=$code release=$release cache=$cache docs=$docs"
+          echo "changes: code=$code release=$release cache=$cache docs=$docs makefile=$makefile"
           printf '%s\n' "$files"
 
   # Builds the Go cache that the other jobs restore (see the comment at the top of
@@ -851,11 +861,12 @@ jobs:
 
   # Generation-only: proves the SBOMs build. The job runs `make sbom`, the one place
   # that holds the syft options. It uploads no artifact, because the release builds
-  # its own SBOM. The SBOM lists the Go module graph only. A release
-  # input changes that graph, so the job runs when the output snapshot is true.
+  # its own SBOM. The SBOM lists the Go module graph only. A release input changes
+  # that graph, and a Makefile change can break the recipe, so the job runs when
+  # the output sbom is true.
   sbom:
     needs: changes
-    if: needs.changes.outputs.snapshot == 'true'
+    if: needs.changes.outputs.sbom == 'true'
     runs-on: ubuntu-latest
     steps:
       - *harden-go
