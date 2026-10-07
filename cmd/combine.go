@@ -204,8 +204,9 @@ func runCombine(cmd *cobra.Command, cfg *config, args []string, with string) err
 		cfg.log().Debug("from source", "handle", st.spec.handle)
 		cfg.logStagePlan(st.spec.url, st.spec.handle, st.spec.filter)
 		// The stage config carries the logger so its store decorator and scan
-		// records fire too; the trace writer is already the log-teed sink.
-		vals, err := collectSource(ctx, &config{url: st.spec.url, address: st.spec.address, trace: cfg.trace, decimalMode: cfg.decimalMode, logger: cfg.logger}, st.spec.filter, opts)
+		// records fire too, and the cache flags so a file:// stage obeys them.
+		// The trace writer is already the log-teed sink.
+		vals, err := collectSource(ctx, st.spec.runConfig(cfg), st.spec.filter, opts)
 		if err != nil {
 			if errors.Is(err, query.ErrScanNotAllowed) {
 				return fmt.Errorf("source %q: %w; add --unbounded or give the spec a .[]-rooted filter", st.spec.handle, err)

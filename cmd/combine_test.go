@@ -405,6 +405,21 @@ func TestCombineRunsEveryStage(t *testing.T) {
 	require.Equal(t, 2, strings.Count(out, `"msg":"query plan"`), "one plan record per stage")
 }
 
+// TestCombineStageCarriesCacheFlags checks that --no-cache and --no-cache-index
+// reach the config of each stage, so a file:// stage obeys them.
+func TestCombineStageCarriesCacheFlags(t *testing.T) {
+	opened := useCombDriver(t)
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "combine", "a=.[]", "b=.[]", "--with", ".", "--no-cache", "--no-cache-index")
+	require.NoError(t, err)
+
+	require.Len(t, *opened, 2)
+	for _, c := range *opened {
+		require.True(t, c.noCache, "--no-cache reaches the stage")
+		require.True(t, c.noCacheIndex, "--no-cache-index reaches the stage")
+	}
+}
+
 // TestCombineStageFailures covers the errors a stage reports.
 func TestCombineStageFailures(t *testing.T) {
 	t.Run("an open failure names the source and keeps the cause", func(t *testing.T) {
