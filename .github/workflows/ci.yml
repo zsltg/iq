@@ -21,11 +21,14 @@
 # e2e live flows bring up a single compose service each.
 name: CI
 
-# push / pull_request drive the fast per-change gates. The `changes` job decides
-# whether the change touches code. If it does not (for example docs or another
-# workflow only), the Go jobs are skipped: a job that its `if:` skips passes a
-# required check. Never use paths-ignore for this, because then the required checks
-# never report and the pull request cannot merge. The weekly schedule and
+# pull_request drives the per-change gates. The `changes` job decides whether the
+# change touches code. If it does not (for example docs or another workflow only),
+# the Go jobs are skipped: a job that its `if:` skips passes a required check.
+# Never use paths-ignore for this, because then the required checks never report and
+# the pull request cannot merge. The ruleset of main requires a pull request for each
+# change, so each pushed tree was tested as a pull request. A push to main therefore
+# runs only the coverage jobs, which keep the Codecov baseline of main, and the
+# go-cache job, which saves the Go cache. The weekly schedule and
 # manual dispatch drive the `deep-*` jobs (fresh CVE data, the sharded mutation
 # scan of the packages that changed, the badge), gated off the fast jobs so a
 # schedule run does not re-lint.
@@ -72,14 +75,15 @@ jobs:
   # cannot be required when the changes job skips them. This job needs every
   # per-change job, runs also when one of them fails, and fails when one of them
   # failed or was cancelled. A skipped job passes. A new per-change job goes into
-  # this needs list, and the ruleset does not change. On a draft pull request the
+  # this needs list, and the ruleset does not change. It runs on pull requests only,
+  # because a push to main has no required check. On a draft pull request the
   # slow jobs are skipped, so this job fails there: only the full run that starts
   # when the pull request is marked ready can pass it. It fails and does not skip
   # on purpose. GitHub counts a skipped job as a pass for a required check, and
   # the ready run creates its ci-ok check only after the jobs it needs end, so a
   # skipped draft ci-ok would let the pull request merge before the tests finish.
   ci-ok:
-    if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
+    if: always() && github.event_name == 'pull_request'
     needs: [changes, go-cache, lint, workflows, test, coverage-group, coverage, e2e, cross, release-snapshot, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -120,13 +124,19 @@ jobs:
   # Sets code=false only when every changed file is on the list of files that no Go
   # job reads. Any other file, an unknown base, or an error sets code=true, so an
   # unexpected case runs everything. If it fails, the jobs that need it are
-  # skipped, and ci-ok fails, which blocks the merge. It sets cache=true on a push
-  # and on a pull request that changes this file or the shared actions, so that
-  # the go-cache job builds with the new files. It also sets full=true when
-  # code=true and the pull request is not a draft: the slow jobs (the test matrix,
-  # coverage, e2e, cross builds, the release snapshot, SBOM, capabilities, fuzzing
-  # and the mutation gate) run only then, so review rounds on a draft do not start
-  # them on every push.
+  # skipped, and ci-ok fails, which blocks the merge. The diff step writes the raw
+  # results. The job outputs code, full, snapshot and docs are true only on a pull
+  # request, so a push to main skips the jobs that a pull request already ran. The
+  # output coverage reads the raw results, so a push with code changes keeps the
+  # coverage jobs. The step sets cache=true on a push and on a pull request that
+  # changes this file or the shared actions, so that the go-cache job builds with
+  # the new files. It sets docs=true when a changed file is under docs/ or is this
+  # file, so that the docs job builds the site only then. It also sets full=true
+  # when code=true and the pull request is not a draft: the slow jobs (the test
+  # matrix, e2e, cross builds, the release snapshot, SBOM, capabilities, fuzzing and
+  # the mutation gate) run only then, so review rounds on a draft do not start them
+  # on every push. The coverage output is the same without the pull request
+  # condition, and a draft does not run the coverage jobs either.
   changes:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -136,10 +146,12 @@ jobs:
       pull-requests: read # read the live draft state of the pull request
     outputs:
       cache: ${{ steps.diff.outputs.cache }}
-      code: ${{ steps.diff.outputs.code }}
+      code: ${{ github.event_name == 'pull_request' && steps.diff.outputs.code == 'true' }}
+      coverage: ${{ steps.diff.outputs.code == 'true' && steps.draft.outputs.draft != 'true' }}
+      docs: ${{ github.event_name == 'pull_request' && steps.diff.outputs.docs == 'true' }}
       draft: ${{ steps.draft.outputs.draft }}
-      full: ${{ steps.diff.outputs.code == 'true' && steps.draft.outputs.draft != 'true' }}
-      snapshot: ${{ steps.diff.outputs.release == 'true' && steps.draft.outputs.draft != 'true' }}
+      full: ${{ github.event_name == 'pull_request' && steps.diff.outputs.code == 'true' && steps.draft.outputs.draft != 'true' }}
+      snapshot: ${{ github.event_name == 'pull_request' && steps.diff.outputs.release == 'true' && steps.draft.outputs.draft != 'true' }}
     steps:
       - name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -187,9 +199,11 @@ jobs:
           code=true
           release=true
           cache=true
+          docs=true
           if files="$(git diff --name-only "$BASE...$HEAD")"; then
             code=false
             release=false
+            docs=false
             # A push always builds the cache. A pull request builds it only when
             # the change can alter the cache key or the build steps.
             if [ "$EVENT" != push ]; then cache=false; fi
@@ -204,6 +218,11 @@ jobs:
               esac
               case "$f" in
                 .github/workflows/ci.yml | .github/actions/*) cache=true ;;
+              esac
+              # The docs job builds the site, so it reads docs/ and, for the
+              # workflow steps that build it, this file.
+              case "$f" in
+                docs/* | .github/workflows/ci.yml) docs=true ;;
               esac
               case "$f" in
                 '') ;;
@@ -231,9 +250,10 @@ jobs:
           {
             echo "cache=$cache"
             echo "code=$code"
+            echo "docs=$docs"
             echo "release=$release"
           } >> "$GITHUB_OUTPUT"
-          echo "changes: code=$code release=$release cache=$cache"
+          echo "changes: code=$code release=$release cache=$cache docs=$docs"
           printf '%s\n' "$files"
 
   # Builds the Go cache that the other jobs restore (see the comment at the top of
@@ -411,7 +431,7 @@ jobs:
   # `# shellcheck disable=` line with a reason. A finding with no inline form goes
   # into .github/actionlint.yaml.
   workflows:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
@@ -519,7 +539,7 @@ jobs:
   # that no other group names, so a new package is always in one group.
   coverage-group:
     needs: changes
-    if: needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.coverage == 'true'
     name: coverage (${{ matrix.group }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -593,9 +613,10 @@ jobs:
 
   # The required check. It runs also when a group fails, and then fails too, so
   # a failed group can never show as a skipped (passing) coverage check. When the
-  # change touches no code, it is skipped with the groups, which passes the check.
+  # change touches no code, or the pull request is a draft, it is skipped with the
+  # groups, which passes the check. It also runs on a push to main with code changes.
   coverage:
-    if: always() && needs.changes.outputs.full == 'true'
+    if: always() && needs.changes.outputs.coverage == 'true'
     needs: [changes, coverage-group]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -847,7 +868,7 @@ jobs:
   # OSV complements govulncheck: the whole dependency graph regardless of symbol
   # reachability, and --licenses gates every dependency against the allowlist.
   osv:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
@@ -992,7 +1013,7 @@ jobs:
         run: bash scripts/commit-emails.sh "$BASE..$HEAD"
 
   secrets:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
@@ -1553,7 +1574,7 @@ jobs:
   # here even though none of the recorder (expect, asciinema, agg, a patched Nerd Font)
   # is installed; recording stays manual, catching staleness does not.
   demo-check:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
@@ -1573,10 +1594,12 @@ jobs:
       - name: Demo stamp
         run: bash scripts/demo/stamp.sh check
 
-  # Build the Zensical docs site on every change so a broken page fails the PR;
-  # docs.yml owns the GitHub Pages deploy on pushes to main.
+  # Build the Zensical docs site on a pull request that changes docs/ or this file,
+  # so that a broken page fails the PR. A change to this file can alter the build
+  # steps. docs.yml owns the GitHub Pages deploy on pushes to main.
   docs:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
