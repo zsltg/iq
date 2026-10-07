@@ -112,6 +112,6 @@ jobs:
     needs: goreleaser
     permissions:
       contents: read
-    uses: $/.github/workflows/install-smoke.yml
+    uses: ./.github/workflows/install-smoke.yml
     with:
       tag: ${{ github.ref_name }}

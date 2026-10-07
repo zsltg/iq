@@ -768,24 +768,23 @@ Posture and upkeep around the pipeline, all on GitHub:
   pinned once as `ZIZMOR_VERSION` in `scripts/tool-versions.env`, and Renovate
   tracks it. `make security` runs it locally, the `workflows` job runs it on
   every push and pull request, and `deep-scan` re-runs it weekly against fresh
-  advisory data. There is no config file, so an accepted finding is an inline
-  `# zizmor: ignore[<audit>]` comment with a reason on the offending line. Two
-  exist. In `ci.yml`, the `capabilities` and `mutate-diff` jobs keep the
-  checkout credential because they fetch the pull-request base branch.
+  advisory data. An accepted finding is an inline `# zizmor: ignore[<audit>]`
+  comment with a reason on the offending line. Two exist. In `ci.yml`, the
+  `capabilities` and `mutate-diff` jobs keep the checkout credential because
+  they fetch the pull-request base branch. `.github/zizmor.yml` turns off one
+  audit everywhere: `self-repository`, which asks for the form `$/.github/...`.
+  OpenSSF Scorecard counts that form as an unpinned third-party action, so the
+  workflows use `./.github/...`. The two forms run the same code, because no
+  workflow checks out a commit other than the one that started it.
 - [actionlint](https://github.com/rhysd/actionlint) checks that the workflow files
   are correct: the schema, the types in `${{ }}` expressions, `needs` and `outputs`
   references, action inputs, and the `run` blocks through `shellcheck`. The version
   is pinned once as `ACTIONLINT_VERSION` in `scripts/tool-versions.env`, and
   Renovate tracks it. `make check` runs it locally, and the `workflows` job runs it
-  on every push and pull request, next to zizmor. Two kinds of finding are accepted.
+  on every push and pull request, next to zizmor. One finding is accepted.
   In `ci.yml`, the `test` job leaves `$RACE` unquoted on purpose, because it is
   empty off Linux and must disappear from the command. It has an inline
-  `# shellcheck disable=SC2086` line. Workflow files call a local workflow or
-  action as `$/.github/...`, which zizmor asks for and actionlint does not know
-  (rhysd/actionlint#732). `release.yml` does it for `install-smoke.yml`, and
-  `ci.yml`, `codeql.yml` and `mutant-proof.yml` do it for the action
-  `.github/actions/setup-go`. `.github/actionlint.yaml` ignores these messages for
-  each file. Remove the entries when an actionlint release accepts the form.
+  `# shellcheck disable=SC2086` line.
 - `renovate.json` drives Renovate (the Mend GitHub App). It updates these items:
   the Go modules, the GitHub Actions (pinned by digest), the Go toolchain, the
   tool pins, the test images in `compose.yaml`, and the docs tooling in
