@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+# Reject a commit message that holds an email address which is not the author
+# address, the committer address or an allowed no-reply address.
+#
+# pre-commit and pre-push compare the author and committer fields, but they do
+# not read the message. A hand-typed Signed-off-by line can put a private
+# address into history. scripts/commit-emails.sh has the rule and the allowlist.
+# git commit -s adds the sign-off with your configured address.
+#
+# Deliberate override: commit with --no-verify.
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+exec bash "$root/scripts/commit-emails.sh" --message "$1"

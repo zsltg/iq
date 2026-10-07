@@ -445,7 +445,7 @@ file with the fix as the regression seed. Never delete it to make a run pass.
 make hooks   # per checkout, worktrees included
 ```
 
-Points `core.hooksPath` at the committed `.githooks`. Both hooks compare a
+Points `core.hooksPath` at the committed `.githooks`. Two hooks compare a
 commit's address against the `user.email` configured in a config file, read
 with `--show-origin` so a `git -c user.email=...` cannot move both sides of the
 comparison at once. `pre-commit` resolves the identity the commit will carry,
@@ -456,6 +456,23 @@ bypasses hooks, a replayed rebase, or history written before the hooks existed.
 `pre-push` skips a commit that a remote-tracking ref already holds, because it is
 already published. This lets a squash merge from GitHub, whose committer is
 `noreply@github.com`, reach `origin` and the next pull request branch.
+The third hook, `commit-msg`, reads the message text. Every email address in a
+commit message must be the author or committer address of that same commit, or
+match the allowlist: `*@users.noreply.github.com`, `noreply@github.com`,
+`noreply@anthropic.com` and `noreply@openai.com`. The rule is in
+`scripts/commit-emails.sh`, and the allowlist is in that file only. The first
+case lets an outside contributor sign off with their own public address. A
+hand-typed `Signed-off-by:` line with another address fails. Do not type an
+address into a message: `git commit -s` adds the sign-off with your configured
+address. The script reads non-ASCII addresses too. It checks the whole
+message file, comment lines and the text after a scissors line included, because
+the cleanup mode of git decides what stays in the commit. A foreign address fails
+even when git would strip its line. `pre-push` runs the same script over the commits that it publishes, and
+the `dco` job runs it over the pull request range. A later commit does not remove an
+address from history, so a failure on existing commits needs a rewrite of each
+named message: `git commit --amend -s` for the last commit, or a rebase that
+edits an older one. A pushed commit then needs a force-push. `bash scripts/test/commit-emails.sh`
+tests the script, and `make check` runs it.
 The address a repository publishes is the one in its config, and removing a
 different one from published history costs a force-push over every clone. A
 deliberate override, such as applying someone else's patch, passes
@@ -474,15 +491,27 @@ containers, and the run takes much longer.
 
 `.github/workflows/ci.yml` runs on the GitHub mirror only (the primary remote has
 Actions off; `docs.yml` deploys the site and `release.yml` publishes releases,
-both guarded the same way). Every pull request and every push to `main` runs one
-job per gate. A pull request branch runs through `pull_request` only, not also
-through `push`. The first job, `changes`, decides whether the change touches code.
+both guarded the same way). Every pull request runs one job per gate. A pull
+request branch runs through `pull_request` only, not also through `push`. The
+ruleset of `main` requires a pull request for each change, so each pushed tree
+was tested as a pull request. A push to `main` runs only `changes`, the coverage
+jobs and `go-cache`. The coverage jobs keep the Codecov baseline of `main`, and
+`go-cache` saves the Go cache. The first job, `changes`, decides whether the
+change touches code.
 It sets `code=false` only when every changed file is on a short list that no Go job
 reads (Markdown files outside `skills/`, `docs/` outside the man page and the
-completions, `.github/` except `ci.yml`, `.agents/`, and the app configs). Then the
-Go jobs are skipped, and a skipped job passes its required check, so a docs-only or
-workflow-only pull request takes about 2 minutes. Any other file, a change to
-`ci.yml` itself, or a diff that fails runs every job. The last job, `ci-ok`, is the
+completions, `.github/` except `ci.yml` and `.github/actions/`, `.agents/`, and the app configs). Then the
+Go jobs are skipped, and a skipped job passes its required check. The `docs` job
+builds the site and runs only when `changes` sets `docs=true`. That happens when
+the diff changes a file under `docs/` or `ci.yml`, or when the diff fails. A
+pull request that changes only a Markdown file outside `docs/` runs the fast
+jobs only, and it takes about 2 minutes. A pull request that changes a file
+under `docs/` also builds the site. Any other file, a change to `ci.yml` or to a
+shared action in `.github/actions/`, or a diff that fails runs every job. The
+`code`, `full`, `snapshot` and `docs` outputs of `changes` are true only on a
+pull request. The `coverage` output ignores the event, so a push to `main` with
+code changes runs the coverage jobs. The last job, `ci-ok`, runs on pull
+requests only. It is the
 only required check of the `main` ruleset: it needs every per-change job and fails
 when one of them failed or was cancelled (a skipped job passes). The per-job checks
 cannot be required themselves, because GitHub reports a skipped matrix job under
@@ -494,7 +523,7 @@ coverage jobs, `e2e`, `cross`, `sbom`, `capabilities`, `mutate-diff` and `fuzz`)
 run only then, and `ci-ok` fails on a draft. `changes` sets `snapshot=true` when
 the pull request is not a draft and the diff changes `.goreleaser.yaml`,
 `go.mod`, `go.sum`, `scripts/third-party-licenses.sh`,
-`scripts/tool-versions.env` or `ci.yml`, or deletes or renames `LICENSE`,
+`scripts/tool-versions.env`, `ci.yml` or a file in `.github/actions/`, or deletes or renames `LICENSE`,
 `README.md`, the man page or a completion file. `release-snapshot` runs only
 then, because it takes about 11 minutes. The release copies those four kinds of
 files by fixed names, so a change to their content cannot break it. Mark the
@@ -507,7 +536,7 @@ would let a pull request merge while its full run is still in progress. The runs
 of one pull request share a concurrency group, so a new push cancels the run of
 the previous push. A push to `main` is never cancelled.
 The jobs per gate:
-`lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
+`go-cache` (builds the Go cache, see below), `lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
 Linux, macOS and Windows, with `-race` on Linux), `coverage` (four `coverage (<group>)` jobs each test a
 group of packages on their own runner, then `coverage` joins the partial profiles,
 makes sure that each package is in exactly one group, applies the floor, and does
@@ -525,8 +554,10 @@ on an escape, `mutago-baseline.candidate.json`, so the ids of the escapes need
 no local re-run), `workflows` (zizmor and actionlint over
 `.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target), `dco`
 (`scripts/dco.sh`, a `Signed-off-by:` for the author of each pull request commit,
+and `scripts/commit-emails.sh`, no unallowed email address in a commit message,
 on pull requests only) and
-`docs` (site build). The
+`docs` (site build). The jobs `workflows`, `osv`, `secrets`, `demo-check` and
+`dco` run on pull requests only. The
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
 workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
 (`deep-scan`), give every fuzz target five minutes instead of twenty seconds
@@ -616,6 +647,38 @@ without `IQ_HBASE_URL`. The Linux leg of the `test` job runs with `-race`; the
 macOS and Windows legs do not, because the race detector needs cgo there. The
 `cmd` tests that run the root command are not parallel: its PreRun writes the
 process-wide `color.NoColor`, which parallel formatter tests read.
+
+The Go cache holds the module cache and the build cache. One composite action,
+`.github/actions/setup-go`, installs Go and restores the cache. Each job that
+needs Go runs `actions/checkout` first and then this action, because the cache
+key hashes files of the workspace. The action does not save. The `codeql.yml` and
+`mutant-proof.yml` workflows use it too. `release.yml` and `install-smoke.yml`
+keep `actions/setup-go` with no cache. The key is `go-<OS>-<architecture>-<hash>`.
+The hash covers `go.mod`, `go.sum`, `scripts/tool-versions.env`, `ci.yml` and the
+action file. The key has no commit, so one entry exists for each set of
+dependencies. When no entry matches, a job restores the newest entry of the same
+OS and architecture (the restore key `go-<OS>-<architecture>-`) and compiles the
+rest.
+
+The `go-cache` job is the only job that saves. It runs on a push to `main`, and on
+a pull request that is not a draft when the diff changes `ci.yml` or
+`.github/actions/` (the `cache` output of `changes`). On a push, it saves one entry
+for each runner when the exact key does not exist. On a pull request, it builds and
+saves nothing, so a mistake in a build step fails the pull request and not
+`main`. It looks up the exact key only and never restores the fallback entry,
+because that entry would carry every old module version into the new one, and Go
+never trims the module cache. The Linux leg builds the variants that the jobs
+use: `go build`, `CGO_ENABLED=0 go build -trimpath`, and the test binaries of a
+plain build, of `-race` and of `-covermode=atomic -coverpkg=./...`. It also runs
+each fuzz target for one iteration, and compiles each tool of
+`scripts/tool-versions.env` with `go install`, with no run, because a tool can
+call a host that the job blocks. The `test` job sets `CGO_ENABLED=1` on Linux and
+`0` on macOS and Windows, and builds with `-trimpath` there, so that these legs
+use the cache entry of `go-cache`. `release-snapshot` gets no gain from the
+cache, because goreleaser builds targets that the cache does not hold. The old
+`setup-go-*` entries expire after seven days without a use. A maintainer can
+delete them earlier with `gh cache delete`.
+
 Tool versions are pinned once in `scripts/tool-versions.env`. Each workflow step
 that runs a tool reads that file first. The pins of mutago and capslock stay in
 `scripts/mutation-gate.sh` and `scripts/capabilities.sh`.
@@ -658,9 +721,12 @@ Posture and upkeep around the pipeline, all on GitHub:
   job (`coverage-group`, `deep-mutate`, `mutant-proof`) has one list for all legs,
   so add the host there. When a new tool or compose image enters a job, add its
   hosts in the same change. Do not add a host that you did not check.
-  Every job that runs `actions/setup-go` also allows `go.dev:443` and
-  `dl.google.com:443`. The action downloads Go from there when the Go version
-  is not yet in the runner cache or in the GitHub version manifest.
+  Every job that runs `actions/setup-go` or the shared action
+  `.github/actions/setup-go` also allows `go.dev:443` and `dl.google.com:443`.
+  The action downloads Go from there when the Go version is not yet in the runner
+  cache or in the GitHub version manifest. The shared action also needs
+  `*.actions.githubusercontent.com:443` and `*.blob.core.windows.net:443`, which
+  serve the cache.
 - `.github/workflows/codeql.yml` runs CodeQL (the `security-and-quality` queries
   over the Go code) on every pull request, every push to `main` and weekly, and
   uploads the results to the Security tab. It is not a required check:
@@ -681,12 +747,15 @@ Posture and upkeep around the pipeline, all on GitHub:
   references, action inputs, and the `run` blocks through `shellcheck`. The version
   is pinned once as `ACTIONLINT_VERSION` in `scripts/tool-versions.env`, and
   Renovate tracks it. `make check` runs it locally, and the `workflows` job runs it
-  on every push and pull request, next to zizmor. Two findings are accepted. In
-  `ci.yml`, the `test` job leaves `$RACE` unquoted on purpose, because it is empty
-  off Linux and must disappear from the command. It has an inline
-  `# shellcheck disable=SC2086` line. In `release.yml`, the `smoke` job calls
-  `install-smoke.yml` as `$/.github/...`, which zizmor asks for and actionlint
-  does not know. `.github/actionlint.yaml` ignores that one message.
+  on every push and pull request, next to zizmor. Two kinds of finding are accepted.
+  In `ci.yml`, the `test` job leaves `$RACE` unquoted on purpose, because it is
+  empty off Linux and must disappear from the command. It has an inline
+  `# shellcheck disable=SC2086` line. Workflow files call a local workflow or
+  action as `$/.github/...`, which zizmor asks for and actionlint does not know
+  (rhysd/actionlint#732). `release.yml` does it for `install-smoke.yml`, and
+  `ci.yml`, `codeql.yml` and `mutant-proof.yml` do it for the action
+  `.github/actions/setup-go`. `.github/actionlint.yaml` ignores these messages for
+  each file. Remove the entries when an actionlint release accepts the form.
 - `renovate.json` drives Renovate (the Mend GitHub App). It updates these items:
   the Go modules, the GitHub Actions (pinned by digest), the Go toolchain, the
   tool pins, the test images in `compose.yaml`, and the docs tooling in
