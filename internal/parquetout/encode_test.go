@@ -413,7 +413,7 @@ func TestAppendScalarValues(t *testing.T) {
 		require.NoError(t, appendVal(b, &enc{kind: encFloat}, 7, "c"))
 		arr := b.(*array.Float64Builder).NewFloat64Array()
 		defer arr.Release()
-		require.Equal(t, 7.0, arr.Value(0))
+		require.InDelta(t, 7.0, arr.Value(0), 0)
 	})
 	t.Run("bool", func(t *testing.T) {
 		b := builderFor(t, arrow.FixedWidthTypes.Boolean)
