@@ -1,0 +1,56 @@
+package file
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// TestURIParamsAreRead makes sure that every option in the catalogue changes the
+// parsed result, and that every row below names a catalogue option.
+func TestURIParamsAreRead(t *testing.T) {
+	const base = "file:///dumps/d.json"
+	tests := []struct{ param, with string }{
+		{paramFormat, base + "?format=bson"},
+		{paramTypes, base + "?types=a=int"},
+		{paramKeys, base + "?keys=pk"},
+		{paramColumns, base + "?columns=a,b"},
+		{paramLabel, base + "?label=Person"},
+		{paramRel, base + "?rel=KNOWS"},
+		{paramKey, base + "?key=id"},
+	}
+	var names []string
+	for _, p := range URIParams {
+		names = append(names, p.Name)
+	}
+	var rows []string
+	for _, tt := range tests {
+		rows = append(rows, tt.param)
+	}
+	require.ElementsMatch(t, names, rows, "one row for each catalogue option")
+
+	_, unsetFormat, unsetHints, err := parseFileURL(base)
+	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.param, func(t *testing.T) {
+			_, format, hints, err := parseFileURL(tt.with)
+			require.NoError(t, err)
+			require.NotEqual(t, []any{unsetFormat, unsetHints}, []any{format, hints})
+		})
+	}
+}
+
+// TestURIParamsClosedValues feeds every listed value of a catalogue option to the
+// parser.
+func TestURIParamsClosedValues(t *testing.T) {
+	for _, p := range URIParams {
+		for _, v := range p.Values {
+			t.Run(p.Name+"="+v, func(t *testing.T) {
+				_, format, _, err := parseFileURL("file:///dumps/d.json?" + p.Name + "=" + v)
+				require.NoError(t, err)
+				require.NotEqual(t, FormatUnknown, format)
+				require.Equal(t, v, format.String(), "the listed value is the canonical name")
+			})
+		}
+	}
+}

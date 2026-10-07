@@ -50,20 +50,7 @@ func newAddCmd(cfg *config) *cobra.Command {
 			"elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://);\n" +
 			"-d/--driver asserts the expected driver.\n" +
 			"\n" +
-			"Each driver reads its own URI options. MongoDB: a default collection as\n" +
-			"?collection= (`mongodb://host/db?collection=orders`). Cassandra: a default\n" +
-			"table as ?table= (`cassandra://host/keyspace?table=orders`). DynamoDB: the\n" +
-			"region is the host, a default table as ?table=\n" +
-			"(`dynamodb://us-east-1/?table=orders`, credentials from the AWS default\n" +
-			"chain). HBase: the host is the ZooKeeper quorum, a default table as ?table=\n" +
-			"(`hbase://host:2181/?table=books`, cell encodings declared with\n" +
-			"?types=cf:age=long). CouchDB: the host is the server, a default database as\n" +
-			"?database= (`couchdb://host:5984/?database=orders`). Couchbase: the host is\n" +
-			"the cluster, a bucket as ?bucket= with an optional scope.collection as\n" +
-			"?collection= (`couchbase://host/?bucket=iq&collection=sales.orders`). Neo4j:\n" +
-			"the host is the bolt server, a default node label as ?label= (or a\n" +
-			"relationship type as ?rel=). Elasticsearch and OpenSearch: a default index as\n" +
-			"?index= (`elasticsearch://host:9200/?index=books`).\n" +
+			uriOptionsHelp() + "\n" +
 			"\n" +
 			"Handles may be grouped with '/' (`iq add -n prod/books mongodb://…`). -p\n" +
 			"prompts for the URI password (or reads it from stdin). The password goes to the\n" +

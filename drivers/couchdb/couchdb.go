@@ -105,7 +105,7 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	q := u.Query()
 	db := address
 	if db == "" {
-		db = q.Get("database")
+		db = q.Get(paramDatabase)
 	}
 	if db == "" {
 		// Lenient: accept the database in the path too (couchdb://host/mydb), the

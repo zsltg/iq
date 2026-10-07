@@ -222,20 +222,16 @@ func lineWith(t *testing.T, out, sub string) string {
 	return ""
 }
 
-// TestRegistryAddressParams pins the registry invariants the handle derivation and
+// TestRegistryAddressParams pins the registry invariant the handle derivation and
 // the keyspace guard both rely on: a backend is addressable exactly when it
-// declares a keyspace param, and only a keyspace-less backend claims query params
-// of its own.
+// declares a keyspace param.
 func TestRegistryAddressParams(t *testing.T) {
 	for _, d := range drivers {
 		t.Run(d.name, func(t *testing.T) {
-			require.Equal(t, d.addressable, len(d.addressParams) > 0,
+			require.Equal(t, d.addressable, len(d.addressParams()) > 0,
 				"addressable and addressParams must agree")
-			for _, p := range d.addressParams {
+			for _, p := range d.addressParams() {
 				require.NotEmpty(t, p, "a keyspace param name must not be empty")
-			}
-			if len(d.addressParams) > 0 {
-				require.Empty(t, d.urlParams, "a keyspace-bearing backend owns its whole query string")
 			}
 		})
 	}
@@ -293,7 +289,7 @@ func TestDriverRegistryCapabilities(t *testing.T) {
 			}
 			require.Equal(t, tt.name, d.name)
 			require.Equal(t, tt.addressable, d.addressable)
-			require.Equal(t, tt.addressParams, d.addressParams)
+			require.Equal(t, tt.addressParams, d.addressParams())
 			require.Equal(t, tt.verifiesOnOpen, d.verifiesOnOpen)
 			require.Equal(t, tt.filtersScan, d.filtersScan)
 			require.NotNil(t, d.explainPlan)
@@ -389,4 +385,130 @@ func TestDriverLsFlags(t *testing.T) {
 		require.Contains(t, out, "driver: mongo")
 		require.NotContains(t, out, "DRIVER")
 	})
+}
+
+// TestURLAddressName pins which keyspace param a URI names, most specific first,
+// so the choice stays the same when the registry derives its param lists.
+func TestURLAddressName(t *testing.T) {
+	tests := []struct {
+		name string
+		uri  string
+		want string
+	}{
+		{"mongo collection", "mongodb://h/db?collection=orders", "orders"},
+		{"couchbase collection beats bucket", "couchbase://h/?bucket=iq&collection=sales.orders", "sales.orders"},
+		{"couchbase bucket alone", "couchbase://h/?bucket=iq", "iq"},
+		{"neo4j label beats rel", "neo4j://h/?rel=KNOWS&label=Movie", "Movie"},
+		{"neo4j rel beats database", "neo4j://h/?database=movies&rel=KNOWS", "KNOWS"},
+		{"neo4j database alone", "neo4j://h/?database=movies", "movies"},
+		{"neo4j key is not a keyspace", "neo4j://h/?key=id", ""},
+		{"cassandra consistency is not a keyspace", "cassandra://h/ks?consistency=one", ""},
+		{"mongo ignores a table param of another backend", "mongodb://h/db?table=orders", ""},
+		{"redis names no keyspace", "redis://h/0?collection=orders", ""},
+		{"file label is not a keyspace", "file:///d.json?label=Movie", ""},
+		{"unknown scheme", "postgres://h/db?table=x", ""},
+		{"unparseable uri", "mongodb://%zz@h/db?collection=orders", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, urlAddressName(tt.uri))
+		})
+	}
+}
+
+// TestForeignAddressParam pins the keyspace guard: a keyspace-less backend
+// rejects a keyspace spelling except the params it reads itself.
+func TestForeignAddressParam(t *testing.T) {
+	tests := []struct {
+		name string
+		uri  string
+		want string
+	}{
+		{"redis collection", "redis://h/0?collection=orders", "collection"},
+		{"redis database", "redis://h/0?database=x", "database"},
+		{"redis bucket", "redis://h/0?bucket=x", "bucket"},
+		{"redis label", "redis://h/0?label=x", "label"},
+		{"redis rel", "redis://h/0?rel=x", "rel"},
+		{"redis unrelated param", "redis://h/0?db=1", ""},
+		{"file label is its own", "file:///d.json?label=a", ""},
+		{"file rel is its own", "file:///d.json?rel=a", ""},
+		{"file key is its own", "file:///d.json?key=a", ""},
+		{"file table is foreign", "file:///d.json?table=a", "table"},
+		{"file index after its own", "file:///d.json?label=a&index=b", "index"},
+		{"mongo owns its query", "mongodb://h/db?table=a", ""},
+		{"unknown scheme", "postgres://h/db?table=x", ""},
+		{"unparseable uri", "redis://%zz@h/0?table=x", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, foreignAddressParam(tt.uri))
+		})
+	}
+}
+
+// TestDriverParamCatalogue pins the shape of each driver catalogue: names are
+// unique and have a description, and a driver that has options has a sample URI.
+func TestDriverParamCatalogue(t *testing.T) {
+	for _, d := range drivers {
+		t.Run(d.name, func(t *testing.T) {
+			if len(d.params) > 0 {
+				require.NotEmpty(t, d.uriExample, "a driver with options needs a sample URI")
+			}
+			seen := map[string]bool{}
+			for _, p := range d.params {
+				require.NotEmpty(t, p.Name)
+				require.NotEmpty(t, p.Desc, "option %q needs a description", p.Name)
+				require.False(t, seen[p.Name], "option %q is listed twice", p.Name)
+				seen[p.Name] = true
+			}
+		})
+	}
+}
+
+// TestDriverParamViews pins the keyspace and own-param lists that the catalogue
+// yields, in catalogue order.
+func TestDriverParamViews(t *testing.T) {
+	tests := []struct {
+		name     string
+		keyspace []string
+		own      []string
+	}{
+		{"mongo", []string{"collection"}, nil},
+		{"cassandra", []string{"table"}, []string{"consistency"}},
+		{"dynamodb", []string{"table"}, []string{"endpoint"}},
+		{"hbase", []string{"table"}, []string{"znode", "types", "keytype"}},
+		{"couchdb", []string{"database"}, nil},
+		{"couchbase", []string{"collection", "bucket"}, nil},
+		{"neo4j", []string{"label", "rel", "database"}, []string{"key"}},
+		{"elasticsearch", []string{"index"}, nil},
+		{"opensearch", []string{"index"}, nil},
+		{"redis", nil, nil},
+		{"file", nil, []string{"format", "types", "keys", "columns", "label", "rel", "key"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d, ok := driverByName(tt.name)
+			require.True(t, ok)
+			require.Equal(t, tt.keyspace, d.addressParams())
+			require.Equal(t, tt.own, d.ownParams())
+		})
+	}
+}
+
+// TestAddHelpListsEveryParam makes sure that the long help of `iq add` names each
+// option of each catalogue, and each closed value.
+func TestAddHelpListsEveryParam(t *testing.T) {
+	// The help wraps its lines, so compare on words.
+	help := strings.Join(strings.Fields(newAddCmd(&config{}).Long), " ")
+	for _, d := range drivers {
+		for _, p := range d.params {
+			t.Run(d.name+"/"+p.Name, func(t *testing.T) {
+				require.Contains(t, help, "?"+p.Name+"=")
+				require.Contains(t, help, p.Desc)
+				for _, v := range p.Values {
+					require.Contains(t, help, v)
+				}
+			})
+		}
+	}
 }

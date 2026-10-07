@@ -157,7 +157,27 @@ Register a source from a connection URI (sq\-style)
 .PP
 Register a source from a connection URI, like `sq add`. The URI is the only positional argument; \-n/\-\-handle names the source, and when omitted a handle is derived from the URI: the keyspace it pins (?collection=, ?table=, ?index=, ...), else the MongoDB database or Cassandra keyspace name (its schema container), else the dump file's stem for a file:// source, else the driver. The backend is inferred from the URI scheme: redis:// (rediss://), mongodb:// (mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb:// (couchdbs://), couchbase:// (couchbases://), neo4j:// (neo4j+s://, bolt://), elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://); \-d/\-\-driver asserts the expected driver.
 .PP
-Each driver reads its own URI options. MongoDB: a default collection as ?collection= (`mongodb://host/db?collection=orders`). Cassandra: a default table as ?table= (`cassandra://host/keyspace?table=orders`). DynamoDB: the region is the host, a default table as ?table= (`dynamodb://us\-east\-1/?table=orders`, credentials from the AWS default chain). HBase: the host is the ZooKeeper quorum, a default table as ?table= (`hbase://host:2181/?table=books`, cell encodings declared with ?types=cf:age=long). CouchDB: the host is the server, a default database as ?database= (`couchdb://host:5984/?database=orders`). Couchbase: the host is the cluster, a bucket as ?bucket= with an optional scope.collection as ?collection= (`couchbase://host/?bucket=iq&collection=sales.orders`). Neo4j: the host is the bolt server, a default node label as ?label= (or a relationship type as ?rel=). Elasticsearch and OpenSearch: a default index as ?index= (`elasticsearch://host:9200/?index=books`).
+Each driver reads its own URI options. A keyspace option sets the default collection, table, or index of the source. When a URI sets more than one keyspace option, the first one in the list names the source.
+.PP
+mongo: mongodb://host/db?collection=orders. ?collection= (keyspace): default collection.
+.PP
+cassandra: cassandra://host/keyspace?table=orders. ?table= (keyspace): default table. ?consistency=: read consistency level, quorum by default. Values: any, one, two, three, quorum, all, local_quorum, each_quorum, local_one.
+.PP
+dynamodb: dynamodb://us\-east\-1/?table=orders. The host is the region. Credentials come from the AWS default chain. ?table= (keyspace): default table. ?endpoint=: endpoint override, for DynamoDB Local.
+.PP
+hbase: hbase://host:2181/?table=books. The host is the ZooKeeper quorum. ?table= (keyspace): default table, as [namespace:]table. ?znode=: ZooKeeper znode of the cluster, /hbase by default. ?types=: cell encodings, as family:qualifier=type pairs separated by commas. ?keytype=: encoding of the row key. Values: text, bytes, int, long, double, bool.
+.PP
+couchdb: couchdb://host:5984/?database=orders. ?database= (keyspace): default database.
+.PP
+couchbase: couchbase://host/?bucket=iq&collection=sales.orders. ?collection= (keyspace): default collection, as [scope.]collection. ?bucket= (keyspace): bucket.
+.PP
+neo4j: neo4j://host:7687/?label=Person. The host is the Bolt server. ?label= (keyspace): default node label. ?rel= (keyspace): default relationship type, instead of a label. ?database= (keyspace): database, neo4j by default. ?key=: property that keys the records, the element id by default.
+.PP
+elasticsearch: elasticsearch://host:9200/?index=books. ?index= (keyspace): default index.
+.PP
+opensearch: opensearch://host:9200/?index=books. ?index= (keyspace): default index.
+.PP
+file: file:///dumps/orders.bson?format=bson. ?format=: dump format, detected from the content by default. Values: jsonl, yaml, mongoexport, bson, rdb, dynamodb\-json, cassandra\-csv, neo4j\-json. ?types=: column types of a Cassandra CSV dump, as col=cqltype pairs separated by commas. ?keys=: primary key of a DynamoDB or Cassandra dump. ?columns=: column names of a Cassandra CSV dump without a header. ?label=: node label to read from a Neo4j dump. ?rel=: relationship type to read from a Neo4j dump. ?key=: property that keys the records of a Neo4j dump.
 .PP
 Handles may be grouped with '/' (`iq add \-n prod/books mongodb://...`). \-p prompts for the URI password (or reads it from stdin). The password goes to the OS keyring and is stripped from the stored URI. When no keyring is available, iq stores the password in the config file and prints a warning. \-\-store inline keeps it in the config file, and \-\-store keyring makes a missing keyring an error. \-a makes the new source active. The source is pinged before it is saved unless \-\-skip\-verify is set. Note: `iq add` is this command, which shadows jq's built\-in `add` filter: write the filter as `[ .a, .b ] | add`.
 .PP
