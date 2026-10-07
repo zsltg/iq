@@ -11,8 +11,10 @@
 # module cache and the build cache). The order matters, because the cache key
 # hashes files of the workspace. Only the go-cache job saves the cache, on a push
 # to main. The key holds the OS, the architecture and a hash of go.mod, go.sum,
-# the tool versions, this file and the action. When no entry matches the key, a
-# job restores the newest entry of the same runner. The go-cache job never does
+# the tool versions, the script scripts/ci-warm-cache.sh and the action. Go's
+# build cache is content-addressed, so if the build flags of a job stop matching
+# that script, the job misses the cache and compiles, with no wrong result. When
+# no entry matches the key, a job restores the newest entry of the same runner. The go-cache job never does
 # that, so a new entry starts clean and does not keep old module versions.
 # The cache has one entry for each runner OS. The Linux entry holds the variants
 # and the shared tools. The macOS and Windows entries hold the no-cgo build and
@@ -217,19 +219,27 @@ jobs:
             docs=false
             makefile=false
             # A push always builds the cache. A pull request builds it only when
-            # the change can alter the cache key or the build steps.
+            # the change can alter the build steps: the warm-up script and the
+            # shared action. A change to go.mod, go.sum or the tool versions
+            # alters the key but not the steps, so the next push to main builds
+            # the new entry.
             if [ "$EVENT" != push ]; then cache=false; fi
             while IFS= read -r f; do
               # The files that can alter the build or the packaging of the
               # release. The release also copies LICENSE, README.md, the man
               # page and the completions by fixed names, so only a deletion or a
               # rename of one of them can break it. The loop below finds those.
+              # This list holds no workflow file and no shared action. The real
+              # release runs release.yml, which does not use the shared action.
+              # The next pull request that changes a release input tests an edit
+              # to the steps of release-snapshot. Renovate changes go.mod and
+              # go.sum every week.
               case "$f" in
                 .goreleaser.yaml | go.mod | go.sum | scripts/third-party-licenses.sh) release=true ;;
-                scripts/tool-versions.env | .github/workflows/ci.yml | .github/actions/*) release=true ;;
+                scripts/tool-versions.env) release=true ;;
               esac
               case "$f" in
-                .github/workflows/ci.yml | .github/actions/*) cache=true ;;
+                scripts/ci-warm-cache.sh | .github/actions/*) cache=true ;;
               esac
               # The docs job builds the site, so it reads docs/ and, for the
               # workflow steps that build it, this file.
@@ -277,7 +287,9 @@ jobs:
   # Builds the Go cache that the other jobs restore (see the comment at the top of
   # this file). On a push to main it saves one entry for each runner, unless the
   # exact key exists. On a pull request it builds and saves nothing, so a mistake
-  # in a build step fails the pull request and not main. A draft skips it, so the
+  # in a build step fails the pull request and not main. A pull request starts it
+  # only when the diff changes scripts/ci-warm-cache.sh or the shared action.
+  # That script holds the build commands. A draft skips it, so the
   # review rounds do not start three cold builds. It never restores the fallback
   # entry, because that entry carries every old module version into the new one,
   # and Go never trims the module cache. The Linux leg compiles every variant that
@@ -338,53 +350,15 @@ jobs:
           if [ "$EVENT" = pull_request ] || [ "$CACHE_HIT" != true ]; then build=true; fi
           echo "build=$build" >> "$GITHUB_OUTPUT"
           echo "go-cache: build=$build cache-hit=$CACHE_HIT"
-      - name: Download the modules
+      # The script holds the build commands. The cache key hashes it.
+      - name: Build the cache (Linux)
         if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        run: go mod download
-      - name: Build
-        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        run: go build ./...
-      - name: Build without cgo, with trimpath
-        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        run: CGO_ENABLED=0 go build -trimpath ./...
-      # go test -c -o <dir>/ fails when two packages have the same last path
-      # element. No package has one now. The three variants match the test job
-      # (-race), the coverage groups (-covermode and -coverpkg) and a plain run.
-      - name: Compile the test binaries (plain, race, cover)
-        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        run: |
-          go test -c -o "$RUNNER_TEMP/plain/" ./...
-          go test -race -c -o "$RUNNER_TEMP/race/" ./...
-          go test -covermode=atomic -coverpkg=./... -c -o "$RUNNER_TEMP/cover/" ./...
-      # A crasher in the seed corpus fails this job. Then the job saves nothing, and
-      # the fuzz job of the next pull request reports the same crasher.
-      - name: Compile the fuzz targets
-        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        env:
-          IQ_FUZZ_TIME: 1x
-        run: bash scripts/fuzz.sh
-      # go install compiles each tool and does not run it. A version command can
-      # call the network. For example govulncheck -version contacts vuln.go.dev,
-      # and the host list of this job blocks that host. A later go run takes the
-      # compiled packages from the cache and only links the tool again.
-      - name: Compile the pinned tools
-        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
-        run: |
-          . scripts/tool-versions.env
-          export GOBIN="$RUNNER_TEMP/bin"
-          go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"
-          go install "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION"
-          go install "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION"
-          go install "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION"
-      - name: Build and compile the tests (no cgo)
+        shell: bash
+        run: bash scripts/ci-warm-cache.sh linux
+      - name: Build the cache (no cgo)
         if: steps.plan.outputs.build == 'true' && runner.os != 'Linux'
         shell: bash
-        env:
-          CGO_ENABLED: '0'
-        run: |
-          go mod download
-          go build -trimpath ./...
-          go test -c -o "$RUNNER_TEMP/plain/" ./...
+        run: bash scripts/ci-warm-cache.sh other
       - name: Save the Go cache
         if: github.event_name == 'push' && steps.go.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
