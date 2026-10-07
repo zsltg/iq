@@ -140,6 +140,15 @@ func TestCBORModeBuildersPanicOnBadOptions(t *testing.T) {
 		func() { mustDecMode(cbor.DecOptions{DupMapKey: 99}) })
 }
 
+// TestCBORNestedLevelsLimitIsTheLibraryMaximum pins the claim in the comment on
+// maxCBORNestedLevels. The library accepts that value and refuses one more.
+func TestCBORNestedLevelsLimitIsTheLibraryMaximum(t *testing.T) {
+	_, err := cbor.DecOptions{MaxNestedLevels: maxCBORNestedLevels}.DecMode()
+	require.NoError(t, err)
+	_, err = cbor.DecOptions{MaxNestedLevels: maxCBORNestedLevels + 1}.DecMode()
+	require.Error(t, err)
+}
+
 // TestCBORDecodeAcceptsEveryEncodedRecord proves the decoder reads back each
 // record the encoder writes, including records deeper or wider than the
 // fxamacker default limits. A cache that its own reader rejects breaks every
