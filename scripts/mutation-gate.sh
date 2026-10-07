@@ -151,7 +151,7 @@ set -uo pipefail
 # scripts/tool-versions.env, because scripts/mutation-shard.sh and mutation-verdict.sh
 # read this exact line.
 # renovate: datasource=go depName=github.com/quality-gates/mutago/v2
-MUTAGO_VERSION=v2.10.21
+MUTAGO_VERSION=v2.10.23
 mutago_pkg=github.com/quality-gates/mutago/v2/cmd/mutago
 
 # Covered-code MSI floor for a full scan of ./cmd. The value comes from the finished cmd
