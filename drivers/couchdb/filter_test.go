@@ -150,6 +150,42 @@ func TestToSelector(t *testing.T) {
 			wantNarrowing: true,
 		},
 		{
+			name: "an and inside an or keeps its shape",
+			pred: predicate.Or{
+				predicate.And{
+					predicate.Eq{Path: []string{"a"}, Value: "x"},
+					predicate.Eq{Path: []string{"b"}, Value: "y"},
+				},
+				predicate.Eq{Path: []string{"c"}, Value: "z"},
+			},
+			wantSelector: map[string]any{"$or": []any{
+				map[string]any{"$and": []any{
+					map[string]any{"a": "x"},
+					map[string]any{"b": "y"},
+				}},
+				map[string]any{"c": "z"},
+			}},
+			wantNarrowing: true,
+		},
+		{
+			name: "an or inside an and keeps its shape",
+			pred: predicate.And{
+				predicate.Or{
+					predicate.Eq{Path: []string{"a"}, Value: "x"},
+					predicate.Eq{Path: []string{"b"}, Value: "y"},
+				},
+				predicate.Eq{Path: []string{"c"}, Value: "z"},
+			},
+			wantSelector: map[string]any{"$and": []any{
+				map[string]any{"$or": []any{
+					map[string]any{"a": "x"},
+					map[string]any{"b": "y"},
+				}},
+				map[string]any{"c": "z"},
+			}},
+			wantNarrowing: true,
+		},
+		{
 			name:          "an empty or has nothing to push and does not narrow",
 			pred:          predicate.Or{},
 			wantNarrowing: false,
@@ -252,6 +288,19 @@ func TestByteSafeRegex(t *testing.T) {
 		{"trailing backslash", `ab\`, false},
 		{"non-ascii byte", "café", false},
 		{"continuation byte exactly 0x80", "a\x80b", false},
+		{"escaped backslash then bare dot", `\\.`, false},
+		{"escaped backslash then letter D", `\\D`, true},
+		{"escaped bracket then caret", `\[^a]`, true},
+		{"class opener then escaped caret", `[\^a]`, true},
+		{"negated shorthand inside a class", `[\D]`, false},
+		{"class opener then negated class", `[[^a]`, false},
+		{"non-ascii byte after a backslash", "\\é", false},
+		{"even backslashes then a trailing one", `a\\\`, false},
+		{"only an escaped backslash", `\\`, true},
+		{"escaped backslash then negated class", `\\[^`, false},
+		{"escaped dot then bare dot", `\..`, false},
+		{"negated space class after a literal", `a\Sb`, false},
+		{"negated word class after a literal", `a\Wb`, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
