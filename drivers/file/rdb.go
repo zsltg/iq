@@ -6,7 +6,7 @@ import (
 	"io"
 	"sort"
 
-	"github.com/hdt3213/rdb/parser"
+	"github.com/zsltg/rdb/parser"
 
 	"github.com/zsltg/iq/internal/query"
 )
