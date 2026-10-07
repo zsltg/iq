@@ -88,7 +88,7 @@ func TestKeyOfColumnsEveryGoType(t *testing.T) {
 		})
 	}
 	t.Run("a missing column is empty", func(t *testing.T) {
-		require.Equal(t, "", KeyOfColumns([]string{"k"}, map[string]any{}))
+		require.Empty(t, KeyOfColumns([]string{"k"}, map[string]any{}))
 	})
 	t.Run("composite mixes types in the given order", func(t *testing.T) {
 		row := map[string]any{"a": "x", "b": 7, "c": true}
@@ -166,7 +166,7 @@ func TestBindKeyValueEveryType(t *testing.T) {
 	t.Run("an empty text key is the empty string", func(t *testing.T) {
 		got, err := bindKeyValue(gocql.TypeText, "")
 		require.NoError(t, err)
-		require.Equal(t, "", got)
+		require.Empty(t, got)
 	})
 }
 
