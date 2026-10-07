@@ -435,8 +435,15 @@ They need no containers or network.
   whether two documents differ.
 
 `IQ_FUZZ_TIME` sets the budget per target (default `20s`). The CI `fuzz` job
-uses the default on every change that touches code, and the weekly `deep-fuzz`
-job runs the same script with `IQ_FUZZ_TIME=5m`.
+uses the default, but only when the change can affect a target. The weekly
+`deep-fuzz` job always fuzzes every target with `IQ_FUZZ_TIME=5m`.
+
+`bash scripts/fuzz.sh --affected <base> <head>` fuzzes nothing. It prints `true`
+when a file in `<base>...<head>` can affect a target, and `false` if not. A
+change can affect a target when it touches a non-test `.go` file in a package
+that the fuzz packages import, a test file or a `testdata/fuzz/` seed in a fuzz
+package, `scripts/fuzz.sh`, `go.mod` or `go.sum`. A deleted file counts. If the
+diff or `go list` fails, the answer is `true`.
 
 Seed inputs and every committed crasher run as ordinary subtests under
 `go test -short`, so `make check` and `make cover` already cover them. A
@@ -527,9 +534,13 @@ when `code=true` and the pull request is not a draft. The slow jobs (`test`, the
 coverage jobs, `e2e`, `capabilities`, `mutate-diff` and `fuzz`)
 run only then, and `ci-ok` fails on a draft. `changes` sets `snapshot=true` when
 the pull request is not a draft and the diff changes `.goreleaser.yaml`,
-`go.mod`, `go.sum`, `scripts/third-party-licenses.sh`,
-`scripts/tool-versions.env`, `ci.yml` or a file in `.github/actions/`, or deletes or renames `LICENSE`,
-`README.md`, the man page or a completion file. `release-snapshot` runs only
+`go.mod`, `go.sum`, `scripts/third-party-licenses.sh`
+or `scripts/tool-versions.env`, or deletes or renames `LICENSE`,
+`README.md`, the man page or a completion file. A change to `ci.yml` or to a shared
+action is not a release input, because the real release runs `release.yml`, which
+does not use the shared action. The next pull request that changes a release input
+tests an edit to the steps of `release-snapshot`, and Renovate changes `go.mod` and
+`go.sum` every week. `release-snapshot` runs only
 then, because it takes about 11 minutes. The release copies those four kinds of
 files by fixed names, so a change to their content cannot break it. The `sbom`
 job runs when `snapshot=true` or when the diff changes `Makefile` (the `sbom`
@@ -560,7 +571,9 @@ a check of the third-party license texts in the archives and the `.deb`),
 `mutate-diff` with `report.json`, `mutago-agentic.json` and, after a failure
 on an escape, `mutago-baseline.candidate.json`, so the ids of the escapes need
 no local re-run), `workflows` (zizmor and actionlint over
-`.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target), `dco`
+`.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target, only when the change
+can affect a fuzz target; the seeds run in every `go test -short`, and
+`deep-fuzz` explores every target each week), `dco`
 (`scripts/dco.sh`, a `Signed-off-by:` for the author of each pull request commit,
 and `scripts/commit-emails.sh`, no unallowed email address in a commit message,
 on pull requests only) and
@@ -573,7 +586,8 @@ changes. The jobs `workflows`, `osv`, `secrets`, `demo-check` and
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
 workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
 (`deep-scan`, which keeps the only gitleaks scan of the full history), give every fuzz target five minutes instead of twenty seconds
-(`deep-fuzz`), and run an incremental, sharded mutation scan. The stored result of
+(`deep-fuzz`), run the full suite, container-backed tests included, with the race detector
+(`deep-race`, in the package groups of `coverage-group`, reports only, no merge waits for it), and run an incremental, sharded mutation scan. The stored result of
 each package lives on the `badges` branch (`state/<slug>.json`, next to the
 badge endpoint `mutation.json`; `scripts/mutation-state.sh` reads and writes it,
 with the token in an HTTP header from the environment, never in a URI or an
@@ -666,9 +680,11 @@ needs Go runs `actions/checkout` first and then this action, because the cache
 key hashes files of the workspace. The action does not save. The `codeql.yml` and
 `mutant-proof.yml` workflows use it too. `release.yml` and `install-smoke.yml`
 keep `actions/setup-go` with no cache. The key is `go-<OS>-<architecture>-<hash>`.
-The hash covers `go.mod`, `go.sum`, `scripts/tool-versions.env`, `ci.yml` and the
-action file. The key has no commit, so one entry exists for each set of
-dependencies. When no entry matches, a job restores the newest entry of the same
+The hash covers `go.mod`, `go.sum`, `scripts/tool-versions.env`,
+`scripts/ci-warm-cache.sh` and the action file. Go's build cache is
+content-addressed. If the build flags of a job stop matching the warm-up script,
+that job misses the cache and compiles, with no wrong result. The key has no
+commit, so one entry exists for each set of dependencies. When no entry matches, a job restores the newest entry of the same
 OS and architecture (the restore key `go-<OS>-<architecture>-`) and compiles the
 rest.
 
@@ -683,13 +699,16 @@ changed, and a run that does not skip is rare. `workflows` runs `actionlint`,
 which the cache warms, but the compile is shorter than the restore.
 
 The `go-cache` job is the only job that saves. It runs on a push to `main`, and on
-a pull request that is not a draft when the diff changes `ci.yml` or
-`.github/actions/` (the `cache` output of `changes`). On a push, it saves one
+a pull request that is not a draft when the diff changes `scripts/ci-warm-cache.sh`
+or `.github/actions/` (the `cache` output of `changes`). The script holds the build
+commands of both legs. A change to `go.mod`, `go.sum` or the tool versions changes
+the key but not the steps, so it does not start the job. The next push to `main`
+builds the new entry. On a push, it saves one
 entry for each runner when the exact key does not exist. On a pull request, it
 builds and saves nothing, so a mistake in a build step fails the pull request and not
 `main`. It looks up the exact key only and never restores the fallback entry,
 because that entry would carry every old module version into the new one, and Go
-never trims the module cache. The Linux leg builds the variants that the jobs
+never trims the module cache. The Linux leg (`bash scripts/ci-warm-cache.sh linux`) builds the variants that the jobs
 use: `go build`, `CGO_ENABLED=0 go build -trimpath`, and the test binaries of a
 plain build, of `-race` and of `-covermode=atomic -coverpkg=./...`. It also runs
 each fuzz target for one iteration, and compiles `golangci-lint`, `govulncheck`,
@@ -697,7 +716,7 @@ each fuzz target for one iteration, and compiles `golangci-lint`, `govulncheck`,
 call a host that the job blocks. It does not compile `syft`, `osv-scanner` and
 `gitleaks`. The jobs `sbom`, `osv` and `secrets` compile them, because these tools
 bring a large module graph that every Linux job would download. The macOS and
-Windows legs of `go-cache` run `go build -trimpath` and the plain test compile
+Windows legs of `go-cache` (`bash scripts/ci-warm-cache.sh other`) run `go build -trimpath` and the plain test compile
 with no cgo. The `test` job sets `CGO_ENABLED=1` on Linux and `0` on macOS and
 Windows, and builds with `-trimpath` there. These legs use the cached objects, and
 the build is the only per-change build of those targets, because `cross` is gone.
