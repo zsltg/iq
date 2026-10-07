@@ -175,44 +175,45 @@ func typeName(typ gocql.Type) string {
 	return fmt.Sprintf("%s", nativeType(typ))
 }
 
+// scalarBindCases lists every scalar CQL type that bindValue handles. ok is a value the
+// column accepts. mismatch is a value of the wrong kind and mismatchErr is the exact
+// error it gets. The error value that comes with a failure is not part of the contract.
+var scalarBindCases = []struct {
+	name        string
+	typ         gocql.Type
+	ok          any
+	want        any
+	mismatch    any
+	mismatchErr string
+}{
+	{"text", gocql.TypeText, "x", "x", 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeText)},
+	{"varchar", gocql.TypeVarchar, "x", "x", 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeVarchar)},
+	{"ascii", gocql.TypeAscii, "x", "x", 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeAscii)},
+	{"int", gocql.TypeInt, int64(5), 5, "5", "cassandra: 5 (string) is not an integer"},
+	{"smallint", gocql.TypeSmallInt, float64(5), 5, "5", "cassandra: 5 (string) is not an integer"},
+	{"tinyint", gocql.TypeTinyInt, mustBig("5"), 5, true, "cassandra: true (bool) is not an integer"},
+	{"bigint", gocql.TypeBigInt, 5, 5, "5", "cassandra: 5 (string) is not an integer"},
+	{"counter", gocql.TypeCounter, 5, 5, "5", "cassandra: 5 (string) is not an integer"},
+	{"varint int", gocql.TypeVarint, 5, mustBig("5"), true, "cassandra: true (bool) is not a varint"},
+	{"varint int64", gocql.TypeVarint, int64(5), mustBig("5"), "x", `cassandra: "x" is not a varint`},
+	{"varint big", gocql.TypeVarint, mustBig("5"), mustBig("5"), 5.5, "cassandra: 5.5 is not a whole number"},
+	{"float", gocql.TypeFloat, 0.1, float32(0.1), "x", "cassandra: x (string) is not a number"},
+	{"float from int64", gocql.TypeFloat, int64(3), float32(3), "x", "cassandra: x (string) is not a number"},
+	{"double", gocql.TypeDouble, 0.5, 0.5, "x", "cassandra: x (string) is not a number"},
+	{"decimal string", gocql.TypeDecimal, "1.5", mustDec("1.5"), "x", `cassandra: "x" is not a decimal`},
+	{"decimal float", gocql.TypeDecimal, 1.5, mustDec("1.5"), math.NaN(), "cassandra: NaN is not a decimal"},
+	{"decimal infinity", gocql.TypeDecimal, 1.5, mustDec("1.5"), math.Inf(1), "cassandra: +Inf is not a decimal"},
+	{"decimal int", gocql.TypeDecimal, 5, mustDec("5"), int64(5), "cassandra: 5 (int64) is not a decimal"},
+	{"boolean", gocql.TypeBoolean, false, false, "x", "cassandra: value x (string) is not a " + typeName(gocql.TypeBoolean)},
+	{"uuid", gocql.TypeUUID, testUUID, wantUUID, 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeUUID)},
+	{"timeuuid", gocql.TypeTimeUUID, testUUID, wantUUID, 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeTimeUUID)},
+	{"timestamp", gocql.TypeTimestamp, "2021-01-02T03:04:05Z", time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC), 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeTimestamp)},
+	{"blob", gocql.TypeBlob, "aGk=", []byte("hi"), 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeBlob)},
+	{"inet", gocql.TypeInet, "::1", net.ParseIP("::1"), 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeInet)},
+}
+
 func TestBindValueEveryScalarType(t *testing.T) {
-	// ok is a value the column accepts. mismatch is a value of the wrong kind and
-	// mismatchErr is the exact error it gets. The error value that comes with a
-	// failure is not part of the contract.
-	tests := []struct {
-		name        string
-		typ         gocql.Type
-		ok          any
-		want        any
-		mismatch    any
-		mismatchErr string
-	}{
-		{"text", gocql.TypeText, "x", "x", 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeText)},
-		{"varchar", gocql.TypeVarchar, "x", "x", 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeVarchar)},
-		{"ascii", gocql.TypeAscii, "x", "x", 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeAscii)},
-		{"int", gocql.TypeInt, int64(5), 5, "5", "cassandra: 5 (string) is not an integer"},
-		{"smallint", gocql.TypeSmallInt, float64(5), 5, "5", "cassandra: 5 (string) is not an integer"},
-		{"tinyint", gocql.TypeTinyInt, mustBig("5"), 5, true, "cassandra: true (bool) is not an integer"},
-		{"bigint", gocql.TypeBigInt, 5, 5, "5", "cassandra: 5 (string) is not an integer"},
-		{"counter", gocql.TypeCounter, 5, 5, "5", "cassandra: 5 (string) is not an integer"},
-		{"varint int", gocql.TypeVarint, 5, mustBig("5"), true, "cassandra: true (bool) is not a varint"},
-		{"varint int64", gocql.TypeVarint, int64(5), mustBig("5"), "x", `cassandra: "x" is not a varint`},
-		{"varint big", gocql.TypeVarint, mustBig("5"), mustBig("5"), 5.5, "cassandra: 5.5 is not a whole number"},
-		{"float", gocql.TypeFloat, 0.1, float32(0.1), "x", "cassandra: x (string) is not a number"},
-		{"float from int64", gocql.TypeFloat, int64(3), float32(3), "x", "cassandra: x (string) is not a number"},
-		{"double", gocql.TypeDouble, 0.5, 0.5, "x", "cassandra: x (string) is not a number"},
-		{"decimal string", gocql.TypeDecimal, "1.5", mustDec("1.5"), "x", `cassandra: "x" is not a decimal`},
-		{"decimal float", gocql.TypeDecimal, 1.5, mustDec("1.5"), math.NaN(), "cassandra: NaN is not a decimal"},
-		{"decimal infinity", gocql.TypeDecimal, 1.5, mustDec("1.5"), math.Inf(1), "cassandra: +Inf is not a decimal"},
-		{"decimal int", gocql.TypeDecimal, 5, mustDec("5"), int64(5), "cassandra: 5 (int64) is not a decimal"},
-		{"boolean", gocql.TypeBoolean, false, false, "x", "cassandra: value x (string) is not a " + typeName(gocql.TypeBoolean)},
-		{"uuid", gocql.TypeUUID, testUUID, mustUUID(t, testUUID), 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeUUID)},
-		{"timeuuid", gocql.TypeTimeUUID, testUUID, mustUUID(t, testUUID), 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeTimeUUID)},
-		{"timestamp", gocql.TypeTimestamp, "2021-01-02T03:04:05Z", time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC), 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeTimestamp)},
-		{"blob", gocql.TypeBlob, "aGk=", []byte("hi"), 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeBlob)},
-		{"inet", gocql.TypeInet, "::1", net.ParseIP("::1"), 5, "cassandra: value 5 (int) is not a " + typeName(gocql.TypeInet)},
-	}
-	for _, tt := range tests {
+	for _, tt := range scalarBindCases {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := bindValue(nativeType(tt.typ), tt.ok)
 			require.NoError(t, err)
