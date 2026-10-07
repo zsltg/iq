@@ -77,6 +77,13 @@ concurrency:
 # of a job holds every host that the job calls, and DEVELOPMENT.md explains how to
 # add one. A matrix job (the coverage groups and the mutation shards) has one list
 # that is the union for all legs.
+# The Harden-Runner steps that are the same in several jobs, and the plain checkout
+# step, share one YAML anchor. The first job in the file that uses a step defines
+# the anchor, and each later job uses the alias (`- *name`). An alias is not a
+# merge key, so GitHub accepts it. The anchor holds the pinned SHA, so a version
+# update changes one line. A job that needs a host that the shared list does not
+# have gets an inline step of its own. Never widen a shared list for one job. A
+# checkout with fetch-depth or a zizmor ignore also stays inline.
 jobs:
   # The one required check of the main ruleset. GitHub reports a skipped matrix job
   # under its bare name (`test`, not `test (ubuntu-latest)`), so the per-job checks
@@ -96,7 +103,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Harden the runner (block egress)
+      - &harden-base
+        name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
@@ -165,17 +173,7 @@ jobs:
       sbom: ${{ github.event_name == 'pull_request' && steps.diff.outputs.sbom == 'true' && steps.draft.outputs.draft != 'true' }}
       snapshot: ${{ github.event_name == 'pull_request' && steps.diff.outputs.release == 'true' && steps.draft.outputs.draft != 'true' }}
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            github.com:443
+      - *harden-base
       # The draft flag in the event payload is fixed when the event fires. When a
       # push and "ready for review" come close together, the run of the push can
       # cancel the ready run and still see draft=true, so it skips the slow jobs.
@@ -304,7 +302,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - name: Harden the runner (block egress)
+      - &harden-go-linux
+        name: Harden the runner (block egress)
         if: runner.os == 'Linux'
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
@@ -322,7 +321,8 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - id: go
@@ -402,7 +402,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (block egress)
+      - &harden-go
+        name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
@@ -419,9 +420,7 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       # go install through the module proxy, verified by the checksum database,
       # like every other tool here; the upstream curl|sh installer verifies the
@@ -484,9 +483,7 @@ jobs:
             releases.astral.sh:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       # GH_TOKEN adds the online audits: known-vulnerable-actions, impostor-commit,
       # ref-confusion and stale-action-refs. zizmor exits 11 to 14 on a finding.
@@ -523,27 +520,8 @@ jobs:
     env:
       CGO_ENABLED: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
     steps:
-      - name: Harden the runner (block egress)
-        if: runner.os == 'Linux'
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go-linux
+      - *checkout
       - uses: $/.github/actions/setup-go
       # The go-cache job builds with -trimpath on macOS and Windows. This step makes
       # these legs build the same way, so that they use the cached objects. It is
@@ -592,7 +570,8 @@ jobs:
             # Keep this list equal to the packages of the groups above.
             exclude: drivers/(couchbase|elasticsearch|cassandra|neo4j|hbase)
     steps:
-      - name: Harden the runner (block egress)
+      - &harden-docker-elastic
+        name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
@@ -616,9 +595,7 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Start HBase (compose, host networking)
         if: matrix.hbase
@@ -683,9 +660,7 @@ jobs:
             echo "::error::a coverage group did not pass: $RESULT"
             exit 1
           fi
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -720,7 +695,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Harden the runner (block egress)
+      - &harden-docker
+        name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
@@ -742,9 +718,7 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: e2e with redis (all cases + the redis live flow)
         run: |
@@ -772,23 +746,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
+      - *harden-go
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -857,9 +815,7 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
             vuln.go.dev:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: govulncheck
         run: |
@@ -891,9 +847,7 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: OSV scan + license allowlist
         # The allowlist is scripts/license-allowlist.txt, which make security reads too.
@@ -919,26 +873,8 @@ jobs:
     if: needs.changes.outputs.sbom == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Generate SBOMs (syft, SPDX + CycloneDX)
         run: |
@@ -953,26 +889,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Dead code (whole program)
         run: |
@@ -990,17 +908,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            github.com:443
+      - *harden-base
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -1020,23 +928,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
+      - *harden-go
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -1066,23 +958,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
+      - *harden-go
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] the step below fetches the PR base
         with:
           fetch-depth: 0 # the merge-base with the trunk must be reachable
@@ -1113,28 +989,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            *.r2.cloudflarestorage.com:443
-            api.github.com:443
-            auth.docker.io:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            production.cloudflare.docker.com:443
-            production.cloudfront.docker.com:443
-            proxy.golang.org:443
-            registry-1.docker.io:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
+      - *harden-docker
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] the step below fetches the PR base
         with:
           fetch-depth: 0 # full history so the diff base is reachable
@@ -1184,26 +1039,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Fuzz the untrusted parsers
         run: bash scripts/fuzz.sh
@@ -1215,26 +1052,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Fuzz the untrusted parsers (long budget)
         env:
@@ -1319,26 +1138,8 @@ jobs:
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       # Read-only: the token goes to git as a header in the environment, never in a
       # URI or an argument. A branch that does not exist yet gives an empty state.
@@ -1398,33 +1199,8 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.deep-plan.outputs.matrix) }}
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            *.r2.cloudflarestorage.com:443
-            api.github.com:443
-            auth.docker.io:443
-            dl.google.com:443
-            docker-auth.elastic.co:443
-            docker.elastic.co:443
-            github.com:443
-            go.dev:443
-            production.cloudflare.docker.com:443
-            production.cloudfront.docker.com:443
-            proxy.golang.org:443
-            registry-1.docker.io:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-docker-elastic
+      - *checkout
       - uses: $/.github/actions/setup-go
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -1492,26 +1268,8 @@ jobs:
     outputs:
       publish: ${{ steps.verdict.outputs.publish }}
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Fetch the stored state (badges branch)
         env:
@@ -1562,20 +1320,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            github.com:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-base
+      - *checkout
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: scan-state
@@ -1594,20 +1340,8 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            github.com:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-base
+      - *checkout
       - name: Demo stamp
         run: bash scripts/demo/stamp.sh check
 
@@ -1634,9 +1368,7 @@ jobs:
             raw.githubusercontent.com:443
             release-assets.githubusercontent.com:443
             releases.astral.sh:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Build site
         run: uv run --locked zensical build --clean

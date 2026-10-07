@@ -738,6 +738,13 @@ Posture and upkeep around the pipeline, all on GitHub:
   week and of the release runs, and from the steps of each job. A job on a macOS
   or Windows runner
   does not run Harden-Runner, because block mode supports Linux runners only.
+- In `ci.yml`, the Harden-Runner steps with the same host list and the same `if:`
+  share one YAML anchor (`&harden-base`, `&harden-go`, `&harden-go-linux`,
+  `&harden-docker` and `&harden-docker-elastic`). The first job that uses an
+  anchor defines it, and the other jobs use the alias. A job that needs a host
+  that the shared list does not have gets an inline step of its own. Never widen
+  a shared list for one job. To add a host that all jobs of a group need, edit
+  the anchor.
 - When a job fails because of a blocked call, open the job log. The annotation
   names the blocked domain. Make sure that the call is expected, then add
   `host:443` to the `allowed-endpoints` list of that job in sorted order. A matrix
