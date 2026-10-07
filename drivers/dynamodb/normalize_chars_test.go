@@ -283,7 +283,7 @@ func TestParseItemDeepListNesting(t *testing.T) {
 	}
 	item, err := ParseItem([]byte(`{"a":` + raw + `}`))
 	require.NoError(t, err)
-	var cur types.AttributeValue = item["a"]
+	cur := item["a"]
 	for range depth {
 		l, ok := cur.(*types.AttributeValueMemberL)
 		require.True(t, ok)
