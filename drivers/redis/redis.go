@@ -35,6 +35,20 @@ type Store struct {
 	decimal numfmt.DecimalMode
 }
 
+// ErrInvalidURI reports a connection URI that go-redis cannot parse.
+var ErrInvalidURI = errors.New("parse redis url: the connection URI is not valid (percent-encode special characters in the password)")
+
+// parseURL parses a redis:// connection URI. The go-redis parse error can quote
+// a part of the password, for example after an unescaped slash. So this function
+// drops that error text and returns ErrInvalidURI.
+func parseURL(uri string) (*goredis.Options, error) {
+	opts, err := goredis.ParseURL(uri)
+	if err != nil {
+		return nil, ErrInvalidURI
+	}
+	return opts, nil
+}
+
 // Open connects to the Redis server named by a redis:// URL. It verifies the
 // connection with a PING so a bad URL or unreachable server fails fast at
 // startup rather than on the first query. When trace is non-nil, every subsequent
@@ -42,9 +56,9 @@ type Store struct {
 // traced, as the hook is attached only after it succeeds. dec chooses how
 // RedisJSON fractional numbers are presented to the filter.
 func Open(ctx context.Context, url string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
-	opts, err := goredis.ParseURL(url)
+	opts, err := parseURL(url)
 	if err != nil {
-		return nil, fmt.Errorf("parse redis url: %w", err)
+		return nil, err
 	}
 	if opts.Protocol == 0 {
 		// Default to RESP2 so aggregate replies arrive as flat arrays and match
