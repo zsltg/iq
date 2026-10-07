@@ -471,17 +471,9 @@ func (s *Store) scan(ctx context.Context, where string, params map[string]any, m
 // of named parameters, bound end-to-end — never string-built. Rows are returned
 // normalized, in order.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
-	if len(args) < 1 || len(args) > 2 {
-		return nil, fmt.Errorf("couchbase raw expects a SQL++ statement and an optional JSON named-parameters object")
-	}
-	stmt := args[0]
-	var params map[string]any
-	// args[1:] is the optional parameters object (at most one, per the guard above);
-	// ranging avoids an index the SAST cannot prove in bounds.
-	for _, raw := range args[1:] {
-		if err := json.Unmarshal([]byte(raw), &params); err != nil {
-			return nil, fmt.Errorf("parse couchbase query parameters: %w", err)
-		}
+	stmt, params, err := parseQueryArgs(args)
+	if err != nil {
+		return nil, err
 	}
 	s.tracef("query %s", stmt)
 	rows, err := s.query(ctx, stmt, params)
@@ -489,6 +481,29 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
+	return s.collectRows(rows)
+}
+
+// parseQueryArgs splits the raw arguments into the statement and the optional named
+// parameters. args[0] is the statement. An optional args[1] is a JSON object.
+func parseQueryArgs(args []string) (string, map[string]any, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return "", nil, fmt.Errorf("couchbase raw expects a SQL++ statement and an optional JSON named-parameters object")
+	}
+	var params map[string]any
+	// args[1:] is the optional parameters object (at most one, per the guard above);
+	// ranging avoids an index the SAST cannot prove in bounds.
+	for _, raw := range args[1:] {
+		if err := json.Unmarshal([]byte(raw), &params); err != nil {
+			return "", nil, fmt.Errorf("parse couchbase query parameters: %w", err)
+		}
+	}
+	return args[0], params, nil
+}
+
+// collectRows reads every row of a raw query result and decodes each one. It does not
+// close rows. The caller owns that.
+func (s *Store) collectRows(rows pageRows) ([]any, error) {
 	out := []any{}
 	for rows.Next() {
 		var raw json.RawMessage
