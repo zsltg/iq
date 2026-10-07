@@ -464,7 +464,10 @@ match the allowlist: `*@users.noreply.github.com`, `noreply@github.com`,
 case lets an outside contributor sign off with their own public address. A
 hand-typed `Signed-off-by:` line with another address fails. Do not type an
 address into a message: `git commit -s` adds the sign-off with your configured
-address. `pre-push` runs the same script over the commits that it publishes, and
+address. The script reads non-ASCII addresses too. It checks comment lines that
+start with `#`, because git keeps them in a `git commit -m` commit, and it ignores
+the text after a scissors line. A foreign address in a comment line fails even
+when git would strip the line. `pre-push` runs the same script over the commits that it publishes, and
 the `dco` job runs it over the pull request range. A later commit does not remove an
 address from history, so a failure on existing commits needs a rewrite of each
 named message: `git commit --amend -s` for the last commit, or a rebase that

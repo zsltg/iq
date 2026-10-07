@@ -88,10 +88,20 @@ printf 'work\n\nCo-Authored-By: Bot <noreply@example.com>\n' >"$work/message"
 message "a no-reply address outside the allowlist fails" 1 "noreply@example.com"
 
 printf 'work\n# Signed-off-by: Ann <someone@example.com>\n' >"$work/message"
-message "an address in a comment line is ignored" 0
+message "an address in a comment line fails and names it" 1 "someone@example.com"
+
+printf 'work\n# Author: Ann Author <%s>\n' "$noreply" >"$work/message"
+message "the author address in a comment line passes" 0
 
 printf 'work\n# ------------------------ >8 ------------------------\nSigned-off-by: Ann <someone@example.com>\n' >"$work/message"
 message "an address after the scissors line is ignored" 0
+
+printf 'work\n\nCc: Ana <ana@bücher.de>\n' >"$work/message"
+message "a non-ASCII address fails and names it" 1 "ana@bücher.de"
+
+repo non-ascii "ana@bücher.de"
+printf 'work\n\nSigned-off-by: Ana <ana@bücher.de>\n' >"$work/message"
+message "a non-ASCII author address passes" 0
 
 printf 'work\n\nSigned-off-by: Ann <one@example.com>\nCo-Authored-By: Bob <two@example.com>\n' >"$work/message"
 message "each bad address is named" 1 "two@example.com"
@@ -130,6 +140,10 @@ g commit -q --allow-empty -m "side work"
 g checkout -q -
 g merge -q --no-ff side -m "merge" -m "Signed-off-by: Ann <someone@example.com>"
 range "a merge commit is checked" 1 "someone@example.com" HEAD~2..HEAD
+
+repo non-ascii-range "$noreply"
+g commit -q --allow-empty -m "umlaut" -m "Cc: Ana <ana@bücher.de>"
+range "a non-ASCII address in a range fails and names it" 1 "ana@bücher.de" HEAD~1..HEAD
 
 range "a range that does not resolve exits 2" 2 "cannot read the commit range" no-such-ref..HEAD
 

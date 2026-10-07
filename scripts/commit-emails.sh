@@ -11,15 +11,21 @@
 #   2. An address that matches the allowlist below.
 #
 # Rule 1 lets an outside contributor sign off with their own public address.
-# Addresses are found with a simple pattern and compared in lower case.
+# Addresses are found with a simple pattern. Only ASCII letters change case, so
+# the comparison is byte-exact for all other bytes.
 #
 #   bash scripts/commit-emails.sh --message <file>
 #   bash scripts/commit-emails.sh <rev-list arguments>
 #
 # The first form checks a message file before the commit exists (the commit-msg
 # hook uses it). The identities come from git var, so a --author or a -c override
-# counts. Lines that start with # and everything after a scissors line are
-# ignored, as git ignores them. The second form checks each commit of a range,
+# counts. Everything after a scissors line is ignored, as git removes it in the
+# verbose modes. Lines that start with # are checked. Git runs the hook before
+# it cleans up the message, and it keeps those lines when no editor runs, for
+# example with git commit -m. This choice fails closed: an address in a comment
+# line is rejected even when git would strip the line. The template comment of
+# git holds no address except the author address, which the rule allows. The
+# second form checks each commit of a range,
 # merge commits included, for example origin/main..HEAD (the pre-push hook and
 # the dco job use it).
 #
@@ -37,8 +43,12 @@ allowlist=(
 )
 
 # The address pattern. It is simple on purpose. It finds the usual forms and
-# can miss an unusual one.
-address_pattern='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+# can miss an unusual one. grep runs with LC_ALL=C, so it reads bytes. The
+# class u holds ASCII characters and all bytes of 0x80 and above, so a UTF-8
+# character counts as part of a name. The top-level domain is either 2 or more
+# ASCII letters, or a label that holds at least one byte of 0x80 or above.
+hi=$'\x80-\xff'
+address_pattern="[A-Za-z0-9._%+${hi}-]+@[A-Za-z0-9.${hi}-]+\\.([A-Za-z]{2,}|[A-Za-z0-9${hi}-]*[${hi}][A-Za-z0-9${hi}-]*)"
 
 usage() {
   echo "usage: bash scripts/commit-emails.sh --message <file>" >&2
@@ -46,7 +56,7 @@ usage() {
   exit 2
 }
 
-lower() { tr '[:upper:]' '[:lower:]'; }
+lower() { LC_ALL=C tr '[:upper:]' '[:lower:]'; }
 
 # allowed <address> <author> <committer>: the address is the author or the
 # committer address, or it matches the allowlist. All values are in lower case.
@@ -72,7 +82,7 @@ check_text() {
     if ! allowed "$address" "$author" "$committer"; then
       bad+="$address"$'\n'
     fi
-  done < <(grep -oE "$address_pattern" "$file" | lower | sort -u || true)
+  done < <(LC_ALL=C grep -oE "$address_pattern" "$file" | lower | LC_ALL=C sort -u || true)
   if [ -z "$bad" ]; then
     return 0
   fi
@@ -105,8 +115,8 @@ if [ "$1" = "--message" ]; then
   fi
   author=$(sed -n 's/.*<\(.*\)>.*/\1/p' <<<"$author" | lower)
   committer=$(sed -n 's/.*<\(.*\)>.*/\1/p' <<<"$committer" | lower)
-  # Drop the comment lines and everything after the scissors line.
-  awk '/^# -+ >8 -+$/ { exit } /^#/ { next } { print }' "$2" >"$work/message"
+  # Cut the text at the scissors line. Keep the comment lines (see the header).
+  awk '/^# -+ >8 -+$/ { exit } { print }' "$2" >"$work/message"
   if ! check_text "the message" "$author" "$committer" "$work/message"; then
     cat >&2 <<EOF
 commit-emails: do not type an address into a commit message.
