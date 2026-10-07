@@ -25,21 +25,29 @@ The pipe is one source only. `iq diff`, `iq combine`, and `source()` name
 registered sources, so they cannot read the pipe. Write the pipe to a fixed file
 path and register that path once. Then rewrite the file before each run.
 
-`iq add` needs the file to exist, so write it first. Use `--typed --key-field`
-to write iq's typed dump. Plain JSON rows from `sq -J` have no `_id`, so
-without a key they all collapse into one item.
+`iq add` needs the file to exist, so write it first. Plain JSON rows from
+`sq -J` are not in iq's typed dump format. `iq --typed --key-field id` converts
+them to typed records keyed by `id`. Without `--key-field`, `iq --typed` rejects
+the rows with `record has no key`.
+
+The examples set `pipefail`. Without it, a pipeline reports only the status of
+`iq`. A failed `sq` or `curl` can then leave a partial file, and the next
+command reads it.
 
 ```sh { title='One time: write the file, then register it' }
-sq -J @pg.users | iq --typed --key-field id > /tmp/in.jsonl
-iq add -n in file:///tmp/in.jsonl
+set -o pipefail
+sq -J @pg.users | iq --typed --key-field id > /tmp/in.jsonl &&
+  iq add -n in file:///tmp/in.jsonl
 ```
 
 ```sh { title='Diff piped data against a source' }
+set -o pipefail
 sq -J @pg.users | iq --typed --key-field id > /tmp/in.jsonl && iq diff in prod
 ```
 
 ```sh { title='Combine piped data with a source' }
-curl -s https://api.example.com/users | iq --typed --key-field id > /tmp/in.jsonl &&
+set -o pipefail
+curl -sf https://api.example.com/users | iq --typed --key-field id > /tmp/in.jsonl &&
   iq combine --with '$in + $prod' 'in=.[]' 'prod=.[]'
 ```
 
