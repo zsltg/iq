@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 # Refuse to publish a commit whose author or committer address is not the
-# configured user.email.
+# configured user.email, or whose message holds an address that
+# scripts/commit-emails.sh does not allow.
 #
 # pre-commit already rejects an override at commit time, but only for commits
 # it saw: a --no-verify, a tool that bypasses hooks, a rebase that replays old
@@ -17,8 +18,8 @@ set -eu
 # precedence, so the last file: line is the effective file value.
 configured=$(git config --show-origin --get-all user.email 2>/dev/null |
 	awk -F'\t' '$1 ~ /^file:/ { v = $2 } END { print v }')
-[ -n "$configured" ] || exit 0
 
+root=$(git rev-parse --show-toplevel)
 zero=$(git hash-object --stdin </dev/null | tr '0-9a-f' '0')
 status=0
 
@@ -34,12 +35,22 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
 	else
 		range="$remote_sha..$local_sha --not --remotes"
 	fi
-	# shellcheck disable=SC2086 # range is two or three deliberate arguments.
-	bad=$(git log --format='%h %ae %ce' $range | awk -v want="$configured" '$2 != want || $3 != want')
+	# The identity check needs a configured address. The message check does not,
+	# because it compares each message with the identity of its own commit.
+	bad=""
+	if [ -n "$configured" ]; then
+		# shellcheck disable=SC2086 # range is two or three deliberate arguments.
+		bad=$(git log --format='%h %ae %ce' $range | awk -v want="$configured" '$2 != want || $3 != want')
+	fi
 	if [ -n "$bad" ]; then
 		echo "pre-push: these commits carry an address other than the configured <$configured>:" >&2
 		echo "$bad" >&2
 		echo "pre-push: rewrite them (git filter-branch --env-filter, or git rebase -x) before publishing, or push with --no-verify." >&2
+		status=1
+	fi
+	# The same range, for the addresses in the commit messages.
+	# shellcheck disable=SC2086 # range is two or three deliberate arguments.
+	if ! bash "$root/scripts/commit-emails.sh" $range; then
 		status=1
 	fi
 done

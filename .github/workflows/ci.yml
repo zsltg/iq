@@ -830,9 +830,10 @@ jobs:
           if [ -n "$out" ]; then echo "$out"; echo "::error::dead code: delete it or wire it up"; exit 1; fi
 
   # Developer Certificate of Origin: every new commit of a pull request carries a
-  # Signed-off-by trailer for its author (scripts/dco.sh). It runs for every pull
-  # request, also one without code; on a push to main it is skipped, because the
-  # commits there already passed it as a pull request.
+  # Signed-off-by trailer for its author (scripts/dco.sh). A second step makes sure
+  # that no commit message holds an address that scripts/commit-emails.sh does not
+  # allow. It runs for every pull request, also one without code; on a push to
+  # main it is skipped, because the commits there already passed it as a pull request.
   dco:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -858,6 +859,11 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: bash scripts/dco.sh "$BASE" "$HEAD"
+      - name: Check the addresses in the commit messages
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/commit-emails.sh "$BASE..$HEAD"
 
   secrets:
     if: github.event_name == 'push' || github.event_name == 'pull_request'

@@ -88,6 +88,11 @@ step "dco tests"
 # directory. They need no network and finish in seconds.
 bash scripts/test/dco.sh || note_fail "dco tests"
 
+step "commit email tests"
+# The fixture tests of scripts/commit-emails.sh make small git repositories in a
+# temporary directory. They need no network and finish in seconds.
+bash scripts/test/commit-emails.sh || note_fail "commit email tests"
+
 step "capability wrapper tests"
 bash scripts/test/capabilities.sh || note_fail "capability wrapper tests"
 
