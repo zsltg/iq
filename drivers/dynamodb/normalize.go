@@ -4,8 +4,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"maps"
 	"math/big"
+	"slices"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -305,12 +307,9 @@ func toAttributeValue(v any) (types.AttributeValue, error) {
 // toAttributeMap converts every entry of a JSON object to an attribute value.
 func toAttributeMap(obj map[string]any) (map[string]types.AttributeValue, error) {
 	m := make(map[string]types.AttributeValue, len(obj))
-	for k, e := range obj {
-		av, err := toAttributeValue(e)
-		if err != nil {
-			return nil, err
-		}
-		m[k] = av
+	err := convertAll(maps.All(obj), func(k string, av types.AttributeValue) { m[k] = av })
+	if err != nil {
+		return nil, err
 	}
 	return m, nil
 }
@@ -318,14 +317,24 @@ func toAttributeMap(obj map[string]any) (map[string]types.AttributeValue, error)
 // toAttributeList converts every element of a JSON array to an attribute value.
 func toAttributeList(list []any) ([]types.AttributeValue, error) {
 	l := make([]types.AttributeValue, len(list))
-	for i, e := range list {
-		av, err := toAttributeValue(e)
-		if err != nil {
-			return nil, err
-		}
-		l[i] = av
+	err := convertAll(slices.All(list), func(i int, av types.AttributeValue) { l[i] = av })
+	if err != nil {
+		return nil, err
 	}
 	return l, nil
+}
+
+// convertAll converts each value of seq to an attribute value and passes it to store
+// with its key or index. It stops at the first conversion error and returns it.
+func convertAll[K any](seq iter.Seq2[K, any], store func(K, types.AttributeValue)) error {
+	for k, e := range seq {
+		av, err := toAttributeValue(e)
+		if err != nil {
+			return err
+		}
+		store(k, av)
+	}
+	return nil
 }
 
 // scalarAttributeValue converts a JSON scalar (nil, bool, string, or a Go or json
