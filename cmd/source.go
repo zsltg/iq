@@ -37,7 +37,7 @@ func newAddCmd(cfg *config) *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:               "add <uri>",
-		ValidArgsFunction: cobra.NoFileCompletions,
+		ValidArgsFunction: firstArgOnly(completeURI),
 		Short:             "Register a source from a connection URI (sq-style)",
 		Long: "Register a source from a connection URI, like `sq add`. The URI is the only\n" +
 			"positional argument; -n/--handle names the source, and when omitted a handle\n" +
