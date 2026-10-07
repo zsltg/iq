@@ -141,7 +141,7 @@ jobs:
   # job reads. Any other file, an unknown base, or an error sets code=true, so an
   # unexpected case runs everything. If it fails, the jobs that need it are
   # skipped, and ci-ok fails, which blocks the merge. The diff step writes the raw
-  # results. The job outputs code, full, sbom, snapshot and docs are true only on a
+  # results. The job outputs code, full, snapshot and docs are true only on a
   # pull request, so a push to main skips the jobs that a pull request already ran.
   # The output coverage reads the raw results, so a push with code changes keeps the
   # coverage jobs. The step sets cache=true on a push and on a pull request that
@@ -152,10 +152,9 @@ jobs:
   # matrix, e2e, the release snapshot, capabilities, fuzzing and the mutation gate)
   # run only then, so review rounds on a draft do not start them on every push. The
   # coverage output is the same without the pull request condition, and a draft
-  # does not run the coverage jobs either. The step sets sbom=true when
-  # snapshot=true, when the diff changes docs/pyproject.toml or docs/uv.lock, or
-  # when the diff fails. The output sbom is true only on a pull request that is
-  # not a draft, as the output snapshot is. The sbom job does not read full.
+  # does not run the coverage jobs either. The output sbom is true when snapshot is
+  # true or the Makefile changed, because the Makefile target sbom holds the syft
+  # options. The sbom job does not read full.
   changes:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -170,7 +169,7 @@ jobs:
       docs: ${{ github.event_name == 'pull_request' && steps.diff.outputs.docs == 'true' }}
       draft: ${{ steps.draft.outputs.draft }}
       full: ${{ github.event_name == 'pull_request' && steps.diff.outputs.code == 'true' && steps.draft.outputs.draft != 'true' }}
-      sbom: ${{ github.event_name == 'pull_request' && steps.diff.outputs.sbom == 'true' && steps.draft.outputs.draft != 'true' }}
+      sbom: ${{ github.event_name == 'pull_request' && (steps.diff.outputs.release == 'true' || steps.diff.outputs.makefile == 'true') && steps.draft.outputs.draft != 'true' }}
       snapshot: ${{ github.event_name == 'pull_request' && steps.diff.outputs.release == 'true' && steps.draft.outputs.draft != 'true' }}
     steps:
       - *harden-base
@@ -210,12 +209,12 @@ jobs:
           release=true
           cache=true
           docs=true
-          sbom=true
+          makefile=true
           if files="$(git diff --name-only "$BASE...$HEAD")"; then
             code=false
             release=false
             docs=false
-            sbom=false
+            makefile=false
             # A push always builds the cache. A pull request builds it only when
             # the change can alter the cache key or the build steps.
             if [ "$EVENT" != push ]; then cache=false; fi
@@ -231,16 +230,15 @@ jobs:
               case "$f" in
                 .github/workflows/ci.yml | .github/actions/*) cache=true ;;
               esac
-              # syft reads the Go module graph and the Python files of the docs
-              # site. A release input covers the Go side. These two files cover
-              # the Python side.
-              case "$f" in
-                docs/pyproject.toml | docs/uv.lock) sbom=true ;;
-              esac
               # The docs job builds the site, so it reads docs/ and, for the
               # workflow steps that build it, this file.
               case "$f" in
                 docs/* | .github/workflows/ci.yml) docs=true ;;
+              esac
+              # The Makefile target sbom holds the syft options, and the sbom
+              # job runs it. goreleaser does not read the Makefile.
+              case "$f" in
+                Makefile) makefile=true ;;
               esac
               case "$f" in
                 '') ;;
@@ -262,8 +260,6 @@ jobs:
               echo "::warning::cannot list the deleted files of $BASE...$HEAD, so the release snapshot runs"
               release=true
             fi
-            # A release input also changes the Go module graph that syft reads.
-            if [ "$release" = true ]; then sbom=true; fi
           else
             echo "::warning::cannot diff $BASE...$HEAD, so every job runs"
           fi
@@ -271,10 +267,10 @@ jobs:
             echo "cache=$cache"
             echo "code=$code"
             echo "docs=$docs"
+            echo "makefile=$makefile"
             echo "release=$release"
-            echo "sbom=$sbom"
           } >> "$GITHUB_OUTPUT"
-          echo "changes: code=$code release=$release cache=$cache docs=$docs sbom=$sbom"
+          echo "changes: code=$code release=$release cache=$cache docs=$docs makefile=$makefile"
           printf '%s\n' "$files"
 
   # Builds the Go cache that the other jobs restore (see the comment at the top of
@@ -863,11 +859,11 @@ jobs:
         # on every change, also when the release-snapshot job does not run.
         run: bash scripts/third-party-licenses.sh
 
-  # Generation-only: proves the SBOMs build (same syft invocation as `make sbom`).
-  # No artifact upload; actions/upload-artifact is not among the mirrored actions.
-  # `syft scan dir:.` reads the Go module graph and the Python files of the docs
-  # site. The sbom output of the changes job covers both: a release input changes
-  # the Go side, and docs/pyproject.toml or docs/uv.lock change the Python side.
+  # Generation-only: proves the SBOMs build. The job runs `make sbom`, the one place
+  # that holds the syft options. It uploads no artifact, because the release builds
+  # its own SBOM. The SBOM lists the Go module graph only. A release input changes
+  # that graph, and a Makefile change can break the recipe, so the job runs when
+  # the output sbom is true.
   sbom:
     needs: changes
     if: needs.changes.outputs.sbom == 'true'
@@ -877,11 +873,7 @@ jobs:
       - *checkout
       - uses: $/.github/actions/setup-go
       - name: Generate SBOMs (syft, SPDX + CycloneDX)
-        run: |
-          . scripts/tool-versions.env
-          mkdir -p dist
-          go run github.com/anchore/syft/cmd/syft@"$SYFT_VERSION" scan dir:. -q \
-            -o spdx-json=dist/sbom.spdx.json -o cyclonedx-json=dist/sbom.cdx.json
+        run: make sbom
 
   # Whole-program dead code: a function reachable from neither main nor any test.
   deadcode:

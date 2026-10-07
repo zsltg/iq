@@ -79,10 +79,12 @@ cover:
 security:
 	bash scripts/security.sh
 
-# sbom writes SPDX + CycloneDX SBOMs of the module to dist/.
+# sbom writes SPDX + CycloneDX SBOMs of the Go module graph to dist/. Only the
+# go.mod cataloger runs, so the docs site's Python packages and the GitHub Actions
+# stay out. scripts/security.sh and the CI job sbom run this target.
 sbom:
 	@mkdir -p dist
-	go run github.com/anchore/syft/cmd/syft@$(SYFT_VERSION) scan dir:. -q -o spdx-json=dist/sbom.spdx.json -o cyclonedx-json=dist/sbom.cdx.json
+	go run github.com/anchore/syft/cmd/syft@$(SYFT_VERSION) scan dir:. -q --override-default-catalogers go-module-file-cataloger -o spdx-json=dist/sbom.spdx.json -o cyclonedx-json=dist/sbom.cdx.json
 	@echo "wrote dist/sbom.spdx.json and dist/sbom.cdx.json"
 
 # e2e runs the black-box smoke tests that build and drive the iq binary.
