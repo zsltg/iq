@@ -78,10 +78,11 @@ filters, dump file content, and every database response.
   (`cmd/source.go`, `cmd/config.go`, `cmd/inspect.go`, `cmd/ls.go`,
   `cmd/keyring_cmd.go`): the redaction and storage rules in the threat model.
 - `cmd/mcp.go`, `cmd/mcp_tools.go`: the rules in the MCP server section.
-- `.github/workflows/*`: each action is pinned by commit SHA. A job gets only
-  the permissions it needs. A `pull_request_target` job never checks out or
-  runs pull request code. A new per-change CI job goes into the `needs` list of
-  `ci-ok`.
+- `.github/workflows/*`: each action is pinned by commit SHA. The one exception
+  is the SLSA generator in `release.yml`, which is pinned by tag (see
+  DEVELOPMENT.md). A job gets only the permissions it needs. A
+  `pull_request_target` job never checks out or runs pull request code. A new
+  per-change CI job goes into the `needs` list of `ci-ok`.
 - `scripts/mutation-*.sh`, `scripts/coverage.sh`, `scripts/release.sh`,
   `.githooks/*`: these are the gates. A change must not let a failing state
   pass. Examples: an error that is counted as a kill, a skipped job that hides
