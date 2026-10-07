@@ -166,3 +166,8 @@ require (
 	modernc.org/b/v2 v2.1.11 // indirect
 	software.sslmate.com/src/go-pkcs12 v0.7.2 // indirect
 )
+
+// The zsltg fork fixes a fatal out-of-memory error on a length that an RDB file declares.
+// Remove this line and bump the require when upstream releases the fix.
+// See HDT3213/rdb issue 75 and pull request 76.
+replace github.com/hdt3213/rdb => github.com/zsltg/rdb v1.3.3-0.20261007123221-a273eef08475
