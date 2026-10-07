@@ -773,6 +773,13 @@ func TestCompletionDumpFormatsExactSet(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestCompleteDumpFormatsDirective pins that --from-format completion
+// never falls back to file names.
+func TestCompleteDumpFormatsDirective(t *testing.T) {
+	_, directive := completeDumpFormats(nil, nil, "")
+	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, directive)
+}
+
 // TestCompletionNeverLeaksURIParts stores a URI with a password and pins that
 // no part of it reaches the completion output, in either mode.
 func TestCompletionNeverLeaksURIParts(t *testing.T) {
