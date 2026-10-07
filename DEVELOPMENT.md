@@ -762,8 +762,8 @@ Posture and upkeep around the pipeline, all on GitHub:
   or Windows runner
   does not run Harden-Runner, because block mode supports Linux runners only.
 - In `ci.yml`, the Harden-Runner steps with the same host list and the same `if:`
-  share one YAML anchor (`&harden-base`, `&harden-go`, `&harden-go-linux`,
-  `&harden-docker` and `&harden-docker-elastic`). The first job that uses an
+  share one YAML anchor (`&harden-base`, `&harden-go`, `&harden-go-linux`
+  and `&harden-docker-elastic`). The first job that uses an
   anchor defines it, and the other jobs use the alias. A job that needs a host
   that the shared list does not have gets an inline step of its own. Never widen
   a shared list for one job. To add a host that all jobs of a group need, edit
@@ -772,8 +772,10 @@ Posture and upkeep around the pipeline, all on GitHub:
   names the blocked domain. Make sure that the call is expected, then add
   `host:443` to the `allowed-endpoints` list of that job in sorted order. A matrix
   job (`coverage-group`, `deep-mutate`, `mutant-proof`) has one list for all legs,
-  so add the host there. When a new tool or compose image enters a job, add its
-  hosts in the same change. Do not add a host that you did not check.
+  so add the host there. The `mutate-diff` job tests the packages that a pull
+  request changes, so it uses the shared list with the hosts of every compose
+  image registry. When a new tool or compose image enters a job, add its hosts in
+  the same change. Do not add a host that you did not check.
   Every job that runs `actions/setup-go` or the shared action
   `.github/actions/setup-go` also allows `go.dev:443` and `dl.google.com:443`.
   The action downloads Go from there when the Go version is not yet in the runner

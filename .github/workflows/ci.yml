@@ -79,7 +79,8 @@ concurrency:
 # Each Linux job starts with Harden-Runner in block mode. The allowed-endpoints list
 # of a job holds every host that the job calls, and DEVELOPMENT.md explains how to
 # add one. A matrix job (the coverage groups and the mutation shards) has one list
-# that is the union for all legs.
+# that is the union for all legs. The `mutate-diff` job tests the packages that a pull
+# request changes, so it uses the shared list with the hosts of every compose image registry.
 # The Harden-Runner steps that are the same in several jobs, and the plain checkout
 # step, share one YAML anchor. The first job in the file that uses a step defines
 # the anchor, and each later job uses the alias (`- *name`). An alias is not a
@@ -674,8 +675,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - &harden-docker
-        name: Harden the runner (block egress)
+      - name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
@@ -964,7 +964,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
-      - *harden-docker
+      - *harden-docker-elastic
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] the step below fetches the PR base
         with:
           fetch-depth: 0 # full history so the diff base is reachable
