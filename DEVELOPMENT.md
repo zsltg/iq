@@ -811,7 +811,8 @@ Posture and upkeep around the pipeline, all on GitHub:
   (upstream issue 75, pull request 76). The fork branch `zsltg-module-path`
   changes the module path, because `go install` refuses a module whose `go.mod`
   has a `replace` directive. Do not use a `replace` in `go.mod`. When upstream
-  releases the fix, change the imports back to `github.com/hdt3213/rdb`.
+  releases the fix, change the imports back to `github.com/hdt3213/rdb`, require
+  its fixed version, and remove the require of `github.com/zsltg/rdb`.
 - The tool pins live in `scripts/tool-versions.env`, `scripts/mutation-gate.sh`,
   and `scripts/capabilities.sh`. One custom manager reads them. Each pin needs a
   line directly above it in this form: `# renovate: datasource=go depName=<package>`.

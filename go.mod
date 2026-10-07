@@ -169,8 +169,8 @@ require (
 
 // The require of github.com/zsltg/rdb is a fork of github.com/hdt3213/rdb. The fork fixes
 // a fatal out-of-memory error on a length that an RDB file declares. When upstream releases
-// the fix, change the imports back to github.com/hdt3213/rdb. See HDT3213/rdb issue 75 and
-// pull request 76.
+// the fix, change the imports back to github.com/hdt3213/rdb, require its fixed version, and
+// remove the require of github.com/zsltg/rdb. See HDT3213/rdb issue 75 and pull request 76.
 
 // v0.38.2 has a replace directive in go.mod, so go install refuses that version.
 retract v0.38.2
