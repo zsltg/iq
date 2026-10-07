@@ -148,7 +148,7 @@ func openPointInTime(ctx context.Context, c esClient, path string, reply pitRepl
 		return "", err
 	}
 	res, perr := c.perform(req) //nolint:bodyclose // decodeInto closes res.Body.
-	if err := decodeInto(res, perr, c.label(), "open point-in-time", reply); err != nil {
+	if err := decodeInto(res, perr, c.label()+" open point-in-time", reply); err != nil {
 		return "", err
 	}
 	if reply.id() == "" {
@@ -166,7 +166,7 @@ func releasePointInTime(ctx context.Context, c esClient, path string, body any) 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodDelete, path, bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
 	res, err := c.perform(req) //nolint:bodyclose // decodeInto closes res.Body.
-	_ = decodeInto(res, err, c.label(), "close point-in-time", nil)
+	_ = decodeInto(res, err, c.label()+" close point-in-time", nil)
 }
 
 // request builds one JSON request against a relative path and performs it, decoding
@@ -197,33 +197,34 @@ func (s *Store) do(ctx context.Context, method, path, contentType string, body [
 
 // finish decodes a reply using the store's backend label for error messages.
 func (s *Store) finish(res *http.Response, err error, op string, out any) error {
-	return decodeInto(res, err, s.client.label(), op, out)
+	return decodeInto(res, err, s.client.label()+" "+op, out)
 }
 
 // decodeInto maps a transport error and an HTTP error status to a clean, labelled
 // message (never leaking the raw response body), and otherwise decodes the JSON body
-// into out when non-nil. It always closes the body.
-func decodeInto(res *http.Response, err error, label, op string, out any) error {
+// into out when non-nil. It always closes the body. what names the backend and the
+// operation, for example "elasticsearch count", and starts every message.
+func decodeInto(res *http.Response, err error, what string, out any) error {
 	if err != nil {
-		return fmt.Errorf("%s %s: %w", label, op, err)
+		return fmt.Errorf("%s: %w", what, err)
 	}
 	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode/100 != 2 {
-		return apiError(res, label, op)
+		return apiError(res, what)
 	}
 	if out == nil {
 		_, _ = io.Copy(io.Discard, res.Body)
 		return nil
 	}
 	if err := json.NewDecoder(res.Body).Decode(out); err != nil {
-		return fmt.Errorf("%s %s: decode response: %w", label, op, err)
+		return fmt.Errorf("%s: decode response: %w", what, err)
 	}
 	return nil
 }
 
 // apiError turns an error response into a safe, concise message: the error type and
 // reason it reports, or the status code when the body is not the expected envelope.
-func apiError(res *http.Response, label, op string) error {
+func apiError(res *http.Response, what string) error {
 	var e struct {
 		Error struct {
 			Type   string `json:"type"`
@@ -232,9 +233,9 @@ func apiError(res *http.Response, label, op string) error {
 	}
 	if err := json.NewDecoder(res.Body).Decode(&e); err == nil && e.Error.Type != "" {
 		if e.Error.Reason != "" {
-			return fmt.Errorf("%s %s: %s: %s", label, op, e.Error.Type, e.Error.Reason)
+			return fmt.Errorf("%s: %s: %s", what, e.Error.Type, e.Error.Reason)
 		}
-		return fmt.Errorf("%s %s: %s", label, op, e.Error.Type)
+		return fmt.Errorf("%s: %s", what, e.Error.Type)
 	}
-	return fmt.Errorf("%s %s: unexpected status %d", label, op, res.StatusCode)
+	return fmt.Errorf("%s: unexpected status %d", what, res.StatusCode)
 }

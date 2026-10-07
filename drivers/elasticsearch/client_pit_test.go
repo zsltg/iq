@@ -222,6 +222,13 @@ func TestOperationErrorTextsAreExact(t *testing.T) {
 		err := st.request(boundedCtx(t), "probe", http.MethodGet, "/", nil, nil)
 		require.EqualError(t, err, "elasticsearch probe: unexpected status 404")
 	})
+	t.Run("store query", func(t *testing.T) {
+		st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
+			esJSON(w, http.StatusBadRequest, `{"error":{"type":"parsing_exception","reason":"bad query"}}`)
+		})
+		_, err := st.Query(boundedCtx(t), []string{`{"match_all":{}}`})
+		require.EqualError(t, err, "elasticsearch search: parsing_exception: bad query")
+	})
 	t.Run("store bulk", func(t *testing.T) {
 		st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
 			esJSON(w, http.StatusTooManyRequests, `{"error":{"type":"rejected","reason":"busy"}}`)
