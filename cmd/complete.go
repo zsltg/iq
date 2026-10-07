@@ -21,39 +21,39 @@ import (
 // source argument of query-shaped commands (src, ping, inspect, schema, diff)
 // and the --src flag.
 func completeSourceHandles(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return completeConfigNames(toComplete, cobra.ShellCompDirectiveNoFileComp, handleNames)
+}
+
+// completeConfigNames completes from a list of names that the config provides.
+// If the config does not load, it returns no candidates and the given directive.
+func completeConfigNames(toComplete string, directive cobra.ShellCompDirective, names func(*iqconfig.Config) []string) ([]string, cobra.ShellCompDirective) {
 	cf, err := iqconfig.Load()
 	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
+		return nil, directive
 	}
+	return withPrefix(names(cf), toComplete), directive
+}
+
+// handleNames returns the handle of every saved source, in listing order.
+func handleNames(cf *iqconfig.Config) []string {
 	handles := make([]string, 0, len(cf.Sources))
 	for _, h := range cf.List() {
 		handles = append(handles, h.Name)
 	}
-	return withPrefix(handles, toComplete), cobra.ShellCompDirectiveNoFileComp
+	return handles
 }
 
 // completeGroups completes saved source groups (ls, group).
 func completeGroups(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	cf, err := iqconfig.Load()
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	return withPrefix(cf.Groups(), toComplete), cobra.ShellCompDirectiveNoFileComp
+	return completeConfigNames(toComplete, cobra.ShellCompDirectiveNoFileComp, (*iqconfig.Config).Groups)
 }
 
 // completeHandlesAndGroups completes both source handles and groups, for
 // commands that accept either (rm, mv).
 func completeHandlesAndGroups(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	cf, err := iqconfig.Load()
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	names := make([]string, 0, len(cf.Sources))
-	for _, h := range cf.List() {
-		names = append(names, h.Name)
-	}
-	names = append(names, cf.Groups()...)
-	return withPrefix(names, toComplete), cobra.ShellCompDirectiveNoFileComp
+	return completeConfigNames(toComplete, cobra.ShellCompDirectiveNoFileComp, func(cf *iqconfig.Config) []string {
+		return append(handleNames(cf), cf.Groups()...)
+	})
 }
 
 // completeConfigKeys completes the persistable option names (config get/set),
@@ -118,12 +118,7 @@ func completeCSV(fn cobra.CompletionFunc) cobra.CompletionFunc {
 		// the split needs no guard.
 		i := strings.LastIndex(toComplete, ",")
 		head, tail := toComplete[:i+1], toComplete[i+1:]
-		chosen := make(map[string]bool)
-		for s := range strings.SplitSeq(head, ",") {
-			if s != "" {
-				chosen[s] = true
-			}
-		}
+		chosen := chosenSet(head)
 		values, _ := fn(cmd, args, tail)
 		out := make([]string, 0, len(values))
 		for _, v := range values {
@@ -136,6 +131,17 @@ func completeCSV(fn cobra.CompletionFunc) cobra.CompletionFunc {
 		}
 		return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 	}
+}
+
+// chosenSet returns the non-empty segments of a comma-separated head as a set.
+func chosenSet(head string) map[string]bool {
+	chosen := make(map[string]bool)
+	for s := range strings.SplitSeq(head, ",") {
+		if s != "" {
+			chosen[s] = true
+		}
+	}
+	return chosen
 }
 
 // completeInspectOnly completes `inspect --only` / `diff --section` with the
@@ -158,6 +164,21 @@ func sourceDriverName(cmd *cobra.Command, args []string) string {
 	if err != nil {
 		return ""
 	}
+	name := completionSource(cmd, args, cf.Active)
+	if name == "" {
+		return ""
+	}
+	base, _, _ := splitSourceArg(cf, name)
+	src, _, ok := cf.Resolve(base)
+	if !ok {
+		return ""
+	}
+	return driverName(src.URL)
+}
+
+// completionSource returns the name of the source that a completion is about:
+// the positional argument, else --src, else the active source.
+func completionSource(cmd *cobra.Command, args []string, active string) string {
 	name := ""
 	if len(args) > 0 {
 		name = args[0]
@@ -171,17 +192,9 @@ func sourceDriverName(cmd *cobra.Command, args []string) string {
 		}
 	}
 	if name == "" {
-		name = cf.Active
+		name = active
 	}
-	if name == "" {
-		return ""
-	}
-	base, _, _ := splitSourceArg(cf, name)
-	src, _, ok := cf.Resolve(base)
-	if !ok {
-		return ""
-	}
-	return driverName(src.URL)
+	return name
 }
 
 // completeConfigSet completes `config set <option> <value>`: the option name for
@@ -214,15 +227,7 @@ func optionValues(cmd *cobra.Command, key string) []string {
 // completion (ShellCompDirectiveDefault), since `cache clear` accepts a source
 // or a dump-file path.
 func completeCacheClear(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	cf, err := iqconfig.Load()
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveDefault
-	}
-	handles := make([]string, 0, len(cf.Sources))
-	for _, h := range cf.List() {
-		handles = append(handles, h.Name)
-	}
-	return withPrefix(handles, toComplete), cobra.ShellCompDirectiveDefault
+	return completeConfigNames(toComplete, cobra.ShellCompDirectiveDefault, handleNames)
 }
 
 // firstArgOnly restricts a completion function to the first positional argument,
