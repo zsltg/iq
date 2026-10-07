@@ -1,6 +1,7 @@
 package cassandra
 
 import (
+	"fmt"
 	"testing"
 
 	gocql "github.com/apache/cassandra-gocql-driver/v2"
@@ -157,4 +158,83 @@ func TestTarget(t *testing.T) {
 
 	_, _, err = Target("redis://h/x", "")
 	require.Error(t, err)
+}
+
+func TestParseConsistencyEveryName(t *testing.T) {
+	tests := []struct {
+		in   string
+		want gocql.Consistency
+	}{
+		{"any", gocql.Any},
+		{"one", gocql.One},
+		{"two", gocql.Two},
+		{"three", gocql.Three},
+		{"quorum", gocql.Quorum},
+		{"all", gocql.All},
+		{"localquorum", gocql.LocalQuorum},
+		{"local_quorum", gocql.LocalQuorum},
+		{"eachquorum", gocql.EachQuorum},
+		{"each_quorum", gocql.EachQuorum},
+		{"localone", gocql.LocalOne},
+		{"local_one", gocql.LocalOne},
+		{" ONE ", gocql.One},
+		{"Local_Quorum", gocql.LocalQuorum},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := parseConsistency(tt.in)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+	unknown := []string{"Bogus", "  ", "local quorum", "serial"}
+	for _, in := range unknown {
+		t.Run("unknown "+in, func(t *testing.T) {
+			got, err := parseConsistency(in)
+			require.Equal(t, gocql.Quorum, got)
+			require.EqualError(t, err, fmt.Sprintf("cassandra: unknown consistency %q", in))
+		})
+	}
+}
+
+func TestParseURLErrorsAreExact(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr string
+	}{
+		{"wrong scheme", "redis://h/ks", "cassandra url must start with cassandra://"},
+		{"no host", "cassandra:///ks", "cassandra url must name at least one host, e.g. cassandra://host:9042/keyspace"},
+		{"no host with userinfo", "cassandra://u:dummysecret@/ks", "cassandra url must name at least one host, e.g. cassandra://host:9042/keyspace"},
+		{"no keyspace", "cassandra://h/", "cassandra url must name a keyspace, e.g. cassandra://host:9042/mykeyspace"},
+		{"no keyspace with userinfo", "cassandra://u:dummysecret@h", "cassandra url must name a keyspace, e.g. cassandra://host:9042/mykeyspace"},
+		{"two segments", "cassandra://u:dummysecret@h/a/b", "cassandra url must name a keyspace, e.g. cassandra://host:9042/mykeyspace"},
+		{"unknown consistency", "cassandra://u:dummysecret@h/ks?consistency=bogus", `cassandra: unknown consistency "bogus"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseURL(tt.rawURL, "")
+			require.EqualError(t, err, tt.wantErr)
+			require.NotContains(t, err.Error(), "dummysecret")
+		})
+	}
+}
+
+func TestParseURLHostsAndKeyspaceShapes(t *testing.T) {
+	t.Run("an empty host in the list stays empty", func(t *testing.T) {
+		cc, err := parseURL("cassandra://a,,b/ks", "")
+		require.NoError(t, err)
+		require.Equal(t, []string{"a:9042", "", "b:9042"}, cc.hosts)
+	})
+	t.Run("slashes around the keyspace are trimmed", func(t *testing.T) {
+		cc, err := parseURL("cassandra://h//ks/", "")
+		require.NoError(t, err)
+		require.Equal(t, "ks", cc.keyspace)
+	})
+	t.Run("the query is read after the path", func(t *testing.T) {
+		cc, err := parseURL("cassandra://h/ks?table=t&consistency=one", "")
+		require.NoError(t, err)
+		require.Equal(t, "t", cc.table)
+		require.Equal(t, gocql.One, cc.consistency)
+	})
 }
