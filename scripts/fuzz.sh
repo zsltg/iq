@@ -47,7 +47,8 @@ affected() {
     return
   fi
   # Directories of the fuzz packages and of the module packages that they import.
-  if ! dirs="$(go list -deps -f '{{if .Module}}{{if .Module.Main}}{{.Dir}}{{end}}{{end}}' "${packages[@]}")"; then
+  # -test also follows the imports of the test files, where the fuzz targets live.
+  if ! dirs="$(go list -deps -test -f '{{if .Module}}{{if .Module.Main}}{{.Dir}}{{end}}{{end}}' "${packages[@]}")"; then
     echo true
     return
   fi
