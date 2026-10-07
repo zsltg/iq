@@ -464,18 +464,9 @@ func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
 // returns the result rows as a list of {column: value} maps with every value
 // normalized, the natural shape for `iq exec`.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
-	if len(args) < 1 || len(args) > 2 {
-		return nil, fmt.Errorf("neo4j raw expects a Cypher statement and an optional JSON parameters object")
-	}
-	cypher := strings.TrimSpace(args[0])
-	if cypher == "" {
-		return nil, fmt.Errorf("neo4j raw expects a non-empty Cypher statement")
-	}
-	var params map[string]any
-	if len(args) == 2 {
-		if err := json.Unmarshal([]byte(args[1]), &params); err != nil {
-			return nil, fmt.Errorf("parse neo4j query parameters: %w", err)
-		}
+	cypher, params, err := parseQueryArgs(args)
+	if err != nil {
+		return nil, err
 	}
 	sess := s.session(ctx, neo4j.AccessModeWrite)
 	defer func() { _ = sess.Close(ctx) }()
@@ -486,17 +477,40 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	}
 	rows := []any{}
 	for res.Next(ctx) {
-		rec := res.Record()
-		row := make(map[string]any, len(rec.Keys))
-		for i, k := range rec.Keys {
-			row[k] = s.normalizeValue(rec.Values[i])
-		}
-		rows = append(rows, row)
+		rows = append(rows, s.rowOf(res.Record()))
 	}
 	if err := res.Err(); err != nil {
 		return nil, fmt.Errorf("neo4j query: %w", err)
 	}
 	return rows, nil
+}
+
+// parseQueryArgs splits the arguments of a raw query into the trimmed Cypher text and
+// the optional JSON parameters object.
+func parseQueryArgs(args []string) (string, map[string]any, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return "", nil, fmt.Errorf("neo4j raw expects a Cypher statement and an optional JSON parameters object")
+	}
+	cypher := strings.TrimSpace(args[0])
+	if cypher == "" {
+		return "", nil, fmt.Errorf("neo4j raw expects a non-empty Cypher statement")
+	}
+	var params map[string]any
+	if len(args) == 2 {
+		if err := json.Unmarshal([]byte(args[1]), &params); err != nil {
+			return "", nil, fmt.Errorf("parse neo4j query parameters: %w", err)
+		}
+	}
+	return cypher, params, nil
+}
+
+// rowOf renders one result row as a {column: value} map with every value normalized.
+func (s *Store) rowOf(rec *neo4j.Record) map[string]any {
+	row := make(map[string]any, len(rec.Keys))
+	for i, k := range rec.Keys {
+		row[k] = s.normalizeValue(rec.Values[i])
+	}
+	return row
 }
 
 // keyConstraintExists reports whether a uniqueness (or node-key) constraint covers
