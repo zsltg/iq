@@ -3,6 +3,7 @@ package file
 import (
 	"bytes"
 	"math"
+	"strconv"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -137,4 +138,46 @@ func TestCBORModeBuildersPanicOnBadOptions(t *testing.T) {
 	require.PanicsWithValue(t,
 		"file: build cbor dec mode: cbor: invalid DupMapKey 99",
 		func() { mustDecMode(cbor.DecOptions{DupMapKey: 99}) })
+}
+
+// TestCBORNestedLevelsLimitIsTheLibraryMaximum pins the claim in the comment on
+// maxCBORNestedLevels. The library accepts that value and refuses one more.
+func TestCBORNestedLevelsLimitIsTheLibraryMaximum(t *testing.T) {
+	_, err := cbor.DecOptions{MaxNestedLevels: maxCBORNestedLevels}.DecMode()
+	require.NoError(t, err)
+	_, err = cbor.DecOptions{MaxNestedLevels: maxCBORNestedLevels + 1}.DecMode()
+	require.Error(t, err)
+}
+
+// TestCBORDecodeAcceptsEveryEncodedRecord proves the decoder reads back each
+// record the encoder writes, including records deeper or wider than the
+// fxamacker default limits. A cache that its own reader rejects breaks every
+// later scan.
+func TestCBORDecodeAcceptsEveryEncodedRecord(t *testing.T) {
+	deep := any("leaf")
+	for range 40 {
+		deep = []any{deep}
+	}
+	wide := make([]any, 140000)
+	for i := range wide {
+		wide[i] = i
+	}
+	pairs := make(map[string]any, 140000)
+	for i := range 140000 {
+		pairs[strconv.Itoa(i)] = i
+	}
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{"nested-40-levels", deep},
+		{"array-140000-elements", wide},
+		{"map-140000-pairs", pairs},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := query.Record{Key: "k", Type: "t", Value: tt.value}
+			require.Equal(t, rec, roundTrip(t, rec))
+		})
+	}
 }

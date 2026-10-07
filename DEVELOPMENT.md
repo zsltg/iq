@@ -508,7 +508,7 @@ pull request that changes only a Markdown file outside `docs/` runs the fast
 jobs only, and it takes about 2 minutes. A pull request that changes a file
 under `docs/` also builds the site. Any other file, a change to `ci.yml` or to a
 shared action in `.github/actions/`, or a diff that fails runs every job. The
-`code`, `full`, `snapshot` and `docs` outputs of `changes` are true only on a
+`code`, `full`, `sbom`, `snapshot` and `docs` outputs of `changes` are true only on a
 pull request. The `coverage` output ignores the event, so a push to `main` with
 code changes runs the coverage jobs. The last job, `ci-ok`, runs on pull
 requests only. It is the
@@ -519,14 +519,18 @@ its bare name. A new per-change job goes into the `needs` list of `ci-ok`.
 
 A draft pull request runs the fast jobs only. `changes` also sets `full=true`
 when `code=true` and the pull request is not a draft. The slow jobs (`test`, the
-coverage jobs, `e2e`, `cross`, `sbom`, `capabilities`, `mutate-diff` and `fuzz`)
+coverage jobs, `e2e`, `capabilities`, `mutate-diff` and `fuzz`)
 run only then, and `ci-ok` fails on a draft. `changes` sets `snapshot=true` when
 the pull request is not a draft and the diff changes `.goreleaser.yaml`,
 `go.mod`, `go.sum`, `scripts/third-party-licenses.sh`,
 `scripts/tool-versions.env`, `ci.yml` or a file in `.github/actions/`, or deletes or renames `LICENSE`,
 `README.md`, the man page or a completion file. `release-snapshot` runs only
 then, because it takes about 11 minutes. The release copies those four kinds of
-files by fixed names, so a change to their content cannot break it. Mark the
+files by fixed names, so a change to their content cannot break it. `changes`
+sets `sbom=true` in the same cases and also when the diff changes
+`docs/pyproject.toml` or `docs/uv.lock`, because `syft scan dir:.` reads the Go
+module graph and the Python files of the docs site. The `sbom` job runs only
+then. Mark the
 pull request ready for review when the review rounds settle: the
 `ready_for_review` event starts the full run once. `changes` reads the draft
 state from the API, not from the event, so a push just before "ready for review"
@@ -536,17 +540,17 @@ would let a pull request merge while its full run is still in progress. The runs
 of one pull request share a concurrency group, so a new push cancels the run of
 the previous push. A push to `main` is never cancelled.
 The jobs per gate:
-`go-cache` (builds the Go cache, see below), `lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
+`go-cache` (builds the Go cache, see below), `lint` (format, a build without cgo and with `-trimpath`, golangci-lint), `test` (`go test -short -shuffle=on` on
 Linux, macOS and Windows, with `-race` on Linux), `coverage` (four `coverage (<group>)` jobs each test a
 group of packages on their own runner, then `coverage` joins the partial profiles,
 makes sure that each package is in exactly one group, applies the floor, and does
 a reporting-only Codecov upload, `CODECOV_TOKEN` secret), `e2e` (redis pass, then
-the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
+the mongo live flow),
 `release-snapshot` (a goreleaser snapshot with no publish and no signature, then
 a check of the third-party license texts in the archives and the `.deb`),
 `vuln` (govulncheck), `osv` (OSV plus the permissive license allowlist, then
 `scripts/third-party-licenses.sh` on every change), `sbom` (syft), `deadcode`,
-`secrets` (gitleaks, tree and history), `capabilities`
+`secrets` (gitleaks, the tree and the commits of the pull request), `capabilities`
 (`scripts/capabilities.sh` against the PR base), `mutate-diff`
 (`scripts/mutation-gate.sh` against the PR base; it uploads the artifact
 `mutate-diff` with `report.json`, `mutago-agentic.json` and, after a failure
@@ -556,11 +560,15 @@ no local re-run), `workflows` (zizmor and actionlint over
 (`scripts/dco.sh`, a `Signed-off-by:` for the author of each pull request commit,
 and `scripts/commit-emails.sh`, no unallowed email address in a commit message,
 on pull requests only) and
-`docs` (site build). The jobs `workflows`, `osv`, `secrets`, `demo-check` and
+`docs` (site build). A pull request builds `linux/amd64` in `lint`, `darwin/arm64`
+in the macOS leg of `test` and `windows/amd64` in the Windows leg of `test`. It
+does not build `linux/arm64`, `darwin/amd64` or `windows/arm64`. That gap is
+accepted, and `release-snapshot` builds all six targets when a release input
+changes. The jobs `workflows`, `osv`, `secrets`, `demo-check` and
 `dco` run on pull requests only. The
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
 workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
-(`deep-scan`), give every fuzz target five minutes instead of twenty seconds
+(`deep-scan`, which keeps the only gitleaks scan of the full history), give every fuzz target five minutes instead of twenty seconds
 (`deep-fuzz`), and run an incremental, sharded mutation scan. The stored result of
 each package lives on the `badges` branch (`state/<slug>.json`, next to the
 badge endpoint `mutation.json`; `scripts/mutation-state.sh` reads and writes it,
@@ -660,21 +668,36 @@ dependencies. When no entry matches, a job restores the newest entry of the same
 OS and architecture (the restore key `go-<OS>-<architecture>-`) and compiles the
 rest.
 
+The cache has one entry for each runner OS. The Linux entry holds the variants
+and the shared tools. The macOS and Windows entries hold the no-cgo build and the
+plain test compile. The action has an input `restore`, which is `'true'` by
+default. A job that sets `restore: 'false'` installs Go and skips the restore.
+Then the output `cache-hit` is empty. The jobs `capabilities`, `workflows` and
+`secrets` set it, because they compile no iq package and the restore costs more
+than the tool compile that it saves. The script `scripts/capabilities.sh` skips itself unless `go.mod` or `go.sum`
+changed, and a run that does not skip is rare. `workflows` runs `actionlint`,
+which the cache warms, but the compile is shorter than the restore.
+
 The `go-cache` job is the only job that saves. It runs on a push to `main`, and on
 a pull request that is not a draft when the diff changes `ci.yml` or
-`.github/actions/` (the `cache` output of `changes`). On a push, it saves one entry
-for each runner when the exact key does not exist. On a pull request, it builds and
-saves nothing, so a mistake in a build step fails the pull request and not
+`.github/actions/` (the `cache` output of `changes`). On a push, it saves one
+entry for each runner when the exact key does not exist. On a pull request, it
+builds and saves nothing, so a mistake in a build step fails the pull request and not
 `main`. It looks up the exact key only and never restores the fallback entry,
 because that entry would carry every old module version into the new one, and Go
 never trims the module cache. The Linux leg builds the variants that the jobs
 use: `go build`, `CGO_ENABLED=0 go build -trimpath`, and the test binaries of a
 plain build, of `-race` and of `-covermode=atomic -coverpkg=./...`. It also runs
-each fuzz target for one iteration, and compiles each tool of
-`scripts/tool-versions.env` with `go install`, with no run, because a tool can
-call a host that the job blocks. The `test` job sets `CGO_ENABLED=1` on Linux and
-`0` on macOS and Windows, and builds with `-trimpath` there, so that these legs
-use the cache entry of `go-cache`. `release-snapshot` gets no gain from the
+each fuzz target for one iteration, and compiles `golangci-lint`, `govulncheck`,
+`deadcode` and `actionlint` with `go install`, with no run, because a tool can
+call a host that the job blocks. It does not compile `syft`, `osv-scanner` and
+`gitleaks`. The jobs `sbom`, `osv` and `secrets` compile them, because these tools
+bring a large module graph that every Linux job would download. The macOS and
+Windows legs of `go-cache` run `go build -trimpath` and the plain test compile
+with no cgo. The `test` job sets `CGO_ENABLED=1` on Linux and `0` on macOS and
+Windows, and builds with `-trimpath` there. These legs use the cached objects, and
+the build is the only per-change build of those targets, because `cross` is gone.
+`release-snapshot` gets no gain from the
 cache, because goreleaser builds targets that the cache does not hold. The old
 `setup-go-*` entries expire after seven days without a use. A maintainer can
 delete them earlier with `gh cache delete`.
@@ -715,6 +738,13 @@ Posture and upkeep around the pipeline, all on GitHub:
   week and of the release runs, and from the steps of each job. A job on a macOS
   or Windows runner
   does not run Harden-Runner, because block mode supports Linux runners only.
+- In `ci.yml`, the Harden-Runner steps with the same host list and the same `if:`
+  share one YAML anchor (`&harden-base`, `&harden-go`, `&harden-go-linux`,
+  `&harden-docker` and `&harden-docker-elastic`). The first job that uses an
+  anchor defines it, and the other jobs use the alias. A job that needs a host
+  that the shared list does not have gets an inline step of its own. Never widen
+  a shared list for one job. To add a host that all jobs of a group need, edit
+  the anchor.
 - When a job fails because of a blocked call, open the job log. The annotation
   names the blocked domain. Make sure that the call is expected, then add
   `host:443` to the `allowed-endpoints` list of that job in sorted order. A matrix

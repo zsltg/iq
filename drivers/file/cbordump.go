@@ -36,7 +36,15 @@ var cborDec = mustDecMode(cbor.DecOptions{
 	DefaultMapType: reflect.TypeFor[map[string]any](),
 	UTF8:           cbor.UTF8DecodeInvalid,
 	TagsMd:         cbor.TagsForbidden,
+
+	MaxNestedLevels:  maxCBORNestedLevels,
+	MaxArrayElements: math.MaxInt32,
+	MaxMapPairs:      math.MaxInt32,
 })
+
+// maxCBORNestedLevels is the largest nesting depth that fxamacker/cbor allows.
+// It is above the 10000 levels that encoding/json accepts from a dump.
+const maxCBORNestedLevels = 65535
 
 // mustEncMode builds an immutable CBOR encode mode from static options. The
 // options are compile-time constants proven valid, so a build error is a

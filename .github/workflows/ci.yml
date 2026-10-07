@@ -14,6 +14,14 @@
 # the tool versions, this file and the action. When no entry matches the key, a
 # job restores the newest entry of the same runner. The go-cache job never does
 # that, so a new entry starts clean and does not keep old module versions.
+# The cache has one entry for each runner OS. The Linux entry holds the variants
+# and the shared tools. The macOS and Windows entries hold the no-cgo build and
+# the plain test compile. The jobs capabilities, workflows and secrets skip the
+# restore (restore: 'false'), because they compile no iq package and the restore
+# costs more than the tool compile that it saves.
+# The jobs osv, sbom and secrets compile their tool themselves. Those tools bring
+# about 3.9 GB of modules and 1.3 GB of build cache, which every Linux job would
+# download if the cache held them.
 #
 # Integration tests and gates that need a datastore run ONE CONTAINER AT A TIME:
 # GOFLAGS=-p=1 serialises package test binaries, so each driver's testcontainer
@@ -69,6 +77,13 @@ concurrency:
 # of a job holds every host that the job calls, and DEVELOPMENT.md explains how to
 # add one. A matrix job (the coverage groups and the mutation shards) has one list
 # that is the union for all legs.
+# The Harden-Runner steps that are the same in several jobs, and the plain checkout
+# step, share one YAML anchor. The first job in the file that uses a step defines
+# the anchor, and each later job uses the alias (`- *name`). An alias is not a
+# merge key, so GitHub accepts it. The anchor holds the pinned SHA, so a version
+# update changes one line. A job that needs a host that the shared list does not
+# have gets an inline step of its own. Never widen a shared list for one job. A
+# checkout with fetch-depth or a zizmor ignore also stays inline.
 jobs:
   # The one required check of the main ruleset. GitHub reports a skipped matrix job
   # under its bare name (`test`, not `test (ubuntu-latest)`), so the per-job checks
@@ -84,11 +99,12 @@ jobs:
   # skipped draft ci-ok would let the pull request merge before the tests finish.
   ci-ok:
     if: always() && github.event_name == 'pull_request'
-    needs: [changes, go-cache, lint, workflows, test, coverage-group, coverage, e2e, cross, release-snapshot, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
+    needs: [changes, go-cache, lint, workflows, test, coverage-group, coverage, e2e, release-snapshot, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Harden the runner (block egress)
+      - &harden-base
+        name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
@@ -125,18 +141,21 @@ jobs:
   # job reads. Any other file, an unknown base, or an error sets code=true, so an
   # unexpected case runs everything. If it fails, the jobs that need it are
   # skipped, and ci-ok fails, which blocks the merge. The diff step writes the raw
-  # results. The job outputs code, full, snapshot and docs are true only on a pull
-  # request, so a push to main skips the jobs that a pull request already ran. The
-  # output coverage reads the raw results, so a push with code changes keeps the
+  # results. The job outputs code, full, sbom, snapshot and docs are true only on a
+  # pull request, so a push to main skips the jobs that a pull request already ran.
+  # The output coverage reads the raw results, so a push with code changes keeps the
   # coverage jobs. The step sets cache=true on a push and on a pull request that
   # changes this file or the shared actions, so that the go-cache job builds with
   # the new files. It sets docs=true when a changed file is under docs/ or is this
   # file, so that the docs job builds the site only then. It also sets full=true
   # when code=true and the pull request is not a draft: the slow jobs (the test
-  # matrix, e2e, cross builds, the release snapshot, SBOM, capabilities, fuzzing and
-  # the mutation gate) run only then, so review rounds on a draft do not start them
-  # on every push. The coverage output is the same without the pull request
-  # condition, and a draft does not run the coverage jobs either.
+  # matrix, e2e, the release snapshot, capabilities, fuzzing and the mutation gate)
+  # run only then, so review rounds on a draft do not start them on every push. The
+  # coverage output is the same without the pull request condition, and a draft
+  # does not run the coverage jobs either. The step sets sbom=true when
+  # snapshot=true, when the diff changes docs/pyproject.toml or docs/uv.lock, or
+  # when the diff fails. The output sbom is true only on a pull request that is
+  # not a draft, as the output snapshot is. The sbom job does not read full.
   changes:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -151,19 +170,10 @@ jobs:
       docs: ${{ github.event_name == 'pull_request' && steps.diff.outputs.docs == 'true' }}
       draft: ${{ steps.draft.outputs.draft }}
       full: ${{ github.event_name == 'pull_request' && steps.diff.outputs.code == 'true' && steps.draft.outputs.draft != 'true' }}
+      sbom: ${{ github.event_name == 'pull_request' && steps.diff.outputs.sbom == 'true' && steps.draft.outputs.draft != 'true' }}
       snapshot: ${{ github.event_name == 'pull_request' && steps.diff.outputs.release == 'true' && steps.draft.outputs.draft != 'true' }}
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            github.com:443
+      - *harden-base
       # The draft flag in the event payload is fixed when the event fires. When a
       # push and "ready for review" come close together, the run of the push can
       # cancel the ready run and still see draft=true, so it skips the slow jobs.
@@ -200,10 +210,12 @@ jobs:
           release=true
           cache=true
           docs=true
+          sbom=true
           if files="$(git diff --name-only "$BASE...$HEAD")"; then
             code=false
             release=false
             docs=false
+            sbom=false
             # A push always builds the cache. A pull request builds it only when
             # the change can alter the cache key or the build steps.
             if [ "$EVENT" != push ]; then cache=false; fi
@@ -218,6 +230,12 @@ jobs:
               esac
               case "$f" in
                 .github/workflows/ci.yml | .github/actions/*) cache=true ;;
+              esac
+              # syft reads the Go module graph and the Python files of the docs
+              # site. A release input covers the Go side. These two files cover
+              # the Python side.
+              case "$f" in
+                docs/pyproject.toml | docs/uv.lock) sbom=true ;;
               esac
               # The docs job builds the site, so it reads docs/ and, for the
               # workflow steps that build it, this file.
@@ -244,6 +262,8 @@ jobs:
               echo "::warning::cannot list the deleted files of $BASE...$HEAD, so the release snapshot runs"
               release=true
             fi
+            # A release input also changes the Go module graph that syft reads.
+            if [ "$release" = true ]; then sbom=true; fi
           else
             echo "::warning::cannot diff $BASE...$HEAD, so every job runs"
           fi
@@ -252,8 +272,9 @@ jobs:
             echo "code=$code"
             echo "docs=$docs"
             echo "release=$release"
+            echo "sbom=$sbom"
           } >> "$GITHUB_OUTPUT"
-          echo "changes: code=$code release=$release cache=$cache docs=$docs"
+          echo "changes: code=$code release=$release cache=$cache docs=$docs sbom=$sbom"
           printf '%s\n' "$files"
 
   # Builds the Go cache that the other jobs restore (see the comment at the top of
@@ -263,8 +284,11 @@ jobs:
   # review rounds do not start three cold builds. It never restores the fallback
   # entry, because that entry carries every old module version into the new one,
   # and Go never trims the module cache. The Linux leg compiles every variant that
-  # the jobs build and every pinned tool, and runs none of them: a tool can call
-  # the network when it starts, and the host list of this job blocks that.
+  # the Linux jobs build and the tools that more than one job runs, and runs none
+  # of them: a tool can call the network when it starts, and the host list of this
+  # job blocks that. It does not compile syft, osv-scanner and gitleaks. The jobs
+  # sbom, osv and secrets compile them, because they bring about 3.9 GB of modules
+  # and 1.3 GB of build cache.
   go-cache:
     needs: changes
     if: >-
@@ -278,7 +302,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - name: Harden the runner (block egress)
+      - &harden-go-linux
+        name: Harden the runner (block egress)
         if: runner.os == 'Linux'
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
@@ -296,7 +321,8 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - id: go
@@ -351,11 +377,8 @@ jobs:
           export GOBIN="$RUNNER_TEMP/bin"
           go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"
           go install "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION"
-          go install "github.com/zricethezav/gitleaks/v8@$GITLEAKS_VERSION"
-          go install "github.com/google/osv-scanner/v2/cmd/osv-scanner@$OSV_SCANNER_VERSION"
           go install "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION"
           go install "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION"
-          go install "github.com/anchore/syft/cmd/syft@$SYFT_VERSION"
       - name: Build and compile the tests (no cgo)
         if: steps.plan.outputs.build == 'true' && runner.os != 'Linux'
         shell: bash
@@ -379,7 +402,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (block egress)
+      - &harden-go
+        name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
@@ -396,9 +420,7 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       # go install through the module proxy, verified by the checksum database,
       # like every other tool here; the upstream curl|sh installer verifies the
@@ -414,8 +436,14 @@ jobs:
         run: |
           golangci-lint fmt
           git diff --exit-code || { echo "::error::run 'gofumpt -w . && goimports -w .' and commit the result"; exit 1; }
-      - name: Vet
-        run: go vet ./...
+      # golangci-lint runs the vet analyzers, and `make check` keeps `go vet` for
+      # local runs. This step builds the packages without cgo and with trimpath, as
+      # the release does. A pull request builds linux/amd64 here, darwin/arm64 in
+      # the macOS leg of test and windows/amd64 in the Windows leg of test. It does
+      # not build linux/arm64, darwin/amd64 or windows/arm64. That gap is accepted.
+      # The release-snapshot job builds all six targets when a release input changes.
+      - name: Build without cgo, with trimpath
+        run: CGO_ENABLED=0 go build -trimpath ./...
       - name: Lint
         run: golangci-lint run
 
@@ -455,9 +483,7 @@ jobs:
             releases.astral.sh:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       # GH_TOKEN adds the online audits: known-vulnerable-actions, impostor-commit,
       # ref-confusion and stale-action-refs. zizmor exits 11 to 14 on a finding.
@@ -467,7 +493,11 @@ jobs:
         run: |
           . scripts/tool-versions.env
           uvx "zizmor==$ZIZMOR_VERSION" .github/
+      # The restore is off. The go-cache job warms actionlint, but the compile takes
+      # about 16 s and the restore takes about 60 s.
       - uses: $/.github/actions/setup-go
+        with:
+          restore: 'false'
       # The runner has shellcheck, so actionlint also checks the run blocks.
       - name: actionlint (GitHub Actions workflow lint)
         run: |
@@ -486,35 +516,17 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # The cache holds the objects of the build that its consumers run. cgo is on
-    # for the race detector on Linux and off on the other runners, as in go-cache.
+    # cgo is on for the race detector on Linux and off on the other runners.
     env:
       CGO_ENABLED: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
     steps:
-      - name: Harden the runner (block egress)
-        if: runner.os == 'Linux'
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go-linux
+      - *checkout
       - uses: $/.github/actions/setup-go
       # The go-cache job builds with -trimpath on macOS and Windows. This step makes
-      # these legs build the same way, so that they use the cached objects.
+      # these legs build the same way, so that they use the cached objects. It is
+      # also the only per-change build of those targets, because the cross job is
+      # gone.
       - name: Build (-trimpath)
         if: runner.os != 'Linux'
         shell: bash
@@ -558,7 +570,8 @@ jobs:
             # Keep this list equal to the packages of the groups above.
             exclude: drivers/(couchbase|elasticsearch|cassandra|neo4j|hbase)
     steps:
-      - name: Harden the runner (block egress)
+      - &harden-docker-elastic
+        name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
@@ -582,9 +595,7 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Start HBase (compose, host networking)
         if: matrix.hbase
@@ -649,9 +660,7 @@ jobs:
             echo "::error::a coverage group did not pass: $RESULT"
             exit 1
           fi
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -686,7 +695,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Harden the runner (block egress)
+      - &harden-docker
+        name: Harden the runner (block egress)
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
@@ -708,9 +718,7 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: e2e with redis (all cases + the redis live flow)
         run: |
@@ -722,39 +730,6 @@ jobs:
           docker compose up -d --wait mongo
           IQ_MONGO_URL=mongodb://localhost:27017/iq_test go test ./e2e/ -run TestLiveMongoRoundTrip
           docker compose stop mongo
-
-  cross:
-    needs: changes
-    if: needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: $/.github/actions/setup-go
-      - name: Cross-compile gate (no CGO, trimpath)
-        run: |
-          for os in linux darwin windows; do
-            echo "== GOOS=$os CGO_ENABLED=0 =="
-            CGO_ENABLED=0 GOOS="$os" go build -trimpath ./...
-          done
 
   # Builds the release as a snapshot, with no publish and no signature, so that a
   # broken .goreleaser.yaml fails a pull request and not the release. Then checks
@@ -771,23 +746,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
+      - *harden-go
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -856,9 +815,7 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
             vuln.go.dev:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: govulncheck
         run: |
@@ -890,9 +847,7 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: OSV scan + license allowlist
         # The allowlist is scripts/license-allowlist.txt, which make security reads too.
@@ -910,31 +865,16 @@ jobs:
 
   # Generation-only: proves the SBOMs build (same syft invocation as `make sbom`).
   # No artifact upload; actions/upload-artifact is not among the mirrored actions.
+  # `syft scan dir:.` reads the Go module graph and the Python files of the docs
+  # site. The sbom output of the changes job covers both: a release input changes
+  # the Go side, and docs/pyproject.toml or docs/uv.lock change the Python side.
   sbom:
     needs: changes
-    if: needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.sbom == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Generate SBOMs (syft, SPDX + CycloneDX)
         run: |
@@ -949,26 +889,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Dead code (whole program)
         run: |
@@ -986,17 +908,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            github.com:443
+      - *harden-base
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -1016,33 +928,26 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
+      - *harden-go
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0 # gitleaks scans the full commit history
+          fetch-depth: 0 # the range scan needs the commits of the pull request
+      # The restore is off. The go-cache job does not warm gitleaks, so the restore
+      # would only download modules that this job does not use.
       - uses: $/.github/actions/setup-go
-      - name: gitleaks (working tree + history)
+        with:
+          restore: 'false'
+      # The history scan covers only the commits of the pull request. The weekly
+      # deep-scan job keeps the only scan of the full history.
+      - name: gitleaks (working tree + pull request commits)
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           . scripts/tool-versions.env
           go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" dir --no-banner .
-          go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" git --no-banner .
+          go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" git --no-banner --log-opts="$BASE..$HEAD" .
 
   # What the dependency tree can *do* (google/capslock, scripts/capabilities.sh).
   # The wrapper self-skips unless go.mod or go.sum moved against the base, so this
@@ -1053,27 +958,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
+      - *harden-go
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] the step below fetches the PR base
         with:
           fetch-depth: 0 # the merge-base with the trunk must be reachable
+      # The restore is off. The wrapper skips itself unless go.mod or go.sum changed.
+      # When it runs, it compiles many packages. That case is rare.
       - uses: $/.github/actions/setup-go
+        with:
+          restore: 'false'
       - name: Capability drift vs capslock-baseline.json
         env:
           BASE: ${{ github.base_ref || 'main' }} # PR target branch, else the trunk
@@ -1096,28 +989,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            *.r2.cloudflarestorage.com:443
-            api.github.com:443
-            auth.docker.io:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            production.cloudflare.docker.com:443
-            production.cloudfront.docker.com:443
-            proxy.golang.org:443
-            registry-1.docker.io:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
+      - *harden-docker
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] the step below fetches the PR base
         with:
           fetch-depth: 0 # full history so the diff base is reachable
@@ -1167,26 +1039,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Fuzz the untrusted parsers
         run: bash scripts/fuzz.sh
@@ -1198,26 +1052,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Fuzz the untrusted parsers (long budget)
         env:
@@ -1302,26 +1138,8 @@ jobs:
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       # Read-only: the token goes to git as a header in the environment, never in a
       # URI or an argument. A branch that does not exist yet gives an empty state.
@@ -1381,33 +1199,8 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.deep-plan.outputs.matrix) }}
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            *.r2.cloudflarestorage.com:443
-            api.github.com:443
-            auth.docker.io:443
-            dl.google.com:443
-            docker-auth.elastic.co:443
-            docker.elastic.co:443
-            github.com:443
-            go.dev:443
-            production.cloudflare.docker.com:443
-            production.cloudfront.docker.com:443
-            proxy.golang.org:443
-            registry-1.docker.io:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-docker-elastic
+      - *checkout
       - uses: $/.github/actions/setup-go
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -1475,26 +1268,8 @@ jobs:
     outputs:
       publish: ${{ steps.verdict.outputs.publish }}
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-go
+      - *checkout
       - uses: $/.github/actions/setup-go
       - name: Fetch the stored state (badges branch)
         env:
@@ -1545,20 +1320,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            github.com:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-base
+      - *checkout
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: scan-state
@@ -1577,20 +1340,8 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            github.com:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *harden-base
+      - *checkout
       - name: Demo stamp
         run: bash scripts/demo/stamp.sh check
 
@@ -1617,9 +1368,7 @@ jobs:
             raw.githubusercontent.com:443
             release-assets.githubusercontent.com:443
             releases.astral.sh:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - *checkout
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Build site
         run: uv run --locked zensical build --clean
