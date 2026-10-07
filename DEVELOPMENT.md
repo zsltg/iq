@@ -101,7 +101,8 @@ the parse, pack and rate steps of `scripts/mutation-plan.sh` on prepared dry run
 (`--pack`, `--rate`, `--stale`), and `scripts/mutation-fingerprint.sh` in a small copy of the
 repository; no network, no container, no mutago run), the capability wrapper tests
 (`bash scripts/test/capabilities.sh`: simulated Go and Capslock commands, needs `jq`,
-no network, no container), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
+no network, no container), the go install check (`bash scripts/go-installable.sh`
+and its fixture tests in `scripts/test/go-installable.sh`), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
 paths are a stale cache from a removed worktree; check clears the cache and
 retries once. Do not clear the cache unconditionally. A warm lint run takes about
 3 seconds, compared with about 65 seconds after a cache clear.
@@ -125,6 +126,9 @@ Never add an exclusion for new code.
 The modernizer proposes current Go forms, including `slices`, `maps`, `range n`,
 `strings.SplitSeq`, and `errors.AsType`. Use `golangci-lint run --fix` for its fixes.
 The dead-code command is `deadcode -test ./...`, which analyzes the whole program.
+The go install check fails when `go.mod` has a `replace` or an `exclude` directive.
+`go install github.com/zsltg/iq@<version>` refuses such a module, but a build from
+the checkout accepts it. The CI `lint` job runs the same check.
 Fix every reported issue before committing.
 
 ### Security gate (`scripts/security.sh`)

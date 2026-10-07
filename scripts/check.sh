@@ -93,6 +93,13 @@ step "commit email tests"
 # temporary directory. They need no network and finish in seconds.
 bash scripts/test/commit-emails.sh || note_fail "commit email tests"
 
+step "go install accepts the module"
+# go install refuses a module whose go.mod has a replace or exclude directive. The
+# builds here use the checkout and accept such a directive, so this step checks
+# go.mod directly. The fixture tests need no network and finish in seconds.
+bash scripts/go-installable.sh || note_fail "go-installable"
+bash scripts/test/go-installable.sh || note_fail "go-installable tests"
+
 step "capability wrapper tests"
 bash scripts/test/capabilities.sh || note_fail "capability wrapper tests"
 

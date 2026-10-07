@@ -442,6 +442,13 @@ jobs:
         run: CGO_ENABLED=0 go build -trimpath ./...
       - name: Lint
         run: golangci-lint run
+      # go install refuses a module whose go.mod has a replace or exclude directive.
+      # The builds of this workflow use the checkout and accept such a directive.
+      # This step and its fixture tests also run in `make check`.
+      - name: go install accepts the module
+        run: |
+          bash scripts/go-installable.sh
+          bash scripts/test/go-installable.sh
 
   # zizmor audits the workflow files themselves. It reports unpinned or impostor
   # actions, persisted credentials, cache poisoning on release paths, and template
