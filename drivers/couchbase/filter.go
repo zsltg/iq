@@ -297,12 +297,14 @@ func (b *whereBuilder) orIn(or predicate.Or) (string, bool) {
 
 // fieldRef renders a predicate path as a backtick-quoted SQL++ field reference under
 // the scan alias t (`t`.`a`.`b`). pushdown.safeField already rejects a path component
-// with a dot or a $ prefix; this additionally refuses a backtick so a component can
-// never break out of its quotes, declining (false) rather than emitting an unsafe ref.
+// with a dot or a $ prefix. This also refuses a backtick and a backslash. A backtick
+// ends the quotes, and SQL++ reads a backslash as an escape inside them. A component
+// with either character returns false, so the predicate is not pushed and jq runs it
+// on the client.
 func fieldRef(path []string) (string, bool) {
 	parts := []string{"`t`"}
 	for _, p := range path {
-		if strings.Contains(p, "`") {
+		if strings.ContainsAny(p, "`\\") {
 			return "", false
 		}
 		parts = append(parts, "`"+p+"`")
