@@ -19,6 +19,55 @@ over the pipe.
 `--from-format` forces the decode when the content cannot be sniffed (a gzipped
 or oddly-shaped dump).
 
+### Compare piped data with a source
+
+The pipe is one source only. `iq diff`, `iq combine`, and `source()` name
+registered sources, so they cannot read the pipe. Write the pipe to a fixed file
+path and register that path once. Then rewrite the file before each run.
+
+`iq add` needs the file to exist, so write it first. Plain JSON rows from
+`sq -J` are not in iq's typed dump format. `iq --typed --key-field id` converts
+them to typed records keyed by `id`. Without `--key-field`, `iq --typed` rejects
+the rows with `record has no key`.
+
+The examples set `pipefail`. Without it, a pipeline reports only the status of
+`iq`. A failed `sq` or `curl` can then leave a partial file, and the next
+command reads it. `pipefail` needs bash, zsh, or another shell that supports it.
+
+Keep the file in a directory that only you can write to, such as your home
+directory. Do not use a shared directory such as `/tmp`. There, another user
+can create a symbolic link at the path, and the redirect then overwrites the
+file that the link points to.
+
+```bash { title='One time: write the file, then register it' }
+set -o pipefail
+sq -J @pg.users | iq --typed --key-field id > "$HOME/in.jsonl" &&
+  iq add -n in "file://$HOME/in.jsonl"
+```
+
+```bash { title='Diff piped data against a source' }
+set -o pipefail
+sq -J @pg.users | iq --typed --key-field id > "$HOME/in.jsonl" && iq diff in prod
+```
+
+```bash { title='Combine piped data with a source' }
+set -o pipefail
+curl -sf https://api.example.com/users | iq --typed --key-field id > "$HOME/in.jsonl" &&
+  iq combine --with '$in + $prod' 'in=.[]' 'prod=.[]'
+```
+
+For a diff, the keys must match the keys of the other source.
+
+Because `in` is a registered file source, iq reads it from disk page by page.
+The data and schema diffs and every combine feature work on it. A file source
+has no native statistics, so `iq diff --stats` does not.
+
+The file changes on every run, so a decode cache of it is never used again. For
+a large file, add `--no-cache`, so that each run does not leave an old cache
+entry behind.
+
+Scripts that run at the same time must use different paths and handles.
+
 ## sq
 
 [`sq`](https://sq.io) is a command-line tool giving jq-style access to SQL
