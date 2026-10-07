@@ -445,7 +445,7 @@ file with the fix as the regression seed. Never delete it to make a run pass.
 make hooks   # per checkout, worktrees included
 ```
 
-Points `core.hooksPath` at the committed `.githooks`. Both hooks compare a
+Points `core.hooksPath` at the committed `.githooks`. Two hooks compare a
 commit's address against the `user.email` configured in a config file, read
 with `--show-origin` so a `git -c user.email=...` cannot move both sides of the
 comparison at once. `pre-commit` resolves the identity the commit will carry,
@@ -456,6 +456,20 @@ bypasses hooks, a replayed rebase, or history written before the hooks existed.
 `pre-push` skips a commit that a remote-tracking ref already holds, because it is
 already published. This lets a squash merge from GitHub, whose committer is
 `noreply@github.com`, reach `origin` and the next pull request branch.
+The third hook, `commit-msg`, reads the message text. Every email address in a
+commit message must be the author or committer address of that same commit, or
+match the allowlist: `*@users.noreply.github.com`, `noreply@github.com`,
+`noreply@anthropic.com` and `noreply@openai.com`. The rule is in
+`scripts/commit-emails.sh`, and the allowlist is in that file only. The first
+case lets an outside contributor sign off with their own public address. A
+hand-typed `Signed-off-by:` line with another address fails. Do not type an
+address into a message: `git commit -s` adds the sign-off with your configured
+address. `pre-push` runs the same script over the commits that it publishes, and
+the `dco` job runs it over the pull request range. A later commit does not remove an
+address from history, so a failure on existing commits needs a rewrite of each
+named message: `git commit --amend -s` for the last commit, or a rebase that
+edits an older one. A pushed commit then needs a force-push. `bash scripts/test/commit-emails.sh`
+tests the script, and `make check` runs it.
 The address a repository publishes is the one in its config, and removing a
 different one from published history costs a force-push over every clone. A
 deliberate override, such as applying someone else's patch, passes
@@ -525,6 +539,7 @@ on an escape, `mutago-baseline.candidate.json`, so the ids of the escapes need
 no local re-run), `workflows` (zizmor and actionlint over
 `.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target), `dco`
 (`scripts/dco.sh`, a `Signed-off-by:` for the author of each pull request commit,
+and `scripts/commit-emails.sh`, no unallowed email address in a commit message,
 on pull requests only) and
 `docs` (site build). The
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run

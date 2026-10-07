@@ -55,12 +55,13 @@ release-tag:
 	bash scripts/release.sh --tag
 
 # hooks points core.hooksPath at the committed .githooks, which guard the commit
-# identity: the address a repository publishes is the one in its git config, and
-# an override is expensive to remove once pushed. Per checkout, worktrees
+# identity and the addresses in commit messages: the address a repository
+# publishes is the one in its git config, and an override is expensive to remove
+# once pushed. Per checkout, worktrees
 # included, so run it once in each.
 hooks:
 	git config core.hooksPath .githooks
-	@echo "hooks: core.hooksPath -> .githooks (pre-commit, pre-push)"
+	@echo "hooks: core.hooksPath -> .githooks (pre-commit, commit-msg, pre-push)"
 
 # check is the fast, offline gate: format, vet, build, lint, dead code, and the
 # unit suite with a coverage report. No Docker, no network.

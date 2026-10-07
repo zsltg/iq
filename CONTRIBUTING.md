@@ -113,6 +113,10 @@ entry. This note goes away with the re-baseline.
   commit with this line:
   `I, <name> <author email>, hereby add my Signed-off-by to this commit: <sha>`.
   The failed `dco` job prints both commands.
+  Do not type an email address into a commit message. Every address in it must
+  be the commit's author or committer address, or a no-reply address (see
+  `scripts/commit-emails.sh`). The `commit-msg` hook and the `dco` job enforce
+  this, and `git commit -s` adds the sign-off for you.
   When authorized to commit, agents use the signed-off empty corrective commit by default.
   Agents need explicit authorization for the author-only rebase and force-push
   exception. It does not apply to review fixes or newer `main`.
