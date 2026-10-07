@@ -14,6 +14,14 @@
 # the tool versions, this file and the action. When no entry matches the key, a
 # job restores the newest entry of the same runner. The go-cache job never does
 # that, so a new entry starts clean and does not keep old module versions.
+# The cache has one entry for each runner OS. The Linux entry holds the variants
+# and the shared tools. The macOS and Windows entries hold the no-cgo build and
+# the plain test compile. The jobs capabilities, workflows and secrets skip the
+# restore (restore: 'false'), because they compile no iq package and the restore
+# costs more than the tool compile that it saves.
+# The jobs osv, sbom and secrets compile their tool themselves. Those tools bring
+# about 3.9 GB of modules and 1.3 GB of build cache, which every Linux job would
+# download if the cache held them.
 #
 # Integration tests and gates that need a datastore run ONE CONTAINER AT A TIME:
 # GOFLAGS=-p=1 serialises package test binaries, so each driver's testcontainer
@@ -278,8 +286,11 @@ jobs:
   # review rounds do not start three cold builds. It never restores the fallback
   # entry, because that entry carries every old module version into the new one,
   # and Go never trims the module cache. The Linux leg compiles every variant that
-  # the jobs build and every pinned tool, and runs none of them: a tool can call
-  # the network when it starts, and the host list of this job blocks that.
+  # the Linux jobs build and the tools that more than one job runs, and runs none
+  # of them: a tool can call the network when it starts, and the host list of this
+  # job blocks that. It does not compile syft, osv-scanner and gitleaks. The jobs
+  # sbom, osv and secrets compile them, because they bring about 3.9 GB of modules
+  # and 1.3 GB of build cache.
   go-cache:
     needs: changes
     if: >-
@@ -366,11 +377,8 @@ jobs:
           export GOBIN="$RUNNER_TEMP/bin"
           go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"
           go install "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION"
-          go install "github.com/zricethezav/gitleaks/v8@$GITLEAKS_VERSION"
-          go install "github.com/google/osv-scanner/v2/cmd/osv-scanner@$OSV_SCANNER_VERSION"
           go install "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION"
           go install "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION"
-          go install "github.com/anchore/syft/cmd/syft@$SYFT_VERSION"
       - name: Build and compile the tests (no cgo)
         if: steps.plan.outputs.build == 'true' && runner.os != 'Linux'
         shell: bash
@@ -488,7 +496,11 @@ jobs:
         run: |
           . scripts/tool-versions.env
           uvx "zizmor==$ZIZMOR_VERSION" .github/
+      # The restore is off. The go-cache job warms actionlint, but the compile takes
+      # about 16 s and the restore takes about 60 s.
       - uses: $/.github/actions/setup-go
+        with:
+          restore: 'false'
       # The runner has shellcheck, so actionlint also checks the run blocks.
       - name: actionlint (GitHub Actions workflow lint)
         run: |
@@ -507,8 +519,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # The cache holds the objects of the build that its consumers run. cgo is on
-    # for the race detector on Linux and off on the other runners, as in go-cache.
+    # cgo is on for the race detector on Linux and off on the other runners.
     env:
       CGO_ENABLED: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
     steps:
@@ -535,7 +546,9 @@ jobs:
           persist-credentials: false
       - uses: $/.github/actions/setup-go
       # The go-cache job builds with -trimpath on macOS and Windows. This step makes
-      # these legs build the same way, so that they use the cached objects.
+      # these legs build the same way, so that they use the cached objects. It is
+      # also the only per-change build of those targets, because the cross job is
+      # gone.
       - name: Build (-trimpath)
         if: runner.os != 'Linux'
         shell: bash
@@ -1028,7 +1041,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # the range scan needs the commits of the pull request
+      # The restore is off. The go-cache job does not warm gitleaks, so the restore
+      # would only download modules that this job does not use.
       - uses: $/.github/actions/setup-go
+        with:
+          restore: 'false'
       # The history scan covers only the commits of the pull request. The weekly
       # deep-scan job keeps the only scan of the full history.
       - name: gitleaks (working tree + pull request commits)
@@ -1069,7 +1086,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] the step below fetches the PR base
         with:
           fetch-depth: 0 # the merge-base with the trunk must be reachable
+      # The restore is off. The wrapper skips itself unless go.mod or go.sum changed.
+      # When it runs, it compiles many packages. That case is rare.
       - uses: $/.github/actions/setup-go
+        with:
+          restore: 'false'
       - name: Capability drift vs capslock-baseline.json
         env:
           BASE: ${{ github.base_ref || 'main' }} # PR target branch, else the trunk
