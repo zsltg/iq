@@ -218,7 +218,7 @@ func TestScanPagesByKeyset(t *testing.T) {
 		}))
 		require.Equal(t, []int{100, 3}, sizes)
 		require.Len(t, drv.session.runs, 2)
-		require.Equal(t, "", drv.session.runs[0].params["after"])
+		require.Empty(t, drv.session.runs[0].params["after"])
 		require.Equal(t, "e99", drv.session.runs[1].params["after"])
 	})
 	t.Run("short page stops", func(t *testing.T) {
@@ -258,7 +258,7 @@ func TestScanAllNilPageMakesNoCallback(t *testing.T) {
 	require.NoError(t, s.ScanBatches(markedContext(), func(map[string]any) error { calls++; return nil }))
 	require.Zero(t, calls)
 	require.Len(t, drv.session.runs, 2)
-	require.Equal(t, "", drv.session.runs[1].params["after"], "no entity was seen, so the cursor stays")
+	require.Empty(t, drv.session.runs[1].params["after"], "no entity was seen, so the cursor stays")
 }
 
 func TestScanKeepsDuplicateKeysApart(t *testing.T) {
