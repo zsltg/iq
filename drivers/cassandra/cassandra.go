@@ -148,14 +148,9 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	rest, rawQuery, _ := strings.Cut(rest, "?")
 	authority, path, _ := strings.Cut(rest, "/")
 
-	var username, password string
-	if at := strings.LastIndex(authority, "@"); at >= 0 {
-		var err error
-		username, password, err = splitUserinfo(authority[:at])
-		if err != nil {
-			return connConfig{}, err
-		}
-		authority = authority[at+1:]
+	username, password, authority, err := splitAuthority(authority)
+	if err != nil {
+		return connConfig{}, err
 	}
 	if authority == "" {
 		return connConfig{}, fmt.Errorf("cassandra url must name at least one host, e.g. cassandra://host:9042/keyspace")
@@ -190,6 +185,20 @@ func parseURL(rawURL, address string) (connConfig, error) {
 		password:    password,
 		consistency: consistency,
 	}, nil
+}
+
+// splitAuthority splits the userinfo from the hosts at the last "@". An authority
+// without "@" has no userinfo.
+func splitAuthority(authority string) (username, password, hosts string, err error) {
+	userinfo, hosts, ok := strings.CutLast(authority, "@")
+	if !ok {
+		return "", "", authority, nil
+	}
+	username, password, err = splitUserinfo(userinfo)
+	if err != nil {
+		return "", "", "", err
+	}
+	return username, password, hosts, nil
 }
 
 // errBadUserinfo is the fixed error for a user name or password with an invalid
