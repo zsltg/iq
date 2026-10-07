@@ -94,7 +94,7 @@ printf 'work\n# Author: Ann Author <%s>\n' "$noreply" >"$work/message"
 message "the author address in a comment line passes" 0
 
 printf 'work\n# ------------------------ >8 ------------------------\nSigned-off-by: Ann <someone@example.com>\n' >"$work/message"
-message "an address after the scissors line is ignored" 0
+message "an address after the scissors line fails and names it" 1 "someone@example.com"
 
 printf 'work\n\nCc: Ana <ana@bücher.de>\n' >"$work/message"
 message "a non-ASCII address fails and names it" 1 "ana@bücher.de"

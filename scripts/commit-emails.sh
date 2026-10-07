@@ -19,12 +19,13 @@
 #
 # The first form checks a message file before the commit exists (the commit-msg
 # hook uses it). The identities come from git var, so a --author or a -c override
-# counts. Everything after a scissors line is ignored, as git removes it in the
-# verbose modes. Lines that start with # are checked. Git runs the hook before
-# it cleans up the message, and it keeps those lines when no editor runs, for
-# example with git commit -m. This choice fails closed: an address in a comment
-# line is rejected even when git would strip the line. The template comment of
-# git holds no address except the author address, which the rule allows. The
+# counts. The whole file is checked, comment lines and the text after a
+# scissors line included. Git runs the hook before it cleans up the message, and
+# the cleanup mode decides what stays: git commit -m keeps the comment lines, and
+# --cleanup=whitespace keeps the text after the scissors line. This choice fails
+# closed: an address is rejected even when git would strip its line. The template
+# comment of git holds no address except the author address, which the rule
+# allows. A git commit -v diff that adds a foreign address fails too. The
 # second form checks each commit of a range,
 # merge commits included, for example origin/main..HEAD (the pre-push hook and
 # the dco job use it).
@@ -115,9 +116,8 @@ if [ "$1" = "--message" ]; then
   fi
   author=$(sed -n 's/.*<\(.*\)>.*/\1/p' <<<"$author" | lower)
   committer=$(sed -n 's/.*<\(.*\)>.*/\1/p' <<<"$committer" | lower)
-  # Cut the text at the scissors line. Keep the comment lines (see the header).
-  awk '/^# -+ >8 -+$/ { exit } { print }' "$2" >"$work/message"
-  if ! check_text "the message" "$author" "$committer" "$work/message"; then
+  # Check the whole file (see the header).
+  if ! check_text "the message" "$author" "$committer" "$2"; then
     cat >&2 <<EOF
 commit-emails: do not type an address into a commit message.
 commit-emails: git commit -s adds the sign-off with your configured address.
