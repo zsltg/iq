@@ -108,6 +108,7 @@ space (which cobra's name derivation makes impossible), and a fall-through that 
 byte-identical line.
 - de2fc8366cbb cmd/complete.go:69 statement/return — completeCacheClear error path returns `nil, ShellCompDirectiveDefault`; ShellCompDirectiveDefault is 0, the directive's zero value, so the zero-value return is byte-identical.
 - 2ee430f494f0 cmd/complete.go:75 statement/return — same ShellCompDirectiveDefault==0 identity on completeCacheClear's success return.
+- ec576c164a72 cmd/complete.go:365 statement/return: the same ShellCompDirectiveDefault==0 identity on the success return of completeCacheClear. The line changed when candidates got descriptions (2026-10-08, feat/completion-descriptions), so the mutant has a new ID.
 - 2cc310b7cd64 cmd/man.go:163 expression/comparison — manUsageLine `i >= 0` → `i > 0` differs only when IndexByte returns 0, i.e. a Use beginning with a space; cobra derives Name() from the first token, so no such command can exist.
 - 9adb645adba3 cmd/man.go:163 numbers/incrementer — same impossible-input class: the mutated bound differs only for a Use whose first byte is the space.
 - 53c0f7192ad9 cmd/man.go:246 branch/if — writeManExampleBlock's empty-line fast path; the general path renders an empty line as manVerbatim("")+"\n" == "\n", byte-identical output.

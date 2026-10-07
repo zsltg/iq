@@ -2922,6 +2922,12 @@
    "file": "drivers/couchbase/write.go",
    "mutator": "expression/error-guard",
    "line": 191
+  },
+  {
+   "id": "ec576c164a7231b6643906c2d58c8e51",
+   "file": "cmd/complete.go",
+   "mutator": "statement/return",
+   "line": 365
   }
  ]
 }
