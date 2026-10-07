@@ -13,6 +13,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestSelectFormat(t *testing.T) {
@@ -573,4 +574,16 @@ func TestYAMLFormatterFlushError(t *testing.T) {
 	f := newFormatter(formatYAML, &errAfter{0}, false)
 	require.ErrorContains(t, f.emit("x"), "encode result")
 	require.ErrorContains(t, f.flush(), "close yaml")
+}
+
+// TestYAMLFormatterEmitRejectsUnencodableValue checks that a value yaml.v3
+// cannot encode gives an error and not a panic.
+func TestYAMLFormatterEmitRejectsUnencodableValue(t *testing.T) {
+	var buf bytes.Buffer
+	f := &yamlFormatter{enc: yaml.NewEncoder(&buf)}
+
+	err := f.emit(make(chan int))
+
+	require.EqualError(t, err, "encode result: cannot marshal type: chan int")
+	require.Empty(t, buf.String())
 }

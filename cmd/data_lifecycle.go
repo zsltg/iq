@@ -18,6 +18,7 @@ import (
 // --explain plan and whether the backend supports the op at all.
 type lifecycleOp struct {
 	name      string
+	past      string // past tense of name, for the report line
 	supported func(st store) bool
 	run       func(ctx context.Context, st store) error
 	describe  func(d driver) (query.AccessPlan, bool)
@@ -25,6 +26,7 @@ type lifecycleOp struct {
 
 var clearOp = lifecycleOp{
 	name:      "clear",
+	past:      "cleared",
 	supported: func(st store) bool { _, ok := st.(query.Clearer); return ok },
 	run:       func(ctx context.Context, st store) error { return st.(query.Clearer).Clear(ctx) },
 	describe: func(d driver) (query.AccessPlan, bool) {
@@ -37,6 +39,7 @@ var clearOp = lifecycleOp{
 
 var dropOp = lifecycleOp{
 	name:      "drop",
+	past:      "dropped",
 	supported: func(st store) bool { _, ok := st.(query.Dropper); return ok },
 	run:       func(ctx context.Context, st store) error { return st.(query.Dropper).Drop(ctx) },
 	describe: func(d driver) (query.AccessPlan, bool) {
@@ -299,7 +302,7 @@ func applyLifecycleOp(ctx context.Context, op lifecycleOp, t endpoint, dry bool,
 	if err := op.run(ctx, st); err != nil {
 		return "", redactErr(err, t.url)
 	}
-	return fmt.Sprintf("%sed %s", op.name, t.label()), nil
+	return fmt.Sprintf("%s %s", op.past, t.label()), nil
 }
 
 // affectedSuffix appends an approximate item count to a dry-run line when the store
