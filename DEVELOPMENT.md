@@ -627,6 +627,9 @@ Posture and upkeep around the pipeline, all on GitHub:
   score behind the README badge. Every action in every workflow is pinned by
   commit SHA with the release in a trailing comment; keep it that way (a tag
   pin is a Scorecard deduction and a supply-chain gap).
+  The one exception is the SLSA generator in `release.yml`. It verifies its own
+  identity from the tag, so it is pinned by tag, and the project accepts the
+  Scorecard finding.
 - The repository Actions setting allows only actions made by GitHub, actions from
   verified creators, and an allow-list with these exact patterns:
   `astral-sh/setup-uv@*`, `codecov/codecov-action@*`, `ossf/scorecard-action@*`,
