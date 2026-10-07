@@ -37,8 +37,9 @@ name: CI
 # change, so each pushed tree was tested as a pull request. A push to main therefore
 # runs only the coverage jobs, which keep the Codecov baseline of main, and the
 # go-cache job, which saves the Go cache. The weekly schedule and
-# manual dispatch drive the `deep-*` jobs (fresh CVE data, the sharded mutation
-# scan of the packages that changed, the badge), gated off the fast jobs so a
+# manual dispatch drive the `deep-*` jobs (fresh CVE data, long fuzzing, the full suite
+# with the race detector, the sharded mutation scan of the packages that changed, the
+# badge), gated off the fast jobs so a
 # schedule run does not re-lint.
 on:
   push:
@@ -1059,6 +1060,55 @@ jobs:
         env:
           IQ_FUZZ_TIME: 5m
         run: bash scripts/fuzz.sh
+
+  # The race detector never runs on the container-backed driver tests in the per-change
+  # jobs. The Linux leg of `test` uses -short, which skips them. The timing tests are
+  # also too slow under -race to gate every pull request. This weekly job runs the full
+  # suite with -race and reports only: a data race or a failed test fails the job, but
+  # no merge waits for it, so it is not in the needs list of ci-ok. It uses the group
+  # layout of coverage-group (the same packages, the same one-container-at-a-time rule
+  # and the same HBase service), so each package runs exactly once. Keep both matrices
+  # equal. A manual dispatch also runs this job. The race detector slows the tests by 2
+  # to 10 times, so a leg gets 120 minutes, where a coverage group gets 45. There is
+  # no coverage profile. -timeout is per test binary, as in scripts/coverage.sh.
+  deep-race:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: race (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: couchbase
+            packages: ./drivers/couchbase
+          - group: elasticsearch
+            packages: ./drivers/elasticsearch
+          - group: cassandra-neo4j-hbase
+            packages: ./drivers/cassandra ./drivers/neo4j ./drivers/hbase
+            hbase: true
+          - group: rest
+            # Keep this list equal to the packages of the groups above.
+            exclude: drivers/(couchbase|elasticsearch|cassandra|neo4j|hbase)
+    steps:
+      - *harden-docker-elastic
+      - *checkout
+      - uses: ./.github/actions/setup-go
+      - name: Start HBase (compose, host networking)
+        if: matrix.hbase
+        run: docker compose up -d --wait hbase
+      - name: Test with the race detector (one container at a time)
+        env:
+          GOFLAGS: -p=1
+          IQ_HBASE_URL: ${{ matrix.hbase && 'hbase://localhost:2181/' || '' }}
+          PACKAGES: ${{ matrix.packages }}
+          EXCLUDE: ${{ matrix.exclude }}
+        run: |
+          if [ -n "$EXCLUDE" ]; then
+            PACKAGES="$(go list ./... | grep -vE "^github.com/zsltg/iq/($EXCLUDE)\$" | tr '\n' ' ')"
+          fi
+          read -ra pkgs <<<"$PACKAGES"
+          go test -race -shuffle=on -timeout 30m "${pkgs[@]}"
 
   # Weekly + manual deep scan, gated to schedule/workflow_dispatch:
   # deep-scan re-runs the vulnerability scanners against fresh OSV/CVE data on
