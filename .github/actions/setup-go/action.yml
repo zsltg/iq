@@ -5,8 +5,7 @@
 # job only restores it. The key has no commit, so one entry exists for each set of
 # dependencies, tool versions and workflow files. A job that finds no exact entry
 # restores the newest older entry of the same runner, except with lookup-only.
-# The cache exists for Linux only, so the restore step is skipped on other runners.
-# A job can also skip the restore with the input restore set to 'false'. The job
+# The restore runs on every runner OS. A job can skip the restore with the input restore set to 'false'. The job
 # then installs Go and nothing else. Use it when the job compiles no iq package and
 # the restore costs more than the tool compile that it saves. When the restore is
 # skipped, the output cache-hit is empty. It is not the string false.
@@ -15,7 +14,7 @@ description: Install the Go version of go.mod, then restore the Go module cache 
 
 inputs:
   restore:
-    description: Set to false to install Go and skip the cache restore. The restore also does not run off Linux.
+    description: Set to false to install Go and skip the cache restore.
     required: false
     default: 'true'
   lookup-only:
@@ -53,7 +52,7 @@ runs:
         echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
         echo "key=$KEY" >> "$GITHUB_OUTPUT"
     - id: restore
-      if: inputs.restore == 'true' && runner.os == 'Linux'
+      if: inputs.restore == 'true'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |

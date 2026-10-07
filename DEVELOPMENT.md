@@ -668,20 +668,21 @@ dependencies. When no entry matches, a job restores the newest entry of the same
 OS and architecture (the restore key `go-<OS>-<architecture>-`) and compiles the
 rest.
 
-The cache exists for Linux only. On macOS and Windows the action installs Go and
-skips the restore. The action has an input `restore`, which is `'true'` by
+The cache has one entry for each runner OS. The Linux entry holds the variants
+and the shared tools. The macOS and Windows entries hold the no-cgo build and the
+plain test compile. The action has an input `restore`, which is `'true'` by
 default. A job that sets `restore: 'false'` installs Go and skips the restore.
 Then the output `cache-hit` is empty. The jobs `capabilities`, `workflows` and
-`secrets` set it, because they compile no iq package and the restore costs more than the tool compile that it saves. The
-script `scripts/capabilities.sh` skips itself unless `go.mod` or `go.sum`
+`secrets` set it, because they compile no iq package and the restore costs more
+than the tool compile that it saves. The script `scripts/capabilities.sh` skips itself unless `go.mod` or `go.sum`
 changed, and a run that does not skip is rare. `workflows` runs `actionlint`,
 which the cache warms, but the compile is shorter than the restore.
 
 The `go-cache` job is the only job that saves. It runs on a push to `main`, and on
 a pull request that is not a draft when the diff changes `ci.yml` or
-`.github/actions/` (the `cache` output of `changes`). It runs on Linux only. On a
-push, it saves one entry when the exact key does not exist. On a pull request, it builds and
-saves nothing, so a mistake in a build step fails the pull request and not
+`.github/actions/` (the `cache` output of `changes`). On a push, it saves one
+entry for each runner when the exact key does not exist. On a pull request, it
+builds and saves nothing, so a mistake in a build step fails the pull request and not
 `main`. It looks up the exact key only and never restores the fallback entry,
 because that entry would carry every old module version into the new one, and Go
 never trims the module cache. The Linux leg builds the variants that the jobs
@@ -691,9 +692,12 @@ each fuzz target for one iteration, and compiles `golangci-lint`, `govulncheck`,
 `deadcode` and `actionlint` with `go install`, with no run, because a tool can
 call a host that the job blocks. It does not compile `syft`, `osv-scanner` and
 `gitleaks`. The jobs `sbom`, `osv` and `secrets` compile them, because these tools
-bring a large module graph that every Linux job would download. The `test` job
-sets `CGO_ENABLED=1` on Linux and `0` on macOS and Windows. Those legs build with
-`-trimpath` and no cgo, which proves that these targets build. `release-snapshot` gets no gain from the
+bring a large module graph that every Linux job would download. The macOS and
+Windows legs of `go-cache` run `go build -trimpath` and the plain test compile
+with no cgo. The `test` job sets `CGO_ENABLED=1` on Linux and `0` on macOS and
+Windows, and builds with `-trimpath` there. These legs use the cached objects, and
+the build is the only per-change build of those targets, because `cross` is gone.
+`release-snapshot` gets no gain from the
 cache, because goreleaser builds targets that the cache does not hold. The old
 `setup-go-*` entries expire after seven days without a use. A maintainer can
 delete them earlier with `gh cache delete`.

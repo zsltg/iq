@@ -14,10 +14,11 @@
 # the tool versions, this file and the action. When no entry matches the key, a
 # job restores the newest entry of the same runner. The go-cache job never does
 # that, so a new entry starts clean and does not keep old module versions.
-# The cache exists for Linux only. The action skips the restore on macOS and
-# Windows. The jobs capabilities, workflows and secrets also skip it
-# (restore: 'false'), because they compile no iq package and the restore costs
-# more than the tool compile that it saves.
+# The cache has one entry for each runner OS. The Linux entry holds the variants
+# and the shared tools. The macOS and Windows entries hold the no-cgo build and
+# the plain test compile. The jobs capabilities, workflows and secrets skip the
+# restore (restore: 'false'), because they compile no iq package and the restore
+# costs more than the tool compile that it saves.
 # The jobs osv, sbom and secrets compile their tool themselves. Those tools bring
 # about 3.9 GB of modules and 1.3 GB of build cache, which every Linux job would
 # download if the cache held them.
@@ -279,27 +280,32 @@ jobs:
           printf '%s\n' "$files"
 
   # Builds the Go cache that the other jobs restore (see the comment at the top of
-  # this file). On a push to main it saves one Linux entry, unless the exact key
-  # exists. On a pull request it builds and saves nothing, so a mistake
+  # this file). On a push to main it saves one entry for each runner, unless the
+  # exact key exists. On a pull request it builds and saves nothing, so a mistake
   # in a build step fails the pull request and not main. A draft skips it, so the
-  # review rounds do not start a cold build. It never restores the fallback
+  # review rounds do not start three cold builds. It never restores the fallback
   # entry, because that entry carries every old module version into the new one,
-  # and Go never trims the module cache. It compiles every variant that the Linux
-  # jobs build and the tools that more than one job runs, and runs none of them: a
-  # tool can call the network when it starts, and the host list of this job blocks
-  # that. It does not compile syft, osv-scanner and gitleaks. The jobs sbom, osv and
-  # secrets compile them, because they bring about 3.9 GB of modules and 1.3 GB of
-  # build cache.
+  # and Go never trims the module cache. The Linux leg compiles every variant that
+  # the Linux jobs build and the tools that more than one job runs, and runs none
+  # of them: a tool can call the network when it starts, and the host list of this
+  # job blocks that. It does not compile syft, osv-scanner and gitleaks. The jobs
+  # sbom, osv and secrets compile them, because they bring about 3.9 GB of modules
+  # and 1.3 GB of build cache.
   go-cache:
     needs: changes
     if: >-
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
       needs.changes.outputs.cache == 'true' && needs.changes.outputs.draft != 'true')
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Harden the runner (block egress)
+        if: runner.os == 'Linux'
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
@@ -336,19 +342,19 @@ jobs:
           echo "build=$build" >> "$GITHUB_OUTPUT"
           echo "go-cache: build=$build cache-hit=$CACHE_HIT"
       - name: Download the modules
-        if: steps.plan.outputs.build == 'true'
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
         run: go mod download
       - name: Build
-        if: steps.plan.outputs.build == 'true'
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
         run: go build ./...
       - name: Build without cgo, with trimpath
-        if: steps.plan.outputs.build == 'true'
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
         run: CGO_ENABLED=0 go build -trimpath ./...
       # go test -c -o <dir>/ fails when two packages have the same last path
       # element. No package has one now. The three variants match the test job
       # (-race), the coverage groups (-covermode and -coverpkg) and a plain run.
       - name: Compile the test binaries (plain, race, cover)
-        if: steps.plan.outputs.build == 'true'
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
         run: |
           go test -c -o "$RUNNER_TEMP/plain/" ./...
           go test -race -c -o "$RUNNER_TEMP/race/" ./...
@@ -356,7 +362,7 @@ jobs:
       # A crasher in the seed corpus fails this job. Then the job saves nothing, and
       # the fuzz job of the next pull request reports the same crasher.
       - name: Compile the fuzz targets
-        if: steps.plan.outputs.build == 'true'
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
         env:
           IQ_FUZZ_TIME: 1x
         run: bash scripts/fuzz.sh
@@ -365,7 +371,7 @@ jobs:
       # and the host list of this job blocks that host. A later go run takes the
       # compiled packages from the cache and only links the tool again.
       - name: Compile the pinned tools
-        if: steps.plan.outputs.build == 'true'
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
         run: |
           . scripts/tool-versions.env
           export GOBIN="$RUNNER_TEMP/bin"
@@ -373,6 +379,15 @@ jobs:
           go install "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION"
           go install "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION"
           go install "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION"
+      - name: Build and compile the tests (no cgo)
+        if: steps.plan.outputs.build == 'true' && runner.os != 'Linux'
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go mod download
+          go build -trimpath ./...
+          go test -c -o "$RUNNER_TEMP/plain/" ./...
       - name: Save the Go cache
         if: github.event_name == 'push' && steps.go.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -530,9 +545,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: $/.github/actions/setup-go
-      # The cache exists for Linux only. This step builds the whole module without
-      # cgo and with -trimpath on macOS and Windows. It proves that those targets
-      # build, because the cross job no longer does.
+      # The go-cache job builds with -trimpath on macOS and Windows. This step makes
+      # these legs build the same way, so that they use the cached objects. It is
+      # also the only per-change build of those targets, because the cross job is
+      # gone.
       - name: Build (-trimpath)
         if: runner.os != 'Linux'
         shell: bash
