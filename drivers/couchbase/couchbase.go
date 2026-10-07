@@ -437,10 +437,9 @@ func (s *Store) scan(ctx context.Context, spec scanSpec, fn func(batch map[strin
 	if s.collection == nil {
 		return errNoBucket
 	}
-	stmt := s.scanStatement(spec.where)
 	after := ""
 	for {
-		page, last, n, err := s.scanPage(ctx, stmt, after, spec)
+		page, last, n, err := s.scanPage(ctx, spec, after)
 		if err != nil {
 			return err
 		}
@@ -460,12 +459,12 @@ func (s *Store) scan(ctx context.Context, spec scanSpec, fn func(batch map[strin
 	}
 }
 
-// scanStatement builds the keyset statement for one scan. where, when non-empty, is
-// ANDed into the WHERE clause. Every value rides as a named parameter.
-func (s *Store) scanStatement(where string) string {
+// scanStatement builds the keyset statement for one scan. spec.where, when non-empty,
+// is ANDed into the WHERE clause. Every value rides as a named parameter.
+func (s *Store) scanStatement(spec scanSpec) string {
 	clause := "META(t).id > $after"
-	if where != "" {
-		clause += " AND (" + where + ")"
+	if spec.where != "" {
+		clause += " AND (" + spec.where + ")"
 	}
 	return fmt.Sprintf(
 		"SELECT META(t).id AS k, t AS v FROM %s t WHERE %s ORDER BY META(t).id LIMIT $page",
@@ -473,9 +472,10 @@ func (s *Store) scanStatement(where string) string {
 	)
 }
 
-// scanPage runs the statement for one keyset page after the ID after and reads it. It
-// returns the page, the last ID read and the number of rows read.
-func (s *Store) scanPage(ctx context.Context, stmt, after string, spec scanSpec) (map[string]any, string, int, error) {
+// scanPage runs the keyset statement for spec, for one page after the ID after, and
+// reads it. It returns the page, the last ID read and the number of rows read.
+func (s *Store) scanPage(ctx context.Context, spec scanSpec, after string) (map[string]any, string, int, error) {
+	stmt := s.scanStatement(spec)
 	args := map[string]any{"after": after, "page": s.pageSize}
 	maps.Copy(args, spec.params)
 	s.tracef("query %s", stmt)
