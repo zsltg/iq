@@ -582,7 +582,8 @@ changes. The jobs `workflows`, `osv`, `secrets`, `demo-check` and
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
 workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
 (`deep-scan`, which keeps the only gitleaks scan of the full history), give every fuzz target five minutes instead of twenty seconds
-(`deep-fuzz`), and run an incremental, sharded mutation scan. The stored result of
+(`deep-fuzz`), run the full suite, container-backed tests included, with the race detector
+(`deep-race`, in the package groups of `coverage-group`, reports only, no merge waits for it), and run an incremental, sharded mutation scan. The stored result of
 each package lives on the `badges` branch (`state/<slug>.json`, next to the
 badge endpoint `mutation.json`; `scripts/mutation-state.sh` reads and writes it,
 with the token in an HTTP header from the environment, never in a URI or an
