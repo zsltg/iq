@@ -770,7 +770,7 @@ func TestMCPPingRowRedactsPassword(t *testing.T) {
 	require.Len(t, out.Results, 1)
 	require.False(t, out.Results[0].OK)
 	require.NotContains(t, out.Results[0].Error, "review-secret")
-	require.Contains(t, out.Results[0].Error, "(unparseable URI)")
+	require.Contains(t, out.Results[0].Error, "the connection URI is not valid")
 }
 
 // TestMCPToolListIsSortedAndCacheable pins the advertised list: sorted by name,

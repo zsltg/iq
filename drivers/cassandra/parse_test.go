@@ -37,6 +37,35 @@ func TestParseURL(t *testing.T) {
 		require.Equal(t, "alice", cc.username)
 		require.Equal(t, "s3cret", cc.password)
 	})
+	userinfoTests := []struct {
+		name     string
+		uri      string
+		user     string
+		password string
+		hosts    []string
+		wantErr  error
+	}{
+		{"password with at sign and colon", "cassandra://u:ab@cd:ef@host/ks", "u", "ab@cd:ef", []string{"host:9042"}, nil},
+		{"percent-encoded user and password", "cassandra://u%40x:p%40ss@host/ks", "u@x", "p@ss", []string{"host:9042"}, nil},
+		{"empty userinfo", "cassandra://@host/ks", "", "", []string{"host:9042"}, nil},
+		{"bad escape in password", "cassandra://u:dummysecret%zz@host/ks", "", "", nil, errBadUserinfo},
+		{"bad escape in user name", "cassandra://u%zz:p@host/ks", "", "", nil, errBadUserinfo},
+	}
+	for _, tt := range userinfoTests {
+		t.Run(tt.name, func(t *testing.T) {
+			cc, err := parseURL(tt.uri, "")
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				require.NotContains(t, err.Error(), "dummysecret")
+				require.NotContains(t, err.Error(), "u%zz")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.user, cc.username)
+			require.Equal(t, tt.password, cc.password)
+			require.Equal(t, tt.hosts, cc.hosts)
+		})
+	}
 	t.Run("consistency param", func(t *testing.T) {
 		cc, err := parseURL("cassandra://h/shop?consistency=local_quorum", "")
 		require.NoError(t, err)

@@ -50,8 +50,9 @@ func TestOpenRejectsBadURL(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "parse redis url")
+	require.ErrorIs(t, err, iqredis.ErrInvalidURI)
 	var urlErr *url.Error
-	require.ErrorAs(t, err, &urlErr, "the parser's cause survives the wrap")
+	require.NotErrorAs(t, err, &urlErr, "the parser's cause is hidden")
 }
 
 func TestOpenFailsFastWhenUnreachable(t *testing.T) {

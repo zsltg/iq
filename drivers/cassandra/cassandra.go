@@ -134,7 +134,8 @@ func authenticatorFor(cc connConfig) gocql.Authenticator {
 
 // parseURL parses a cassandra:// source URL into its cluster config. It is
 // hand-rolled rather than net/url-based because a multi-host authority
-// (cassandra://h1,h2/ks) is not a valid net/url host. The address override, when
+// (cassandra://h1,h2/ks) is not a valid net/url host. The userinfo ends at the last
+// "@" and is percent-decoded, as net/url does. The address override, when
 // non-empty, wins over the URL's ?table= default. The keyspace is required, as both
 // the jq and raw paths run against a specific keyspace.
 func parseURL(rawURL, address string) (connConfig, error) {
@@ -147,10 +148,9 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	rest, rawQuery, _ := strings.Cut(rest, "?")
 	authority, path, _ := strings.Cut(rest, "/")
 
-	var username, password string
-	if userinfo, hostpart, ok := strings.Cut(authority, "@"); ok {
-		username, password, _ = strings.Cut(userinfo, ":")
-		authority = hostpart
+	username, password, authority, err := splitAuthority(authority)
+	if err != nil {
+		return connConfig{}, err
 	}
 	if authority == "" {
 		return connConfig{}, fmt.Errorf("cassandra url must name at least one host, e.g. cassandra://host:9042/keyspace")
@@ -185,6 +185,39 @@ func parseURL(rawURL, address string) (connConfig, error) {
 		password:    password,
 		consistency: consistency,
 	}, nil
+}
+
+// splitAuthority splits the userinfo from the hosts at the last "@". An authority
+// without "@" has no userinfo.
+func splitAuthority(authority string) (username, password, hosts string, err error) {
+	userinfo, hosts, ok := strings.CutLast(authority, "@")
+	if !ok {
+		return "", "", authority, nil
+	}
+	username, password, err = splitUserinfo(userinfo)
+	if err != nil {
+		return "", "", "", err
+	}
+	return username, password, hosts, nil
+}
+
+// errBadUserinfo is the fixed error for a user name or password with an invalid
+// percent escape. It never quotes the input, which can hold a password.
+var errBadUserinfo = errors.New("cassandra url has an invalid percent escape in the user name or password")
+
+// splitUserinfo splits userinfo at the first colon and percent-decodes both parts.
+// This matches net/url, which the CLI uses to store and rewrite a source URI.
+func splitUserinfo(userinfo string) (username, password string, err error) {
+	rawUser, rawPass, _ := strings.Cut(userinfo, ":")
+	username, err = url.PathUnescape(rawUser)
+	if err != nil {
+		return "", "", errBadUserinfo
+	}
+	password, err = url.PathUnescape(rawPass)
+	if err != nil {
+		return "", "", errBadUserinfo
+	}
+	return username, password, nil
 }
 
 // withPort appends the default CQL port to a bare host, leaving a host that already
