@@ -151,6 +151,9 @@ func TestToWhereNotNarrowing(t *testing.T) {
 		{name: "or with an unpushable branch", node: predicate.Or{predicate.Eq{Path: []string{"a"}, Value: 1}, predicate.Ne{Path: []string{"b"}, Value: 2}}},
 		{name: "empty or", node: predicate.Or{}},
 		{name: "backtick in path is refused", node: predicate.Eq{Path: []string{"a`b"}, Value: 1}},
+		{name: "trailing backslash in path is refused", node: predicate.Eq{Path: []string{"x\\"}, Value: 1}},
+		{name: "inner backslash in path is refused", node: predicate.Eq{Path: []string{"a\\b"}, Value: 1}},
+		{name: "backslash in nested path is refused", node: predicate.Exists{Path: []string{"a", "b\\"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -158,6 +161,29 @@ func TestToWhereNotNarrowing(t *testing.T) {
 			require.False(t, narrow)
 			require.Empty(t, where)
 			require.Nil(t, params)
+		})
+	}
+}
+
+func TestFieldRef(t *testing.T) {
+	tests := []struct {
+		name   string
+		path   []string
+		want   string
+		wantOK bool
+	}{
+		{name: "normal name", path: []string{"year"}, want: "`t`.`year`", wantOK: true},
+		{name: "nested names", path: []string{"a", "b"}, want: "`t`.`a`.`b`", wantOK: true},
+		{name: "backtick", path: []string{"a`b"}, wantOK: false},
+		{name: "trailing backslash", path: []string{"x\\"}, wantOK: false},
+		{name: "inner backslash", path: []string{"a\\b"}, wantOK: false},
+		{name: "backslash in a later component", path: []string{"a", "b\\"}, wantOK: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := fieldRef(tt.path)
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
