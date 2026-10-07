@@ -437,24 +437,35 @@ func uriOptionsHelp() string {
 		if len(d.params) == 0 {
 			continue
 		}
-		parts := []string{d.name + ": " + d.uriExample + "."}
-		if d.uriNote != "" {
-			parts = append(parts, d.uriNote)
-		}
-		for _, p := range d.params {
-			opt := "?" + p.Name + "="
-			if p.Keyspace {
-				opt += " (keyspace)"
-			}
-			opt += ": " + p.Desc + "."
-			if len(p.Values) > 0 {
-				opt += " Values: " + strings.Join(p.Values, ", ") + "."
-			}
-			parts = append(parts, opt)
-		}
-		b.WriteString("\n\n" + wrapText(strings.Join(parts, " ")))
+		b.WriteString("\n\n" + wrapText(driverOptionsHelp(d)))
 	}
 	return b.String()
+}
+
+// driverOptionsHelp renders one driver as a paragraph: the example URI, the
+// note, then one sentence for each option.
+func driverOptionsHelp(d driver) string {
+	parts := []string{d.name + ": " + d.uriExample + "."}
+	if d.uriNote != "" {
+		parts = append(parts, d.uriNote)
+	}
+	for _, p := range d.params {
+		parts = append(parts, paramHelp(p))
+	}
+	return strings.Join(parts, " ")
+}
+
+// paramHelp renders one URI option as a sentence.
+func paramHelp(p query.URIParam) string {
+	opt := "?" + p.Name + "="
+	if p.Keyspace {
+		opt += " (keyspace)"
+	}
+	opt += ": " + p.Desc + "."
+	if len(p.Values) > 0 {
+		opt += " Values: " + strings.Join(p.Values, ", ") + "."
+	}
+	return opt
 }
 
 // wrapText breaks text into lines of at most 78 columns. A single word longer
