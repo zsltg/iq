@@ -491,16 +491,27 @@ containers, and the run takes much longer.
 
 `.github/workflows/ci.yml` runs on the GitHub mirror only (the primary remote has
 Actions off; `docs.yml` deploys the site and `release.yml` publishes releases,
-both guarded the same way). Every pull request and every push to `main` runs one
-job per gate. A pull request branch runs through `pull_request` only, not also
-through `push`. The first job, `changes`, decides whether the change touches code.
+both guarded the same way). Every pull request runs one job per gate. A pull
+request branch runs through `pull_request` only, not also through `push`. The
+ruleset of `main` requires a pull request for each change, so each pushed tree
+was tested as a pull request. A push to `main` runs only `changes`, the coverage
+jobs and `go-cache`. The coverage jobs keep the Codecov baseline of `main`, and
+`go-cache` saves the Go cache. The first job, `changes`, decides whether the
+change touches code.
 It sets `code=false` only when every changed file is on a short list that no Go job
 reads (Markdown files outside `skills/`, `docs/` outside the man page and the
 completions, `.github/` except `ci.yml` and `.github/actions/`, `.agents/`, and the app configs). Then the
-Go jobs are skipped, and a skipped job passes its required check, so a docs-only or
-workflow-only pull request takes about 2 minutes. Any other file, a change to
-`ci.yml` or to a shared action in `.github/actions/`, or a diff that fails runs
-every job. The last job, `ci-ok`, is the
+Go jobs are skipped, and a skipped job passes its required check. The `docs` job
+builds the site and runs only when `changes` sets `docs=true`. That happens when
+the diff changes a file under `docs/` or `ci.yml`, or when the diff fails. A
+pull request that changes only a Markdown file outside `docs/` runs the fast
+jobs only, and it takes about 2 minutes. A pull request that changes a file
+under `docs/` also builds the site. Any other file, a change to `ci.yml` or to a
+shared action in `.github/actions/`, or a diff that fails runs every job. The
+`code`, `full`, `snapshot` and `docs` outputs of `changes` are true only on a
+pull request. The `coverage` output ignores the event, so a push to `main` with
+code changes runs the coverage jobs. The last job, `ci-ok`, runs on pull
+requests only. It is the
 only required check of the `main` ruleset: it needs every per-change job and fails
 when one of them failed or was cancelled (a skipped job passes). The per-job checks
 cannot be required themselves, because GitHub reports a skipped matrix job under
@@ -545,7 +556,8 @@ no local re-run), `workflows` (zizmor and actionlint over
 (`scripts/dco.sh`, a `Signed-off-by:` for the author of each pull request commit,
 and `scripts/commit-emails.sh`, no unallowed email address in a commit message,
 on pull requests only) and
-`docs` (site build). The
+`docs` (site build). The jobs `workflows`, `osv`, `secrets`, `demo-check` and
+`dco` run on pull requests only. The
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
 workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
 (`deep-scan`), give every fuzz target five minutes instead of twenty seconds
