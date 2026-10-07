@@ -84,7 +84,7 @@ jobs:
   # skipped draft ci-ok would let the pull request merge before the tests finish.
   ci-ok:
     if: always() && github.event_name == 'pull_request'
-    needs: [changes, go-cache, lint, workflows, test, coverage-group, coverage, e2e, cross, release-snapshot, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
+    needs: [changes, go-cache, lint, workflows, test, coverage-group, coverage, e2e, release-snapshot, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -125,18 +125,21 @@ jobs:
   # job reads. Any other file, an unknown base, or an error sets code=true, so an
   # unexpected case runs everything. If it fails, the jobs that need it are
   # skipped, and ci-ok fails, which blocks the merge. The diff step writes the raw
-  # results. The job outputs code, full, snapshot and docs are true only on a pull
-  # request, so a push to main skips the jobs that a pull request already ran. The
-  # output coverage reads the raw results, so a push with code changes keeps the
+  # results. The job outputs code, full, sbom, snapshot and docs are true only on a
+  # pull request, so a push to main skips the jobs that a pull request already ran.
+  # The output coverage reads the raw results, so a push with code changes keeps the
   # coverage jobs. The step sets cache=true on a push and on a pull request that
   # changes this file or the shared actions, so that the go-cache job builds with
   # the new files. It sets docs=true when a changed file is under docs/ or is this
   # file, so that the docs job builds the site only then. It also sets full=true
   # when code=true and the pull request is not a draft: the slow jobs (the test
-  # matrix, e2e, cross builds, the release snapshot, SBOM, capabilities, fuzzing and
-  # the mutation gate) run only then, so review rounds on a draft do not start them
-  # on every push. The coverage output is the same without the pull request
-  # condition, and a draft does not run the coverage jobs either.
+  # matrix, e2e, the release snapshot, capabilities, fuzzing and the mutation gate)
+  # run only then, so review rounds on a draft do not start them on every push. The
+  # coverage output is the same without the pull request condition, and a draft
+  # does not run the coverage jobs either. The step sets sbom=true when
+  # snapshot=true, when the diff changes docs/pyproject.toml or docs/uv.lock, or
+  # when the diff fails. The output sbom is true only on a pull request that is
+  # not a draft, as the output snapshot is. The sbom job does not read full.
   changes:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -151,6 +154,7 @@ jobs:
       docs: ${{ github.event_name == 'pull_request' && steps.diff.outputs.docs == 'true' }}
       draft: ${{ steps.draft.outputs.draft }}
       full: ${{ github.event_name == 'pull_request' && steps.diff.outputs.code == 'true' && steps.draft.outputs.draft != 'true' }}
+      sbom: ${{ github.event_name == 'pull_request' && steps.diff.outputs.sbom == 'true' && steps.draft.outputs.draft != 'true' }}
       snapshot: ${{ github.event_name == 'pull_request' && steps.diff.outputs.release == 'true' && steps.draft.outputs.draft != 'true' }}
     steps:
       - name: Harden the runner (block egress)
@@ -200,10 +204,12 @@ jobs:
           release=true
           cache=true
           docs=true
+          sbom=true
           if files="$(git diff --name-only "$BASE...$HEAD")"; then
             code=false
             release=false
             docs=false
+            sbom=false
             # A push always builds the cache. A pull request builds it only when
             # the change can alter the cache key or the build steps.
             if [ "$EVENT" != push ]; then cache=false; fi
@@ -218,6 +224,12 @@ jobs:
               esac
               case "$f" in
                 .github/workflows/ci.yml | .github/actions/*) cache=true ;;
+              esac
+              # syft reads the Go module graph and the Python files of the docs
+              # site. A release input covers the Go side. These two files cover
+              # the Python side.
+              case "$f" in
+                docs/pyproject.toml | docs/uv.lock) sbom=true ;;
               esac
               # The docs job builds the site, so it reads docs/ and, for the
               # workflow steps that build it, this file.
@@ -244,6 +256,8 @@ jobs:
               echo "::warning::cannot list the deleted files of $BASE...$HEAD, so the release snapshot runs"
               release=true
             fi
+            # A release input also changes the Go module graph that syft reads.
+            if [ "$release" = true ]; then sbom=true; fi
           else
             echo "::warning::cannot diff $BASE...$HEAD, so every job runs"
           fi
@@ -252,8 +266,9 @@ jobs:
             echo "code=$code"
             echo "docs=$docs"
             echo "release=$release"
+            echo "sbom=$sbom"
           } >> "$GITHUB_OUTPUT"
-          echo "changes: code=$code release=$release cache=$cache docs=$docs"
+          echo "changes: code=$code release=$release cache=$cache docs=$docs sbom=$sbom"
           printf '%s\n' "$files"
 
   # Builds the Go cache that the other jobs restore (see the comment at the top of
@@ -414,8 +429,14 @@ jobs:
         run: |
           golangci-lint fmt
           git diff --exit-code || { echo "::error::run 'gofumpt -w . && goimports -w .' and commit the result"; exit 1; }
-      - name: Vet
-        run: go vet ./...
+      # golangci-lint runs the vet analyzers, and `make check` keeps `go vet` for
+      # local runs. This step builds the packages without cgo and with trimpath, as
+      # the release does. A pull request builds linux/amd64 here, darwin/arm64 in
+      # the macOS leg of test and windows/amd64 in the Windows leg of test. It does
+      # not build linux/arm64, darwin/amd64 or windows/arm64. That gap is accepted.
+      # The release-snapshot job builds all six targets when a release input changes.
+      - name: Build without cgo, with trimpath
+        run: CGO_ENABLED=0 go build -trimpath ./...
       - name: Lint
         run: golangci-lint run
 
@@ -723,39 +744,6 @@ jobs:
           IQ_MONGO_URL=mongodb://localhost:27017/iq_test go test ./e2e/ -run TestLiveMongoRoundTrip
           docker compose stop mongo
 
-  cross:
-    needs: changes
-    if: needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: block
-          disable-telemetry: true
-          allowed-endpoints: >-
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-            *.githubapp.com:443
-            api.github.com:443
-            dl.google.com:443
-            github.com:443
-            go.dev:443
-            proxy.golang.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-            sum.golang.org:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: $/.github/actions/setup-go
-      - name: Cross-compile gate (no CGO, trimpath)
-        run: |
-          for os in linux darwin windows; do
-            echo "== GOOS=$os CGO_ENABLED=0 =="
-            CGO_ENABLED=0 GOOS="$os" go build -trimpath ./...
-          done
-
   # Builds the release as a snapshot, with no publish and no signature, so that a
   # broken .goreleaser.yaml fails a pull request and not the release. Then checks
   # that each archive and the .deb package carry the same files as the
@@ -910,9 +898,12 @@ jobs:
 
   # Generation-only: proves the SBOMs build (same syft invocation as `make sbom`).
   # No artifact upload; actions/upload-artifact is not among the mirrored actions.
+  # `syft scan dir:.` reads the Go module graph and the Python files of the docs
+  # site. The sbom output of the changes job covers both: a release input changes
+  # the Go side, and docs/pyproject.toml or docs/uv.lock change the Python side.
   sbom:
     needs: changes
-    if: needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.sbom == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
@@ -1036,13 +1027,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0 # gitleaks scans the full commit history
+          fetch-depth: 0 # the range scan needs the commits of the pull request
       - uses: $/.github/actions/setup-go
-      - name: gitleaks (working tree + history)
+      # The history scan covers only the commits of the pull request. The weekly
+      # deep-scan job keeps the only scan of the full history.
+      - name: gitleaks (working tree + pull request commits)
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           . scripts/tool-versions.env
           go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" dir --no-banner .
-          go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" git --no-banner .
+          go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" git --no-banner --log-opts="$BASE..$HEAD" .
 
   # What the dependency tree can *do* (google/capslock, scripts/capabilities.sh).
   # The wrapper self-skips unless go.mod or go.sum moved against the base, so this

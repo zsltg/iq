@@ -508,7 +508,7 @@ pull request that changes only a Markdown file outside `docs/` runs the fast
 jobs only, and it takes about 2 minutes. A pull request that changes a file
 under `docs/` also builds the site. Any other file, a change to `ci.yml` or to a
 shared action in `.github/actions/`, or a diff that fails runs every job. The
-`code`, `full`, `snapshot` and `docs` outputs of `changes` are true only on a
+`code`, `full`, `sbom`, `snapshot` and `docs` outputs of `changes` are true only on a
 pull request. The `coverage` output ignores the event, so a push to `main` with
 code changes runs the coverage jobs. The last job, `ci-ok`, runs on pull
 requests only. It is the
@@ -519,14 +519,18 @@ its bare name. A new per-change job goes into the `needs` list of `ci-ok`.
 
 A draft pull request runs the fast jobs only. `changes` also sets `full=true`
 when `code=true` and the pull request is not a draft. The slow jobs (`test`, the
-coverage jobs, `e2e`, `cross`, `sbom`, `capabilities`, `mutate-diff` and `fuzz`)
+coverage jobs, `e2e`, `capabilities`, `mutate-diff` and `fuzz`)
 run only then, and `ci-ok` fails on a draft. `changes` sets `snapshot=true` when
 the pull request is not a draft and the diff changes `.goreleaser.yaml`,
 `go.mod`, `go.sum`, `scripts/third-party-licenses.sh`,
 `scripts/tool-versions.env`, `ci.yml` or a file in `.github/actions/`, or deletes or renames `LICENSE`,
 `README.md`, the man page or a completion file. `release-snapshot` runs only
 then, because it takes about 11 minutes. The release copies those four kinds of
-files by fixed names, so a change to their content cannot break it. Mark the
+files by fixed names, so a change to their content cannot break it. `changes`
+sets `sbom=true` in the same cases and also when the diff changes
+`docs/pyproject.toml` or `docs/uv.lock`, because `syft scan dir:.` reads the Go
+module graph and the Python files of the docs site. The `sbom` job runs only
+then. Mark the
 pull request ready for review when the review rounds settle: the
 `ready_for_review` event starts the full run once. `changes` reads the draft
 state from the API, not from the event, so a push just before "ready for review"
@@ -536,17 +540,17 @@ would let a pull request merge while its full run is still in progress. The runs
 of one pull request share a concurrency group, so a new push cancels the run of
 the previous push. A push to `main` is never cancelled.
 The jobs per gate:
-`go-cache` (builds the Go cache, see below), `lint` (format, vet, golangci-lint), `test` (`go test -short -shuffle=on` on
+`go-cache` (builds the Go cache, see below), `lint` (format, a build without cgo and with `-trimpath`, golangci-lint), `test` (`go test -short -shuffle=on` on
 Linux, macOS and Windows, with `-race` on Linux), `coverage` (four `coverage (<group>)` jobs each test a
 group of packages on their own runner, then `coverage` joins the partial profiles,
 makes sure that each package is in exactly one group, applies the floor, and does
 a reporting-only Codecov upload, `CODECOV_TOKEN` secret), `e2e` (redis pass, then
-the mongo live flow), `cross` (CGO-off builds for the three shipped targets),
+the mongo live flow),
 `release-snapshot` (a goreleaser snapshot with no publish and no signature, then
 a check of the third-party license texts in the archives and the `.deb`),
 `vuln` (govulncheck), `osv` (OSV plus the permissive license allowlist, then
 `scripts/third-party-licenses.sh` on every change), `sbom` (syft), `deadcode`,
-`secrets` (gitleaks, tree and history), `capabilities`
+`secrets` (gitleaks, the tree and the commits of the pull request), `capabilities`
 (`scripts/capabilities.sh` against the PR base), `mutate-diff`
 (`scripts/mutation-gate.sh` against the PR base; it uploads the artifact
 `mutate-diff` with `report.json`, `mutago-agentic.json` and, after a failure
@@ -556,11 +560,15 @@ no local re-run), `workflows` (zizmor and actionlint over
 (`scripts/dco.sh`, a `Signed-off-by:` for the author of each pull request commit,
 and `scripts/commit-emails.sh`, no unallowed email address in a commit message,
 on pull requests only) and
-`docs` (site build). The jobs `workflows`, `osv`, `secrets`, `demo-check` and
+`docs` (site build). A pull request builds `linux/amd64` in `lint`, `darwin/arm64`
+in the macOS leg of `test` and `windows/amd64` in the Windows leg of `test`. It
+does not build `linux/arm64`, `darwin/amd64` or `windows/arm64`. That gap is
+accepted, and `release-snapshot` builds all six targets when a release input
+changes. The jobs `workflows`, `osv`, `secrets`, `demo-check` and
 `dco` run on pull requests only. The
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
 workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
-(`deep-scan`), give every fuzz target five minutes instead of twenty seconds
+(`deep-scan`, which keeps the only gitleaks scan of the full history), give every fuzz target five minutes instead of twenty seconds
 (`deep-fuzz`), and run an incremental, sharded mutation scan. The stored result of
 each package lives on the `badges` branch (`state/<slug>.json`, next to the
 badge endpoint `mutation.json`; `scripts/mutation-state.sh` reads and writes it,
