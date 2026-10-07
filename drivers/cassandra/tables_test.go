@@ -3,6 +3,7 @@ package cassandra
 import (
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	gocql "github.com/apache/cassandra-gocql-driver/v2"
@@ -34,4 +35,16 @@ func TestScalarBindersHaveARowEach(t *testing.T) {
 	covered = slices.Compact(covered)
 	got := slices.Sorted(maps.Keys(scalarBinders))
 	require.Equal(t, covered, got)
+}
+
+func TestConsistencyLevelsHaveARowEach(t *testing.T) {
+	var covered []string
+	for _, tt := range consistencyNameCases {
+		if name := strings.ToLower(strings.TrimSpace(tt.in)); name != "" {
+			covered = append(covered, name)
+		}
+	}
+	slices.Sort(covered)
+	covered = slices.Compact(covered)
+	require.Equal(t, covered, slices.Sorted(maps.Keys(consistencyLevels)))
 }

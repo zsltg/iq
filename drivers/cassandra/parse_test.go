@@ -160,27 +160,30 @@ func TestTarget(t *testing.T) {
 	require.Error(t, err)
 }
 
+// consistencyNameCases lists every name that parseConsistency accepts, and a few
+// spellings that need trimming or case folding.
+var consistencyNameCases = []struct {
+	in   string
+	want gocql.Consistency
+}{
+	{"any", gocql.Any},
+	{"one", gocql.One},
+	{"two", gocql.Two},
+	{"three", gocql.Three},
+	{"quorum", gocql.Quorum},
+	{"all", gocql.All},
+	{"localquorum", gocql.LocalQuorum},
+	{"local_quorum", gocql.LocalQuorum},
+	{"eachquorum", gocql.EachQuorum},
+	{"each_quorum", gocql.EachQuorum},
+	{"localone", gocql.LocalOne},
+	{"local_one", gocql.LocalOne},
+	{" ONE ", gocql.One},
+	{"Local_Quorum", gocql.LocalQuorum},
+}
+
 func TestParseConsistencyEveryName(t *testing.T) {
-	tests := []struct {
-		in   string
-		want gocql.Consistency
-	}{
-		{"any", gocql.Any},
-		{"one", gocql.One},
-		{"two", gocql.Two},
-		{"three", gocql.Three},
-		{"quorum", gocql.Quorum},
-		{"all", gocql.All},
-		{"localquorum", gocql.LocalQuorum},
-		{"local_quorum", gocql.LocalQuorum},
-		{"eachquorum", gocql.EachQuorum},
-		{"each_quorum", gocql.EachQuorum},
-		{"localone", gocql.LocalOne},
-		{"local_one", gocql.LocalOne},
-		{" ONE ", gocql.One},
-		{"Local_Quorum", gocql.LocalQuorum},
-	}
-	for _, tt := range tests {
+	for _, tt := range consistencyNameCases {
 		t.Run(tt.in, func(t *testing.T) {
 			got, err := parseConsistency(tt.in)
 			require.NoError(t, err)
