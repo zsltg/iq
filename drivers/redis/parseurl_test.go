@@ -18,6 +18,7 @@ func TestParseURLHidesPassword(t *testing.T) {
 		{"slash after digits", "redis://u:123/dummysecret@host", true},
 		{"bad port without at sign", "redis://host:bad/0", false},
 		{"bad database without at sign", "redis://host:6379/x", false},
+		{"bad database with a parsed password", "redis://u:p@host:6379/x", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
