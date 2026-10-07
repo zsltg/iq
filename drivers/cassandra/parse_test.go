@@ -37,6 +37,25 @@ func TestParseURL(t *testing.T) {
 		require.Equal(t, "alice", cc.username)
 		require.Equal(t, "s3cret", cc.password)
 	})
+	t.Run("password with at sign and colon", func(t *testing.T) {
+		cc, err := parseURL("cassandra://u:ab@cd:ef@host/ks", "")
+		require.NoError(t, err)
+		require.Equal(t, "u", cc.username)
+		require.Equal(t, "ab@cd:ef", cc.password)
+		require.Equal(t, []string{"host:9042"}, cc.hosts)
+	})
+	t.Run("percent-encoded password", func(t *testing.T) {
+		cc, err := parseURL("cassandra://u%40x:p%40ss@host/ks", "")
+		require.NoError(t, err)
+		require.Equal(t, "u@x", cc.username)
+		require.Equal(t, "p@ss", cc.password)
+		require.Equal(t, []string{"host:9042"}, cc.hosts)
+	})
+	t.Run("bad escape hides the password", func(t *testing.T) {
+		_, err := parseURL("cassandra://u:dummysecret%zz@host/ks", "")
+		require.ErrorIs(t, err, errBadUserinfo)
+		require.NotContains(t, err.Error(), "dummysecret")
+	})
 	t.Run("consistency param", func(t *testing.T) {
 		cc, err := parseURL("cassandra://h/shop?consistency=local_quorum", "")
 		require.NoError(t, err)
