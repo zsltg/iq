@@ -135,8 +135,8 @@ filters, dump file content, and every database response.
 ## Do not flag
 
 - The subjects of commits in the pull request that fix earlier review findings.
-  The pull request is squash-merged: its title becomes the subject on `main`, and
-  the commit messages (with their `Co-Authored-By:` trailers) go into the body.
+  The pull request is squash-merged: its title becomes the subject on `main`. The
+  maintainer writes one body for the whole change and keeps the trailers.
 - Accepted equivalent mutants in `mutago-baseline.json`. Each one has a reason
   in `mutago-baseline.notes.md`.
 - Known capability false positives listed in `capslock-baseline.notes.md`.

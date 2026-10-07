@@ -51,8 +51,15 @@ An unresolved thread blocks merge.
 
 Before an authorized merge, meet [the merge prerequisites](../AGENTS.md#tests-and-gates).
 
-1. Run `gh pr merge <n> --squash`. Repository settings enable GitHub to delete the remote branch automatically.
-2. In the clean `main` checkout, run `git pull --ff-only github main`, then `git push origin main`.
+Without `--body-file`, GitHub puts every commit message of the pull request in the body of the squash commit.
+The pull request keeps the review-fix commits, so the commit on `main` needs only the result.
+
+1. In a file outside the worktree, write one body for the whole change. Say what changes and why.
+2. End the body with each different `Signed-off-by:` and `Co-Authored-By:` trailer of the pull request commits.
+   In the task branch, this command prints them:
+   `git log --no-merges --format='%(trailers:key=Signed-off-by,key=Co-Authored-By,unfold)' github/main..HEAD | sort -u | grep .`
+3. Run `gh pr merge <n> --squash --body-file <file>`. Repository settings enable GitHub to delete the remote branch automatically.
+4. In the clean `main` checkout, run `git pull --ff-only github main`, then `git push origin main`.
 
 Both remotes must hold the same commit. The pre-push hook skips commits that a remote already holds.
 
