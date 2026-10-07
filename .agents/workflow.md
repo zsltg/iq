@@ -12,6 +12,9 @@ Follow [the scope, authorization, and branch rules](../AGENTS.md#scope-and-autho
 - Sign off every commit for its author with `git commit -s`.
   The `Signed-off-by:` trailer certifies the Developer Certificate of Origin (DCO).
   The CI `dco` job checks each pull request commit, except merge commits.
+- Never type an email address into a commit message. `git commit -s` adds the sign-off.
+  Agents put no `Signed-off-by:` line in a commit message draft.
+  The `commit-msg` hook and the `dco` job reject an address that is not the author address or an allowed no-reply address.
 - End each agent-authored commit message with a `Co-Authored-By:` trailer that names the model and version.
 - For missing sign-offs, use the signed-off empty corrective commit described in [CONTRIBUTING.md](../CONTRIBUTING.md#commits).
   That document also permits an author-only DCO repair with a rebase and force-push.
