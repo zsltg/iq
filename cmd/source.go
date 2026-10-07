@@ -463,48 +463,71 @@ func newMvCmd() *cobra.Command {
 			"  $ iq mv prod staging   # rename a whole group (prod/* -> staging/*)",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cf, err := iqconfig.Load()
-			if err != nil {
-				return err
-			}
-			moved, err := cf.Move(args[0], args[1])
-			if err != nil {
-				return err
-			}
-			if len(moved) == 0 {
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), "nothing to move")
-				return err
-			}
-			// Stage each keyring credential under its new handle (leaving the old
-			// entry in place) so a failed Save rolls back without data loss.
-			staged := make([]iqconfig.Rename, 0, len(moved))
-			for _, r := range moved {
-				if !cf.Sources[r.New].Keyring {
-					continue
-				}
-				pw, gErr := keyringStore.Get(r.Old)
-				if gErr != nil {
-					continue // no stored credential to migrate
-				}
-				if sErr := keyringStore.Set(r.New, pw); sErr != nil {
-					return sErr
-				}
-				staged = append(staged, r)
-			}
-			if err := cf.Save(); err != nil {
-				for _, r := range staged {
-					_ = keyringStore.Delete(r.New)
-				}
-				return err
-			}
-			for _, r := range staged {
-				_ = keyringStore.Delete(r.Old)
-			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "moved %s to %s\n",
-				strings.TrimPrefix(args[0], "@"), strings.TrimPrefix(args[1], "@"))
-			return err
+			return runMv(cmd, args[0], args[1])
 		},
 	}
+}
+
+// runMv renames or moves a source or group, and moves the keyring entries with it.
+func runMv(cmd *cobra.Command, oldName, newName string) error {
+	cf, err := iqconfig.Load()
+	if err != nil {
+		return err
+	}
+	moved, err := cf.Move(oldName, newName)
+	if err != nil {
+		return err
+	}
+	if len(moved) == 0 {
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "nothing to move")
+		return err
+	}
+	staged, err := stageKeyringMoves(cf, moved)
+	if err != nil {
+		return err
+	}
+	if err := commitMove(cf, staged); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "moved %s to %s\n",
+		strings.TrimPrefix(oldName, "@"), strings.TrimPrefix(newName, "@"))
+	return err
+}
+
+// stageKeyringMoves copies each keyring secret of a moved source to its new
+// handle. It leaves the old entry in place, so that a failed Save rolls back
+// without data loss. It returns the renames that it staged.
+func stageKeyringMoves(cf *iqconfig.Config, moved []iqconfig.Rename) ([]iqconfig.Rename, error) {
+	staged := make([]iqconfig.Rename, 0, len(moved))
+	for _, r := range moved {
+		if !cf.Sources[r.New].Keyring {
+			continue
+		}
+		pw, gErr := keyringStore.Get(r.Old)
+		if gErr != nil {
+			continue // no stored credential to migrate
+		}
+		if sErr := keyringStore.Set(r.New, pw); sErr != nil {
+			return nil, sErr
+		}
+		staged = append(staged, r)
+	}
+	return staged, nil
+}
+
+// commitMove saves the config. If the save fails, it deletes the staged new
+// entries. Otherwise it deletes the old entries.
+func commitMove(cf *iqconfig.Config, staged []iqconfig.Rename) error {
+	if err := cf.Save(); err != nil {
+		for _, r := range staged {
+			_ = keyringStore.Delete(r.New)
+		}
+		return err
+	}
+	for _, r := range staged {
+		_ = keyringStore.Delete(r.Old)
+	}
+	return nil
 }
 
 // newSrcCmd builds `iq src [name]`: show the active source, or set it.
@@ -523,12 +546,7 @@ func newSrcCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if len(args) == 0 {
-				if cf.Active == "" {
-					_, err := fmt.Fprintln(out, "no active source")
-					return err
-				}
-				_, err := fmt.Fprintln(out, cf.Active)
-				return err
+				return showCurrent(out, cf.Active, "no active source")
 			}
 			if err := cf.SetActive(args[0]); err != nil {
 				return err
@@ -540,6 +558,15 @@ func newSrcCmd() *cobra.Command {
 			return err
 		},
 	}
+}
+
+// showCurrent prints current, or none when current is empty.
+func showCurrent(out io.Writer, current, none string) error {
+	if current == "" {
+		current = none
+	}
+	_, err := fmt.Fprintln(out, current)
+	return err
 }
 
 // newGroupCmd builds `iq group [name]`: show, set, or (with --clear) clear the
@@ -556,42 +583,45 @@ func newGroupCmd() *cobra.Command {
 			"  $ iq group --clear # back to top-level handles",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cf, err := iqconfig.Load()
-			if err != nil {
-				return err
-			}
-			out := cmd.OutOrStdout()
-			switch {
-			case clear:
-				if err := cf.SetGroup(""); err != nil {
-					return err
-				}
-				if err := cf.Save(); err != nil {
-					return err
-				}
-				_, err = fmt.Fprintln(out, "cleared active group")
-				return err
-			case len(args) == 0:
-				if cf.Group == "" {
-					_, err := fmt.Fprintln(out, "no active group")
-					return err
-				}
-				_, err := fmt.Fprintln(out, cf.Group)
-				return err
-			default:
-				if err := cf.SetGroup(args[0]); err != nil {
-					return err
-				}
-				if err := cf.Save(); err != nil {
-					return err
-				}
-				_, err = fmt.Fprintf(out, "active group: %s\n", cf.Group)
-				return err
-			}
+			return runGroup(cmd, args, clear)
 		},
 	}
 	c.Flags().BoolVar(&clear, "clear", false, "clear the active group")
 	return c
+}
+
+// runGroup shows, sets, or clears the active group. --clear wins over a
+// positional name.
+func runGroup(cmd *cobra.Command, args []string, clear bool) error {
+	cf, err := iqconfig.Load()
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	switch {
+	case clear:
+		if err := saveGroup(cf, ""); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(out, "cleared active group")
+		return err
+	case len(args) == 0:
+		return showCurrent(out, cf.Group, "no active group")
+	default:
+		if err := saveGroup(cf, args[0]); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(out, "active group: %s\n", cf.Group)
+		return err
+	}
+}
+
+// saveGroup sets the active group to name and saves the config.
+func saveGroup(cf *iqconfig.Config, name string) error {
+	if err := cf.SetGroup(name); err != nil {
+		return err
+	}
+	return cf.Save()
 }
 
 // redactURL returns raw with any password in its userinfo replaced by "xxxxx",
