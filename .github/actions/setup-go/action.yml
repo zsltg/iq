@@ -1,0 +1,54 @@
+# Set up Go and restore the shared Go cache, which holds the module cache and the
+# build cache. The job must run actions/checkout first, because hashFiles reads the
+# workspace. The "$/" form of the reference needs no checkout, but the key does.
+# Only the go-cache job of ci.yml saves the cache, on a push to main. Every other
+# job only restores it. The key has no commit, so one entry exists for each set of
+# dependencies, tool versions and workflow files. A job that finds no exact entry
+# restores the newest older entry of the same runner, except with lookup-only.
+name: Set up Go with the shared cache
+description: Install the Go version of go.mod, then restore the Go module cache and build cache
+
+inputs:
+  lookup-only:
+    description: Check that the exact entry exists and download nothing. The restore-key fallback is off.
+    required: false
+    default: 'false'
+
+outputs:
+  gocache:
+    description: The path of the Go build cache
+    value: ${{ steps.paths.outputs.gocache }}
+  gomodcache:
+    description: The path of the Go module cache
+    value: ${{ steps.paths.outputs.gomodcache }}
+  key:
+    description: The exact cache key
+    value: ${{ steps.paths.outputs.key }}
+  cache-hit:
+    description: The string true when the exact key matched, else false
+    value: ${{ steps.restore.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: false # this action restores the cache, and go-cache saves it
+    - id: paths
+      shell: bash
+      env:
+        KEY: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum', 'scripts/tool-versions.env', '.github/workflows/ci.yml', '.github/actions/setup-go/action.yml') }}
+      run: |
+        echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+        echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+        echo "key=$KEY" >> "$GITHUB_OUTPUT"
+    - id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.paths.outputs.gocache }}
+          ${{ steps.paths.outputs.gomodcache }}
+        key: ${{ steps.paths.outputs.key }}
+        restore-keys: ${{ inputs.lookup-only != 'true' && format('go-{0}-{1}-', runner.os, runner.arch) || '' }}
+        lookup-only: ${{ inputs.lookup-only }}

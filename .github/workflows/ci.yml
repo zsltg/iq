@@ -1,11 +1,19 @@
 # GitHub Actions syntax. The primary remote is a self-hosted git server with Actions off,
 # so this file runs only on the GitHub mirror (release.yml and docs.yml share that
-# guard style). checkout and setup-go are universally mirrored, golangci-lint
-# installs via `go install`, and every other tool runs via
+# guard style). golangci-lint installs via `go install`, and every other tool runs via
 # `go run <module>@<version>` or through the repo's own wrappers (which provision
 # their pinned mutago/capslock into a throwaway GOBIN), so nothing touches go.mod.
 # The tool versions live in scripts/tool-versions.env. Each step that runs a tool
 # sources that file first.
+#
+# Every job that needs Go runs actions/checkout first and then the shared action
+# .github/actions/setup-go. The action installs Go and restores one Go cache (the
+# module cache and the build cache). The order matters, because the cache key
+# hashes files of the workspace. Only the go-cache job saves the cache, on a push
+# to main. The key holds the OS, the architecture and a hash of go.mod, go.sum,
+# the tool versions, this file and the action. When no entry matches the key, a
+# job restores the newest entry of the same runner. The go-cache job never does
+# that, so a new entry starts clean and does not keep old module versions.
 #
 # Integration tests and gates that need a datastore run ONE CONTAINER AT A TIME:
 # GOFLAGS=-p=1 serialises package test binaries, so each driver's testcontainer
@@ -72,7 +80,7 @@ jobs:
   # skipped draft ci-ok would let the pull request merge before the tests finish.
   ci-ok:
     if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
-    needs: [changes, lint, workflows, test, coverage-group, coverage, e2e, cross, release-snapshot, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
+    needs: [changes, go-cache, lint, workflows, test, coverage-group, coverage, e2e, cross, release-snapshot, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -112,7 +120,9 @@ jobs:
   # Sets code=false only when every changed file is on the list of files that no Go
   # job reads. Any other file, an unknown base, or an error sets code=true, so an
   # unexpected case runs everything. If it fails, the jobs that need it are
-  # skipped, and ci-ok fails, which blocks the merge. It also sets full=true when
+  # skipped, and ci-ok fails, which blocks the merge. It sets cache=true on a push
+  # and on a pull request that changes this file or the shared actions, so that
+  # the go-cache job builds with the new files. It also sets full=true when
   # code=true and the pull request is not a draft: the slow jobs (the test matrix,
   # coverage, e2e, cross builds, the release snapshot, SBOM, capabilities, fuzzing
   # and the mutation gate) run only then, so review rounds on a draft do not start
@@ -125,6 +135,7 @@ jobs:
       contents: read
       pull-requests: read # read the live draft state of the pull request
     outputs:
+      cache: ${{ steps.diff.outputs.cache }}
       code: ${{ steps.diff.outputs.code }}
       draft: ${{ steps.draft.outputs.draft }}
       full: ${{ steps.diff.outputs.code == 'true' && steps.draft.outputs.draft != 'true' }}
@@ -169,14 +180,19 @@ jobs:
           fetch-depth: 0
       - id: diff
         env:
+          EVENT: ${{ github.event_name }}
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           code=true
           release=true
+          cache=true
           if files="$(git diff --name-only "$BASE...$HEAD")"; then
             code=false
             release=false
+            # A push always builds the cache. A pull request builds it only when
+            # the change can alter the cache key or the build steps.
+            if [ "$EVENT" != push ]; then cache=false; fi
             while IFS= read -r f; do
               # The files that can alter the build or the packaging of the
               # release. The release also copies LICENSE, README.md, the man
@@ -184,11 +200,14 @@ jobs:
               # rename of one of them can break it. The loop below finds those.
               case "$f" in
                 .goreleaser.yaml | go.mod | go.sum | scripts/third-party-licenses.sh) release=true ;;
-                scripts/tool-versions.env | .github/workflows/ci.yml) release=true ;;
+                scripts/tool-versions.env | .github/workflows/ci.yml | .github/actions/*) release=true ;;
+              esac
+              case "$f" in
+                .github/workflows/ci.yml | .github/actions/*) cache=true ;;
               esac
               case "$f" in
                 '') ;;
-                .github/workflows/ci.yml) code=true ;;
+                .github/workflows/ci.yml | .github/actions/*) code=true ;;
                 docs/man/* | docs/completions/*) code=true ;; # drift tests read them
                 skills/*) code=true ;; # cmd/skill_test.go reads SKILL.md
                 *.md | docs/* | .github/* | .agents/* | LICENSE | .coderabbit.yaml | renovate.json | socket.yml | osv-scanner.toml) ;;
@@ -209,10 +228,131 @@ jobs:
           else
             echo "::warning::cannot diff $BASE...$HEAD, so every job runs"
           fi
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          echo "release=$release" >> "$GITHUB_OUTPUT"
-          echo "changes: code=$code release=$release"
+          {
+            echo "cache=$cache"
+            echo "code=$code"
+            echo "release=$release"
+          } >> "$GITHUB_OUTPUT"
+          echo "changes: code=$code release=$release cache=$cache"
           printf '%s\n' "$files"
+
+  # Builds the Go cache that the other jobs restore (see the comment at the top of
+  # this file). On a push to main it saves one entry for each runner, unless the
+  # exact key exists. On a pull request it builds and saves nothing, so a mistake
+  # in a build step fails the pull request and not main. A draft skips it, so the
+  # review rounds do not start three cold builds. It never restores the fallback
+  # entry, because that entry carries every old module version into the new one,
+  # and Go never trims the module cache. The Linux leg compiles every variant that
+  # the jobs build and every pinned tool, and runs none of them: a tool can call
+  # the network when it starts, and the host list of this job blocks that.
+  go-cache:
+    needs: changes
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+      needs.changes.outputs.cache == 'true' && needs.changes.outputs.draft != 'true')
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Harden the runner (block egress)
+        if: runner.os == 'Linux'
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          disable-telemetry: true
+          allowed-endpoints: >-
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            api.github.com:443
+            dl.google.com:443
+            github.com:443
+            go.dev:443
+            proxy.golang.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: go
+        uses: $/.github/actions/setup-go
+        with:
+          lookup-only: 'true'
+      # A pull request always builds, so that it tests the build steps. A push builds
+      # only when the exact entry does not exist.
+      - id: plan
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          CACHE_HIT: ${{ steps.go.outputs.cache-hit }}
+        run: |
+          build=false
+          if [ "$EVENT" = pull_request ] || [ "$CACHE_HIT" != true ]; then build=true; fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "go-cache: build=$build cache-hit=$CACHE_HIT"
+      - name: Download the modules
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
+        run: go mod download
+      - name: Build
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
+        run: go build ./...
+      - name: Build without cgo, with trimpath
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
+        run: CGO_ENABLED=0 go build -trimpath ./...
+      # go test -c -o <dir>/ fails when two packages have the same last path
+      # element. No package has one now. The three variants match the test job
+      # (-race), the coverage groups (-covermode and -coverpkg) and a plain run.
+      - name: Compile the test binaries (plain, race, cover)
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
+        run: |
+          go test -c -o "$RUNNER_TEMP/plain/" ./...
+          go test -race -c -o "$RUNNER_TEMP/race/" ./...
+          go test -covermode=atomic -coverpkg=./... -c -o "$RUNNER_TEMP/cover/" ./...
+      # A crasher in the seed corpus fails this job. Then the job saves nothing, and
+      # the fuzz job of the next pull request reports the same crasher.
+      - name: Compile the fuzz targets
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
+        env:
+          IQ_FUZZ_TIME: 1x
+        run: bash scripts/fuzz.sh
+      # go install compiles each tool and does not run it. A version command can
+      # call the network. For example govulncheck -version contacts vuln.go.dev,
+      # and the host list of this job blocks that host. A later go run takes the
+      # compiled packages from the cache and only links the tool again.
+      - name: Compile the pinned tools
+        if: steps.plan.outputs.build == 'true' && runner.os == 'Linux'
+        run: |
+          . scripts/tool-versions.env
+          export GOBIN="$RUNNER_TEMP/bin"
+          go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"
+          go install "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION"
+          go install "github.com/zricethezav/gitleaks/v8@$GITLEAKS_VERSION"
+          go install "github.com/google/osv-scanner/v2/cmd/osv-scanner@$OSV_SCANNER_VERSION"
+          go install "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION"
+          go install "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION"
+          go install "github.com/anchore/syft/cmd/syft@$SYFT_VERSION"
+      - name: Build and compile the tests (no cgo)
+        if: steps.plan.outputs.build == 'true' && runner.os != 'Linux'
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go mod download
+          go build -trimpath ./...
+          go test -c -o "$RUNNER_TEMP/plain/" ./...
+      - name: Save the Go cache
+        if: github.event_name == 'push' && steps.go.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go.outputs.gocache }}
+            ${{ steps.go.outputs.gomodcache }}
+          key: ${{ steps.go.outputs.key }}
 
   lint:
     needs: changes
@@ -239,9 +379,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       # go install through the module proxy, verified by the checksum database,
       # like every other tool here; the upstream curl|sh installer verifies the
       # release tarball against a checksums file and has failed on a mismatch.
@@ -309,9 +447,7 @@ jobs:
         run: |
           . scripts/tool-versions.env
           uvx "zizmor==$ZIZMOR_VERSION" .github/
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       # The runner has shellcheck, so actionlint also checks the run blocks.
       - name: actionlint (GitHub Actions workflow lint)
         run: |
@@ -330,6 +466,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # The cache holds the objects of the build that its consumers run. cgo is on
+    # for the race detector on Linux and off on the other runners, as in go-cache.
+    env:
+      CGO_ENABLED: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
     steps:
       - name: Harden the runner (block egress)
         if: runner.os == 'Linux'
@@ -352,9 +492,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
+      # The go-cache job builds with -trimpath on macOS and Windows. This step makes
+      # these legs build the same way, so that they use the cached objects.
+      - name: Build (-trimpath)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: go build -trimpath ./...
       - name: Test (-short, shuffled, -race on Linux)
         env:
           RACE: ${{ matrix.os == 'ubuntu-latest' && '-race' || '' }}
@@ -421,9 +565,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: Start HBase (compose, host networking)
         if: matrix.hbase
         run: docker compose up -d --wait hbase
@@ -489,9 +631,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: coverage-*
@@ -550,9 +690,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: e2e with redis (all cases + the redis live flow)
         run: |
           docker compose up -d --wait redis
@@ -589,9 +727,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: Cross-compile gate (no CGO, trimpath)
         run: |
           for os in linux darwin windows; do
@@ -635,9 +771,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # goreleaser reads the tags to set the snapshot version
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: Release snapshot
         run: |
           . scripts/tool-versions.env
@@ -704,9 +838,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: govulncheck
         run: |
           . scripts/tool-versions.env
@@ -740,9 +872,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: OSV scan + license allowlist
         # The allowlist is scripts/license-allowlist.txt, which make security reads too.
         run: |
@@ -784,9 +914,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: Generate SBOMs (syft, SPDX + CycloneDX)
         run: |
           . scripts/tool-versions.env
@@ -820,9 +948,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: Dead code (whole program)
         run: |
           . scripts/tool-versions.env
@@ -884,9 +1010,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # gitleaks scans the full commit history
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: gitleaks (working tree + history)
         run: |
           . scripts/tool-versions.env
@@ -922,9 +1046,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] the step below fetches the PR base
         with:
           fetch-depth: 0 # the merge-base with the trunk must be reachable
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: Capability drift vs capslock-baseline.json
         env:
           BASE: ${{ github.base_ref || 'main' }} # PR target branch, else the trunk
@@ -972,9 +1094,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] the step below fetches the PR base
         with:
           fetch-depth: 0 # full history so the diff base is reachable
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       # The HBase tests have no testcontainer. They run only against the compose
       # service and skip without it. Without this step, a change to drivers/hbase
       # would pass the gate with those lines untested, as "not covered".
@@ -1040,9 +1160,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: Fuzz the untrusted parsers
         run: bash scripts/fuzz.sh
 
@@ -1073,9 +1191,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: Fuzz the untrusted parsers (long budget)
         env:
           IQ_FUZZ_TIME: 5m
@@ -1128,9 +1244,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # gitleaks history
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: Vulnerabilities (govulncheck + OSV, fresh data)
         run: |
           . scripts/tool-versions.env
@@ -1181,9 +1295,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       # Read-only: the token goes to git as a header in the environment, never in a
       # URI or an argument. A branch that does not exist yet gives an empty state.
       - name: Fetch the stored state (badges branch)
@@ -1269,9 +1381,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: scan-plan
@@ -1358,9 +1468,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: Fetch the stored state (badges branch)
         env:
           GITHUB_TOKEN: ${{ github.token }}
