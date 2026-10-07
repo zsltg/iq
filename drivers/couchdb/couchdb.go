@@ -203,6 +203,42 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 	return nil
 }
 
+// nextDoc reads the document of the current row and decodes it.
+func (s *Store) nextDoc(rows *kivik.ResultSet) (map[string]any, error) {
+	var raw json.RawMessage
+	if err := rows.ScanDoc(&raw); err != nil {
+		return nil, fmt.Errorf("couchdb scan document: %w", err)
+	}
+	return decodeDoc(raw, s.decimal)
+}
+
+// readFind drains a _find reply. It decodes each row into a document and hands it to
+// add. It returns the number of rows read, design documents included, so a paging
+// caller can tell a full page from a short one. It does not close rows.
+func (s *Store) readFind(rows *kivik.ResultSet, add func(doc map[string]any)) (int, error) {
+	n := 0
+	for rows.Next() {
+		n++
+		doc, err := s.nextDoc(rows)
+		if err != nil {
+			return n, err
+		}
+		add(doc)
+	}
+	if err := rows.Err(); err != nil {
+		return n, fmt.Errorf("couchdb find: %w", err)
+	}
+	return n, nil
+}
+
+// sendPage hands a non-empty page to fn. An empty page is not sent.
+func sendPage(page map[string]any, fn func(batch map[string]any) error) error {
+	if len(page) == 0 {
+		return nil
+	}
+	return fn(page)
+}
+
 // EstimateCount returns the database's document count from its metadata (the
 // doc_count in GET /{db}), a cheap approximate total for a full scan's progress. It
 // counts design documents too and may be stale under concurrent writes, so the
