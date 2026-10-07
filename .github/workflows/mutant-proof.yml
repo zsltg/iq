@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       # Check every input before it is used. The patch is data, so the step
       # decodes it to a file and never puts it on a command line.
       - name: Validate the inputs

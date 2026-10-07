@@ -1,6 +1,6 @@
 # Set up Go and restore the shared Go cache, which holds the module cache and the
-# build cache. The job must run actions/checkout first, because hashFiles reads the
-# workspace. The "$/" form of the reference needs no checkout, but the key does.
+# build cache. The job must run actions/checkout first, because the workflow
+# reaches this action through the workspace, and hashFiles reads the workspace.
 # Only the go-cache job of ci.yml saves the cache, on a push to main. Every other
 # job only restores it. The key has no commit, so one entry exists for each set of
 # dependencies, tool versions and workflow files. A job that finds no exact entry

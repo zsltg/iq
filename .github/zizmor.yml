@@ -1,0 +1,12 @@
+# zizmor finds this file by itself when it audits the .github/ directory.
+# An accepted finding on one line stays an inline `# zizmor: ignore[<audit>]`
+# comment. This file holds only an audit that the project turns off everywhere.
+rules:
+  # The self-repository audit asks for the form `$/.github/...` in place of
+  # `./.github/...`. OpenSSF Scorecard does not know the `$/` form and counts
+  # each such reference as an unpinned third-party action. The two forms run
+  # the same code here, because no workflow checks out a commit other than the
+  # one that started it. If a workflow starts to check out another commit,
+  # enable the audit again.
+  self-repository:
+    disable: true
