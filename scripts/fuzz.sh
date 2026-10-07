@@ -10,6 +10,16 @@
 # committed crasher run as ordinary subtests under `go test -short`, so `make check`
 # and `make cover` cover them with no extra step.
 #
+# `bash scripts/fuzz.sh --affected <base> <head>` fuzzes nothing. It prints `true`
+# when a change in <base>...<head> can affect a fuzz target, and `false` if not.
+# The CI `fuzz` job uses it to skip the fuzzing on other changes. A change can
+# affect a target when it touches one of these files:
+#   - a non-test .go file in a package that the fuzz packages import, in this module
+#   - a test file or a testdata/fuzz seed in a fuzz package
+#   - this script, go.mod or go.sum
+# A deleted file counts as changed. If the diff or `go list` fails, the answer is
+# `true`. The weekly deep-fuzz job always fuzzes every target.
+#
 # A crasher is a real bug. Go writes the input to <pkg>/testdata/fuzz/<Name>/, and
 # that file is committed with the fix as the regression seed.
 set -uo pipefail
@@ -27,6 +37,59 @@ packages=(
   ./internal/shape
   ./internal/diff
 )
+
+# Print true when the change from $1 to $2 can affect a fuzz target, else false.
+affected() {
+  local base="$1" head="$2" root files dirs dir file rel pkg
+  root="$(pwd -P)"
+  if ! files="$(git diff --name-only --no-renames "$base...$head")"; then
+    echo true
+    return
+  fi
+  # Directories of the fuzz packages and of the module packages that they import.
+  if ! dirs="$(go list -deps -f '{{if .Module}}{{if .Module.Main}}{{.Dir}}{{end}}{{end}}' "${packages[@]}")"; then
+    echo true
+    return
+  fi
+  while IFS= read -r file; do
+    case "$file" in
+      scripts/fuzz.sh | go.mod | go.sum)
+        echo true
+        return
+        ;;
+    esac
+    for pkg in "${packages[@]}"; do
+      pkg="${pkg#./}"
+      if [[ "$file" == "$pkg"/testdata/fuzz/* ]]; then
+        echo true
+        return
+      fi
+      if [[ "$file" == *_test.go && "$(dirname "$file")" == "$pkg" ]]; then
+        echo true
+        return
+      fi
+    done
+    if [[ "$file" == *.go && "$file" != *_test.go ]]; then
+      while IFS= read -r dir; do
+        rel="${dir#"$root"/}"
+        if [[ "$(dirname "$file")" == "$rel" ]]; then
+          echo true
+          return
+        fi
+      done <<<"$dirs"
+    fi
+  done <<<"$files"
+  echo false
+}
+
+if [[ "${1:-}" == "--affected" ]]; then
+  if [[ $# -ne 3 ]]; then
+    echo "usage: fuzz.sh --affected <base> <head>" >&2
+    exit 2
+  fi
+  affected "$2" "$3"
+  exit 0
+fi
 
 fuzztime="${IQ_FUZZ_TIME:-20s}"
 

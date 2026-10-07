@@ -435,8 +435,15 @@ They need no containers or network.
   whether two documents differ.
 
 `IQ_FUZZ_TIME` sets the budget per target (default `20s`). The CI `fuzz` job
-uses the default on every change that touches code, and the weekly `deep-fuzz`
-job runs the same script with `IQ_FUZZ_TIME=5m`.
+uses the default, but only when the change can affect a target. The weekly
+`deep-fuzz` job always fuzzes every target with `IQ_FUZZ_TIME=5m`.
+
+`bash scripts/fuzz.sh --affected <base> <head>` fuzzes nothing. It prints `true`
+when a file in `<base>...<head>` can affect a target, and `false` if not. A
+change can affect a target when it touches a non-test `.go` file in a package
+that the fuzz packages import, a test file or a `testdata/fuzz/` seed in a fuzz
+package, `scripts/fuzz.sh`, `go.mod` or `go.sum`. A deleted file counts. If the
+diff or `go list` fails, the answer is `true`.
 
 Seed inputs and every committed crasher run as ordinary subtests under
 `go test -short`, so `make check` and `make cover` already cover them. A
@@ -560,7 +567,9 @@ a check of the third-party license texts in the archives and the `.deb`),
 `mutate-diff` with `report.json`, `mutago-agentic.json` and, after a failure
 on an escape, `mutago-baseline.candidate.json`, so the ids of the escapes need
 no local re-run), `workflows` (zizmor and actionlint over
-`.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target), `dco`
+`.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target, only when the change
+can affect a fuzz target; the seeds run in every `go test -short`, and
+`deep-fuzz` explores every target each week), `dco`
 (`scripts/dco.sh`, a `Signed-off-by:` for the author of each pull request commit,
 and `scripts/commit-emails.sh`, no unallowed email address in a commit message,
 on pull requests only) and

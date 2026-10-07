@@ -1031,8 +1031,14 @@ jobs:
   # Go native fuzzing over the parsers that read untrusted bytes (scripts/fuzz.sh),
   # one target per invocation because that is what `go test -fuzz` takes. The budget
   # here is the default 20s per target, enough to re-cover the committed corpus and
-  # explore a little; deep-fuzz gives each target 5m on the weekly run. A crasher
-  # fails the job, and the fix commits the input Go wrote as the regression seed.
+  # explore a little. The job fuzzes only when the change can affect a target: a
+  # non-test file in a package that the fuzz packages import, a test file or a seed
+  # in a fuzz package, scripts/fuzz.sh, go.mod or go.sum. Otherwise it passes and
+  # prints a notice, because ci-ok needs the job. The seeds and crashers run in
+  # every `go test -short` anyway, and deep-fuzz explores every target each week.
+  # The job needs the base commit, so it fetches the full history. A failed diff
+  # or `go list` makes the fuzzing run. A crasher fails the job, and the fix
+  # commits the input Go wrote as the regression seed.
   fuzz:
     needs: changes
     if: needs.changes.outputs.full == 'true'
@@ -1040,9 +1046,27 @@ jobs:
     timeout-minutes: 20
     steps:
       - *harden-go
-      - *checkout
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the diff needs the base commit
       - uses: ./.github/actions/setup-go
+      - id: affected
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! result="$(bash scripts/fuzz.sh --affected "$BASE" "$HEAD")"; then
+            result=true
+          fi
+          if [ "$result" = true ]; then
+            echo "fuzz: the change can affect a fuzz target, so the job fuzzes"
+          else
+            echo "::notice::no file in the change can affect a fuzz target, so the job skips the fuzzing"
+          fi
+          echo "run=$result" >> "$GITHUB_OUTPUT"
       - name: Fuzz the untrusted parsers
+        if: steps.affected.outputs.run != 'false'
         run: bash scripts/fuzz.sh
 
   # Eight targets at 5m each, plus the build, fits well inside the hour. The corpus
