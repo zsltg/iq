@@ -173,42 +173,52 @@ type skillWord struct {
 // splitSkillWords splits a token the way a shell would, keeping a single- or
 // double-quoted span as one word so `select(.a == "b")` does not fragment.
 func splitSkillWords(token string) ([]skillWord, error) {
-	var (
-		words  []skillWord
-		cur    strings.Builder
-		open   bool
-		quoted bool
-		quote  rune
-	)
-	flush := func() {
-		if open {
-			words = append(words, skillWord{text: cur.String(), quoted: quoted})
-		}
-		cur.Reset()
-		open, quoted = false, false
-	}
+	var s skillSplitter
 	for _, r := range token {
-		switch {
-		case quote != 0:
-			if r == quote {
-				quote = 0
-				continue
-			}
-			cur.WriteRune(r)
-		case r == '\'' || r == '"':
-			quote, open, quoted = r, true, true
-		case unicode.IsSpace(r):
-			flush()
-		default:
-			open = true
-			cur.WriteRune(r)
-		}
+		s.feed(r)
 	}
-	if quote != 0 {
+	if s.quote != 0 {
 		return nil, fmt.Errorf("unbalanced quote in %q", token)
 	}
-	flush()
-	return words, nil
+	s.flush()
+	return s.words, nil
+}
+
+// skillSplitter holds the state of splitSkillWords: the words so far, the word
+// being read, and the quote that is open.
+type skillSplitter struct {
+	words        []skillWord
+	cur          strings.Builder
+	open, quoted bool
+	quote        rune
+}
+
+// feed reads one rune.
+func (s *skillSplitter) feed(r rune) {
+	switch {
+	case s.quote != 0:
+		if r == s.quote {
+			s.quote = 0
+			return
+		}
+		s.cur.WriteRune(r)
+	case r == '\'' || r == '"':
+		s.quote, s.open, s.quoted = r, true, true
+	case unicode.IsSpace(r):
+		s.flush()
+	default:
+		s.open = true
+		s.cur.WriteRune(r)
+	}
+}
+
+// flush ends the current word, when one is open.
+func (s *skillSplitter) flush() {
+	if s.open {
+		s.words = append(s.words, skillWord{text: s.cur.String(), quoted: s.quoted})
+	}
+	s.cur.Reset()
+	s.open, s.quoted = false, false
 }
 
 // resolveSkillToken walks one token against the cobra tree. A token opening with
@@ -224,53 +234,108 @@ func resolveSkillToken(root *cobra.Command, token string) error {
 	if len(words) == 0 {
 		return nil
 	}
-
-	cur := root
-	i := 0
-	switch {
-	case !words[0].quoted && words[0].text == "iq":
-		i = 1
-	case strings.HasPrefix(words[0].text, "-"):
-		cur = nil
-	default:
+	w, ok := startSkillWalk(root, words)
+	if !ok {
 		return nil
 	}
-
-	// A token that is nothing but a flag name mentions the flag in prose, so it
-	// carries no value; every longer fragment is an invocation and must.
-	mention := cur == nil && len(words) == 1
-
-	operand := false
-	for ; i < len(words); i++ {
-		w := words[i]
-		switch {
-		case !w.quoted && (w.text == "--help" || w.text == "-h" || w.text == "help"):
-			// Cobra's built-in help flag and help command.
-		case !w.quoted && len(w.text) > 1 && strings.HasPrefix(w.text, "-"):
-			name, inline, _ := strings.Cut(strings.TrimLeft(w.text, "-"), "=")
-			flag := findSkillFlag(root, cur, name)
-			if flag == nil {
-				return fmt.Errorf("unknown flag %q", w.text)
-			}
-			if inline == "" && !mention && flag.Value.Type() != "bool" {
-				if i+1 >= len(words) {
-					return fmt.Errorf("flag %q expects a value", w.text)
-				}
-				i++ // The next word is this flag's value.
-			}
-		case isSkillPlaceholder(w.text):
-			// <handle>, <filter>: the reader substitutes it.
-		case !w.quoted && !operand && cur != nil && cur.HasAvailableSubCommands():
-			sub := findSkillCommand(cur, w.text)
-			if sub == nil {
-				return fmt.Errorf("unknown command %q", w.text)
-			}
-			cur = sub
-		default:
-			operand = true
+	for ; w.i < len(w.words); w.i++ {
+		if err := w.step(); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// skillWalk is the state of one token walk against the cobra tree.
+type skillWalk struct {
+	root, cur *cobra.Command // cur is nil for a bare flag fragment
+	words     []skillWord
+	i         int  // index of the word that the walk reads next
+	mention   bool // the token is only a flag name in prose
+	operand   bool // a word was already read that is not a subcommand
+}
+
+// startSkillWalk decides where a token starts. It reports false when the token is
+// neither an iq command nor a flag fragment.
+func startSkillWalk(root *cobra.Command, words []skillWord) (*skillWalk, bool) {
+	w := &skillWalk{root: root, cur: root, words: words}
+	switch {
+	case !words[0].quoted && words[0].text == "iq":
+		w.i = 1
+	case strings.HasPrefix(words[0].text, "-"):
+		w.cur = nil
+	default:
+		return nil, false
+	}
+	// A token that is nothing but a flag name mentions the flag in prose, so it
+	// carries no value; every longer fragment is an invocation and must.
+	w.mention = w.cur == nil && len(words) == 1
+	return w, true
+}
+
+// step reads the word at w.i. A flag that takes a value moves w.i past the value.
+func (w *skillWalk) step() error {
+	word := w.words[w.i]
+	switch {
+	case isSkillHelp(word):
+		// Cobra's built-in help flag and help command.
+		return nil
+	case isSkillFlag(word):
+		return w.flag()
+	case isSkillPlaceholder(word.text):
+		// <handle>, <filter>: the reader substitutes it.
+		return nil
+	case w.wantsSubcommand(word):
+		return w.subcommand()
+	default:
+		w.operand = true
+		return nil
+	}
+}
+
+// flag checks the flag word at w.i. It skips the next word when that word is the
+// value of the flag.
+func (w *skillWalk) flag() error {
+	text := w.words[w.i].text
+	name, inline, _ := strings.Cut(strings.TrimLeft(text, "-"), "=")
+	flag := findSkillFlag(w.root, w.cur, name)
+	if flag == nil {
+		return fmt.Errorf("unknown flag %q", text)
+	}
+	if inline == "" && !w.mention && flag.Value.Type() != "bool" {
+		if w.i+1 >= len(w.words) {
+			return fmt.Errorf("flag %q expects a value", text)
+		}
+		w.i++ // The next word is this flag's value.
+	}
+	return nil
+}
+
+// subcommand moves the walk into the subcommand that the word at w.i names.
+func (w *skillWalk) subcommand() error {
+	text := w.words[w.i].text
+	sub := findSkillCommand(w.cur, text)
+	if sub == nil {
+		return fmt.Errorf("unknown command %q", text)
+	}
+	w.cur = sub
+	return nil
+}
+
+// isSkillFlag reports whether a word is an unquoted flag. A lone dash is not.
+func isSkillFlag(word skillWord) bool {
+	return !word.quoted && len(word.text) > 1 && strings.HasPrefix(word.text, "-")
+}
+
+// wantsSubcommand reports whether the word is read as a subcommand name: it is
+// unquoted, no operand came before it, and the current command has subcommands.
+func (w *skillWalk) wantsSubcommand(word skillWord) bool {
+	return !word.quoted && !w.operand && w.cur != nil && w.cur.HasAvailableSubCommands()
+}
+
+// isSkillHelp reports whether a word is cobra's help flag or help command.
+func isSkillHelp(word skillWord) bool {
+	return !word.quoted && (word.text == "--help" || word.text == "-h" || word.text == "help")
 }
 
 // isSkillPlaceholder reports whether a word is a <placeholder> the reader fills in.
