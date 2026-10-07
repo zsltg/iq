@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -17,6 +19,58 @@ import (
 	iqfile "github.com/zsltg/iq/drivers/file"
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
+
+// addLong is the long help of `iq add`.
+const addLong = "Register a source from a connection URI, like `sq add`. The URI is the only\n" +
+	"positional argument; -n/--handle names the source, and when omitted a handle\n" +
+	"is derived from the URI: the keyspace it pins (?collection=, ?table=,\n" +
+	"?index=, …), else the MongoDB database or Cassandra keyspace name (its schema\n" +
+	"container), else the dump file's stem for a file:// source, else the driver.\n" +
+	"The backend is inferred from the URI scheme: redis:// (rediss://), mongodb://\n" +
+	"(mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb://\n" +
+	"(couchdbs://), couchbase:// (couchbases://), neo4j:// (neo4j+s://, bolt://),\n" +
+	"elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://);\n" +
+	"-d/--driver asserts the expected driver.\n" +
+	"\n" +
+	"Each driver reads its own URI options. MongoDB: a default collection as\n" +
+	"?collection= (`mongodb://host/db?collection=orders`). Cassandra: a default\n" +
+	"table as ?table= (`cassandra://host/keyspace?table=orders`). DynamoDB: the\n" +
+	"region is the host, a default table as ?table=\n" +
+	"(`dynamodb://us-east-1/?table=orders`, credentials from the AWS default\n" +
+	"chain). HBase: the host is the ZooKeeper quorum, a default table as ?table=\n" +
+	"(`hbase://host:2181/?table=books`, cell encodings declared with\n" +
+	"?types=cf:age=long). CouchDB: the host is the server, a default database as\n" +
+	"?database= (`couchdb://host:5984/?database=orders`). Couchbase: the host is\n" +
+	"the cluster, a bucket as ?bucket= with an optional scope.collection as\n" +
+	"?collection= (`couchbase://host/?bucket=iq&collection=sales.orders`). Neo4j:\n" +
+	"the host is the bolt server, a default node label as ?label= (or a\n" +
+	"relationship type as ?rel=). Elasticsearch and OpenSearch: a default index as\n" +
+	"?index= (`elasticsearch://host:9200/?index=books`).\n" +
+	"\n" +
+	"Handles may be grouped with '/' (`iq add -n prod/books mongodb://…`). -p\n" +
+	"prompts for the URI password (or reads it from stdin). The password goes to the\n" +
+	"OS keyring and is stripped from the stored URI. When no keyring is available,\n" +
+	"iq stores the password in the config file and prints a warning. --store inline\n" +
+	"keeps it in the config file, and --store keyring makes a missing keyring an\n" +
+	"error. -a makes the new source active. The source is pinged before it is saved unless\n" +
+	"--skip-verify is set. Note: `iq add` is this command, which shadows jq's\n" +
+	"built-in `add` filter: write the filter as `[ .a, .b ] | add`."
+
+// addExample is the example block of `iq add`.
+const addExample = "  # Register a Redis source named \"cache\".\n" +
+	"  $ iq add -n cache redis://localhost:6379/0\n" +
+	"\n" +
+	"  # Register a Mongo source; ?collection= sets its default collection and names it \"orders\".\n" +
+	"  $ iq add 'mongodb://localhost:27017/shop?collection=orders'\n" +
+	"\n" +
+	"  # A source needing auth, made active: prompt for the password, keep it in the keyring.\n" +
+	"  $ iq add -a -p 'mongodb://user@localhost:27017/shop?collection=orders'"
+
+// addOptions holds the flag values of `iq add`.
+type addOptions struct {
+	handle, store, driver              string
+	active, passwordPrompt, skipVerify bool
+}
 
 // newAddCmd builds `iq add <url>`: register a source from a connection URL,
 // mirroring `sq add`. The URL is the sole positional; -n/--handle names the
@@ -27,139 +81,145 @@ import (
 // built-in `add` filter at the top level; run the filter inside a larger
 // expression (`[ .a, .b ] | add`) instead.
 func newAddCmd(cfg *config) *cobra.Command {
-	var (
-		handle         string
-		store          string
-		driverFlag     string
-		active         bool
-		passwordPrompt bool
-		skipVerify     bool
-	)
+	var o addOptions
 	c := &cobra.Command{
 		Use:               "add <uri>",
 		ValidArgsFunction: cobra.NoFileCompletions,
 		Short:             "Register a source from a connection URI (sq-style)",
-		Long: "Register a source from a connection URI, like `sq add`. The URI is the only\n" +
-			"positional argument; -n/--handle names the source, and when omitted a handle\n" +
-			"is derived from the URI: the keyspace it pins (?collection=, ?table=,\n" +
-			"?index=, …), else the MongoDB database or Cassandra keyspace name (its schema\n" +
-			"container), else the dump file's stem for a file:// source, else the driver.\n" +
-			"The backend is inferred from the URI scheme: redis:// (rediss://), mongodb://\n" +
-			"(mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb://\n" +
-			"(couchdbs://), couchbase:// (couchbases://), neo4j:// (neo4j+s://, bolt://),\n" +
-			"elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://);\n" +
-			"-d/--driver asserts the expected driver.\n" +
-			"\n" +
-			"Each driver reads its own URI options. MongoDB: a default collection as\n" +
-			"?collection= (`mongodb://host/db?collection=orders`). Cassandra: a default\n" +
-			"table as ?table= (`cassandra://host/keyspace?table=orders`). DynamoDB: the\n" +
-			"region is the host, a default table as ?table=\n" +
-			"(`dynamodb://us-east-1/?table=orders`, credentials from the AWS default\n" +
-			"chain). HBase: the host is the ZooKeeper quorum, a default table as ?table=\n" +
-			"(`hbase://host:2181/?table=books`, cell encodings declared with\n" +
-			"?types=cf:age=long). CouchDB: the host is the server, a default database as\n" +
-			"?database= (`couchdb://host:5984/?database=orders`). Couchbase: the host is\n" +
-			"the cluster, a bucket as ?bucket= with an optional scope.collection as\n" +
-			"?collection= (`couchbase://host/?bucket=iq&collection=sales.orders`). Neo4j:\n" +
-			"the host is the bolt server, a default node label as ?label= (or a\n" +
-			"relationship type as ?rel=). Elasticsearch and OpenSearch: a default index as\n" +
-			"?index= (`elasticsearch://host:9200/?index=books`).\n" +
-			"\n" +
-			"Handles may be grouped with '/' (`iq add -n prod/books mongodb://…`). -p\n" +
-			"prompts for the URI password (or reads it from stdin). The password goes to the\n" +
-			"OS keyring and is stripped from the stored URI. When no keyring is available,\n" +
-			"iq stores the password in the config file and prints a warning. --store inline\n" +
-			"keeps it in the config file, and --store keyring makes a missing keyring an\n" +
-			"error. -a makes the new source active. The source is pinged before it is saved unless\n" +
-			"--skip-verify is set. Note: `iq add` is this command, which shadows jq's\n" +
-			"built-in `add` filter: write the filter as `[ .a, .b ] | add`.",
-		Example: "  # Register a Redis source named \"cache\".\n" +
-			"  $ iq add -n cache redis://localhost:6379/0\n" +
-			"\n" +
-			"  # Register a Mongo source; ?collection= sets its default collection and names it \"orders\".\n" +
-			"  $ iq add 'mongodb://localhost:27017/shop?collection=orders'\n" +
-			"\n" +
-			"  # A source needing auth, made active: prompt for the password, keep it in the keyring.\n" +
-			"  $ iq add -a -p 'mongodb://user@localhost:27017/shop?collection=orders'",
-		Args: cobra.ExactArgs(1),
+		Long:              addLong,
+		Example:           addExample,
+		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rawURL := args[0]
-			if driverFlag != "" {
-				if _, ok := driverByName(driverFlag); !ok {
-					return fmt.Errorf("unknown driver %q; known drivers: %s", driverFlag, driverNames())
-				}
-			}
-			if !supportedScheme(rawURL) {
-				return fmt.Errorf("unsupported URI scheme %q; %s", schemeOf(rawURL), expectedSchemes())
-			}
-			if driverFlag != "" && driverName(rawURL) != driverFlag {
-				return fmt.Errorf("--driver %q does not match URI scheme %q:// (driver %q)", driverFlag, schemeOf(rawURL), driverName(rawURL))
-			}
-			if err := urlAddressUnsupported(rawURL); err != nil {
-				return err
-			}
-			// A prompted password is spliced into the URL before storage, so the
-			// keyring/inline path below handles it uniformly.
-			if passwordPrompt {
-				pw, err := readPassword(cmd)
-				if err != nil {
-					return err
-				}
-				rawURL, err = injectPassword(rawURL, pw)
-				if err != nil {
-					return err
-				}
-			}
-			useKeyring, err := parseStore(store)
-			if err != nil {
-				return err
-			}
-			plan, err := planPassword(rawURL, useKeyring, cmd.Flags().Changed("store"))
-			if err != nil {
-				return err
-			}
-			cf, err := iqconfig.Load()
-			if err != nil {
-				return err
-			}
-			name := handle
-			if !cmd.Flags().Changed("handle") {
-				name = suggestHandle(cf, rawURL)
-			}
-			if err := cf.Add(name, plan.stored); err != nil {
-				return err
-			}
-			// Verify reachability before persisting so a failed add leaves no
-			// trace. rawURL still carries the password (stripped from plan.stored
-			// for a keyring source), so it is what we dial.
-			if !skipVerify {
-				if err := verifySource(cmd.Context(), rawURL, cfg.timeout); err != nil {
-					return fmt.Errorf("verify %s: %w (use --skip-verify to add it anyway)", strings.TrimPrefix(name, "@"), err)
-				}
-			}
-			if active {
-				if err := cf.SetActive(name); err != nil {
-					return err
-				}
-			}
-			if err := saveSource(cmd.ErrOrStderr(), cf, name, plan); err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added source %s\n", strings.TrimPrefix(name, "@"))
-			return err
+			return runAdd(cmd, cfg, o, args[0])
 		},
 	}
-	c.Flags().StringVarP(&handle, "handle", "n", "", "handle for the source; derived from the keyspace the URI names when omitted")
-	c.Flags().StringVarP(&driverFlag, "driver", "d", "", "expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb, couchbase, neo4j, elasticsearch, opensearch); must match the URI scheme")
-	c.Flags().BoolVarP(&active, "active", "a", false, "make the new source the active source")
-	c.Flags().BoolVarP(&passwordPrompt, "password", "p", false, "prompt for the URI password (or read it from stdin)")
-	c.Flags().BoolVar(&skipVerify, "skip-verify", false, "skip the post-add reachability check")
-	c.Flags().StringVar(&store, "store", "keyring", "where the URI's password is kept: keyring (the OS keyring) or inline (in the config file); without this flag, inline when no keyring is available")
+	c.Flags().StringVarP(&o.handle, "handle", "n", "", "handle for the source; derived from the keyspace the URI names when omitted")
+	c.Flags().StringVarP(&o.driver, "driver", "d", "", "expected backend driver (mongo, redis, cassandra, dynamodb, hbase, couchdb, couchbase, neo4j, elasticsearch, opensearch); must match the URI scheme")
+	c.Flags().BoolVarP(&o.active, "active", "a", false, "make the new source the active source")
+	c.Flags().BoolVarP(&o.passwordPrompt, "password", "p", false, "prompt for the URI password (or read it from stdin)")
+	c.Flags().BoolVar(&o.skipVerify, "skip-verify", false, "skip the post-add reachability check")
+	c.Flags().StringVar(&o.store, "store", "keyring", "where the URI's password is kept: keyring (the OS keyring) or inline (in the config file); without this flag, inline when no keyring is available")
 	// Both flags take a closed set; --driver's comes from the registry, so a new
 	// backend completes without a second edit.
 	_ = c.RegisterFlagCompletionFunc("driver", fixedValues(driverNameList()...))
 	_ = c.RegisterFlagCompletionFunc("store", fixedValues(passwordStoreNames...))
 	return c
+}
+
+// runAdd registers the source rawURL. It checks the URI, plans the password,
+// verifies the source, and saves it.
+func runAdd(cmd *cobra.Command, cfg *config, o addOptions, rawURL string) error {
+	rawURL, err := prepareAddURI(cmd, o, rawURL)
+	if err != nil {
+		return err
+	}
+	plan, err := planAddPassword(cmd, rawURL, o.store)
+	if err != nil {
+		return err
+	}
+	cf, err := iqconfig.Load()
+	if err != nil {
+		return err
+	}
+	name := addHandle(cmd, cf, o, rawURL)
+	if err := cf.Add(name, plan.stored); err != nil {
+		return err
+	}
+	// Verify reachability before persisting so a failed add leaves no
+	// trace. rawURL still carries the password (stripped from plan.stored
+	// for a keyring source), so it is what we dial.
+	if !o.skipVerify {
+		if err := verifyAdd(cmd.Context(), name, rawURL, cfg.timeout); err != nil {
+			return err
+		}
+	}
+	return finishAdd(cmd, cf, addedSource{name: name, active: o.active, plan: plan})
+}
+
+// prepareAddURI checks rawURL against the driver flag and the registry. It then
+// returns rawURL with the prompted password inserted, when the user asked to be
+// prompted.
+func prepareAddURI(cmd *cobra.Command, o addOptions, rawURL string) (string, error) {
+	if err := validateAddURI(rawURL, o.driver); err != nil {
+		return "", err
+	}
+	// A prompted password is spliced into the URL before storage, so the
+	// keyring/inline path below handles it uniformly.
+	if !o.passwordPrompt {
+		return rawURL, nil
+	}
+	pw, err := readPassword(cmd)
+	if err != nil {
+		return "", err
+	}
+	return injectPassword(rawURL, pw)
+}
+
+// validateAddURI makes sure that rawURL names a known driver scheme that matches
+// driverFlag, and that its query holds no keyspace parameter the driver cannot
+// use.
+func validateAddURI(rawURL, driverFlag string) error {
+	if driverFlag != "" {
+		if _, ok := driverByName(driverFlag); !ok {
+			return fmt.Errorf("unknown driver %q; known drivers: %s", driverFlag, driverNames())
+		}
+	}
+	if !supportedScheme(rawURL) {
+		return fmt.Errorf("unsupported URI scheme %q; %s", schemeOf(rawURL), expectedSchemes())
+	}
+	if driverFlag != "" && driverName(rawURL) != driverFlag {
+		return fmt.Errorf("--driver %q does not match URI scheme %q:// (driver %q)", driverFlag, schemeOf(rawURL), driverName(rawURL))
+	}
+	return urlAddressUnsupported(rawURL)
+}
+
+// planAddPassword reads the --store value and decides where the password goes.
+func planAddPassword(cmd *cobra.Command, rawURL, store string) (passwordPlan, error) {
+	useKeyring, err := parseStore(store)
+	if err != nil {
+		return passwordPlan{}, err
+	}
+	return planPassword(rawURL, useKeyring, cmd.Flags().Changed("store"))
+}
+
+// addHandle returns the handle for the new source: the -n value when the user
+// gave one, else a handle derived from rawURL.
+func addHandle(cmd *cobra.Command, cf *iqconfig.Config, o addOptions, rawURL string) string {
+	if cmd.Flags().Changed("handle") {
+		return o.handle
+	}
+	return suggestHandle(cf, rawURL)
+}
+
+// verifyAdd opens the new source and pings it. It wraps a failure with the handle
+// and the --skip-verify hint.
+func verifyAdd(ctx context.Context, name, rawURL string, timeout time.Duration) error {
+	if err := verifySource(ctx, rawURL, timeout); err != nil {
+		return fmt.Errorf("verify %s: %w (use --skip-verify to add it anyway)", strings.TrimPrefix(name, "@"), err)
+	}
+	return nil
+}
+
+// addedSource is a source that `iq add` has put in the config in memory: its
+// handle, whether to make it active, and where its password goes.
+type addedSource struct {
+	name   string
+	active bool
+	plan   passwordPlan
+}
+
+// finishAdd makes the source active when asked, saves it, and prints the report.
+func finishAdd(cmd *cobra.Command, cf *iqconfig.Config, src addedSource) error {
+	if src.active {
+		if err := cf.SetActive(src.name); err != nil {
+			return err
+		}
+	}
+	if err := saveSource(cmd.ErrOrStderr(), cf, src.name, src.plan); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "added source %s\n", strings.TrimPrefix(src.name, "@"))
+	return err
 }
 
 // suggestHandle derives a source handle from rawURL when -n is omitted, mirroring
