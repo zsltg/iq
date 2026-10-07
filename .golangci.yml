@@ -45,10 +45,6 @@ linters:
         linters:
           - gocognit
         text: "of func `extJSONSource` "
-      - path: cmd/keyring_cmd\.go
-        linters:
-          - gocognit
-        text: "of func `newConfigKeyringMigrateCmd` "
       - path: cmd/root\.go
         linters:
           - gocognit
