@@ -1,6 +1,7 @@
 package couchdb
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -8,13 +9,17 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-func TestToSelector(t *testing.T) {
-	tests := []struct {
-		name          string
-		pred          predicate.Node
-		wantSelector  map[string]any
-		wantNarrowing bool
-	}{
+// toSelectorCase is one row of the toSelector table.
+type toSelectorCase struct {
+	name          string
+	pred          predicate.Node
+	wantSelector  map[string]any
+	wantNarrowing bool
+}
+
+// equalitySelectorCases lists the rows for equality.
+func equalitySelectorCases() []toSelectorCase {
+	return []toSelectorCase{
 		{
 			name:          "equality on a scalar",
 			pred:          predicate.Eq{Path: []string{"author"}, Value: "Kleppmann"},
@@ -36,6 +41,12 @@ func TestToSelector(t *testing.T) {
 			}},
 			wantNarrowing: true,
 		},
+	}
+}
+
+// rangeSelectorCases lists the rows for range comparisons.
+func rangeSelectorCases() []toSelectorCase {
+	return []toSelectorCase{
 		{
 			name: "greater-than adds higher-ranked types",
 			pred: predicate.Cmp{Path: []string{"year"}, Op: predicate.Gt, Value: 2015.0},
@@ -80,6 +91,12 @@ func TestToSelector(t *testing.T) {
 			}},
 			wantNarrowing: true,
 		},
+	}
+}
+
+// existenceSelectorCases lists the rows for existence, regex and size.
+func existenceSelectorCases() []toSelectorCase {
+	return []toSelectorCase{
 		{
 			name:          "exists",
 			pred:          predicate.Exists{Path: []string{"tags"}},
@@ -92,6 +109,42 @@ func TestToSelector(t *testing.T) {
 			wantSelector:  map[string]any{"tags": map[string]any{"$exists": false}},
 			wantNarrowing: true,
 		},
+		{
+			name:          "byte-safe regex narrows",
+			pred:          predicate.Regex{Path: []string{"a"}, Pattern: "^x"},
+			wantSelector:  map[string]any{"a": map[string]any{"$regex": "^x"}},
+			wantNarrowing: true,
+		},
+		{
+			name: "size narrows as a size-plus-type superset",
+			pred: predicate.Size{Path: []string{"a"}, N: 2},
+			wantSelector: map[string]any{"$or": []any{
+				map[string]any{"a": map[string]any{"$size": 2}},
+				map[string]any{"a": map[string]any{"$type": "string"}},
+				map[string]any{"a": map[string]any{"$type": "object"}},
+				map[string]any{"a": map[string]any{"$type": "number"}},
+			}},
+			wantNarrowing: true,
+		},
+		{
+			name: "size zero also matches null and a missing field",
+			pred: predicate.Size{Path: []string{"a"}, N: 0},
+			wantSelector: map[string]any{"$or": []any{
+				map[string]any{"a": map[string]any{"$size": 0}},
+				map[string]any{"a": map[string]any{"$type": "string"}},
+				map[string]any{"a": map[string]any{"$type": "object"}},
+				map[string]any{"a": map[string]any{"$type": "number"}},
+				map[string]any{"a": map[string]any{"$type": "null"}},
+				map[string]any{"a": map[string]any{"$exists": false}},
+			}},
+			wantNarrowing: true,
+		},
+	}
+}
+
+// compositeSelectorCases lists the rows for And and Or of leaf nodes.
+func compositeSelectorCases() []toSelectorCase {
+	return []toSelectorCase{
 		{
 			name: "and of two pushable clauses",
 			pred: predicate.And{
@@ -114,14 +167,6 @@ func TestToSelector(t *testing.T) {
 			wantNarrowing: true,
 		},
 		{
-			name: "and of only non-pushable clauses does not narrow",
-			pred: predicate.And{
-				predicate.Ne{Path: []string{"a"}, Value: "x"},
-				predicate.Regex{Path: []string{"b"}, Pattern: "y.z"}, // unescaped dot: not byte-safe
-			},
-			wantNarrowing: false,
-		},
-		{
 			name: "or of two pushable clauses",
 			pred: predicate.Or{
 				predicate.Eq{Path: []string{"a"}, Value: "x"},
@@ -134,14 +179,6 @@ func TestToSelector(t *testing.T) {
 			wantNarrowing: true,
 		},
 		{
-			name: "or with a non-pushable branch does not narrow",
-			pred: predicate.Or{
-				predicate.Eq{Path: []string{"a"}, Value: "x"},
-				predicate.Ne{Path: []string{"b"}, Value: "y"},
-			},
-			wantNarrowing: false,
-		},
-		{
 			name: "or of a single pushable branch narrows to a one-arm $or",
 			pred: predicate.Or{predicate.Eq{Path: []string{"a"}, Value: "x"}},
 			wantSelector: map[string]any{"$or": []any{
@@ -149,6 +186,12 @@ func TestToSelector(t *testing.T) {
 			}},
 			wantNarrowing: true,
 		},
+	}
+}
+
+// nestedSelectorCases lists the rows for And and Or inside each other.
+func nestedSelectorCases() []toSelectorCase {
+	return []toSelectorCase{
 		{
 			name: "an and inside an or keeps its shape",
 			pred: predicate.Or{
@@ -185,6 +228,28 @@ func TestToSelector(t *testing.T) {
 			}},
 			wantNarrowing: true,
 		},
+	}
+}
+
+// unpushableSelectorCases lists the rows for nodes that do not narrow.
+func unpushableSelectorCases() []toSelectorCase {
+	return []toSelectorCase{
+		{
+			name: "and of only non-pushable clauses does not narrow",
+			pred: predicate.And{
+				predicate.Ne{Path: []string{"a"}, Value: "x"},
+				predicate.Regex{Path: []string{"b"}, Pattern: "y.z"}, // unescaped dot: not byte-safe
+			},
+			wantNarrowing: false,
+		},
+		{
+			name: "or with a non-pushable branch does not narrow",
+			pred: predicate.Or{
+				predicate.Eq{Path: []string{"a"}, Value: "x"},
+				predicate.Ne{Path: []string{"b"}, Value: "y"},
+			},
+			wantNarrowing: false,
+		},
 		{
 			name:          "an empty or has nothing to push and does not narrow",
 			pred:          predicate.Or{},
@@ -201,12 +266,6 @@ func TestToSelector(t *testing.T) {
 			wantNarrowing: false,
 		},
 		{
-			name:          "byte-safe regex narrows",
-			pred:          predicate.Regex{Path: []string{"a"}, Pattern: "^x"},
-			wantSelector:  map[string]any{"a": map[string]any{"$regex": "^x"}},
-			wantNarrowing: true,
-		},
-		{
 			name:          "case-insensitive regex does not narrow",
 			pred:          predicate.Regex{Path: []string{"a"}, Pattern: "^x", Flags: "i"},
 			wantNarrowing: false,
@@ -217,35 +276,22 @@ func TestToSelector(t *testing.T) {
 			wantNarrowing: false,
 		},
 		{
-			name: "size narrows as a size-plus-type superset",
-			pred: predicate.Size{Path: []string{"a"}, N: 2},
-			wantSelector: map[string]any{"$or": []any{
-				map[string]any{"a": map[string]any{"$size": 2}},
-				map[string]any{"a": map[string]any{"$type": "string"}},
-				map[string]any{"a": map[string]any{"$type": "object"}},
-				map[string]any{"a": map[string]any{"$type": "number"}},
-			}},
-			wantNarrowing: true,
-		},
-		{
-			name: "size zero also matches null and a missing field",
-			pred: predicate.Size{Path: []string{"a"}, N: 0},
-			wantSelector: map[string]any{"$or": []any{
-				map[string]any{"a": map[string]any{"$size": 0}},
-				map[string]any{"a": map[string]any{"$type": "string"}},
-				map[string]any{"a": map[string]any{"$type": "object"}},
-				map[string]any{"a": map[string]any{"$type": "number"}},
-				map[string]any{"a": map[string]any{"$type": "null"}},
-				map[string]any{"a": map[string]any{"$exists": false}},
-			}},
-			wantNarrowing: true,
-		},
-		{
 			name:          "elem-match does not narrow",
 			pred:          predicate.ElemMatch{Path: []string{"a"}, Cond: predicate.Eq{Path: []string{"b"}, Value: 1.0}},
 			wantNarrowing: false,
 		},
 	}
+}
+
+func TestToSelector(t *testing.T) {
+	tests := slices.Concat(
+		equalitySelectorCases(),
+		rangeSelectorCases(),
+		existenceSelectorCases(),
+		compositeSelectorCases(),
+		nestedSelectorCases(),
+		unpushableSelectorCases(),
+	)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sel, narrowing := toSelector(tt.pred)
