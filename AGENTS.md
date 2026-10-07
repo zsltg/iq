@@ -126,7 +126,7 @@ Keep these pairs synchronized in the same change:
 - Read [the driver contract](.agents/driver-contract.md) before designing, changing, or reviewing a backend adapter or driver plan document.
 - A new datastore must pass all four admission gates there before adapter code starts. A failed gate stops the work.
 - The registry rules for options, host ports, and exec families bind adapters and plans.
-- Read [the security index](.agents/security.md) before work on credentials, redaction, logs, error messages, connection URIs, TLS, query text, dump parsing, jq functions, the MCP server, subprocesses, CI workflows, release signing, or dependencies.
+- Read [the security index](.agents/security-index.md) before work on credentials, redaction, logs, error messages, connection URIs, TLS, query text, dump parsing, jq functions, the MCP server, subprocesses, CI workflows, release signing, or dependencies.
 
 Read the applicable books before the related work:
 

@@ -322,7 +322,7 @@ jobs:
         with:
           persist-credentials: false
       - id: go
-        uses: $/.github/actions/setup-go
+        uses: ./.github/actions/setup-go
         with:
           lookup-only: 'true'
       # A pull request always builds, so that it tests the build steps. A push builds
@@ -417,7 +417,7 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       # go install through the module proxy, verified by the checksum database,
       # like every other tool here; the upstream curl|sh installer verifies the
       # release tarball against a checksums file and has failed on a mismatch.
@@ -448,7 +448,8 @@ jobs:
   # injection. `make security` runs the same uvx invocation locally, so the gate is
   # one command in both places. The marketplace action is not used, because it adds
   # a mirrored action for no gain. An accepted finding gets an inline
-  # `# zizmor: ignore[<audit>]` comment with a reason.
+  # `# zizmor: ignore[<audit>]` comment with a reason. .github/zizmor.yml turns off
+  # the self-repository audit. DEVELOPMENT.md gives the reason.
   # actionlint checks correctness: the workflow schema, the types in `${{ }}`
   # expressions, `needs` and `outputs` references, action inputs, and the `run`
   # blocks through shellcheck. An accepted shellcheck finding gets an inline
@@ -491,7 +492,7 @@ jobs:
           uvx "zizmor==$ZIZMOR_VERSION" .github/
       # The restore is off. The go-cache job warms actionlint, but the compile takes
       # about 16 s and the restore takes about 60 s.
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
         with:
           restore: 'false'
       # The runner has shellcheck, so actionlint also checks the run blocks.
@@ -518,7 +519,7 @@ jobs:
     steps:
       - *harden-go-linux
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       # The go-cache job builds with -trimpath on macOS and Windows. This step makes
       # these legs build the same way, so that they use the cached objects. It is
       # also the only per-change build of those targets, because the cross job is
@@ -592,7 +593,7 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - name: Start HBase (compose, host networking)
         if: matrix.hbase
         run: docker compose up -d --wait hbase
@@ -657,7 +658,7 @@ jobs:
             exit 1
           fi
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: coverage-*
@@ -715,7 +716,7 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - name: e2e with redis (all cases + the redis live flow)
         run: |
           docker compose up -d --wait redis
@@ -747,7 +748,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # goreleaser reads the tags to set the snapshot version
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - name: Release snapshot
         run: |
           . scripts/tool-versions.env
@@ -812,7 +813,7 @@ jobs:
             sum.golang.org:443
             vuln.go.dev:443
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - name: govulncheck
         run: |
           . scripts/tool-versions.env
@@ -844,7 +845,7 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - name: OSV scan + license allowlist
         # The allowlist is scripts/license-allowlist.txt, which make security reads too.
         run: |
@@ -871,7 +872,7 @@ jobs:
     steps:
       - *harden-go
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - name: Generate SBOMs (syft, SPDX + CycloneDX)
         run: make sbom
 
@@ -883,7 +884,7 @@ jobs:
     steps:
       - *harden-go
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - name: Dead code (whole program)
         run: |
           . scripts/tool-versions.env
@@ -927,7 +928,7 @@ jobs:
           fetch-depth: 0 # the range scan needs the commits of the pull request
       # The restore is off. The go-cache job does not warm gitleaks, so the restore
       # would only download modules that this job does not use.
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
         with:
           restore: 'false'
       # The history scan covers only the commits of the pull request. The weekly
@@ -956,7 +957,7 @@ jobs:
           fetch-depth: 0 # the merge-base with the trunk must be reachable
       # The restore is off. The wrapper skips itself unless go.mod or go.sum changed.
       # When it runs, it compiles many packages. That case is rare.
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
         with:
           restore: 'false'
       - name: Capability drift vs capslock-baseline.json
@@ -985,7 +986,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] the step below fetches the PR base
         with:
           fetch-depth: 0 # full history so the diff base is reachable
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       # The HBase tests have no testcontainer. They run only against the compose
       # service and skip without it. Without this step, a change to drivers/hbase
       # would pass the gate with those lines untested, as "not covered".
@@ -1033,7 +1034,7 @@ jobs:
     steps:
       - *harden-go
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - name: Fuzz the untrusted parsers
         run: bash scripts/fuzz.sh
 
@@ -1046,7 +1047,7 @@ jobs:
     steps:
       - *harden-go
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - name: Fuzz the untrusted parsers (long budget)
         env:
           IQ_FUZZ_TIME: 5m
@@ -1099,7 +1100,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # gitleaks history
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - name: Vulnerabilities (govulncheck + OSV, fresh data)
         run: |
           . scripts/tool-versions.env
@@ -1132,7 +1133,7 @@ jobs:
     steps:
       - *harden-go
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       # Read-only: the token goes to git as a header in the environment, never in a
       # URI or an argument. A branch that does not exist yet gives an empty state.
       - name: Fetch the stored state (badges branch)
@@ -1193,7 +1194,7 @@ jobs:
     steps:
       - *harden-docker-elastic
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: scan-plan
@@ -1262,7 +1263,7 @@ jobs:
     steps:
       - *harden-go
       - *checkout
-      - uses: $/.github/actions/setup-go
+      - uses: ./.github/actions/setup-go
       - name: Fetch the stored state (badges branch)
         env:
           GITHUB_TOKEN: ${{ github.token }}
