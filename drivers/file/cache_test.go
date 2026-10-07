@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hdt3213/rdb/encoder"
-	"github.com/hdt3213/rdb/model"
 	"github.com/stretchr/testify/require"
+	"github.com/zsltg/rdb/encoder"
+	"github.com/zsltg/rdb/model"
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/zsltg/iq/internal/numfmt"

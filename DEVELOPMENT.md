@@ -806,11 +806,12 @@ Posture and upkeep around the pipeline, all on GitHub:
   dates. Security updates do not wait. Security PRs depend on the Dependabot alerts of
   the repository, so keep the alerts and the dependency graph on. Dependabot
   security updates can stay off.
-- `go.mod` has a `replace` that points `github.com/hdt3213/rdb` at the
-  `github.com/zsltg/rdb` fork. The fork fixes a fatal out-of-memory error on a
-  length that an RDB file declares (upstream issue 75, pull request 76). When
-  upstream releases the fix, remove the `replace` and bump the `require`.
-  Renovate does not bump a replaced module, so do this by hand.
+- iq imports `github.com/zsltg/rdb`, a fork of `github.com/hdt3213/rdb`. The
+  fork fixes a fatal out-of-memory error on a length that an RDB file declares
+  (upstream issue 75, pull request 76). The fork branch `zsltg-module-path`
+  changes the module path, because `go install` refuses a module whose `go.mod`
+  has a `replace` directive. Do not use a `replace` in `go.mod`. When upstream
+  releases the fix, change the imports back to `github.com/hdt3213/rdb`.
 - The tool pins live in `scripts/tool-versions.env`, `scripts/mutation-gate.sh`,
   and `scripts/capabilities.sh`. One custom manager reads them. Each pin needs a
   line directly above it in this form: `# renovate: datasource=go depName=<package>`.

@@ -19,7 +19,6 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
-	github.com/hdt3213/rdb v1.3.2
 	github.com/itchyny/gojq v0.12.19
 	github.com/lmittmann/tint v1.1.3
 	github.com/mattn/go-isatty v0.0.22
@@ -41,6 +40,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.12.1
 	github.com/wI2L/jsondiff v0.7.0
 	github.com/zalando/go-keyring v0.2.8
+	github.com/zsltg/rdb v1.3.3-0.20261007154853-79442de87f28
 	go.mongodb.org/mongo-driver/v2 v2.7.0
 	golang.org/x/term v0.45.0
 	google.golang.org/protobuf v1.36.11
@@ -167,7 +167,10 @@ require (
 	software.sslmate.com/src/go-pkcs12 v0.7.2 // indirect
 )
 
-// The zsltg fork fixes a fatal out-of-memory error on a length that an RDB file declares.
-// Remove this line and bump the require when upstream releases the fix.
-// See HDT3213/rdb issue 75 and pull request 76.
-replace github.com/hdt3213/rdb => github.com/zsltg/rdb v1.3.3-0.20261007123221-a273eef08475
+// The require of github.com/zsltg/rdb is a fork of github.com/hdt3213/rdb. The fork fixes
+// a fatal out-of-memory error on a length that an RDB file declares. When upstream releases
+// the fix, change the imports back to github.com/hdt3213/rdb. See HDT3213/rdb issue 75 and
+// pull request 76.
+
+// v0.38.2 has a replace directive in go.mod, so go install refuses that version.
+retract v0.38.2
