@@ -32,22 +32,27 @@ the rows with `record has no key`.
 
 The examples set `pipefail`. Without it, a pipeline reports only the status of
 `iq`. A failed `sq` or `curl` can then leave a partial file, and the next
-command reads it.
+command reads it. `pipefail` needs bash, zsh, or another shell that supports it.
 
-```sh { title='One time: write the file, then register it' }
+Keep the file in a directory that only you can write to, such as your home
+directory. Do not use a shared directory such as `/tmp`. There, another user
+can create a symbolic link at the path, and the redirect then overwrites the
+file that the link points to.
+
+```bash { title='One time: write the file, then register it' }
 set -o pipefail
-sq -J @pg.users | iq --typed --key-field id > /tmp/in.jsonl &&
-  iq add -n in file:///tmp/in.jsonl
+sq -J @pg.users | iq --typed --key-field id > "$HOME/in.jsonl" &&
+  iq add -n in "file://$HOME/in.jsonl"
 ```
 
-```sh { title='Diff piped data against a source' }
+```bash { title='Diff piped data against a source' }
 set -o pipefail
-sq -J @pg.users | iq --typed --key-field id > /tmp/in.jsonl && iq diff in prod
+sq -J @pg.users | iq --typed --key-field id > "$HOME/in.jsonl" && iq diff in prod
 ```
 
-```sh { title='Combine piped data with a source' }
+```bash { title='Combine piped data with a source' }
 set -o pipefail
-curl -sf https://api.example.com/users | iq --typed --key-field id > /tmp/in.jsonl &&
+curl -sf https://api.example.com/users | iq --typed --key-field id > "$HOME/in.jsonl" &&
   iq combine --with '$in + $prod' 'in=.[]' 'prod=.[]'
 ```
 
