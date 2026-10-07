@@ -362,7 +362,7 @@ func (s *Store) collectGets(getOps []*gocb.GetOp, out map[string]any) error {
 // streaming caller keeps only one page in memory and the loop provably terminates on a
 // short page. Bounded by ctx; stops at the first error from fn or the driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
-	return s.scan(ctx, "", nil, nil, fn)
+	return s.scan(ctx, scanSpec{}, fn)
 }
 
 // pageRows is the part of a query result that a scan page reads. *gocb.QueryResult
@@ -412,41 +412,35 @@ func (s *Store) readPage(rows pageRows, matcher *rawpred.Matcher) (map[string]an
 	return page, last, n, nil
 }
 
-// scan runs the keyset walk shared by ScanBatches and ScanFiltered. where, when
+// scanSpec is the optional narrowing of one keyset scan: an extra WHERE predicate with
+// its named parameters, and a raw-byte prefilter. The zero value walks the whole
+// collection with no prefilter.
+type scanSpec struct {
+	where   string
+	params  map[string]any
+	matcher *rawpred.Matcher
+}
+
+// scan runs the keyset walk shared by ScanBatches and ScanFiltered. spec.where, when
 // non-empty, is an extra predicate ANDed into each page's WHERE (its named parameters
-// ride in params); it must never reference the reserved $after/$page names. Every
+// ride in spec.params); it must never reference the reserved $after/$page names. Every
 // value travels as a named parameter, never concatenated.
 //
-// When matcher is non-nil, each row's raw value is run through it before decode, and a
+// When spec.matcher is non-nil, each row's raw value is run through it before decode, and a
 // row the prepared matcher proves the predicate rejects is skipped (counted in
 // prefilterSkipped) rather than decoded and delivered — a byte-level drop that never
 // changes results because the matcher's predicate is a conservative superset the caller
 // re-runs in full. The keyset cursor advances past every row, skipped or kept, so
 // pagination never re-reads or loops; a page emptied entirely by the prefilter is never
 // handed to fn, preserving the "a scan never yields an empty batch" contract.
-func (s *Store) scan(ctx context.Context, where string, params map[string]any, matcher *rawpred.Matcher, fn func(batch map[string]any) error) error {
+func (s *Store) scan(ctx context.Context, spec scanSpec, fn func(batch map[string]any) error) error {
 	if s.collection == nil {
 		return errNoBucket
 	}
-	ref := s.keyspaceRef()
-	clause := "META(t).id > $after"
-	if where != "" {
-		clause += " AND (" + where + ")"
-	}
-	stmt := fmt.Sprintf(
-		"SELECT META(t).id AS k, t AS v FROM %s t WHERE %s ORDER BY META(t).id LIMIT $page",
-		ref, clause,
-	)
+	stmt := s.scanStatement(spec.where)
 	after := ""
 	for {
-		args := map[string]any{"after": after, "page": s.pageSize}
-		maps.Copy(args, params)
-		s.tracef("query %s", stmt)
-		rows, err := s.query(ctx, stmt, args)
-		if err != nil {
-			return err
-		}
-		page, last, n, err := s.readPage(rows, matcher)
+		page, last, n, err := s.scanPage(ctx, stmt, after, spec)
 		if err != nil {
 			return err
 		}
@@ -464,6 +458,32 @@ func (s *Store) scan(ctx context.Context, where string, params map[string]any, m
 		}
 		after = last
 	}
+}
+
+// scanStatement builds the keyset statement for one scan. where, when non-empty, is
+// ANDed into the WHERE clause. Every value rides as a named parameter.
+func (s *Store) scanStatement(where string) string {
+	clause := "META(t).id > $after"
+	if where != "" {
+		clause += " AND (" + where + ")"
+	}
+	return fmt.Sprintf(
+		"SELECT META(t).id AS k, t AS v FROM %s t WHERE %s ORDER BY META(t).id LIMIT $page",
+		s.keyspaceRef(), clause,
+	)
+}
+
+// scanPage runs the statement for one keyset page after the ID after and reads it. It
+// returns the page, the last ID read and the number of rows read.
+func (s *Store) scanPage(ctx context.Context, stmt, after string, spec scanSpec) (map[string]any, string, int, error) {
+	args := map[string]any{"after": after, "page": s.pageSize}
+	maps.Copy(args, spec.params)
+	s.tracef("query %s", stmt)
+	rows, err := s.query(ctx, stmt, args)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	return s.readPage(rows, spec.matcher)
 }
 
 // Query runs a raw SQL++ statement against the selected scope (or the cluster when no
