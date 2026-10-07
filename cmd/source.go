@@ -68,7 +68,7 @@ const addExample = "  # Register a Redis source named \"cache\".\n" +
 
 // addOptions holds the flag values of `iq add`.
 type addOptions struct {
-	handle, store, driver              string
+	uri, handle, store, driver         string
 	active, passwordPrompt, skipVerify bool
 }
 
@@ -90,7 +90,8 @@ func newAddCmd(cfg *config) *cobra.Command {
 		Example:           addExample,
 		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdd(cmd, cfg, o, args[0])
+			o.uri = args[0]
+			return runAdd(cmd, cfg, o)
 		},
 	}
 	c.Flags().StringVarP(&o.handle, "handle", "n", "", "handle for the source; derived from the keyspace the URI names when omitted")
@@ -106,14 +107,15 @@ func newAddCmd(cfg *config) *cobra.Command {
 	return c
 }
 
-// runAdd registers the source rawURL. It checks the URI, plans the password,
+// runAdd registers the source o.uri. It checks the URI, plans the password,
 // verifies the source, and saves it.
-func runAdd(cmd *cobra.Command, cfg *config, o addOptions, rawURL string) error {
-	rawURL, err := prepareAddURI(cmd, o, rawURL)
+func runAdd(cmd *cobra.Command, cfg *config, o addOptions) error {
+	uri, err := prepareAddURI(cmd, o)
 	if err != nil {
 		return err
 	}
-	plan, err := planAddPassword(cmd, rawURL, o.store)
+	o.uri = uri
+	plan, err := planAddPassword(cmd, o)
 	if err != nil {
 		return err
 	}
@@ -121,91 +123,93 @@ func runAdd(cmd *cobra.Command, cfg *config, o addOptions, rawURL string) error 
 	if err != nil {
 		return err
 	}
-	name := addHandle(cmd, cf, o, rawURL)
-	if err := cf.Add(name, plan.stored); err != nil {
+	src := addedSource{name: addHandle(cmd, cf, o), uri: o.uri, active: o.active, plan: plan}
+	if err := cf.Add(src.name, plan.stored); err != nil {
 		return err
 	}
 	// Verify reachability before persisting so a failed add leaves no
-	// trace. rawURL still carries the password (stripped from plan.stored
+	// trace. src.uri still carries the password (stripped from plan.stored
 	// for a keyring source), so it is what we dial.
 	if !o.skipVerify {
-		if err := verifyAdd(cmd.Context(), name, rawURL, cfg.timeout); err != nil {
+		if err := verifyAdd(cmd.Context(), src, cfg.timeout); err != nil {
 			return err
 		}
 	}
-	return finishAdd(cmd, cf, addedSource{name: name, active: o.active, plan: plan})
+	return finishAdd(cmd, cf, src)
 }
 
-// prepareAddURI checks rawURL against the driver flag and the registry. It then
-// returns rawURL with the prompted password inserted, when the user asked to be
+// prepareAddURI checks o.uri against the driver flag and the registry. It then
+// returns the URI with the prompted password inserted, when the user asked to be
 // prompted.
-func prepareAddURI(cmd *cobra.Command, o addOptions, rawURL string) (string, error) {
-	if err := validateAddURI(rawURL, o.driver); err != nil {
+func prepareAddURI(cmd *cobra.Command, o addOptions) (string, error) {
+	if err := validateAddURI(o); err != nil {
 		return "", err
 	}
 	// A prompted password is spliced into the URL before storage, so the
 	// keyring/inline path below handles it uniformly.
 	if !o.passwordPrompt {
-		return rawURL, nil
+		return o.uri, nil
 	}
 	pw, err := readPassword(cmd)
 	if err != nil {
 		return "", err
 	}
-	return injectPassword(rawURL, pw)
+	return injectPassword(o.uri, pw)
 }
 
-// validateAddURI makes sure that rawURL names a known driver scheme that matches
-// driverFlag, and that its query holds no keyspace parameter the driver cannot
-// use.
-func validateAddURI(rawURL, driverFlag string) error {
-	if driverFlag != "" {
-		if _, ok := driverByName(driverFlag); !ok {
-			return fmt.Errorf("unknown driver %q; known drivers: %s", driverFlag, driverNames())
+// validateAddURI makes sure that o.uri names a known driver scheme that matches
+// the --driver flag, and that its query holds no keyspace parameter the driver
+// cannot use.
+func validateAddURI(o addOptions) error {
+	if o.driver != "" {
+		if _, ok := driverByName(o.driver); !ok {
+			return fmt.Errorf("unknown driver %q; known drivers: %s", o.driver, driverNames())
 		}
 	}
-	if !supportedScheme(rawURL) {
-		return fmt.Errorf("unsupported URI scheme %q; %s", schemeOf(rawURL), expectedSchemes())
+	if !supportedScheme(o.uri) {
+		return fmt.Errorf("unsupported URI scheme %q; %s", schemeOf(o.uri), expectedSchemes())
 	}
-	if driverFlag != "" && driverName(rawURL) != driverFlag {
-		return fmt.Errorf("--driver %q does not match URI scheme %q:// (driver %q)", driverFlag, schemeOf(rawURL), driverName(rawURL))
+	if o.driver != "" && driverName(o.uri) != o.driver {
+		return fmt.Errorf("--driver %q does not match URI scheme %q:// (driver %q)", o.driver, schemeOf(o.uri), driverName(o.uri))
 	}
-	return urlAddressUnsupported(rawURL)
+	return urlAddressUnsupported(o.uri)
 }
 
-// planAddPassword reads the --store value and decides where the password goes.
-func planAddPassword(cmd *cobra.Command, rawURL, store string) (passwordPlan, error) {
-	useKeyring, err := parseStore(store)
+// planAddPassword reads the --store value and decides where the password of
+// o.uri goes.
+func planAddPassword(cmd *cobra.Command, o addOptions) (passwordPlan, error) {
+	useKeyring, err := parseStore(o.store)
 	if err != nil {
 		return passwordPlan{}, err
 	}
-	return planPassword(rawURL, useKeyring, cmd.Flags().Changed("store"))
+	return planPassword(o.uri, useKeyring, cmd.Flags().Changed("store"))
 }
 
 // addHandle returns the handle for the new source: the -n value when the user
-// gave one, else a handle derived from rawURL.
-func addHandle(cmd *cobra.Command, cf *iqconfig.Config, o addOptions, rawURL string) string {
+// gave one, else a handle derived from o.uri.
+func addHandle(cmd *cobra.Command, cf *iqconfig.Config, o addOptions) string {
 	if cmd.Flags().Changed("handle") {
 		return o.handle
 	}
-	return suggestHandle(cf, rawURL)
+	return suggestHandle(cf, o.uri)
 }
 
 // verifyAdd opens the new source and pings it. It wraps a failure with the handle
 // and the --skip-verify hint.
-func verifyAdd(ctx context.Context, name, rawURL string, timeout time.Duration) error {
-	if err := verifySource(ctx, rawURL, timeout); err != nil {
-		return fmt.Errorf("verify %s: %w (use --skip-verify to add it anyway)", strings.TrimPrefix(name, "@"), err)
+func verifyAdd(ctx context.Context, src addedSource, timeout time.Duration) error {
+	if err := verifySource(ctx, src.uri, timeout); err != nil {
+		return fmt.Errorf("verify %s: %w (use --skip-verify to add it anyway)", strings.TrimPrefix(src.name, "@"), err)
 	}
 	return nil
 }
 
 // addedSource is a source that `iq add` has put in the config in memory: its
-// handle, whether to make it active, and where its password goes.
+// handle, the URI to dial (with the password), whether to make it active, and
+// where its password goes.
 type addedSource struct {
-	name   string
-	active bool
-	plan   passwordPlan
+	name, uri string
+	active    bool
+	plan      passwordPlan
 }
 
 // finishAdd makes the source active when asked, saves it, and prints the report.
@@ -463,18 +467,18 @@ func newMvCmd() *cobra.Command {
 			"  $ iq mv prod staging   # rename a whole group (prod/* -> staging/*)",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runMv(cmd, args[0], args[1])
+			return runMv(cmd, args)
 		},
 	}
 }
 
 // runMv renames or moves a source or group, and moves the keyring entries with it.
-func runMv(cmd *cobra.Command, oldName, newName string) error {
+func runMv(cmd *cobra.Command, args []string) error {
 	cf, err := iqconfig.Load()
 	if err != nil {
 		return err
 	}
-	moved, err := cf.Move(oldName, newName)
+	moved, err := cf.Move(args[0], args[1])
 	if err != nil {
 		return err
 	}
@@ -490,7 +494,7 @@ func runMv(cmd *cobra.Command, oldName, newName string) error {
 		return err
 	}
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "moved %s to %s\n",
-		strings.TrimPrefix(oldName, "@"), strings.TrimPrefix(newName, "@"))
+		strings.TrimPrefix(args[0], "@"), strings.TrimPrefix(args[1], "@"))
 	return err
 }
 
@@ -600,7 +604,7 @@ func runGroup(cmd *cobra.Command, args []string, clear bool) error {
 	out := cmd.OutOrStdout()
 	switch {
 	case clear:
-		if err := saveGroup(cf, ""); err != nil {
+		if err := saveGroup(cf, nil); err != nil {
 			return err
 		}
 		_, err = fmt.Fprintln(out, "cleared active group")
@@ -608,7 +612,7 @@ func runGroup(cmd *cobra.Command, args []string, clear bool) error {
 	case len(args) == 0:
 		return showCurrent(out, cf.Group, "no active group")
 	default:
-		if err := saveGroup(cf, args[0]); err != nil {
+		if err := saveGroup(cf, args); err != nil {
 			return err
 		}
 		_, err = fmt.Fprintf(out, "active group: %s\n", cf.Group)
@@ -616,8 +620,13 @@ func runGroup(cmd *cobra.Command, args []string, clear bool) error {
 	}
 }
 
-// saveGroup sets the active group to name and saves the config.
-func saveGroup(cf *iqconfig.Config, name string) error {
+// saveGroup sets the active group to the first argument, or clears it when there
+// is none, and saves the config.
+func saveGroup(cf *iqconfig.Config, args []string) error {
+	name := ""
+	if len(args) > 0 {
+		name = args[0]
+	}
 	if err := cf.SetGroup(name); err != nil {
 		return err
 	}
