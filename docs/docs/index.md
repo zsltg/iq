@@ -220,6 +220,14 @@ from your config. As a result, `iq --src <TAB>` offers the sources `iq ls` lists
 A flag that takes a closed
 set offers that option's own values.
 
+In zsh, fish, and PowerShell, a candidate shows a short description next to it.
+Bash shows the descriptions when it lists more than one candidate. A source
+handle shows its driver, its keyspace, and `active` for the active source, for
+example `prod/books  mongo, orders, active`. It never shows the host, the user,
+or the URI. A group shows its number of sources, and a config key shows the help
+text of its flag. To turn the descriptions off, generate the script with
+`iq completion <shell> --no-descriptions`.
+
 `iq inspect --only <TAB>` and `iq diff --section <TAB>` offer the
 introspection subcommands of the selected source's backend, worked out from its
 saved URI.
