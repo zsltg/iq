@@ -176,7 +176,7 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	q := u.Query()
 	bucket := q.Get("bucket")
 	if bucket != "" {
-		if err := validateIdent("bucket", bucket); err != nil {
+		if err := validateIdent(kindBucket, bucket); err != nil {
 			return connConfig{}, err
 		}
 	}
@@ -221,20 +221,31 @@ func parseCollSpec(spec string) (scope, coll string, err error) {
 	default:
 		return "", "", fmt.Errorf("couchbase collection address %q must be collection or scope.collection", spec)
 	}
-	if err := validateIdent("scope", scope); err != nil {
+	if err := validateIdent(kindScope, scope); err != nil {
 		return "", "", err
 	}
-	if err := validateIdent("collection", coll); err != nil {
+	if err := validateIdent(kindCollection, coll); err != nil {
 		return "", "", err
 	}
 	return scope, coll, nil
 }
 
+// identKind names the part of a keyspace that an identifier belongs to. It only
+// appears in error messages.
+type identKind string
+
+// The three parts of a keyspace address.
+const (
+	kindBucket     identKind = "bucket"
+	kindScope      identKind = "scope"
+	kindCollection identKind = "collection"
+)
+
 // validateIdent rejects a keyspace identifier that is empty, over the length limit, or
 // carries a character outside Couchbase's documented set. Identifiers cannot be
 // parameterized, so this validation plus backtick-quoting (keyspaceRef) is the
 // injection guard: a name that survives cannot break out of its backticks.
-func validateIdent(kind, name string) error {
+func validateIdent(kind identKind, name string) error {
 	if name == "" {
 		return fmt.Errorf("couchbase %s name is empty", kind)
 	}

@@ -13,12 +13,12 @@ import (
 // TestValidateIdentTable pins the accepted set, the rejected neighbours, the error
 // texts and the check order of validateIdent.
 func TestValidateIdentTable(t *testing.T) {
-	invalid := func(kind, name string) string {
+	invalid := func(kind identKind, name string) string {
 		return fmt.Sprintf("couchbase %s name %q has an invalid character", kind, name)
 	}
 	tests := []struct {
 		name string
-		kind string
+		kind identKind
 		in   string
 		want string
 	}{
