@@ -172,6 +172,43 @@ func TestKeysMalformedAST(t *testing.T) {
 			wantScan:       true,
 			wantStreamable: false,
 		},
+		{
+			name: "bracketed subscript carrying an end bound without a slice flag",
+			query: &gojq.Query{Term: &gojq.Term{
+				Type: gojq.TermTypeIndex,
+				Index: &gojq.Index{
+					Start: &gojq.Query{Term: str("book:1")},
+					End:   &gojq.Query{Term: str("z")},
+				},
+			}},
+			wantScan: true,
+		},
+		{
+			name: "index with no name, string or subscript",
+			query: &gojq.Query{Term: &gojq.Term{
+				Type:  gojq.TermTypeIndex,
+				Index: &gojq.Index{},
+			}},
+			wantScan: true,
+		},
+		{
+			name: "array term whose array carries no query",
+			query: &gojq.Query{Term: &gojq.Term{
+				Type:  gojq.TermTypeArray,
+				Array: &gojq.Array{},
+			}},
+			wantScan: false,
+		},
+		{
+			name: "identity with no suffix at the end of a pipe",
+			query: &gojq.Query{
+				Op:    gojq.OpPipe,
+				Left:  &gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeIdentity}},
+				Right: &gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeIdentity}},
+			},
+			wantScan:       true,
+			wantStreamable: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
