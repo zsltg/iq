@@ -333,31 +333,13 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 // each key's native structure. It mirrors ScanBatches but carries each key's TYPE
 // alongside its normalized value.
 func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) error) error {
-	iter := s.client.Scan(ctx, 0, "*", scanCount).Iterator()
-	page := make([]string, 0, s.pageSize)
-	flush := func() error {
-		if len(page) == 0 {
-			return nil
-		}
+	return s.walkKeyPages(ctx, func(page []string) error {
 		recs, err := s.typedGet(ctx, page)
 		if err != nil {
 			return err
 		}
-		page = page[:0]
 		return fn(recs)
-	}
-	for iter.Next(ctx) {
-		page = append(page, iter.Val())
-		if len(page) >= s.pageSize {
-			if err := flush(); err != nil {
-				return err
-			}
-		}
-	}
-	if err := iter.Err(); err != nil {
-		return fmt.Errorf("redis scan: %w", err)
-	}
-	return flush()
+	})
 }
 
 // typedGet reads a page of keys into typed records, reusing the read pipelines but

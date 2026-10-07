@@ -74,7 +74,7 @@ func TestReaderForQueuesTheReadOfEachType(t *testing.T) {
 			t.Cleanup(func() { _ = client.Close() })
 			p := client.Pipeline()
 
-			r, err := readerFor(context.Background(), p, "k", tt.typ, numfmt.DecimalString)
+			r, err := readerFor(context.Background(), p, typedKey{key: "k", typ: tt.typ}, numfmt.DecimalString)
 
 			require.NoError(t, err)
 			require.IsType(t, tt.wantReader, r)
@@ -94,7 +94,7 @@ func TestReaderForRefusesAnUnsupportedType(t *testing.T) {
 	t.Cleanup(func() { _ = client.Close() })
 	p := client.Pipeline()
 
-	r, err := readerFor(context.Background(), p, "k", "TSDB-TYPE", numfmt.DecimalAuto)
+	r, err := readerFor(context.Background(), p, typedKey{key: "k", typ: "TSDB-TYPE"}, numfmt.DecimalAuto)
 
 	require.EqualError(t, err, `unsupported redis type "TSDB-TYPE" for key "k"`)
 	require.Nil(t, r)

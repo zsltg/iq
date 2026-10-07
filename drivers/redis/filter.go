@@ -91,7 +91,7 @@ func filteredReaderFor(ctx context.Context, p goredis.Pipeliner, key, typ string
 	if typ == "ReJSON-RL" {
 		return filterJSONReader{cmd: p.JSONGet(ctx, key), decimal: dec, matcher: matcher}, nil
 	}
-	return readerFor(ctx, p, key, typ, dec)
+	return readerFor(ctx, p, typedKey{key: key, typ: typ}, dec)
 }
 
 // filterJSONReader is jsonReader plus the prefilter: it runs the raw JSON.GET reply
