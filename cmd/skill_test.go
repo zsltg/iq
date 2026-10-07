@@ -329,3 +329,89 @@ func allSkillCommands(root *cobra.Command) []*cobra.Command {
 	}
 	return out
 }
+
+// TestSkillTokenCheckerAccepts pins the shapes the checker lets through, so a
+// change to its walk cannot make it stricter or looser without a failing row.
+func TestSkillTokenCheckerAccepts(t *testing.T) {
+	root, _ := newRootCmd()
+
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{"bare iq", "iq"},
+		{"long help flag", "iq --help"},
+		{"short help flag", "iq ls -h"},
+		{"help command", "iq help"},
+		{"inherited bool flag", "iq ls -v"},
+		{"short flag with a value", "iq add -n shop"},
+		{"inline value", "iq add --handle=shop"},
+		{"quoted operand then a flag", `iq '.[] | select(.a == "b")' --src shop`},
+		{"placeholder", "iq add <uri>"},
+		{"nested subcommands", "iq config keyring ls"},
+		{"bare flag mention", "--reveal"},
+		{"bare fragment with a value", "--src shop"},
+		{"flag value that looks like a flag", "--src --reveal"},
+		{"not an iq token", "jq .a"},
+		{"empty token", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NoError(t, resolveSkillToken(root, tt.token))
+		})
+	}
+}
+
+// TestSkillTokenCheckerRejectsMore adds the reject shapes of nested commands,
+// short flags and flags that follow an operand.
+func TestSkillTokenCheckerRejectsMore(t *testing.T) {
+	root, _ := newRootCmd()
+
+	tests := []struct {
+		name  string
+		token string
+		want  string
+	}{
+		{"unknown nested subcommand", "iq config nosuch", `unknown command "nosuch"`},
+		{"short flag without its value", "iq add -n", `flag "-n" expects a value`},
+		{"unknown bare flag", "--nosuch shop", `unknown flag "--nosuch"`},
+		{"flag of another command after an operand", "iq ls extra --key-field id", `unknown flag "--key-field"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := resolveSkillToken(root, tt.token)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+// TestSplitSkillWords pins how a token splits into words and which words count
+// as quoted.
+func TestSplitSkillWords(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+		want  []skillWord
+	}{
+		{"plain words", "iq ls -v", []skillWord{{"iq", false}, {"ls", false}, {"-v", false}}},
+		{"single quotes", "iq 'a b'", []skillWord{{"iq", false}, {"a b", true}}},
+		{"double quotes", `iq "a b"`, []skillWord{{"iq", false}, {"a b", true}}},
+		{"quote inside a word", "x'a b'y", []skillWord{{"xa by", true}}},
+		{"other quote inside quotes", `'say "hi"'`, []skillWord{{`say "hi"`, true}}},
+		{"adjacent quoted words", "'a' 'b'", []skillWord{{"a", true}, {"b", true}}},
+		{"empty quoted word", "iq ''", []skillWord{{"iq", false}, {"", true}}},
+		{"extra spaces", "  iq   ls  ", []skillWord{{"iq", false}, {"ls", false}}},
+		{"empty token", "", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := splitSkillWords(tt.token)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+
+	_, err := splitSkillWords(`iq "open`)
+	require.ErrorContains(t, err, "unbalanced quote")
+}
