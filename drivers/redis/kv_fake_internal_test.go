@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/rawpred"
 )
 
@@ -101,162 +102,145 @@ func TestReaderForRefusesAnUnsupportedType(t *testing.T) {
 	require.Zero(t, p.Len())
 }
 
-// TestGetReadsTypesThenValuesInKeyOrder pins the two pipelines of Get: TYPE for
-// each unique key in first-seen order, then each key's value command in the same
-// order. Both carry the caller's context.
-func TestGetReadsTypesThenValuesInKeyOrder(t *testing.T) {
-	ctx := markedContext()
-	f := &fakeRedis{keys: map[string]fakeKey{
-		"b": {typ: "string", val: "vb"},
-		"a": {typ: "hash", val: map[string]string{"f": "v"}},
-	}}
-	store := newFakeStore(t, f, 10)
+// readPath is one of the two ways a Store reads a page of keys: Get, and the
+// filtered read that ScanFiltered uses. Both share the pipelines and the error
+// wraps, so the tests below run each case against both.
+type readPath struct {
+	name string
+	read func(s *Store, ctx context.Context, keys []string) (map[string]any, error) //nolint:revive // ctx follows the receiver-like store here.
+}
 
-	got, err := store.Get(ctx, []string{"b", "a", "b", "gone"})
+var readPaths = []readPath{
+	{"Get", func(s *Store, ctx context.Context, keys []string) (map[string]any, error) {
+		return s.Get(ctx, keys)
+	}},
+	{"getFiltered", func(s *Store, ctx context.Context, keys []string) (map[string]any, error) {
+		return s.getFiltered(ctx, keys, rawpred.NewMatcher(nil))
+	}},
+}
 
-	require.NoError(t, err)
-	require.Equal(t, map[string]any{"b": "vb", "a": map[string]any{"f": "v"}}, got)
-	calls := f.snapshot()
-	require.Len(t, calls, 2)
-	require.Equal(t, []string{"type b", "type a", "type gone"}, calls[0].lines())
-	require.Equal(t, []string{"get b", "hgetall a"}, calls[1].lines())
-	for _, c := range calls {
-		require.True(t, c.piped)
-		require.Equal(t, ctx, c.ctx, "the caller's context reaches the pipeline")
+// TestReadPathsReadTypesThenValuesInKeyOrder pins the two pipelines of a read:
+// TYPE for each unique key in first-seen order, then each key's value command in
+// the same order. Both carry the caller's context.
+func TestReadPathsReadTypesThenValuesInKeyOrder(t *testing.T) {
+	tests := []struct {
+		path       readPath
+		keys       map[string]fakeKey
+		ask        []string
+		want       map[string]any
+		wantTypes  []string
+		wantValues []string
+	}{
+		{
+			readPaths[0],
+			map[string]fakeKey{
+				"b": {typ: "string", val: "vb"},
+				"a": {typ: "hash", val: map[string]string{"f": "v"}},
+			},
+			[]string{"b", "a", "b", "gone"},
+			map[string]any{"b": "vb", "a": map[string]any{"f": "v"}},
+			[]string{"type b", "type a", "type gone"},
+			[]string{"get b", "hgetall a"},
+		},
+		{
+			readPaths[1],
+			map[string]fakeKey{
+				"s": {typ: "string", val: "v"},
+				"j": {typ: "ReJSON-RL", val: `{"a":1}`},
+			},
+			[]string{"s", "j", "s"},
+			map[string]any{"s": "v", "j": map[string]any{"a": 1}},
+			[]string{"type s", "type j"},
+			[]string{"get s", "JSON.GET j"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path.name, func(t *testing.T) {
+			ctx := markedContext()
+			f := &fakeRedis{keys: tt.keys}
+			store := newFakeStore(t, f, 10)
+
+			got, err := tt.path.read(store, ctx, tt.ask)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			calls := f.snapshot()
+			require.Len(t, calls, 2)
+			require.Equal(t, tt.wantTypes, calls[0].lines())
+			require.Equal(t, tt.wantValues, calls[1].lines())
+			for _, c := range calls {
+				require.True(t, c.piped)
+				require.Equal(t, ctx, c.ctx, "the caller's context reaches the pipeline")
+			}
+		})
 	}
 }
 
-// TestGetTreatsAPerCommandNilAsAbsent pins that a value command that answers Nil
-// (the key vanished after TYPE) drops that key and keeps the rest of the page.
-func TestGetTreatsAPerCommandNilAsAbsent(t *testing.T) {
-	f := &fakeRedis{keys: map[string]fakeKey{
-		"gone": {typ: "string", err: goredis.Nil},
-		"here": {typ: "string", val: "v"},
-	}}
-	store := newFakeStore(t, f, 10)
+// TestReadPathsTreatAPerCommandNilAsAbsent pins that a value command that answers
+// Nil (the key vanished after TYPE) drops that key and keeps the rest of the page.
+func TestReadPathsTreatAPerCommandNilAsAbsent(t *testing.T) {
+	tests := []struct {
+		path     readPath
+		goneType string
+	}{
+		{readPaths[0], "string"},
+		{readPaths[1], "string"},
+		{readPaths[1], "ReJSON-RL"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path.name+"/"+tt.goneType, func(t *testing.T) {
+			f := &fakeRedis{keys: map[string]fakeKey{
+				"gone": {typ: tt.goneType, err: goredis.Nil},
+				"here": {typ: "string", val: "v"},
+			}}
+			store := newFakeStore(t, f, 10)
 
-	got, err := store.Get(context.Background(), []string{"gone", "here"})
+			got, err := tt.path.read(store, context.Background(), []string{"gone", "here"})
 
-	require.NoError(t, err)
-	require.Equal(t, map[string]any{"here": "v"}, got)
+			require.NoError(t, err)
+			require.Equal(t, map[string]any{"here": "v"}, got)
+		})
+	}
 }
 
-// TestGetSurfacesAPipelineTransportError pins the wrap of a failed pipeline. A
-// failed TYPE pipeline stops Get before the value pipeline.
-func TestGetSurfacesAPipelineTransportError(t *testing.T) {
+// TestReadPathsWrapEachFailure pins the wraps of a read: a failed TYPE pipeline
+// stops before the value pipeline, a failed value pipeline is wrapped, a reader
+// error names its key, and an unsupported type stops before the value pipeline
+// runs. A pipeline reports its first failed command, so the reader-error case
+// puts a Nil key first and the failing reader second.
+func TestReadPathsWrapEachFailure(t *testing.T) {
 	boom := errors.New("boom")
-	tests := []struct {
+	nilFirst := fakeKey{typ: "string", err: goredis.Nil}
+	cases := []struct {
 		name      string
-		failAt    int
+		keys      map[string]fakeKey
+		fail      map[int]error
 		wantText  string
+		wantIs    error
 		wantCalls int
 	}{
-		{"type pipeline", 0, "redis type", 1},
-		{"value pipeline", 1, "redis read", 2},
+		{"type pipeline", map[string]fakeKey{"k": {typ: "string"}}, map[int]error{0: boom}, "redis type", boom, 1},
+		{"value pipeline", map[string]fakeKey{"k": {typ: "string"}}, map[int]error{1: boom}, "redis read", boom, 2},
+		{"reader error", map[string]fakeKey{"gone": nilFirst, "k": {typ: "hash", err: boom}}, nil, `read key "k"`, boom, 2},
+		{"unsupported type", map[string]fakeKey{"k": {typ: "TSDB-TYPE"}}, nil, `unsupported redis type "TSDB-TYPE" for key "k"`, nil, 1},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			f := &fakeRedis{
-				keys: map[string]fakeKey{"k": {typ: "string", val: "v"}},
-				fail: map[int]error{tt.failAt: boom},
-			}
-			store := newFakeStore(t, f, 10)
+	for _, path := range readPaths {
+		for _, tt := range cases {
+			t.Run(path.name+"/"+tt.name, func(t *testing.T) {
+				f := &fakeRedis{keys: tt.keys, fail: tt.fail}
+				store := newFakeStore(t, f, 10)
 
-			got, err := store.Get(context.Background(), []string{"k"})
+				got, err := path.read(store, context.Background(), []string{"gone", "k"})
 
-			require.ErrorContains(t, err, tt.wantText)
-			require.ErrorIs(t, err, boom)
-			require.Nil(t, got)
-			require.Len(t, f.snapshot(), tt.wantCalls)
-		})
+				require.ErrorContains(t, err, tt.wantText)
+				if tt.wantIs != nil {
+					require.ErrorIs(t, err, tt.wantIs)
+				}
+				require.Nil(t, got)
+				require.Len(t, f.snapshot(), tt.wantCalls)
+			})
+		}
 	}
-}
-
-// TestGetNamesTheKeyOfAReaderError pins that a reader error names its key.
-func TestGetNamesTheKeyOfAReaderError(t *testing.T) {
-	boom := errors.New("wrongtype")
-	// A pipeline reports its first failed command, so the Nil of the first key
-	// is what Pipelined returns, and the reader of the second key must name itself.
-	f := &fakeRedis{keys: map[string]fakeKey{
-		"gone": {typ: "string", err: goredis.Nil},
-		"bad":  {typ: "hash", err: boom},
-	}}
-	store := newFakeStore(t, f, 10)
-
-	_, err := store.Get(context.Background(), []string{"gone", "bad"})
-
-	require.ErrorContains(t, err, `read key "bad"`)
-	require.ErrorIs(t, err, boom)
-}
-
-// TestGetFilteredReadsTypesThenValuesInKeyOrder pins the command order of the
-// filtered read: TYPE for each unique key, then one value command each, with
-// JSON.GET for a RedisJSON key. Both pipelines carry the caller's context.
-func TestGetFilteredReadsTypesThenValuesInKeyOrder(t *testing.T) {
-	ctx := markedContext()
-	f := &fakeRedis{keys: map[string]fakeKey{
-		"s": {typ: "string", val: "v"},
-		"j": {typ: "ReJSON-RL", val: `{"a":1}`},
-	}}
-	store := newFakeStore(t, f, 10)
-
-	got, err := store.getFiltered(ctx, []string{"s", "j", "s"}, rawpred.NewMatcher(nil))
-
-	require.NoError(t, err)
-	require.Equal(t, map[string]any{"s": "v", "j": map[string]any{"a": 1}}, got)
-	calls := f.snapshot()
-	require.Len(t, calls, 2)
-	require.Equal(t, []string{"type s", "type j"}, calls[0].lines())
-	require.Equal(t, []string{"get s", "JSON.GET j"}, calls[1].lines())
-	for _, c := range calls {
-		require.Equal(t, ctx, c.ctx)
-	}
-}
-
-// TestGetFilteredWrapsEachFailure pins the wraps of the filtered read: a failed
-// TYPE pipeline, a failed value pipeline, a reader error that names its key, and
-// an unsupported type that stops before the value pipeline runs.
-func TestGetFilteredWrapsEachFailure(t *testing.T) {
-	boom := errors.New("boom")
-	tests := []struct {
-		name     string
-		keys     map[string]fakeKey
-		fail     map[int]error
-		wantText string
-	}{
-		{"type pipeline", map[string]fakeKey{"k": {typ: "string"}}, map[int]error{0: boom}, "redis type"},
-		{"value pipeline", map[string]fakeKey{"k": {typ: "string"}}, map[int]error{1: boom}, "redis read"},
-		{"reader error", map[string]fakeKey{"gone": {typ: "string", err: goredis.Nil}, "k": {typ: "hash", err: boom}}, nil, `read key "k"`},
-		{"unsupported type", map[string]fakeKey{"k": {typ: "TSDB-TYPE"}}, nil, `unsupported redis type "TSDB-TYPE" for key "k"`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			f := &fakeRedis{keys: tt.keys, fail: tt.fail}
-			store := newFakeStore(t, f, 10)
-
-			_, err := store.getFiltered(context.Background(), []string{"gone", "k"}, rawpred.NewMatcher(nil))
-
-			require.ErrorContains(t, err, tt.wantText)
-			if tt.fail != nil || tt.name == "reader error" {
-				require.ErrorIs(t, err, boom)
-			}
-		})
-	}
-}
-
-// TestGetFilteredTreatsAPerCommandNilAsAbsent pins that a key that vanished after
-// TYPE is absent from the filtered read, and the rest of the page arrives.
-func TestGetFilteredTreatsAPerCommandNilAsAbsent(t *testing.T) {
-	f := &fakeRedis{keys: map[string]fakeKey{
-		"gone": {typ: "ReJSON-RL", err: goredis.Nil},
-		"here": {typ: "string", val: "v"},
-	}}
-	store := newFakeStore(t, f, 10)
-
-	got, err := store.getFiltered(context.Background(), []string{"gone", "here"}, rawpred.NewMatcher(nil))
-
-	require.NoError(t, err)
-	require.Equal(t, map[string]any{"here": "v"}, got)
 }
 
 // TestListAndSetReadersOrderAndErrors pins the two string-slice readers: a list
@@ -341,83 +325,107 @@ func TestScanBatchesSplitsPagesAndPinsScanCount(t *testing.T) {
 	}
 }
 
-// TestScanPagesEdges pins the edges of the shared cursor walk: an empty keyspace,
-// an empty batch from build, a build error, an fn error and a SCAN error.
-func TestScanPagesEdges(t *testing.T) {
-	boom := errors.New("boom")
-	build := func(_ context.Context, keys []string) (map[string]any, error) {
-		out := map[string]any{}
-		for _, k := range keys {
-			out[k] = k
+// keyspaceWalk runs one of the two cursor walks, calling onPage for each page it
+// delivers. Both walks share walkKeyPages, so the edge cases below run on both.
+type keyspaceWalk struct {
+	name string
+	run  func(s *Store, ctx context.Context, onPage func() error) error //nolint:revive // ctx follows the store here.
+}
+
+var keyspaceWalks = []keyspaceWalk{
+	{"scanPages", func(s *Store, ctx context.Context, onPage func() error) error {
+		build := func(_ context.Context, keys []string) (map[string]any, error) {
+			out := map[string]any{}
+			for _, k := range keys {
+				out[k] = k
+			}
+			return out, nil
 		}
-		return out, nil
+		return s.scanPages(ctx, build, func(map[string]any) error { return onPage() })
+	}},
+	{"TypedScan", func(s *Store, ctx context.Context, onPage func() error) error {
+		return s.TypedScan(ctx, func([]query.Record) error { return onPage() })
+	}},
+}
+
+// TestKeyspaceWalkStopsAtTheFirstError pins the edges that both cursor walks
+// share: an empty keyspace calls nothing, an fn error ends the walk at once, and
+// a SCAN error is wrapped and skips the final flush.
+func TestKeyspaceWalkStopsAtTheFirstError(t *testing.T) {
+	boom := errors.New("boom")
+	keys := map[string]fakeKey{"a": {typ: "string", val: "v"}, "b": {typ: "string", val: "v"}, "c": {typ: "string", val: "v"}}
+	cases := []struct {
+		name      string
+		scan      [][]string
+		fail      map[int]error
+		fnErr     error
+		wantText  string
+		wantIs    error
+		wantPages int
+	}{
+		{"empty keyspace", nil, nil, nil, "", nil, 0},
+		{"fn error", [][]string{{"a", "b", "c"}}, nil, boom, "", boom, 1},
+		{"scan error", [][]string{{"a"}, {"b"}}, map[int]error{1: boom}, nil, "redis scan: ", boom, 0},
 	}
+	for _, w := range keyspaceWalks {
+		for _, tt := range cases {
+			t.Run(w.name+"/"+tt.name, func(t *testing.T) {
+				f := &fakeRedis{keys: keys, scan: tt.scan, fail: tt.fail}
+				store := newFakeStore(t, f, 2)
+				pages := 0
+
+				err := w.run(store, context.Background(), func() error {
+					pages++
+					return tt.fnErr
+				})
+
+				if tt.wantIs == nil {
+					require.NoError(t, err)
+				} else {
+					require.ErrorIs(t, err, tt.wantIs)
+				}
+				if tt.wantText != "" {
+					require.ErrorContains(t, err, tt.wantText)
+				}
+				require.Equal(t, tt.wantPages, pages)
+			})
+		}
+	}
+}
+
+// TestScanPagesBuildEdges pins what scanPages does with the result of build: an
+// empty batch skips fn, and a build error ends the walk before fn runs.
+func TestScanPagesBuildEdges(t *testing.T) {
+	boom := errors.New("boom")
 	tests := []struct {
 		name       string
-		scan       [][]string
-		fail       map[int]error
-		build      func(context.Context, []string) (map[string]any, error)
-		fn         func(map[string]any) error
+		batch      map[string]any
+		err        error
 		wantErr    error
-		wantText   string
 		wantBuilds int
-		wantFns    int
 	}{
-		{"empty keyspace", nil, nil, build, func(map[string]any) error { return nil }, nil, "", 0, 0},
-		{
-			"empty batch skips fn",
-			[][]string{{"a", "b"}},
-			nil,
-			func(context.Context, []string) (map[string]any, error) { return map[string]any{}, nil },
-			func(map[string]any) error { return nil }, nil, "", 1, 0,
-		},
-		{
-			"build error stops the walk",
-			[][]string{{"a", "b", "c"}},
-			nil,
-			func(context.Context, []string) (map[string]any, error) { return nil, boom },
-			func(map[string]any) error { return nil }, boom, "", 1, 0,
-		},
-		{
-			"fn error stops the walk",
-			[][]string{{"a", "b", "c"}},
-			nil, build,
-			func(map[string]any) error { return boom }, boom, "", 1, 1,
-		},
-		{
-			"scan error skips the final flush",
-			[][]string{{"a"}, {"b"}},
-			map[int]error{1: boom},
-			build,
-			func(map[string]any) error { return nil }, boom, "redis scan", 0, 0,
-		},
+		{"empty batch skips fn", map[string]any{}, nil, nil, 2},
+		{"build error stops the walk", nil, boom, boom, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := &fakeRedis{scan: tt.scan, fail: tt.fail}
+			f := &fakeRedis{scan: [][]string{{"a", "b", "c"}}}
 			store := newFakeStore(t, f, 2)
 			builds, fns := 0, 0
 
 			err := store.scanPages(context.Background(),
-				func(ctx context.Context, keys []string) (map[string]any, error) {
+				func(context.Context, []string) (map[string]any, error) {
 					builds++
-					return tt.build(ctx, keys)
+					return tt.batch, tt.err
 				},
-				func(batch map[string]any) error {
+				func(map[string]any) error {
 					fns++
-					return tt.fn(batch)
+					return nil
 				})
 
-			if tt.wantErr == nil {
-				require.NoError(t, err)
-			} else {
-				require.ErrorIs(t, err, tt.wantErr)
-			}
-			if tt.wantText != "" {
-				require.ErrorContains(t, err, tt.wantText)
-			}
+			require.ErrorIs(t, err, tt.wantErr)
 			require.Equal(t, tt.wantBuilds, builds)
-			require.Equal(t, tt.wantFns, fns)
+			require.Zero(t, fns)
 		})
 	}
 }
