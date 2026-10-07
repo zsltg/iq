@@ -256,7 +256,7 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		}
 		pending := map[string]types.KeysAndAttributes{s.table: {Keys: reqKeys}}
 		if err := s.drainBatchGet(ctx, pending, func(item map[string]types.AttributeValue) {
-			out[s.keyOf(item)] = s.normalizeItem(item)
+			out[s.keyOf(item)] = normalizeMap(item, s.decimal)
 		}); err != nil {
 			return nil, err
 		}
@@ -312,7 +312,7 @@ func (s *Store) scan(ctx context.Context, in *dynamodb.ScanInput, fn func(batch 
 			return fmt.Errorf("dynamodb scan: %w", err)
 		}
 		for _, item := range out.Items {
-			page[s.keyOf(item)] = s.normalizeItem(item)
+			page[s.keyOf(item)] = normalizeMap(item, s.decimal)
 			if len(page) >= s.pageSize {
 				if err := fn(page); err != nil {
 					return err
@@ -348,7 +348,7 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 			return nil, fmt.Errorf("dynamodb: %w", err)
 		}
 		for _, item := range out.Items {
-			rows = append(rows, s.normalizeItem(item))
+			rows = append(rows, normalizeMap(item, s.decimal))
 		}
 		if out.NextToken == nil {
 			break
@@ -389,15 +389,6 @@ func (s *Store) FormatRaw(v any, colored bool) string {
 // (each call is a bounded HTTP request), so there is nothing to release.
 func (s *Store) Close() error {
 	return nil
-}
-
-// normalizeItem normalizes every attribute value of an item, preserving names.
-func (s *Store) normalizeItem(item map[string]types.AttributeValue) map[string]any {
-	out := make(map[string]any, len(item))
-	for k, v := range item {
-		out[k] = Normalize(v, s.decimal)
-	}
-	return out
 }
 
 // backoffUnit is the base backoff delay, exported to the package so tests can zero it
