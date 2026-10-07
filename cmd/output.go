@@ -365,7 +365,14 @@ func (f *valuesFormatter) line(s string) error {
 // documents with `---`, so a stream renders as a valid multi-document file.
 type yamlFormatter struct{ enc *yaml.Encoder }
 
-func (f *yamlFormatter) emit(v any) error {
+func (f *yamlFormatter) emit(v any) (err error) {
+	// yaml.v3 panics on a value it cannot encode, such as a channel. Turn the
+	// panic into an error. The message names the cause, not the data.
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("encode result: %v", r)
+		}
+	}()
 	if err := f.enc.Encode(v); err != nil {
 		return fmt.Errorf("encode result: %w", err)
 	}
