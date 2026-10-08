@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/query"
@@ -77,9 +76,7 @@ func TestQueueWrite(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
-			t.Cleanup(func() { _ = client.Close() })
-			p := client.Pipeline()
+			p := newPipeline(t)
 
 			err := queueWrite(context.Background(), p, tt.record)
 

@@ -60,6 +60,15 @@ func newFakeStore(t *testing.T, f *fakeRedis, pageSize int) *Store {
 	return &Store{client: client, pageSize: pageSize, decimal: numfmt.DecimalAuto}
 }
 
+// newPipeline returns a pipeline that only queues commands. Its client never
+// dials the address, so a test reads the queued commands and nothing runs.
+func newPipeline(t *testing.T) goredis.Pipeliner {
+	t.Helper()
+	client := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { _ = client.Close() })
+	return client.Pipeline()
+}
+
 // snapshot returns a copy of the recorded calls.
 func (f *fakeRedis) snapshot() []fakeCall {
 	f.mu.Lock()

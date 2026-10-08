@@ -71,9 +71,7 @@ func TestReaderForQueuesTheReadOfEachType(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.typ, func(t *testing.T) {
-			client := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
-			t.Cleanup(func() { _ = client.Close() })
-			p := client.Pipeline()
+			p := newPipeline(t)
 
 			r, err := readerFor(context.Background(), p, typedKey{key: "k", typ: tt.typ}, numfmt.DecimalString)
 
@@ -91,9 +89,7 @@ func TestReaderForQueuesTheReadOfEachType(t *testing.T) {
 // TestReaderForRefusesAnUnsupportedType pins the error for a module type with no
 // frozen JSON encoding, and that it queues nothing.
 func TestReaderForRefusesAnUnsupportedType(t *testing.T) {
-	client := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
-	t.Cleanup(func() { _ = client.Close() })
-	p := client.Pipeline()
+	p := newPipeline(t)
 
 	r, err := readerFor(context.Background(), p, typedKey{key: "k", typ: "TSDB-TYPE"}, numfmt.DecimalAuto)
 
