@@ -1724,6 +1724,12 @@
    "line": 245
   },
   {
+   "id": "c3149cc7239ce0945f69920b9b0655f5",
+   "file": "drivers/dynamodb/dynamodb.go",
+   "mutator": "expression/context-nil",
+   "line": 117
+  },
+  {
    "id": "0be71c824c9a97043e8e4a2829db9966",
    "file": "drivers/dynamodb/filter.go",
    "mutator": "branch/case",
@@ -1766,10 +1772,10 @@
    "line": 55
   },
   {
-   "id": "8a05b55045e96455612550597e444eee",
+   "id": "d8ba5c4c6d75ee030a1adbee9e5f971d",
    "file": "drivers/dynamodb/write.go",
    "mutator": "expression/error-guard",
-   "line": 239
+   "line": 269
   },
   {
    "id": "e2dcbf5b273c42acedff2e2d72c80a3d",
