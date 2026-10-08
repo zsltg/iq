@@ -3,7 +3,6 @@ package redis
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	goredis "github.com/redis/go-redis/v9"
 
@@ -53,35 +52,13 @@ func (s *Store) getFiltered(ctx context.Context, keys []string, matcher *rawpred
 		return nil, err
 	}
 
-	readers := make([]reader, len(unique))
-	_, err = s.client.Pipelined(ctx, func(p goredis.Pipeliner) error {
-		for i, k := range unique {
-			r, rerr := filteredReaderFor(ctx, p, k, types[i], s.decimal, matcher)
-			if rerr != nil {
-				return rerr
-			}
-			readers[i] = r
-		}
-		return nil
+	readers, err := s.readPipelined(ctx, unique, func(p goredis.Pipeliner, i int) (reader, error) {
+		return filteredReaderFor(ctx, p, unique[i], types[i], s.decimal, matcher)
 	})
-	// As in pipeValues, a per-command goredis.Nil surfaces here but is handled by
-	// the per-reader normalize below, so only a transport error aborts.
-	if err != nil && !errors.Is(err, goredis.Nil) {
-		return nil, fmt.Errorf("redis read: %w", err)
+	if err != nil {
+		return nil, err
 	}
-
-	out := make(map[string]any, len(unique))
-	for i, k := range unique {
-		v, present, err := readers[i].normalize()
-		if err != nil {
-			return nil, fmt.Errorf("read key %q: %w", k, err)
-		}
-		if !present {
-			continue
-		}
-		out[k] = v
-	}
-	return out, nil
+	return normalizeAll(unique, readers)
 }
 
 // filteredReaderFor is readerFor with the RedisJSON case swapped for a
@@ -91,7 +68,7 @@ func filteredReaderFor(ctx context.Context, p goredis.Pipeliner, key, typ string
 	if typ == "ReJSON-RL" {
 		return filterJSONReader{cmd: p.JSONGet(ctx, key), decimal: dec, matcher: matcher}, nil
 	}
-	return readerFor(ctx, p, key, typ, dec)
+	return readerFor(ctx, p, typedKey{key: key, typ: typ}, dec)
 }
 
 // filterJSONReader is jsonReader plus the prefilter: it runs the raw JSON.GET reply

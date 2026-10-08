@@ -41,36 +41,48 @@ func newPingCmd(cfg *config) *cobra.Command {
 			"  $ iq ping --all      # every saved source",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cf, err := iqconfig.Load()
-			if err != nil {
-				return err
-			}
-			targets, err := pingTargets(cf, args, all)
-			if err != nil {
-				return err
-			}
-			rows := make([][]tableCell, 0, len(targets))
-			anyFail := false
-			for _, t := range targets {
-				driver := driverName(t.source.URL)
-				if d, perr := pingOne(cmd.Context(), t, cfg.timeout); perr != nil {
-					anyFail = true
-					rows = append(rows, []tableCell{cell(t.handle), cell(driver), coloredCell("error", pal.fail), cell(oneLine(perr))})
-				} else {
-					rows = append(rows, []tableCell{cell(t.handle), cell(driver), coloredCell("ok", pal.ok), cell(d.Round(time.Millisecond).String())})
-				}
-			}
-			if err := renderTable(cmd.OutOrStdout(), rows); err != nil {
-				return err
-			}
-			if anyFail {
-				return errors.New("one or more sources unreachable")
-			}
-			return nil
+			return runPing(cmd, cfg, args, all)
 		},
 	}
 	c.Flags().BoolVar(&all, "all", false, "ping every saved source")
 	return c
+}
+
+// runPing checks each target and prints one table row per target. It returns an
+// error after the table when any check failed.
+func runPing(cmd *cobra.Command, cfg *config, args []string, all bool) error {
+	cf, err := iqconfig.Load()
+	if err != nil {
+		return err
+	}
+	targets, err := pingTargets(cf, args, all)
+	if err != nil {
+		return err
+	}
+	rows := make([][]tableCell, 0, len(targets))
+	anyFail := false
+	for _, t := range targets {
+		d, perr := pingOne(cmd.Context(), t, cfg.timeout)
+		anyFail = anyFail || perr != nil
+		rows = append(rows, pingRow(t, d, perr))
+	}
+	if err := renderTable(cmd.OutOrStdout(), rows); err != nil {
+		return err
+	}
+	if anyFail {
+		return errors.New("one or more sources unreachable")
+	}
+	return nil
+}
+
+// pingRow builds the table row of one check: the handle, the driver, and either
+// "ok" with the elapsed time or "error" with the message on one line.
+func pingRow(t pingTarget, elapsed time.Duration, err error) []tableCell {
+	driver := driverName(t.source.URL)
+	if err != nil {
+		return []tableCell{cell(t.handle), cell(driver), coloredCell("error", pal.fail), cell(oneLine(err))}
+	}
+	return []tableCell{cell(t.handle), cell(driver), coloredCell("ok", pal.ok), cell(elapsed.Round(time.Millisecond).String())}
 }
 
 // pingTargets resolves the ping arguments to sources: every saved source when all
@@ -79,60 +91,92 @@ func newPingCmd(cfg *config) *cobra.Command {
 // combined with arguments, --all finds no saved sources, there is no active
 // source, or an argument is unknown.
 func pingTargets(cf *iqconfig.Config, args []string, all bool) ([]pingTarget, error) {
-	if all {
-		if len(args) > 0 {
-			return nil, errors.New("--all pings every source; drop the source arguments")
-		}
-		handles := cf.List()
-		if len(handles) == 0 {
-			return nil, errors.New("no sources; add one with `iq add <uri>`")
-		}
-		targets := make([]pingTarget, 0, len(handles))
-		for _, h := range handles {
-			targets = append(targets, pingTarget{handle: h.Name, source: h.Source})
-		}
-		return targets, nil
+	switch {
+	case all:
+		return allPingTargets(cf, args)
+	case len(args) == 0:
+		return activePingTarget(cf)
+	default:
+		return namedPingTargets(cf, args)
 	}
-	if len(args) == 0 {
-		if cf.Active == "" {
-			return nil, errors.New("no active source; name one or run `iq src <name>`")
-		}
-		s, full, ok := cf.Resolve(cf.Active)
-		if !ok {
-			return nil, fmt.Errorf("active source %q not found; run `iq ls`", cf.Active)
-		}
-		return []pingTarget{{handle: full, source: s}}, nil
+}
+
+// allPingTargets returns every saved source. It refuses source arguments and an
+// empty registry, in that order.
+func allPingTargets(cf *iqconfig.Config, args []string) ([]pingTarget, error) {
+	if len(args) > 0 {
+		return nil, errors.New("--all pings every source; drop the source arguments")
 	}
-	var targets []pingTarget
+	handles := cf.List()
+	if len(handles) == 0 {
+		return nil, errors.New("no sources; add one with `iq add <uri>`")
+	}
+	targets := make([]pingTarget, 0, len(handles))
+	for _, h := range handles {
+		targets = append(targets, pingTarget{handle: h.Name, source: h.Source})
+	}
+	return targets, nil
+}
+
+// activePingTarget returns the active source as the one target.
+func activePingTarget(cf *iqconfig.Config) ([]pingTarget, error) {
+	if cf.Active == "" {
+		return nil, errors.New("no active source; name one or run `iq src <name>`")
+	}
+	s, full, ok := cf.Resolve(cf.Active)
+	if !ok {
+		return nil, fmt.Errorf("active source %q not found; run `iq ls`", cf.Active)
+	}
+	return []pingTarget{{handle: full, source: s}}, nil
+}
+
+// namedPingTargets resolves each argument as a source or a group. It collects the
+// unknown names and reports them together.
+func namedPingTargets(cf *iqconfig.Config, args []string) ([]pingTarget, error) {
+	set := pingSet{seen: make(map[string]bool)}
 	var unknown []string
-	seen := make(map[string]bool)
-	add := func(handle string, s iqconfig.Source) {
-		if !seen[handle] {
-			targets = append(targets, pingTarget{handle: handle, source: s})
-			seen[handle] = true
-		}
-	}
 	for _, arg := range args {
 		if s, full, ok := cf.Resolve(arg); ok {
-			add(full, s)
+			set.add(full, s)
 			continue
 		}
-		prefix := iqconfig.CleanHandle(arg) + "/"
-		found := false
-		for _, h := range cf.List() {
-			if strings.HasPrefix(h.Name, prefix) {
-				add(h.Name, h.Source)
-				found = true
-			}
-		}
-		if !found {
+		if !set.addGroup(cf, arg) {
 			unknown = append(unknown, iqconfig.CleanHandle(arg))
 		}
 	}
 	if len(unknown) > 0 {
 		return nil, fmt.Errorf("unknown source or group: %s", strings.Join(unknown, ", "))
 	}
-	return targets, nil
+	return set.targets, nil
+}
+
+// pingSet collects targets and keeps the first one of each handle.
+type pingSet struct {
+	targets []pingTarget
+	seen    map[string]bool
+}
+
+// add appends the target unless its handle is already in the set.
+func (p *pingSet) add(handle string, s iqconfig.Source) {
+	if p.seen[handle] {
+		return
+	}
+	p.targets = append(p.targets, pingTarget{handle: handle, source: s})
+	p.seen[handle] = true
+}
+
+// addGroup adds every source under the group that arg names. It reports whether
+// the group has a member.
+func (p *pingSet) addGroup(cf *iqconfig.Config, arg string) bool {
+	prefix := iqconfig.CleanHandle(arg) + "/"
+	found := false
+	for _, h := range cf.List() {
+		if strings.HasPrefix(h.Name, prefix) {
+			p.add(h.Name, h.Source)
+			found = true
+		}
+	}
+	return found
 }
 
 // pingOne opens the target and round-trips one cheap command, returning the
@@ -164,16 +208,25 @@ func verifySource(ctx context.Context, rawURL string, timeout time.Duration) err
 		return redactErr(err, rawURL)
 	}
 	defer func() { _ = st.Close() }()
-	// A read-only local source (a dump file) has no server to round-trip a command
-	// against, and a verifiesOnOpen backend (DynamoDB) already round-tripped a
-	// reachability probe at open — for both, opening it is the reachability check.
-	if d, ok := driverForScheme(schemeOf(rawURL)); ok && (d.readOnly || d.verifiesOnOpen) {
+	if opensAreEnough(rawURL) {
 		return nil
 	}
 	if _, err := st.Query(cctx, healthArgs(rawURL)); err != nil {
 		return redactErr(err, rawURL)
 	}
 	return nil
+}
+
+// opensAreEnough reports whether opening the backend already proves that it is
+// reachable. A read-only local source (a dump file) has no server to round-trip a
+// command against, and a verifiesOnOpen backend (DynamoDB) already round-tripped a
+// reachability probe at open.
+func opensAreEnough(rawURL string) bool {
+	d, ok := driverForScheme(schemeOf(rawURL))
+	if !ok {
+		return false
+	}
+	return d.readOnly || d.verifiesOnOpen
 }
 
 // healthArgs returns the cheapest round-trip command for the URL's backend.

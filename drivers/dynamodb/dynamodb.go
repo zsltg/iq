@@ -188,9 +188,9 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	q := u.Query()
 	table := address
 	if table == "" {
-		table = q.Get("table")
+		table = q.Get(paramTable)
 	}
-	return connConfig{region: region, table: table, endpoint: q.Get("endpoint")}, nil
+	return connConfig{region: region, table: table, endpoint: q.Get(paramEndpoint)}, nil
 }
 
 // loadKeySchema reads the selected table's primary-key schema (partition key, then

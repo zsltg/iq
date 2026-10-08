@@ -36,19 +36,44 @@ func (s *Store) putUpsert(ctx context.Context, batch []query.Record) (query.Writ
 	dels := make([]*goredis.IntCmd, len(batch))
 	_, err := s.client.Pipelined(ctx, func(p goredis.Pipeliner) error {
 		for i, r := range batch {
-			if r.Key == "" {
-				return fmt.Errorf("%w; use --key-field for foreign input", query.ErrNoKey)
-			}
-			dels[i] = p.Del(ctx, r.Key)
-			if err := queueWrite(ctx, p, r); err != nil {
+			del, err := queueReplace(ctx, p, r)
+			if err != nil {
 				return err
 			}
+			dels[i] = del
 		}
 		return nil
 	})
 	if err != nil {
 		return query.WriteStat{}, fmt.Errorf("redis write: %w", err)
 	}
+	return countReplaced(dels), nil
+}
+
+// queueReplace queues the DEL and the write commands that replace one record, and
+// returns the DEL reply. The reply tells the caller whether the key existed.
+func queueReplace(ctx context.Context, p goredis.Pipeliner, r query.Record) (*goredis.IntCmd, error) {
+	if err := requireKey(r); err != nil {
+		return nil, err
+	}
+	del := p.Del(ctx, r.Key)
+	if err := queueWrite(ctx, p, r); err != nil {
+		return nil, err
+	}
+	return del, nil
+}
+
+// requireKey rejects a record that has no key, before any command is queued.
+func requireKey(r query.Record) error {
+	if r.Key == "" {
+		return fmt.Errorf("%w; use --key-field for foreign input", query.ErrNoKey)
+	}
+	return nil
+}
+
+// countReplaced turns the DEL replies of an upsert into a WriteStat: a reply above
+// zero is an overwrite, anything else is a new key.
+func countReplaced(dels []*goredis.IntCmd) query.WriteStat {
 	var stat query.WriteStat
 	for _, d := range dels {
 		if d.Val() > 0 {
@@ -57,29 +82,43 @@ func (s *Store) putUpsert(ctx context.Context, batch []query.Record) (query.Writ
 			stat.Written++
 		}
 	}
-	return stat, nil
+	return stat
 }
 
 // putInsertOnly skips keys that already exist. It reads existence in one pipeline,
 // then writes only the absent keys in a second, so an existing key is never
 // clobbered.
 func (s *Store) putInsertOnly(ctx context.Context, batch []query.Record) (query.WriteStat, error) {
+	exists, err := s.pipeExists(ctx, batch)
+	if err != nil {
+		return query.WriteStat{}, err
+	}
+	return s.writeAbsent(ctx, batch, exists)
+}
+
+// pipeExists reads, in one pipeline, whether each record's key exists.
+func (s *Store) pipeExists(ctx context.Context, batch []query.Record) ([]*goredis.IntCmd, error) {
 	exists := make([]*goredis.IntCmd, len(batch))
 	_, err := s.client.Pipelined(ctx, func(p goredis.Pipeliner) error {
 		for i, r := range batch {
-			if r.Key == "" {
-				return fmt.Errorf("%w; use --key-field for foreign input", query.ErrNoKey)
+			if err := requireKey(r); err != nil {
+				return err
 			}
 			exists[i] = p.Exists(ctx, r.Key)
 		}
 		return nil
 	})
 	if err != nil {
-		return query.WriteStat{}, fmt.Errorf("redis exists: %w", err)
+		return nil, fmt.Errorf("redis exists: %w", err)
 	}
+	return exists, nil
+}
 
+// writeAbsent writes, in one pipeline, the records whose EXISTS reply is zero. It
+// counts the records that it wrote and the records that it skipped.
+func (s *Store) writeAbsent(ctx context.Context, batch []query.Record, exists []*goredis.IntCmd) (query.WriteStat, error) {
 	var stat query.WriteStat
-	_, err = s.client.Pipelined(ctx, func(p goredis.Pipeliner) error {
+	_, err := s.client.Pipelined(ctx, func(p goredis.Pipeliner) error {
 		for i, r := range batch {
 			if exists[i].Val() > 0 {
 				stat.Skipped++
@@ -105,11 +144,7 @@ func (s *Store) putInsertOnly(ctx context.Context, batch []query.Record) (query.
 func queueWrite(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
 	switch resolveType(r) {
 	case "string":
-		v, err := redisString(r.Value)
-		if err != nil {
-			return fmt.Errorf("key %q: %w", r.Key, err)
-		}
-		p.Set(ctx, r.Key, v, 0)
+		return queueString(ctx, p, r)
 	case "hash":
 		return queueHash(ctx, p, r)
 	case "list":
@@ -121,14 +156,29 @@ func queueWrite(ctx context.Context, p goredis.Pipeliner, r query.Record) error 
 	case "stream":
 		return queueStream(ctx, p, r)
 	case "json":
-		raw, err := json.Marshal(r.Value)
-		if err != nil {
-			return fmt.Errorf("key %q: encode json: %w", r.Key, err)
-		}
-		p.Do(ctx, "JSON.SET", r.Key, "$", string(raw))
+		return queueJSON(ctx, p, r)
 	default:
 		return fmt.Errorf("key %q: unsupported redis type %q", r.Key, r.Type)
 	}
+}
+
+// queueString queues a SET that replaces the string value and drops any expiry.
+func queueString(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
+	v, err := redisString(r.Value)
+	if err != nil {
+		return fmt.Errorf("key %q: %w", r.Key, err)
+	}
+	p.Set(ctx, r.Key, v, 0)
+	return nil
+}
+
+// queueJSON queues a JSON.SET at the document root.
+func queueJSON(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
+	raw, err := json.Marshal(r.Value)
+	if err != nil {
+		return fmt.Errorf("key %q: encode json: %w", r.Key, err)
+	}
+	p.Do(ctx, "JSON.SET", r.Key, "$", string(raw))
 	return nil
 }
 
@@ -209,22 +259,31 @@ func queueZSet(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
 	}
 	members := make([]goredis.Z, len(arr))
 	for i, e := range arr {
-		obj, ok := e.(map[string]any)
-		if !ok {
-			return fmt.Errorf("key %q: zset element is not a {member, score} object", r.Key)
-		}
-		member, err := redisString(obj["member"])
+		z, err := zsetMember(r.Key, e)
 		if err != nil {
-			return fmt.Errorf("key %q: zset member: %w", r.Key, err)
+			return err
 		}
-		score, err := asFloat(obj["score"])
-		if err != nil {
-			return fmt.Errorf("key %q: zset score: %w", r.Key, err)
-		}
-		members[i] = goredis.Z{Score: score, Member: member}
+		members[i] = z
 	}
 	p.ZAdd(ctx, r.Key, members...)
 	return nil
+}
+
+// zsetMember converts one normalized {member, score} element to a goredis.Z.
+func zsetMember(key string, e any) (goredis.Z, error) {
+	obj, ok := e.(map[string]any)
+	if !ok {
+		return goredis.Z{}, fmt.Errorf("key %q: zset element is not a {member, score} object", key)
+	}
+	member, err := redisString(obj["member"])
+	if err != nil {
+		return goredis.Z{}, fmt.Errorf("key %q: zset member: %w", key, err)
+	}
+	score, err := asFloat(obj["score"])
+	if err != nil {
+		return goredis.Z{}, fmt.Errorf("key %q: zset score: %w", key, err)
+	}
+	return goredis.Z{Score: score, Member: member}, nil
 }
 
 // queueStream queues an XADD per entry, reconstructing a stream from its
@@ -235,29 +294,46 @@ func queueStream(ctx context.Context, p goredis.Pipeliner, r query.Record) error
 		return fmt.Errorf("key %q: stream value is not an array", r.Key)
 	}
 	for _, e := range arr {
-		entry, ok := e.(map[string]any)
-		if !ok {
-			return fmt.Errorf("key %q: stream entry is not an {id, fields} object", r.Key)
+		if err := queueStreamEntry(ctx, p, r.Key, e); err != nil {
+			return err
 		}
-		id, err := redisString(entry["id"])
-		if err != nil {
-			return fmt.Errorf("key %q: stream id: %w", r.Key, err)
-		}
-		rawFields, ok := entry["fields"].(map[string]any)
-		if !ok {
-			return fmt.Errorf("key %q: stream fields is not an object", r.Key)
-		}
-		values := make(map[string]any, len(rawFields))
-		for k, v := range rawFields {
-			s, err := redisString(v)
-			if err != nil {
-				return fmt.Errorf("key %q field %q: %w", r.Key, k, err)
-			}
-			values[k] = s
-		}
-		p.XAdd(ctx, &goredis.XAddArgs{Stream: r.Key, ID: id, Values: values})
 	}
 	return nil
+}
+
+// queueStreamEntry queues one XADD for a normalized {id, fields} element.
+func queueStreamEntry(ctx context.Context, p goredis.Pipeliner, key string, e any) error {
+	entry, ok := e.(map[string]any)
+	if !ok {
+		return fmt.Errorf("key %q: stream entry is not an {id, fields} object", key)
+	}
+	id, err := redisString(entry["id"])
+	if err != nil {
+		return fmt.Errorf("key %q: stream id: %w", key, err)
+	}
+	rawFields, ok := entry["fields"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("key %q: stream fields is not an object", key)
+	}
+	values, err := streamFields(key, rawFields)
+	if err != nil {
+		return err
+	}
+	p.XAdd(ctx, &goredis.XAddArgs{Stream: key, ID: id, Values: values})
+	return nil
+}
+
+// streamFields converts the fields of a stream entry to strings.
+func streamFields(key string, raw map[string]any) (map[string]any, error) {
+	values := make(map[string]any, len(raw))
+	for k, v := range raw {
+		s, err := redisString(v)
+		if err != nil {
+			return nil, fmt.Errorf("key %q field %q: %w", key, k, err)
+		}
+		values[k] = s
+	}
+	return values, nil
 }
 
 // redisString renders a scalar as the string Redis stores. A composite value
@@ -333,31 +409,13 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 // each key's native structure. It mirrors ScanBatches but carries each key's TYPE
 // alongside its normalized value.
 func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) error) error {
-	iter := s.client.Scan(ctx, 0, "*", scanCount).Iterator()
-	page := make([]string, 0, s.pageSize)
-	flush := func() error {
-		if len(page) == 0 {
-			return nil
-		}
+	return s.walkKeyPages(ctx, func(page []string) error {
 		recs, err := s.typedGet(ctx, page)
 		if err != nil {
 			return err
 		}
-		page = page[:0]
 		return fn(recs)
-	}
-	for iter.Next(ctx) {
-		page = append(page, iter.Val())
-		if len(page) >= s.pageSize {
-			if err := flush(); err != nil {
-				return err
-			}
-		}
-	}
-	if err := iter.Err(); err != nil {
-		return fmt.Errorf("redis scan: %w", err)
-	}
-	return flush()
+	})
 }
 
 // typedGet reads a page of keys into typed records, reusing the read pipelines but

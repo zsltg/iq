@@ -111,6 +111,16 @@
 # different mutant ids (upstream bug quality-gates/mutago#248), and those ids do not match
 # mutago-baseline.json. An absolute path gives the same ids as a package run.
 #
+# IQ_MUTATION_DIFF=1 keeps the diff scope for file targets. It is for the CI `mutate-diff`
+# shards (scripts/mutation-diff-shard.sh). A .go file argument is normally a full-scan target
+# and drops --git-diff-lines. With this variable, mutago mutates only the changed lines of
+# the named files, against the merge-base of IQ_MUTATION_BASE and HEAD, and the gate flag is
+# always --fail-on-escaped, also for files under cmd/ (the diff form stays zero-survivor).
+# It needs IQ_MUTATION_BASE and one or more non-test .go file arguments. It stops on a
+# package argument, on an empty base, and on IQ_MUTATION_MUTATORS, IQ_MUTATION_UPDATE_BASELINE
+# and IQ_MUTATION_MUTANT, because each of them means another kind of run. Without this
+# variable, nothing changes.
+#
 # IQ_MUTATION_MUTATORS="a/b c/d" is shard mode. mutago then uses only the named mutators: the
 # wrapper writes a temporary config, .mutago.yml plus an enable_mutators list, and passes it
 # to --config. Shard mode needs a package or file argument. Each name must be a mutator that
@@ -151,7 +161,7 @@ set -uo pipefail
 # scripts/tool-versions.env, because scripts/mutation-shard.sh and mutation-verdict.sh
 # read this exact line.
 # renovate: datasource=go depName=github.com/quality-gates/mutago/v2
-MUTAGO_VERSION=v2.10.16
+MUTAGO_VERSION=v2.10.22
 mutago_pkg=github.com/quality-gates/mutago/v2/cmd/mutago
 
 # Covered-code MSI floor for a full scan of ./cmd. The value comes from the finished cmd
@@ -202,6 +212,9 @@ repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
   exit 1
 }
 has_path=0
+diff_mode="${IQ_MUTATION_DIFF-}"
+package_args=0
+file_args=0
 normalized=()
 cmd_package=0
 cmd_files=0
@@ -225,9 +238,11 @@ for arg in "$@"; do
     fi
     normalized+=("$abs")
     has_path=1
+    file_args=$((file_args + 1))
     continue
   fi
   [[ "$arg" == .* || "$arg" == /* ]] && has_path=1
+  package_args=$((package_args + 1))
   if [[ "$arg" == "./cmd" || "$arg" == "./cmd/..." ]]; then
     cmd_package=$((cmd_package + 1))
   else
@@ -236,6 +251,27 @@ for arg in "$@"; do
   normalized+=("$arg")
 done
 set -- "${normalized[@]}"
+
+# Diff mode for file targets (see the header). The checks run before the mutago install, so a
+# bad combination fails in a second and installs nothing.
+if [[ -n "$diff_mode" ]]; then
+  if [[ "$diff_mode" != "1" ]]; then
+    echo "mutation gate: IQ_MUTATION_DIFF must be 1 or unset, got '$diff_mode'" >&2
+    exit 1
+  fi
+  if [[ -z "${IQ_MUTATION_BASE-}" ]]; then
+    echo "mutation gate: IQ_MUTATION_DIFF=1 needs IQ_MUTATION_BASE" >&2
+    exit 1
+  fi
+  if [[ "$file_args" -eq 0 || "$package_args" -gt 0 ]]; then
+    echo "mutation gate: IQ_MUTATION_DIFF=1 needs one or more non-test .go file arguments and no package argument" >&2
+    exit 1
+  fi
+  if [[ -n "${IQ_MUTATION_MUTATORS-}" || "${IQ_MUTATION_UPDATE_BASELINE-}" == "1" || -n "${IQ_MUTATION_MUTANT-}" ]]; then
+    echo "mutation gate: IQ_MUTATION_DIFF=1 cannot combine with IQ_MUTATION_MUTATORS, IQ_MUTATION_UPDATE_BASELINE or IQ_MUTATION_MUTANT" >&2
+    exit 1
+  fi
+fi
 
 # Shard mode (see the header). The names are examined here for their form, and again after
 # the mutago install against `mutago --list-mutators`. An empty value means all mutators.
@@ -268,7 +304,7 @@ fi
 # nothing.
 gate=(--fail-on-escaped)
 cmd_policy=0
-if [[ "$has_path" -eq 1 ]]; then
+if [[ "$has_path" -eq 1 && -z "$diff_mode" ]]; then
   cmd_targets=$((cmd_package + cmd_files))
   if [[ "$cmd_targets" -gt 0 && "$other_targets" -gt 0 ]] || [[ "$cmd_package" -gt 1 ]] ||
     [[ "$cmd_package" -gt 0 && "$cmd_files" -gt 0 ]]; then
@@ -385,7 +421,7 @@ fi
 scope=()
 diff_ref=""
 base="${IQ_MUTATION_BASE-origin/main}"
-if [[ "$has_path" -eq 0 && -n "$base" ]]; then
+if [[ ( "$has_path" -eq 0 || -n "$diff_mode" ) && -n "$base" ]]; then
   # Diff against the branch point. merge-base is robust to a base ref that has
   # advanced on the remote; fall back to the ref itself, then to a full scan.
   if ref=$(git merge-base "$base" HEAD 2>/dev/null) || ref=$(git rev-parse --verify --quiet "$base"); then

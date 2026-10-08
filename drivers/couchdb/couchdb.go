@@ -121,7 +121,7 @@ func httpScheme(scheme string) (string, error) {
 func databaseName(u *url.URL, address string) string {
 	db := address
 	if db == "" {
-		db = u.Query().Get("database")
+		db = u.Query().Get(paramDatabase)
 	}
 	if db == "" {
 		// Lenient: accept the database in the path too (couchdb://host/mydb), the
