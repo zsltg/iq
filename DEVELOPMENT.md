@@ -666,8 +666,18 @@ version. It does not cover the backend images or other packages; the monthly
 full run catches that drift. The `packages` input (space-separated, for example
 `./internal/numfmt`) limits the plan for a manual test; the plan removes a
 trailing slash and a duplicate, and stops on a path that is not a module
-package. The unit of work is a (file, mutator) cell from a dry run; the sum of
-the cells must equal the dry run total. The plan packs cells into shards of
+package. The unit of work is a (file, mutator) cell. The plan counts each cell
+with one dry run for each mutator, with only that mutator enabled
+(`IQ_MUTATION_DRYRUN=1` with `IQ_MUTATION_MUTATORS`), because that is the
+configuration that the shard runs. mutago merges identical edits of different
+mutators, and the mutator that keeps a merged edit depends on the mutators that
+are enabled. A dry run with all mutators enabled can count less for one mutator
+than a shard that runs that mutator alone, and the verdict refuses a cell whose
+report holds more mutants than the plan. The sum of the cells of each dry run
+must equal its total. The plan makes one dry run for each mutator of each stale
+package. A dry run takes 0.3 to 3 s, and four of them run at the same time.
+The plan of all 28 packages took about 6 min on a local machine with 6 cores,
+and the `deep-plan` job stops at 30 min. The plan packs cells into shards of
 about 120 min at the measured seconds per mutant (a package with no stored
 result uses its starting rate from the table in the script, else 180 s with a
 backend and 15 s without; `bash scripts/mutation-plan.sh --rate <badges-dir>
