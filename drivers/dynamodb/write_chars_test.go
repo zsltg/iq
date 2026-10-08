@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -326,7 +327,9 @@ func TestScanPagesKeepOrderAndStopOnError(t *testing.T) {
 	s.pageSize = 2
 	var got [][]string
 	require.NoError(t, s.ScanBatches(context.Background(), func(b map[string]any) error {
-		got = append(got, keysOf(b))
+		keys := keysOf(b)
+		slices.Sort(keys) // a page is a map: its size is the contract, not its order
+		got = append(got, keys)
 		return nil
 	}))
 	require.Equal(t, [][]string{{"1", "2"}, {"3", "4"}, {"5"}}, got)
