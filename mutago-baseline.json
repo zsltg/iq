@@ -2,52 +2,10 @@
  "version": 1,
  "mutants": [
   {
-   "id": "ac861b4637fd21e3a689283922c34589",
-   "file": "cmd/diff.go",
-   "mutator": "statement/remove",
-   "line": 123
-  },
-  {
-   "id": "37d9c30e8d5ee51e4477de4f71990e5c",
-   "file": "drivers/file/filter.go",
-   "mutator": "expression/error-guard",
-   "line": 113
-  },
-  {
-   "id": "fa325da92f2a29a6fbce8b0de0a2a116",
-   "file": "drivers/file/filter.go",
-   "mutator": "expression/remove",
-   "line": 138
-  },
-  {
-   "id": "7ce847b35cfa365f203e50b1ad2db198",
-   "file": "drivers/file/filter.go",
-   "mutator": "expression/error-guard",
-   "line": 179
-  },
-  {
-   "id": "31da6664b0f3fb8ec3b4c7524db9bf44",
-   "file": "drivers/file/filter.go",
-   "mutator": "expression/remove",
-   "line": 225
-  },
-  {
-   "id": "b7a67e872a5ed4cf7c1af3b179a3aa44",
-   "file": "drivers/redis/filter.go",
-   "mutator": "expression/context-nil",
-   "line": 56
-  },
-  {
    "id": "505413a1ae7c2b23c0e241a30a0acbbe",
    "file": "drivers/redis/filter.go",
    "mutator": "expression/context-nil",
    "line": 59
-  },
-  {
-   "id": "7598e64951e38be99e19c6df07e4f8d1",
-   "file": "drivers/redis/filter.go",
-   "mutator": "expression/context-nil",
-   "line": 89
   },
   {
    "id": "578155c117f299062661e7004cef33bb",
@@ -74,12 +32,6 @@
    "line": 232
   },
   {
-   "id": "6d0a9cacd4c78468d741252ffe9d7741",
-   "file": "internal/diff/diff.go",
-   "mutator": "arithmetic/base",
-   "line": 260
-  },
-  {
    "id": "5ee09328de4c8bb5cae525db203582d4",
    "file": "internal/diff/diff.go",
    "mutator": "numbers/incrementer",
@@ -92,40 +44,10 @@
    "line": 301
   },
   {
-   "id": "6b9701424bb1fdd55fb5f04bc7611431",
-   "file": "internal/diff/diff.go",
-   "mutator": "numbers/decrementer",
-   "line": 317
-  },
-  {
-   "id": "12e79a7c28257f09472dec1d39e733d1",
-   "file": "internal/parquetout/writer.go",
-   "mutator": "expression/error-guard",
-   "line": 85
-  },
-  {
-   "id": "7865be46f9ec82497e31880563887736",
-   "file": "internal/parquetout/writer.go",
-   "mutator": "numbers/decrementer",
-   "line": 329
-  },
-  {
    "id": "f54a44ed2ade74a8c7d4e35cd8e0610e",
    "file": "internal/parquetout/writer.go",
    "mutator": "numbers/incrementer",
    "line": 329
-  },
-  {
-   "id": "5ce25ced3604a0b15f540c56e015beec",
-   "file": "internal/parquetout/writer.go",
-   "mutator": "expression/comparison",
-   "line": 359
-  },
-  {
-   "id": "3662a8d1c95de944071381f400a1331f",
-   "file": "internal/pushdown/conjuncts.go",
-   "mutator": "numbers/decrementer",
-   "line": 40
   },
   {
    "id": "13548ffece9a593ed54c73d0c0c1b200",
@@ -134,112 +56,10 @@
    "line": 52
   },
   {
-   "id": "6b1f8a784f4f5cf797a4b4f5b6422c6e",
-   "file": "internal/shape/shape.go",
-   "mutator": "loop/break",
-   "line": 244
-  },
-  {
-   "id": "fe1bac8ba09dc7e99e4e80230048d6f3",
-   "file": "internal/shape/shape.go",
-   "mutator": "expression/remove",
-   "line": 293
-  },
-  {
-   "id": "c6d581179b01a1460b6313b925804788",
-   "file": "internal/shape/shape.go",
-   "mutator": "expression/remove",
-   "line": 308
-  },
-  {
-   "id": "766fe5db8afb65b568422aadeda21aa5",
-   "file": "internal/shape/shape.go",
-   "mutator": "statement/remove",
-   "line": 354
-  },
-  {
-   "id": "544efe91883eb5920f6728c51adfc0fd",
-   "file": "internal/shape/shape.go",
-   "mutator": "statement/return",
-   "line": 461
-  },
-  {
    "id": "38583e7a2e76cb06f885537f967739e1",
    "file": "internal/shape/shape.go",
    "mutator": "expression/remove",
    "line": 487
-  },
-  {
-   "id": "af10555f0c70f3477822a4b8232988c3",
-   "file": "internal/shape/shape.go",
-   "mutator": "expression/remove",
-   "line": 567
-  },
-  {
-   "id": "3309d6f97333d173dea07d58cca8c765",
-   "file": "internal/shape/shape.go",
-   "mutator": "expression/remove",
-   "line": 567
-  },
-  {
-   "id": "aa907ec49a4de78e4b575e0779b71041",
-   "file": "internal/shape/shape.go",
-   "mutator": "statement/remove",
-   "line": 567
-  },
-  {
-   "id": "82a74944465aaff4fb4cba79d043bd04",
-   "file": "internal/shape/shape.go",
-   "mutator": "expression/remove",
-   "line": 568
-  },
-  {
-   "id": "457d6848da6d44de18d3c62e8a407fd0",
-   "file": "internal/shape/shape.go",
-   "mutator": "expression/remove",
-   "line": 568
-  },
-  {
-   "id": "bf8096272848e1b37f3f08a473948adf",
-   "file": "internal/shape/shape.go",
-   "mutator": "statement/remove",
-   "line": 568
-  },
-  {
-   "id": "02fd69899d32f9718c6248b807897b10",
-   "file": "internal/shape/shape.go",
-   "mutator": "expression/remove",
-   "line": 569
-  },
-  {
-   "id": "6be5c0bb2756c4ef6bd7cc3a17be72d3",
-   "file": "internal/shape/shape.go",
-   "mutator": "expression/remove",
-   "line": 569
-  },
-  {
-   "id": "e9849fa5dcec381424911d2bf9d17a93",
-   "file": "internal/shape/shape.go",
-   "mutator": "statement/remove",
-   "line": 569
-  },
-  {
-   "id": "fcc263bd5b29c186524f49494e3b3f45",
-   "file": "internal/shape/shape.go",
-   "mutator": "expression/logical",
-   "line": 620
-  },
-  {
-   "id": "a489e3fe1948b4c2026bfc027d8f9c26",
-   "file": "internal/shape/shape.go",
-   "mutator": "expression/remove",
-   "line": 620
-  },
-  {
-   "id": "67c061d705374f0edafa2a061c14a4c8",
-   "file": "internal/shape/shape.go",
-   "mutator": "expression/remove",
-   "line": 620
   },
   {
    "id": "d61c1d13909632b24aff56c4b2ae5d2c",
@@ -266,22 +86,10 @@
    "line": 250
   },
   {
-   "id": "de2fc8366cbb5da6a6bcf90980a3167c",
-   "file": "cmd/complete.go",
-   "mutator": "statement/return",
-   "line": 69
-  },
-  {
    "id": "2ee430f494f06b65d310feefc7bf008e",
    "file": "cmd/complete.go",
    "mutator": "statement/return",
    "line": 75
-  },
-  {
-   "id": "53c0f7192ad9a05c2f0a4d3857232b2d",
-   "file": "cmd/man.go",
-   "mutator": "branch/if",
-   "line": 246
   },
   {
    "id": "2cc310b7cd64a0ec5022699186144da0",
@@ -302,46 +110,16 @@
    "line": 249
   },
   {
-   "id": "5e54a9e0b86ca93efeca1882a131f751",
-   "file": "cmd/explain.go",
-   "mutator": "expression/error-guard",
-   "line": 130
-  },
-  {
-   "id": "98ddb7c013bce6ccb987a3e710f18931",
-   "file": "cmd/explain.go",
-   "mutator": "numbers/decrementer",
-   "line": 246
-  },
-  {
    "id": "3ea86735ab2ddd1704c461d866ca6ac8",
    "file": "cmd/explain.go",
    "mutator": "numbers/incrementer",
    "line": 246
   },
   {
-   "id": "e17052a49a36459678f452ce083eca1e",
-   "file": "cmd/explain.go",
-   "mutator": "expression/error-guard",
-   "line": 155
-  },
-  {
    "id": "6277c273c32b9f5a6679903ec1a71534",
    "file": "cmd/resolve.go",
    "mutator": "expression/comparison",
    "line": 165
-  },
-  {
-   "id": "4c668185c33abe890d941091c16b6cf2",
-   "file": "cmd/resolve.go",
-   "mutator": "numbers/decrementer",
-   "line": 165
-  },
-  {
-   "id": "b55f9e8e0c94594627063091c26cbb36",
-   "file": "cmd/explain.go",
-   "mutator": "expression/error-guard",
-   "line": 151
   },
   {
    "id": "569a2c9df78609ff09ef028db4b61b1e",
@@ -362,22 +140,10 @@
    "line": 24
   },
   {
-   "id": "fbfaeb5c66700fc63114587d8be26a00",
-   "file": "cmd/move.go",
-   "mutator": "branch/if",
-   "line": 172
-  },
-  {
    "id": "cc46f0c68e46b1b7ced227270766bb4e",
    "file": "cmd/move.go",
    "mutator": "composite/field-clear",
    "line": 189
-  },
-  {
-   "id": "5617b58cc6aae489cd730271088f1d40",
-   "file": "cmd/move.go",
-   "mutator": "statement/return",
-   "line": 172
   },
   {
    "id": "e34537e600cfd647de83b718dbb6f09c",
@@ -404,12 +170,6 @@
    "line": 255
   },
   {
-   "id": "925ed1e9b0f7669ef08093ac400aad5a",
-   "file": "drivers/mongo/mongo.go",
-   "mutator": "expression/error-guard",
-   "line": 146
-  },
-  {
    "id": "b97da05ec7d2cb610afb0f74a89af5ff",
    "file": "drivers/mongo/normalize.go",
    "mutator": "numbers/decrementer",
@@ -434,60 +194,6 @@
    "line": 576
   },
   {
-   "id": "6d61c0aa8f84b3c5c64ec83d5d8d0f15",
-   "file": "drivers/file/cache.go",
-   "mutator": "expression/error-guard",
-   "line": 122
-  },
-  {
-   "id": "fe55b530d19646560322fda114d61a31",
-   "file": "drivers/file/cache.go",
-   "mutator": "expression/error-guard",
-   "line": 292
-  },
-  {
-   "id": "446be0cd7d2f0209723c35f4744b8acd",
-   "file": "drivers/file/cache.go",
-   "mutator": "expression/remove",
-   "line": 467
-  },
-  {
-   "id": "c7fa9b921071d593ab0dabd526f37a95",
-   "file": "drivers/file/cache.go",
-   "mutator": "expression/remove",
-   "line": 475
-  },
-  {
-   "id": "9b389bd6c4ed2eac39bcaeb01cae5346",
-   "file": "drivers/file/cache.go",
-   "mutator": "expression/remove",
-   "line": 558
-  },
-  {
-   "id": "1cade0d0d9d7a1d1621097ccc066de96",
-   "file": "drivers/file/cache.go",
-   "mutator": "numbers/incrementer",
-   "line": 495
-  },
-  {
-   "id": "83eab4bb13c723cd1be377ed7eea28e1",
-   "file": "drivers/file/cache.go",
-   "mutator": "statement/return",
-   "line": 576
-  },
-  {
-   "id": "83535655adb596a9db5b41fd3678eeb1",
-   "file": "drivers/file/cache.go",
-   "mutator": "statement/return",
-   "line": 614
-  },
-  {
-   "id": "a5776bc0b54aeb78b502cfa940066024",
-   "file": "drivers/file/cassandra.go",
-   "mutator": "branch/if",
-   "line": 99
-  },
-  {
    "id": "5d6cecd548efb192558ac422ac748d85",
    "file": "drivers/file/cassandra.go",
    "mutator": "conditional/bool-literal",
@@ -498,18 +204,6 @@
    "file": "drivers/file/cassandra.go",
    "mutator": "numbers/incrementer",
    "line": 40
-  },
-  {
-   "id": "e9d2453f6f93e2a6a01f2fcb1b96e182",
-   "file": "drivers/file/cassandra.go",
-   "mutator": "statement/remove",
-   "line": 39
-  },
-  {
-   "id": "d89bdc4dfe249d92d0c4085a23e06340",
-   "file": "drivers/file/detect.go",
-   "mutator": "branch/if",
-   "line": 206
   },
   {
    "id": "096350411b1ca4f288cc8a590ab26c74",
@@ -554,100 +248,10 @@
    "line": 250
   },
   {
-   "id": "368581278664ad349a7a64af6b604e62",
-   "file": "drivers/file/detect.go",
-   "mutator": "statement/return",
-   "line": 99
-  },
-  {
-   "id": "e9779a9c068230d06ee5988e7a00014c",
-   "file": "drivers/file/detect.go",
-   "mutator": "statement/return",
-   "line": 145
-  },
-  {
-   "id": "eeb84b031cd5a1ce102d7a2ecbb79e8e",
-   "file": "drivers/file/detect.go",
-   "mutator": "statement/return",
-   "line": 151
-  },
-  {
-   "id": "853420eac2c8cb784e68654d32b65e2b",
-   "file": "drivers/file/detect.go",
-   "mutator": "statement/return",
-   "line": 170
-  },
-  {
-   "id": "e959cd5dc29e1d1f6bc87b40b8bef60d",
-   "file": "drivers/file/detect.go",
-   "mutator": "statement/return",
-   "line": 196
-  },
-  {
-   "id": "db769e0a49496a825ed5c21f293d455d",
-   "file": "drivers/file/file.go",
-   "mutator": "conditional/bool-literal",
-   "line": 350
-  },
-  {
-   "id": "fdb6613b3cb747a4fe5ba6218b64f69b",
-   "file": "drivers/file/file.go",
-   "mutator": "expression/remove",
-   "line": 182
-  },
-  {
-   "id": "3010f9fcee4e99eaa07e15d1bb1f4654",
-   "file": "drivers/file/file.go",
-   "mutator": "statement/return",
-   "line": 159
-  },
-  {
-   "id": "7c903f929870bf9edeb9c018e42a5bb5",
-   "file": "drivers/file/file.go",
-   "mutator": "statement/return",
-   "line": 176
-  },
-  {
-   "id": "344b074185e8c234a613b1468f8e9d0b",
-   "file": "drivers/file/file.go",
-   "mutator": "statement/return",
-   "line": 188
-  },
-  {
-   "id": "bc9401a966b3dce56304999f87843784",
-   "file": "drivers/file/file.go",
-   "mutator": "statement/return",
-   "line": 195
-  },
-  {
-   "id": "9547ee9cc2ce06cb474c6fb3e385fcdf",
-   "file": "drivers/file/mongo.go",
-   "mutator": "expression/error-guard",
-   "line": 93
-  },
-  {
-   "id": "eee383190b764df3d797e5964432f5b0",
-   "file": "drivers/file/mongo.go",
-   "mutator": "expression/remove",
-   "line": 106
-  },
-  {
-   "id": "3b80a9a0b9289a9db028ebb05d5b7bbd",
-   "file": "drivers/file/neo4j.go",
-   "mutator": "expression/error-guard",
-   "line": 56
-  },
-  {
    "id": "a2bdbf15126dcf96ad1de5d8ae5377cf",
    "file": "drivers/file/neo4j.go",
    "mutator": "numbers/incrementer",
    "line": 264
-  },
-  {
-   "id": "cef35d51bf2f33f899a949a8a887a327",
-   "file": "drivers/file/neo4j.go",
-   "mutator": "statement/return",
-   "line": 110
   },
   {
    "id": "fadcb92636adebbf9e7ca1372b57b3a2",
@@ -668,12 +272,6 @@
    "line": 127
   },
   {
-   "id": "335919d487998a1402b76002b828e906",
-   "file": "internal/pushdown/pushdown.go",
-   "mutator": "branch/if",
-   "line": 405
-  },
-  {
    "id": "7d928d6fc391cca2558e457578feb8e8",
    "file": "internal/pushdown/pushdown.go",
    "mutator": "numbers/decrementer",
@@ -686,52 +284,10 @@
    "line": 599
   },
   {
-   "id": "a14ba2b8f94c5a42201a396545db60b1",
-   "file": "internal/pushdown/pushdown.go",
-   "mutator": "statement/return",
-   "line": 166
-  },
-  {
-   "id": "8390730bca2c67847191a42ebd8b4a90",
-   "file": "drivers/dynamodb/dynamodb.go",
-   "mutator": "arithmetic/base",
-   "line": 411
-  },
-  {
-   "id": "ef1b2e4aead9c14e1deb0eab31192045",
-   "file": "drivers/dynamodb/dynamodb.go",
-   "mutator": "branch/if",
-   "line": 245
-  },
-  {
    "id": "86aeab55ccdf60a8c57b260d950a79b1",
    "file": "drivers/dynamodb/dynamodb.go",
    "mutator": "expression/context-nil",
    "line": 125
-  },
-  {
-   "id": "e37357b89d71f19ef606666ae954626c",
-   "file": "drivers/dynamodb/dynamodb.go",
-   "mutator": "numbers/decrementer",
-   "line": 244
-  },
-  {
-   "id": "8fa7cf9ddfc232ee066bf15e7d901da6",
-   "file": "drivers/dynamodb/dynamodb.go",
-   "mutator": "numbers/decrementer",
-   "line": 411
-  },
-  {
-   "id": "f0e52161b2820663ef00a46d2b244682",
-   "file": "drivers/dynamodb/dynamodb.go",
-   "mutator": "numbers/incrementer",
-   "line": 411
-  },
-  {
-   "id": "8fa37565c7127ec877718764fe038233",
-   "file": "drivers/dynamodb/dynamodb.go",
-   "mutator": "numbers/incrementer",
-   "line": 411
   },
   {
    "id": "21e32368a191b718fbc19b867fc8d0a2",
@@ -744,12 +300,6 @@
    "file": "drivers/dynamodb/filter.go",
    "mutator": "expression/remove",
    "line": 29
-  },
-  {
-   "id": "500722b4e1c51b35fc16d5b6cc732f60",
-   "file": "drivers/dynamodb/filter.go",
-   "mutator": "numbers/decrementer",
-   "line": 138
   },
   {
    "id": "ea04b88488efbbb39940f97da595cd5f",
@@ -792,30 +342,6 @@
    "file": "drivers/dynamodb/plan.go",
    "mutator": "expression/remove",
    "line": 25
-  },
-  {
-   "id": "007970fbff2655047d22c0a44a1fd690",
-   "file": "drivers/dynamodb/trace.go",
-   "mutator": "branch/if",
-   "line": 47
-  },
-  {
-   "id": "ee4f978b2ea5d131d577f489382eaf36",
-   "file": "drivers/dynamodb/trace.go",
-   "mutator": "expression/remove",
-   "line": 55
-  },
-  {
-   "id": "da214413f2737db99961296445e31f16",
-   "file": "drivers/redis/kv.go",
-   "mutator": "branch/if",
-   "line": 28
-  },
-  {
-   "id": "d5c43949128e64f8fcace984b59a0dd9",
-   "file": "drivers/redis/kv.go",
-   "mutator": "branch/if",
-   "line": 308
   },
   {
    "id": "df468c19faeee5b4855eb3e06e7f8690",
@@ -870,18 +396,6 @@
    "file": "drivers/redis/kv.go",
    "mutator": "expression/context-nil",
    "line": 121
-  },
-  {
-   "id": "4b7421b81e3b7df89422c407399ec562",
-   "file": "drivers/redis/kv.go",
-   "mutator": "numbers/decrementer",
-   "line": 27
-  },
-  {
-   "id": "b8332d504b6a15ebea35bef846cb687e",
-   "file": "drivers/redis/kv.go",
-   "mutator": "numbers/decrementer",
-   "line": 307
   },
   {
    "id": "8a9bf3c7fc9698a61264d7cbbfb66a2a",
@@ -956,22 +470,10 @@
    "line": 258
   },
   {
-   "id": "bcda4e484c659dcd1b8d4a1ba61f1296",
-   "file": "drivers/redis/write.go",
-   "mutator": "numbers/decrementer",
-   "line": 23
-  },
-  {
    "id": "760ad7f757c7ac930a6a6fa68b5bb156",
    "file": "drivers/redis/write.go",
    "mutator": "numbers/incrementer",
    "line": 277
-  },
-  {
-   "id": "7beb181f5718acd4619b4ffa114e7674",
-   "file": "drivers/couchdb/couchdb.go",
-   "mutator": "expression/remove",
-   "line": 113
   },
   {
    "id": "d02d70f46a0e4f06f96cdc0cb91ee619",
@@ -980,94 +482,16 @@
    "line": 69
   },
   {
-   "id": "5986e10e44283e82ec27bdf8ec5c28c5",
-   "file": "internal/config/config.go",
-   "mutator": "expression/error-guard",
-   "line": 166
-  },
-  {
-   "id": "061b6cb1bc1b16906b4432e09eb26d62",
-   "file": "internal/config/config.go",
-   "mutator": "expression/error-guard",
-   "line": 170
-  },
-  {
-   "id": "0df46f720e89d90f15fa3fdcc3304172",
-   "file": "internal/config/config.go",
-   "mutator": "expression/error-guard",
-   "line": 174
-  },
-  {
-   "id": "d227e4fa42331b2df7c5d87664e3b333",
-   "file": "internal/config/config.go",
-   "mutator": "expression/remove",
-   "line": 250
-  },
-  {
-   "id": "8727d6e6f7cd10c9cdd62603dce5379d",
-   "file": "internal/config/options.go",
-   "mutator": "branch/if",
-   "line": 49
-  },
-  {
    "id": "6e235b84704b53af98d39f9e0ab9dd94",
    "file": "internal/config/options.go",
    "mutator": "expression/comparison",
    "line": 90
   },
   {
-   "id": "5d5732b03749eec931d19cd8409094c7",
-   "file": "internal/config/options.go",
-   "mutator": "expression/remove",
-   "line": 83
-  },
-  {
-   "id": "bed35ced74f680ddc78ea9611ec83eb3",
-   "file": "internal/render/json.go",
-   "mutator": "statement/remove",
-   "line": 67
-  },
-  {
-   "id": "b65de6a58f1ae86fedf8e6fc00a7d2cb",
-   "file": "internal/rawpred/rawpred.go",
-   "mutator": "branch/case",
-   "line": 728
-  },
-  {
-   "id": "d0db686f2471e58afa0132a2be2f5b74",
-   "file": "internal/rawpred/rawpred.go",
-   "mutator": "expression/error-guard",
-   "line": 608
-  },
-  {
-   "id": "3c63527171ee007923126445b6baa154",
-   "file": "internal/rawpred/rawpred.go",
-   "mutator": "loop/break",
-   "line": 728
-  },
-  {
    "id": "7c019bb775c298a196100f0acb68bc55",
    "file": "internal/numfmt/convert.go",
    "mutator": "expression/remove",
    "line": 41
-  },
-  {
-   "id": "dd0c601a1d638e7ae052249c40e639c0",
-   "file": "internal/numfmt/decimal.go",
-   "mutator": "statement/return",
-   "line": 37
-  },
-  {
-   "id": "939386efa8e17c4320ce6076daec5835",
-   "file": "internal/numfmt/decimal.go",
-   "mutator": "statement/return",
-   "line": 43
-  },
-  {
-   "id": "1e973c7c2926c8a2523d2dce8d009647",
-   "file": "internal/diff/diff.go",
-   "mutator": "branch/if",
-   "line": 467
   },
   {
    "id": "ad6f9cb96664edfdca29fd45e9fe103e",
@@ -1088,12 +512,6 @@
    "line": 390
   },
   {
-   "id": "38e51015625f7feb403fd818e673222f",
-   "file": "internal/diff/diff.go",
-   "mutator": "numbers/decrementer",
-   "line": 486
-  },
-  {
    "id": "21ce2b52bd662b3b6a2f4c5416d8dd48",
    "file": "internal/diff/diff.go",
    "mutator": "numbers/incrementer",
@@ -1110,18 +528,6 @@
    "file": "internal/query/dump.go",
    "mutator": "arithmetic/bitwise",
    "line": 51
-  },
-  {
-   "id": "a99b26be16234e839cad9b703fdf3066",
-   "file": "internal/query/dump.go",
-   "mutator": "expression/error-guard",
-   "line": 174
-  },
-  {
-   "id": "b2cd4944894a055379941789463c373e",
-   "file": "internal/query/dump.go",
-   "mutator": "expression/remove",
-   "line": 188
   },
   {
    "id": "50515d01f31f491ea13616fd1b25e52a",
@@ -1146,42 +552,6 @@
    "file": "internal/query/dump.go",
    "mutator": "numbers/incrementer",
    "line": 51
-  },
-  {
-   "id": "4c2b9ffba20864009b884446505bd613",
-   "file": "drivers/hbase/filter.go",
-   "mutator": "expression/error-guard",
-   "line": 30
-  },
-  {
-   "id": "4a9c13a319df546e3ed695312b651c07",
-   "file": "drivers/hbase/hbase.go",
-   "mutator": "branch/if",
-   "line": 105
-  },
-  {
-   "id": "3968ff34cb25de5b9e23b668c371d569",
-   "file": "drivers/hbase/hbase.go",
-   "mutator": "expression/error-guard",
-   "line": 117
-  },
-  {
-   "id": "5dae232f8b7348d501fcbad65673bf39",
-   "file": "drivers/hbase/hbase.go",
-   "mutator": "numbers/incrementer",
-   "line": 184
-  },
-  {
-   "id": "1776c8f21dc36c86651923884fe2b278",
-   "file": "drivers/hbase/hbase.go",
-   "mutator": "numbers/decrementer",
-   "line": 322
-  },
-  {
-   "id": "a9a81c63acc8912b13d1ef62aab03c79",
-   "file": "drivers/hbase/hbase.go",
-   "mutator": "statement/remove",
-   "line": 106
   },
   {
    "id": "c8cdfa3f41d73640362c25eabc73b652",
@@ -1214,22 +584,10 @@
    "line": 219
   },
   {
-   "id": "9fddefd1d54bf2948977ac86903c2380",
-   "file": "drivers/hbase/normalize.go",
-   "mutator": "statement/return",
-   "line": 71
-  },
-  {
    "id": "e489c6e21e9851bf6a0bdaa23d41f351",
    "file": "drivers/hbase/normalize.go",
    "mutator": "statement/return",
    "line": 253
-  },
-  {
-   "id": "e3d5e1a379fb395b8de6739dee4b99a9",
-   "file": "drivers/hbase/write.go",
-   "mutator": "expression/error-guard",
-   "line": 45
   },
   {
    "id": "c1f39b268d560d67a93ac86870baccac",
@@ -1266,12 +624,6 @@
    "file": "drivers/hbase/write.go",
    "mutator": "statement/return",
    "line": 91
-  },
-  {
-   "id": "298e2e7f0fd1fb9845bac5d8c284dd4d",
-   "file": "drivers/neo4j/filter.go",
-   "mutator": "branch/if",
-   "line": 26
   },
   {
    "id": "dce9edc83ff61c97a206243ee0015234",
@@ -1322,70 +674,16 @@
    "line": 311
   },
   {
-   "id": "f1996a65b72e580c7dbc4ad343fe2af8",
-   "file": "drivers/neo4j/neo4j.go",
-   "mutator": "expression/remove",
-   "line": 518
-  },
-  {
    "id": "413b18704336923c1f7c242b795d1f94",
    "file": "drivers/neo4j/normalize.go",
    "mutator": "numbers/incrementer",
    "line": 84
   },
   {
-   "id": "6ff99294550a67616b4207c48087c766",
-   "file": "drivers/neo4j/write.go",
-   "mutator": "expression/error-guard",
-   "line": 199
-  },
-  {
-   "id": "acdc7481f2cf6f6c39a20cf18cef9276",
-   "file": "drivers/neo4j/write.go",
-   "mutator": "expression/remove",
-   "line": 104
-  },
-  {
    "id": "54c1a923120c4509f713c3cc8089b171",
    "file": "drivers/neo4j/write.go",
    "mutator": "expression/remove",
    "line": 181
-  },
-  {
-   "id": "7bf22d86ca3ec15be3c9d55b8c794c3f",
-   "file": "drivers/neo4j/write.go",
-   "mutator": "statement/return",
-   "line": 34
-  },
-  {
-   "id": "556958714b0de87e4484c16f29561a93",
-   "file": "drivers/neo4j/write.go",
-   "mutator": "statement/return",
-   "line": 43
-  },
-  {
-   "id": "cb38925ce60476663a9f97d2282c3546",
-   "file": "drivers/neo4j/write.go",
-   "mutator": "statement/return",
-   "line": 47
-  },
-  {
-   "id": "cfe6c6f5e179c0956aa53891e61aaad6",
-   "file": "drivers/elasticsearch/elasticsearch.go",
-   "line": 301,
-   "mutator": "branch/if"
-  },
-  {
-   "id": "808ba5da7eb543934244a0a380e73460",
-   "file": "drivers/elasticsearch/elasticsearch.go",
-   "line": 133,
-   "mutator": "expression/remove"
-  },
-  {
-   "id": "24b90a952906e8193eeaa058b4e6e130",
-   "file": "drivers/elasticsearch/elasticsearch.go",
-   "line": 300,
-   "mutator": "numbers/decrementer"
   },
   {
    "id": "2caea306608e3d24aea0ce6532721adf",
@@ -1412,58 +710,10 @@
    "mutator": "composite/field-clear"
   },
   {
-   "id": "2ff0f65b4bc4ad51c50759283b7b5f9f",
-   "file": "drivers/elasticsearch/filter.go",
-   "line": 273,
-   "mutator": "expression/remove"
-  },
-  {
-   "id": "edc0317f0eafe93f186cf96f5f0aed5e",
-   "file": "drivers/elasticsearch/inspect.go",
-   "line": 61,
-   "mutator": "expression/error-guard"
-  },
-  {
-   "id": "2cf1585dd1d3c631b2404c491783451c",
-   "file": "drivers/elasticsearch/write.go",
-   "line": 42,
-   "mutator": "expression/error-guard"
-  },
-  {
-   "id": "55272235d47f149d13bc11209a2a4669",
-   "file": "drivers/elasticsearch/write.go",
-   "line": 166,
-   "mutator": "expression/error-guard"
-  },
-  {
    "id": "03f465282ea2ab1de8d3cd108574f6e2",
    "file": "drivers/couchbase/couchbase.go",
    "line": 287,
    "mutator": "composite/field-clear"
-  },
-  {
-   "id": "d99383f25be1adf6e32bf6868049df0c",
-   "file": "drivers/couchbase/couchbase.go",
-   "line": 324,
-   "mutator": "expression/error-guard"
-  },
-  {
-   "id": "8c63029eadfa51b0c3dfbf77fcf5ba29",
-   "file": "drivers/couchbase/inspect.go",
-   "line": 45,
-   "mutator": "statement/remove"
-  },
-  {
-   "id": "f05e1f5ec07a3ef80cf1d53906d5538e",
-   "file": "drivers/couchbase/inspect.go",
-   "line": 85,
-   "mutator": "statement/remove"
-  },
-  {
-   "id": "aee2807a16f12adee9de297bbd985046",
-   "file": "drivers/couchbase/write.go",
-   "line": 148,
-   "mutator": "statement/return"
   },
   {
    "id": "0d9a7238636cc3a7370371551e2a6560",
@@ -1488,12 +738,6 @@
    "file": "internal/query/dump.go",
    "mutator": "numbers/incrementer",
    "line": 152
-  },
-  {
-   "id": "fc3ff1d05b4e76156483f3a0215e55cb",
-   "file": "cmd/keyring_cmd.go",
-   "mutator": "expression/error-guard",
-   "line": 286
   },
   {
    "id": "15045794c5f126a17eda63f81545e7e0",
@@ -1586,28 +830,160 @@
    "line": 411
   },
   {
-   "id": "a16d692b2fa184be4aad87122f92888a",
-   "file": "cmd/diff.go",
-   "mutator": "expression/remove",
-   "line": 174
-  },
-  {
-   "id": "78166f5f603a2e75640963621736ee78",
-   "file": "cmd/diff.go",
-   "mutator": "statement/remove",
-   "line": 201
-  },
-  {
-   "id": "ff1dc6972d154428ed50cdd5c399dc56",
-   "file": "cmd/diff.go",
-   "mutator": "statement/remove",
-   "line": 215
-  },
-  {
    "id": "e1c81375bec9e0cb1043c2e2146bd3d0",
    "file": "cmd/diff.go",
    "mutator": "statement/remove",
    "line": 262
+  },
+  {
+   "id": "c739e1a3bc61cebd56152ac1f7c29114",
+   "file": "cmd/driver.go",
+   "mutator": "branch/if",
+   "line": 359
+  },
+  {
+   "id": "5e4580b2556b2cde77edbca340764176",
+   "file": "cmd/driver.go",
+   "mutator": "loop/break",
+   "line": 436
+  },
+  {
+   "id": "86c9dcd26e266041aa1b63cbf5441f14",
+   "file": "cmd/config.go",
+   "mutator": "composite/field-clear",
+   "line": 106
+  },
+  {
+   "id": "4bc6851dc56e20be60e6008757ad921e",
+   "file": "cmd/config.go",
+   "mutator": "expression/error-guard",
+   "line": 301
+  },
+  {
+   "id": "ffb02d7a9fc069ddadc049221353165c",
+   "file": "cmd/config.go",
+   "mutator": "expression/error-guard",
+   "line": 333
+  },
+  {
+   "id": "f6139e1758ce3e87493327eb35cc2b87",
+   "file": "cmd/config.go",
+   "mutator": "expression/error-guard",
+   "line": 366
+  },
+  {
+   "id": "a23b9ab0725b2d119275baf1bd822219",
+   "file": "cmd/config.go",
+   "mutator": "expression/comparison",
+   "line": 384
+  },
+  {
+   "id": "fa45e4b11d139a226647e88c5279f3f2",
+   "file": "cmd/config.go",
+   "mutator": "numbers/decrementer",
+   "line": 384
+  },
+  {
+   "id": "20ad1b1927d0a7604d3535a14a7a50dc",
+   "file": "cmd/cache.go",
+   "mutator": "composite/field-clear",
+   "line": 54
+  },
+  {
+   "id": "ab5f9b2221751753c700454eb4450c08",
+   "file": "cmd/cache.go",
+   "mutator": "expression/remove",
+   "line": 179
+  },
+  {
+   "id": "82ae2a754192a20c132eae4bcad90bc3",
+   "file": "cmd/cache.go",
+   "mutator": "expression/logical",
+   "line": 179
+  },
+  {
+   "id": "15c273f7ee3a96f9626a70358811d32f",
+   "file": "cmd/source.go",
+   "mutator": "expression/error-guard",
+   "line": 141
+  },
+  {
+   "id": "ad8b61b9dc1b7fc131ed2296a752cdf5",
+   "file": "cmd/source.go",
+   "mutator": "numbers/incrementer",
+   "line": 199
+  },
+  {
+   "id": "f228fbc4fb0463a16817d6e408d255e4",
+   "file": "cmd/source.go",
+   "mutator": "expression/comparison",
+   "line": 199
+  },
+  {
+   "id": "acd928bfd5edbb9818239da5df60477d",
+   "file": "cmd/source.go",
+   "mutator": "branch/if",
+   "line": 228
+  },
+  {
+   "id": "c19661420165dc0782739497c27657d7",
+   "file": "cmd/source.go",
+   "mutator": "expression/error-guard",
+   "line": 506
+  },
+  {
+   "id": "07e1d990b35b0de487d1cff5ddb6052c",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 195
+  },
+  {
+   "id": "f9fa458eebd81676d67c1d0867b13797",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 235
+  },
+  {
+   "id": "0a8a1fbd2583d0a893748b4be0606a17",
+   "file": "cmd/logging.go",
+   "mutator": "statement/return",
+   "line": 60
+  },
+  {
+   "id": "d1e92ada966cbf979725812183e2f435",
+   "file": "cmd/logging.go",
+   "mutator": "statement/return",
+   "line": 98
+  },
+  {
+   "id": "ac108a768b2d26ddfcdd39d4de6a6a41",
+   "file": "cmd/logging.go",
+   "mutator": "statement/return",
+   "line": 110
+  },
+  {
+   "id": "b2cd4f1dd85c08001a8943a34f3141f4",
+   "file": "cmd/logging.go",
+   "mutator": "statement/return",
+   "line": 245
+  },
+  {
+   "id": "1cf291f033d8c5faaf449dc55cdbb7b7",
+   "file": "cmd/logging.go",
+   "mutator": "branch/case",
+   "line": 245
+  },
+  {
+   "id": "8aa9eef1943dd572e8cca60c94cf3fdf",
+   "file": "cmd/output.go",
+   "mutator": "expression/errorf-wrap",
+   "line": 386
+  },
+  {
+   "id": "33105492944e7011cc7ca4546e7c403b",
+   "file": "cmd/output.go",
+   "mutator": "expression/error-guard",
+   "line": 404
   },
   {
    "id": "11979afff78230432fa121e15b4401ae",
@@ -1632,24 +1008,6 @@
    "file": "internal/rawpred/rawpred.go",
    "mutator": "branch/case",
    "line": 817
-  },
-  {
-   "id": "2ae2e2a2c2520b5454e5d859e4a6b18d",
-   "file": "internal/rawpred/rawpred.go",
-   "mutator": "branch/case",
-   "line": 829
-  },
-  {
-   "id": "2ae2e2a2c2520b5454e5d859e4a6b18d",
-   "file": "internal/rawpred/rawpred.go",
-   "mutator": "branch/case",
-   "line": 892
-  },
-  {
-   "id": "2ae2e2a2c2520b5454e5d859e4a6b18d",
-   "file": "internal/rawpred/rawpred.go",
-   "mutator": "branch/case",
-   "line": 905
   },
   {
    "id": "a237d926ff2910c63a6520046a9ab25a",
@@ -1838,12 +1196,6 @@
    "line": 42
   },
   {
-   "id": "137cc6c2630f65f10450f934678a3eaa",
-   "file": "internal/pushdown/pushdown.go",
-   "mutator": "branch/case",
-   "line": 114
-  },
-  {
    "id": "bdbdd9ff2f20212d0176362849c1a12b",
    "file": "internal/pushdown/pushdown.go",
    "mutator": "branch/case",
@@ -1910,34 +1262,10 @@
    "line": 422
   },
   {
-   "id": "6f1756a7fd023e281677d86aa2780504",
-   "file": "internal/pushdown/pushdown.go",
-   "mutator": "expression/remove",
-   "line": 97
-  },
-  {
-   "id": "2941fe7fc0fb995c91fa7ea227ed1d8e",
-   "file": "internal/pushdown/pushdown.go",
-   "mutator": "numbers/decrementer",
-   "line": 31
-  },
-  {
-   "id": "0280419b36e879f9208aaebea755d9a9",
-   "file": "internal/pushdown/pushdown.go",
-   "mutator": "numbers/decrementer",
-   "line": 97
-  },
-  {
    "id": "a8ff75800f75a2f8588456f8d34984b3",
    "file": "internal/pushdown/pushdown.go",
    "mutator": "statement/return",
    "line": 166
-  },
-  {
-   "id": "5cb80d413e90f4c3b6fda9f26e64d728",
-   "file": "internal/query/dump.go",
-   "mutator": "expression/error-guard",
-   "line": 188
   },
   {
    "id": "f005955aac26927d04ac19bd3760deaa",
@@ -2006,52 +1334,16 @@
    "line": 369
   },
   {
-   "id": "f3a87a7025906f5708a8cd657bd2237c",
-   "file": "drivers/file/cache.go",
-   "mutator": "expression/error-guard",
-   "line": 458
-  },
-  {
-   "id": "f3a87a7025906f5708a8cd657bd2237c",
-   "file": "drivers/file/cache.go",
-   "mutator": "expression/error-guard",
-   "line": 463
-  },
-  {
-   "id": "f3a87a7025906f5708a8cd657bd2237c",
-   "file": "drivers/file/cache.go",
-   "mutator": "expression/error-guard",
-   "line": 471
-  },
-  {
    "id": "9dd45cbc07ee0a4c7a8d50910dac5631",
    "file": "drivers/file/cache.go",
    "mutator": "expression/error-guard",
    "line": 625
   },
   {
-   "id": "5a6f23978e363d961b0f02b72e77d438",
-   "file": "drivers/file/cache.go",
-   "mutator": "expression/remove",
-   "line": 467
-  },
-  {
    "id": "0e85f403fc969882eaa437f1286974d2",
    "file": "drivers/file/cache.go",
    "mutator": "expression/remove",
    "line": 475
-  },
-  {
-   "id": "528540c71c54d2cc618bd42205544591",
-   "file": "drivers/file/cache.go",
-   "mutator": "expression/remove",
-   "line": 558
-  },
-  {
-   "id": "05d717019a071a2b7369ba1d40d2f977",
-   "file": "drivers/file/cache.go",
-   "mutator": "loop/break",
-   "line": 486
   },
   {
    "id": "760492cbcbc3679402886ea952864505",
@@ -2064,6 +1356,18 @@
    "file": "drivers/file/cache.go",
    "mutator": "branch/if",
    "line": 525
+  },
+  {
+   "id": "ba702cbf1446c0fa97e719fd9d0ce662",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 517
+  },
+  {
+   "id": "e5f7886924951ea6a44f8bc8b539b5da",
+   "file": "drivers/file/cache.go",
+   "mutator": "loop/break",
+   "line": 540
   },
   {
    "id": "e69e4896a635899800a7371803484891",
@@ -2126,12 +1430,6 @@
    "line": 182
   },
   {
-   "id": "dafdbf3e95795efae61f439f8583b7fc",
-   "file": "drivers/file/file.go",
-   "mutator": "statement/remove",
-   "line": 190
-  },
-  {
    "id": "42238f235be39acafe4ae051d82694f6",
    "file": "drivers/file/file.go",
    "mutator": "statement/return",
@@ -2160,18 +1458,6 @@
    "file": "drivers/file/file.go",
    "mutator": "statement/return",
    "line": 195
-  },
-  {
-   "id": "a4b4e3c598faa3fd24cdafc7ad6f01cc",
-   "file": "drivers/file/filter.go",
-   "mutator": "expression/error-guard",
-   "line": 113
-  },
-  {
-   "id": "a39ce3ac5c75bb52c6060940307ddacf",
-   "file": "drivers/file/filter.go",
-   "mutator": "expression/error-guard",
-   "line": 197
   },
   {
    "id": "0dd5ade7ed6f2498d94d795791ce8d90",
@@ -2450,12 +1736,6 @@
    "line": 435
   },
   {
-   "id": "f6f8931e586e8e4b993aed591a7f04f1",
-   "file": "drivers/hbase/hbase.go",
-   "mutator": "numbers/decrementer",
-   "line": 322
-  },
-  {
    "id": "2ae6ad4db5ccda1d8608baf5776107e1",
    "file": "drivers/hbase/normalize.go",
    "mutator": "statement/return",
@@ -2480,18 +1760,6 @@
    "line": 129
   },
   {
-   "id": "554a02124a429661738aea679625a103",
-   "file": "drivers/hbase/write.go",
-   "mutator": "expression/error-guard",
-   "line": 45
-  },
-  {
-   "id": "f35114793f505e1494d8074a027dd606",
-   "file": "drivers/hbase/write.go",
-   "mutator": "expression/error-guard",
-   "line": 67
-  },
-  {
    "id": "359112adf9a9c2567c832f72b9bab5ec",
    "file": "drivers/hbase/write.go",
    "mutator": "expression/error-guard",
@@ -2504,22 +1772,10 @@
    "line": 175
   },
   {
-   "id": "a8d7bd9f01b52b9404410a5bd4369d6a",
-   "file": "drivers/hbase/write.go",
-   "mutator": "expression/error-guard",
-   "line": 192
-  },
-  {
    "id": "42d4957c9fd894b729a942a802acc0d4",
    "file": "drivers/hbase/write.go",
    "mutator": "expression/error-guard",
    "line": 240
-  },
-  {
-   "id": "0965b67f4ad4d1d1f585006605778732",
-   "file": "drivers/hbase/write.go",
-   "mutator": "expression/error-guard",
-   "line": 242
   },
   {
    "id": "d41537a3e6f06617d08821a79dc70453",
@@ -2922,6 +2178,12 @@
    "file": "drivers/couchbase/write.go",
    "mutator": "expression/error-guard",
    "line": 191
+  },
+  {
+   "id": "ec576c164a7231b6643906c2d58c8e51",
+   "file": "cmd/complete.go",
+   "mutator": "statement/return",
+   "line": 365
   }
  ]
 }

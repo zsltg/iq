@@ -13,6 +13,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestSelectFormat(t *testing.T) {
@@ -573,4 +574,28 @@ func TestYAMLFormatterFlushError(t *testing.T) {
 	f := newFormatter(formatYAML, &errAfter{0}, false)
 	require.ErrorContains(t, f.emit("x"), "encode result")
 	require.ErrorContains(t, f.flush(), "close yaml")
+}
+
+// TestYAMLFormatterEmitRejectsUnencodableValue checks that a value yaml.v3
+// cannot encode gives an error and not a panic.
+func TestYAMLFormatterEmitRejectsUnencodableValue(t *testing.T) {
+	var buf bytes.Buffer
+	f := &yamlFormatter{enc: yaml.NewEncoder(&buf)}
+
+	err := f.emit(make(chan int))
+
+	require.EqualError(t, err, "encode result: cannot marshal type: chan int")
+	require.Empty(t, buf.String())
+}
+
+// TestYAMLFormatterEmitWrapsTheWriteError checks that a failed write stays wrapped
+// with %w under the "encode result" prefix. yaml.v3 flattens the write error into a
+// string, so the sentinel is not reachable; the wrapped yaml error is.
+func TestYAMLFormatterEmitWrapsTheWriteError(t *testing.T) {
+	f := &yamlFormatter{enc: yaml.NewEncoder(&sentinelFailAt{at: 1})}
+
+	err := f.emit("x")
+
+	require.EqualError(t, err, "encode result: yaml: write error: boom")
+	require.EqualError(t, errors.Unwrap(err), "yaml: write error: boom")
 }
