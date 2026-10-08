@@ -1166,12 +1166,6 @@
    "line": 354
   },
   {
-   "id": "5705310706204ce44202cfdd7a2eec2e",
-   "file": "internal/shape/shape.go",
-   "mutator": "statement/remove",
-   "line": 392
-  },
-  {
    "id": "86a6546efa5e62a47e3515554b754a93",
    "file": "internal/parquetout/writer.go",
    "mutator": "branch/case",
