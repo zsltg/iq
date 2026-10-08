@@ -67,13 +67,16 @@ func TestDeleteChunksReturnsZeroOnAFailure(t *testing.T) {
 		script  [][]driver.BulkResult
 		failAt  int
 		wantErr string
+		// wantCalls is how many bulk requests go out before the failure stops the walk.
+		wantCalls int
 	}{
-		{"request failure on the first chunk", nil, 1, "couchdb bulk delete"},
-		{"request failure on a later chunk", nil, 2, "couchdb bulk delete"},
+		{"request failure on the first chunk", nil, 1, "couchdb bulk delete", 1},
+		{"request failure on a later chunk", nil, 2, "couchdb bulk delete", 2},
 		{
-			name:    "per-document failure on the first chunk",
-			script:  [][]driver.BulkResult{{{ID: "k1", Error: conflict}}},
-			wantErr: `couchdb delete "k1"`,
+			name:      "per-document failure on the first chunk",
+			script:    [][]driver.BulkResult{{{ID: "k1", Error: conflict}}},
+			wantErr:   `couchdb delete "k1"`,
+			wantCalls: 1,
 		},
 		{
 			name: "per-document failure after an accepted chunk",
@@ -81,14 +84,15 @@ func TestDeleteChunksReturnsZeroOnAFailure(t *testing.T) {
 				{{ID: "k1"}, {ID: "k2"}},
 				{{ID: "k3", Error: conflict}},
 			},
-			wantErr: `couchdb delete "k3"`,
+			wantErr:   `couchdb delete "k3"`,
+			wantCalls: 2,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			st, _, mdb := newMockStore(t, 2, 1)
+			st, mock, mdb := newMockStore(t, 2, 1)
 			rec := &bulkRecorder{t: t, results: tt.script, failAt: tt.failAt}
-			for range 3 {
+			for range tt.wantCalls {
 				mdb.ExpectBulkDocs().WillExecute(rec.answer)
 			}
 			docs := []any{
@@ -99,6 +103,8 @@ func TestDeleteChunksReturnsZeroOnAFailure(t *testing.T) {
 
 			require.ErrorContains(t, err, tt.wantErr)
 			require.Zero(t, n)
+			require.Len(t, rec.calls, tt.wantCalls, "the failure must stop the walk")
+			require.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
 }
