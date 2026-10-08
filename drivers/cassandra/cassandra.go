@@ -171,9 +171,9 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	}
 	table := address
 	if table == "" {
-		table = q.Get("table")
+		table = q.Get(paramTable)
 	}
-	consistency, err := parseConsistency(q.Get("consistency"))
+	consistency, err := parseConsistency(q.Get(paramConsistency))
 	if err != nil {
 		return connConfig{}, err
 	}

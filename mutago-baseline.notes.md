@@ -24,9 +24,7 @@ pipeline. `(*Pipeline).BatchProcess` discards that per-command context — the o
 governs the actual I/O and its deadline — so nil-ing the inner context is behaviorally inert. The
 59/92 pair are the same two sites as 56..92, re-accepted under fresh content-hash ids after a
 refactor shifted them.
-- b7a67e872a5e drivers/redis/filter.go:56 expression/context-nil — inner ctx discarded by BatchProcess; outer Pipelined(ctx) governs I/O.
 - 505413a1ae7c drivers/redis/filter.go:59 expression/context-nil — same site as :56 re-accepted after refactor (content-hash id changed).
-- 7598e64951e3 drivers/redis/filter.go:89 expression/context-nil — inner ctx discarded by BatchProcess; outer Pipelined(ctx) governs I/O.
 - 578155c117f2 drivers/redis/filter.go:91 expression/context-nil — inner ctx discarded by BatchProcess; outer Pipelined(ctx) governs I/O.
 - 3e53982b48bf drivers/redis/filter.go:92 expression/context-nil — same site as :91 re-accepted after refactor (content-hash id changed).
 
@@ -36,13 +34,7 @@ refactor shifted them.
 ## internal/parquetout/writer.go — parquet-export residue (accepted 6942d82; proofs held by that session)
 Accepted during the parquet-export work; the equivalence proofs are not reconstructed here.
 Justification pending (parquet session) — re-derive before relying on any of these.
-- 12e79a7c2825 internal/parquetout/writer.go:85 expression/error-guard — accepted in 6942d82; justification pending (parquet session).
-- 7865be46f9ec internal/parquetout/writer.go:329 numbers/decrementer — accepted in 6942d82; justification pending (parquet session).
 - f54a44ed2ade internal/parquetout/writer.go:329 numbers/incrementer — accepted in 6942d82; justification pending (parquet session).
-- 5ce25ced3604 internal/parquetout/writer.go:359 expression/comparison — accepted in 6942d82; justification pending (parquet session).
-
-## internal/pushdown/conjuncts.go — leading `.[]` stage carries no conjunct (accepted aa139a4)
-- 3662a8d1c95d internal/pushdown/conjuncts.go:40 numbers/decrementer — `range stages[1:]`→`stages[0:]`; stages[0] is the leading `.[]`, which yields no select arg and is skipped, so including it is inert.
 
 ## internal/shape/shape.go — schema-inference residue (accepted 95f8e57)
 The schema projection walks Go maps (`n.kinds`, `n.fields`, `o.vals`) whose iteration order is
@@ -50,32 +42,7 @@ randomized, so this cluster is dominated by flaky-order-dependent escapes (killa
 seeds — labeled not-equivalent per the order-dependent-residue doctrine) plus a few genuine
 zero-value / redundant-guard equivalents. Confident proofs are stated; the rest are seeded from
 the 95f8e57 acceptance as pending and must be re-derived before relying on them.
-- 6b1f8a784f4f internal/shape/shape.go:244 loop/break — `continue`→`break` over the randomized `n.kinds` map; escapes only when kindInteger is visited before other kinds. Order-dependent, not a true equivalent.
-- 544efe91883e internal/shape/shape.go:461 statement/return — `return kindNull`; kindNull is iota 0 (the zero kind), so a return-zero mutant is byte-identical.
-- fe1bac8ba09d internal/shape/shape.go:293 expression/remove — object-case guard `len(n.fields) > 0`; accepted in 95f8e57; justification pending.
-- c6d581179b01 internal/shape/shape.go:308 expression/remove — array-items guard `n.elem != nil`; accepted in 95f8e57; justification pending.
-- 766fe5db8afb internal/shape/shape.go:354 statement/remove — `seen[name]` dedup bookkeeping; order/coverage-dependent, accepted in 95f8e57; justification pending.
 - 38583e7a2e76 internal/shape/shape.go:487 expression/remove — floatKind finite/integral guard conjunct; accepted in 95f8e57; justification pending.
-- af10555f0c70 internal/shape/shape.go:567 expression/remove — formats.mergeFrom date-time AND-collapse; map-collapse order-dependent, accepted in 95f8e57; justification pending.
-- 3309d6f97333 internal/shape/shape.go:567 expression/remove — formats.mergeFrom date-time AND-collapse; map-collapse order-dependent, accepted in 95f8e57; justification pending.
-- aa907ec49a4d internal/shape/shape.go:567 statement/remove — formats.mergeFrom date-time assignment; map-collapse order-dependent, accepted in 95f8e57; justification pending.
-- 82a74944465a internal/shape/shape.go:568 expression/remove — formats.mergeFrom date AND-collapse; map-collapse order-dependent, accepted in 95f8e57; justification pending.
-- 457d6848da6d internal/shape/shape.go:568 expression/remove — formats.mergeFrom date AND-collapse; map-collapse order-dependent, accepted in 95f8e57; justification pending.
-- bf8096272848 internal/shape/shape.go:568 statement/remove — formats.mergeFrom date assignment; map-collapse order-dependent, accepted in 95f8e57; justification pending.
-- 02fd69899d32 internal/shape/shape.go:569 expression/remove — formats.mergeFrom uuid AND-collapse; map-collapse order-dependent, accepted in 95f8e57; justification pending.
-- 6be5c0bb2756 internal/shape/shape.go:569 expression/remove — formats.mergeFrom uuid AND-collapse; map-collapse order-dependent, accepted in 95f8e57; justification pending.
-- e9849fa5dcec internal/shape/shape.go:569 statement/remove — formats.mergeFrom uuid assignment; map-collapse order-dependent, accepted in 95f8e57; justification pending.
-- fcc263bd5b29 internal/shape/shape.go:620 expression/logical — enumAcc.mergeFrom `e.over || o.over` over-flag short-circuit; accepted in 95f8e57; justification pending.
-- a489e3fe1948 internal/shape/shape.go:620 expression/remove — enumAcc.mergeFrom over-flag guard side; accepted in 95f8e57; justification pending.
-- 67c061d70537 internal/shape/shape.go:620 expression/remove — enumAcc.mergeFrom over-flag guard side; accepted in 95f8e57; justification pending.
-
-## drivers/file/filter.go — buffered-reader guards over an already-peeked byte (accepted eebfe15)
-The streaming JSON scanner peeks a byte before consuming it, so the follow-up read cannot fail,
-and one comparison is a 64-bit tautology.
-- 37d9c30e8d5e drivers/file/filter.go:113 expression/error-guard — Token() on the already-peeked buffered `[` cannot error.
-- fa325da92f2a drivers/file/filter.go:138 expression/remove — `!array` is redundant: array-mode Decode is only reached when More() is true, so a clean io.EOF is impossible there.
-- 7ce847b35cfa drivers/file/filter.go:179 expression/error-guard — Discard(1) after a successful Peek(1) of a buffered byte cannot fail.
-- 31da6664b0f3 drivers/file/filter.go:225 expression/remove — `int64(int(i)) == i` is a tautology on 64-bit int platforms; load-bearing only on 32-bit.
 
 ## cmd/diff.go, internal/diff — LCS alignment, set-arrays, and RFC 6902 patch (accepted <SHA>)
 The diff walk gained an LCS array alignment, an order-insensitive set mode, and a JSON Patch
@@ -89,13 +56,10 @@ checks over 4000 seeded pairs up to length 12 on four symbols. A mutant that mer
 different equally-minimal alignment satisfies that contract; a mutant that degrades the table
 does not: the fill-loop `dp[i+0][j]` degradation is caught by the scale test and was fixed rather
 than accepted here.
-- ac861b4637fd21e3a689283922c34589 cmd/diff.go:123 statement/remove — `meter.Stop()` on the --patch read path; newProgressMeter returns nil for a non-terminal writer, so under test the call is already a no-op and nothing observable changes. Killable only by a TTY-backed integration harness we do not have.
 - a0d9419cf8fce8254c35a8a66e5673aa internal/diff/diff.go:184 composite/field-clear — `Op: OpAdd` dropped from the surplus-right Change literal; OpAdd is iota 0, the zero value of Op, so the cleared field holds the value it was assigned.
 - 2aa60a55faebcce062fa39df2fa39d79 internal/diff/diff.go:232 composite/field-clear — same zero-value identity for the set-mode surplus-right Change literal.
-- 6d0a9cacd4c78468d741252ffe9d7741 internal/diff/diff.go:260 arithmetic/base — `make(map[string]struct{}, len(a)+len(b))` capacity hint becomes `len(a)-len(b)`; a map capacity hint is an allocation sizing argument only, never a semantic one, and a negative hint is legal.
 - 5ee09328de4c8bb5cae525db203582d4 internal/diff/diff.go:300 numbers/incrementer — `dp[i][j] = dp[i+1][j+1] + 1` becomes `+ 2`. Every match contributes the same constant, so the table becomes a uniform scaling of the LCS-length table (2*L with a 0 base) and every `>=` comparison in the fill and the backtrack orders identically. Provably equivalent, not merely untested.
 - 15a18bbc73e394d89110ab55fa1589c9 internal/diff/diff.go:301 expression/comparison — the fill tie-break `dp[i+1][j] >= dp[i][j+1]` becomes `>`. Both directions select an equally long common subsequence, so both alignments are minimal and satisfy the contract; output was byte-identical across the 21866 exhaustive pairs and the 4000 seeded pairs.
-- 6b9701424bb1fdd55fb5f04bc7611431 internal/diff/diff.go:317 numbers/decrementer — the backtrack tie-break `dp[i+1][j] >= dp[i][j+1]` becomes `dp[i+1][j] >= dp[i][j]`. That case is reached only when `same(a[i], b[j])` is false, and the fill defines a non-matching cell as `dp[i][j] = max(dp[i+1][j], dp[i][j+1])`; so `dp[i+1][j] >= max(dp[i+1][j], dp[i][j+1])` holds exactly when `dp[i+1][j] >= dp[i][j+1]`. The mutated condition is the original condition. Proven, and consistent with no counterexample in an exhaustive search to length 6 and 200000 randomized pairs.
 - d61c1d13909632b24aff56c4b2ae5d2c cmd/backend.go:33 expression/context-nil — ctx passed to wrapStoreLogging feeds only `(*slog.Logger).Enabled`, which normalizes a nil ctx to `context.Background()` before the handler runs (log/slog/logger.go), so no handler can observe the substitution.
 - 8d8b67cfaa5a2f9ae268a758c53d80ae cmd/backend.go:42 expression/context-nil — same slog.Enabled nil-ctx normalization, at the Enabled call inside wrapStoreLogging.
 - 0994bc19cf0021d62b93daf5a7054485 cmd/jq.go:166 expression/context-nil — same slog.Enabled nil-ctx normalization, at the plan-record gating check.
@@ -106,21 +70,17 @@ The man generator and the dynamic completion helpers leave five genuine equivale
 zero-value directive identities, two guards reachable only by a `Use` string starting with a
 space (which cobra's name derivation makes impossible), and a fall-through that emits a
 byte-identical line.
-- de2fc8366cbb cmd/complete.go:69 statement/return — completeCacheClear error path returns `nil, ShellCompDirectiveDefault`; ShellCompDirectiveDefault is 0, the directive's zero value, so the zero-value return is byte-identical.
 - 2ee430f494f0 cmd/complete.go:75 statement/return — same ShellCompDirectiveDefault==0 identity on completeCacheClear's success return.
+- ec576c164a72 cmd/complete.go:365 statement/return: the same ShellCompDirectiveDefault==0 identity on the success return of completeCacheClear. The line changed when candidates got descriptions in feat/completion-descriptions, so the mutant has a new ID. Accepted 2026-10-08.
 - 2cc310b7cd64 cmd/man.go:163 expression/comparison — manUsageLine `i >= 0` → `i > 0` differs only when IndexByte returns 0, i.e. a Use beginning with a space; cobra derives Name() from the first token, so no such command can exist.
 - 9adb645adba3 cmd/man.go:163 numbers/incrementer — same impossible-input class: the mutated bound differs only for a Use whose first byte is the space.
-- 53c0f7192ad9 cmd/man.go:246 branch/if — writeManExampleBlock's empty-line fast path; the general path renders an empty line as manVerbatim("")+"\n" == "\n", byte-identical output.
 
 ## cmd/explain.go — jq-stage annotation equivalents (accepted 2026-07-22, explain-jq-descriptions branch)
 The `--verbose` per-stage jq annotation leaves four genuine equivalents: one unreachable
 error guard and a note-column max loop whose result is independent of its start value and of
 strict-vs-nonstrict comparison.
-- 5e54a9e0b86c cmd/explain.go:130 expression/error-guard — writeAccessPlan returns an error only if render.JSON fails on a driver-produced filter map, which cannot happen for a plain JSON-able map; the call is the last statement in buildJQPlan, so removing or negating its early return leaves the output byte-identical.
 - 3ea86735ab2d cmd/explain.go:246 numbers/incrementer — writeJQExplained's note column starts at `col := 0`, then becomes the max visible width over the note-bearing lines; any non-negative start converges to that same maximum when a note exists and is unused when none do.
-- 98ddb7c013bc cmd/explain.go:246 numbers/decrementer — same col-init convergence, with the start decremented to -1.
 - 28f644a6cfbd cmd/explain.go:249 expression/comparison — the max loop's `w > col` and `w >= col` pick the same maximum, since an equal width leaves col unchanged either way.
-- e17052a49a36 cmd/explain.go:155 expression/error-guard — the buildCombinePlan twin of the 130 guard: writeAccessPlan errors only on an unreachable render.JSON failure, so the error branch never runs and clearing it is byte-identical (flaky-killed as a timeout during the batch baseline run, so recorded here on the follow-up).
 
 ## cmd/resolve.go — dotted-address walk equivalents (accepted 2026-07-24, couchbase-scope-address branch)
 splitSourceArg walks the dots right to left looking for the longest prefix that names a
@@ -129,7 +89,6 @@ which is the empty string, and `(*Config).Resolve` returns false for an empty na
 touching the source map (internal/config/config.go:453) — so the extra step can never match
 and the walk falls through to the same result.
 - 6277c273c32b cmd/resolve.go:165 expression/comparison — the walk's `i > 0` → `i >= 0` adds one iteration for a leading-dot argument, resolving `arg[:0]` == "", which Resolve rejects outright.
-- 4c668185c33a cmd/resolve.go:165 numbers/decrementer — same empty-prefix iteration via `i > -1`; LastIndex returns -1 only when no dot remains, so the bound admits exactly the same unmatchable step.
 
 ## cmd — source-spec equivalents (accepted 2026-07-29, feat/source-spec branch)
 Two survivors whose mutations cannot change behaviour, for unrelated reasons. The explain
@@ -137,7 +96,6 @@ entry is the third recording of one guard: it was accepted at :130 and again at 
 this branch moved it once more by passing the stage's own resolved url instead of a local,
 which re-hashes the id. The sourcespec entry mutates an argument the callee only consults on
 a path the caller has already excluded.
-- b55f9e8e0c94594627063091c26cbb36 cmd/explain.go:151 expression/error-guard — the buildCombinePlan writeAccessPlan guard again: it errors only if render.JSON fails on a driver-produced filter map, which cannot happen for a plain JSON-able map, so the error branch never runs and clearing it leaves the plan byte-identical (same reasoning as the :130 and :155 entries above).
 - 569a2c9df78609ff09ef028db4b61b1e cmd/sourcespec.go:91 conditional/bool-literal — flips the isDst argument of resolveEndpoint, which that function reads only when the argument is the empty string (cmd/data.go:82-87); resolveSourceSpec rejects an empty or all-space name two statements earlier, so the flipped value is never consulted from this call site.
 
 ## cmd — typed-format equivalent (accepted 2026-08-08, fix/typed-format-rejects-gron branch)
@@ -158,8 +116,6 @@ other mutant on the path is killed by TestApplyInsertRedisIntegration (dry-run r
 asks nor clears, a replace asks then clears, a refused confirmation aborts before clearing,
 insert-only skips, upsert overwrites, the transform shapes the write, the label and the outcome
 line are reported) and TestApplyInsertNeedsADestination.
-- 5617b58cc6aae489cd730271088f1d40 cmd/move.go:172 statement/return — returns nil instead of the "cannot be written to" error when the destination store is not a Putter; drivers/file is the only store without Put, and applyInsert refuses a file destination two statements earlier, before any store is opened, so no destination reaches this branch.
-- fbfaeb5c66700fc63114587d8be26a00 cmd/move.go:172 branch/if — drops the same branch; unreachable for the same reason, and kept as the guard a future read-only driver would need.
 - cc46f0c68e46b1b7ced227270766bb4e cmd/move.go:189 composite/field-clear — clears `PageSize: movePageSize` from the Copier, which then batches 100 records instead of 500; batching changes neither the records written nor the reported counts, and the write is observable only through those.
 
 ## drivers/file — Windows drive-path mapping (accepted 2026-08-30, fix/windows-tests branch)
@@ -178,7 +134,6 @@ mid-scan cancellation tests, the unordered-write tests and the command-monitor t
 - d70002bbf70b drivers/mongo/mongo.go:100 expression/context-nil — `_ = client.Disconnect(ctx)` on Open's failed-ping path; the result is discarded and the driver maps a nil ctx to context.Background(), so neither the returned error nor the (nil) store changes.
 - c5ea53e8585d drivers/mongo/mongo.go:143 expression/context-nil — `defer func() { _ = cur.Close(ctx) }()`; Close's only effect is a best-effort killCursors whose error is discarded, and a nil ctx becomes context.Background() inside the driver.
 - f492a2761e42 drivers/mongo/mongo.go:255 expression/context-nil — `s.client.Disconnect(context.Background())` → `Disconnect(nil)`; the driver's first act is `if ctx == nil { ctx = context.Background() }`, so the mutant is byte-identical to the original call.
-- 925ed1e9b0f7 drivers/mongo/mongo.go:146 expression/error-guard — `cur.Decode(&doc)` into a bson.M cannot fail on a document the server actually returned (the guard covers malformed wire data only), so the branch is unreachable from any test that talks to a real MongoDB.
 - b97da05ec7d2 drivers/mongo/normalize.go:86 numbers/decrementer — `strconv.ParseFloat(str, 64)` → bitSize 63; ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path, so the parsed float is identical (verified against Go 1.27).
 - b537ea92d1b6 drivers/mongo/normalize.go:86 numbers/incrementer — same site with bitSize 65; identical for the same reason.
 
@@ -199,41 +154,15 @@ and found killable — a new bounded-read test had merely turned a previously un
 into a covered one — so it was killed by a test and removed from the baseline, not accepted.
 - 4702d30bfae5c4cd2c150a2749ab46c5 drivers/file/cache.go:574 expression/comparison — the DumpPath `<` runs only inside `if out[i].DumpPath != out[j].DumpPath`, so `<=` and `<` agree on every pair that branch can see.
 - 9a12822cbaba3824543b385811b459ce drivers/file/cache.go:576 expression/comparison — the File tiebreak `<=` differs from `<` only for two entries with the same file name, which one directory cannot hold.
-- 83eab4bb13c723cd1be377ed7eea28e1 drivers/file/cache.go:576 statement/return — returns false for the File tiebreak; os.ReadDir yields names already ascending and the tiebreak is by that same name, so entries sharing a DumpPath are already in tiebreak order and no correct DumpPath sort reorders them.
-- 6d61c0aa8f84b3c5c64ec83d5d8d0f15 drivers/file/cache.go:122 expression/error-guard — filepath.Abs returns "" with its error and the next statement stats that "", returning the same `cacheMeta{}, false`; the guard only shortens the path to an identical result.
-- fe55b530d19646560322fda114d61a31 drivers/file/cache.go:292 expression/error-guard — writeHeader fails only if a write to the just-created temp file fails, which no test can produce without an unwritable or full filesystem; writeHeader's own three write guards are covered directly through an io.Writer.
-- 446be0cd7d2f0209723c35f4744b8acd drivers/file/cache.go:467 expression/remove — drops `err != nil` from cacheGet's freshness check; readHeader zeroes its header on error and cacheable guarantees `m.size >= minSize > 0`, so `h.Size != m.size` is already true whenever err is.
-- c7fa9b921071d593ab0dabd526f37a95 drivers/file/cache.go:475 expression/remove — drops `err != nil` beside `len(idx.Pages) == 0`; readIndex returns a zero indexBlock on error, whose Pages is nil, so the surviving disjunct already covers it.
-- 9b389bd6c4ed2eac39bcaeb01cae5346 drivers/file/cache.go:558 expression/remove — drops `de.IsDir()` from ListCache's filter; a directory that survives the .cbor extension test is then opened by headerOf, whose first read of a directory fails, so it is skipped either way.
-- 1cade0d0d9d7a1d1621097ccc066de96 drivers/file/cache.go:495 numbers/incrementer — `i+1 < len(idx.Pages)` becomes `i+2`, widening only the second-to-last page's decode span to the end of the record region; decodePage copies just the wanted keys, so the returned map and the found set are identical.
-- 83535655adb596a9db5b41fd3678eeb1 drivers/file/cache.go:614 statement/return — `return removed` becomes `return 0` on a remove failure; every cache file sits in the one directory whose permissions decide that failure, so a failing run has removed nothing and `removed` is already 0.
-- a5776bc0b54aeb78b502cfa940066024 drivers/file/cassandra.go:99 branch/if — drops `ct = gocql.TypeText` for an untyped column; bindKeyValue's default branch returns the raw string, exactly what TypeText returns, so the bound value is identical.
 - 5d6cecd548efb192558ac422ac748d85 drivers/file/cassandra.go:39 conditional/bool-literal — `cr.ReuseRecord = false`; the reader copies the header and reads each row's fields into fresh maps before the next Read, so reuse is an allocation choice with no observable effect.
-- e9d2453f6f93e2a6a01f2fcb1b96e182 drivers/file/cassandra.go:39 statement/remove — the same setting removed, equivalent for the same reason.
 - 7a06a12c45b6dca481dfe2fd5aee631d drivers/file/cassandra.go:40 numbers/incrementer — `cr.FieldsPerRecord = -1` becomes -2; encoding/csv treats every negative value alike (no width check), and recordForCSVRow still validates the width against the header.
-- 368581278664ad349a7a64af6b604e62 drivers/file/detect.go:99 statement/return — `return FormatUnknown` becomes `return 0`; FormatUnknown is iota 0, so the returned value is unchanged.
-- e9779a9c068230d06ee5988e7a00014c drivers/file/detect.go:145 statement/return — the same zero-value identity on the open-failure return.
-- eeb84b031cd5a1ce102d7a2ecbb79e8e drivers/file/detect.go:151 statement/return — the same identity on the head-read-failure return.
-- 853420eac2c8cb784e68654d32b65e2b drivers/file/detect.go:170 statement/return — the same identity on the empty-dump return.
-- e959cd5dc29e1d1f6bc87b40b8bef60d drivers/file/detect.go:196 statement/return — the same identity on the undetectable-format return.
 - 43f599983251773dc7d810463ff1148c drivers/file/detect.go:150 expression/remove — drops `!errors.Is(err, bufio.ErrBufferFull)`; the peek asks a 4096-byte bufio.Reader for 512 bytes, so ErrBufferFull is unreachable and the conjunct is inert.
 - 096350411b1ca4f288cc8a590ab26c74 drivers/file/detect.go:161 expression/comparison — `len(head) > 512` becomes `>= 512`, which differs only at exactly 512, where `head = head[:512]` is the identity.
 - f5f3cd412a70e9727295719eb6854896 drivers/file/detect.go:161 numbers/decrementer — `> 511` admits the same single extra length, 512, where the truncation is again the identity; the incrementer `> 513`, which does change the sniffed head, is killed by TestDetectSniffWindow.
-- d89bdc4dfe249d92d0c4085a23e06340 drivers/file/detect.go:206 branch/if — drops the early `return FormatMongoexport` for an undecidable head; obj is nil there, so both key lookups miss and the function falls through to the same FormatMongoexport return.
 - e97a69fca836d2c77f988578c6c9d6c2 drivers/file/detect.go:221 numbers/incrementer — `len(h) > 0` becomes `> 1`, differing only for the one-byte head "[": stepping past it leaves "" and not stepping leaves "[", and json.Decoder rejects both, so firstJSONObject reports false either way.
 - 248b371646e765dbb2445df91d1c2727 drivers/file/detect.go:250 numbers/decrementer — `int(head[1])<<7`; the four bytes are combined with OR, so with head[3] zero the value never exceeds 0xFFFEFF (under the 16 MiB cap) whichever shift is used, and with head[3] non-zero both forms exceed the cap exactly when the lower bytes are non-zero, so the verdict cannot change.
 - 086a59f5a54db6ae79e7ae744c2b77d1 drivers/file/detect.go:250 numbers/decrementer — `int(head[2])<<15`, equivalent by the same OR argument.
 - 630fc938740df3516a7d96c6a0f8c55d drivers/file/detect.go:250 numbers/incrementer — `int(head[1])<<9`, equivalent by the same OR argument; the sibling shifts that can cross the five-byte minimum or the 16 MiB cap (<<17, <<23, <<25 and the >> forms) are all killed by TestLooksLikeBSON.
-- 3010f9fcee4e99eaa07e15d1bb1f4654 drivers/file/file.go:159 statement/return — `return FormatUnknown, err` becomes `return 0, err`; FormatUnknown is iota 0.
-- 7c903f929870bf9edeb9c018e42a5bb5 drivers/file/file.go:176 statement/return — the same identity on the non-file-scheme rejection.
-- 344b074185e8c234a613b1468f8e9d0b drivers/file/file.go:188 statement/return — the same identity on the empty-path rejection.
-- bc9401a966b3dce56304999f87843784 drivers/file/file.go:195 statement/return — the same identity on the bad-?format= rejection.
-- fdb6613b3cb747a4fe5ba6218b64f69b drivers/file/file.go:182 expression/remove — drops `u.Host != ""` from the host-folding guard; with an empty host the body computes `path = "" + path`, so entering it is the identity.
-- db769e0a49496a825ed5c21f293d455d drivers/file/file.go:350 conditional/bool-literal — `found[r.Key] = true` becomes `= false`; the assignment still creates the map entry, so len(found) advances identically and the early stop fires at the same record.
-- 9547ee9cc2ce06cb474c6fb3e385fcdf drivers/file/mongo.go:93 expression/error-guard — Token() consuming the '[' startsArray already peeked in the same buffered reader cannot fail; the same class as the accepted drivers/file/filter.go:113 entry above.
-- eee383190b764df3d797e5964432f5b0 drivers/file/mongo.go:106 expression/remove — drops `!array` from the end-of-stream check; in array mode Decode is only reached when More() is true, so it never returns io.EOF and the dropped conjunct never decides.
-- 3b80a9a0b9289a9db028ebb05d5b7bbd drivers/file/neo4j.go:56 expression/error-guard — the same already-peeked-'[' Token guard as mongo.go:93.
-- cef35d51bf2f33f899a949a8a887a327 drivers/file/neo4j.go:110 statement/return — `return nodeKind` becomes `return 0`; nodeKind is iota 0. The sibling zero returns on the two error paths are killed by TestNeo4jKeyspaceSelector, which asserts the kind a rejection reports.
 - a2bdbf15126dcf96ad1de5d8ae5377cf drivers/file/neo4j.go:264 numbers/incrementer — strconv.FormatFloat precision -1 becomes -2; strconv selects the shortest representation for any negative precision, so the rendered literal is identical.
 - fadcb92636adebbf9e7ca1372b57b3a2 drivers/file/rdb.go:93 expression/comparison — the score `<` runs only inside `if Score != Score`, so `<=` and `<` agree on every pair that branch can see.
 - 0a4fab84db634e38ce728550886ffef1 drivers/file/rdb.go:127 expression/comparison — the same guarded-by-!= identity for the stream's millisecond comparison.
@@ -248,8 +177,6 @@ because the mutation cannot change what the function returns. Each was verified 
 mutation applied to the real file, the whole package suite still green — before acceptance. The
 fifth survivor, conjuncts.go:40, was already accepted on an earlier branch and is justified
 above.
-- 335919d487998a1402b76002b828e906 internal/pushdown/pushdown.go:405 branch/if — intLiteral's `if !ok { return 0, false }` guard cleared. Every false path of literalOf returns a nil value, so the mutant falls through to `f, ok := v.(float64)`, which fails on that same nil and returns the identical `0, false`. The guard is a readability shortcut, not a behavioural one; the two numeric mutations of the same return are killed by TestIntLiteral's non-literal row, which pins the zero.
-- a14ba2b8f94c5a42201a396545db60b1 internal/pushdown/pushdown.go:166 statement/return — flip's `case predicate.Lt: return predicate.Gt` becomes `return 0`; Gt is the first iota of predicate.Op, so 0 IS Gt. The other three arms return non-zero operators and are killed by the reversed-comparison rows in TestCompilePushable.
 - 7d928d6fc391cca2558e457578feb8e8 internal/pushdown/pushdown.go:599 numbers/decrementer — `strconv.ParseFloat(t.Number, 64)` → bitSize 63; ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path, so the parsed float is identical (same reasoning as the drivers/mongo normalize.go:86 pair).
 - 0153fe57aa10de9180740096dab9718d internal/pushdown/pushdown.go:599 numbers/incrementer — the same site with bitSize 65, identical for the same reason.
 
@@ -274,25 +201,16 @@ width of a random jitter, which is a distribution and not a value a test can pin
 guard the invalid zero Value already satisfies; and a driver-context normalization. Each was
 verified by hand — the mutation applied to the real file, the whole package suite still green
 — before acceptance.
-- ef1b2e4aead9c14e1deb0eab31192045 drivers/dynamodb/dynamodb.go:245 branch/if — Get's `if len(keys) == 0 { return out, nil }` short-circuit cleared; the chunk loop that follows is then `for start := 0; start < 0`, which does not run, so the same allocated empty map is returned by the path below. The short-circuit saves nothing but a comparison, and the guard above it (no table selected) is killed by TestGetGuards.
-- e37357b89d71f19ef606666ae954626c drivers/dynamodb/dynamodb.go:244 numbers/decrementer — the same short-circuit's `== 0` made `== -1`, never true; equivalent for the same reason.
 - 86aeab55ccdf60a8c57b260d950a79b1 drivers/dynamodb/dynamodb.go:125 expression/context-nil — `config.LoadDefaultConfig(ctx, loadOpts...)` → nil ctx. The loader consults ctx only for remote resolution (IMDS region and credentials), which an explicit region plus either static dummy or lazily-resolved credentials never reaches, so the config and error it returns are identical.
-- 8390730bca2c67847191a42ebd8b4a90 drivers/dynamodb/dynamodb.go:411 arithmetic/base — `rand.Int63n(int64(base)/2+1)` → `*2+1`, widening the jitter window. TestBackoffGrowsAndCaps pins the wait's lower bound (the base) and its exponential cap, which is everything a timer can prove; the width of the random draw above the base is a distribution, and an assertion on it is a probability, not a verdict.
-- 8fa7cf9ddfc232ee066bf15e7d901da6 drivers/dynamodb/dynamodb.go:411 numbers/decrementer — the same site with `/1`, equivalent for the same reason.
-- f0e52161b2820663ef00a46d2b244682 drivers/dynamodb/dynamodb.go:411 numbers/incrementer — `/3`, narrowing the same window; same reason.
-- 8fa37565c7127ec877718764fe038233 drivers/dynamodb/dynamodb.go:411 numbers/incrementer — `+2` in place of `+1`, one nanosecond of extra jitter range; same reason.
 - 21e32368a191b718fbc19b867fc8d0a2 drivers/dynamodb/filter.go:29 expression/logical — `if f, ok := compile(pred); ok && f.expr != ""` → `||`. compile reports false only from a `return frag{}, false`, whose expr is "", so both forms are false on every failure and true on every success.
 - 5b56a6bee3f7be39963668752a5d0fcd drivers/dynamodb/filter.go:29 expression/remove — the same guard's `f.expr != ""` conjunct dropped; ok is true only for a fragment with a non-empty expr, so the conjunct is inert.
 - cef917dc83163a2012ff9f1731e40987 drivers/dynamodb/plan.go:25 expression/logical — the same pair on ExplainPlan's `ok && f.display != ""`, equivalent for the same reason (display, like expr, is non-empty exactly when ok).
 - dc7b703757d8953f2392aa9ec1a1dd83 drivers/dynamodb/plan.go:25 expression/remove — the dropped `f.display != ""` conjunct; same reason.
-- 500722b4e1c51b35fc16d5b6cc732f60 drivers/dynamodb/filter.go:138 numbers/decrementer — buildOr's `len(or) == 0` made `== -1`; an empty Or then reaches join, whose loop does not run and whose `len(exprs) == 0` check returns the identical `frag{}, false`. The incrementer at the same site, which would drop a one-branch Or, is killed by TestCompilePushable.
 - ea04b88488efbbb39940f97da595cd5f drivers/dynamodb/filter.go:192 numbers/incrementer — `strconv.FormatFloat(t, 'g', -1, 64)` → precision -2; strconv selects the shortest representation for any negative precision, so the bound N literal is byte-identical (same as drivers/file/neo4j.go:264).
 - 27719415840fab5cc1c1c95178cafa60 drivers/dynamodb/normalize.go:295 numbers/incrementer — the same FormatFloat identity on the write path.
 - 8f40be339f598f2ff82cf2eedc3f51a3 drivers/dynamodb/normalize.go:93 numbers/decrementer — `strconv.ParseFloat(s, 64)` → bitSize 63; ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path (same as drivers/mongo normalize.go:86).
 - 10cdb27c736ce44ee5012b4cb54422ce drivers/dynamodb/normalize.go:93 numbers/incrementer — the same site with bitSize 65.
 - c4a107b075b68a6af3a9749b439cc47b drivers/dynamodb/normalize.go:88 numbers/incrementer — `new(big.Int).SetString(s, 10)` → base 11; only the ok flag is read, and isIntLiteral has already restricted s to an optional sign and decimal digits, each a valid base-11 digit too. The base-9 sibling, where '9' is not, is killed by TestNumberValue.
-- 007970fbff2655047d22c0a44a1fd690 drivers/dynamodb/trace.go:47 branch/if — tableOf's `if rv.IsNil() { return "" }` cleared; Elem() of a nil pointer is the invalid zero Value, whose Kind is not Struct, so the guard below returns the same "".
-- ee4f978b2ea5d131d577f489382eaf36 drivers/dynamodb/trace.go:55 expression/remove — the `f.IsValid()` conjunct dropped from the TableName guard; an invalid Value's Kind is Invalid, never Pointer, so the conjunct beside it already rejects it. The `f.Kind() == reflect.Pointer` conjunct, whose removal makes IsNil panic on a non-pointer TableName field, is killed by TestTableOf.
 
 ## drivers/redis — full-scan equivalents (accepted 2026-08-31, test/redis-mutation branch)
 First full scan of the package (only its diff lines had ever been gated): 611 mutants, 57 escapes,
@@ -316,8 +234,6 @@ context, which `(*Pipeline).BatchProcess` discards (the class of the accepted en
 enumerated across the whole package); a short-circuit whose absence reaches a pipeline with no
 commands, which `(*Pipeline).Exec` returns from before any round trip; and a negative FormatFloat
 precision the standard library treats identically. Covered-code MSI 88.76 -> 94.36.
-- da214413f2737db99961296445e31f16 drivers/redis/kv.go:28 branch/if — the same short-circuit's body cleared; equivalent for the same reason, and it saves only the two no-op pipelines.
-- d5c43949128e64f8fcace984b59a0dd9 drivers/redis/kv.go:308 branch/if — the same guard's body cleared; equivalent for the same reason (newly covered by the multi-round scan test, which ends on an empty page).
 - df468c19faeee5b4855eb3e06e7f8690 drivers/redis/kv.go:44 expression/context-nil — `p.Type(ctx, k)` → nil; queued command context, discarded by BatchProcess.
 - 82cf8c47e08e4bf648c2549f9998eceb drivers/redis/kv.go:65 expression/context-nil — `readerFor(ctx, ...)` → nil; the ctx reaches only the queued value command.
 - 8e3cb2b99806944a03766b588f09b7f3 drivers/redis/kv.go:109 expression/context-nil — `p.Get(ctx, key)` → nil; queued command context, discarded by BatchProcess.
@@ -327,8 +243,6 @@ precision the standard library treats identically. Covered-code MSI 88.76 -> 94.
 - c90adcfa21033ba9fd3b0f7ebec6c2de drivers/redis/kv.go:117 expression/context-nil — `p.ZRangeWithScores(ctx, key, 0, -1)` → nil; same.
 - 9235d952f28969607ac6973afc1a54eb drivers/redis/kv.go:119 expression/context-nil — `p.XRange(ctx, key, "-", "+")` → nil; same.
 - f60032c63c642e82b7f4a5a12fda2a86 drivers/redis/kv.go:121 expression/context-nil — `p.JSONGet(ctx, key)` → nil; same.
-- 4b7421b81e3b7df89422c407399ec562 drivers/redis/kv.go:27 numbers/decrementer — Get's `len(keys) == 0` short-circuit made `== -1`, never true; an empty read then falls through to two pipelines that queue nothing, and `(*Pipeline).Exec` returns before any round trip, so the identical empty map comes back.
-- b8332d504b6a15ebea35bef846cb687e drivers/redis/kv.go:307 numbers/decrementer — scanPages' `len(page) == 0` flush guard made `== -1`; an empty page reaches build, whose zero-key read is the same no-op pipeline, and the `len(batch) == 0` check below returns the identical nil.
 - 8a9bf3c7fc9698a61264d7cbbfb66a2a drivers/redis/write.go:42 expression/context-nil — `p.Del(ctx, r.Key)` → nil; queued command context, discarded by BatchProcess.
 - 8fca4cd2ecaabb8998ad75f915d6ddf8 drivers/redis/write.go:43 expression/context-nil — `queueWrite(ctx, ...)` → nil; every command it queues is pipelined, so the discarded context is the only thing that changes.
 - e0e06a97c60cab83f63ed7906582cba8 drivers/redis/write.go:73 expression/context-nil — `p.Exists(ctx, r.Key)` → nil; same as :42.
@@ -341,7 +255,6 @@ precision the standard library treats identically. Covered-code MSI 88.76 -> 94.
 - f4519986eedb3f27d6008b866c7acbfc drivers/redis/write.go:172 expression/context-nil — `p.HSet(ctx, r.Key, fields...)` → nil; same as :42.
 - 9a00a0bb240ab3ca47176eab991cfa6e drivers/redis/write.go:226 expression/context-nil — `p.ZAdd(ctx, r.Key, members...)` → nil; same.
 - 33265e6357968b93d0166f6c3a04ec74 drivers/redis/write.go:258 expression/context-nil — `p.XAdd(ctx, &goredis.XAddArgs{...})` → nil; same.
-- bcda4e484c659dcd1b8d4a1ba61f1296 drivers/redis/write.go:23 numbers/decrementer — Put's `len(batch) == 0` short-circuit made `== -1`; an empty batch reaches putUpsert, whose pipeline queues nothing, so the zero WriteStat and nil error are identical.
 - 760ad7f757c7ac930a6a6fa68b5bb156 drivers/redis/write.go:277 numbers/incrementer — `strconv.FormatFloat(t, 'g', -1, 64)` → precision -2; strconv selects the shortest representation for any negative precision, so the rendered scalar is byte-identical (same as drivers/dynamodb/filter.go:192).
 
 ## drivers/couchdb — full-scan equivalents (accepted 2026-08-31, test/couchdb-mutation branch)
@@ -364,7 +277,6 @@ the remaining pair. The two below survive because the mutation cannot change wha
 does: one is an assignment of the value the variable already holds, the other a conjunct the
 guard beside it already implies. Each was verified by hand — the mutation applied to the real
 file, the whole package suite still green — before acceptance.
-- 7beb181f5718acd4619b4ffa114e7674 drivers/couchdb/couchdb.go:113 expression/remove — parseURL's path fallback `if p := strings.Trim(u.Path, "/"); p != "" && !strings.Contains(p, "/")` with the `p != ""` conjunct dropped. The block is reached only when `db == ""`, and the conjunct can only newly admit `p == ""`, whose body then runs `db = p`, assigning "" to a db that is already "". Both forms leave the same connConfig.
 - d02d70f46a0e4f06f96cdc0cb91ee619 drivers/couchdb/write.go:69 expression/remove — upsert's `if _, existed := revs[batch[i].Key]; existed && batch[i].Key != ""` with the key-non-empty conjunct dropped. revs comes from currentRevs, which sends only the batch's non-empty keys to _all_docs, and currentRevsForKeys stores a row only under the id the server echoed back, so `existed` is already false for every keyless record. The conjunct beside it decides every case.
 
 ## internal/config — full-scan equivalents (accepted 2026-08-31, test/config-mutation branch)
@@ -391,45 +303,7 @@ left to mutate. The seven below survive because the mutation cannot change what 
 or because the syscall it guards cannot be made to fail in-process. Each was verified by
 hand — the mutation applied to the real file, the whole package suite still green — before
 acceptance.
-- 5986e10e44283e82ec27bdf8ec5c28c5 internal/config/config.go:166 expression/error-guard — Save's `if err := f.Chmod(0o600); err != nil` guard cleared. The mutation keeps the call and drops only its error branch, and fchmod on a temp file this process just created in a directory it owns fails only for EROFS or EPERM: a read-only or unwritable parent makes `os.CreateTemp` fail two lines earlier instead, so no hermetic test can reach the branch. Same class as the accepted drivers/file/cache.go:292 entry.
-- 061b6cb1bc1b16906b4432e09eb26d62 internal/config/config.go:170 expression/error-guard — the TOML encode guard. `toml.NewEncoder(f).Encode(c)` fails only when the writer fails: the encoder was probed with invalid UTF-8 in a key and a value, and with a NUL byte, and escaped all three rather than erroring, so no Config shape produces one. A write to a just-created private temp file then needs a full or quota-limited filesystem, which is the accepted drivers/file/cache.go:292 case.
-- 0df46f720e89d90f15fa3fdcc3304172 internal/config/config.go:174 expression/error-guard — the temp file's `f.Close()` guard. Every write has already returned by then, so close(2) on a local regular file reports an error only for a delayed-writeback EIO or ENOSPC, which no in-process test can arrange.
-- d227e4fa42331b2df7c5d87664e3b333 internal/config/config.go:250 expression/remove — moveSource's `if c.Group != "" && !c.hasGroup(c.Group)` with the non-empty conjunct dropped. The conjunct can only newly admit `c.Group == ""`, and `hasGroup("")` tests the prefix "/", which no stored handle carries, so the body then assigns "" to a Group that is already "". (With a hand-written "/x" handle `hasGroup("")` is true and the branch stays skipped either way.) Same class as the accepted drivers/couchdb/couchdb.go:113 entry.
-- 8727d6e6f7cd10c9cdd62603dce5379d internal/config/options.go:49 branch/if — GetOption's `if !ok { return "", false }` body cleared. optionsFor returns `ok == false` only together with a nil map, and the next statement indexes that same nil map, yielding the identical "" and false. The guard is a readability shortcut, not a behavioural one; same class as the accepted internal/pushdown/pushdown.go:405 entry.
 - 6e235b84704b53af98d39f9e0ab9dd94 internal/config/options.go:90 expression/comparison — OptionList's `sort.Slice` less function widened from `<` to `<=`. opts is built by ranging a map, so no two Key values are equal, and on distinct keys `<=` is the same predicate as `<`. That the call sorts at all is pinned by TestOptionListSortsByKey, which kills the `return false` mutant on the same line.
-- 5d5732b03749eec931d19cd8409094c7 internal/config/options.go:83 expression/remove — OptionList's `if handle != "" && !ok` with the non-empty conjunct dropped. optionsFor's first statement returns `ok == true` for every empty handle, so `!ok` is already false wherever the dropped conjunct would be, and the guard beside it decides every case. Same class as the accepted drivers/couchdb/write.go:69 entry.
-
-## internal/render — full-scan equivalents (accepted 2026-08-31, test/internal-mutation branch)
-First full scan of the package (only its diff lines had ever been gated): 8 escapes, 7 of them
-killed. The package is exercised mostly from `cmd`, and a mutant counts as killed only by its own
-package's tests, so the assertions had to move here. All seven were assertion gaps in the
-colored-JSON writer: the plain round trip was compared with `require.JSONEq`, which unmarshals
-both sides and so forgives exactly what the two encoder settings decide — HTML escaping and the
-two-space layout — and the colored encoder was never asked to render an HTML metacharacter, never
-re-encoded often enough for Go's randomised map order to expose an unsorted pass, and never made
-to fail. The plain and colored round trips now compare line by line, eight keys are re-encoded ten
-times, and a channel drives the encode failure. The update run surfaced one more escape the new
-failure test had turned from uncovered into covered, the `%w` wrap on that failure; it was killed
-with an `errors.As` assertion on the `*json.UnsupportedTypeError` cause, not accepted, and its id
-removed from the baseline before the closing run verified the one below. It survives because the
-call it removes only re-asserts the library default. It was verified by hand — the mutation applied
-to the real file, the whole package suite still green — before acceptance.
-- bed35ced74f680ddc78ea9611ec83eb3 internal/render/json.go:67 statement/remove — the colored branch's `enc.SetSortMapKeys(true)` call dropped. `jsoncolor.NewEncoder` constructs with `flags: EscapeHTML | SortMapKeys`, so the call sets a bit that is already set and removing it changes no byte of the output. The call stays as a deliberate pin against a library default change, and it is not unasserted: the `true`->`false` flip on the same line is killed by TestNewJSONEncoderColoredSortsMapKeys. (The `SetEscapeHTML(false)` call two lines above is the opposite case — it clears a default bit — and both its removal and its flip are killed.)
-
-## internal/rawpred — full-scan equivalents (accepted 2026-08-31, test/internal-mutation branch)
-First full scan of the package (only its diff lines had ever been gated): 6 escapes, 2 of them
-killed. isObject had never been called directly, so its arms were only ever reached through
-getField, where every false answer collapses to the same fieldAmbiguous the mutated one produces;
-a direct table now pins the arms apart, including an array and a string that each carry a `{`
-after the first byte. The regex dedup guard was asserted only by entry count, which a
-recompile-and-overwrite leaves unchanged, so the test now preps the same (pattern, flags) a second
-time and requires the stored *Regexp to be the same pointer. The three below survive because the
-mutation cannot change what the code does. Each was verified by hand — the mutation applied to the
-real file, the whole package suite still green — before acceptance. The fourth survivor,
-rawpred.go:52 statement/return, was already accepted on an earlier branch and is justified above.
-- b65de6a58f1ae86fedf8e6fc00a7d2cb internal/rawpred/rawpred.go:728 branch/case — isObject's `case ' ', '\t', '\n', '\r': continue` body cleared. The switch is the last statement in the range body, so falling out of an empty case and continuing the loop are the same control flow; the next byte is read either way.
-- 3c63527171ee007923126445b6baa154 internal/rawpred/rawpred.go:728 loop/break — the same arm's `continue` replaced by `break`. Inside a switch, `break` leaves the switch, not the loop, so it too falls to the end of the range body and reads the next byte. (The `default: return false` arm on line 732 is the opposite case — clearing it really does read on — and it is killed by the array and string rows of TestIsObject.)
-- d0db686f2471e58afa0132a2be2f5b74 internal/rawpred/rawpred.go:608 expression/error-guard — foldArray's `if cbErr != nil` guard cleared. jsonparser's ArrayEach returns on its own parse error before ever invoking the callback (`if e != nil { return offset, e }` guards the `cb(v, t, ..., e)` call in parser.go), so the error it hands the callback is always nil and the branch is unreachable for any input. The guard stays as the library's callback contract; the walk error it does not cover is the ArrayEach return value, whose guard is killed by the malformed-array rows.
 
 ## internal/numfmt — full-scan equivalents (accepted 2026-08-31, test/internal-mutation branch)
 First full scan of the package (only its diff lines had ever been gated): 3 escapes, none of them
@@ -437,8 +311,6 @@ an assertion gap. Two return a named constant that IS the zero value the mutant 
 the third is a narrowing guard that only has an effect on a 32-bit platform, which the gate does
 not run on. Each was verified by hand — the mutation applied to the real file, the whole package
 suite still green — before acceptance.
-- dd0c601a1d638e7ae052249c40e639c0 internal/numfmt/decimal.go:37 statement/return — ParseDecimalMode's `case "auto": return DecimalAuto, nil` becomes `return 0, nil`. DecimalAuto is the first iota of DecimalMode, deliberately so ("a store opened without an explicit mode defaults to it"), so 0 IS DecimalAuto. The other two arms return non-zero modes and are killed by TestParseDecimalMode.
-- 939386efa8e17c4320ce6076daec5835 internal/numfmt/decimal.go:43 statement/return — the same function's `default: return DecimalAuto, fmt.Errorf(...)` becomes `return 0, ...`, identical for the same reason. That the arm errors at all is pinned by the invalid-value rows, which assert the message.
 - 7c019bb775c298a196100f0acb68bc55 internal/numfmt/convert.go:41 expression/remove — ConvertNumber's `if i, err := n.Int64(); err == nil && int64(int(i)) == i` with the round-trip conjunct dropped. The conjunct exists so a 32-bit build falls through to the *big.Int branch for a value that overflows its `int`; on the linux/amd64 the gate runs, `int` is 64 bits and the round trip is the identity, so the conjunct is constantly true and no input can separate the two forms. Out-of-int64 literals are covered by the big-int row, which fails `err == nil` two operands earlier.
 
 ## internal/diff — full-scan equivalents (accepted 2026-08-31, test/diffquery-mutation branch)
@@ -459,8 +331,6 @@ before acceptance.
 - ad6f9cb96664edfdca29fd45e9fe103e internal/diff/diff.go:144 composite/field-clear — `Op: OpAdd` dropped from walkMap's right-only Change literal. OpAdd is iota 0, the zero value of Op and deliberately so ("an unset Op is never a silent Change"), so the cleared field holds the value it was assigned. Same class as the accepted diff.go:184 and diff.go:232 entries above.
 - 4d45f48d5f17eb374e9b73b85fabbd4b internal/diff/diff.go:207 composite/field-clear — the same zero-value identity for walkPositional's surplus-right Change literal. The other field-clear on this line, the one that drops `New: b[i]`, is not equivalent and is killed by TestTreeArrayMemoryGuard's whole-Change comparison.
 - 3c8e23fa70268383fbbf7bb2ff2a5890 internal/diff/diff.go:390 composite/field-clear — the same zero-value identity for KeyedOpt's right-only ItemDelta literal.
-- 1e973c7c2926c8a2523d2dce8d009647 internal/diff/diff.go:467 branch/if — equal's `if _, ok := asFloat(b); ok { return false }` body cleared, so a number on the right falls through to `reflect.DeepEqual(a, b)`. The branch is reached only when `asFloat(a)` failed, so a's dynamic type is outside the normalized numeric set while b's is inside it; DeepEqual reports false for any two values of different dynamic types, so the fall-through returns the same false the guard returned. No input can separate the two forms. The guard stays as the statement that a number is never equal to a non-number, and it is not unasserted: the negation of the same condition is killed by the int-versus-string rows.
-- 38e51015625f7feb403fd818e673222f internal/diff/diff.go:486 numbers/decrementer — asFloat's `default: return 0, false` becomes `return -1, false`. asFloat is unexported and has two callers, both in equal, and both read the float only inside the `ok` branch; a false second result means the first is discarded, so no value it carries is observable.
 - 21ce2b52bd662b3b6a2f4c5416d8dd48 internal/diff/diff.go:486 numbers/incrementer — the same return, `return 1, false`, discarded for the same reason.
 
 ## internal/query — full-scan equivalents (accepted 2026-08-31, test/diffquery-mutation branch)
@@ -496,9 +366,7 @@ mechanism was checked against the source of the library it depends on.
 - 8ea21c3710dc9d5f6bab1c689ca51b2c internal/query/dump.go:51 numbers/decrementer — the same size becomes `64 << 9`.
 - 51b008c9093f675582c640c84d593146 internal/query/dump.go:51 numbers/incrementer — the same size becomes `65 << 10`.
 - 89ecb8a92c78788933091fd53c9a717b internal/query/dump.go:51 numbers/incrementer — the same size becomes `64 << 11`. All five are the `initBuf` argument to `sc.Buffer`, an allocation hint and nothing else: bufio.Scanner doubles its buffer on demand (from `startBufSize` when it is handed an empty one) and caps the growth at `maxTokenSize`, so every starting size reaches the same 16 MiB ceiling and accepts and refuses exactly the same lines. The second argument is the one that decides behaviour, and all five of its mutants are killed by TestJSONLSourceLineCap, which reads a line just under the cap and refuses one just over it.
-- a99b26be16234e839cad9b703fdf3066 internal/query/dump.go:174 expression/error-guard — JSONSource's `if _, err := dec.Token(); err != nil` guard, on the token that consumes a top-level array's `[`. The guard is reached only when startsJSONArray has already peeked that `[`, which leaves it buffered in the bufio.Reader, and bufio serves buffered bytes without touching the underlying reader; the decoder needs exactly that one byte to return Delim('['). Probed with a reader that fails immediately after handing out `[`: the failure surfaces at the following `dec.Decode`, whose guard is killed, never at this one.
 - b56902b659d6f9f8e09226e3005cad2f internal/query/dump.go:155 expression/remove — convertNumber' `if i, err := t.Int64(); err == nil && int64(int(i)) == i` with the round-trip conjunct dropped. The conjunct exists so a 32-bit build falls through to the *big.Int branch for a value that overflows its `int`; on the linux/amd64 the gate runs, `int` is 64 bits and the round trip is the identity. Same class as the accepted internal/numfmt/convert.go:41 entry, which is the same guard in the read path.
-- b2cd4944894a055379941789463c373e internal/query/dump.go:188 expression/remove — JSONSource's `if !array && errors.Is(err, io.EOF)` with the `!array` conjunct dropped, so an io.EOF from Decode would end an array walk quietly instead of being reported. In array mode Decode is only reached past `if array && !dec.More()`, and encoding/json's More returns false exactly when its peek fails, which at end of input it does; so inside an array the decoder is never called with nothing left to read, and it answers a truncated array with io.ErrUnexpectedEOF, which this condition does not match either way. The other two mutants of the same condition are the reachable ones, and TestJSONSourceRejectsTrailingGarbage kills both.
 
 ## drivers/hbase — full-scan equivalents (accepted 2026-09-01, test/hbase-mutation branch)
 First full scan of the package with a live cluster (its CI `deep-mutate` job ran with no HBase
@@ -527,16 +395,9 @@ by hand before the closing run verified the ten below. Covered-code MSI 82.66 ->
 The ten below survive because the mutation cannot change what the code does, or because the
 failure it guards cannot be produced in bounded time. Each was checked against the source of the
 library it depends on, and the three `Open` entries were probed twice with real connections.
-- 4c2b9ffba20864009b884446505bd613 drivers/hbase/filter.go:30 expression/error-guard — ScanFiltered's `if err != nil` after `hrpc.NewScanStr(ctx, s.table, opts...)`. gohbase's constructors fail only when an option function fails (`baseScan` returns `applyOptions`' error and nothing else), and the two options here are `hrpc.MaxVersions(1)`, which errors only for a call that is not a Get or Scan or for a count above MaxInt32, and `hrpc.Filters(f)`, which errors only if `ConstructPBFilter` does, i.e. a `proto.Marshal` of a well-formed message. No input reaches the branch. Same class as the write.go:45 entry below.
-- 4a9c13a319df546e3ed695312b651c07 drivers/hbase/hbase.go:105 branch/if — Open's `if dl, ok := ctx.Deadline(); ok { ... }` body cleared, so the ZooKeeper, region-lookup and region-read timeouts are left at gohbase's own defaults.
-- a9a81c63acc8912b13d1ef62aab03c79 drivers/hbase/hbase.go:106 statement/remove — the `opts = append(opts, gohbase.ZookeeperTimeout(d), ...)` inside that branch, the same change by another route. Both are unobservable against a reachable cluster, and against an unreachable one gohbase does not honour either bound as a deadline: probed with an already-expired context against the live cluster, and with a 5-second context against a refused port, `Open` ran past ten minutes and past two minutes respectively rather than returning, because the ZooKeeper client retries the lookup and `ClusterStatus` takes no context of its own. So no bounded test can separate the two forms. The timeouts stay as the honest expression of the caller's deadline; that `Open` does not in fact fail fast on an unreachable quorum is a driver bug to fix separately, not a missing assertion.
-- 3968ff34cb25de5b9e23b668c371d569 drivers/hbase/hbase.go:117 expression/error-guard — Open's `if _, err := st.admin.ClusterStatus(); err != nil` guard cleared. `ClusterStatus` returns an error only when the cluster cannot be reached, which is exactly the case the two probes above showed hangs rather than returning, so the branch is unreachable in bounded time from a test. Its body is reachable in principle and stays.
-- 1776c8f21dc36c86651923884fe2b278 drivers/hbase/hbase.go:322 numbers/decrementer — execScan's `limit := 0` becomes `limit := -1`. The variable is overwritten whenever a limit argument is given, and its only other reader is `if limit > 0 && len(rows) >= limit`, which is false for 0 and -1 alike, so no scan can tell the two initialisations apart. That the cap itself works is pinned by TestQueryScanLimitOne and TestQueryScanWithLimit, which kill the incrementer on the same line and on the comparison.
 - 8f294e8c90fdcb1f13cb00b98a822f0a drivers/hbase/normalize.go:219 numbers/decrementer — toFloat64's `strconv.ParseFloat(n, 64)` bit width becomes 63.
 - e55c46ed4e95912550a77f73604d5c8a drivers/hbase/normalize.go:219 numbers/incrementer — the same width becomes 65. strconv's `parseFloatPrefix` branches on `bitSize == 32` and nothing else, so 63, 64 and 65 all take the identical `atof64` path and return the identical value and error; unlike ParseInt, ParseFloat has no range check to widen or narrow. The ParseInt call two functions above is the opposite case, and its bit-width mutants are killed by the largest- and smallest-int64 rows of TestToInt64.
-- 9fddefd1d54bf2948977ac86903c2380 drivers/hbase/normalize.go:71 statement/return — parseColType's `default: return ctAuto, fmt.Errorf(...)` becomes `return 0, ...`. ctAuto is the first iota of colType, deliberately so ("a column absent from the map is ctAuto"), so 0 IS ctAuto. That the arm errors at all, and that every named arm returns its own non-zero type, is pinned by TestParseColType.
 - e489c6e21e9851bf6a0bdaa23d41f351 drivers/hbase/normalize.go:253 statement/return — colTypeFor's `return ctAuto` for an undeclared column becomes `return 0`, identical for the same reason. The declared branch above it returns the stored type and is killed by the typed rows of TestRowFromCells.
-- e3d5e1a379fb395b8de6739dee4b99a9 drivers/hbase/write.go:45 expression/error-guard — Put's `if err != nil` after `hrpc.NewPut(ctx, []byte(s.table), rk, values)` on the insert-only path. `baseMutate` stores its arguments and returns `applyOptions`' error, and this call passes no options, so the constructor cannot fail for any record. Same class as the filter.go:30 entry above. The upsert path carries the identical guard a few lines below, and mutago reaches the same verdict about it by the other route: its body at write.go:68 is reported NOT COVERED, because no record can make the constructor fail.
 
 Neo4j, accepted 2026-09-07 after the first full scan of the package (687 mutants, 48 escapes;
 37 killed). Every entry below survives the whole suite, and each was confirmed by hand: apply the
@@ -544,7 +405,6 @@ mutant diff, run the package tests, see them pass, restore. The five context-nil
 for neo4j driver v5.28.4 only; a driver upgrade may make them killable while they stay recorded
 here, so re-check them when the SDK moves.
 
-- 298e2e7f0fd1fb9845bac5d8c284dd4d drivers/neo4j/filter.go:26 branch/if — the non-narrowing early return. Every non-narrowing path of translate returns an empty where, and ScanBatches is pagedScan(ctx, "", nil, fn), so the fall-through runs the same query. It differs only by unused f0..fN parameters, which Neo4j accepts and the trace never prints (it logs the cypher without parameters).
 - dce9edc83ff61c97a206243ee0015234 drivers/neo4j/inspect.go:66 expression/context-nil — readRows passes a nil context to session. Driver v5.28.4 NewSession gives the context to computeCacheKey alone, which ignores it unless SessionConfig.Auth is set, and this driver never sets it.
 - 478cf8fc2fb53c4d33b07c1ce9e04374 drivers/neo4j/inspect.go:67 expression/context-nil — the deferred sess.Close(nil). The result is discarded and the context reaches only pool and router cleanup, which no caller can observe.
 - a9e25828b1be84d62366cdd519c5fed3 drivers/neo4j/neo4j.go:189 expression/context-nil — drv.Close(nil) on an Open error path. driverWithContext.Close sets d.pool = nil before it reads the context, the return is discarded by `_ =`, and Open returns the same error and no Store, so nothing observable differs.
@@ -553,14 +413,8 @@ here, so re-check them when the SDK moves.
 - d337011e0e53169a08882e5f038ad66a drivers/neo4j/neo4j.go:443 expression/context-nil — s.session(nil, ...). Same reason as neo4j.go:261.
 - 811eef4ad362892a16888080cfd62d01 drivers/neo4j/neo4j.go:537 expression/context-nil — driver.Close(nil). d.pool = nil happens before the context is used, so the driver closes either way and the context reaches only socket teardown.
 - 3804221283486b6225fcc6969342d4a1 drivers/neo4j/neo4j.go:311 expression/remove — the `s.target.key != ""` conjunct of the duplicate-key guard. Without ?key= the key is elementId, and WHERE elementId(n) IN $ids cannot return one id twice, so dup is never true on that branch.
-- f1996a65b72e580c7dbc4ad343fe2af8 drivers/neo4j/neo4j.go:518 expression/remove — the `!ok` disjunct of `!ok || len(items) != 1`. A failed type assertion leaves items nil, so len(items) != 1 is already true and both forms return false.
 - 413b18704336923c1f7c242b795d1f94 drivers/neo4j/normalize.go:84 numbers/incrementer — the -1 precision of strconv.FormatFloat. strconv treats every negative precision as shortest (`shortest := prec < 0`), so -1 and -2 produce the same text.
-- 6ff99294550a67616b4207c48087c766 drivers/neo4j/write.go:199 expression/error-guard — the Consume error guard of DETACH DELETE. NOT equivalent, but unkillable without fault injection: the statement binds only $eids and elementId(), neither of which can raise at consume time, syntax and database errors surface at Run, Neo4j Community has no constraint a delete can violate, and a cancelled context always fails the earlier resolve Run first. A deadline timed to expire between Run and Consume would be flaky, so no test was written.
-- acdc7481f2cf6f6c39a20cf18cef9276 drivers/neo4j/write.go:104 expression/remove — the `!ok` disjunct of `!ok || keyVal == nil`. A failed type assertion leaves keyVal nil, so the second disjunct already covers it.
 - 54c1a923120c4509f713c3cc8089b171 drivers/neo4j/write.go:181 expression/remove — the `s.target.key != ""` conjunct of Delete's duplicate-key guard, for the same reason as neo4j.go:311.
-- 7bf22d86ca3ec15be3c9d55b8c794c3f drivers/neo4j/write.go:34 statement/return — `return stat` where stat is still its zero value. Nothing writes to stat before this line, so the mutant returns the same value.
-- 556958714b0de87e4484c16f29561a93 drivers/neo4j/write.go:43 statement/return — the same zero-value return on the next early path.
-- cb38925ce60476663a9f97d2282c3546 drivers/neo4j/write.go:47 statement/return — the same zero-value return on the empty-batch path. The test asserts the exact value, and the mutant returns that value too.
 
 Elasticsearch, accepted 2026-09-09 after the first full scan of the package. Every entry below
 was confirmed by hand: apply the mutant diff, run the package tests, see them pass, restore.
@@ -568,17 +422,10 @@ The closing run scored 599 killed, 9 equivalent and 90 not covered. Read the not
 elasticsearch.go:133 before you touch that line: the site holds two operand variants and only
 one of them is equivalent.
 
-- cfe6c6f5e179c0956aa53891e61aaad6 drivers/elasticsearch/elasticsearch.go:301 branch/if — the body of that same early return, for the same reason.
-- 808ba5da7eb543934244a0a380e73460 drivers/elasticsearch/elasticsearch.go:133 expression/remove — the first conjunct of the lenient path-as-index rule, the test that the trimmed path is not empty. It only decides the empty case, and there the assignment sets index to the empty string it already holds. The sibling operand, the check that the path holds no slash, does change behaviour and a test kills it.
-- 24b90a952906e8193eeaa058b4e6e130 drivers/elasticsearch/elasticsearch.go:300 numbers/decrementer — the len(hits) == 0 early return. With no hits the copy loop runs zero times, len(page) > 0 is false so fn is never called, and the len(hits) < s.pageSize test returns on the same iteration. The two paths agree for every page size of one or more, and pageSize is scanBatch on every path that reaches here.
 - 2caea306608e3d24aea0ce6532721adf drivers/elasticsearch/elasticsearch.go:130 statement/return — the mutant returns the flavor 0 for the elasticsearch scheme. flavorES is the first iota value, so it is 0 already and the program does not change. Applied by hand: the package suite passes.
 - 4fa7d370b448bb06ea859ebdb5dd08f4 drivers/elasticsearch/elasticsearch.go:132 statement/return — the same flavor 0 for the elasticsearch+s scheme, for the same reason.
 - 623005b05d81beb25bc45b14e310ada9 drivers/elasticsearch/filter.go:50 composite/field-clear — the class: stringClass field of the keyword and ip case. stringClass is iota, so it is the zero value of fieldClass and clearing the field is a no-op.
 - a012bb4171c8f10389864efbe5865517 drivers/elasticsearch/filter.go:59 composite/field-clear — the same field on the text sub-field case, for the same reason.
-- 2ff0f65b4bc4ad51c50759283b7b5f9f drivers/elasticsearch/filter.go:273 expression/remove — the e.Value == nil disjunct of the push guard. matchesLiteral type-asserts a nil value against string, float64 and bool, returns false for each, and falls to false in the default, so a null literal never pushes either way.
-- edc0317f0eafe93f186cf96f5f0aed5e drivers/elasticsearch/inspect.go:61 expression/error-guard — the json.Unmarshal error guard. The argument is a json.RawMessage that a successful decode produced, so it is always valid JSON and an unmarshal into any cannot fail. The branch is unreachable.
-- 2cf1585dd1d3c631b2404c491783451c drivers/elasticsearch/write.go:42 expression/error-guard — a json.Marshal error guard over a map whose only values are strings, the bulk action line. json.Marshal cannot fail on that shape, so the branch is unreachable.
-- 55272235d47f149d13bc11209a2a4669 drivers/elasticsearch/write.go:166 expression/error-guard — the same guard over the delete action line. The sibling guard at write.go:45 marshals caller data, can fail, and a test kills it.
 
 Couchbase, accepted 2026-09-26 after the verdict re-scan of the package (657 mutants, 579
 killed, 15 escaped, 63 not covered, 0 errors). Nine escapes were test gaps and are now killed.
@@ -587,10 +434,6 @@ fixed tree, run the package tests, see them pass, restore. The couchbase.go:383 
 is not here: it moved into readPage, and TestReadPage kills it now.
 
 - 03f465282ea2ab1de8d3cd108574f6e2 drivers/couchbase/couchbase.go:287 composite/field-clear — the Context field of BulkOpOptions in bulkDo. gocb v2.12.4 ignores that field on the couchbase:// KV path (it reads Timeout only), so clearing it changes nothing. bulkDo refuses a cancelled context before the call, and tests kill that check.
-- d99383f25be1adf6e32bf6868049df0c drivers/couchbase/couchbase.go:324 expression/error-guard — the decode guard in Get. The bulk get uses rawTranscoder, whose Decode fails only for a target that is not *[]byte. The target here is always a *[]byte, so the branch is unreachable.
-- 8c63029eadfa51b0c3dfbf77fcf5ba29 drivers/couchbase/inspect.go:45 statement/remove — sort.Strings on the bucket names. The test cluster holds one bucket, so the order cannot differ. A kill needs a second bucket in the test cluster, which costs about 15 to 20 s per suite run. Reversible: remove this entry when the suite gets a second bucket.
-- f05e1f5ec07a3ef80cf1d53906d5538e drivers/couchbase/inspect.go:85 statement/remove — the WHERE clause that limits the index list to the source bucket. With one bucket in the cluster the filter removes nothing. Same cost and same reversal as inspect.go:45.
-- aee2807a16f12adee9de297bbd985046 drivers/couchbase/write.go:148 statement/return — the empty-keys return in existingKeys, an empty map changed to nil. The only caller reads the result with `_, ok := existing[key]`, and a lookup in a nil map also gives false. One hand run failed, in TestQueryScopeQualified (a COUNT(*) that returned 1 instead of 3). Two more runs passed, so that failure was a flake in the count test, not a kill.
 
 Config mode warning, accepted 2026-09-28 in the pull request that adds the warning.
 
@@ -612,6 +455,7 @@ The mutago bump from v2.7.7 to v2.10.16 changed every mutant id. A full scan of 
 - cba7aae52682 internal/diff/diff.go:467 branch/if — replaces 1e973c7c2926 (diff.go:467 branch/if). The `return false` body is cleared, so the call falls through to reflect.DeepEqual. That point is reached only when a is not a number and b is one, so DeepEqual also returns false.
 - e3b8b730e858 internal/diff/diff.go:486 numbers/decrementer — replaces 38e51015625f (diff.go:486 numbers/decrementer). asFloat returns -1 in place of 0 with ok false. Both callers read the float only when ok is true, so the value is never used.
 - bbf28e84e5c2 internal/diff/diff.go:486 branch/case — new in v2.10.16. The mutator replaces the body of the default arm with a return of the zero values, `return 0, false`. That is the original statement, so the mutant is the original code with a different indentation.
+- 889bc176c322 internal/diff/diff.go:493 composite/field-clear — the `Op: OpAdd` field of the Change that `addition` returns is cleared. OpAdd is the zero value of Op (iota), so the cleared field holds the same value. The four old entries of this class at the inline Change literals collapsed into this one helper.
 - 69a6bab3fd68 internal/diff/patch.go:27 expression/error-guard — new in v2.10.16. The error guard after json.Marshal(patch) becomes `if false`. jsondiff.Compare marshals both inputs and unmarshals them into plain JSON values before it builds the patch, so every operation value is a map, slice, string, float64, bool or nil. json.Marshal cannot fail on those values, so the guard is unreachable. A value that cannot be marshaled fails earlier in Compare, and TestPatchMarshalError asserts that error.
 
 ## internal/render, mutago v2.10.16 re-baseline (accepted 2026-09-29, test/mutation-rebaseline-small branch)
@@ -624,20 +468,13 @@ Keyring default store, accepted 2026-09-29 in the pull request that makes the ke
 - 9aeae887cb1de5c888584aacb549d977 cmd/password.go:113 expression/error-guard — the UseKeyring error guard in keepPassword. The add command added the source to the config a few lines earlier with cf.Add, and UseKeyring fails only for an unknown source, so the branch cannot be reached. mutago scored the same guard KILLED in one earlier run; with the mutation applied by hand, the full cmd suite passes.
 - f47547a1950ba78bf71b5349ab4cb2b1 cmd/password.go:122 expression/error-guard — the SetSourceURL error guard in the fallback of keepPassword. The source exists and the raw URI passed the scheme and parse checks, so it is not blank. SetSourceURL fails only for an unknown source or a blank URL, so the branch cannot be reached.
 - a4302bede0d913e4708c747159c3f4ba cmd/password.go:122 conditional/negated — the same guard with `err == nil`. SetSourceURL returns nil, so the mutant returns `false, nil` from the guard, which is what the next line returns.
-- fc3ff1d05b4e76156483f3a0215e55cb cmd/keyring_cmd.go:286 expression/error-guard — the write error of a `would migrate` line under --dry-run. The output is the command's writer, and no test writer fails, so the branch cannot be reached in a test.
-- 15045794c5f126a17eda63f81545e7e0 cmd/keyring_cmd.go:298 expression/error-guard — the UseKeyring error guard in the migrate loop. migrateTargets resolved the source from the same config, so UseKeyring cannot fail for an unknown source.
-- d0b761fc9d1e8678984a5fcac08b75c9 cmd/keyring_cmd.go:302 expression/error-guard — the SetSourceURL error guard in the migrate loop. The source exists, and migrateSecret returned a stripped URL that is not blank, so SetSourceURL cannot fail. mutago scored it KILLED in one local run; with the mutation applied by hand, the full cmd suite passes.
 - e4dd7cceaed99e103693bed574cca5ae cmd/inspect.go:411 loop/break — the `continue` that skips the columns read when no table is set, in the reads builder of inspectCassandra. columns is the last name in cassandraInspectCmds, so `break` at that name ends the loop at the same point as `continue`. Both forms build the same map.
-- a16d692b2fa184be4aad87122f92888a cmd/diff.go:174 expression/remove — `!m.data` removed from the default-layer check in diffModes.validate. The branch only sets `m.data = true`. When m.data is already true, the assignment changes nothing, so both forms leave the same modes.
-- 78166f5f603a2e75640963621736ee78 cmd/diff.go:201 statement/remove — `meter.Stop()` on the --patch path of runDiff. newProgressMeter returns nil for a writer that is not a terminal, so under test the call does nothing. The same case as the ac861b46 entry for the old diff.go:123, which the refactor moved here.
-- ff1dc6972d154428ed50cdd5c399dc56 cmd/diff.go:215 statement/remove — `meter.Stop()` on the --data path of runDiff. The same reason as the 78166f5f entry above.
 - e1c81375bec9e0cb1043c2e2146bd3d0 cmd/diff.go:262 statement/remove — `meter.Stop()` in `metered`. newProgressMeter returns nil for a writer that is not a terminal, so under test the call does nothing. The same reason as the 78166f5f entry above.
 
 ## internal/rawpred, mutago v2.10.16 re-baseline (accepted 2026-09-29, test/mutation-rebaseline-2 branch)
 The mutago bump from v2.7.7 to v2.10.16 changed every mutant id. A full scan of the package found 13 new escape ids. Five were a test gap. jsonparser hands a string element back without its quotes, so the string "{}" reads as an empty object, and no test gave evalElement such an element. New rows in TestEvalElemMatch and TestEvalNoneMatch now require unknown for it. Without the type check an ElemMatch drops that document, but jq errors on it. TestCountKeys pins the (0, false) result of countKeys, and TestRanks now pins the 0 that valueRank returns with ok false and requires that no rank is 0. Each of the five was applied by hand and failed the package suite. The rawpred.go:130 statement/return escape keeps its accepted id 13548ffece9a. The eight ids below cover 11 sites. Each site was applied by hand to the real file, and the full package suite passed.
 - 11979afff782 internal/rawpred/rawpred.go:604 branch/case — new in v2.10.16. The default arm of evalAny gets its own statement back with a different indentation, so the program does not change.
 - 744e052285de internal/rawpred/rawpred.go:804 branch/case — new in v2.10.16. The same indentation-only edit on the default arms of docRank (line 804) and valueRank (line 817). The id covers both sites.
-- 2ae2e2a2c252 internal/rawpred/rawpred.go:829 branch/case — new in v2.10.16. The same indentation-only edit on the default arms of cmpInt (line 829), cmpInt64 (line 892) and cmpFloat (line 905). The id covers the three sites.
 - a237d926ff29 internal/rawpred/rawpred.go:596 branch/if — new in v2.10.16. The `return anyState{}, false` body in evalAny is cleared, so a field that is not found falls through to the type switch. getField returns jsonparser.Unknown as the type on every path that is not fieldFound, so the switch takes its default arm and returns the same `anyState{}, false`.
 - df7620fb7781 internal/rawpred/rawpred.go:762 branch/case — replaces b65de6a58f1a (rawpred.go:728 branch/case). The `continue` of the whitespace arm in isObject is removed. The switch is the last statement of the loop body, so the loop reads the next byte either way.
 - 43d0f4633226 internal/rawpred/rawpred.go:762 loop/break — replaces 3c63527171ee (rawpred.go:728 loop/break). The same `continue` becomes `break`. In a switch, `break` leaves the switch and not the loop, so the loop also reads the next byte.
@@ -681,23 +518,18 @@ The mutago bump from v2.7.7 to v2.10.16 changed every mutant id. The CI scan of 
 
 ## internal/pushdown, mutago v2.10.16 re-baseline (accepted 2026-09-30, test/mutation-rebaseline-3 branch)
 The mutago bump from v2.7.7 to v2.10.16 changed every mutant id. The CI scan of the package on f566ec9 found 56 escapes. Three kept their old ids, and 35 were a test gap. extractExact and exactPipe had no guard tests, so each dropped or misjoined clause of their shape guards escaped. TestExtractExactShapeGuards and TestPipeShapeGuards now give both extractors a query with no term, an operator query that carries a term, a term with no function, and a builtin with a suffix. TestPathOf gives pathOf one row per guard clause, and new rows of TestConstString give constString an operator query and a query with no term. New rows of TestCompileNotPushable reject a filter that is not streamable, an optional path, a path piped into a path, and a builtin with a suffix, with and without `| not`. TestUnwrapDepthCap pins the cap of 512 wrappers with literal depths. The `continue` to `break` edit in Compile stops at the first stage that is not a select. The new "an identity stage between two selects" row of TestCompilePushable requires the select after a `.` stage. Each of the 35 was applied by hand and failed the package suite. The old entries 3662a8d1c95d (conjuncts.go:40), 7d928d6fc391 and 0153fe57aa10 (pushdown.go:599) still escape with the same ids, and their reasons hold. The 11 ids below cover 18 sites. Each site below was applied by hand to the real file, and the full package suite passed.
-- 2941fe7fc0fb internal/pushdown/pushdown.go:31 numbers/decrementer — new in v2.10.16, the same edit as 3662a8d1c95d (conjuncts.go:40) in Compile. The loop in Compile reads `stages[0:]` in place of `stages[1:]`. Compile runs only on a streamable filter, so stages[0] is `.[]`, a term with an iterating suffix. selectArg rejects a term with a suffix, so the loop skips that stage and the predicate is the same.
-- 6f1756a7fd02 internal/pushdown/pushdown.go:97 expression/remove — new in v2.10.16. The `len(stages) >= 2` operand of the `| not` check is removed. With one stage, the check would see e itself as a bare `not`. The check on line 92 returns first for every bare builtin with no suffix, and that includes `not`. So one stage never reaches line 97 as a `not`, and the operand does not change the result.
-- 0280419b36e8 internal/pushdown/pushdown.go:97 numbers/decrementer — new in v2.10.16. `len(stages) >= 2` becomes `>= 1`. This is equivalent for the same reason as 6f1756a7fd02.
 - a8ff75800f75 internal/pushdown/pushdown.go:166 statement/return — the same site as a14ba2b8f94c. flip returns 0 in place of predicate.Gt for Lt. Gt is the first iota of predicate.Op, so 0 is Gt.
 - 46d886441bcf internal/pushdown/pushdown.go:166 branch/case — new in v2.10.16. The Lt arm of flip becomes `_ = predicate.Gt` and `return 0`. 0 is Gt, as for a14ba2b8f94c.
 - 781445a762d4 internal/pushdown/pushdown.go:300 branch/if — new in v2.10.16. The body of `if !ok` in negate is cleared. extractExact returns a nil node with every false ok, so the type switch goes to its default arm and returns nil, false.
 - 5f0cba885491 internal/pushdown/pushdown.go:405 branch/if — the same site as 335919d48799. The body of `if !ok` in intLiteral is cleared. literalOf returns a nil value with every false ok, so the float64 assertion fails and the function returns 0, false.
 - 5616b72b9e59 internal/pushdown/pushdown.go:422 branch/if — new in v2.10.16. The body of `if !ok` in stringLit is cleared. literalOf returns a nil value with every false ok, so the string assertion gives "" and false.
 - bdbdd9ff2f20 internal/pushdown/pushdown.go:42 branch/case — new in v2.10.16. The arm gets its own `return nil, false` back with a different indentation, so the program does not change. The id covers the byte-identical arms at lines 136, 184, 215, 310, 350, 379 and 616.
-- 137cc6c2630f internal/pushdown/pushdown.go:114 branch/case — new in v2.10.16. The same indentation edit in the inner switch of the and case.
 - 461a79b3c892 internal/pushdown/conjuncts.go:154 branch/case — new in v2.10.16. The same indentation edit in the default arm of firstUnsafeComponent.
 
 ## internal/query, mutago v2.10.16 re-baseline (accepted 2026-09-30, test/mutation-rebaseline-4 branch)
 The mutago bump from v2.7.7 to v2.10.16 changed every mutant id. A full scan of the package found 49 escapes. Eight kept their old ids (copy.go:267, dump.go:152, dump.go:155 and the five initBuf edits at dump.go:52). The other 41 had a new id, and 40 of them were a test gap. The compile guards of Run, RunKeyed, the cross engine and the combiner had no test with a filter that parses but does not compile. RunKeyed had no parse, fetch or estimate test. JSONSource and YAMLSource had no test of their page sizes, a cancel, a keyless record, a first-read error or a YAML syntax error. Transform had no filter that fails at run time, and no copy failed on its last flush. Each new test was proved by hand: the mutation applied to a copy of the file makes the package suite fail.
 The scan also disproves the old reason for b2cd4944894a (dump.go:188 expression/remove, now at line 202). A reader error that wraps io.EOF inside a top-level array makes Decode return an error that matches io.EOF. Without the `!array` operand the walk then ends in silence and reports a truncated array as complete. TestJSONSourceReportsAnEOFReadErrorInsideAnArray now kills it. The old id stays in the baseline, but its reason does not hold.
 The update run surfaced five more ids that the new tests had turned from uncovered into covered. Four were killed: the %w wrap of the item filter error in Transform (copy.go:189), a consumer that refuses a full page in JSONSource and YAMLSource (dump.go:213 and dump.go:274, one id), and white space before a top-level array (dump.go:236 conditional/negated and numbers/incrementer). Their ids were removed from the baseline by hand before the closing run.
-- 5cb80d413e90 internal/query/dump.go:188 expression/error-guard — replaces a99b26be1623 (dump.go:174 expression/error-guard). The guard on the dec.Token call that reads the `[` of a top-level array becomes `if false`. The old reason holds on the current code with encoding/json v2: startsJSONArray has already peeked the `[`, so it is in the bufio.Reader, and the decoder reads it with no call to the underlying reader. Probed with a reader that fails at once after the `[`, one that gives one byte for each call, and one that gives io.EOF: the original and the mutant give the same error from the next Decode. The mutation applied by hand passes the whole package suite.
 - f005955aac26 internal/query/dump.go:236 expression/error-guard — new in v2.10.16. The guard on br.Discard(1) in startsJSONArray becomes `if false`. The loop reaches Discard only after br.Peek(1) returned a byte, so that byte is in the buffer, and bufio.Reader.Discard of buffered bytes returns no error. The same class as the drivers/file/filter.go:197 entry.
 
 ## drivers/file, mutago v2.10.16 re-baseline (accepted 2026-09-30, test/mutation-rebaseline-4 branch)
@@ -711,12 +543,8 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 - 0df8cf0a5627 drivers/file/cache.go:188 expression/error-guard — new in v2.10.16. The fileSize guard in readCache becomes `if false`. fileSize calls Stat on a file that os.Open opened in the line before, and fstat on an open descriptor fails only for a kernel I/O fault. No hermetic test can make it fail. fileSize itself is covered by TestFileSizeReportsAStatFailure.
 - e85d315b99a7 drivers/file/cache.go:292 expression/error-guard — replaces fe55b530d196 (cache.go:292 expression/error-guard). The old reason holds: writeHeader fails only if a write to the temp file that the line before created fails.
 - f250ccd3990d drivers/file/cache.go:369 expression/error-guard — new in v2.10.16. The guard on cborEnc.Marshal of the cache header becomes `if false`. The header is a fixed struct of one string and four integers, and the encoder with default options fails only for a type it cannot encode. Probed with a non-UTF-8 path, a NUL byte, and extreme integers: all encode with no error.
-- f3a87a702590 drivers/file/cache.go:458 expression/error-guard — new in v2.10.16. The os.Open guard in cacheGet becomes `if false`. fileSize on the nil *os.File then fails with os.ErrInvalid, and the next guard returns the same `nil, false`. The same id covers the fileSize guard at line 463: size 0 makes readTrailer fail with "too small", so the function returns the same `nil, false`. It also covers the readTrailer guard at line 471: indexOffset 0 makes readIndex decode from the start of the file, which is the magic `IQCACHE\n` that readHeader already checked. Its first byte is a CBOR byte-string head, which does not decode into indexBlock, so the function returns the same `nil, false`. Probed with a trailer offset past the end and one inside the header: both give `nil, false` with and without the guard.
 - 57437d498f41 drivers/file/cache.go:459 branch/if — new in v2.10.16. The `return nil, false` bodies at lines 459 and 472 are cleared. The function then gives the same `nil, false` for the reasons of f3a87a702590.
-- 5a6f23978e36 drivers/file/cache.go:467 expression/remove — replaces 446be0cd7d2f (cache.go:467 expression/remove). The old reason holds: readHeader gives a zero header with its error, so `h.Size != m.size` is already true.
 - 0e85f403fc96 drivers/file/cache.go:475 expression/remove — replaces c7fa9b921071 (cache.go:475 expression/remove). The old reason holds: readIndex gives a zero indexBlock with its error, so `len(idx.Pages) == 0` is already true.
-- 05d717019a07 drivers/file/cache.go:486 loop/break — new in v2.10.16. The `break` when all wanted keys are found becomes `continue`. Each later pass meets the same condition first and goes to the next page, so no page is decoded and no check runs. The loop only ends later, with the same result.
-- 528540c71c54 drivers/file/cache.go:558 expression/remove — replaces 9b389bd6c4ed (cache.go:558 expression/remove). The old reason holds: headerOf fails on the first read of a directory, so ListCache skips it either way.
 - 760492cbcbc3 drivers/file/cache.go:614 statement/return — replaces 83535655adb5 (cache.go:614 statement/return). The old reason holds: all cache files are in one directory, whose permissions decide if a remove fails, so a failing run has removed nothing.
 - 9dd45cbc07ee drivers/file/cache.go:625 expression/error-guard — new in v2.10.16. The os.Open guard in headerOf becomes `if false`. readHeader on the nil *os.File fails with os.ErrInvalid, so the next guard returns the same `cacheHeader{}, false`.
 - e69e4896a635 drivers/file/cassandra.go:99 branch/if — replaces a5776bc0b54a (cassandra.go:99 branch/if). The old reason holds: bindKeyValue's default branch returns the raw string, the same value that TypeText returns.
@@ -734,9 +562,6 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 - 0e7102f7ee31 drivers/file/file.go:188 statement/return — replaces 344b074185e8 (file.go:188 statement/return). The same zero-value identity.
 - aa1f8c4c2431 drivers/file/file.go:195 statement/return — replaces bc9401a966b3 (file.go:195 statement/return). The same zero-value identity.
 - 63eecb02c775 drivers/file/file.go:182 expression/remove — replaces fdb6613b3cb7 (file.go:182 expression/remove). The old reason holds: with an empty host the body sets `path = "" + path`, which does not change it.
-- dafdbf3e9579 drivers/file/file.go:190 statement/remove — replaces e34537e600cf (file.go:190 statement/remove). The old reason holds: nativePath changes a path only on Windows, and the gate runs on Linux.
-- a4b4e3c598fa drivers/file/filter.go:113 expression/error-guard — replaces 37d9c30e8d5e (filter.go:113 expression/error-guard). The guard on the dec.Token call that reads the `[` of a top-level array becomes `if false`. The old reason holds with the json/v2 decoder: startsJSONArray has already peeked the `[`, so the decoder reads it from the bufio.Reader. Probed with a reader that fails at once after the `[`, one that gives one byte for each call, and one that gives io.EOF: the original and the mutant give the same error from the next Decode.
-- a39ce3ac5c75 drivers/file/filter.go:197 expression/error-guard — replaces 7ce847b35cfa (filter.go:179 expression/error-guard). The old reason holds: Discard(1) after a Peek(1) that returned a byte cannot fail.
 - 0dd5ade7ed6f drivers/file/mongo.go:96 expression/error-guard — replaces 9547ee9cc2ce (mongo.go:93 expression/error-guard). The same Token guard as a4b4e3c598fa, probed the same way.
 - 3647f8ebf312 drivers/file/mongo.go:139 expression/error-guard — new in v2.10.16. The Discard(1) guard in startsArray, the same class as a39ce3ac5c75.
 - 8d8c1c16ad5a drivers/file/neo4j.go:56 expression/error-guard — replaces 3b80a9a0b928 (neo4j.go:56 expression/error-guard). The same Token guard as a4b4e3c598fa, probed the same way.
@@ -773,10 +598,6 @@ Each entry below was applied by hand to a copy of the file, and the whole packag
 - f07d39503f42 drivers/couchdb/couchdb.go:113 expression/remove — a second id for the line of 7beb181f5718. The old reason holds: the dropped `p != ""` conjunct can only admit `p == ""`, and then `db = p` assigns "" to a db that is already "".
 - 68c285503c1b drivers/couchdb/filter.go:133 branch/case — new in v2.10.16. The `default` arm of the selector switch gets its own `return nil, false` back with a different indentation, so the program does not change.
 - 522cc819bc3a drivers/couchdb/filter.go:272 branch/case — new in v2.10.16. The `case 0` arm gets its own `return nil, false` back with a different indentation, so the program does not change.
-
-## drivers/hbase probe fallback (accepted 2026-10-02, fix/hbase-open-deadline branch)
-
-- 5dae232f8b73 drivers/hbase/hbase.go:184 numbers/incrementer. The probe goroutine sends exactly one value, so a buffer of 1 or 2 never blocks it. Applied by hand: the hbase package suite passes. The decrementer twin (buffer 0) is killed by TestProbeFallbackGoroutineEndsAfterTheContext.
 
 ## drivers/hbase write and column parse equivalents (accepted 2026-10-02, chore/codescene-hbase branch)
 
@@ -824,17 +645,12 @@ The mutago bump from v2.7.7 to v2.10.16 changed every mutant id. The seed scan o
 - 14a3d957e56d drivers/hbase/hbase.go:364 expression/error-guard — new in v2.10.16. The guard after `hrpc.NewScanStr` with a KeyOnlyFilter in execCount. ConstructPBFilter of that filter cannot fail.
 - 7a1fcf072122 drivers/hbase/hbase.go:406 expression/error-guard — new in v2.10.16. The guard after `hrpc.NewPut` in execPut with no options. `baseMutate` stores its arguments and has no option to fail.
 - 005fad56f1ae drivers/hbase/hbase.go:435 expression/error-guard — new in v2.10.16. The guard after `hrpc.NewDel` in execDelete. NewDel fails only for the DeleteOneVersion option, which is not used.
-- f6f8931e586e drivers/hbase/hbase.go:322 numbers/decrementer — replaces 1776c8f21dc3 (hbase.go:322 numbers/decrementer). The old reason holds: `limit := -1` is overwritten when a limit argument is given, and the only read is `limit > 0`, which is false for 0 and for -1.
 - 2ae6ad4db5cc drivers/hbase/normalize.go:71 statement/return — replaces 9fddefd1d54b (normalize.go:71 statement/return). The old reason holds: ctAuto is iota 0, so `return 0` is the same value.
 - a6395147e7eb drivers/hbase/normalize.go:261 branch/if — new in v2.10.16. The `return s` of rowKeyString is cleared for a string. The code then returns `fmt.Sprintf("%v", v)` of the same string, which is the same string.
 - 95c381b70969 drivers/hbase/parse.go:117 branch/if — new in v2.10.16. The early `return out, nil` of parseTypeMap for an empty parameter is cleared. The loop then sees one empty entry, skips it and returns the same empty map. TestParseTypeMapReturnsAnAllocatedMapForNoEntries kills the statement/return mutant at the same line (a58a386076ad).
 - e7a0b91cec6d drivers/hbase/parse.go:129 expression/remove — new in v2.10.16. The `!ok` term of `!ok || family == "" || qualifier == ""` is removed. When the colon is missing, strings.Cut gives an empty qualifier, so the next term is true.
-- 554a02124a42 drivers/hbase/write.go:45 expression/error-guard — replaces e3d5e1a379fb (write.go:45 expression/error-guard). The old reason holds: `baseMutate` has no option to fail.
-- f35114793f50 drivers/hbase/write.go:67 expression/error-guard — new in v2.10.16. The guard after `hrpc.NewPut` on the upsert path, the same reason.
 - 359112adf9a9 drivers/hbase/write.go:93 expression/error-guard — new in v2.10.16. The guard after `hrpc.NewGet` in rowExists, which has no option.
 - 19b61554aeb1 drivers/hbase/write.go:175 expression/error-guard — new in v2.10.16. The guard after `hrpc.NewScanStr` with a KeyOnlyFilter in Clear, the same reason as hbase.go:364.
-- a8d7bd9f01b5 drivers/hbase/write.go:192 expression/error-guard — new in v2.10.16. The guard after `hrpc.NewDel` with no values in Clear. DeleteOneVersion is not used.
-- 0965b67f4ad4 drivers/hbase/write.go:242 expression/error-guard — new in v2.10.16. The guard after `hrpc.NewDel` with no values in Delete, the same reason.
 - 42d4957c9fd8 drivers/hbase/write.go:240 expression/error-guard. The same guard as a8d7bd9f01b5 after #61 moved Clear's row delete into the eachRow callback, so the id changed. The reason is the same: hrpc.NewDel with no option cannot fail. CI applied the mutant (PR #64), and the whole hbase package suite passed against a real HBase, with 19 rows through the callback.
 
 ## drivers/neo4j, mutago v2.10.16 re-baseline (accepted 2026-10-02, test/mutation-rebaseline-6 branch)
@@ -923,3 +739,69 @@ Each id below is accepted as equivalent. The CI deep scan run 37183581854 ran th
 - 65ed89eaa467 write.go:191 expression/error-guard. rows.Close returns only the stream error that rows.Err already returned, so the Close guard in Clear cannot fire.
 
 Some ids share their text with other lines of the same file, so mutago tests one copy per scan. The ids 262ecd91, c6b3294b, 2e5c697a, b951dc94, b754003e, bf328d47, 60824250, 09431de6, 9b4997ad and f08fa040 each belong to a group that mixes a covered copy with an unreachable one. A scan that picks the covered copy kills the mutant, which is harmless.
+
+## cmd — equivalents found in the v2.10.22 re-baseline (accepted 2026-10-08, test/mutago-v2.10.22-rebaseline branch)
+Each reason was checked against the current code. A scan id covers every site with the same mutated text.
+- c739e1a3bc61cebd56152ac1f7c29114 cmd/driver.go:359 branch/if — the `if !ok` return after `urlQuery` in `foreignAddressParam`. `urlQuery` returns nil `Values` when the URL does not parse, and `Get` on nil `Values` returns an empty string, so the loop finds no parameter and the function still returns an empty string. The twin guard in `urlAddressName` (:337) has the same text and the same id, and the same reason.
+- 5e4580b2556b2cde77edbca340764176 cmd/driver.go:436 loop/break — the `continue` on a read-only driver in `expectedSchemes`. `file` is the only read-only driver and the last entry of the registry, so `break` ends the loop at the same point. Both forms build the same list.
+- 86c9dcd26e266041aa1b63cbf5441f14 cmd/config.go:106 composite/field-clear — clears `Args: cobra.NoArgs` on the `config` parent command. This command has no `Run`, so cobra prints help before it checks the arguments. Without `Args`, cobra uses the legacy check, which accepts arguments for a command that has a parent.
+- 4bc6851dc56e20be60e6008757ad921e cmd/config.go:301 expression/error-guard — the `effectiveOption` error guard in `listAllOptions`. The function fails only when a key has no flag. Every key in `persistableOptions` has a flag, so the branch cannot be reached.
+- ffb02d7a9fc069ddadc049221353165c cmd/config.go:333 expression/error-guard — the `Load` error guard in `config edit`. The same `Load` just succeeded, and `Load` of a missing file returns an empty config and no error, so the branch cannot be reached.
+- f6139e1758ce3e87493327eb35cc2b87 cmd/config.go:366 expression/error-guard — the `toml.Marshal` error guard in `config view`. The configuration struct always encodes, so the branch cannot be reached.
+- a23b9ab0725b2d119275baf1bd822219 cmd/config.go:384 expression/comparison — `len(cf.Sources) > 0` becomes `>= 0` in `redactedConfig`. An empty source map encodes to the same TOML as a nil map because the field has `omitempty`.
+- fa45e4b11d139a226647e88c5279f3f2 cmd/config.go:384 numbers/decrementer — the same check as `>= 0`, now `> -1`. An empty source map encodes to the same TOML as a nil map.
+- 20ad1b1927d0a7604d3535a14a7a50dc cmd/cache.go:54 composite/field-clear — clears `Args: cobra.NoArgs` on the `cache` parent command. The same reason as the `config` entry at config.go:106: this command has no `Run`, so cobra prints help first.
+- ab5f9b2221751753c700454eb4450c08 cmd/cache.go:179 expression/remove — `schemeOf(src.URL) == "file"` becomes `true` in `dumpPathArg`. `DumpPath` rejects a URL that is not a file URL, so the code falls through to `return arg`, which is the result of the original check.
+- 82ae2a754192a20c132eae4bcad90bc3 cmd/cache.go:179 expression/logical — `ok && schemeOf(...) == "file"` becomes `ok || ...`. A missing source has an empty URL and the check fails, and `DumpPath` rejects every URL that is not a file URL. The result is `arg` in each case.
+- ad8b61b9dc1b7fc131ed2296a752cdf5 cmd/source.go:199 numbers/incrementer — `i >= 0` becomes `i >= 1` in `handleBase`. `seg` has its leading slashes removed, so `IndexByte` cannot return 0.
+- f228fbc4fb0463a16817d6e408d255e4 cmd/source.go:199 expression/comparison — `i >= 0` becomes `i > 0` in `handleBase`. The same reason: `seg` has no leading slash, so `i` is never 0.
+- acd928bfd5edbb9818239da5df60477d cmd/source.go:228 branch/if — the `DumpPath` error return in `fileStem`. `DumpPath` returns an empty path on an error, `Base` of an empty path is `.`, and the extension trim leaves an empty stem. The next check then returns `"", false`, the same as the original.
+- c19661420165dc0782739497c27657d7 cmd/source.go:506 expression/error-guard — the `SetGroup("")` error guard in `iq group --clear`. `SetGroup` with an empty group always clears it and returns nil, so the branch cannot be reached.
+- 0a8a1fbd2583d0a893748b4be0606a17 cmd/logging.go:60 statement/return — `return o, err` becomes `return logOptions{}, err` for a bad `IQ_LOG` value in `resolveLogOptions`. Both callers (root.go and mcp.go) return the error and never read the options.
+- d1e92ada966cbf979725812183e2f435 cmd/logging.go:98 statement/return — the same change for a bad log level. Both callers drop the options on an error.
+- ac108a768b2d26ddfcdd39d4de6a6a41 cmd/logging.go:110 statement/return — the same change for a bad log format. Both callers drop the options on an error.
+- b2cd4f1dd85c08001a8943a34f3141f4 cmd/logging.go:245 statement/return — `return slog.LevelInfo, nil` becomes `return 0, nil` in `parseLogLevel`. `slog.LevelInfo` is 0, so the value is the same.
+- 1cf291f033d8c5faaf449dc55cdbb7b7 cmd/logging.go:245 branch/case — the `INFO` case body is replaced by `return 0, nil`. `slog.LevelInfo` is 0, so the value is the same.
+- 8aa9eef1943dd572e8cca60c94cf3fdf cmd/output.go:386 expression/errorf-wrap — `%w` becomes `%v` in the `close yaml` error of `yamlFormatter.flush`. `Close` can fail only when the writer fails, and `Encode` already reports that failure first, so no test can reach the branch. The color formatter has the same text (:408) and the same id.
+- 33105492944e7011cc7ca4546e7c403b cmd/output.go:404 expression/error-guard — the `Encode` error guard in `colorYAMLFormatter.emit`. The encoder writes to a `bytes.Buffer`, which cannot fail, and a value that yaml.v3 cannot encode panics instead of returning an error. The panic is handled in `yamlFormatter.emit` only, so the branch cannot be reached.
+
+## drivers/file/cache.go — cache index equivalents (accepted 2026-10-08, test/mutago-v2.10.22-rebaseline branch)
+- ba702cbf1446c0fa97e719fd9d0ce662 drivers/file/cache.go:517 expression/error-guard — the `fileSize` guard (:517) and the `readTrailer` guard (:524) in `openIndex` share this id. With the first guard removed, `size` is 0, and `readTrailer` rejects it as too small. With the second guard removed, `readTrailer` returns offset 0 on an error. Offset 0 holds the cache magic, whose first byte is a CBOR byte string, so decoding it as the array-shaped index block always fails. In both cases `openIndex` returns false. Checked by hand: both mutants applied, `go test -short ./drivers/file/...` passes.
+- e5f7886924951ea6a44f8bc8b539b5da drivers/file/cache.go:540 loop/break — the `break` on `l.done()` in `lookupPages` becomes `continue`. The lookup never becomes undone, so every later page also continues before the context check and the decode. The loop then ends with true and `l.out` is unchanged. Only the number of iterations differs. Checked by hand: `go test -short ./drivers/file/...` passes.
+
+## cmd refactor (CodeScene round 3, PR #115)
+
+- 40eefbb72fe8 cmd/keyring_cmd.go:425 expression/error-guard — the `UseKeyring` error guard in stageMigration is removed. Moved from 15045794c5f1 (old keyring_cmd.go:298) with the same reason: UseKeyring and SetSourceURL fail only when lookup finds no such source, so the next SetSourceURL fails with the same error and runs the same rollback.
+- b9483a340b75 cmd/keyring_cmd.go:314 expression/error-guard — the `ClearKeyring` error guard in runKeyringRm is removed. Moved from f9fa458eebd8 (old keyring_cmd.go:235) with the same reason: the source comes from a Resolve that succeeded on the same loaded config, so ClearKeyring cannot fail.
+- 77d9d2edee6f cmd/keyring_cmd.go:581 expression/remove — `err != nil || !has` becomes `!has` in pruneEntry. keyringHas returns has false on every error path, so `!has` is true whenever err is not nil, and `return false, err` runs either way.
+- 2ead2c98e663 cmd/complete.go:314 branch/if — the `return ""` of the `!ok` branch in sourceDriverName is removed. An unresolved source is the zero value with an empty URL, and driverName("") is "" because no driver has the empty scheme, so the function returns "" either way.
+- 905e3f41357f cmd/mcp_tools.go:519 expression/remove — the `err == nil` operand in queryRun.finish is removed. A nil error passes through asSyntaxError, scanHint and toolError, and each returns nil for nil, so the result is nil either way.
+- 637e4f3664f3 cmd/mcp_tools.go:306 expression/error-guard — the error guard after explainResult in toolExplain is removed. explainResult fails only when gojq.Parse fails, and UsesSource and buildJQPlan parse the same filter earlier in the same call and return first, so the guard is unreachable.
+- acd9d9538231 cmd/move.go:176 statement/return — `return query.Upsert` becomes `return 0` in writeModeFor. Upsert is the first iota value of WriteMode, so both return the same value.
+
+## drivers/redis pipeline commands (CodeScene round 3, PR #119)
+
+Each of these mutants replaces the ctx of a command that is queued on a go-redis Pipeliner, or of a helper that only passes the ctx on to such a command, with nil. Pipeline.Process only appends the command, and Exec runs every queued command with the Exec ctx, so the per-command ctx is never read (go-redis v9.21.0). The fake pins the Exec ctx of each pipeline.
+
+- 208e2961166b drivers/redis/filter.go:56 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 6afe31978331 drivers/redis/filter.go:71 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- a1b832bb6302 drivers/redis/kv.go:63 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 14e9c483f1a9 drivers/redis/kv.go:133 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 25e72a85bb59 drivers/redis/kv.go:135 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 929d74254b5e drivers/redis/kv.go:144 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 7dd82b66f822 drivers/redis/kv.go:146 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- c54bd4fa807c drivers/redis/kv.go:148 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 119e4613a065 drivers/redis/kv.go:150 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- bc1c6edf483e drivers/redis/kv.go:152 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 3b23fdba61fb drivers/redis/kv.go:154 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- ee6a87705834 drivers/redis/write.go:39 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 90827cde3b57 drivers/redis/write.go:59 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 496f91634281 drivers/redis/write.go:60 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- ed995db838ac drivers/redis/write.go:147 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 9ae40ee74daa drivers/redis/write.go:159 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- c40b23842805 drivers/redis/write.go:171 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 8e29e857eb1c drivers/redis/write.go:181 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 2e5f88fe7422 drivers/redis/write.go:297 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 0602aeb56673 drivers/redis/write.go:322 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+
+- 0e7c67c66d9b drivers/couchdb/write.go:304 statement/remove — the `docs = make([]any, 0, len(keys))` capacity hint in deletions is removed. A nil slice and an empty slice behave the same: append allocates on demand, and slices.Chunk of nil yields no chunk, so BulkDocs is not called either way.

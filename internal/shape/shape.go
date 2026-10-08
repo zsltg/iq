@@ -14,6 +14,7 @@ import (
 	"math"
 	"math/big"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -47,6 +48,29 @@ type node struct {
 // newNode returns an empty node ready to accumulate.
 func newNode() *node {
 	return &node{kinds: kindSet{}}
+}
+
+// field returns the child node for the object field name. It creates the child,
+// and the fields map, on first use.
+func (n *node) field(name string) *node {
+	if n.fields == nil {
+		n.fields = map[string]*node{}
+	}
+	child := n.fields[name]
+	if child == nil {
+		child = newNode()
+		n.fields[name] = child
+	}
+	return child
+}
+
+// elemNode returns the unified array-element child. It creates the child on first
+// use.
+func (n *node) elemNode() *node {
+	if n.elem == nil {
+		n.elem = newNode()
+	}
+	return n.elem
 }
 
 // Infer reduces a set of sampled items into a Shape. Each item is accumulated at
@@ -132,24 +156,11 @@ func mergeNode(dst, src *node) {
 	dst.objCount += src.objCount
 	dst.fmt.mergeFrom(src.fmt)
 	dst.enum.mergeFrom(src.enum)
-	if src.fields != nil {
-		if dst.fields == nil {
-			dst.fields = map[string]*node{}
-		}
-		for name, sc := range src.fields {
-			dc := dst.fields[name]
-			if dc == nil {
-				dc = newNode()
-				dst.fields[name] = dc
-			}
-			mergeNode(dc, sc)
-		}
+	for name, sc := range src.fields {
+		mergeNode(dst.field(name), sc)
 	}
 	if src.elem != nil {
-		if dst.elem == nil {
-			dst.elem = newNode()
-		}
-		mergeNode(dst.elem, src.elem)
+		mergeNode(dst.elemNode(), src.elem)
 	}
 }
 
@@ -171,23 +182,12 @@ func accumulate(n *node, v any) {
 		n.enum.observe(t)
 	case map[string]any:
 		n.objCount++
-		if n.fields == nil {
-			n.fields = map[string]*node{}
-		}
 		for k, val := range t {
-			child := n.fields[k]
-			if child == nil {
-				child = newNode()
-				n.fields[k] = child
-			}
-			accumulate(child, val)
+			accumulate(n.field(k), val)
 		}
 	case []any:
 		for _, e := range t {
-			if n.elem == nil {
-				n.elem = newNode()
-			}
-			accumulate(n.elem, e)
+			accumulate(n.elemNode(), e)
 		}
 	}
 }
@@ -236,18 +236,10 @@ func projectComparable(out map[string]any, prefix string, parent *node) {
 // string format renders into the type name, so "string(date-time)" reads as one
 // value and format drift is a single visible row.
 func (n *node) comparableTypes() []any {
-	hasNumber := n.kinds.has(kindNumber)
 	format := n.fmt.resolve()
 	names := make([]string, 0, len(n.kinds))
-	for k := range n.kinds {
-		if k == kindInteger && hasNumber {
-			continue // collapsed into number
-		}
-		if k == kindString && format != "" {
-			names = append(names, "string("+format+")")
-			continue
-		}
-		names = append(names, k.String())
+	for _, k := range n.kinds.collapsed() {
+		names = append(names, comparableName(k, format))
 	}
 	sort.Strings(names)
 	out := make([]any, len(names))
@@ -255,6 +247,15 @@ func (n *node) comparableTypes() []any {
 		out[i] = name
 	}
 	return out
+}
+
+// comparableName renders kind k in the Comparable vocabulary. A string with a
+// resolved format reads "string(format)".
+func comparableName(k kind, format string) string {
+	if k == kindString && format != "" {
+		return "string(" + format + ")"
+	}
+	return k.String()
 }
 
 // presence classifies a child seen in seen of total parent object-instances:
@@ -291,34 +292,45 @@ func schemaFor(n *node) map[string]any {
 	case n.mapVal != nil:
 		schema["additionalProperties"] = schemaFor(n.mapVal)
 	case n.kinds.has(kindObject) && len(n.fields) > 0:
-		props := make(map[string]any, len(n.fields))
-		var required []string
-		for name, child := range n.fields {
-			props[name] = schemaFor(child)
-			if child.seen == n.objCount {
-				required = append(required, name)
-			}
-		}
-		schema["properties"] = props
-		if len(required) > 0 {
-			sort.Strings(required)
-			schema["required"] = toAnySlice(required)
-		}
+		setProperties(schema, n)
 	}
 	if n.kinds.has(kindArray) && n.elem != nil {
 		schema["items"] = schemaFor(n.elem)
 	}
 	if n.kinds.has(kindString) {
-		if f := n.fmt.resolve(); f != "" {
-			schema["format"] = f
-		}
-		if len(n.kinds) == 1 { // enum only where every value is a string
-			if vals := n.enum.values(); vals != nil {
-				schema["enum"] = toAnySlice(vals)
-			}
-		}
+		setStringDetail(schema, n)
 	}
 	return schema
+}
+
+// setProperties adds properties, and required when a field is in every object, to
+// the schema of an object node.
+func setProperties(schema map[string]any, n *node) {
+	props := make(map[string]any, len(n.fields))
+	var required []string
+	for name, child := range n.fields {
+		props[name] = schemaFor(child)
+		if child.seen == n.objCount {
+			required = append(required, name)
+		}
+	}
+	schema["properties"] = props
+	if len(required) > 0 {
+		sort.Strings(required)
+		schema["required"] = toAnySlice(required)
+	}
+}
+
+// setStringDetail adds format and enum to the schema of a node that holds strings.
+func setStringDetail(schema map[string]any, n *node) {
+	if f := n.fmt.resolve(); f != "" {
+		schema["format"] = f
+	}
+	if len(n.kinds) == 1 { // enum only where every value is a string
+		if vals := n.enum.values(); vals != nil {
+			schema["enum"] = toAnySlice(vals)
+		}
+	}
 }
 
 // setType sets the JSON Schema "type": a bare string for a single type, a type
@@ -337,25 +349,15 @@ func setType(schema map[string]any, types []string) {
 // integer collapsed into number when both are present and object/map both
 // rendering "object" (a map is a JSON object with additionalProperties).
 func (n *node) schemaTypes() []string {
-	hasNumber := n.kinds.has(kindNumber)
-	seen := map[string]struct{}{}
 	names := make([]string, 0, len(n.kinds))
-	for k := range n.kinds {
-		if k == kindInteger && hasNumber {
-			continue
+	for _, k := range n.kinds.collapsed() {
+		if name := k.schemaName(); name != "" {
+			names = append(names, name)
 		}
-		name := k.schemaName()
-		if name == "" {
-			continue
-		}
-		if _, dup := seen[name]; dup {
-			continue
-		}
-		seen[name] = struct{}{}
-		names = append(names, name)
 	}
 	sort.Strings(names)
-	return names
+	// Object and map both render "object", so drop the repeat.
+	return slices.Compact(names)
 }
 
 // toAnySlice copies a string slice into an []any for JSON rendering.
@@ -375,6 +377,21 @@ func (s kindSet) add(k kind) { s[k] = struct{}{} }
 
 // has reports whether k was observed.
 func (s kindSet) has(k kind) bool { _, ok := s[k]; return ok }
+
+// collapsed returns the kinds in ascending order. Integer is left out when number
+// is also present, because integer joined with number is number.
+func (s kindSet) collapsed() []kind {
+	hasNumber := s.has(kindNumber)
+	kinds := make([]kind, 0, len(s))
+	for k := range s {
+		if k == kindInteger && hasNumber {
+			continue
+		}
+		kinds = append(kinds, k)
+	}
+	slices.Sort(kinds)
+	return kinds
+}
 
 // replace swaps one kind for another (object -> map on collapse), leaving any
 // other observed kinds intact.
@@ -402,28 +419,24 @@ const (
 	kindUnknown
 )
 
+// kindNames maps each kind to its name in the Comparable vocabulary.
+var kindNames = map[kind]string{
+	kindNull:    "null",
+	kindBool:    "bool",
+	kindInteger: "integer",
+	kindNumber:  "number",
+	kindString:  "string",
+	kindArray:   "array",
+	kindObject:  "object",
+	kindMap:     "map",
+}
+
 // String renders a kind in the Comparable vocabulary.
 func (k kind) String() string {
-	switch k {
-	case kindNull:
-		return "null"
-	case kindBool:
-		return "bool"
-	case kindInteger:
-		return "integer"
-	case kindNumber:
-		return "number"
-	case kindString:
-		return "string"
-	case kindArray:
-		return "array"
-	case kindObject:
-		return "object"
-	case kindMap:
-		return "map"
-	default:
-		return "unknown"
+	if name, ok := kindNames[k]; ok {
+		return name
 	}
+	return "unknown"
 }
 
 // schemaName renders a kind in the JSON Schema vocabulary: "bool" becomes
@@ -456,7 +469,7 @@ func (k kind) schemaName() string {
 // Integral-value counting makes the split uniform whether a driver hands an int
 // or a JSON-decoded float64 for the same 5.
 func kindOf(v any) kind {
-	switch t := v.(type) {
+	switch v.(type) {
 	case nil:
 		return kindNull
 	case bool:
@@ -471,6 +484,15 @@ func kindOf(v any) kind {
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		*big.Int:
 		return kindInteger
+	default:
+		return numericKind(v)
+	}
+}
+
+// numericKind classifies a float32, float64 or json.Number value. Any other type
+// is kindUnknown.
+func numericKind(v any) kind {
+	switch t := v.(type) {
 	case float32:
 		return floatKind(float64(t))
 	case float64:
@@ -482,9 +504,10 @@ func kindOf(v any) kind {
 	}
 }
 
-// floatKind splits a float into integer (a finite, integral value) or number.
+// floatKind splits a float into integer (a finite, integral value) or number. NaN
+// is number without a separate test, because NaN never equals its own Trunc.
 func floatKind(f float64) kind {
-	if !math.IsInf(f, 0) && !math.IsNaN(f) && f == math.Trunc(f) {
+	if !math.IsInf(f, 0) && f == math.Trunc(f) {
 		return kindInteger
 	}
 	return kindNumber

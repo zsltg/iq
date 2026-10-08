@@ -83,6 +83,11 @@ step "mutation verdict tests"
 # tests need no network, no container and no mutago run, and finish in seconds.
 bash scripts/test/mutation-verdict.sh || note_fail "mutation verdict tests"
 
+step "mutation diff tests"
+# The sharded CI mutate-diff job: the argument checks of the gate, the plan, the shard
+# runner and the verdict. The tests need no network, no container and no mutago run.
+bash scripts/test/mutation-diff.sh || note_fail "mutation diff tests"
+
 step "dco tests"
 # The fixture tests of scripts/dco.sh make small git repositories in a temporary
 # directory. They need no network and finish in seconds.

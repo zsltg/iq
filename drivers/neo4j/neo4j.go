@@ -69,10 +69,10 @@ type target struct {
 // source cannot set both ?label= and ?rel=. The chosen name and the ?key= property
 // are validated as bare identifiers so they are injection-safe when interpolated.
 func resolveTarget(address string, q url.Values) (target, error) {
-	if q.Get("label") != "" && q.Get("rel") != "" {
+	if q.Get(paramLabel) != "" && q.Get(paramRel) != "" {
 		return target{}, errors.New("neo4j url sets both ?label= and ?rel=; a source addresses either a node label or a relationship type, not both")
 	}
-	key := q.Get("key")
+	key := q.Get(paramKey)
 	if key != "" && !identifier.MatchString(key) {
 		return target{}, fmt.Errorf("neo4j key property %q must be a bare identifier", key)
 	}
@@ -84,10 +84,10 @@ func resolveTarget(address string, q url.Values) (target, error) {
 		}
 		return newTarget(nodeTarget, address, key)
 	}
-	if rel := q.Get("rel"); rel != "" {
+	if rel := q.Get(paramRel); rel != "" {
 		return newTarget(relTarget, rel, key)
 	}
-	return newTarget(nodeTarget, q.Get("label"), key)
+	return newTarget(nodeTarget, q.Get(paramLabel), key)
 }
 
 // newTarget validates the entity name (a non-empty name must be a bare identifier,
@@ -231,7 +231,7 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	}
 
 	q := u.Query()
-	database := q.Get("database")
+	database := q.Get(paramDatabase)
 	if database == "" {
 		database = defaultDatabase
 	}
