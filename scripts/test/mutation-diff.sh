@@ -214,6 +214,15 @@ check "shard: more than one worker is a stop" \
 shard_case backend "$(jq -c '.[0].backend = "./cmd"' <<<"$good_plan")"
 check "shard: a backend with no IQ_*_URL variable is a stop" \
   '[[ $status -eq 1 ]] && grep -q "no IQ_\*_URL variable is set" "$case_dir/out"'
+# A large environment after the IQ_*_URL variable must not hide it. The check once
+# piped env into grep -q under pipefail: grep exited at the first match, env got
+# SIGPIPE, and the pipeline failed although the variable was set. The case stops at
+# the later groups check, before any install.
+big=$(printf 'x%.0s' $(seq 1 100000))
+shard_case bigenv "$(jq -c '.[0].backend = "./cmd" | .[0].groups[0].files[0].file = "internal/numfmt/decimal_test.go"' <<<"$good_plan")" \
+  IQ_REDIS_URL=redis://localhost:6379/0 IQ_PAD1="$big" IQ_PAD2="$big" IQ_PAD3="$big"
+check "shard: a large environment does not hide an IQ_*_URL variable" \
+  '[[ $status -eq 1 ]] && ! grep -q "no IQ_\*_URL variable is set" "$case_dir/out" && grep -q "groups of the plan entry are not valid" "$case_dir/out"'
 shard_case commit "$(jq -c '.[0].mergeBase = "0000000000000000000000000000000000000000"' <<<"$good_plan")"
 check "shard: a merge-base that is not a commit is a stop" \
   '[[ $status -eq 1 ]] && grep -q "is not a commit of this checkout" "$case_dir/out"'

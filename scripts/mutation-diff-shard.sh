@@ -93,7 +93,10 @@ if [[ -n "$backend" ]]; then
     echo "mutation-diff-shard: '$backend' is not a package path" >&2
     exit 1
   fi
-  if ! env | grep -qE '^IQ_[A-Z0-9_]+_URL=.'; then
+  # Read env through a process substitution, not a pipe. Under pipefail, grep -q
+  # exits at the first match, env gets SIGPIPE, and a pipe would fail the check
+  # although the variable is set.
+  if ! grep -qE '^IQ_[A-Z0-9_]+_URL=.' < <(env); then
     echo "mutation-diff-shard: the plan names the backend $backend, but no IQ_*_URL variable is set (scripts/ci-backend.sh sets them)" >&2
     exit 1
   fi
