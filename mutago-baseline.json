@@ -146,6 +146,12 @@
    "line": 189
   },
   {
+   "id": "acd9d953823117fb1b2fbb32fa61d5a6",
+   "file": "cmd/move.go",
+   "mutator": "statement/return",
+   "line": 176
+  },
+  {
    "id": "e34537e600cfd647de83b718dbb6f09c",
    "file": "drivers/file/file.go",
    "mutator": "statement/remove",
@@ -740,12 +746,6 @@
    "line": 152
   },
   {
-   "id": "15045794c5f126a17eda63f81545e7e0",
-   "file": "cmd/keyring_cmd.go",
-   "mutator": "expression/error-guard",
-   "line": 298
-  },
-  {
    "id": "9a221f56b0b51dedaf1de1918384b218",
    "file": "cmd/password.go",
    "mutator": "branch/case",
@@ -768,12 +768,6 @@
    "file": "cmd/password.go",
    "mutator": "expression/error-guard",
    "line": 122
-  },
-  {
-   "id": "d0b761fc9d1e8678984a5fcac08b75c9",
-   "file": "cmd/keyring_cmd.go",
-   "mutator": "expression/error-guard",
-   "line": 302
   },
   {
    "id": "6a0dd0157ce27749c3c878b07fd6ea4f",
@@ -908,12 +902,6 @@
    "line": 179
   },
   {
-   "id": "15c273f7ee3a96f9626a70358811d32f",
-   "file": "cmd/source.go",
-   "mutator": "expression/error-guard",
-   "line": 141
-  },
-  {
    "id": "ad8b61b9dc1b7fc131ed2296a752cdf5",
    "file": "cmd/source.go",
    "mutator": "numbers/incrementer",
@@ -936,18 +924,6 @@
    "file": "cmd/source.go",
    "mutator": "expression/error-guard",
    "line": 506
-  },
-  {
-   "id": "07e1d990b35b0de487d1cff5ddb6052c",
-   "file": "cmd/keyring_cmd.go",
-   "mutator": "expression/error-guard",
-   "line": 195
-  },
-  {
-   "id": "f9fa458eebd81676d67c1d0867b13797",
-   "file": "cmd/keyring_cmd.go",
-   "mutator": "expression/error-guard",
-   "line": 235
   },
   {
    "id": "0a8a1fbd2583d0a893748b4be0606a17",
@@ -2190,6 +2166,42 @@
    "file": "cmd/complete.go",
    "mutator": "statement/return",
    "line": 365
+  },
+  {
+   "id": "2ead2c98e6634805d3dd9f20183d4a01",
+   "file": "cmd/complete.go",
+   "mutator": "branch/if",
+   "line": 314
+  },
+  {
+   "id": "40eefbb72fe8e703397e0639aea85602",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 425
+  },
+  {
+   "id": "b9483a340b7576ac2acd65b2085a10e8",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 314
+  },
+  {
+   "id": "77d9d2edee6fe7632fd15a5a9d2ebc4d",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/remove",
+   "line": 581
+  },
+  {
+   "id": "905e3f41357f6a1a6b6adff030464d4b",
+   "file": "cmd/mcp_tools.go",
+   "mutator": "expression/remove",
+   "line": 519
+  },
+  {
+   "id": "637e4f3664f39181787f647ea956620f",
+   "file": "cmd/mcp_tools.go",
+   "mutator": "expression/error-guard",
+   "line": 306
   }
  ]
 }

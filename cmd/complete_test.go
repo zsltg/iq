@@ -644,6 +644,48 @@ func TestFlagCompletionWiring(t *testing.T) {
 	})
 }
 
+// TestCompleteGroupsLoadError checks that an unreadable config gives no group
+// candidates and the no-file directive.
+func TestCompleteGroupsLoadError(t *testing.T) {
+	t.Setenv("IQ_CONFIG", t.TempDir())
+	got, dir := completeGroups(nil, nil, "")
+	require.Nil(t, got)
+	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
+}
+
+// TestCompleteLoadErrorIgnoresThePrefix checks that an unreadable config gives
+// nothing, with or without a typed prefix.
+func TestCompleteLoadErrorIgnoresThePrefix(t *testing.T) {
+	t.Setenv("IQ_CONFIG", t.TempDir())
+	got, _ := completeSourceHandles(nil, nil, "sh")
+	require.Nil(t, got)
+}
+
+// TestSourceDriverNameWithoutASource checks the empty answers: no active source,
+// and an empty positional that falls through.
+func TestSourceDriverNameWithoutASource(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("cache", "redis://localhost:6379/0"))
+	seedConfig(t, c)
+	root, _ := newRootCmd()
+
+	require.Empty(t, sourceDriverName(root, nil))
+	require.Empty(t, sourceDriverName(root, []string{""}))
+
+	require.NoError(t, root.PersistentFlags().Set("src", "cache"))
+	t.Cleanup(func() { require.NoError(t, root.PersistentFlags().Set("src", "")) })
+	require.Equal(t, "redis", sourceDriverName(root, []string{""}))
+}
+
+// TestCompleteCacheClearList checks the handle list and the file-fallback
+// directive on success.
+func TestCompleteCacheClearList(t *testing.T) {
+	seedTwoGroups(t)
+	got, dir := completeCacheClear(nil, nil, "")
+	require.Equal(t, []string{"cache", "prod/books", "prod/users", "shop"}, candidateValues(got))
+	require.Equal(t, cobra.ShellCompDirectiveDefault, dir)
+}
+
 // writeCompletionConfig writes raw TOML to a private config file and points
 // IQ_CONFIG at it, so a test can store a handle or URI that iq itself would
 // refuse to write.

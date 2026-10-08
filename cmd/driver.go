@@ -614,24 +614,54 @@ func newDriverLsCmd(cfg *config) *cobra.Command {
 // format-bearing driver's dump-format catalogue (the file driver's readers).
 func listDrivers(out io.Writer, verbose, jsonOut, yamlOut bool) error {
 	if jsonOut || yamlOut {
-		rows := make([]driverRow, 0, len(drivers))
-		for _, d := range drivers {
-			row := driverRow{
-				Driver:      d.name,
-				Description: d.desc,
-				Schemes:     d.schemes,
-				Versions:    d.versions,
-				Doc:         d.doc,
-			}
-			if verbose {
-				for _, fi := range d.formats {
-					row.Formats = append(row.Formats, driverFormatRow{Name: fi.Name(), Auto: fi.Auto, Source: fi.Source})
-				}
-			}
-			rows = append(rows, row)
-		}
-		return writeStructured(out, rows, yamlOut)
+		return writeStructured(out, driverRows(verbose), yamlOut)
 	}
+	if err := renderTable(out, driverTable()); err != nil {
+		return err
+	}
+	if verbose {
+		for _, d := range drivers {
+			if err := writeDriverFormats(out, d); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// driverRows returns the machine-readable rows of the registry. With verbose, a
+// driver that reads dump files lists its formats.
+func driverRows(verbose bool) []driverRow {
+	rows := make([]driverRow, 0, len(drivers))
+	for _, d := range drivers {
+		row := driverRow{
+			Driver:      d.name,
+			Description: d.desc,
+			Schemes:     d.schemes,
+			Versions:    d.versions,
+			Doc:         d.doc,
+		}
+		if verbose {
+			row.Formats = driverFormatRows(d.formats)
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// driverFormatRows returns the machine-readable rows of a driver's dump formats.
+// It returns nil when the driver has none.
+func driverFormatRows(formats []iqfile.FormatInfo) []driverFormatRow {
+	var rows []driverFormatRow
+	for _, fi := range formats {
+		rows = append(rows, driverFormatRow{Name: fi.Name(), Auto: fi.Auto, Source: fi.Source})
+	}
+	return rows
+}
+
+// driverTable returns the table of the registry: a header row and one row for
+// each driver.
+func driverTable() [][]tableCell {
 	rows := [][]tableCell{{
 		coloredCell("DRIVER", pal.header),
 		coloredCell("DESCRIPTION", pal.header),
@@ -648,17 +678,7 @@ func listDrivers(out io.Writer, verbose, jsonOut, yamlOut bool) error {
 			cell(d.doc),
 		})
 	}
-	if err := renderTable(out, rows); err != nil {
-		return err
-	}
-	if verbose {
-		for _, d := range drivers {
-			if err := writeDriverFormats(out, d); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return rows
 }
 
 // writeDriverFormats appends a driver's dump-format catalogue under `iq driver ls -v`:

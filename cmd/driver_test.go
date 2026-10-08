@@ -389,6 +389,46 @@ func TestDriverLsFlags(t *testing.T) {
 	})
 }
 
+// TestDriverRowsListFormatsOnlyWithVerbose checks that only the file driver lists
+// formats, and only with -v, in JSON and in YAML.
+func TestDriverRowsListFormatsOnlyWithVerbose(t *testing.T) {
+	for _, verbose := range []bool{false, true} {
+		out, err := runCmd(t, newDriverCmd(&config{verbose: verbose}), "ls", "--json")
+		require.NoError(t, err)
+		var rows []driverRow
+		require.NoError(t, json.Unmarshal([]byte(out), &rows))
+		for _, r := range rows {
+			if verbose && r.Driver == "file" {
+				require.NotEmpty(t, r.Formats)
+				continue
+			}
+			require.Empty(t, r.Formats, r.Driver)
+		}
+	}
+
+	// Without -v every driver prints an empty format list. With -v only the
+	// drivers that advertise no formats do.
+	withoutFormats := 0
+	for _, d := range drivers {
+		if len(d.formats) == 0 {
+			withoutFormats++
+		}
+	}
+	require.Less(t, withoutFormats, len(drivers), "the file driver advertises formats")
+	plain, err := runCmd(t, newDriverCmd(&config{}), "ls", "-y")
+	require.NoError(t, err)
+	require.Equal(t, len(drivers), strings.Count(plain, "formats: []"))
+	verbose, err := runCmd(t, newDriverCmd(&config{verbose: true}), "ls", "-y")
+	require.NoError(t, err)
+	require.Equal(t, withoutFormats, strings.Count(verbose, "formats: []"))
+	require.Contains(t, verbose, "name: cassandra-csv")
+}
+
+// TestListDriversStructuredWriteError checks the write error of the JSON path.
+func TestListDriversStructuredWriteError(t *testing.T) {
+	require.ErrorContains(t, listDrivers(&failAt{at: 1}, false, true, false), "write failed")
+}
+
 // TestURLAddressName pins which keyspace param a URI names, most specific first,
 // so the choice stays the same when the registry derives its param lists.
 func TestURLAddressName(t *testing.T) {
