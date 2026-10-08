@@ -10,6 +10,7 @@ import (
 
 	iqfile "github.com/zsltg/iq/drivers/file"
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/query"
 )
 
 // Dynamic shell completions. Every function here is offline: it reads only the
@@ -381,29 +382,17 @@ func completeURI(_ *cobra.Command, _ []string, toComplete string) ([]string, cob
 	if !found {
 		return uriSchemeCandidates(toComplete)
 	}
-	// The password guard reads the raw text. A password with an unescaped "/",
-	// "?", or "#" moves the authority boundary, so a parsed URI would miss it. The
-	// guard also stops a "#", since a fragment is not part of the query.
-	if before, _, ok := strings.CutLast(rest, "@"); ok && strings.Contains(before, ":") {
-		return none()
-	}
-	if strings.Contains(rest, "#") {
+	if uriBlocked(rest) {
 		return none()
 	}
 	d, ok := driverForScheme(scheme)
 	if !ok {
 		return none()
 	}
-	_, qs, hasQuery := strings.Cut(rest, "?")
-	if !hasQuery {
+	head, seg, ok := uriSegment(toComplete, rest)
+	if !ok {
 		return none()
 	}
-	// The query is not decoded before the split: %26 and %3F are value data.
-	seg := qs
-	if _, after, ok := strings.CutLast(qs, "&"); ok {
-		seg = after
-	}
-	head := toComplete[:len(toComplete)-len(seg)]
 	name, typed, hasEq := strings.Cut(seg, "=")
 	// Only the typed option name is decoded, to compare it with the catalogue.
 	plain, err := url.QueryUnescape(name)
@@ -411,22 +400,60 @@ func completeURI(_ *cobra.Command, _ []string, toComplete string) ([]string, cob
 		return none()
 	}
 	if !hasEq {
-		var cands []candidate
-		for _, p := range d.params {
-			if strings.HasPrefix(p.Name, plain) {
-				cands = append(cands, candidate{value: head + p.Name + "=", desc: p.Desc})
-			}
-		}
-		return finishURI(cands, cobra.ShellCompDirectiveNoSpace|cobra.ShellCompDirectiveNoFileComp)
+		return uriNameCandidates(d.params, head, plain)
 	}
+	return uriValueCandidates(d.params, head+name+"=", plain, typed)
+}
+
+// uriBlocked reports whether the text after "://" must get no candidates. The
+// password guard reads the raw text. A password with an unescaped "/", "?", or
+// "#" moves the authority boundary, so a parsed URI would miss it. The guard
+// also stops a "#", since a fragment is not part of the query.
+func uriBlocked(rest string) bool {
+	if before, _, ok := strings.CutLast(rest, "@"); ok && strings.Contains(before, ":") {
+		return true
+	}
+	return strings.Contains(rest, "#")
+}
+
+// uriSegment finds the query segment under completion: the text after the last
+// "&" of the query. It returns the typed word up to that segment, and the
+// segment. The query is not decoded before the split: %26 and %3F are value
+// data. It returns false when the text has no query.
+func uriSegment(toComplete, rest string) (head, seg string, ok bool) {
+	_, qs, hasQuery := strings.Cut(rest, "?")
+	if !hasQuery {
+		return "", "", false
+	}
+	seg = qs
+	if _, after, found := strings.CutLast(qs, "&"); found {
+		seg = after
+	}
+	return toComplete[:len(toComplete)-len(seg)], seg, true
+}
+
+// uriNameCandidates offers each option name that starts with the typed name.
+func uriNameCandidates(params []query.URIParam, head, plain string) ([]string, cobra.ShellCompDirective) {
 	var cands []candidate
-	for _, p := range d.params {
+	for _, p := range params {
+		if strings.HasPrefix(p.Name, plain) {
+			cands = append(cands, candidate{value: head + p.Name + "=", desc: p.Desc})
+		}
+	}
+	return finishURI(cands, cobra.ShellCompDirectiveNoSpace|cobra.ShellCompDirectiveNoFileComp)
+}
+
+// uriValueCandidates offers each closed value of the named option that starts
+// with the typed value. The prefix holds the typed word up to and including "=".
+func uriValueCandidates(params []query.URIParam, prefix, plain, typed string) ([]string, cobra.ShellCompDirective) {
+	var cands []candidate
+	for _, p := range params {
 		if p.Name != plain {
 			continue
 		}
 		for _, v := range p.Values {
 			if strings.HasPrefix(v, typed) {
-				cands = append(cands, candidate{value: head + name + "=" + v})
+				cands = append(cands, candidate{value: prefix + v})
 			}
 		}
 	}
