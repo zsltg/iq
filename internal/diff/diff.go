@@ -139,9 +139,9 @@ func walkMap(path []string, a, b map[string]any, out *[]Change, o Options) {
 		child := append(path, k) //nolint:gocritic // child slice, cloned before storage
 		switch {
 		case aok && !bok:
-			*out = append(*out, Change{Path: clone(child), Op: OpRemove, Old: av})
+			*out = append(*out, removal(child, av))
 		case !aok && bok:
-			*out = append(*out, Change{Path: clone(child), Op: OpAdd, New: bv})
+			*out = append(*out, addition(child, bv))
 		default:
 			walk(child, av, bv, out, o)
 		}
@@ -170,18 +170,15 @@ func walkSlice(path []string, a, b []any, out *[]Change, o Options) {
 		la, lb := pa-ai, pb-bi
 		common := min(la, lb)
 		for k := range common {
-			child := append(path, "["+strconv.Itoa(pos)+"]") //nolint:gocritic // cloned before storage
-			walk(child, a[ai+k], b[bi+k], out, o)
+			walk(indexed(path, pos), a[ai+k], b[bi+k], out, o)
 			pos++
 		}
 		for k := common; k < la; k++ {
-			child := append(path, "["+strconv.Itoa(pos)+"]") //nolint:gocritic // cloned before storage
-			*out = append(*out, Change{Path: clone(child), Op: OpRemove, Old: a[ai+k]})
+			*out = append(*out, removal(indexed(path, pos), a[ai+k]))
 			pos++
 		}
 		for k := common; k < lb; k++ {
-			child := append(path, "["+strconv.Itoa(pos)+"]") //nolint:gocritic // cloned before storage
-			*out = append(*out, Change{Path: clone(child), Op: OpAdd, New: b[bi+k]})
+			*out = append(*out, addition(indexed(path, pos), b[bi+k]))
 			pos++
 		}
 	}
@@ -199,12 +196,12 @@ func walkSlice(path []string, a, b []any, out *[]Change, o Options) {
 func walkPositional(path []string, a, b []any, out *[]Change, o Options) {
 	n := max(len(a), len(b))
 	for i := range n {
-		child := append(path, "["+strconv.Itoa(i)+"]") //nolint:gocritic // cloned before storage
+		child := indexed(path, i)
 		switch {
 		case i >= len(b):
-			*out = append(*out, Change{Path: clone(child), Op: OpRemove, Old: a[i]})
+			*out = append(*out, removal(child, a[i]))
 		case i >= len(a):
-			*out = append(*out, Change{Path: clone(child), Op: OpAdd, New: b[i]})
+			*out = append(*out, addition(child, b[i]))
 		default:
 			walk(child, a[i], b[i], out, o)
 		}
@@ -223,13 +220,13 @@ func walkPositional(path []string, a, b []any, out *[]Change, o Options) {
 // meaningless order-insensitively) and are emitted sorted by canonical key.
 func walkSet(path []string, a, b []any, out *[]Change) {
 	left, right := multiset(a), multiset(b)
-	for _, key := range sortedSetKeys(left.counts, right.counts) {
+	for _, key := range unionKeys(left.counts, right.counts) {
 		delta := left.counts[key] - right.counts[key]
 		for range delta {
-			*out = append(*out, Change{Path: clone(path), Op: OpRemove, Old: left.sample[key]})
+			*out = append(*out, removal(path, left.sample[key]))
 		}
 		for i := 0; i < -delta; i++ {
-			*out = append(*out, Change{Path: clone(path), Op: OpAdd, New: right.sample[key]})
+			*out = append(*out, addition(path, right.sample[key]))
 		}
 	}
 }
@@ -255,23 +252,6 @@ func multiset(xs []any) bag {
 	return b
 }
 
-// sortedSetKeys returns the sorted union of the keys of two count maps.
-func sortedSetKeys(a, b map[string]int) []string {
-	seen := make(map[string]struct{}, len(a)+len(b))
-	for k := range a {
-		seen[k] = struct{}{}
-	}
-	for k := range b {
-		seen[k] = struct{}{}
-	}
-	keys := make([]string, 0, len(seen))
-	for k := range seen {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // canonicalKey serializes v to its canonical JSON form for multiset bucketing,
 // falling back to fmt formatting when v cannot be marshaled (same spirit as the
 // CLI's compact helper).
@@ -283,28 +263,12 @@ func canonicalKey(v any) string {
 }
 
 // lcsPairs returns the index pairs (i in a, j in b) of a longest common
-// subsequence of a and b, matched by same, in increasing order. The DP table over
-// suffixes and its backtrack share the deterministic tie-break "advance a when the
-// skip-a subsequence is at least as long as skip-b", so the alignment is stable.
+// subsequence of a and b, matched by same, in increasing order. The backtrack over
+// the suffix table uses the deterministic tie-break "advance a when the skip-a
+// subsequence is at least as long as skip-b", so the alignment is stable.
 func lcsPairs(a, b []any) [][2]int {
 	la, lb := len(a), len(b)
-	// dp[i][j] is the LCS length of a[i:] and b[j:]; the extra row and column are
-	// the empty-suffix base case (length 0).
-	dp := make([][]int, la+1)
-	for i := range dp {
-		dp[i] = make([]int, lb+1)
-	}
-	for i := la - 1; i >= 0; i-- {
-		for j := lb - 1; j >= 0; j-- {
-			if same(a[i], b[j]) {
-				dp[i][j] = dp[i+1][j+1] + 1
-			} else if dp[i+1][j] >= dp[i][j+1] {
-				dp[i][j] = dp[i+1][j]
-			} else {
-				dp[i][j] = dp[i][j+1]
-			}
-		}
-	}
+	dp := lcsLengths(a, b)
 	var pairs [][2]int
 	// Every branch advances i or j, so the walk reaches the end of one side and
 	// terminates.
@@ -323,6 +287,27 @@ func lcsPairs(a, b []any) [][2]int {
 	return pairs
 }
 
+// lcsLengths returns the table dp over suffixes: dp[i][j] is the LCS length of
+// a[i:] and b[j:]. The extra row and column are the empty-suffix base case
+// (length 0).
+func lcsLengths(a, b []any) [][]int {
+	la, lb := len(a), len(b)
+	dp := make([][]int, la+1)
+	for i := range dp {
+		dp[i] = make([]int, lb+1)
+	}
+	for i := la - 1; i >= 0; i-- {
+		for j := lb - 1; j >= 0; j-- {
+			if same(a[i], b[j]) {
+				dp[i][j] = dp[i+1][j+1] + 1
+			} else {
+				dp[i][j] = max(dp[i+1][j], dp[i][j+1])
+			}
+		}
+	}
+	return dp
+}
+
 // same reports whether two normalized values are deeply equal for LCS anchoring:
 // maps by key, arrays by position, scalars via equal (so an int and a float64 of
 // the same magnitude anchor together, matching the rest of the package).
@@ -330,32 +315,43 @@ func same(a, b any) bool {
 	switch av := a.(type) {
 	case map[string]any:
 		bv, ok := b.(map[string]any)
-		if !ok || len(av) != len(bv) {
-			return false
-		}
-		for k, x := range av {
-			y, ok := bv[k]
-			if !ok || !same(x, y) {
-				return false
-			}
-		}
-		return true
+		return ok && sameMap(av, bv)
 	case []any:
 		bv, ok := b.([]any)
-		if !ok || len(av) != len(bv) {
-			return false
-		}
-		for i := range av {
-			if !same(av[i], bv[i]) {
-				return false
-			}
-		}
-		return true
+		return ok && sameSlice(av, bv)
 	default:
 		// A composite on the right only reaches here against a scalar left, which
 		// the deep comparison in equal already reports as unequal.
 		return equal(a, b)
 	}
+}
+
+// sameMap reports whether two maps hold the same keys with same values.
+func sameMap(a, b map[string]any) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, x := range a {
+		y, ok := b[k]
+		if !ok || !same(x, y) {
+			return false
+		}
+	}
+	return true
+}
+
+// sameSlice reports whether two arrays have the same length and same elements by
+// position.
+func sameSlice(a, b []any) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !same(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // ItemDelta is the difference for one keyed item between two sets. Op Add and
@@ -438,7 +434,7 @@ func bump(s *Summary, op Op) {
 }
 
 // unionKeys returns the sorted union of the keys of a and b.
-func unionKeys(a, b map[string]any) []string {
+func unionKeys[V any](a, b map[string]V) []string {
 	seen := make(map[string]struct{}, len(a))
 	for k := range a {
 		seen[k] = struct{}{}
@@ -485,6 +481,22 @@ func asFloat(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// removal returns the Change for a value that only the left side holds at path.
+func removal(path []string, old any) Change {
+	return Change{Path: clone(path), Op: OpRemove, Old: old}
+}
+
+// addition returns the Change for a value that only the right side holds at path.
+func addition(path []string, v any) Change {
+	return Change{Path: clone(path), Op: OpAdd, New: v}
+}
+
+// indexed returns path with the array index segment "[i]" appended. The result may
+// share the backing array of path, so a caller that stores it must clone it.
+func indexed(path []string, i int) []string {
+	return append(path, "["+strconv.Itoa(i)+"]") //nolint:gocritic // cloned before storage
 }
 
 // clone returns a fresh copy of path so appends into the shared backing array of

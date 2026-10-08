@@ -467,3 +467,58 @@ func TestLogFailure(t *testing.T) {
 		}
 	}
 }
+
+// TestRootPreRunOrder gives the root pre-run two faults at once and checks which
+// error wins, so the order of its steps stays fixed.
+func TestRootPreRunOrder(t *testing.T) {
+	missingDir := filepath.Join(t.TempDir(), "no", "such", "out.txt")
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"config path before the color check", []string{"--config", "bad\x00path", "-M", "-C", "version"}, "apply --config"},
+		{"color check before the output file", []string{"-M", "-C", "--output", missingDir, "version"}, "cannot use --monochrome"},
+		{"color check before the error format", []string{"-M", "-C", "--error.format=xml", "version"}, "cannot use --monochrome"},
+		{"output file before the error format", []string{"--output", missingDir, "--error.format=xml", "version"}, "open output file"},
+		{"error format before the format", []string{"--error.format=xml", "--format=csv"}, "invalid --error.format"},
+		{"format before the decimal mode", []string{"--format=csv", "--format.decimal=bogus"}, "invalid --format \"csv\""},
+		{"decimal mode before the log level", []string{"--format.decimal=bogus", "--log.level=loud", "version"}, "invalid --format.decimal"},
+		{"log level before the profile", []string{"--log.level=loud", "--debug.pprof=bogus", "version"}, "invalid --log.level"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configEnv(t)
+			root, cfg := newRootCmd()
+			closeResources(t, cfg)
+			_, err := runCmd(t, root, tt.args...)
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+	require.NoFileExists(t, missingDir)
+}
+
+// TestRootStoresTheOutputHandleBeforeLaterFailures checks that the --output file
+// handle is on cfg when a later step fails, so Execute can close it.
+func TestRootStoresTheOutputHandleBeforeLaterFailures(t *testing.T) {
+	configEnv(t)
+	root, cfg := newRootCmd()
+	closeResources(t, cfg)
+	out := filepath.Join(t.TempDir(), "out.txt")
+
+	_, err := runCmd(t, root, "--output", out, "--error.format=xml", "version")
+	require.ErrorContains(t, err, "invalid --error.format")
+	require.NotNil(t, cfg.outClose)
+	require.FileExists(t, out)
+}
+
+// TestRootTypedWithoutAFilterRunsTheMove checks that --typed alone reaches the
+// data move, not the help text.
+func TestRootTypedWithoutAFilterRunsTheMove(t *testing.T) {
+	configEnv(t)
+	root, cfg := newRootCmd()
+	closeResources(t, cfg)
+	out, err := runCmd(t, root, "--typed")
+	require.ErrorContains(t, err, "no source selected")
+	require.NotContains(t, out, "Usage")
+}

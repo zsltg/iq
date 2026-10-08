@@ -70,12 +70,13 @@ func streamable(q *gojq.Query) bool {
 		return false
 	}
 	t := q.Term
+	if t.Type != gojq.TermTypeIdentity || len(t.SuffixList) < 1 {
+		return false
+	}
 	// The leading `.[]`: an identity whose first suffix is iteration. Trailing
 	// suffixes (`.[].name`) stay per-element, so they remain streamable.
-	return t.Type == gojq.TermTypeIdentity &&
-		len(t.SuffixList) >= 1 &&
-		t.SuffixList[0].Iter &&
-		t.SuffixList[0].Index == nil
+	first := t.SuffixList[0]
+	return first.Iter && first.Index == nil
 }
 
 // extractor accumulates the referenced keys while walking the AST. Once scan is
@@ -127,18 +128,12 @@ func (e *extractor) visitQuery(q *gojq.Query) {
 // within the term's value, not the root.
 func (e *extractor) visitTerm(t *gojq.Term) {
 	switch t.Type {
-	case gojq.TermTypeIdentity:
-		// A bare `.` is the whole keyspace; `.` with any suffix (for example
-		// `.[]`) iterates it. Both are scans.
-		e.scan = true
 	case gojq.TermTypeIndex:
 		e.visitIndex(t.Index)
 	case gojq.TermTypeQuery:
 		e.visitQuery(t.Query)
 	case gojq.TermTypeArray:
-		if t.Array != nil && t.Array.Query != nil {
-			e.visitQuery(t.Array.Query)
-		}
+		e.visitArray(t.Array)
 	case gojq.TermTypeObject:
 		e.visitObject(t.Object)
 	case gojq.TermTypeUnary:
@@ -150,9 +145,19 @@ func (e *extractor) visitTerm(t *gojq.Term) {
 		// Literals reference no key. An interpolated format string carries its
 		// queries in Str, handled by TermTypeString above.
 	default:
-		// Func, Recurse (`..`), If, Try, Reduce, Foreach, Label, Break: none can
-		// be pinned to a key, so they can only be answered by a scan.
+		// Identity: a bare `.` is the whole keyspace, and `.` with any suffix (for
+		// example `.[]`) iterates it. Func, Recurse (`..`), If, Try, Reduce,
+		// Foreach, Label, Break: none can be pinned to a key. All of them can only
+		// be answered by a scan.
 		e.scan = true
+	}
+}
+
+// visitArray walks the query inside an array constructor. An empty constructor
+// (`[]`), or a term that carries no array, references no key.
+func (e *extractor) visitArray(a *gojq.Array) {
+	if a != nil && a.Query != nil {
+		e.visitQuery(a.Query)
 	}
 }
 
@@ -168,29 +173,41 @@ func (e *extractor) visitIndex(idx *gojq.Index) {
 		e.add(idx.Name)
 	case idx.Str != nil && len(idx.Str.Queries) == 0:
 		e.add(idx.Str.Str)
-	case !idx.IsSlice && idx.End == nil && idx.Start != nil:
+	case idx.Start != nil:
+		e.visitSubscript(idx)
+	default:
+		e.scan = true
+	}
+}
+
+// visitSubscript records the key of a bracketed subscript (`.["book:1"]`) when it
+// is a plain string literal. A slice, an end bound, or any other subscript forces
+// a scan.
+func (e *extractor) visitSubscript(idx *gojq.Index) {
+	if !idx.IsSlice && idx.End == nil {
 		if key, ok := constString(idx.Start); ok {
 			e.add(key)
 			return
 		}
-		e.scan = true
-	default:
-		e.scan = true
 	}
+	e.scan = true
 }
 
 // constString reports the literal value of q when q is exactly a plain string
 // literal with no interpolation, navigation, or operators; otherwise it reports
 // false. It is how a bracketed key like `.["book:1"]` is recognised as specific.
 func constString(q *gojq.Query) (string, bool) {
-	if q.Term == nil || q.Op != 0 || len(q.FuncDefs) != 0 {
+	if q.Term == nil || q.Op != 0 {
 		return "", false
 	}
 	t := q.Term
-	if t.Type != gojq.TermTypeString || len(t.SuffixList) != 0 {
+	if len(q.FuncDefs) != 0 || len(t.SuffixList) != 0 {
 		return "", false
 	}
-	if t.Str == nil || len(t.Str.Queries) != 0 {
+	if t.Type != gojq.TermTypeString || t.Str == nil {
+		return "", false
+	}
+	if len(t.Str.Queries) != 0 {
 		return "", false
 	}
 	return t.Str.Str, true

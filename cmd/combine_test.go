@@ -342,11 +342,11 @@ func useCombDriver(t *testing.T) *[]config {
 	t.Cleanup(func() { drivers = orig })
 	drivers = append(append([]driver{}, orig...),
 		driver{
-			name:          "comb",
-			schemes:       []string{"comb"},
-			addressable:   true,
-			addressParams: []string{"collection"},
-			filtersScan:   false,
+			name:        "comb",
+			schemes:     []string{"comb"},
+			addressable: true,
+			params:      []query.URIParam{{Name: "collection", Keyspace: true}},
+			filtersScan: false,
 			open: func(_ context.Context, cfg *config) (store, error) {
 				opened = append(opened, *cfg)
 				// Each source serves its own marker, so a test can tell the stages apart.

@@ -143,7 +143,7 @@ func schemeFlavor(scheme string) (string, flavor, error) {
 func resolveIndex(address string, u *url.URL) (string, error) {
 	index := address
 	if index == "" {
-		index = u.Query().Get("index")
+		index = u.Query().Get(paramIndex)
 	}
 	if index == "" {
 		// Lenient: accept the index in the path too (elasticsearch://host/books), as

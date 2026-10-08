@@ -174,7 +174,7 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	}
 
 	q := u.Query()
-	bucket := q.Get("bucket")
+	bucket := q.Get(paramBucket)
 	if bucket != "" {
 		if err := validateIdent(kindBucket, bucket); err != nil {
 			return connConfig{}, err
@@ -182,7 +182,7 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	}
 	collSpec := address
 	if collSpec == "" {
-		collSpec = q.Get("collection")
+		collSpec = q.Get(paramCollection)
 	}
 	scope, coll, err := parseCollSpec(collSpec)
 	if err != nil {
@@ -191,8 +191,8 @@ func parseURL(rawURL, address string) (connConfig, error) {
 
 	// The connection string gocb dials is the cluster address with iq-owned params and
 	// userinfo removed; any remaining query stays as gocb connstr options.
-	q.Del("bucket")
-	q.Del("collection")
+	q.Del(paramBucket)
+	q.Del(paramCollection)
 	dial := url.URL{Scheme: u.Scheme, Host: u.Host, RawQuery: q.Encode()}
 	password, _ := u.User.Password()
 	return connConfig{

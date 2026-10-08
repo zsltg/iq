@@ -59,10 +59,22 @@ func (s *Store) pipeTypes(ctx context.Context, keys []string) ([]string, error) 
 // pipeline, and normalizes each reply. An unsupported type fails fast rather
 // than guessing an encoding.
 func (s *Store) pipeValues(ctx context.Context, keys, types []string) (map[string]any, error) {
+	readers, err := s.readPipelined(ctx, keys, func(p goredis.Pipeliner, i int) (reader, error) {
+		return readerFor(ctx, p, typedKey{key: keys[i], typ: types[i]}, s.decimal)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return normalizeAll(keys, readers)
+}
+
+// readPipelined queues one value read for each key in a single pipeline, using
+// queue(p, i) for key i, and returns the readers in key order.
+func (s *Store) readPipelined(ctx context.Context, keys []string, queue func(p goredis.Pipeliner, i int) (reader, error)) ([]reader, error) {
 	readers := make([]reader, len(keys))
 	_, err := s.client.Pipelined(ctx, func(p goredis.Pipeliner) error {
-		for i, k := range keys {
-			r, err := readerFor(ctx, p, k, types[i], s.decimal)
+		for i := range keys {
+			r, err := queue(p, i)
 			if err != nil {
 				return err
 			}
@@ -71,12 +83,17 @@ func (s *Store) pipeValues(ctx context.Context, keys, types []string) (map[strin
 		return nil
 	})
 	// A pipeline surfaces a per-command error (for example goredis.Nil) through
-	// Pipelined's return; the per-reader normalize below handles those, so only a
+	// Pipelined's return; the per-reader normalize handles those, so only a
 	// transport error should abort here.
 	if err != nil && !errors.Is(err, goredis.Nil) {
 		return nil, fmt.Errorf("redis read: %w", err)
 	}
+	return readers, nil
+}
 
+// normalizeAll normalizes each reader and returns the present values keyed by
+// key name. A key that is not there is left out. A reader error names its key.
+func normalizeAll(keys []string, readers []reader) (map[string]any, error) {
 	out := make(map[string]any, len(keys))
 	for i, k := range keys {
 		v, present, err := readers[i].normalize()
@@ -99,30 +116,46 @@ type reader interface {
 	normalize() (any, bool, error)
 }
 
+// typedKey is a Redis key with the TYPE that the first pipeline reported for it.
+// The two travel together from the TYPE pipeline to the value pipeline.
+type typedKey struct {
+	key string
+	typ string
+}
+
 // readerFor queues the read appropriate to a key's type and returns the reader
 // that will normalize the reply once the pipeline executes.
-func readerFor(ctx context.Context, p goredis.Pipeliner, key, typ string, dec numfmt.DecimalMode) (reader, error) {
-	switch typ {
+func readerFor(ctx context.Context, p goredis.Pipeliner, k typedKey, dec numfmt.DecimalMode) (reader, error) {
+	switch k.typ {
 	case "none":
 		return missingReader{}, nil
-	case "string":
-		return stringReader{p.Get(ctx, key)}, nil
-	case "hash":
-		return hashReader{p.HGetAll(ctx, key)}, nil
-	case "list":
-		return listReader{p.LRange(ctx, key, 0, -1)}, nil
-	case "set":
-		return setReader{p.SMembers(ctx, key)}, nil
-	case "zset":
-		return zsetReader{p.ZRangeWithScores(ctx, key, 0, -1)}, nil
-	case "stream":
-		return streamReader{p.XRange(ctx, key, "-", "+")}, nil
 	case "ReJSON-RL":
-		return jsonReader{cmd: p.JSONGet(ctx, key), decimal: dec}, nil
+		return jsonReader{cmd: p.JSONGet(ctx, k.key), decimal: dec}, nil
+	default:
+		return nativeReader(ctx, p, k)
+	}
+}
+
+// nativeReader queues the read for a built-in Redis type (string, hash, list,
+// set, zset, stream) and returns its reader.
+func nativeReader(ctx context.Context, p goredis.Pipeliner, k typedKey) (reader, error) {
+	switch k.typ {
+	case "string":
+		return stringReader{p.Get(ctx, k.key)}, nil
+	case "hash":
+		return hashReader{p.HGetAll(ctx, k.key)}, nil
+	case "list":
+		return listReader{p.LRange(ctx, k.key, 0, -1)}, nil
+	case "set":
+		return setReader{p.SMembers(ctx, k.key)}, nil
+	case "zset":
+		return zsetReader{p.ZRangeWithScores(ctx, k.key, 0, -1)}, nil
+	case "stream":
+		return streamReader{p.XRange(ctx, k.key, "-", "+")}, nil
 	default:
 		// Other module types (time series, bloom, and so on) have no frozen JSON
 		// encoding yet, so refuse rather than emit a lossy or ambiguous value.
-		return nil, fmt.Errorf("unsupported redis type %q for key %q", typ, key)
+		return nil, fmt.Errorf("unsupported redis type %q for key %q", k.typ, k.key)
 	}
 }
 
@@ -172,13 +205,9 @@ func (r hashReader) normalize() (any, bool, error) {
 type listReader struct{ cmd *goredis.StringSliceCmd }
 
 func (r listReader) normalize() (any, bool, error) {
-	vs, err := r.cmd.Result()
-	if err != nil {
+	vs, present, err := nonEmptyStrings(r.cmd)
+	if !present {
 		return nil, false, err
-	}
-	// An empty list cannot exist in Redis; the key went away after TYPE.
-	if len(vs) == 0 {
-		return nil, false, nil
 	}
 	return toAnySlice(vs), true, nil
 }
@@ -188,16 +217,26 @@ func (r listReader) normalize() (any, bool, error) {
 type setReader struct{ cmd *goredis.StringSliceCmd }
 
 func (r setReader) normalize() (any, bool, error) {
-	vs, err := r.cmd.Result()
-	if err != nil {
+	vs, present, err := nonEmptyStrings(r.cmd)
+	if !present {
 		return nil, false, err
-	}
-	// An empty set cannot exist in Redis; the key went away after TYPE.
-	if len(vs) == 0 {
-		return nil, false, nil
 	}
 	sort.Strings(vs)
 	return toAnySlice(vs), true, nil
+}
+
+// nonEmptyStrings reads a string-slice reply. It reports the key as absent when
+// the reply is empty: Redis deletes a list or a set when its last member goes,
+// so an empty reply means the key vanished after TYPE saw it.
+func nonEmptyStrings(cmd *goredis.StringSliceCmd) ([]string, bool, error) {
+	vs, err := cmd.Result()
+	if err != nil {
+		return nil, false, err
+	}
+	if len(vs) == 0 {
+		return nil, false, nil
+	}
+	return vs, true, nil
 }
 
 // zsetReader normalizes a sorted set to an array of {member, score} objects in
@@ -301,21 +340,33 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 // reduces to an empty batch (every key filtered out) advances the cursor without
 // calling fn, so a caller never sees an empty batch.
 func (s *Store) scanPages(ctx context.Context, build func(context.Context, []string) (map[string]any, error), fn func(batch map[string]any) error) error {
-	iter := s.client.Scan(ctx, 0, "*", scanCount).Iterator()
-	page := make([]string, 0, scanCount)
-	flush := func() error {
-		if len(page) == 0 {
-			return nil
-		}
+	return s.walkKeyPages(ctx, func(page []string) error {
 		batch, err := build(ctx, page)
 		if err != nil {
 			return err
 		}
-		page = page[:0]
 		if len(batch) == 0 {
 			return nil
 		}
 		return fn(batch)
+	})
+}
+
+// walkKeyPages walks the keyspace with SCAN and hands each page of at most
+// pageSize keys to handle. It never calls handle with an empty page, and it stops
+// at the first error from handle or from SCAN.
+func (s *Store) walkKeyPages(ctx context.Context, handle func(page []string) error) error {
+	iter := s.client.Scan(ctx, 0, "*", scanCount).Iterator()
+	page := make([]string, 0, s.pageSize)
+	flush := func() error {
+		if len(page) == 0 {
+			return nil
+		}
+		if err := handle(page); err != nil {
+			return err
+		}
+		page = page[:0]
+		return nil
 	}
 	for iter.Next(ctx) {
 		page = append(page, iter.Val())
