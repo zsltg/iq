@@ -1694,6 +1694,12 @@
    "line": 272
   },
   {
+   "id": "0e7c67c66d9b94cf87082e39b1054603",
+   "file": "drivers/couchdb/write.go",
+   "mutator": "statement/remove",
+   "line": 304
+  },
+  {
    "id": "9562bb13dc8eacd4800d1d320ca4d772",
    "file": "internal/rawpred/rawpred.go",
    "mutator": "numbers/decrementer",

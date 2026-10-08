@@ -803,3 +803,5 @@ Each of these mutants replaces the ctx of a command that is queued on a go-redis
 - 8e29e857eb1c drivers/redis/write.go:181 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
 - 2e5f88fe7422 drivers/redis/write.go:297 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
 - 0602aeb56673 drivers/redis/write.go:322 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+
+- 0e7c67c66d9b drivers/couchdb/write.go:304 statement/remove — the `docs = make([]any, 0, len(keys))` capacity hint in deletions is removed. A nil slice and an empty slice behave the same: append allocates on demand, and slices.Chunk of nil yields no chunk, so BulkDocs is not called either way.
