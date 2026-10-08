@@ -97,88 +97,161 @@ func parseAttributeValue(raw json.RawMessage) (types.AttributeValue, error) {
 	return nil, fmt.Errorf("attribute value has no type tag")
 }
 
+// scalarDecoders maps each scalar type tag to the decoder of its payload. The
+// collection tags are not here: decoding them calls back into parseAttributeValue,
+// and a table that holds them would be an initialization cycle.
+var scalarDecoders = map[string]func(json.RawMessage) (types.AttributeValue, error){
+	"S":    decodeS,
+	"N":    decodeN,
+	"B":    decodeB,
+	"BOOL": decodeBOOL,
+	"NULL": decodeNULL,
+}
+
 // decodeTagged builds the attribute value for a single type tag and its payload.
 func decodeTagged(tag string, payload json.RawMessage) (types.AttributeValue, error) {
 	switch tag {
-	case "S":
-		s, err := decodeString(payload)
-		if err != nil {
-			return nil, err
-		}
-		return &types.AttributeValueMemberS{Value: s}, nil
-	case "N":
-		s, err := decodeString(payload)
-		if err != nil {
-			return nil, err
-		}
-		return &types.AttributeValueMemberN{Value: s}, nil
-	case "B":
-		b, err := decodeBinary(payload)
-		if err != nil {
-			return nil, err
-		}
-		return &types.AttributeValueMemberB{Value: b}, nil
-	case "BOOL":
-		var v bool
-		if err := json.Unmarshal(payload, &v); err != nil {
-			return nil, fmt.Errorf("decode BOOL: %w", err)
-		}
-		return &types.AttributeValueMemberBOOL{Value: v}, nil
-	case "NULL":
-		var v bool
-		if err := json.Unmarshal(payload, &v); err != nil {
-			return nil, fmt.Errorf("decode NULL: %w", err)
-		}
-		return &types.AttributeValueMemberNULL{Value: v}, nil
 	case "M":
-		m, err := ParseItem(payload)
+		return decodeM(payload)
+	case "L":
+		return decodeL(payload)
+	case "SS":
+		return decodeSS(payload)
+	case "NS":
+		return decodeNS(payload)
+	case "BS":
+		return decodeBS(payload)
+	}
+	if decode, ok := scalarDecoders[tag]; ok {
+		return decode(payload)
+	}
+	return nil, fmt.Errorf("unknown attribute type tag %q", tag)
+}
+
+// decodeS builds an S attribute from a JSON string payload.
+func decodeS(payload json.RawMessage) (types.AttributeValue, error) {
+	s, err := decodeString(payload)
+	if err != nil {
+		return nil, err
+	}
+	return &types.AttributeValueMemberS{Value: s}, nil
+}
+
+// decodeN builds an N attribute from a JSON string payload, keeping the exact text.
+func decodeN(payload json.RawMessage) (types.AttributeValue, error) {
+	s, err := decodeString(payload)
+	if err != nil {
+		return nil, err
+	}
+	return &types.AttributeValueMemberN{Value: s}, nil
+}
+
+// decodeB builds a B attribute from a base64 JSON string payload.
+func decodeB(payload json.RawMessage) (types.AttributeValue, error) {
+	b, err := decodeBinary(payload)
+	if err != nil {
+		return nil, err
+	}
+	return &types.AttributeValueMemberB{Value: b}, nil
+}
+
+// decodeBOOL builds a BOOL attribute from a JSON boolean payload.
+func decodeBOOL(payload json.RawMessage) (types.AttributeValue, error) {
+	v, err := decodeBool("BOOL", payload)
+	if err != nil {
+		return nil, err
+	}
+	return &types.AttributeValueMemberBOOL{Value: v}, nil
+}
+
+// decodeNULL builds a NULL attribute from a JSON boolean payload. It keeps the
+// decoded boolean.
+func decodeNULL(payload json.RawMessage) (types.AttributeValue, error) {
+	v, err := decodeBool("NULL", payload)
+	if err != nil {
+		return nil, err
+	}
+	return &types.AttributeValueMemberNULL{Value: v}, nil
+}
+
+// decodeM builds an M attribute from a JSON object of typed attribute values.
+func decodeM(payload json.RawMessage) (types.AttributeValue, error) {
+	m, err := ParseItem(payload)
+	if err != nil {
+		return nil, err
+	}
+	return &types.AttributeValueMemberM{Value: m}, nil
+}
+
+// decodeL builds an L attribute from a JSON array of typed attribute values.
+func decodeL(payload json.RawMessage) (types.AttributeValue, error) {
+	var elems []json.RawMessage
+	if err := json.Unmarshal(payload, &elems); err != nil {
+		return nil, fmt.Errorf("decode L: %w", err)
+	}
+	list := make([]types.AttributeValue, len(elems))
+	for i, e := range elems {
+		av, err := parseAttributeValue(e)
 		if err != nil {
 			return nil, err
 		}
-		return &types.AttributeValueMemberM{Value: m}, nil
-	case "L":
-		var elems []json.RawMessage
-		if err := json.Unmarshal(payload, &elems); err != nil {
-			return nil, fmt.Errorf("decode L: %w", err)
-		}
-		list := make([]types.AttributeValue, len(elems))
-		for i, e := range elems {
-			av, err := parseAttributeValue(e)
-			if err != nil {
-				return nil, err
-			}
-			list[i] = av
-		}
-		return &types.AttributeValueMemberL{Value: list}, nil
-	case "SS":
-		var v []string
-		if err := json.Unmarshal(payload, &v); err != nil {
-			return nil, fmt.Errorf("decode SS: %w", err)
-		}
-		return &types.AttributeValueMemberSS{Value: v}, nil
-	case "NS":
-		var v []string
-		if err := json.Unmarshal(payload, &v); err != nil {
-			return nil, fmt.Errorf("decode NS: %w", err)
-		}
-		return &types.AttributeValueMemberNS{Value: v}, nil
-	case "BS":
-		var encoded []string
-		if err := json.Unmarshal(payload, &encoded); err != nil {
-			return nil, fmt.Errorf("decode BS: %w", err)
-		}
-		blobs := make([][]byte, len(encoded))
-		for i, e := range encoded {
-			b, err := base64.StdEncoding.DecodeString(e)
-			if err != nil {
-				return nil, fmt.Errorf("decode BS element: %w", err)
-			}
-			blobs[i] = b
-		}
-		return &types.AttributeValueMemberBS{Value: blobs}, nil
-	default:
-		return nil, fmt.Errorf("unknown attribute type tag %q", tag)
+		list[i] = av
 	}
+	return &types.AttributeValueMemberL{Value: list}, nil
+}
+
+// decodeSS builds an SS attribute from a JSON array of strings.
+func decodeSS(payload json.RawMessage) (types.AttributeValue, error) {
+	v, err := decodeStrings("SS", payload)
+	if err != nil {
+		return nil, err
+	}
+	return &types.AttributeValueMemberSS{Value: v}, nil
+}
+
+// decodeNS builds an NS attribute from a JSON array of number strings.
+func decodeNS(payload json.RawMessage) (types.AttributeValue, error) {
+	v, err := decodeStrings("NS", payload)
+	if err != nil {
+		return nil, err
+	}
+	return &types.AttributeValueMemberNS{Value: v}, nil
+}
+
+// decodeBS builds a BS attribute from a JSON array of base64 strings.
+func decodeBS(payload json.RawMessage) (types.AttributeValue, error) {
+	var encoded []string
+	if err := json.Unmarshal(payload, &encoded); err != nil {
+		return nil, fmt.Errorf("decode BS: %w", err)
+	}
+	blobs := make([][]byte, len(encoded))
+	for i, e := range encoded {
+		b, err := base64.StdEncoding.DecodeString(e)
+		if err != nil {
+			return nil, fmt.Errorf("decode BS element: %w", err)
+		}
+		blobs[i] = b
+	}
+	return &types.AttributeValueMemberBS{Value: blobs}, nil
+}
+
+// decodeBool reads a JSON boolean payload. tag names the attribute type in the error.
+func decodeBool(tag string, payload json.RawMessage) (bool, error) {
+	var v bool
+	if err := json.Unmarshal(payload, &v); err != nil {
+		return false, fmt.Errorf("decode %s: %w", tag, err)
+	}
+	return v, nil
+}
+
+// decodeStrings reads a JSON array of strings. tag names the attribute type in the
+// error.
+func decodeStrings(tag string, payload json.RawMessage) ([]string, error) {
+	var v []string
+	if err := json.Unmarshal(payload, &v); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", tag, err)
+	}
+	return v, nil
 }
 
 // decodeString reads a JSON string payload for an S or N attribute.

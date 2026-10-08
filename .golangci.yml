@@ -49,10 +49,6 @@ linters:
         linters:
           - gocognit
         text: "of func `cassandraCSVSource` "
-      - path: drivers/dynamodb/dump\.go
-        linters:
-          - gocognit
-        text: "of func `decodeTagged` "
 formatters:
   enable:
     - gofumpt

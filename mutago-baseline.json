@@ -1766,10 +1766,10 @@
    "line": 55
   },
   {
-   "id": "8a05b55045e96455612550597e444eee",
+   "id": "d8ba5c4c6d75ee030a1adbee9e5f971d",
    "file": "drivers/dynamodb/write.go",
    "mutator": "expression/error-guard",
-   "line": 239
+   "line": 269
   },
   {
    "id": "e2dcbf5b273c42acedff2e2d72c80a3d",
