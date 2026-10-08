@@ -72,12 +72,6 @@ Gate procedures and settings are in [DEVELOPMENT.md](DEVELOPMENT.md#quality-gate
 To prove on CI that a test kills a mutant, use the manual `mutant-proof`
 workflow, see [DEVELOPMENT.md](DEVELOPMENT.md#prove-one-mutant-on-ci).
 
-Until the mutago v2.10.16 re-baseline is done, some accepted escapes in
-`mutago-baseline.json` carry IDs from the older version. The diff-scoped gate can
-then fail on a line you changed, even though the escape there was accepted
-before. Say so in the pull request, and the maintainer re-checks and handles the
-entry. This note goes away with the re-baseline.
-
 ## Commits
 
 - Trunk-based: `main` always buildable; short-lived branches prefixed

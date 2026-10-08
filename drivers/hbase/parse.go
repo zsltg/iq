@@ -60,23 +60,23 @@ func parseURL(rawURL, address string) (connConfig, error) {
 
 	table := address
 	if table == "" {
-		table = q.Get("table")
+		table = q.Get(paramTable)
 	}
 	if strings.Contains(table, "/") {
 		return connConfig{}, fmt.Errorf("hbase table %q must be [namespace:]table, not a path", table)
 	}
 
-	znode := q.Get("znode")
+	znode := q.Get(paramZnode)
 	if znode == "" {
 		znode = defaultZnode
 	}
 
-	types, err := parseTypeMap(q.Get("types"))
+	types, err := parseTypeMap(q.Get(paramTypes))
 	if err != nil {
 		return connConfig{}, err
 	}
 	rowkeyType := ctAuto
-	if rk := q.Get("keytype"); rk != "" {
+	if rk := q.Get(paramKeytype); rk != "" {
 		rowkeyType, err = parseColType(rk)
 		if err != nil {
 			return connConfig{}, err
