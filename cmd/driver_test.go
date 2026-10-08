@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/zsltg/iq/internal/query"
 )
 
 func TestDriverForScheme(t *testing.T) {
@@ -510,5 +512,51 @@ func TestAddHelpListsEveryParam(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestWrapText pins the exact output of the word wrap.
+func TestWrapText(t *testing.T) {
+	a38 := strings.Repeat("a", 38)
+	long := strings.Repeat("x", 100)
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{"empty", "", ""},
+		{"only spaces", "   ", ""},
+		{"short", "one two three", "one two three"},
+		{"exactly 78 columns", a38 + " " + strings.Repeat("b", 39), a38 + " " + strings.Repeat("b", 39)},
+		{"79 columns breaks", a38 + " " + strings.Repeat("b", 40), a38 + "\n" + strings.Repeat("b", 40)},
+		{"several lines", strings.Repeat("word ", 40), strings.TrimSpace(strings.Repeat("word ", 15)) + "\n" +
+			strings.TrimSpace(strings.Repeat("word ", 15)) + "\n" + strings.TrimSpace(strings.Repeat("word ", 10))},
+		{"long word alone", long, long},
+		{"long word after short", "ab " + long + " cd", "ab\n" + long + "\ncd"},
+		{"multiple spaces", "a   b \t c\n\nd", "a b c d"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, wrapText(tt.text))
+		})
+	}
+}
+
+// TestParamHelp pins the sentence for one URI option.
+func TestParamHelp(t *testing.T) {
+	tests := []struct {
+		name string
+		p    query.URIParam
+		want string
+	}{
+		{"plain", query.URIParam{Name: "a", Desc: "d"}, "?a=: d."},
+		{"keyspace", query.URIParam{Name: "a", Desc: "d", Keyspace: true}, "?a= (keyspace): d."},
+		{"one value", query.URIParam{Name: "a", Desc: "d", Values: []string{"x"}}, "?a=: d. Values: x."},
+		{"two values", query.URIParam{Name: "a", Desc: "d", Values: []string{"x", "y"}}, "?a=: d. Values: x, y."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, paramHelp(tt.p))
+		})
 	}
 }

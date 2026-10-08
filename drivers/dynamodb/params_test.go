@@ -34,3 +34,41 @@ func TestURIParamsAreRead(t *testing.T) {
 		})
 	}
 }
+
+// TestURIParamsCatalogue pins what each catalogue entry says: the option name,
+// whether it names a keyspace, a description, and the closed set of values.
+func TestURIParamsCatalogue(t *testing.T) {
+	tests := []struct {
+		name     string
+		keyspace bool
+		values   []string
+	}{
+		{"table", true, nil},
+		{"endpoint", false, nil},
+	}
+	require.Len(t, URIParams, len(tests))
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := URIParams[i]
+			require.Equal(t, tt.name, got.Name)
+			require.Equal(t, tt.keyspace, got.Keyspace)
+			require.NotEmpty(t, got.Desc, "an option needs a description")
+			require.Equal(t, tt.values, got.Values)
+		})
+	}
+}
+
+// TestURIParamsKeyspace makes sure that each keyspace option sets the table that
+// parseURL returns.
+func TestURIParamsKeyspace(t *testing.T) {
+	for _, p := range URIParams {
+		if !p.Keyspace {
+			continue
+		}
+		t.Run(p.Name, func(t *testing.T) {
+			cc, err := parseURL("dynamodb://us-east-1/?"+p.Name+"=orders", "")
+			require.NoError(t, err)
+			require.Equal(t, "orders", cc.table)
+		})
+	}
+}
