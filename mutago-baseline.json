@@ -20,6 +20,18 @@
    "line": 92
   },
   {
+   "id": "6afe3197833111526b6f3fcdf328029c",
+   "file": "drivers/redis/filter.go",
+   "mutator": "expression/context-nil",
+   "line": 71
+  },
+  {
+   "id": "208e2961166bf06845c8660bd9f8efd8",
+   "file": "drivers/redis/filter.go",
+   "mutator": "expression/context-nil",
+   "line": 56
+  },
+  {
    "id": "a0d9419cf8fce8254c35a8a66e5673aa",
    "file": "internal/diff/diff.go",
    "mutator": "composite/field-clear",
@@ -1538,6 +1550,60 @@
    "line": 307
   },
   {
+   "id": "3b23fdba61fb1dd4c773327aef305fef",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 154
+  },
+  {
+   "id": "bc1c6edf483e34e8d05b841b45ec61e3",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 152
+  },
+  {
+   "id": "119e4613a065adfd26393669c13cf9d3",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 150
+  },
+  {
+   "id": "c54bd4fa807c54efb422d8fca9f74502",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 148
+  },
+  {
+   "id": "7dd82b66f822b62350aa07ed3d139c23",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 146
+  },
+  {
+   "id": "929d74254b5ebb6a3f7b503dab22c2a5",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 144
+  },
+  {
+   "id": "25e72a85bb592498036453d6634c273f",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 135
+  },
+  {
+   "id": "14e9c483f1a974bad81b36a00b1915cd",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 133
+  },
+  {
+   "id": "a1b832bb63022b179ab7897bf9f22e98",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 63
+  },
+  {
    "id": "5a5725afc8eebd8903c5d949b0faf45b",
    "file": "drivers/redis/write.go",
    "mutator": "branch/case",
@@ -1548,6 +1614,60 @@
    "file": "drivers/redis/write.go",
    "mutator": "numbers/decrementer",
    "line": 23
+  },
+  {
+   "id": "0602aeb56673bae03a673e1d04334b23",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 322
+  },
+  {
+   "id": "2e5f88fe7422366d828b698698208f85",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 297
+  },
+  {
+   "id": "8e29e857eb1ccf8ec0eec08a946f653c",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 181
+  },
+  {
+   "id": "c40b23842805dcf8932ea4369c6c1ebf",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 171
+  },
+  {
+   "id": "9ae40ee74daa73b64f81c7798155dbb2",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 159
+  },
+  {
+   "id": "ed995db838acbb29809cea49630b5d81",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 147
+  },
+  {
+   "id": "496f9163428114e23147830a34e9fbcb",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 60
+  },
+  {
+   "id": "90827cde3b57be7da3a406ffea874cae",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 59
+  },
+  {
+   "id": "ee6a87705834e0c5d16e8dc24524c396",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 39
   },
   {
    "id": "db9a7a275cd0fc97c2afe22baa4d6d3c",
