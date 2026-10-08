@@ -406,12 +406,21 @@ func TestDriverRowsListFormatsOnlyWithVerbose(t *testing.T) {
 		}
 	}
 
+	// Without -v every driver prints an empty format list. With -v only the
+	// drivers that advertise no formats do.
+	withoutFormats := 0
+	for _, d := range drivers {
+		if len(d.formats) == 0 {
+			withoutFormats++
+		}
+	}
+	require.Less(t, withoutFormats, len(drivers), "the file driver advertises formats")
 	plain, err := runCmd(t, newDriverCmd(&config{}), "ls", "-y")
 	require.NoError(t, err)
-	require.Equal(t, 11, strings.Count(plain, "formats: []"))
+	require.Equal(t, len(drivers), strings.Count(plain, "formats: []"))
 	verbose, err := runCmd(t, newDriverCmd(&config{verbose: true}), "ls", "-y")
 	require.NoError(t, err)
-	require.Equal(t, 10, strings.Count(verbose, "formats: []"))
+	require.Equal(t, withoutFormats, strings.Count(verbose, "formats: []"))
 	require.Contains(t, verbose, "name: cassandra-csv")
 }
 
