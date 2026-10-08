@@ -986,36 +986,6 @@
    "line": 404
   },
   {
-   "id": "f93d5986c2f8f19116cbf068f0ce8739",
-   "file": "cmd/output.go",
-   "mutator": "expression/errorf-wrap",
-   "line": 433
-  },
-  {
-   "id": "b56817e8d7a6cb25dc1abf8e91c936a8",
-   "file": "cmd/pprof.go",
-   "mutator": "numbers/incrementer",
-   "line": 52
-  },
-  {
-   "id": "42e6f32a44ff5bc7eeec6b9571801c7e",
-   "file": "cmd/pprof.go",
-   "mutator": "numbers/decrementer",
-   "line": 52
-  },
-  {
-   "id": "6ef8a0f8e2706752ff3af05cb5dde449",
-   "file": "cmd/pprof.go",
-   "mutator": "branch/case",
-   "line": 52
-  },
-  {
-   "id": "47e2fd70f5196bbe6d23c20eb4f8eb8b",
-   "file": "cmd/pprof.go",
-   "mutator": "statement/remove",
-   "line": 63
-  },
-  {
    "id": "11979afff78230432fa121e15b4401ae",
    "file": "internal/rawpred/rawpred.go",
    "mutator": "branch/case",
