@@ -78,6 +78,7 @@ func TestKeysScan(t *testing.T) {
 		{"variable index", ".[$k]", false},
 		{"computed index", ".[.a]", false},
 		{"slice index", ".[1:2]", false},
+		{"slice with a string start and no end", `.["book:1":]`, false},
 		{"interpolated index", `.["\(.x)"]`, false},
 		{"variable reference", "$x", false},
 		{"control flow", "if .a then .b end", false},
