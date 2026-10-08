@@ -65,3 +65,19 @@ func TestRunPingTableWriteError(t *testing.T) {
 
 	require.ErrorIs(t, err, w.err)
 }
+
+// TestRunPingReturnsAConfigLoadError makes sure that a config file that does not
+// parse stops the command before any check runs.
+func TestRunPingReturnsAConfigLoadError(t *testing.T) {
+	path := configEnv(t)
+	require.NoError(t, os.WriteFile(path, []byte("sources = [not toml"), 0o600))
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	out := &cappedBuffer{}
+	cmd.SetOut(out)
+
+	err := runPing(cmd, &config{timeout: 2 * time.Second}, nil, true)
+
+	require.Error(t, err)
+	require.Empty(t, out.String())
+}

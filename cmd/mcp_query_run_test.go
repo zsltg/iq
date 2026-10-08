@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"math"
 	"sync"
@@ -142,6 +143,8 @@ func TestQueryCollectorEmit(t *testing.T) {
 		err := c.emit(math.NaN())
 
 		require.ErrorContains(t, err, "encode result item")
+		var unsupported *json.UnsupportedValueError
+		require.ErrorAs(t, err, &unsupported)
 		require.Empty(t, c.out.Items)
 		require.False(t, c.out.Truncated)
 	})

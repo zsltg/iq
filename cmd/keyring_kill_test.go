@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"errors"
 	"testing"
+	"testing/iotest"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
@@ -99,11 +102,39 @@ func TestStageMigrationRollsBackWhenTheURLIsBlank(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("sec", "redis://u:pw@h:6379/0"))
 	fk := useFakeKeyring(t)
-	items := []migrateItem{{keyringStaged: keyringStaged{full: "sec", clean: "sec"}, password: "pw"}}
+	item := migrateItem{password: "pw"}
+	item.full, item.clean = "sec", "sec"
+	items := []migrateItem{item}
 
 	done, err := stageMigration(c, items)
 
 	require.ErrorIs(t, err, iqconfig.ErrEmptyURL)
 	require.Nil(t, done)
+	require.Empty(t, fk.m)
+}
+
+// TestRefuseInlinePasswordAcceptsAKeyringSource makes sure that a keyring-backed
+// source passes at once, even when its URI still holds a password.
+func TestRefuseInlinePasswordAcceptsAKeyringSource(t *testing.T) {
+	err := refuseInlinePassword(iqconfig.Source{URL: "redis://u:pw@h:6379/0", Keyring: true}, "kr")
+
+	require.NoError(t, err)
+}
+
+// TestRunKeyringSetReturnsAStdinReadError makes sure that a failed read of the
+// secret stops `config keyring set` before the keyring gets a write.
+func TestRunKeyringSetReturnsAStdinReadError(t *testing.T) {
+	configEnv(t)
+	c := newSeed()
+	fk := useFakeKeyring(t)
+	seedKeyringSource(t, c, fk, "kr", "redis://u@h:6379/0", true, "")
+	seedConfig(t, c)
+	cmd := &cobra.Command{}
+	cmd.SetIn(iotest.ErrReader(errors.New("stdin broke")))
+
+	err := runKeyringSet(cmd, []string{"kr"})
+
+	require.ErrorContains(t, err, "read password")
+	require.ErrorContains(t, err, "stdin broke")
 	require.Empty(t, fk.m)
 }
