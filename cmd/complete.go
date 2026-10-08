@@ -375,7 +375,7 @@ func completeCacheClear(_ *cobra.Command, _ []string, toComplete string) ([]stri
 // the original bytes, so earlier options and their escapes stay unchanged.
 func completeURI(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	none := func() ([]string, cobra.ShellCompDirective) { return nil, cobra.ShellCompDirectiveNoFileComp }
-	if strings.IndexFunc(toComplete, unicode.IsControl) >= 0 {
+	if strings.ContainsFunc(toComplete, unicode.IsControl) {
 		return none()
 	}
 	scheme, rest, found := strings.Cut(toComplete, "://")

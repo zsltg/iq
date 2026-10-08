@@ -195,6 +195,7 @@ func TestCompleteURIGuards(t *testing.T) {
 		{"literal newline", "hbase://host/?\nkeyt"},
 		{"escape character", "hbase://host/?\x1b[2J"},
 		{"delete character", "hbase://host/?keyt\x7f"},
+		{"literal tab before a matching option name", "hbase://h\tost/?keyt"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
