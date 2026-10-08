@@ -812,6 +812,12 @@
    "line": 486
   },
   {
+   "id": "889bc176c32274937749e71310114785",
+   "file": "internal/diff/diff.go",
+   "mutator": "composite/field-clear",
+   "line": 493
+  },
+  {
    "id": "69a6bab3fd68079d7eafa6df4486e9f1",
    "file": "internal/diff/patch.go",
    "mutator": "expression/error-guard",
@@ -1158,6 +1164,12 @@
    "file": "internal/shape/shape.go",
    "mutator": "statement/remove",
    "line": 354
+  },
+  {
+   "id": "5705310706204ce44202cfdd7a2eec2e",
+   "file": "internal/shape/shape.go",
+   "mutator": "statement/remove",
+   "line": 392
   },
   {
    "id": "86a6546efa5e62a47e3515554b754a93",
