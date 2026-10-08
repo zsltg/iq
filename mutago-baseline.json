@@ -836,6 +836,186 @@
    "line": 262
   },
   {
+   "id": "c739e1a3bc61cebd56152ac1f7c29114",
+   "file": "cmd/driver.go",
+   "mutator": "branch/if",
+   "line": 359
+  },
+  {
+   "id": "5e4580b2556b2cde77edbca340764176",
+   "file": "cmd/driver.go",
+   "mutator": "loop/break",
+   "line": 436
+  },
+  {
+   "id": "86c9dcd26e266041aa1b63cbf5441f14",
+   "file": "cmd/config.go",
+   "mutator": "composite/field-clear",
+   "line": 106
+  },
+  {
+   "id": "4bc6851dc56e20be60e6008757ad921e",
+   "file": "cmd/config.go",
+   "mutator": "expression/error-guard",
+   "line": 301
+  },
+  {
+   "id": "ffb02d7a9fc069ddadc049221353165c",
+   "file": "cmd/config.go",
+   "mutator": "expression/error-guard",
+   "line": 333
+  },
+  {
+   "id": "f6139e1758ce3e87493327eb35cc2b87",
+   "file": "cmd/config.go",
+   "mutator": "expression/error-guard",
+   "line": 366
+  },
+  {
+   "id": "a23b9ab0725b2d119275baf1bd822219",
+   "file": "cmd/config.go",
+   "mutator": "expression/comparison",
+   "line": 384
+  },
+  {
+   "id": "fa45e4b11d139a226647e88c5279f3f2",
+   "file": "cmd/config.go",
+   "mutator": "numbers/decrementer",
+   "line": 384
+  },
+  {
+   "id": "20ad1b1927d0a7604d3535a14a7a50dc",
+   "file": "cmd/cache.go",
+   "mutator": "composite/field-clear",
+   "line": 54
+  },
+  {
+   "id": "ab5f9b2221751753c700454eb4450c08",
+   "file": "cmd/cache.go",
+   "mutator": "expression/remove",
+   "line": 179
+  },
+  {
+   "id": "82ae2a754192a20c132eae4bcad90bc3",
+   "file": "cmd/cache.go",
+   "mutator": "expression/logical",
+   "line": 179
+  },
+  {
+   "id": "15c273f7ee3a96f9626a70358811d32f",
+   "file": "cmd/source.go",
+   "mutator": "expression/error-guard",
+   "line": 141
+  },
+  {
+   "id": "ad8b61b9dc1b7fc131ed2296a752cdf5",
+   "file": "cmd/source.go",
+   "mutator": "numbers/incrementer",
+   "line": 199
+  },
+  {
+   "id": "f228fbc4fb0463a16817d6e408d255e4",
+   "file": "cmd/source.go",
+   "mutator": "expression/comparison",
+   "line": 199
+  },
+  {
+   "id": "acd928bfd5edbb9818239da5df60477d",
+   "file": "cmd/source.go",
+   "mutator": "branch/if",
+   "line": 228
+  },
+  {
+   "id": "c19661420165dc0782739497c27657d7",
+   "file": "cmd/source.go",
+   "mutator": "expression/error-guard",
+   "line": 506
+  },
+  {
+   "id": "07e1d990b35b0de487d1cff5ddb6052c",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 195
+  },
+  {
+   "id": "f9fa458eebd81676d67c1d0867b13797",
+   "file": "cmd/keyring_cmd.go",
+   "mutator": "expression/error-guard",
+   "line": 235
+  },
+  {
+   "id": "0a8a1fbd2583d0a893748b4be0606a17",
+   "file": "cmd/logging.go",
+   "mutator": "statement/return",
+   "line": 60
+  },
+  {
+   "id": "d1e92ada966cbf979725812183e2f435",
+   "file": "cmd/logging.go",
+   "mutator": "statement/return",
+   "line": 98
+  },
+  {
+   "id": "ac108a768b2d26ddfcdd39d4de6a6a41",
+   "file": "cmd/logging.go",
+   "mutator": "statement/return",
+   "line": 110
+  },
+  {
+   "id": "b2cd4f1dd85c08001a8943a34f3141f4",
+   "file": "cmd/logging.go",
+   "mutator": "statement/return",
+   "line": 245
+  },
+  {
+   "id": "1cf291f033d8c5faaf449dc55cdbb7b7",
+   "file": "cmd/logging.go",
+   "mutator": "branch/case",
+   "line": 245
+  },
+  {
+   "id": "8aa9eef1943dd572e8cca60c94cf3fdf",
+   "file": "cmd/output.go",
+   "mutator": "expression/errorf-wrap",
+   "line": 386
+  },
+  {
+   "id": "33105492944e7011cc7ca4546e7c403b",
+   "file": "cmd/output.go",
+   "mutator": "expression/error-guard",
+   "line": 404
+  },
+  {
+   "id": "f93d5986c2f8f19116cbf068f0ce8739",
+   "file": "cmd/output.go",
+   "mutator": "expression/errorf-wrap",
+   "line": 433
+  },
+  {
+   "id": "b56817e8d7a6cb25dc1abf8e91c936a8",
+   "file": "cmd/pprof.go",
+   "mutator": "numbers/incrementer",
+   "line": 52
+  },
+  {
+   "id": "42e6f32a44ff5bc7eeec6b9571801c7e",
+   "file": "cmd/pprof.go",
+   "mutator": "numbers/decrementer",
+   "line": 52
+  },
+  {
+   "id": "6ef8a0f8e2706752ff3af05cb5dde449",
+   "file": "cmd/pprof.go",
+   "mutator": "branch/case",
+   "line": 52
+  },
+  {
+   "id": "47e2fd70f5196bbe6d23c20eb4f8eb8b",
+   "file": "cmd/pprof.go",
+   "mutator": "statement/remove",
+   "line": 63
+  },
+  {
    "id": "11979afff78230432fa121e15b4401ae",
    "file": "internal/rawpred/rawpred.go",
    "mutator": "branch/case",
@@ -1206,6 +1386,18 @@
    "file": "drivers/file/cache.go",
    "mutator": "branch/if",
    "line": 525
+  },
+  {
+   "id": "ba702cbf1446c0fa97e719fd9d0ce662",
+   "file": "drivers/file/cache.go",
+   "mutator": "expression/error-guard",
+   "line": 517
+  },
+  {
+   "id": "e5f7886924951ea6a44f8bc8b539b5da",
+   "file": "drivers/file/cache.go",
+   "mutator": "loop/break",
+   "line": 540
   },
   {
    "id": "e69e4896a635899800a7371803484891",
