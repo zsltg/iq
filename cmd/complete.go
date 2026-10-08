@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"unicode"
 
@@ -9,6 +10,7 @@ import (
 
 	iqfile "github.com/zsltg/iq/drivers/file"
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/query"
 )
 
 // Dynamic shell completions. Every function here is offline: it reads only the
@@ -363,6 +365,127 @@ func completeCacheClear(_ *cobra.Command, _ []string, toComplete string) ([]stri
 		return nil, cobra.ShellCompDirectiveDefault
 	}
 	return candidateStrings(withPrefix(handleCandidates(cf), toComplete)), cobra.ShellCompDirectiveDefault
+}
+
+// completeURI completes the connection URI of `iq add <uri>`, one part at a
+// time: the scheme, then the names and closed values of the URI options that iq
+// reads. It reads only the typed word. It never reads the config file or the
+// keyring, and it never puts the typed text in a description or an error. Each
+// candidate is the typed word up to the completed part plus that part, built from
+// the original bytes, so earlier options and their escapes stay unchanged.
+func completeURI(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	none := func() ([]string, cobra.ShellCompDirective) { return nil, cobra.ShellCompDirectiveNoFileComp }
+	if strings.ContainsFunc(toComplete, unicode.IsControl) {
+		return none()
+	}
+	scheme, rest, found := strings.Cut(toComplete, "://")
+	if !found {
+		return uriSchemeCandidates(toComplete)
+	}
+	if uriBlocked(rest) {
+		return none()
+	}
+	// An unknown scheme gets the zero driver, which has no options, so it gets
+	// no candidates.
+	d, _ := driverForScheme(scheme)
+	head, seg, ok := uriSegment(toComplete, rest)
+	if !ok {
+		return none()
+	}
+	name, typed, hasEq := strings.Cut(seg, "=")
+	// Only the typed option name is decoded, to compare it with the catalogue.
+	plain, err := url.QueryUnescape(name)
+	if err != nil {
+		return none()
+	}
+	if !hasEq {
+		return uriNameCandidates(d.params, head, plain)
+	}
+	return uriValueCandidates(d.params, head+name+"=", plain, typed)
+}
+
+// uriBlocked reports whether the text after "://" must get no candidates. The
+// password guard reads the raw text. A password with an unescaped "/", "?", or
+// "#" moves the authority boundary, so a parsed URI would miss it. The guard
+// also stops a "#", since a fragment is not part of the query.
+func uriBlocked(rest string) bool {
+	if before, _, ok := strings.CutLast(rest, "@"); ok && strings.Contains(before, ":") {
+		return true
+	}
+	return strings.Contains(rest, "#")
+}
+
+// uriSegment finds the query segment under completion: the text after the last
+// "&" of the query. It returns the typed word up to that segment, and the
+// segment. The query is not decoded before the split: %26 and %3F are value
+// data. It returns false when the text has no query.
+func uriSegment(toComplete, rest string) (head, seg string, ok bool) {
+	_, qs, hasQuery := strings.Cut(rest, "?")
+	if !hasQuery {
+		return "", "", false
+	}
+	seg = qs
+	if _, after, found := strings.CutLast(qs, "&"); found {
+		seg = after
+	}
+	return toComplete[:len(toComplete)-len(seg)], seg, true
+}
+
+// uriNameCandidates offers each option name that starts with the typed name.
+func uriNameCandidates(params []query.URIParam, head, plain string) ([]string, cobra.ShellCompDirective) {
+	var cands []candidate
+	for _, p := range params {
+		if strings.HasPrefix(p.Name, plain) {
+			cands = append(cands, candidate{value: head + p.Name + "=", desc: p.Desc})
+		}
+	}
+	return finishURI(cands, cobra.ShellCompDirectiveNoSpace|cobra.ShellCompDirectiveNoFileComp)
+}
+
+// uriValueCandidates offers each closed value of the named option that starts
+// with the typed value. The prefix holds the typed word up to and including "=".
+func uriValueCandidates(params []query.URIParam, prefix, plain, typed string) ([]string, cobra.ShellCompDirective) {
+	var cands []candidate
+	for _, v := range closedValues(params, plain) {
+		if strings.HasPrefix(v, typed) {
+			cands = append(cands, candidate{value: prefix + v})
+		}
+	}
+	return finishURI(cands, cobra.ShellCompDirectiveNoFileComp)
+}
+
+// closedValues returns the closed values of the named option. It returns nil
+// for an unknown option and for an option with a free value.
+func closedValues(params []query.URIParam, name string) []string {
+	for _, p := range params {
+		if p.Name == name {
+			return p.Values
+		}
+	}
+	return nil
+}
+
+// uriSchemeCandidates offers each scheme of the driver registry, with "://"
+// attached, described by its driver.
+func uriSchemeCandidates(toComplete string) ([]string, cobra.ShellCompDirective) {
+	var cands []candidate
+	for _, d := range drivers {
+		for _, s := range d.schemes {
+			if strings.HasPrefix(s+"://", toComplete) {
+				cands = append(cands, candidate{value: s + "://", desc: d.desc})
+			}
+		}
+	}
+	return finishURI(cands, cobra.ShellCompDirectiveNoSpace|cobra.ShellCompDirectiveNoFileComp)
+}
+
+// finishURI renders URI candidates. An empty result gets only NoFileComp, so the
+// shell does not offer local file names.
+func finishURI(cands []candidate, dir cobra.ShellCompDirective) ([]string, cobra.ShellCompDirective) {
+	if len(cands) == 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return candidateStrings(cands), dir
 }
 
 // firstArgOnly restricts a completion function to the first positional argument,
