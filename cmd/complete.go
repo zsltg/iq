@@ -385,10 +385,9 @@ func completeURI(_ *cobra.Command, _ []string, toComplete string) ([]string, cob
 	if uriBlocked(rest) {
 		return none()
 	}
-	d, ok := driverForScheme(scheme)
-	if !ok {
-		return none()
-	}
+	// An unknown scheme gets the zero driver, which has no options, so it gets
+	// no candidates.
+	d, _ := driverForScheme(scheme)
 	head, seg, ok := uriSegment(toComplete, rest)
 	if !ok {
 		return none()
