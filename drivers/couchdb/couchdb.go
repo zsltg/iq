@@ -89,23 +89,39 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	if err != nil {
 		return connConfig{}, fmt.Errorf("parse couchdb url: %w", err)
 	}
-	var httpScheme string
-	switch u.Scheme {
-	case "couchdb":
-		httpScheme = "http"
-	case "couchdbs":
-		httpScheme = "https"
-	default:
-		return connConfig{}, fmt.Errorf("couchdb url must use couchdb:// or couchdbs://, got %q", u.Scheme)
+	scheme, err := httpScheme(u.Scheme)
+	if err != nil {
+		return connConfig{}, err
 	}
 	if u.Host == "" {
 		return connConfig{}, fmt.Errorf("couchdb url must name a host, e.g. couchdb://localhost:5984/?database=mydb")
 	}
 
-	q := u.Query()
+	// The DSN kivik connects to is the server root: scheme + userinfo + host, no
+	// path or query (the database is selected per call with client.DB).
+	dsn := url.URL{Scheme: scheme, User: u.User, Host: u.Host, Path: "/"}
+	return connConfig{dsn: dsn.String(), db: databaseName(u, address)}, nil
+}
+
+// httpScheme maps the couchdb URL scheme to its http scheme: couchdb to http and
+// couchdbs to https.
+func httpScheme(scheme string) (string, error) {
+	switch scheme {
+	case "couchdb":
+		return "http", nil
+	case "couchdbs":
+		return "https", nil
+	default:
+		return "", fmt.Errorf("couchdb url must use couchdb:// or couchdbs://, got %q", scheme)
+	}
+}
+
+// databaseName picks the database: the address override, else ?database=, else a
+// single-segment URL path.
+func databaseName(u *url.URL, address string) string {
 	db := address
 	if db == "" {
-		db = q.Get(paramDatabase)
+		db = u.Query().Get(paramDatabase)
 	}
 	if db == "" {
 		// Lenient: accept the database in the path too (couchdb://host/mydb), the
@@ -114,11 +130,7 @@ func parseURL(rawURL, address string) (connConfig, error) {
 			db = p
 		}
 	}
-
-	// The DSN kivik connects to is the server root: scheme + userinfo + host, no
-	// path or query (the database is selected per call with client.DB).
-	dsn := url.URL{Scheme: httpScheme, User: u.User, Host: u.Host, Path: "/"}
-	return connConfig{dsn: dsn.String(), db: db}, nil
+	return db
 }
 
 // Get fetches the documents whose _id matches one of keys and returns them keyed by
@@ -170,6 +182,25 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 	defer func() { _ = rows.Close() }()
 
 	page := make(map[string]any, s.pageSize)
+	err := s.readAllDocs(rows, func(id string, doc map[string]any) error {
+		page[id] = doc
+		if len(page) < s.pageSize {
+			return nil
+		}
+		full := page
+		page = make(map[string]any, s.pageSize)
+		return fn(full)
+	})
+	if err != nil {
+		return err
+	}
+	return sendPage(page, fn)
+}
+
+// readAllDocs drains an _all_docs reply that includes documents. It hands add the id
+// and the decoded document of each row and skips design documents. It stops at the
+// first error from add. It does not close rows.
+func (s *Store) readAllDocs(rows *kivik.ResultSet, add func(id string, doc map[string]any) error) error {
 	for rows.Next() {
 		id, err := rows.ID()
 		if err != nil {
@@ -178,29 +209,54 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 		if strings.HasPrefix(id, designPrefix) {
 			continue
 		}
-		var raw json.RawMessage
-		if err := rows.ScanDoc(&raw); err != nil {
-			return fmt.Errorf("couchdb scan document: %w", err)
-		}
-		doc, err := decodeDoc(raw, s.decimal)
+		doc, err := s.nextDoc(rows)
 		if err != nil {
 			return err
 		}
-		page[id] = doc
-		if len(page) >= s.pageSize {
-			if err := fn(page); err != nil {
-				return err
-			}
-			page = make(map[string]any, s.pageSize)
+		if err := add(id, doc); err != nil {
+			return err
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("couchdb all_docs: %w", err)
 	}
-	if len(page) > 0 {
-		return fn(page)
-	}
 	return nil
+}
+
+// nextDoc reads the document of the current row and decodes it.
+func (s *Store) nextDoc(rows *kivik.ResultSet) (map[string]any, error) {
+	var raw json.RawMessage
+	if err := rows.ScanDoc(&raw); err != nil {
+		return nil, fmt.Errorf("couchdb scan document: %w", err)
+	}
+	return decodeDoc(raw, s.decimal)
+}
+
+// readFind drains a _find reply. It decodes each row into a document and hands it to
+// add. It returns the number of rows read, design documents included, so a paging
+// caller can tell a full page from a short one. It does not close rows.
+func (s *Store) readFind(rows *kivik.ResultSet, add func(doc map[string]any)) (int, error) {
+	n := 0
+	for rows.Next() {
+		n++
+		doc, err := s.nextDoc(rows)
+		if err != nil {
+			return n, err
+		}
+		add(doc)
+	}
+	if err := rows.Err(); err != nil {
+		return n, fmt.Errorf("couchdb find: %w", err)
+	}
+	return n, nil
+}
+
+// sendPage hands a non-empty page to fn. An empty page is not sent.
+func sendPage(page map[string]any, fn func(batch map[string]any) error) error {
+	if len(page) == 0 {
+		return nil
+	}
+	return fn(page)
 }
 
 // EstimateCount returns the database's document count from its metadata (the
@@ -228,6 +284,27 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if s.db == "" {
 		return nil, errNoDatabase
 	}
+	query, err := mangoQuery(args)
+	if err != nil {
+		return nil, err
+	}
+
+	rows := s.client.DB(s.db).Find(ctx, query)
+	defer func() { _ = rows.Close() }()
+	docs := []any{}
+	if _, err := s.readFind(rows, func(doc map[string]any) { docs = append(docs, doc) }); err != nil {
+		return nil, err
+	}
+	out := map[string]any{"docs": docs}
+	if md, err := rows.Metadata(); err == nil && md.Bookmark != "" {
+		out["bookmark"] = md.Bookmark
+	}
+	return out, nil
+}
+
+// mangoQuery turns the raw argument list into a _find request. One JSON document is
+// required. A bare selector is wrapped as {"selector": ...}.
+func mangoQuery(args []string) (map[string]any, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("couchdb raw expects one JSON Mango query document")
 	}
@@ -238,29 +315,7 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if _, ok := query["selector"]; !ok {
 		query = map[string]any{"selector": query}
 	}
-
-	rows := s.client.DB(s.db).Find(ctx, query)
-	defer func() { _ = rows.Close() }()
-	docs := []any{}
-	for rows.Next() {
-		var raw json.RawMessage
-		if err := rows.ScanDoc(&raw); err != nil {
-			return nil, fmt.Errorf("couchdb scan document: %w", err)
-		}
-		doc, err := decodeDoc(raw, s.decimal)
-		if err != nil {
-			return nil, err
-		}
-		docs = append(docs, doc)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("couchdb find: %w", err)
-	}
-	out := map[string]any{"docs": docs}
-	if md, err := rows.Metadata(); err == nil && md.Bookmark != "" {
-		out["bookmark"] = md.Bookmark
-	}
-	return out, nil
+	return query, nil
 }
 
 // FormatRaw renders a raw Mango reply as indented JSON, the natural form for a
