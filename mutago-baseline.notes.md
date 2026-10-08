@@ -778,3 +778,28 @@ Each reason was checked against the current code. A scan id covers every site wi
 - 905e3f41357f cmd/mcp_tools.go:519 expression/remove — the `err == nil` operand in queryRun.finish is removed. A nil error passes through asSyntaxError, scanHint and toolError, and each returns nil for nil, so the result is nil either way.
 - 637e4f3664f3 cmd/mcp_tools.go:306 expression/error-guard — the error guard after explainResult in toolExplain is removed. explainResult fails only when gojq.Parse fails, and UsesSource and buildJQPlan parse the same filter earlier in the same call and return first, so the guard is unreachable.
 - acd9d9538231 cmd/move.go:176 statement/return — `return query.Upsert` becomes `return 0` in writeModeFor. Upsert is the first iota value of WriteMode, so both return the same value.
+
+## drivers/redis pipeline commands (CodeScene round 3, PR #119)
+
+Each of these mutants replaces the ctx of a command that is queued on a go-redis Pipeliner, or of a helper that only passes the ctx on to such a command, with nil. Pipeline.Process only appends the command, and Exec runs every queued command with the Exec ctx, so the per-command ctx is never read (go-redis v9.21.0). The fake pins the Exec ctx of each pipeline.
+
+- 208e2961166b drivers/redis/filter.go:56 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 6afe31978331 drivers/redis/filter.go:71 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- a1b832bb6302 drivers/redis/kv.go:63 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 14e9c483f1a9 drivers/redis/kv.go:133 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 25e72a85bb59 drivers/redis/kv.go:135 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 929d74254b5e drivers/redis/kv.go:144 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 7dd82b66f822 drivers/redis/kv.go:146 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- c54bd4fa807c drivers/redis/kv.go:148 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 119e4613a065 drivers/redis/kv.go:150 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- bc1c6edf483e drivers/redis/kv.go:152 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 3b23fdba61fb drivers/redis/kv.go:154 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- ee6a87705834 drivers/redis/write.go:39 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 90827cde3b57 drivers/redis/write.go:59 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 496f91634281 drivers/redis/write.go:60 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- ed995db838ac drivers/redis/write.go:147 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 9ae40ee74daa drivers/redis/write.go:159 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- c40b23842805 drivers/redis/write.go:171 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 8e29e857eb1c drivers/redis/write.go:181 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 2e5f88fe7422 drivers/redis/write.go:297 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 0602aeb56673 drivers/redis/write.go:322 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
