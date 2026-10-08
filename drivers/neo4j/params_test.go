@@ -36,3 +36,60 @@ func TestURIParamsAreRead(t *testing.T) {
 		})
 	}
 }
+
+// TestURIParamsCatalogue pins what each catalogue entry says: the option name,
+// whether it names a keyspace, a description, and the closed set of values.
+func TestURIParamsCatalogue(t *testing.T) {
+	tests := []struct {
+		name     string
+		keyspace bool
+		values   []string
+	}{
+		{"label", true, nil},
+		{"rel", true, nil},
+		{"database", true, nil},
+		{"key", false, nil},
+	}
+	require.Len(t, URIParams, len(tests))
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := URIParams[i]
+			require.Equal(t, tt.name, got.Name)
+			require.Equal(t, tt.keyspace, got.Keyspace)
+			require.NotEmpty(t, got.Desc, "an option needs a description")
+			require.Equal(t, tt.values, got.Values)
+		})
+	}
+}
+
+// TestURIParamsKeyspace makes sure that each keyspace option sets the target or
+// database that parseURL returns.
+func TestURIParamsKeyspace(t *testing.T) {
+	tests := []struct {
+		param string
+		value string
+		want  func(connConfig) string
+	}{
+		{paramLabel, "Person", func(c connConfig) string { return c.target.name }},
+		{paramRel, "KNOWS", func(c connConfig) string { return c.target.name }},
+		{paramDatabase, "movies", func(c connConfig) string { return c.database }},
+	}
+	var names []string
+	for _, p := range URIParams {
+		if p.Keyspace {
+			names = append(names, p.Name)
+		}
+	}
+	var rows []string
+	for _, tt := range tests {
+		rows = append(rows, tt.param)
+	}
+	require.ElementsMatch(t, names, rows, "one row for each keyspace option")
+	for _, tt := range tests {
+		t.Run(tt.param, func(t *testing.T) {
+			cc, err := parseURL("neo4j://h:7687/?"+tt.param+"="+tt.value, "")
+			require.NoError(t, err)
+			require.Equal(t, tt.value, tt.want(cc))
+		})
+	}
+}

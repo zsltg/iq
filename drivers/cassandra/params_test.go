@@ -47,3 +47,58 @@ func TestURIParamsClosedValues(t *testing.T) {
 		}
 	}
 }
+
+// TestURIParamsCatalogue pins what each catalogue entry says: the option name,
+// whether it names a keyspace, a description, and the closed set of values.
+func TestURIParamsCatalogue(t *testing.T) {
+	tests := []struct {
+		name     string
+		keyspace bool
+		values   []string
+	}{
+		{"table", true, nil},
+		{"consistency", false, []string{
+			"any", "one", "two", "three", "quorum", "all",
+			"local_quorum", "each_quorum", "local_one",
+		}},
+	}
+	require.Len(t, URIParams, len(tests))
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := URIParams[i]
+			require.Equal(t, tt.name, got.Name)
+			require.Equal(t, tt.keyspace, got.Keyspace)
+			require.NotEmpty(t, got.Desc, "an option needs a description")
+			require.Equal(t, tt.values, got.Values)
+		})
+	}
+}
+
+// TestURIParamsKeyspace makes sure that each keyspace option sets the table that
+// parseURL returns.
+func TestURIParamsKeyspace(t *testing.T) {
+	for _, p := range URIParams {
+		if !p.Keyspace {
+			continue
+		}
+		t.Run(p.Name, func(t *testing.T) {
+			cc, err := parseURL("cassandra://h/ks?"+p.Name+"=events", "")
+			require.NoError(t, err)
+			require.Equal(t, "events", cc.table)
+		})
+	}
+}
+
+// TestURIParamsRejectUnlisted makes sure that the parser rejects a value that a
+// closed option does not list.
+func TestURIParamsRejectUnlisted(t *testing.T) {
+	for _, p := range URIParams {
+		if len(p.Values) == 0 {
+			continue
+		}
+		t.Run(p.Name, func(t *testing.T) {
+			_, err := parseURL("cassandra://h/ks?"+p.Name+"=unlisted", "")
+			require.Error(t, err)
+		})
+	}
+}
