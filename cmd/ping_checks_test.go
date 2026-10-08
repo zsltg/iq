@@ -5,7 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,9 +88,9 @@ func TestPingTable(t *testing.T) {
 	t.Run("an ok row and an error row, in target order", func(t *testing.T) {
 		out, err := runCmd(t, newPingCmd(&config{timeout: 2 * time.Second}), "a-dump", "b-dead")
 		require.EqualError(t, err, "one or more sources unreachable")
-		require.Regexp(t, regexp.MustCompile(`(?m)^a-dump\s+file\s+ok\s+(0s|\d+(\.\d+)?m?s)\s*$`), out)
-		require.Regexp(t, regexp.MustCompile(`(?m)^b-dead\s+redis\s+error\s+\S.*$`), out)
-		require.Less(t, regexp.MustCompile(`a-dump`).FindStringIndex(out)[0], regexp.MustCompile(`b-dead`).FindStringIndex(out)[0])
+		require.Regexp(t, `(?m)^a-dump\s+file\s+ok\s+(0s|\d+(\.\d+)?m?s)\s*$`, out)
+		require.Regexp(t, `(?m)^b-dead\s+redis\s+error\s+\S.*$`, out)
+		require.Less(t, strings.Index(out, "a-dump"), strings.Index(out, "b-dead"))
 	})
 
 	t.Run("all reachable gives no error", func(t *testing.T) {
