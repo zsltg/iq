@@ -705,3 +705,151 @@ func anySlice(xs []int) []any {
 	}
 	return out
 }
+
+// TestTreeStoredPathsAreIndependent pins that every stored Path is its own copy.
+// The walk appends path segments into a shared backing array, so a delta that
+// kept the shared slice would be rewritten by a later sibling. Depth two and
+// three siblings give the shared array spare capacity.
+func TestTreeStoredPathsAreIndependent(t *testing.T) {
+	t.Run("map siblings under a nested map", func(t *testing.T) {
+		a := map[string]any{"p": map[string]any{"q": map[string]any{"a": 1, "b": 2, "c": 3}}}
+		b := map[string]any{"p": map[string]any{"q": map[string]any{"b": 9, "d": 4, "e": 5}}}
+		require.Equal(t, []diff.Change{
+			{Path: []string{"p", "q", "a"}, Op: diff.OpRemove, Old: 1},
+			{Path: []string{"p", "q", "b"}, Op: diff.OpChange, Old: 2, New: 9},
+			{Path: []string{"p", "q", "c"}, Op: diff.OpRemove, Old: 3},
+			{Path: []string{"p", "q", "d"}, Op: diff.OpAdd, New: 4},
+			{Path: []string{"p", "q", "e"}, Op: diff.OpAdd, New: 5},
+		}, diff.Tree(a, b))
+	})
+
+	t.Run("array leftovers under a nested map", func(t *testing.T) {
+		a := map[string]any{"p": map[string]any{"q": []any{"x", 1, 2, 3}}}
+		b := map[string]any{"p": map[string]any{"q": []any{"x", 7, 8, 9, 10}}}
+		require.Equal(t, []diff.Change{
+			{Path: []string{"p", "q", "[1]"}, Op: diff.OpChange, Old: 1, New: 7},
+			{Path: []string{"p", "q", "[2]"}, Op: diff.OpChange, Old: 2, New: 8},
+			{Path: []string{"p", "q", "[3]"}, Op: diff.OpChange, Old: 3, New: 9},
+			{Path: []string{"p", "q", "[4]"}, Op: diff.OpAdd, New: 10},
+		}, diff.Tree(a, b))
+		require.Equal(t, []diff.Change{
+			{Path: []string{"p", "q", "[1]"}, Op: diff.OpChange, Old: 7, New: 1},
+			{Path: []string{"p", "q", "[2]"}, Op: diff.OpChange, Old: 8, New: 2},
+			{Path: []string{"p", "q", "[3]"}, Op: diff.OpChange, Old: 9, New: 3},
+			{Path: []string{"p", "q", "[4]"}, Op: diff.OpRemove, Old: 10},
+		}, diff.Tree(b, a))
+	})
+
+	t.Run("positional fallback under a nested map", func(t *testing.T) {
+		seq := func(n int) []any {
+			out := make([]any, n)
+			for i := range out {
+				out[i] = i
+			}
+			return out
+		}
+		a := map[string]any{"p": map[string]any{"q": seq(1100)}}
+		b := map[string]any{"p": map[string]any{"q": seq(1103)}}
+		got := diff.Tree(a, b)
+		require.Equal(t, []diff.Change{
+			{Path: []string{"p", "q", "[1100]"}, Op: diff.OpAdd, New: 1100},
+			{Path: []string{"p", "q", "[1101]"}, Op: diff.OpAdd, New: 1101},
+			{Path: []string{"p", "q", "[1102]"}, Op: diff.OpAdd, New: 1102},
+		}, got)
+		got = diff.Tree(b, a)
+		require.Equal(t, []diff.Change{
+			{Path: []string{"p", "q", "[1100]"}, Op: diff.OpRemove, Old: 1100},
+			{Path: []string{"p", "q", "[1101]"}, Op: diff.OpRemove, Old: 1101},
+			{Path: []string{"p", "q", "[1102]"}, Op: diff.OpRemove, Old: 1102},
+		}, got)
+	})
+
+	t.Run("set mode surplus under a nested map", func(t *testing.T) {
+		a := map[string]any{"p": map[string]any{"q": []any{1, 1, 1, 2}}}
+		b := map[string]any{"p": map[string]any{"q": []any{2, 3, 3, 4}}}
+		require.Equal(t, []diff.Change{
+			{Path: []string{"p", "q"}, Op: diff.OpRemove, Old: 1},
+			{Path: []string{"p", "q"}, Op: diff.OpRemove, Old: 1},
+			{Path: []string{"p", "q"}, Op: diff.OpRemove, Old: 1},
+			{Path: []string{"p", "q"}, Op: diff.OpAdd, New: 3},
+			{Path: []string{"p", "q"}, Op: diff.OpAdd, New: 3},
+			{Path: []string{"p", "q"}, Op: diff.OpAdd, New: 4},
+		}, diff.TreeOpt(a, b, diff.Options{SetArrays: true}))
+	})
+}
+
+// TestTreeAnchorComparison pins how anchoring compares maps and arrays: equal
+// length with different keys is not an anchor, and a map never anchors an array.
+func TestTreeAnchorComparison(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b []any
+		want []diff.Change
+	}{
+		{
+			name: "equal-length maps with different keys do not anchor",
+			a:    []any{map[string]any{"a": 1}},
+			b:    []any{0, map[string]any{"b": 1}},
+			want: []diff.Change{
+				{Path: []string{"[0]"}, Op: diff.OpChange, Old: map[string]any{"a": 1}, New: 0},
+				{Path: []string{"[1]"}, Op: diff.OpAdd, New: map[string]any{"b": 1}},
+			},
+		},
+		{
+			name: "a map does not anchor an array",
+			a:    []any{map[string]any{}},
+			b:    []any{0, []any{}},
+			want: []diff.Change{
+				{Path: []string{"[0]"}, Op: diff.OpChange, Old: map[string]any{}, New: 0},
+				{Path: []string{"[1]"}, Op: diff.OpAdd, New: []any{}},
+			},
+		},
+		{
+			name: "an array does not anchor a map",
+			a:    []any{[]any{}},
+			b:    []any{0, map[string]any{}},
+			want: []diff.Change{
+				{Path: []string{"[0]"}, Op: diff.OpChange, Old: []any{}, New: 0},
+				{Path: []string{"[1]"}, Op: diff.OpAdd, New: map[string]any{}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, diff.Tree(tt.a, tt.b))
+		})
+	}
+}
+
+// TestTreeTieBreakAlignment pins which of several equally long alignments wins.
+func TestTreeTieBreakAlignment(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b []any
+		want []diff.Change
+	}{
+		{
+			name: "left has the repeated value",
+			a:    []any{1, 2, 1},
+			b:    []any{1},
+			want: []diff.Change{
+				{Path: []string{"[1]"}, Op: diff.OpRemove, Old: 2},
+				{Path: []string{"[2]"}, Op: diff.OpRemove, Old: 1},
+			},
+		},
+		{
+			name: "right has the repeated value",
+			a:    []any{1},
+			b:    []any{1, 2, 1},
+			want: []diff.Change{
+				{Path: []string{"[1]"}, Op: diff.OpAdd, New: 2},
+				{Path: []string{"[2]"}, Op: diff.OpAdd, New: 1},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, diff.Tree(tt.a, tt.b))
+		})
+	}
+}
