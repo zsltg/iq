@@ -1724,12 +1724,6 @@
    "line": 245
   },
   {
-   "id": "c3149cc7239ce0945f69920b9b0655f5",
-   "file": "drivers/dynamodb/dynamodb.go",
-   "mutator": "expression/context-nil",
-   "line": 117
-  },
-  {
    "id": "0be71c824c9a97043e8e4a2829db9966",
    "file": "drivers/dynamodb/filter.go",
    "mutator": "branch/case",

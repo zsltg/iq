@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -367,6 +369,33 @@ func openServer(t *testing.T, answer func(w http.ResponseWriter, calls int)) (*h
 		defer mu.Unlock()
 		return append([]http.Header(nil), seen...)
 	}
+}
+
+// TestOpenWithEnvironmentCredentialsAndNoEndpoint opens a source that has no
+// ?endpoint=, so the SDK resolves credentials with its default chain. With keys in the
+// environment the chain reads values from the context that Open passes in, so a nil
+// context would panic. The SDK service endpoint variable sends the request to a local
+// stub, so the test never reaches AWS.
+func TestOpenWithEnvironmentCredentialsAndNoEndpoint(t *testing.T) {
+	srv, headers := openServer(t, func(w http.ResponseWriter, _ int) { _, _ = w.Write([]byte(`{"TableNames":[]}`)) })
+	empty := filepath.Join(t.TempDir(), "empty")
+	require.NoError(t, os.WriteFile(empty, nil, 0o600))
+	t.Setenv("AWS_ACCESS_KEY_ID", "envkey")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "envsecret")
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	t.Setenv("AWS_CONFIG_FILE", empty)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", empty)
+	t.Setenv("AWS_ENDPOINT_URL_DYNAMODB", srv.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	st, err := Open(ctx, "dynamodb://eu-west-2/", "", nil, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	seen := headers()
+	require.Len(t, seen, 1)
+	require.Contains(t, seen[0].Get("Authorization"), "Credential=envkey/")
 }
 
 func TestOpenOptionsReachTheClient(t *testing.T) {
