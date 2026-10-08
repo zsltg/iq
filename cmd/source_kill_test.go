@@ -49,6 +49,21 @@ func TestMvReturnsAConfigLoadError(t *testing.T) {
 	require.ErrorContains(t, err, "parse config")
 }
 
+// TestAddReturnsAConfigLoadError makes sure that a config that does not parse
+// stops add, and that add leaves the broken file as it was.
+func TestAddReturnsAConfigLoadError(t *testing.T) {
+	p := configEnv(t)
+	broken := []byte("not = [valid toml\n")
+	require.NoError(t, os.WriteFile(p, broken, 0o600))
+
+	_, err := runCmd(t, newAddCmd(&config{}), "-n", "sec", "redis://h:6379/0", "--store", "inline", "--skip-verify")
+
+	require.ErrorContains(t, err, "parse config")
+	got, readErr := os.ReadFile(p)
+	require.NoError(t, readErr)
+	require.Equal(t, broken, got)
+}
+
 // TestMvReportsAWriteFailureOfTheNothingLine makes sure that the "nothing to
 // move" line returns its write error.
 func TestMvReportsAWriteFailureOfTheNothingLine(t *testing.T) {
