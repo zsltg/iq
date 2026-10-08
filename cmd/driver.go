@@ -53,19 +53,16 @@ type driver struct {
 	// (handle.address) naming a sub-container — MongoDB's collection. A
 	// non-addressable backend (Redis, file) rejects an address at resolve time.
 	addressable bool
-	// addressParams names the URL query params that pin a source's default
-	// keyspace, most specific first (Couchbase's ?collection= outranks its
-	// ?bucket=). `iq add` derives a handle from the first one the URL sets, and
-	// urlAddressUnsupported rejects any of these spellings on a backend that
-	// declares none. Empty for a backend with no keyspace (Redis, file), which is
-	// exactly the set that is not addressable.
-	addressParams []string
-	// urlParams names query params a keyspace-less backend reads for its own
-	// purposes, so the foreign-keyspace guard does not mistake one for a keyspace
-	// it cannot honour — the file driver takes ?label= and ?rel= as decode hints
-	// for a graph dump. Empty for a backend that declares addressParams, which
-	// owns its whole query string.
-	urlParams []string
+	// params is the catalogue of URI query options iq itself reads for this
+	// backend, owned by the driver package so its parse code and this registry share
+	// one list. Options that a backend SDK parses are not listed. The keyspace
+	// options, in catalogue order (most specific first, Couchbase's ?collection=
+	// outranks its ?bucket=), pin a source's default keyspace: see addressParams.
+	params []query.URIParam
+	// uriExample is a sample URI for the `iq add` help. uriNote says what the host
+	// part names, when the host is not a plain server.
+	uriExample string
+	uriNote    string
 	// verifiesOnOpen marks a backend whose open already round-trips to the server
 	// (DynamoDB's connectionless client issues a reachability probe at open), so the
 	// post-open health check in `iq ping`/`iq add` needs no second round-trip — like
@@ -100,14 +97,15 @@ type driver struct {
 // listing order of `iq driver ls` and the enumeration order of expectedSchemes.
 var drivers = []driver{
 	{
-		name:          "mongo",
-		desc:          "MongoDB document store",
-		schemes:       []string{"mongodb", "mongodb+srv"},
-		doc:           "https://www.mongodb.com/docs/",
-		versions:      "4.2+",
-		addressable:   true,
-		addressParams: []string{"collection"},
-		filtersScan:   true,
+		name:        "mongo",
+		desc:        "MongoDB document store",
+		schemes:     []string{"mongodb", "mongodb+srv"},
+		doc:         "https://www.mongodb.com/docs/",
+		versions:    "4.2+",
+		addressable: true,
+		params:      iqmongo.URIParams,
+		uriExample:  "mongodb://host/db?collection=orders",
+		filtersScan: true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqmongo.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -118,14 +116,15 @@ var drivers = []driver{
 		explainDelete: iqmongo.ExplainDelete,
 	},
 	{
-		name:          "cassandra",
-		desc:          "Apache Cassandra wide-column store",
-		schemes:       []string{"cassandra"},
-		doc:           "https://cassandra.apache.org/doc/",
-		versions:      "3.11+",
-		addressable:   true,
-		addressParams: []string{"table"},
-		filtersScan:   true,
+		name:        "cassandra",
+		desc:        "Apache Cassandra wide-column store",
+		schemes:     []string{"cassandra"},
+		doc:         "https://cassandra.apache.org/doc/",
+		versions:    "3.11+",
+		addressable: true,
+		params:      iqcassandra.URIParams,
+		uriExample:  "cassandra://host/keyspace?table=orders",
+		filtersScan: true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcassandra.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
@@ -142,7 +141,9 @@ var drivers = []driver{
 		doc:            "https://docs.aws.amazon.com/dynamodb/",
 		versions:       "AWS (managed)",
 		addressable:    true,
-		addressParams:  []string{"table"},
+		params:         iqdynamodb.URIParams,
+		uriExample:     "dynamodb://us-east-1/?table=orders",
+		uriNote:        "The host is the region. Credentials come from the AWS default chain.",
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -161,7 +162,9 @@ var drivers = []driver{
 		doc:            "https://hbase.apache.org/book.html",
 		versions:       "1.0+",
 		addressable:    true,
-		addressParams:  []string{"table"},
+		params:         iqhbase.URIParams,
+		uriExample:     "hbase://host:2181/?table=books",
+		uriNote:        "The host is the ZooKeeper quorum.",
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -180,7 +183,8 @@ var drivers = []driver{
 		doc:            "https://docs.couchdb.org/",
 		versions:       "2.x, 3.x",
 		addressable:    true,
-		addressParams:  []string{"database"},
+		params:         iqcouchdb.URIParams,
+		uriExample:     "couchdb://host:5984/?database=orders",
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -199,7 +203,8 @@ var drivers = []driver{
 		doc:            "https://docs.couchbase.com/",
 		versions:       "7.x, 8.x (Community or Enterprise)",
 		addressable:    true,
-		addressParams:  []string{"collection", "bucket"},
+		params:         iqcouchbase.URIParams,
+		uriExample:     "couchbase://host/?bucket=iq&collection=sales.orders",
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -217,7 +222,9 @@ var drivers = []driver{
 		doc:            "https://neo4j.com/docs/",
 		versions:       "5.x",
 		addressable:    true,
-		addressParams:  []string{"label", "rel", "database"},
+		params:         iqneo4j.URIParams,
+		uriExample:     "neo4j://host:7687/?label=Person",
+		uriNote:        "The host is the Bolt server.",
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -236,7 +243,8 @@ var drivers = []driver{
 		doc:            "https://www.elastic.co/docs/",
 		versions:       "8.x",
 		addressable:    true,
-		addressParams:  []string{"index"},
+		params:         iqelasticsearch.URIParams,
+		uriExample:     "elasticsearch://host:9200/?index=books",
 		verifiesOnOpen: true,
 		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
@@ -255,7 +263,8 @@ var drivers = []driver{
 		doc:            "https://opensearch.org/docs/",
 		versions:       "2.x, 3.x",
 		addressable:    true,
-		addressParams:  []string{"index"},
+		params:         iqelasticsearch.URIParams,
+		uriExample:     "opensearch://host:9200/?index=books",
 		verifiesOnOpen: true,
 		// OpenSearch shares the Elasticsearch driver; the source scheme selects the
 		// opensearch-go client behind the same query ports.
@@ -286,17 +295,48 @@ var drivers = []driver{
 		explainDelete: iqredis.ExplainDelete,
 	},
 	{
-		name:      "file",
-		desc:      "Local dump file, read-only",
-		schemes:   []string{"file"},
-		readOnly:  true,
-		urlParams: []string{"label", "rel"},
-		formats:   iqfile.SupportedFormats(),
+		name:       "file",
+		desc:       "Local dump file, read-only",
+		schemes:    []string{"file"},
+		readOnly:   true,
+		params:     iqfile.URIParams,
+		uriExample: "file:///dumps/orders.bson?format=bson",
+		formats:    iqfile.SupportedFormats(),
 		open: func(_ context.Context, cfg *config) (store, error) {
 			return iqfile.Open(cfg.url, cfg.decimalMode, cfg.fileCacheConfig())
 		},
 		explainPlan: iqfile.ExplainPlan,
 	},
+}
+
+// addressParams names the URI query params that pin a source's default keyspace,
+// most specific first (Couchbase's ?collection= outranks its ?bucket=). `iq add`
+// derives a handle from the first one the URI sets, and urlAddressUnsupported
+// rejects any of these spellings on a backend that declares none. Empty for a
+// backend with no keyspace (Redis, file), which is exactly the set that is not
+// addressable.
+func (d driver) addressParams() []string {
+	var names []string
+	for _, p := range d.params {
+		if p.Keyspace {
+			names = append(names, p.Name)
+		}
+	}
+	return names
+}
+
+// ownParams names the non-keyspace query params a backend reads for its own
+// purposes, so the foreign-keyspace guard does not mistake one for a keyspace it
+// cannot honour: the file driver takes ?label= and ?rel= as decode hints for a
+// graph dump.
+func (d driver) ownParams() []string {
+	var names []string
+	for _, p := range d.params {
+		if !p.Keyspace {
+			names = append(names, p.Name)
+		}
+	}
+	return names
 }
 
 // driverForScheme returns the driver a URL scheme selects, dispatching over the
@@ -323,7 +363,7 @@ func driverName(url string) string {
 }
 
 // urlAddressName returns the keyspace a source URL pins through a driver-owned
-// query param: the value of the first of the driver's addressParams the URL sets,
+// query param: the value of the first of the driver's addressParams() the URL sets,
 // most specific first. It is what `iq add` names a source after when -n is
 // omitted. Empty when the driver declares no keyspace param, the URL sets none,
 // or the URL does not parse.
@@ -336,7 +376,7 @@ func urlAddressName(rawURL string) string {
 	if !ok {
 		return ""
 	}
-	for _, p := range d.addressParams {
+	for _, p := range d.addressParams() {
 		if v := q.Get(p); v != "" {
 			return v
 		}
@@ -351,15 +391,16 @@ func urlAddressName(rawURL string) string {
 // silently ignored at connect time. Empty when the URL carries no such param.
 func foreignAddressParam(rawURL string) string {
 	d, ok := driverForScheme(schemeOf(rawURL))
-	if !ok || len(d.addressParams) > 0 {
+	if !ok || len(d.addressParams()) > 0 {
 		return ""
 	}
 	q, ok := urlQuery(rawURL)
 	if !ok {
 		return ""
 	}
+	own := d.ownParams()
 	for _, p := range allAddressParams() {
-		if slices.Contains(d.urlParams, p) {
+		if slices.Contains(own, p) {
 			continue
 		}
 		if q.Get(p) != "" {
@@ -375,13 +416,75 @@ func foreignAddressParam(rawURL string) string {
 func allAddressParams() []string {
 	params := make([]string, 0, len(drivers))
 	for _, d := range drivers {
-		for _, p := range d.addressParams {
+		for _, p := range d.addressParams() {
 			if !slices.Contains(params, p) {
 				params = append(params, p)
 			}
 		}
 	}
 	return params
+}
+
+// uriOptionsHelp renders the per-driver URI options of `iq add` from the driver
+// catalogues, so the help cannot drift from the options the drivers read. Each
+// driver is one wrapped paragraph, which the man page and the markdown docs keep.
+func uriOptionsHelp() string {
+	var b strings.Builder
+	b.WriteString("Each driver reads its own URI options. A keyspace option sets the default\n" +
+		"collection, table, or index of the source. When a URI sets more than one\n" +
+		"keyspace option, the first one in the list names the source.")
+	for _, d := range drivers {
+		if len(d.params) == 0 {
+			continue
+		}
+		b.WriteString("\n\n" + wrapText(driverOptionsHelp(d)))
+	}
+	return b.String()
+}
+
+// driverOptionsHelp renders one driver as a paragraph: the example URI, the
+// note, then one sentence for each option.
+func driverOptionsHelp(d driver) string {
+	parts := []string{d.name + ": " + d.uriExample + "."}
+	if d.uriNote != "" {
+		parts = append(parts, d.uriNote)
+	}
+	for _, p := range d.params {
+		parts = append(parts, paramHelp(p))
+	}
+	return strings.Join(parts, " ")
+}
+
+// paramHelp renders one URI option as a sentence.
+func paramHelp(p query.URIParam) string {
+	opt := "?" + p.Name + "="
+	if p.Keyspace {
+		opt += " (keyspace)"
+	}
+	opt += ": " + p.Desc + "."
+	if len(p.Values) > 0 {
+		opt += " Values: " + strings.Join(p.Values, ", ") + "."
+	}
+	return opt
+}
+
+// wrapText breaks text into lines of at most 78 columns. A single word longer
+// than a line stays whole.
+func wrapText(text string) string {
+	const limit = 78
+	var lines []string
+	line := ""
+	for w := range strings.FieldsSeq(text) {
+		if line != "" && len(line)+1+len(w) > limit {
+			lines = append(lines, line)
+			line = ""
+		}
+		if line != "" {
+			line += " "
+		}
+		line += w
+	}
+	return strings.Join(append(lines, line), "\n")
 }
 
 // urlQuery parses a source URL's query string. An unparseable URL yields false
