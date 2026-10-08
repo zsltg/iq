@@ -221,7 +221,7 @@ func parseFileURL(raw string) (path string, format Format, hints Hints, err erro
 	}
 	path = nativePath(runtime.GOOS, path)
 	q := u.Query()
-	if f := q.Get("format"); f != "" {
+	if f := q.Get(paramFormat); f != "" {
 		format, err = ParseFormat(f)
 		if err != nil {
 			return "", FormatUnknown, Hints{}, err
@@ -248,12 +248,12 @@ func urlPath(u *url.URL) string {
 // hintsFrom reads the schema hints from the query of a file:// URL.
 func hintsFrom(q url.Values) Hints {
 	return Hints{
-		Types:   q.Get("types"),
-		Keys:    q.Get("keys"),
-		Columns: q.Get("columns"),
-		Label:   q.Get("label"),
-		Rel:     q.Get("rel"),
-		Key:     q.Get("key"),
+		Types:   q.Get(paramTypes),
+		Keys:    q.Get(paramKeys),
+		Columns: q.Get(paramColumns),
+		Label:   q.Get(paramLabel),
+		Rel:     q.Get(paramRel),
+		Key:     q.Get(paramKey),
 	}
 }
 

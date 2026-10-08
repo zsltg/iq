@@ -441,7 +441,7 @@ func registerRootCompletions(root *cobra.Command) {
 	_ = root.RegisterFlagCompletionFunc("src", completeSourceHandles)
 	_ = root.RegisterFlagCompletionFunc("insert", completeSourceHandles)
 	_ = root.RegisterFlagCompletionFunc("format", fixedValues(formatNames()...))
-	_ = root.RegisterFlagCompletionFunc("from-format", fixedValues(dumpFormatNames...))
+	_ = root.RegisterFlagCompletionFunc("from-format", completeDumpFormats)
 	_ = root.RegisterFlagCompletionFunc("format.decimal", fixedValues(decimalModeNames...))
 	_ = root.RegisterFlagCompletionFunc("log.level", fixedValues(logLevelNames...))
 	_ = root.RegisterFlagCompletionFunc("log.format", fixedValues(textJSONNames...))

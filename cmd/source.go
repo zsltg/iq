@@ -20,41 +20,31 @@ import (
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
-// addLong is the long help of `iq add`.
-const addLong = "Register a source from a connection URI, like `sq add`. The URI is the only\n" +
-	"positional argument; -n/--handle names the source, and when omitted a handle\n" +
-	"is derived from the URI: the keyspace it pins (?collection=, ?table=,\n" +
-	"?index=, …), else the MongoDB database or Cassandra keyspace name (its schema\n" +
-	"container), else the dump file's stem for a file:// source, else the driver.\n" +
-	"The backend is inferred from the URI scheme: redis:// (rediss://), mongodb://\n" +
-	"(mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb://\n" +
-	"(couchdbs://), couchbase:// (couchbases://), neo4j:// (neo4j+s://, bolt://),\n" +
-	"elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://);\n" +
-	"-d/--driver asserts the expected driver.\n" +
-	"\n" +
-	"Each driver reads its own URI options. MongoDB: a default collection as\n" +
-	"?collection= (`mongodb://host/db?collection=orders`). Cassandra: a default\n" +
-	"table as ?table= (`cassandra://host/keyspace?table=orders`). DynamoDB: the\n" +
-	"region is the host, a default table as ?table=\n" +
-	"(`dynamodb://us-east-1/?table=orders`, credentials from the AWS default\n" +
-	"chain). HBase: the host is the ZooKeeper quorum, a default table as ?table=\n" +
-	"(`hbase://host:2181/?table=books`, cell encodings declared with\n" +
-	"?types=cf:age=long). CouchDB: the host is the server, a default database as\n" +
-	"?database= (`couchdb://host:5984/?database=orders`). Couchbase: the host is\n" +
-	"the cluster, a bucket as ?bucket= with an optional scope.collection as\n" +
-	"?collection= (`couchbase://host/?bucket=iq&collection=sales.orders`). Neo4j:\n" +
-	"the host is the bolt server, a default node label as ?label= (or a\n" +
-	"relationship type as ?rel=). Elasticsearch and OpenSearch: a default index as\n" +
-	"?index= (`elasticsearch://host:9200/?index=books`).\n" +
-	"\n" +
-	"Handles may be grouped with '/' (`iq add -n prod/books mongodb://…`). -p\n" +
-	"prompts for the URI password (or reads it from stdin). The password goes to the\n" +
-	"OS keyring and is stripped from the stored URI. When no keyring is available,\n" +
-	"iq stores the password in the config file and prints a warning. --store inline\n" +
-	"keeps it in the config file, and --store keyring makes a missing keyring an\n" +
-	"error. -a makes the new source active. The source is pinged before it is saved unless\n" +
-	"--skip-verify is set. Note: `iq add` is this command, which shadows jq's\n" +
-	"built-in `add` filter: write the filter as `[ .a, .b ] | add`."
+// addLong returns the long help of `iq add`. The URI options come from the driver
+// catalogue, so the text is built when the command is.
+func addLong() string {
+	return "Register a source from a connection URI, like `sq add`. The URI is the only\n" +
+		"positional argument; -n/--handle names the source, and when omitted a handle\n" +
+		"is derived from the URI: the keyspace it pins (?collection=, ?table=,\n" +
+		"?index=, …), else the MongoDB database or Cassandra keyspace name (its schema\n" +
+		"container), else the dump file's stem for a file:// source, else the driver.\n" +
+		"The backend is inferred from the URI scheme: redis:// (rediss://), mongodb://\n" +
+		"(mongodb+srv://), cassandra://, dynamodb://, hbase://, couchdb://\n" +
+		"(couchdbs://), couchbase:// (couchbases://), neo4j:// (neo4j+s://, bolt://),\n" +
+		"elasticsearch:// (elasticsearch+s://), or opensearch:// (opensearch+s://);\n" +
+		"-d/--driver asserts the expected driver.\n" +
+		"\n" +
+		uriOptionsHelp() + "\n" +
+		"\n" +
+		"Handles may be grouped with '/' (`iq add -n prod/books mongodb://…`). -p\n" +
+		"prompts for the URI password (or reads it from stdin). The password goes to the\n" +
+		"OS keyring and is stripped from the stored URI. When no keyring is available,\n" +
+		"iq stores the password in the config file and prints a warning. --store inline\n" +
+		"keeps it in the config file, and --store keyring makes a missing keyring an\n" +
+		"error. -a makes the new source active. The source is pinged before it is saved unless\n" +
+		"--skip-verify is set. Note: `iq add` is this command, which shadows jq's\n" +
+		"built-in `add` filter: write the filter as `[ .a, .b ] | add`."
+}
 
 // addExample is the example block of `iq add`.
 const addExample = "  # Register a Redis source named \"cache\".\n" +
@@ -84,9 +74,9 @@ func newAddCmd(cfg *config) *cobra.Command {
 	var o addOptions
 	c := &cobra.Command{
 		Use:               "add <uri>",
-		ValidArgsFunction: cobra.NoFileCompletions,
+		ValidArgsFunction: firstArgOnly(completeURI),
 		Short:             "Register a source from a connection URI (sq-style)",
-		Long:              addLong,
+		Long:              addLong(),
 		Example:           addExample,
 		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"bytes"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -31,9 +34,14 @@ func TestCompleteSourceHandles(t *testing.T) {
 		toComplete string
 		want       []string
 	}{
-		{"all handles, sorted", "", []string{"cache", "prod/books", "prod/users", "shop"}},
-		{"prefix filters", "sh", []string{"shop"}},
-		{"group prefix", "prod/", []string{"prod/books", "prod/users"}},
+		{"all handles, sorted", "", []string{
+			"cache\tredis",
+			"prod/books\tmongo",
+			"prod/users\tmongo",
+			"shop\tredis, active",
+		}},
+		{"prefix filters", "sh", []string{"shop\tredis, active"}},
+		{"group prefix", "prod/", []string{"prod/books\tmongo", "prod/users\tmongo"}},
 		{"no match", "zzz", []string{}},
 	}
 	for _, tt := range tests {
@@ -48,7 +56,7 @@ func TestCompleteSourceHandles(t *testing.T) {
 func TestCompleteGroups(t *testing.T) {
 	seedTwoGroups(t)
 	got, dir := completeGroups(nil, nil, "")
-	require.Equal(t, []string{"prod"}, got)
+	require.Equal(t, []string{"prod\t2 sources"}, got)
 	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 
 	got, _ = completeGroups(nil, nil, "x")
@@ -58,31 +66,58 @@ func TestCompleteGroups(t *testing.T) {
 func TestCompleteHandlesAndGroups(t *testing.T) {
 	seedTwoGroups(t)
 	got, dir := completeHandlesAndGroups(nil, nil, "")
-	require.Equal(t, []string{"cache", "prod/books", "prod/users", "shop", "prod"}, got)
+	require.Equal(t, []string{
+		"cache\tredis",
+		"prod/books\tmongo",
+		"prod/users\tmongo",
+		"shop\tredis, active",
+		"prod\t2 sources",
+	}, got)
 	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 
 	// "prod" prefixes two handles and the group itself.
 	got, _ = completeHandlesAndGroups(nil, nil, "prod")
-	require.Equal(t, []string{"prod/books", "prod/users", "prod"}, got)
+	require.Equal(t, []string{"prod/books\tmongo", "prod/users\tmongo", "prod\t2 sources"}, got)
 }
 
 func TestCompleteConfigKeys(t *testing.T) {
 	seedTwoGroups(t)
-	got, dir := completeConfigKeys(nil, nil, "for")
-	require.Equal(t, []string{"format", "format.decimal"}, got)
+	root, _ := newRootCmd()
+	got, dir := completeConfigKeys(root, nil, "for")
+	require.Equal(t, []string{
+		"format\t" + root.Flags().Lookup("format").Usage,
+		"format.decimal\t" + root.Flags().Lookup("format.decimal").Usage,
+	}, got)
 	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 
 	// The full list is the persistableOptions allowlist (one source of truth).
-	all, _ := completeConfigKeys(nil, nil, "")
-	require.Equal(t, persistableOptions, all)
+	all, _ := completeConfigKeys(root, nil, "")
+	require.Equal(t, persistableOptions, candidateValues(all))
+
+	// Without a command no flag is found, so the keys carry no description.
+	bare, _ := completeConfigKeys(nil, nil, "")
+	require.Equal(t, persistableOptions, bare)
 }
 
 func TestCompleteCacheClearKeepsFileFallback(t *testing.T) {
 	seedTwoGroups(t)
 	got, dir := completeCacheClear(nil, nil, "ca")
-	require.Equal(t, []string{"cache"}, got)
+	require.Equal(t, []string{"cache\tredis"}, got)
 	// Default keeps the shell's path completion (cache clear also accepts a path).
 	require.Equal(t, cobra.ShellCompDirectiveDefault, dir)
+}
+
+// candidateValues drops the description from each completion string, for the
+// tests that pin which values a command offers and not their descriptions.
+func candidateValues(got []string) []string {
+	if got == nil {
+		return nil
+	}
+	out := make([]string, len(got))
+	for i, g := range got {
+		out[i], _, _ = strings.Cut(g, "\t")
+	}
+	return out
 }
 
 func TestFirstArgOnly(t *testing.T) {
@@ -91,7 +126,12 @@ func TestFirstArgOnly(t *testing.T) {
 
 	// No args yet: delegates to the wrapped function.
 	got, dir := fn(nil, nil, "")
-	require.Equal(t, []string{"cache", "prod/books", "prod/users", "shop"}, got)
+	require.Equal(t, []string{
+		"cache\tredis",
+		"prod/books\tmongo",
+		"prod/users\tmongo",
+		"shop\tredis, active",
+	}, got)
 	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 
 	// One arg present: offers nothing and no file completion.
@@ -134,10 +174,11 @@ func TestCompleteConfigLoadError(t *testing.T) {
 // than becoming a freshly allocated empty slice.
 func TestWithPrefixEmptyPreservesSlice(t *testing.T) {
 	require.Nil(t, withPrefix(nil, ""))
-	require.Equal(t, []string{"a", "b"}, withPrefix([]string{"a", "b"}, ""))
+	both := plainCandidates([]string{"a", "b"})
+	require.Equal(t, both, withPrefix(both, ""))
 	// A non-empty prefix still filters.
-	require.Equal(t, []string{"a"}, withPrefix([]string{"a", "b"}, "a"))
-	require.Empty(t, withPrefix([]string{"a", "b"}, "z"))
+	require.Equal(t, both[:1], withPrefix(both, "a"))
+	require.Empty(t, withPrefix(both, "z"))
 }
 
 func TestFixedValues(t *testing.T) {
@@ -156,7 +197,7 @@ func TestFixedValues(t *testing.T) {
 
 func TestCompleteCSV(t *testing.T) {
 	const both = cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
-	fn := completeCSV(fixedValues("a", "b", "c"))
+	fn := completeCSV(fixedCandidates("a", "b", "c"))
 	tests := []struct {
 		name       string
 		toComplete string
@@ -305,7 +346,7 @@ func TestCompleteConfigSet(t *testing.T) {
 
 	t.Run("first arg completes option names", func(t *testing.T) {
 		got, dir := completeConfigSet(c, nil, "")
-		require.Equal(t, persistableOptions, got)
+		require.Equal(t, persistableOptions, candidateValues(got))
 		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 	})
 
@@ -382,9 +423,9 @@ func TestEnumAllowlistsMatchValidators(t *testing.T) {
 	})
 
 	t.Run("dump formats round-trip", func(t *testing.T) {
-		for _, name := range dumpFormatNames {
-			_, err := iqfile.ParseFormat(name)
-			require.NoErrorf(t, err, "--from-format %q is offered but not accepted", name)
+		for _, c := range dumpFormatCandidates() {
+			_, err := iqfile.ParseFormat(c.value)
+			require.NoErrorf(t, err, "--from-format %q is offered but not accepted", c.value)
 		}
 	})
 
@@ -434,7 +475,7 @@ func TestCommandArgsAndCompletionWiring(t *testing.T) {
 		c := findCmd(t, root, "cache", "clear")
 		require.NotNil(t, c.ValidArgsFunction, "cache clear completion wiring dropped")
 		got, dir := c.ValidArgsFunction(c, nil, "")
-		require.Equal(t, handles, got)
+		require.Equal(t, handles, candidateValues(got))
 		require.Equal(t, cobra.ShellCompDirectiveDefault, dir)
 	})
 
@@ -442,7 +483,7 @@ func TestCommandArgsAndCompletionWiring(t *testing.T) {
 		c := findCmd(t, root, "config", "get")
 		require.NotNil(t, c.ValidArgsFunction, "config get completion wiring dropped")
 		got, dir := c.ValidArgsFunction(c, nil, "")
-		require.Equal(t, persistableOptions, got)
+		require.Equal(t, persistableOptions, candidateValues(got))
 		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 
 		require.NotNil(t, c.Args, "config get Args validator dropped")
@@ -455,7 +496,7 @@ func TestCommandArgsAndCompletionWiring(t *testing.T) {
 		c := findCmd(t, root, "config", "set")
 		require.NotNil(t, c.ValidArgsFunction, "config set completion wiring dropped")
 		got, dir := c.ValidArgsFunction(c, nil, "")
-		require.Equal(t, persistableOptions, got)
+		require.Equal(t, persistableOptions, candidateValues(got))
 		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 	})
 
@@ -466,11 +507,11 @@ func TestCommandArgsAndCompletionWiring(t *testing.T) {
 			c := findCmd(t, root, "data", name)
 			require.NotNilf(t, c.ValidArgsFunction, "data %s completion wiring dropped", name)
 			got, dir := c.ValidArgsFunction(c, nil, "")
-			require.Equal(t, handles, got)
+			require.Equal(t, handles, candidateValues(got))
 			require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 			// A second target completes too — clear/drop take a list.
 			got, _ = c.ValidArgsFunction(c, []string{"shop"}, "")
-			require.Equal(t, handles, got)
+			require.Equal(t, handles, candidateValues(got))
 		})
 	}
 
@@ -478,7 +519,7 @@ func TestCommandArgsAndCompletionWiring(t *testing.T) {
 		c := findCmd(t, root, "data", "delete")
 		require.NotNil(t, c.ValidArgsFunction, "data delete completion wiring dropped")
 		got, dir := c.ValidArgsFunction(c, nil, "")
-		require.Equal(t, handles, got)
+		require.Equal(t, handles, candidateValues(got))
 		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 
 		// The keys are opaque values: no candidates, and no filename fallback.
@@ -493,11 +534,11 @@ func TestCommandArgsAndCompletionWiring(t *testing.T) {
 		c := findCmd(t, root, "combine")
 		require.NotNil(t, c.ValidArgsFunction, "combine completion wiring dropped")
 		got, dir := c.ValidArgsFunction(c, nil, "")
-		require.Equal(t, handles, got)
+		require.Equal(t, handles, candidateValues(got))
 		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 
 		got, _ = c.ValidArgsFunction(c, []string{"shop=.[]"}, "")
-		require.Equal(t, handles, got)
+		require.Equal(t, handles, candidateValues(got))
 
 		require.Error(t, c.Args(c, nil), "combine needs at least one source")
 		require.NoError(t, c.Args(c, []string{"shop=.[]"}))
@@ -517,7 +558,7 @@ func TestCommandArgsAndCompletionWiring(t *testing.T) {
 			c := findCmd(t, root, "config", "keyring", name)
 			require.NotNilf(t, c.ValidArgsFunction, "keyring %s completion wiring dropped", name)
 			got, dir := c.ValidArgsFunction(c, nil, "")
-			require.Equal(t, handles, got)
+			require.Equal(t, handles, candidateValues(got))
 			require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 		})
 	}
@@ -599,7 +640,7 @@ func TestFlagCompletionWiring(t *testing.T) {
 		fn, ok := root.GetFlagCompletionFunc("insert")
 		require.True(t, ok)
 		got, _ := fn(root, nil, "")
-		require.Equal(t, []string{"cache", "cluster", "shop"}, got)
+		require.Equal(t, []string{"cache", "cluster", "shop"}, candidateValues(got))
 	})
 }
 
@@ -641,6 +682,280 @@ func TestSourceDriverNameWithoutASource(t *testing.T) {
 func TestCompleteCacheClearList(t *testing.T) {
 	seedTwoGroups(t)
 	got, dir := completeCacheClear(nil, nil, "")
-	require.Equal(t, []string{"cache", "prod/books", "prod/users", "shop"}, got)
+	require.Equal(t, []string{"cache", "prod/books", "prod/users", "shop"}, candidateValues(got))
 	require.Equal(t, cobra.ShellCompDirectiveDefault, dir)
+}
+
+// writeCompletionConfig writes raw TOML to a private config file and points
+// IQ_CONFIG at it, so a test can store a handle or URI that iq itself would
+// refuse to write.
+func writeCompletionConfig(t *testing.T, toml string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "iq.toml")
+	require.NoError(t, os.WriteFile(path, []byte(toml), 0o600))
+	t.Setenv("IQ_CONFIG", path)
+}
+
+// runComplete runs the hidden completion command of a fresh command tree and
+// returns the candidate lines, without the directive trailer.
+func runComplete(t *testing.T, name string, args ...string) []string {
+	t.Helper()
+	root, _ := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs(append([]string{name}, args...))
+	require.NoError(t, root.Execute())
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	// The last line is the directive, such as ":4".
+	require.True(t, strings.HasPrefix(lines[len(lines)-1], ":"), "no directive line in %q", out.String())
+	return lines[:len(lines)-1]
+}
+
+// TestCompletionDescriptions runs each row through the real completion command,
+// both with descriptions and without them.
+func TestCompletionDescriptions(t *testing.T) {
+	writeCompletionConfig(t, `active = "prod/books"
+
+[sources."prod/books"]
+url = "mongodb://localhost:27017/shop?collection=orders"
+
+[sources."prod/users"]
+url = "mongodb://localhost:27017/shop"
+
+[sources.cache]
+url = "redis://localhost:6379/0"
+
+[sources.solo]
+url = "redis://localhost:6379/1"
+`)
+	root, _ := newRootCmd()
+	tests := []struct {
+		name     string
+		args     []string
+		want     []string
+		wantNoDe []string
+	}{
+		{
+			"handle with a keyspace and the active marker",
+			[]string{"ping", "prod/b"},
+			[]string{"prod/books\tmongo, orders, active"},
+			[]string{"prod/books"},
+		},
+		{
+			"handle without a keyspace",
+			[]string{"ping", "prod/u"},
+			[]string{"prod/users\tmongo"},
+			[]string{"prod/users"},
+		},
+		{
+			"group with several sources",
+			[]string{"ls", ""},
+			[]string{"prod\t2 sources"},
+			[]string{"prod"},
+		},
+		{
+			"configuration key shows the flag usage",
+			[]string{"config", "get", "compact"},
+			[]string{"compact\t" + root.Flags().Lookup("compact").Usage},
+			[]string{"compact"},
+		},
+		{
+			"dump format shows its source",
+			[]string{"--from-format", "mongo"},
+			[]string{"mongoexport\tmongoexport Extended JSON"},
+			[]string{"mongoexport"},
+		},
+		{
+			"a typed prefix does not match description text",
+			[]string{"ping", "orders"},
+			[]string{},
+			[]string{},
+		},
+		{
+			"a typed prefix does not match the active marker",
+			[]string{"ping", "active"},
+			[]string{},
+			[]string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, runComplete(t, "__complete", tt.args...))
+			require.Equal(t, tt.wantNoDe, runComplete(t, "__completeNoDesc", tt.args...))
+		})
+	}
+}
+
+func TestCompletionGroupCountSingular(t *testing.T) {
+	writeCompletionConfig(t, `[sources."g/one"]
+url = "redis://localhost:6379/0"
+`)
+	require.Equal(t, []string{"g\t1 source"}, runComplete(t, "__complete", "ls", ""))
+}
+
+func TestCompletionDumpFormatsExactSet(t *testing.T) {
+	t.Setenv("IQ_CONFIG", filepath.Join(t.TempDir(), "absent.toml"))
+	want := []string{
+		"jsonl\tiq typed JSON Lines / array",
+		"yaml\tiq typed YAML",
+		"mongoexport\tmongoexport Extended JSON",
+		"bson\tmongodump BSON",
+		"rdb\tRedis RDB snapshot",
+		"dynamodb-json\tDynamoDB S3 export / scan JSON",
+		"cassandra-csv\tcqlsh COPY TO CSV",
+		"neo4j-json\tNeo4j APOC JSON export",
+	}
+	require.Equal(t, want, runComplete(t, "__complete", "--from-format", ""))
+	// The json alias still parses but is no longer offered.
+	for _, line := range want {
+		require.NotEqual(t, "json", strings.SplitN(line, "\t", 2)[0])
+	}
+	_, err := iqfile.ParseFormat("json")
+	require.NoError(t, err)
+}
+
+// TestCompleteDumpFormatsDirective pins that --from-format completion
+// never falls back to file names.
+func TestCompleteDumpFormatsDirective(t *testing.T) {
+	_, directive := completeDumpFormats(nil, nil, "")
+	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, directive)
+}
+
+// TestCompletionNeverLeaksURIParts stores a URI with a password and pins that
+// no part of it reaches the completion output, in either mode.
+func TestCompletionNeverLeaksURIParts(t *testing.T) {
+	writeCompletionConfig(t, `[sources.secret]
+url = "mongodb://leakuser:leakpass-9X@leakhost.example:27017/shop?collection=orders"
+`)
+	for _, name := range []string{"__complete", "__completeNoDesc"} {
+		out := strings.Join(runComplete(t, name, "ping", ""), "\n")
+		require.Contains(t, out, "secret")
+		for _, part := range []string{"leakpass-9X", "leakuser", "leakhost", "27017", "mongodb://"} {
+			require.NotContains(t, out, part, "%s leaked %q", name, part)
+		}
+	}
+}
+
+// TestCompletionEscapesControlCharsInDescriptions pins that control characters
+// from a stored URI show as visible escapes, and that a percent-encoded byte
+// stays as typed.
+func TestCompletionEscapesControlCharsInDescriptions(t *testing.T) {
+	tests := []struct {
+		name     string
+		keyspace string
+		want     string
+	}{
+		{"tab", "a%09b", `a\tb`},
+		{"carriage return", "a%0Db", `a\rb`},
+		{"line feed", "a%0Ab", `a\nb`},
+		{"escape sequence", "a%1B%5B2J", `a\x1b[2J`},
+		{"delete", "a%7Fb", `a\x7fb`},
+		{"c1 control", "a%C2%9Bb", `a\x9bb`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writeCompletionConfig(t, "[sources.k]\nurl = \"mongodb://localhost/db?collection="+tt.keyspace+"\"\n")
+			require.Equal(t, []string{"k\tmongo, " + tt.want}, runComplete(t, "__complete", "ping", ""))
+		})
+	}
+}
+
+// TestCompletionOmitsControlCharsInValues pins that a handle with a control
+// character is dropped whole, while the valid handles stay exact.
+func TestCompletionOmitsControlCharsInValues(t *testing.T) {
+	writeCompletionConfig(t, `[sources."bad\tname"]
+url = "redis://localhost:6379/0"
+
+[sources."bad\u001bname"]
+url = "redis://localhost:6379/0"
+
+[sources.good]
+url = "redis://localhost:6379/1"
+
+[sources."zoo/ok"]
+url = "redis://localhost:6379/2"
+`)
+	want := []string{"good\tredis", "zoo/ok\tredis"}
+	require.Equal(t, want, runComplete(t, "__complete", "ping", ""))
+	require.Equal(t, []string{"good", "zoo/ok"}, runComplete(t, "__completeNoDesc", "ping", ""))
+}
+
+func TestEscapeControl(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain text is unchanged", "mongo, orders", "mongo, orders"},
+		{"percent-encoded bytes are unchanged", "a%09b", "a%09b"},
+		{"non-ASCII text is unchanged", "caf\u00e9", "caf\u00e9"},
+		{"tab", "a\tb", `a\tb`},
+		{"newline", "a\nb", `a\nb`},
+		{"carriage return", "a\rb", `a\rb`},
+		{"escape", "\x1b[2J", `\x1b[2J`},
+		{"c1 control", "a\u009bb", `a\x9bb`},
+		{"line separator is not a control character", "a\u2028b", "a\u2028b"},
+		{"control above 0xff", "a\u0600b", "a\u0600b"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, escapeControl(tt.in))
+		})
+	}
+}
+
+func TestCandidateStrings(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []candidate
+		want []string
+	}{
+		{"value only", []candidate{{value: "a"}}, []string{"a"}},
+		{"value with description", []candidate{{value: "a", desc: "d"}}, []string{"a\td"}},
+		{"description is escaped", []candidate{{value: "a", desc: "x\ty"}}, []string{`a` + "\t" + `x\ty`}},
+		{"value with a tab is omitted", []candidate{{value: "a\tb", desc: "d"}, {value: "c"}}, []string{"c"}},
+		{"value with a newline is omitted", []candidate{{value: "a\nb"}}, []string{}},
+		{"value with an escape is omitted", []candidate{{value: "\x1b"}}, []string{}},
+		{"percent-encoded value is kept", []candidate{{value: "a%09b"}}, []string{"a%09b"}},
+		{"nil input gives an empty list", nil, []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, candidateStrings(tt.in))
+		})
+	}
+}
+
+func TestWithPrefixIgnoresDescription(t *testing.T) {
+	cands := []candidate{{value: "alpha", desc: "beta"}, {value: "beta", desc: "alpha"}}
+	require.Equal(t, cands[:1], withPrefix(cands, "al"))
+	require.Equal(t, cands[1:], withPrefix(cands, "be"))
+}
+
+// TestCompleteCSVKeepsDescriptions pins that the description stays with its
+// value, that the chosen set holds values only, and that the typed head joins
+// the value and not the description.
+func TestCompleteCSVKeepsDescriptions(t *testing.T) {
+	const both = cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
+	fn := completeCSV(func(_ *cobra.Command, _ []string, toComplete string) ([]candidate, cobra.ShellCompDirective) {
+		return withPrefix([]candidate{{"a", "first"}, {"b", "second"}, {"c", ""}}, toComplete), cobra.ShellCompDirectiveNoFileComp
+	})
+	tests := []struct {
+		name       string
+		toComplete string
+		want       []string
+	}{
+		{"descriptions pass through", "", []string{"a\tfirst", "b\tsecond", "c"}},
+		{"head joins the value only", "a,", []string{"a,b\tsecond", "a,c"}},
+		{"a chosen value is dropped with its description", "b,", []string{"b,a\tfirst", "b,c"}},
+		{"a description word is not a chosen value", "first,", []string{"first,a\tfirst", "first,b\tsecond", "first,c"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, dir := fn(nil, nil, tt.toComplete)
+			require.Equal(t, tt.want, got)
+			require.Equal(t, both, dir)
+		})
+	}
 }

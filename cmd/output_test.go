@@ -587,3 +587,15 @@ func TestYAMLFormatterEmitRejectsUnencodableValue(t *testing.T) {
 	require.EqualError(t, err, "encode result: cannot marshal type: chan int")
 	require.Empty(t, buf.String())
 }
+
+// TestYAMLFormatterEmitWrapsTheWriteError checks that a failed write stays wrapped
+// with %w under the "encode result" prefix. yaml.v3 flattens the write error into a
+// string, so the sentinel is not reachable; the wrapped yaml error is.
+func TestYAMLFormatterEmitWrapsTheWriteError(t *testing.T) {
+	f := &yamlFormatter{enc: yaml.NewEncoder(&sentinelFailAt{at: 1})}
+
+	err := f.emit("x")
+
+	require.EqualError(t, err, "encode result: yaml: write error: boom")
+	require.EqualError(t, errors.Unwrap(err), "yaml: write error: boom")
+}

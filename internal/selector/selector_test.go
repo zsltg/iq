@@ -78,6 +78,7 @@ func TestKeysScan(t *testing.T) {
 		{"variable index", ".[$k]", false},
 		{"computed index", ".[.a]", false},
 		{"slice index", ".[1:2]", false},
+		{"slice with a string start and no end", `.["book:1":]`, false},
 		{"interpolated index", `.["\(.x)"]`, false},
 		{"variable reference", "$x", false},
 		{"control flow", "if .a then .b end", false},
@@ -169,6 +170,43 @@ func TestKeysMalformedAST(t *testing.T) {
 					{Iter: true, Index: &gojq.Index{Name: "a"}},
 				},
 			}},
+			wantScan:       true,
+			wantStreamable: false,
+		},
+		{
+			name: "bracketed subscript carrying an end bound without a slice flag",
+			query: &gojq.Query{Term: &gojq.Term{
+				Type: gojq.TermTypeIndex,
+				Index: &gojq.Index{
+					Start: &gojq.Query{Term: str("book:1")},
+					End:   &gojq.Query{Term: str("z")},
+				},
+			}},
+			wantScan: true,
+		},
+		{
+			name: "index with no name, string or subscript",
+			query: &gojq.Query{Term: &gojq.Term{
+				Type:  gojq.TermTypeIndex,
+				Index: &gojq.Index{},
+			}},
+			wantScan: true,
+		},
+		{
+			name: "array term whose array carries no query",
+			query: &gojq.Query{Term: &gojq.Term{
+				Type:  gojq.TermTypeArray,
+				Array: &gojq.Array{},
+			}},
+			wantScan: false,
+		},
+		{
+			name: "identity with no suffix at the end of a pipe",
+			query: &gojq.Query{
+				Op:    gojq.OpPipe,
+				Left:  &gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeIdentity}},
+				Right: &gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeIdentity}},
+			},
 			wantScan:       true,
 			wantStreamable: false,
 		},

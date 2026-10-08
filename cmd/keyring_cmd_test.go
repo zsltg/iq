@@ -254,6 +254,24 @@ func TestConfigKeyringMigrate(t *testing.T) {
 		require.False(t, cf.Sources["sec"].Keyring)
 	})
 
+	t.Run("rejects --all with two handles and migrates nothing", func(t *testing.T) {
+		configEnv(t)
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "a", "redis://u:pa@h:6379/0", false, "")
+		seedKeyringSource(t, c, fk, "b", "redis://u:pb@h:6379/1", false, "")
+		seedConfig(t, c)
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all", "a", "b")
+
+		require.EqualError(t, err, "accepts at most 1 arg(s), received 2")
+		require.Empty(t, fk.m)
+		cf, err := iqconfig.Load()
+		require.NoError(t, err)
+		require.False(t, cf.Sources["a"].Keyring)
+		require.False(t, cf.Sources["b"].Keyring)
+	})
+
 	t.Run("rejects both a handle and --all", func(t *testing.T) {
 		configEnv(t)
 		seedConfig(t, newSeed())
