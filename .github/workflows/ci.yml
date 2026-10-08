@@ -103,7 +103,7 @@ jobs:
   # skipped draft ci-ok would let the pull request merge before the tests finish.
   ci-ok:
     if: always() && github.event_name == 'pull_request'
-    needs: [changes, go-cache, lint, workflows, test, coverage-group, coverage, e2e, release-snapshot, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-diff, fuzz, dco, demo-check, docs]
+    needs: [changes, go-cache, lint, workflows, test, coverage-group, coverage, e2e, release-snapshot, vuln, osv, sbom, deadcode, secrets, capabilities, mutate-plan, mutate-diff, mutate-verdict, fuzz, dco, demo-check, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -949,57 +949,156 @@ jobs:
           git fetch --no-tags origin "$BASE"
           IQ_CAPS_BASE="origin/$BASE" bash scripts/capabilities.sh
 
-  # Mutation feedback scoped to the change (scripts/mutation-gate.sh): mutates only
-  # lines changed vs the trunk and enumerates only the packages holding them.
-  # BLOCKING: an escaped mutant on a changed covered line, or an errored/timed-out
-  # mutant, fails the job; a genuine equivalent goes into mutago-baseline.json with
-  # a note. Driver packages provision their testcontainer per test run, so with
-  # --workers 1 and -p=1 there is one container at a time. The one exception is
-  # drivers/hbase: its tests run only against the compose service, so the HBase
-  # step below starts it when the change touches that driver. The `deep-*` jobs scan
-  # the changed packages weekly (all packages monthly), one shard per runner.
-  mutate-diff:
+  # Mutation feedback scoped to the change, in three jobs. mutate-plan lists the changed
+  # non-test Go files and packs them into at most 12 shards (scripts/mutation-plan.sh --diff).
+  # mutate-diff runs one shard on each runner (scripts/mutation-diff-shard.sh): the gate of
+  # scripts/mutation-gate.sh with IQ_MUTATION_DIFF=1, so mutago mutates only the lines that
+  # the change touched, in the files of the shard. mutate-verdict checks that every shard
+  # reported, merges the escapes, and uploads the artifact mutate-diff. BLOCKING, as the
+  # old single job was: an escaped mutant on a changed covered line, or an errored or
+  # timed-out mutant, fails the shard; a genuine equivalent goes into mutago-baseline.json
+  # with a note. A file is never split between shards, so the mutant set is the same as in
+  # one run. The plan stops on a diff line over 60000 bytes (mutago would read no diff) and
+  # on a package that go list rejects. A file with many changed code lines and no mutant
+  # gives a warning. A shard starts the compose services of one backend package through
+  # scripts/ci-backend.sh (drivers/hbase included) and runs one mutago worker, because a
+  # shared backend and parallel workers give false kills. Shards of different backend
+  # packages never share a runner. The `deep-*` jobs scan the changed packages weekly (all
+  # packages monthly), one shard per runner.
+  mutate-plan:
     needs: changes
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
-      - *harden-docker-elastic
+      - *harden-go
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] the step below fetches the PR base
         with:
           fetch-depth: 0 # full history so the diff base is reachable
       - uses: ./.github/actions/setup-go
-      # The HBase tests have no testcontainer. They run only against the compose
-      # service and skip without it. Without this step, a change to drivers/hbase
-      # would pass the gate with those lines untested, as "not covered".
-      - name: Start HBase when drivers/hbase changed (compose)
+      # The plan keeps the merge-base commit, so that every shard diffs against the same
+      # commit even when the base branch moves. The full plan (with the file lists) goes to
+      # the diff-plan artifact; the job output keeps only what the matrix needs.
+      - id: plan
+        shell: bash
         env:
           BASE: ${{ github.base_ref || 'main' }} # PR target branch, else the trunk
         run: |
           git fetch --no-tags origin "$BASE"
-          if git diff --quiet "$(git merge-base "origin/$BASE" HEAD)" -- drivers/hbase; then
-            echo "drivers/hbase is unchanged, so the gate needs no HBase server"
-          else
-            docker compose up -d --wait hbase
-            echo "IQ_HBASE_URL=hbase://localhost:2181/" >> "$GITHUB_ENV"
-          fi
-      - name: Mutation testing (scoped to the change, one container at a time)
+          mkdir -p plan
+          bash scripts/mutation-plan.sh --diff "origin/$BASE" > plan/plan.json
+          matrix="$(jq -c 'map({shard, shards, backend})' plan/plan.json)"
+          echo "plan: $(wc -c < plan/plan.json) bytes, matrix: $matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diff-plan
+          path: plan
+          if-no-files-found: error
+          retention-days: 7
+
+  mutate-diff:
+    needs: mutate-plan
+    if: needs.mutate-plan.result == 'success' && needs.mutate-plan.outputs.matrix != '[]'
+    name: mutate-diff ${{ matrix.shard }}/${{ matrix.shards }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false # every shard reports; one red shard does not hide the others
+      max-parallel: 8
+      matrix:
+        include: ${{ fromJSON(needs.mutate-plan.outputs.matrix) }}
+    steps:
+      - *harden-docker-elastic
+      # The plan names the merge-base commit, which is an ancestor of HEAD, so a shard
+      # needs the history but not the credential.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-go
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: diff-plan
+          path: plan
+      # One set of compose services for the backend package of the shard, with the
+      # IQ_*_URL variables for the tests. HBase has no testcontainer path, so this step
+      # also covers a change to drivers/hbase. Without a backend package, nothing starts.
+      - name: Start the backend of the shard (compose)
+        if: matrix.backend != ''
         env:
-          BASE: ${{ github.base_ref || 'main' }} # PR target branch, else the trunk
+          PKG: ${{ matrix.backend }}
+        run: bash scripts/ci-backend.sh "$PKG"
+      # The step limit is below the job limit of 180 min, so the upload that follows
+      # still has time to keep the finished groups.
+      - name: Mutation testing (shard, one worker, one container set)
+        timeout-minutes: 165
+        env:
           GOFLAGS: -p=1
-        run: |
-          IQ_MUTATION_BASE="origin/$BASE" bash scripts/mutation-gate.sh
-      # The ids of the escapes, for the baseline of an accepted equivalent, without a
-      # local re-run. The candidate file exists only when the gate failed on an escape.
-      - name: Upload the mutation reports
+          SHARD: ${{ matrix.shard }}
+        run: bash scripts/mutation-diff-shard.sh shard-out plan/plan.json "$SHARD"
+      # The ids of the escapes (mutago-agentic.json in each group) and the full report.
+      # They upload also when the shard fails or is cancelled.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutate-diff-shard-${{ matrix.shard }}
+          path: shard-out
+          if-no-files-found: ignore
+          overwrite: true
+          retention-days: 7
+
+  # The verdict. It runs when the plan failed, and when the shards ended (success,
+  # failure or cancelled). It does not run when the plan is empty (no non-test Go file
+  # changed), and then ci-ok passes. The artifact mutate-diff holds the merged
+  # mutago-agentic.json, and mutago-baseline.candidate.json after an escape, so the ids
+  # of the escapes need no local re-run.
+  mutate-verdict:
+    needs: [changes, mutate-plan, mutate-diff]
+    if: >-
+      always() && needs.changes.outputs.full == 'true' &&
+      (needs.mutate-plan.result != 'success' || needs.mutate-plan.outputs.matrix != '[]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - *harden-base
+      - *checkout
+      - name: Stop when the plan failed
+        if: needs.mutate-plan.result != 'success'
+        env:
+          PLAN_RESULT: ${{ needs.mutate-plan.result }}
+        run: |
+          echo "::error::the mutate-plan job ended as $PLAN_RESULT, so no shard ran"
+          exit 1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: diff-plan
+          path: plan
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.mutate-diff.result != 'skipped'
+        with:
+          pattern: mutate-diff-shard-*
+          path: shards
+      - id: verdict
+        name: Verdict
+        env:
+          PLAN_RESULT: ${{ needs.mutate-plan.result }}
+          SHARDS_RESULT: ${{ needs.mutate-diff.result }}
+        run: |
+          mkdir -p shards
+          status=0
+          bash scripts/mutation-diff-verdict.sh shards plan/plan.json verdict-out || status=$?
+          if [ -f verdict-out/summary.md ]; then
+            cat verdict-out/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
         with:
           name: mutate-diff
-          path: |
-            report.json
-            mutago-agentic.json
-            mutago-baseline.candidate.json
+          path: verdict-out
           if-no-files-found: ignore
           retention-days: 14
 
