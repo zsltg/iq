@@ -447,17 +447,23 @@ func uriNameCandidates(params []query.URIParam, head, plain string) ([]string, c
 // with the typed value. The prefix holds the typed word up to and including "=".
 func uriValueCandidates(params []query.URIParam, prefix, plain, typed string) ([]string, cobra.ShellCompDirective) {
 	var cands []candidate
-	for _, p := range params {
-		if p.Name != plain {
-			continue
-		}
-		for _, v := range p.Values {
-			if strings.HasPrefix(v, typed) {
-				cands = append(cands, candidate{value: prefix + v})
-			}
+	for _, v := range closedValues(params, plain) {
+		if strings.HasPrefix(v, typed) {
+			cands = append(cands, candidate{value: prefix + v})
 		}
 	}
 	return finishURI(cands, cobra.ShellCompDirectiveNoFileComp)
+}
+
+// closedValues returns the closed values of the named option. It returns nil
+// for an unknown option and for an option with a free value.
+func closedValues(params []query.URIParam, name string) []string {
+	for _, p := range params {
+		if p.Name == name {
+			return p.Values
+		}
+	}
+	return nil
 }
 
 // uriSchemeCandidates offers each scheme of the driver registry, with "://"
