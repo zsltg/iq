@@ -64,7 +64,7 @@ func TestURIParamsKeyspace(t *testing.T) {
 	tests := []struct {
 		param string
 		value string
-		want  func(connConfig) string
+		field func(connConfig) string
 	}{
 		{paramCollection, "sales.orders", func(c connConfig) string { return c.scope + "." + c.coll }},
 		{paramBucket, "iq", func(c connConfig) string { return c.bucket }},
@@ -84,7 +84,7 @@ func TestURIParamsKeyspace(t *testing.T) {
 		t.Run(tt.param, func(t *testing.T) {
 			cc, err := parseURL("couchbase://h/?"+tt.param+"="+tt.value, "")
 			require.NoError(t, err)
-			require.Equal(t, tt.value, tt.want(cc))
+			require.Equal(t, tt.value, tt.field(cc))
 		})
 	}
 }
