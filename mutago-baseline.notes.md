@@ -805,3 +805,6 @@ Each of these mutants replaces the ctx of a command that is queued on a go-redis
 - 0602aeb56673 drivers/redis/write.go:322 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
 
 - 0e7c67c66d9b drivers/couchdb/write.go:304 statement/remove — the `docs = make([]any, 0, len(keys))` capacity hint in deletions is removed. A nil slice and an empty slice behave the same: append allocates on demand, and slices.Chunk of nil yields no chunk, so BulkDocs is not called either way.
+
+- 21102862e812 drivers/couchbase/couchbase.go:495 numbers/decrementer — the count that scanPage returns with a query error changes from 0. Its only caller, scan, returns the error without reading the count, so no caller can see it.
+- 7184173f3db8 drivers/couchbase/couchbase.go:495 numbers/incrementer — the count that scanPage returns with a query error changes from 0. Its only caller, scan, returns the error without reading the count, so no caller can see it.
