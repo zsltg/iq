@@ -2180,6 +2180,54 @@
    "line": 524
   },
   {
+   "id": "d52a32e3a38d9f231613feb17b3d1ad3",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "branch/case",
+   "line": 65
+  },
+  {
+   "id": "99d37facda97363041688648e0a55cb2",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "branch/case",
+   "line": 85
+  },
+  {
+   "id": "c5051dcea1719ad744cd117b352de6dc",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "branch/if",
+   "line": 188
+  },
+  {
+   "id": "7b4798482c96556f1eb9a33962b73f15",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "branch/if",
+   "line": 194
+  },
+  {
+   "id": "a2c1853032e8caec0e5047af99afeacd",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "numbers/decrementer",
+   "line": 332
+  },
+  {
+   "id": "60409b793c965f50ae8e0b5aa9e77092",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 332
+  },
+  {
+   "id": "850d83a9a0228b71b68ab40320f8a884",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 210
+  },
+  {
+   "id": "0e31fb68364e93f98b8adc2d9c75e939",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 212
+  },
+  {
    "id": "ba7aa88733c782a23c6dfdb20d453055",
    "file": "drivers/cassandra/plan.go",
    "mutator": "expression/remove",
