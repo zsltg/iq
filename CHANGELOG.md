@@ -4,6 +4,33 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.39.0 - 2026-10-09
+### Refactoring
+- raise the code health of the config, shape, selector, parquetout and diff packages (#114) (ef77904)
+- **cassandra:** raise the code health of the cassandra driver (#125) (955ccc0)
+- **cmd:** raise the code health of the setup and execution commands (#115) (1febb3e)
+- **couchbase:** raise the code health of the couchbase driver (#116) (e185870)
+- **couchdb:** raise the code health of the couchdb driver (#120) (b92bc1f)
+- **drivers:** list the URI options of each driver in one catalogue (#123) (7784874)
+- **dynamodb:** raise the code health of the dynamodb driver (#121) (dc224b9)
+- **elasticsearch:** share the point-in-time steps of the two client adapters (#117) (2910d8e)
+- **neo4j:** raise the code health of the neo4j driver (#118) (e39456a)
+- **redis:** raise the code health of the redis driver (#119) (72dfc5a)
+
+### Bug Fixes
+- **cmd:** spell "dropped" and recover yaml encode panics (#112) (9219cea)
+- **cmd:** apply --no-cache and --no-cache-index to combine stages (#109) (9f6afd5)
+- **deps:** update Go to 1.27.2 and golang.org/x/net to v0.60.0 (GO-2026-6617) (#130) (2471b5b)
+
+### Features
+- **cmd:** complete the connection URI of iq add (#128) (cec454e)
+- **cmd:** add descriptions to shell completion candidates (#122) (d9e3aa7)
+
+### Documentation
+- **agents:** write one squash body for each merged pull request (#113) (5ae9681)
+- **cookbook:** show how to compare piped data with a source (#110) (67b0f6c)
+
+
 ## v0.38.3 - 2026-10-07
 ### Bug Fixes
 - **deps:** import the zsltg/rdb fork without a replace directive (#103) (51f893d)
