@@ -2216,6 +2216,18 @@
    "line": 468
   },
   {
+   "id": "21102862e812f0614d99616053cb229e",
+   "file": "drivers/couchbase/couchbase.go",
+   "mutator": "numbers/decrementer",
+   "line": 495
+  },
+  {
+   "id": "7184173f3db8671c90118333c9673abe",
+   "file": "drivers/couchbase/couchbase.go",
+   "mutator": "numbers/incrementer",
+   "line": 495
+  },
+  {
    "id": "be449d0d9f11dfeb2780fd10e29bab63",
    "file": "drivers/couchbase/filter.go",
    "mutator": "branch/case",
