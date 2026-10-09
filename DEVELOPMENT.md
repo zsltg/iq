@@ -99,7 +99,10 @@ the mutation verdict tests (`bash scripts/test/mutation-verdict.sh`: fixture sha
 from `scripts/test/mutation-verdict-fixtures.py` through `scripts/mutation-verdict.sh`,
 the parse, pack and rate steps of `scripts/mutation-plan.sh` on prepared dry runs
 (`--pack`, `--rate`, `--stale`), and `scripts/mutation-fingerprint.sh` in a small copy of the
-repository; no network, no container, no mutago run), the capability wrapper tests
+repository; no network, no container, no mutago run), the mutation diff tests
+(`bash scripts/test/mutation-diff.sh`: the argument checks of the gate, `scripts/mutation-plan.sh --diff`
+and `--diff-pack`, the checks of `scripts/mutation-diff-shard.sh` before the mutago install, and fixture
+shards through `scripts/mutation-diff-verdict.sh`; same limits), the capability wrapper tests
 (`bash scripts/test/capabilities.sh`: simulated Go and Capslock commands, needs `jq`,
 no network, no container), the go install check (`bash scripts/go-installable.sh`
 and its fixture tests in `scripts/test/go-installable.sh`), and `go test -short` with a coverage report. Lint findings in `../<worktree>/...`
@@ -291,8 +294,10 @@ Every run writes the gitignored `mutago-agentic.json` with escaped-mutant data.
 A failed gate prints each new escape ID and writes the gitignored
 `mutago-baseline.candidate.json`. That candidate contains the committed baseline
 plus the new escapes. Accept only justified equivalents from it.
-The CI `mutate-diff` artifact includes those files and `report.json`, so CI
-escape analysis needs no local rerun just to obtain their IDs.
+The CI artifact `mutate-diff` holds the merged `mutago-agentic.json`, and
+`mutago-baseline.candidate.json` after a new escape, so CI escape analysis needs
+no local rerun just to obtain their IDs. The artifacts `mutate-diff-shard-<n>`
+hold the full `report.json` of each shard (see Continuous integration).
 
 A package dry run counts mutants without tests. A diff or `./...` dry run first
 runs the whole-target instrumented coverage pass and can use substantial memory.
@@ -300,6 +305,13 @@ Scope dry runs to one package. Never run a dry run beside a live mutation gate.
 
 - `IQ_MUTATION_BASE`: base ref; empty for a full-module scan; a package arg
   (`bash scripts/mutation-gate.sh ./cmd`) full-scans that package
+- `IQ_MUTATION_DIFF=1`: with file arguments, keep the diff scope: mutago mutates
+  only the changed lines of those files, against the merge-base of
+  `IQ_MUTATION_BASE`, and the gate flag stays `--fail-on-escaped` (also for files
+  under `cmd/`). CI shards use it (`scripts/mutation-diff-shard.sh`). It needs
+  `IQ_MUTATION_BASE` and non-test `.go` files, and it stops on a package argument,
+  `IQ_MUTATION_MUTATORS`, `IQ_MUTATION_UPDATE_BASELINE` and `IQ_MUTATION_MUTANT`.
+  Without it, a file argument is a full-scan target as before.
 - `IQ_MUTATION_WORKERS`: parallel mutants, default 1, subject to the memory and backend constraints above
 - `IQ_MUTATION_TIMEOUT_COEFFICIENT`: per-mutant timeout multiplier (default
   5; raise it for a legitimately slow package instead of letting mutants time out)
@@ -567,10 +579,10 @@ a check of the third-party license texts in the archives and the `.deb`),
 `scripts/third-party-licenses.sh` on every change), `sbom` (syft), `deadcode`,
 `secrets` (gitleaks, the tree and the commits of the pull request), `capabilities`
 (`scripts/capabilities.sh` against the PR base), `mutate-diff`
-(`scripts/mutation-gate.sh` against the PR base; it uploads the artifact
-`mutate-diff` with `report.json`, `mutago-agentic.json` and, after a failure
-on an escape, `mutago-baseline.candidate.json`, so the ids of the escapes need
-no local re-run), `workflows` (zizmor and actionlint over
+(three jobs, see "The mutation gate on a pull request" below: `mutate-plan`,
+`mutate-diff` and `mutate-verdict`; the artifact `mutate-diff` holds the merged
+`mutago-agentic.json` and, after an escape, `mutago-baseline.candidate.json`, so
+the ids of the escapes need no local re-run), `workflows` (zizmor and actionlint over
 `.github/`), `fuzz` (`scripts/fuzz.sh`, the default budget per target, only when the change
 can affect a fuzz target; the seeds run in every `go test -short`, and
 `deep-fuzz` explores every target each week), `dco`
@@ -595,6 +607,54 @@ argument, and three attempts for each network step). Scheduled and manual runs
 of one ref share one concurrency group, so two scans of that ref never overlap;
 a running scan is not cancelled, and a dispatch on a branch never replaces a
 waiting scan of `main`.
+
+### The mutation gate on a pull request
+
+The job `mutate-diff` of a pull request runs in three jobs, so that a large change
+finishes in parallel instead of in one job of 2.5 hours.
+
+- `mutate-plan` runs `scripts/mutation-plan.sh --diff origin/<base>`. It takes the
+  merge-base commit of the base and `HEAD`, lists the changed non-test Go files,
+  and packs them into shards. It weighs a file by its added lines, times 0.3
+  mutants for each line, times the seconds per mutant of its package (the table of
+  the weekly plan). The budget of a shard is 45 min and the plan has at most 12
+  shards. If the packing needs more, the budget grows by a factor 1.5. A file is
+  never split between shards, because mutago removes byte-identical mutants of one
+  file, and a split would change that set. A backend package (one that starts
+  compose services) has shards of its own, so a shard starts the services of one
+  package only. Other packages can share a shard. The plan stops on a line of the
+  diff that is longer than 60,000 bytes (mutago reads the diff with a 64 KB line
+  limit and ignores the error, so a longer line gives no mutants and a false
+  pass), and on a changed directory that `go list` rejects. The merge-base commit
+  goes into the plan, so all shards see the same changed lines when the base
+  branch moves during the run. With no changed non-test Go file, the plan is
+  empty, the other two jobs are skipped, and `ci-ok` passes.
+- `mutate-diff` runs one shard per runner (`scripts/mutation-diff-shard.sh`; eight
+  runners at a time, 180 min per job). A shard starts the compose services of its
+  backend package with `scripts/ci-backend.sh` and sets the `IQ_*_URL` variables,
+  as `deep-mutate` does. It uses exactly one mutago worker: the runner stops when
+  `IQ_MUTATION_WORKERS` is above 1, because parallel workers on a shared backend
+  give false kills. It runs the gate once for each package of the shard with
+  `IQ_MUTATION_DIFF=1`, the merge-base commit of the plan, and the absolute paths
+  of the files. The gate fails the shard on a new escape or an errored mutant, as
+  the local diff gate does. A file with 20 or more changed code lines and no
+  mutant gives a `::warning::`, not a failure: a change that adds only types,
+  constants or comments gives no mutant.
+- `mutate-verdict` runs `scripts/mutation-diff-verdict.sh`. It fails when the plan
+  failed, when a planned shard has no `shard.json` (a timeout or a cancel), when
+  the identity of a shard is not the identity of the checkout, or when a group
+  failed, a mutant errored, or an escape is new. It writes the artifact
+  `mutate-diff` (the merged `mutago-agentic.json`, the candidate baseline after an
+  escape, and `summary.md`, which is also the job summary). It uses no Go and
+  needs no new host.
+
+`ci-ok` needs all three jobs, so a failed plan, shard or verdict blocks the merge.
+The shard ids equal the ids of a package run, because the files are absolute
+paths (mutago#248), so the committed `mutago-baseline.json` works unchanged.
+Editing `scripts/mutation-gate.sh` and `scripts/mutation-plan.sh` changes the
+fingerprint of every package (they are inputs of `scripts/mutation-fingerprint.sh`),
+so the first weekly scan after the change that introduced this design rescans
+every package once. That is expected.
 
 `deep-plan` (`scripts/mutation-plan.sh`) plans only the packages whose
 fingerprint changed or whose last scan failed, or every package on a forced run: the `full` input, or a
@@ -662,12 +722,12 @@ monthly full run. The branch cannot be protected, because CI force-pushes it.
 Parallelism is across runners only: one container
 at a time per machine is what keeps the gate's timeouts honest.
 
-Containers run one at a time per runner in CI: the `coverage (<group>)` and `mutate-diff` jobs set
+Containers run one at a time per runner in CI: the `coverage (<group>)` jobs set
 no `IQ_*_URL` except HBase's, so each driver's `TestMain` provisions its own testcontainer,
 `GOFLAGS=-p=1` serialises the package test binaries (coverage and mutation),
 the e2e job brings up a single compose service per pass, and a `deep-mutate`
-shard starts only the compose services of its own package. HBase has no testcontainers path, so the
-`coverage (cassandra-neo4j-hbase)` job and the hbase `deep-mutate` job start its compose service (host
+shard and a `mutate-diff` shard start only the compose services of their own package. HBase has no testcontainers path, so the
+`coverage (cassandra-neo4j-hbase)` job, the hbase `deep-mutate` job and a `mutate-diff` shard of `drivers/hbase` start its compose service (host
 networking) and set `IQ_HBASE_URL`; everywhere else it skips, as it does locally
 without `IQ_HBASE_URL`. The Linux leg of the `test` job runs with `-race`; the
 macOS and Windows legs do not, because the race detector needs cgo there. The
@@ -772,9 +832,10 @@ Posture and upkeep around the pipeline, all on GitHub:
   names the blocked domain. Make sure that the call is expected, then add
   `host:443` to the `allowed-endpoints` list of that job in sorted order. A matrix
   job (`coverage-group`, `deep-mutate`, `mutant-proof`) has one list for all legs,
-  so add the host there. The `mutate-diff` job tests the packages that a pull
-  request changes, so it uses the shared list with the hosts of every compose
-  image registry. When a new tool or compose image enters a job, add its hosts in
+  so add the host there. The `mutate-diff` shards test the packages that a pull
+  request changes, so they use the shared list with the hosts of every compose
+  image registry. `mutate-plan` uses the Go list, and `mutate-verdict` uses the
+  base list. When a new tool or compose image enters a job, add its hosts in
   the same change. Do not add a host that you did not check.
   Every job that runs `actions/setup-go` or the shared action
   `.github/actions/setup-go` also allows `go.dev:443` and `dl.google.com:443`.
@@ -795,8 +856,9 @@ Posture and upkeep around the pipeline, all on GitHub:
   every push and pull request, and `deep-scan` re-runs it weekly against fresh
   advisory data. An accepted finding is an inline `# zizmor: ignore[<audit>]`
   comment with a reason on the offending line. Two exist. In `ci.yml`, the
-  `capabilities` and `mutate-diff` jobs keep the checkout credential because
-  they fetch the pull-request base branch. `.github/zizmor.yml` turns off one
+  `capabilities` and `mutate-plan` jobs keep the checkout credential because
+  they fetch the pull-request base branch. The `mutate-diff` shards diff against a
+  commit of the plan and do not keep it. `.github/zizmor.yml` turns off one
   audit everywhere: `self-repository`, which asks for the form `$/.github/...`.
   OpenSSF Scorecard counts that form as an unpinned third-party action, so the
   workflows use `./.github/...`. The two forms run the same code, because no

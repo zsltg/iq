@@ -42,11 +42,26 @@ func (s *Store) upsert(ctx context.Context, batch []query.Record) (query.WriteSt
 		return query.WriteStat{}, err
 	}
 
+	docs, err := bulkBodies(batch, revs)
+	if err != nil {
+		return query.WriteStat{}, err
+	}
+
+	results, err := db.BulkDocs(ctx, docs)
+	if err != nil {
+		return query.WriteStat{}, fmt.Errorf("couchdb bulk write: %w", err)
+	}
+	return upsertStat(batch, revs, results)
+}
+
+// bulkBodies builds the documents to write for batch. A key adds _id. A key that revs
+// holds adds _rev. revs may be nil, as for an insert, which never adds _rev.
+func bulkBodies(batch []query.Record, revs map[string]string) ([]any, error) {
 	docs := make([]any, len(batch))
 	for i, r := range batch {
 		doc, err := documentBody(r)
 		if err != nil {
-			return query.WriteStat{}, err
+			return nil, err
 		}
 		if r.Key != "" {
 			doc["_id"] = r.Key
@@ -56,11 +71,12 @@ func (s *Store) upsert(ctx context.Context, batch []query.Record) (query.WriteSt
 		}
 		docs[i] = doc
 	}
+	return docs, nil
+}
 
-	results, err := db.BulkDocs(ctx, docs)
-	if err != nil {
-		return query.WriteStat{}, fmt.Errorf("couchdb bulk write: %w", err)
-	}
+// upsertStat counts the outcome of an upsert. A record whose non-empty key had a prior
+// revision is Overwritten, the rest are Written. The first per-document error fails it.
+func upsertStat(batch []query.Record, revs map[string]string, results []kivik.BulkResult) (query.WriteStat, error) {
 	var stat query.WriteStat
 	for i, res := range results {
 		if res.Error != nil {
@@ -79,16 +95,9 @@ func (s *Store) upsert(ctx context.Context, batch []query.Record) (query.WriteSt
 // as skips. CouchDB reports each collision as a per-document 409 in the bulk result,
 // so the batch continues past a collision; any other per-document error fails it.
 func (s *Store) insertOnly(ctx context.Context, batch []query.Record) (query.WriteStat, error) {
-	docs := make([]any, len(batch))
-	for i, r := range batch {
-		doc, err := documentBody(r)
-		if err != nil {
-			return query.WriteStat{}, err
-		}
-		if r.Key != "" {
-			doc["_id"] = r.Key
-		}
-		docs[i] = doc
+	docs, err := bulkBodies(batch, nil)
+	if err != nil {
+		return query.WriteStat{}, err
 	}
 
 	results, err := s.client.DB(s.db).BulkDocs(ctx, docs)
@@ -212,18 +221,14 @@ func (s *Store) scanDeletes(ctx context.Context, fn func(batch []any) error) err
 
 	batch := make([]any, 0, s.pageSize)
 	for rows.Next() {
-		id, err := rows.ID()
+		doc, ok, err := tombstone(rows)
 		if err != nil {
-			return fmt.Errorf("couchdb row id: %w", err)
+			return err
 		}
-		if id == "" || strings.HasPrefix(id, designPrefix) {
+		if !ok {
 			continue
 		}
-		rev := rowRev(rows)
-		if rev == "" {
-			continue
-		}
-		batch = append(batch, map[string]any{"_id": id, "_rev": rev, "_deleted": true})
+		batch = append(batch, doc)
 		if len(batch) >= s.pageSize {
 			if err := fn(batch); err != nil {
 				return err
@@ -238,6 +243,24 @@ func (s *Store) scanDeletes(ctx context.Context, fn func(batch []any) error) err
 		return fn(batch)
 	}
 	return nil
+}
+
+// tombstone reads the current _all_docs row as a deletion document
+// {_id, _rev, _deleted: true}. ok is false for a row with nothing to delete: an empty
+// id, a design document, or no live revision.
+func tombstone(rows *kivik.ResultSet) (doc map[string]any, ok bool, err error) {
+	id, err := rows.ID()
+	if err != nil {
+		return nil, false, fmt.Errorf("couchdb row id: %w", err)
+	}
+	if id == "" || strings.HasPrefix(id, designPrefix) {
+		return nil, false, nil
+	}
+	rev := rowRev(rows)
+	if rev == "" {
+		return nil, false, nil
+	}
+	return map[string]any{"_id": id, "_rev": rev, "_deleted": true}, true, nil
 }
 
 // Drop removes the database entirely — documents and indexes (the `iq data drop`
@@ -267,30 +290,46 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 	if err != nil {
 		return query.DeleteStat{}, err
 	}
-	var stat query.DeleteStat
-	docs := make([]any, 0, len(keys))
+	docs, missing := deletions(keys, revs)
+	deleted, err := s.deleteChunks(ctx, s.client.DB(s.db), docs)
+	if err != nil {
+		return query.DeleteStat{}, err
+	}
+	return query.DeleteStat{Deleted: deleted, Missing: missing}, nil
+}
+
+// deletions returns the tombstone documents for the keys that have a live revision, in
+// key order, and the number of keys that have none.
+func deletions(keys []string, revs map[string]string) (docs []any, missing int) {
+	docs = make([]any, 0, len(keys))
 	for _, k := range keys {
 		rev, ok := revs[k]
 		if !ok {
-			stat.Missing++
+			missing++
 			continue
 		}
 		docs = append(docs, map[string]any{"_id": k, "_rev": rev, "_deleted": true})
 	}
-	db := s.client.DB(s.db)
+	return docs, missing
+}
+
+// deleteChunks bulk-deletes docs in chunks of pageSize and returns how many tombstones
+// the server accepted.
+func (s *Store) deleteChunks(ctx context.Context, db *kivik.DB, docs []any) (int, error) {
+	deleted := 0
 	for chunk := range slices.Chunk(docs, s.pageSize) {
 		results, err := db.BulkDocs(ctx, chunk)
 		if err != nil {
-			return query.DeleteStat{}, fmt.Errorf("couchdb bulk delete: %w", err)
+			return 0, fmt.Errorf("couchdb bulk delete: %w", err)
 		}
 		for _, r := range results {
 			if r.Error != nil {
-				return query.DeleteStat{}, fmt.Errorf("couchdb delete %q: %w", r.ID, r.Error)
+				return 0, fmt.Errorf("couchdb delete %q: %w", r.ID, r.Error)
 			}
-			stat.Deleted++
+			deleted++
 		}
 	}
-	return stat, nil
+	return deleted, nil
 }
 
 // TypedScan streams the whole database as typed records, reusing the ScanBatches

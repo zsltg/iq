@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"testing/iotest"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -739,4 +741,141 @@ func TestReadPasswordFromAPipe(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "s3cret", got)
 	require.Empty(t, stderr.String(), "no prompt for a piped password")
+}
+
+// TestAddCheckOrder gives `iq add` two faults at once and checks which error
+// wins, so the order of the checks stays fixed.
+func TestAddCheckOrder(t *testing.T) {
+	tests := []struct {
+		name  string
+		args  []string
+		stdin io.Reader
+		want  string
+	}{
+		{"unknown driver before the scheme", []string{"-d", "nosuch", "postgres://h"}, nil, "unknown driver"},
+		{"scheme before the driver match", []string{"-d", "mongo", "postgres://h"}, nil, "unsupported URI scheme"},
+		{"driver match before the keyspace param", []string{"-d", "mongo", "redis://h?collection=x"}, nil, "does not match URI scheme"},
+		{"keyspace param before the store", []string{"--store", "bogus", "redis://h?collection=x"}, nil, "no collections"},
+		{"password prompt before the store", []string{"-p", "--store", "bogus", "redis://u@h"}, iotest.ErrReader(errors.New("stdin broke")), "read password"},
+		{"store before the duplicate handle", []string{"--store", "bogus", "-n", "cache", "redis://h"}, nil, "unknown --store"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newSeed()
+			require.NoError(t, c.Add("cache", "redis://first:6379/0"))
+			seedConfig(t, c)
+			cmd := newAddCmd(&config{})
+			if tt.stdin != nil {
+				cmd.SetIn(tt.stdin)
+			}
+			_, err := runCmd(t, cmd, append(tt.args, "--skip-verify")...)
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+// TestAddVerifyFailureLeavesNoTrace checks that a source that fails its
+// reachability check is not saved, not made active, and leaves no keyring entry.
+func TestAddVerifyFailureLeavesNoTrace(t *testing.T) {
+	seedConfig(t, newSeed())
+	fk := useFakeKeyring(t)
+	missing := "file://" + filepath.ToSlash(filepath.Join(t.TempDir(), "missing.json"))
+
+	_, err := runCmd(t, newAddCmd(&config{timeout: time.Second}), "-n", "dump", "-a", missing)
+	require.ErrorContains(t, err, "verify dump:")
+	require.ErrorContains(t, err, "(use --skip-verify to add it anyway)")
+
+	cf, lerr := iqconfig.Load()
+	require.NoError(t, lerr)
+	require.NotContains(t, cf.Sources, "dump")
+	require.Empty(t, cf.Active)
+	require.Empty(t, fk.m)
+}
+
+// TestAddVerifiesAReadableDump checks the success path of the reachability check.
+func TestAddVerifiesAReadableDump(t *testing.T) {
+	seedConfig(t, newSeed())
+	path := filepath.Join(t.TempDir(), "dump.jsonl")
+	require.NoError(t, os.WriteFile(path, []byte("{\"a\":1}\n"), 0o600))
+
+	out, err := runCmd(t, newAddCmd(&config{timeout: time.Second}), "-n", "dump", "file://"+filepath.ToSlash(path))
+	require.NoError(t, err)
+	require.Contains(t, out, "added source dump")
+}
+
+// TestAddReportsAWriteError checks that the error of the success line comes back,
+// after the source is saved.
+func TestAddReportsAWriteError(t *testing.T) {
+	seedConfig(t, newSeed())
+	c := newAddCmd(&config{})
+	c.SetOut(&errAfter{0})
+	c.SetErr(io.Discard)
+	c.SetArgs([]string{"-n", "cache", "redis://h:6379/0", "--skip-verify"})
+	require.ErrorContains(t, c.Execute(), "write failed")
+
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	require.Contains(t, cf.Sources, "cache")
+}
+
+// TestMvNothingToMove checks that moving a source onto its own name reports it
+// and leaves the config file alone.
+func TestMvNothingToMove(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("cache", "redis://h"))
+	seedConfig(t, c)
+	path := os.Getenv(iqconfig.EnvConfig)
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	out, err := runCmd(t, newMvCmd(), "cache", "cache")
+	require.NoError(t, err)
+	require.Equal(t, "nothing to move\n", out)
+
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+}
+
+// TestSrcAndGroupShowTheCurrentValue pins the show form of `iq src` and `iq group`,
+// with and without a value.
+func TestSrcAndGroupShowTheCurrentValue(t *testing.T) {
+	tests := []struct {
+		name  string
+		build func() *cobra.Command
+		prep  func(c *iqconfig.Config)
+		want  string
+	}{
+		{"src without an active source", newSrcCmd, func(*iqconfig.Config) {}, "no active source\n"},
+		{"src with an active source", newSrcCmd, func(c *iqconfig.Config) { require.NoError(t, c.SetActive("cache")) }, "cache\n"},
+		{"group without a group", newGroupCmd, func(*iqconfig.Config) {}, "no active group\n"},
+		{"group with a group", newGroupCmd, func(c *iqconfig.Config) { require.NoError(t, c.SetGroup("prod")) }, "prod\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newSeed()
+			require.NoError(t, c.Add("cache", "redis://h"))
+			require.NoError(t, c.Add("prod/db", "redis://h"))
+			tt.prep(c)
+			seedConfig(t, c)
+			out, err := runCmd(t, tt.build())
+			require.NoError(t, err)
+			require.Equal(t, tt.want, out)
+		})
+	}
+}
+
+// TestGroupClearWinsOverAnArgument checks that --clear ignores a positional.
+func TestGroupClearWinsOverAnArgument(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("prod/db", "redis://h"))
+	require.NoError(t, c.SetGroup("prod"))
+	seedConfig(t, c)
+
+	out, err := runCmd(t, newGroupCmd(), "--clear", "prod")
+	require.NoError(t, err)
+	require.Equal(t, "cleared active group\n", out)
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	require.Empty(t, cf.Group)
 }
