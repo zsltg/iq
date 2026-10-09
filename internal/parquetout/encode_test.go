@@ -372,3 +372,95 @@ func TestAppendStructMissingFieldIsNull(t *testing.T) {
 	require.Equal(t, int64(5), arr.Field(0).(*array.Int64).Value(0))
 	require.True(t, arr.Field(1).IsNull(0), "missing struct field should be null")
 }
+
+func TestAppendScalarErrorText(t *testing.T) {
+	const tail = "; use --format jsonl for heterogeneous data"
+	tests := []struct {
+		name string
+		dt   arrow.DataType
+		enc  *enc
+		v    any
+		want string
+	}{
+		{"int", arrow.PrimitiveTypes.Int64, &enc{kind: encInt}, "x", `parquet: value of type string at column "a.b[]" does not fit inferred type int64` + tail},
+		{"float", arrow.PrimitiveTypes.Float64, &enc{kind: encFloat}, true, `parquet: value of type bool at column "a.b[]" does not fit inferred type double` + tail},
+		{"bool", arrow.FixedWidthTypes.Boolean, &enc{kind: encBool}, 1, `parquet: value of type integer at column "a.b[]" does not fit inferred type bool` + tail},
+		{"string", arrow.BinaryTypes.String, &enc{kind: encString}, 1.5, `parquet: value of type number at column "a.b[]" does not fit inferred type utf8` + tail},
+		{"timestamp type", &arrow.TimestampType{Unit: arrow.Nanosecond, TimeZone: "UTC"}, &enc{kind: encTimestamp}, 42, `parquet: value of type integer at column "a.b[]" does not fit inferred type timestamp[ns, UTC]` + tail},
+		{"date type", arrow.FixedWidthTypes.Date32, &enc{kind: encDate}, 42, `parquet: value of type integer at column "a.b[]" does not fit inferred type date32` + tail},
+		{"timestamp parse", &arrow.TimestampType{Unit: arrow.Nanosecond, TimeZone: "UTC"}, &enc{kind: encTimestamp}, "nope", `parquet: "nope" is not an RFC3339Nano timestamp for column "a.b[]"` + tail},
+		{"date parse", arrow.FixedWidthTypes.Date32, &enc{kind: encDate}, "2021-13-99", `parquet: "2021-13-99" is not a YYYY-MM-DD date for column "a.b[]"` + tail},
+		{"unknown kind", arrow.BinaryTypes.String, &enc{kind: encKind(99)}, []any{}, `parquet: value of type array at column "a.b[]" does not fit inferred type unknown` + tail},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := appendVal(builderFor(t, tc.dt), tc.enc, tc.v, "a.b[]")
+			require.EqualError(t, err, tc.want)
+		})
+	}
+}
+
+func TestAppendScalarValues(t *testing.T) {
+	t.Run("int", func(t *testing.T) {
+		b := builderFor(t, arrow.PrimitiveTypes.Int64)
+		require.NoError(t, appendVal(b, &enc{kind: encInt}, int8(-3), "c"))
+		arr := b.(*array.Int64Builder).NewInt64Array()
+		defer arr.Release()
+		require.Equal(t, int64(-3), arr.Value(0))
+	})
+	t.Run("float", func(t *testing.T) {
+		b := builderFor(t, arrow.PrimitiveTypes.Float64)
+		require.NoError(t, appendVal(b, &enc{kind: encFloat}, 7, "c"))
+		arr := b.(*array.Float64Builder).NewFloat64Array()
+		defer arr.Release()
+		require.InDelta(t, 7.0, arr.Value(0), 0)
+	})
+	t.Run("bool", func(t *testing.T) {
+		b := builderFor(t, arrow.FixedWidthTypes.Boolean)
+		require.NoError(t, appendVal(b, &enc{kind: encBool}, true, "c"))
+		arr := b.(*array.BooleanBuilder).NewBooleanArray()
+		defer arr.Release()
+		require.True(t, arr.Value(0))
+	})
+	t.Run("string", func(t *testing.T) {
+		b := builderFor(t, arrow.BinaryTypes.String)
+		require.NoError(t, appendVal(b, &enc{kind: encString}, "hi", "c"))
+		arr := b.(*array.StringBuilder).NewStringArray()
+		defer arr.Release()
+		require.Equal(t, "hi", arr.Value(0))
+	})
+	t.Run("timestamp with an offset is stored as the UTC instant", func(t *testing.T) {
+		b := builderFor(t, &arrow.TimestampType{Unit: arrow.Nanosecond, TimeZone: "UTC"})
+		require.NoError(t, appendVal(b, &enc{kind: encTimestamp}, "1970-01-01T01:00:00.000000005+01:00", "c"))
+		arr := b.(*array.TimestampBuilder).NewTimestampArray()
+		defer arr.Release()
+		require.Equal(t, arrow.Timestamp(5), arr.Value(0))
+	})
+	t.Run("date is stored as a day count", func(t *testing.T) {
+		b := builderFor(t, arrow.FixedWidthTypes.Date32)
+		require.NoError(t, appendVal(b, &enc{kind: encDate}, "1970-01-11", "c"))
+		arr := b.(*array.Date32Builder).NewDate32Array()
+		defer arr.Release()
+		require.Equal(t, arrow.Date32(10), arr.Value(0))
+	})
+}
+
+func TestToInt64JSONNumberEdges(t *testing.T) {
+	tests := []struct {
+		name string
+		v    json.Number
+		want int64
+		ok   bool
+	}{
+		{"integral exponent text", json.Number("1e3"), 1000, true},
+		{"integer text past int64 is out of range as float", json.Number("9223372036854775808"), 0, false},
+		{"negative integral float text", json.Number("-2.0"), -2, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := toInt64(tc.v)
+			require.Equal(t, tc.ok, ok)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}

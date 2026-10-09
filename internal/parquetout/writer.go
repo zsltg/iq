@@ -182,36 +182,15 @@ func appendNested(b array.Builder, e *enc, v any, path string) error {
 func appendScalar(b array.Builder, e *enc, v any, path string) error {
 	switch e.kind {
 	case encJSON:
-		s, err := canonicalJSON(v)
-		if err != nil {
-			return fmt.Errorf("parquet: encode %q as json: %w", path, err)
-		}
-		// The arrow.json column is plain utf8 storage; append the canonical text.
-		b.(*array.StringBuilder).Append(s)
+		return appendJSON(b, v, path)
 	case encInt:
-		n, ok := toInt64(v)
-		if !ok {
-			return mismatch(path, "int64", v)
-		}
-		b.(*array.Int64Builder).Append(n)
+		return intScalar.put(b.(*array.Int64Builder), v, path)
 	case encFloat:
-		f, ok := toFloat64(v)
-		if !ok {
-			return mismatch(path, "double", v)
-		}
-		b.(*array.Float64Builder).Append(f)
+		return floatScalar.put(b.(*array.Float64Builder), v, path)
 	case encBool:
-		bv, ok := v.(bool)
-		if !ok {
-			return mismatch(path, "bool", v)
-		}
-		b.(*array.BooleanBuilder).Append(bv)
+		return boolScalar.put(b.(*array.BooleanBuilder), v, path)
 	case encString:
-		s, ok := v.(string)
-		if !ok {
-			return mismatch(path, "utf8", v)
-		}
-		b.(*array.StringBuilder).Append(s)
+		return stringScalar.put(b.(*array.StringBuilder), v, path)
 	case encTimestamp:
 		return appendTimestamp(b, v, path)
 	case encDate:
@@ -219,20 +198,85 @@ func appendScalar(b array.Builder, e *enc, v any, path string) error {
 	default:
 		return mismatch(path, "unknown", v)
 	}
+}
+
+// scalar describes one leaf column type: the Arrow type name that a mismatch
+// error shows, and how to convert a normalized value to the Go type T that the
+// column builder takes.
+type scalar[T any] struct {
+	arrow string
+	conv  func(any) (T, bool)
+}
+
+// The leaf column types that convert a value in place.
+var (
+	intScalar    = scalar[int64]{arrow: "int64", conv: toInt64}
+	floatScalar  = scalar[float64]{arrow: "double", conv: toFloat64}
+	boolScalar   = scalar[bool]{arrow: "bool", conv: asType[bool]}
+	stringScalar = scalar[string]{arrow: "utf8", conv: asType[string]}
+)
+
+// put converts v and appends it to builder b. A value that does not convert is a
+// mismatch, so the export fails rather than coercing it.
+func (s scalar[T]) put(b interface{ Append(T) }, v any, path string) error {
+	x, ok := s.conv(v)
+	if !ok {
+		return mismatch(path, s.arrow, v)
+	}
+	b.Append(x)
 	return nil
 }
 
-// appendTimestamp parses an RFC3339Nano string into a nanosecond UTC timestamp.
-// A non-string value or an unparseable timestamp fails the export rather than
-// coercing to a wrong instant.
-func appendTimestamp(b array.Builder, v any, path string) error {
+// asType returns v as T, reporting whether v holds a T.
+func asType[T any](v any) (T, bool) {
+	t, ok := v.(T)
+	return t, ok
+}
+
+// appendJSON appends v as canonical JSON text to a json column.
+func appendJSON(b array.Builder, v any, path string) error {
+	s, err := canonicalJSON(v)
+	if err != nil {
+		return fmt.Errorf("parquet: encode %q as json: %w", path, err)
+	}
+	// The arrow.json column is plain utf8 storage; append the canonical text.
+	b.(*array.StringBuilder).Append(s)
+	return nil
+}
+
+// timeLayout says how a time column parses its source text and how its errors
+// read.
+type timeLayout struct {
+	layout    string // layout for time.Parse
+	arrowType string // type name in a mismatch error
+	noun      string // what the text must be, for a parse error
+}
+
+var (
+	timestampLayout = timeLayout{layout: time.RFC3339Nano, arrowType: "timestamp[ns, UTC]", noun: "an RFC3339Nano timestamp"}
+	dateLayout      = timeLayout{layout: "2006-01-02", arrowType: "date32", noun: "a YYYY-MM-DD date"}
+)
+
+// parseTimeValue parses v as a time string with tl. A non-string value is a
+// mismatch. A string that does not parse fails the export rather than coercing to
+// a wrong instant.
+func parseTimeValue(v any, path string, tl timeLayout) (time.Time, error) {
 	s, ok := v.(string)
 	if !ok {
-		return mismatch(path, "timestamp[ns, UTC]", v)
+		return time.Time{}, mismatch(path, tl.arrowType, v)
 	}
-	t, err := time.Parse(time.RFC3339Nano, s)
+	t, err := time.Parse(tl.layout, s)
 	if err != nil {
-		return fmt.Errorf("parquet: %q is not an RFC3339Nano timestamp for column %q; use --format jsonl for heterogeneous data", s, path)
+		return time.Time{}, fmt.Errorf("parquet: %q is not %s for column %q; use --format jsonl for heterogeneous data", s, tl.noun, path)
+	}
+	return t, nil
+}
+
+// appendTimestamp parses an RFC3339Nano string into a nanosecond UTC timestamp.
+func appendTimestamp(b array.Builder, v any, path string) error {
+	t, err := parseTimeValue(v, path, timestampLayout)
+	if err != nil {
+		return err
 	}
 	b.(*array.TimestampBuilder).Append(arrow.Timestamp(t.UTC().UnixNano()))
 	return nil
@@ -240,13 +284,9 @@ func appendTimestamp(b array.Builder, v any, path string) error {
 
 // appendDate parses a YYYY-MM-DD string into a date32 day count.
 func appendDate(b array.Builder, v any, path string) error {
-	s, ok := v.(string)
-	if !ok {
-		return mismatch(path, "date32", v)
-	}
-	t, err := time.Parse("2006-01-02", s)
+	t, err := parseTimeValue(v, path, dateLayout)
 	if err != nil {
-		return fmt.Errorf("parquet: %q is not a YYYY-MM-DD date for column %q; use --format jsonl for heterogeneous data", s, path)
+		return err
 	}
 	b.(*array.Date32Builder).Append(arrow.Date32FromTime(t))
 	return nil
@@ -337,16 +377,22 @@ func toInt64(v any) (int64, bool) {
 		}
 		return 0, false
 	case json.Number:
-		if n, err := t.Int64(); err == nil {
-			return n, true
-		}
-		if f, err := t.Float64(); err == nil {
-			return floatToInt64(f)
-		}
-		return 0, false
+		return jsonNumberToInt64(t)
 	default:
 		return 0, false
 	}
+}
+
+// jsonNumberToInt64 converts a json.Number to int64. It reads the integer text
+// first, so a full-precision int64 survives, and then an integral float.
+func jsonNumberToInt64(n json.Number) (int64, bool) {
+	if i, err := n.Int64(); err == nil {
+		return i, true
+	}
+	if f, err := n.Float64(); err == nil {
+		return floatToInt64(f)
+	}
+	return 0, false
 }
 
 // intKind says which result of widenInteger holds the value.

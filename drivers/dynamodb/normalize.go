@@ -4,8 +4,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"maps"
 	"math/big"
+	"slices"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -25,9 +27,7 @@ import (
 // exact same shape a live scan does — the frozen encoding contract.
 func Normalize(av types.AttributeValue, dec numfmt.DecimalMode) any {
 	switch t := av.(type) {
-	case nil:
-		return nil
-	case *types.AttributeValueMemberNULL:
+	case nil, *types.AttributeValueMemberNULL:
 		return nil
 	case *types.AttributeValueMemberS:
 		return t.Value
@@ -38,38 +38,46 @@ func Normalize(av types.AttributeValue, dec numfmt.DecimalMode) any {
 	case *types.AttributeValueMemberB:
 		return base64.StdEncoding.EncodeToString(t.Value)
 	case *types.AttributeValueMemberM:
-		out := make(map[string]any, len(t.Value))
-		for k, v := range t.Value {
-			out[k] = Normalize(v, dec)
-		}
-		return out
+		return normalizeMap(t.Value, dec)
 	case *types.AttributeValueMemberL:
-		out := make([]any, len(t.Value))
-		for i, v := range t.Value {
-			out[i] = Normalize(v, dec)
-		}
-		return out
-	case *types.AttributeValueMemberSS:
-		out := make([]any, len(t.Value))
-		for i, s := range t.Value {
-			out[i] = s
-		}
-		return out
-	case *types.AttributeValueMemberNS:
-		out := make([]any, len(t.Value))
-		for i, s := range t.Value {
-			out[i] = numberValue(s, dec)
-		}
-		return out
-	case *types.AttributeValueMemberBS:
-		out := make([]any, len(t.Value))
-		for i, b := range t.Value {
-			out[i] = base64.StdEncoding.EncodeToString(b)
-		}
-		return out
+		return normalizeEach(t.Value, func(v types.AttributeValue) any { return Normalize(v, dec) })
 	default:
-		// An attribute type without a first-class JSON form is rendered as its Go
-		// string form rather than dropped, so nothing is lost silently.
+		return normalizeSet(av, dec)
+	}
+}
+
+// normalizeMap normalizes every attribute value of an M value or an item, keeping
+// the names.
+func normalizeMap(m map[string]types.AttributeValue, dec numfmt.DecimalMode) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = Normalize(v, dec)
+	}
+	return out
+}
+
+// normalizeEach converts every element of in with f and keeps the order. It always
+// returns a non-nil slice, so an empty set or list stays an empty JSON array.
+func normalizeEach[T any](in []T, f func(T) any) []any {
+	out := make([]any, len(in))
+	for i, v := range in {
+		out[i] = f(v)
+	}
+	return out
+}
+
+// normalizeSet renders the set types SS, NS and BS as a []any. Any other attribute
+// type is rendered as its Go string form rather than dropped, so nothing is lost
+// silently.
+func normalizeSet(av types.AttributeValue, dec numfmt.DecimalMode) any {
+	switch t := av.(type) {
+	case *types.AttributeValueMemberSS:
+		return normalizeEach(t.Value, func(s string) any { return s })
+	case *types.AttributeValueMemberNS:
+		return normalizeEach(t.Value, func(s string) any { return numberValue(s, dec) })
+	case *types.AttributeValueMemberBS:
+		return normalizeEach(t.Value, func(b []byte) any { return base64.StdEncoding.EncodeToString(b) })
+	default:
 		return fmt.Sprintf("%v", av)
 	}
 }
@@ -244,13 +252,9 @@ func (s *Store) toItem(r recordValue) (map[string]types.AttributeValue, error) {
 	if !ok {
 		return nil, fmt.Errorf("dynamodb: record value must be an item object, got %T", r.value)
 	}
-	item := make(map[string]types.AttributeValue, len(obj))
-	for name, v := range obj {
-		av, err := toAttributeValue(v)
-		if err != nil {
-			return nil, err
-		}
-		item[name] = av
+	item, err := toAttributeMap(obj)
+	if err != nil {
+		return nil, err
 	}
 	if r.key != "" {
 		keyAVs, err := s.decodeKey(r.key)
@@ -283,6 +287,60 @@ type recordValue struct {
 // presented as strings (auto/string decimal mode) write back as S, not N.
 func toAttributeValue(v any) (types.AttributeValue, error) {
 	switch t := v.(type) {
+	case map[string]any:
+		m, err := toAttributeMap(t)
+		if err != nil {
+			return nil, err
+		}
+		return &types.AttributeValueMemberM{Value: m}, nil
+	case []any:
+		l, err := toAttributeList(t)
+		if err != nil {
+			return nil, err
+		}
+		return &types.AttributeValueMemberL{Value: l}, nil
+	default:
+		return scalarAttributeValue(v)
+	}
+}
+
+// toAttributeMap converts every entry of a JSON object to an attribute value.
+func toAttributeMap(obj map[string]any) (map[string]types.AttributeValue, error) {
+	m := make(map[string]types.AttributeValue, len(obj))
+	err := convertAll(maps.All(obj), func(k string, av types.AttributeValue) { m[k] = av })
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// toAttributeList converts every element of a JSON array to an attribute value.
+func toAttributeList(list []any) ([]types.AttributeValue, error) {
+	l := make([]types.AttributeValue, len(list))
+	err := convertAll(slices.All(list), func(i int, av types.AttributeValue) { l[i] = av })
+	if err != nil {
+		return nil, err
+	}
+	return l, nil
+}
+
+// convertAll converts each value of seq to an attribute value and passes it to store
+// with its key or index. It stops at the first conversion error and returns it.
+func convertAll[K any](seq iter.Seq2[K, any], store func(K, types.AttributeValue)) error {
+	for k, e := range seq {
+		av, err := toAttributeValue(e)
+		if err != nil {
+			return err
+		}
+		store(k, av)
+	}
+	return nil
+}
+
+// scalarAttributeValue converts a JSON scalar (nil, bool, string, or a Go or json
+// number) to an attribute value. Any other type is an error.
+func scalarAttributeValue(v any) (types.AttributeValue, error) {
+	switch t := v.(type) {
 	case nil:
 		return &types.AttributeValueMemberNULL{Value: true}, nil
 	case bool:
@@ -297,26 +355,6 @@ func toAttributeValue(v any) (types.AttributeValue, error) {
 		return &types.AttributeValueMemberN{Value: strconv.FormatFloat(t, 'g', -1, 64)}, nil
 	case json.Number:
 		return &types.AttributeValueMemberN{Value: t.String()}, nil
-	case map[string]any:
-		m := make(map[string]types.AttributeValue, len(t))
-		for k, e := range t {
-			av, err := toAttributeValue(e)
-			if err != nil {
-				return nil, err
-			}
-			m[k] = av
-		}
-		return &types.AttributeValueMemberM{Value: m}, nil
-	case []any:
-		l := make([]types.AttributeValue, len(t))
-		for i, e := range t {
-			av, err := toAttributeValue(e)
-			if err != nil {
-				return nil, err
-			}
-			l[i] = av
-		}
-		return &types.AttributeValueMemberL{Value: l}, nil
 	default:
 		return nil, fmt.Errorf("dynamodb: cannot write value %v (%T)", v, v)
 	}

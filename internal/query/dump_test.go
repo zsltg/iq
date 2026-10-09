@@ -183,6 +183,17 @@ func TestYAMLSourceRoundTrip(t *testing.T) {
 	require.Equal(t, map[string]any{"f": "v"}, recs[1].Value)
 }
 
+// TestYAMLSourcePlainKeepsTheWholeValue pins plain mode: each YAML document is the
+// record value, with no key and no type. A record that drops the value (the
+// recordFromDecoded plain return) would come back empty.
+func TestYAMLSourcePlainKeepsTheWholeValue(t *testing.T) {
+	src := query.YAMLSource(strings.NewReader("a: 1\nb: [x, y]\n---\n- 7\n"), 10, true)
+	recs := drainSource(t, src)
+	require.Len(t, recs, 2)
+	require.Equal(t, query.Record{Value: map[string]any{"a": 1, "b": []any{"x", "y"}}}, recs[0])
+	require.Equal(t, query.Record{Value: []any{7}}, recs[1])
+}
+
 // errReader fails after handing out its payload, so a source's read error is
 // reachable without a filesystem.
 type errReader struct {

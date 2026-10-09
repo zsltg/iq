@@ -246,10 +246,7 @@ func TestQueueWriteRejectsANonScalarPart(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// The pipeline only queues, so the client never dials the address.
-			client := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
-			t.Cleanup(func() { _ = client.Close() })
-			p := client.Pipeline()
+			p := newPipeline(t)
 
 			err := queueWrite(context.Background(), p, tt.record)
 

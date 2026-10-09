@@ -220,9 +220,28 @@ from your config. As a result, `iq --src <TAB>` offers the sources `iq ls` lists
 A flag that takes a closed
 set offers that option's own values.
 
+In zsh, fish, and PowerShell, a candidate shows a short description next to it.
+Bash shows the descriptions when it lists more than one candidate. A source
+handle shows its driver, its keyspace, and `active` for the active source, for
+example `prod/books  mongo, orders, active`. It never shows the host, the user,
+or the URI. A group shows its number of sources, and a config key shows the help
+text of its flag. To turn the descriptions off, generate the script with
+`iq completion <shell> --no-descriptions`.
+
 `iq inspect --only <TAB>` and `iq diff --section <TAB>` offer the
 introspection subcommands of the selected source's backend, worked out from its
 saved URI.
+
+`iq add <TAB>` completes the connection URI part by part. It offers the schemes,
+then the names of the URI options that `iq` itself reads, then the values of an
+option that has a closed set of values. A shell gives `?` and `&` a special
+meaning, so type them with a backslash, for example
+`iq add cassandra://host/ks\?consistency=lo<TAB>`, which offers `local_quorum`
+and `local_one`. Completion does not work inside quotes, because the bash and
+zsh completion scripts pass the quote character to `iq`. A quoted URI still runs
+correctly. Completion does not offer the host, the path, or the options that a
+backend SDK reads, such as `authSource` for MongoDB. It also offers nothing when
+the typed text holds a password, so a password never appears in a candidate.
 
 The `jq` filter itself is a program, not a completable value. As a result, `iq`
 offers no candidates there (and never falls back to filenames). `iq` also offers

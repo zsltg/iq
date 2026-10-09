@@ -5,6 +5,8 @@
 #   scripts/mutation-plan.sh --rate <badges-dir> <package>   # print the seconds per mutant
 #   scripts/mutation-plan.sh --pack <work-dir>               # pack prepared dry runs (tests)
 #   scripts/mutation-plan.sh --stale <badges-dir> <package>  # print why it is planned (tests)
+#   scripts/mutation-plan.sh --diff <base-ref>               # plan the CI mutate-diff shards
+#   scripts/mutation-plan.sh --diff-pack <work-dir>          # pack prepared diff files (tests)
 #
 # <badges-dir> holds the last published `badges` branch (state/<slug>.json for each
 # package). Without a package argument the plan covers every package with a non-test Go
@@ -40,6 +42,27 @@
 # larger than 285 min (the 300 min job less the setup) stops the plan, because its shard
 # cannot finish. A package with no mutants gets one shard with no cells, so that the
 # verdict still records its zero result.
+#
+# --diff plans the CI `mutate-plan` job. It does not use a dry run. It takes the merge-base of
+# <base-ref> and HEAD, lists the changed non-test Go files, and packs them into shards. The
+# output is a JSON array on stdout, one entry for each shard: {shard, shards, backend,
+# mergeBase, estimateSeconds, groups: [{package, files: [{file, lines, codeLines}]}]}. The
+# merge-base goes into every entry, so all shards diff against the same commit even if the
+# base branch moves during the run. The plan stops (exit 1) on a changed Go file whose
+# directory `go list` rejects, and on a line of the diff that is longer than 60000 bytes:
+# mutago reads the diff with a 64 KB line limit and ignores the error, so a longer line
+# silently drops the rest of the diff and the gate would find no mutants. The cost of a file
+# is its added lines x MUTANTS_PER_LINE x the rate of its package (the same rate table as
+# above, with no stored state). A package that starts a backend is a backend package: its
+# shards hold files of that package only, because a shard starts one set of compose services
+# (scripts/ci-backend.sh). Other packages can share a shard. The budget of a shard is
+# 45 min, and the plan has at most 12 shards: if the packing needs more, the budget grows by
+# a factor 1.5 until it fits, and the plan stops when the budget passes the 165 min step
+# limit. A file is never split between shards: mutago removes byte-identical mutants of one
+# file, and a split would change that set. --diff-pack runs only the pack step on a work
+# directory that holds base.txt (the merge-base) and files.tsv (package, file, added lines,
+# code lines, seconds per mutant, backend 0 or 1; tab-separated). scripts/test/mutation-diff.sh
+# uses it.
 #
 # --pack runs only the parse and pack steps on a work directory that holds stale.tsv
 # (package, slug, seconds per mutant, reason; tab-separated) and <slug>.dry for each row.
@@ -253,6 +276,151 @@ if [[ "${1-}" == "--rate" ]]; then
     exit 1
   }
   rate "$2" "$3" "$(slug_of "$3")"
+  exit 0
+fi
+
+# pack_diff <work-dir>: pack the changed files of files.tsv into shards. Prints the plan on
+# stdout.
+pack_diff() {
+python3 - "$1" <<'PY'
+import json
+import math
+import os
+import sys
+
+work = sys.argv[1]
+MUTANTS_PER_LINE = 0.3  # first estimate; correct it with the counts of real runs
+BUDGET = 45 * 60
+STEP_LIMIT = 165 * 60
+MAX_SHARDS = 12
+GROWTH = 1.5
+
+merge_base = open(os.path.join(work, "base.txt"), encoding="utf-8").read().strip()
+files = []
+for row in open(os.path.join(work, "files.tsv"), encoding="utf-8"):
+    package, path, lines, code, spm, backend = row.rstrip("\n").split("\t")
+    files.append({"package": package, "file": path, "lines": int(lines), "codeLines": int(code),
+                  "spm": float(spm), "backend": backend == "1",
+                  "cost": int(lines) * MUTANTS_PER_LINE * float(spm)})
+if not files:
+    print("[]")
+    sys.exit(0)
+
+backend_packages = sorted({f["package"] for f in files if f["backend"]})
+if len(backend_packages) > MAX_SHARDS:
+    sys.exit("mutation-plan: {} backend packages changed, more than the {} shards that a plan can hold; split the change".format(
+        len(backend_packages), MAX_SHARDS))
+for f in files:
+    if f["cost"] > STEP_LIMIT:
+        sys.exit("mutation-plan: {} needs about {:.0f} min, more than the step limit of {} min; split the change".format(
+            f["file"], f["cost"] / 60, STEP_LIMIT // 60))
+
+
+def pack(budget):
+    """First-fit decreasing. A backend shard holds one package; the others share shards."""
+    bins = []
+    for f in sorted(files, key=lambda f: (-f["cost"], f["file"])):
+        key = f["package"] if f["backend"] else ""
+        for b in bins:
+            extra = f["cost"] + (0 if f["package"] in b["packages"] else f["spm"])
+            if b["key"] == key and b["seconds"] + extra <= budget:
+                b["files"].append(f)
+                b["seconds"] += extra
+                b["packages"].add(f["package"])
+                break
+        else:
+            bins.append({"key": key, "files": [f], "seconds": f["cost"] + f["spm"], "packages": {f["package"]}})
+    return bins
+
+
+budget = BUDGET
+bins = pack(budget)
+while len(bins) > MAX_SHARDS:
+    budget *= GROWTH
+    if budget > STEP_LIMIT:
+        sys.exit("mutation-plan: the change needs more than {} shards of {} min; split the change".format(MAX_SHARDS, STEP_LIMIT // 60))
+    bins = pack(budget)
+    print("mutation-plan: more than {} shards, so the budget of a shard grows to {:.0f} min".format(MAX_SHARDS, budget / 60), file=sys.stderr)
+
+for b in bins:
+    if len(b["files"]) == 1 and b["files"][0]["cost"] > budget:
+        print("mutation-plan: WARNING {} needs about {:.0f} min, more than the budget of {:.0f} min; it gets its own shard".format(
+            b["files"][0]["file"], b["files"][0]["cost"] / 60, budget / 60), file=sys.stderr)
+bins.sort(key=lambda b: (b["key"] == "", b["key"], min(f["file"] for f in b["files"])))
+
+plan = []
+for index, b in enumerate(bins, start=1):
+    groups = []
+    for package in sorted(b["packages"]):
+        groups.append({"package": package, "files": [
+            {"file": f["file"], "lines": f["lines"], "codeLines": f["codeLines"]}
+            for f in sorted(b["files"], key=lambda f: f["file"]) if f["package"] == package]})
+    plan.append({"shard": index, "shards": len(bins), "backend": b["key"], "mergeBase": merge_base,
+                 "estimateSeconds": int(math.ceil(b["seconds"])), "groups": groups})
+    print("mutation-plan: shard {}/{}: {} file(s) in {}, about {:.0f} min{}".format(
+        index, len(bins), len(b["files"]), ", ".join(sorted(b["packages"])), b["seconds"] / 60,
+        ", backend " + b["key"] if b["key"] else ""), file=sys.stderr)
+json.dump(plan, sys.stdout, separators=(",", ":"))
+sys.stdout.write("\n")
+PY
+}
+
+if [[ "${1-}" == "--diff-pack" ]]; then
+  [[ $# -eq 2 && -f "$2/files.tsv" && -f "$2/base.txt" ]] || {
+    echo "usage: mutation-plan.sh --diff-pack <work-dir with base.txt and files.tsv>" >&2
+    exit 1
+  }
+  pack_diff "$2"
+  exit 0
+fi
+
+if [[ "${1-}" == "--diff" ]]; then
+  [[ $# -eq 2 && -n "$2" ]] || {
+    echo "usage: mutation-plan.sh --diff <base-ref>" >&2
+    exit 1
+  }
+  cd "$(git rev-parse --show-toplevel)" || exit 1
+  merge_base=$(git merge-base "$2" HEAD) || {
+    echo "mutation-plan: no merge-base of '$2' and HEAD" >&2
+    exit 1
+  }
+  # mutago reads this diff. A line over 64 KB ends its parse without an error.
+  long_line=$(git diff --unified=0 "$merge_base" | awk '
+    /^\+\+\+ / { file = $0 }
+    length($0) > 60000 { print file " (" length($0) " bytes)"; exit }')
+  if [[ -n "$long_line" ]]; then
+    echo "mutation-plan: the diff has a line over 60000 bytes in ${long_line#+++ }; mutago would stop reading the diff there and find no mutants. Mark the file binary in .gitattributes or shorten the line." >&2
+    exit 1
+  fi
+  work=$(mktemp -d)
+  trap 'rm -rf "$work"' EXIT
+  printf '%s\n' "$merge_base" >"$work/base.txt"
+  : >"$work/files.tsv"
+  module=$(go list -m) || exit 1
+  while IFS= read -r file; do
+    [[ -n "$file" && "$file" != *_test.go ]] || continue
+    dir=$(dirname "$file")
+    pkg="./$dir"
+    [[ "$dir" == "." ]] && pkg="."
+    # Read the package path from stdout only. On a cold module cache, go list
+    # writes progress such as "go: downloading ..." to stderr.
+    resolved=$(go list "$pkg" 2>"$work/golist.err") || {
+      echo "mutation-plan: go list rejects the package of $file: $(cat "$work/golist.err")" >&2
+      exit 1
+    }
+    [[ "$resolved" == "$module" || "$resolved" == "$module"/* ]] || {
+      echo "mutation-plan: the package of $file is outside the module" >&2
+      exit 1
+    }
+    lines=$(git diff --numstat "$merge_base" -- "$file" | awk '{ print ($1 ~ /^[0-9]+$/) ? $1 : 0 }')
+    code=$(git diff --unified=0 "$merge_base" -- "$file" | grep '^+' | grep -v '^+++' |
+      grep -Evc '^\+[[:space:]]*(//|$)') || true
+    backend=0
+    [[ "$backend_packages" == *" $pkg "* ]] && backend=1
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$pkg" "$file" "${lines:-0}" "${code:-0}" \
+      "$(rate /nonexistent "$pkg" "$(slug_of "$pkg")")" "$backend" >>"$work/files.tsv"
+  done < <(git diff --name-only --diff-filter=d "$merge_base" -- '*.go')
+  pack_diff "$work"
   exit 0
 fi
 

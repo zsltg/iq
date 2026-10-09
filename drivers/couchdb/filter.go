@@ -2,8 +2,6 @@ package couchdb
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/zsltg/iq/internal/predicate"
@@ -34,45 +32,27 @@ func (s *Store) findPaged(ctx context.Context, selector map[string]any, fn func(
 	db := s.client.DB(s.db)
 	bookmark := ""
 	for {
-		query := map[string]any{"selector": selector, "limit": s.pageSize}
-		if bookmark != "" {
-			query["bookmark"] = bookmark
-		}
-		rows := db.Find(ctx, query)
+		rows := db.Find(ctx, findQuery(selector, s.pageSize, bookmark))
 
 		page := make(map[string]any, s.pageSize)
-		n := 0
-		for rows.Next() {
-			n++
-			var raw json.RawMessage
-			if err := rows.ScanDoc(&raw); err != nil {
-				_ = rows.Close()
-				return fmt.Errorf("couchdb scan document: %w", err)
-			}
-			doc, err := decodeDoc(raw, s.decimal)
-			if err != nil {
-				_ = rows.Close()
-				return err
-			}
+		n, err := s.readFind(rows, func(doc map[string]any) {
 			// A _find row does not expose ID() the way _all_docs does; the document
 			// carries its own _id.
 			id, _ := doc["_id"].(string)
 			if strings.HasPrefix(id, designPrefix) {
-				continue
+				return
 			}
 			page[id] = doc
-		}
-		if err := rows.Err(); err != nil {
+		})
+		if err != nil {
 			_ = rows.Close()
-			return fmt.Errorf("couchdb find: %w", err)
+			return err
 		}
 		md, mdErr := rows.Metadata()
 		_ = rows.Close()
 
-		if len(page) > 0 {
-			if err := fn(page); err != nil {
-				return err
-			}
+		if err := sendPage(page, fn); err != nil {
+			return err
 		}
 		// A page shorter than the limit is the last one. Otherwise follow the
 		// bookmark the server returned to fetch the next page.
@@ -84,6 +64,15 @@ func (s *Store) findPaged(ctx context.Context, selector map[string]any, fn func(
 		}
 		bookmark = md.Bookmark
 	}
+}
+
+// findQuery builds the _find request for one page. A bookmark of "" asks for the first page.
+func findQuery(selector map[string]any, limit int, bookmark string) map[string]any {
+	query := map[string]any{"selector": selector, "limit": limit}
+	if bookmark != "" {
+		query["bookmark"] = bookmark
+	}
+	return query
 }
 
 // mangoTypes lists the Mango $type names in jq's total order, so index i is the
@@ -110,6 +99,19 @@ var mangoOp = map[predicate.Op]string{
 // could exclude a document jq would keep, deliberately do not narrow.
 func toSelector(n predicate.Node) (map[string]any, bool) {
 	switch t := n.(type) {
+	case predicate.And:
+		return andSelector(t)
+	case predicate.Or:
+		return orSelector(t)
+	default:
+		return leafSelector(n)
+	}
+}
+
+// leafSelector translates a node that has no children, which is every node except And
+// and Or.
+func leafSelector(n predicate.Node) (map[string]any, bool) {
+	switch t := n.(type) {
 	case predicate.Eq:
 		return eqSelector(field(t.Path), t.Value), true
 	case predicate.Cmp:
@@ -124,10 +126,6 @@ func toSelector(n predicate.Node) (map[string]any, bool) {
 		return regexSelector(t)
 	case predicate.Size:
 		return sizeSelector(t)
-	case predicate.And:
-		return andSelector(t)
-	case predicate.Or:
-		return orSelector(t)
 	default:
 		// Ne, NoneMatch, ElemMatch, and any unknown node: do not narrow.
 		return nil, false
@@ -162,31 +160,37 @@ func byteSafeRegex(p string) bool {
 	escaped := false
 	for i := 0; i < len(p); i++ {
 		c := p[i]
-		if c >= 0x80 {
+		switch {
+		case c >= 0x80:
 			return false
-		}
-		if escaped {
+		case escaped:
 			// c is the character after a backslash. A negated shorthand class is
 			// unsafe over bytes; anything else is a literal, so it is fine.
-			if c == 'D' || c == 'W' || c == 'S' {
+			if negatedShorthand(c) {
 				return false
 			}
 			escaped = false
-			continue
-		}
-		if c == '.' {
+		case unsafeRegexByte(p, i):
 			return false
-		}
-		if c == '[' && i+1 < len(p) && p[i+1] == '^' {
-			return false
-		}
-		if c == '\\' {
+		case c == '\\':
 			escaped = true
 		}
 	}
 	// A trailing backslash leaves escaped set: it has no escaped character, so it
 	// is a dangling metacharacter we cannot trust byte-for-byte.
 	return !escaped
+}
+
+// unsafeRegexByte reports whether byte i of p is unsafe outside an escape: a bare dot,
+// or the "[" of a negated class "[^".
+func unsafeRegexByte(p string, i int) bool {
+	return p[i] == '.' || (p[i] == '[' && strings.HasPrefix(p[i+1:], "^"))
+}
+
+// negatedShorthand reports whether c, the byte after a backslash, names a negated
+// shorthand class: \D, \W or \S.
+func negatedShorthand(c byte) bool {
+	return strings.IndexByte("DWS", c) >= 0
 }
 
 // sizeSelector mirrors the Mongo size push. jq length is polymorphic (array,
