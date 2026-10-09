@@ -288,19 +288,34 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	sess := s.session(ctx, neo4j.AccessModeRead)
 	defer func() { _ = sess.Close(ctx) }()
 
-	v := s.target.variable()
-	params := map[string]any{"ids": keys}
-	var cypher string
-	if s.target.key == "" {
-		cypher = s.target.match() + " WHERE elementId(" + v + ") IN $ids RETURN elementId(" + v + ") AS k, " + v
-	} else {
-		params["key"] = s.target.key
-		cypher = s.target.match() + " WHERE toString(" + v + "[$key]) IN $ids RETURN toString(" + v + "[$key]) AS k, " + v
-	}
+	cypher, params := s.target.getStatement(keys)
 	res, err := s.run(ctx, sess, cypher, params)
 	if err != nil {
 		return nil, err
 	}
+	if err := s.collectByKey(ctx, res, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// getStatement returns the Cypher text and the parameters that fetch the entities
+// whose key is in keys. The key is the elementId, or the string form of the ?key=
+// property.
+func (t target) getStatement(keys []string) (string, map[string]any) {
+	v := t.variable()
+	params := map[string]any{"ids": keys}
+	if t.key == "" {
+		return t.match() + " WHERE elementId(" + v + ") IN $ids RETURN elementId(" + v + ") AS k, " + v, params
+	}
+	params["key"] = t.key
+	return t.match() + " WHERE toString(" + v + "[$key]) IN $ids RETURN toString(" + v + "[$key]) AS k, " + v, params
+}
+
+// collectByKey reads the rows of a Get result into out, keyed by the first column. A
+// nil entity is skipped. With a ?key= property, a key that matches more than one
+// entity is an error.
+func (s *Store) collectByKey(ctx context.Context, res neo4j.ResultWithContext, out map[string]any) error {
 	for res.Next(ctx) {
 		rec := res.Record()
 		k, _ := rec.Values[0].(string)
@@ -309,14 +324,14 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 			continue
 		}
 		if _, dup := out[k]; dup && s.target.key != "" {
-			return nil, fmt.Errorf("neo4j: key %q matches more than one %s; %s.%s is not unique", k, s.target.noun(), s.target.name, s.target.key)
+			return fmt.Errorf("neo4j: key %q matches more than one %s; %s.%s is not unique", k, s.target.noun(), s.target.name, s.target.key)
 		}
 		out[k] = s.normalizeValue(ent)
 	}
 	if err := res.Err(); err != nil {
-		return nil, fmt.Errorf("neo4j get: %w", err)
+		return fmt.Errorf("neo4j get: %w", err)
 	}
-	return out, nil
+	return nil
 }
 
 // ScanBatches streams the whole label, handing the caller each page of {key: node}.
@@ -341,7 +356,32 @@ func (s *Store) pagedScan(ctx context.Context, where string, filterParams map[st
 	sess := s.session(ctx, neo4j.AccessModeRead)
 	defer func() { _ = sess.Close(ctx) }()
 
-	v := s.target.variable()
+	cypher, params := s.target.pageStatement(where, filterParams)
+	for {
+		res, err := s.run(ctx, sess, cypher, params)
+		if err != nil {
+			return err
+		}
+		page, err := s.readPage(ctx, res)
+		if err != nil {
+			return err
+		}
+		if len(page.rows) > 0 {
+			if err := fn(page.rows); err != nil {
+				return err
+			}
+		}
+		if page.fetched < scanBatch {
+			return nil
+		}
+		params["after"] = page.last
+	}
+}
+
+// pageStatement returns the keyset-page Cypher text and the starting parameters for
+// a scan, optionally narrowed by where and its parameters.
+func (t target) pageStatement(where string, filterParams map[string]any) (string, map[string]any) {
+	v := t.variable()
 	keyExpr := "elementId(" + v + ")"
 	// Keyset pagination: each page fetches the next elementIds after the last one
 	// seen, ORDER BY elementId. This holds one page in memory, is stable under
@@ -349,8 +389,8 @@ func (s *Store) pagedScan(ctx context.Context, where string, filterParams map[st
 	// offset arithmetic — the cursor is the last elementId, an empty string first
 	// (below every elementId).
 	params := map[string]any{"limit": scanBatch, "after": ""}
-	if s.target.key != "" {
-		params["key"] = s.target.key
+	if t.key != "" {
+		params["key"] = t.key
 		keyExpr = "CASE WHEN " + v + "[$key] IS NULL THEN elementId(" + v + ") ELSE toString(" + v + "[$key]) END"
 	}
 	maps.Copy(params, filterParams)
@@ -358,44 +398,41 @@ func (s *Store) pagedScan(ctx context.Context, where string, filterParams map[st
 	if where != "" {
 		cond += " AND (" + where + ")"
 	}
-	cypher := s.target.match() + " WHERE " + cond + " RETURN " + keyExpr + " AS k, elementId(" + v + ") AS eid, " + v + " ORDER BY eid LIMIT $limit"
+	return t.match() + " WHERE " + cond + " RETURN " + keyExpr + " AS k, elementId(" + v + ") AS eid, " + v + " ORDER BY eid LIMIT $limit", params
+}
 
-	for {
-		res, err := s.run(ctx, sess, cypher, params)
-		if err != nil {
-			return err
+// scanPage is one page read from a scan result: the entities by key, the number of
+// rows fetched (nil entities included), and the elementId of the last row that held
+// an entity.
+type scanPage struct {
+	rows    map[string]any
+	fetched int
+	last    string
+}
+
+// readPage reads one page from res. A key that repeats inside the page is stored
+// under the elementId of the later row, so a non-unique key never drops a node.
+func (s *Store) readPage(ctx context.Context, res neo4j.ResultWithContext) (scanPage, error) {
+	page := scanPage{rows: make(map[string]any, scanBatch)}
+	for res.Next(ctx) {
+		page.fetched++
+		rec := res.Record()
+		k, _ := rec.Values[0].(string)
+		eid, _ := rec.Values[1].(string)
+		ent := rec.Values[2]
+		if ent == nil {
+			continue
 		}
-		page := make(map[string]any, scanBatch)
-		n := 0
-		var lastEid string
-		for res.Next(ctx) {
-			n++
-			rec := res.Record()
-			k, _ := rec.Values[0].(string)
-			eid, _ := rec.Values[1].(string)
-			ent := rec.Values[2]
-			if ent == nil {
-				continue
-			}
-			lastEid = eid
-			if _, dup := page[k]; dup {
-				k = eid // avoid silent in-page loss on a non-unique key.
-			}
-			page[k] = s.normalizeValue(ent)
+		page.last = eid
+		if _, dup := page.rows[k]; dup {
+			k = eid // avoid silent in-page loss on a non-unique key.
 		}
-		if err := res.Err(); err != nil {
-			return fmt.Errorf("neo4j scan: %w", err)
-		}
-		if len(page) > 0 {
-			if err := fn(page); err != nil {
-				return err
-			}
-		}
-		if n < scanBatch {
-			return nil
-		}
-		params["after"] = lastEid
+		page.rows[k] = s.normalizeValue(ent)
 	}
+	if err := res.Err(); err != nil {
+		return scanPage{}, fmt.Errorf("neo4j scan: %w", err)
+	}
+	return page, nil
 }
 
 // EstimateCount returns the label's node count, a cheap total for a full scan's
@@ -427,18 +464,9 @@ func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
 // returns the result rows as a list of {column: value} maps with every value
 // normalized, the natural shape for `iq exec`.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
-	if len(args) < 1 || len(args) > 2 {
-		return nil, fmt.Errorf("neo4j raw expects a Cypher statement and an optional JSON parameters object")
-	}
-	cypher := strings.TrimSpace(args[0])
-	if cypher == "" {
-		return nil, fmt.Errorf("neo4j raw expects a non-empty Cypher statement")
-	}
-	var params map[string]any
-	if len(args) == 2 {
-		if err := json.Unmarshal([]byte(args[1]), &params); err != nil {
-			return nil, fmt.Errorf("parse neo4j query parameters: %w", err)
-		}
+	cypher, params, err := parseQueryArgs(args)
+	if err != nil {
+		return nil, err
 	}
 	sess := s.session(ctx, neo4j.AccessModeWrite)
 	defer func() { _ = sess.Close(ctx) }()
@@ -449,17 +477,40 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	}
 	rows := []any{}
 	for res.Next(ctx) {
-		rec := res.Record()
-		row := make(map[string]any, len(rec.Keys))
-		for i, k := range rec.Keys {
-			row[k] = s.normalizeValue(rec.Values[i])
-		}
-		rows = append(rows, row)
+		rows = append(rows, s.rowOf(res.Record()))
 	}
 	if err := res.Err(); err != nil {
 		return nil, fmt.Errorf("neo4j query: %w", err)
 	}
 	return rows, nil
+}
+
+// parseQueryArgs splits the arguments of a raw query into the trimmed Cypher text and
+// the optional JSON parameters object.
+func parseQueryArgs(args []string) (string, map[string]any, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return "", nil, fmt.Errorf("neo4j raw expects a Cypher statement and an optional JSON parameters object")
+	}
+	cypher := strings.TrimSpace(args[0])
+	if cypher == "" {
+		return "", nil, fmt.Errorf("neo4j raw expects a non-empty Cypher statement")
+	}
+	var params map[string]any
+	if len(args) == 2 {
+		if err := json.Unmarshal([]byte(args[1]), &params); err != nil {
+			return "", nil, fmt.Errorf("parse neo4j query parameters: %w", err)
+		}
+	}
+	return cypher, params, nil
+}
+
+// rowOf renders one result row as a {column: value} map with every value normalized.
+func (s *Store) rowOf(rec *neo4j.Record) map[string]any {
+	row := make(map[string]any, len(rec.Keys))
+	for i, k := range rec.Keys {
+		row[k] = s.normalizeValue(rec.Values[i])
+	}
+	return row
 }
 
 // keyConstraintExists reports whether a uniqueness (or node-key) constraint covers
