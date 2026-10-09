@@ -11,7 +11,7 @@ the architecture) is [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Before you start
 
-- Go 1.27.0 or newer (matches `go.mod`).
+- Go 1.27.2 or newer (matches `go.mod`).
 - Docker, for the integration tests. `go test -short ./...` needs no Docker.
 - [gofumpt](https://github.com/mvdan/gofumpt),
   [goimports](https://pkg.go.dev/golang.org/x/tools/cmd/goimports) and
