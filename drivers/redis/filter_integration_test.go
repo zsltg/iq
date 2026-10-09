@@ -26,8 +26,7 @@ import (
 // RedisJSON and non-JSON key sets for the assertions.
 func seedFilterKeyspace(t *testing.T, store *iqredis.Store) (jsonKeys, otherKeys []string) {
 	t.Helper()
-	ctx := context.Background()
-	flushKeyspace(t, ctx, store)
+	flushKeyspace(t, store)
 
 	// The s field spans the Regex prefilter's cases: doc1/doc3 are strings that
 	// match ^h (case-insensitively), doc2 a string that does not, doc4 omits s
@@ -43,28 +42,42 @@ func seedFilterKeyspace(t *testing.T, store *iqredis.Store) (jsonKeys, otherKeys
 		"iq:test:sf:doc5": `{"author":{"name":"Rob"},"year":"recent","s":123}`,
 	}
 	for k, v := range docs {
-		mustQuery(t, ctx, store, "JSON.SET", k, "$", v)
+		mustQuery(t, store, "JSON.SET", k, "$", v)
 		jsonKeys = append(jsonKeys, k)
 	}
 
-	mustQuery(t, ctx, store, "SET", "iq:test:sf:str", "hello")
-	mustQuery(t, ctx, store, "HSET", "iq:test:sf:hash", "f", "v")
+	mustQuery(t, store, "SET", "iq:test:sf:str", "hello")
+	mustQuery(t, store, "HSET", "iq:test:sf:hash", "f", "v")
 	otherKeys = []string{"iq:test:sf:str", "iq:test:sf:hash"}
 	return jsonKeys, otherKeys
 }
 
-// mustQuery runs one command on store and fails the test on error.
-func mustQuery(t *testing.T, ctx context.Context, store *iqredis.Store, args ...string) {
+// setupTimeout bounds each setup and cleanup call to the server.
+const setupTimeout = 5 * time.Second
+
+// mustQuery runs one command on store under its own deadline and fails the test
+// on error.
+func mustQuery(t *testing.T, store *iqredis.Store, args ...string) {
 	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), setupTimeout)
+	defer cancel()
 	_, err := store.Query(ctx, args)
 	require.NoError(t, err)
 }
 
 // flushKeyspace empties the reserved database now and again when the test ends.
-func flushKeyspace(t *testing.T, ctx context.Context, store *iqredis.Store) {
+// The cleanup uses a fresh context, because the context of the test is already
+// cancelled by then, and it reports a failed flush.
+func flushKeyspace(t *testing.T, store *iqredis.Store) {
 	t.Helper()
-	mustQuery(t, ctx, store, "FLUSHDB")
-	t.Cleanup(func() { _, _ = store.Query(ctx, []string{"FLUSHDB"}) })
+	mustQuery(t, store, "FLUSHDB")
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), setupTimeout)
+		defer cancel()
+		if _, err := store.Query(ctx, []string{"FLUSHDB"}); err != nil {
+			t.Errorf("flush the keyspace at cleanup: %v", err)
+		}
+	})
 }
 
 // collect walks a scan into a single {key: value} map, the whole (small) keyspace.
@@ -150,8 +163,8 @@ func TestScanFilteredHonorsDecimalMode(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
-	flushKeyspace(t, ctx, store)
-	mustQuery(t, ctx, store, "JSON.SET", "iq:test:dec", "$", `{"a":1,"r":1.5}`)
+	flushKeyspace(t, store)
+	mustQuery(t, store, "JSON.SET", "iq:test:dec", "$", `{"a":1,"r":1.5}`)
 
 	// a == 1 keeps the document, so it is decoded — under DecimalString, r is "1.5".
 	pred := predicate.Eq{Path: []string{"a"}, Value: 1.0}
@@ -169,8 +182,8 @@ func TestScanFilteredHonorsDecimalMode(t *testing.T) {
 func TestScanFilteredRejectsUnsupportedType(t *testing.T) {
 	store := openIntegration(t)
 	ctx := context.Background()
-	flushKeyspace(t, ctx, store)
-	mustQuery(t, ctx, store, "TS.ADD", "iq:test:ts", "*", "1")
+	flushKeyspace(t, store)
+	mustQuery(t, store, "TS.ADD", "iq:test:ts", "*", "1")
 
 	err := store.ScanFiltered(ctx, predicate.Exists{Path: []string{"a"}}, func(map[string]any) error {
 		return nil
