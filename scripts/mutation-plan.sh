@@ -483,10 +483,18 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 # Install mutago once for all the dry runs.
-mutago_bin=$(IQ_MUTATION_INSTALL_DIR="$work/bin" bash scripts/mutation-gate.sh | tail -n 1)
+if ! mutago_bin=$(IQ_MUTATION_INSTALL_DIR="$work/bin" bash scripts/mutation-gate.sh | tail -n 1); then
+  echo "mutation-plan: could not install mutago" >&2
+  exit 1
+fi
 
-# The mutators of the pinned mutago. The plan makes one dry run for each of them.
-mapfile -t mutators < <("$mutago_bin" --list-mutators)
+# The mutators of the pinned mutago. The plan makes one dry run for each of them. A
+# failed listing must stop the plan: a partial list would leave mutators unscanned.
+if ! "$mutago_bin" --list-mutators >"$work/mutators.txt"; then
+  echo "mutation-plan: could not list the mutators of mutago" >&2
+  exit 1
+fi
+mapfile -t mutators <"$work/mutators.txt"
 if [[ ${#mutators[@]} -eq 0 ]]; then
   echo "mutation-plan: mutago lists no mutator" >&2
   exit 1
