@@ -25,11 +25,19 @@
 #
 # Cells. mutago has no shard flag. The unit of work is a (file, mutator) cell, and one gate
 # run (scripts/mutation-gate.sh with IQ_MUTATION_MUTATORS and an absolute file target) does
-# one cell. The cells come from the per-file counts of a package dry run, which reads
-# .mutago.yml like a real run. A dry run count is an upper bound, so the plan is safe.
-# Cells with zero mutants are not in the plan. The sum of the cells must be equal to the
-# "Total: N" line of the dry run, so a line that the parser does not know stops the plan
-# instead of dropping mutants.
+# one cell. The plan counts each cell with the configuration that its shard runs: for each
+# stale package, one dry run for each mutator (mutago --list-mutators) with only that
+# mutator enabled (IQ_MUTATION_DRYRUN=1 with IQ_MUTATION_MUTATORS). A dry run reads
+# .mutago.yml like a real run. The count of a mutator comes from its own dry run. A dry run
+# with all mutators enabled is not enough: mutago merges identical edits of different
+# mutators into one mutant, and since v2.10.23 the dry run applies that merge. The merged
+# edit then counts for one mutator only, usually branch/case, while a shard with only
+# statement/return enabled has nothing to merge with and tests every edit. The verdict
+# (scripts/mutation-verdict.sh) refuses a cell whose report holds more mutants than the
+# plan. A mutator that has a count of zero with all mutators enabled can have a count above
+# zero alone, so the plan does not skip any mutator. Cells with zero mutants are not in the
+# plan. The sum of the cells of each dry run must be equal to its "Total: N" line, so a line
+# that the parser does not know stops the plan instead of dropping mutants.
 #
 # Shard size. The budget of a shard is 120 min. The job runs for 300 min, so the margin of 180 min
 # covers a slow suite, a slow backend start and the setup. The cost of a cell is (mutants + 1) x seconds per mutant: each gate run also
@@ -65,7 +73,8 @@
 # uses it.
 #
 # --pack runs only the parse and pack steps on a work directory that holds stale.tsv
-# (package, slug, seconds per mutant, reason; tab-separated) and <slug>.dry for each row.
+# (package, slug, seconds per mutant, reason; tab-separated) and, for each row, the
+# directory <slug>.dry with one file <family>+<name>.dry for each mutator.
 # scripts/test/mutation-verdict.sh uses it, so the test needs no mutago run.
 set -euo pipefail
 
@@ -147,38 +156,50 @@ for row in open(os.path.join(work, "stale.tsv"), encoding="utf-8"):
     package, slug, spm, reason = row.rstrip("\n").split("\t")
     spm = float(spm)
     cells = []
-    current = None
-    total = None
-    in_files = True
-    for line in open(os.path.join(work, slug + ".dry"), encoding="utf-8"):
-        line = line.rstrip("\n")
-        if line.startswith("Total: "):
-            match = re.match(r"^Total: (\d+) mutation", line)
-            if not match:
-                sys.exit("mutation-plan: cannot read the dry run line {!r} of {}".format(line, package))
-            total = int(match.group(1))
-            continue
-        if line.startswith("Per-mutator totals"):
-            in_files = False
-            continue
-        if not in_files:
-            continue
-        if line.endswith(".go:") and not line.startswith(("\t", " ")):
-            current = line[:-1]
-            continue
-        if line.startswith("\t") and current:
-            name, _, count = line.strip().rpartition(": ")
-            if not count.isdigit():
-                sys.exit("mutation-plan: cannot read the dry run line {!r} of {}".format(line, package))
-            if int(count) > 0:
-                cells.append({"file": current, "mutator": name, "mutants": int(count)})
-    if total is None:
-        sys.exit("mutation-plan: the dry run of {} has no Total line".format(package))
-    parsed = sum(c["mutants"] for c in cells)
-    if total > 0 and not cells:
-        sys.exit("mutation-plan: the dry run of {} has {} mutants but no per-file cells".format(package, total))
-    if parsed != total:
-        sys.exit("mutation-plan: the cells of {} hold {} mutants, but the dry run Total is {}".format(package, parsed, total))
+    dry_dir = os.path.join(work, slug + ".dry")
+    names = sorted(os.listdir(dry_dir)) if os.path.isdir(dry_dir) else []
+    if not names:
+        sys.exit("mutation-plan: {} has no dry run".format(package))
+    for name in names:
+        # One dry run for each mutator, with only that mutator enabled. The file name holds
+        # the mutator, with "+" in place of "/".
+        mutator = name[:-len(".dry")].replace("+", "/")
+        current = None
+        total = None
+        in_files = True
+        found = []
+        for line in open(os.path.join(dry_dir, name), encoding="utf-8"):
+            line = line.rstrip("\n")
+            if line.startswith("Total: "):
+                match = re.match(r"^Total: (\d+) mutation", line)
+                if not match:
+                    sys.exit("mutation-plan: cannot read the dry run line {!r} of {} for {}".format(line, package, mutator))
+                total = int(match.group(1))
+                continue
+            if line.startswith("Per-mutator totals"):
+                in_files = False
+                continue
+            if not in_files:
+                continue
+            if line.endswith(".go:") and not line.startswith(("\t", " ")):
+                current = line[:-1]
+                continue
+            if line.startswith("\t") and current:
+                got, _, count = line.strip().rpartition(": ")
+                if not count.isdigit():
+                    sys.exit("mutation-plan: cannot read the dry run line {!r} of {} for {}".format(line, package, mutator))
+                if got != mutator:
+                    sys.exit("mutation-plan: the dry run of {} for {} counts the mutator {}".format(package, mutator, got))
+                if int(count) > 0:
+                    found.append({"file": current, "mutator": mutator, "mutants": int(count)})
+        if total is None:
+            sys.exit("mutation-plan: the dry run of {} for {} has no Total line".format(package, mutator))
+        parsed = sum(c["mutants"] for c in found)
+        if total > 0 and not found:
+            sys.exit("mutation-plan: the dry run of {} for {} has {} mutants but no per-file cells".format(package, mutator, total))
+        if parsed != total:
+            sys.exit("mutation-plan: the cells of {} for {} hold {} mutants, but the dry run Total is {}".format(package, mutator, parsed, total))
+        cells.extend(found)
     for cell in cells:
         if os.path.isabs(cell["file"]) or ".." in cell["file"].split("/"):
             sys.exit("mutation-plan: the dry run of {} names the file {!r}".format(package, cell["file"]))
@@ -462,7 +483,34 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 # Install mutago once for all the dry runs.
-mutago_bin=$(IQ_MUTATION_INSTALL_DIR="$work/bin" bash scripts/mutation-gate.sh | tail -n 1)
+if ! mutago_bin=$(IQ_MUTATION_INSTALL_DIR="$work/bin" bash scripts/mutation-gate.sh | tail -n 1); then
+  echo "mutation-plan: could not install mutago" >&2
+  exit 1
+fi
+
+# The mutators of the pinned mutago. The plan makes one dry run for each of them. A
+# failed listing must stop the plan: a partial list would leave mutators unscanned.
+if ! "$mutago_bin" --list-mutators >"$work/mutators.txt"; then
+  echo "mutation-plan: could not list the mutators of mutago" >&2
+  exit 1
+fi
+mapfile -t mutators <"$work/mutators.txt"
+if [[ ${#mutators[@]} -eq 0 ]]; then
+  echo "mutation-plan: mutago lists no mutator" >&2
+  exit 1
+fi
+
+# dry_run_mutator <package> <mutator> <output file>: one dry run with only that mutator
+# enabled. A failure prints the output and the cause on stderr and returns 1.
+dry_run_mutator() {
+  if ! IQ_MUTATION_MUTAGO_BIN="$mutago_bin" IQ_MUTATION_MUTATORS="$2" IQ_MUTATION_DRYRUN=1 \
+    bash scripts/mutation-gate.sh "$1" >"$3" 2>&1; then
+    cat "$3" >&2
+    echo "mutation-plan: the dry run of $1 for $2 failed" >&2
+    return 1
+  fi
+}
+dry_jobs=4
 
 full="${IQ_MUTATION_FULL-}"
 for pkg in "${packages[@]}"; do
@@ -473,11 +521,26 @@ for pkg in "${packages[@]}"; do
     continue
   fi
   spm=$(rate "$badges" "$pkg" "$slug")
-  if ! IQ_MUTATION_MUTAGO_BIN="$mutago_bin" IQ_MUTATION_DRYRUN=1 bash scripts/mutation-gate.sh "$pkg" >"$work/$slug.dry" 2>&1; then
-    cat "$work/$slug.dry" >&2
-    echo "mutation-plan: the dry run of $pkg failed" >&2
-    exit 1
-  fi
+  # One dry run for each mutator, with only that mutator enabled: the configuration that
+  # the shard runs (see the comment on cells at the top). The file name holds the mutator
+  # with "+" in place of "/". A pool of 4 dry runs works at the same time, because a serial
+  # plan of all packages takes about 40 min and the deep-plan job stops at 30 min.
+  mkdir -p "$work/$slug.dry"
+  running=0
+  failed=0
+  for mutator in "${mutators[@]}"; do
+    dry_run_mutator "$pkg" "$mutator" "$work/$slug.dry/${mutator/\//+}.dry" &
+    running=$((running + 1))
+    if [[ "$running" -ge "$dry_jobs" ]]; then
+      wait -n || failed=1
+      running=$((running - 1))
+    fi
+  done
+  while [[ "$running" -gt 0 ]]; do
+    wait -n || failed=1
+    running=$((running - 1))
+  done
+  [[ "$failed" -eq 0 ]] || exit 1
   printf '%s\t%s\t%s\t%s\n' "$pkg" "$slug" "$spm" "$reason" >>"$work/stale.tsv"
 done
 

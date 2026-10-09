@@ -314,34 +314,57 @@ verdict
 check "report of a package that is not in the plan: the verdict stops, nothing written" \
   '[[ $status -eq 2 && ! -f "$case_dir/badges/state/$nslug.json" ]]'
 
-# F2 and E2: the parse and pack steps of the plan, on prepared dry runs.
+# F2 and E2: the parse and pack steps of the plan, on prepared dry runs. The plan holds one
+# dry run for each mutator, with only that mutator enabled. pack_case <name> <seconds per
+# mutant> <mutator> <dry run text> [<mutator> <dry run text>]...
 pack_case() {
   case_dir="$work/pack-$1"
-  mkdir -p "$case_dir"
+  mkdir -p "$case_dir/internal-numfmt.dry"
   printf './internal/numfmt\tinternal-numfmt\t%s\ttest\n' "$2" >"$case_dir/stale.tsv"
-  printf '%b' "$3" >"$case_dir/internal-numfmt.dry"
+  shift 2
+  while [[ $# -ge 2 ]]; do
+    printf '%b' "$2" >"$case_dir/internal-numfmt.dry/${1/\//+}.dry"
+    shift 2
+  done
   bash scripts/mutation-plan.sh --pack "$case_dir" >"$case_dir/plan.json" 2>"$case_dir/out"
   status=$?
 }
-pack_case good 15 'internal/numfmt/a.go:\n\tbranch/if: 3\n\tstatement/return: 2\ninternal/numfmt/b.go:\n\tbranch/if: 1\n\nPer-mutator totals across all files:\n  branch/if 4\n  statement/return 2\n\nTotal: 6 mutation(s) would be generated.\n'
-check "pack: cells sum to the dry run Total" \
+pack_case good 15 \
+  branch/if 'internal/numfmt/a.go:\n\tbranch/if: 3\ninternal/numfmt/b.go:\n\tbranch/if: 1\n\nPer-mutator totals across all files:\n  branch/if 4\n\nTotal: 4 mutation(s) would be generated.\n' \
+  statement/return 'internal/numfmt/a.go:\n\tstatement/return: 2\n\nPer-mutator totals across all files:\n  statement/return 2\n\nTotal: 2 mutation(s) would be generated.\n'
+check "pack: cells sum to the Total of each dry run" \
   '[[ $status -eq 0 && "$(jq "[.[].cells[].mutants] | add" "$case_dir/plan.json")" == 6 ]]'
-pack_case mismatch 15 'internal/numfmt/a.go:\n\tbranch/if: 3\n\nTotal: 7 mutation(s) would be generated.\n'
+# mutago merges identical edits of different mutators. With all mutators enabled, a merged
+# edit counts for one mutator only (branch/case: 1 statement/return: 1). A shard runs
+# statement/return alone, so it tests 4 edits. The plan must use the count of that dry run
+# (statement/return: 4), because the verdict refuses a report with more mutants than planned.
+pack_case single-mutator 15 \
+  branch/case 'internal/numfmt/a.go:\n\tbranch/case: 4\n\nTotal: 4 mutation(s) would be generated.\n' \
+  statement/return 'internal/numfmt/a.go:\n\tstatement/return: 4\n\nTotal: 4 mutation(s) would be generated.\n'
+check "pack: a cell holds the count of the dry run with only its mutator enabled" \
+  '[[ $status -eq 0 && "$(jq -c "[.[].cells[] | select(.mutator == \"statement/return\") | .mutants]" "$case_dir/plan.json")" == "[4]" ]]'
+pack_case wrong-mutator 15 \
+  statement/return 'internal/numfmt/a.go:\n\tbranch/case: 1\n\nTotal: 1 mutation(s) would be generated.\n'
+check "pack: a dry run that counts another mutator stops the plan" \
+  '[[ $status -ne 0 ]] && grep -q "for statement/return counts the mutator branch/case" "$case_dir/out"'
+pack_case mismatch 15 branch/if 'internal/numfmt/a.go:\n\tbranch/if: 3\n\nTotal: 7 mutation(s) would be generated.\n'
 check "pack: cells that do not sum to the Total stop the plan" \
   '[[ $status -ne 0 ]] && grep -q "hold 3 mutants, but the dry run Total is 7" "$case_dir/out"'
-pack_case no-cells 15 'something new\n\tbranch/if 3\n\nTotal: 3 mutation(s) would be generated.\n'
+pack_case no-cells 15 branch/if 'something new\n\tbranch/if 3\n\nTotal: 3 mutation(s) would be generated.\n'
 check "pack: a Total with no parsed cells stops the plan" \
   '[[ $status -ne 0 ]] && grep -q "has 3 mutants but no per-file cells" "$case_dir/out"'
-pack_case no-total 15 'internal/numfmt/a.go:\n\tbranch/if: 3\n'
+pack_case no-total 15 branch/if 'internal/numfmt/a.go:\n\tbranch/if: 3\n'
 check "pack: a dry run with no Total line stops the plan" '[[ $status -ne 0 ]] && grep -q "has no Total line" "$case_dir/out"'
-pack_case zero 15 '\nTotal: 0 mutation(s) would be generated.\n'
+pack_case no-dry 15
+check "pack: a package with no dry run stops the plan" '[[ $status -ne 0 ]] && grep -q "has no dry run" "$case_dir/out"'
+pack_case zero 15 branch/if '\nTotal: 0 mutation(s) would be generated.\n'
 check "pack: no mutants gives one empty shard" '[[ $status -eq 0 && "$(jq -c "map(.cells | length)" "$case_dir/plan.json")" == "[0]" ]]'
 # (99 + 1) x 95 s is about 158 min: over the budget, under the job limit.
-pack_case over-budget 95 'internal/numfmt/a.go:\n\tbranch/if: 99\n\nTotal: 99 mutation(s) would be generated.\n'
+pack_case over-budget 95 branch/if 'internal/numfmt/a.go:\n\tbranch/if: 99\n\nTotal: 99 mutation(s) would be generated.\n'
 check "pack: a cell over the 120 min budget gets its own shard and a warning" \
   '[[ $status -eq 0 ]] && grep -q "WARNING" "$case_dir/out"'
 # (99 + 1) x 175 s is about 292 min: over the job limit.
-pack_case over-limit 175 'internal/numfmt/a.go:\n\tbranch/if: 99\n\nTotal: 99 mutation(s) would be generated.\n'
+pack_case over-limit 175 branch/if 'internal/numfmt/a.go:\n\tbranch/if: 99\n\nTotal: 99 mutation(s) would be generated.\n'
 check "pack: a cell over the 285 min job limit stops the plan" \
   '[[ $status -ne 0 ]] && grep -q "more than the job limit of 285 min" "$case_dir/out"'
 
