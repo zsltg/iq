@@ -182,6 +182,20 @@ check "plan diff: a deleted file and a test file are not planned" \
   '! grep -q "gone.go\|a_test.go" "$case_dir/plan.json" && grep -q "internal/a/a.go" "$case_dir/plan.json"'
 check "plan diff: the plan counts the changed lines" \
   '[[ "$(jq "[.[].groups[].files[] | select(.file == \"internal/a/a.go\") | .lines] | add" "$case_dir/plan.json")" == 7 ]]'
+# go list writes progress such as "go: downloading ..." to stderr on a cold module
+# cache. The plan must read the package path from stdout only. A go wrapper that
+# writes such a line to stderr stands in for the cold cache.
+shim="$work/goshim"
+mkdir -p "$shim"
+real_go=$(command -v go)
+printf '#!/usr/bin/env bash\necho "go: downloading example.com/x v1.0.0" >&2\nexec %q "$@"\n' "$real_go" >"$shim/go"
+chmod +x "$shim/go"
+case_dir="$work/diffplan-stderr"
+mkdir -p "$case_dir"
+(cd "$repo" && PATH="$shim:$PATH" GOFLAGS=-mod=mod GOTOOLCHAIN=local GOPROXY=off bash "$root/scripts/mutation-plan.sh" --diff main) >"$case_dir/plan.json" 2>"$case_dir/out"
+status=$?
+check "plan diff: go list progress on stderr does not hide the module" \
+  '[[ $status -eq 0 ]] && ! grep -q "outside the module" "$case_dir/out" && grep -q "internal/a/a.go" "$case_dir/plan.json"'
 long=$(head -c 70000 /dev/zero | tr '\0' 'x')
 printf 'package a\n\n// %s\nfunc Three() int { return 3 }\n' "$long" >>"$repo/internal/a/a.go"
 git_in add -A && git_in commit -q -m "long line"
