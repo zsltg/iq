@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -29,13 +30,7 @@ func TestRootHelpGroupsFlags(t *testing.T) {
 		"  Diagnostics:",
 		"  Options:",
 	}
-	prev := -1
-	for _, h := range wantOrder {
-		at := strings.Index(out, h)
-		require.NotEqualf(t, -1, at, "header %q missing from help", h)
-		require.Greaterf(t, at, prev, "header %q out of order", h)
-		prev = at
-	}
+	requireHeadersInOrder(t, out, wantOrder)
 
 	// A flag lands under its own section, not merely somewhere in the output.
 	cases := []struct{ header, flag string }{
@@ -143,6 +138,19 @@ func TestGroupedFlagUsages(t *testing.T) {
 	})
 }
 
+// requireHeadersInOrder makes sure that every header appears in out, in the
+// order given.
+func requireHeadersInOrder(t *testing.T, out string, headers []string) {
+	t.Helper()
+	prev := -1
+	for _, h := range headers {
+		at := strings.Index(out, h)
+		require.NotEqualf(t, -1, at, "header %q missing from help", h)
+		require.Greaterf(t, at, prev, "header %q out of order", h)
+		prev = at
+	}
+}
+
 // sectionAfter returns the slice of s starting just past header and ending at the
 // next two-space-indented section header (or end of string), i.e. the flag lines
 // that belong to that section.
@@ -171,7 +179,8 @@ func sectionAfter(s, header string) string {
 // indent, single word, trailing colon), distinguishing it from a "    --flag"
 // entry indented four spaces.
 func isSectionHeader(line string) bool {
-	if !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "   ") {
+	indent := len(line) - len(strings.TrimLeft(line, " "))
+	if indent != 2 {
 		return false
 	}
 	trimmed := strings.TrimSpace(line)
@@ -195,27 +204,28 @@ func TestRootHelpGroupsCommands(t *testing.T) {
 		"Info:",
 		"Additional Commands:",
 	}
-	prev := -1
-	for _, h := range wantOrder {
-		at := strings.Index(out, h)
-		require.NotEqualf(t, -1, at, "header %q missing from help", h)
-		require.Greaterf(t, at, prev, "header %q out of order", h)
-		prev = at
-	}
+	requireHeadersInOrder(t, out, wantOrder)
 
-	cases := []struct{ header, next, cmd string }{
-		{"Sources:", "Query & Data:", "add"},
-		{"Sources:", "Query & Data:", "ping"},
-		{"Query & Data:", "Configuration:", "exec"},
-		{"Query & Data:", "Configuration:", "diff"},
-		{"Configuration:", "Info:", "config"},
-		{"Info:", "Additional Commands:", "driver"},
-		{"Info:", "Additional Commands:", "version"},
+	sources := groupBounds{"Sources:", "Query & Data:"}
+	query := groupBounds{"Query & Data:", "Configuration:"}
+	config := groupBounds{"Configuration:", "Info:"}
+	info := groupBounds{"Info:", "Additional Commands:"}
+	cases := []struct {
+		bounds groupBounds
+		cmd    string
+	}{
+		{sources, "add"},
+		{sources, "ping"},
+		{query, "exec"},
+		{query, "diff"},
+		{config, "config"},
+		{info, "driver"},
+		{info, "version"},
 	}
 	for _, c := range cases {
 		t.Run(c.cmd, func(t *testing.T) {
-			section := sectionBetween(out, c.header, c.next)
-			require.Containsf(t, section, c.cmd, "%s not under %s", c.cmd, c.header)
+			section := sectionBetween(out, c.bounds)
+			require.Containsf(t, section, c.cmd, "%s not under %s", c.cmd, c.bounds.header)
 		})
 	}
 
@@ -260,17 +270,24 @@ func TestExamplesUseLiveFlags(t *testing.T) {
 			for _, line := range exampleInvocations(c.Example) {
 				target, _, err := root.Find(line)
 				require.NoErrorf(t, err, "example %q names no command", strings.Join(line, " "))
-				for _, tok := range line {
-					name, ok := flagName(tok)
-					if !ok {
-						continue
-					}
-					require.NotNilf(t, lookupFlag(target, name),
-						"example on %q spells %s, which %q does not define",
-						c.CommandPath(), tok, target.CommandPath())
-				}
+				requireFlagsDefined(t, c, target, line)
 			}
 		})
+	}
+}
+
+// requireFlagsDefined makes sure that every flag spelled in line, an example on
+// owner, resolves against target, the command that the line invokes.
+func requireFlagsDefined(t *testing.T, owner, target *cobra.Command, line []string) {
+	t.Helper()
+	for _, tok := range line {
+		name, ok := flagName(tok)
+		if !ok {
+			continue
+		}
+		require.NotNilf(t, lookupFlag(target, name),
+			"example on %q spells %s, which %q does not define",
+			owner.CommandPath(), tok, target.CommandPath())
 	}
 }
 
@@ -320,23 +337,21 @@ func exampleInvocations(example string) [][]string {
 func invocationTokens(line string) []string {
 	line = quotedSpan.ReplaceAllString(line, " arg ")
 	toks := strings.Fields(line)
-	start := -1
-	for i, tok := range toks {
-		if tok == "iq" {
-			start = i + 1
-			break
-		}
-	}
+	start := slices.Index(toks, "iq")
 	if start == -1 {
 		return nil
 	}
-	toks = toks[start:]
-	for i, tok := range toks {
-		if tok == "|" || tok == ">" || tok == ">>" || tok == "&&" || strings.HasPrefix(tok, "#") {
-			return toks[:i]
-		}
+	toks = toks[start+1:]
+	if end := slices.IndexFunc(toks, endsInvocation); end != -1 {
+		return toks[:end]
 	}
 	return toks
+}
+
+// endsInvocation reports whether tok is a pipe, redirect, "&&" or the start of a
+// trailing comment, so it and everything after it is not an argument to iq.
+func endsInvocation(tok string) bool {
+	return slices.Contains([]string{"|", ">", ">>", "&&"}, tok) || strings.HasPrefix(tok, "#")
 }
 
 // quotedSpan matches a single-quoted span, the only quoting the examples use.
@@ -348,9 +363,10 @@ var quotedSpan = regexp.MustCompile(`'[^']*'`)
 func flagName(tok string) (string, bool) {
 	name, ok := strings.CutPrefix(tok, "--")
 	if !ok {
-		if name, ok = strings.CutPrefix(tok, "-"); !ok || name == "" {
-			return "", false
-		}
+		name, ok = strings.CutPrefix(tok, "-")
+	}
+	if !ok {
+		return "", false
 	}
 	name, _, _ = strings.Cut(name, "=")
 	return name, name != ""
@@ -372,15 +388,19 @@ func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {
 	return nil
 }
 
-// sectionBetween returns the slice of s between the end of from and the start
-// of to, i.e. the content of one command group's section.
-func sectionBetween(s, from, to string) string {
-	start := strings.Index(s, from)
+// groupBounds names one command group's section: its own header and the header
+// of the group that follows it.
+type groupBounds struct{ header, next string }
+
+// sectionBetween returns the slice of s between the end of the header and the
+// start of the next header, i.e. the content of one command group's section.
+func sectionBetween(s string, b groupBounds) string {
+	start := strings.Index(s, b.header)
 	if start == -1 {
 		return ""
 	}
-	start += len(from)
-	end := strings.Index(s[start:], to)
+	start += len(b.header)
+	end := strings.Index(s[start:], b.next)
 	if end == -1 {
 		return s[start:]
 	}

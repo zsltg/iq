@@ -26,9 +26,7 @@ import (
 // RedisJSON and non-JSON key sets for the assertions.
 func seedFilterKeyspace(t *testing.T, store *iqredis.Store) (jsonKeys, otherKeys []string) {
 	t.Helper()
-	ctx := context.Background()
-	_, err := store.Query(ctx, []string{"FLUSHDB"})
-	require.NoError(t, err)
+	flushKeyspace(t, store)
 
 	// The s field spans the Regex prefilter's cases: doc1/doc3 are strings that
 	// match ^h (case-insensitively), doc2 a string that does not, doc4 omits s
@@ -44,19 +42,42 @@ func seedFilterKeyspace(t *testing.T, store *iqredis.Store) (jsonKeys, otherKeys
 		"iq:test:sf:doc5": `{"author":{"name":"Rob"},"year":"recent","s":123}`,
 	}
 	for k, v := range docs {
-		_, err := store.Query(ctx, []string{"JSON.SET", k, "$", v})
-		require.NoError(t, err)
+		mustQuery(t, store, "JSON.SET", k, "$", v)
 		jsonKeys = append(jsonKeys, k)
 	}
 
-	_, err = store.Query(ctx, []string{"SET", "iq:test:sf:str", "hello"})
-	require.NoError(t, err)
-	_, err = store.Query(ctx, []string{"HSET", "iq:test:sf:hash", "f", "v"})
-	require.NoError(t, err)
+	mustQuery(t, store, "SET", "iq:test:sf:str", "hello")
+	mustQuery(t, store, "HSET", "iq:test:sf:hash", "f", "v")
 	otherKeys = []string{"iq:test:sf:str", "iq:test:sf:hash"}
-
-	t.Cleanup(func() { _, _ = store.Query(ctx, []string{"FLUSHDB"}) })
 	return jsonKeys, otherKeys
+}
+
+// setupTimeout bounds each setup and cleanup call to the server.
+const setupTimeout = 5 * time.Second
+
+// mustQuery runs one command on store under its own deadline and fails the test
+// on error.
+func mustQuery(t *testing.T, store *iqredis.Store, args ...string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), setupTimeout)
+	defer cancel()
+	_, err := store.Query(ctx, args)
+	require.NoError(t, err)
+}
+
+// flushKeyspace empties the reserved database now and again when the test ends.
+// The cleanup uses a fresh context, because the context of the test is already
+// cancelled by then, and it reports a failed flush.
+func flushKeyspace(t *testing.T, store *iqredis.Store) {
+	t.Helper()
+	mustQuery(t, store, "FLUSHDB")
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), setupTimeout)
+		defer cancel()
+		if _, err := store.Query(ctx, []string{"FLUSHDB"}); err != nil {
+			t.Errorf("flush the keyspace at cleanup: %v", err)
+		}
+	})
 }
 
 // collect walks a scan into a single {key: value} map, the whole (small) keyspace.
@@ -142,11 +163,8 @@ func TestScanFilteredHonorsDecimalMode(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
-	_, err = store.Query(ctx, []string{"FLUSHDB"})
-	require.NoError(t, err)
-	_, err = store.Query(ctx, []string{"JSON.SET", "iq:test:dec", "$", `{"a":1,"r":1.5}`})
-	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = store.Query(ctx, []string{"FLUSHDB"}) })
+	flushKeyspace(t, store)
+	mustQuery(t, store, "JSON.SET", "iq:test:dec", "$", `{"a":1,"r":1.5}`)
 
 	// a == 1 keeps the document, so it is decoded — under DecimalString, r is "1.5".
 	pred := predicate.Eq{Path: []string{"a"}, Value: 1.0}
@@ -164,13 +182,10 @@ func TestScanFilteredHonorsDecimalMode(t *testing.T) {
 func TestScanFilteredRejectsUnsupportedType(t *testing.T) {
 	store := openIntegration(t)
 	ctx := context.Background()
-	_, err := store.Query(ctx, []string{"FLUSHDB"})
-	require.NoError(t, err)
-	_, err = store.Query(ctx, []string{"TS.ADD", "iq:test:ts", "*", "1"})
-	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = store.Query(ctx, []string{"FLUSHDB"}) })
+	flushKeyspace(t, store)
+	mustQuery(t, store, "TS.ADD", "iq:test:ts", "*", "1")
 
-	err = store.ScanFiltered(ctx, predicate.Exists{Path: []string{"a"}}, func(map[string]any) error {
+	err := store.ScanFiltered(ctx, predicate.Exists{Path: []string{"a"}}, func(map[string]any) error {
 		return nil
 	})
 	require.Error(t, err)
@@ -201,36 +216,13 @@ func refMatchValue(v any, pred predicate.Node) bool {
 	case predicate.Ne:
 		return gojq.Compare(lookup(v, n.Path), n.Value) != 0
 	case predicate.Cmp:
-		c := gojq.Compare(lookup(v, n.Path), n.Value)
-		switch n.Op {
-		case predicate.Gt:
-			return c > 0
-		case predicate.Ge:
-			return c >= 0
-		case predicate.Lt:
-			return c < 0
-		default:
-			return c <= 0
-		}
+		return refCmpHolds(gojq.Compare(lookup(v, n.Path), n.Value), n.Op)
 	case predicate.Exists:
 		return present(v, n.Path)
 	case predicate.NotExists:
 		return !present(v, n.Path)
 	case predicate.Regex:
-		s, ok := lookup(v, n.Path).(string)
-		if !ok {
-			// jq test() errors on a non-string; the oracle treats it as non-matching,
-			// and rawpred keeps it (MayMatch), so it is never wrongly dropped.
-			return false
-		}
-		pat := n.Pattern
-		if strings.ContainsRune(n.Flags, 'i') {
-			pat = "(?i)" + pat
-		}
-		if strings.ContainsRune(n.Flags, 'm') {
-			pat = "(?s)" + pat
-		}
-		return regexp.MustCompile(pat).MatchString(s)
+		return refRegexValue(lookup(v, n.Path), n)
 	case predicate.Size:
 		return refSizeValue(lookup(v, n.Path), n.N)
 	case predicate.ElemMatch:
@@ -246,6 +238,38 @@ func refMatchValue(v any, pred predicate.Node) bool {
 	}
 }
 
+// refCmpHolds reports whether a gojq.Compare result c satisfies op.
+func refCmpHolds(c int, op predicate.Op) bool {
+	switch op {
+	case predicate.Gt:
+		return c > 0
+	case predicate.Ge:
+		return c >= 0
+	case predicate.Lt:
+		return c < 0
+	default:
+		return c <= 0
+	}
+}
+
+// refRegexValue reports whether v is a string that matches the pattern of n.
+func refRegexValue(v any, n predicate.Regex) bool {
+	s, ok := v.(string)
+	if !ok {
+		// jq test() errors on a non-string; the oracle treats it as non-matching,
+		// and rawpred keeps it (MayMatch), so it is never wrongly dropped.
+		return false
+	}
+	pat := n.Pattern
+	if strings.ContainsRune(n.Flags, 'i') {
+		pat = "(?i)" + pat
+	}
+	if strings.ContainsRune(n.Flags, 'm') {
+		pat = "(?s)" + pat
+	}
+	return regexp.MustCompile(pat).MatchString(s)
+}
+
 // refSizeValue mirrors jq's length compared to n over a decoded value: array
 // elements, object keys, string runes, 0 for null, |value| for a number; a boolean
 // (jq length errors) and any unexpected type are must-keep.
@@ -259,8 +283,17 @@ func refSizeValue(v any, n int) bool {
 		return len(t) == n
 	case map[string]any:
 		return len(t) == n
-	case bool:
+	case int, *big.Int, float64:
+		return refAbsEquals(t, n)
+	default:
+		// A boolean (jq length errors) or an unexpected type.
 		return true
+	}
+}
+
+// refAbsEquals reports whether the absolute value of the number v equals n.
+func refAbsEquals(v any, n int) bool {
+	switch t := v.(type) {
 	case int:
 		if t < 0 {
 			t = -t
@@ -279,22 +312,13 @@ func refSizeValue(v any, n int) bool {
 // at the first element satisfying Cond, errored=true on a non-container or a
 // non-indexable element reached before any match (jq would error there).
 func refAnyValue(v any, cond predicate.Node) (match, errored bool) {
-	var elems []any
-	switch t := v.(type) {
-	case []any:
-		elems = t
-	case map[string]any:
-		for _, e := range t {
-			elems = append(elems, e)
-		}
-	default:
+	elems, ok := refElements(v)
+	if !ok {
 		return false, true
 	}
 	for _, e := range elems {
-		if e != nil {
-			if _, ok := e.(map[string]any); !ok {
-				return false, true
-			}
+		if !refIndexable(e) {
+			return false, true
 		}
 		if refMatchValue(e, cond) {
 			return true, false
@@ -303,32 +327,54 @@ func refAnyValue(v any, cond predicate.Node) (match, errored bool) {
 	return false, false
 }
 
-// lookup returns the value at path or nil (jq's null) when it is absent.
-func lookup(v any, path []string) any {
+// refElements returns the elements of an array or the values of an object.
+func refElements(v any) ([]any, bool) {
+	switch t := v.(type) {
+	case []any:
+		return t, true
+	case map[string]any:
+		var elems []any
+		for _, e := range t {
+			elems = append(elems, e)
+		}
+		return elems, true
+	default:
+		return nil, false
+	}
+}
+
+// refIndexable reports whether jq can index e: null or an object.
+func refIndexable(e any) bool {
+	if e == nil {
+		return true
+	}
+	_, ok := e.(map[string]any)
+	return ok
+}
+
+// walk resolves path through nested objects and reports whether it exists.
+func walk(v any, path []string) (any, bool) {
 	cur := v
 	for _, key := range path {
 		m, ok := cur.(map[string]any)
 		if !ok {
-			return nil
+			return nil, false
 		}
 		if cur, ok = m[key]; !ok {
-			return nil
+			return nil, false
 		}
 	}
+	return cur, true
+}
+
+// lookup returns the value at path or nil (jq's null) when it is absent.
+func lookup(v any, path []string) any {
+	cur, _ := walk(v, path)
 	return cur
 }
 
 // present reports whether path resolves to a value.
 func present(v any, path []string) bool {
-	cur := v
-	for _, key := range path {
-		m, ok := cur.(map[string]any)
-		if !ok {
-			return false
-		}
-		if cur, ok = m[key]; !ok {
-			return false
-		}
-	}
-	return true
+	_, ok := walk(v, path)
+	return ok
 }
