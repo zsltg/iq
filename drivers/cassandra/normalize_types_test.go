@@ -166,6 +166,7 @@ func TestBindKeyValueEveryType(t *testing.T) {
 	t.Run("an empty text key is the empty string", func(t *testing.T) {
 		got, err := bindKeyValue(gocql.TypeText, "")
 		require.NoError(t, err)
+		require.IsType(t, "", got)
 		require.Empty(t, got)
 	})
 }
@@ -323,4 +324,92 @@ func TestBindValueCollections(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestSignedInt(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     any
+		want   int64
+		wantOK bool
+	}{
+		{"int", 42, 42, true},
+		{"int8", int8(-8), -8, true},
+		{"int16", int16(-16), -16, true},
+		{"int32", int32(-32), -32, true},
+		{"int64", int64(-64), -64, true},
+		{"uint8 is not signed", uint8(7), 0, false},
+		{"string", "7", 0, false},
+		{"nil", nil, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := signedInt(tt.in)
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestTextForm(t *testing.T) {
+	ts := time.Date(2021, 1, 2, 3, 4, 5, 6, time.FixedZone("x", 3600))
+	tests := []struct {
+		name   string
+		in     any
+		want   string
+		wantOK bool
+	}{
+		{"string", "abc", "abc", true},
+		{"empty string", "", "", true},
+		{"uuid", mustUUID(t, testUUID), testUUID, true},
+		{"time is utc with nanoseconds", ts, "2021-01-02T02:04:05.000000006Z", true},
+		{"blob", []byte("hi"), "aGk=", true},
+		{"inet", net.ParseIP("10.0.0.1"), "10.0.0.1", true},
+		{"int", 7, "", false},
+		{"nil", nil, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := textForm(tt.in)
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestNumberKey(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     any
+		want   string
+		wantOK bool
+	}{
+		{"float32 shortest form", float32(3.25), "3.25", true},
+		{"float32 keeps 32-bit precision", float32(0.1), "0.1", true},
+		{"float64 shortest form", 2.5, "2.5", true},
+		{"float64 exponent", 1e21, "1e+21", true},
+		{"big int", mustBig("123456789012345678901234567890"), "123456789012345678901234567890", true},
+		{"decimal", mustDec("3.14"), "3.14", true},
+		{"int is not a number key", 7, "", false},
+		{"nil", nil, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := numberKey(tt.in)
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestBindMapRejectsAColumnThatIsNotACollection(t *testing.T) {
+	got, err := bindMap(nativeType(gocql.TypeInt), map[string]any{"k": 1})
+	require.Nil(t, got)
+	require.ErrorContains(t, err, "is not a collection type")
+}
+
+func TestBindListRejectsAColumnThatIsNotACollection(t *testing.T) {
+	got, err := bindList(nativeType(gocql.TypeInt), []any{1})
+	require.Nil(t, got)
+	require.ErrorContains(t, err, "is not a collection type")
 }
