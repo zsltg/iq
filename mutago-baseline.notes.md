@@ -808,3 +808,12 @@ Each of these mutants replaces the ctx of a command that is queued on a go-redis
 
 - 21102862e812 drivers/couchbase/couchbase.go:495 numbers/decrementer — the count that scanPage returns with a query error changes from 0. Its only caller, scan, returns the error without reading the count, so no caller can see it.
 - 7184173f3db8 drivers/couchbase/couchbase.go:495 numbers/incrementer — the count that scanPage returns with a query error changes from 0. Its only caller, scan, returns the error without reading the count, so no caller can see it.
+
+- d52a32e3a38d drivers/cassandra/normalize.go:65 branch/case — the branch/case mutant drops only the `default:` label of the switch in signedInt, so the same `return 0, false` still runs.
+- 99d37facda97 drivers/cassandra/normalize.go:85 branch/case — the branch/case mutant drops only the `default:` label of the switch in textForm, so the same `return "", false` still runs.
+- c5051dcea171 drivers/cassandra/normalize.go:188 branch/if — the signedInt branch in keyString is skipped. keyString then reaches its `fmt.Sprintf("%v")` default, which prints every signed integer type the same as strconv.FormatInt.
+- 7b4798482c96 drivers/cassandra/normalize.go:194 branch/if — the numberKey branch in keyString is skipped. The `%v` default prints float32 and float64 the same as FormatFloat with 'g', -1 and the type's bit size, and *big.Int (also nil) and *inf.Dec through their String methods.
+- a2c1853032e8 drivers/cassandra/normalize.go:332 numbers/decrementer — the ParseFloat bit size in parseKeyDouble becomes 63. strconv parses as float32 only for bit size 32 and as float64 for every other value, so 63 and 64 give the same value and error.
+- 60409b793c96 drivers/cassandra/normalize.go:332 numbers/incrementer — the ParseFloat bit size in parseKeyDouble becomes 65. strconv parses as float32 only for bit size 32 and as float64 for every other value.
+- 850d83a9a022 drivers/cassandra/normalize.go:210 numbers/incrementer — the FormatFloat precision for float32 in numberKey becomes -2. strconv treats every negative precision as the shortest form.
+- 0e31fb68364e drivers/cassandra/normalize.go:212 numbers/incrementer — the FormatFloat precision for float64 in numberKey becomes -2. strconv treats every negative precision as the shortest form.
