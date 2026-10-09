@@ -27,46 +27,73 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 	if len(s.keys) == 0 {
 		return query.WriteStat{}, errNoTable
 	}
-	items := make([]map[string]types.AttributeValue, len(batch))
-	for i, r := range batch {
-		item, err := s.toItem(recordValue{key: r.Key, value: r.Value})
-		if err != nil {
-			return query.WriteStat{}, err
-		}
-		items[i] = item
+	items, err := s.itemsOf(batch)
+	if err != nil {
+		return query.WriteStat{}, err
 	}
-	var existing map[string]bool
-	if mode == query.Upsert {
-		var err error
-		existing, err = s.existingKeys(ctx, batch)
-		if err != nil {
-			return query.WriteStat{}, err
-		}
+	existing, err := s.existingFor(ctx, batch, mode)
+	if err != nil {
+		return query.WriteStat{}, err
 	}
 	var stat query.WriteStat
 	for i, r := range batch {
-		in := &dynamodb.PutItemInput{TableName: &s.table, Item: items[i]}
-		if mode == query.InsertOnly {
-			// Skip a key that already exists: the partition key must not be present.
-			// Aliased through #pk so a reserved partition-key name is still safe.
-			in.ConditionExpression = aws.String("attribute_not_exists(#pk)")
-			in.ExpressionAttributeNames = map[string]string{"#pk": s.keys[0].name}
+		skipped, err := s.putItem(ctx, items[i], mode)
+		if err != nil {
+			return query.WriteStat{}, err
 		}
-		if _, err := s.client.PutItem(ctx, in); err != nil {
-			var ccf *types.ConditionalCheckFailedException
-			if mode == query.InsertOnly && errors.As(err, &ccf) {
-				stat.Skipped++
-				continue
-			}
-			return query.WriteStat{}, fmt.Errorf("dynamodb put: %w", err)
-		}
-		if existing[r.Key] {
+		switch {
+		case skipped:
+			stat.Skipped++
+		case existing[r.Key]:
 			stat.Overwritten++
-		} else {
+		default:
 			stat.Written++
 		}
 	}
 	return stat, nil
+}
+
+// itemsOf builds the DynamoDB item of every record before any write, so one bad
+// record fails the whole batch.
+func (s *Store) itemsOf(batch []query.Record) ([]map[string]types.AttributeValue, error) {
+	items := make([]map[string]types.AttributeValue, len(batch))
+	for i, r := range batch {
+		item, err := s.toItem(recordValue{key: r.Key, value: r.Value})
+		if err != nil {
+			return nil, err
+		}
+		items[i] = item
+	}
+	return items, nil
+}
+
+// existingFor returns which keys of batch already hold an item when mode is Upsert,
+// for the Overwritten count. Any other mode needs no pre-read and gets a nil map.
+func (s *Store) existingFor(ctx context.Context, batch []query.Record, mode query.WriteMode) (map[string]bool, error) {
+	if mode != query.Upsert {
+		return nil, nil
+	}
+	return s.existingKeys(ctx, batch)
+}
+
+// putItem writes one item. In InsertOnly mode the partition key must not exist yet,
+// and a key that does exist is not an error: it reports skipped as true.
+func (s *Store) putItem(ctx context.Context, item map[string]types.AttributeValue, mode query.WriteMode) (skipped bool, err error) {
+	in := &dynamodb.PutItemInput{TableName: &s.table, Item: item}
+	if mode == query.InsertOnly {
+		// Skip a key that already exists: the partition key must not be present.
+		// Aliased through #pk so a reserved partition-key name is still safe.
+		in.ConditionExpression = aws.String("attribute_not_exists(#pk)")
+		in.ExpressionAttributeNames = map[string]string{"#pk": s.keys[0].name}
+	}
+	if _, err := s.client.PutItem(ctx, in); err != nil {
+		var ccf *types.ConditionalCheckFailedException
+		if mode == query.InsertOnly && errors.As(err, &ccf) {
+			return true, nil
+		}
+		return false, fmt.Errorf("dynamodb put: %w", err)
+	}
+	return false, nil
 }
 
 // existingKeys returns which of a batch's keys already have an item, so an upsert can
@@ -101,13 +128,9 @@ func (s *Store) existingKeySet(ctx context.Context, keys []string) (map[string]b
 	existing := make(map[string]bool, len(keys))
 	for start := 0; start < len(keys); start += batchGetMax {
 		end := min(start+batchGetMax, len(keys))
-		reqKeys := make([]map[string]types.AttributeValue, 0, batchGetMax)
-		for _, k := range keys[start:end] {
-			av, err := s.decodeKey(k)
-			if err != nil {
-				return nil, err
-			}
-			reqKeys = append(reqKeys, av)
+		reqKeys, err := s.decodeKeys(keys[start:end])
+		if err != nil {
+			return nil, err
 		}
 		pending := map[string]types.KeysAndAttributes{s.table: {
 			Keys:                     reqKeys,
@@ -176,34 +199,43 @@ func (s *Store) keyProjection() (string, map[string]string) {
 func (s *Store) deleteItems(ctx context.Context, items []map[string]types.AttributeValue) error {
 	for start := 0; start < len(items); start += batchWriteMax {
 		end := min(start+batchWriteMax, len(items))
-		reqs := make([]types.WriteRequest, 0, batchWriteMax)
-		for _, item := range items[start:end] {
-			reqs = append(reqs, types.WriteRequest{
-				DeleteRequest: &types.DeleteRequest{Key: s.keyAttrs(item)},
-			})
-		}
-		pending := map[string][]types.WriteRequest{s.table: reqs}
-		// Drain the batch, retrying the throttled leftovers (UnprocessedItems) with
-		// bounded backoff between attempts. The range bounds the retries, so it can
-		// never loop forever.
-		for attempt := range maxUnprocessed {
-			out, err := s.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{RequestItems: pending})
-			if err != nil {
-				return fmt.Errorf("dynamodb batch write: %w", err)
-			}
-			pending = out.UnprocessedItems
-			if len(pending) == 0 {
-				break
-			}
-			if err := backoff(ctx, attempt); err != nil {
-				return err
-			}
-		}
-		if len(pending) > 0 {
-			return fmt.Errorf("dynamodb batch write: %d attempt(s) left items unprocessed", maxUnprocessed)
+		pending := map[string][]types.WriteRequest{s.table: s.deleteRequests(items[start:end])}
+		if err := s.drainBatchWrite(ctx, pending); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// deleteRequests builds one delete request per item, each with only its key attributes.
+func (s *Store) deleteRequests(items []map[string]types.AttributeValue) []types.WriteRequest {
+	reqs := make([]types.WriteRequest, 0, len(items))
+	for _, item := range items {
+		reqs = append(reqs, types.WriteRequest{
+			DeleteRequest: &types.DeleteRequest{Key: s.keyAttrs(item)},
+		})
+	}
+	return reqs
+}
+
+// drainBatchWrite issues BatchWriteItem against pending and drains the throttled
+// leftovers (UnprocessedItems) with bounded backoff between attempts. The range bounds
+// the retries, so it can never loop forever.
+func (s *Store) drainBatchWrite(ctx context.Context, pending map[string][]types.WriteRequest) error {
+	for attempt := range maxUnprocessed {
+		out, err := s.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{RequestItems: pending})
+		if err != nil {
+			return fmt.Errorf("dynamodb batch write: %w", err)
+		}
+		pending = out.UnprocessedItems
+		if len(pending) == 0 {
+			return nil
+		}
+		if err := backoff(ctx, attempt); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("dynamodb batch write: %d attempt(s) left items unprocessed", maxUnprocessed)
 }
 
 // keyAttrs extracts just the primary-key attributes from an item, the key a delete or
@@ -233,13 +265,9 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 	if err != nil {
 		return query.DeleteStat{}, err
 	}
-	items := make([]map[string]types.AttributeValue, 0, len(keys))
-	for _, k := range keys {
-		av, err := s.decodeKey(k)
-		if err != nil {
-			return query.DeleteStat{}, err
-		}
-		items = append(items, av)
+	items, err := s.decodeKeys(keys)
+	if err != nil {
+		return query.DeleteStat{}, err
 	}
 	if err := s.deleteItems(ctx, items); err != nil {
 		return query.DeleteStat{}, err

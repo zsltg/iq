@@ -182,6 +182,20 @@ check "plan diff: a deleted file and a test file are not planned" \
   '! grep -q "gone.go\|a_test.go" "$case_dir/plan.json" && grep -q "internal/a/a.go" "$case_dir/plan.json"'
 check "plan diff: the plan counts the changed lines" \
   '[[ "$(jq "[.[].groups[].files[] | select(.file == \"internal/a/a.go\") | .lines] | add" "$case_dir/plan.json")" == 7 ]]'
+# go list writes progress such as "go: downloading ..." to stderr on a cold module
+# cache. The plan must read the package path from stdout only. A go wrapper that
+# writes such a line to stderr stands in for the cold cache.
+shim="$work/goshim"
+mkdir -p "$shim"
+real_go=$(command -v go)
+printf '#!/usr/bin/env bash\necho "go: downloading example.com/x v1.0.0" >&2\nexec %q "$@"\n' "$real_go" >"$shim/go"
+chmod +x "$shim/go"
+case_dir="$work/diffplan-stderr"
+mkdir -p "$case_dir"
+(cd "$repo" && PATH="$shim:$PATH" GOFLAGS=-mod=mod GOTOOLCHAIN=local GOPROXY=off bash "$root/scripts/mutation-plan.sh" --diff main) >"$case_dir/plan.json" 2>"$case_dir/out"
+status=$?
+check "plan diff: go list progress on stderr does not hide the module" \
+  '[[ $status -eq 0 ]] && ! grep -q "outside the module" "$case_dir/out" && grep -q "internal/a/a.go" "$case_dir/plan.json"'
 long=$(head -c 70000 /dev/zero | tr '\0' 'x')
 printf 'package a\n\n// %s\nfunc Three() int { return 3 }\n' "$long" >>"$repo/internal/a/a.go"
 git_in add -A && git_in commit -q -m "long line"
@@ -214,6 +228,15 @@ check "shard: more than one worker is a stop" \
 shard_case backend "$(jq -c '.[0].backend = "./cmd"' <<<"$good_plan")"
 check "shard: a backend with no IQ_*_URL variable is a stop" \
   '[[ $status -eq 1 ]] && grep -q "no IQ_\*_URL variable is set" "$case_dir/out"'
+# A large environment after the IQ_*_URL variable must not hide it. The check once
+# piped env into grep -q under pipefail: grep exited at the first match, env got
+# SIGPIPE, and the pipeline failed although the variable was set. The case stops at
+# the later groups check, before any install.
+big=$(printf 'x%.0s' $(seq 1 100000))
+shard_case bigenv "$(jq -c '.[0].backend = "./cmd" | .[0].groups[0].files[0].file = "internal/numfmt/decimal_test.go"' <<<"$good_plan")" \
+  IQ_REDIS_URL=redis://localhost:6379/0 IQ_PAD1="$big" IQ_PAD2="$big" IQ_PAD3="$big"
+check "shard: a large environment does not hide an IQ_*_URL variable" \
+  '[[ $status -eq 1 ]] && ! grep -q "no IQ_\*_URL variable is set" "$case_dir/out" && grep -q "groups of the plan entry are not valid" "$case_dir/out"'
 shard_case commit "$(jq -c '.[0].mergeBase = "0000000000000000000000000000000000000000"' <<<"$good_plan")"
 check "shard: a merge-base that is not a commit is a stop" \
   '[[ $status -eq 1 ]] && grep -q "is not a commit of this checkout" "$case_dir/out"'

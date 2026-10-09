@@ -423,8 +423,10 @@ if [[ "${1-}" == "--diff" ]]; then
     dir=$(dirname "$file")
     pkg="./$dir"
     [[ "$dir" == "." ]] && pkg="."
-    resolved=$(go list "$pkg" 2>&1) || {
-      echo "mutation-plan: go list rejects the package of $file: $resolved" >&2
+    # Read the package path from stdout only. On a cold module cache, go list
+    # writes progress such as "go: downloading ..." to stderr.
+    resolved=$(go list "$pkg" 2>"$work/golist.err") || {
+      echo "mutation-plan: go list rejects the package of $file: $(cat "$work/golist.err")" >&2
       exit 1
     }
     [[ "$resolved" == "$module" || "$resolved" == "$module"/* ]] || {

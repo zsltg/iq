@@ -44,7 +44,7 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	if !exactWhere(pred) {
 		matcher = rawpred.NewMatcher(pred)
 	}
-	return s.scan(ctx, where, params, matcher, fn)
+	return s.scan(ctx, scanSpec{where: where, params: params, matcher: matcher}, fn)
 }
 
 // exactWhere reports whether toWhere's translation of n captures it exactly — the query

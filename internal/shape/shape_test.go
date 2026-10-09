@@ -247,3 +247,107 @@ func TestInferFormatObserveOrder(t *testing.T) {
 		})
 	}
 }
+
+func TestInferFloatKinds(t *testing.T) {
+	tests := []struct {
+		name string
+		val  any
+		want []any
+	}{
+		{"NaN is number", math.NaN(), []any{"number"}},
+		{"float32 NaN is number", float32(math.NaN()), []any{"number"}},
+		{"integral float32 is integer", float32(5), []any{"integer"}},
+		{"fractional float32 is number", float32(5.5), []any{"number"}},
+		{"float32 infinity is number", float32(math.Inf(1)), []any{"number"}},
+		{"negative zero is integer", math.Copysign(0, -1), []any{"integer"}},
+		{"uintptr is integer", uintptr(3), []any{"integer"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, fieldTypes(tt.val))
+		})
+	}
+}
+
+func TestInferKindNames(t *testing.T) {
+	tests := []struct {
+		name string
+		val  any
+		want []any
+	}{
+		{"null", nil, []any{"null"}},
+		{"bool", true, []any{"bool"}},
+		{"integer", 1, []any{"integer"}},
+		{"number", 1.5, []any{"number"}},
+		{"string", "s", []any{"string"}},
+		{"array", []any{1}, []any{"array"}},
+		{"object", map[string]any{"k": 1}, []any{"object"}},
+		{"unknown", struct{}{}, []any{"unknown"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, fieldTypes(tt.val))
+		})
+	}
+}
+
+func TestInferUnknownKindSchema(t *testing.T) {
+	doc := shape.Infer(map[string]any{"1": map[string]any{"f": struct{}{}}}).JSONSchema("t")
+	f := doc["properties"].(map[string]any)["f"].(map[string]any)
+	require.Equal(t, map[string]any{}, f, "an unknown-only node has no type")
+}
+
+func TestInferEmptyObjectProjection(t *testing.T) {
+	t.Run("at a field", func(t *testing.T) {
+		s := shape.Infer(map[string]any{"1": map[string]any{"f": map[string]any{}}})
+		require.Equal(t, map[string]any{
+			"$root": map[string]any{"types": []any{"object"}},
+			".f":    map[string]any{"types": []any{"object"}, "presence": "required"},
+		}, s.Comparable())
+		require.Equal(t, map[string]any{
+			"$schema":    "https://json-schema.org/draft/2020-12/schema",
+			"title":      "t",
+			"type":       "object",
+			"properties": map[string]any{"f": map[string]any{"type": "object"}},
+			"required":   []any{"f"},
+		}, s.JSONSchema("t"))
+	})
+
+	t.Run("inside a collapsing map", func(t *testing.T) {
+		items := map[string]any{}
+		for i := range 8 {
+			s := strconv.Itoa(i)
+			items[s] = map[string]any{"f": map[string]any{"id" + s: map[string]any{}}}
+		}
+		s := shape.Infer(items)
+		require.Equal(t, map[string]any{
+			"$root": map[string]any{"types": []any{"object"}},
+			".f":    map[string]any{"types": []any{"map"}, "presence": "required"},
+			".f{}":  map[string]any{"types": []any{"object"}},
+		}, s.Comparable())
+		f := s.JSONSchema("t")["properties"].(map[string]any)["f"]
+		require.Equal(t, map[string]any{
+			"type":                 "object",
+			"additionalProperties": map[string]any{"type": "object"},
+		}, f)
+	})
+}
+
+func TestInferEmptyArrayInsideMap(t *testing.T) {
+	items := map[string]any{}
+	for i := range 8 {
+		s := strconv.Itoa(i)
+		items[s] = map[string]any{"f": map[string]any{"id" + s: []any{}}}
+	}
+	sh := shape.Infer(items)
+	require.Equal(t, map[string]any{
+		"$root": map[string]any{"types": []any{"object"}},
+		".f":    map[string]any{"types": []any{"map"}, "presence": "required"},
+		".f{}":  map[string]any{"types": []any{"array"}},
+	}, sh.Comparable())
+	f := sh.JSONSchema("t")["properties"].(map[string]any)["f"]
+	require.Equal(t, map[string]any{
+		"type":                 "object",
+		"additionalProperties": map[string]any{"type": "array"},
+	}, f)
+}

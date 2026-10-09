@@ -155,14 +155,11 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	if authority == "" {
 		return connConfig{}, fmt.Errorf("cassandra url must name at least one host, e.g. cassandra://host:9042/keyspace")
 	}
-	hosts := strings.Split(authority, ",")
-	for i, h := range hosts {
-		hosts[i] = withPort(h)
-	}
+	hosts := hostList(authority)
 
-	keyspace := strings.Trim(path, "/")
-	if keyspace == "" || strings.Contains(keyspace, "/") {
-		return connConfig{}, fmt.Errorf("cassandra url must name a keyspace, e.g. cassandra://host:9042/mykeyspace")
+	keyspace, err := keyspaceOf(path)
+	if err != nil {
+		return connConfig{}, err
 	}
 
 	q, err := url.ParseQuery(rawQuery)
@@ -171,9 +168,9 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	}
 	table := address
 	if table == "" {
-		table = q.Get("table")
+		table = q.Get(paramTable)
 	}
-	consistency, err := parseConsistency(q.Get("consistency"))
+	consistency, err := parseConsistency(q.Get(paramConsistency))
 	if err != nil {
 		return connConfig{}, err
 	}
@@ -185,6 +182,26 @@ func parseURL(rawURL, address string) (connConfig, error) {
 		password:    password,
 		consistency: consistency,
 	}, nil
+}
+
+// hostList splits the host part of an authority at commas and adds the default port to
+// each bare host.
+func hostList(authority string) []string {
+	hosts := strings.Split(authority, ",")
+	for i, h := range hosts {
+		hosts[i] = withPort(h)
+	}
+	return hosts
+}
+
+// keyspaceOf returns the keyspace that the URL path names. An empty path or a path
+// with more than one segment is an error.
+func keyspaceOf(path string) (string, error) {
+	keyspace := strings.Trim(path, "/")
+	if keyspace == "" || strings.Contains(keyspace, "/") {
+		return "", fmt.Errorf("cassandra url must name a keyspace, e.g. cassandra://host:9042/mykeyspace")
+	}
+	return keyspace, nil
 }
 
 // splitAuthority splits the userinfo from the hosts at the last "@". An authority
@@ -239,6 +256,23 @@ func withPort(host string) string {
 	return host + ":" + defaultPort
 }
 
+// consistencyLevels maps a lower-case consistency name to its gocql level. The map is
+// read only: nothing writes to it after init.
+var consistencyLevels = map[string]gocql.Consistency{
+	"any":          gocql.Any,
+	"one":          gocql.One,
+	"two":          gocql.Two,
+	"three":        gocql.Three,
+	"quorum":       gocql.Quorum,
+	"all":          gocql.All,
+	"localquorum":  gocql.LocalQuorum,
+	"local_quorum": gocql.LocalQuorum,
+	"eachquorum":   gocql.EachQuorum,
+	"each_quorum":  gocql.EachQuorum,
+	"localone":     gocql.LocalOne,
+	"local_one":    gocql.LocalOne,
+}
+
 // parseConsistency resolves the optional ?consistency= URL parameter to a gocql
 // consistency level, case-insensitively, defaulting to QUORUM when absent. An
 // unknown level fails fast at connect rather than surprising a later query.
@@ -246,28 +280,10 @@ func parseConsistency(s string) (gocql.Consistency, error) {
 	if s == "" {
 		return gocql.Quorum, nil
 	}
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "any":
-		return gocql.Any, nil
-	case "one":
-		return gocql.One, nil
-	case "two":
-		return gocql.Two, nil
-	case "three":
-		return gocql.Three, nil
-	case "quorum":
-		return gocql.Quorum, nil
-	case "all":
-		return gocql.All, nil
-	case "localquorum", "local_quorum":
-		return gocql.LocalQuorum, nil
-	case "eachquorum", "each_quorum":
-		return gocql.EachQuorum, nil
-	case "localone", "local_one":
-		return gocql.LocalOne, nil
-	default:
-		return gocql.Quorum, fmt.Errorf("cassandra: unknown consistency %q", s)
+	if level, ok := consistencyLevels[strings.ToLower(strings.TrimSpace(s))]; ok {
+		return level, nil
 	}
+	return gocql.Quorum, fmt.Errorf("cassandra: unknown consistency %q", s)
 }
 
 // tableMeta reads a table's schema from the keyspace metadata, so keys can be
