@@ -444,7 +444,7 @@ func searchRequest(arg string) ([]byte, error) {
 // the body. A non-2xx status becomes the labelled API error.
 func (s *Store) decodeReply(res *http.Response) (any, error) {
 	if res.StatusCode/100 != 2 {
-		return nil, apiError(res, s.client.label(), "search")
+		return nil, apiError(res, s.client.label()+" search")
 	}
 	dec := json.NewDecoder(res.Body)
 	dec.UseNumber()
