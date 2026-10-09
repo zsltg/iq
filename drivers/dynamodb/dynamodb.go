@@ -114,27 +114,10 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 		return nil, err
 	}
 
-	loadOpts := []func(*config.LoadOptions) error{config.WithRegion(cc.region)}
-	if cc.endpoint != "" {
-		// DynamoDB Local ignores credentials but the SDK still requires a provider;
-		// supply non-secret static dummies so credential resolution never fails.
-		loadOpts = append(loadOpts, config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider("dummy", "dummy", ""),
-		))
-	}
-	cfg, err := config.LoadDefaultConfig(ctx, loadOpts...)
+	client, err := newClient(ctx, cc, trace)
 	if err != nil {
-		return nil, fmt.Errorf("load aws config: %w", err)
+		return nil, err
 	}
-
-	client := dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
-		if cc.endpoint != "" {
-			o.BaseEndpoint = aws.String(cc.endpoint)
-		}
-		if trace != nil {
-			o.APIOptions = append(o.APIOptions, traceMiddleware(trace))
-		}
-	})
 
 	// Bounded reachability probe: validates region, endpoint, and credentials, the
 	// DynamoDB analogue of establishing a session — Open fails fast on a bad source.
@@ -154,6 +137,38 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 		}
 	}
 	return st, nil
+}
+
+// newClient loads the AWS config and builds the DynamoDB client for cc. A custom
+// endpoint (DynamoDB Local) gets static dummy credentials: the emulator ignores them
+// but the SDK still needs a provider.
+func newClient(ctx context.Context, cc connConfig, trace io.Writer) (*dynamodb.Client, error) {
+	loadOpts := []func(*config.LoadOptions) error{config.WithRegion(cc.region)}
+	if cc.endpoint != "" {
+		// DynamoDB Local ignores credentials but the SDK still requires a provider;
+		// supply non-secret static dummies so credential resolution never fails.
+		loadOpts = append(loadOpts, config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider("dummy", "dummy", ""),
+		))
+	}
+	cfg, err := config.LoadDefaultConfig(ctx, loadOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+	return dynamodb.NewFromConfig(cfg, clientOption(cc, trace)), nil
+}
+
+// clientOption sets the endpoint override when cc names one, and logs each SDK
+// operation to trace when it is non-nil.
+func clientOption(cc connConfig, trace io.Writer) func(*dynamodb.Options) {
+	return func(o *dynamodb.Options) {
+		if cc.endpoint != "" {
+			o.BaseEndpoint = aws.String(cc.endpoint)
+		}
+		if trace != nil {
+			o.APIOptions = append(o.APIOptions, traceMiddleware(trace))
+		}
+	}
 }
 
 // Target returns the region and table a dynamodb:// source addresses: the address
@@ -188,9 +203,9 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	q := u.Query()
 	table := address
 	if table == "" {
-		table = q.Get("table")
+		table = q.Get(paramTable)
 	}
-	return connConfig{region: region, table: table, endpoint: q.Get("endpoint")}, nil
+	return connConfig{region: region, table: table, endpoint: q.Get(paramEndpoint)}, nil
 }
 
 // loadKeySchema reads the selected table's primary-key schema (partition key, then
@@ -205,13 +220,25 @@ func (s *Store) loadKeySchema(ctx context.Context) error {
 	if out.Table == nil {
 		return fmt.Errorf("dynamodb: table %q not found", s.table)
 	}
-	attrType := make(map[string]types.ScalarAttributeType, len(out.Table.AttributeDefinitions))
-	for _, ad := range out.Table.AttributeDefinitions {
+	keys := keySchemaOf(out.Table)
+	if len(keys) == 0 {
+		return fmt.Errorf("dynamodb: table %q has no partition key", s.table)
+	}
+	s.keys = keys
+	return nil
+}
+
+// keySchemaOf returns the table's primary key in schema order, the partition key then
+// the sort key, each with its scalar type. It returns nil when the table has no
+// partition key.
+func keySchemaOf(td *types.TableDescription) []KeyAttr {
+	attrType := make(map[string]types.ScalarAttributeType, len(td.AttributeDefinitions))
+	for _, ad := range td.AttributeDefinitions {
 		attrType[aws.ToString(ad.AttributeName)] = ad.AttributeType
 	}
 	var hash *KeyAttr
 	var sort *KeyAttr
-	for _, ks := range out.Table.KeySchema {
+	for _, ks := range td.KeySchema {
 		ka := KeyAttr{name: aws.ToString(ks.AttributeName), typ: attrType[aws.ToString(ks.AttributeName)]}
 		switch ks.KeyType {
 		case types.KeyTypeHash:
@@ -223,13 +250,13 @@ func (s *Store) loadKeySchema(ctx context.Context) error {
 		}
 	}
 	if hash == nil {
-		return fmt.Errorf("dynamodb: table %q has no partition key", s.table)
+		return nil
 	}
-	s.keys = []KeyAttr{*hash}
+	keys := []KeyAttr{*hash}
 	if sort != nil {
-		s.keys = append(s.keys, *sort)
+		keys = append(keys, *sort)
 	}
-	return nil
+	return keys
 }
 
 // Get fetches the items whose primary key matches one of keys and returns them keyed
@@ -246,20 +273,30 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	}
 	for start := 0; start < len(keys); start += batchGetMax {
 		end := min(start+batchGetMax, len(keys))
-		reqKeys := make([]map[string]types.AttributeValue, 0, batchGetMax)
-		for _, k := range keys[start:end] {
-			av, err := s.decodeKey(k)
-			if err != nil {
-				return nil, err
-			}
-			reqKeys = append(reqKeys, av)
+		reqKeys, err := s.decodeKeys(keys[start:end])
+		if err != nil {
+			return nil, err
 		}
 		pending := map[string]types.KeysAndAttributes{s.table: {Keys: reqKeys}}
 		if err := s.drainBatchGet(ctx, pending, func(item map[string]types.AttributeValue) {
-			out[s.keyOf(item)] = s.normalizeItem(item)
+			out[s.keyOf(item)] = normalizeMap(item, s.decimal)
 		}); err != nil {
 			return nil, err
 		}
+	}
+	return out, nil
+}
+
+// decodeKeys decodes every key to its key attributes, in order, and fails on the
+// first malformed key.
+func (s *Store) decodeKeys(keys []string) ([]map[string]types.AttributeValue, error) {
+	out := make([]map[string]types.AttributeValue, 0, len(keys))
+	for _, k := range keys {
+		av, err := s.decodeKey(k)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, av)
 	}
 	return out, nil
 }
@@ -311,20 +348,31 @@ func (s *Store) scan(ctx context.Context, in *dynamodb.ScanInput, fn func(batch 
 		if err != nil {
 			return fmt.Errorf("dynamodb scan: %w", err)
 		}
-		for _, item := range out.Items {
-			page[s.keyOf(item)] = s.normalizeItem(item)
-			if len(page) >= s.pageSize {
-				if err := fn(page); err != nil {
-					return err
-				}
-				page = make(map[string]any, s.pageSize)
-			}
+		page, err = s.addItems(page, out.Items, fn)
+		if err != nil {
+			return err
 		}
 	}
 	if len(page) > 0 {
 		return fn(page)
 	}
 	return nil
+}
+
+// addItems normalizes items into page under their keys and hands the page to fn each
+// time it holds pageSize entries. It returns the page to keep filling.
+func (s *Store) addItems(page map[string]any, items []map[string]types.AttributeValue, fn func(batch map[string]any) error) (map[string]any, error) {
+	for _, item := range items {
+		page[s.keyOf(item)] = normalizeMap(item, s.decimal)
+		if len(page) < s.pageSize {
+			continue
+		}
+		if err := fn(page); err != nil {
+			return nil, err
+		}
+		page = make(map[string]any, s.pageSize)
+	}
+	return page, nil
 }
 
 // Query runs a raw PartiQL statement via ExecuteStatement, DynamoDB's SQL surface
@@ -348,7 +396,7 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 			return nil, fmt.Errorf("dynamodb: %w", err)
 		}
 		for _, item := range out.Items {
-			rows = append(rows, s.normalizeItem(item))
+			rows = append(rows, normalizeMap(item, s.decimal))
 		}
 		if out.NextToken == nil {
 			break
@@ -389,15 +437,6 @@ func (s *Store) FormatRaw(v any, colored bool) string {
 // (each call is a bounded HTTP request), so there is nothing to release.
 func (s *Store) Close() error {
 	return nil
-}
-
-// normalizeItem normalizes every attribute value of an item, preserving names.
-func (s *Store) normalizeItem(item map[string]types.AttributeValue) map[string]any {
-	out := make(map[string]any, len(item))
-	for k, v := range item {
-		out[k] = Normalize(v, s.decimal)
-	}
-	return out
 }
 
 // backoffUnit is the base backoff delay, exported to the package so tests can zero it

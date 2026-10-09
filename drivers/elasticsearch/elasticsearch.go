@@ -143,7 +143,7 @@ func schemeFlavor(scheme string) (string, flavor, error) {
 func resolveIndex(address string, u *url.URL) (string, error) {
 	index := address
 	if index == "" {
-		index = u.Query().Get("index")
+		index = u.Query().Get(paramIndex)
 	}
 	if index == "" {
 		// Lenient: accept the index in the path too (elasticsearch://host/books), as
@@ -444,7 +444,7 @@ func searchRequest(arg string) ([]byte, error) {
 // the body. A non-2xx status becomes the labelled API error.
 func (s *Store) decodeReply(res *http.Response) (any, error) {
 	if res.StatusCode/100 != 2 {
-		return nil, apiError(res, s.client.label(), "search")
+		return nil, apiError(res, s.client.label()+" search")
 	}
 	dec := json.NewDecoder(res.Body)
 	dec.UseNumber()

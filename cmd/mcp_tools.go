@@ -44,107 +44,132 @@ func toolError(err error) error {
 	return &mcpToolError{body: strings.TrimRight(b.String(), "\n")}
 }
 
-// addTools registers every tool the server's --allow set permits, in sorted name
-// order so tools/list is deterministic. A tool that is not allowed is never
-// registered, so it is absent from tools/list and cannot be called: the
-// annotations below are display hints, and --allow is the only gate.
+// addTools registers every tool the server's --allow set permits. The SDK lists
+// tools sorted by name, so tools/list is deterministic. A tool that is not
+// allowed is never registered, so it is absent from tools/list and cannot be
+// called: the annotations are display hints, and --allow is the only gate.
 func (s *mcpServer) addTools(srv *mcp.Server) {
-	// The title is set twice on purpose: Tool.Title is the current field, and
-	// Annotations.Title is the only one a client on a revision older than
-	// 2025-06-18 reads, which the SDK still negotiates down to.
-	readOnly := func(title string) *mcp.ToolAnnotations {
-		return &mcp.ToolAnnotations{
-			Title: title, ReadOnlyHint: true, IdempotentHint: true,
-			DestructiveHint: new(false), OpenWorldHint: new(false),
-		}
-	}
-	destructive := func(title string, idempotent bool) *mcp.ToolAnnotations {
-		return &mcp.ToolAnnotations{
-			Title: title, ReadOnlyHint: false, IdempotentHint: idempotent,
-			DestructiveHint: new(true), OpenWorldHint: new(false),
-		}
-	}
-
 	if s.allows(allowDestructive) {
-		mcp.AddTool(srv, &mcp.Tool{
-			Name:        "iq_data_clear",
-			Title:       "Empty a container",
-			Description: "Empty a source's container, keeping it (MongoDB deleteMany({}), Redis FLUSHDB). Destroys the stored data. Pass dry_run to report the effect without changing anything; a real run needs confirm.",
-			Annotations: destructive("Empty a container", true),
-		}, s.toolDataClear)
-		mcp.AddTool(srv, &mcp.Tool{
-			Name:        "iq_data_delete",
-			Title:       "Delete specific keys",
-			Description: "Remove named keys from a source's container, keeping the container. A key already absent is not an error. Pass dry_run to report the effect without changing anything; a real run needs confirm.",
-			Annotations: destructive("Delete specific keys", true),
-		}, s.toolDataDelete)
-		mcp.AddTool(srv, &mcp.Tool{
-			Name:        "iq_data_drop",
-			Title:       "Drop a container",
-			Description: "Remove a source's container entirely (MongoDB drops the collection and its indexes). Rejected on a backend with no droppable container, such as Redis. Pass dry_run to report the effect without changing anything; a real run needs confirm.",
-			Annotations: destructive("Drop a container", true),
-		}, s.toolDataDrop)
+		s.addLifecycleTools(srv)
 	}
+	if s.allows(allowExec) {
+		s.addExecTool(srv)
+	}
+	if s.allows(allowWrites) {
+		s.addInsertTool(srv)
+	}
+	s.addReadTools(srv)
+}
+
+// readOnlyAnnotations returns the display hints of a tool that only reads.
+// The title is set twice on purpose: Tool.Title is the current field, and
+// Annotations.Title is the only one a client on a revision older than
+// 2025-06-18 reads, which the SDK still negotiates down to.
+func readOnlyAnnotations(title string) *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{
+		Title: title, ReadOnlyHint: true, IdempotentHint: true,
+		DestructiveHint: new(false), OpenWorldHint: new(false),
+	}
+}
+
+// destructiveAnnotations returns the display hints of a tool that can change
+// data.
+func destructiveAnnotations(title string, idempotent bool) *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{
+		Title: title, ReadOnlyHint: false, IdempotentHint: idempotent,
+		DestructiveHint: new(true), OpenWorldHint: new(false),
+	}
+}
+
+// addLifecycleTools registers iq_data_clear, iq_data_delete and iq_data_drop.
+func (s *mcpServer) addLifecycleTools(srv *mcp.Server) {
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "iq_data_clear",
+		Title:       "Empty a container",
+		Description: "Empty a source's container, keeping it (MongoDB deleteMany({}), Redis FLUSHDB). Destroys the stored data. Pass dry_run to report the effect without changing anything; a real run needs confirm.",
+		Annotations: destructiveAnnotations("Empty a container", true),
+	}, s.toolDataClear)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "iq_data_delete",
+		Title:       "Delete specific keys",
+		Description: "Remove named keys from a source's container, keeping the container. A key already absent is not an error. Pass dry_run to report the effect without changing anything; a real run needs confirm.",
+		Annotations: destructiveAnnotations("Delete specific keys", true),
+	}, s.toolDataDelete)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "iq_data_drop",
+		Title:       "Drop a container",
+		Description: "Remove a source's container entirely (MongoDB drops the collection and its indexes). Rejected on a backend with no droppable container, such as Redis. Pass dry_run to report the effect without changing anything; a real run needs confirm.",
+		Annotations: destructiveAnnotations("Drop a container", true),
+	}, s.toolDataDrop)
+}
+
+// addExecTool registers iq_exec.
+func (s *mcpServer) addExecTool(srv *mcp.Server) {
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "iq_exec",
+		Title:       "Run a native backend command",
+		Description: "Forward a command to the backend verbatim, in the backend's own language: a Redis command and operands, a MongoDB runCommand document, CQL, PartiQL, a Mango request, SQL++, Cypher, an Elasticsearch search body, or an HBase verb. It can write, so it is behind --allow exec.",
+		Annotations: destructiveAnnotations("Run a native backend command", false),
+	}, s.toolExec)
+}
+
+// addInsertTool registers iq_insert.
+func (s *mcpServer) addInsertTool(srv *mcp.Server) {
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "iq_insert",
+		Title:       "Copy items into another source",
+		Description: "Copy a source's items into a destination source, native types intact, optionally transformed by a jq filter. no_overwrite defaults to true, so existing keys are skipped. replace empties the destination first and needs --allow destructive and a confirmation. Preview with dry_run.",
+		Annotations: &mcp.ToolAnnotations{
+			Title: "Copy items into another source", ReadOnlyHint: false, IdempotentHint: true,
+			DestructiveHint: new(true), OpenWorldHint: new(false),
+		},
+	}, s.toolInsert)
+}
+
+// addReadTools registers the tools that only read: iq_diff, iq_explain,
+// iq_inspect, iq_ping, iq_query, iq_schema and iq_sources.
+func (s *mcpServer) addReadTools(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "iq_diff",
 		Title:       "Compare two sources",
 		Description: "Compare two saved sources: data (item by item, keyed), stats (native introspection, same driver only), or schema (an inferred field/type shape, cross-driver). Selecting no layer diffs the data.",
-		Annotations: readOnly("Compare two sources"),
+		Annotations: readOnlyAnnotations("Compare two sources"),
 	}, s.toolDiff)
-	if s.allows(allowExec) {
-		mcp.AddTool(srv, &mcp.Tool{
-			Name:        "iq_exec",
-			Title:       "Run a native backend command",
-			Description: "Forward a command to the backend verbatim, in the backend's own language: a Redis command and operands, a MongoDB runCommand document, CQL, PartiQL, a Mango request, SQL++, Cypher, an Elasticsearch search body, or an HBase verb. It can write, so it is behind --allow exec.",
-			Annotations: destructive("Run a native backend command", false),
-		}, s.toolExec)
-	}
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "iq_explain",
 		Title:       "Explain a query plan",
 		Description: "Compute the access plan for a filter without connecting: the route (bounded read, streaming scan, materialized scan), the backend calls, and which select() conjuncts the backend evaluates. Run it before any scan.",
-		Annotations: readOnly("Explain a query plan"),
+		Annotations: readOnlyAnnotations("Explain a query plan"),
 	}, s.toolExplain)
-	if s.allows(allowWrites) {
-		mcp.AddTool(srv, &mcp.Tool{
-			Name:        "iq_insert",
-			Title:       "Copy items into another source",
-			Description: "Copy a source's items into a destination source, native types intact, optionally transformed by a jq filter. no_overwrite defaults to true, so existing keys are skipped. replace empties the destination first and needs --allow destructive and a confirmation. Preview with dry_run.",
-			Annotations: &mcp.ToolAnnotations{
-				Title: "Copy items into another source", ReadOnlyHint: false, IdempotentHint: true,
-				DestructiveHint: new(true), OpenWorldHint: new(false),
-			},
-		}, s.toolInsert)
-	}
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "iq_inspect",
 		Title:       "Inspect a source",
 		Description: "Show a source's native server or database introspection (MongoDB diagnostic commands, Redis INFO, Cassandra system tables, and their kin). Use only to narrow to named sections.",
-		Annotations: readOnly("Inspect a source"),
+		Annotations: readOnlyAnnotations("Inspect a source"),
 	}, s.toolInspect)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "iq_ping",
 		Title:       "Check a source is reachable",
 		Description: "Open a source and round-trip one cheap backend command, reporting the driver and the round-trip time, or the error. With no source it pings the active one; a group name pings every member.",
-		Annotations: readOnly("Check a source is reachable"),
+		Annotations: readOnlyAnnotations("Check a source is reachable"),
 	}, s.toolPing)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "iq_query",
 		Title:       "Query a source with jq",
 		Description: "Run a jq filter against a source. The filter is both the key selector and the transform: '.[\"k\"]' fetches one key, '.[] | select(...)' streams the keyspace. A filter that needs the whole keyspace at once is refused unless unbounded is set. The result is capped by max_items and max_bytes.",
-		Annotations: readOnly("Query a source with jq"),
+		Annotations: readOnlyAnnotations("Query a source with jq"),
 	}, s.toolQuery)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "iq_schema",
 		Title:       "Infer a source's schema",
 		Description: "Sample a source and return a JSON Schema draft 2020-12 inferred from its values. The shape is sampled, never declared, so a wider sample yields a truer shape. A few hundred bytes, not a dump of documents.",
-		Annotations: readOnly("Infer a source's schema"),
+		Annotations: readOnlyAnnotations("Infer a source's schema"),
 	}, s.toolSchema)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "iq_sources",
 		Title:       "List the saved sources",
 		Description: "List the sources this server may reach: the handle to address, the driver, and the connection URI with any password redacted. Start here; never guess a handle.",
-		Annotations: readOnly("List the saved sources"),
+		Annotations: readOnlyAnnotations("List the saved sources"),
 	}, s.toolSources)
 }
 
@@ -269,44 +294,78 @@ func (s *mcpServer) toolExplain(_ context.Context, _ *mcp.CallToolRequest, in mc
 	if err != nil {
 		return nil, mcpExplainOutput{}, toolError(asSyntaxError(in.Filter, err))
 	}
-	cfg := s.callConfig()
-	cfg.src = in.Source
-	cfg.unbounded = in.Unbounded
-	cfg.noCompile = !boolOr(in.Compile, true)
-	if !cross {
-		if err := resolveSource(cfg); err != nil {
-			return nil, mcpExplainOutput{}, toolError(err)
-		}
+	cfg, err := s.targetConfig(filterTarget{source: in.Source, compile: in.Compile, unbounded: in.Unbounded}, cross)
+	if err != nil {
+		return nil, mcpExplainOutput{}, toolError(err)
 	}
 	text, err := buildJQPlan(cfg, in.Filter, cross, true)
 	if err != nil {
 		return nil, mcpExplainOutput{}, toolError(err)
 	}
+	out, err := explainResult(cfg, in.Filter, text)
+	if err != nil {
+		return nil, mcpExplainOutput{}, toolError(err)
+	}
+	return nil, out, nil
+}
+
+// explainResult builds the structured plan for filter. text is the rendered plan.
+func explainResult(cfg *config, filter, text string) (mcpExplainOutput, error) {
 	// keys and ops are always-present arrays in the result schema, so they start
 	// empty rather than nil: a nil slice would serialize as null and fail the
 	// output schema for a cross-source filter or a driver with no describer. A
 	// cross-source filter has no URI, so the source plan below has no driver and
 	// leaves every per-source field at that empty value.
 	out := mcpExplainOutput{Plan: text, Ops: []string{}, Classification: mcpClassification{Keys: []string{}}}
-	sp, err := buildSourcePlan(cfg.url, in.Filter, !cfg.noCompile, cfg.unbounded)
+	sp, err := buildSourcePlan(cfg.url, filter, !cfg.noCompile, cfg.unbounded)
 	if err != nil {
-		return nil, mcpExplainOutput{}, toolError(err)
+		return mcpExplainOutput{}, err
 	}
 	out.Handle = cfg.handle
 	if sp.hasPlan {
-		out.Driver = sp.driver
-		out.Classification.Streamable = sp.keys.Streamable
-		out.Classification.Scan = sp.keys.Scan
-		if sp.keys.Keys != nil {
-			out.Classification.Keys = sp.keys.Keys
-		}
-		if sp.ops != nil {
-			out.Ops = sp.ops
-		}
-		out.Filter = sp.filter
-		out.Conjuncts = sp.conjuncts
+		out.addSourcePlan(sp)
 	}
-	return nil, out, nil
+	return out, nil
+}
+
+// addSourcePlan copies the per-source facts of sp into o. Keys and ops keep their
+// empty-slice defaults when sp has none.
+func (o *mcpExplainOutput) addSourcePlan(sp sourcePlan) {
+	o.Driver = sp.driver
+	o.Classification.Streamable = sp.keys.Streamable
+	o.Classification.Scan = sp.keys.Scan
+	if sp.keys.Keys != nil {
+		o.Classification.Keys = sp.keys.Keys
+	}
+	if sp.ops != nil {
+		o.Ops = sp.ops
+	}
+	o.Filter = sp.filter
+	o.Conjuncts = sp.conjuncts
+}
+
+// filterTarget is what iq_query and iq_explain share: the source to read, the
+// pushdown switch, and whether the filter may load the whole keyspace.
+type filterTarget struct {
+	source    string
+	compile   *bool
+	unbounded bool
+}
+
+// targetConfig returns the configuration for one call that targets t. It resolves
+// the source from the registry unless the filter reads through source() (cross),
+// which has no single backend.
+func (s *mcpServer) targetConfig(t filterTarget, cross bool) (*config, error) {
+	cfg := s.callConfig()
+	cfg.src = t.source
+	cfg.unbounded = t.unbounded
+	cfg.noCompile = !boolOr(t.compile, true)
+	if !cross {
+		if err := resolveSource(cfg); err != nil {
+			return nil, err
+		}
+	}
+	return cfg, nil
 }
 
 // mcpQueryInput is a query request: the source, the filter, and the per-call
@@ -341,79 +400,129 @@ func (s *mcpServer) toolQuery(ctx context.Context, req *mcp.CallToolRequest, in 
 	if err != nil {
 		return nil, mcpQueryOutput{}, toolError(asSyntaxError(in.Filter, err))
 	}
-	maxItems, err := capValue("max_items", in.MaxItems, s.maxItems)
+	bounds, err := s.boundsFor(in)
 	if err != nil {
 		return nil, mcpQueryOutput{}, toolError(err)
 	}
-	maxBytes, err := capValue("max_bytes", in.MaxBytes, s.maxBytes)
-	if err != nil {
-		return nil, mcpQueryOutput{}, toolError(err)
-	}
-	timeout, err := s.callTimeout(in.Timeout)
+	cfg, err := s.targetConfig(filterTarget{source: in.Source, compile: in.Compile, unbounded: in.Unbounded}, cross)
 	if err != nil {
 		return nil, mcpQueryOutput{}, toolError(err)
 	}
 
-	cfg := s.callConfig()
-	cfg.src = in.Source
-	cfg.unbounded = in.Unbounded
-	cfg.noCompile = !boolOr(in.Compile, true)
-	if !cross {
-		if err := resolveSource(cfg); err != nil {
-			return nil, mcpQueryOutput{}, toolError(err)
-		}
-	}
-
-	out := mcpQueryOutput{Items: []any{}}
-	size := 0
-	emit := func(v any) error {
-		if len(out.Items) >= maxItems {
-			out.Truncated = true
-			return errTruncated
-		}
-		enc, err := json.Marshal(v)
-		if err != nil {
-			return fmt.Errorf("encode result item: %w", err)
-		}
-		if size+len(enc) > maxBytes {
-			out.Truncated = true
-			return errTruncated
-		}
-		size += len(enc)
-		out.Items = append(out.Items, v)
-		return nil
-	}
-
-	cctx, cancel := context.WithTimeout(ctx, timeout)
+	col := &queryCollector{bounds: bounds, out: mcpQueryOutput{Items: []any{}}}
+	cctx, cancel := context.WithTimeout(ctx, bounds.timeout)
 	defer cancel()
 	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: !cfg.noCompile, Logger: cfg.log()}
 	opts.OnPage, opts.OnEstimate = s.progressHooks(cctx, req)
 
-	var runErr error
-	if cross {
-		cf, err := iqconfig.Load()
-		if err != nil {
-			return nil, mcpQueryOutput{}, toolError(err)
-		}
-		opener := newSourceOpener(cf, nil, cfg.decimalMode, cfg.noCache, cfg.noCacheIndex)
-		defer opener.closeAll()
-		runErr = query.NewCrossEngine(opener).Run(cctx, in.Filter, opts, emit)
-	} else {
-		st, err := openStore(cctx, cfg)
-		if err != nil {
-			return nil, mcpQueryOutput{}, toolError(redactErr(err, cfg.url))
-		}
-		defer func() { _ = st.Close() }()
-		runErr = query.NewJQEngine(st).Run(cctx, in.Filter, opts, emit)
+	if err := (queryRun{cfg: cfg, filter: in.Filter, cross: cross, opts: opts}).run(cctx, col.emit); err != nil {
+		return nil, mcpQueryOutput{}, err
 	}
-	if runErr != nil && !errors.Is(runErr, errTruncated) {
-		// No store echoes its URI into a run error, and the rendered error is
-		// redacted by shape anyway, so the chain goes through intact: a parse
-		// error keeps its position and a scan refusal keeps its hint.
-		return nil, mcpQueryOutput{}, toolError(scanHint(asSyntaxError(in.Filter, runErr)))
+	col.out.Count = len(col.out.Items)
+	return nil, col.out, nil
+}
+
+// queryBounds holds the caps and the deadline of one iq_query call, each already
+// checked against the server's own.
+type queryBounds struct {
+	maxItems, maxBytes int
+	timeout            time.Duration
+}
+
+// boundsFor resolves the per-call caps and timeout of in, in this order:
+// max_items, max_bytes, timeout. The first bad value is the error.
+func (s *mcpServer) boundsFor(in mcpQueryInput) (queryBounds, error) {
+	maxItems, err := capValue("max_items", in.MaxItems, s.maxItems)
+	if err != nil {
+		return queryBounds{}, err
 	}
-	out.Count = len(out.Items)
-	return nil, out, nil
+	maxBytes, err := capValue("max_bytes", in.MaxBytes, s.maxBytes)
+	if err != nil {
+		return queryBounds{}, err
+	}
+	timeout, err := s.callTimeout(in.Timeout)
+	if err != nil {
+		return queryBounds{}, err
+	}
+	return queryBounds{maxItems: maxItems, maxBytes: maxBytes, timeout: timeout}, nil
+}
+
+// queryCollector gathers the values of one iq_query run until a cap is reached.
+type queryCollector struct {
+	out    mcpQueryOutput
+	size   int
+	bounds queryBounds
+}
+
+// emit adds v to the result. It returns errTruncated, and marks the result
+// truncated, when v would pass the item cap or the byte cap.
+func (c *queryCollector) emit(v any) error {
+	if len(c.out.Items) >= c.bounds.maxItems {
+		c.out.Truncated = true
+		return errTruncated
+	}
+	enc, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("encode result item: %w", err)
+	}
+	if c.size+len(enc) > c.bounds.maxBytes {
+		c.out.Truncated = true
+		return errTruncated
+	}
+	c.size += len(enc)
+	c.out.Items = append(c.out.Items, v)
+	return nil
+}
+
+// queryRun is one iq_query run: the configuration, the filter, whether it reads
+// through source(), and the engine options.
+type queryRun struct {
+	cfg    *config
+	filter string
+	cross  bool
+	opts   query.RunOptions
+}
+
+// run drives the engine and passes each value to emit. It returns nil when a cap
+// ended the run. Every other failure comes back as a tool error.
+func (r queryRun) run(ctx context.Context, emit func(any) error) error {
+	if r.cross {
+		return r.runCross(ctx, emit)
+	}
+	return r.runStore(ctx, emit)
+}
+
+// runCross runs a filter that reads through source().
+func (r queryRun) runCross(ctx context.Context, emit func(any) error) error {
+	cf, err := iqconfig.Load()
+	if err != nil {
+		return toolError(err)
+	}
+	opener := newSourceOpener(cf, nil, r.cfg.decimalMode, r.cfg.noCache, r.cfg.noCacheIndex)
+	defer opener.closeAll()
+	return r.finish(query.NewCrossEngine(opener).Run(ctx, r.filter, r.opts, emit))
+}
+
+// runStore runs a filter against the one source in cfg.
+func (r queryRun) runStore(ctx context.Context, emit func(any) error) error {
+	st, err := openStore(ctx, r.cfg)
+	if err != nil {
+		return toolError(redactErr(err, r.cfg.url))
+	}
+	defer func() { _ = st.Close() }()
+	return r.finish(query.NewJQEngine(st).Run(ctx, r.filter, r.opts, emit))
+}
+
+// finish maps the error of an engine run: a cap is success, anything else is a
+// tool error.
+func (r queryRun) finish(err error) error {
+	if err == nil || errors.Is(err, errTruncated) {
+		return nil
+	}
+	// No store echoes its URI into a run error, and the rendered error is
+	// redacted by shape anyway, so the chain goes through intact: a parse
+	// error keeps its position and a scan refusal keeps its hint.
+	return toolError(scanHint(asSyntaxError(r.filter, err)))
 }
 
 // mcpInspectInput names the source and, optionally, the sections to keep.
@@ -548,53 +657,81 @@ func (s *mcpServer) toolDiff(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	if err != nil {
 		return nil, mcpDiffOutput{}, toolError(err)
 	}
-	cf, err := iqconfig.Load()
+	left, right, err := diffSpecs(in)
 	if err != nil {
 		return nil, mcpDiffOutput{}, toolError(err)
 	}
-	left, err := parseSourceSpec(cf, in.A, in.Filter)
-	if err != nil {
-		return nil, mcpDiffOutput{}, toolError(err)
-	}
-	right, err := parseSourceSpec(cf, in.B, in.Filter)
-	if err != nil {
-		return nil, mcpDiffOutput{}, toolError(err)
-	}
-	data, stats, schema := in.Data, in.Stats, in.Schema
-	if !stats && !schema {
-		data = true
-	}
-	if stats && eitherFiltered(left, right) {
+	layers := in.layers()
+	if layers.stats && eitherFiltered(left, right) {
 		return nil, mcpDiffOutput{}, toolError(errors.New("the stats layer diffs the backend's own introspection, which has no items to filter; drop the filter or diff data/schema"))
 	}
-	cfg := s.callConfig()
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
 
+	run := diffRun{cfg: s.callConfig(), left: left, right: right, sections: in.Section, sample: sample}
+	out, err := collectDiff(cctx, run, layers)
+	if err != nil {
+		return nil, mcpDiffOutput{}, toolError(err)
+	}
+	return nil, out, nil
+}
+
+// layers returns the layers an iq_diff call selects. The data layer is the
+// default when the call names neither stats nor schema.
+func (in mcpDiffInput) layers() diffModes {
+	m := diffModes{data: in.Data, stats: in.Stats, schema: in.Schema}
+	if !m.stats && !m.schema {
+		m.data = true
+	}
+	return m
+}
+
+// diffSpecs loads the registry and parses both sides of in, left first.
+func diffSpecs(in mcpDiffInput) (left, right sourceSpec, err error) {
+	cf, err := iqconfig.Load()
+	if err != nil {
+		return sourceSpec{}, sourceSpec{}, err
+	}
+	left, err = parseSourceSpec(cf, in.A, in.Filter)
+	if err != nil {
+		return sourceSpec{}, sourceSpec{}, err
+	}
+	right, err = parseSourceSpec(cf, in.B, in.Filter)
+	if err != nil {
+		return sourceSpec{}, sourceSpec{}, err
+	}
+	return left, right, nil
+}
+
+// collectDiff runs the selected layers in order (data, stats, schema) and
+// projects the deltas. run carries every input. The data layer ignores sections
+// and sample, the stats layer ignores cfg and sample, and the schema layer
+// ignores sections, so each layer reads only its own inputs.
+func collectDiff(ctx context.Context, run diffRun, layers diffModes) (mcpDiffOutput, error) {
 	var out mcpDiffOutput
-	if data {
-		deltas, err := diffRun{cfg: cfg, left: left, right: right}.diffData(cctx, func(int) {})
+	if layers.data {
+		deltas, err := run.diffData(ctx, func(int) {})
 		if err != nil {
-			return nil, mcpDiffOutput{}, toolError(err)
+			return mcpDiffOutput{}, err
 		}
 		out.Data = mcpItemDeltas(deltas)
 	}
-	if stats {
-		changes, err := diffRun{left: left, right: right, sections: in.Section}.diffStats(cctx)
+	if layers.stats {
+		changes, err := run.diffStats(ctx)
 		if err != nil {
-			return nil, mcpDiffOutput{}, toolError(err)
+			return mcpDiffOutput{}, err
 		}
 		out.Stats = mcpChanges(changes)
 	}
-	if schema {
-		changes, err := diffRun{cfg: cfg, left: left, right: right, sample: sample}.diffSchema(cctx)
+	if layers.schema {
+		changes, err := run.diffSchema(ctx)
 		if err != nil {
-			return nil, mcpDiffOutput{}, toolError(err)
+			return mcpDiffOutput{}, err
 		}
 		out.Schema = mcpChanges(changes)
 	}
 	out.Differ = len(out.Data)+len(out.Stats)+len(out.Schema) > 0
-	return nil, out, nil
+	return out, nil
 }
 
 // mcpExecInput carries the backend command verbatim: the verb and its operands,
@@ -688,19 +825,11 @@ type mcpWriteOutput struct {
 // path `iq --insert` drives. replace empties the destination first, so it needs
 // the destructive capability and a confirmation.
 func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in mcpInsertInput) (*mcp.CallToolResult, mcpWriteOutput, error) {
-	if strings.TrimSpace(in.Source) == "" {
-		return nil, mcpWriteOutput{}, toolError(errors.New("insert: a source is required"))
+	if err := s.checkInsert(in); err != nil {
+		return nil, mcpWriteOutput{}, toolError(err)
 	}
-	if strings.TrimSpace(in.Destination) == "" {
-		return nil, mcpWriteOutput{}, toolError(errors.New("insert: a destination is required"))
-	}
-	if in.Replace && !s.allows(allowDestructive) {
-		return nil, mcpWriteOutput{}, toolError(errors.New("replace empties the destination, so it needs the destructive capability; the server was started without --allow destructive"))
-	}
-	if in.Replace && !in.DryRun {
-		if res, ok := s.confirmation(req, in.Confirm, fmt.Sprintf("empty %s before writing", in.Destination)); !ok {
-			return res, mcpWriteOutput{}, nil
-		}
+	if res, ok := s.confirmInsert(req, in); !ok {
+		return res, mcpWriteOutput{}, nil
 	}
 	transform, err := query.NewTransform(insertTransformOptions(in))
 	if err != nil {
@@ -714,15 +843,11 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
-	st, err := openStore(cctx, cfg)
+	tr, closeSrc, err := openTypedSource(cctx, cfg)
 	if err != nil {
-		return nil, mcpWriteOutput{}, toolError(redactErr(err, cfg.url))
+		return nil, mcpWriteOutput{}, toolError(err)
 	}
-	defer func() { _ = st.Close() }()
-	tr, ok := st.(query.TypedReader)
-	if !ok {
-		return nil, mcpWriteOutput{}, toolError(fmt.Errorf("source %s (%s) cannot be read for a move", cfg.handle, driverName(cfg.url)))
-	}
+	defer func() { _ = closeSrc() }()
 
 	label, stat, err := applyInsert(cctx, insertRequestFrom(in), tr.TypedScan, transform)
 	if err != nil {
@@ -732,6 +857,30 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 		Destination: label, Written: stat.Written, Overwritten: stat.Overwritten,
 		Skipped: stat.Skipped, DryRun: in.DryRun,
 	}, nil
+}
+
+// checkInsert rejects an iq_insert call that lacks a source or a destination, or
+// that asks for replace without the destructive capability, in that order.
+func (s *mcpServer) checkInsert(in mcpInsertInput) error {
+	if strings.TrimSpace(in.Source) == "" {
+		return errors.New("insert: a source is required")
+	}
+	if strings.TrimSpace(in.Destination) == "" {
+		return errors.New("insert: a destination is required")
+	}
+	if in.Replace && !s.allows(allowDestructive) {
+		return errors.New("replace empties the destination, so it needs the destructive capability; the server was started without --allow destructive")
+	}
+	return nil
+}
+
+// confirmInsert takes the confirmation that a replace needs. It returns ok when
+// the call can go on: no replace, a dry run, or an accepted confirmation.
+func (s *mcpServer) confirmInsert(req *mcp.CallToolRequest, in mcpInsertInput) (*mcp.CallToolResult, bool) {
+	if !in.Replace || in.DryRun {
+		return nil, true
+	}
+	return s.confirmation(req, in.Confirm, fmt.Sprintf("empty %s before writing", in.Destination))
 }
 
 // mcpLifecycleInput names the container to empty or drop.
@@ -911,11 +1060,11 @@ func errorResult(err error) *mcp.CallToolResult {
 // request's own stream. Without a token both are nil and the engine calls
 // nothing.
 func (s *mcpServer) progressHooks(ctx context.Context, req *mcp.CallToolRequest) (onPage func(int), onEstimate func(int64)) {
-	if req == nil || req.Params == nil || req.Session == nil {
+	if req == nil || req.Params == nil {
 		return nil, nil
 	}
 	token := req.Params.GetProgressToken()
-	if token == nil {
+	if token == nil || req.Session == nil {
 		return nil, nil
 	}
 	var scanned, total float64

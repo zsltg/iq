@@ -111,6 +111,64 @@ type config struct {
 	trace io.Writer
 }
 
+// rootLong is the long help of the root command.
+const rootLong = "jq for NoSQL databases.\n" +
+	"\n" +
+	"  $ iq '.[] | select(.total > 99) | .id' --src shop.orders\n" +
+	"\n" +
+	"The filter's top-level paths name the keys to fetch: `iq '.greeting'`, or\n" +
+	"`iq '.[\"user:1\"]'` for a key with a colon. A `.[]`-rooted filter streams the\n" +
+	"whole keyspace in constant memory; a filter that collapses the dataset into one\n" +
+	"value (`.`, `keys`, `map(...)`) needs --unbounded. Always single-quote the\n" +
+	"filter so the shell leaves its brackets, spaces, and pipes alone.\n" +
+	"\n" +
+	"A database is a saved source, chosen by URI scheme (redis://, mongodb://,\n" +
+	"cassandra://, and more; run `iq driver ls` for the full list). Register with\n" +
+	"`iq add`, pick a default with `iq src`, list with `iq ls`. Address a\n" +
+	"collection, table, database, label, or index as handle.name (e.g. --src\n" +
+	"shop.orders), or set a default in the source URI (...?collection=orders) and\n" +
+	"drop the suffix.\n" +
+	"\n" +
+	"select(...) clauses are pushed to the backend automatically, results unchanged;\n" +
+	"run `iq '<filter>' --explain` to see the plan. A filter can also read other\n" +
+	"sources inline with source(\"name\"; \"<jq>\"). The documentation site carries\n" +
+	"the full reference."
+
+// rootExample is the example block of the root command.
+const rootExample = "  # Register a Redis source (active) and a Mongo source whose password goes to the OS keyring.\n" +
+	"  # The Mongo URI sets a default collection with ?collection=orders.\n" +
+	"  $ iq add -a -n cache redis://localhost:6379/0\n" +
+	"  $ iq add -p 'mongodb://user@localhost:27017/shop?collection=orders'\n" +
+	"\n" +
+	"  # List saved sources (the active one marked *); check reachability; inspect metadata.\n" +
+	"  $ iq ls\n" +
+	"  $ iq ping\n" +
+	"  $ iq inspect shop.orders\n" +
+	"\n" +
+	"  # Fetch one key from the active Redis source.\n" +
+	"  $ iq '.greeting'\n" +
+	"\n" +
+	"  # Query a Mongo collection; select(...) pushes to the backend.\n" +
+	"  $ iq '.[] | select(.total > 99) | .id' --src shop.orders\n" +
+	"\n" +
+	"  # The URI's ?collection= default lets you drop the suffix.\n" +
+	"  $ iq '.[]' --src shop\n" +
+	"\n" +
+	"  # Output as JSON Lines, or one JSON array written to a file.\n" +
+	"  $ iq '.[]' --src shop.orders --jsonl\n" +
+	"  $ iq '.[]' --src shop.orders -A -o results.json\n" +
+	"\n" +
+	"  # Join two sources in one filter with source() (runs over null input, needs no active source).\n" +
+	"  $ iq 'INDEX(source(\"users\"; \".[]\"); .id) as $u\n" +
+	"      | source(\"orders\"; \".[] | select(.total > 99)\") | {name: $u[.userId].name, total}'\n" +
+	"\n" +
+	"  # Join two collections of one source on a shared id (each spec binds $shop_orders, $shop_users).\n" +
+	"  $ iq combine 'shop.orders=.[] | {id, total}' 'shop.users=.[] | {id, name}' \\\n" +
+	"      --with '($shop_users | INDEX(.id)) as $u | $shop_orders[] | . + {name: $u[.id].name}'\n" +
+	"\n" +
+	"  # Query a piped dump file (implicit stdin).\n" +
+	"  $ cat dump.jsonl | iq '.[]'"
+
 // newRootCmd builds the root command and its subcommands. The default action is
 // the jq query: a bare `iq '<filter>'` runs the filter against the active source,
 // whose top-level paths name the keys to fetch. The `add`/`ls`/`rm`/`src`/`group`
@@ -118,63 +176,11 @@ type config struct {
 func newRootCmd() (*cobra.Command, *config) {
 	cfg := &config{}
 	root := &cobra.Command{
-		Use:     "iq <jq-filter>",
-		Version: buildVersion(),
-		Short:   "jq for NoSQL databases",
-		Long: "jq for NoSQL databases.\n" +
-			"\n" +
-			"  $ iq '.[] | select(.total > 99) | .id' --src shop.orders\n" +
-			"\n" +
-			"The filter's top-level paths name the keys to fetch: `iq '.greeting'`, or\n" +
-			"`iq '.[\"user:1\"]'` for a key with a colon. A `.[]`-rooted filter streams the\n" +
-			"whole keyspace in constant memory; a filter that collapses the dataset into one\n" +
-			"value (`.`, `keys`, `map(...)`) needs --unbounded. Always single-quote the\n" +
-			"filter so the shell leaves its brackets, spaces, and pipes alone.\n" +
-			"\n" +
-			"A database is a saved source, chosen by URI scheme (redis://, mongodb://,\n" +
-			"cassandra://, and more; run `iq driver ls` for the full list). Register with\n" +
-			"`iq add`, pick a default with `iq src`, list with `iq ls`. Address a\n" +
-			"collection, table, database, label, or index as handle.name (e.g. --src\n" +
-			"shop.orders), or set a default in the source URI (...?collection=orders) and\n" +
-			"drop the suffix.\n" +
-			"\n" +
-			"select(...) clauses are pushed to the backend automatically, results unchanged;\n" +
-			"run `iq '<filter>' --explain` to see the plan. A filter can also read other\n" +
-			"sources inline with source(\"name\"; \"<jq>\"). The documentation site carries\n" +
-			"the full reference.",
-		Example: "  # Register a Redis source (active) and a Mongo source whose password goes to the OS keyring.\n" +
-			"  # The Mongo URI sets a default collection with ?collection=orders.\n" +
-			"  $ iq add -a -n cache redis://localhost:6379/0\n" +
-			"  $ iq add -p 'mongodb://user@localhost:27017/shop?collection=orders'\n" +
-			"\n" +
-			"  # List saved sources (the active one marked *); check reachability; inspect metadata.\n" +
-			"  $ iq ls\n" +
-			"  $ iq ping\n" +
-			"  $ iq inspect shop.orders\n" +
-			"\n" +
-			"  # Fetch one key from the active Redis source.\n" +
-			"  $ iq '.greeting'\n" +
-			"\n" +
-			"  # Query a Mongo collection; select(...) pushes to the backend.\n" +
-			"  $ iq '.[] | select(.total > 99) | .id' --src shop.orders\n" +
-			"\n" +
-			"  # The URI's ?collection= default lets you drop the suffix.\n" +
-			"  $ iq '.[]' --src shop\n" +
-			"\n" +
-			"  # Output as JSON Lines, or one JSON array written to a file.\n" +
-			"  $ iq '.[]' --src shop.orders --jsonl\n" +
-			"  $ iq '.[]' --src shop.orders -A -o results.json\n" +
-			"\n" +
-			"  # Join two sources in one filter with source() (runs over null input, needs no active source).\n" +
-			"  $ iq 'INDEX(source(\"users\"; \".[]\"); .id) as $u\n" +
-			"      | source(\"orders\"; \".[] | select(.total > 99)\") | {name: $u[.userId].name, total}'\n" +
-			"\n" +
-			"  # Join two collections of one source on a shared id (each spec binds $shop_orders, $shop_users).\n" +
-			"  $ iq combine 'shop.orders=.[] | {id, total}' 'shop.users=.[] | {id, name}' \\\n" +
-			"      --with '($shop_users | INDEX(.id)) as $u | $shop_orders[] | . + {name: $u[.id].name}'\n" +
-			"\n" +
-			"  # Query a piped dump file (implicit stdin).\n" +
-			"  $ cat dump.jsonl | iq '.[]'",
+		Use:           "iq <jq-filter>",
+		Version:       buildVersion(),
+		Short:         "jq for NoSQL databases",
+		Long:          rootLong,
+		Example:       rootExample,
 		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -185,91 +191,10 @@ func newRootCmd() (*cobra.Command, *config) {
 		// flag fails fast; resources that do open are stored on cfg immediately so
 		// Execute's finalize closes them on every path.
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			// An explicit --config redirects the config path for the whole run by
-			// setting IQ_CONFIG, the single mechanism every Load/Save already honors
-			// (and a child editor inherits it). Precedence: flag > env > default.
-			if cfg.configPath != "" {
-				if err := os.Setenv(iqconfig.EnvConfig, cfg.configPath); err != nil {
-					return fmt.Errorf("apply --config: %w", err)
-				}
-			}
-			// Warn, and continue, when the config file holds an inline password that
-			// other users can read. stderr only, so stdout stays clean for a pipe or
-			// for the MCP protocol.
-			if msg := iqconfig.ModeWarning(); msg != "" {
-				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), msg)
-			}
-			// Merge stored option defaults into the flags before anything reads them,
-			// so a saved default (base or per-source) fills any flag left unset.
-			if err := applyStoredOptions(cmd, cfg); err != nil {
-				return err
-			}
-			if cfg.monochrome && cfg.forceColor {
-				return errors.New("cannot use --monochrome with --color")
-			}
-			resolveColor(cfg.monochrome, cfg.forceColor, cmd.OutOrStdout())
-			// --output redirects every command's stdout to a file. Resolve color
-			// again against the file so a regular file drops color (unless -C forces
-			// it), matching a pipe; Execute closes the file on every exit path.
-			if cfg.output != "" {
-				f, err := openOutputFile(cfg.output)
-				if err != nil {
-					return err
-				}
-				cmd.SetOut(f)
-				cfg.outClose = f.Close
-				resolveColor(cfg.monochrome, cfg.forceColor, f)
-			}
-			if err := validateErrorFormat(cfg.errorFormat); err != nil {
-				return err
-			}
-			if err := validateFormat(cfg.format); err != nil {
-				return err
-			}
-			mode, err := numfmt.ParseDecimalMode(cfg.decimal)
-			if err != nil {
-				return err
-			}
-			cfg.decimalMode = mode
-			logOpts, err := resolveLogOptions(cmd, cfg)
-			if err != nil {
-				return err
-			}
-			// The structured "query plan" record is gated on the structured sink, so
-			// carry its active-ness onto cfg for the run body to read.
-			cfg.logStructured = logOpts.fileActive()
-			logger, closeLog, err := logOpts.build(cmd.ErrOrStderr(), cmd.OutOrStdout())
-			if err != nil {
-				return err
-			}
-			cfg.logger = logger
-			cfg.logClose = closeLog
-			stop, err := startProfile(cfg.pprofMode, cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
-			cfg.pprofStop = stop
-			cfg.logger.Debug("iq start", "version", buildVersion(), "cmd", cmd.CommandPath())
-			return nil
+			return preRun(cmd, cfg)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// --insert/--typed turn the command into a data move: the source's items
-			// are transformed by the optional positional filter and written to a
-			// destination source (--insert) or emitted as a typed dump (--typed). A
-			// move needs no filter, so it runs even with no positional.
-			if cfg.insert != "" || cfg.typed {
-				filter := ""
-				if len(args) > 0 {
-					filter = args[0]
-				}
-				return runMove(cmd, cfg, filter)
-			}
-			// A bare `iq` with no filter prints help rather than erroring, so the
-			// entry point is discoverable.
-			if len(args) == 0 {
-				return cmd.Help()
-			}
-			return runJQ(cmd, cfg, args[0])
+			return runRoot(cmd, cfg, args)
 		},
 	}
 	// --version prints the bare version for scripts; `iq version` is the human form.
@@ -277,6 +202,184 @@ func newRootCmd() (*cobra.Command, *config) {
 	// says that, rather than the generic "version for iq".
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.Flags().Bool("version", false, "print the bare version and exit (for scripts; iq version is the human form)")
+	addRootFlags(root, cfg)
+	root.MarkFlagsMutuallyExclusive("insert", "typed")
+	root.AddCommand(
+		newExecCmd(cfg),
+		newDataCmd(cfg),
+		newAddCmd(cfg),
+		newLsCmd(cfg),
+		newRmCmd(),
+		newMvCmd(),
+		newSrcCmd(),
+		newGroupCmd(),
+		newConfigCmd(cfg),
+		newCacheCmd(),
+		newPingCmd(cfg),
+		newInspectCmd(cfg),
+		newDiffCmd(cfg),
+		newSchemaCmd(cfg),
+		newCombineCmd(cfg),
+		newMCPCmd(cfg),
+		newDriverCmd(cfg),
+		newVersionCmd(),
+		newManCmd(),
+	)
+	// Render --help flags in labeled sections (Source/Query/Output/Display/
+	// Diagnostics) instead of one flat list. Presentation only: parsing and the
+	// mutual-exclusivity constraint above are untouched.
+	installGroupedHelp(root)
+	// Render --help's "Available Commands" in labeled sections (Sources/Query &
+	// Data/Configuration/Info) instead of one flat alphabetical list.
+	installCommandGroups(root)
+	// A bare `iq <jq-filter>` positional is a jq program, never a file, so suppress
+	// the shell's default filename completion. --src completes saved source handles.
+	root.ValidArgsFunction = cobra.NoFileCompletions
+	registerRootCompletions(root)
+	return root, cfg
+}
+
+// preRun is the PersistentPreRunE of the root command. It checks every value
+// before a resource opens, so a bad flag fails fast.
+func preRun(cmd *cobra.Command, cfg *config) error {
+	if err := applyConfigPath(cfg.configPath); err != nil {
+		return err
+	}
+	warnOpenConfig(cmd)
+	// Merge stored option defaults into the flags before anything reads them,
+	// so a saved default (base or per-source) fills any flag left unset.
+	if err := applyStoredOptions(cmd, cfg); err != nil {
+		return err
+	}
+	if err := resolveColorFlags(cmd, cfg); err != nil {
+		return err
+	}
+	if err := redirectOutput(cmd, cfg); err != nil {
+		return err
+	}
+	if err := validateValues(cfg); err != nil {
+		return err
+	}
+	return startDiagnostics(cmd, cfg)
+}
+
+// applyConfigPath makes --config the config path for the whole run by setting
+// IQ_CONFIG, the single mechanism every Load/Save already honors (and a child
+// editor inherits it). Precedence: flag > env > default. An empty path changes
+// nothing.
+func applyConfigPath(path string) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.Setenv(iqconfig.EnvConfig, path); err != nil {
+		return fmt.Errorf("apply --config: %w", err)
+	}
+	return nil
+}
+
+// warnOpenConfig warns, and continues, when the config file holds an inline
+// password that other users can read. stderr only, so stdout stays clean for a
+// pipe or for the MCP protocol.
+func warnOpenConfig(cmd *cobra.Command) {
+	if msg := iqconfig.ModeWarning(); msg != "" {
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), msg)
+	}
+}
+
+// resolveColorFlags refuses --monochrome with --color, then decides color for
+// stdout.
+func resolveColorFlags(cmd *cobra.Command, cfg *config) error {
+	if cfg.monochrome && cfg.forceColor {
+		return errors.New("cannot use --monochrome with --color")
+	}
+	resolveColor(cfg.monochrome, cfg.forceColor, cmd.OutOrStdout())
+	return nil
+}
+
+// redirectOutput redirects every command's stdout to the --output file. It
+// resolves color again against the file so a regular file drops color (unless -C
+// forces it), matching a pipe; Execute closes the file on every exit path. It
+// does nothing when --output is not set.
+func redirectOutput(cmd *cobra.Command, cfg *config) error {
+	if cfg.output == "" {
+		return nil
+	}
+	f, err := openOutputFile(cfg.output)
+	if err != nil {
+		return err
+	}
+	cmd.SetOut(f)
+	cfg.outClose = f.Close
+	resolveColor(cfg.monochrome, cfg.forceColor, f)
+	return nil
+}
+
+// validateValues checks --error.format, --format and --format.decimal, and
+// stores the decimal mode on cfg.
+func validateValues(cfg *config) error {
+	if err := validateErrorFormat(cfg.errorFormat); err != nil {
+		return err
+	}
+	if err := validateFormat(cfg.format); err != nil {
+		return err
+	}
+	mode, err := numfmt.ParseDecimalMode(cfg.decimal)
+	if err != nil {
+		return err
+	}
+	cfg.decimalMode = mode
+	return nil
+}
+
+// startDiagnostics builds the logger and starts the profile. It stores each
+// handle on cfg as soon as it exists, so Execute can close it on every path.
+func startDiagnostics(cmd *cobra.Command, cfg *config) error {
+	logOpts, err := resolveLogOptions(cmd, cfg)
+	if err != nil {
+		return err
+	}
+	// The structured "query plan" record is gated on the structured sink, so
+	// carry its active-ness onto cfg for the run body to read.
+	cfg.logStructured = logOpts.fileActive()
+	logger, closeLog, err := logOpts.build(cmd.ErrOrStderr(), cmd.OutOrStdout())
+	if err != nil {
+		return err
+	}
+	cfg.logger = logger
+	cfg.logClose = closeLog
+	stop, err := startProfile(cfg.pprofMode, cmd.ErrOrStderr())
+	if err != nil {
+		return err
+	}
+	cfg.pprofStop = stop
+	cfg.logger.Debug("iq start", "version", buildVersion(), "cmd", cmd.CommandPath())
+	return nil
+}
+
+// runRoot is the default action: a data move, the help text, or a jq query.
+func runRoot(cmd *cobra.Command, cfg *config, args []string) error {
+	// --insert/--typed turn the command into a data move: the source's items
+	// are transformed by the optional positional filter and written to a
+	// destination source (--insert) or emitted as a typed dump (--typed). A
+	// move needs no filter, so it runs even with no positional.
+	if cfg.insert != "" || cfg.typed {
+		filter := ""
+		if len(args) > 0 {
+			filter = args[0]
+		}
+		return runMove(cmd, cfg, filter)
+	}
+	// A bare `iq` with no filter prints help rather than erroring, so the
+	// entry point is discoverable.
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+	return runJQ(cmd, cfg, args[0])
+}
+
+// addRootFlags registers the persistent flags of the root command, and the flags
+// of its default action.
+func addRootFlags(root *cobra.Command, cfg *config) {
 	root.PersistentFlags().StringVarP(&cfg.src, "src", "s", "", "run against this saved `source` for one invocation (overrides the active source, see iq src)")
 	root.PersistentFlags().StringVar(&cfg.configPath, "config", "", "path to the config file (overrides $IQ_CONFIG; default <user config dir>/iq/iq.toml)")
 	root.PersistentFlags().DurationVar(&cfg.timeout, "timeout", 5*time.Second, "timeout for the whole operation: a query, a diff, a combine, or an --insert copy")
@@ -327,38 +430,10 @@ func newRootCmd() (*cobra.Command, *config) {
 	root.Flags().BoolVar(&cfg.force, "force", false, "skip the confirmation prompt for --replace")
 	root.Flags().BoolVar(&cfg.dryRun, "dry-run", false, "report the effect of --insert without writing anything")
 	root.Flags().StringVar(&cfg.fromFormat, "from-format", "", "format of a piped-stdin source when it cannot be sniffed: jsonl, yaml, mongoexport, bson, rdb, dynamodb-json, cassandra-csv, or neo4j-json (aliases like json accepted)")
-	root.MarkFlagsMutuallyExclusive("insert", "typed")
-	root.AddCommand(
-		newExecCmd(cfg),
-		newDataCmd(cfg),
-		newAddCmd(cfg),
-		newLsCmd(cfg),
-		newRmCmd(),
-		newMvCmd(),
-		newSrcCmd(),
-		newGroupCmd(),
-		newConfigCmd(cfg),
-		newCacheCmd(),
-		newPingCmd(cfg),
-		newInspectCmd(cfg),
-		newDiffCmd(cfg),
-		newSchemaCmd(cfg),
-		newCombineCmd(cfg),
-		newMCPCmd(cfg),
-		newDriverCmd(cfg),
-		newVersionCmd(),
-		newManCmd(),
-	)
-	// Render --help flags in labeled sections (Source/Query/Output/Display/
-	// Diagnostics) instead of one flat list. Presentation only: parsing and the
-	// mutual-exclusivity constraint above are untouched.
-	installGroupedHelp(root)
-	// Render --help's "Available Commands" in labeled sections (Sources/Query &
-	// Data/Configuration/Info) instead of one flat alphabetical list.
-	installCommandGroups(root)
-	// A bare `iq <jq-filter>` positional is a jq program, never a file, so suppress
-	// the shell's default filename completion. --src completes saved source handles.
-	root.ValidArgsFunction = cobra.NoFileCompletions
+}
+
+// registerRootCompletions registers the value completion of the root flags.
+func registerRootCompletions(root *cobra.Command) {
 	// RegisterFlagCompletionFunc errors only on an unknown flag; every name below is
 	// registered above, so the error cannot fire and swallowing it keeps setup
 	// panic-free. --src and --insert both name a saved source; the rest take a
@@ -366,13 +441,12 @@ func newRootCmd() (*cobra.Command, *config) {
 	_ = root.RegisterFlagCompletionFunc("src", completeSourceHandles)
 	_ = root.RegisterFlagCompletionFunc("insert", completeSourceHandles)
 	_ = root.RegisterFlagCompletionFunc("format", fixedValues(formatNames()...))
-	_ = root.RegisterFlagCompletionFunc("from-format", fixedValues(dumpFormatNames...))
+	_ = root.RegisterFlagCompletionFunc("from-format", completeDumpFormats)
 	_ = root.RegisterFlagCompletionFunc("format.decimal", fixedValues(decimalModeNames...))
 	_ = root.RegisterFlagCompletionFunc("log.level", fixedValues(logLevelNames...))
 	_ = root.RegisterFlagCompletionFunc("log.format", fixedValues(textJSONNames...))
 	_ = root.RegisterFlagCompletionFunc("error.format", fixedValues(textJSONNames...))
 	_ = root.RegisterFlagCompletionFunc("debug.pprof", fixedValues(pprofModes...))
-	return root, cfg
 }
 
 // validateErrorFormat rejects an --error.format outside {text, json} at PreRun,

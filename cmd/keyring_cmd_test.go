@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/stretchr/testify/require"
 
@@ -251,6 +252,24 @@ func TestConfigKeyringMigrate(t *testing.T) {
 		cf, err := iqconfig.Load()
 		require.NoError(t, err)
 		require.False(t, cf.Sources["sec"].Keyring)
+	})
+
+	t.Run("rejects --all with two handles and migrates nothing", func(t *testing.T) {
+		configEnv(t)
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "a", "redis://u:pa@h:6379/0", false, "")
+		seedKeyringSource(t, c, fk, "b", "redis://u:pb@h:6379/1", false, "")
+		seedConfig(t, c)
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all", "a", "b")
+
+		require.EqualError(t, err, "accepts at most 1 arg(s), received 2")
+		require.Empty(t, fk.m)
+		cf, err := iqconfig.Load()
+		require.NoError(t, err)
+		require.False(t, cf.Sources["a"].Keyring)
+		require.False(t, cf.Sources["b"].Keyring)
 	})
 
 	t.Run("rejects both a handle and --all", func(t *testing.T) {
@@ -701,4 +720,91 @@ func TestConfigKeyringMigrateEdges(t *testing.T) {
 		require.NoError(t, loadErr)
 		require.False(t, saved.Sources["a-inline"].Keyring)
 	})
+}
+
+// TestConfigKeyringReadFailures checks that a keyring read error other than "not
+// found" comes back from `ls` and `prune`, and is not shown as a missing secret.
+func TestConfigKeyringReadFailures(t *testing.T) {
+	for _, args := range [][]string{{"ls"}, {"prune"}} {
+		t.Run(args[0], func(t *testing.T) {
+			c := newSeed()
+			fk := useFakeKeyring(t)
+			seedKeyringSource(t, c, fk, "kr", "redis://u@h:6379/0", true, "secret")
+			seedKeyringSource(t, c, fk, "plain", "redis://h:6379/1", false, "")
+			seedConfig(t, c)
+			fk.getErr = errors.New("keyring locked")
+
+			out, err := runCmd(t, newConfigKeyringCmd(&config{}), args...)
+			require.ErrorContains(t, err, "keyring locked")
+			require.NotContains(t, out, "missing")
+		})
+	}
+}
+
+// TestConfigKeyringRefusals pins the exact text of the source checks that the
+// commands share.
+func TestConfigKeyringRefusals(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"get of an unknown source", []string{"get", "nosuch"}, "unknown source \"nosuch\"; run `iq ls`"},
+		{"set of an unknown source", []string{"set", "nosuch", "v"}, "unknown source \"nosuch\"; run `iq ls`"},
+		{"rm of an unknown source", []string{"rm", "nosuch"}, "unknown source \"nosuch\"; run `iq ls`"},
+		{"migrate of an unknown source", []string{"migrate", "nosuch"}, "unknown source \"nosuch\"; run `iq ls`"},
+		{"get of an inline source", []string{"get", "plain"}, "source \"plain\" is not keyring-backed"},
+		{"rm of an inline source", []string{"rm", "plain"}, "source \"plain\" is not keyring-backed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newSeed()
+			fk := useFakeKeyring(t)
+			seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
+			seedConfig(t, c)
+
+			_, err := runCmd(t, newConfigKeyringCmd(&config{}), tt.args...)
+			require.EqualError(t, err, tt.want)
+		})
+	}
+}
+
+// TestConfigKeyringSetRefusesInlineBeforeReading checks that the refusal for a
+// source with an inline password comes before the value is read, and that the
+// keyring is not touched.
+func TestConfigKeyringSetRefusesInlineBeforeReading(t *testing.T) {
+	c := newSeed()
+	fk := useFakeKeyring(t)
+	seedKeyringSource(t, c, fk, "inline", "redis://u:pw@h:6379/0", false, "")
+	seedConfig(t, c)
+
+	cmd := newConfigKeyringCmd(&config{})
+	cmd.SetIn(iotest.ErrReader(errors.New("stdin broke")))
+	_, err := runCmd(t, cmd, "set", "inline")
+	require.ErrorContains(t, err, "has an inline password")
+	require.NotContains(t, err.Error(), "stdin broke")
+	require.Empty(t, fk.calls)
+}
+
+// TestConfigKeyringMigrateArgumentCheckComesFirst checks that the handle-or-all
+// rule runs before the config is read.
+func TestConfigKeyringMigrateArgumentCheckComesFirst(t *testing.T) {
+	p := configEnv(t)
+	require.NoError(t, os.WriteFile(p, []byte("not = [valid toml\n"), 0o600))
+	_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate")
+	require.ErrorContains(t, err, "not both or neither")
+}
+
+// TestConfigKeyringMigrateAllStopsOnAnUnparsableURI checks that --all returns the
+// parse error of an inline source instead of skipping it.
+func TestConfigKeyringMigrateAllStopsOnAnUnparsableURI(t *testing.T) {
+	configEnv(t)
+	c := newSeed()
+	fk := useFakeKeyring(t)
+	seedKeyringSource(t, c, fk, "bad", "redis://u:p%zz@h:6379/0", false, "")
+	seedConfig(t, c)
+
+	_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all")
+	require.ErrorIs(t, err, errInvalidURI)
+	require.Empty(t, fk.m)
 }

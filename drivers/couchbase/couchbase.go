@@ -174,15 +174,15 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	}
 
 	q := u.Query()
-	bucket := q.Get("bucket")
+	bucket := q.Get(paramBucket)
 	if bucket != "" {
-		if err := validateIdent("bucket", bucket); err != nil {
+		if err := validateIdent(kindBucket, bucket); err != nil {
 			return connConfig{}, err
 		}
 	}
 	collSpec := address
 	if collSpec == "" {
-		collSpec = q.Get("collection")
+		collSpec = q.Get(paramCollection)
 	}
 	scope, coll, err := parseCollSpec(collSpec)
 	if err != nil {
@@ -191,8 +191,8 @@ func parseURL(rawURL, address string) (connConfig, error) {
 
 	// The connection string gocb dials is the cluster address with iq-owned params and
 	// userinfo removed; any remaining query stays as gocb connstr options.
-	q.Del("bucket")
-	q.Del("collection")
+	q.Del(paramBucket)
+	q.Del(paramCollection)
 	dial := url.URL{Scheme: u.Scheme, Host: u.Host, RawQuery: q.Encode()}
 	password, _ := u.User.Password()
 	return connConfig{
@@ -221,20 +221,31 @@ func parseCollSpec(spec string) (scope, coll string, err error) {
 	default:
 		return "", "", fmt.Errorf("couchbase collection address %q must be collection or scope.collection", spec)
 	}
-	if err := validateIdent("scope", scope); err != nil {
+	if err := validateIdent(kindScope, scope); err != nil {
 		return "", "", err
 	}
-	if err := validateIdent("collection", coll); err != nil {
+	if err := validateIdent(kindCollection, coll); err != nil {
 		return "", "", err
 	}
 	return scope, coll, nil
 }
 
+// identKind names the part of a keyspace that an identifier belongs to. It only
+// appears in error messages.
+type identKind string
+
+// The three parts of a keyspace address.
+const (
+	kindBucket     identKind = "bucket"
+	kindScope      identKind = "scope"
+	kindCollection identKind = "collection"
+)
+
 // validateIdent rejects a keyspace identifier that is empty, over the length limit, or
 // carries a character outside Couchbase's documented set. Identifiers cannot be
 // parameterized, so this validation plus backtick-quoting (keyspaceRef) is the
 // injection guard: a name that survives cannot break out of its backticks.
-func validateIdent(kind, name string) error {
+func validateIdent(kind identKind, name string) error {
 	if name == "" {
 		return fmt.Errorf("couchbase %s name is empty", kind)
 	}
@@ -242,14 +253,21 @@ func validateIdent(kind, name string) error {
 		return fmt.Errorf("couchbase %s name exceeds %d bytes", kind, maxIdentBytes)
 	}
 	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case r == '_' || r == '-' || r == '%' || r == '.':
-		default:
+		if !isIdentRune(r) {
 			return fmt.Errorf("couchbase %s name %q has an invalid character", kind, name)
 		}
 	}
 	return nil
+}
+
+// isIdentRune reports whether r is allowed in a bucket, scope or collection name: an
+// ASCII letter or digit, or one of _ - % .
+func isIdentRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return true
+	}
+	return strings.ContainsRune("_-%.", r)
 }
 
 // validateKey rejects a document key that is empty or over Couchbase's 250-byte limit,
@@ -298,35 +316,55 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	if len(keys) == 0 {
 		return out, nil
 	}
-	ops := make([]gocb.BulkOp, 0, len(keys))
-	getOps := make([]*gocb.GetOp, 0, len(keys))
-	for _, k := range keys {
-		if err := validateKey(k); err != nil {
-			return nil, err
-		}
-		op := &gocb.GetOp{ID: k}
-		getOps = append(getOps, op)
+	getOps, err := newGetOps(keys)
+	if err != nil {
+		return nil, err
+	}
+	ops := make([]gocb.BulkOp, 0, len(getOps))
+	for _, op := range getOps {
 		ops = append(ops, op)
 	}
 	s.tracef("get %s", strings.Join(keys, " "))
 	if err := s.bulkDo(ctx, ops, rawTranscoder{}); err != nil {
 		return nil, fmt.Errorf("couchbase get: %w", err)
 	}
+	if err := s.collectGets(getOps, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// newGetOps validates keys and returns one GetOp for each, in order. It stops at the
+// first invalid key, before any network call.
+func newGetOps(keys []string) ([]*gocb.GetOp, error) {
+	getOps := make([]*gocb.GetOp, 0, len(keys))
+	for _, k := range keys {
+		if err := validateKey(k); err != nil {
+			return nil, err
+		}
+		getOps = append(getOps, &gocb.GetOp{ID: k})
+	}
+	return getOps, nil
+}
+
+// collectGets decodes the finished get ops into out, keyed by document ID. A missing
+// document is skipped. Any other op error ends the walk.
+func (s *Store) collectGets(getOps []*gocb.GetOp, out map[string]any) error {
 	for _, op := range getOps {
 		key := op.ID
 		if op.Err != nil {
 			if errors.Is(op.Err, gocb.ErrDocumentNotFound) {
 				continue
 			}
-			return nil, fmt.Errorf("couchbase get: %w", op.Err)
+			return fmt.Errorf("couchbase get: %w", op.Err)
 		}
 		var raw []byte
 		if err := op.Result.Content(&raw); err != nil {
-			return nil, fmt.Errorf("couchbase get: decode %q: %w", key, err)
+			return fmt.Errorf("couchbase get: decode %q: %w", key, err)
 		}
 		out[key] = decodeValue(raw, s.decimal)
 	}
-	return out, nil
+	return nil
 }
 
 // ScanBatches streams the whole collection, handing the caller each page of
@@ -335,7 +373,7 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 // streaming caller keeps only one page in memory and the loop provably terminates on a
 // short page. Bounded by ctx; stops at the first error from fn or the driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
-	return s.scan(ctx, "", nil, nil, fn)
+	return s.scan(ctx, scanSpec{}, fn)
 }
 
 // pageRows is the part of a query result that a scan page reads. *gocb.QueryResult
@@ -385,41 +423,34 @@ func (s *Store) readPage(rows pageRows, matcher *rawpred.Matcher) (map[string]an
 	return page, last, n, nil
 }
 
-// scan runs the keyset walk shared by ScanBatches and ScanFiltered. where, when
+// scanSpec is the optional narrowing of one keyset scan: an extra WHERE predicate with
+// its named parameters, and a raw-byte prefilter. The zero value walks the whole
+// collection with no prefilter.
+type scanSpec struct {
+	where   string
+	params  map[string]any
+	matcher *rawpred.Matcher
+}
+
+// scan runs the keyset walk shared by ScanBatches and ScanFiltered. spec.where, when
 // non-empty, is an extra predicate ANDed into each page's WHERE (its named parameters
-// ride in params); it must never reference the reserved $after/$page names. Every
+// ride in spec.params); it must never reference the reserved $after/$page names. Every
 // value travels as a named parameter, never concatenated.
 //
-// When matcher is non-nil, each row's raw value is run through it before decode, and a
+// When spec.matcher is non-nil, each row's raw value is run through it before decode, and a
 // row the prepared matcher proves the predicate rejects is skipped (counted in
 // prefilterSkipped) rather than decoded and delivered — a byte-level drop that never
 // changes results because the matcher's predicate is a conservative superset the caller
 // re-runs in full. The keyset cursor advances past every row, skipped or kept, so
 // pagination never re-reads or loops; a page emptied entirely by the prefilter is never
 // handed to fn, preserving the "a scan never yields an empty batch" contract.
-func (s *Store) scan(ctx context.Context, where string, params map[string]any, matcher *rawpred.Matcher, fn func(batch map[string]any) error) error {
+func (s *Store) scan(ctx context.Context, spec scanSpec, fn func(batch map[string]any) error) error {
 	if s.collection == nil {
 		return errNoBucket
 	}
-	ref := s.keyspaceRef()
-	clause := "META(t).id > $after"
-	if where != "" {
-		clause += " AND (" + where + ")"
-	}
-	stmt := fmt.Sprintf(
-		"SELECT META(t).id AS k, t AS v FROM %s t WHERE %s ORDER BY META(t).id LIMIT $page",
-		ref, clause,
-	)
 	after := ""
 	for {
-		args := map[string]any{"after": after, "page": s.pageSize}
-		maps.Copy(args, params)
-		s.tracef("query %s", stmt)
-		rows, err := s.query(ctx, stmt, args)
-		if err != nil {
-			return err
-		}
-		page, last, n, err := s.readPage(rows, matcher)
+		page, last, n, err := s.scanPage(ctx, spec, after)
 		if err != nil {
 			return err
 		}
@@ -439,22 +470,41 @@ func (s *Store) scan(ctx context.Context, where string, params map[string]any, m
 	}
 }
 
+// scanStatement builds the keyset statement for one scan. spec.where, when non-empty,
+// is ANDed into the WHERE clause. Every value rides as a named parameter.
+func (s *Store) scanStatement(spec scanSpec) string {
+	clause := "META(t).id > $after"
+	if spec.where != "" {
+		clause += " AND (" + spec.where + ")"
+	}
+	return fmt.Sprintf(
+		"SELECT META(t).id AS k, t AS v FROM %s t WHERE %s ORDER BY META(t).id LIMIT $page",
+		s.keyspaceRef(), clause,
+	)
+}
+
+// scanPage runs the keyset statement for spec, for one page after the ID after, and
+// reads it. It returns the page, the last ID read and the number of rows read.
+func (s *Store) scanPage(ctx context.Context, spec scanSpec, after string) (map[string]any, string, int, error) {
+	stmt := s.scanStatement(spec)
+	args := map[string]any{"after": after, "page": s.pageSize}
+	maps.Copy(args, spec.params)
+	s.tracef("query %s", stmt)
+	rows, err := s.query(ctx, stmt, args)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	return s.readPage(rows, spec.matcher)
+}
+
 // Query runs a raw SQL++ statement against the selected scope (or the cluster when no
 // bucket is selected). args[0] is the statement; an optional args[1] is a JSON object
 // of named parameters, bound end-to-end — never string-built. Rows are returned
 // normalized, in order.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
-	if len(args) < 1 || len(args) > 2 {
-		return nil, fmt.Errorf("couchbase raw expects a SQL++ statement and an optional JSON named-parameters object")
-	}
-	stmt := args[0]
-	var params map[string]any
-	// args[1:] is the optional parameters object (at most one, per the guard above);
-	// ranging avoids an index the SAST cannot prove in bounds.
-	for _, raw := range args[1:] {
-		if err := json.Unmarshal([]byte(raw), &params); err != nil {
-			return nil, fmt.Errorf("parse couchbase query parameters: %w", err)
-		}
+	stmt, params, err := parseQueryArgs(args)
+	if err != nil {
+		return nil, err
 	}
 	s.tracef("query %s", stmt)
 	rows, err := s.query(ctx, stmt, params)
@@ -462,6 +512,29 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
+	return s.collectRows(rows)
+}
+
+// parseQueryArgs splits the raw arguments into the statement and the optional named
+// parameters. args[0] is the statement. An optional args[1] is a JSON object.
+func parseQueryArgs(args []string) (string, map[string]any, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return "", nil, fmt.Errorf("couchbase raw expects a SQL++ statement and an optional JSON named-parameters object")
+	}
+	var params map[string]any
+	// args[1:] is the optional parameters object (at most one, per the guard above);
+	// ranging avoids an index the SAST cannot prove in bounds.
+	for _, raw := range args[1:] {
+		if err := json.Unmarshal([]byte(raw), &params); err != nil {
+			return "", nil, fmt.Errorf("parse couchbase query parameters: %w", err)
+		}
+	}
+	return args[0], params, nil
+}
+
+// collectRows reads every row of a raw query result and decodes each one. It does not
+// close rows. The caller owns that.
+func (s *Store) collectRows(rows pageRows) ([]any, error) {
 	out := []any{}
 	for rows.Next() {
 		var raw json.RawMessage

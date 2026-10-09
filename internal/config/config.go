@@ -242,65 +242,85 @@ func (c *Config) moveSource(oldC, newC string) ([]Rename, error) {
 	if _, exists := c.Sources[newC]; exists {
 		return nil, fmt.Errorf("%w: %q", ErrDuplicate, newC)
 	}
-	c.Sources[newC] = c.Sources[oldC]
-	delete(c.Sources, oldC)
-	if c.Active == oldC {
-		c.Active = newC
+	c.rekey(oldC, newC)
+	c.dropEmptyGroup()
+	return []Rename{{Old: oldC, New: newC}}, nil
+}
+
+// rekey stores the source under newKey and removes it from oldKey. The active
+// source follows when it pointed at oldKey.
+func (c *Config) rekey(oldKey, newKey string) {
+	c.Sources[newKey] = c.Sources[oldKey]
+	delete(c.Sources, oldKey)
+	if c.Active == oldKey {
+		c.Active = newKey
 	}
+}
+
+// dropEmptyGroup clears the active group when no source belongs to it any more.
+func (c *Config) dropEmptyGroup() {
 	if c.Group != "" && !c.hasGroup(c.Group) {
 		c.Group = ""
 	}
-	return []Rename{{Old: oldC, New: newC}}, nil
 }
 
 // moveGroup re-prefixes every member of group oldC to newC, both already cleaned.
 func (c *Config) moveGroup(oldC, newC string) ([]Rename, error) {
-	oldPrefix := oldC + "/"
-	members := make([]string, 0)
-	member := make(map[string]bool)
-	for k := range c.Sources {
-		if strings.HasPrefix(k, oldPrefix) {
-			members = append(members, k)
-			member[k] = true
-		}
-	}
-	// Reject a target that already names a source outside the moved set.
-	for _, k := range members {
-		nk := newC + "/" + strings.TrimPrefix(k, oldPrefix)
-		if _, exists := c.Sources[nk]; exists && !member[nk] {
-			return nil, fmt.Errorf("%w: %q", ErrDuplicate, nk)
-		}
+	members := c.membersOf(oldC)
+	if err := c.moveCollision(members, oldC, newC); err != nil {
+		return nil, err
 	}
 	moved := make([]Rename, 0, len(members))
 	for _, k := range members {
-		nk := newC + "/" + strings.TrimPrefix(k, oldPrefix)
-		c.Sources[nk] = c.Sources[k]
-		delete(c.Sources, k)
-		if c.Active == k {
-			c.Active = nk
-		}
+		nk := reprefix(k, oldC, newC)
+		c.rekey(k, nk)
 		moved = append(moved, Rename{Old: k, New: nk})
 	}
-	// Re-point the active group at its new prefix. It cannot become empty here:
-	// every source in it was just re-prefixed, so the remapped group still has
-	// members (moveSource handles the emptying case).
-	switch {
-	case c.Group == oldC:
-		c.Group = newC
-	case strings.HasPrefix(c.Group, oldPrefix):
-		c.Group = newC + "/" + strings.TrimPrefix(c.Group, oldPrefix)
-	}
+	c.repointGroup(oldC, newC)
 	return moved, nil
+}
+
+// moveCollision returns ErrDuplicate for the first member whose target name
+// already names a source outside the moved set.
+func (c *Config) moveCollision(members []string, oldGroup, newGroup string) error {
+	member := make(map[string]bool, len(members))
+	for _, k := range members {
+		member[k] = true
+	}
+	for _, k := range members {
+		nk := reprefix(k, oldGroup, newGroup)
+		if _, exists := c.Sources[nk]; exists && !member[nk] {
+			return fmt.Errorf("%w: %q", ErrDuplicate, nk)
+		}
+	}
+	return nil
+}
+
+// repointGroup moves the active group to its new prefix when it is oldGroup or
+// lies below it. It cannot become empty here: every source in it was just
+// re-prefixed, so the remapped group still has members (moveSource handles the
+// emptying case).
+func (c *Config) repointGroup(oldGroup, newGroup string) {
+	switch {
+	case c.Group == oldGroup:
+		c.Group = newGroup
+	case strings.HasPrefix(c.Group, oldGroup+"/"):
+		c.Group = reprefix(c.Group, oldGroup, newGroup)
+	}
+}
+
+// reprefix returns key with the group prefix oldGroup replaced by newGroup.
+func reprefix(key, oldGroup, newGroup string) string {
+	return newGroup + "/" + strings.TrimPrefix(key, oldGroup+"/")
 }
 
 // UseKeyring marks the named source as keyring-backed: its password lives in the
 // OS keyring, not the stored URL. It errors if the source is unknown. The caller
 // owns storing the password in the keyring; this only records the flag.
 func (c *Config) UseKeyring(handle string) error {
-	h := cleanHandle(handle)
-	s, ok := c.Sources[h]
-	if !ok {
-		return fmt.Errorf("%w: %q", ErrUnknownSource, h)
+	h, s, err := c.lookup(handle)
+	if err != nil {
+		return err
 	}
 	s.Keyring = true
 	c.Sources[h] = s
@@ -312,10 +332,9 @@ func (c *Config) UseKeyring(handle string) error {
 // unknown. The caller owns deleting the password from the keyring; this only
 // clears the flag.
 func (c *Config) ClearKeyring(handle string) error {
-	h := cleanHandle(handle)
-	s, ok := c.Sources[h]
-	if !ok {
-		return fmt.Errorf("%w: %q", ErrUnknownSource, h)
+	h, s, err := c.lookup(handle)
+	if err != nil {
+		return err
 	}
 	s.Keyring = false
 	c.Sources[h] = s
@@ -327,10 +346,9 @@ func (c *Config) ClearKeyring(handle string) error {
 // blank. Callers use it when migrating an inline password into the keyring,
 // rewriting the source to its password-less form.
 func (c *Config) SetSourceURL(handle, url string) error {
-	h := cleanHandle(handle)
-	s, ok := c.Sources[h]
-	if !ok {
-		return fmt.Errorf("%w: %q", ErrUnknownSource, h)
+	h, s, err := c.lookup(handle)
+	if err != nil {
+		return err
 	}
 	if strings.TrimSpace(url) == "" {
 		return ErrEmptyURL
@@ -344,18 +362,27 @@ func (c *Config) SetSourceURL(handle, url string) error {
 // there and the active group if that group no longer has any source. It errors
 // if the name is unknown.
 func (c *Config) Remove(handle string) error {
-	h := cleanHandle(handle)
-	if _, ok := c.Sources[h]; !ok {
-		return fmt.Errorf("%w: %q", ErrUnknownSource, h)
+	h, _, err := c.lookup(handle)
+	if err != nil {
+		return err
 	}
 	delete(c.Sources, h)
 	if c.Active == h {
 		c.Active = ""
 	}
-	if c.Group != "" && !c.hasGroup(c.Group) {
-		c.Group = ""
-	}
+	c.dropEmptyGroup()
 	return nil
+}
+
+// lookup returns the cleaned handle and the stored source for handle. An unknown
+// handle gives ErrUnknownSource, wrapped with the cleaned handle.
+func (c *Config) lookup(handle string) (string, Source, error) {
+	h := cleanHandle(handle)
+	s, ok := c.Sources[h]
+	if !ok {
+		return "", Source{}, fmt.Errorf("%w: %q", ErrUnknownSource, h)
+	}
+	return h, s, nil
 }
 
 // Removed records a source that RemoveAll deleted, so a caller can clean up
@@ -379,21 +406,25 @@ func (c *Config) RemoveAll(names []string) ([]Removed, error) {
 			set[h] = s
 			continue
 		}
-		prefix := h + "/"
-		found := false
-		for k, s := range c.Sources {
-			if strings.HasPrefix(k, prefix) {
-				set[k] = s
-				found = true
-			}
+		members := c.membersOf(h)
+		for _, k := range members {
+			set[k] = c.Sources[k]
 		}
-		if !found {
+		if len(members) == 0 {
 			unknown = append(unknown, h)
 		}
 	}
 	if len(unknown) > 0 {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownSource, strings.Join(unknown, ", "))
 	}
+	removed := sortedRemoved(set)
+	c.forget(removed)
+	c.dropEmptyGroup()
+	return removed, nil
+}
+
+// sortedRemoved returns the entries of set as Removed values, sorted by handle.
+func sortedRemoved(set map[string]Source) []Removed {
 	handles := make([]string, 0, len(set))
 	for h := range set {
 		handles = append(handles, h)
@@ -403,16 +434,18 @@ func (c *Config) RemoveAll(names []string) ([]Removed, error) {
 	for _, h := range handles {
 		removed = append(removed, Removed{Handle: h, Source: set[h]})
 	}
+	return removed
+}
+
+// forget deletes the removed sources. The active source is cleared when it was
+// one of them.
+func (c *Config) forget(removed []Removed) {
 	for _, r := range removed {
 		delete(c.Sources, r.Handle)
 		if c.Active == r.Handle {
 			c.Active = ""
 		}
 	}
-	if c.Group != "" && !c.hasGroup(c.Group) {
-		c.Group = ""
-	}
-	return removed, nil
 }
 
 // SetActive sets the active source, storing its resolved full handle. It errors
@@ -497,25 +530,25 @@ func (c *Config) Groups() []string {
 // CountGroup returns how many sources belong to the given group (any source
 // whose handle is prefixed by "<group>/").
 func (c *Config) CountGroup(group string) int {
-	prefix := cleanHandle(group) + "/"
-	n := 0
-	for h := range c.Sources {
-		if strings.HasPrefix(h, prefix) {
-			n++
-		}
-	}
-	return n
+	return len(c.membersOf(cleanHandle(group)))
 }
 
 // hasGroup reports whether any source belongs to the given group.
 func (c *Config) hasGroup(group string) bool {
+	return len(c.membersOf(group)) > 0
+}
+
+// membersOf returns the handles of the sources whose name starts with
+// "<group>/", in map order.
+func (c *Config) membersOf(group string) []string {
 	prefix := group + "/"
+	var members []string
 	for h := range c.Sources {
 		if strings.HasPrefix(h, prefix) {
-			return true
+			members = append(members, h)
 		}
 	}
-	return false
+	return members
 }
 
 // CleanHandle canonicalizes a handle the way stored keys are: trimming space and
@@ -539,7 +572,8 @@ func validateHandle(h string) (string, error) {
 	if h == "" {
 		return "", ErrEmptyHandle
 	}
-	if strings.HasPrefix(h, "/") || strings.HasSuffix(h, "/") || strings.Contains(h, "//") {
+	// Padding with "/" makes a leading, a trailing and a doubled slash all show as "//".
+	if strings.Contains("/"+h+"/", "//") {
 		return "", fmt.Errorf("%w %q: misplaced '/'", ErrBadHandle, h)
 	}
 	for _, r := range h {
