@@ -49,11 +49,13 @@ func TestOpenPITRequestShape(t *testing.T) {
 	// path still reaches a server and fails much later.
 	for _, tt := range flavors {
 		t.Run(tt.name, func(t *testing.T) {
-			var method, path, rawQuery, body string
+			// The handler runs on the server goroutine, so it hands the request
+			// fields over through a channel.
+			type seen struct{ method, path, rawQuery, body string }
+			got := make(chan seen, 1)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				method, path, rawQuery = r.Method, r.URL.Path, r.URL.RawQuery
 				b, _ := io.ReadAll(r.Body)
-				body = string(b)
+				got <- seen{r.Method, r.URL.Path, r.URL.RawQuery, string(b)}
 				esJSON(w, http.StatusOK, `{"`+tt.idKey+`":"P1"}`)
 			}))
 			t.Cleanup(srv.Close)
@@ -62,10 +64,11 @@ func TestOpenPITRequestShape(t *testing.T) {
 			id, err := c.openPIT(t.Context(), "books")
 			require.NoError(t, err)
 			require.Equal(t, "P1", id)
-			require.Equal(t, http.MethodPost, method)
-			require.Equal(t, tt.openPath, path)
-			require.Equal(t, "keep_alive="+keepAlive, rawQuery)
-			require.Empty(t, body)
+			req := <-got
+			require.Equal(t, http.MethodPost, req.method)
+			require.Equal(t, tt.openPath, req.path)
+			require.Equal(t, "keep_alive="+keepAlive, req.rawQuery)
+			require.Empty(t, req.body)
 		})
 	}
 }
