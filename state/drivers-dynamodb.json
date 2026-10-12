@@ -1,0 +1,18 @@
+{
+  "package": "./drivers/dynamodb",
+  "slug": "drivers-dynamodb",
+  "status": "passed",
+  "fingerprint": "dc5905eb6d538e26c786e12a977f48f3275d6d3028795b564c0e9814a1cfc5f4",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 2.4,
+  "summary": {
+    "totalMutantsCount": 918,
+    "killedCount": 864,
+    "notCoveredCount": 9,
+    "escapedCount": 18,
+    "errorCount": 0,
+    "skippedCount": 27,
+    "score": 0.9795918367346939
+  }
+}

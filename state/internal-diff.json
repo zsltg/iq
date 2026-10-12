@@ -1,0 +1,18 @@
+{
+  "package": "./internal/diff",
+  "slug": "internal-diff",
+  "status": "passed",
+  "fingerprint": "36742da6903ff8aa52df6cc677f7e76b2001a8b1494247b0d8f405aed30c4ed2",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 0.5,
+  "summary": {
+    "totalMutantsCount": 318,
+    "killedCount": 261,
+    "notCoveredCount": 43,
+    "escapedCount": 7,
+    "errorCount": 0,
+    "skippedCount": 7,
+    "score": 0.9738805970149254
+  }
+}

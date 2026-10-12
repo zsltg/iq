@@ -1,0 +1,18 @@
+{
+  "package": "./drivers/couchbase",
+  "slug": "drivers-couchbase",
+  "status": "passed",
+  "fingerprint": "e00be0ed0a938df2d6a4ecd5b83e0108ef3d925204ae9e8d49b6b8436c600028",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 82,
+  "summary": {
+    "totalMutantsCount": 644,
+    "killedCount": 564,
+    "notCoveredCount": 51,
+    "escapedCount": 9,
+    "errorCount": 0,
+    "skippedCount": 20,
+    "score": 0.9842931937172775
+  }
+}

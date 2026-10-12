@@ -1,0 +1,18 @@
+{
+  "package": "./internal/jqfmt",
+  "slug": "internal-jqfmt",
+  "status": "passed",
+  "fingerprint": "e96f48010a9a89bc50a1c16839c89dfe1cefcc2a134f51f5a62979ecea740c2f",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 0.4,
+  "summary": {
+    "totalMutantsCount": 631,
+    "killedCount": 580,
+    "notCoveredCount": 46,
+    "escapedCount": 2,
+    "errorCount": 0,
+    "skippedCount": 3,
+    "score": 0.9965635738831615
+  }
+}

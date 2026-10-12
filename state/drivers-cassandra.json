@@ -1,0 +1,9 @@
+{
+  "package": "./drivers/cassandra",
+  "slug": "drivers-cassandra",
+  "status": "failed",
+  "fingerprint": "f9668fd0e9864f0e99f950f5cd39439d63521a79a2ce35deb7aeef8263f179d1",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": null
+}

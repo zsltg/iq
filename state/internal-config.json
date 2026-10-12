@@ -1,0 +1,18 @@
+{
+  "package": "./internal/config",
+  "slug": "internal-config",
+  "status": "passed",
+  "fingerprint": "3e5f9db01e8754edd704ea2f4345b708514c80943809e18527f30f8a3588dfc3",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 0.5,
+  "summary": {
+    "totalMutantsCount": 390,
+    "killedCount": 336,
+    "notCoveredCount": 44,
+    "escapedCount": 8,
+    "errorCount": 0,
+    "skippedCount": 2,
+    "score": 0.9767441860465116
+  }
+}

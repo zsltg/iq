@@ -1,0 +1,18 @@
+{
+  "package": "./drivers/neo4j",
+  "slug": "drivers-neo4j",
+  "status": "passed",
+  "fingerprint": "b49fdddae20d6dc4351590b78711187cf2a808392240d9d586a18d88edb0c5dc",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 1,
+  "summary": {
+    "totalMutantsCount": 642,
+    "killedCount": 567,
+    "notCoveredCount": 52,
+    "escapedCount": 12,
+    "errorCount": 0,
+    "skippedCount": 11,
+    "score": 0.9792746113989638
+  }
+}

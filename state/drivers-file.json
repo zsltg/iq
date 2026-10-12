@@ -1,0 +1,18 @@
+{
+  "package": "./drivers/file",
+  "slug": "drivers-file",
+  "status": "passed",
+  "fingerprint": "5ebdea1600092b570979415de3f2a2f2dbfdb5f14c38f6046c968378a10d32cd",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 1.1,
+  "summary": {
+    "totalMutantsCount": 1450,
+    "killedCount": 1344,
+    "notCoveredCount": 45,
+    "escapedCount": 43,
+    "errorCount": 0,
+    "skippedCount": 18,
+    "score": 0.9689978370583994
+  }
+}

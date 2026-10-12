@@ -1,0 +1,18 @@
+{
+  "package": "./internal/rawpred",
+  "slug": "internal-rawpred",
+  "status": "passed",
+  "fingerprint": "406142c7a7fd16dba0632c251880583dabbad62d8a7217c15ce3fee921deccc0",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 0.5,
+  "summary": {
+    "totalMutantsCount": 469,
+    "killedCount": 429,
+    "notCoveredCount": 21,
+    "escapedCount": 11,
+    "errorCount": 0,
+    "skippedCount": 8,
+    "score": 0.975
+  }
+}

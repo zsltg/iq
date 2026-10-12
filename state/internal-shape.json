@@ -1,0 +1,9 @@
+{
+  "package": "./internal/shape",
+  "slug": "internal-shape",
+  "status": "failed",
+  "fingerprint": "ca4eadb072c47d672dca478e6e1b4bbfcf9c437fa16f0c2dc7652a947487b6d9",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": null
+}

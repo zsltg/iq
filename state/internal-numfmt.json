@@ -1,0 +1,18 @@
+{
+  "package": "./internal/numfmt",
+  "slug": "internal-numfmt",
+  "status": "passed",
+  "fingerprint": "da6443d5b814a69e4bfe1892a5ae65d7eac526c68c8f79153ea658fbc56bb3fb",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 0.8,
+  "summary": {
+    "totalMutantsCount": 36,
+    "killedCount": 31,
+    "notCoveredCount": 0,
+    "escapedCount": 4,
+    "errorCount": 0,
+    "skippedCount": 1,
+    "score": 0.8857142857142857
+  }
+}

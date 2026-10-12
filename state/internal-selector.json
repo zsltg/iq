@@ -1,0 +1,18 @@
+{
+  "package": "./internal/selector",
+  "slug": "internal-selector",
+  "status": "passed",
+  "fingerprint": "cfe48a3e974a727cd11d1621cb1d11668af4ddec3dd9c91ad494cfad22c13a00",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 0.4,
+  "summary": {
+    "totalMutantsCount": 143,
+    "killedCount": 121,
+    "notCoveredCount": 22,
+    "escapedCount": 0,
+    "errorCount": 0,
+    "skippedCount": 0,
+    "score": 1.0
+  }
+}

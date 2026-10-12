@@ -1,0 +1,18 @@
+{
+  "package": "./internal/parquetout",
+  "slug": "internal-parquetout",
+  "status": "passed",
+  "fingerprint": "e2220cbe9991f2c56a55e47348125fedc00cfec5dd2f6753abcf133c39281a94",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 1.1,
+  "summary": {
+    "totalMutantsCount": 363,
+    "killedCount": 340,
+    "notCoveredCount": 4,
+    "escapedCount": 6,
+    "errorCount": 0,
+    "skippedCount": 13,
+    "score": 0.9826589595375722
+  }
+}

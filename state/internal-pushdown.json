@@ -1,0 +1,18 @@
+{
+  "package": "./internal/pushdown",
+  "slug": "internal-pushdown",
+  "status": "passed",
+  "fingerprint": "cbe7fa1990e9185aac6aef406bd26126c9b38983770c275d51534861f1453db4",
+  "commit": "5cc2533787aba4bf01428ac3785b388e841fd0b0",
+  "scannedAt": "2026-10-12T19:33:28Z",
+  "secondsPerMutant": 0.5,
+  "summary": {
+    "totalMutantsCount": 594,
+    "killedCount": 526,
+    "notCoveredCount": 54,
+    "escapedCount": 10,
+    "errorCount": 0,
+    "skippedCount": 4,
+    "score": 0.9813432835820896
+  }
+}
