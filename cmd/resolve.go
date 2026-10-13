@@ -139,14 +139,13 @@ func cassandraTarget(cfg *config) (keyspace, table string) {
 }
 
 // splitSourceArg parses a source argument into a source name and an optional
-// collection override. It tries the whole arg as a known source first so a handle
-// that legitimately contains a dot (or an @-prefixed one) still resolves; failing
-// that it walks the dots right to left and takes the longest prefix that names a
-// real source, so the most specific handle still wins while the remainder stays
-// whole as the address. The remainder may itself be dotted — Couchbase addresses
-// a scope.collection, and a MongoDB collection name may contain a dot — which a
-// last-dot split could not express. An empty arg yields an empty name, letting
-// the caller fall back to --src or the active source.
+// collection override. It tries the whole arg as a known source first, so a
+// handle that contains a dot (or starts with @) still resolves. Otherwise it
+// walks the dots right to left and takes the longest prefix that names a real
+// source. The remainder stays whole as the address. It can be dotted: Couchbase
+// addresses a scope.collection, and a MongoDB collection name can contain a
+// dot, which a last-dot split cannot express. An empty arg yields an empty
+// name, so the caller can fall back to --src or the active source.
 func splitSourceArg(cf *iqconfig.Config, arg string) (name, collection string, hasCollection bool) {
 	if arg == "" {
 		return "", "", false

@@ -421,10 +421,10 @@ func (f *colorYAMLFormatter) emit(v any) error {
 func (f *colorYAMLFormatter) flush() error { return nil }
 
 // parquetFormatter streams the emitted values to Parquet. Unlike the text
-// formatters it buffers a leading sample to infer the schema, then writes one
-// record batch per page in bounded memory; flush writes the final page and the
-// file footer, so callers must flush once the engine has finished. The heavy
-// lifting lives in internal/parquetout, keeping the Arrow dependency out of the
+// formatters, it buffers a leading sample to infer the schema, then writes one
+// record batch per page in bounded memory. flush writes the final page and the
+// file footer, so callers must flush once the engine has finished. The work
+// lives in internal/parquetout, which keeps the Arrow dependency out of the
 // core query path.
 type parquetFormatter struct{ pw *parquetout.Writer }
 

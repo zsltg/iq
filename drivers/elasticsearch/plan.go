@@ -10,11 +10,11 @@ import (
 
 // ExplainPlan describes the Elasticsearch calls this driver would make for a
 // classified query, without connecting. A bounded query fetches the named documents
-// by _id via _mget; a scan pages a point-in-time with search_after, pre-filtered by a
-// bool query when the pushed predicate narrows, else an unfiltered walk. Because it
-// does not connect, the equality gate (a term is pushed only when the field mapping
-// is exactly matchable) is not resolved here, so the shown filter is the query the
-// driver would attempt and the description carries the caveat.
+// by _id with _mget. A scan pages a point-in-time with search_after, with a bool
+// query when the pushed predicate narrows. It does not connect, so it does not
+// resolve the equality gate (a term is pushed only on an exactly matchable field).
+// The shown filter is the query that the driver attempts, and the description says
+// so.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -38,10 +38,10 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	return query.AccessPlan{Ops: []string{desc, mode}, Filter: filter}
 }
 
-// explainQuery is the connection-free mirror of Store.toQuery: it pushes the same
-// node kinds (equality, existence, and their and/or combinations), but assumes an
-// equality's field is exactly matchable — the live mapping is what actually decides,
-// so this is the optimistic plan the --explain caveat describes.
+// explainQuery is the connection-free mirror of Store.toQuery. It pushes the same
+// node kinds (equality, existence, and their and/or combinations). It assumes that an
+// equality's field is exactly matchable, because only the live mapping decides. This
+// is the optimistic plan that the --explain caveat describes.
 func explainQuery(n predicate.Node) (map[string]any, bool) {
 	switch t := n.(type) {
 	case predicate.Eq:

@@ -9,12 +9,11 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// Conjunct is one top-level conjunct of a streamable filter's select(...)
-// predicate together with the pushdown compiler's decision about it. Expr is the
-// conjunct's jq source, for display. Pred is the pushable predicate the compiler
-// extracted from it, or nil when the conjunct cannot be pushed; Reason then carries
-// a short, backend-neutral explanation of why. A caller offers a non-nil Pred to a
-// backend translator, which may still decline it — so Pred means "the compiler
+// Conjunct is one top-level conjunct of a streamable filter's select(...) predicate,
+// with the pushdown compiler's decision about it. Expr is the conjunct's jq source, for
+// display. Pred is the pushable predicate that the compiler extracted, or nil when the
+// conjunct cannot be pushed. Reason then gives a short, backend-neutral explanation. A
+// backend translator can still decline a non-nil Pred, so Pred means "the compiler
 // could push this", not "the backend did".
 type Conjunct struct {
 	Expr   string
@@ -22,14 +21,14 @@ type Conjunct struct {
 	Reason string
 }
 
-// Conjuncts splits the select(...) predicates of a streamable `.[]`-rooted filter
-// that test the element itself (see elementSelects) into their top-level conjuncts and reports, per conjunct, whether the compiler could
-// turn it into a pushable predicate and, when it could not, why. Multiple selects
-// contribute their conjuncts in order; a select whose argument is a top-level `and`
-// contributes each side separately, so the breakdown matches what Compile would
-// push (the And of the compiled conjuncts). It returns ok=false when the filter is
-// not a streamable scan or has no select conjunct to analyse — nothing is ever
-// pushed then, so the caller shows no breakdown.
+// Conjuncts splits the select(...) predicates of a streamable `.[]`-rooted filter that
+// test the element itself (see elementSelects) into their top-level conjuncts. For each
+// conjunct it reports whether the compiler can turn it into a pushable predicate and,
+// if not, why. Multiple selects contribute their conjuncts in order. A select whose
+// argument is a top-level `and` contributes each side separately, so the breakdown
+// matches what Compile pushes (the And of the compiled conjuncts). Conjuncts returns
+// ok=false if the filter is not a streamable scan or has no select conjunct to analyse.
+// Nothing is pushed then, so the caller shows no breakdown.
 func Conjuncts(q *gojq.Query) ([]Conjunct, bool) {
 	if !selector.Keys(q).Streamable || shadowsAny(q) {
 		return nil, false
@@ -59,13 +58,13 @@ func Conjuncts(q *gojq.Query) ([]Conjunct, bool) {
 // removes the loop's progress cannot spin forever — it terminates at the cap.
 const maxNestDepth = 512
 
-// topConjuncts splits e into its top-level and-conjuncts, unwrapping parentheses so
-// `(a and b) and c` yields [a, b, c]. Splitting stops at any operator other than
-// `and`: a comparison, a `path | builtin` pipe, or an `or` stays whole, because its
-// parts are not independently droppable conjuncts (an or must push every branch or
-// none). An expression nested past maxNestDepth contributes no conjunct: it affects
-// only the --explain breakdown, never execution (which compiles independently), and
-// the client-side jq still runs.
+// topConjuncts splits e into its top-level and-conjuncts and unwraps parentheses, so
+// `(a and b) and c` yields [a, b, c]. Splitting stops at any other operator: a
+// comparison, a `path | builtin` pipe, or an `or` stays whole, because its parts are
+// not independently droppable (an or must push every branch or none). An expression
+// nested past maxNestDepth contributes no conjunct. This affects only the --explain
+// breakdown, never execution, which compiles independently. The client-side jq still
+// runs.
 func topConjuncts(e *gojq.Query) []*gojq.Query {
 	u, ok := unwrap(e)
 	if !ok {
@@ -130,12 +129,9 @@ func isTestPipe(e *gojq.Query) bool {
 	return f.Name == "test"
 }
 
-// unsafeFieldName returns the first field name in a comparison or membership
-// conjunct that the compiler refused because it is unsafe to push: a name with a
-// dot (a backend joining the path with dots would read it as a nested path) or one
-// beginning with '$' (it could land in operator position in a document-query
-// backend). A conjunct with no resolvable field path returns ok=false and falls
-// through to the generic reason.
+// unsafeFieldName returns the first field name in a comparison or membership conjunct
+// that safeField refuses to push. A conjunct with no resolvable field path returns
+// ok=false and falls through to the generic reason.
 func unsafeFieldName(e *gojq.Query) (string, bool) {
 	switch e.Op {
 	case gojq.OpEq, gojq.OpNe, gojq.OpGt, gojq.OpGe, gojq.OpLt, gojq.OpLe:

@@ -158,16 +158,15 @@ func (cfg *config) logQueryComplete(scanned int, start time.Time) {
 	cfg.log().Info("query complete", "scanned", scanned, "elapsed", time.Since(start))
 }
 
-// logQueryPlan emits the one structured "query plan" record at INFO when the
-// structured file/stream sink is active, so a CI run captures the classification,
-// planned backend ops, pushed server-side filter, and per-conjunct pushdown
-// decisions that the --explain text shows — without --explain. It is gated on the
-// structured sink, not the verbose sink: a bare -v already prints the pretty plan
-// text to stderr, so emitting the record too would render it a second time (the
-// tinted one-liner). It shares buildSourcePlan with the --explain text, so the log
-// and the pretty plan never drift. A cross-source source() filter has no single
-// driver, and a stdin dump no backend, so those log a minimal plan; building the
-// plan is skipped entirely when the structured sink is off or below INFO.
+// logQueryPlan emits the structured "query plan" record at INFO when the
+// structured file/stream sink is active, so a CI run captures the
+// classification, planned ops, pushed filter, and per-conjunct decisions that
+// --explain shows. It is gated on the structured sink, not the verbose sink: a
+// bare -v already prints the pretty plan to stderr, so the record renders
+// it twice. It shares buildSourcePlan with the --explain text, so the two never
+// drift. A cross-source source() filter has no single driver, and a stdin dump
+// has no backend, so those log a minimal plan. It skips building the plan when
+// the structured sink is off or below INFO.
 func (cfg *config) logQueryPlan(filter string, cross bool) {
 	if !cfg.logStructured {
 		return

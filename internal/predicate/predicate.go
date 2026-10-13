@@ -1,13 +1,11 @@
 // Package predicate is the backend-neutral representation of a pushable filter
 // predicate. A jq compiler (internal/pushdown) builds one from a select(...)
-// expression, and a backend adapter translates it into that store's own query
-// language. Keeping it neutral lets the jq→predicate extraction and the
-// predicate→query translation evolve independently, and lets one predicate serve
-// every backend.
+// expression, and a backend adapter translates it into that store's own query language.
+// The neutral form lets the jq-to-predicate extraction and the predicate-to-query
+// translation change independently, and lets one predicate serve every backend.
 //
-// A predicate is always a conservative *superset* of the jq expression it came
-// from: a store may return extra documents, never fewer, because the caller
-// re-runs the full jq client-side over whatever is fetched.
+// A predicate is always a conservative *superset* of the jq expression it came from: a
+// store can return extra documents, never fewer. See query.FilteredScanner.
 package predicate
 
 // Node is one node of a boolean predicate tree.
@@ -45,13 +43,13 @@ type Cmp struct {
 	Value any
 }
 
-// Regex matches documents whose field at Path is a string the Pattern matches
-// (unanchored, like jq's test). Flags is a subset of "im" carrying jq's meaning:
-// i is case-insensitive and m is "dot matches newline" (dotall) — jq's m is not
-// PCRE's line-anchor multiline. Only patterns whose meaning is identical, or a
-// superset, across regex engines are ever put here; a backend hands Pattern to
-// its own engine and translates Flags to that engine's spelling (e.g. jq m ->
-// PCRE s), so which documents match never narrows against jq.
+// Regex matches documents whose field at Path is a string that Pattern matches
+// (unanchored, like jq's test). Flags is a subset of "im" with jq's meaning: i is
+// case-insensitive and m is "dot matches newline" (dotall). jq's m is not PCRE's
+// line-anchor multiline. Only patterns with identical meaning, or a superset, across
+// regex engines are put here. A backend hands Pattern to its own engine and translates
+// Flags to that engine's spelling (for example jq m to PCRE s), so the matched set
+// never narrows against jq.
 type Regex struct {
 	Path    []string
 	Pattern string
@@ -66,9 +64,9 @@ type Exists struct {
 }
 
 // Size matches documents whose field at Path has jq length N. jq's length is
-// polymorphic (array elements, string characters, object keys, |number|,
-// null→0), so a backend must not treat this as an array-only test; it is a
-// superset in the same spirit as Cmp.
+// polymorphic (array elements, string characters, object keys, |number|, null→0), so a
+// backend must not treat this as an array-only test. It is a superset in the same way
+// as Cmp.
 type Size struct {
 	Path []string
 	N    int

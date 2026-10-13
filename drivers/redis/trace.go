@@ -49,10 +49,10 @@ func (h *traceHook) log(cmd goredis.Cmder) {
 	_, _ = fmt.Fprintf(h.w, "redis> %s\n", formatRedisCmd(cmd.Args()))
 }
 
-// formatRedisCmd renders a command's args as an uppercased command name followed
-// by its arguments, redacting any AUTH credential so no password reaches the
-// trace: a bare AUTH command is fully masked, and the credentials after an AUTH
-// token in a HELLO handshake are masked.
+// formatRedisCmd renders the args of a command as an uppercased command name
+// followed by its arguments. It redacts any AUTH credential, so no password reaches
+// the trace: a bare AUTH command is fully masked, and so are the credentials after
+// an AUTH token in a HELLO handshake.
 func formatRedisCmd(args []any) string {
 	if len(args) == 0 {
 		return ""

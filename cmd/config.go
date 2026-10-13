@@ -15,14 +15,13 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// persistableOptions is the allowlist of flag names that may be stored as config
-// defaults, keyed by the flag's own name so an option is a 1:1 alias for its
-// flag (same name, type, help, and validation — one source of truth). Excluded
-// on purpose: per-invocation targeting (src, collection, from, combine,
-// explain), display-only listing toggles (reveal, expand), diagnostics that only
-// make sense live (debug.pprof), the config path itself, the -j/-J/-A/-y/-r
-// aliases (the canonical selector is format), and the query safety gates
-// (unbounded, no-compile) whose intent is one run, not a stored default.
+// persistableOptions is the allowlist of flag names that can be stored as
+// config defaults. Each option is keyed by the name of its flag, so it is a 1:1
+// alias (same name, type, help, and validation). Excluded: per-invocation
+// targeting (src, collection, from, combine, explain), display-only toggles
+// (reveal, expand), live-only diagnostics (debug.pprof), the config path, the
+// -j/-J/-A/-y/-r aliases (the canonical selector is format), and the query
+// safety gates (unbounded, no-compile), which apply to one run.
 var persistableOptions = []string{
 	"format", "format.decimal", "compact",
 	"timeout",
@@ -36,13 +35,13 @@ func isPersistableOption(key string) bool {
 	return slices.Contains(persistableOptions, key)
 }
 
-// applyStoredOptions merges stored option defaults into cmd's flags before the
-// rest of PersistentPreRunE validates and consumes them. Precedence per key:
-// an explicit flag wins; else the selected source's option; else the base
-// option; else the flag's built-in default (left untouched). The source is
-// resolved read-only — no keyring, no connection — so per-source defaults reach
-// even the logger/color setup that runs later in PreRun. Values were validated
-// at `config set` time; a hand-edited bad value is caught here and fails fast.
+// applyStoredOptions merges stored option defaults into the flags of cmd before
+// PersistentPreRunE validates them. Precedence per key: an explicit flag, then
+// the option of the selected source, then the base option, then the built-in
+// default (untouched). The source is resolved read-only (no keyring, no
+// connection), so per-source defaults reach the logger and color setup that
+// runs later. Values were validated at `config set` time. A hand-edited bad
+// value fails fast here.
 func applyStoredOptions(cmd *cobra.Command, cfg *config) error {
 	cf, err := iqconfig.Load()
 	if err != nil {

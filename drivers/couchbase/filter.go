@@ -9,37 +9,25 @@ import (
 	"github.com/zsltg/iq/internal/rawpred"
 )
 
-// ScanFiltered streams only the documents a SQL++ WHERE pre-selects for pred, letting
-// the query service narrow the scan. pred is a conservative superset (the caller
-// re-runs the full jq per page), so returning extra documents is safe and returning
-// too few is not. When pred compiles to nothing that narrows — an operator whose SQL++
-// semantics could wrongly exclude a jq match (!=, regex, length, element match) — the
-// scan falls back to the plain keyset walk (an empty WHERE), which is correct and no
-// more expensive.
+// ScanFiltered lets the query service narrow the scan with a SQL++ WHERE for
+// pred. See query.FilteredScanner.
 //
-// Whatever the WHERE leaves behind, a client-side raw-byte prefilter runs the full
-// predicate over each row's raw value before it is decoded and drops any row rawpred
-// proves the predicate rejects — so a full-scan fallback or a partially-pushed scan
-// skips the (dominant) UseNumber decode of the documents the query service could not
-// exclude. The prefilter is bypassed only when the WHERE already captures the predicate
-// exactly (the raw scan would only re-confirm matches): a nil matcher means no prefilter.
-// A Couchbase document's ID is KV metadata, never injected into the value the filter
-// sees, so there is no injected-field trap — the raw value rawpred reads is exactly the
-// document.
+// If pred has no safe WHERE, the scan walks the whole collection with an empty
+// WHERE. This happens for an operator whose SQL++ semantics can wrongly exclude
+// a jq match (!=, regex, length, element match).
+//
+// Whatever the WHERE leaves behind, a client-side rawpred prefilter drops rows
+// that the full predicate provably rejects, before the UseNumber decode. It does
+// not run if the WHERE already captures pred exactly, and the matcher is then
+// nil. A document ID is KV metadata and never enters the value, so rawpred reads
+// exactly the document.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if s.collection == nil {
 		return errNoBucket
 	}
-	// toWhere yields a non-narrowing empty fragment for a predicate it cannot push, and
-	// scan reads an empty where as a full keyset walk, so the fallback needs no separate
-	// branch: a non-narrowing predicate simply walks the whole collection and the
-	// prefilter trims it.
+	// An empty where is a full keyset walk, so the fallback needs no branch.
 	where, params, _ := toWhere(pred)
-	// Prepare the predicate once for the whole scan only when a prefilter will actually
-	// run: NewMatcher compiles every Regex pattern here so the per-row path never
-	// recompiles one. A nil matcher means no prefilter — the single bypass case (the
-	// WHERE captures the predicate exactly) leaves it nil so scan skips the raw-byte
-	// check entirely.
+	// A nil matcher means no prefilter.
 	var matcher *rawpred.Matcher
 	if !exactWhere(pred) {
 		matcher = rawpred.NewMatcher(pred)
@@ -47,18 +35,15 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	return s.scan(ctx, scanSpec{where: where, params: params, matcher: matcher}, fn)
 }
 
-// exactWhere reports whether toWhere's translation of n captures it exactly — the query
-// service's WHERE returns precisely jq's matching set, so a client-side raw-byte
-// prefilter over the same rows would only re-confirm matches and is pure overhead. Every
-// node toWhere pushes reproduces jq's semantics exactly: an equality (a `null` literal
-// widened to null-or-missing, measured 0.0% over-return), the ISTYPE-widened range
-// (measured EXACTLY 0.0% — the widening reproduces jq's cross-type order precisely), and
-// existence. Exactness is therefore lost only when a conjunct is dropped or a node is
-// refused: an And is exact only when every conjunct is pushed exactly (a dropped Regex or
-// != conjunct makes it inexact), an Or only when every branch is, and a node toWhere
-// cannot push at all (!=, regex, length, element match, any unknown node) is never exact.
-// A field path toWhere would refuse (a backtick component) is likewise not exact, so the
-// prefilter runs there too.
+// exactWhere reports whether toWhere captures n exactly. The WHERE then returns
+// precisely the jq matches, so a client-side prefilter only re-confirms them.
+// Every node that toWhere pushes is exact: equality (a `null` literal widened to
+// null-or-missing, measured 0.0% over-return), the ISTYPE-widened range (measured
+// 0.0%), and existence. Exactness is lost when a conjunct is dropped or a node is
+// refused. An And is exact only if every conjunct is, and an Or only if every
+// branch is. A node that toWhere cannot push (!=, regex, length, element match, any
+// unknown node) is never exact. A field path that toWhere refuses (a backtick
+// component) is not exact either.
 func exactWhere(n predicate.Node) bool {
 	switch t := n.(type) {
 	case predicate.Eq:
@@ -84,9 +69,8 @@ func exactWhere(n predicate.Node) bool {
 	}
 }
 
-// allExact reports whether every child of a non-empty composite is pushed exactly. An
-// empty composite is never exact: toWhere declines an empty And/Or as non-narrowing, so
-// there is no clause backing an exactness claim.
+// allExact reports whether every child of a non-empty composite is exact. An empty
+// composite is never exact, because toWhere declines it as non-narrowing.
 func allExact(children []predicate.Node) bool {
 	if len(children) == 0 {
 		return false
@@ -107,13 +91,11 @@ var rangeOp = map[predicate.Op]string{
 	predicate.Le: "<=",
 }
 
-// typeAbove and typeBelow list the SQL++ type-check predicates for the jq types that
-// rank strictly above / below each range-literal type. jq compares across types
-// (null < boolean < number < string < array < object, a missing field folded to null),
-// so `field > <number>` must also keep every string/array/object and `field < <number>`
-// every boolean/null/missing. SQL++ comparison operators are type-restricted (a
-// cross-type compare yields NULL and is filtered out), so those types are re-included
-// with explicit ISTYPE clauses — a superset the client re-run trims.
+// typeAbove and typeBelow list the SQL++ type checks for the jq types that rank
+// above and below each range-literal type. jq compares across types (null < boolean
+// < number < string < array < object, a missing field folded to null). SQL++
+// comparisons are type-restricted: a cross-type compare yields NULL. So the ISTYPE
+// clauses re-include those types, and the client re-run trims them.
 var (
 	typeAboveNumber = []string{"ISSTRING(%s)", "ISARRAY(%s)", "ISOBJECT(%s)"}
 	typeAboveString = []string{"ISARRAY(%s)", "ISOBJECT(%s)"}
@@ -122,11 +104,10 @@ var (
 )
 
 // toWhere translates a neutral predicate into a SQL++ WHERE fragment and its named
-// parameters. The final bool is whether the fragment actually narrows the scan: false
-// means the node (or an unsafe part of it) could not be pushed without risking wrongly
-// excluding a jq match, so the caller must fall back to a full scan. Only pure-superset
-// nodes are pushed: equality, ranges, and existence. Every value rides as a named
-// parameter ($p0, $p1, …), never concatenated into the statement.
+// parameters. The final bool is false if the fragment does not narrow the scan:
+// the node, or an unsafe part of it, cannot be pushed without risk of wrongly
+// excluding a jq match. Only pure-superset nodes are pushed: equality, ranges, and
+// existence. Every value is a named parameter ($p0, $p1, ...), never concatenated.
 func toWhere(n predicate.Node) (string, map[string]any, bool) {
 	b := &whereBuilder{params: map[string]any{}}
 	clause, ok := b.node(n)

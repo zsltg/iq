@@ -9,13 +9,11 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// ScanFiltered streams only the rows matching pred, translating the pushable part
-// of the predicate to a CQL WHERE so the cluster pre-filters. pred is a conservative
-// superset (the engine re-runs the full jq per page), so pushing fewer conjuncts is
-// always safe; only equality and same-column membership are pushed. A WHERE that
-// touches anything but the full partition key needs ALLOW FILTERING, appended here —
-// an opt-in cost surfaced in --explain. When nothing is pushable it falls back to a
-// full scan, identical to ScanBatches.
+// ScanFiltered translates the pushable part of pred to a CQL WHERE. See
+// query.FilteredScanner. Only equality and same-column membership are pushed. A
+// WHERE on anything but the full partition key needs ALLOW FILTERING, which this
+// method appends. --explain shows that cost. If nothing is pushable, the scan is
+// the same as ScanBatches.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if s.meta == nil {
 		return errNoTable
@@ -39,13 +37,13 @@ func columnTypes(meta *gocql.TableMetadata) map[string]gocql.TypeInfo {
 }
 
 // toCQL translates the pushable part of a neutral predicate into a CQL WHERE clause
-// and its bind values. Only equality (Eq) and a same-column or of equalities (→ IN)
-// are pushed; an And pushes the subset of its conjuncts that compile and drops the
-// rest (widening, safe because the full jq re-runs). Ranges, regex, existence, size,
-// element matches, and negations are never pushed. A path that is not a single
-// top-level column, or (when cols is non-nil) not a real column, or whose literal
-// will not coerce to the column type, is treated as not pushable. cols may be nil
-// for a connection-free description, which skips validation and coercion.
+// and its bind values. Only equality (Eq) and a same-column or of equalities (to
+// IN) are pushed. An And pushes the conjuncts that compile and drops the rest.
+// Ranges, regex, existence, size, element matches, and negations are never pushed.
+// A path is not pushable if it is not a single top-level column. It is also not
+// pushable if cols is non-nil and the column is not real, or if its literal will
+// not coerce to the column type. cols can be nil for a connection-free
+// description, which skips validation and coercion.
 func toCQL(cols map[string]gocql.TypeInfo, n predicate.Node) (where string, args []any, ok bool) {
 	switch t := n.(type) {
 	case predicate.Eq:

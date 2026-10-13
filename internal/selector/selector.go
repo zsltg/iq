@@ -1,11 +1,10 @@
 // Package selector classifies a parsed jq expression by the reads it needs. The
-// expression doubles as the key selector: its root-level paths name the store
-// keys to fetch. When every root path resolves to a specific key, the fetch is
-// bounded to O(keys requested). When it does not — a bare `.`, value iteration
-// `.[]`, `keys`, a computed index, and so on — the expression can only be
-// answered by materializing the whole keyspace, an unbounded read. This package
-// decides which case an expression is; the caller decides whether an unbounded
-// read is permitted.
+// expression doubles as the key selector: its root-level paths name the store keys to
+// fetch. If every root path resolves to a specific key, the fetch is bounded to O(keys
+// requested). Otherwise (a bare `.`, value iteration `.[]`, `keys`, a computed index,
+// and so on), only materializing the whole keyspace can answer the expression. That
+// read is unbounded. This package decides which case an expression is. The caller
+// decides whether an unbounded read is permitted.
 package selector
 
 import (
@@ -40,13 +39,12 @@ func Keys(q *gojq.Query) KeySet {
 	return KeySet{Keys: e.keys}
 }
 
-// streamable reports whether q is rooted at `.[]` — its top-level structure is
-// value iteration over the root, optionally piped into a per-element residual
-// (`.[]`, `.[] | select(...)`, `.[].name`). Such a filter distributes over any
-// partition of the input, so it can be run batch by batch and its outputs
-// concatenated. A filter that instead collapses the collection into one value
-// (`.`, `keys`, `map(...)`, an aggregate, or a top-level comma) is not
-// streamable and must be materialized.
+// streamable reports whether q is rooted at `.[]`: its top-level structure is value
+// iteration over the root, optionally piped into a per-element residual (`.[]`, `.[] |
+// select(...)`, `.[].name`). Such a filter distributes over any partition of the input,
+// so the engine can run it batch by batch and concatenate the outputs. A filter that
+// collapses the collection into one value (`.`, `keys`, `map(...)`, an aggregate, or a
+// top-level comma) is not streamable and must be materialized.
 func streamable(q *gojq.Query) bool {
 	// A nil query names nothing to stream (Keys(nil) is a scan).
 	if q == nil {
@@ -55,10 +53,10 @@ func streamable(q *gojq.Query) bool {
 	// Follow the leftmost stage of the pipe chain: `a | b | c` nests as
 	// ((a | b) | c), so the first stage is the deepest Left.
 	for q.Op == gojq.OpPipe {
-		// `E as $x | body` is a pipe carrying binding patterns, and its body is fed
-		// the *root*, not each bound element — so `.[] as $x | .` yields the whole
-		// input once per element and does not distribute over a partition, however
-		// much its left side looks like a plain `.[]`.
+		// `E as $x | body` is a pipe with binding patterns, and its body receives the *root*,
+		// not each bound element. `.[] as $x | .` yields the whole input once per element and
+		// does not distribute over a partition, however much its left side looks like a plain
+		// `.[]`.
 		if len(q.Patterns) > 0 {
 			return false
 		}
@@ -161,12 +159,12 @@ func (e *extractor) visitArray(a *gojq.Array) {
 	}
 }
 
-// visitIndex records the key named by a leading index. A bare field (`.foo`), a
-// quoted field (`."a.b"`), or a bracketed string literal (`.["book:1"]`) resolves
-// to a specific key. A slice, a numeric or computed subscript, or an interpolated
-// string does not, and forces a scan. gojq stores the three literal forms in
-// three different places: a bare field in Name, a quoted field in Str, and a
-// bracketed subscript in Start (as a sub-query).
+// visitIndex records the key named by a leading index. A bare field (`.foo`), a quoted
+// field (`."a.b"`), or a bracketed string literal (`.["book:1"]`) resolves to a
+// specific key. A slice, a numeric or computed subscript, or an interpolated string
+// does not, and forces a scan. gojq stores the three literal forms in three places: a
+// bare field in Name, a quoted field in Str, and a bracketed subscript in Start (as a
+// sub-query).
 func (e *extractor) visitIndex(idx *gojq.Index) {
 	switch {
 	case idx.Name != "":

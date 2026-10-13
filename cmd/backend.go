@@ -45,12 +45,11 @@ func wrapStoreLogging(ctx context.Context, st store, lg *slog.Logger) store {
 	return st
 }
 
-// newLoggingStore wraps st so every port call is logged at DEBUG, selecting the
-// narrowest wrapper that still advertises the store's optional capabilities: a
-// wrapper that always claimed FilteredScanner/Estimator would defeat the engine's
-// capability probe (it would push to a store that cannot filter, or estimate a
-// store that cannot count). The four concrete types cover the presence or absence
-// of each capability, so the wrapped store's method set matches the original's.
+// newLoggingStore wraps st so every port call is logged at DEBUG. It selects
+// the narrowest wrapper that still advertises the optional capabilities of the
+// store. A wrapper that always claims FilteredScanner or Estimator
+// defeats the capability probe of the engine. The four concrete types cover each
+// combination of capabilities.
 func newLoggingStore(st store, lg *slog.Logger) store {
 	base := loggingStore{st: st, lg: lg}
 	fs, hasFS := st.(query.FilteredScanner)
@@ -67,13 +66,13 @@ func newLoggingStore(st store, lg *slog.Logger) store {
 	}
 }
 
-// loggingStore is the base decorator: it delegates every store method to the
-// wrapped store and logs the four data-path calls (Get/ScanBatches/Query, and
+// loggingStore is the base decorator. It delegates every store method to the
+// wrapped store. It logs the four data-path calls (Get/ScanBatches/Query, and
 // ScanFiltered on the capability wrapper) at DEBUG with a duration, the item
 // counts, and the error status. Close and FormatRaw pass through unlogged. It
-// holds the delegate as a field rather than embedding it, so it never promotes an
-// optional capability the delegate happens to satisfy — the capability wrappers
-// add those explicitly.
+// holds the delegate as a field, not embedded, so it never promotes an optional
+// capability that the delegate happens to satisfy. The capability wrappers add
+// those explicitly.
 type loggingStore struct {
 	st store
 	lg *slog.Logger

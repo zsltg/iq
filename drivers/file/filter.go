@@ -17,44 +17,29 @@ import (
 // filter compiles.
 var _ query.FilteredScanner = (*Store)(nil)
 
-// ScanFiltered answers the query.FilteredScanner port: it streams the dump like
-// ScanBatches but, before decoding, drops any record a pushed predicate provably
-// cannot match. The predicate is a conservative superset and the engine re-runs the
-// full jq over every returned page, so the prefilter only shrinks how much this
-// driver decodes — it never changes results.
+// ScanFiltered drops records that the pushed predicate provably cannot match,
+// before it decodes them. See query.FilteredScanner and rawpred.
 //
-// The prefilter runs only for an uncached typed-JSONL dump (iq's own {key,type,value}
-// JSON Lines / array, the sole format whose on-disk bytes are the JSON the engine
-// filters). Every other case falls back to the exact ScanBatches behavior: a non-JSONL
-// format (YAML/CSV/BSON/RDB/mongoexport/DynamoDB-AV/Neo4j-APOC), whose byte shape does
-// not match jq's view of the value, and a dump served from a fresh CBOR decode cache,
-// whose bytes are already-decoded CBOR a JSON prefilter can never read. Both of those
-// are already fast (the cache streams decoded records; a small dump decodes sub-perceptibly),
-// so the fallback costs nothing the prefilter would save.
+// The prefilter runs only for an uncached typed-JSONL dump. Typed JSONL is the
+// only format whose on-disk bytes are the JSON that the engine filters. Every
+// other format falls back to ScanBatches, because its byte shape does not match
+// the jq view of the value. A dump served from a fresh CBOR decode cache also
+// falls back, because a JSON prefilter cannot read decoded CBOR bytes.
 //
-// A prefiltered scan deliberately does NOT populate the decode cache: cache population
-// requires decoding every record, which is exactly the work the prefilter skips, so
-// teeing a cache here would defeat the optimization. A later full scan (ScanBatches /
-// TypedScan) still populates the cache as before; only this filtered path opts out.
+// A prefiltered scan does not populate the decode cache. The cache needs every
+// record decoded, which is the work that the prefilter skips.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if !s.prefilterable() {
-		// Non-JSONL format, or a fresh cache: the plain scan is already fast and its
-		// bytes are not filterable JSON, so re-use ScanBatches unchanged. checked stays
-		// zero, which the class tests assert as the bypass signature.
+		// The class tests assert that checked stays zero on this path.
 		return s.ScanBatches(ctx, fn)
 	}
-	// Prepare the predicate once for the whole scan: NewMatcher compiles every Regex
-	// pattern here so the per-record path never recompiles one.
 	matcher := rawpred.NewMatcher(pred)
 	return s.prefilterJSONL(ctx, matcher, fn)
 }
 
-// prefilterable reports whether ScanFiltered's raw-byte prefilter applies to this
-// store: the format must be typed JSONL (the only format whose stored bytes are the
-// JSON the engine filters over), and no fresh decode cache may exist (a cache stores
-// already-decoded CBOR, unfilterable, and streaming it is already fast). It reuses
-// the exact cacheSource freshness check, so the route decision and the cache read
-// agree on what "fresh" means.
+// prefilterable reports whether the raw-byte prefilter applies: the format is
+// typed JSONL and no fresh decode cache exists. It uses the same cacheSource
+// check as the cache read, so both agree on what "fresh" means.
 func (s *Store) prefilterable() bool {
 	if s.format != FormatJSONL {
 		return false
@@ -63,12 +48,9 @@ func (s *Store) prefilterable() bool {
 	return !fresh
 }
 
-// prefilterJSONL streams the dump's typed-JSONL bytes, dropping every record the
-// matcher proves cannot match before it is decoded, and hands the survivors to fn in
-// {key: value} pages. It reads the dump with the same query.JSONStream as
-// query.JSONSource, and puts one raw-byte check between reading a record's raw bytes
-// and decoding it. It never touches the decode cache, so a prefiltered scan leaves the
-// cache unpopulated.
+// prefilterJSONL streams the typed-JSONL dump with query.JSONStream. It checks
+// the raw bytes of each record against the matcher before it decodes the record.
+// It never touches the decode cache.
 func (s *Store) prefilterJSONL(ctx context.Context, matcher *rawpred.Matcher, fn func(batch map[string]any) error) error {
 	r, closeR, err := s.reader()
 	if err != nil {
@@ -90,13 +72,11 @@ type recordFilter struct {
 	checked, skipped *int
 }
 
-// drop reports whether the record in raw can be skipped without a decode. The matcher
-// runs over the envelope's raw `value` bytes, never the whole {key,type,value} line:
-// the engine filters over the value, so matching the whole envelope would evaluate the
-// predicate's paths against the wrong object. A value that cannot be extracted (a
-// malformed or value-less line) is not evaluated: it is left for
-// query.DecodeTypedRecord, which reports the same error the plain scan would. So is an
-// envelope that repeats `value`.
+// drop reports whether the record in raw can be skipped without a decode. The
+// matcher sees only the raw `value` bytes, because the engine filters over the
+// value and not over the whole {key,type,value} line. If the value cannot be
+// extracted (a malformed line, no value, or a repeated one), drop keeps the
+// record. query.DecodeTypedRecord then reports the same error as the plain scan.
 func (f recordFilter) drop(raw []byte) bool {
 	val, ok := typedValue(raw)
 	if !ok {
@@ -110,11 +90,10 @@ func (f recordFilter) drop(raw []byte) bool {
 	return true
 }
 
-// scanFilteredJSON scans a typed dump with a raw-byte prefilter spliced into the loop
-// of query.JSONSource. It reads either concatenated JSON objects (JSON Lines) or a
-// single top-level array, decodes each survivor with query.DecodeTypedRecord, and
-// flushes {key: value} pages of pageSize records, the same page shape ScanBatches
-// produces. The filter counts every record it evaluated and the subset it dropped.
+// scanFilteredJSON runs the raw-byte prefilter inside the loop of
+// query.JSONSource. It reads JSON Lines or one top-level array, decodes each
+// survivor, and flushes {key: value} pages of pageSize records. The filter counts
+// the records it evaluated and the records it dropped.
 func scanFilteredJSON(ctx context.Context, r io.Reader, f recordFilter, fn func(batch map[string]any) error) error {
 	stream, err := query.NewJSONStream(r)
 	if err != nil {
@@ -159,11 +138,11 @@ func recordBatch(recs []query.Record) map[string]any {
 	return batch
 }
 
-// typedValue returns the raw `value` of a typed record envelope, or ok=false when the
-// envelope is malformed, has no `value`, or repeats it. encoding/json matches field
-// names without regard to case and keeps the last match, so `value`, `Value` and
-// `VALUE` all count, and a repeated one cannot be judged from raw bytes: it goes to
-// the full decode.
+// typedValue returns the raw `value` of a typed record envelope. It returns
+// ok=false if the envelope is malformed, has no `value`, or repeats it.
+// encoding/json matches field names without case and keeps the last match, so
+// `value`, `Value` and `VALUE` all count. Raw bytes cannot judge a repeated
+// field, so the record goes to the full decode.
 func typedValue(raw []byte) ([]byte, bool) {
 	var val []byte
 	count := 0

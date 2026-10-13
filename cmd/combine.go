@@ -87,12 +87,12 @@ func newCombineCmd(cfg *config) *cobra.Command {
 // the error that reports one used without --insert.
 var combineWriteFlags = []string{"key", "key-field", "key-prefix", "type", "no-overwrite", "replace", "force", "dry-run"}
 
-// combineTransform builds the record transform a --insert run writes through,
-// and rejects the two shapes that cannot work. A combine emits values over a
-// null input, so no record carries a source key to inherit: without --key or
-// --key-field every record would fail at the write boundary with ErrNoKey, one
-// record into a partial copy, so it is refused here instead. The filter half of
-// the transform stays empty — the --with program already is the filter.
+// combineTransform builds the record transform that a --insert run writes
+// through. It rejects a run with neither --key nor --key-field. A combine emits
+// values over a null input, so no record has a source key to inherit. Without a
+// key every record fails at the write boundary with ErrNoKey, one record
+// into a partial copy. The filter half stays empty, because the --with program
+// is the filter.
 func combineTransform(cfg *config) (func(query.Record) ([]query.Record, error), error) {
 	if cfg.moveKey == "" && cfg.keyField == "" {
 		return nil, errors.New("--insert needs --key or --key-field: a combine emits values over a null input, so there are no source keys to write with")
@@ -255,13 +255,12 @@ func planCombine(cf *iqconfig.Config, specs []string) ([]combineStage, error) {
 	return stages, nil
 }
 
-// logStagePlan emits the structured "query plan" record for one combine stage at
-// INFO when the structured file/stream sink is active, so each cross-source
-// stage's classification, planned ops, and pushdown decisions are captured
-// (distinguished by the handle attr). Like logQueryPlan it is gated on the
-// structured sink, not the verbose sink, so a bare -v does not render the plan
-// twice. It shares buildSourcePlan with the --explain text, so the two never
-// drift; building the plan is skipped when the structured sink is off or below INFO.
+// logStagePlan emits the structured "query plan" record for one combine stage
+// at INFO. It runs only when the structured sink is active, not the verbose
+// sink, so a bare -v does not render the plan twice. The handle attr identifies
+// the stage. It shares buildSourcePlan with the --explain text, so the two
+// never drift. It skips building the plan when the structured sink is off or
+// below INFO.
 func (cfg *config) logStagePlan(url, handle, filter string) {
 	if !cfg.logStructured {
 		return

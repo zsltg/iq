@@ -8,14 +8,14 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// Put writes a batch of records into the table, keyed by primary key. Upsert issues
-// a plain INSERT, which Cassandra applies as an idempotent upsert; InsertOnly issues
-// INSERT ... IF NOT EXISTS (a lightweight transaction) and counts a row whose key
-// already exists as a skip. Every value is bound as a parameter — never string-built
-// — and coerced to its column's type; a value that cannot be represented, an unknown
-// column, or a record missing a primary-key column is a returned error, never a
-// silent drop. Cassandra's INSERT cannot tell an insert from an overwrite, so an
-// upsert pre-reads which keys already exist and counts those as Overwritten.
+// Put writes a batch of records into the table, keyed by primary key. Upsert
+// issues a plain INSERT, which Cassandra applies as an idempotent upsert.
+// InsertOnly issues INSERT ... IF NOT EXISTS (a lightweight transaction) and counts
+// a row whose key exists as a skip. Every value is a bound parameter, coerced to
+// its column type. A value that cannot be represented, an unknown column, or a
+// record without a primary-key column is an error, never a silent drop. An INSERT
+// cannot tell an insert from an overwrite, so an upsert pre-reads which keys exist
+// and counts them as Overwritten.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if s.meta == nil {
 		return query.WriteStat{}, errNoTable
@@ -95,12 +95,10 @@ func (s *Store) putPlain(ctx context.Context, batch []query.Record, existing map
 }
 
 // existingKeys returns which of a batch's non-empty keys already have a row, so an
-// upsert can report them as Overwritten. It reuses Get — one WHERE ... IN for a
-// single-column key, one point query per composite key — reading the rows only to
-// learn which keys are present. The read is accounting only: it never changes what
-// Put writes, and it is not atomic with the writes that follow, so a concurrent
-// insert between the two can skew the count by one. The rows written are always
-// correct.
+// upsert can report them as Overwritten. It uses Get: one WHERE ... IN for a
+// single-column key, one point query per composite key. The read is for the count
+// only and is not atomic with the writes, so a concurrent insert can skew the
+// count by one. The rows written are always correct.
 func (s *Store) existingKeys(ctx context.Context, batch []query.Record) (map[string]bool, error) {
 	keys := make([]string, 0, len(batch))
 	for _, r := range batch {

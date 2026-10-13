@@ -9,13 +9,11 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// ScanFiltered streams only the nodes a Cypher WHERE clause pre-selects for pred,
-// letting the server narrow the scan. pred is a conservative superset (the caller
-// re-runs the full jq per page), so returning extra nodes is safe and returning too
-// few is not. When pred compiles to nothing that narrows — a nested path Neo4j has
-// no property for, or an operator whose Cypher semantics could wrongly exclude a jq
-// match — the scan falls back to a plain label walk, which is both correct and
-// cheaper than a match-everything filter.
+// ScanFiltered lets the server narrow the scan with a Cypher WHERE clause for
+// pred. See query.FilteredScanner. If pred has no safe clause (a nested path with
+// no Neo4j property, or an operator whose Cypher semantics could wrongly exclude a
+// jq match), the scan is a plain label walk. That walk is cheaper than a
+// match-everything filter.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if s.target.name == "" {
 		return errNoLabel
@@ -47,14 +45,13 @@ func (b *cypherBuilder) param(v any) string {
 }
 
 // translate renders a neutral predicate as a Cypher boolean expression over the
-// bound node n. The second return is whether the expression actually narrows the
-// scan: false means the node (or an unsafe part of it) could not be pushed without
-// risking wrongly excluding a jq match, so the caller must fall back to a full scan.
-// Only pure-superset, over-inclusion-safe nodes are pushed: equality, key presence,
-// and their AND/OR combinations. Range comparisons (Cmp) are deliberately not
-// pushed — Cypher compares different types as null rather than by jq's cross-type
-// ordering, so a range clause could exclude a value jq keeps; the exact negations
-// (Ne, NoneMatch) and the polymorphic length/regex/any tests do not narrow either.
+// bound node n. The second return is false if the expression does not narrow the
+// scan: the node, or an unsafe part of it, cannot be pushed without risk of
+// wrongly excluding a jq match. Only pure-superset nodes are pushed: equality, key
+// presence, and their AND/OR combinations. Range comparisons (Cmp) are not pushed.
+// Cypher compares different types as null, not by the cross-type ordering of jq,
+// so a range clause could exclude a value that jq keeps. The exact negations (Ne,
+// NoneMatch) and the polymorphic length, regex, and any tests do not narrow.
 func (b *cypherBuilder) translate(n predicate.Node) (string, bool) {
 	switch t := n.(type) {
 	case predicate.Eq:

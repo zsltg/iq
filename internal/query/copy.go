@@ -136,17 +136,18 @@ func (o TransformOptions) empty() bool {
 	return o == TransformOptions{}
 }
 
-// NewTransform compiles opts into a record transform. It fails fast on a bad jq
-// expression. The returned func maps one source record to its destination
-// records, applying these keying rules:
+// NewTransform compiles opts into a record transform. It fails on a bad jq expression.
+// The returned func maps one source record to its destination records with these keying
+// rules:
 //   - no Filter: identity value, Type preserved, key = source key (or KeyField).
 //   - Filter set, one output: key = source key unless Key/KeyField overrides.
 //   - Filter set, many outputs: each needs its own key, so Key or KeyField is
-//     required; otherwise it is ErrNoKey (a single source key cannot cover them).
+//     required. Otherwise the result is ErrNoKey (a single source key cannot cover
+//     them).
 //
-// A reshaping Filter stamps Type from opts.Type (may be empty; a typed
-// destination then rejects the record, so the ambiguity surfaces at the edge that
-// knows it needs a type).
+// A reshaping Filter stamps Type from opts.Type, which can be empty. A typed
+// destination then rejects the record, so the error surfaces at the edge that needs a
+// type.
 func NewTransform(opts TransformOptions) (func(Record) ([]Record, error), error) {
 	if opts.empty() {
 		return nil, nil

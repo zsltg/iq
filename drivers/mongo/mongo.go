@@ -70,14 +70,13 @@ func CollectionFromURI(uri string) string {
 	return c
 }
 
-// Open connects to the MongoDB server named by a mongodb:// URI and verifies the
-// connection with a ping so a bad URI or unreachable server fails fast. The
-// database is taken from the URI path. The collection (the jq keyspace, may be
-// empty for raw-only use) is the address override when non-empty, else the URI's
-// ?collection= default. When trace is non-nil, each query command the driver
-// issues is logged to it (the CLI's --verbose trace); handshake and auth commands
-// are omitted, so no credential is written. dec chooses how Decimal128 values are
-// presented to the filter.
+// Open connects to the MongoDB server named by a mongodb:// URI. A ping makes a
+// bad URI or unreachable server fail fast. The database comes from the URI path.
+// The collection (the jq keyspace, empty for raw-only use) is the address override
+// if non-empty, else the URI's ?collection= default. If trace is non-nil, each
+// query command is logged to it. Handshake and auth commands are omitted, so no
+// credential is written. dec chooses how Decimal128 values are presented to the
+// filter.
 func Open(ctx context.Context, uri, address string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	uri, def := SplitCollection(uri)
 	collection := address
@@ -161,10 +160,8 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 	return s.scanWith(ctx, bson.M{}, fn)
 }
 
-// ScanFiltered streams only the documents matching pred, translating it to a
-// native Mongo query so the server does the filtering. pred is a conservative
-// superset (the caller re-runs the full jq), so returning extra documents is
-// safe and returning too few is not — which is why only equality is pushed.
+// ScanFiltered translates pred to a native Mongo query. See
+// query.FilteredScanner. Only equality is pushed.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	return s.scanWith(ctx, toFilter(pred), fn)
 }

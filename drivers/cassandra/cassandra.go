@@ -1,13 +1,11 @@
 // Package cassandra adapts an Apache Cassandra table to the query ports. A table
-// is modelled as Map[key, row]: a row's full primary key (partition-key columns
-// followed by clustering columns), rendered to a string, is the key; the row, each
-// column normalized to a JSON-ready value, is the value. The jq filter runs
-// client-side over rows fetched by primary key or streamed from the table, so the
-// semantics match every other backend behind the KV port.
+// is modelled as Map[key, row]. The key is the full primary key (partition-key
+// columns, then clustering columns), rendered to a string. The value is the row,
+// with each column normalized to a JSON-ready value.
 //
 // A single-column primary key renders as its bare canonical string (like Mongo's
-// _id); a composite primary key renders as a JSON array of the key columns in
-// schema order. Reversing a key back to typed bind values needs the table schema,
+// _id). A composite primary key renders as a JSON array of the key columns in
+// schema order. Reversing a key to typed bind values needs the table schema,
 // which is read once at connect time.
 package cassandra
 
@@ -61,14 +59,13 @@ type connConfig struct {
 	consistency gocql.Consistency
 }
 
-// Open connects to the Cassandra cluster named by a cassandra:// URL and verifies
-// the connection by establishing a session (which fails fast on a bad URL or an
-// unreachable cluster). The keyspace is taken from the URL path; the table (the jq
-// keyspace, may be empty for raw-only use) is the address override when non-empty,
-// else the URL's ?table= default. When a table is selected its schema is read once
-// so keys can be encoded and reversed. When trace is non-nil, each executed CQL
-// statement is logged to it (the CLI's --verbose trace) with bind values redacted.
-// dec chooses how decimal values are presented to the filter.
+// Open connects to the Cassandra cluster named by a cassandra:// URL. It opens a
+// session, which fails fast on a bad URL or an unreachable cluster. The keyspace
+// comes from the URL path. The table (the jq keyspace, empty for raw-only use) is
+// the address override if non-empty, else the URL's ?table= default. A selected
+// table has its schema read once, so keys can be encoded and reversed. If trace is
+// non-nil, each CQL statement is logged to it with bind values redacted. dec
+// chooses how decimal values are presented to the filter.
 func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	cc, err := parseURL(rawURL, address)
 	if err != nil {

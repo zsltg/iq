@@ -71,10 +71,10 @@ type bulkError struct {
 	Reason string `json:"reason"`
 }
 
-// tallyBulk reduces a _bulk response's per-item outcomes to a write stat: a 409 is a
-// skipped insert-only conflict, any other error fails the whole batch, an "updated"
-// result is an overwrite, and everything else (a "created" or other success) is a new
-// write. Each item map carries exactly one action, so the inner loop runs once.
+// tallyBulk reduces a _bulk response's per-item outcomes to a write stat. A 409 is a
+// skipped insert-only conflict. Any other error fails the batch. An "updated" result
+// is an overwrite. Everything else is a new write. Each item map has one action, so
+// the inner loop runs once.
 func tallyBulk(items []map[string]bulkItem) (query.WriteStat, error) {
 	var stat query.WriteStat
 	for _, item := range items {
@@ -185,9 +185,9 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 }
 
 // tallyBulkDelete reduces a _bulk delete response's per-item outcomes to a delete
-// stat: a "deleted" result is a document that existed and was removed, a "not_found"
-// one that was already absent (Missing, not an error), and any actual error fails the
-// batch. Each item map carries exactly one action, so the inner loop runs once.
+// stat. A "deleted" result is a document that existed. A "not_found" result is
+// Missing, not an error. Any other error fails the batch. Each item map has one
+// action, so the inner loop runs once.
 func tallyBulkDelete(items []map[string]bulkItem) (query.DeleteStat, error) {
 	var stat query.DeleteStat
 	for _, item := range items {

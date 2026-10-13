@@ -12,17 +12,16 @@ import (
 )
 
 // Put writes a batch of records into the table, keyed by row key. Upsert issues a
-// plain Put, which HBase applies as an idempotent overwrite of the named cells;
-// InsertOnly issues an atomic CheckAndPut guarded on the absence of the row's first
-// cell (lexicographically smallest family:qualifier), counting a row whose guard cell
-// already exists as a skip. HBase has no whole-row "insert if absent" primitive — the
-// check is per-cell — so a row that exists but lacks that specific guard cell is still
-// written; document your rows carry a stable first column for exact insert-only
-// semantics. Every value is encoded through its column's declared type; a value that
-// cannot be represented, or a record whose value is not a row object, is a returned
-// error, never a silent drop. A plain Put reply cannot tell an insert from an
-// overwrite, so an upsert pre-reads each row's existence to report Overwritten; see
-// rowExists for the accounting-only, non-atomic caveat.
+// plain Put, which HBase applies as an idempotent overwrite of the named cells.
+// InsertOnly issues an atomic CheckAndPut guarded on the absence of the first cell
+// of the row (the smallest family:qualifier), and counts a row whose guard cell
+// exists as a skip. HBase has no whole-row "insert if absent" primitive. So a row
+// that exists but lacks the guard cell is still written. For exact insert-only
+// semantics, give every row a stable first column. Every value is encoded through
+// its column type. A value that cannot be represented, or a record whose value is
+// not a row object, is an error, never a silent drop. A Put reply cannot tell an
+// insert from an overwrite, so an upsert pre-reads each row to report Overwritten.
+// See rowExists for the caveat.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if s.table == "" {
 		return query.WriteStat{}, errNoTable
@@ -129,14 +128,12 @@ func tally(stat *query.WriteStat, o putOutcome) {
 	}
 }
 
-// rowExists reports whether a row already has any cell, the existence check an upsert
-// makes to count an overwrite. It issues an existence-only Get, so the region server
-// answers whether the row exists without shipping any cell. It resolves the reply's
-// Exists flag when the server sets it, falling back to the presence of cells otherwise
-// (the in-memory test client returns cells, not the flag). The check is accounting
-// only: it never changes what Put writes, and it is not atomic with the write that
-// follows, so a concurrent insert between the two can skew the count by one. The row
-// written is always correct.
+// rowExists reports whether a row has any cell. An upsert uses it to count an
+// overwrite. It issues an existence-only Get, so the region server ships no cell.
+// It reads the Exists flag of the reply if the server sets it, else the presence of
+// cells (the in-memory test client returns cells, not the flag). The check is for
+// the count only and is not atomic with the write, so a concurrent insert can skew
+// the count by one. The row written is always correct.
 func (s *Store) rowExists(ctx context.Context, rk []byte) (bool, error) {
 	s.traceOp("exists %s", s.table)
 	req, err := hrpc.NewGet(ctx, []byte(s.table), rk)

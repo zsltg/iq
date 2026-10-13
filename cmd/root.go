@@ -22,9 +22,9 @@ import (
 )
 
 // config holds the per-invocation settings. url, source, and handle are not
-// flags: they are resolved from the selected source (--src or the active source)
-// before the store opens. source and handle carry the stored source so a command
-// can render its location honouring --reveal/--expand.
+// flags: they come from the selected source (--src or the active source) before
+// the store opens. source and handle carry the stored source so a command can
+// render its location with --reveal/--expand.
 type config struct {
 	src        string
 	configPath string
@@ -101,10 +101,9 @@ type config struct {
 	logClose  func() error
 	pprofStop func()
 	// logStructured is true when the structured file/stream sink is active
-	// (logOptions.fileActive). It gates the INFO "query plan" record so that a bare
-	// --verbose run — whose tinted sink already renders the pretty plan text — does
-	// not also emit the one-line structured record; the record is for the structured
-	// sink, never the verbose sink alone.
+	// (logOptions.fileActive). It gates the INFO "query plan" record, so a bare
+	// --verbose run, whose tinted sink already renders the pretty plan, does
+	// not also emit the structured record.
 	logStructured bool
 	// trace, when non-nil, is where a driver writes its live command trace (set
 	// to stderr for the duration of a --verbose run); nil disables tracing.
@@ -484,8 +483,8 @@ func logFailure(cfg *config, err error) {
 
 // Execute runs the CLI. It is the composition root: it builds a signal-aware
 // context, runs the root command, finalizes the diagnostics resources opened in
-// PersistentPreRunE (on both success and error paths), and maps any error to a
-// rendered stderr message and a non-zero exit code.
+// PersistentPreRunE (on success and error), and maps any error to a rendered
+// stderr message and a non-zero exit code.
 func Execute() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

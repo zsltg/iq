@@ -797,10 +797,10 @@ func insertTransformOptions(in mcpInsertInput) query.TransformOptions {
 	}
 }
 
-// insertRequestFrom states the tool inputs as the write request both delivery
-// mechanisms share. no_overwrite is on unless the call turns it off, and the
-// confirmation was answered in protocol before this point, so the request never
-// prompts; --force has no meaning on this surface.
+// insertRequestFrom states the tool inputs as the write request that both
+// delivery mechanisms share. no_overwrite is on unless the call turns it off.
+// The protocol answered the confirmation before this point, so the request
+// never prompts. --force has no meaning on this surface.
 func insertRequestFrom(in mcpInsertInput) insertRequest {
 	mode := query.InsertOnly
 	if !boolOr(in.NoOverwrite, true) {
@@ -986,12 +986,12 @@ func (s *mcpServer) lifecycleTarget(arg, op string) (endpoint, error) {
 	return t, nil
 }
 
-// confirmation gates a destructive call. It returns ok when the call may proceed:
-// either the caller passed confirm, or a previous round trip came back with the
-// user accepting. Otherwise it returns the result to send back — an input-required
-// result carrying the confirmation when the client can elicit one (the 2026-07-28
-// multi round-trip mechanism, which the SDK also fulfills for older clients), and
-// an error result naming what to pass when it cannot.
+// confirmation gates a destructive call. It returns ok when the call can
+// proceed: the caller passed confirm, or a previous round trip came back with
+// the user accepting. Otherwise it returns the result to send back. If the
+// client can elicit a confirmation, that is an input-required result (the
+// 2026-07-28 multi round-trip mechanism, which the SDK also fulfills for older
+// clients). If not, it is an error result that names what to pass.
 func (s *mcpServer) confirmation(req *mcp.CallToolRequest, confirmed bool, action string) (*mcp.CallToolResult, bool) {
 	if confirmed {
 		return nil, true

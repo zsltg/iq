@@ -25,13 +25,13 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// driver describes one backend iq can talk to: a stable name, a human
-// description, the URI schemes that select it, its upstream docs, and the opener
-// that connects. The drivers registry below is the single source of truth —
-// openStore, supportedScheme, driverForScheme, driverName, and `iq driver ls`
-// all derive from it, so adding a backend is one entry, not edits scattered
-// across a switch. It lives in cmd, the composition root, because open returns
-// the cmd-local store port and takes the per-invocation config.
+// driver describes one backend iq can talk to: a stable name, a description,
+// the URI schemes that select it, its upstream docs, and the opener. The
+// drivers registry below is the single source of truth. openStore,
+// supportedScheme, driverForScheme, driverName, and `iq driver ls` all derive
+// from it, so a new backend is one entry. It lives in cmd, the composition
+// root, because open returns the cmd-local store port and takes the
+// per-invocation config.
 type driver struct {
 	name    string
 	desc    string
@@ -41,9 +41,9 @@ type driver struct {
 	// library supports, shown by `iq driver ls`.
 	versions string
 	// readOnly marks a local, connection-less backend (a dump file) that iq can
-	// only read: it has no write-side describers, is never a copy destination, and
-	// has no upstream server to suggest — so doc/versions may be empty for it and
-	// it is left out of the connection-scheme hint in error messages.
+	// only read. It has no write-side describers, is never a copy destination,
+	// and has no upstream server to suggest. So doc and versions can be empty,
+	// and the connection-scheme hint in error messages leaves it out.
 	readOnly bool
 	// formats is the dump-format catalogue a read-only file driver advertises under
 	// `iq driver ls -v`; it keeps the summary description short while the format
@@ -63,30 +63,30 @@ type driver struct {
 	// part names, when the host is not a plain server.
 	uriExample string
 	uriNote    string
-	// verifiesOnOpen marks a backend whose open already round-trips to the server
-	// (DynamoDB's connectionless client issues a reachability probe at open), so the
-	// post-open health check in `iq ping`/`iq add` needs no second round-trip — like
-	// a read-only source, opening it is the reachability check.
+	// verifiesOnOpen marks a backend whose open already round-trips to the
+	// server (the connectionless DynamoDB client issues a reachability probe at
+	// open). The post-open health check of `iq ping` and `iq add` then needs no
+	// second round-trip.
 	verifiesOnOpen bool
-	// filtersScan marks a driver that narrows a scan with a pushed predicate —
-	// server-side, or a client-side raw-byte prefilter (Redis) — i.e. one that
-	// implements the FilteredScanner capability. It mirrors that capability so
-	// `--explain` can tell a conjunct a backend declined from a driver that never
-	// filters a scan at all (the read-only file driver), reporting each conjunct as
-	// client-side with the right reason. A driver that leaves it false is scanned
-	// whole and filtered client-side.
+	// filtersScan marks a driver that implements the FilteredScanner
+	// capability: it narrows a scan with a pushed predicate, on the server or
+	// with a client-side raw-byte prefilter (Redis). `--explain` uses it to
+	// tell a conjunct that a backend declined from a driver that never filters
+	// a scan (the read-only file driver), and to give the right client-side
+	// reason. A driver with false is scanned whole and filtered client-side.
 	filtersScan bool
 	open        func(ctx context.Context, cfg *config) (store, error)
 	// explainPlan describes, without connecting, the backend calls this driver
 	// would make for a classified query and pushed predicate — the data the query
 	// plan (--explain/--verbose) shows.
 	explainPlan func(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan
-	// explainWrite, explainClear, explainDrop, and explainDelete are the write-side
-	// counterparts: each describes an `iq data` operation without connecting, so
-	// `--explain` stays connection-free. explainDrop's and explainDelete's bool
-	// reports whether the backend supports the operation at all (drop is false for
-	// Redis, whose DB index is not removable; delete is nil for a backend with no
-	// per-key identity, such as the read-only file driver).
+	// explainWrite, explainClear, explainDrop, and explainDelete are the
+	// write-side counterparts. Each describes an `iq data` operation without
+	// connecting, so `--explain` stays connection-free. The bool of explainDrop
+	// and explainDelete reports whether the backend supports the operation at
+	// all. Drop is false for Redis, whose DB index is not removable. Delete is
+	// nil for a backend with no per-key identity, such as the read-only file
+	// driver.
 	explainWrite  func(mode query.WriteMode) query.AccessPlan
 	explainClear  func() query.AccessPlan
 	explainDrop   func() (query.AccessPlan, bool)
@@ -325,10 +325,10 @@ func (d driver) addressParams() []string {
 	return names
 }
 
-// ownParams names the non-keyspace query params a backend reads for its own
-// purposes, so the foreign-keyspace guard does not mistake one for a keyspace it
-// cannot honour: the file driver takes ?label= and ?rel= as decode hints for a
-// graph dump.
+// ownParams names the non-keyspace query params that a backend reads itself, so
+// the foreign-keyspace guard does not mistake one for a keyspace it cannot
+// honour. The file driver takes ?label= and ?rel= as decode hints for a graph
+// dump.
 func (d driver) ownParams() []string {
 	var names []string
 	for _, p := range d.params {

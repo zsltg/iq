@@ -1,10 +1,9 @@
-// Package pushdown compiles the equality predicate of a jq select(...) filter
-// into a backend-neutral predicate, so a backend can pre-filter server-side
-// instead of streaming its whole collection. It only extracts what is provably a
-// conservative *superset* of the jq semantics — positive equality combined with
-// and/or — because the caller always re-runs the full jq client-side, which can
-// strip extra results but cannot recover missing ones. Ranges, negation, regex,
-// and everything else are left to that client-side pass.
+// Package pushdown compiles the predicate of a jq select(...) filter into a
+// backend-neutral predicate, so a backend can pre-filter on the server and not stream
+// its whole collection. It extracts only what is provably a conservative *superset* of
+// the jq semantics. The caller always re-runs the full jq client-side, which can strip
+// extra results but cannot recover missing ones. The client-side pass handles
+// everything that the compiler cannot prove.
 package pushdown
 
 import (
@@ -42,14 +41,14 @@ func Compile(q *gojq.Query) (predicate.Node, bool) {
 	}
 }
 
-// elementSelects returns the arguments of the select(...) stages that test the
-// element itself. stages[0] must be a bare `.[]` (or `.[]?`): a head such as
-// `.[].b` already hands a derived value to the next stage. The element reaches a
-// stage unchanged only through select(...) and identity (`.`) stages, so the walk
-// stops at the first other stage: a select after `.b`, `map(...)` or `{b: .a}`
-// tests a derived value, not the element, and a predicate on the element would
-// drop an element that the filter keeps. The selects before that stage still hold
-// for every element that reaches the output, so their predicates stay a superset.
+// elementSelects returns the arguments of the select(...) stages that test the element
+// itself. stages[0] must be a bare `.[]` (or `.[]?`): a head such as `.[].b` already
+// hands a derived value to the next stage. The element reaches a stage unchanged only
+// through select(...) and identity (`.`) stages, so the walk stops at the first other
+// stage. A select after `.b`, `map(...)` or `{b: .a}` tests a derived value, and a
+// predicate on the element drops an element that the filter keeps. The selects
+// before that stage hold for every element that reaches the output, so their predicates
+// stay a superset.
 func elementSelects(stages []*gojq.Query) []*gojq.Query {
 	if head := stages[0].String(); head != ".[]" && head != ".[]?" {
 		return nil
@@ -435,10 +434,10 @@ func parenQuery(q *gojq.Query) (*gojq.Query, bool) {
 	return t.Query, true
 }
 
-// negate pushes `inner | not`. A negation cannot use the superset-and-re-run
-// safety net (negating a superset yields a subset that silently drops matching
-// documents), so it extracts inner through extractExact — which never widens —
-// and pushes only equality, existence, or an any() over an exact condition.
+// negate pushes `inner | not`. Negating a superset yields a subset that silently drops
+// matching documents, so the superset-and-re-run safety net does not apply. negate
+// extracts inner through extractExact, which never widens, and pushes only equality,
+// existence, or an any() over an exact condition.
 func negate(inner *gojq.Query) (predicate.Node, bool) {
 	p, ok := extractExact(inner)
 	if !ok {
@@ -457,12 +456,12 @@ func negate(inner *gojq.Query) (predicate.Node, bool) {
 }
 
 // extractExact builds a predicate that represents e *exactly*, never a widened
-// superset, or ok=false when no such predicate exists. It is the negation-safe
-// counterpart to extractPred: extractPred may drop an uncompilable conjunct of an
-// `and` (safe positively, because the client re-runs jq), but negating that
-// widened result yields a subset that drops matching documents. Only positive
-// equality, existence, an any() over an exact condition, and an and/or of those
-// are exact; a range, regex, !=, size, or a widened `and` is not.
+// superset, or returns ok=false if none exists. It is the negation-safe counterpart of
+// extractPred. extractPred can drop an uncompilable conjunct of an `and`, which is safe
+// positively because the client re-runs jq, but negating that widened result yields a
+// subset that drops matching documents. Only positive equality, existence, an any()
+// over an exact condition, and an and/or of those are exact. A range, regex, !=, size,
+// or a widened `and` is not.
 func extractExact(e *gojq.Query) (predicate.Node, bool) {
 	// Unwrap a parenthesized sub-expression, matching extractPred.
 	if inner, ok := parenQuery(e); ok {
@@ -568,13 +567,13 @@ func stringLit(q *gojq.Query) (string, bool) {
 	return s, ok
 }
 
-// portableFlags reports whether flags are ones jq accepts and a backend can
-// translate exactly. gojq accepts only i, m, g; of those we push i
-// (case-insensitive) and m (jq's "dot matches newline", i.e. dotall), each
-// backend mapping them to its own engine's spelling (see the mongo translator's
-// mongoOptions). g only affects how many matches the test family collects, never
-// test()'s boolean, so it is left to the client. s is not a jq flag at all (gojq
-// rejects it at runtime), so it is never portable.
+// portableFlags reports whether flags are ones jq accepts and a backend can translate
+// exactly. gojq accepts only i, m, and g. The code pushes i (case-insensitive) and m
+// (jq's "dot matches newline", that is dotall). Each backend maps them to its own
+// engine's spelling (see the mongo translator's mongoOptions). The flag g only changes
+// how many matches the test family collects, never test()'s boolean, so it stays with
+// the client. The flag s is not a jq flag (gojq rejects it at runtime), so it is never
+// portable.
 func portableFlags(flags string) bool {
 	for _, c := range flags {
 		if c != 'i' && c != 'm' {
@@ -584,13 +583,13 @@ func portableFlags(flags string) bool {
 	return true
 }
 
-// portableRegex reports whether a pattern uses only constructs that Oniguruma
-// (jq's engine) and PCRE (MongoDB's) interpret identically, so pushing it cannot
-// change which documents match. It is deliberately conservative: an unrecognized
-// construct means "not portable", leaving the filter to the client-side pass.
-// Rejected: group extensions `(?...)` (lookaround, named, inline flags, atomic),
-// POSIX classes `[[:...:]]`, possessive quantifiers, backreferences, unicode
-// property escapes, and any other engine-specific escape.
+// portableRegex reports whether a pattern uses only constructs that Oniguruma (jq's
+// engine) and PCRE (MongoDB's) interpret identically, so pushing it cannot change which
+// documents match. It is conservative: an unrecognized construct means "not portable",
+// and the client-side pass handles the filter. It rejects group extensions `(?...)`
+// (lookaround, named, inline flags, atomic), POSIX classes `[[:...:]]`, possessive
+// quantifiers, backreferences, unicode property escapes, and any other engine-specific
+// escape.
 func portableRegex(p string) bool {
 	i := 0
 	for i < len(p) {
@@ -639,15 +638,15 @@ func badPair(p string, i int) bool {
 	}
 }
 
-// portableEscape reports whether a backslash escape means the same, or a
-// superset, across engines — pushing it must never drop a document jq keeps. The
-// ASCII shorthand classes and word boundaries qualify, with one exception: \S is
-// not portable. Go's RE2 \s omits the vertical tab (U+000B) that PCRE's \s
-// includes, so RE2's \S matches a vertical tab PCRE's \S does not — pushing \S to
-// a PCRE backend would narrow the match. \s diverges the other way (the pushed
-// set is a superset), which the client-side re-run corrects, so it stays. An
-// escaped punctuation character is a literal and qualifies; a digit
-// (backreference) or any other letter (engine-specific, e.g. \p, \h, \A) does not.
+// portableEscape reports whether a backslash escape means the same, or a superset,
+// across engines. Pushing it must never drop a document that jq keeps. The ASCII
+// shorthand classes and word boundaries qualify, except \S. Go's RE2 \s omits the
+// vertical tab (U+000B) that PCRE's \s includes, so RE2's \S matches a vertical tab
+// that PCRE's \S does not. Pushing \S to a PCRE backend narrows the match. \s
+// diverges the other way (the pushed set is a superset), which the client-side re-run
+// corrects, so it stays. An escaped punctuation character is a literal and qualifies. A
+// digit (backreference) or any other letter (engine-specific, for example \p, \h, \A)
+// does not.
 func portableEscape(b byte) bool {
 	switch b {
 	case 'd', 'D', 'w', 'W', 's', 'b', 'B', 'n', 't', 'r', 'f', 'v':
@@ -734,13 +733,13 @@ func suffixName(s *gojq.Suffix) (string, bool) {
 	return indexName(s.Index)
 }
 
-// safeField reports whether a field name is safe to push as a backend path
-// component. A name containing a dot is rejected because a backend that joins the
-// path with dots (Mongo) would read it as a nested path and query the wrong
-// field. A name beginning with '$' is rejected because it would land in operator
-// position in a document-query backend — Mongo's `$where`/`$expr`, a CouchDB
-// Mango selector key — turning an unsanitized field name into a server-side
-// operator; the field is left to the client-side pass instead.
+// safeField reports whether a field name is safe to push as a backend path component.
+// It rejects a name that contains a dot, because a backend that joins the path with
+// dots (Mongo) reads it as a nested path and queries the wrong field. It rejects a name
+// that begins with '$', because it lands in operator position in a document-query
+// backend (Mongo's `$where` or `$expr`, a CouchDB Mango selector key) and turns an
+// unsanitized field name into a server-side operator. The client-side pass handles such
+// fields.
 func safeField(name string) bool {
 	return !strings.Contains(name, ".") && !strings.HasPrefix(name, "$")
 }

@@ -514,10 +514,10 @@ func migrateRollback(done []keyringStaged) {
 }
 
 // newConfigKeyringPruneCmd builds `iq config keyring prune`: delete keyring
-// entries that no live source uses. Because the keyring cannot be enumerated,
-// "stale" is only detectable for sources still in the config that are not
-// keyring-backed yet still have an entry (left by a crash, a failed rm, or a
-// migrate); entries for deleted sources cannot be found.
+// entries that no live source uses. The keyring cannot be enumerated. So
+// "stale" is detectable only for a source that is still in the config, is not
+// keyring-backed, and still has an entry (left by a crash, a failed rm, or a
+// migrate). Entries for deleted sources cannot be found.
 func newConfigKeyringPruneCmd() *cobra.Command {
 	var dryRun bool
 	c := &cobra.Command{

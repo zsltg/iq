@@ -16,21 +16,14 @@ import (
 // raw-byte prefilter, so the engine prefers it over a plain ScanBatches.
 var _ query.FilteredScanner = (*Store)(nil)
 
-// ScanFiltered answers the query.FilteredScanner port: it walks the whole keyspace
-// like ScanBatches but drops, before decoding, any RedisJSON document a pushed
-// predicate provably cannot match. The predicate is a conservative superset and
-// the engine re-runs the full jq over every returned page, so a client-side
-// prefilter only shrinks how much this driver decodes and returns — it never
-// changes results.
+// ScanFiltered walks the whole keyspace like ScanBatches and drops RedisJSON
+// documents that the predicate provably cannot match, before it decodes them.
+// See query.FilteredScanner and rawpred.
 //
-// The prefilter is byte-level and applies only to RedisJSON values, the sole Redis
-// type that pays a JSON decode. Every other type (string, hash, list, set, zset,
-// stream, missing) is normalized and returned exactly as ScanBatches does, so the
-// engine's re-filter preserves the current mixed-keyspace semantics, including
-// jq's behaviour on non-object values.
+// Only RedisJSON values are prefiltered, because they are the only Redis type
+// that pays a JSON decode. Every other type is normalized and returned as
+// ScanBatches returns it.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
-	// Prepare the predicate once for the whole scan: NewMatcher compiles every Regex
-	// pattern here, so the per-document prefilter never recompiles one.
 	matcher := rawpred.NewMatcher(pred)
 	build := func(ctx context.Context, keys []string) (map[string]any, error) {
 		return s.getFiltered(ctx, keys, matcher)
@@ -38,12 +31,10 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	return s.scanPages(ctx, build, fn)
 }
 
-// getFiltered fetches a page like Get, but for RedisJSON keys it runs the raw
-// JSON.GET reply through rawpred against pred and omits any key the predicate
-// provably rejects, so a dropped document is never decoded. Every non-RedisJSON
-// key normalizes and is included exactly as Get does — the engine re-filters those
-// with the full jq. It costs the same two round-trips as Get regardless of key
-// count.
+// getFiltered fetches a page like Get. For RedisJSON keys, it matches the raw
+// JSON.GET reply with rawpred and omits each key that the predicate provably
+// rejects. The engine re-filters the other keys. It costs the same two
+// round-trips as Get for any key count.
 func (s *Store) getFiltered(ctx context.Context, keys []string, matcher *rawpred.Matcher) (map[string]any, error) {
 	unique := dedupe(keys)
 

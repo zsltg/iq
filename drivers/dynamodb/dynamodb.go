@@ -1,19 +1,17 @@
 // Package dynamodb adapts an Amazon DynamoDB table to the query ports. A table is
-// modelled as Map[key, item]: an item's full primary key (the partition key, then
-// the sort key when the table has one), rendered to a string, is the key; the item,
-// each attribute normalized to a JSON-ready value, is the value. The jq filter runs
-// client-side over items fetched by primary key or streamed from the table, so the
-// semantics match every other backend behind the KV port.
+// modelled as Map[key, item]. The key is the full primary key (the partition key,
+// then the sort key if the table has one), rendered to a string. The value is the
+// item, with each attribute normalized to a JSON-ready value.
 //
-// A partition-key-only table renders its key as the partition value's bare canonical
-// string (like Mongo's _id); a table with a sort key renders a JSON array of the two
-// key attributes in schema order. Reversing a key back to typed DynamoDB values needs
-// the table's key schema, which is read once at connect time.
+// A partition-key-only table renders its key as the bare canonical string of the
+// partition value (like Mongo's _id). A table with a sort key renders a JSON array
+// of the two key attributes in schema order. Reversing a key to typed DynamoDB
+// values needs the key schema of the table, which is read once at connect time.
 //
-// Credentials never travel in the URL: the AWS default credential chain (environment,
-// shared config, IAM role) resolves them, so a secret never touches iq's config or
-// keyring. When ?endpoint= points at DynamoDB Local, non-secret static dummy
-// credentials are supplied because the local emulator ignores them.
+// Credentials never travel in the URL. The AWS default credential chain
+// (environment, shared config, IAM role) resolves them, so a secret never touches
+// iq's config or keyring. If ?endpoint= points at DynamoDB Local, non-secret dummy
+// credentials are supplied, because the emulator ignores them.
 package dynamodb
 
 import (
@@ -100,14 +98,13 @@ type connConfig struct {
 	endpoint string
 }
 
-// Open connects to DynamoDB in the region named by a dynamodb:// URL and verifies
-// the connection with a bounded ListTables probe (the SDK client is otherwise lazy,
-// so this is what fails fast on a bad region, endpoint, or credentials). The table
-// (the jq keyspace, may be empty for raw-only use) is the address override when
-// non-empty, else the URL's ?table= default. When a table is selected its key schema
-// is read once so keys can be encoded and reversed. When trace is non-nil, each SDK
-// operation is logged to it (the CLI's --verbose trace) with parameters redacted. dec
-// chooses how numeric values are presented to the filter.
+// Open connects to DynamoDB in the region named by a dynamodb:// URL. A bounded
+// ListTables probe makes a bad region, endpoint, or credentials fail fast, because
+// the SDK client is lazy. The table (the jq keyspace, empty for raw-only use) is
+// the address override if non-empty, else the URL's ?table= default. A selected
+// table has its key schema read once, so keys can be encoded and reversed. If
+// trace is non-nil, each SDK operation is logged to it with parameters redacted.
+// dec chooses how numeric values are presented to the filter.
 func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	cc, err := parseURL(rawURL, address)
 	if err != nil {

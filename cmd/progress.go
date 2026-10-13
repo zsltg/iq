@@ -28,16 +28,16 @@ const (
 )
 
 // progressMeter renders a scan-progress spinner on stderr while a query walks a
-// keyspace. It is driven by the core's per-page RunOptions.OnPage hook (see
-// Tick), keeping the query core UI-agnostic. A nil *progressMeter is a working
-// no-op: every method is nil-safe, so callers wire it unconditionally and the
-// constructor returns nil when progress is off or stderr is not a terminal.
+// keyspace. The per-page RunOptions.OnPage hook of the core drives it (see
+// Tick), so the core stays UI-agnostic. A nil *progressMeter is a working
+// no-op: every method is nil-safe, and the constructor returns nil when
+// progress is off or stderr is not a terminal.
 //
 // Coordination with streamed stdout: the container uses manual refresh, and the
-// animation ticker skips a repaint whenever stdout was written within
-// progressQuietWindow. During a sparse streaming scan (the case a spinner helps
-// most) stdout is quiet, so the spinner animates; during a dense burst the
-// spinner holds still rather than interleaving with the rows.
+// animation ticker skips a repaint when stdout was written within
+// progressQuietWindow. In a sparse streaming scan stdout is quiet, so the
+// spinner animates. In a dense burst the spinner holds still and does not
+// interleave with the rows.
 type progressMeter struct {
 	prog    *mpb.Progress
 	refresh chan any

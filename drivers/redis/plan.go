@@ -11,11 +11,10 @@ import (
 
 // ExplainPlan describes the Redis calls this driver would make for a classified
 // query, without connecting. Redis pushes no filter to the server (a scan always
-// uses MATCH *), but when a predicate compiles it prefilters each RedisJSON
-// document client-side against its raw bytes, dropping a provable non-match before
-// decode; the ops reflect the pipelined TYPE + per-type read the driver issues,
-// and Filter carries the compiled predicate the prefilter applies (nil when none
-// compiles, or for a bounded key read).
+// uses MATCH *). If a predicate compiles, the driver prefilters each RedisJSON
+// document client-side against its raw bytes. The ops show the pipelined TYPE and
+// per-type read. Filter carries the compiled predicate that the prefilter applies,
+// and is nil if none compiles or for a bounded key read.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.AccessPlan {
 	const typedReads = "then per key by type: GET / HGETALL / LRANGE 0 -1 / SMEMBERS / ZRANGE 0 -1 WITHSCORES / JSON.GET"
 	if !keys.Scan {
@@ -43,9 +42,8 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.Access
 }
 
 // describePredicate renders a compiled predicate into a nested map for the query
-// plan, so `--explain` shows exactly what the client-side prefilter evaluates.
-// There is no server query language to mirror (as the other drivers' plans do), so
-// it renders the neutral predicate tree itself.
+// plan, so `--explain` shows what the client-side prefilter evaluates. Redis has no
+// server query language to mirror, so it renders the neutral predicate tree.
 func describePredicate(pred predicate.Node) map[string]any {
 	switch n := pred.(type) {
 	case predicate.Eq:

@@ -26,16 +26,17 @@ func newManCmd() *cobra.Command {
 	}
 }
 
-// writeManPage renders the iq(1) manual page in roff to w, derived from the Cobra
-// command tree so it can never drift from --help. It embeds no version or date:
-// the page is a static function of the command definitions, which keeps
-// regeneration deterministic and its golden test meaningful. The build version is
-// a runtime fact, available via `iq version`.
+// writeManPage renders the iq(1) manual page in roff to w, derived from the
+// Cobra command tree so it cannot drift from --help. It embeds no version or
+// date: the page is a static function of the command definitions, which keeps
+// regeneration deterministic and the golden test meaningful. The build version
+// is available via `iq version`.
 //
-// To stay independent of Cobra's execute-time initialization (which adds the
-// auto help/completion commands and per-command --help flags), the page walks
-// only the grouped commands — every real iq command — and omits the auto-added
-// help flag, so the CLI output and the direct-call golden test are byte-identical.
+// The page walks only the grouped commands (every real iq command) and omits
+// the auto-added help flag. This keeps it independent of the execute-time
+// initialization of Cobra (auto help and completion commands, per-command
+// --help flags), so the CLI output and the direct-call golden test are
+// byte-identical.
 func writeManPage(w io.Writer, root *cobra.Command) error {
 	var b strings.Builder
 
@@ -166,9 +167,9 @@ func writeManCommandTree(b *strings.Builder, cmd *cobra.Command) {
 	}
 }
 
-// manUsageLine builds a command's usage line as its full path plus the argument
-// spec from its Use field (the tokens after the command name), deterministically:
-// unlike cobra's UseLine it never appends a " [flags]" suffix that depends on
+// manUsageLine builds the usage line of a command: its full path plus the
+// argument spec from its Use field (the tokens after the command name). Unlike
+// UseLine of cobra, it never appends a " [flags]" suffix, which depends on
 // execute-time help-flag initialization.
 func manUsageLine(cmd *cobra.Command) string {
 	if i := strings.IndexByte(cmd.Use, ' '); i >= 0 {
@@ -281,12 +282,12 @@ var manPunct = strings.NewReplacer(
 	"…", "...", // horizontal ellipsis
 )
 
-// manVerbatim escapes one roff output line: backslashes become the escape-glyph
-// sequence, non-ASCII punctuation becomes its roff escape, hyphens become literal
-// minus signs (so copy-paste of flags works and roff does not hyphenate them),
-// and a leading control character is neutralized with the zero-width \& so the
-// line is never read as a request. Order matters: existing backslashes are
-// doubled first, before the escapes we introduce.
+// manVerbatim escapes one roff output line. Backslashes become the escape-glyph
+// sequence. Non-ASCII punctuation becomes its roff escape. Hyphens become
+// literal minus signs, so copy-paste of flags works and roff does not hyphenate
+// them. A leading control character is neutralized with the zero-width \& so
+// roff never reads the line as a request. Order matters: existing backslashes
+// are doubled first, before the escapes that this function adds.
 func manVerbatim(s string) string {
 	s = strings.ReplaceAll(s, "\\", "\\e")
 	s = manPunct.Replace(s)

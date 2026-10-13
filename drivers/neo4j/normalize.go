@@ -1,23 +1,19 @@
 // Package neo4j adapts a Neo4j property graph to the query ports. A node label is
-// modelled as Map[key, node]: a node's key is the value of a chosen property
-// (?key=) or its elementId, and the value is the node's properties plus its
-// identity. The jq filter runs client-side over nodes fetched by key or streamed
-// from the label, so the semantics match every other backend behind the KV port.
+// modelled as Map[key, node]. The key is the value of a chosen property (?key=) or
+// the elementId. The value is the node properties plus its identity.
 //
 // Neo4j has no single keyspace, so a node label is the addressable container (like
-// a Mongo collection or a Cassandra table): the source names the server and the
-// label rides as ?label= or the handle.<label> dotted override, within the
-// database named by ?database= (default "neo4j"). Credentials travel in the URL
-// userinfo (Bolt basic auth) and never in a query, so the CLI's keyring support
-// applies unchanged and the --verbose trace logs only the Cypher statement, never
-// its parameters.
+// a Mongo collection or a Cassandra table). The source names the server, and the
+// label is ?label= or the handle.<label> dotted override, within the database named
+// by ?database= (default "neo4j"). Credentials travel in the URL userinfo (Bolt
+// basic auth), never in a query. The --verbose trace logs only the Cypher
+// statement, never its parameters.
 //
 // A relationship type is an addressable collection too (?rel=KNOWS, or handle.:KNOWS
-// with the ':' marker): a scan streams relationships of that type as {props, _type,
-// _start, _end} where _start/_end are the endpoint elementIds. Relationship
-// collections are read-only for now — creating an edge needs endpoint resolution
-// (which nodes to connect, by which key), a further follow-up — so a write into one
-// is refused rather than half-done.
+// with the ':' marker). A scan streams relationships of that type as {props, _type,
+// _start, _end}, where _start and _end are the endpoint elementIds. Relationship
+// collections are read-only. Creating an edge needs endpoint resolution (which
+// nodes to connect, by which key), so a write into one is refused.
 package neo4j
 
 import (
@@ -33,11 +29,11 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// The reserved envelope keys iq injects alongside a value's real properties live in
-// internal/neo4jenvelope, shared with the offline APOC-JSON reader so both agree on
-// the exact keys. _id and _labels carry a node's identity so a ?key= source still
-// exposes the elementId and labels; _type/_start/_end carry a relationship's type
-// and endpoints. A same-named property is overwritten by the reserved key.
+// The reserved envelope keys live in internal/neo4jenvelope, shared with the
+// offline APOC-JSON reader. iq injects them next to the real properties. The keys
+// _id and _labels carry the identity of a node, so a ?key= source still exposes
+// it. The keys _type, _start, and _end carry the type and endpoints of a
+// relationship. A reserved key overwrites a property with the same name.
 
 // normalizeNode renders a graph node as a JSON-ready map: its properties, each
 // value converted by normalizeValue, plus _id (the elementId) and _labels.

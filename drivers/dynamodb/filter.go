@@ -14,13 +14,11 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// ScanFiltered streams only the items matching pred, translating the pushable part of
-// the predicate to a DynamoDB Scan FilterExpression so the service pre-filters. pred is
-// a conservative superset (the engine re-runs the full jq per page), so pushing fewer
-// conjuncts is always safe; only equality and existence are pushed. Ranges are never
-// pushed because jq's cross-type ordering (a string is greater than every number) means
-// a typed comparison would wrongly exclude items and drop rows. When nothing is pushable
-// it falls back to a full scan, identical to ScanBatches.
+// ScanFiltered translates the pushable part of pred to a DynamoDB Scan
+// FilterExpression. See query.FilteredScanner. Only equality and existence are
+// pushed. Ranges are never pushed: in jq a string is greater than every number, so
+// a typed comparison would wrongly exclude items. If nothing is pushable, the scan
+// is the same as ScanBatches.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if len(s.keys) == 0 {
 		return errNoTable
@@ -34,11 +32,11 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	return s.scan(ctx, in, fn)
 }
 
-// frag is one compiled predicate fragment: its DynamoDB FilterExpression form (using
-// #nN name placeholders and :vN value placeholders, which DynamoDB requires so a
-// reserved word like "name" or "size" is never interpolated raw), the placeholder maps
-// it introduced, and a human-readable form for --explain. Keeping the execution and
-// display forms in one struct means the plan shown can never drift from the filter run.
+// frag is one compiled predicate fragment: its FilterExpression form, the
+// placeholder maps it introduced, and a readable form for --explain. The
+// expression uses #nN name placeholders and :vN value placeholders, so a reserved
+// word like "name" or "size" is never interpolated raw. One struct holds both
+// forms, so the plan shown cannot drift from the filter that runs.
 type frag struct {
 	expr    string
 	display string
@@ -57,11 +55,10 @@ func (c *counter) next() int {
 
 // compile translates the pushable part of a neutral predicate into a DynamoDB filter
 // fragment. Only equality (Eq on a scalar), existence (Exists, NotExists), and their
-// And/Or combinations are pushed; a single top-level attribute path only. An And keeps
-// the subset of its conjuncts that compile and drops the rest (widening, safe because
-// the full jq re-runs); an Or must compile every branch or it is dropped whole, since
-// dropping an Or branch would narrow the result and lose items. Ranges, regex, size,
-// negations, and element matches are never pushed.
+// And/Or combinations are pushed, on a single top-level attribute path. An And keeps
+// the conjuncts that compile and drops the rest. An Or must compile every branch, or
+// it is dropped whole, because dropping one branch would lose items. Ranges, regex,
+// size, negations, and element matches are never pushed.
 func compile(pred predicate.Node) (frag, bool) {
 	return build(&counter{}, pred)
 }

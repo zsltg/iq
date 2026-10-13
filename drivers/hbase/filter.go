@@ -10,11 +10,9 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// ScanFiltered streams only the rows matching pred, translating the pushable part of
-// the predicate to an HBase server-side filter so the region servers pre-filter. pred
-// is a conservative superset (the engine re-runs the full jq per page), so pushing
-// fewer conjuncts is always safe; only column equality is pushed. When nothing is
-// pushable it falls back to a full scan, identical to ScanBatches.
+// ScanFiltered translates the pushable part of pred to an HBase server-side
+// filter. See query.FilteredScanner. Only column equality is pushed. If nothing is
+// pushable, the scan is the same as ScanBatches.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if s.table == "" {
 		return errNoTable
@@ -34,14 +32,13 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 }
 
 // toFilter translates the pushable part of a neutral predicate into an HBase filter.
-// Only column equality (Eq on a family:qualifier path) and an And of such equalities
-// are pushed; an And pushes the subset of its conjuncts that compile and drops the
-// rest (widening, safe because the full jq re-runs). Ranges, regex, existence, size,
-// negation, and Or are never pushed. A path that is not a two-segment
-// family:qualifier, or whose literal will not encode to the column's type, is not
-// pushable. types declares column encodings so the comparator bytes match the stored
-// bytes; the connection-free plan description walks the predicate itself
-// (pushdownColumns) rather than building filters.
+// Only column equality (Eq on a family:qualifier path) and an And of such
+// equalities are pushed. An And pushes the conjuncts that compile and drops the
+// rest. Ranges, regex, existence, size, negation, and Or are never pushed. A path
+// is not pushable if it is not a two-segment family:qualifier, or its literal will
+// not encode to the column type. types declares column encodings, so the
+// comparator bytes match the stored bytes. The connection-free plan description
+// walks the predicate itself (pushdownColumns) and builds no filters.
 func toFilter(types typeMap, n predicate.Node) (filter.Filter, bool) {
 	switch t := n.(type) {
 	case predicate.Eq:

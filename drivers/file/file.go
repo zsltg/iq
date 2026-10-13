@@ -1,11 +1,11 @@
 // Package file adapts a local database dump file to the query ports, so a dump is
-// queried, inspected, diffed, and copied-from exactly like a live backend. It is
-// read-only: it implements the read and typed-scan ports but no writer, so a
-// file:// endpoint is never a copy destination. Formats are detected by content
-// (or forced by a ?format= URL query): iq's own typed JSONL, mongoexport Extended
-// JSON, mongodump BSON, and Redis RDB. The Store holds only the path and reopens
-// per operation, so scans stream and no values are held in memory beyond one page;
-// whole-dataset queries obey the core's --unbounded contract like any backend.
+// queried, inspected, diffed, and copied from like a live backend. It is read-only:
+// it implements the read and typed-scan ports and no writer, so a file:// endpoint
+// is never a copy destination. Content detects the format, or a ?format= URL query
+// forces it: iq's own typed JSONL, mongoexport Extended JSON, mongodump BSON, and
+// Redis RDB. The Store holds only the path and reopens it per operation. Scans
+// stream, and no more than one page of values is in memory. Whole-dataset queries
+// obey the --unbounded contract of the core.
 package file
 
 import (
@@ -182,17 +182,17 @@ func nativePath(goos, path string) string {
 	return filepath.FromSlash(rest)
 }
 
-// DumpPath returns the filesystem path a file:// URL refers to — the same path
-// Open resolves and the decode cache records in its header — so a caller can map
-// a saved file source to its cache entry (iq cache clear @src).
+// DumpPath returns the filesystem path that a file:// URL refers to. Open resolves
+// the same path, and the decode cache records it in its header. A caller can map a
+// saved file source to its cache entry (iq cache clear @src).
 func DumpPath(rawURL string) (string, error) {
 	path, _, _, err := parseFileURL(rawURL)
 	return path, err
 }
 
-// DetectFormat reports the dump format a file:// URL resolves to: an explicit
-// ?format= wins, otherwise the content is sniffed from the file. Exported so a
-// caller (iq ls -v) can name a file source's format without building a Store.
+// DetectFormat reports the dump format that a file:// URL resolves to. An explicit
+// ?format= wins. Otherwise it sniffs the file content. A caller (iq ls -v) can name
+// a file source's format without a Store.
 func DetectFormat(rawURL string) (Format, error) {
 	path, forced, _, err := parseFileURL(rawURL)
 	if err != nil {
@@ -257,11 +257,11 @@ func hintsFrom(q url.Values) Hints {
 	}
 }
 
-// records is the cache-aware decode entry point every read path shares. When a
-// fresh decode cache exists it streams that; otherwise it decodes the original
-// dump, and when populate is set and the dump is cacheable, tees the decode into
-// a new cache installed only on a complete pass. populate is false for Get, whose
-// early stop would persist a partial dump — so only a full scan populates.
+// records is the cache-aware decode entry point of every read path. If a fresh decode
+// cache exists, it streams the cache. Otherwise it decodes the dump. If populate is
+// set and the dump is cacheable, it also tees the decode into a new cache, installed
+// only after a complete pass. populate is false for Get, because its early stop
+// persists a partial dump. Only a full scan populates.
 func (s *Store) records(ctx context.Context, populate bool, fn func(batch []query.Record) error) error {
 	if src, ok := s.cacheSource(); ok {
 		return src(ctx, fn)
@@ -274,9 +274,8 @@ func (s *Store) records(ctx context.Context, populate bool, fn func(batch []quer
 	return s.recordsDirect(ctx, fn)
 }
 
-// recordsDirect decodes the dump straight from its bytes, with no cache: it opens
-// the dump (a file, reopened per operation, or the in-memory stdin buffer),
-// builds the source for its format, and drives it.
+// recordsDirect decodes the dump straight from its bytes, with no cache. The dump is
+// a file (reopened per operation) or the in-memory stdin buffer.
 func (s *Store) recordsDirect(ctx context.Context, fn func(batch []query.Record) error) error {
 	r, closeR, err := s.reader()
 	if err != nil {
@@ -414,13 +413,12 @@ func (s *Store) FormatRaw(v any, _ bool) string {
 	return string(b)
 }
 
-// ExplainPlan describes, without opening the file, the work a file query does: a
-// full decode then a client-side filter or scan. There is no server-side pushdown.
-// When a scan carries a compiled predicate, an uncached typed-JSONL dump additionally
-// runs a client-side raw-byte prefilter (rawpred) that drops a provable non-match
-// before decode; every other format, and any scan served from a fresh decode cache,
-// decodes in full and lets the client filter. The plan is static (it opens no file),
-// so it names the condition rather than resolving the dump's format here.
+// ExplainPlan describes the work of a file query, without opening the file: a full
+// decode, then a client-side filter or scan. There is no server-side pushdown. If a
+// scan carries a compiled predicate, an uncached typed-JSONL dump also runs the
+// rawpred prefilter. Every other format, and any scan served from a fresh decode
+// cache, decodes in full. The plan is static, so it names this condition and does not
+// resolve the format of the dump.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.AccessPlan {
 	if !keys.Scan && len(keys.Keys) > 0 {
 		return query.AccessPlan{Ops: []string{

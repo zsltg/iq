@@ -1,15 +1,15 @@
-// Package jqfmt pretty-prints a jq filter: it parses the source with gojq and
-// re-emits the AST with real line breaks, indentation, and optional syntax
-// coloring. gojq itself only offers single-line canonical output ((*Query).String
-// via an unexported writer), so the multi-line layout is done here.
+// Package jqfmt pretty-prints a jq filter. It parses the source with gojq and re-emits
+// the AST with line breaks, indentation, and optional syntax coloring. gojq itself only
+// offers single-line canonical output ((*Query).String via an unexported writer), so
+// this package does the multi-line layout.
 //
-// The printer controls layout only at structural break points — pipes, multi-entry
-// objects, piped array bodies, if/try/reduce/foreach clauses, and breakable
-// function arguments — and delegates every leaf token (indexes, strings, numbers,
-// formats, patterns, suffixes) to gojq's own String(), so the emitted text always
-// re-parses to the same query. The one deliberate deviation is a nested
-// source("name"; "<sub>") call: the string sub-filter is unquoted and pretty-printed
-// inline as its own indented block, which is the whole point of showing nested jq.
+// The printer controls layout only at structural break points: pipes, multi-entry
+// objects, piped array bodies, if/try/reduce/foreach clauses, and breakable function
+// arguments. It delegates every leaf token (indexes, strings, numbers, formats,
+// patterns, suffixes) to gojq's own String(), so the emitted text always re-parses to
+// the same query. The one exception is a nested source("name"; "<sub>") call. The
+// printer unquotes the string sub-filter and pretty-prints it inline as its own
+// indented block, so the nested jq is readable.
 package jqfmt
 
 import (

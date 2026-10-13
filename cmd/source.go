@@ -62,14 +62,13 @@ type addOptions struct {
 	active, passwordPrompt, skipVerify bool
 }
 
-// newAddCmd builds `iq add <url>`: register a source from a connection URL,
-// mirroring `sq add`. The URL is the sole positional; -n/--handle names the
-// source, and when omitted a handle is derived from the URL. The backend is
-// inferred from the URL scheme, so the scheme is validated here (the CLI owns
-// backend dispatch). The source is pinged before it is saved unless
-// --skip-verify is set, so a failed add leaves no trace. Note `add` shadows jq's
-// built-in `add` filter at the top level; run the filter inside a larger
-// expression (`[ .a, .b ] | add`) instead.
+// newAddCmd builds `iq add <url>`: register a source from a connection URI,
+// mirroring `sq add`. The URI is the sole positional. -n/--handle names the
+// source, and if omitted a handle is derived from the URI. The URI scheme
+// selects the backend, so the CLI validates the scheme here. The source is
+// pinged before it is saved unless --skip-verify is set, so a failed add leaves
+// no trace. `add` shadows the jq built-in `add` filter at the top level. Run
+// the filter inside a larger expression (`[ .a, .b ] | add`) instead.
 func newAddCmd(cfg *config) *cobra.Command {
 	var o addOptions
 	c := &cobra.Command{
@@ -235,12 +234,13 @@ func suggestHandle(cf *iqconfig.Config, rawURL string) string {
 	}
 }
 
-// handleBase picks the raw handle stem for a URL: the most specific container the
-// URL names, in order — the keyspace a driver-owned query param pins
-// (?collection=, ?table=, ?index=, …), the dump file's stem for a file source,
-// the first path segment when it is a non-numeric name (a MongoDB database or
-// Cassandra keyspace), else the driver name. A multi-host Mongo URI that net/url
-// cannot parse falls back to the driver name too.
+// handleBase picks the raw handle stem for a URI: the most specific container
+// that the URI names, in this order. First the keyspace that a driver-owned
+// query param pins (?collection=, ?table=, ?index=, ...). Then the dump file
+// stem for a file source. Then the first path segment if it is a non-numeric
+// name (a MongoDB database or Cassandra keyspace). Else the driver name. A
+// multi-host Mongo URI that net/url cannot parse also falls back to the driver
+// name.
 func handleBase(rawURL string) string {
 	if a := urlAddressName(rawURL); a != "" {
 		return lastSegment(a)
@@ -269,12 +269,11 @@ func lastSegment(s string) string {
 	return s[strings.LastIndexByte(s, '.')+1:]
 }
 
-// fileStem returns the dump file's base name without its extension for a local
-// dump source (file:///dumps/books.json names "books") — the container such a
-// source reads, since its path names a file rather than a database. DumpPath
-// rejects every non-file:// URL, so a connected backend reports false here, as
-// does a file URL naming no usable stem (file:/// is the bare root,
-// file:///dumps/.json is all extension); the caller then falls through to the
+// fileStem returns the base name without extension of a local dump source
+// (file:///dumps/books.json names "books"), the container such a source reads.
+// DumpPath rejects every non-file:// URL, so a connected backend reports false.
+// A file URL with no usable stem also reports false (file:/// is the bare root,
+// file:///dumps/.json is all extension). The caller then falls through to the
 // path and driver-name rules.
 func fileStem(rawURL string) (string, bool) {
 	path, err := iqfile.DumpPath(rawURL)
@@ -625,8 +624,8 @@ func saveGroup(cf *iqconfig.Config, args []string) error {
 
 // redactURL returns raw with any password in its userinfo replaced by "xxxxx",
 // so a stored credential is never printed. url.Parse handles multi-host Mongo
-// URIs (mongodb://h1,h2/db); an unparseable string yields a safe placeholder
-// rather than risk leaking a credential we could not locate.
+// URIs (mongodb://h1,h2/db). An unparseable string yields a safe placeholder,
+// so a credential that iq cannot locate never leaks.
 func redactURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {

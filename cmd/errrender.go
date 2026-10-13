@@ -48,10 +48,10 @@ func asSyntaxError(filter string, err error) error {
 }
 
 // report renders the two-line caret span for a syntax error: the filter, then a
-// caret under the offending token. gojq's Offset counts bytes read when the
-// error fired (just past the token), so the caret is placed at the token's
-// start. The filter is treated as a single line (CLI filters almost always are);
-// a multi-line filter still renders, with the caret measured from the start.
+// caret under the offending token. The Offset of gojq counts bytes read when
+// the error fired (just past the token), so the caret goes at the token start.
+// The filter is treated as one line. A multi-line filter still renders, with
+// the caret measured from the start.
 func (e *filterSyntaxError) report() string {
 	// offset counts bytes read up to the error, so col = offset - len(token) is
 	// the token's start and never exceeds len(filter); it can only underflow if a
@@ -143,11 +143,11 @@ func stackFrames(err error) []string {
 	return frames
 }
 
-// causeChain reduces err's %w unwrap chain to distinct frames, outermost first:
-// each layer is trimmed to the prefix it added over the layer it wraps, so the
-// chain reads as "combine", "open source", "<leaf>" instead of repeating the
-// leaf at every level. iq wraps with %w rather than carrying goroutine traces,
-// so this is its analog of a stack.
+// causeChain reduces the %w unwrap chain of err to distinct frames, outermost
+// first. Each layer is trimmed to the prefix it added over the layer it wraps.
+// So the chain reads "combine", "open source", "<leaf>" and does not repeat the
+// leaf at every level. iq wraps with %w and carries no goroutine traces, so
+// this is its analog of a stack.
 func causeChain(err error) []string {
 	var msgs []string
 	for e := err; e != nil; e = errors.Unwrap(e) {

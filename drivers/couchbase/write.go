@@ -11,10 +11,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// putItem is one record resolved for writing: its document body and the key it writes
-// under, with keyed recording whether the key came from the record (an existing key,
-// eligible to be overwritten) or was minted for a keyless record (always a fresh
-// insert).
+// putItem is one record resolved for writing: its document body and its key. keyed
+// is true if the key came from the record, so it can overwrite an existing document.
+// It is false if the driver minted the key for a keyless record (always an insert).
 type putItem struct {
 	key   string
 	keyed bool
@@ -22,12 +21,11 @@ type putItem struct {
 }
 
 // Put writes a batch of records into the collection, keyed by document ID. Upsert
-// overwrites an existing document and inserts a new one; InsertOnly inserts new
-// documents and skips (counts) those whose ID already exists. A keyless record mints a
-// client-side UUIDv4 key (foreign JSON in, like Mongo's _id). Every document is built
-// before the bulk call, so a record that cannot be represented — a non-object value —
-// fails the whole batch before any write lands. Every value is JSON-encoded by the
-// SDK, never string-built.
+// overwrites an existing document and inserts a new one. InsertOnly inserts new
+// documents and counts the skipped ones whose ID exists. A keyless record gets a
+// client-side UUIDv4 key. The driver builds every document before the bulk call, so
+// a record that cannot be represented (a non-object value) fails the whole batch
+// before any write lands. The SDK JSON-encodes every value.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if s.collection == nil {
 		return query.WriteStat{}, errNoBucket

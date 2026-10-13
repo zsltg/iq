@@ -7,13 +7,10 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// ScanFiltered streams only the documents a Mango _find pre-selects for pred,
-// letting the server narrow the scan. pred is a conservative superset (the caller
-// re-runs the full jq per page), so returning extra documents is safe and returning
-// too few is not. When pred compiles to nothing that narrows (an operator whose
-// Mango semantics could wrongly exclude a jq match, e.g. !=, regex, length), the
-// scan falls back to a plain _all_docs walk, which is both correct and cheaper than
-// a match-everything _find.
+// ScanFiltered lets the server narrow the scan with a Mango _find for pred. See
+// query.FilteredScanner. If pred has no safe selector (an operator whose Mango
+// semantics could wrongly exclude a jq match, such as !=), the scan is a plain
+// _all_docs walk. That walk is cheaper than a match-everything _find.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if s.db == "" {
 		return errNoDatabase
@@ -89,14 +86,13 @@ var mangoOp = map[predicate.Op]string{
 }
 
 // toSelector translates a neutral predicate into a Mango selector. The second
-// return is whether the selector actually narrows the scan: false means the node
-// (or an unsafe part of it) could not be pushed without risking wrongly excluding a
-// jq match, so the caller must fall back to a full scan rather than trust the
-// selector. Only pure-superset, over-inclusion-safe nodes are pushed: equality,
-// ranges, existence, a byte-safe regex, and a polymorphic length as a
-// $size-plus-$type superset. The exact negations (!=, NoneMatch), an array any
-// (ElemMatch), and a regex outside the byte-safe subset, whose Mango semantics
-// could exclude a document jq would keep, deliberately do not narrow.
+// return is false if the selector does not narrow the scan: the node, or an unsafe
+// part of it, cannot be pushed without risk of wrongly excluding a jq match. Only
+// pure-superset nodes are pushed: equality, ranges, existence, a byte-safe regex,
+// and a polymorphic length as a $size-plus-$type superset. The exact negations
+// (!=, NoneMatch), an array any (ElemMatch), and a regex outside the byte-safe
+// subset do not narrow, because their Mango semantics could exclude a document
+// that jq keeps.
 func toSelector(n predicate.Node) (map[string]any, bool) {
 	switch t := n.(type) {
 	case predicate.And:
@@ -132,14 +128,13 @@ func leafSelector(n predicate.Node) (map[string]any, bool) {
 	}
 }
 
-// regexSelector pushes a portable regex as a Mango $regex, but only for the
-// subset CouchDB's byte-mode Erlang re interprets like gojq's RE2. CouchDB runs
-// $regex over the raw UTF-8 bytes with no unicode option, guarded by is_binary (a
-// non-string field silently does not match, exactly as jq's test over a
-// non-string is false), so an ASCII, byte-safe pattern selects the same strings
-// in both engines. The i flag is declined — byte-mode caseless folds only ASCII,
-// so it could drop a non-ASCII string jq keeps — and the m (dotall) flag needs no
-// handling: a byte-safe pattern has no unescaped dot, so dotall is vacuous.
+// regexSelector pushes a portable regex as a Mango $regex, only for the subset
+// that CouchDB's byte-mode Erlang re reads like gojq's RE2. CouchDB runs $regex
+// over raw UTF-8 bytes with no unicode option. A non-string field does not match,
+// as in jq. So an ASCII, byte-safe pattern selects the same strings in both
+// engines. The i flag is declined: byte-mode caseless folds only ASCII, so it
+// could drop a non-ASCII string that jq keeps. The m (dotall) flag needs no
+// handling, because a byte-safe pattern has no unescaped dot.
 func regexSelector(r predicate.Regex) (map[string]any, bool) {
 	if strings.ContainsRune(r.Flags, 'i') || !byteSafeRegex(r.Pattern) {
 		return nil, false
@@ -148,14 +143,13 @@ func regexSelector(r predicate.Regex) (map[string]any, bool) {
 }
 
 // byteSafeRegex reports whether a portable regex is also safe for CouchDB's
-// byte-mode $regex. The core portableRegex gate already admits only cross-engine
-// constructs, but CouchDB's Erlang re runs over raw bytes without the unicode
-// option, so anything meaning "one character" or "not this class" diverges on
-// multi-byte UTF-8. This gate is stricter: it rejects a non-ASCII byte (a
-// multi-byte rune the byte engine splits), an unescaped dot (matches one byte,
-// not one rune), a negated class [^…] or the negated shorthands \D \W \S (their
-// byte complement includes UTF-8 continuation bytes RE2 would not match), and a
-// trailing backslash. A pattern that survives matches byte-for-byte in both.
+// byte-mode $regex. The core portableRegex gate admits only cross-engine
+// constructs, but CouchDB runs over raw bytes, so "one character" and "not this
+// class" diverge on multi-byte UTF-8. This gate rejects a non-ASCII byte, an
+// unescaped dot (it matches one byte, not one rune), a negated class [^…] or the
+// shorthands \D \W \S (their byte complement includes UTF-8 continuation bytes),
+// and a trailing backslash. A surviving pattern matches byte for byte in both
+// engines.
 func byteSafeRegex(p string) bool {
 	escaped := false
 	for i := 0; i < len(p); i++ {
@@ -193,12 +187,11 @@ func negatedShorthand(c byte) bool {
 	return strings.IndexByte("DWS", c) >= 0
 }
 
-// sizeSelector mirrors the Mongo size push. jq length is polymorphic (array,
-// string, object, number), so an exact array $size alone would drop a string,
-// object, or number whose length matches. It pushes a superset — arrays of
-// exactly N via $size, plus every string/object/number as a separate $type
-// clause (Mango's $type takes one string, unlike Mongo's list) — and the client
-// re-run strips the non-array matches. Length 0 also matches null and a missing
+// sizeSelector mirrors the Mongo size push. The jq length is polymorphic (array,
+// string, object, number), so an array $size alone would drop a string, object, or
+// number of that length. It pushes a superset: arrays of exactly N via $size, plus
+// every string, object, and number as a separate $type clause (Mango's $type takes
+// one string, unlike Mongo's list). Length 0 also matches null and a missing
 // field, which jq reads as length 0.
 func sizeSelector(s predicate.Size) (map[string]any, bool) {
 	path := field(s.Path)
@@ -231,15 +224,13 @@ func eqSelector(path string, value any) map[string]any {
 	return map[string]any{path: value}
 }
 
-// cmpSelector translates a range comparison into a conservative superset that
-// reproduces jq's cross-type ordering. jq compares across types (null < boolean <
-// number < string < array < object), so `field > value` also matches every value
-// whose type ranks strictly above the literal's, and `field < value` also matches
-// every type strictly below plus a missing field (jq reads a missing field as null,
-// the lowest value). The same-type bound uses the native operator; the cross-type
-// parts are added as explicit $type clauses. Extra matches are harmless because the
-// caller re-runs the full jq; missing one would be a bug, which is why the type
-// clauses are exhaustive.
+// cmpSelector translates a range comparison into a superset that follows jq's
+// cross-type ordering (null < boolean < number < string < array < object). So
+// `field > value` also matches every value of a type that ranks above the
+// literal's. `field < value` also matches every lower type, plus a missing field
+// (jq reads it as null, the lowest value). The same-type bound uses the native
+// operator. The cross-type parts are explicit $type clauses, and they must be
+// exhaustive, because a missed match is a bug.
 func cmpSelector(c predicate.Cmp) map[string]any {
 	path := field(c.Path)
 	clauses := []any{map[string]any{path: map[string]any{mangoOp[c.Op]: c.Value}}}

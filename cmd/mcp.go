@@ -34,9 +34,9 @@ const (
 	defaultMCPMaxBytes = 256 * 1024
 )
 
-// mcpListTTLMs is the tools/list cache hint: the tool set is fixed at process
-// start by --allow, so it cannot change while the client is connected, and an
-// hour is an honest freshness window for a list that only a restart alters.
+// mcpListTTLMs is the tools/list cache hint. --allow fixes the tool set at
+// process start, so only a restart changes the list. An hour is an honest
+// freshness window.
 const mcpListTTLMs = 3600_000
 
 // mcpServer is the delivery mechanism `iq mcp` builds: the inherited run config,

@@ -47,14 +47,13 @@ type connConfig struct {
 	db  string
 }
 
-// Open connects to the CouchDB server named by a couchdb:// (or couchdbs://) URL
-// and verifies the connection with a ping so a bad URL, unreachable server, or bad
-// credentials fails fast. The database (the jq keyspace, may be empty for
-// raw/inspect-only use) is the dotted address override when non-empty, else the
-// URL's ?database= default, else the URL path. When trace is non-nil, each HTTP
-// request the driver issues is logged to it (the CLI's --verbose trace) as
-// method+path only, so no credential (carried in the Authorization header) is ever
-// written. dec chooses how fractional numbers are presented to the filter.
+// Open connects to the CouchDB server named by a couchdb:// (or couchdbs://) URL.
+// A ping makes a bad URL, unreachable server, or bad credentials fail fast. The
+// database (the jq keyspace, empty for raw-only use) is the dotted address
+// override if non-empty, else the URL's ?database= default, else the URL path. If
+// trace is non-nil, each HTTP request is logged to it as method and path only, so
+// no credential from the Authorization header is written. dec chooses how
+// fractional numbers are presented to the filter.
 func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	cc, err := parseURL(rawURL, address)
 	if err != nil {

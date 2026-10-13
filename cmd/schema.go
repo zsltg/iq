@@ -20,12 +20,11 @@ const (
 )
 
 // newSchemaCmd builds `iq schema [source]`: sample a source and project the
-// inferred shape into a chosen contract format (--format). The positional names
-// the source exactly as `inspect` does (empty = --src or the active source,
-// sq-style `<source>.<collection>` addressing); the shape is sampled (--sample)
-// and inferred, never declared. It renders driver-agnostic sampled inference, the
-// complement to `inspect`, which renders each backend's native introspection.
-// Bounded by --timeout.
+// inferred shape into a contract format (--format). The positional names the
+// source as `inspect` does (empty = --src or the active source, sq-style
+// `<source>.<collection>`). The shape is sampled (--sample) and inferred, never
+// declared. It is driver-agnostic, the complement to `inspect`, which renders
+// the native introspection of each backend. Bounded by --timeout.
 func newSchemaCmd(cfg *config) *cobra.Command {
 	var (
 		sample  int

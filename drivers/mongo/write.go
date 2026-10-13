@@ -121,10 +121,9 @@ func documentFor(r query.Record) (bson.M, error) {
 	return doc, nil
 }
 
-// bsonValue converts a JSON-ready value into a BSON-encodable one, recursing into
-// objects and arrays and rendering a big integer (which BSON cannot encode) as an
-// int64 when it fits, else its decimal string, so a cross-driver copy never fails
-// to marshal.
+// bsonValue converts a JSON-ready value into a BSON-encodable one. It recurses
+// into objects and arrays. BSON cannot encode a big integer, so it becomes an int64
+// if it fits, else its decimal string.
 func bsonValue(v any) any {
 	switch t := v.(type) {
 	case *big.Int:

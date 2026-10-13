@@ -1,18 +1,16 @@
 // Package hbase adapts an Apache HBase table to the query ports. A table is
-// modelled as Map[rowkey, row]: the row key, rendered to a string, is the key; the
-// row — every cell grouped as a nested {family: {qualifier: value}} object — is the
-// value. The jq filter runs client-side over rows fetched by row key or streamed
-// from the table, so the semantics match every other backend behind the KV port.
+// modelled as Map[rowkey, row]. The key is the row key, rendered to a string. The
+// value is the row: every cell grouped as a nested {family: {qualifier: value}}
+// object.
 //
-// HBase stores no types: a cell is raw bytes. A value is presented honestly by
-// default — valid UTF-8 as text, else base64 — and a caller who knows a column's
-// encoding declares it in the URL (?types=cf:q=long) for an exact, reversible
-// mapping via the standard HBase Bytes layout. The row key is likewise text-or-base64
-// unless ?keytype= declares it.
+// HBase stores no types: a cell is raw bytes. By default a value is valid UTF-8 as
+// text, else base64. A caller who knows a column encoding declares it in the URL
+// (?types=cf:q=long) for an exact, reversible mapping through the standard HBase
+// Bytes layout. The row key is text or base64 unless ?keytype= declares it.
 //
-// HBase has no query language, so the raw path (iq exec) is a small, safe verb set —
-// get, scan, count, put, delete — mapped straight onto RPC, never a built query
-// string, so it is injection-safe by construction.
+// HBase has no query language. The raw path (iq exec) is a small verb set (get,
+// scan, count, put, delete) mapped straight onto RPC. It builds no query string, so
+// it is injection-safe by construction.
 package hbase
 
 import (
@@ -80,14 +78,13 @@ type Store struct {
 	trace      io.Writer
 }
 
-// Open connects to the HBase cluster named by an hbase:// URL and verifies the
-// connection with a bounded ClusterStatus probe (gohbase connects lazily, so this is
-// what fails fast on an unreachable ZooKeeper quorum or master). The table (the jq
-// keyspace, may be empty for raw-only or list-only use) is the address override when
-// non-empty, else the URL's ?table= default, and its existence is checked once at
-// connect. When trace is non-nil, each executed operation is logged to it (the CLI's
-// --verbose trace) with cell values redacted. dec is unused: HBase has no decimal
-// type, so declared doubles present as plain float64.
+// Open connects to the HBase cluster named by an hbase:// URL. A bounded
+// ClusterStatus probe makes an unreachable ZooKeeper quorum or master fail fast,
+// because gohbase connects lazily. The table (the jq keyspace, empty for raw-only
+// or list-only use) is the address override if non-empty, else the URL's ?table=
+// default. Its existence is checked once at connect. If trace is non-nil, each
+// operation is logged to it with cell values redacted. dec is unused: HBase has no
+// decimal type, so declared doubles present as plain float64.
 func Open(ctx context.Context, rawURL, address string, trace io.Writer, _ numfmt.DecimalMode) (*Store, error) {
 	cc, err := parseURL(rawURL, address)
 	if err != nil {
@@ -147,12 +144,12 @@ func (c ctxClusterStatus) Context() context.Context { return c.ctx }
 
 // probe checks that the cluster answers. AdminClient.ClusterStatus takes no context
 // and retries a dead quorum or master without end, because it builds its request
-// with context.Background. So probe sends the request itself through SendRPC with the
-// caller's context, and the retry loop stops when ctx ends. If the admin client has no
-// SendRPC (a fake, or a gohbase upgrade that drops it), probe falls back to
-// ClusterStatus in a goroutine and ctx ends the wait only. The call then keeps
-// retrying in the background until the process exits. An ended ctx always wins over
-// the result.
+// with context.Background. So probe sends the request through SendRPC with the
+// caller's context, and the retry loop stops when ctx ends. If the admin client has
+// no SendRPC (a fake, or a gohbase upgrade that drops it), probe calls
+// ClusterStatus in a goroutine, and ctx ends only the wait. The call keeps retrying
+// in the background until the process exits. An ended ctx always wins over the
+// result.
 func (s *Store) probe(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
