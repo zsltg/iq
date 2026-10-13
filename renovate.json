@@ -26,6 +26,12 @@
       "groupName": "minor and patch updates"
     },
     {
+      "description": "Renovate must not raise the Python floor in docs/pyproject.toml. A higher floor makes uv select a Python that has no wheel for every docs dependency, and the docs build fails. A person raises the floor by hand.",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["requires-python"],
+      "enabled": false
+    },
+    {
       "description": "mutago changes the mutant IDs between versions, so a bump needs a mutation-gate run and a re-baseline in the same PR. Keep it out of the weekly group, in its own PR.",
       "matchPackageNames": ["github.com/quality-gates/mutago/v2"],
       "groupName": "mutago",

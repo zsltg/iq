@@ -138,7 +138,7 @@ func (o logOptions) build(stderr, stdout io.Writer) (*slog.Logger, func() error,
 	suppressVerbose := structuredActive && o.file == "stderr"
 	if o.verbose && !suppressVerbose {
 		// tint.Options.Level is nil, so tint uses its default level, INFO.
-		handlers = append(handlers, tint.NewHandler(stderr, &tint.Options{
+		handlers = append(handlers, tint.NewTextHandler(stderr, &tint.Options{
 			NoColor: !o.color,
 			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 				return redactAttr(groups, dropTimeAttr(groups, a))
