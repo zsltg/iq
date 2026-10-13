@@ -48,11 +48,33 @@ func (t *tappedPipe) written() string {
 	return t.b.String()
 }
 
+// lockedBuffer is a bytes.Buffer that is safe for concurrent use. The os/exec
+// package writes the stderr of the child from its own goroutine while the test
+// reads it, so both sides must hold the lock.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+// Write appends p to the buffer.
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+// String returns everything written so far.
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
 // startMCP launches `iq mcp` as a long-lived child process and connects an MCP
 // client to it over its real stdin and stdout, the way a client such as Claude
 // Code or Codex does. It returns the live session, the stdout tap, and the
-// process's stderr, all torn down on cleanup.
-func startMCP(t *testing.T, env []string, args ...string) (*mcp.ClientSession, *tappedPipe, *bytes.Buffer) {
+// process's stderr (safe to read while the process runs), all torn down on cleanup.
+func startMCP(t *testing.T, env []string, args ...string) (*mcp.ClientSession, *tappedPipe, *lockedBuffer) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), iqBin, append([]string{"mcp"}, args...)...)
 	cmd.Env = append(os.Environ(), env...)
@@ -60,8 +82,8 @@ func startMCP(t *testing.T, env []string, args ...string) (*mcp.ClientSession, *
 	require.NoError(t, err)
 	stdout, err := cmd.StdoutPipe()
 	require.NoError(t, err)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	stderr := &lockedBuffer{}
+	cmd.Stderr = stderr
 	require.NoError(t, cmd.Start())
 
 	tap := &tappedPipe{r: stdout}
@@ -76,7 +98,7 @@ func startMCP(t *testing.T, env []string, args ...string) (*mcp.ClientSession, *
 		_ = stdin.Close()
 		_ = cmd.Wait()
 	})
-	return cs, tap, &stderr
+	return cs, tap, stderr
 }
 
 // TestMCPStdioSession drives the built binary as an MCP server over real stdio:
