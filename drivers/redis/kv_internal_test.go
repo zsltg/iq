@@ -34,8 +34,10 @@ func openOnDB(t *testing.T, ctx context.Context, dec numfmt.DecimalMode) *Store 
 }
 
 // seedStrings writes n string keys under prefix in one pipeline.
-func seedStrings(t *testing.T, ctx context.Context, store *Store, prefix string, n int) { //nolint:revive // t first matches the other helpers in this package.
+func seedStrings(t *testing.T, store *Store, prefix string, n int) {
 	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
 	p := store.client.Pipeline()
 	for i := range n {
 		p.Set(ctx, fmt.Sprintf("%s%d", prefix, i), "v", 0)
@@ -76,7 +78,7 @@ func TestScanBatchesWalksEveryCursorRound(t *testing.T) {
 	defer cancel()
 	store := openOnDB(t, ctx, numfmt.DecimalAuto)
 	const n = 3 * scanCount
-	seedStrings(t, ctx, store, "iq:test:round:", n)
+	seedStrings(t, store, "iq:test:round:", n)
 
 	seen := map[string]struct{}{}
 	err := store.ScanBatches(ctx, func(batch map[string]any) error {
@@ -96,7 +98,7 @@ func TestScanBatchesStopsAtTheFirstPageError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	store := openOnDB(t, ctx, numfmt.DecimalAuto)
-	seedStrings(t, ctx, store, "iq:test:pageerr:", 5)
+	seedStrings(t, store, "iq:test:pageerr:", 5)
 	store.pageSize = 2
 
 	sentinel := errors.New("stop")
@@ -113,20 +115,50 @@ func TestScanBatchesStopsAtTheFirstPageError(t *testing.T) {
 	require.Equal(t, 1, pages, "the walk stops at the first failing page")
 }
 
-// TestScanBatchesSurfacesTheScanError pins the cursor's own failure: when SCAN
-// itself fails the walk reports that error, rather than reading a truncated
-// keyspace as a complete one.
-func TestScanBatchesSurfacesTheScanError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	store := openOnDB(t, ctx, numfmt.DecimalAuto)
-	dead, cancelDead := context.WithCancel(ctx)
-	cancelDead()
+// TestReadCommandsSurfaceTheCancelledContext pins that each read reports the
+// failure of its call, with the cause kept in the chain, when its context is dead.
+// When SCAN itself fails, the walk reports that error, rather than reading a
+// truncated keyspace as a complete one. Get stops when the TYPE pipeline fails,
+// because with no type for each key it cannot choose a reader.
+func TestReadCommandsSurfaceTheCancelledContext(t *testing.T) {
+	tests := []struct {
+		name     string
+		call     func(ctx context.Context, s *Store) error
+		fragment string
+		cause    string
+	}{
+		{
+			name: "scan batches reports the scan error",
+			call: func(ctx context.Context, s *Store) error {
+				return s.ScanBatches(ctx, func(map[string]any) error { return nil })
+			},
+			fragment: "redis scan",
+			cause:    "the cursor's cause survives the wrap",
+		},
+		{
+			name: "get fails fast on the type error",
+			call: func(ctx context.Context, s *Store) error {
+				_, err := s.Get(ctx, []string{"iq:test:gettype"})
+				return err
+			},
+			fragment: "redis type",
+			cause:    "the pipeline's cause survives the wrap",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			store := openOnDB(t, ctx, numfmt.DecimalAuto)
+			dead, cancelDead := context.WithCancel(ctx)
+			cancelDead()
 
-	err := store.ScanBatches(dead, func(map[string]any) error { return nil })
+			err := tt.call(dead, store)
 
-	require.ErrorContains(t, err, "redis scan")
-	require.ErrorIs(t, err, context.Canceled, "the cursor's cause survives the wrap")
+			require.ErrorContains(t, err, tt.fragment)
+			require.ErrorIs(t, err, context.Canceled, tt.cause)
+		})
+	}
 }
 
 // TestGetHonorsDecimalMode pins that the store's decimal mode reaches the RedisJSON
@@ -161,21 +193,6 @@ func (h beforePipelineHook) ProcessPipelineHook(next goredis.ProcessPipelineHook
 		h.before(cmds)
 		return next(ctx, cmds)
 	}
-}
-
-// TestGetFailsFastOnTypeError proves Get stops when the TYPE pipeline fails. With
-// no type for each key it cannot choose a reader.
-func TestGetFailsFastOnTypeError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	store := openOnDB(t, ctx, numfmt.DecimalAuto)
-	dead, cancelDead := context.WithCancel(ctx)
-	cancelDead()
-
-	_, err := store.Get(dead, []string{"iq:test:gettype"})
-
-	require.ErrorContains(t, err, "redis type")
-	require.ErrorIs(t, err, context.Canceled, "the pipeline's cause survives the wrap")
 }
 
 // TestGetToleratesAVanishedKey stages the race on the plain read path: a key that
