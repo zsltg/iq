@@ -207,38 +207,50 @@ func TestExactFieldsFrom(t *testing.T) {
 		"a field no mapping makes exact is dropped, never kept with an empty term path")
 }
 
-func TestExactFieldsFromDropsEveryUnpushableField(t *testing.T) {
-	// Two fields are analyzed text in one mapping and keyword in the other, so neither
-	// can push. Both must be dropped whatever order the mapping properties come in: a
-	// walk that stops at the first unpushable field keeps the other one by accident.
-	raw := map[string]indexMapping{
-		"idx_a": {Mappings: indexProperties{Properties: map[string]mappingProperty{
-			"body":  {Type: "text"},
-			"notes": {Type: "text"},
-		}}},
-		"idx_b": {Mappings: indexProperties{Properties: map[string]mappingProperty{
-			"body":  {Type: "keyword"},
-			"notes": {Type: "keyword"},
-		}}},
+// TestExactFieldsFromDropsEveryFieldThatCannotPush pins that every unpushable field
+// is dropped whatever order the mapping properties come in. A walk that stops at
+// the first such field keeps the other one by accident.
+func TestExactFieldsFromDropsEveryFieldThatCannotPush(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  map[string]indexMapping
+	}{
+		{
+			// Two fields are analyzed text in one mapping and keyword in the other, so
+			// neither can push.
+			name: "fields analyzed as text in one mapping",
+			raw: map[string]indexMapping{
+				"idx_a": {Mappings: indexProperties{Properties: map[string]mappingProperty{
+					"body":  {Type: "text"},
+					"notes": {Type: "text"},
+				}}},
+				"idx_b": {Mappings: indexProperties{Properties: map[string]mappingProperty{
+					"body":  {Type: "keyword"},
+					"notes": {Type: "keyword"},
+				}}},
+			},
+		},
+		{
+			// Two fields are exact in both mappings but as different classes, so neither
+			// can push.
+			name: "fields exact as different classes",
+			raw: map[string]indexMapping{
+				"idx_a": {Mappings: indexProperties{Properties: map[string]mappingProperty{
+					"code": {Type: "keyword"},
+					"rank": {Type: "keyword"},
+				}}},
+				"idx_b": {Mappings: indexProperties{Properties: map[string]mappingProperty{
+					"code": {Type: "long"},
+					"rank": {Type: "long"},
+				}}},
+			},
+		},
 	}
-	require.Empty(t, exactFieldsFrom(raw))
-}
-
-func TestExactFieldsFromDropsEveryFieldTheMappingsDisagreeOn(t *testing.T) {
-	// Two fields are exact in both mappings but as different classes, so neither can
-	// push. Both must be dropped whatever order the mapping properties come in: a walk
-	// that stops at the first disagreement keeps the other one by accident.
-	raw := map[string]indexMapping{
-		"idx_a": {Mappings: indexProperties{Properties: map[string]mappingProperty{
-			"code": {Type: "keyword"},
-			"rank": {Type: "keyword"},
-		}}},
-		"idx_b": {Mappings: indexProperties{Properties: map[string]mappingProperty{
-			"code": {Type: "long"},
-			"rank": {Type: "long"},
-		}}},
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Empty(t, exactFieldsFrom(tt.raw))
+		})
 	}
-	require.Empty(t, exactFieldsFrom(raw))
 }
 
 func TestMappingPropertyExact(t *testing.T) {

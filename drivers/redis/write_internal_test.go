@@ -208,20 +208,71 @@ func TestDeleteAccumulatesAcrossChunks(t *testing.T) {
 	require.Equal(t, 2, stat.Missing, "every chunk's misses are summed")
 }
 
-// TestClearSurfacesTheFlushError pins that a failed FLUSHDB is reported: Clear
-// answers `iq data clear`, so reporting success on a keyspace it did not empty
-// would be the worst possible lie.
-func TestClearSurfacesTheFlushError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	store := openOnDB(t, ctx, numfmt.DecimalAuto)
-	dead, cancelDead := context.WithCancel(ctx)
-	cancelDead()
+// TestWriteCommandsSurfaceTheCancelledContext pins that each command reports the
+// failure of its call, with the cause kept in the chain, when its context is dead.
+// Clear answers `iq data clear`, so reporting success on a keyspace it did not
+// empty would be the worst possible lie. A failed DEL is reported with a zero
+// count, not read as a delete of keys that were missing. TypedScan reports a
+// failed SCAN, so a cut keyspace is not taken for a complete one. typedGet stops
+// when the TYPE pipeline fails, because with no type for each key it cannot choose
+// a reader.
+func TestWriteCommandsSurfaceTheCancelledContext(t *testing.T) {
+	tests := []struct {
+		name     string
+		call     func(t *testing.T, ctx context.Context, s *Store) error
+		fragment string
+		cause    string
+	}{
+		{
+			name: "clear reports the flush error",
+			call: func(t *testing.T, ctx context.Context, s *Store) error {
+				return s.Clear(ctx)
+			},
+			fragment: "redis flushdb",
+			cause:    "the command's cause survives the wrap",
+		},
+		{
+			name: "delete reports the del error with a zero count",
+			call: func(t *testing.T, ctx context.Context, s *Store) error {
+				stat, err := s.Delete(ctx, []string{"iq:test:k"})
+				require.Zero(t, stat)
+				return err
+			},
+			fragment: "redis del",
+			cause:    "the command's cause survives the wrap",
+		},
+		{
+			name: "typed scan reports the scan error",
+			call: func(t *testing.T, ctx context.Context, s *Store) error {
+				return s.TypedScan(ctx, func([]query.Record) error { return nil })
+			},
+			fragment: "redis scan",
+			cause:    "the cursor's cause survives the wrap",
+		},
+		{
+			name: "typed get fails fast on the type error",
+			call: func(t *testing.T, ctx context.Context, s *Store) error {
+				_, err := s.typedGet(ctx, []string{"iq:test:ttype"})
+				return err
+			},
+			fragment: "redis type",
+			cause:    "the pipeline's cause survives the wrap",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			store := openOnDB(t, ctx, numfmt.DecimalAuto)
+			dead, cancelDead := context.WithCancel(ctx)
+			cancelDead()
 
-	err := store.Clear(dead)
+			err := tt.call(t, dead, store)
 
-	require.ErrorContains(t, err, "redis flushdb")
-	require.ErrorIs(t, err, context.Canceled, "the command's cause survives the wrap")
+			require.ErrorContains(t, err, tt.fragment)
+			require.ErrorIs(t, err, context.Canceled, tt.cause)
+		})
+	}
 }
 
 // TestQueueWriteRejectsANonScalarPart proves queueWrite rejects a value whose
@@ -295,22 +346,6 @@ func TestPutInsertOnlySurfacesAFailedWrite(t *testing.T) {
 	require.Zero(t, stat)
 }
 
-// TestDeleteSurfacesTheDelError proves a failed DEL is reported with a zero
-// count, not read as a delete of keys that were missing.
-func TestDeleteSurfacesTheDelError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	store := openOnDB(t, ctx, numfmt.DecimalAuto)
-	dead, cancelDead := context.WithCancel(ctx)
-	cancelDead()
-
-	stat, err := store.Delete(dead, []string{"iq:test:k"})
-
-	require.ErrorContains(t, err, "redis del")
-	require.ErrorIs(t, err, context.Canceled, "the command's cause survives the wrap")
-	require.Zero(t, stat)
-}
-
 // TestTypedScanWalksEveryCursorRound proves TypedScan is a cursor loop under the
 // caller's context. With more keys than the SCAN COUNT hint, it must fetch more
 // rounds and deliver every key once.
@@ -319,7 +354,7 @@ func TestTypedScanWalksEveryCursorRound(t *testing.T) {
 	defer cancel()
 	store := openOnDB(t, ctx, numfmt.DecimalAuto)
 	const n = 3 * scanCount
-	seedStrings(t, ctx, store, "iq:test:tround:", n)
+	seedStrings(t, store, "iq:test:tround:", n)
 
 	seen := map[string]struct{}{}
 	err := store.TypedScan(ctx, func(batch []query.Record) error {
@@ -356,7 +391,7 @@ func TestTypedScanStopsAtTheFirstPageError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	store := openOnDB(t, ctx, numfmt.DecimalAuto)
-	seedStrings(t, ctx, store, "iq:test:tpageerr:", 5)
+	seedStrings(t, store, "iq:test:tpageerr:", 5)
 	store.pageSize = 2
 
 	sentinel := errors.New("stop")
@@ -371,21 +406,6 @@ func TestTypedScanStopsAtTheFirstPageError(t *testing.T) {
 
 	require.ErrorIs(t, err, sentinel)
 	require.Equal(t, 1, pages, "the walk stops at the first failing page")
-}
-
-// TestTypedScanSurfacesTheScanError proves TypedScan reports a failed SCAN, so a
-// cut keyspace is not taken for a complete one.
-func TestTypedScanSurfacesTheScanError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	store := openOnDB(t, ctx, numfmt.DecimalAuto)
-	dead, cancelDead := context.WithCancel(ctx)
-	cancelDead()
-
-	err := store.TypedScan(dead, func([]query.Record) error { return nil })
-
-	require.ErrorContains(t, err, "redis scan")
-	require.ErrorIs(t, err, context.Canceled, "the cursor's cause survives the wrap")
 }
 
 // TestTypedScanSurfacesAReadFailure proves TypedScan reports a page whose value
@@ -413,19 +433,4 @@ func TestTypedScanSurfacesAReadFailure(t *testing.T) {
 
 	require.ErrorContains(t, err, "redis read")
 	require.Zero(t, calls, "the failed page is not delivered")
-}
-
-// TestTypedGetFailsFastOnTypeError proves typedGet stops when the TYPE pipeline
-// fails. With no type for each key it cannot choose a reader.
-func TestTypedGetFailsFastOnTypeError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	store := openOnDB(t, ctx, numfmt.DecimalAuto)
-	dead, cancelDead := context.WithCancel(ctx)
-	cancelDead()
-
-	_, err := store.typedGet(dead, []string{"iq:test:ttype"})
-
-	require.ErrorContains(t, err, "redis type")
-	require.ErrorIs(t, err, context.Canceled, "the pipeline's cause survives the wrap")
 }
