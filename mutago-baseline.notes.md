@@ -821,3 +821,14 @@ Each of these mutants replaces the ctx of a command that is queued on a go-redis
 ## drivers/cassandra, weekly scan of 2026-10-12 (accepted 2026-10-13)
 
 - 69396d040275 drivers/cassandra/normalize.go:198 branch/case. The nil arm of the switch in keyString gets its own `return ""` back with a different indentation, so the program does not change.
+
+## mutago v2.10.26, branch deep scan of 2026-10-13 (accepted 2026-10-13)
+
+The deep scan run 38464330518 ran these four packages under mutago v2.10.26. Each id below is a new id for an edit that an earlier line of this file accepts. The code at each site did not change its behavior since that acceptance.
+
+- f4fab70f1201 drivers/cassandra/normalize.go:194 branch/if. The same edit as 7b4798482c96: the numberKey branch in keyString is skipped, and the `%v` default prints the same text.
+- 21df6010dcdb drivers/cassandra/normalize.go:218 branch/case. The default arm of numberKey gets its own `return "", false` back with a different indentation, so the program does not change.
+- 3031932e6bb5 drivers/redis/format.go:68 branch/if. The same edit as f28d80fb93b2: without a newline in s, strings.ReplaceAll returns s unchanged.
+- 74cd506e8529 internal/shape/shape.go:548 branch/if. The same edit as 8028e5c64c63: time.Parse with the layout "2006-01-02" accepts the same strings as the regexp in matchDate.
+- b3d8a90adb64 internal/shape/shape.go:610 branch/case. The same edit as d4b2f616e4ae: the default arm of formats.resolve gets its own `return ""` back with a different indentation.
+- bd305ca0b35c internal/shape/shape.go:628 branch/if. The same edit as 9785c3f69ec5: vals fills again after over in enumAcc.observe, but over stays true, so values and mergeFrom ignore vals.

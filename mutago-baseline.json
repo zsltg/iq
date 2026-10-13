@@ -1154,6 +1154,24 @@
    "line": 354
   },
   {
+   "id": "74cd506e85298c814d1ee624e397d435",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/if",
+   "line": 548
+  },
+  {
+   "id": "b3d8a90adb640935a98e2f21b9b58c05",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/case",
+   "line": 610
+  },
+  {
+   "id": "bd305ca0b35c3711d7c880e987446911",
+   "file": "internal/shape/shape.go",
+   "mutator": "branch/if",
+   "line": 628
+  },
+  {
    "id": "86a6546efa5e62a47e3515554b754a93",
    "file": "internal/parquetout/writer.go",
    "mutator": "branch/case",
@@ -1521,6 +1539,12 @@
   },
   {
    "id": "f28d80fb93b2a91965dc29f1eddf5cd4",
+   "file": "drivers/redis/format.go",
+   "mutator": "branch/if",
+   "line": 68
+  },
+  {
+   "id": "3031932e6bb5f7d854f8a175e8093374",
    "file": "drivers/redis/format.go",
    "mutator": "branch/if",
    "line": 68
@@ -2232,6 +2256,18 @@
    "file": "drivers/cassandra/normalize.go",
    "mutator": "branch/case",
    "line": 198
+  },
+  {
+   "id": "f4fab70f1201fc8ead47c05557431412",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "branch/if",
+   "line": 194
+  },
+  {
+   "id": "21df6010dcdb2677fad56ff11bc4b761",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "branch/case",
+   "line": 218
   },
   {
    "id": "ba7aa88733c782a23c6dfdb20d453055",
