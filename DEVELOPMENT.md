@@ -885,7 +885,9 @@ Posture and upkeep around the pipeline, all on GitHub:
 - `renovate.json` drives Renovate (the Mend GitHub App). It updates these items:
   the Go modules, the GitHub Actions (pinned by digest), the Go toolchain, the
   tool pins, the test images in `compose.yaml`, and `zensical` in
-  `docs/pyproject.toml`. It does not change the Python floor. A human merges every PR.
+  `docs/pyproject.toml`. It does not change the Python floor.
+  The docs dependencies have an exact pin, so uv locks the version that Renovate chose.
+  A human merges every PR.
   The `:gitSignOff` preset makes Renovate sign off each commit that it makes.
   If a person adds a commit to a Renovate PR, that commit also needs a
   sign-off, or the `dco` job fails.
