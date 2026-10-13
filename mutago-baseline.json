@@ -2228,6 +2228,12 @@
    "line": 212
   },
   {
+   "id": "69396d0402a755448a397bb96b03b862",
+   "file": "drivers/cassandra/normalize.go",
+   "mutator": "branch/case",
+   "line": 198
+  },
+  {
    "id": "ba7aa88733c782a23c6dfdb20d453055",
    "file": "drivers/cassandra/plan.go",
    "mutator": "expression/remove",

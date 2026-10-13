@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math/big"
 	"net/url"
 	"strconv"
 	"sync"
@@ -267,16 +268,34 @@ func TestBindValueReportsABadElement(t *testing.T) {
 	})
 }
 
+// TestToIntGivesZeroWithTheError pins that toInt returns 0 and a named error for
+// each value that is not a valid int: a fraction, a number past int64, or a
+// wrong kind of value.
 func TestToIntGivesZeroWithTheError(t *testing.T) {
-	got, err := toInt(1.5)
-	require.Zero(t, got)
-	require.ErrorContains(t, err, "is not a whole number")
+	tests := []struct {
+		name    string
+		in      any
+		wantErr string
+	}{
+		{"fraction", 1.5, "is not a whole number"},
+		{"big integer past int64", new(big.Int).Lsh(big.NewInt(1), 64), "overflows int"},
+		{"wrong kind of value", "x", "is not an integer"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := toInt(tt.in)
+			require.Zero(t, got)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
 }
 
-func TestToIntGivesZeroForAWrongKindOfValue(t *testing.T) {
-	got, err := toInt("x")
+// TestToFloatGivesZeroForANonNumber pins that toFloat returns 0 and a named error
+// for a value that is not a number.
+func TestToFloatGivesZeroForANonNumber(t *testing.T) {
+	got, err := toFloat("x")
 	require.Zero(t, got)
-	require.ErrorContains(t, err, "is not an integer")
+	require.ErrorContains(t, err, "is not a number")
 }
 
 // gateWriter blocks its first Write until release closes. Every later Write

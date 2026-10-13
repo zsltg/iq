@@ -817,3 +817,7 @@ Each of these mutants replaces the ctx of a command that is queued on a go-redis
 - 60409b793c96 drivers/cassandra/normalize.go:332 numbers/incrementer — the ParseFloat bit size in parseKeyDouble becomes 65. strconv parses as float32 only for bit size 32 and as float64 for every other value.
 - 850d83a9a022 drivers/cassandra/normalize.go:210 numbers/incrementer — the FormatFloat precision for float32 in numberKey becomes -2. strconv treats every negative precision as the shortest form.
 - 0e31fb68364e drivers/cassandra/normalize.go:212 numbers/incrementer — the FormatFloat precision for float64 in numberKey becomes -2. strconv treats every negative precision as the shortest form.
+
+## drivers/cassandra, weekly scan of 2026-10-12 (accepted 2026-10-13)
+
+- 69396d040275 drivers/cassandra/normalize.go:198 branch/case. The nil arm of the switch in keyString gets its own `return ""` back with a different indentation, so the program does not change.
