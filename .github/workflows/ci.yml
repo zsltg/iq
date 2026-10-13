@@ -109,7 +109,7 @@ jobs:
     steps:
       - &harden-base
         name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           disable-telemetry: true
@@ -315,7 +315,7 @@ jobs:
       - &harden-go-linux
         name: Harden the runner (block egress)
         if: runner.os == 'Linux'
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           disable-telemetry: true
@@ -376,7 +376,7 @@ jobs:
     steps:
       - &harden-go
         name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           disable-telemetry: true
@@ -443,7 +443,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           disable-telemetry: true
@@ -464,7 +464,7 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
       - *checkout
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       # GH_TOKEN adds the online audits: known-vulnerable-actions, impostor-commit,
       # ref-confusion and stale-action-refs. zizmor exits 11 to 14 on a finding.
       - name: zizmor (GitHub Actions workflow audit)
@@ -552,7 +552,7 @@ jobs:
     steps:
       - &harden-docker-elastic
         name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           disable-telemetry: true
@@ -595,7 +595,7 @@ jobs:
           go list "${pkgs[@]}" > partial/packages.txt
           IQ_COVER_PKGS="$PACKAGES" bash scripts/coverage.sh
           mv coverage.out partial/coverage.out
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-${{ matrix.group }}
           path: partial
@@ -613,7 +613,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           disable-telemetry: true
@@ -642,7 +642,7 @@ jobs:
           fi
       - *checkout
       - uses: ./.github/actions/setup-go
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: coverage-*
           path: partial
@@ -676,7 +676,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           disable-telemetry: true
@@ -777,7 +777,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           disable-telemetry: true
@@ -808,7 +808,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           disable-telemetry: true
@@ -992,7 +992,7 @@ jobs:
           matrix="$(jq -c 'map({shard, shards, backend})' plan/plan.json)"
           echo "plan: $(wc -c < plan/plan.json) bytes, matrix: $matrix"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: diff-plan
           path: plan
@@ -1019,7 +1019,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-go
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: diff-plan
           path: plan
@@ -1041,7 +1041,7 @@ jobs:
         run: bash scripts/mutation-diff-shard.sh shard-out plan/plan.json "$SHARD"
       # The ids of the escapes (mutago-agentic.json in each group) and the full report.
       # They upload also when the shard fails or is cancelled.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: mutate-diff-shard-${{ matrix.shard }}
@@ -1072,11 +1072,11 @@ jobs:
         run: |
           echo "::error::the mutate-plan job ended as $PLAN_RESULT, so no shard ran"
           exit 1
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: diff-plan
           path: plan
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: needs.mutate-diff.result != 'skipped'
         with:
           pattern: mutate-diff-shard-*
@@ -1094,7 +1094,7 @@ jobs:
             cat verdict-out/summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
           exit "$status"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: mutate-diff
@@ -1227,7 +1227,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           disable-telemetry: true
@@ -1268,7 +1268,7 @@ jobs:
         run: |
           . scripts/tool-versions.env
           go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" git --no-banner .
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       # The online audits read the advisory data of GitHub, so a re-run on
       # unchanged workflows finds a newly vulnerable or yanked action.
       - name: zizmor (GitHub Actions workflow audit, fresh data)
@@ -1327,7 +1327,7 @@ jobs:
             exit 1
           fi
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: scan-plan
           path: plan
@@ -1349,7 +1349,7 @@ jobs:
       - *harden-docker-elastic
       - *checkout
       - uses: ./.github/actions/setup-go
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: scan-plan
           path: plan
@@ -1387,7 +1387,7 @@ jobs:
       # cancelled, so the finished cells of that shard are kept. Such a shard has
       # no shard.json (the runner writes it last), so the verdict fails its package.
       # overwrite lets "Re-run failed jobs" replace the artifact of the failed attempt.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: mutation-${{ matrix.slug }}-${{ matrix.shard }}
@@ -1422,11 +1422,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/mutation-state.sh fetch badges
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: scan-plan
           path: plan
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: needs.deep-mutate.result != 'skipped'
         with:
           pattern: mutation-*
@@ -1446,7 +1446,7 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
           exit "$status"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.verdict.outputs.publish == 'true'
         with:
           name: scan-state
@@ -1469,7 +1469,7 @@ jobs:
     steps:
       - *harden-base
       - *checkout
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: scan-state
           path: badges
@@ -1501,7 +1501,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           disable-telemetry: true
@@ -1516,7 +1516,7 @@ jobs:
             release-assets.githubusercontent.com:443
             releases.astral.sh:443
       - *checkout
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - name: Build site
         run: uv run --locked zensical build --clean
         working-directory: docs
