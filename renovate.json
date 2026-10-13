@@ -26,6 +26,11 @@
       "groupName": "minor and patch updates"
     },
     {
+      "description": "The docs tooling in docs/pyproject.toml is an application, so each dependency has an exact pin. With a range, uv locks the newest release, which can be younger than the minimum release age, and Renovate reports an artifact update failure.",
+      "matchManagers": ["pep621"],
+      "rangeStrategy": "pin"
+    },
+    {
       "description": "Renovate must not raise the Python floor in docs/pyproject.toml. A higher floor makes uv select a Python that has no wheel for every docs dependency, and the docs build fails. A person raises the floor by hand.",
       "matchManagers": ["pep621"],
       "matchDepTypes": ["requires-python"],
