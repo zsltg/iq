@@ -61,10 +61,11 @@ type KVStore interface {
 }
 
 // FilteredScanner is an optional capability a KVStore can also implement: given a
-// pushed-down predicate, stream only the matching documents.
+// pushed-down predicate, stream fewer documents than a full scan.
 //
-// The predicate is a conservative superset of the jq filter. The engine runs the full
-// jq filter again over every page, so a prefilter never changes results. An implementer
+// The predicate is a conservative superset of the jq filter. ScanFiltered must return
+// every jq match and can return extra documents. The engine runs the full jq filter
+// again over every page, so a prefilter never changes results. An implementer
 // can narrow on the backend, on the client before it decodes a document, or both. A
 // store that does neither does not implement this port, and the engine falls back to a
 // full scan.

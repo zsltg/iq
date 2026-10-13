@@ -14,10 +14,10 @@ import (
 // rdbSource streams a Redis RDB snapshot as typed records. Each object converts to
 // the Type/Value shape that the typed read of the live Redis adapter produces (see
 // drivers/redis: string→string, hash→object, list/set→array, zset→[{member,score}],
-// stream→[{id,fields}]). So an RDB restore round-trips losslessly, and a jq query
-// over a dump matches a query over the live server. RDB metadata (aux, resizedb,
-// functions) and opaque module types carry no keyspace value, and the reader skips
-// them.
+// stream→[{id,fields}]). So for these types an RDB restore round-trips losslessly,
+// and a jq query over a dump matches a query over the live server. The reader skips
+// RDB metadata (aux, resizedb, functions), which carries no keyspace value. It also
+// skips opaque module types, so a module value does not round-trip.
 func rdbSource(r io.Reader, size int) query.RecordSource {
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
 		page := make([]query.Record, 0, size)

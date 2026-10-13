@@ -160,8 +160,8 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 	return s.scanWith(ctx, bson.M{}, fn)
 }
 
-// ScanFiltered translates pred to a native Mongo query. See
-// query.FilteredScanner. Only equality is pushed.
+// ScanFiltered translates pred to a native Mongo query with toFilter. See
+// query.FilteredScanner. toFilter lists the predicates that push.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	return s.scanWith(ctx, toFilter(pred), fn)
 }

@@ -58,7 +58,7 @@ func (c *counter) next() int {
 // And/Or combinations are pushed, on a single top-level attribute path. An And keeps
 // the conjuncts that compile and drops the rest. An Or must compile every branch, or
 // it is dropped whole, because dropping one branch would lose items. Ranges, regex,
-// size, negations, and element matches are never pushed.
+// size, element matches, and the other negations (Ne, NoneMatch) are never pushed.
 func compile(pred predicate.Node) (frag, bool) {
 	return build(&counter{}, pred)
 }

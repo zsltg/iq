@@ -68,12 +68,13 @@ type driver struct {
 	// open). The post-open health check of `iq ping` and `iq add` then needs no
 	// second round-trip.
 	verifiesOnOpen bool
-	// filtersScan marks a driver that implements the FilteredScanner
-	// capability: it narrows a scan with a pushed predicate, on the server or
-	// with a client-side raw-byte prefilter (Redis). `--explain` uses it to
-	// tell a conjunct that a backend declined from a driver that never filters
-	// a scan (the read-only file driver), and to give the right client-side
-	// reason. A driver with false is scanned whole and filtered client-side.
+	// filtersScan marks a driver whose ExplainPlan can report a conjunct as
+	// pushed: it narrows a scan through the FilteredScanner capability, on the
+	// server or with a client-side raw-byte prefilter (Redis). `--explain` uses
+	// it to tell a conjunct that a backend declined from a driver with no
+	// scan-side filter to report. The file driver leaves it false: it has no
+	// server, and its prefilter depends on the format and cache of the opened
+	// dump, so `--explain` shows every conjunct as client-side.
 	filtersScan bool
 	open        func(ctx context.Context, cfg *config) (store, error)
 	// explainPlan describes, without connecting, the backend calls this driver

@@ -19,8 +19,8 @@ import (
 )
 
 // sourcePlan is the computed access plan for one source: the driver name, the
-// query classification, the planned backend operations, the server-side filter
-// (nil when the backend filters nothing), and the per-conjunct pushdown
+// query classification, the planned backend operations, the planned scan filter
+// (nil when no filter is planned), and the per-conjunct pushdown
 // decisions. The pretty --explain/--verbose text and the structured "query
 // plan" log record both read from this one assembly (buildSourcePlan), so they
 // never drift. hasPlan is false when the scheme has no registered describer.

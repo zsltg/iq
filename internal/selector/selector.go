@@ -2,9 +2,10 @@
 // expression doubles as the key selector: its root-level paths name the store keys to
 // fetch. If every root path resolves to a specific key, the fetch is bounded to O(keys
 // requested). Otherwise (a bare `.`, value iteration `.[]`, `keys`, a computed index,
-// and so on), only materializing the whole keyspace can answer the expression. That
-// read is unbounded. This package decides which case an expression is. The caller
-// decides whether an unbounded read is permitted.
+// and so on), only a read of the whole keyspace can answer the expression. That read
+// is unbounded. A streamable expression (rooted at `.[]`) can run page by page. Any
+// other one needs the whole keyspace in memory. This package decides which case an
+// expression is. The caller decides whether an unbounded read is permitted.
 package selector
 
 import (

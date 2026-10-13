@@ -8,10 +8,11 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// toFilter translates a neutral predicate into a MongoDB find filter. An Eq
-// becomes a field equality on the dotted path; And and Or become $and and $or.
-// A nil predicate (nothing to push) becomes an empty filter that matches every
-// document, so the caller falls back to a full scan.
+// toFilter translates a neutral predicate into a MongoDB find filter on the
+// dotted path. It pushes every node type: Eq, Cmp, Regex, Exists, Size,
+// ElemMatch, Ne, NotExists, NoneMatch, And, and Or. A nil predicate (nothing to
+// push) becomes an empty filter that matches every document, so the caller
+// falls back to a full scan.
 func toFilter(n predicate.Node) bson.M {
 	switch t := n.(type) {
 	case nil:
