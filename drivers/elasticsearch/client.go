@@ -109,7 +109,7 @@ type osFlavor struct {
 	os *opensearch.Client
 }
 
-func (c osFlavor) perform(req *http.Request) (*http.Response, error) { return c.os.Perform(req) }
+func (c osFlavor) perform(req *http.Request) (*http.Response, error) { return c.os.Stream(req) }
 func (c osFlavor) label() string                                     { return "opensearch" }
 func (c osFlavor) scanSort() []any                                   { return []any{map[string]any{"_id": "asc"}} }
 func (c osFlavor) close() error                                      { return nil }
