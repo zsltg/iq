@@ -820,7 +820,7 @@ Each of these mutants replaces the ctx of a command that is queued on a go-redis
 
 ## drivers/cassandra, weekly scan of 2026-10-12 (accepted 2026-10-13)
 
-- 69396d040275 drivers/cassandra/normalize.go:198 branch/case. The nil arm of the switch in keyString gets its own `return ""` back with a different indentation, so the program does not change.
+- 69396d0402a7 drivers/cassandra/normalize.go:198 branch/case. The nil arm of the switch in keyString gets its own `return ""` back with a different indentation, so the program does not change.
 
 ## mutago v2.10.26, branch deep scan of 2026-10-13 (accepted 2026-10-13)
 
