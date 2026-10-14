@@ -132,12 +132,38 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	}
 	// A nil query is a full point-in-time walk, so the narrowing flag needs no branch.
 	query, _ := s.toQuery(pred)
-	// A nil matcher means no prefilter.
-	var matcher *rawpred.Matcher
-	if !s.exactPush(pred) && !referencesInjectedID(pred) {
-		matcher = rawpred.NewMatcher(pred)
+	return s.pagedSearch(ctx, query, s.prefilterMatcher(pred), fn)
+}
+
+// prefilterMatcher makes the live prefilter decision with the mapping. A nil matcher
+// means no prefilter.
+func (s *Store) prefilterMatcher(pred predicate.Node) *rawpred.Matcher {
+	if s.exactPush(pred) || referencesInjectedID(pred) {
+		return nil
 	}
-	return s.pagedSearch(ctx, query, matcher, fn)
+	return rawpred.NewMatcher(pred)
+}
+
+// neverExact reports whether the predicate has a leaf that no mapping makes exact:
+// a leaf that is not an Eq, an Eq with a null value, or an Eq on a nested path. An
+// empty composite counts as never exact. It mirrors exactPush without the mapping.
+func neverExact(n predicate.Node) bool {
+	switch t := n.(type) {
+	case predicate.Eq:
+		return t.Value == nil || len(t.Path) != 1
+	case predicate.And:
+		return anyNeverExact(t)
+	case predicate.Or:
+		return anyNeverExact(t)
+	default:
+		return true
+	}
+}
+
+// anyNeverExact reports whether a composite is empty or has a child that is never
+// exact.
+func anyNeverExact(children []predicate.Node) bool {
+	return len(children) == 0 || slices.ContainsFunc(children, neverExact)
 }
 
 // exactPush reports whether toQuery captures n exactly. The backend then returns

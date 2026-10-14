@@ -141,7 +141,7 @@ Hashed, everything that paints a frame or fabricates the world in it:
 |---|---|
 | `scripts/demo/` | the recorder, its scripts and every knob in `demo.mk` |
 | `scripts/seed-mongo.sh` | the four books on screen |
-| `cmd/` `explain.go`, `output.go`, `gron.go`, `color.go`, `errrender.go`, `source.go` | the plan, the two writers, every color, and the handle `add` echoes |
+| `cmd/` `explain.go`, `explain_stages.go`, `output.go`, `gron.go`, `color.go`, `errrender.go`, `source.go` | the plan and its filter stages, the two writers, every color, and the handle `add` echoes |
 | `internal/render`, `internal/jqfmt` | the JSON colorizer and the pretty-printed filter inside the plan |
 
 Excluded from those roots: `*_test.go` and `*.md` (this file included). Neither

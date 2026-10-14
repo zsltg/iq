@@ -196,41 +196,34 @@ hold 4
 # 4. The same command again, recalled from history with the up arrow and explained
 #    rather than retyped. --explain prints the plan without connecting: the pretty
 #    filter with each stage annotated, the projection now among them as a stage of its
-#    own, the mongo calls the filter becomes, and the pushdown section, which is the
+#    own, the mongo calls the filter becomes, and the filter stages, which are the
 #    point of the whole screen. The conjunct is compiled to a Mongo filter and
-#    evaluated on the server, so the scan never leaves it.
+#    evaluated on the server, so the server filter section shows it, and the jq
+#    section has no conjunct left to run alone.
 #
-#    The plan is 36 lines into a 26-row terminal, so it goes where a person sends
-#    output taller than the screen: into a pager. -C is what keeps its colors, iq
-#    turns the color writer off when stdout is not a terminal and this stdout is a
-#    pipe; less -R passes the escapes it forces on straight through. Two screens, one
-#    Space between them, and the reader is the one turning the page.
+#    The plan goes into a pager, where a person sends a plan that can outgrow the
+#    screen. -C is what keeps its colors, iq turns the color writer off when stdout is
+#    not a terminal and this stdout is a pipe; less -R passes the escapes it forces on
+#    straight through. The plan is 23 lines, so it fits the 26-row terminal on one page,
+#    and less prints (END) under it at once.
 #
 #    -v is on stderr, which is not in the pipe, so its resolved source line is written
 #    to the terminal rather than to the pager: less has the alternate screen up by
-#    then, the line lands at the top of it, and the plan painting under it scrolls it
-#    off. Measured, not assumed, and nothing else on screen moves.
+#    then, and the line lands at the top of it, above the plan. Measured, not assumed,
+#    and nothing else on screen moves.
 forget
 recall { --explain -v -C | less -R}
-# Page one, the top 25 lines: the source, the annotated filter, the calls it becomes,
-# and the pushdown section down to the middle of the compiled Mongo filter. `calls:`
-# is the mongo section's header, the one token of the screen that cannot also be read
-# off the recalled command line.
+# The one page, asserted in order. `calls:` is the mongo section's header, the one
+# token of the plan that cannot also be read off the recalled command line. `find):`
+# then matches the end of the `server filter (mongo find):` header, which the ops
+# line `find(<filter>)` cannot answer, and `object` the last arm of the $type list in
+# the fragment, which is only in the server filter section. `END` is what less prints
+# when the whole plan is on screen.
 await "calls:"
-hold 5
-# Space pages down, and `forget` first because the assertion below is about what the
-# SECOND page paints. less scrolls rather than repainting: the page is one screen from
-# the end, so it stops with the last line at the bottom, which puts the `mongo calls:`
-# header back at the top and paints only the eleven rows that close the compiled
-# filter, plus its own prompt. Those eleven rows are what is asserted, in order: the
-# `object` arm of the $type list, then the `(END)` less prints when there is no more
-# to page. `object` is in the annotation on page one too, which is exactly why the
-# buffer is dropped first.
-forget
-send -- " "
+await "find):"
 await "object"
 await "END"
-hold 6
+hold 8
 # q quits, the alternate screen goes with it, and the recalled command line is on
 # screen again with the prompt under it, which is where the next command is typed. The
 # assertion is that prompt, spelled `2004h` for the reason `await` gives above: if less

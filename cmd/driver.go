@@ -68,19 +68,12 @@ type driver struct {
 	// open). The post-open health check of `iq ping` and `iq add` then needs no
 	// second round-trip.
 	verifiesOnOpen bool
-	// filtersScan marks a driver whose ExplainPlan can report a conjunct as
-	// pushed: it narrows a scan through the FilteredScanner capability, on the
-	// server or with a client-side raw-byte prefilter (Redis). `--explain` uses
-	// it to tell a conjunct that a backend declined from a driver with no
-	// scan-side filter to report. The file driver leaves it false: it has no
-	// server, and its prefilter depends on the format and cache of the opened
-	// dump, so `--explain` shows every conjunct as client-side.
-	filtersScan bool
-	open        func(ctx context.Context, cfg *config) (store, error)
+	open           func(ctx context.Context, cfg *config) (store, error)
 	// explainPlan describes, without connecting, the backend calls this driver
 	// would make for a classified query and pushed predicate — the data the query
-	// plan (--explain/--verbose) shows.
-	explainPlan func(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan
+	// plan (--explain/--verbose) shows. Only a driver whose plan depends on the URI
+	// reads it, and only that driver returns an error.
+	explainPlan func(src planSource, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error)
 	// explainWrite, explainClear, explainDrop, and explainDelete are the
 	// write-side counterparts. Each describes an `iq data` operation without
 	// connecting, so `--explain` stays connection-free. The bool of explainDrop
@@ -92,6 +85,32 @@ type driver struct {
 	explainClear  func() query.AccessPlan
 	explainDrop   func() (query.AccessPlan, bool)
 	explainDelete func() (query.AccessPlan, bool)
+}
+
+// planSource is the source a plan describes: the saved URI and the resolved address.
+// Execution opens the store with the same two values, so planning parses what the
+// open parses.
+type planSource struct {
+	url     string
+	address string
+}
+
+// planSource returns the plan source of the config.
+func (cfg *config) planSource() planSource {
+	return planSource{url: cfg.url, address: cfg.address}
+}
+
+// planSource returns the plan source of the endpoint.
+func (e endpoint) planSource() planSource {
+	return planSource{url: e.url, address: e.address}
+}
+
+// withoutURI adapts a plan function that ignores the URI and cannot fail to the
+// registry signature.
+func withoutURI(f func(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan) func(planSource, selector.KeySet, predicate.Node, bool) (query.AccessPlan, error) {
+	return func(_ planSource, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
+		return f(keys, pred, unbounded), nil
+	}
 }
 
 // drivers is the registry of every backend the CLI can dispatch to. Order is the
@@ -106,11 +125,10 @@ var drivers = []driver{
 		addressable: true,
 		params:      iqmongo.URIParams,
 		uriExample:  "mongodb://host/db?collection=orders",
-		filtersScan: true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqmongo.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   iqmongo.ExplainPlan,
+		explainPlan:   withoutURI(iqmongo.ExplainPlan),
 		explainWrite:  iqmongo.ExplainWrite,
 		explainClear:  iqmongo.ExplainClear,
 		explainDrop:   iqmongo.ExplainDrop,
@@ -125,11 +143,10 @@ var drivers = []driver{
 		addressable: true,
 		params:      iqcassandra.URIParams,
 		uriExample:  "cassandra://host/keyspace?table=orders",
-		filtersScan: true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcassandra.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   iqcassandra.ExplainPlan,
+		explainPlan:   withoutURI(iqcassandra.ExplainPlan),
 		explainWrite:  iqcassandra.ExplainWrite,
 		explainClear:  iqcassandra.ExplainClear,
 		explainDrop:   iqcassandra.ExplainDrop,
@@ -146,11 +163,10 @@ var drivers = []driver{
 		uriExample:     "dynamodb://us-east-1/?table=orders",
 		uriNote:        "The host is the region. Credentials come from the AWS default chain.",
 		verifiesOnOpen: true,
-		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqdynamodb.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   iqdynamodb.ExplainPlan,
+		explainPlan:   withoutURI(iqdynamodb.ExplainPlan),
 		explainWrite:  iqdynamodb.ExplainWrite,
 		explainClear:  iqdynamodb.ExplainClear,
 		explainDrop:   iqdynamodb.ExplainDrop,
@@ -167,11 +183,12 @@ var drivers = []driver{
 		uriExample:     "hbase://host:2181/?table=books",
 		uriNote:        "The host is the ZooKeeper quorum.",
 		verifiesOnOpen: true,
-		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqhbase.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   iqhbase.ExplainPlan,
+		explainPlan: func(src planSource, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
+			return iqhbase.ExplainPlan(iqhbase.Source{URI: src.url, Address: src.address}, keys, pred, unbounded)
+		},
 		explainWrite:  iqhbase.ExplainWrite,
 		explainClear:  iqhbase.ExplainClear,
 		explainDrop:   iqhbase.ExplainDrop,
@@ -187,11 +204,10 @@ var drivers = []driver{
 		params:         iqcouchdb.URIParams,
 		uriExample:     "couchdb://host:5984/?database=orders",
 		verifiesOnOpen: true,
-		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcouchdb.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   iqcouchdb.ExplainPlan,
+		explainPlan:   withoutURI(iqcouchdb.ExplainPlan),
 		explainWrite:  iqcouchdb.ExplainWrite,
 		explainClear:  iqcouchdb.ExplainClear,
 		explainDrop:   iqcouchdb.ExplainDrop,
@@ -207,11 +223,10 @@ var drivers = []driver{
 		params:         iqcouchbase.URIParams,
 		uriExample:     "couchbase://host/?bucket=iq&collection=sales.orders",
 		verifiesOnOpen: true,
-		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcouchbase.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:  iqcouchbase.ExplainPlan,
+		explainPlan:  withoutURI(iqcouchbase.ExplainPlan),
 		explainWrite: iqcouchbase.ExplainWrite,
 		explainClear: iqcouchbase.ExplainClear,
 		explainDrop:  iqcouchbase.ExplainDrop,
@@ -227,11 +242,10 @@ var drivers = []driver{
 		uriExample:     "neo4j://host:7687/?label=Person",
 		uriNote:        "The host is the Bolt server.",
 		verifiesOnOpen: true,
-		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqneo4j.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   iqneo4j.ExplainPlan,
+		explainPlan:   withoutURI(iqneo4j.ExplainPlan),
 		explainWrite:  iqneo4j.ExplainWrite,
 		explainClear:  iqneo4j.ExplainClear,
 		explainDrop:   iqneo4j.ExplainDrop,
@@ -247,11 +261,10 @@ var drivers = []driver{
 		params:         iqelasticsearch.URIParams,
 		uriExample:     "elasticsearch://host:9200/?index=books",
 		verifiesOnOpen: true,
-		filtersScan:    true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqelasticsearch.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   iqelasticsearch.ExplainPlan,
+		explainPlan:   withoutURI(iqelasticsearch.ExplainPlan),
 		explainWrite:  iqelasticsearch.ExplainWrite,
 		explainClear:  iqelasticsearch.ExplainClear,
 		explainDrop:   iqelasticsearch.ExplainDrop,
@@ -269,27 +282,25 @@ var drivers = []driver{
 		verifiesOnOpen: true,
 		// OpenSearch shares the Elasticsearch driver; the source scheme selects the
 		// opensearch-go client behind the same query ports.
-		filtersScan: true,
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqelasticsearch.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   iqelasticsearch.ExplainPlan,
+		explainPlan:   withoutURI(iqelasticsearch.ExplainPlan),
 		explainWrite:  iqelasticsearch.ExplainWrite,
 		explainClear:  iqelasticsearch.ExplainClear,
 		explainDrop:   iqelasticsearch.ExplainDrop,
 		explainDelete: iqelasticsearch.ExplainDelete,
 	},
 	{
-		name:        "redis",
-		desc:        "Redis key-value store",
-		schemes:     []string{"redis", "rediss"},
-		doc:         "https://redis.io/docs/",
-		versions:    "7.0+",
-		filtersScan: true,
+		name:     "redis",
+		desc:     "Redis key-value store",
+		schemes:  []string{"redis", "rediss"},
+		doc:      "https://redis.io/docs/",
+		versions: "7.0+",
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqredis.Open(ctx, cfg.url, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   iqredis.ExplainPlan,
+		explainPlan:   withoutURI(iqredis.ExplainPlan),
 		explainWrite:  iqredis.ExplainWrite,
 		explainClear:  iqredis.ExplainClear,
 		explainDrop:   iqredis.ExplainDrop,
@@ -306,7 +317,7 @@ var drivers = []driver{
 		open: func(_ context.Context, cfg *config) (store, error) {
 			return iqfile.Open(cfg.url, cfg.decimalMode, cfg.fileCacheConfig())
 		},
-		explainPlan: iqfile.ExplainPlan,
+		explainPlan: withoutURI(iqfile.ExplainPlan),
 	},
 }
 

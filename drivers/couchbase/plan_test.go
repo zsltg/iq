@@ -43,38 +43,20 @@ func TestExplainPlan(t *testing.T) {
 		require.Contains(t, plan.Filter["params"], "p0")
 	})
 
-	t.Run("exact push describes no client-side prefilter", func(t *testing.T) {
-		// An exact push (equality) returns precisely jq's matching set, so ExplainPlan must
-		// not claim a client-side prefilter runs — the phrase distinguishes this branch from
-		// both the partial and the non-narrowing wordings, which do mention it.
-		pred := predicate.Eq{Path: []string{"year"}, Value: 2017}
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
-		require.NotContains(t, plan.Ops[0], "raw-byte prefilter")
-		require.Equal(t, "`t`.`year` = $p0", plan.Filter["where"])
-	})
-
-	t.Run("partial push describes the where and the residual prefilter", func(t *testing.T) {
-		// An And whose != conjunct the server drops: it narrows on the equality, and the
-		// residual is trimmed by the client-side raw-byte prefilter. "residual" is the phrase
-		// unique to this branch (the non-narrowing wording says "provable non-matches"), so it
-		// pins the exact-vs-partial split, not a shared prefix.
+	t.Run("a narrowing push never names the prefilter in the ops", func(t *testing.T) {
 		pred := predicate.And{
 			predicate.Eq{Path: []string{"year"}, Value: 2017},
 			predicate.Ne{Path: []string{"lang"}, Value: "go"},
 		}
 		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
-		require.Contains(t, plan.Ops[0], "raw-byte prefilter")
-		require.Contains(t, plan.Ops[0], "residual")
+		require.NotContains(t, plan.Ops[0], "rawpred")
+		require.Contains(t, plan.Ops[0], "WHERE <pushed>")
 		require.Equal(t, "`t`.`year` = $p0", plan.Filter["where"])
 	})
 
-	t.Run("non-narrowing predicate is a full scan with the prefilter", func(t *testing.T) {
-		// Nothing narrows, so the plan is a full keyset scan trimmed by the prefilter.
-		// "provable non-matches" is the phrase unique to this branch, distinguishing it from
-		// the partial wording's "residual" and pinning the default (non-narrowing) arm.
+	t.Run("non-narrowing predicate is a full scan", func(t *testing.T) {
 		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, predicate.Ne{Path: []string{"year"}, Value: 2017}, false)
-		require.Contains(t, plan.Ops[0], "raw-byte prefilter")
-		require.Contains(t, plan.Ops[0], "provable non-matches")
+		require.NotContains(t, plan.Ops[0], "rawpred")
 		require.NotContains(t, plan.Ops[0], "WHERE <pushed>")
 		require.Nil(t, plan.Filter)
 	})
@@ -152,4 +134,61 @@ func TestQueryErrorNoIndexHint(t *testing.T) {
 		require.Contains(t, err.Error(), "couchbase scan: boom")
 		require.NotContains(t, err.Error(), "CREATE PRIMARY INDEX")
 	})
+}
+
+func TestExplainPlanStages(t *testing.T) {
+	serverOn := query.StagePlan{State: query.StageOn, Scope: "sql++ where"}
+	serverOff := query.StagePlan{State: query.StageOff, Note: "no conjunct pushes"}
+	prefilterOn := query.StagePlan{State: query.StageOn, Scope: "rawpred on the raw value of each row, before decode"}
+	scan := selector.KeySet{Scan: true, Streamable: true}
+	tests := []struct {
+		name          string
+		keys          selector.KeySet
+		pred          predicate.Node
+		wantServer    query.StagePlan
+		wantPrefilter query.StagePlan
+	}{
+		{
+			name:          "exact where turns the prefilter off",
+			keys:          scan,
+			pred:          predicate.Eq{Path: []string{"year"}, Value: 2017},
+			wantServer:    serverOn,
+			wantPrefilter: query.StagePlan{State: query.StageOff, Note: "the WHERE captures the predicate exactly"},
+		},
+		{
+			name: "equality with a declined regex keeps the prefilter on",
+			keys: scan,
+			pred: predicate.And{
+				predicate.Eq{Path: []string{"year"}, Value: 2017},
+				predicate.Regex{Path: []string{"t"}, Pattern: "^x"},
+			},
+			wantServer:    serverOn,
+			wantPrefilter: prefilterOn,
+		},
+		{
+			name:          "nothing pushable",
+			keys:          scan,
+			pred:          predicate.Ne{Path: []string{"year"}, Value: 2017},
+			wantServer:    serverOff,
+			wantPrefilter: prefilterOn,
+		},
+		{
+			name:          "nil predicate",
+			keys:          scan,
+			wantServer:    serverOff,
+			wantPrefilter: query.StagePlan{State: query.StageOff, Note: "no compiled predicate"},
+		},
+		{
+			name: "bounded read",
+			keys: selector.KeySet{Keys: []string{"1"}},
+			pred: predicate.Eq{Path: []string{"year"}, Value: 2017},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := ExplainPlan(tt.keys, tt.pred, false)
+			require.Equal(t, tt.wantServer, plan.Server)
+			require.Equal(t, tt.wantPrefilter, plan.Prefilter)
+		})
+	}
 }

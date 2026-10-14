@@ -138,7 +138,7 @@ func (s *mcpServer) addReadTools(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "iq_explain",
 		Title:       "Explain a query plan",
-		Description: "Compute the access plan for a filter without connecting: the route (bounded read, streaming scan, materialized scan), the backend calls, and which select() conjuncts the backend evaluates. Run it before any scan.",
+		Description: "Compute the access plan for a filter without connecting: the route (bounded read, streaming scan, materialized scan), the backend calls, and the stages planned for each select() conjunct (server, prefilter, jq). Run it before any scan.",
 		Annotations: readOnlyAnnotations("Explain a query plan"),
 	}, s.toolExplain)
 	mcp.AddTool(srv, &mcp.Tool{
@@ -272,6 +272,20 @@ type mcpClassification struct {
 	Scan       bool     `json:"scan"`
 }
 
+// mcpStagePlan is query.StagePlan as the output schema sees it. The state is a
+// string, as query.StageState marshals. The schema inference reads the integer
+// type of the state, so it cannot take query.StagePlan itself.
+type mcpStagePlan struct {
+	State string `json:"state" jsonschema:"none, off, on, or conditional"`
+	Scope string `json:"scope,omitempty" jsonschema:"what the stage evaluates and how, for on and conditional"`
+	Note  string `json:"note,omitempty" jsonschema:"the reason for none and off, the condition for conditional"`
+}
+
+// newMCPStagePlan converts a stage plan to its output form.
+func newMCPStagePlan(p query.StagePlan) *mcpStagePlan {
+	return &mcpStagePlan{State: p.State.String(), Scope: p.Scope, Note: p.Note}
+}
+
 // mcpExplainOutput is the access plan: the same facts the structured "query plan"
 // log record carries (sourcePlan.logAttrs), plus the rendered plan text.
 type mcpExplainOutput struct {
@@ -280,6 +294,8 @@ type mcpExplainOutput struct {
 	Classification mcpClassification `json:"classification"`
 	Ops            []string          `json:"ops"`
 	Filter         map[string]any    `json:"filter,omitempty"`
+	Server         *mcpStagePlan     `json:"server,omitempty"`
+	Prefilter      *mcpStagePlan     `json:"prefilter,omitempty"`
 	Conjuncts      []conjunctPlan    `json:"conjuncts,omitempty"`
 	Plan           string            `json:"plan"`
 }
@@ -317,7 +333,7 @@ func explainResult(cfg *config, filter, text string) (mcpExplainOutput, error) {
 	// cross-source filter has no URI, so the source plan below has no driver and
 	// leaves every per-source field at that empty value.
 	out := mcpExplainOutput{Plan: text, Ops: []string{}, Classification: mcpClassification{Keys: []string{}}}
-	sp, err := buildSourcePlan(cfg.url, filter, !cfg.noCompile, cfg.unbounded)
+	sp, err := buildSourcePlan(cfg.planSource(), filter, !cfg.noCompile, cfg.unbounded)
 	if err != nil {
 		return mcpExplainOutput{}, err
 	}
@@ -341,6 +357,9 @@ func (o *mcpExplainOutput) addSourcePlan(sp sourcePlan) {
 		o.Ops = sp.ops
 	}
 	o.Filter = sp.filter
+	if sp.keys.Scan && !sp.materialized {
+		o.Server, o.Prefilter = newMCPStagePlan(sp.server), newMCPStagePlan(sp.prefilter)
+	}
 	o.Conjuncts = sp.conjuncts
 }
 

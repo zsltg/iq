@@ -14,34 +14,45 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/pushdown"
 	"github.com/zsltg/iq/internal/query"
-	"github.com/zsltg/iq/internal/render"
 	"github.com/zsltg/iq/internal/selector"
 )
 
 // sourcePlan is the computed access plan for one source: the driver name, the
-// query classification, the planned backend operations, the planned scan filter
-// (nil when no filter is planned), and the per-conjunct pushdown
-// decisions. The pretty --explain/--verbose text and the structured "query
-// plan" log record both read from this one assembly (buildSourcePlan), so they
-// never drift. hasPlan is false when the scheme has no registered describer.
-// Then the caller adds no backend section and logs no plan.
+// query classification, the planned backend operations, the merged server filter
+// (nil when none is planned), the server and prefilter stages of the whole
+// predicate, and the per-conjunct stage plans. The pretty --explain/--verbose text
+// and the structured "query plan" log record both read from this one assembly
+// (buildSourcePlan), so they never drift. hasPlan is false when the scheme has no
+// registered describer. Then the caller adds no backend section and logs no plan.
+// On the materialized route the stage plans stay empty, because the scan runs
+// neither stage.
 type sourcePlan struct {
-	hasPlan   bool
-	driver    string
-	keys      selector.KeySet
-	ops       []string
-	filter    map[string]any
-	conjuncts []conjunctPlan
+	hasPlan      bool
+	driver       string
+	keys         selector.KeySet
+	ops          []string
+	filter       map[string]any
+	server       query.StagePlan
+	prefilter    query.StagePlan
+	materialized bool
+	conjuncts    []conjunctPlan
 }
 
-// conjunctPlan is one top-level conjunct's pushdown outcome: the jq source, the
-// pushed decision, and the reason it stayed client-side (empty when pushed). Its
-// fields are exported so slog.Any renders it as a JSON object under the json
-// format — the CI-parseable per-conjunct contract.
+// conjunctPlan is the stage plan of one top-level conjunct: its jq source, the
+// one-line form of its compiled node, its server fragment, the ordered stages that
+// evaluate it, the stages that skip it with the reason, and the reason that only
+// jq sees it. Its fields are exported so slog.Any renders it as a JSON object under
+// the json format. That is the CI-parseable per-conjunct contract.
 type conjunctPlan struct {
-	Expr   string `json:"expr"`
-	Pushed bool   `json:"pushed"`
-	Reason string `json:"reason,omitempty"`
+	Expr     string            `json:"expr"`
+	Compiled string            `json:"compiled,omitempty"`
+	Server   map[string]any    `json:"server,omitempty"`
+	Stages   []string          `json:"stages"`
+	Skipped  map[string]string `json:"skipped,omitempty"`
+	Reason   string            `json:"reason,omitempty"`
+
+	// node is the compiled predicate. The text prefilter section renders it as a tree.
+	node predicate.Node
 }
 
 // buildSourcePlan computes the access plan for one source without connecting: it
@@ -50,41 +61,63 @@ type conjunctPlan struct {
 // backend calls it would make. An unrecognized scheme or a driver with no
 // describer yields hasPlan false. A filter parse failure is returned as a syntax
 // error. It is the single source both the text renderer and the log record use.
-func buildSourcePlan(url, filter string, compile, unbounded bool) (sourcePlan, error) {
+func buildSourcePlan(src planSource, filter string, compile, unbounded bool) (sourcePlan, error) {
 	q, err := gojq.Parse(filter)
 	if err != nil {
 		return sourcePlan{}, asSyntaxError(filter, err)
 	}
-	return buildSourcePlanQuery(url, q, compile, unbounded), nil
+	return buildSourcePlanQuery(src, q, compile, unbounded)
 }
 
-// materializedReason is why a conjunct stays client-side on the materialized
-// route.
+// materializedReason is why a conjunct stays jq-only on the materialized route.
 const materializedReason = "materialized: the scan reads every record"
+
+// Stage names in conjunctPlan.Stages and conjunctPlan.Skipped.
+const (
+	stageServer    = "server"
+	stagePrefilter = "prefilter"
+	stageJQ        = "jq"
+)
+
+// declinedReason is why a compiled conjunct has no server fragment.
+const declinedReason = "declined by backend translator"
 
 // buildSourcePlanQuery is buildSourcePlan for an already-parsed query, so the
 // --explain text path (which parses the filter once up front) does not re-parse it.
 // It follows JQEngine.Run: with unbounded set, a scan is materialized and pushes
-// nothing. Then the driver gets no predicate, and every conjunct is client-side
+// nothing. Then the driver gets no predicate, and every conjunct reaches only jq,
 // with materializedReason. The unbounded flag alone decides this. Only a
 // streamable scan has conjuncts, and a bounded read ignores the predicate.
-func buildSourcePlanQuery(url string, q *gojq.Query, compile, unbounded bool) sourcePlan {
-	d, ok := driverForScheme(schemeOf(url))
+func buildSourcePlanQuery(src planSource, q *gojq.Query, compile, unbounded bool) (sourcePlan, error) {
+	d, ok := driverForScheme(schemeOf(src.url))
 	if !ok || d.explainPlan == nil {
-		return sourcePlan{}
+		return sourcePlan{}, nil
 	}
 	keys := selector.Keys(q)
 	materialized := unbounded
 	pred, conjuncts := compiledPredicate(q, compile, materialized)
-	ap := d.explainPlan(keys, pred, unbounded)
-	return sourcePlan{
-		hasPlan:   true,
-		driver:    d.name,
-		keys:      keys,
-		ops:       ap.Ops,
-		filter:    ap.Filter,
-		conjuncts: conjunctPlans(d, keys, conjuncts, unbounded, materialized),
+	ap, err := d.explainPlan(src, keys, pred, unbounded)
+	if err != nil {
+		return sourcePlan{}, fmt.Errorf("plan %s source: %w", d.name, err)
 	}
+	cx := conjunctContext{driver: d, src: src, keys: keys, plan: ap}
+	plans, err := conjunctPlans(cx, conjuncts, materialized)
+	if err != nil {
+		return sourcePlan{}, err
+	}
+	sp := sourcePlan{
+		hasPlan:      true,
+		driver:       d.name,
+		keys:         keys,
+		ops:          ap.Ops,
+		filter:       ap.Filter,
+		materialized: materialized,
+		conjuncts:    plans,
+	}
+	if !materialized {
+		sp.server, sp.prefilter = ap.Server, ap.Prefilter
+	}
+	return sp, nil
 }
 
 // compiledPredicate returns the predicate to give the driver and the conjuncts
@@ -104,25 +137,29 @@ func compiledPredicate(q *gojq.Query, compile, materialized bool) (predicate.Nod
 	return nil, conjuncts
 }
 
-// conjunctPlans resolves each conjunct to its plan entry. On the materialized
-// route, every conjunct is client-side with materializedReason.
-func conjunctPlans(d driver, keys selector.KeySet, conjuncts []pushdown.Conjunct, unbounded, materialized bool) []conjunctPlan {
+// conjunctPlans resolves each conjunct to its stage plan. On the materialized
+// route, every conjunct reaches only jq, with materializedReason.
+func conjunctPlans(cx conjunctContext, conjuncts []pushdown.Conjunct, materialized bool) ([]conjunctPlan, error) {
 	var plans []conjunctPlan
 	for _, cj := range conjuncts {
 		if materialized {
-			plans = append(plans, conjunctPlan{Expr: cj.Expr, Reason: materializedReason})
+			plans = append(plans, conjunctPlan{Expr: cj.Expr, Stages: []string{stageJQ}, Reason: materializedReason})
 			continue
 		}
-		pushed, reason := conjunctDecision(d, keys, cj, unbounded)
-		plans = append(plans, conjunctPlan{Expr: cj.Expr, Pushed: pushed, Reason: reason})
+		c, err := conjunctStages(cx, cj)
+		if err != nil {
+			return nil, err
+		}
+		plans = append(plans, c)
 	}
-	return plans
+	return plans, nil
 }
 
 // logAttrs renders the source plan as the structured attributes of the "query
 // plan" log record: the source handle, the driver, a classification group
 // {keys, streamable, scan}, the planned ops, the server-side filter (a nested
-// object, omitted when none), and the per-conjunct decisions. Keys are attrs
+// object, omitted when none), the server and prefilter stage plans of a scan
+// (omitted on the materialized route), and the per-conjunct stage plans. Keys are attrs
 // only, never interpolated into the message. This is the documented stable-key
 // contract.
 func (sp sourcePlan) logAttrs(handle string) []any {
@@ -139,6 +176,9 @@ func (sp sourcePlan) logAttrs(handle string) []any {
 	}
 	if sp.filter != nil {
 		attrs = append(attrs, slog.Any("filter", sp.filter))
+	}
+	if sp.keys.Scan && !sp.materialized {
+		attrs = append(attrs, slog.Any("server", sp.server), slog.Any("prefilter", sp.prefilter))
 	}
 	if len(sp.conjuncts) > 0 {
 		attrs = append(attrs, slog.Any("conjuncts", sp.conjuncts))
@@ -167,7 +207,7 @@ func buildJQPlan(cfg *config, filter string, cross, describe bool) (string, erro
 	writePlanSection(&b, "jq filter")
 	writeJQFilterQuery(&b, q, describe, cfg.unbounded, !cross)
 	if !cross {
-		if err := writeAccessPlan(&b, cfg.url, q, !cfg.noCompile, cfg.unbounded); err != nil {
+		if err := writeAccessPlan(&b, cfg.planSource(), q, !cfg.noCompile, cfg.unbounded); err != nil {
 			return "", err
 		}
 	}
@@ -187,7 +227,7 @@ func buildCombinePlan(cfg *config, stages []combineStage, with string, describe 
 		}
 		writePlanSection(&b, fmt.Sprintf("$%s  <-  %s (%s)", st.varName, st.spec.handle, driverName(st.spec.url)))
 		writeJQFilterQuery(&b, q, describe, cfg.unbounded, true)
-		if err := writeAccessPlan(&b, st.spec.url, q, !cfg.noCompile, cfg.unbounded); err != nil {
+		if err := writeAccessPlan(&b, st.spec.planSource(), q, !cfg.noCompile, cfg.unbounded); err != nil {
 			return "", err
 		}
 	}
@@ -356,14 +396,16 @@ func stageNote(desc string, stage int, mark *accessMark) string {
 	}
 }
 
-// writeAccessPlan appends the backend-calls section for one source: the driver's
-// planned operations, a per-conjunct pushdown breakdown, and, when a predicate
-// pushes to the store, the compiled server-side filter as colored JSON. A driver
-// with no describer, or an unrecognized scheme, contributes nothing. The predicate
-// is compiled here only when pushdown is enabled (the default; disabled by
-// --no-compile), matching how execution gates the push.
-func writeAccessPlan(b *strings.Builder, url string, q *gojq.Query, compile, unbounded bool) error {
-	sp := buildSourcePlanQuery(url, q, compile, unbounded)
+// writeAccessPlan appends the plan of one source: the backend calls, then one
+// section per filter stage (server, prefilter, jq). A driver with no describer, or
+// an unrecognized scheme, contributes nothing. The predicate is compiled only when
+// pushdown is enabled (the default, disabled by --no-compile), matching how
+// execution gates the push.
+func writeAccessPlan(b *strings.Builder, src planSource, q *gojq.Query, compile, unbounded bool) error {
+	sp, err := buildSourcePlanQuery(src, q, compile, unbounded)
+	if err != nil {
+		return err
+	}
 	if !sp.hasPlan {
 		return nil
 	}
@@ -371,73 +413,7 @@ func writeAccessPlan(b *strings.Builder, url string, q *gojq.Query, compile, unb
 	for _, op := range sp.ops {
 		b.WriteString("  " + op + "\n")
 	}
-	writePushdownDecisions(b, sp.conjuncts)
-	if sp.filter != nil {
-		js, err := render.JSON(sp.filter, colorOn())
-		if err != nil {
-			return fmt.Errorf("render pushed filter: %w", err)
-		}
-		b.WriteString("  filter:\n")
-		writeIndented(b, js, 4)
-	}
-	return nil
-}
-
-// writePushdownDecisions appends the per-conjunct pushdown breakdown. For each
-// top-level conjunct of the select(...) predicate of the filter, it shows
-// whether the backend evaluates it server-side (pushed) or it falls to the
-// client-side jq re-run (client-side), and why a client-side conjunct did not
-// push. It mirrors the pushdown report of Trino EXPLAIN. The merged fragment of
-// the pushed conjuncts is the filter block that follows, so this section adds
-// decisions and reasons, never a second rendering. It writes nothing when the
-// filter has no analysable conjuncts (a non-streamable filter, no select, or
-// pushdown disabled).
-func writePushdownDecisions(b *strings.Builder, conjuncts []conjunctPlan) {
-	if len(conjuncts) == 0 {
-		return
-	}
-	writePlanSection(b, "pushdown")
-	for _, cj := range conjuncts {
-		writeConjunctLine(b, cj.Pushed, cj.Expr, cj.Reason)
-	}
-}
-
-// conjunctDecision resolves one conjunct to pushed (true, no reason) or
-// client-side (false, with the reason). A conjunct that the compiler cannot
-// turn into a predicate carries its own compile-stage reason. A compiled
-// conjunct goes to the scan translator of the driver through the same describer
-// as the plan. A non-nil pushed fragment means the backend pushes it. If the
-// translator declines it, or the driver has no scan-side filter, the conjunct
-// re-runs client-side. The caller does not ask for a materialized route, which
-// pushes nothing.
-func conjunctDecision(d driver, keys selector.KeySet, cj pushdown.Conjunct, unbounded bool) (bool, string) {
-	if cj.Pred == nil {
-		return false, cj.Reason
-	}
-	if !d.filtersScan {
-		return false, "store applies no server-side filter"
-	}
-	if d.explainPlan(keys, cj.Pred, unbounded).Filter == nil {
-		return false, "declined by backend translator"
-	}
-	return true, ""
-}
-
-// writeConjunctLine writes one decision row: a colored pushed/client-side label, the
-// conjunct's jq source, and, for a client-side conjunct, the reason it did not push.
-// The label word is padded before it is colored so the ANSI escapes never skew the
-// column alignment (the color helpers render plain when color is off).
-func writeConjunctLine(b *strings.Builder, pushed bool, expr, reason string) {
-	const w = len("client-side")
-	label, c := "pushed", pal.ok
-	if !pushed {
-		label, c = "client-side", pal.change
-	}
-	b.WriteString("  " + c.Sprint(label) + strings.Repeat(" ", w-len(label)) + "  " + expr)
-	if reason != "" {
-		b.WriteString("  " + pal.faint.Sprint("— "+reason))
-	}
-	b.WriteByte('\n')
+	return writeStageSections(b, sp)
 }
 
 // writePlanTitle writes the plan's title line.

@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/selector"
 )
 
@@ -65,6 +66,27 @@ func TestExplainPlan(t *testing.T) {
 			got := ExplainPlan(tt.keys, tt.pred, tt.unbounded)
 			require.Equal(t, tt.wantOps, got.Ops)
 			require.Equal(t, tt.wantFilter, got.Filter)
+		})
+	}
+}
+
+func TestExplainPlanStages(t *testing.T) {
+	scan := selector.KeySet{Scan: true, Streamable: true}
+	tests := []struct {
+		name       string
+		keys       selector.KeySet
+		pred       predicate.Node
+		wantServer query.StagePlan
+	}{
+		{name: "scan with a pushing fragment", keys: scan, pred: predicate.Eq{Path: []string{"a"}, Value: "x"}, wantServer: query.StagePlan{State: query.StageOn, Scope: "mongo find"}},
+		{name: "scan with a nil predicate", keys: scan, wantServer: query.StagePlan{State: query.StageOff, Note: "no conjunct pushes"}},
+		{name: "bounded read", keys: selector.KeySet{Keys: []string{"a"}}, pred: predicate.Eq{Path: []string{"a"}, Value: "x"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := ExplainPlan(tt.keys, tt.pred, false)
+			require.Equal(t, tt.wantServer, plan.Server)
+			require.Equal(t, query.StagePlan{}, plan.Prefilter)
 		})
 	}
 }

@@ -182,7 +182,7 @@ func (cfg *config) logQueryPlan(filter string, cross bool) {
 		lg.Info("query plan", "driver", "stdin",
 			"ops", []string{"decode stdin dump", "scan client-side"})
 	default:
-		sp, err := buildSourcePlan(cfg.url, filter, !cfg.noCompile, cfg.unbounded)
+		sp, err := buildSourcePlan(cfg.planSource(), filter, !cfg.noCompile, cfg.unbounded)
 		if err != nil || !sp.hasPlan {
 			return
 		}

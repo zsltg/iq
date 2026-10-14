@@ -82,8 +82,8 @@ Workflow:
 1. iq_sources lists the handles you may reach. Address one as "<handle>" or
    "<handle>.<keyspace>" (collection, table, index, label). Never guess a handle.
 2. iq_explain before any scan: it never connects, and it names the route
-   (bounded read, streaming scan, materialized scan) and which select() conjuncts
-   the backend evaluates.
+   (bounded read, streaming scan, materialized scan) and the stages planned for
+   each select() conjunct (server, prefilter, jq).
 3. iq_query runs the filter. The filter is both the key selector and the
    transform: '.["k"]' fetches one key, '.[] | select(...)' streams the keyspace.
 4. iq_inspect and iq_schema describe a source without dumping it; iq_diff

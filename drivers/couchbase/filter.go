@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/rawpred"
 )
 
@@ -29,10 +30,24 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	where, params, _ := toWhere(pred)
 	// A nil matcher means no prefilter.
 	var matcher *rawpred.Matcher
-	if !exactWhere(pred) {
+	if prefilterStage(pred).State == query.StageOn {
 		matcher = rawpred.NewMatcher(pred)
 	}
 	return s.scan(ctx, scanSpec{where: where, params: params, matcher: matcher}, fn)
+}
+
+// prefilterStage decides the rawpred prefilter from the whole predicate. ScanFiltered
+// and ExplainPlan both call it, so the plan cannot drift from the scan. The prefilter
+// is off for a nil predicate and for a WHERE that captures the predicate exactly.
+func prefilterStage(pred predicate.Node) query.StagePlan {
+	switch {
+	case pred == nil:
+		return query.StagePlan{State: query.StageOff, Note: "no compiled predicate"}
+	case exactWhere(pred):
+		return query.StagePlan{State: query.StageOff, Note: "the WHERE captures the predicate exactly"}
+	default:
+		return query.StagePlan{State: query.StageOn, Scope: "rawpred on the raw value of each row, before decode"}
+	}
 }
 
 // exactWhere reports whether toWhere captures n exactly. The WHERE then returns
