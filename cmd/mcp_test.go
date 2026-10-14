@@ -568,7 +568,7 @@ func TestMCPRefusesStdoutLogSink(t *testing.T) {
 func TestMCPExplainKeysMatchLogAttrs(t *testing.T) {
 	// A Mongo plan is the one that emits every key: the file driver pushes no
 	// server-side filter, so its plan would leave "filter" out.
-	sp, err := buildSourcePlan("mongodb://h/db?collection=c", `.[] | select(.a == 1)`, true, false)
+	sp, err := buildSourcePlan(planSource{url: "mongodb://h/db?collection=c"}, `.[] | select(.a == 1)`, true, false)
 	require.NoError(t, err)
 	require.True(t, sp.hasPlan)
 	require.NotNil(t, sp.filter)

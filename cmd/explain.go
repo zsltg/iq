@@ -61,12 +61,12 @@ type conjunctPlan struct {
 // backend calls it would make. An unrecognized scheme or a driver with no
 // describer yields hasPlan false. A filter parse failure is returned as a syntax
 // error. It is the single source both the text renderer and the log record use.
-func buildSourcePlan(url, filter string, compile, unbounded bool) (sourcePlan, error) {
+func buildSourcePlan(src planSource, filter string, compile, unbounded bool) (sourcePlan, error) {
 	q, err := gojq.Parse(filter)
 	if err != nil {
 		return sourcePlan{}, asSyntaxError(filter, err)
 	}
-	return buildSourcePlanQuery(url, q, compile, unbounded)
+	return buildSourcePlanQuery(src, q, compile, unbounded)
 }
 
 // materializedReason is why a conjunct stays jq-only on the materialized route.
@@ -88,19 +88,20 @@ const declinedReason = "declined by backend translator"
 // nothing. Then the driver gets no predicate, and every conjunct reaches only jq,
 // with materializedReason. The unbounded flag alone decides this. Only a
 // streamable scan has conjuncts, and a bounded read ignores the predicate.
-func buildSourcePlanQuery(url string, q *gojq.Query, compile, unbounded bool) (sourcePlan, error) {
-	d, ok := driverForScheme(schemeOf(url))
+func buildSourcePlanQuery(src planSource, q *gojq.Query, compile, unbounded bool) (sourcePlan, error) {
+	d, ok := driverForScheme(schemeOf(src.url))
 	if !ok || d.explainPlan == nil {
 		return sourcePlan{}, nil
 	}
 	keys := selector.Keys(q)
 	materialized := unbounded
 	pred, conjuncts := compiledPredicate(q, compile, materialized)
-	ap, err := d.explainPlan(url, keys, pred, unbounded)
+	ap, err := d.explainPlan(src, keys, pred, unbounded)
 	if err != nil {
 		return sourcePlan{}, fmt.Errorf("plan %s source: %w", d.name, err)
 	}
-	plans, err := conjunctPlans(d, url, keys, ap, conjuncts, unbounded, materialized)
+	cx := conjunctContext{driver: d, src: src, keys: keys, plan: ap, unbounded: unbounded}
+	plans, err := conjunctPlans(cx, conjuncts, materialized)
 	if err != nil {
 		return sourcePlan{}, err
 	}
@@ -138,9 +139,8 @@ func compiledPredicate(q *gojq.Query, compile, materialized bool) (predicate.Nod
 
 // conjunctPlans resolves each conjunct to its stage plan. On the materialized
 // route, every conjunct reaches only jq, with materializedReason.
-func conjunctPlans(d driver, url string, keys selector.KeySet, ap query.AccessPlan, conjuncts []pushdown.Conjunct, unbounded, materialized bool) ([]conjunctPlan, error) {
+func conjunctPlans(cx conjunctContext, conjuncts []pushdown.Conjunct, materialized bool) ([]conjunctPlan, error) {
 	var plans []conjunctPlan
-	cx := conjunctContext{driver: d, url: url, keys: keys, plan: ap, unbounded: unbounded}
 	for _, cj := range conjuncts {
 		if materialized {
 			plans = append(plans, conjunctPlan{Expr: cj.Expr, Stages: []string{stageJQ}, Reason: materializedReason})
@@ -207,7 +207,7 @@ func buildJQPlan(cfg *config, filter string, cross, describe bool) (string, erro
 	writePlanSection(&b, "jq filter")
 	writeJQFilterQuery(&b, q, describe, cfg.unbounded, !cross)
 	if !cross {
-		if err := writeAccessPlan(&b, cfg.url, q, !cfg.noCompile, cfg.unbounded); err != nil {
+		if err := writeAccessPlan(&b, cfg.planSource(), q, !cfg.noCompile, cfg.unbounded); err != nil {
 			return "", err
 		}
 	}
@@ -227,7 +227,7 @@ func buildCombinePlan(cfg *config, stages []combineStage, with string, describe 
 		}
 		writePlanSection(&b, fmt.Sprintf("$%s  <-  %s (%s)", st.varName, st.spec.handle, driverName(st.spec.url)))
 		writeJQFilterQuery(&b, q, describe, cfg.unbounded, true)
-		if err := writeAccessPlan(&b, st.spec.url, q, !cfg.noCompile, cfg.unbounded); err != nil {
+		if err := writeAccessPlan(&b, st.spec.planSource(), q, !cfg.noCompile, cfg.unbounded); err != nil {
 			return "", err
 		}
 	}
@@ -401,8 +401,8 @@ func stageNote(desc string, stage int, mark *accessMark) string {
 // an unrecognized scheme, contributes nothing. The predicate is compiled only when
 // pushdown is enabled (the default, disabled by --no-compile), matching how
 // execution gates the push.
-func writeAccessPlan(b *strings.Builder, url string, q *gojq.Query, compile, unbounded bool) error {
-	sp, err := buildSourcePlanQuery(url, q, compile, unbounded)
+func writeAccessPlan(b *strings.Builder, src planSource, q *gojq.Query, compile, unbounded bool) error {
+	sp, err := buildSourcePlanQuery(src, q, compile, unbounded)
 	if err != nil {
 		return err
 	}

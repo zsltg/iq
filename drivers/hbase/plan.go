@@ -9,14 +9,22 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
+// Source names the table to plan for: the saved URI and the optional address that
+// overrides its ?table=. Open takes the same two values.
+type Source struct {
+	URI     string
+	Address string
+}
+
 // ExplainPlan describes the HBase RPCs this driver would run for a classified query,
 // without connecting. A bounded query reads the named rows by key with point Gets; a
 // scan runs a table Scan, pre-filtered by a server-side SingleColumnValueFilter when
 // the predicate has pushable equalities, else a full-table scan. It parses the URI for
 // the column types and runs toFilter, as ScanFiltered does, so the plan shows what the
-// scan pushes. A URI that does not parse is an error.
-func ExplainPlan(uri string, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
-	cc, err := parseURL(uri, "")
+// scan pushes. It parses the source as Open does, so an address wins over the saved
+// ?table=. A source that does not parse is an error.
+func ExplainPlan(src Source, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
+	cc, err := parseURL(src.URI, src.Address)
 	if err != nil {
 		return query.AccessPlan{}, fmt.Errorf("explain hbase source: %w", err)
 	}

@@ -26,11 +26,11 @@ const noteColumn = 34
 const sectionIndent = 2
 
 // conjunctContext is what the planner of one conjunct needs besides the conjunct:
-// the driver, the connection URI, the keys, the access plan of the whole predicate,
+// the driver, the source, the keys, the access plan of the whole predicate,
 // and whether the read is unbounded.
 type conjunctContext struct {
 	driver    driver
-	url       string
+	src       planSource
 	keys      selector.KeySet
 	plan      query.AccessPlan
 	unbounded bool
@@ -61,7 +61,7 @@ func (c *conjunctPlan) planServer(cx conjunctContext, pred predicate.Node) error
 	if cx.plan.Server.State == query.StageNone {
 		return nil
 	}
-	cp, err := cx.driver.explainPlan(cx.url, cx.keys, pred, cx.unbounded)
+	cp, err := cx.driver.explainPlan(cx.src, cx.keys, pred, cx.unbounded)
 	if err != nil {
 		return fmt.Errorf("plan %s conjunct: %w", cx.driver.name, err)
 	}

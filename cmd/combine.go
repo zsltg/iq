@@ -202,7 +202,7 @@ func runCombine(cmd *cobra.Command, cfg *config, args []string, with string) err
 	values := make([]any, 0, len(stages))
 	for _, st := range stages {
 		cfg.log().Debug("from source", "handle", st.spec.handle)
-		cfg.logStagePlan(st.spec.url, st.spec.handle, st.spec.filter)
+		cfg.logStagePlan(st.spec.planSource(), st.spec.handle, st.spec.filter)
 		// The stage config carries the logger so its store decorator and scan
 		// records fire too, and the cache flags so a file:// stage obeys them.
 		// The trace writer is already the log-teed sink.
@@ -261,7 +261,7 @@ func planCombine(cf *iqconfig.Config, specs []string) ([]combineStage, error) {
 // the stage. It shares buildSourcePlan with the --explain text, so the two
 // never drift. It skips building the plan when the structured sink is off or
 // below INFO.
-func (cfg *config) logStagePlan(url, handle, filter string) {
+func (cfg *config) logStagePlan(src planSource, handle, filter string) {
 	if !cfg.logStructured {
 		return
 	}
@@ -269,7 +269,7 @@ func (cfg *config) logStagePlan(url, handle, filter string) {
 	if !lg.Enabled(context.Background(), slog.LevelInfo) {
 		return
 	}
-	sp, err := buildSourcePlan(url, filter, !cfg.noCompile, cfg.unbounded)
+	sp, err := buildSourcePlan(src, filter, !cfg.noCompile, cfg.unbounded)
 	if err != nil || !sp.hasPlan {
 		return
 	}

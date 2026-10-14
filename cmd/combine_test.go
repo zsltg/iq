@@ -352,7 +352,7 @@ func useCombDriver(t *testing.T) *[]config {
 				mark := "data-of-" + strings.TrimPrefix(cfg.url, "comb://")
 				return &fakeStore{pages: []map[string]any{{"k1": map[string]any{"n": 1.0, "mark": mark}}}}, nil
 			},
-			explainPlan: func(string, selector.KeySet, predicate.Node, bool) (query.AccessPlan, error) {
+			explainPlan: func(planSource, selector.KeySet, predicate.Node, bool) (query.AccessPlan, error) {
 				return query.AccessPlan{Ops: []string{"SCAN comb"}}, nil
 			},
 		},

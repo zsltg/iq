@@ -73,7 +73,7 @@ type driver struct {
 	// would make for a classified query and pushed predicate — the data the query
 	// plan (--explain/--verbose) shows. Only a driver whose plan depends on the URI
 	// reads it, and only that driver returns an error.
-	explainPlan func(uri string, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error)
+	explainPlan func(src planSource, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error)
 	// explainWrite, explainClear, explainDrop, and explainDelete are the
 	// write-side counterparts. Each describes an `iq data` operation without
 	// connecting, so `--explain` stays connection-free. The bool of explainDrop
@@ -87,10 +87,28 @@ type driver struct {
 	explainDelete func() (query.AccessPlan, bool)
 }
 
+// planSource is the source a plan describes: the saved URI and the resolved address.
+// Execution opens the store with the same two values, so planning parses what the
+// open parses.
+type planSource struct {
+	url     string
+	address string
+}
+
+// planSource returns the plan source of the config.
+func (cfg *config) planSource() planSource {
+	return planSource{url: cfg.url, address: cfg.address}
+}
+
+// planSource returns the plan source of the endpoint.
+func (e endpoint) planSource() planSource {
+	return planSource{url: e.url, address: e.address}
+}
+
 // withoutURI adapts a plan function that ignores the URI and cannot fail to the
 // registry signature.
-func withoutURI(f func(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan) func(string, selector.KeySet, predicate.Node, bool) (query.AccessPlan, error) {
-	return func(_ string, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
+func withoutURI(f func(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan) func(planSource, selector.KeySet, predicate.Node, bool) (query.AccessPlan, error) {
+	return func(_ planSource, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
 		return f(keys, pred, unbounded), nil
 	}
 }
@@ -168,7 +186,9 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqhbase.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   iqhbase.ExplainPlan,
+		explainPlan: func(src planSource, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
+			return iqhbase.ExplainPlan(iqhbase.Source{URI: src.url, Address: src.address}, keys, pred, unbounded)
+		},
 		explainWrite:  iqhbase.ExplainWrite,
 		explainClear:  iqhbase.ExplainClear,
 		explainDrop:   iqhbase.ExplainDrop,

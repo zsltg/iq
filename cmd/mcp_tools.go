@@ -333,7 +333,7 @@ func explainResult(cfg *config, filter, text string) (mcpExplainOutput, error) {
 	// cross-source filter has no URI, so the source plan below has no driver and
 	// leaves every per-source field at that empty value.
 	out := mcpExplainOutput{Plan: text, Ops: []string{}, Classification: mcpClassification{Keys: []string{}}}
-	sp, err := buildSourcePlan(cfg.url, filter, !cfg.noCompile, cfg.unbounded)
+	sp, err := buildSourcePlan(cfg.planSource(), filter, !cfg.noCompile, cfg.unbounded)
 	if err != nil {
 		return mcpExplainOutput{}, err
 	}

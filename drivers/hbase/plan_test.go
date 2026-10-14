@@ -14,7 +14,7 @@ const planURI = "hbase://zk/?table=t"
 
 func TestExplainPlan(t *testing.T) {
 	t.Run("bounded get by key", func(t *testing.T) {
-		plan, err := ExplainPlan(planURI, selector.KeySet{Keys: []string{"1", "2"}}, nil, false)
+		plan, err := ExplainPlan(Source{URI: planURI}, selector.KeySet{Keys: []string{"1", "2"}}, nil, false)
 		require.NoError(t, err)
 		require.Contains(t, plan.Ops[0], "Get by row key")
 		require.Contains(t, plan.Ops[0], "2 requested key(s)")
@@ -23,11 +23,26 @@ func TestExplainPlan(t *testing.T) {
 
 	t.Run("filtered scan lists pushed columns", func(t *testing.T) {
 		pred := predicate.Eq{Path: []string{"cf", "author"}, Value: "Herbert"}
-		plan, err := ExplainPlan(planURI, selector.KeySet{Scan: true, Streamable: true}, pred, false)
+		plan, err := ExplainPlan(Source{URI: planURI}, selector.KeySet{Scan: true, Streamable: true}, pred, false)
 		require.NoError(t, err)
 		require.Contains(t, plan.Ops[0], "SingleColumnValueFilter")
 		require.Contains(t, plan.Ops[0], cellKey("cf", "author"))
 		require.Equal(t, map[string]any{"columns": []string{cellKey("cf", "author")}}, plan.Filter)
+	})
+}
+
+func TestExplainPlanAddress(t *testing.T) {
+	scan := selector.KeySet{Scan: true, Streamable: true}
+
+	t.Run("address replaces a bad saved table", func(t *testing.T) {
+		plan, err := ExplainPlan(Source{URI: "hbase://zk/?table=bad/name", Address: "good"}, scan, nil, false)
+		require.NoError(t, err)
+		require.Contains(t, plan.Ops[0], "full-table scan")
+	})
+
+	t.Run("bad address with a valid saved table", func(t *testing.T) {
+		_, err := ExplainPlan(Source{URI: planURI, Address: "bad/name"}, scan, nil, false)
+		require.ErrorContains(t, err, "not a path")
 	})
 }
 
@@ -51,7 +66,7 @@ func TestExplainPlanStages(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			plan, err := ExplainPlan(tt.uri, tt.keys, tt.pred, false)
+			plan, err := ExplainPlan(Source{URI: tt.uri}, tt.keys, tt.pred, false)
 			require.NoError(t, err)
 			require.Equal(t, tt.wantServer, plan.Server)
 			require.Equal(t, query.StagePlan{}, plan.Prefilter)
@@ -59,13 +74,13 @@ func TestExplainPlanStages(t *testing.T) {
 	}
 
 	t.Run("a malformed types parameter is an error", func(t *testing.T) {
-		_, err := ExplainPlan(planURI+"&types=noequals", scan, numeric, false)
+		_, err := ExplainPlan(Source{URI: planURI + "&types=noequals"}, scan, numeric, false)
 		require.ErrorContains(t, err, "explain hbase source")
 		require.ErrorContains(t, err, `malformed ?types= entry "noequals"`)
 	})
 
 	t.Run("a bounded read still rejects a bad URI", func(t *testing.T) {
-		_, err := ExplainPlan("redis://x", selector.KeySet{Keys: []string{"a"}}, nil, false)
+		_, err := ExplainPlan(Source{URI: "redis://x"}, selector.KeySet{Keys: []string{"a"}}, nil, false)
 		require.Error(t, err)
 	})
 }
@@ -121,7 +136,7 @@ func TestExplainPlanStreamingMode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			plan, err := ExplainPlan(planURI, selector.KeySet{Scan: true, Streamable: tt.streamable}, nil, tt.unbounded)
+			plan, err := ExplainPlan(Source{URI: planURI}, selector.KeySet{Scan: true, Streamable: tt.streamable}, nil, tt.unbounded)
 			require.NoError(t, err)
 			require.Equal(t, []string{
 				"Scan: full-table scan (every row read, filtered client-side)",

@@ -345,7 +345,7 @@ func TestBuildJQPlanStageColorKeepsAlignment(t *testing.T) {
 // planOf returns the source plan of a filter, failing the test on an error.
 func planOf(t *testing.T, url, filter string, unbounded bool) sourcePlan {
 	t.Helper()
-	sp, err := buildSourcePlan(url, filter, true, unbounded)
+	sp, err := buildSourcePlan(planSource{url: url}, filter, true, unbounded)
 	require.NoError(t, err)
 	require.True(t, sp.hasPlan)
 	return sp
@@ -576,6 +576,58 @@ func TestPlanErrorTextPaths(t *testing.T) {
 	})
 }
 
+// hbaseSlashURI saves a table with a slash. The HBase parser rejects it unless an
+// address replaces the table.
+const hbaseSlashURI = "hbase://zk/?table=bad/name&types=cf:a=int"
+
+func TestPlanUsesAddress(t *testing.T) {
+	c := newSeed()
+	require.NoError(t, c.Add("books", hbaseSlashURI))
+	seedConfig(t, c)
+	failHBaseOpen(t)
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"iq explain", []string{"--src", "books.good", "--timeout", "200ms", "--explain", hbaseFilter}},
+		{"iq verbose explain", []string{"--src", "books.good", "--timeout", "200ms", "-v", "--explain", hbaseFilter}},
+		{"combine explain", []string{"combine", "--timeout", "200ms", "--explain", "books.good=" + hbaseFilter, "--with", "$books_good | length"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, _ := newRootCmd()
+			out, err := runCmd(t, root, tt.args...)
+			require.NoError(t, err)
+			require.Contains(t, out, "SingleColumnValueFilter")
+		})
+	}
+
+	t.Run("mcp iq_explain", func(t *testing.T) {
+		cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
+		res := callMCP(t, cs, "iq_explain", map[string]any{"source": "books.good", "filter": hbaseFilter})
+		require.False(t, res.IsError, contentText(res))
+		require.Contains(t, contentText(res), "SingleColumnValueFilter")
+	})
+
+	t.Run("explainResult", func(t *testing.T) {
+		cfg := &config{url: hbaseSlashURI, address: "good", handle: "books"}
+		out, err := explainResult(cfg, hbaseFilter, "plan")
+		require.NoError(t, err)
+		require.Equal(t, "hbase", out.Driver)
+	})
+
+	t.Run("query plan record", func(t *testing.T) {
+		var buf bytes.Buffer
+		lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		cfg := &config{url: hbaseSlashURI, address: "good", handle: "books", logger: lg, logStructured: true}
+		cfg.logQueryPlan(hbaseFilter, false)
+		rec := parseLogRecords(t, buf.String())["query plan"]
+		require.NotNil(t, rec)
+		require.Equal(t, "hbase", rec["driver"])
+	})
+}
+
 func TestPlanErrorRecordHelpers(t *testing.T) {
 	newCfg := func(buf *bytes.Buffer) *config {
 		lg := slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -589,8 +641,8 @@ func TestPlanErrorRecordHelpers(t *testing.T) {
 	}{
 		{"query plan, bad uri", hbaseBadURI, func(cfg *config) { cfg.logQueryPlan(hbaseFilter, false) }, false},
 		{"query plan, valid uri", hbaseGoodURI, func(cfg *config) { cfg.logQueryPlan(hbaseFilter, false) }, true},
-		{"stage plan, bad uri", hbaseBadURI, func(cfg *config) { cfg.logStagePlan(cfg.url, "hb", hbaseFilter) }, false},
-		{"stage plan, valid uri", hbaseGoodURI, func(cfg *config) { cfg.logStagePlan(cfg.url, "hb", hbaseFilter) }, true},
+		{"stage plan, bad uri", hbaseBadURI, func(cfg *config) { cfg.logStagePlan(cfg.planSource(), "hb", hbaseFilter) }, false},
+		{"stage plan, valid uri", hbaseGoodURI, func(cfg *config) { cfg.logStagePlan(cfg.planSource(), "hb", hbaseFilter) }, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

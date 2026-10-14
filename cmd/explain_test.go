@@ -110,7 +110,7 @@ func TestBuildJQPlanReportsSyntaxError(t *testing.T) {
 func TestWriteAccessPlanUnknownSchemeIsSilent(t *testing.T) {
 	// An unrecognized scheme (no registered driver) contributes no backend section.
 	var b strings.Builder
-	require.NoError(t, writeAccessPlan(&b, "postgres://x/y", mustParseCmd(t, ".[]"), false, false))
+	require.NoError(t, writeAccessPlan(&b, planSource{url: "postgres://x/y"}, mustParseCmd(t, ".[]"), false, false))
 	require.Empty(t, b.String())
 }
 
@@ -331,7 +331,7 @@ func TestBuildJQPlanMarkedStageWithoutDescription(t *testing.T) {
 // structured attrs — the same data the pretty --explain text is built from.
 func planLogRecord(t *testing.T, url, handle, filter string, compile bool) map[string]any {
 	t.Helper()
-	sp, err := buildSourcePlan(url, filter, compile, false)
+	sp, err := buildSourcePlan(planSource{url: url}, filter, compile, false)
 	require.NoError(t, err)
 	require.True(t, sp.hasPlan)
 
@@ -476,7 +476,7 @@ func TestBuildSourcePlanDriverWithoutDescriber(t *testing.T) {
 	// A driver with a scheme but a nil explainPlan (the zero-value field).
 	drivers = append(append([]driver{}, orig...), driver{name: "nulldrv", schemes: []string{"nulldrv"}})
 
-	sp, err := buildSourcePlan("nulldrv://x", ".[]", true, false)
+	sp, err := buildSourcePlan(planSource{url: "nulldrv://x"}, ".[]", true, false)
 	require.NoError(t, err)
 	require.False(t, sp.hasPlan, "a driver without a describer contributes no plan (no nil-deref)")
 }
