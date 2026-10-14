@@ -64,16 +64,17 @@ const materializedReason = "materialized: the scan reads every record"
 
 // buildSourcePlanQuery is buildSourcePlan for an already-parsed query, so the
 // --explain text path (which parses the filter once up front) does not re-parse it.
-// It picks the route the way JQEngine.Run does. A streamable scan with unbounded
-// set is materialized: execution pushes nothing, so the driver gets no predicate
-// and every conjunct is client-side with materializedReason.
+// It follows JQEngine.Run: with unbounded set, a scan is materialized and pushes
+// nothing. Then the driver gets no predicate, and every conjunct is client-side
+// with materializedReason. The unbounded flag alone decides this. Only a
+// streamable scan has conjuncts, and a bounded read ignores the predicate.
 func buildSourcePlanQuery(url string, q *gojq.Query, compile, unbounded bool) sourcePlan {
 	d, ok := driverForScheme(schemeOf(url))
 	if !ok || d.explainPlan == nil {
 		return sourcePlan{}
 	}
 	keys := selector.Keys(q)
-	materialized := keys.Scan && keys.Streamable && unbounded
+	materialized := unbounded
 	pred, conjuncts := compiledPredicate(q, compile, materialized)
 	ap := d.explainPlan(keys, pred, unbounded)
 	return sourcePlan{
