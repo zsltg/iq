@@ -1,6 +1,7 @@
 package hbase
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -77,6 +78,7 @@ func TestExplainPlanStages(t *testing.T) {
 		_, err := ExplainPlan(Source{URI: planURI + "&types=noequals"}, scan, numeric, false)
 		require.ErrorContains(t, err, "explain hbase source")
 		require.ErrorContains(t, err, `malformed ?types= entry "noequals"`)
+		require.Error(t, errors.Unwrap(err), "the error wraps the parse error")
 	})
 
 	t.Run("a bounded read still rejects a bad URI", func(t *testing.T) {

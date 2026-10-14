@@ -26,14 +26,12 @@ const noteColumn = 34
 const sectionIndent = 2
 
 // conjunctContext is what the planner of one conjunct needs besides the conjunct:
-// the driver, the source, the keys, the access plan of the whole predicate,
-// and whether the read is unbounded.
+// the driver, the source, the keys, and the access plan of the whole predicate.
 type conjunctContext struct {
-	driver    driver
-	src       planSource
-	keys      selector.KeySet
-	plan      query.AccessPlan
-	unbounded bool
+	driver driver
+	src    planSource
+	keys   selector.KeySet
+	plan   query.AccessPlan
 }
 
 // conjunctStages plans the stages of one conjunct on a streaming route. A conjunct
@@ -61,7 +59,8 @@ func (c *conjunctPlan) planServer(cx conjunctContext, pred predicate.Node) error
 	if cx.plan.Server.State == query.StageNone {
 		return nil
 	}
-	cp, err := cx.driver.explainPlan(cx.src, cx.keys, pred, cx.unbounded)
+	// Only a streaming read has conjunct plans, so the read is never unbounded here.
+	cp, err := cx.driver.explainPlan(cx.src, cx.keys, pred, false)
 	if err != nil {
 		return fmt.Errorf("plan %s conjunct: %w", cx.driver.name, err)
 	}
@@ -201,21 +200,19 @@ const maxJSONWidth = 80
 // no HTML escaping) if the line fits in width. Else an object or array opens on the
 // first line, each member goes on its own line two spaces deeper, and the closing
 // bracket goes on its own line. Each member fits in maxJSONWidth or breaks the same
-// way. A scalar never breaks.
+// way. A scalar never breaks. It fails for a value that JSON cannot encode.
 func fitJSON(v any, indent, width int) ([]string, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	data, err := json.Marshal(v)
+	var norm any
+	if err == nil {
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.UseNumber()
+		err = dec.Decode(&norm)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("encode JSON: %w", err)
 	}
-	dec := json.NewDecoder(&buf)
-	dec.UseNumber()
-	var norm any
-	if err := dec.Decode(&norm); err != nil {
-		return nil, fmt.Errorf("decode JSON: %w", err)
-	}
-	return layoutJSON(norm, jsonSlot{indent: indent, width: width})
+	return layoutJSON(norm, jsonSlot{indent: indent, width: width}), nil
 }
 
 // jsonSlot is where a value sits in the layout: the indent and the width of its line,
@@ -252,51 +249,40 @@ type jsonContainer struct {
 
 // containerOf returns the container form of a normalized value. It returns false for
 // a scalar.
-func containerOf(v any) (jsonContainer, bool, error) {
+func containerOf(v any) (jsonContainer, bool) {
 	switch t := v.(type) {
 	case map[string]any:
-		members, err := objectMembers(t)
-		return jsonContainer{open: "{", closer: "}", members: members}, true, err
+		return jsonContainer{open: "{", closer: "}", members: objectMembers(t)}, true
 	case []any:
 		members := make([]jsonMember, 0, len(t))
 		for _, e := range t {
 			members = append(members, jsonMember{value: e})
 		}
-		return jsonContainer{open: "[", closer: "]", members: members}, true, nil
+		return jsonContainer{open: "[", closer: "]", members: members}, true
 	default:
-		return jsonContainer{}, false, nil
+		return jsonContainer{}, false
 	}
 }
 
 // objectMembers lists the members of an object with sorted keys.
-func objectMembers(m map[string]any) ([]jsonMember, error) {
+func objectMembers(m map[string]any) []jsonMember {
 	members := make([]jsonMember, 0, len(m))
 	for _, k := range slices.Sorted(maps.Keys(m)) {
-		key, err := jsonString(k)
-		if err != nil {
-			return nil, err
-		}
-		members = append(members, jsonMember{label: key + ": ", value: m[k]})
+		members = append(members, jsonMember{label: jsonString(k) + ": ", value: m[k]})
 	}
-	return members, nil
+	return members
 }
 
 // layoutJSON lays out a normalized value (maps, slices, json.Number, string, bool,
 // nil) in a slot.
-func layoutJSON(v any, s jsonSlot) ([]string, error) {
-	compact, err := compactJSON(v)
-	if err != nil {
-		return nil, err
-	}
+func layoutJSON(v any, s jsonSlot) []string {
+	compact := compactJSON(v)
 	if s.fits(compact) {
-		return []string{s.line(compact)}, nil
+		return []string{s.line(compact)}
 	}
-	c, ok, err := containerOf(v)
-	if err != nil {
-		return nil, err
-	}
+	c, ok := containerOf(v)
 	if !ok {
-		return []string{s.line(compact)}, nil
+		return []string{s.line(compact)}
 	}
 	return layoutContainer(c, s)
 }
@@ -304,7 +290,7 @@ func layoutJSON(v any, s jsonSlot) ([]string, error) {
 // layoutContainer breaks a container over lines. The opening bracket goes on the
 // first line, each member on its own line two spaces deeper, and the closing bracket
 // on its own line.
-func layoutContainer(c jsonContainer, s jsonSlot) ([]string, error) {
+func layoutContainer(c jsonContainer, s jsonSlot) []string {
 	pad := strings.Repeat(" ", s.indent)
 	lines := []string{pad + s.prefix + c.open}
 	for i, m := range c.members {
@@ -312,17 +298,14 @@ func layoutContainer(c jsonContainer, s jsonSlot) ([]string, error) {
 		if i == len(c.members)-1 {
 			sep = ""
 		}
-		member, err := layoutJSON(m.value, jsonSlot{indent: s.indent + 2, width: maxJSONWidth, prefix: m.label, suffix: sep})
-		if err != nil {
-			return nil, err
-		}
-		lines = append(lines, member...)
+		slot := jsonSlot{indent: s.indent + 2, width: maxJSONWidth, prefix: m.label, suffix: sep}
+		lines = append(lines, layoutJSON(m.value, slot)...)
 	}
-	return append(lines, pad+c.closer+s.suffix), nil
+	return append(lines, pad+c.closer+s.suffix)
 }
 
 // compactJSON is the one-line form of a normalized value.
-func compactJSON(v any) (string, error) {
+func compactJSON(v any) string {
 	switch t := v.(type) {
 	case map[string]any:
 		return compactObject(t)
@@ -331,62 +314,63 @@ func compactJSON(v any) (string, error) {
 	case string:
 		return jsonString(t)
 	case json.Number:
-		return t.String(), nil
+		return t.String()
 	case bool:
-		return strconv.FormatBool(t), nil
+		return strconv.FormatBool(t)
 	default:
-		return "null", nil
+		return "null"
 	}
 }
 
 // compactObject is the one-line form of an object, with sorted keys.
-func compactObject(m map[string]any) (string, error) {
+func compactObject(m map[string]any) string {
 	parts := make([]string, 0, len(m))
 	for _, k := range slices.Sorted(maps.Keys(m)) {
-		part, err := compactMember(k, m[k])
-		if err != nil {
-			return "", err
-		}
-		parts = append(parts, part)
+		parts = append(parts, jsonString(k)+": "+compactJSON(m[k]))
 	}
-	return "{" + strings.Join(parts, ", ") + "}", nil
-}
-
-// compactMember is the one-line form of one object member.
-func compactMember(k string, v any) (string, error) {
-	key, err := jsonString(k)
-	if err != nil {
-		return "", err
-	}
-	val, err := compactJSON(v)
-	if err != nil {
-		return "", err
-	}
-	return key + ": " + val, nil
+	return "{" + strings.Join(parts, ", ") + "}"
 }
 
 // compactArray is the one-line form of an array.
-func compactArray(a []any) (string, error) {
+func compactArray(a []any) string {
 	parts := make([]string, 0, len(a))
 	for _, e := range a {
-		val, err := compactJSON(e)
-		if err != nil {
-			return "", err
-		}
-		parts = append(parts, val)
+		parts = append(parts, compactJSON(e))
 	}
-	return "[" + strings.Join(parts, ", ") + "]", nil
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
-// jsonString is a JSON string literal with no HTML escaping.
-func jsonString(s string) (string, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(s); err != nil {
-		return "", fmt.Errorf("encode JSON string: %w", err)
+// jsonEscapes are the runes that a JSON string writes as an escape. The short forms
+// and the two line separators match encoding/json.
+var jsonEscapes = map[rune]string{
+	'"':      `\"`,
+	'\\':     `\\`,
+	'\n':     `\n`,
+	'\r':     `\r`,
+	'\t':     `\t`,
+	'\b':     `\b`,
+	'\f':     `\f`,
+	'\u2028': `\u2028`,
+	'\u2029': `\u2029`,
+}
+
+// jsonString is a JSON string literal with no HTML escaping. The text comes from a
+// decoded JSON value, so it is valid UTF-8. A control rune below 0x20 with no short
+// form is written as \u00XX.
+func jsonString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		if esc, ok := jsonEscapes[r]; ok {
+			b.WriteString(esc)
+		} else if r < 0x20 {
+			b.WriteString(`\u` + fmt.Sprintf("%04x", r))
+		} else {
+			b.WriteRune(r)
+		}
 	}
-	return strings.TrimSuffix(buf.String(), "\n"), nil
+	b.WriteByte('"')
+	return b.String()
 }
 
 // writePrefilterSection appends the prefilter section. Each row is a compiled

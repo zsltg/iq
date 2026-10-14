@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
+	"math"
 	"strings"
 	"testing"
 
 	"github.com/fatih/color"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
+	"github.com/zsltg/iq/internal/selector"
 )
 
 // noColor pins plain text output for the test, whatever an earlier test left in
@@ -507,6 +511,16 @@ func TestExplainResultElasticsearchStagePlans(t *testing.T) {
 	require.Equal(t, "not compiled: not a pushable comparison", out.Conjuncts[2].Reason)
 }
 
+// TestExplainResultBoundedReadHasNoStagePlans pins that the MCP result names no
+// server or prefilter stage for a bounded read, even if the driver has the stages.
+func TestExplainResultBoundedReadHasNoStagePlans(t *testing.T) {
+	out, err := explainResult(&config{url: "elasticsearch://h/idx", handle: "logs"}, `.a, .b`, "plan")
+	require.NoError(t, err)
+	require.False(t, out.Classification.Scan)
+	require.Nil(t, out.Server)
+	require.Nil(t, out.Prefilter)
+}
+
 func TestBuildSourcePlanKeepsNoStagesOnBoundedRead(t *testing.T) {
 	sp := planOf(t, "elasticsearch://h/idx", `.a, .b`, false)
 	require.NotNil(t, sp.filter)
@@ -718,12 +732,244 @@ func TestFitJSON(t *testing.T) {
 		{"html and quote stay literal", map[string]any{"s": `a<b>"c"&`}, 0, 100, []string{`{"s": "a<b>\"c\"&"}`}},
 		{"keys sorted", map[string]any{"b": 1, "a": 2, "c": nil}, 0, 100, []string{`{"a": 2, "b": 1, "c": null}`}},
 		{"whole number and float", []any{1.0, 2.5, true}, 0, 100, []string{`[1, 2.5, true]`}},
+		{"top level fits exactly", []string{"abc"}, 2, 9, []string{`  ["abc"]`}},
+		{"top level one column too wide", []string{"abc"}, 2, 8, []string{`  [`, `    "abc"`, `  ]`}},
+		{
+			"member line of exactly 80 columns stays compact",
+			map[string]any{"a": []string{strings.Repeat("x", 68)}, "b": 1},
+			0, 10,
+			[]string{`{`, `  "a": ["` + strings.Repeat("x", 68) + `"],`, `  "b": 1`, `}`},
+		},
+		{
+			"member line of 81 columns breaks",
+			map[string]any{"a": []string{strings.Repeat("x", 69)}, "b": 1},
+			0, 10,
+			[]string{`{`, `  "a": [`, `    "` + strings.Repeat("x", 69) + `"`, `  ],`, `  "b": 1`, `}`},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := fitJSON(tt.value, tt.indent, tt.width)
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFitJSONRejectsAnUnencodableValue(t *testing.T) {
+	_, err := fitJSON(map[string]any{"n": math.NaN()}, 2, 36)
+	var unsupported *json.UnsupportedValueError
+	require.ErrorAs(t, err, &unsupported)
+}
+
+func TestJSONString(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", `""`},
+		{"plain", "abc", `"abc"`},
+		{"quote", `a"b`, `"a\"b"`},
+		{"backslash", `a\b`, `"a\\b"`},
+		{"newline", "a\nb", `"a\nb"`},
+		{"carriage return", "a\rb", `"a\rb"`},
+		{"tab", "a\tb", `"a\tb"`},
+		{"backspace", "a\bb", `"a\bb"`},
+		{"form feed", "a\fb", `"a\fb"`},
+		{"line separator", "a\u2028b", `"a\u2028b"`},
+		{"paragraph separator", "a\u2029b", `"a\u2029b"`},
+		{"control rune without a short form", "a\x01b\x1f", `"a\u0001b\u001f"`},
+		{"space is not a control rune", "a b", `"a b"`},
+		{"html stays literal", "<a>&", `"<a>&"`},
+		{"non-ASCII stays literal", "é世", `"é世"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, jsonString(tt.in))
+			var back string
+			require.NoError(t, json.Unmarshal([]byte(jsonString(tt.in)), &back))
+			require.Equal(t, tt.in, back, "the literal decodes to the input")
+		})
+	}
+}
+
+// errStageDown is the error of the fake planner.
+var errStageDown = errors.New("planner down")
+
+// useStageDriver registers a driver with the scheme "stg" and the given planner for
+// the test.
+func useStageDriver(t *testing.T, plan func(pred predicate.Node, unbounded bool) (query.AccessPlan, error)) {
+	t.Helper()
+	orig := drivers
+	t.Cleanup(func() { drivers = orig })
+	drivers = append(append([]driver{}, orig...), driver{
+		name:    "stg",
+		schemes: []string{"stg"},
+		explainPlan: func(_ planSource, _ selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
+			return plan(pred, unbounded)
+		},
+	})
+}
+
+var stageServerOn = query.StagePlan{State: query.StageOn, Scope: "fake"}
+
+func TestBuildSourcePlanWrapsAWholePredicateError(t *testing.T) {
+	useStageDriver(t, func(predicate.Node, bool) (query.AccessPlan, error) {
+		return query.AccessPlan{}, errStageDown
+	})
+	_, err := buildSourcePlan(planSource{url: "stg://x"}, stageFilterTwo, true, false)
+	require.ErrorIs(t, err, errStageDown)
+	require.ErrorContains(t, err, "plan stg source")
+}
+
+const stageFilterTwo = `.[] | select(.a == 1 and .b == 2)`
+
+func TestBuildSourcePlanReturnsAConjunctPlanError(t *testing.T) {
+	// The whole predicate (an and node) plans well. One conjunct fails.
+	useStageDriver(t, func(pred predicate.Node, _ bool) (query.AccessPlan, error) {
+		if _, whole := pred.(predicate.And); whole {
+			return query.AccessPlan{Server: stageServerOn}, nil
+		}
+		return query.AccessPlan{}, errStageDown
+	})
+	sp, err := buildSourcePlan(planSource{url: "stg://x"}, stageFilterTwo, true, false)
+	require.ErrorIs(t, err, errStageDown)
+	require.ErrorContains(t, err, "plan stg conjunct")
+	require.Empty(t, sp.conjuncts)
+}
+
+func TestBuildSourcePlanPlansConjunctsAsBounded(t *testing.T) {
+	// The fake returns a fragment only for a read that is not unbounded. A conjunct
+	// plan on the streaming route must ask as a bounded read.
+	useStageDriver(t, func(_ predicate.Node, unbounded bool) (query.AccessPlan, error) {
+		ap := query.AccessPlan{Server: stageServerOn}
+		if !unbounded {
+			ap.Filter = map[string]any{"fragment": 1}
+		}
+		return ap, nil
+	})
+	sp, err := buildSourcePlan(planSource{url: "stg://x"}, `.[] | select(.a == 1)`, true, false)
+	require.NoError(t, err)
+	require.Len(t, sp.conjuncts, 1)
+	require.Equal(t, map[string]any{"fragment": 1}, sp.conjuncts[0].Server)
+	require.Equal(t, []string{"server", "jq"}, sp.conjuncts[0].Stages)
+}
+
+// fragmentOf is a conjunct plan with a server fragment.
+func fragmentOf(expr string, frag map[string]any) conjunctPlan {
+	return conjunctPlan{Expr: expr, Server: frag, Stages: []string{stageServer, stageJQ}}
+}
+
+func TestWriteStageSectionsServerRows(t *testing.T) {
+	noColor(t)
+	jqOnly := conjunctPlan{Expr: ".c == 3", Stages: []string{stageJQ}}
+	tests := []struct {
+		name   string
+		server query.StagePlan
+		rows   []conjunctPlan
+		want   []string
+		absent []string
+	}{
+		{
+			name:   "a conjunct without a fragment does not stop the next rows",
+			server: stageServerOn,
+			rows:   []conjunctPlan{jqOnly, fragmentOf(".a == 1", map[string]any{"a": 1}), fragmentOf(".b == 2", map[string]any{"b": 2})},
+			want: []string{
+				notePad(2, `{"a": 1}`, ".a == 1"),
+				notePad(2, `{"b": 2}`, ".b == 2"),
+			},
+		},
+		{
+			name:   "an off stage writes no rows",
+			server: query.StagePlan{State: query.StageOff, Note: "no conjunct pushes"},
+			rows:   []conjunctPlan{fragmentOf(".a == 1", map[string]any{"a": 1})},
+			want:   []string{"server filter: off, no conjunct pushes"},
+			absent: []string{`{"a": 1}`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b strings.Builder
+			require.NoError(t, writeStageSections(&b, sourcePlan{server: tt.server, conjuncts: tt.rows}))
+			for _, w := range tt.want {
+				require.Contains(t, b.String(), w)
+			}
+			for _, a := range tt.absent {
+				require.NotContains(t, b.String(), a)
+			}
+		})
+	}
+}
+
+func TestWriteStageSectionsOffPrefilterWritesNoRows(t *testing.T) {
+	noColor(t)
+	row := conjunctPlan{
+		Expr:   ".a == 1",
+		Stages: []string{stagePrefilter, stageJQ},
+		node:   predicate.Eq{Path: []string{"a"}, Value: 1.0},
+	}
+	var b strings.Builder
+	sp := sourcePlan{
+		server:    query.StagePlan{State: query.StageNone, Note: "no server"},
+		prefilter: query.StagePlan{State: query.StageOff, Note: "nothing to scan"},
+		conjuncts: []conjunctPlan{row},
+	}
+	require.NoError(t, writeStageSections(&b, sp))
+	require.Contains(t, b.String(), "off, nothing to scan")
+	require.NotContains(t, b.String(), "— .a == 1")
+}
+
+func TestWriteStageSectionsKeyFetchWidth(t *testing.T) {
+	noColor(t)
+	// The compact form is 34 characters, which fits the 36 columns with the indent.
+	fits := map[string]any{"k": strings.Repeat("a", 25)}
+	tooWide := map[string]any{"k": strings.Repeat("a", 26)}
+	tests := []struct {
+		name   string
+		filter map[string]any
+		want   []string
+	}{
+		{"fits on one line", fits, []string{`  {"k": "` + strings.Repeat("a", 25) + `"}`}},
+		{"one column too wide breaks", tooWide, []string{`  {`, `    "k": "` + strings.Repeat("a", 26) + `"`, `  }`}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b strings.Builder
+			require.NoError(t, writeStageSections(&b, sourcePlan{filter: tt.filter, keys: selector.KeySet{Keys: []string{"a"}}}))
+			requireLinesInOrder(t, b.String(), tt.want)
+		})
+	}
+}
+
+func TestWriteStageSectionsRejectsAnUnencodableFilter(t *testing.T) {
+	bad := map[string]any{"n": math.NaN()}
+	tests := []struct {
+		name string
+		sp   sourcePlan
+		want string
+	}{
+		{
+			"server fragment",
+			sourcePlan{server: stageServerOn, conjuncts: []conjunctPlan{fragmentOf(".n == 1", bad)}},
+			"render server fragment",
+		},
+		{
+			"second server fragment",
+			sourcePlan{server: stageServerOn, conjuncts: []conjunctPlan{
+				fragmentOf(".a == 1", map[string]any{"a": 1}), fragmentOf(".n == 1", bad),
+			}},
+			"render server fragment",
+		},
+		{"key fetch filter", sourcePlan{filter: bad}, "render server filter"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b strings.Builder
+			err := writeStageSections(&b, tt.sp)
+			var unsupported *json.UnsupportedValueError
+			require.ErrorAs(t, err, &unsupported)
+			require.ErrorContains(t, err, tt.want)
 		})
 	}
 }

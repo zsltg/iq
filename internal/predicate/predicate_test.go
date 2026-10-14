@@ -30,6 +30,7 @@ func TestString(t *testing.T) {
 		{"regex slash", Regex{Path: []string{"p"}, Pattern: "a/b"}, `p =~ /a\/b/`},
 		{"regex escaped slash", Regex{Path: []string{"p"}, Pattern: `a\/b`}, `p =~ /a\/b/`},
 		{"regex escaped backslash then slash", Regex{Path: []string{"p"}, Pattern: `a\\/b`}, `p =~ /a\\\/b/`},
+		{"regex escaped slash at the end", Regex{Path: []string{"p"}, Pattern: `a\/`}, `p =~ /a\//`},
 		{"regex trailing backslash", Regex{Path: []string{"p"}, Pattern: `a\`}, `p =~ /a\/`},
 		{"quoted field name", Eq{Path: []string{"first name"}, Value: 1.0}, `"first name" == 1`},
 		{"quoted nested name", Eq{Path: []string{"a", "b-c"}, Value: 1.0}, `a."b-c" == 1`},

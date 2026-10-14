@@ -100,7 +100,7 @@ func buildSourcePlanQuery(src planSource, q *gojq.Query, compile, unbounded bool
 	if err != nil {
 		return sourcePlan{}, fmt.Errorf("plan %s source: %w", d.name, err)
 	}
-	cx := conjunctContext{driver: d, src: src, keys: keys, plan: ap, unbounded: unbounded}
+	cx := conjunctContext{driver: d, src: src, keys: keys, plan: ap}
 	plans, err := conjunctPlans(cx, conjuncts, materialized)
 	if err != nil {
 		return sourcePlan{}, err

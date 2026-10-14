@@ -436,7 +436,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.Access
 	}
 	return query.AccessPlan{
 		Ops:       []string{"decode dump file", "scan client-side"},
-		Server:    query.StagePlan{State: query.StageNone, Note: "a dump file has no server"},
+		Server:    query.StagePlan{Note: "a dump file has no server"},
 		Prefilter: prefilter,
 	}
 }

@@ -34,7 +34,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.Access
 			"per page: pipeline TYPE for the page's keys",
 			typedReads,
 		},
-		Server:    query.StagePlan{State: query.StageNone, Note: "Redis filters nothing on the server"},
+		Server:    query.StagePlan{Note: "Redis filters nothing on the server"},
 		Prefilter: prefilter,
 	}
 }
