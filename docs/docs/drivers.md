@@ -52,7 +52,7 @@ same contract:
   pre-filter is a client-side raw-byte prefilter that drops a provable non-match before decode
   (Redis, on RedisJSON values, Elasticsearch/OpenSearch and Couchbase, over the residual their
   server-side query cannot narrow). The full jq always re-runs client-side. As a result, output is
-  identical with or without the pushed predicate, and [`--explain`](query-plan.md) shows exactly what was pushed.
+  identical with or without the pushed predicate, and [`--explain`](query-plan.md) shows which stage evaluates each conjunct.
 - **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, drop and per-key
   delete are opt-in ports. A backend implements what its model supports. A command against a
   missing capability fails with a clear message instead of emulating it. For example, Redis, whose

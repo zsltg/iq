@@ -81,18 +81,17 @@ func TestToFilterPushable(t *testing.T) {
 	}
 }
 
-func TestPushdownColumns(t *testing.T) {
+func TestPushedColumns(t *testing.T) {
+	types := typeMap{cellKey("cf", "age"): ctInt}
 	tests := []struct {
 		name string
 		pred predicate.Node
-		cols []string
-		ok   bool
+		want []string
 	}{
 		{
 			name: "single equality",
 			pred: predicate.Eq{Path: []string{"cf", "author"}, Value: "Herbert"},
-			cols: []string{cellKey("cf", "author")},
-			ok:   true,
+			want: []string{cellKey("cf", "author")},
 		},
 		{
 			name: "and of two",
@@ -100,8 +99,7 @@ func TestPushdownColumns(t *testing.T) {
 				predicate.Eq{Path: []string{"cf", "author"}, Value: "Herbert"},
 				predicate.Eq{Path: []string{"cf", "year"}, Value: "1965"},
 			},
-			cols: []string{cellKey("cf", "author"), cellKey("cf", "year")},
-			ok:   true,
+			want: []string{cellKey("cf", "author"), cellKey("cf", "year")},
 		},
 		{
 			name: "and with one pushable conjunct pushes that one column",
@@ -109,30 +107,28 @@ func TestPushdownColumns(t *testing.T) {
 				predicate.Eq{Path: []string{"cf", "author"}, Value: "Herbert"},
 				predicate.Cmp{Path: []string{"cf", "age"}, Op: predicate.Gt, Value: float64(10)},
 			},
-			cols: []string{cellKey("cf", "author")},
-			ok:   true,
+			want: []string{cellKey("cf", "author")},
+		},
+		{
+			name: "an equality that does not encode is not listed",
+			pred: predicate.And{
+				predicate.Eq{Path: []string{"cf", "author"}, Value: "Herbert"},
+				predicate.Eq{Path: []string{"cf", "age"}, Value: "old"},
+			},
+			want: []string{cellKey("cf", "author")},
+		},
+		{
+			name: "a path that is not family:qualifier is not listed",
+			pred: predicate.Eq{Path: []string{"author"}, Value: "Herbert"},
 		},
 		{
 			name: "nothing pushable",
 			pred: predicate.Cmp{Path: []string{"cf", "age"}, Op: predicate.Lt, Value: float64(5)},
-			ok:   false,
-		},
-		{
-			name: "and of only non-pushable conjuncts is not pushable",
-			pred: predicate.And{
-				predicate.Cmp{Path: []string{"cf", "age"}, Op: predicate.Lt, Value: float64(5)},
-				predicate.Exists{Path: []string{"cf", "author"}},
-			},
-			ok: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cols, ok := pushdownColumns(tt.pred)
-			require.Equal(t, tt.ok, ok)
-			if tt.ok {
-				require.Equal(t, tt.cols, cols)
-			}
+			require.Equal(t, tt.want, pushedColumns(types, tt.pred))
 		})
 	}
 }

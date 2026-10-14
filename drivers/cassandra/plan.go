@@ -31,7 +31,15 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	if unbounded || !keys.Streamable {
 		mode = "whole result materialized in memory"
 	}
-	return query.AccessPlan{Ops: []string{desc, mode}, Filter: filter}
+	server := query.ServerStage("", false)
+	if filter != nil {
+		server = query.StagePlan{
+			State: query.StageConditional,
+			Scope: "cql where",
+			Note:  "each referenced column exists and its type accepts the literal",
+		}
+	}
+	return query.AccessPlan{Ops: []string{desc, mode}, Filter: filter, Server: server}
 }
 
 // ExplainWrite describes, without connecting, the write a copy into this table would

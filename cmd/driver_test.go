@@ -264,20 +264,19 @@ func TestDriverRegistryCapabilities(t *testing.T) {
 		addressable    bool
 		addressParams  []string
 		verifiesOnOpen bool
-		filtersScan    bool
 		write, clear   bool
 		drop, del      bool
 	}{
-		{name: "mongo", addressable: true, addressParams: []string{"collection"}, filtersScan: true, write: true, clear: true, drop: true, del: true},
-		{name: "cassandra", addressable: true, addressParams: []string{"table"}, filtersScan: true, write: true, clear: true, drop: true, del: true},
-		{name: "dynamodb", addressable: true, addressParams: []string{"table"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
-		{name: "hbase", addressable: true, addressParams: []string{"table"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
-		{name: "couchdb", addressable: true, addressParams: []string{"database"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
-		{name: "couchbase", addressable: true, addressParams: []string{"collection", "bucket"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true},
-		{name: "neo4j", addressable: true, addressParams: []string{"label", "rel", "database"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
-		{name: "elasticsearch", addressable: true, addressParams: []string{"index"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
-		{name: "opensearch", addressable: true, addressParams: []string{"index"}, verifiesOnOpen: true, filtersScan: true, write: true, clear: true, drop: true, del: true},
-		{name: "redis", filtersScan: true, write: true, clear: true, drop: true, del: true},
+		{name: "mongo", addressable: true, addressParams: []string{"collection"}, write: true, clear: true, drop: true, del: true},
+		{name: "cassandra", addressable: true, addressParams: []string{"table"}, write: true, clear: true, drop: true, del: true},
+		{name: "dynamodb", addressable: true, addressParams: []string{"table"}, verifiesOnOpen: true, write: true, clear: true, drop: true, del: true},
+		{name: "hbase", addressable: true, addressParams: []string{"table"}, verifiesOnOpen: true, write: true, clear: true, drop: true, del: true},
+		{name: "couchdb", addressable: true, addressParams: []string{"database"}, verifiesOnOpen: true, write: true, clear: true, drop: true, del: true},
+		{name: "couchbase", addressable: true, addressParams: []string{"collection", "bucket"}, verifiesOnOpen: true, write: true, clear: true, drop: true},
+		{name: "neo4j", addressable: true, addressParams: []string{"label", "rel", "database"}, verifiesOnOpen: true, write: true, clear: true, drop: true, del: true},
+		{name: "elasticsearch", addressable: true, addressParams: []string{"index"}, verifiesOnOpen: true, write: true, clear: true, drop: true, del: true},
+		{name: "opensearch", addressable: true, addressParams: []string{"index"}, verifiesOnOpen: true, write: true, clear: true, drop: true, del: true},
+		{name: "redis", write: true, clear: true, drop: true, del: true},
 		{name: "file"},
 	}
 	require.Len(t, drivers, len(tests), "every registered driver needs a row")
@@ -293,7 +292,6 @@ func TestDriverRegistryCapabilities(t *testing.T) {
 			require.Equal(t, tt.addressable, d.addressable)
 			require.Equal(t, tt.addressParams, d.addressParams())
 			require.Equal(t, tt.verifiesOnOpen, d.verifiesOnOpen)
-			require.Equal(t, tt.filtersScan, d.filtersScan)
 			require.NotNil(t, d.explainPlan)
 			require.Equal(t, tt.write, d.explainWrite != nil)
 			require.Equal(t, tt.clear, d.explainClear != nil)

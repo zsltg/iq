@@ -83,3 +83,25 @@ func TestExplainDelete(t *testing.T) {
 		"DELETE FROM <table> WHERE <pk> = ? per key: remove the named rows",
 	}, plan.Ops)
 }
+
+func TestExplainPlanStages(t *testing.T) {
+	scan := selector.KeySet{Scan: true, Streamable: true}
+	tests := []struct {
+		name       string
+		keys       selector.KeySet
+		pred       predicate.Node
+		wantServer query.StagePlan
+	}{
+		{name: "scan with a pushing fragment", keys: scan, pred: predicate.Eq{Path: []string{"missing"}, Value: "x"}, wantServer: query.StagePlan{State: query.StageConditional, Scope: "cql where", Note: "each referenced column exists and its type accepts the literal"}},
+		{name: "scan with nothing pushable", keys: scan, pred: predicate.Cmp{Path: []string{"t"}, Op: predicate.Gt, Value: 3.0}, wantServer: query.StagePlan{State: query.StageOff, Note: "no conjunct pushes"}},
+		{name: "scan with a nil predicate", keys: scan, wantServer: query.StagePlan{State: query.StageOff, Note: "no conjunct pushes"}},
+		{name: "bounded read", keys: selector.KeySet{Keys: []string{"a"}}, pred: predicate.Eq{Path: []string{"missing"}, Value: "x"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := ExplainPlan(tt.keys, tt.pred, false)
+			require.Equal(t, tt.wantServer, plan.Server)
+			require.Equal(t, query.StagePlan{}, plan.Prefilter)
+		})
+	}
+}

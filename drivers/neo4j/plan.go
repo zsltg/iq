@@ -34,7 +34,11 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	if unbounded || !keys.Streamable {
 		mode = "whole result materialized in memory"
 	}
-	return query.AccessPlan{Ops: []string{desc, mode}, Filter: filter}
+	return query.AccessPlan{
+		Ops:    []string{desc, mode},
+		Filter: filter,
+		Server: query.ServerStage("cypher where", filter != nil),
+	}
 }
 
 // ExplainWrite describes, without connecting, the write a copy into this label would

@@ -12,18 +12,24 @@ import (
 // ExplainPlan describes the HBase RPCs this driver would run for a classified query,
 // without connecting. A bounded query reads the named rows by key with point Gets; a
 // scan runs a table Scan, pre-filtered by a server-side SingleColumnValueFilter when
-// the predicate has pushable equalities, else a full-table scan. It reuses
-// pushdownColumns so the shown filter columns are exactly what ScanFiltered would push.
-func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
+// the predicate has pushable equalities, else a full-table scan. It parses the URI for
+// the column types and runs toFilter, as ScanFiltered does, so the plan shows what the
+// scan pushes. A URI that does not parse is an error.
+func ExplainPlan(uri string, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
+	cc, err := parseURL(uri, "")
+	if err != nil {
+		return query.AccessPlan{}, fmt.Errorf("explain hbase source: %w", err)
+	}
 	if !keys.Scan {
 		return query.AccessPlan{
 			Ops: []string{fmt.Sprintf("Get by row key: fetch %d requested key(s)", len(keys.Keys))},
-		}
+		}, nil
 	}
 
 	desc := "Scan: full-table scan (every row read, filtered client-side)"
 	var filterInfo map[string]any
-	if cols, ok := pushdownColumns(pred); ok {
+	if _, ok := toFilter(cc.types, pred); ok {
+		cols := pushedColumns(cc.types, pred)
 		desc = "Scan + SingleColumnValueFilter on " + strings.Join(cols, ", ") +
 			": server-side pre-filter, then the full jq re-runs client-side"
 		filterInfo = map[string]any{"columns": cols}
@@ -32,7 +38,11 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	if unbounded || !keys.Streamable {
 		mode = "whole result materialized in memory"
 	}
-	return query.AccessPlan{Ops: []string{desc, mode}, Filter: filterInfo}
+	return query.AccessPlan{
+		Ops:    []string{desc, mode},
+		Filter: filterInfo,
+		Server: query.ServerStage("single column value filter", filterInfo != nil),
+	}, nil
 }
 
 // ExplainWrite describes, without connecting, the write a copy into this table would

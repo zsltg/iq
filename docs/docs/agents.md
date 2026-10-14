@@ -197,8 +197,8 @@ Register that config's sources with the same `iq add --config
   with the answer. Where it cannot, the call comes back refused, naming what to
   pass. The CLI's `--force` has no counterpart here. A confirmed call is the
   confirmation.
-- **`iq_explain` first.** It never connects, and it names the route and the
-  pushed-down conjuncts, so a plan can be read before a scan runs.
+- **`iq_explain` first.** It never connects. It names the route and the
+  stages planned for each `select()` conjunct (server, prefilter, jq), so a plan can be read before a scan runs.
 - **Errors are redacted.** Every failure is a tool result carrying the CLI's
   `{"error":{"message","causes"}}` document with every connection URI redacted.
   As a result, no raw driver error and no stored password reaches a transcript.

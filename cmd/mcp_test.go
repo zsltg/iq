@@ -582,9 +582,9 @@ func TestMCPExplainKeysMatchLogAttrs(t *testing.T) {
 	}
 	// The plan text is the explain tool's own addition; every other key is the
 	// log record's.
-	// filter and conjuncts are omitempty, so a zero value omits them; they are
-	// part of the contract either way.
-	got := jsonFieldNames(t, mcpExplainOutput{}, "filter", "conjuncts")
+	// filter, server, prefilter, and conjuncts are omitempty, so a zero value omits
+	// them. They are part of the contract either way.
+	got := jsonFieldNames(t, mcpExplainOutput{}, "filter", "server", "prefilter", "conjuncts")
 	require.Contains(t, got, "plan")
 	got = slices.DeleteFunc(got, func(s string) bool { return s == "plan" })
 	slices.Sort(want)
@@ -2050,8 +2050,10 @@ func TestMCPExplainHonoursUnbounded(t *testing.T) {
 	structOf(t, callMCP(t, cs, "iq_explain", map[string]any{"source": "snap", "filter": ".[] | select(.n > 1)", "unbounded": true}), &selected)
 	require.Nil(t, selected.Filter)
 	require.NotEmpty(t, selected.Conjuncts)
+	require.Nil(t, selected.Server)
+	require.Nil(t, selected.Prefilter)
 	for _, cj := range selected.Conjuncts {
-		require.False(t, cj.Pushed)
+		require.Equal(t, []string{"jq"}, cj.Stages)
 		require.Equal(t, "materialized: the scan reads every record", cj.Reason)
 	}
 }
