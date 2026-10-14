@@ -58,8 +58,15 @@ func buildSourcePlan(url, filter string, compile, unbounded bool) (sourcePlan, e
 	return buildSourcePlanQuery(url, q, compile, unbounded), nil
 }
 
+// materializedReason is why a conjunct stays client-side on the materialized
+// route.
+const materializedReason = "materialized: the scan reads every record"
+
 // buildSourcePlanQuery is buildSourcePlan for an already-parsed query, so the
 // --explain text path (which parses the filter once up front) does not re-parse it.
+// It picks the route the way JQEngine.Run does. A streamable scan with unbounded
+// set is materialized: execution pushes nothing, so the driver gets no predicate
+// and every conjunct is client-side with materializedReason.
 func buildSourcePlanQuery(url string, q *gojq.Query, compile, unbounded bool) sourcePlan {
 	d, ok := driverForScheme(schemeOf(url))
 	if !ok || d.explainPlan == nil {
@@ -68,8 +75,9 @@ func buildSourcePlanQuery(url string, q *gojq.Query, compile, unbounded bool) so
 	keys := selector.Keys(q)
 	var pred predicate.Node
 	var conjuncts []pushdown.Conjunct
+	materialized := keys.Scan && keys.Streamable && unbounded
 	if compile {
-		if p, ok := pushdown.Compile(q); ok {
+		if p, ok := pushdown.Compile(q); ok && !materialized {
 			pred = p
 		}
 		conjuncts, _ = pushdown.Conjuncts(q)
@@ -77,6 +85,10 @@ func buildSourcePlanQuery(url string, q *gojq.Query, compile, unbounded bool) so
 	ap := d.explainPlan(keys, pred, unbounded)
 	sp := sourcePlan{hasPlan: true, driver: d.name, keys: keys, ops: ap.Ops, filter: ap.Filter}
 	for _, cj := range conjuncts {
+		if materialized {
+			sp.conjuncts = append(sp.conjuncts, conjunctPlan{Expr: cj.Expr, Reason: materializedReason})
+			continue
+		}
 		pushed, reason := conjunctDecision(d, keys, cj, unbounded)
 		sp.conjuncts = append(sp.conjuncts, conjunctPlan{Expr: cj.Expr, Pushed: pushed, Reason: reason})
 	}
@@ -372,7 +384,8 @@ func writePushdownDecisions(b *strings.Builder, conjuncts []conjunctPlan) {
 // conjunct goes to the scan translator of the driver through the same describer
 // as the plan. A non-nil pushed fragment means the backend pushes it. If the
 // translator declines it, or the driver has no scan-side filter, the conjunct
-// re-runs client-side.
+// re-runs client-side. The caller does not ask for a materialized route, which
+// pushes nothing.
 func conjunctDecision(d driver, keys selector.KeySet, cj pushdown.Conjunct, unbounded bool) (bool, string) {
 	if cj.Pred == nil {
 		return false, cj.Reason

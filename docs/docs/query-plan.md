@@ -61,6 +61,8 @@ a terminal:
       says whether the backend evaluates it (`pushed`) or it re-runs
       client-side (`client-side`). It also says why a client-side conjunct did
       not push.
+    - Under `--unbounded`, a streamable scan reads every record. Every conjunct
+      is then `client-side` with the reason `materialized: the scan reads every record`.
     - A conjunct is `client-side` when the compiler cannot express it as
       a provable superset (an inexact negation, a non-portable regex, an unsafe
       field name, or any other unpushable construct). It is also `client-side`

@@ -2045,6 +2045,15 @@ func TestMCPExplainHonoursUnbounded(t *testing.T) {
 	structOf(t, callMCP(t, cs, "iq_explain", map[string]any{"source": "snap", "filter": ".[]", "unbounded": true}), &materialized)
 	require.Contains(t, materialized.Plan, "materialized scan")
 	require.NotContains(t, materialized.Plan, "streaming scan")
+
+	var selected mcpExplainOutput
+	structOf(t, callMCP(t, cs, "iq_explain", map[string]any{"source": "snap", "filter": ".[] | select(.n > 1)", "unbounded": true}), &selected)
+	require.Nil(t, selected.Filter)
+	require.NotEmpty(t, selected.Conjuncts)
+	for _, cj := range selected.Conjuncts {
+		require.False(t, cj.Pushed)
+		require.Equal(t, "materialized: the scan reads every record", cj.Reason)
+	}
 }
 
 // TestInsertTransformOptions pins the tool-to-core mapping of the reshaping
