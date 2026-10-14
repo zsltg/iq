@@ -81,7 +81,7 @@ Local and layered: the quality gates run on your machine first, and
 ```bash
 make check          # fast offline gate: format, vet, build, lint, workflow lint, dead code, short tests
 make cover          # full suite + coverage floor
-make security       # govulncheck + osv-scanner (vulnerabilities, license allowlist) + gitleaks (tree + git history) + zizmor, SBOMs to dist/
+make security       # govulncheck + osv-scanner (vulnerabilities, license allowlist) + Betterleaks (tree + git history) + zizmor, SBOMs to dist/
 make capabilities   # capslock capability drift (runs only when go.mod/go.sum moved)
 make mutation       # mutago mutation gate over the branch diff
 make ci             # all of the above, in order; start the compose stack first
@@ -146,7 +146,8 @@ module proxy:
 - `govulncheck` finds vulnerabilities in reachable Go code.
 - `osv-scanner` scans vulnerabilities and every Go module against
   `scripts/license-allowlist.txt`. The CI `osv` job reads the same allowlist.
-- `gitleaks` scans the working tree and Git history for secrets.
+- `betterleaks` scans the working tree and Git history for secrets. It reads
+  `.betterleaks.toml`, which skips the fake passwords of the tests.
 - `zizmor` audits `.github/` through `uvx`, with the version pinned by
   `ZIZMOR_VERSION` in `scripts/tool-versions.env`. Without `GH_TOKEN` or `GITHUB_TOKEN`, it runs only offline audits.
 - `syft` writes a software bill of materials (SBOM) to `dist/`. The SBOM lists the Go module graph only.
@@ -577,7 +578,7 @@ the mongo live flow),
 a check of the third-party license texts in the archives and the `.deb`),
 `vuln` (govulncheck), `osv` (OSV plus the permissive license allowlist, then
 `scripts/third-party-licenses.sh` on every change), `sbom` (syft), `deadcode`,
-`secrets` (gitleaks, the tree and the commits of the pull request), `capabilities`
+`secrets` (Betterleaks, the tree and the commits of the pull request), `capabilities`
 (`scripts/capabilities.sh` against the PR base), `mutate-diff`
 (three jobs, see "The mutation gate on a pull request" below: `mutate-plan`,
 `mutate-diff` and `mutate-verdict`; the artifact `mutate-diff` holds the merged
@@ -597,7 +598,7 @@ changes. The jobs `workflows`, `osv`, `secrets`, `demo-check` and
 `dco` run on pull requests only. The
 weekly `deep-*` jobs (Mondays, or `workflow_dispatch`: Actions, CI, Run
 workflow) re-run the vulnerability, secret and zizmor workflow scans against fresh data
-(`deep-scan`, which keeps the only gitleaks scan of the full history), give every fuzz target five minutes instead of twenty seconds
+(`deep-scan`, which keeps the only Betterleaks scan of the full history), give every fuzz target five minutes instead of twenty seconds
 (`deep-fuzz`), run the full suite, container-backed tests included, with the race detector
 (`deep-race`, in the package groups of `coverage-group`, reports only, no merge waits for it), and run an incremental, sharded mutation scan. The stored result of
 each package lives on the `badges` branch (`state/<slug>.json`, next to the
@@ -784,7 +785,7 @@ plain build, of `-race` and of `-covermode=atomic -coverpkg=./...`. It also runs
 each fuzz target for one iteration, and compiles `golangci-lint`, `govulncheck`,
 `deadcode` and `actionlint` with `go install`, with no run, because a tool can
 call a host that the job blocks. It does not compile `syft`, `osv-scanner` and
-`gitleaks`. The jobs `sbom`, `osv` and `secrets` compile them, because these tools
+`betterleaks`. The jobs `sbom`, `osv` and `secrets` compile them, because these tools
 bring a large module graph that every Linux job would download. The macOS and
 Windows legs of `go-cache` (`bash scripts/ci-warm-cache.sh other`) run `go build -trimpath` and the plain test compile
 with no cgo. The `test` job sets `CGO_ENABLED=1` on Linux and `0` on macOS and

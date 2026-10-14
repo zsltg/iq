@@ -296,7 +296,7 @@ jobs:
   # and Go never trims the module cache. The Linux leg compiles every variant that
   # the Linux jobs build and the tools that more than one job runs, and runs none
   # of them: a tool can call the network when it starts, and the host list of this
-  # job blocks that. It does not compile syft, osv-scanner and gitleaks. The jobs
+  # job blocks that. It does not compile syft, osv-scanner and betterleaks. The jobs
   # sbom, osv and secrets compile them, because they bring about 3.9 GB of modules
   # and 1.3 GB of build cache.
   go-cache:
@@ -908,21 +908,21 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # the range scan needs the commits of the pull request
-      # The restore is off. The go-cache job does not warm gitleaks, so the restore
+      # The restore is off. The go-cache job does not warm betterleaks, so the restore
       # would only download modules that this job does not use.
       - uses: ./.github/actions/setup-go
         with:
           restore: 'false'
       # The history scan covers only the commits of the pull request. The weekly
       # deep-scan job keeps the only scan of the full history.
-      - name: gitleaks (working tree + pull request commits)
+      - name: betterleaks (working tree + pull request commits)
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           . scripts/tool-versions.env
-          go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" dir --no-banner .
-          go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" git --no-banner --log-opts="$BASE..$HEAD" .
+          go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" dir --no-banner --config .betterleaks.toml .
+          go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" git --no-banner --config .betterleaks.toml --log-opts="$BASE..$HEAD" .
 
   # What the dependency tree can *do* (google/capslock, scripts/capabilities.sh).
   # The wrapper self-skips unless go.mod or go.sum moved against the base, so this
@@ -1253,7 +1253,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0 # gitleaks history
+          fetch-depth: 0 # betterleaks history
       - uses: ./.github/actions/setup-go
       - name: Vulnerabilities (govulncheck + OSV, fresh data)
         run: |
@@ -1267,7 +1267,7 @@ jobs:
       - name: Secret history scan
         run: |
           . scripts/tool-versions.env
-          go run github.com/zricethezav/gitleaks/v8@"$GITLEAKS_VERSION" git --no-banner .
+          go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" git --no-banner --config .betterleaks.toml .
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       # The online audits read the advisory data of GitHub, so a re-run on
       # unchanged workflows finds a newly vulnerable or yanked action.

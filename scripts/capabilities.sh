@@ -4,7 +4,7 @@
 # a run error. The wrapper selects the scope and decides whether a run is needed.
 # It exits 1 for drift and run errors, with a distinct message for each.
 # It does not parse output. It answers the one question the rest of the sweep does not: govulncheck and
-# osv-scanner ask whether a dependency is known-vulnerable and gitleaks whether we leaked
+# osv-scanner ask whether a dependency is known-vulnerable and betterleaks whether we leaked
 # a secret, while this asks what a dependency can actually *do* — a bump that gains a new
 # capability is invisible in a 295-module go.sum diff.
 #

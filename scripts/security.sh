@@ -16,7 +16,7 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 . scripts/tool-versions.env
 govulncheck() { go run "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION" "$@"; }
 osv-scanner() { go run "github.com/google/osv-scanner/v2/cmd/osv-scanner@$OSV_SCANNER_VERSION" "$@"; }
-gitleaks() { go run "github.com/zricethezav/gitleaks/v8@$GITLEAKS_VERSION" "$@"; }
+betterleaks() { go run "github.com/betterleaks/betterleaks@$BETTERLEAKS_VERSION" "$@"; }
 
 command -v uvx >/dev/null 2>&1 || { echo "security: uvx not found; install uv" >&2; exit 1; }
 
@@ -47,9 +47,9 @@ step "third-party licenses (texts of every linked module)"
 bash scripts/third-party-licenses.sh || { echo "security: the third-party license collection failed" >&2; fail=1; }
 rm -rf third-party-licenses
 
-step "gitleaks (secrets: working tree + git history)"
-gitleaks dir . --no-banner || { echo "security: gitleaks found secrets in the working tree" >&2; fail=1; }
-gitleaks git . --no-banner || { echo "security: gitleaks found secrets in git history" >&2; fail=1; }
+step "betterleaks (secrets: working tree + git history)"
+betterleaks dir . --no-banner --config .betterleaks.toml || { echo "security: betterleaks found secrets in the working tree" >&2; fail=1; }
+betterleaks git . --no-banner --config .betterleaks.toml || { echo "security: betterleaks found secrets in git history" >&2; fail=1; }
 
 step "zizmor (GitHub Actions workflow audit)"
 uvx "zizmor==$ZIZMOR_VERSION" .github/ || { echo "security: zizmor reported workflow findings" >&2; fail=1; }
