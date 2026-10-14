@@ -414,10 +414,10 @@ func (s *Store) FormatRaw(v any, _ bool) string {
 }
 
 // ExplainPlan describes the work of a file query, without opening the file: a full
-// decode, then a client-side filter or scan. There is no server-side pushdown. If a
-// scan carries a compiled predicate, an uncached typed-JSONL dump also runs the
-// rawpred prefilter. Every other format, and any scan served from a fresh decode
-// cache, decodes in full. The plan is static, so it names this condition and does not
+// decode, then a client-side filter or scan. A dump file has no server. If a scan
+// carries a compiled predicate, an uncached typed-JSONL dump also runs the rawpred
+// prefilter. Every other format, and any scan served from a fresh decode cache,
+// decodes in full. The plan is static, so it names this condition and does not
 // resolve the format of the dump.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.AccessPlan {
 	if !keys.Scan && len(keys.Keys) > 0 {
@@ -426,12 +426,17 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.Access
 			fmt.Sprintf("filter to %d key(s) client-side", len(keys.Keys)),
 		}}
 	}
+	prefilter := query.StagePlan{State: query.StageOff, Note: "no compiled predicate"}
 	if pred != nil {
-		return query.AccessPlan{Ops: []string{
-			"decode dump file",
-			"uncached typed-JSONL only: client-side raw-byte prefilter (rawpred) drops a provable non-match before decode",
-			"scan client-side",
-		}}
+		prefilter = query.StagePlan{
+			State: query.StageConditional,
+			Scope: "rawpred on the raw value of each record, before decode",
+			Note:  "only for an uncached typed-JSONL dump",
+		}
 	}
-	return query.AccessPlan{Ops: []string{"decode dump file", "scan client-side"}}
+	return query.AccessPlan{
+		Ops:       []string{"decode dump file", "scan client-side"},
+		Server:    query.StagePlan{Note: "a dump file has no server"},
+		Prefilter: prefilter,
+	}
 }

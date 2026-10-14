@@ -1,6 +1,7 @@
 package hbase
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,9 +11,12 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
+const planURI = "hbase://zk/?table=t"
+
 func TestExplainPlan(t *testing.T) {
 	t.Run("bounded get by key", func(t *testing.T) {
-		plan := ExplainPlan(selector.KeySet{Keys: []string{"1", "2"}}, nil, false)
+		plan, err := ExplainPlan(Source{URI: planURI}, selector.KeySet{Keys: []string{"1", "2"}}, nil, false)
+		require.NoError(t, err)
 		require.Contains(t, plan.Ops[0], "Get by row key")
 		require.Contains(t, plan.Ops[0], "2 requested key(s)")
 		require.Nil(t, plan.Filter)
@@ -20,10 +24,66 @@ func TestExplainPlan(t *testing.T) {
 
 	t.Run("filtered scan lists pushed columns", func(t *testing.T) {
 		pred := predicate.Eq{Path: []string{"cf", "author"}, Value: "Herbert"}
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
+		plan, err := ExplainPlan(Source{URI: planURI}, selector.KeySet{Scan: true, Streamable: true}, pred, false)
+		require.NoError(t, err)
 		require.Contains(t, plan.Ops[0], "SingleColumnValueFilter")
 		require.Contains(t, plan.Ops[0], cellKey("cf", "author"))
 		require.Equal(t, map[string]any{"columns": []string{cellKey("cf", "author")}}, plan.Filter)
+	})
+}
+
+func TestExplainPlanAddress(t *testing.T) {
+	scan := selector.KeySet{Scan: true, Streamable: true}
+
+	t.Run("address replaces a bad saved table", func(t *testing.T) {
+		plan, err := ExplainPlan(Source{URI: "hbase://zk/?table=bad/name", Address: "good"}, scan, nil, false)
+		require.NoError(t, err)
+		require.Contains(t, plan.Ops[0], "full-table scan")
+	})
+
+	t.Run("bad address with a valid saved table", func(t *testing.T) {
+		_, err := ExplainPlan(Source{URI: planURI, Address: "bad/name"}, scan, nil, false)
+		require.ErrorContains(t, err, "not a path")
+	})
+}
+
+func TestExplainPlanStages(t *testing.T) {
+	scan := selector.KeySet{Scan: true, Streamable: true}
+	numeric := predicate.Eq{Path: []string{"cf", "author"}, Value: 1.0}
+	serverOn := query.StagePlan{State: query.StageOn, Scope: "single column value filter"}
+	serverOff := query.StagePlan{State: query.StageOff, Note: "no conjunct pushes"}
+	tests := []struct {
+		name       string
+		uri        string
+		keys       selector.KeySet
+		pred       predicate.Node
+		wantServer query.StagePlan
+	}{
+		{"number with no declared type", planURI, scan, numeric, serverOff},
+		{"number with a declared int type", planURI + "&types=cf:author=int", scan, numeric, serverOn},
+		{"string needs no declaration", planURI, scan, predicate.Eq{Path: []string{"cf", "author"}, Value: "x"}, serverOn},
+		{"nil predicate", planURI, scan, nil, serverOff},
+		{"bounded read", planURI, selector.KeySet{Keys: []string{"a"}}, numeric, query.StagePlan{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan, err := ExplainPlan(Source{URI: tt.uri}, tt.keys, tt.pred, false)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantServer, plan.Server)
+			require.Equal(t, query.StagePlan{}, plan.Prefilter)
+		})
+	}
+
+	t.Run("a malformed types parameter is an error", func(t *testing.T) {
+		_, err := ExplainPlan(Source{URI: planURI + "&types=noequals"}, scan, numeric, false)
+		require.ErrorContains(t, err, "explain hbase source")
+		require.ErrorContains(t, err, `malformed ?types= entry "noequals"`)
+		require.Error(t, errors.Unwrap(err), "the error wraps the parse error")
+	})
+
+	t.Run("a bounded read still rejects a bad URI", func(t *testing.T) {
+		_, err := ExplainPlan(Source{URI: "redis://x"}, selector.KeySet{Keys: []string{"a"}}, nil, false)
+		require.Error(t, err)
 	})
 }
 
@@ -78,7 +138,8 @@ func TestExplainPlanStreamingMode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: tt.streamable}, nil, tt.unbounded)
+			plan, err := ExplainPlan(Source{URI: planURI}, selector.KeySet{Scan: true, Streamable: tt.streamable}, nil, tt.unbounded)
+			require.NoError(t, err)
 			require.Equal(t, []string{
 				"Scan: full-table scan (every row read, filtered client-side)",
 				tt.want,

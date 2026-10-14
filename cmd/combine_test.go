@@ -346,15 +346,14 @@ func useCombDriver(t *testing.T) *[]config {
 			schemes:     []string{"comb"},
 			addressable: true,
 			params:      []query.URIParam{{Name: "collection", Keyspace: true}},
-			filtersScan: false,
 			open: func(_ context.Context, cfg *config) (store, error) {
 				opened = append(opened, *cfg)
 				// Each source serves its own marker, so a test can tell the stages apart.
 				mark := "data-of-" + strings.TrimPrefix(cfg.url, "comb://")
 				return &fakeStore{pages: []map[string]any{{"k1": map[string]any{"n": 1.0, "mark": mark}}}}, nil
 			},
-			explainPlan: func(selector.KeySet, predicate.Node, bool) query.AccessPlan {
-				return query.AccessPlan{Ops: []string{"SCAN comb"}}
+			explainPlan: func(planSource, selector.KeySet, predicate.Node, bool) (query.AccessPlan, error) {
+				return query.AccessPlan{Ops: []string{"SCAN comb"}}, nil
 			},
 		},
 		driver{

@@ -35,7 +35,38 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	if unbounded || !keys.Streamable {
 		mode = "whole result materialized in memory"
 	}
-	return query.AccessPlan{Ops: []string{desc, mode}, Filter: filter}
+	server := query.StagePlan{State: query.StageOff, Note: query.NoPushNote}
+	if filter != nil {
+		server = query.StagePlan{
+			State: query.StageConditional,
+			Scope: "elasticsearch bool query",
+			Note:  "each equality field is exactly mapped and its literal type matches",
+		}
+	}
+	return query.AccessPlan{Ops: []string{desc, mode}, Filter: filter, Server: server, Prefilter: prefilterStage(pred)}
+}
+
+// prefilterStage decides the plan's prefilter state from the whole predicate, with no
+// connection. It agrees with prefilterMatcher wherever the answer does not need the
+// live mapping. The prefilter is off for a nil predicate and for a predicate that
+// reads _id. It is on if a leaf is never exact. Else the mapping decides, so the
+// state is conditional.
+func prefilterStage(pred predicate.Node) query.StagePlan {
+	const scope = "rawpred on the raw _source of each hit, before decode"
+	switch {
+	case pred == nil:
+		return query.StagePlan{State: query.StageOff, Note: "no compiled predicate"}
+	case referencesInjectedID(pred):
+		return query.StagePlan{State: query.StageOff, Note: "the predicate reads _id, which the raw _source does not carry"}
+	case neverExact(pred):
+		return query.StagePlan{State: query.StageOn, Scope: scope}
+	default:
+		return query.StagePlan{
+			State: query.StageConditional,
+			Scope: scope,
+			Note:  "unless every compiled equality translates to an exact term under the live mapping",
+		}
+	}
 }
 
 // explainQuery is the connection-free mirror of Store.toQuery. It pushes the same

@@ -37,8 +37,8 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 // rest. Ranges, regex, existence, size, negation, and Or are never pushed. A path
 // is not pushable if it is not a two-segment family:qualifier, or its literal will
 // not encode to the column type. types declares column encodings, so the
-// comparator bytes match the stored bytes. The connection-free plan description
-// walks the predicate itself (pushdownColumns) and builds no filters.
+// comparator bytes match the stored bytes. The connection-free plan runs it with the
+// type map of the URI.
 func toFilter(types typeMap, n predicate.Node) (filter.Filter, bool) {
 	switch t := n.(type) {
 	case predicate.Eq:
@@ -97,26 +97,21 @@ func andToFilter(types typeMap, and predicate.And) (filter.Filter, bool) {
 	}
 }
 
-// pushdownColumns walks a predicate and returns the family:qualifier columns a
-// server-side filter would pre-filter on, and whether any push at all. It mirrors
-// toFilter's pushable set (column equality, and And of such) without connecting or
-// encoding, so the connection-free plan description matches what ScanFiltered issues.
-func pushdownColumns(n predicate.Node) ([]string, bool) {
+// pushedColumns lists the family:qualifier columns that toFilter accepts for n, in
+// predicate order. It runs eqToFilter on each equality, so the plan names exactly the
+// columns that the scan pushes.
+func pushedColumns(types typeMap, n predicate.Node) []string {
 	switch t := n.(type) {
 	case predicate.Eq:
-		if len(t.Path) != 2 {
-			return nil, false
+		if _, ok := eqToFilter(types, t); ok {
+			return []string{cellKey(t.Path[0], t.Path[1])}
 		}
-		return []string{cellKey(t.Path[0], t.Path[1])}, true
 	case predicate.And:
 		var cols []string
 		for _, c := range t {
-			if cc, ok := pushdownColumns(c); ok {
-				cols = append(cols, cc...)
-			}
+			cols = append(cols, pushedColumns(types, c)...)
 		}
-		return cols, len(cols) > 0
-	default:
-		return nil, false
+		return cols
 	}
+	return nil
 }

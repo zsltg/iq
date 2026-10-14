@@ -760,7 +760,7 @@ func TestGetStopsOnceEveryKeyIsFound(t *testing.T) {
 
 // TestExplainPlanRouting pins which plan each request shape produces: only a bounded
 // (non-scan) request with at least one key reports the key-filter plan, a scan reports
-// the scan plan even when keys are present, and a predicate adds the prefilter line.
+// the scan plan even when keys are present.
 func TestExplainPlanRouting(t *testing.T) {
 	tests := []struct {
 		name string
@@ -789,11 +789,47 @@ func TestExplainPlanRouting(t *testing.T) {
 			require.Equal(t, tt.want, ExplainPlan(tt.keys, tt.pred, false).Ops)
 		})
 	}
-	t.Run("a predicate adds the prefilter line", func(t *testing.T) {
-		ops := ExplainPlan(selector.KeySet{Scan: true}, predicate.And{}, false).Ops
-		require.Len(t, ops, 3)
-		require.Contains(t, ops[1], "rawpred")
-	})
+}
+
+func TestExplainPlanStages(t *testing.T) {
+	noServer := query.StagePlan{State: query.StageNone, Note: "a dump file has no server"}
+	tests := []struct {
+		name          string
+		keys          selector.KeySet
+		pred          predicate.Node
+		wantServer    query.StagePlan
+		wantPrefilter query.StagePlan
+	}{
+		{
+			name:       "scan with a predicate",
+			keys:       selector.KeySet{Scan: true},
+			pred:       predicate.Eq{Path: []string{"a"}, Value: 1.0},
+			wantServer: noServer,
+			wantPrefilter: query.StagePlan{
+				State: query.StageConditional,
+				Scope: "rawpred on the raw value of each record, before decode",
+				Note:  "only for an uncached typed-JSONL dump",
+			},
+		},
+		{
+			name:          "scan with a nil predicate",
+			keys:          selector.KeySet{Scan: true},
+			wantServer:    noServer,
+			wantPrefilter: query.StagePlan{State: query.StageOff, Note: "no compiled predicate"},
+		},
+		{
+			name: "bounded read",
+			keys: selector.KeySet{Keys: []string{"a"}},
+			pred: predicate.Eq{Path: []string{"a"}, Value: 1.0},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExplainPlan(tt.keys, tt.pred, false)
+			require.Equal(t, tt.wantServer, got.Server)
+			require.Equal(t, tt.wantPrefilter, got.Prefilter)
+		})
+	}
 }
 
 // TestZSetValueOrdering pins the sorted-set rendering: score ascending, ties broken

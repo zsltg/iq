@@ -39,6 +39,7 @@ INPUTS=(
   scripts/demo        # basic.exp, seed.sh, demo.mk: the recorder and every knob it reads
   scripts/seed-mongo.sh # the four books on screen
   cmd/explain.go      # the query plan the recording pauses on
+  cmd/explain_stages.go # the filter stage sections of that plan
   cmd/output.go       # the JSON writer
   cmd/gron.go         # the gron writer the recording ends on
   cmd/color.go        # every color in every frame
