@@ -75,7 +75,7 @@ cover:
 	bash scripts/coverage.sh
 
 # security runs the supply-chain + secrets sweep (govulncheck, osv-scanner,
-# gitleaks) and writes SBOMs to dist/; touches the network.
+# betterleaks) and writes SBOMs to dist/; touches the network.
 security:
 	bash scripts/security.sh
 

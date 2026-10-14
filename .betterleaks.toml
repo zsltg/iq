@@ -1,0 +1,21 @@
+# Betterleaks configuration for iq. The scans in scripts/security.sh and CI
+# pass this file with --config.
+
+# The tests of iq put fake passwords in connection URIs, for example to test
+# redaction. REVIEW.md describes this practice. The local stack uses public
+# development passwords. The filter skips only the three generic rules, and
+# only in these files. All other rules still scan these files. A true result
+# discards the finding. TOML puts each key after a table header into that
+# table. Thus keep this key above [extend].
+filter = '''
+finding["rule_id"] in ["generic-credential-uri", "generic-password", "mongodb-connection-string"]
+&& matchesAny(attributes["path"], [
+  `_test\.go$`,
+  `^REVIEW\.md$`,
+  `^compose\.yaml$`,
+  `^scripts/seed-[a-z0-9-]+\.sh$`
+])
+'''
+
+[extend]
+useDefault = true
