@@ -14,10 +14,10 @@ import (
 // keyring; production wiring is the OS-backed store.
 var keyringStore secret.Keyring = secret.OSKeyring{}
 
-// effectiveURL returns the connection URL to open for src: src.URL as stored,
-// unless the source is keyring-backed, in which case the password is fetched
-// from the keyring under handle and spliced back into the URL. handle is the
-// full resolved handle, the keyring account name.
+// effectiveURL returns the connection URI to open for src: src.URL as stored.
+// If the source is keyring-backed, it fetches the password from the keyring
+// under handle and splices it back into the URI. handle is the full resolved
+// handle, the keyring account name.
 func effectiveURL(src iqconfig.Source, handle string) (string, error) {
 	if !src.Keyring {
 		return src.URL, nil

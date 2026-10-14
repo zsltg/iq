@@ -1,15 +1,12 @@
 // Package couchdb adapts an Apache CouchDB database to the query ports. A database
-// is modelled as Map[key, document]: a document's _id is the key, the document is
-// the value. The jq filter runs client-side over documents fetched by _id or
-// streamed from the database, so the semantics match every other backend behind
-// the KV port.
+// is modelled as Map[key, document]: the _id of a document is the key, and the
+// document is the value.
 //
 // A CouchDB server hosts many top-level databases and nothing between the server
-// and its documents, so the database is the addressable keyspace (like a Mongo
-// collection or a Cassandra table): the source names the server and the database
-// rides as ?database= or the handle.<db> dotted override. Credentials travel in
-// the URL userinfo (HTTP basic auth) and never in a request path, so the CLI's
-// keyring support applies unchanged and the --verbose trace logs only method+path.
+// and its documents. So the database is the addressable keyspace (like a Mongo
+// collection or a Cassandra table). The source names the server, and the database
+// is ?database= or the handle.<db> dotted override. Credentials travel in the URL
+// userinfo (HTTP basic auth), never in a request path.
 package couchdb
 
 import (

@@ -16,15 +16,14 @@ import (
 )
 
 // Normalize converts a DynamoDB attribute value into a JSON-ready Go value the jq
-// engine accepts: nil, bool, int, float64, string, []any, map[string]any. DynamoDB's
-// scalar types map to their natural JSON form — a string stays a string, a boolean a
-// boolean, a binary value to its base64 string, a null to null. The single number
-// type N (which carries both integers and decimals as strings) follows dec: an integer
-// literal is an int (or its exact decimal string when it does not fit int, so precision
-// is never lost), a fractional literal keeps its exact string in auto and string mode
-// or a bare float64 in number mode. The three set types (SS, NS, BS) map to a []any,
-// so a filter reads them as a list. It is exported so a future dump reader produces the
-// exact same shape a live scan does — the frozen encoding contract.
+// engine accepts: nil, bool, int, float64, string, []any, map[string]any. A
+// DynamoDB scalar gets its natural JSON form: a binary value becomes its base64
+// string, and a null becomes null. The number type N (integers and decimals as
+// strings) follows dec. An integer literal is an int, or its exact decimal string
+// if it does not fit int. A fractional literal keeps its exact string in auto and
+// string mode, or becomes a float64 in number mode. The set types (SS, NS, BS) map
+// to a []any, so a filter reads them as a list. Normalize is exported so a dump
+// reader produces the same shape as a live scan. The encoding is a frozen contract.
 func Normalize(av types.AttributeValue, dec numfmt.DecimalMode) any {
 	switch t := av.(type) {
 	case nil, *types.AttributeValueMemberNULL:
@@ -83,12 +82,10 @@ func normalizeSet(av types.AttributeValue, dec numfmt.DecimalMode) any {
 }
 
 // numberValue renders a DynamoDB N literal per the decimal mode. An integer literal
-// becomes an int when it fits int, else its exact decimal string (so a value beyond
-// int survives without precision loss). The parse uses strconv.IntSize, so a 32-bit
-// build keeps a value beyond int32 as a string and does not truncate it. A
-// fractional literal keeps its exact string in auto and string mode; in number mode
-// it parses to a float64 (lossy beyond float64), matching the Cassandra decimal
-// presentation.
+// becomes an int if it fits int, else its exact decimal string. The parse uses
+// strconv.IntSize, so a 32-bit build keeps a value beyond int32 as a string. A
+// fractional literal keeps its exact string in auto and string mode. In number
+// mode it parses to a float64 (lossy beyond float64), like the Cassandra decimal.
 func numberValue(s string, mode numfmt.DecimalMode) any {
 	if isIntLiteral(s) {
 		if i, err := strconv.ParseInt(s, 10, strconv.IntSize); err == nil {
@@ -231,10 +228,9 @@ func keyAV(k KeyAttr, s string) (types.AttributeValue, error) {
 	}
 }
 
-// isNumberLiteral reports whether s is a well-formed DynamoDB number (an integer or a
-// decimal, of arbitrary precision), used to validate a numeric key component before
-// binding it. big.Float parses integers, decimals, and exponents at arbitrary
-// precision while rejecting a fraction like "1/2" that big.Rat would accept.
+// isNumberLiteral reports whether s is a well-formed DynamoDB number (an integer or
+// a decimal, of any precision). It validates a numeric key component before
+// binding. big.Float rejects a fraction like "1/2" that big.Rat would accept.
 func isNumberLiteral(s string) bool {
 	if s == "" {
 		return false
@@ -278,13 +274,12 @@ type recordValue struct {
 	value any
 }
 
-// toAttributeValue coerces a normalized JSON value (the shape the read path and a copy
-// source produce) into a DynamoDB attribute value, the write-side inverse of
-// Normalize. A number becomes N, a string S, a bool BOOL, null NULL, an object M, an
-// array L. A value with no DynamoDB representation is an error, never a silent drop.
-// Note the set types (SS/NS/BS) normalize to []any, so a round-trip writes them back
-// as L (a list), not a set — the documented set-degradation caveat, and numbers
-// presented as strings (auto/string decimal mode) write back as S, not N.
+// toAttributeValue coerces a normalized JSON value into a DynamoDB attribute
+// value. It is the write-side inverse of Normalize. A number becomes N, a string S,
+// a bool BOOL, null NULL, an object M, an array L. A value with no DynamoDB
+// representation is an error, never a silent drop. Caveats: the set types
+// (SS/NS/BS) normalize to []any, so a round trip writes them back as L, not a set.
+// Numbers presented as strings (auto and string decimal mode) write back as S.
 func toAttributeValue(v any) (types.AttributeValue, error) {
 	switch t := v.(type) {
 	case map[string]any:

@@ -1,16 +1,15 @@
 // Package couchbase adapts a Couchbase collection to the query ports. A collection
-// is modelled as Map[key, document]: a document's ID is the key, the JSON document
-// is the value. The jq filter runs client-side over documents fetched by ID (a KV
-// get) or streamed from the collection (a SQL++ keyset scan), so the semantics match
-// every other backend behind the KV port.
+// is a Map[key, document]: the document ID is the key and the JSON document is the
+// value. The jq filter runs client-side over documents fetched by ID (a KV get) or
+// streamed from the collection (a SQL++ keyset scan).
 //
-// A Couchbase cluster nests bucket → scope → collection. A source names the cluster
-// and its bucket (?bucket=, required for keyspace work); the collection rides as
-// ?collection= or the handle.<[scope.]collection> dotted override, defaulting to
-// _default._default. Switching buckets is a different source. Credentials travel in
-// the URL userinfo (SDK PasswordAuthenticator) and never in a statement, so the
-// CLI's keyring support applies unchanged and the --verbose trace logs statements
-// and op names with parameter placeholders only, never a value or a credential.
+// A Couchbase cluster nests bucket, scope, and collection. A source names the
+// cluster and its bucket (?bucket=, required for keyspace work). The collection is
+// ?collection= or the handle.<[scope.]collection> dotted override, and defaults to
+// _default._default. A different bucket is a different source. Credentials travel in
+// the URL userinfo (SDK PasswordAuthenticator) and never in a statement. The
+// --verbose trace logs statements and op names with parameter placeholders only,
+// never a value or a credential.
 package couchbase
 
 import (
@@ -72,12 +71,10 @@ type Store struct {
 	pageSize   int
 	decimal    numfmt.DecimalMode
 	trace      io.Writer
-	// prefilterChecked counts rows the client-side raw-byte prefilter evaluated (ran
-	// rawpred over) across this store's filtered scans, and prefilterSkipped counts the
-	// subset it dropped before decode. They are diagnostic counters the package's tests
-	// read to prove the prefilter engages exactly when it should — checked stays zero on
-	// an exact-push scan and rises on a prefiltered one — and never part of the public
-	// API; no result depends on either.
+	// prefilterChecked counts the rows that the rawpred prefilter evaluated across this
+	// store's filtered scans. prefilterSkipped counts the rows it dropped before decode.
+	// Tests read both to prove that the prefilter runs exactly when it must. They are
+	// diagnostic only, and no result depends on them.
 	prefilterChecked int
 	prefilterSkipped int
 }
@@ -95,14 +92,13 @@ type connConfig struct {
 }
 
 // Open connects to the Couchbase cluster named by a couchbase:// (or couchbases://)
-// URL and verifies the connection with a bounded readiness probe so a bad URL,
-// unreachable cluster, or bad credentials fails fast. The bucket (the keyspace, may be
-// empty for raw/inspect-only use) comes from ?bucket=; the collection is the dotted
-// address override when non-empty, else ?collection=, else _default._default.
-// Application telemetry is disabled explicitly. When trace is non-nil, each statement
-// and op the driver issues is logged to it (the CLI's --verbose trace) with parameter
-// placeholders only, so no value or credential is ever written. dec chooses how
-// fractional numbers are presented to the filter.
+// URL. A bounded readiness probe fails fast on a bad URL, an unreachable cluster, or
+// bad credentials. The bucket (the keyspace, can be empty for raw or inspect-only
+// use) comes from ?bucket=. The collection is the dotted address override if
+// non-empty, else ?collection=, else _default._default. Application telemetry is
+// off. If trace is non-nil, the driver logs each statement and op to it (the CLI's
+// --verbose trace) with parameter placeholders only. dec sets how the filter sees
+// fractional numbers.
 func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	cc, err := parseURL(rawURL, address)
 	if err != nil {
@@ -154,11 +150,11 @@ func clusterOptions(cc connConfig) gocb.ClusterOptions {
 
 // parseURL splits a couchbase:// source URL into the gocb connection string, the
 // credentials, and the selected keyspace. It strips the iq-owned ?bucket= and
-// ?collection= params and the userinfo (which becomes the authenticator), leaving any
-// remaining query as gocb connection-string options. The collection is the dotted
-// address override, else ?collection=, else _default._default; the scope defaults to
-// _default. A missing scheme or host, or a malformed keyspace identifier, is an error
-// so a bad source fails at parse time.
+// ?collection= params and the userinfo (which becomes the authenticator). Any other
+// query stays as gocb connection-string options. The collection is the dotted
+// address override, else ?collection=, else _default._default. The scope defaults to
+// _default. A missing scheme or host, or a malformed keyspace identifier, is an
+// error.
 func parseURL(rawURL, address string) (connConfig, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -290,14 +286,13 @@ func (s *Store) keyspaceRef() string {
 	return fmt.Sprintf("`%s`.`%s`.`%s`", s.bucket, s.scope, s.coll)
 }
 
-// bulkDo runs a KV batch and refuses one the caller has already cancelled. gocb's core
-// KV provider reads BulkOpOptions.Timeout only and ignores BulkOpOptions.Context, which
-// the SDK marks UNCOMMITTED and honours on the protostellar path alone. A cancelled
-// context must therefore stop the batch here, or the read or the write completes and
-// reports no error. The SDK's own KV timeout still bounds the batch itself, and this code
-// does not override it: the caller's deadline is the longer of the two in normal use, so
-// converting it would loosen the bound rather than tighten it. Context stays set because
-// it is correct for a couchbase2:// connection.
+// bulkDo runs a KV batch and refuses one that the caller already cancelled. The gocb
+// core KV provider reads BulkOpOptions.Timeout only. It ignores BulkOpOptions.Context,
+// which the SDK marks UNCOMMITTED and honours on the protostellar path alone. So a
+// cancelled context must stop the batch here, or the batch completes and reports no
+// error. The SDK KV timeout still bounds the batch. This code does not override it,
+// because the caller's deadline is normally the longer one. Context stays set for a
+// couchbase2:// connection.
 func (s *Store) bulkDo(ctx context.Context, ops []gocb.BulkOp, tc gocb.Transcoder) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -367,11 +362,11 @@ func (s *Store) collectGets(getOps []*gocb.GetOp, out map[string]any) error {
 	return nil
 }
 
-// ScanBatches streams the whole collection, handing the caller each page of
-// {id: document}. It walks a SQL++ keyset scan ordered by document ID — never
-// OFFSET/LIMIT paging — following the last ID of each page as the cursor, so a
-// streaming caller keeps only one page in memory and the loop provably terminates on a
-// short page. Bounded by ctx; stops at the first error from fn or the driver.
+// ScanBatches streams the whole collection and hands the caller each page of
+// {id: document}. It walks a SQL++ keyset scan ordered by document ID and never uses
+// OFFSET/LIMIT. The last ID of each page is the cursor, so a streaming caller keeps
+// one page in memory and the loop ends on a short page. ctx bounds the scan. The scan
+// stops at the first error from fn or the driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
 	return s.scan(ctx, scanSpec{}, fn)
 }
@@ -432,18 +427,15 @@ type scanSpec struct {
 	matcher *rawpred.Matcher
 }
 
-// scan runs the keyset walk shared by ScanBatches and ScanFiltered. spec.where, when
-// non-empty, is an extra predicate ANDed into each page's WHERE (its named parameters
-// ride in spec.params); it must never reference the reserved $after/$page names. Every
-// value travels as a named parameter, never concatenated.
+// scan runs the keyset walk that ScanBatches and ScanFiltered share. If spec.where is
+// non-empty, it is ANDed into each page's WHERE and its named parameters are in
+// spec.params. It must not reference the reserved $after/$page names. Every value is
+// a named parameter, never concatenated.
 //
-// When spec.matcher is non-nil, each row's raw value is run through it before decode, and a
-// row the prepared matcher proves the predicate rejects is skipped (counted in
-// prefilterSkipped) rather than decoded and delivered — a byte-level drop that never
-// changes results because the matcher's predicate is a conservative superset the caller
-// re-runs in full. The keyset cursor advances past every row, skipped or kept, so
-// pagination never re-reads or loops; a page emptied entirely by the prefilter is never
-// handed to fn, preserving the "a scan never yields an empty batch" contract.
+// If spec.matcher is non-nil, the scan runs each row's raw value through it before
+// decode and skips a row that the matcher proves the predicate rejects (counted in
+// prefilterSkipped). The keyset cursor advances past every row, skipped or kept. The
+// scan never hands an empty batch to fn, even if the prefilter empties a page.
 func (s *Store) scan(ctx context.Context, spec scanSpec, fn func(batch map[string]any) error) error {
 	if s.collection == nil {
 		return errNoBucket

@@ -13,16 +13,15 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// Put writes a batch of records into the table, keyed by primary key. Upsert issues a
-// plain PutItem, which DynamoDB applies as an overwrite-or-insert; InsertOnly issues a
-// PutItem with a condition that the partition key not already exist and counts a record
-// whose key exists as a skip. Every value is marshaled to a typed attribute — never
-// string-built — and a record missing a key attribute or carrying an unrepresentable
-// value is a returned error, never a silent drop. Every item is built before any is
-// written, so an unrepresentable record fails the whole batch before it mutates the
-// table rather than partway through. DynamoDB cannot tell an insert from an overwrite in
-// the PutItem reply, so an upsert pre-reads which keys already exist to report Overwritten;
-// see existingKeys for the accounting-only, non-atomic caveat.
+// Put writes a batch of records into the table, keyed by primary key. Upsert
+// issues a plain PutItem, which DynamoDB applies as an overwrite-or-insert.
+// InsertOnly issues a PutItem with a condition that the partition key not exist,
+// and counts a record whose key exists as a skip. Every value is marshaled to a
+// typed attribute. A record without a key attribute, or with an unrepresentable
+// value, is an error, never a silent drop. Every item is built before any is
+// written, so a bad record fails the whole batch before it changes the table. The
+// PutItem reply cannot tell an insert from an overwrite, so an upsert pre-reads
+// which keys exist to report Overwritten. See existingKeys for the caveat.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if len(s.keys) == 0 {
 		return query.WriteStat{}, errNoTable
@@ -250,13 +249,12 @@ func (s *Store) keyAttrs(item map[string]types.AttributeValue) map[string]types.
 	return key
 }
 
-// Delete removes the named keys by decoding each to its key attributes (a single
-// hash key is the bare string, a hash+sort key a JSON array) and reusing deleteItems
-// — BatchWriteItem in batches of 25 with bounded UnprocessedItems retry. The decoded
-// key maps are themselves the key-only items deleteItems needs. BatchWriteItem is
-// silent on whether an item existed, so a pre-read (existingKeySet, accounting only)
-// supplies the present-vs-absent split; the delete requests run regardless, so it is
-// idempotent. Keys ride as bound attribute values, never string-built.
+// Delete removes the named keys. It decodes each key to its key attributes (a
+// single hash key is the bare string, a hash+sort key a JSON array) and calls
+// deleteItems: BatchWriteItem in batches of 25 with bounded UnprocessedItems retry.
+// BatchWriteItem does not say whether an item existed, so a pre-read
+// (existingKeySet) gives the present and absent counts. The delete requests run
+// regardless, so Delete is idempotent.
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
 	if len(s.keys) == 0 {
 		return query.DeleteStat{}, errNoTable

@@ -12,10 +12,10 @@ import (
 )
 
 // colType is how one HBase cell value (raw bytes) is presented to the filter and
-// reversed on write. HBase stores no types, so the default is honest — text when
-// the bytes are valid UTF-8, else base64 — and a caller who knows a column's
-// encoding declares it (?types=cf:q=long) to get an exact, reversible mapping via
-// the standard HBase Bytes layout.
+// reversed on write. HBase stores no types, so the default is text if the bytes
+// are valid UTF-8, else base64. A caller who knows the column encoding declares it
+// (?types=cf:q=long) for an exact, reversible mapping through the standard HBase
+// Bytes layout.
 type colType int
 
 const (

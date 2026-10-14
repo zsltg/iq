@@ -18,15 +18,15 @@ import (
 var gronIdent = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 
 // gronFormatter flattens each emitted value into gron assignment statements
-// (https://github.com/tomnomnom/gron), one `path = <compact JSON>;` per line:
-// greppable line-by-line and reversible with ungron. Plain gron roots every
-// result at a repeated `json` (ungron is last-write-wins across results); the
-// indexed variant (grona) roots result N at json[N] and prefixes a leading
-// `json = [];` declaration, so the whole stream ungrons back to one array.
-// On a terminal the path segments and scalar rhs values syntax-highlight (bare
-// keys and the json root in the Key role, array indices in the Number role, and
-// rhs scalars via the colored encoder); with color off every byte is unchanged,
-// so the output stays ungron-safe.
+// (https://github.com/tomnomnom/gron), one `path = <compact JSON>;` per line.
+// The output is greppable and reversible with ungron. Plain gron roots every
+// result at a repeated `json` (ungron is last-write-wins across results). The
+// indexed variant (grona) roots result N at json[N] and prefixes a `json = [];`
+// declaration, so the whole stream ungrons back to one array. On a terminal,
+// path segments and scalar rhs values are highlighted (bare keys and the json
+// root in the Key role, array indices in the Number role, rhs scalars via the
+// colored encoder). With color off every byte is unchanged, so the output stays
+// ungron-safe.
 type gronFormatter struct {
 	w       io.Writer
 	indexed bool // grona: root result N at json[N] instead of repeating json.

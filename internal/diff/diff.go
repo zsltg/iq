@@ -1,14 +1,14 @@
-// Package diff structurally compares two JSON-ready values — the normalized form
-// (nil, bool, int, float64, string, []any, map[string]any) that every driver
-// adapter produces. It is driver-agnostic and holds no I/O: callers read each
-// side through the query ports and hand the materialized values here. Tree diffs
-// two values; Keyed aligns two keyed item sets. Arrays are aligned by a longest
-// common subsequence so a single insertion reports one delta rather than a
-// cascade at every later index; TreeOpt/KeyedOpt with Options{SetArrays:true}
-// switch arrays to order-insensitive multiset comparison instead. Patch (see
-// patch.go) renders the same two values as an RFC 6902 JSON Patch. Inference of a
-// comparable shape (projected to feed the same Tree) lives in the sibling
-// internal/shape package.
+// Package diff structurally compares two JSON-ready values: the normalized form (nil,
+// bool, int, float64, string, []any, map[string]any) that every driver adapter
+// produces. It is driver-agnostic and does no I/O. Callers read each side through the
+// query ports and hand the materialized values here.
+//
+// Tree diffs two values. Keyed aligns two keyed item sets. Arrays are aligned by a
+// longest common subsequence, so a single insertion reports one delta and not a cascade
+// at every later index. TreeOpt and KeyedOpt with Options{SetArrays:true} compare
+// arrays as order-insensitive multisets instead. Patch (see patch.go) renders the same
+// two values as an RFC 6902 JSON Patch. The sibling internal/shape package infers a
+// comparable shape that feeds the same Tree.
 package diff
 
 import (
@@ -148,17 +148,17 @@ func walkMap(path []string, a, b map[string]any, out *[]Change, o Options) {
 	}
 }
 
-// walkSlice diffs two arrays at path aligned by their longest common subsequence
-// (lcsPairs): elements that appear in both, in order, are anchors and produce no
-// delta. Between two anchors, the left and right leftovers are paired positionally
-// and recursed (so a changed element reports its field-level deltas), then the
-// surplus is Remove (left-only) or Add (right-only). Every emitted delta — anchor,
-// paired change, Add, Remove — advances one aligned position, so a delta's index
-// is its position in the LCS-aligned overlay of the two arrays, not its raw index
-// in either side. An inserted element therefore shifts the reported index of the
-// anchors after it (the "i + adds" convention): a front insertion is a single Add
-// at [0] rather than a cascade. Above lcsCellCap DP cells it falls back to the
-// positional index walk to bound memory.
+// walkSlice diffs two arrays at path, aligned by their longest common subsequence
+// (lcsPairs). Elements that appear in both, in order, are anchors and produce no delta.
+// Between two anchors, the left and right leftovers are paired by position and recursed
+// (so a changed element reports its field-level deltas). The surplus is Remove
+// (left-only) or Add (right-only).
+//
+// Every emitted delta advances one aligned position. A delta's index is therefore its
+// position in the LCS-aligned overlay of the two arrays, not its raw index in either
+// side. An inserted element shifts the reported index of the anchors after it (the "i +
+// adds" convention): a front insertion is a single Add at [0]. Above lcsCellCap DP
+// cells, walkSlice falls back to the positional index walk to bound memory.
 func walkSlice(path []string, a, b []any, out *[]Change, o Options) {
 	if len(a)*len(b) > lcsCellCap {
 		walkPositional(path, a, b, out, o)
@@ -208,16 +208,17 @@ func walkPositional(path []string, a, b []any, out *[]Change, o Options) {
 	}
 }
 
-// walkSet diffs two arrays at path as multisets, order-insensitive with duplicates
-// counted: each element is keyed by its canonical JSON serialization (Go sorts map
-// keys, so the encoding is canonical, and an int and a float64 of the same
-// magnitude encode identically). A key present more often on the left emits one
-// Remove per surplus occurrence, more often on the right one Add per surplus
-// occurrence; equal counts emit nothing, so a pure reorder is no delta. Without
-// element identity there is no "changed element", only membership, so nothing
-// recurses — a nested array inside an element keeps its order inside the serialized
-// key. Deltas carry the array's own path with no index segment (indexes are
-// meaningless order-insensitively) and are emitted sorted by canonical key.
+// walkSet diffs two arrays at path as multisets: order-insensitive, duplicates counted.
+// Each element is keyed by its canonical JSON serialization. Go sorts map keys, so the
+// encoding is canonical, and an int and a float64 of the same magnitude encode
+// identically. A key present more often on the left emits one Remove per surplus
+// occurrence. A key present more often on the right emits one Add per surplus
+// occurrence. Equal counts emit nothing, so a pure reorder is no delta.
+//
+// Without element identity there is no "changed element", only membership, so nothing
+// recurses. A nested array inside an element keeps its order inside the serialized key.
+// Deltas carry the array's own path with no index segment, because indexes have no
+// meaning here. They are emitted sorted by canonical key.
 func walkSet(path []string, a, b []any, out *[]Change) {
 	left, right := multiset(a), multiset(b)
 	for _, key := range unionKeys(left.counts, right.counts) {

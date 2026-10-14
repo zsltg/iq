@@ -164,14 +164,14 @@ type connConfig struct {
 	target   target
 }
 
-// Open connects to the Neo4j server named by a neo4j:// (or bolt://, and their +s /
-// +ssc TLS variants) URL and verifies the connection so a bad URL, unreachable
-// server, or bad credentials fails fast. The label (the jq keyspace, may be empty
-// for a raw/inspect-only or elementId-Get use) is the dotted address override when
-// non-empty, else the URL's ?label=; the key property is ?key= (empty means the
-// elementId is the key). When trace is non-nil, each Cypher statement the driver
-// runs is logged to it (the CLI's --verbose trace) without its parameters, so no
-// stored value is ever written. dec chooses how fractional numbers are presented.
+// Open connects to the Neo4j server named by a neo4j:// (or bolt://, and their +s
+// and +ssc TLS variants) URL. It verifies the connection, so a bad URL,
+// unreachable server, or bad credentials fails fast. The label (the jq keyspace,
+// empty for raw-only or elementId-Get use) is the dotted address override if
+// non-empty, else the URL's ?label=. The key property is ?key= (empty means the
+// elementId is the key). If trace is non-nil, each Cypher statement is logged to it
+// without its parameters, so no stored value is written. dec chooses how
+// fractional numbers are presented.
 func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	cc, err := parseURL(rawURL, address)
 	if err != nil {

@@ -28,10 +28,11 @@ const (
 )
 
 // logOptions is the resolved, validated logging configuration for one
-// invocation: the verbose stderr sink and the file sink are independent, each
-// with its own level, so a DEBUG record can reach the file while the INFO stderr
-// sink skips it. file is empty when file logging is off. color tints the verbose
-// stderr sink (never the file sink) when stderr is a color-eligible terminal.
+// invocation. The verbose stderr sink and the file sink are independent and
+// each has its own level, so a DEBUG record can reach the file while the INFO
+// stderr sink skips it. file is empty when file logging is off. color tints the
+// verbose stderr sink (never the file sink) when stderr is a color-eligible
+// terminal.
 type logOptions struct {
 	verbose bool
 	color   bool
@@ -118,20 +119,20 @@ func resolveLogOptions(cmd *cobra.Command, cfg *config) (logOptions, error) {
 // non-empty path. An empty path disables logging, matching sq.
 func (o logOptions) fileActive() bool { return o.enable && o.file != "" }
 
-// build assembles the invocation logger and, when file logging is on, opens the
-// sink and returns its Close as the second result (nil for a stream target). The
-// logger is never nil: with no sink it discards, so every log point is a cheap
-// no-op. The verbose sink writes to stderr at INFO, tinted when o.color is set;
-// the file sink honors the resolved level and format and is never tinted. stderr
-// and stdout are the writers a literal "stderr"/"stdout" file target resolves to.
+// build assembles the invocation logger. If file logging is on, it opens the
+// sink and returns its Close as the second result (nil for a stream target).
+// The logger is never nil: with no sink it discards, so every log point is a
+// cheap no-op. The verbose sink writes to stderr at INFO, tinted when o.color
+// is set. The file sink honors the resolved level and format and is never
+// tinted. stderr and stdout are the writers that a literal "stderr" or "stdout"
+// file target resolves to.
 //
-// When the verbose sink and the structured sink both target the stderr stream,
-// each record would render twice on that one stream (the tinted line, then the
-// structured text/JSON). The user configured the structured sink explicitly, so
-// the tinted duplicate is suppressed and the structured rendering wins. This
-// matches only the literal "stderr" stream keyword; a "/dev/stderr" file path is
-// a distinct target we do not detect. "stdout" is a different stream, so it never
-// suppresses the verbose sink.
+// If the verbose sink and the structured sink both target the stderr stream,
+// each record renders twice on it. The user configured the structured sink
+// explicitly, so build suppresses the tinted duplicate. This matches only the
+// literal "stderr" keyword. A "/dev/stderr" file path is a distinct target that
+// build does not detect. "stdout" is a different stream, so it never suppresses
+// the verbose sink.
 func (o logOptions) build(stderr, stdout io.Writer) (*slog.Logger, func() error, error) {
 	var handlers []slog.Handler
 	structuredActive := o.fileActive()
@@ -290,13 +291,12 @@ func (c *config) log() *slog.Logger {
 	return discardLogger
 }
 
-// traceSink returns the writer a driver's live command trace should go to: the
-// existing trace (the --verbose stderr sink, or nil) teed with a DEBUG "backend
+// traceSink returns the writer for the live command trace of a driver. It tees
+// the existing trace (the --verbose stderr sink, or nil) with a DEBUG "backend
 // cmd" log bridge when a DEBUG sink is listening, so a plain --log run captures
-// the wire trace without --verbose. Drivers already redact credentials before
-// they reach the trace, so the bridge logs exactly what --verbose would show.
-// With no DEBUG sink it returns the input unchanged, so tracing stays off unless
-// the caller asked for it.
+// the wire trace without --verbose. Drivers redact credentials before they
+// reach the trace, so the bridge logs exactly what --verbose shows. With
+// no DEBUG sink it returns the input unchanged.
 func traceSink(existing io.Writer, lg *slog.Logger) io.Writer {
 	if !lg.Enabled(context.Background(), slog.LevelDebug) {
 		return existing

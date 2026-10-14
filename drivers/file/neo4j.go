@@ -18,12 +18,12 @@ import (
 )
 
 // neo4jSource streams an APOC JSON export (apoc.export.json.*): JSON Lines (the
-// default) or a single JSON array of {"type":"node",…}/{"type":"relationship",…}
-// objects. A dump holds the whole graph, but iq addresses one keyspace at a time, so
-// the reader emits exactly one kind — the nodes of ?label=<Label>, or the
-// relationships of ?rel=<Type> — keyed like a live scan and wrapped in the same
+// default) or one JSON array of {"type":"node",…}/{"type":"relationship",…} objects.
+// A dump holds the whole graph, but iq addresses one keyspace at a time. So the
+// reader emits one kind: the nodes of ?label=<Label>, or the relationships of
+// ?rel=<Type>. It keys them like a live scan and wraps them in the same
 // _id/_labels/_type/_start/_end envelope (see drivers/neo4j). A keyspace selector is
-// required: a dump names neither by itself, so the reader will not guess one.
+// required, and the reader does not guess one.
 func neo4jSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hints) (query.RecordSource, error) {
 	mode, name, err := neo4jKeyspace(hints)
 	if err != nil {
@@ -179,9 +179,10 @@ func relRecord(e apocEntry, keyProp string, dec numfmt.DecimalMode) query.Record
 	return query.Record{Key: key, Type: "relationship", Value: val}
 }
 
-// recordKey picks a record's map key: the export id by default (globally unique
-// within a kind), or the ?key= property's string form when set, falling back to the
-// export id when that property is absent or null so the scan stays total.
+// recordKey picks the map key of a record. By default it is the export id (globally
+// unique within a kind). If ?key= is set, it is the string form of that property. If
+// that property is absent or null, it falls back to the export id, so the scan stays
+// total.
 func recordKey(id string, props map[string]any, keyProp string) string {
 	if keyProp == "" {
 		return id
@@ -218,12 +219,12 @@ func normalizeProps(props map[string]any, dec numfmt.DecimalMode) map[string]any
 	return out
 }
 
-// normalizeJSONValue narrows a decoded APOC value to iq's precision-aware form,
-// matching the live driver's contract: an integral number becomes an exact int (or
-// *big.Int past int64), a fractional one a float64 or, under the string decimal
-// mode, its exact literal; strings, bools, and nested containers pass through with
-// their numbers narrowed. APOC's own string encodings of temporal and spatial values
-// are already JSON and pass through verbatim.
+// normalizeJSONValue narrows a decoded APOC value to the precision-aware form of iq,
+// as the live driver does. An integral number becomes an exact int (a *big.Int past
+// int64). A fractional one becomes a float64, or its exact literal under the string
+// decimal mode. Strings, bools, and nested containers pass through with their numbers
+// narrowed. The APOC string encodings of temporal and spatial values are already
+// JSON and pass through verbatim.
 func normalizeJSONValue(v any, dec numfmt.DecimalMode) any {
 	switch t := v.(type) {
 	case json.Number:

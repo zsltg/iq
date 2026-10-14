@@ -16,11 +16,11 @@ import (
 )
 
 // cassandraCSVSource streams a cqlsh `COPY … TO` CSV dump. A COPY dump carries every
-// value as text and records neither column types nor the primary key, so the ?types=
-// hint re-types the columns and the ?keys= hint names the key columns; each row is then
-// decoded to the exact record a live scan yields (see drivers/cassandra), keyed by its
+// value as text and records neither column types nor the primary key. The ?types=
+// hint re-types the columns and the ?keys= hint names the key columns. Each row then
+// decodes to the record that a live scan yields (see drivers/cassandra), keyed by its
 // primary key and tagged "row". Column names come from the header row, or from a
-// ?columns= hint when the dump was exported without HEADER=TRUE.
+// ?columns= hint if the dump has no HEADER=TRUE.
 func cassandraCSVSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hints) (query.RecordSource, error) {
 	if hints.Keys == "" {
 		return nil, errors.New("cassandra dump needs a key schema: add ?keys=col1[,col2] naming the primary-key columns")

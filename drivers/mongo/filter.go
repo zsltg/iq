@@ -8,10 +8,11 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// toFilter translates a neutral predicate into a MongoDB find filter. An Eq
-// becomes a field equality on the dotted path; And and Or become $and and $or.
-// A nil predicate (nothing to push) becomes an empty filter that matches every
-// document, so the caller falls back to a full scan.
+// toFilter translates a neutral predicate into a MongoDB find filter on the
+// dotted path. It pushes every node type: Eq, Cmp, Regex, Exists, Size,
+// ElemMatch, Ne, NotExists, NoneMatch, And, and Or. A nil predicate (nothing to
+// push) becomes an empty filter that matches every document, so the caller
+// falls back to a full scan.
 func toFilter(n predicate.Node) bson.M {
 	switch t := n.(type) {
 	case nil:
@@ -69,11 +70,11 @@ func toFilter(n predicate.Node) bson.M {
 	}
 }
 
-// mongoOptions translates a neutral Regex's jq flags into MongoDB's $options
-// (PCRE) spelling. jq's i (case-insensitive) is PCRE's i; jq's m ("dot matches
-// newline", i.e. dotall) is PCRE's s — not PCRE's m, which is line-anchor
-// multiline and would leave . not matching a newline, narrowing the match against
-// jq. Only i and m ever reach here (the pushdown gate admits no other flag).
+// mongoOptions translates the jq flags of a neutral Regex into MongoDB's $options
+// (PCRE) spelling. The jq flag i (case-insensitive) is PCRE's i. The jq flag m
+// (dotall) is PCRE's s, not PCRE's m: that is line-anchor multiline, which would
+// leave . not matching a newline and narrow the match against jq. The pushdown gate
+// admits only i and m.
 func mongoOptions(flags string) string {
 	var b strings.Builder
 	for _, f := range flags {
@@ -165,15 +166,13 @@ var mongoOp = map[predicate.Op]string{
 	predicate.Le: "$lte",
 }
 
-// cmpFilter translates a range comparison into a conservative superset that
-// reproduces jq's cross-type ordering. jq compares across types (null < bool <
-// number < string < array < object), so `field > value` also matches every value
-// whose type ranks strictly above the literal's, and `field < value` also matches
-// every type strictly below plus a missing field (jq reads a missing field as
-// null, the lowest value). The same-type bound uses the native operator; the
-// cross-type parts are added with $type. Extra matches are harmless because the
-// caller re-runs the full jq; missing one would be a bug, which is why the type
-// clauses are exhaustive.
+// cmpFilter translates a range comparison into a superset that follows jq's
+// cross-type ordering (null < bool < number < string < array < object). So
+// `field > value` also matches every value of a type that ranks above the
+// literal's. `field < value` also matches every lower type, plus a missing field
+// (jq reads it as null, the lowest value). The same-type bound uses the native
+// operator. The cross-type parts use $type, and they must be exhaustive, because a
+// missed match is a bug.
 func cmpFilter(c predicate.Cmp) bson.M {
 	path := strings.Join(c.Path, ".")
 	clauses := bson.A{bson.M{path: bson.M{mongoOp[c.Op]: c.Value}}}
@@ -191,13 +190,11 @@ func cmpFilter(c predicate.Cmp) bson.M {
 	return bson.M{"$or": clauses}
 }
 
-// sizeFilter translates a jq `length == n` test. jq's length is polymorphic, so
-// $size (array element count) alone would be a subset — it would miss a string of
-// n characters, an object of n keys, or a number whose absolute value is n. The
-// filter therefore matches arrays of exactly n via $size and, conservatively,
-// every string/object/number (their length matches are stripped by the
-// client-side re-run). Length 0 additionally matches null and a missing field,
-// which jq reads as length 0.
+// sizeFilter translates a jq `length == n` test. The jq length is polymorphic, so
+// $size (array element count) alone would miss a string of n characters, an object
+// of n keys, or a number with absolute value n. The filter matches arrays of
+// exactly n via $size, plus every string, object, and number. Length 0 also
+// matches null and a missing field, which jq reads as length 0.
 func sizeFilter(s predicate.Size) bson.M {
 	path := strings.Join(s.Path, ".")
 	types := bson.A{"string", "object", "number"}

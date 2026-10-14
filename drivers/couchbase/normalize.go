@@ -25,12 +25,11 @@ func decodeValue(raw []byte, mode numfmt.DecimalMode) any {
 	return numfmt.ConvertNumbers(v, mode)
 }
 
-// rawTranscoder hands back a KV document's stored bytes untouched, regardless of its
-// datatype flag, so the driver decodes them itself through decodeValue (the same
-// UseNumber path the query rows take) and can render a binary document as a string.
-// gocb's RawJSONTranscoder refuses non-JSON datatypes, so it cannot serve that path.
-// It is read-only: Encode is never called, because writes go through the default
-// JSON transcoder.
+// rawTranscoder hands back the stored bytes of a KV document, whatever its datatype
+// flag. The driver then decodes them through decodeValue (the same UseNumber path as
+// query rows) and can render a binary document as a string. The gocb
+// RawJSONTranscoder refuses non-JSON datatypes, so it cannot serve that path. This
+// transcoder is read-only: writes use the default JSON transcoder.
 type rawTranscoder struct{}
 
 // Decode copies the stored bytes into a *[]byte, ignoring the datatype flag.

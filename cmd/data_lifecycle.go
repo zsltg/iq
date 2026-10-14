@@ -12,9 +12,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// lifecycleOp captures the difference between the two lifecycle verbs so clear and
-// drop share one runner. supported reports whether an opened store has the
-// capability (Clearer / Dropper); run performs it; describe returns the static
+// lifecycleOp captures the difference between the two lifecycle verbs so clear
+// and drop share one runner. supported reports whether an opened store has the
+// capability (Clearer or Dropper). run performs it. describe returns the static
 // --explain plan and whether the backend supports the op at all.
 type lifecycleOp struct {
 	name      string

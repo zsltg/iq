@@ -1,14 +1,13 @@
-// Package parquetout streams a normalized value sequence to Apache Parquet. It
-// buffers the first sample of values, infers their structural shape with
-// internal/shape, projects that shape's JSON Schema onto an Arrow schema, and
-// writes one Parquet record batch per page with pqarrow. The core stays
-// driver-agnostic: this package consumes only the closed normalized value set
-// (nil, bool, int/*big.Int, float64, json.Number, string, []any, map[string]any)
-// that crosses the query boundary, never a driver row.
+// Package parquetout streams a normalized value sequence to Apache Parquet. It buffers
+// the first sample of values, infers their structural shape with internal/shape,
+// projects that shape's JSON Schema onto an Arrow schema, and writes one Parquet record
+// batch per page with pqarrow. It consumes only the closed normalized value set (nil,
+// bool, int/*big.Int, float64, json.Number, string, []any, map[string]any) that crosses
+// the query boundary, never a driver row.
 //
-// The Arrow dependency is contained here — internal/shape and the query core
-// never import it. The schema is projected from shape.JSONSchema (the public
-// lattice projection) rather than the shape's private node tree.
+// The Arrow dependency stays in this package: internal/shape and the query core never
+// import it. The schema comes from shape.JSONSchema (the public lattice projection),
+// not from the shape's private node tree.
 package parquetout
 
 import (
@@ -20,14 +19,13 @@ import (
 	"github.com/zsltg/iq/internal/shape"
 )
 
-// jsonEnc pairs the arrow.json fallback type with its encoder plan. The storage
-// is plain utf8 carrying byte-lossless canonical JSON; the column is marked as
-// the arrow.json canonical extension through field metadata (see fieldMetadata),
-// not through the registered Arrow extension type. arrow-go's registry, given
-// the reserved ARROW:extension:name key, rewrites the column to a JSON Parquet
-// logical type it then cannot read back (storage reads as binary, the extension
-// demands utf8) — the registry resists, so the marker rides in iq's namespace
-// while the utf8 storage round-trips cleanly.
+// jsonEnc pairs the arrow.json fallback type with its encoder plan. The storage is
+// plain utf8 that carries byte-lossless canonical JSON. Field metadata marks the column
+// as the arrow.json canonical extension (see fieldMetadata). The code does not use the
+// registered Arrow extension type, because arrow-go's registry rewrites a column with
+// the reserved ARROW:extension:name key to a JSON Parquet logical type that it cannot
+// read back (storage reads as binary, the extension demands utf8). The marker therefore
+// uses iq's namespace, and the utf8 storage round-trips.
 func jsonEnc() (arrow.DataType, *enc) {
 	// kind defaults to encJSON, the zero value of encKind.
 	return arrow.BinaryTypes.String, &enc{}

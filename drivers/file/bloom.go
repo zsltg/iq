@@ -1,13 +1,11 @@
 package file
 
-// The decode cache stores one Bloom filter per record page, so a bounded Get
-// consults the filters and decodes only the pages that might hold a wanted key,
-// instead of streaming the whole cache. A Bloom filter never yields a false
-// negative — a page that holds a key always tests positive — so this never drops
-// a record; a false positive only costs an extra page decode. The filter is a
-// plain []byte bitset, built and queried with a deterministic hash so a filter
-// written by one process reads correctly in another (hash/maphash's per-process
-// seed would break that).
+// The decode cache stores one Bloom filter per record page. A bounded Get tests the
+// filters and decodes only the pages that can hold a wanted key. A Bloom filter
+// has no false negatives, so it never drops a record. A false positive costs one
+// extra page decode. The filter is a plain []byte bitset with a deterministic hash,
+// so one process can read a filter that another process wrote. The per-process seed
+// of hash/maphash breaks that.
 
 const (
 	// bloomBitsPerKey sizes each page filter; ~10 bits/key gives roughly a 1%

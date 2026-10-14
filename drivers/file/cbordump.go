@@ -11,27 +11,27 @@ import (
 )
 
 // The decode cache serializes the normalized record stream with CBOR. The codec
-// options here are load-bearing: fxamacker's defaults decode a CBOR map to
-// map[interface{}]interface{}, a CBOR integer to uint64/int64, and reject a
-// text string that is not valid UTF-8 — none of which match the value model the
-// query engine (gojq) accepts, and the last of which is fatal for Redis values
-// and hash-field keys, which are arbitrary bytes decoded to a Go string. The
-// pinned options plus narrowInts reproduce Normalize's closed set exactly:
-// nil, bool, int, float64, string, map[string]any, []any. See cbordump_test.go,
-// which proves the round-trip is type-identical for every member of that set.
+// options matter. The defaults of fxamacker decode a CBOR map to
+// map[interface{}]interface{} and a CBOR integer to uint64/int64. They also reject a
+// text string that is not valid UTF-8. None of that matches the value model that
+// gojq accepts, and the last is fatal for Redis values and hash-field keys, which
+// are arbitrary bytes decoded to a Go string. The pinned options plus narrowInts
+// reproduce the closed set of Normalize: nil, bool, int, float64, string,
+// map[string]any, []any. cbordump_test.go proves that the round-trip is
+// type-identical for every member of that set.
 
-// cborEnc marshals with default options: it does not validate UTF-8 (so a
-// binary Redis string encodes verbatim) and does not shrink floats (so a
-// float64 stays bit-exact).
+// cborEnc marshals with default options. It does not validate UTF-8, so a binary
+// Redis string encodes verbatim. It does not shrink floats, so a float64 stays
+// bit-exact.
 var cborEnc = mustEncMode(cbor.EncOptions{})
 
 // cborDec is the counterpart decoder. DefaultMapType returns objects as
-// map[string]any; UTF8DecodeInvalid accepts the non-UTF-8 strings cborEnc
-// wrote, returning their bytes unchanged rather than erroring. Integers still
-// arrive as uint64/int64 — narrowInts converts them to int after decode.
-// TagsForbidden rejects any CBOR tag: the closed value set never encodes one,
-// so a tag means a corrupted cache. Without it, tag 1 decoded to a time.Time,
-// a value outside the set that re-encodes as something else (FuzzCBORRecord).
+// map[string]any. UTF8DecodeInvalid accepts the non-UTF-8 strings that cborEnc
+// wrote and returns their bytes unchanged. Integers arrive as uint64/int64, and
+// narrowInts converts them to int after decode. TagsForbidden rejects any CBOR tag.
+// The closed value set never encodes a tag, so a tag means a corrupted cache.
+// Without it, tag 1 decodes to a time.Time, which is outside the set and re-encodes
+// as something else (FuzzCBORRecord).
 var cborDec = mustDecMode(cbor.DecOptions{
 	DefaultMapType: reflect.TypeFor[map[string]any](),
 	UTF8:           cbor.UTF8DecodeInvalid,

@@ -132,8 +132,8 @@ func stdinRecordSource(r io.Reader, cfg *config) (query.RecordSource, error) {
 	return iqfile.RecordSourceFor(r, format, cfg.decimalMode, iqfile.Hints{})
 }
 
-// insertRequest is the write side of a move, stated without any CLI type so both
-// `iq --insert` and the MCP iq_insert tool drive one implementation: the
+// insertRequest is the write side of a move, stated without any CLI type so `iq
+// --insert` and the MCP iq_insert tool share one implementation. It holds the
 // destination handle, the write mode, whether the destination is emptied first,
 // whether the run only reports, and how a destructive step is confirmed.
 type insertRequest struct {
@@ -295,9 +295,9 @@ func (p typedPutter) Put(_ context.Context, batch []query.Record, _ query.WriteM
 const typedFormatChoices = "choose --jsonl (default), --json, --jsona, or --yaml"
 
 // selectTypedFormat resolves the record serialization for --typed: the chosen
-// structured format, or jsonl when none is set. A dump exists to be re-imported,
-// so a rendering that cannot carry a {key,type,value} record back is rejected:
-// the scalar "values" rendering cannot represent a record, parquet is columnar,
+// structured format, or jsonl if none is set. A dump exists to be re-imported,
+// so it rejects a rendering that cannot carry a {key,type,value} record back.
+// The scalar "values" rendering cannot represent a record, parquet is columnar,
 // and gron flattens the record to assignment statements that no source decodes.
 func selectTypedFormat(cfg *config) (outputFormat, error) {
 	if !anyFormatFlag(cfg) {

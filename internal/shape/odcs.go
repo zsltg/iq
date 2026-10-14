@@ -2,13 +2,12 @@ package shape
 
 import "sort"
 
-// ODCS logical-type constants and the date format patterns iq attaches. The
-// Open Data Contract Standard v3.1.0 admits nine logical types with no binary or
-// decimal member, so iq's base64-binary and exact-decimal strings — which the
-// shape lattice already carries as plain strings — stay logicalType string. The
-// date patterns are JDK DateTimeFormatter strings (ODCS's date/timestamp format
-// vocabulary), the mechanical equivalent of iq's RFC3339 date-time and calendar
-// date formats.
+// ODCS logical-type constants and the date format patterns that iq attaches. The Open
+// Data Contract Standard v3.1.0 admits nine logical types, with no binary or decimal
+// member. iq's base64-binary and exact-decimal strings are plain strings in the shape
+// lattice, so they stay logicalType string. The date patterns are JDK DateTimeFormatter
+// strings (ODCS's date and timestamp format vocabulary). They match iq's RFC3339
+// date-time and calendar date formats.
 const (
 	odcsTypeString  = "string"
 	odcsTypeInteger = "integer"
@@ -23,26 +22,24 @@ const (
 	odcsFormatUUID     = "uuid"                     // ODCS string format enum member.
 )
 
-// ODCSSchemaObject projects the shape to one ODCS v3.1.0 schema object named
-// name — the root element rendered in ODCS's vocabulary: logicalType per node,
-// nested objects via a properties array, arrays via an items element, and
-// per-property required flags from parent-relative presence. It is a pure
-// projection of the same inferred tree JSONSchema renders, so the two stay
-// consistent per fact. A non-object root is legal: a string keyspace yields a
+// ODCSSchemaObject projects the shape to one ODCS v3.1.0 schema object named name. This
+// is the root element in ODCS's vocabulary: logicalType per node, nested objects via a
+// properties array, arrays via an items element, and per-property required flags from
+// parent-relative presence. It projects the same inferred tree as JSONSchema, so the
+// two stay consistent per fact. A non-object root is legal: a string keyspace yields a
 // schema object with logicalType string and no properties.
 func (s *Shape) ODCSSchemaObject(name string) map[string]any {
 	return s.root.odcsElement(name)
 }
 
 // odcsElement renders one node as an ODCS element (a schema object at the root, a
-// property or an array item below it). name is the element identifier; the empty
-// string omits it, which is how an array item — a nameless element definition —
-// is rendered. A node carrying named fields descends into a properties array; one
-// carrying a unified array element descends into an items element. Both guards are
-// on the child slot itself, not a redundant kind check: only an object populates
-// fields (a collapsed map nils them, so it renders as a bare object — ODCS v3.1.0
-// has no additionalProperties analog), and only a non-empty array populates elem
-// (an empty array leaves it nil, so it yields no items).
+// property or an array item below it). name is the element identifier. The empty string
+// omits it, which is how an array item (a nameless element definition) is rendered. A
+// node with named fields descends into a properties array. A node with a unified array
+// element descends into an items element. Both guards test the child slot itself, not
+// the kind. Only an object populates fields (a collapsed map nils them, so it renders
+// as a bare object, because ODCS v3.1.0 has no additionalProperties analog). Only a
+// non-empty array populates elem (an empty array leaves it nil, so it yields no items).
 func (n *node) odcsElement(name string) map[string]any {
 	el := map[string]any{}
 	if name != "" {
@@ -87,15 +84,14 @@ func (n *node) odcsProperties() []any {
 	return props
 }
 
-// odcsLogicalType maps a node's kind set to a single ODCS logical type and its
-// options. ODCS has no union type, so a fixed priority picks one type for a
-// mixed node: composite kinds first (object/map, then array), then string, then
-// number over integer (matching JSONSchema's integer-into-number collapse), then
-// boolean. A string carries a format option demoted from iq's inferred format:
-// date-time and date become logicalType date with a JDK date pattern, a UUID
-// stays logicalType string with the ODCS uuid format. A null-only or unknown node
-// has no ODCS logical type — nullability is expressed by the absence of required,
-// not a type.
+// odcsLogicalType maps a node's kind set to a single ODCS logical type and its options.
+// ODCS has no union type, so a fixed priority picks one type for a mixed node:
+// composite kinds first (object/map, then array), then string, then number over integer
+// (matching JSONSchema's integer-into-number collapse), then boolean. A string carries
+// a format option demoted from iq's inferred format. date-time and date become
+// logicalType date with a JDK date pattern. A UUID stays logicalType string with the
+// ODCS uuid format. A null-only or unknown node has no ODCS logical type, because ODCS
+// expresses nullability by the absence of required, not by a type.
 func (n *node) odcsLogicalType() (string, map[string]any) {
 	switch {
 	case n.kinds.has(kindObject) || n.kinds.has(kindMap):

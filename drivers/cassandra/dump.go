@@ -7,22 +7,20 @@ import (
 	gocql "github.com/apache/cassandra-gocql-driver/v2"
 )
 
-// BindString parses a single string field (a cell from a cqlsh COPY dump, whose values
-// are all text) into the Go value gocql yields for a live column of the given CQL type,
-// so an offline dump reader can feed Normalize and KeyOf the exact typed values a live
-// scan produces. It is the exported façade over bindKeyValue, scoped to the scalar CQL
-// types a COPY dump carries; a type without a dedicated parse binds as the raw string.
+// BindString parses one string field (a cell of a cqlsh COPY dump, where all
+// values are text) into the Go value that gocql yields for a live column of CQL
+// type t. The dump reader can then give Normalize and KeyOf the same typed values
+// as a live scan. A type without a dedicated parse binds as the raw string.
 func BindString(t gocql.Type, s string) (any, error) {
 	return bindKeyValue(t, s)
 }
 
-// ParseColumnTypes parses a ?types= hint into a column-name → CQL type map, so an
-// offline dump reader re-types cqlsh COPY output that a live scan would receive already
-// typed. The hint is a comma-separated list of "column=cqltype" entries, e.g.
-// "id=uuid,created=timestamp,count=int". Only scalar CQL types are supported (a COPY
-// dump of a collection column is out of scope); an unknown or non-scalar type is an
-// error so a typo or an unsupported column fails fast. A column absent from the hint is
-// read as text by the reader, so only non-text columns need listing.
+// ParseColumnTypes parses a ?types= hint into a map from column name to CQL type.
+// The dump reader uses it to re-type cqlsh COPY output. The hint is a
+// comma-separated list of "column=cqltype" entries, for example
+// "id=uuid,created=timestamp,count=int". Only scalar CQL types are supported. An
+// unknown or non-scalar type is an error. A column absent from the hint is read as
+// text, so only non-text columns need listing.
 func ParseColumnTypes(hint string) (map[string]gocql.Type, error) {
 	out := map[string]gocql.Type{}
 	if strings.TrimSpace(hint) == "" {

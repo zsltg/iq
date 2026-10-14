@@ -68,14 +68,13 @@ func (c CacheConfig) minSize() int64 {
 //
 //	magic[8] version[4] header(CBOR)   record… record   index(CBOR) trailer[8]
 //
-// The records are the flat, streamable body a scan reads. The index that follows
-// them holds, per page, the byte offset where the page starts and a Bloom filter
-// of its keys, so a bounded Get tests the filters and decodes only candidate
-// pages. The 8-byte trailer is the little-endian offset of the index block, read
-// from the end so the writer can stream the body without knowing final offsets up
-// front; it also bounds the record region for a scan (records end where the index
-// begins). A flat-mode cache writes an empty index (and still a trailer), so every
-// cache file has the same shape and a Get simply falls back to streaming.
+// The records are the flat body that a scan streams. The index holds, per page, the
+// byte offset of the page and a Bloom filter of its keys, so a bounded Get decodes
+// only candidate pages. The 8-byte trailer is the little-endian offset of the index
+// block. The reader finds it from the end, so the writer can stream the body without
+// final offsets. It also ends the record region for a scan. A flat-mode cache writes
+// an empty index and a trailer, so every cache file has the same shape and a Get
+// falls back to streaming.
 
 // cacheHeader is the metadata prefix of a cache file: enough to re-verify the
 // cache still matches its dump (size, mtime, format, decimal mode) and to report
@@ -154,9 +153,9 @@ func (s *Store) cacheable() (cacheMeta, bool) {
 	return cacheMeta{path: abs, size: fi.Size(), mtime: fi.ModTime().UnixNano()}, true
 }
 
-// cacheFile is the path of the cache file for a dump identity, keyed by a hash of
-// the identity plus format, decimal mode, and cacheVersion, so any of them
-// changing selects a different file (a miss) rather than reusing a stale one.
+// cacheFile is the path of the cache file for a dump identity. The key is a hash of
+// the identity, format, decimal mode, and cacheVersion. If any of them changes, the
+// key selects a different file (a miss), not a stale one.
 func (s *Store) cacheFile(m cacheMeta) string {
 	h := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%d\x00%d\x00%d\x00%d",
 		m.path, m.size, m.mtime, int(s.format), int(s.dec), cacheVersion))
@@ -197,11 +196,11 @@ func (s *Store) cacheFresh(path string, m cacheMeta) bool {
 	return h.key() == s.keyFor(m)
 }
 
-// readCache streams a validated cache file's record region as pages, stopping at
-// the index block (whose offset the trailer names) rather than at end-of-file. It
-// re-checks the header (guarding a file swapped since cacheFresh) and, on any read
-// error, returns it wrapped — by the time records stream, the caller is committed
-// to the cache, so a mid-stream corruption is a real error, not a silent miss.
+// readCache streams the record region of a validated cache file as pages. It stops
+// at the index block (the trailer names its offset), not at end-of-file. It checks
+// the header again, because the file can change after cacheFresh. Once records
+// stream, the caller is committed to the cache, so any read error is a real error
+// and not a silent miss. readCache returns it wrapped.
 func (s *Store) readCache(ctx context.Context, path string, m cacheMeta, fn func(batch []query.Record) error) error {
 	f, err := os.Open(path) //nolint:gosec // G304: opens the user's dump cache file, by design.
 	if err != nil {

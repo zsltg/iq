@@ -66,12 +66,11 @@ func looksLikeUnreadPassword(uri string) bool {
 	return err != nil || u.User == nil
 }
 
-// Open connects to the Redis server named by a redis:// URL. It verifies the
-// connection with a PING so a bad URL or unreachable server fails fast at
-// startup rather than on the first query. When trace is non-nil, every subsequent
-// command is logged to it (the CLI's --verbose trace); the startup PING is not
-// traced, as the hook is attached only after it succeeds. dec chooses how
-// RedisJSON fractional numbers are presented to the filter.
+// Open connects to the Redis server named by a redis:// URL. A PING fails fast on a
+// bad URL or an unreachable server, at startup and not on the first query. If trace
+// is non-nil, the driver logs every later command to it (the CLI's --verbose trace).
+// The startup PING is not traced, because the hook attaches after it succeeds. dec
+// sets how the filter sees RedisJSON fractional numbers.
 func Open(ctx context.Context, url string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	opts, err := parseURL(url)
 	if err != nil {

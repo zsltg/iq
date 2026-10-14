@@ -9,12 +9,11 @@ import (
 )
 
 // ExplainPlan describes the Couchbase calls this driver would make for a classified
-// query, without connecting. A bounded query fetches the named documents by ID via a
-// KV bulk get; a scan walks a SQL++ keyset scan ordered by document ID, pre-filtered by
-// the pushed predicate when one narrows, else unfiltered. It reuses toWhere so the shown
-// WHERE is exactly what the query service would receive, and mirrors ScanFiltered's own
-// decision: unless the WHERE captures the predicate exactly, a client-side raw-byte
-// prefilter trims whatever the server could not exclude before decode.
+// query, without connecting. A bounded query fetches the named documents by ID in a
+// KV bulk get. A scan walks a SQL++ keyset scan ordered by document ID, with the
+// pushed predicate when one narrows. It reuses toWhere, so the shown WHERE is what
+// the query service receives. It mirrors ScanFiltered: unless the WHERE captures the
+// predicate exactly, a rawpred prefilter trims the rows before decode.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -33,12 +32,10 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 				filter["params"] = params
 			}
 		}
-		// exactWhere(pred) implies narrowing (every exactly-pushed node narrows), so the
-		// arms are ordered to keep each condition load-bearing on its own: !narrowing first
-		// selects the non-narrowing full scan, then exactWhere splits the narrowing case into
-		// the exact push and the partial (dropped-conjunct) push. A flat
-		// `narrowing && exactWhere` first arm would make the narrowing operand redundant (an
-		// unkillable, equivalent mutation), so it is deliberately not written that way.
+		// exactWhere(pred) implies narrowing, so the arms stay in this order: !narrowing
+		// first selects the full scan, then exactWhere splits the narrowing case into the
+		// exact push and the partial push. A flat `narrowing && exactWhere` first arm
+		// makes the narrowing operand redundant (an equivalent mutation).
 		switch {
 		case !narrowing:
 			// Nothing narrows (!=, regex, …): a full keyset scan whose rows the

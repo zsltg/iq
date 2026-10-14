@@ -209,13 +209,13 @@ type Rename struct {
 	New string
 }
 
-// Move renames a source or a whole group. When old is a source, it is renamed to
-// the full handle new. When old is a group (a handle prefix with members), every
-// member is re-prefixed from old to new. A source with the same name as a group
-// is treated as the source. Move keeps the active source and group pointing at
-// their new handles, and clears the active group if it ends up empty. It errors
-// if old is unknown, new is malformed, or new collides with an existing source.
-// It returns the old→new handle pairs it moved.
+// Move renames a source or a whole group. If old is a source, Move renames it to the
+// full handle new. If old is a group (a handle prefix with members), Move re-prefixes
+// every member from old to new. A source with the same name as a group counts as the
+// source. Move keeps the active source and group pointing at their new handles. It
+// clears the active group if the group ends up empty. Move returns an error if old is
+// unknown, new is malformed, or new collides with an existing source. It returns the
+// old→new handle pairs it moved.
 func (c *Config) Move(old, new string) ([]Rename, error) {
 	oldC := cleanHandle(old)
 	if oldC == "" {

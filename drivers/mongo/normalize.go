@@ -16,13 +16,11 @@ import (
 )
 
 // Normalize converts a decoded BSON value into a JSON-ready Go value the jq
-// engine accepts: nil, bool, int, float64, string, []any, map[string]any. BSON's
-// richer types are rendered to their natural JSON form — an ObjectID to its hex
-// string, a date to RFC 3339 — so filters read naturally and the encoding is a
-// frozen contract, the MongoDB analogue of the Redis type normalization. A
-// Decimal128 follows dec: exact string, or a bare number. It is exported so a
-// dump reader (the file backend decoding mongodump BSON / mongoexport Extended
-// JSON) produces the exact same shape a live collection scan does.
+// engine accepts: nil, bool, int, float64, string, []any, map[string]any. Richer
+// BSON types get their natural JSON form: an ObjectID becomes its hex string, and
+// a date RFC 3339. The encoding is a frozen contract. A Decimal128 follows dec:
+// exact string, or a bare number. Normalize is exported so a dump reader (the file
+// backend) produces the same shape as a live collection scan.
 func Normalize(v any, dec numfmt.DecimalMode) any {
 	switch t := v.(type) {
 	case nil, bool, string, float64:
@@ -71,9 +69,9 @@ func (s *Store) normalize(v any) any {
 }
 
 // decimalValue renders a BSON Decimal128 per the decimal mode. In auto and string
-// mode it keeps the exact decimal literal as a string; in number mode it parses
-// to a float64 (lossy beyond float64), except NaN and ±Infinity, which have no
-// JSON-number form and so stay strings rather than degrade to null.
+// mode it keeps the exact decimal literal as a string. In number mode it parses
+// to a float64 (lossy beyond float64). NaN and ±Infinity have no JSON-number form,
+// so they stay strings.
 func decimalValue(d bson.Decimal128, mode numfmt.DecimalMode) any {
 	str := d.String()
 	if mode != numfmt.DecimalNumber {

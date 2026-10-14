@@ -14,13 +14,12 @@ import (
 )
 
 // Dynamic shell completions. Every function here is offline: it reads only the
-// config file (via iqconfig.Load, honoring $IQ_CONFIG) and never opens a driver
-// or touches the network, so a <TAB> can never hang or connect. It must not read
-// the OS keyring either (so never effectiveURL) — a keypress cannot be allowed
-// to block on an unlock prompt. A load error yields no candidates rather than a
-// failure — completion is best-effort help, not a command that reports errors.
-// Cobra does not prefix-filter a ValidArgsFunction's results, so each helper
-// filters by toComplete itself.
+// config file (via iqconfig.Load, honoring $IQ_CONFIG). It never opens a
+// driver, touches the network, or reads the OS keyring (so never effectiveURL),
+// because a keypress must not block on an unlock prompt. A load error yields no
+// candidates, because completion is best-effort help. Cobra does not
+// prefix-filter the results of a ValidArgsFunction, so each helper filters by
+// toComplete itself.
 
 // candidate is one completion proposal: the text the shell inserts and an
 // optional description that it shows next to the text. Helpers build candidates
@@ -250,11 +249,10 @@ func fixedCandidates(values ...string) candidateFunc {
 }
 
 // completeCSV adapts a completion function to a comma-separated list flag
-// (--only, --section): it completes the segment after the last comma and
-// re-attaches the segments already typed, since the shell replaces the whole
-// word. A value already in the list is dropped from the candidates, so a long
-// selection narrows as it is built. Descriptions pass through, and the typed
-// head joins the value only. ShellCompDirectiveNoSpace keeps the cursor
+// (--only, --section). It completes the segment after the last comma and
+// re-attaches the typed segments, because the shell replaces the whole word. It
+// drops a value that is already in the list. Descriptions pass through, and the
+// typed head joins the value only. ShellCompDirectiveNoSpace keeps the cursor
 // put so another comma and segment can follow.
 func completeCSV(fn candidateFunc) cobra.CompletionFunc {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

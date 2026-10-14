@@ -138,13 +138,12 @@ func (s *Store) Clear(ctx context.Context) error {
 	}
 }
 
-// Delete removes the named nodes, addressed exactly as Get addresses them: by
-// elementId (the default) or by the ?key= property. It resolves each key to its
-// matching node(s) first — refusing, like Get, a ?key= that matches more than one
-// node, so a non-unique property key never over-deletes — then DETACH DELETEs the
-// matched nodes by elementId (DETACH removes their relationships too). A key that
-// matches no node is Missing, never an error, so a re-run is idempotent. Deleted and
-// Missing are exact from the resolution; keys ride as bound parameters.
+// Delete removes the named nodes, addressed as Get addresses them: by elementId
+// (the default) or by the ?key= property. It resolves each key to its matching
+// nodes first. Like Get, it refuses a ?key= that matches more than one node, so a
+// non-unique property never over-deletes. It then DETACH DELETEs the matched nodes
+// by elementId (DETACH removes their relationships too). A key that matches no node
+// is Missing, not an error, so a re-run is idempotent.
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
 	if s.target.kind == relTarget {
 		return query.DeleteStat{}, errRelWriteUnsupported

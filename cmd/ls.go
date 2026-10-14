@@ -173,10 +173,10 @@ func fileFormat(driver, url string) string {
 	return f.String()
 }
 
-// formatCell renders a source's FORMAT column for `iq ls -v`: a file source's
-// detected dump format, an em dash for a non-file source, or a faint "?" when a
-// file's format cannot be detected (a moved or unreadable dump), so one bad
-// source never fails the whole listing.
+// formatCell renders the FORMAT column of a source for `iq ls -v`: the detected
+// dump format of a file source, an em dash for a non-file source, or a faint
+// "?" when the format of a file cannot be detected (a moved or unreadable
+// dump). One bad source never fails the whole listing.
 func formatCell(driver, url string) tableCell {
 	if driver != "file" {
 		return coloredCell("—", pal.faint)
@@ -263,12 +263,12 @@ func groupJSON(cf *iqconfig.Config, groups []string) []groupRow {
 	return rows
 }
 
-// displayLocation returns a source's URL for display, redacted by default so a
-// stored password never prints. expand resolves a keyring-backed password and
-// inlines it (on lookup failure it keeps the stored password-less URL rather than
-// error); reveal then prints the result verbatim, otherwise any password is
-// redacted to xxxxx. reveal thus un-redacts inline passwords, expand resolves
-// keyring ones, mirroring sq's --reveal/--expand split.
+// displayLocation returns the URI of a source for display, redacted by default
+// so a stored password never prints. expand resolves a keyring-backed password
+// and inlines it. If the lookup fails, it keeps the stored password-less URI
+// and returns no error. reveal prints the result verbatim. Otherwise any
+// password is redacted to xxxxx. So reveal un-redacts inline passwords and
+// expand resolves keyring ones, mirroring the --reveal/--expand split of sq.
 func displayLocation(src iqconfig.Source, handle string, reveal, expand bool) string {
 	raw := src.URL
 	if expand && src.Keyring {

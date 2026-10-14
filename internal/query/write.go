@@ -6,10 +6,10 @@ import (
 )
 
 // NonObjectValueError is the uniform error a keyed document store returns when a
-// record's value is not a JSON object. Wrapping a scalar as {value: ...} would break
-// the round-trip — a "42" copied from Redis would come back as {"value":"42"} — so the
-// store rejects it and points the user at an explicit transform. driver names the
-// backend; key is the record key the value arrived under.
+// record's value is not a JSON object. Wrapping a scalar as {value: ...} breaks
+// the round-trip (a "42" copied from Redis comes back as {"value":"42"}). The store
+// rejects it and points the user at an explicit transform. driver names the backend.
+// key is the record key the value arrived under.
 func NonObjectValueError(driver, key string) error {
 	return fmt.Errorf(
 		`%s: value for key %q is not a JSON object; transform explicitly, e.g. iq 'if type == "object" then . else {value: .} end' --insert <dest>`,
@@ -44,13 +44,13 @@ const (
 // by an Upsert copy, so the command composes Clearer with the copy rather than the
 // Putter carrying a per-batch replace mode.
 
-// WriteStat reports the outcome of a batch of writes. It is accumulated across a
-// whole copy and rendered to the user, so a non-atomic multi-key write is honest
-// about what it did rather than pretending all-or-nothing. Where a backend cannot
-// report an overwrite natively, Overwritten is counted from a key pre-read taken
-// before the batch: it is accounting only — it never changes which records are
-// written — and, not being atomic with the writes, can skew by one under a
-// concurrent write to the same key.
+// WriteStat reports the outcome of a batch of writes. A copy accumulates it across all
+// batches and renders it to the user, so a non-atomic multi-key write reports what it
+// did and does not pretend to be all-or-nothing. If a backend cannot report an
+// overwrite natively, the driver counts Overwritten from a key pre-read taken before
+// the batch. This is accounting only: it never changes which records are written. It is
+// not atomic with the writes, so it can be off by one under a concurrent write to the
+// same key.
 type WriteStat struct {
 	Written     int
 	Overwritten int
@@ -64,12 +64,11 @@ func (s *WriteStat) add(other WriteStat) {
 	s.Skipped += other.Skipped
 }
 
-// The write surface is split into optional capability interfaces, mirroring the
-// read path's FilteredScanner/Estimator/SourceOpener idiom above. A driver
-// implements the capabilities its backend can meaningfully offer; a command
-// type-asserts and rejects cleanly when a capability is absent, so adding a
-// backend never edits the commands and no backend is forced to fake an operation
-// its model lacks.
+// The write surface is split into optional capability interfaces, like the read path's
+// FilteredScanner, Estimator, and SourceOpener. A driver implements the capabilities
+// its backend can offer. A command type-asserts and rejects cleanly when a capability
+// is absent. A new backend therefore never edits the commands, and no backend must fake
+// an operation its model lacks.
 
 // Putter is the destination capability a copy writes through.
 type Putter interface {
@@ -102,12 +101,12 @@ type Deleter interface {
 	Delete(ctx context.Context, keys []string) (DeleteStat, error)
 }
 
-// DeleteStat reports the outcome of a delete batch, honest about non-atomicity the
-// way WriteStat is: Deleted keys that existed and were removed, Missing keys that
-// were already absent. Where a backend cannot distinguish the two without a pre-read
+// DeleteStat reports the outcome of a delete batch and, like WriteStat, is honest about
+// non-atomicity. Deleted counts keys that existed and were removed. Missing counts keys
+// that were already absent. If a backend cannot tell the two apart without a pre-read
 // (DynamoDB BatchWriteItem is silent on absence), the driver takes a bounded key
-// pre-read whose count is accounting only — it never changes which keys are removed,
-// and, not being atomic with the delete, can skew by one under a concurrent write.
+// pre-read. Its count is accounting only: it never changes which keys are removed, and
+// it is not atomic with the delete, so it can be off by one under a concurrent write.
 type DeleteStat struct {
 	Deleted int
 	Missing int

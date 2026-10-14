@@ -28,25 +28,22 @@ const keepAlive = "1m"
 var errNoIndex = errors.New("no index selected; address it as handle.index or set ?index= in the source url")
 
 // Store adapts one Elasticsearch or OpenSearch index to the query ports. The jq and
-// write paths are scoped to a single index (the keyspace); the raw path runs a
-// _search and the inspect path reads server- and index-level metadata. The wire
-// client (Elasticsearch or OpenSearch) is chosen by the source scheme and hidden
-// behind the esClient port, so everything below the transport is shared. exact holds
-// the top-level fields whose mapping makes an equality pushable as a term query (read
-// once at open); it is nil when no index is selected or the mapping could not be read,
-// in which case equality simply is not pushed.
+// write paths use a single index (the keyspace). The raw path runs a _search, and the
+// inspect path reads server and index metadata. The source scheme picks the wire
+// client (Elasticsearch or OpenSearch), which the esClient port hides, so everything
+// below the transport is shared. exact holds the top-level fields whose mapping makes
+// an equality pushable as a term query. It is read once at open. It is nil if no
+// index is selected or the mapping cannot be read, and then no equality is pushed.
 type Store struct {
 	client   esClient
 	index    string
 	pageSize int
 	decimal  numfmt.DecimalMode
 	exact    map[string]exactField
-	// prefilterChecked counts hits the client-side raw-byte prefilter evaluated (ran
-	// rawpred over) across this store's filtered scans, and prefilterSkipped counts the
-	// subset it dropped before decode. They are diagnostic counters the package's tests
-	// read to prove the prefilter engages exactly when it should — checked stays zero
-	// on a bypassed scan and rises on a prefiltered one — and never part of the public
-	// API; no result depends on either.
+	// prefilterChecked counts the hits that the rawpred prefilter evaluated across this
+	// store's filtered scans. prefilterSkipped counts the hits it dropped before decode.
+	// Tests read both to prove that the prefilter runs exactly when it must. They are
+	// diagnostic only, and no result depends on them.
 	prefilterChecked int
 	prefilterSkipped int
 }
@@ -62,13 +59,13 @@ type connConfig struct {
 }
 
 // Open connects to the server named by an elasticsearch:// / elasticsearch+s:// /
-// opensearch:// / opensearch+s:// URL and verifies the connection with an info request
-// so a bad URL, unreachable server, or bad credentials fails fast. The index (the jq
-// keyspace, may be empty for raw/inspect-only use) is the dotted address override when
-// non-empty, else the URL's ?index= default, else the URL path. When trace is non-nil,
-// each HTTP request is logged to it (the CLI's --verbose trace) as method+path only,
-// so no credential (carried in the Authorization header) is ever written. dec chooses
-// how fractional numbers are presented to the filter.
+// opensearch:// / opensearch+s:// URL. An info request fails fast on a bad URL, an
+// unreachable server, or bad credentials. The index (the jq keyspace, can be empty
+// for raw or inspect-only use) is the dotted address override if non-empty, else the
+// URL's ?index= default, else the URL path. If trace is non-nil, it logs each HTTP
+// request (the CLI's --verbose trace) as method and path only, so no credential from
+// the Authorization header is written. dec sets how the filter sees fractional
+// numbers.
 func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	cc, err := parseURL(rawURL, address)
 	if err != nil {
@@ -93,10 +90,10 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 }
 
 // parseURL splits a source URL into the wire flavor, server address, basic-auth
-// credentials, and the default index. elasticsearch:// / opensearch:// map to an
-// http:// address and the +s variants to https://; the index is the dotted address
+// credentials, and the default index. elasticsearch:// and opensearch:// map to an
+// http:// address, and the +s variants to https://. The index is the dotted address
 // override, else ?index=, else the URL path. A missing scheme, host, or malformed
-// index is an error so a bad source fails at parse time.
+// index is an error, so a bad source fails at parse time.
 func parseURL(rawURL, address string) (connConfig, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -259,22 +256,18 @@ type searchHit struct {
 	Sort   json.RawMessage `json:"sort"`
 }
 
-// pagedSearch pages a _search over an optional query, handing fn each page of
-// {_id: document}. It opens a point-in-time, sorts by the flavor's keyset tiebreaker
-// (a total, stable order only defined within a PIT), and advances with search_after,
-// so a resized index cannot make the walk skip or loop. query is nil for a full scan
-// and a bool query for a pushed-down filtered scan. The PIT is always closed, even on
-// error or a cancelled ctx.
+// pagedSearch pages a _search over an optional query and hands fn each page of
+// {_id: document}. It opens a point-in-time and sorts by the flavor's keyset
+// tiebreaker (a total, stable order only inside a PIT). It advances with
+// search_after, so a resized index cannot make the walk skip or loop. query is nil
+// for a full scan and a bool query for a pushed-down scan. The PIT always closes,
+// even on error or a cancelled ctx.
 //
-// When prefilter is non-nil, each hit's raw _source is run through it before decode,
-// and a hit the prepared matcher proves the predicate rejects is skipped (counted in
-// prefilterSkipped) rather than decoded and delivered — a byte-level drop that never
-// changes results because the matcher's predicate is a conservative superset the caller
-// re-runs in full. The matcher is built once per scan by ScanFiltered (so its Regex
-// patterns compile once, not per hit); the keyset cursor advances past every hit,
-// skipped or kept, so pagination never re-reads or loops; a page emptied entirely by
-// the prefilter is simply not handed to fn, preserving the "a scan never yields an empty
-// batch" contract.
+// If prefilter is non-nil, the scan runs each hit's raw _source through it before
+// decode and skips a hit that it proves the predicate rejects (counted in
+// prefilterSkipped). ScanFiltered builds the matcher once per scan. The keyset
+// cursor advances past every hit, skipped or kept. The scan never hands an empty
+// batch to fn, even if the prefilter empties a page.
 func (s *Store) pagedSearch(ctx context.Context, query map[string]any, prefilter *rawpred.Matcher, fn func(batch map[string]any) error) error {
 	if s.index == "" {
 		return errNoIndex
@@ -397,13 +390,12 @@ func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
 	return cr.Count, nil
 }
 
-// Query runs a raw _search against the index. args must be a single JSON document:
-// either a full search body (`{"query":{…},"size":…,"aggs":…}`) or a bare query
-// object (`{"match":{"title":"dune"}}`), which is wrapped as `{"query":…}`. It is
-// decoded and passed as a parameter object — never string-built — and returns the
-// whole _search reply (hits, aggregations, and all) decoded with exact number
-// precision, so it is a faithful escape hatch for anything the jq read path does not
-// cover.
+// Query runs a raw _search against the index. args must be one JSON document: a full
+// search body (`{"query":{…},"size":…,"aggs":…}`) or a bare query object
+// (`{"match":{"title":"dune"}}`), which the driver wraps as `{"query":…}`. The driver
+// decodes it and passes it as a parameter object, never string-built. It returns the
+// whole _search reply (hits and aggregations) with exact number precision, as an
+// escape hatch for what the jq read path does not cover.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if s.index == "" {
 		return nil, errNoIndex

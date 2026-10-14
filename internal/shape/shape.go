@@ -1,12 +1,12 @@
-// Package shape reduces a sample of items to an inferred structural shape and
-// projects it two ways: Comparable, a flat path->node map fed to a structural
-// diff, and JSONSchema, a draft 2020-12 document. NoSQL stores declare no schema, so
-// the shape is sampled and inferred, never authoritative — a wider sample yields
-// a truer shape. It is driver-agnostic and holds no I/O: callers read each side
-// through the query ports and hand the materialized values here.
+// Package shape reduces a sample of items to an inferred structural shape and projects
+// it two ways: Comparable, a flat path->node map fed to a structural diff, and
+// JSONSchema, a draft 2020-12 document. NoSQL stores declare no schema, so the shape is
+// sampled and inferred, never authoritative. A wider sample yields a truer shape. The
+// package is driver-agnostic and does no I/O: callers read each side through the query
+// ports and hand the materialized values here.
 //
-// Inference heuristics adapted from quicktype (github.com/glideapps/quicktype),
-// Apache-2.0; no code copied.
+// Inference heuristics are adapted from quicktype (github.com/glideapps/quicktype),
+// Apache-2.0. No code is copied.
 package shape
 
 import (
@@ -27,13 +27,12 @@ type Shape struct {
 	root *node
 }
 
-// node accumulates what was observed at one position in the shape tree: the
-// distinct JSON kinds seen there, how many values landed there (seen), how many
-// of those were objects (objCount — the denominator for this node's fields'
-// presence), the object children, the unified array-element child (elem), and,
-// for string values, all-or-nothing format tracking. Because every tree position
-// maps to a unique path, presence lives on the edge as the child's seen count
-// measured against its parent's objCount.
+// node accumulates what was observed at one position in the shape tree: the distinct
+// JSON kinds seen there, how many values landed there (seen), how many of those were
+// objects (objCount, the denominator for the presence of this node's fields), the
+// object children, the unified array-element child (elem), and all-or-nothing format
+// tracking for string values. Every tree position maps to a unique path, so presence
+// lives on the edge: the child's seen count measured against its parent's objCount.
 type node struct {
 	kinds    kindSet
 	seen     int
@@ -85,14 +84,13 @@ func Infer(items map[string]any) *Shape {
 	return &Shape{root: root}
 }
 
-// Map-detection thresholds and enum thresholds, kept together as the one place to
-// tune inference. Map detection collapses an object path into a map when it has
-// enough object instances (mapMinInstances), enough distinct child keys
-// (mapMinKeys), and those keys are mostly unique across the key-slots seen
-// (mapMinDistinctRatio) — the signature of id-keyed data, not a fixed record
-// whose few keys repeat in every instance. The ratio is the real discriminator;
-// a wide fixed record clears the count gates but its keys repeat, so its ratio is
-// low. Repeat-heavy maps below the ratio are conservatively left literal.
+// Map-detection and enum thresholds, kept together as the one place to tune inference.
+// Map detection collapses an object path into a map when it has enough object instances
+// (mapMinInstances), enough distinct child keys (mapMinKeys), and mostly unique keys
+// across the key-slots seen (mapMinDistinctRatio). That is the signature of id-keyed
+// data, not of a fixed record whose few keys repeat in every instance. The ratio is the
+// real discriminator: a wide fixed record clears the count gates, but its keys repeat,
+// so its ratio is low. Repeat-heavy maps below the ratio stay literal.
 const (
 	mapMinInstances     = 8
 	mapMinKeys          = 8
@@ -164,15 +162,15 @@ func mergeNode(dst, src *node) {
 	}
 }
 
-// accumulate records value v at node n and recurses into an object's fields and
-// an array's elements. A field's presence is counted against n.objCount: each
-// object occurrence visits each of its keys once, so a child's seen count over
-// the parent's object count is exactly the fraction of parent instances that
-// carried the field — parent-relative, so an optional parent never makes an
-// always-present child look optional. Array elements unify into a single elem
-// node (path segment "[]"), so the path space stays bounded by the sample, not by
-// element count; an object element's fields then count against the elements seen.
-// An empty array records the array kind and nothing below it.
+// accumulate records value v at node n and recurses into an object's fields and an
+// array's elements. A field's presence is counted against n.objCount. Each object
+// occurrence visits each of its keys once, so a child's seen count over the parent's
+// object count is exactly the fraction of parent instances that carried the field. The
+// fraction is parent-relative, so an optional parent never makes an always-present
+// child look optional. Array elements unify into a single elem node (path segment
+// "[]"), so the path space stays bounded by the sample, not by element count. An object
+// element's fields then count against the elements seen. An empty array records the
+// array kind and nothing below it.
 func accumulate(n *node, v any) {
 	n.seen++
 	n.kinds.add(kindOf(v))
@@ -192,13 +190,12 @@ func accumulate(n *node, v any) {
 	}
 }
 
-// Comparable projects the shape to a flat path->node map: "$root" plus every
-// dotted field path, each node carrying its sorted distinct types and (for
-// fields) a presence of "required" or "optional". Presence is a stable attribute,
-// not a sample-count fraction, so two independently drawn samples of the same
-// schema project identically and a schema diff stays quiet under resampling. The
-// result is a map[string]any, so it runs through the structural Tree like any
-// other value.
+// Comparable projects the shape to a flat path->node map: "$root" plus every dotted
+// field path. Each node carries its sorted distinct types and (for fields) a presence
+// of "required" or "optional". Presence is a stable attribute, not a sample-count
+// fraction, so two independently drawn samples of the same schema project identically
+// and a schema diff stays quiet under resampling. The result is a map[string]any, so it
+// runs through the structural Tree like any other value.
 func (s *Shape) Comparable() map[string]any {
 	out := map[string]any{"$root": map[string]any{"types": s.root.comparableTypes()}}
 	projectComparable(out, "", s.root)

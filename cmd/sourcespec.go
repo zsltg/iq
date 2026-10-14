@@ -10,12 +10,12 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// sourceSpec is a source paired with the jq that reduces it: the address half
+// sourceSpec is a source paired with the jq that reduces it. The address half
 // names a saved source (with an optional dotted keyspace) and resolves to a
-// connectable endpoint; filter is the expression run against it, "" meaning the
-// whole keyspace. It is the one shape every command that reads several sources
-// shares, so `handle`, `handle.keyspace` and `handle=<jq>` mean the same thing
-// wherever they appear.
+// connectable endpoint. filter is the expression run against it, "" meaning the
+// whole keyspace. Every command that reads several sources shares this shape,
+// so `handle`, `handle.keyspace` and `handle=<jq>` mean the same wherever they
+// appear.
 type sourceSpec struct {
 	endpoint
 	filter string
@@ -37,10 +37,10 @@ func eitherFiltered(left, right sourceSpec) bool {
 	return left.filter != "" || right.filter != ""
 }
 
-// runConfig builds the per-source config a read of this spec runs under. It
-// carries the run-wide settings forward — decimal mode above all, which changes
-// what the filter computes on — so one spec string means the same thing in `iq`
-// as it does in `iq diff`, and so a store decorator still logs and traces.
+// runConfig builds the per-source config for a read of this spec. It carries
+// the run-wide settings forward, above all decimal mode, which changes what the
+// filter computes. So one spec string means the same in `iq` and `iq diff`, and
+// a store decorator still logs and traces.
 func (s sourceSpec) runConfig(cfg *config) *config {
 	return &config{
 		url:          s.url,

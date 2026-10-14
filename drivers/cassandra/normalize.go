@@ -18,15 +18,13 @@ import (
 
 // Normalize converts a value gocql yields for a CQL column into a JSON-ready Go
 // value the jq engine accepts: nil, bool, int, float64, string, []any,
-// map[string]any. Richer CQL types are rendered to their natural JSON form — a
-// uuid to its canonical string, a timestamp to RFC 3339, a blob to base64, inet to
-// its string — so filters read naturally and the encoding is a frozen contract,
-// the Cassandra analogue of the Redis and Mongo normalizations. A decimal follows
-// dec: exact string, or a bare number. A varint keeps its exact value as an int
-// when it fits, else its decimal string, so precision is never silently lost. It
-// is exported so a future dump reader produces the exact same shape a live scan
-// does. Collections arrive as concrete typed Go containers, so they are walked by
-// reflection rather than an exhaustive per-element-type switch.
+// map[string]any. Richer CQL types get their natural JSON form: a uuid becomes
+// its canonical string, a timestamp RFC 3339, a blob base64, and inet its string.
+// The encoding is a frozen contract. A decimal follows dec: exact string, or a
+// bare number. A varint keeps its exact value as an int if it fits, else its
+// decimal string. Normalize is exported so a dump reader produces the same shape
+// as a live scan. Collections arrive as concrete typed Go containers, so Normalize
+// walks them by reflection.
 func Normalize(v any, dec numfmt.DecimalMode) any {
 	if n, ok := signedInt(v); ok {
 		return int(n)
@@ -144,10 +142,9 @@ func decimalValue(d *inf.Dec, mode numfmt.DecimalMode) any {
 }
 
 // KeyOf renders a row's full primary key to the string key the table is keyed by.
-// A single-column primary key becomes that column's bare canonical string (the
-// Cassandra analogue of Mongo's _id-as-string); a composite primary key becomes a
-// compact JSON array of the key columns in schema order (partition keys first, then
-// clustering columns), so identity is reversible by decodeKey. It is the inverse of
+// A single-column primary key becomes that column's bare canonical string. A
+// composite primary key becomes a compact JSON array of the key columns in schema
+// order (partition keys first, then clustering columns). KeyOf is the inverse of
 // decodeKey and the frozen key contract.
 func KeyOf(meta *gocql.TableMetadata, row map[string]any) string {
 	cols := primaryKeyColumns(meta)

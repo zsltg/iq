@@ -1,14 +1,12 @@
 // Package elasticsearch adapts an Elasticsearch index to the query ports. An index
-// is modelled as Map[key, document]: a document's _id is the key, its _source is the
-// value. The jq filter runs client-side over documents fetched by _id or streamed
-// from the index, so the semantics match every other backend behind the KV port.
+// is a Map[key, document]: the _id is the key and the _source is the value. The jq
+// filter runs client-side over documents fetched by _id or streamed from the index.
 //
-// An Elasticsearch server hosts many top-level indices and nothing between the
-// server and its documents, so the index is the addressable keyspace (like a Mongo
-// collection or a CouchDB database): the source names the server and the index rides
-// as ?index= or the handle.<index> dotted override. Credentials travel in the URL
-// userinfo (HTTP basic auth) and never in a request path, so the CLI's keyring
-// support applies unchanged and the --verbose trace logs only method+path.
+// A server hosts many top-level indices and nothing between the server and its
+// documents, so the index is the addressable keyspace (like a Mongo collection or a
+// CouchDB database). The source names the server. The index is ?index= or the
+// handle.<index> dotted override. Credentials travel in the URL userinfo (HTTP basic
+// auth) and never in a request path. The --verbose trace logs method and path only.
 package elasticsearch
 
 import (
@@ -19,21 +17,19 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// injectedIDField is the metadata field decodeSource injects into every decoded
-// document's value, carrying the hit's _id. Elasticsearch reserves _id as a metadata
-// field, so it is never a real _source field: the raw _source bytes the prefilter
-// sees never contain it. A predicate rooted at this field therefore cannot be decided
-// on raw bytes (see referencesInjectedID), and documentBody strips it on write.
+// injectedIDField is the metadata field that decodeSource injects into every decoded
+// document. It carries the hit's _id. Elasticsearch reserves _id as a metadata field,
+// so the raw _source bytes that the prefilter sees never contain it. A predicate
+// rooted at this field cannot be decided on raw bytes (see referencesInjectedID).
+// documentBody strips it on write.
 const injectedIDField = "_id"
 
 // decodeSource parses a hit's _source into JSON-ready Go values and injects the
-// hit's _id, so a plain .[] stream is self-describing (the document carries its own
-// key, exactly like a Mongo document's _id). Numbers are decoded deliberately
-// (UseNumber) so precision survives: an integer becomes an exact int or *big.Int,
-// and a fractional number follows the decimal mode. A hit with no _source (a
-// stored-fields-only response) still yields {"_id": id}. Elasticsearch reserves _id
-// as a metadata field, so it is never a real _source field and the injection never
-// collides.
+// hit's _id, so the document carries its own key (like a Mongo _id). It decodes with
+// UseNumber to keep precision: an integer becomes an exact int or *big.Int, and a
+// fractional number follows the decimal mode. A hit with no _source (a
+// stored-fields-only response) yields {"_id": id}. The injection never collides,
+// because _id is never a real _source field.
 func decodeSource(raw json.RawMessage, id string, mode numfmt.DecimalMode) (map[string]any, error) {
 	doc := map[string]any{}
 	if len(raw) > 0 {

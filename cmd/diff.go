@@ -523,16 +523,16 @@ func sampleShape(ctx context.Context, cfg *config, t sourceSpec, sample int) (ma
 	return shape.Infer(items).Comparable(), nil
 }
 
-// sampleItems reads up to sample items from an open store into a key->value map,
-// stopping the scan once the cap is reached; a sample of zero reads the whole
-// keyspace. The scan error is returned unwrapped so the caller can anchor it with
-// its own source context. Shared by `diff --schema` and `schema`.
+// sampleItems reads up to sample items from an open store into a key->value map
+// and stops the scan at the cap. A sample of zero reads the whole keyspace. It
+// returns the scan error unwrapped so the caller can add its own source
+// context. `diff --schema` and `schema` share it.
 //
-// A filter runs through the plain engine, not the keyed one: an inferred shape
-// describes values and never keys, so a filter that fans one item out into
-// several values (`.[] | .tags[]`) is a perfectly good question here even though
-// a keyed read must refuse it. The emissions are collected under synthetic keys
-// only because the shape inferrer takes a map.
+// A filter runs through the plain engine, not the keyed one. An inferred shape
+// describes values, never keys. So a filter that fans one item out into several
+// values (`.[] | .tags[]`) is valid here, though a keyed read refuses it. The
+// emissions are collected under synthetic keys because the shape inferrer takes
+// a map.
 func sampleItems(ctx context.Context, st store, req sampleRequest) (map[string]any, error) {
 	if req.filter != "" {
 		return sampleFiltered(ctx, st, req)

@@ -162,11 +162,10 @@ func convertNumber(t json.Number) any {
 	return s
 }
 
-// JSONSource streams typed {key,type,value} records (or, in plain mode, whole
-// values) from a JSON reader that is either concatenated objects (JSON Lines) or a
-// single top-level array — the array-tolerant counterpart of JSONLSource, so a
-// --typed dump written as --jsonl or --jsona both re-import. Integers stay
-// exact.
+// JSONSource streams typed {key,type,value} records (or, in plain mode, whole values)
+// from a JSON reader that holds concatenated objects (JSON Lines) or a single top-level
+// array. It is the array-tolerant counterpart of JSONLSource, so a --typed dump written
+// as --jsonl or --jsona re-imports. Integers stay exact.
 func JSONSource(r io.Reader, pageSize int, plain bool) RecordSource {
 	return func(ctx context.Context, fn func(batch []Record) error) error {
 		stream, err := NewJSONStream(r)

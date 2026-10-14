@@ -18,13 +18,13 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// sourcePlan is the computed access plan for one source: the driver's stable
-// name, the query's classification, the planned backend operations, the
-// server-side filter (nil when the backend filters nothing), and the per-conjunct
-// pushdown decisions. Both the pretty --explain/--verbose text and the structured
-// "query plan" log record read from this one assembly (buildSourcePlan), so the
-// two never drift. hasPlan is false when the scheme has no registered describer,
-// so the caller contributes no backend section and logs no plan.
+// sourcePlan is the computed access plan for one source: the driver name, the
+// query classification, the planned backend operations, the planned scan filter
+// (nil when no filter is planned), and the per-conjunct pushdown
+// decisions. The pretty --explain/--verbose text and the structured "query
+// plan" log record both read from this one assembly (buildSourcePlan), so they
+// never drift. hasPlan is false when the scheme has no registered describer.
+// Then the caller adds no backend section and logs no plan.
 type sourcePlan struct {
 	hasPlan   bool
 	driver    string
@@ -85,9 +85,10 @@ func buildSourcePlanQuery(url string, q *gojq.Query, compile, unbounded bool) so
 
 // logAttrs renders the source plan as the structured attributes of the "query
 // plan" log record: the source handle, the driver, a classification group
-// {keys, streamable, scan}, the planned ops, the server-side filter (as a nested
+// {keys, streamable, scan}, the planned ops, the server-side filter (a nested
 // object, omitted when none), and the per-conjunct decisions. Keys are attrs
-// only, never interpolated into the message — the documented stable-key contract.
+// only, never interpolated into the message. This is the documented stable-key
+// contract.
 func (sp sourcePlan) logAttrs(handle string) []any {
 	attrs := []any{
 		slog.String("handle", handle),
@@ -181,10 +182,10 @@ func writeCombineWritePlan(b *strings.Builder, cfg *config) error {
 	if err != nil {
 		return err
 	}
-	// The plan must refuse what the run refuses. runInsert rejects stdio, and a
-	// backend with no write describer is one that cannot be written to at all (the
-	// file driver is read-only) — rendering a bare write section for either would
-	// describe a run that cannot happen.
+	// The plan must refuse what the run refuses. runInsert rejects stdio. A
+	// backend with no write describer cannot be written to at all (the file
+	// driver is read-only). A write section for either describes a run
+	// that cannot happen.
 	if dst.isFile {
 		return errors.New("--insert must name a saved source, not stdout")
 	}
@@ -221,10 +222,10 @@ func writeJQFilterQuery(b *strings.Builder, q *gojq.Query, describe, unbounded, 
 	writeJQExplained(b, pretty, jqfmt.ExplainQuery(q, colorOn()), 2, mark)
 }
 
-// accessMark labels the pipe stage that reads from the store: which stage (by index
-// in the Explain stage list) performs the root data access, the human name of the
-// route, and the color that names its cost (green bounded read, yellow streaming
-// scan, red materialized scan).
+// accessMark labels the pipe stage that reads from the store: the index of that
+// stage in the Explain stage list, the human name of the route, and the color
+// of its cost (green bounded read, yellow streaming scan, red materialized
+// scan).
 type accessMark struct {
 	stage int
 	label string
@@ -246,10 +247,10 @@ func accessMarkForQuery(q *gojq.Query, unbounded bool) *accessMark {
 	return &accessMark{stage: stage, label: label, c: c}
 }
 
-// classifyAccess names the route the KeySet describes and its cost color: bounded
-// keys are a cheap keyed read (green); a scan that distributes over `.[]` streams
-// batch by batch (yellow), unless --unbounded forces it to materialize; any other
-// scan collapses the whole keyspace into memory (red).
+// classifyAccess names the route that the KeySet describes and its cost color.
+// Bounded keys are a cheap keyed read (green). A scan that distributes over
+// `.[]` streams batch by batch (yellow), unless --unbounded forces it to
+// materialize. Any other scan collapses the whole keyspace into memory (red).
 func classifyAccess(keys selector.KeySet, unbounded bool) (string, *color.Color) {
 	switch {
 	case !keys.Scan:
@@ -261,16 +262,16 @@ func classifyAccess(keys selector.KeySet, unbounded bool) (string, *color.Color)
 	}
 }
 
-// writeJQExplained renders the pretty-printed filter with a right-aligned em-dash
-// note on each pipe stage's first line, matching writeConjunctLine's style. The body
-// is the compact render (jqfmt.Format) verbatim — pipe connectors and all — so the
-// annotated form differs from the plain form only by the note column. A stage spans
-// the same number of lines inline as standalone, so each stage's note attaches to the
-// physical line where that stage begins, found by accumulating stage line counts. The
-// stage named by mark (the root data access) is colored by its route cost and leads
-// with the route name; every other note is dimmed. The note column is the widest
-// annotated line by visible width, so ANSI escapes never skew it; a multi-line stage
-// carries its note on the first line only.
+// writeJQExplained renders the pretty-printed filter with a right-aligned
+// em-dash note on the first line of each pipe stage, in the style of
+// writeConjunctLine. The body is the compact render (jqfmt.Format) verbatim, so
+// the annotated form differs from the plain form only by the note column. A
+// stage spans the same number of lines inline as standalone, so each note
+// attaches to the physical line where its stage begins, found by accumulating
+// stage line counts. The stage named by mark (the root data access) is colored
+// by its route cost and leads with the route name. Every other note is dimmed.
+// The note column is the widest annotated line by visible width, so ANSI
+// escapes never skew it.
 func writeJQExplained(b *strings.Builder, pretty string, stages []jqfmt.Stage, indent int, mark *accessMark) {
 	lines := strings.Split(pretty, "\n")
 	notes := make(map[int]string, len(stages))
@@ -346,16 +347,15 @@ func writeAccessPlan(b *strings.Builder, url string, q *gojq.Query, compile, unb
 	return nil
 }
 
-// writePushdownDecisions appends the per-conjunct pushdown breakdown: for each
-// top-level conjunct of the filter's select(...) predicate, whether the backend
-// evaluates it server-side (pushed) or it falls to the client-side jq re-run
-// (client-side), and why a client-side conjunct did not push. It mirrors Trino's
-// EXPLAIN pushdown report — the observable split of what the backend evaluated
-// versus what ran client-side. The pushed conjuncts' merged fragment is the filter
-// block that follows, rendered by the same scan translator the query itself uses;
-// this section adds the decisions and reasons, never a second rendering. Nothing is
-// written when the filter has no analysable conjuncts (a non-streamable filter, no
-// select, or pushdown disabled).
+// writePushdownDecisions appends the per-conjunct pushdown breakdown. For each
+// top-level conjunct of the select(...) predicate of the filter, it shows
+// whether the backend evaluates it server-side (pushed) or it falls to the
+// client-side jq re-run (client-side), and why a client-side conjunct did not
+// push. It mirrors the pushdown report of Trino EXPLAIN. The merged fragment of
+// the pushed conjuncts is the filter block that follows, so this section adds
+// decisions and reasons, never a second rendering. It writes nothing when the
+// filter has no analysable conjuncts (a non-streamable filter, no select, or
+// pushdown disabled).
 func writePushdownDecisions(b *strings.Builder, conjuncts []conjunctPlan) {
 	if len(conjuncts) == 0 {
 		return
@@ -366,12 +366,13 @@ func writePushdownDecisions(b *strings.Builder, conjuncts []conjunctPlan) {
 	}
 }
 
-// conjunctDecision resolves one conjunct to pushed (true, no reason) or client-side
-// (false, with the reason). A conjunct the compiler could not turn into a predicate
-// carries its own compile-stage reason. A compiled conjunct is then offered to the
-// driver's scan translator through the same describer the plan uses: a backend that
-// narrows on it (a non-nil pushed fragment) pushes it; one whose translator declines
-// it, or a driver with no scan-side filter at all, re-runs it client-side.
+// conjunctDecision resolves one conjunct to pushed (true, no reason) or
+// client-side (false, with the reason). A conjunct that the compiler cannot
+// turn into a predicate carries its own compile-stage reason. A compiled
+// conjunct goes to the scan translator of the driver through the same describer
+// as the plan. A non-nil pushed fragment means the backend pushes it. If the
+// translator declines it, or the driver has no scan-side filter, the conjunct
+// re-runs client-side.
 func conjunctDecision(d driver, keys selector.KeySet, cj pushdown.Conjunct, unbounded bool) (bool, string) {
 	if cj.Pred == nil {
 		return false, cj.Reason
