@@ -604,3 +604,94 @@ func TestBuildJQPlanPushdownDecisions(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildJQPlanMaterializedRoute(t *testing.T) {
+	orig := color.NoColor
+	color.NoColor = true
+	t.Cleanup(func() { color.NoColor = orig })
+	// A streamable scan under --unbounded runs materialized: execution pushes
+	// nothing, so the plan shows no pushed conjunct and no server filter.
+	tests := []struct {
+		name        string
+		url         string
+		filter      string
+		unbounded   bool
+		noCompile   bool
+		contains    []string
+		notContains []string
+	}{
+		{
+			name:        "mongo unbounded scan pushes nothing",
+			url:         "mongodb://h/shop",
+			filter:      `.[] | select(.total > 99)`,
+			unbounded:   true,
+			contains:    []string{"client-side", ".total > 99", "materialized: the scan reads every record"},
+			notContains: []string{"pushed ", "  filter:"},
+		},
+		{
+			name:     "mongo scan without unbounded still pushes",
+			url:      "mongodb://h/shop",
+			filter:   `.[] | select(.total > 99)`,
+			contains: []string{"pushed", ".total > 99", "  filter:", `"$gt": 99`},
+			notContains: []string{
+				"materialized: the scan reads every record",
+			},
+		},
+		{
+			name:        "elasticsearch keyed read keeps its key fetch with unbounded",
+			url:         "elasticsearch://h/idx",
+			filter:      `.a, .b`,
+			unbounded:   true,
+			contains:    []string{"  filter:", `"ids"`},
+			notContains: []string{"materialized: the scan reads every record"},
+		},
+		{
+			name:        "elasticsearch keyed read keeps its key fetch with no-compile",
+			url:         "elasticsearch://h/idx",
+			filter:      `.a, .b`,
+			noCompile:   true,
+			contains:    []string{"  filter:", `"ids"`},
+			notContains: []string{"materialized: the scan reads every record"},
+		},
+		{
+			name:        "no-compile unbounded scan lists no conjuncts",
+			url:         "mongodb://h/shop",
+			filter:      `.[] | select(.total > 99)`,
+			unbounded:   true,
+			noCompile:   true,
+			notContains: []string{"pushdown:", "materialized: the scan reads every record", "  filter:"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config{url: tt.url, handle: "src", unbounded: tt.unbounded, noCompile: tt.noCompile}
+			out, err := buildJQPlan(cfg, tt.filter, false, false)
+			require.NoError(t, err)
+			for _, s := range tt.contains {
+				require.Contains(t, out, s)
+			}
+			for _, s := range tt.notContains {
+				require.NotContains(t, out, s)
+			}
+		})
+	}
+}
+
+func TestBuildSourcePlanMaterializedRoute(t *testing.T) {
+	sp, err := buildSourcePlan("mongodb://h/shop", `.[] | select(.total > 99 and .n == 1)`, true, true)
+	require.NoError(t, err)
+	require.Nil(t, sp.filter)
+	require.Equal(t, []conjunctPlan{
+		{Expr: ".total > 99", Reason: "materialized: the scan reads every record"},
+		{Expr: ".n == 1", Reason: "materialized: the scan reads every record"},
+	}, sp.conjuncts)
+
+	keys := make([]string, 0, len(sp.logAttrs("orders")))
+	for _, a := range sp.logAttrs("orders") {
+		attr, ok := a.(slog.Attr)
+		require.True(t, ok, "logAttrs returns slog.Attr values")
+		keys = append(keys, attr.Key)
+	}
+	require.Contains(t, keys, "conjuncts")
+	require.NotContains(t, keys, "filter")
+}

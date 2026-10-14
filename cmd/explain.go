@@ -58,29 +58,65 @@ func buildSourcePlan(url, filter string, compile, unbounded bool) (sourcePlan, e
 	return buildSourcePlanQuery(url, q, compile, unbounded), nil
 }
 
+// materializedReason is why a conjunct stays client-side on the materialized
+// route.
+const materializedReason = "materialized: the scan reads every record"
+
 // buildSourcePlanQuery is buildSourcePlan for an already-parsed query, so the
 // --explain text path (which parses the filter once up front) does not re-parse it.
+// It follows JQEngine.Run: with unbounded set, a scan is materialized and pushes
+// nothing. Then the driver gets no predicate, and every conjunct is client-side
+// with materializedReason. The unbounded flag alone decides this. Only a
+// streamable scan has conjuncts, and a bounded read ignores the predicate.
 func buildSourcePlanQuery(url string, q *gojq.Query, compile, unbounded bool) sourcePlan {
 	d, ok := driverForScheme(schemeOf(url))
 	if !ok || d.explainPlan == nil {
 		return sourcePlan{}
 	}
 	keys := selector.Keys(q)
-	var pred predicate.Node
-	var conjuncts []pushdown.Conjunct
-	if compile {
-		if p, ok := pushdown.Compile(q); ok {
-			pred = p
-		}
-		conjuncts, _ = pushdown.Conjuncts(q)
-	}
+	materialized := unbounded
+	pred, conjuncts := compiledPredicate(q, compile, materialized)
 	ap := d.explainPlan(keys, pred, unbounded)
-	sp := sourcePlan{hasPlan: true, driver: d.name, keys: keys, ops: ap.Ops, filter: ap.Filter}
-	for _, cj := range conjuncts {
-		pushed, reason := conjunctDecision(d, keys, cj, unbounded)
-		sp.conjuncts = append(sp.conjuncts, conjunctPlan{Expr: cj.Expr, Pushed: pushed, Reason: reason})
+	return sourcePlan{
+		hasPlan:   true,
+		driver:    d.name,
+		keys:      keys,
+		ops:       ap.Ops,
+		filter:    ap.Filter,
+		conjuncts: conjunctPlans(d, keys, conjuncts, unbounded, materialized),
 	}
-	return sp
+}
+
+// compiledPredicate returns the predicate to give the driver and the conjuncts
+// to report. With compile off, it returns neither. On the materialized route, it
+// returns the conjuncts but no predicate, because execution pushes nothing.
+func compiledPredicate(q *gojq.Query, compile, materialized bool) (predicate.Node, []pushdown.Conjunct) {
+	if !compile {
+		return nil, nil
+	}
+	conjuncts, _ := pushdown.Conjuncts(q)
+	if materialized {
+		return nil, conjuncts
+	}
+	if p, ok := pushdown.Compile(q); ok {
+		return p, conjuncts
+	}
+	return nil, conjuncts
+}
+
+// conjunctPlans resolves each conjunct to its plan entry. On the materialized
+// route, every conjunct is client-side with materializedReason.
+func conjunctPlans(d driver, keys selector.KeySet, conjuncts []pushdown.Conjunct, unbounded, materialized bool) []conjunctPlan {
+	var plans []conjunctPlan
+	for _, cj := range conjuncts {
+		if materialized {
+			plans = append(plans, conjunctPlan{Expr: cj.Expr, Reason: materializedReason})
+			continue
+		}
+		pushed, reason := conjunctDecision(d, keys, cj, unbounded)
+		plans = append(plans, conjunctPlan{Expr: cj.Expr, Pushed: pushed, Reason: reason})
+	}
+	return plans
 }
 
 // logAttrs renders the source plan as the structured attributes of the "query
@@ -372,7 +408,8 @@ func writePushdownDecisions(b *strings.Builder, conjuncts []conjunctPlan) {
 // conjunct goes to the scan translator of the driver through the same describer
 // as the plan. A non-nil pushed fragment means the backend pushes it. If the
 // translator declines it, or the driver has no scan-side filter, the conjunct
-// re-runs client-side.
+// re-runs client-side. The caller does not ask for a materialized route, which
+// pushes nothing.
 func conjunctDecision(d driver, keys selector.KeySet, cj pushdown.Conjunct, unbounded bool) (bool, string) {
 	if cj.Pred == nil {
 		return false, cj.Reason
