@@ -251,3 +251,28 @@ func TestTypedScanStopsAtAReadFailure(t *testing.T) {
 	require.ErrorIs(t, err, boom)
 	require.Zero(t, pages)
 }
+
+// TestTypedScanKeepsTheKeysAfterAVanishedKey pins that TypedScan skips a key that
+// vanished and still returns the records of the keys after it, in order.
+func TestTypedScanKeepsTheKeysAfterAVanishedKey(t *testing.T) {
+	f := &fakeRedis{
+		keys: map[string]fakeKey{
+			"a": {typ: "string", val: "va"},
+			"c": {typ: "string", val: "vc"},
+		},
+		scan: [][]string{{"a", "gone", "c"}},
+	}
+	store := newFakeStore(t, f, 3)
+
+	var got []query.Record
+	err := store.TypedScan(context.Background(), func(batch []query.Record) error {
+		got = append(got, batch...)
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []query.Record{
+		{Key: "a", Type: "string", Value: "va"},
+		{Key: "c", Type: "string", Value: "vc"},
+	}, got)
+}

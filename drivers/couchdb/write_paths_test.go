@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/go-kivik/kivik/v4"
 	"github.com/go-kivik/kivik/v4/driver"
 	"github.com/go-kivik/kivik/v4/mockdb"
 	"github.com/stretchr/testify/require"
@@ -233,4 +234,21 @@ func TestScanDeletesBatchBoundariesAndContext(t *testing.T) {
 			require.Equal(t, tt.want, sizes)
 		})
 	}
+}
+
+// TestInsertOnlyKeepsTheStatusOfAPerDocumentFailure pins that an insert fails on a
+// per-document error that is not a conflict, and that the HTTP status of that
+// error is still readable from the returned error.
+func TestInsertOnlyKeepsTheStatusOfAPerDocumentFailure(t *testing.T) {
+	st, _, mdb := newMockStore(t, 10, 1)
+	rec := &bulkRecorder{t: t, results: [][]driver.BulkResult{
+		{{ID: "1", Error: statusError{code: http.StatusForbidden}}},
+	}}
+	mdb.ExpectBulkDocs().WillExecute(rec.answer)
+
+	stat, err := st.Put(keyedCtx(), []query.Record{{Key: "1", Value: map[string]any{}}}, query.InsertOnly)
+
+	require.Equal(t, query.WriteStat{}, stat)
+	require.ErrorContains(t, err, "couchdb insert")
+	require.Equal(t, http.StatusForbidden, kivik.HTTPStatus(err))
 }

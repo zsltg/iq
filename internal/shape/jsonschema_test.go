@@ -271,3 +271,13 @@ func TestJSONSchemaEnumMergeInMap(t *testing.T) {
 		})
 	}
 }
+
+// TestJSONSchemaTypeListIsSortedByName pins that a field with several kinds lists
+// its JSON Schema type names in alphabetical order, not in kind order.
+func TestJSONSchemaTypeListIsSortedByName(t *testing.T) {
+	got := fieldSchema([]any{"s", []any{1}})
+	require.Equal(t, map[string]any{
+		"type":  []any{"array", "string"},
+		"items": map[string]any{"type": "integer"},
+	}, got)
+}
