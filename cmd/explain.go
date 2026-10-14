@@ -73,26 +73,49 @@ func buildSourcePlanQuery(url string, q *gojq.Query, compile, unbounded bool) so
 		return sourcePlan{}
 	}
 	keys := selector.Keys(q)
-	var pred predicate.Node
-	var conjuncts []pushdown.Conjunct
 	materialized := keys.Scan && keys.Streamable && unbounded
-	if compile {
-		if p, ok := pushdown.Compile(q); ok && !materialized {
-			pred = p
-		}
-		conjuncts, _ = pushdown.Conjuncts(q)
-	}
+	pred, conjuncts := compiledPredicate(q, compile, materialized)
 	ap := d.explainPlan(keys, pred, unbounded)
-	sp := sourcePlan{hasPlan: true, driver: d.name, keys: keys, ops: ap.Ops, filter: ap.Filter}
+	return sourcePlan{
+		hasPlan:   true,
+		driver:    d.name,
+		keys:      keys,
+		ops:       ap.Ops,
+		filter:    ap.Filter,
+		conjuncts: conjunctPlans(d, keys, conjuncts, unbounded, materialized),
+	}
+}
+
+// compiledPredicate returns the predicate to give the driver and the conjuncts
+// to report. With compile off, it returns neither. On the materialized route, it
+// returns the conjuncts but no predicate, because execution pushes nothing.
+func compiledPredicate(q *gojq.Query, compile, materialized bool) (predicate.Node, []pushdown.Conjunct) {
+	if !compile {
+		return nil, nil
+	}
+	conjuncts, _ := pushdown.Conjuncts(q)
+	if materialized {
+		return nil, conjuncts
+	}
+	if p, ok := pushdown.Compile(q); ok {
+		return p, conjuncts
+	}
+	return nil, conjuncts
+}
+
+// conjunctPlans resolves each conjunct to its plan entry. On the materialized
+// route, every conjunct is client-side with materializedReason.
+func conjunctPlans(d driver, keys selector.KeySet, conjuncts []pushdown.Conjunct, unbounded, materialized bool) []conjunctPlan {
+	var plans []conjunctPlan
 	for _, cj := range conjuncts {
 		if materialized {
-			sp.conjuncts = append(sp.conjuncts, conjunctPlan{Expr: cj.Expr, Reason: materializedReason})
+			plans = append(plans, conjunctPlan{Expr: cj.Expr, Reason: materializedReason})
 			continue
 		}
 		pushed, reason := conjunctDecision(d, keys, cj, unbounded)
-		sp.conjuncts = append(sp.conjuncts, conjunctPlan{Expr: cj.Expr, Pushed: pushed, Reason: reason})
+		plans = append(plans, conjunctPlan{Expr: cj.Expr, Pushed: pushed, Reason: reason})
 	}
-	return sp
+	return plans
 }
 
 // logAttrs renders the source plan as the structured attributes of the "query
