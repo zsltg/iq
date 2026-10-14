@@ -259,9 +259,8 @@ func containerOf(v any) (jsonContainer, bool) {
 			members = append(members, jsonMember{value: e})
 		}
 		return jsonContainer{open: "[", closer: "]", members: members}, true
-	default:
-		return jsonContainer{}, false
 	}
+	return jsonContainer{}, false
 }
 
 // objectMembers lists the members of an object with sorted keys.
