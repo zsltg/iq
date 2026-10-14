@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -24,36 +25,63 @@ const noteColumn = 34
 // from there.
 const sectionIndent = 2
 
+// conjunctContext is what the planner of one conjunct needs besides the conjunct:
+// the driver, the connection URI, the keys, the access plan of the whole predicate,
+// and whether the read is unbounded.
+type conjunctContext struct {
+	driver    driver
+	url       string
+	keys      selector.KeySet
+	plan      query.AccessPlan
+	unbounded bool
+}
+
 // conjunctStages plans the stages of one conjunct on a streaming route. A conjunct
 // that did not compile is for jq only. A compiled conjunct goes to the server if the
 // translator of the driver gives it a fragment, to the prefilter if that stage runs,
-// and always to jq. The stage states of the whole predicate (ap) decide which stages
-// the plan names. The plan never names a stage whose state is none.
-func conjunctStages(d driver, url string, keys selector.KeySet, ap query.AccessPlan, cj pushdown.Conjunct, unbounded bool) (conjunctPlan, error) {
+// and always to jq. The stage states of the whole predicate (cx.plan) decide which
+// stages the plan names. The plan never names a stage whose state is none.
+func conjunctStages(cx conjunctContext, cj pushdown.Conjunct) (conjunctPlan, error) {
 	if cj.Pred == nil {
 		return conjunctPlan{Expr: cj.Expr, Stages: []string{stageJQ}, Reason: "not compiled: " + cj.Reason}, nil
 	}
 	c := conjunctPlan{Expr: cj.Expr, Compiled: cj.Pred.String(), node: cj.Pred}
-	if ap.Server.State != query.StageNone {
-		cp, err := d.explainPlan(url, keys, cj.Pred, unbounded)
-		if err != nil {
-			return conjunctPlan{}, fmt.Errorf("plan %s conjunct: %w", d.name, err)
-		}
-		c.Server = cp.Filter
+	if err := c.planServer(cx, cj.Pred); err != nil {
+		return conjunctPlan{}, err
 	}
-	if c.Server != nil {
-		c.Stages = append(c.Stages, stageServer)
-	} else if ap.Server.State != query.StageNone {
+	c.planPrefilter(cx.plan.Prefilter)
+	c.Stages = append(c.Stages, stageJQ)
+	return c, nil
+}
+
+// planServer adds the server stage if the driver gives the conjunct a fragment. It
+// records the skip if the driver declines. It does nothing if the server stage is
+// none.
+func (c *conjunctPlan) planServer(cx conjunctContext, pred predicate.Node) error {
+	if cx.plan.Server.State == query.StageNone {
+		return nil
+	}
+	cp, err := cx.driver.explainPlan(cx.url, cx.keys, pred, cx.unbounded)
+	if err != nil {
+		return fmt.Errorf("plan %s conjunct: %w", cx.driver.name, err)
+	}
+	if cp.Filter == nil {
 		c.skip(stageServer, declinedReason)
+		return nil
 	}
-	switch ap.Prefilter.State {
+	c.Server = cp.Filter
+	c.Stages = append(c.Stages, stageServer)
+	return nil
+}
+
+// planPrefilter adds the prefilter stage, or records why it is off.
+func (c *conjunctPlan) planPrefilter(st query.StagePlan) {
+	switch st.State {
 	case query.StageOn, query.StageConditional:
 		c.Stages = append(c.Stages, stagePrefilter)
 	case query.StageOff:
-		c.skip(stagePrefilter, ap.Prefilter.Note)
+		c.skip(stagePrefilter, st.Note)
 	}
-	c.Stages = append(c.Stages, stageJQ)
-	return c, nil
 }
 
 // skip records why a stage does not evaluate the conjunct.
@@ -187,98 +215,167 @@ func fitJSON(v any, indent, width int) ([]string, error) {
 	if err := dec.Decode(&norm); err != nil {
 		return nil, fmt.Errorf("decode JSON: %w", err)
 	}
-	return layoutJSON(norm, indent, "", "", width)
+	return layoutJSON(norm, jsonSlot{indent: indent, width: width})
+}
+
+// jsonSlot is where a value sits in the layout: the indent and the width of its line,
+// the key text before it (the prefix), and the comma after it (the suffix).
+type jsonSlot struct {
+	indent int
+	width  int
+	prefix string
+	suffix string
+}
+
+// line is the one-line form of a value in the slot.
+func (s jsonSlot) line(compact string) string {
+	return strings.Repeat(" ", s.indent) + s.prefix + compact + s.suffix
+}
+
+// fits reports whether the one-line form of a value fits the width of the slot.
+func (s jsonSlot) fits(compact string) bool {
+	return s.indent+utf8.RuneCountInString(s.prefix+compact+s.suffix) <= s.width
+}
+
+// jsonMember is one member of an object or array: the key text before its value
+// (empty for an array) and the value.
+type jsonMember struct {
+	label string
+	value any
+}
+
+// jsonContainer is an object or array: its brackets and its members in order.
+type jsonContainer struct {
+	open, closer string
+	members      []jsonMember
+}
+
+// containerOf returns the container form of a normalized value. It returns false for
+// a scalar.
+func containerOf(v any) (jsonContainer, bool, error) {
+	switch t := v.(type) {
+	case map[string]any:
+		members, err := objectMembers(t)
+		return jsonContainer{open: "{", closer: "}", members: members}, true, err
+	case []any:
+		members := make([]jsonMember, 0, len(t))
+		for _, e := range t {
+			members = append(members, jsonMember{value: e})
+		}
+		return jsonContainer{open: "[", closer: "]", members: members}, true, nil
+	default:
+		return jsonContainer{}, false, nil
+	}
+}
+
+// objectMembers lists the members of an object with sorted keys.
+func objectMembers(m map[string]any) ([]jsonMember, error) {
+	members := make([]jsonMember, 0, len(m))
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		key, err := jsonString(k)
+		if err != nil {
+			return nil, err
+		}
+		members = append(members, jsonMember{label: key + ": ", value: m[k]})
+	}
+	return members, nil
 }
 
 // layoutJSON lays out a normalized value (maps, slices, json.Number, string, bool,
-// nil). The prefix is the key text before the value, and the suffix is the comma
-// after it.
-func layoutJSON(v any, indent int, prefix, suffix string, width int) ([]string, error) {
-	pad := strings.Repeat(" ", indent)
+// nil) in a slot.
+func layoutJSON(v any, s jsonSlot) ([]string, error) {
 	compact, err := compactJSON(v)
 	if err != nil {
 		return nil, err
 	}
-	if indent+utf8.RuneCountInString(prefix+compact+suffix) <= width {
-		return []string{pad + prefix + compact + suffix}, nil
+	if s.fits(compact) {
+		return []string{s.line(compact)}, nil
 	}
-	var open, closer string
-	var members []string
-	var values []any
-	switch t := v.(type) {
-	case map[string]any:
-		open, closer = "{", "}"
-		for _, k := range slices.Sorted(maps.Keys(t)) {
-			key, err := jsonString(k)
-			if err != nil {
-				return nil, err
-			}
-			members = append(members, key+": ")
-			values = append(values, t[k])
-		}
-	case []any:
-		open, closer = "[", "]"
-		for _, e := range t {
-			members = append(members, "")
-			values = append(values, e)
-		}
-	default:
-		return []string{pad + prefix + compact + suffix}, nil
+	c, ok, err := containerOf(v)
+	if err != nil {
+		return nil, err
 	}
-	lines := []string{pad + prefix + open}
-	for i, m := range values {
+	if !ok {
+		return []string{s.line(compact)}, nil
+	}
+	return layoutContainer(c, s)
+}
+
+// layoutContainer breaks a container over lines. The opening bracket goes on the
+// first line, each member on its own line two spaces deeper, and the closing bracket
+// on its own line.
+func layoutContainer(c jsonContainer, s jsonSlot) ([]string, error) {
+	pad := strings.Repeat(" ", s.indent)
+	lines := []string{pad + s.prefix + c.open}
+	for i, m := range c.members {
 		sep := ","
-		if i == len(values)-1 {
+		if i == len(c.members)-1 {
 			sep = ""
 		}
-		member, err := layoutJSON(m, indent+2, members[i], sep, maxJSONWidth)
+		member, err := layoutJSON(m.value, jsonSlot{indent: s.indent + 2, width: maxJSONWidth, prefix: m.label, suffix: sep})
 		if err != nil {
 			return nil, err
 		}
 		lines = append(lines, member...)
 	}
-	return append(lines, pad+closer+suffix), nil
+	return append(lines, pad+c.closer+s.suffix), nil
 }
 
 // compactJSON is the one-line form of a normalized value.
 func compactJSON(v any) (string, error) {
 	switch t := v.(type) {
 	case map[string]any:
-		parts := make([]string, 0, len(t))
-		for _, k := range slices.Sorted(maps.Keys(t)) {
-			key, err := jsonString(k)
-			if err != nil {
-				return "", err
-			}
-			val, err := compactJSON(t[k])
-			if err != nil {
-				return "", err
-			}
-			parts = append(parts, key+": "+val)
-		}
-		return "{" + strings.Join(parts, ", ") + "}", nil
+		return compactObject(t)
 	case []any:
-		parts := make([]string, 0, len(t))
-		for _, e := range t {
-			val, err := compactJSON(e)
-			if err != nil {
-				return "", err
-			}
-			parts = append(parts, val)
-		}
-		return "[" + strings.Join(parts, ", ") + "]", nil
+		return compactArray(t)
 	case string:
 		return jsonString(t)
 	case json.Number:
 		return t.String(), nil
 	case bool:
-		if t {
-			return "true", nil
-		}
-		return "false", nil
+		return strconv.FormatBool(t), nil
 	default:
 		return "null", nil
 	}
+}
+
+// compactObject is the one-line form of an object, with sorted keys.
+func compactObject(m map[string]any) (string, error) {
+	parts := make([]string, 0, len(m))
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		part, err := compactMember(k, m[k])
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, part)
+	}
+	return "{" + strings.Join(parts, ", ") + "}", nil
+}
+
+// compactMember is the one-line form of one object member.
+func compactMember(k string, v any) (string, error) {
+	key, err := jsonString(k)
+	if err != nil {
+		return "", err
+	}
+	val, err := compactJSON(v)
+	if err != nil {
+		return "", err
+	}
+	return key + ": " + val, nil
+}
+
+// compactArray is the one-line form of an array.
+func compactArray(a []any) (string, error) {
+	parts := make([]string, 0, len(a))
+	for _, e := range a {
+		val, err := compactJSON(e)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, val)
+	}
+	return "[" + strings.Join(parts, ", ") + "]", nil
 }
 
 // jsonString is a JSON string literal with no HTML escaping.
@@ -296,34 +393,57 @@ func jsonString(s string) (string, error) {
 // conjunct. Two or more conjuncts nest under an `and` line.
 func writePrefilterSection(b *strings.Builder, sp sourcePlan) {
 	st := sp.prefilter
-	header := fmt.Sprintf("prefilter (%s)", st.Scope)
-	if st.State == query.StageConditional {
-		header = fmt.Sprintf("prefilter (%s: %s)", st.Note, st.Scope)
-	}
 	if st.State == query.StageNone {
 		return
 	}
-	if !writeStageHeader(b, "prefilter", st, header) {
+	if !writeStageHeader(b, "prefilter", st, prefilterHeader(st)) {
 		return
 	}
+	writePrefilterRows(b, sp, conjunctsWhere(sp.conjuncts, func(c conjunctPlan) bool {
+		return c.has(stagePrefilter)
+	}))
+}
+
+// prefilterHeader is the section header of an on or conditional prefilter stage.
+func prefilterHeader(st query.StagePlan) string {
+	if st.State == query.StageConditional {
+		return fmt.Sprintf("prefilter (%s: %s)", st.Note, st.Scope)
+	}
+	return fmt.Sprintf("prefilter (%s)", st.Scope)
+}
+
+// conjunctsWhere returns the conjuncts for which keep is true, in order.
+func conjunctsWhere(cs []conjunctPlan, keep func(conjunctPlan) bool) []conjunctPlan {
 	var rows []conjunctPlan
-	for _, c := range sp.conjuncts {
-		if c.has(stagePrefilter) {
+	for _, c := range cs {
+		if keep(c) {
 			rows = append(rows, c)
 		}
 	}
+	return rows
+}
+
+// writePrefilterRows writes one tree per conjunct. Two or more rows nest under an
+// `and` line.
+func writePrefilterRows(b *strings.Builder, sp sourcePlan, rows []conjunctPlan) {
 	indent := 2
 	if len(rows) > 1 {
 		b.WriteString("  and\n")
 		indent = 4
 	}
 	for _, c := range rows {
-		note := "— " + c.Expr
-		if sp.server.State != query.StageNone && c.Server == nil {
-			note += "  (not pushed: " + declinedReason + ")"
-		}
-		writeNodeRows(b, indent, c.node, note)
+		writeNodeRows(b, indent, c.node, prefilterNote(sp, c))
 	}
+}
+
+// prefilterNote is the note of a prefilter row: the jq source of the conjunct, and
+// the reason the server did not take it.
+func prefilterNote(sp sourcePlan, c conjunctPlan) string {
+	note := "— " + c.Expr
+	if sp.server.State != query.StageNone && c.Server == nil {
+		note += "  (not pushed: " + declinedReason + ")"
+	}
+	return note
 }
 
 // writeNodeRows writes a compiled node. An and or or node is a tree: the operator on
@@ -351,24 +471,24 @@ func writeNodeRows(b *strings.Builder, indent int, n predicate.Node, note string
 // stage evaluates.
 func writeJQSection(b *strings.Builder, sp sourcePlan) {
 	const header = "jq (after decode, the full filter, every conjunct again)"
-	var rows []conjunctPlan
-	for _, c := range sp.conjuncts {
-		if c.jqOnly() {
-			rows = append(rows, c)
-		}
-	}
+	rows := conjunctsWhere(sp.conjuncts, conjunctPlan.jqOnly)
 	if len(rows) == 0 {
 		b.WriteString("\n" + planHeader(header) + "\n")
 		return
 	}
 	writePlanSection(b, header)
 	for _, c := range rows {
-		reason := c.Reason
-		if reason == "" {
-			reason = "not pushed: " + jqOnlyReason(sp, c)
-		}
-		writeNoteRow(b, 2, "only here: "+c.Expr, "— "+reason)
+		writeNoteRow(b, 2, "only here: "+c.Expr, "— "+jqRowReason(sp, c))
 	}
+}
+
+// jqRowReason is the note of a jq row. A conjunct that did not compile carries its
+// own reason.
+func jqRowReason(sp sourcePlan, c conjunctPlan) string {
+	if c.Reason != "" {
+		return c.Reason
+	}
+	return "not pushed: " + jqOnlyReason(sp, c)
 }
 
 // jqOnlyReason is why a compiled conjunct reaches only jq. The server declined it,

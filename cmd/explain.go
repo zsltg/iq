@@ -140,12 +140,13 @@ func compiledPredicate(q *gojq.Query, compile, materialized bool) (predicate.Nod
 // route, every conjunct reaches only jq, with materializedReason.
 func conjunctPlans(d driver, url string, keys selector.KeySet, ap query.AccessPlan, conjuncts []pushdown.Conjunct, unbounded, materialized bool) ([]conjunctPlan, error) {
 	var plans []conjunctPlan
+	cx := conjunctContext{driver: d, url: url, keys: keys, plan: ap, unbounded: unbounded}
 	for _, cj := range conjuncts {
 		if materialized {
 			plans = append(plans, conjunctPlan{Expr: cj.Expr, Stages: []string{stageJQ}, Reason: materializedReason})
 			continue
 		}
-		c, err := conjunctStages(d, url, keys, ap, cj, unbounded)
+		c, err := conjunctStages(cx, cj)
 		if err != nil {
 			return nil, err
 		}
