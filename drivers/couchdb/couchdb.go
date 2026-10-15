@@ -22,7 +22,7 @@ import (
 const scanBatch = 100
 
 // designPrefix marks CouchDB design documents (views, Mango indexes). They are
-// database metadata, not user data, so scans skip them — the KV model exposes only
+// database metadata, not user data, so scans skip them. The KV model exposes only
 // documents.
 const designPrefix = "_design/"
 
@@ -31,8 +31,8 @@ const designPrefix = "_design/"
 var errNoDatabase = errors.New("couchdb: no database selected; address it as handle.database or set ?database= in the source url")
 
 // Store adapts one CouchDB database to the query ports. The jq and write paths are
-// scoped to a single database (the keyspace); the raw path runs a Mango _find and
-// the inspect path reads server- and database-level metadata.
+// scoped to a single database (the keyspace). The raw path runs a Mango _find.
+// The inspect path reads server- and database-level metadata.
 type Store struct {
 	client   *kivik.Client
 	db       string
@@ -47,13 +47,13 @@ type connConfig struct {
 	db  string
 }
 
-// Open connects to the CouchDB server named by a couchdb:// (or couchdbs://) URL.
-// A ping makes a bad URL, unreachable server, or bad credentials fail fast. The
-// database (the jq keyspace, empty for raw-only use) is the dotted address
-// override if non-empty, else the URL's ?database= default, else the URL path. If
-// trace is non-nil, each HTTP request is logged to it as method and path only, so
-// no credential from the Authorization header is written. dec chooses how
-// fractional numbers are presented to the filter.
+// Open connects to the CouchDB server named by a couchdb:// (or couchdbs://) URI.
+// A ping makes a bad URI, unreachable server, or bad credentials fail fast. The
+// database is the jq keyspace. It is empty for raw-only use. It is the dotted
+// address override if non-empty, else the URI's ?database= default, else the URI
+// path. If trace is non-nil, Open logs each HTTP request to it as method and path
+// only, so no credential from the Authorization header is written. The dec
+// argument chooses how fractional numbers are presented to the filter.
 func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	cc, err := parseURL(rawURL, address)
 	if err != nil {
@@ -79,10 +79,10 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 	}, nil
 }
 
-// parseURL splits a couchdb:// source URL into the server DSN and the default
-// database. couchdb:// maps to an http:// DSN and couchdbs:// to https://; the
-// database is the dotted address override, else ?database=, else the URL path. A
-// missing scheme or host is an error so a malformed source fails at parse time.
+// parseURL splits a couchdb:// source URI into the server DSN and the default
+// database. couchdb:// maps to an http:// DSN and couchdbs:// to https://. The
+// database is the dotted address override, else ?database=, else the URI path. A
+// missing scheme or host is an error, so a malformed source fails at parse time.
 func parseURL(rawURL, address string) (connConfig, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -97,7 +97,7 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	}
 
 	// The DSN kivik connects to is the server root: scheme + userinfo + host, no
-	// path or query (the database is selected per call with client.DB).
+	// path or query. The database is selected per call with client.DB.
 	dsn := url.URL{Scheme: scheme, User: u.User, Host: u.Host, Path: "/"}
 	return connConfig{dsn: dsn.String(), db: databaseName(u, address)}, nil
 }
@@ -147,8 +147,8 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var raw json.RawMessage
-		// A missing or deleted key has no document body; ScanDoc reports it, and
-		// the key is simply left out, matching the KV contract.
+		// A missing or deleted key has no document body. ScanDoc reports it, and
+		// the key is left out, matching the KV contract.
 		if err := rows.ScanDoc(&raw); err != nil {
 			continue
 		}
@@ -169,10 +169,10 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 }
 
 // ScanBatches streams the whole database, handing the caller each page of
-// {_id: document}. A single _all_docs request streams every row from the server;
-// the driver accumulates them into pages of pageSize so a streaming caller keeps
-// only one page in memory. Design documents are skipped. Bounded by ctx; stops at
-// the first error from fn or the driver.
+// {_id: document}. A single _all_docs request streams every row from the server.
+// The driver accumulates them into pages of pageSize, so a streaming caller keeps
+// only one page in memory. Design documents are skipped. The scan is bounded by
+// ctx. It stops at the first error from fn or the driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
 	if s.db == "" {
 		return errNoDatabase
@@ -260,7 +260,7 @@ func sendPage(page map[string]any, fn func(batch map[string]any) error) error {
 
 // EstimateCount returns the database's document count from its metadata (the
 // doc_count in GET /{db}), a cheap approximate total for a full scan's progress. It
-// counts design documents too and may be stale under concurrent writes, so the
+// counts design documents too and can be stale under concurrent writes, so the
 // caller treats it as a hint. A missing database is the same error the scan paths
 // return.
 func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
@@ -274,11 +274,11 @@ func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
 	return stats.DocCount, nil
 }
 
-// Query runs a raw Mango query against the database. args must be a single JSON
-// document: either a full _find request (`{"selector":{...},"limit":...}`) or a
-// bare selector (`{"year":2017}`), which is wrapped as `{"selector":...}`. It is
-// decoded and passed as a parameter object — never string-built — and returns the
-// matching documents with the paging bookmark.
+// Query runs a raw Mango query against the database. The args must be a single
+// JSON document: either a full _find request (`{"selector":{...},"limit":...}`)
+// or a bare selector (`{"year":2017}`), which is wrapped as `{"selector":...}`.
+// Query decodes it and passes it as a parameter object, never string-built. It
+// returns the matching documents with the paging bookmark.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if s.db == "" {
 		return nil, errNoDatabase

@@ -71,7 +71,8 @@ func TestToFilter(t *testing.T) {
 			bson.M{"name": bson.M{"$regex": "^a", "$options": "i"}},
 		},
 		{
-			// jq's m is dotall, which is PCRE's s (not PCRE's m); the translation
+			// jq's m is dotall, which is the s of PCRE (not the m of PCRE). The
+			// translation
 			// keeps . matching a newline server-side, so the push stays a superset.
 			"regex with dotall m flag maps to option s",
 			predicate.Regex{Path: []string{"name"}, Pattern: "a.c", Flags: "m"},
@@ -159,7 +160,8 @@ func TestToFilter(t *testing.T) {
 		},
 		{
 			// Neither branch is an equality, so the $in collapse must reject the whole
-			// or rather than read a zero-value equality out of the first non-Eq branch.
+			// or. It must not read a zero-value equality out of the first non-Eq
+			// branch.
 			"or of two ranges on one field stays $or",
 			predicate.Or{
 				predicate.Cmp{Path: []string{"a"}, Op: predicate.Gt, Value: 5.0},

@@ -116,8 +116,8 @@ func TestScanFilteredPushesRegex(t *testing.T) {
 	require.Equal(t, []string{"1"}, sortedKeys(got))
 
 	// Case-sensitive ^K matches ASCII "Kelvin" only: not lowercase "kelvin", not the
-	// Kelvin sign (a different rune), and not the number field (is_binary skips it),
-	// exactly as jq's test would — the i flag is never pushed.
+	// Kelvin sign (a different rune), and not the number field (is_binary skips it).
+	// This is exactly what jq's test does. The i flag is never pushed.
 	got = collect(t, func(fn func(map[string]any) error) error {
 		return st.ScanFiltered(ctx, predicate.Regex{Path: []string{"name"}, Pattern: "^K"}, fn)
 	})
@@ -136,7 +136,7 @@ func TestScanFilteredPushesSize(t *testing.T) {
 
 	// jq length is polymorphic, so the push is a $size-plus-$type superset: the
 	// length-2 array, plus every string/object/number regardless of length. It must
-	// never miss the array (doc 1); the client re-run narrows the rest.
+	// never miss the array (doc 1). The client re-run narrows the rest.
 	got := collect(t, func(fn func(map[string]any) error) error {
 		return st.ScanFiltered(ctx, predicate.Size{Path: []string{"tags"}, N: 2}, fn)
 	})
@@ -280,7 +280,7 @@ func TestOpenRejectsAHostTheClientCannotParse(t *testing.T) {
 }
 
 func TestOpenCarriesTheDecimalMode(t *testing.T) {
-	// The decimal mode chosen at the composition root reaches every decode: in
+	// The decimal mode chosen at the composition root reaches every decode. In
 	// string mode a fractional number keeps its exact literal instead of becoming
 	// a float.
 	seedDB(t, map[string]any{"_id": "1", "price": 19.99})
@@ -297,7 +297,7 @@ func TestOpenCarriesTheDecimalMode(t *testing.T) {
 
 func TestScanFilteredStopsOnAShortPage(t *testing.T) {
 	// Three matches at a page size of two: the second _find comes back short,
-	// which ends the walk there. A third request would be a wasted round trip, so
+	// which ends the walk there. A third request is a wasted round trip, so
 	// the traced request count is the assertion.
 	seedDB(t, kindDocs(3)...)
 	ctx := skipShort(t)

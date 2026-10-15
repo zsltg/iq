@@ -9,10 +9,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
-// tracedSkip are the handshake, authentication, and session commands the driver
-// issues around a query. They carry no query intent (and saslStart/saslContinue
-// carry credentials), so the --verbose trace omits them and shows only the
-// commands the query actually runs.
+// tracedSkip are the handshake, authentication, and session commands that the
+// driver issues around a query. They carry no query intent (and
+// saslStart/saslContinue carry credentials). So the --verbose trace omits them
+// and shows only the commands that the query runs.
 var tracedSkip = map[string]bool{
 	"hello":        true,
 	"ismaster":     true,
@@ -26,9 +26,10 @@ var tracedSkip = map[string]bool{
 }
 
 // newCommandMonitor returns a CommandMonitor that logs each query command to w,
-// backing the CLI's --verbose command trace. Handshake and auth commands are
-// skipped, so no credential is ever written; the find/getMore/aggregate body a
-// query issues carries only its filter. Writes are serialized against tearing.
+// backing the --verbose command trace of the CLI. Handshake and auth commands
+// are skipped, so no credential is ever written. The find, getMore, or
+// aggregate body that a query issues carries only its filter. Writes are
+// serialized against tearing.
 func newCommandMonitor(w io.Writer) *event.CommandMonitor {
 	var mu sync.Mutex
 	return &event.CommandMonitor{

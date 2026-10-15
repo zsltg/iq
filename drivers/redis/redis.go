@@ -15,8 +15,8 @@ import (
 )
 
 func init() {
-	// Silence go-redis's global logger so its internal pool messages never reach
-	// the user; the CLI surfaces its own clean errors instead.
+	// Silence the global logger of go-redis so its internal pool messages never
+	// reach the user. The CLI surfaces its own clean errors instead.
 	goredis.SetLogger(noopLogger{})
 }
 
@@ -29,8 +29,8 @@ func (noopLogger) Printf(_ context.Context, _ string, _ ...any) {}
 type Store struct {
 	client *goredis.Client
 	// pageSize bounds how many keys ScanBatches accumulates before fetching and
-	// handing off a page, so streaming memory stays O(pageSize). Defaults to
-	// scanCount; tests lower it to exercise multi-page behavior.
+	// handing off a page, so streaming memory stays O(pageSize). It defaults
+	// to scanCount. Tests lower it to exercise multi-page behavior.
 	pageSize int
 	// decimal chooses how a RedisJSON fractional number is presented to the
 	// filter: a float64 (auto/number) or its exact literal string.

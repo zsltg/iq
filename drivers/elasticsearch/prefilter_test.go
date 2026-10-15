@@ -16,11 +16,11 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// TestExactPush pins the exactness gate: exactPush is true only when the whole
-// predicate translates to a query that returns precisely jq's matching set, so the
-// client-side prefilter can be bypassed as pure overhead. Only a term-pushed equality
-// is exact; existence, ranges, negations, a dropped conjunct, or any non-exact branch
-// keep the prefilter.
+// TestExactPush pins the exactness gate. exactPush is true only when the whole
+// predicate translates to a query that returns precisely the matching set of jq.
+// Then the client-side prefilter can be bypassed as pure overhead. Only a
+// term-pushed equality is exact. Existence, ranges, negations, a dropped
+// conjunct, or any non-exact branch keep the prefilter.
 func TestExactPush(t *testing.T) {
 	tests := []struct {
 		name string
@@ -88,9 +88,10 @@ func TestExactPush(t *testing.T) {
 	}
 }
 
-// TestReferencesInjectedID pins the _id-trap walker: it is true exactly when some
-// field path in the tree is rooted at the injected _id field, which the raw _source
-// does not carry, so the prefilter must be disabled for that scan.
+// TestReferencesInjectedID pins the _id-trap walker. It is true exactly when
+// some field path in the tree is rooted at the injected _id field. The raw
+// _source does not carry that field, so the prefilter must be disabled for that
+// scan.
 func TestReferencesInjectedID(t *testing.T) {
 	tests := []struct {
 		name string
@@ -140,8 +141,9 @@ func TestReferencesInjectedID(t *testing.T) {
 			want: true,
 		},
 		{
-			// The Path disjunct alone: the array path is rooted at _id, the condition is
-			// normal — so each side of the ElemMatch `||` is independently load-bearing.
+			// The Path disjunct alone: the array path is rooted at _id, and the
+			// condition is normal. So each side of the ElemMatch `||` independently
+			// decides the result.
 			name: "elem-match whose path is rooted at _id",
 			pred: predicate.ElemMatch{Path: []string{"_id"}, Cond: predicate.Eq{Path: []string{"name"}, Value: "x"}},
 			want: true,
@@ -176,10 +178,11 @@ func TestReferencesInjectedID(t *testing.T) {
 	}
 }
 
-// prefilterDocs is the mixed corpus the prefilter equivalence test seeds: lang is an
-// exact keyword (term-pushable), year is a long with ignore_malformed so a string year
-// still lands in _source (the type-mixed Cmp class), and note is unmapped (its Eq
-// cannot push). Every document also carries the injected _id once decoded.
+// prefilterDocs is the mixed corpus that the prefilter equivalence test seeds.
+// The field lang is an exact keyword (term-pushable). The field year is a long
+// with ignore_malformed, so a string year still lands in _source (the type-mixed
+// Cmp class). The field note is unmapped, so its Eq cannot push. Every document
+// also carries the injected _id once decoded.
 func prefilterDocs() []map[string]any {
 	return []map[string]any{
 		{"_id": "1", "lang": "go", "year": 2015, "note": "a"},
@@ -190,11 +193,11 @@ func prefilterDocs() []map[string]any {
 	}
 }
 
-// seedPrefilterIndex creates an index with an explicit mapping (lang keyword, year long
-// with ignore_malformed, dynamic:false so note stays unmapped), indexes prefilterDocs,
-// and returns a store-under-test opened after the seed so it reads the mapping. The
-// mapping is what makes lang term-pushable and note not, which the classes below rely
-// on.
+// seedPrefilterIndex creates an index with an explicit mapping (lang keyword,
+// year long with ignore_malformed, dynamic:false so note stays unmapped). It
+// indexes prefilterDocs. It returns a store-under-test that is opened after the
+// seed, so it reads the mapping. The mapping is what makes lang term-pushable and
+// note not. The classes below rely on this.
 func seedPrefilterIndex(t *testing.T, baseURL string) *Store {
 	t.Helper()
 	ctx := skipShort(t)
@@ -230,21 +233,24 @@ func seedPrefilterIndex(t *testing.T, baseURL string) *Store {
 	st, err := Open(ctx, baseURL, name, nil, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
-	// A page size of one so a document the prefilter drops produces an empty page,
-	// exercising (and guarding) the "never hand fn an empty batch" path.
+	// A page size of one, so a document that the prefilter drops produces an empty
+	// page. This exercises (and guards) the "never hand fn an empty batch" path.
 	st.pageSize = 1
 	return st
 }
 
-// runPrefilterEquivalence is the shared driver-level invariant for both backends: for
-// each predicate class, re-applying the full predicate to ScanFiltered's output selects
-// exactly the same keys as applying it to a plain ScanBatches, and the prefilter's skip
-// count matches whether the class is expected to engage it. Classes: a control equality
-// (exact push, prefilter bypassed), a range on the type-mixed field and an equality on
-// the unmapped field (both fall back to a full scan and the prefilter engages), a
-// predicate on the injected _id field (prefilter disabled — the raw _source lacks it),
-// and a partial-push And (server narrows on the pushable conjunct, the prefilter catches
-// the residual).
+// runPrefilterEquivalence is the shared driver-level invariant for both
+// backends. For each predicate class, re-applying the full predicate to the
+// output of ScanFiltered selects exactly the same keys as applying it to a plain
+// ScanBatches. The skip count of the prefilter matches whether the class is
+// expected to engage it. The classes are:
+//   - A control equality (exact push, prefilter bypassed).
+//   - A range on the type-mixed field, and an equality on the unmapped field.
+//     Both fall back to a full scan and the prefilter engages.
+//   - A predicate on the injected _id field. The prefilter is disabled, because
+//     the raw _source lacks the field.
+//   - A partial-push And. The server narrows on the pushable conjunct, and the
+//     prefilter catches the residual.
 func runPrefilterEquivalence(t *testing.T, baseURL string) {
 	st := seedPrefilterIndex(t, baseURL)
 	ctx := skipShort(t)
@@ -255,21 +261,22 @@ func runPrefilterEquivalence(t *testing.T, baseURL string) {
 	tests := []struct {
 		name string
 		pred predicate.Node
-		// wantKeys is the set the full predicate selects; wantChecked is how many hits
-		// the prefilter must evaluate (0 exactly when the scan bypasses it); wantSkipped
-		// is how many of those it must drop.
+		// wantKeys is the set that the full predicate selects. wantChecked is how many
+		// hits the prefilter must evaluate (0 exactly when the scan bypasses it).
+		// The field wantSkipped is how many of those hits it must drop.
 		wantKeys    []string
 		wantChecked int
 		wantSkipped int
 	}{
 		// Exact push: the term query returns only matches, so the prefilter is bypassed
-		// entirely — it evaluates nothing (checked 0), not merely skips nothing.
+		// entirely. It evaluates nothing (checked 0). It does not only skip
+		// nothing.
 		{"control eq (exact push, prefilter bypassed)", predicate.Eq{Path: []string{"lang"}, Value: "go"}, []string{"1", "3", "5"}, 0, 0},
 		// Fallbacks: no server narrowing, so the prefilter evaluates all five hits.
 		{"cmp on the type-mixed field (fallback + prefilter)", predicate.Cmp{Path: []string{"year"}, Op: predicate.Ge, Value: 2000.0}, []string{"1", "4", "5"}, 5, 2},
 		{"eq on the unmapped field (fallback + prefilter)", predicate.Eq{Path: []string{"note"}, Value: "a"}, []string{"1", "3"}, 5, 3},
-		// Injected _id: the raw _source lacks it, so the prefilter is disabled (checked 0)
-		// or it would wrongly drop the matching document.
+		// Injected _id: the raw _source lacks it, so the prefilter is disabled (checked
+		// 0). Otherwise it wrongly drops the matching document.
 		{"predicate on the injected _id (prefilter disabled)", predicate.Eq{Path: []string{"_id"}, Value: "1"}, []string{"1"}, 0, 0},
 		{
 			// Partial push: the server narrows on lang to three hits, and the prefilter
@@ -300,8 +307,9 @@ func runPrefilterEquivalence(t *testing.T, baseURL string) {
 				require.Contains(t, baseline, k)
 				require.Equal(t, baseline[k], v, "prefilter must not change a surviving decode")
 			}
-			// The load-bearing equivalence: the full predicate over each scan's output
-			// selects the same keys, and that set is what the corpus dictates.
+			// The equivalence that the test depends on: the full predicate over each
+			// scan's output selects the same keys. That set is what the corpus
+			// dictates.
 			require.Equal(t, matchingKeys(baseline, tt.pred), matchingKeys(filtered, tt.pred),
 				"re-filtering ScanFiltered and ScanBatches must agree")
 			require.Equal(t, tt.wantKeys, sortedKeys(matchingKeys(filtered, tt.pred)))
@@ -317,8 +325,9 @@ func TestOpenSearchScanFilteredPrefilterEquivalence(t *testing.T) {
 	runPrefilterEquivalence(t, requireOpenSearch(t))
 }
 
-// collectFrom drains a scan into one {key: value} map, asserting the driver never hands
-// a caller an empty batch — the guard that a page emptied by the prefilter is dropped.
+// collectFrom drains a scan into one {key: value} map. It asserts that the
+// driver never hands a caller an empty batch. This is the guard that a page that
+// the prefilter empties is dropped.
 func collectFrom(ctx context.Context, t *testing.T, scan func(context.Context, func(map[string]any) error) error) map[string]any {
 	t.Helper()
 	out := map[string]any{}
@@ -330,10 +339,10 @@ func collectFrom(ctx context.Context, t *testing.T, scan func(context.Context, f
 	return out
 }
 
-// matchingKeys returns the keys whose decoded value satisfies pred, standing in for the
-// engine's full-jq re-filter over a scan's output. It uses gojq.Compare as the oracle
-// for jq's cross-type ordering, so the type-mixed and _id classes are judged exactly as
-// jq would.
+// matchingKeys returns the keys whose decoded value satisfies pred. It stands in
+// for the full-jq re-filter of the engine over the output of a scan. It uses
+// gojq.Compare as the oracle for the cross-type ordering of jq. So the type-mixed
+// and _id classes are judged exactly as jq judges them.
 func matchingKeys(batch map[string]any, pred predicate.Node) map[string]bool {
 	out := map[string]bool{}
 	for k, v := range batch {

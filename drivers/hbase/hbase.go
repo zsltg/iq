@@ -44,9 +44,9 @@ const defaultNamespace = "default"
 // selected. It is a sentinel so the CLI can surface a clear hint.
 var errNoTable = errors.New("hbase: no table selected; address it as handle.table or set ?table= in the source url")
 
-// hbaseClient is the subset of gohbase.Client the Store calls. The concrete client
-// satisfies it; abstracting it lets the read, write, and scan paths be unit-tested
-// with a fake, without a live region server.
+// hbaseClient is the subset of gohbase.Client the Store calls. The concrete
+// client satisfies it. This abstraction lets a fake unit-test the read, write, and
+// scan paths without a live region server.
 type hbaseClient interface {
 	Get(g *hrpc.Get) (*hrpc.Result, error)
 	Put(p *hrpc.Mutate) (*hrpc.Result, error)
@@ -65,9 +65,9 @@ type hbaseAdmin interface {
 	DeleteTable(t *hrpc.DeleteTable) error
 }
 
-// Store adapts one HBase table to the query ports. The jq and write paths are scoped
-// to a single table (the keyspace of the KV model); the raw path names its own table
-// per command and needs no default.
+// Store adapts one HBase table to the query ports. The jq and write paths are
+// scoped to a single table (the keyspace of the KV model). The raw path names its
+// own table per command and needs no default.
 type Store struct {
 	client     hbaseClient
 	admin      hbaseAdmin
@@ -90,7 +90,7 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, _ numfmt
 	if err != nil {
 		return nil, err
 	}
-	// gohbase logs region discovery at INFO to its own logger; discard it so the
+	// gohbase logs region discovery at INFO to its own logger. Discard it so the
 	// backend never writes to the CLI's stderr. iq's own tracing is the --verbose
 	// trace (trace writer), not the driver's internal chatter.
 	opts := []gohbase.Option{
@@ -147,9 +147,9 @@ func (c ctxClusterStatus) Context() context.Context { return c.ctx }
 // with context.Background. So probe sends the request through SendRPC with the
 // caller's context, and the retry loop stops when ctx ends. If the admin client has
 // no SendRPC (a fake, or a gohbase upgrade that drops it), probe calls
-// ClusterStatus in a goroutine, and ctx ends only the wait. The call keeps retrying
-// in the background until the process exits. An ended ctx always wins over the
-// result.
+// ClusterStatus in a goroutine. In that case, ctx ends only the wait. The call
+// keeps retrying in the background until the process exits. An ended ctx always
+// wins over the result.
 func (s *Store) probe(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -248,8 +248,9 @@ func splitTable(table string) (namespace, qualifier string) {
 }
 
 // Get fetches the rows whose key is one of keys and returns them keyed by the same
-// string key. A key with no row is absent from the map. Each key is a bounded point Get (HBase's
-// efficient single-row read); empty keys short-circuit with no round-trip.
+// string key. A key with no row is absent from the map. Each key is a bounded point
+// Get (HBase's efficient single-row read). Empty keys short-circuit with no
+// round-trip.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	if s.table == "" {
 		return nil, errNoTable
@@ -281,9 +282,10 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	return out, nil
 }
 
-// ScanBatches streams the whole table, handing the caller each page of {key: row} as
-// the region-server cursor yields it, so a streaming caller keeps only one page in
-// memory. Bounded by ctx; stops at the first error from fn or the region server.
+// ScanBatches streams the whole table. It hands the caller each page of
+// {key: row} as the region-server cursor yields it. A streaming caller keeps only
+// one page in memory. ctx bounds the scan. It stops at the first error from fn or
+// the region server.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
 	if s.table == "" {
 		return errNoTable
@@ -296,10 +298,10 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 	return s.pageScan(req, fn)
 }
 
-// pageScan drives a scanner, handing the caller a page of {key: row} every pageSize
-// rows, the shared body of ScanBatches and ScanFiltered. The scanner fetches
-// successive server batches as it advances; the pageSize batching here is the
-// streaming contract to fn.
+// pageScan drives a scanner and hands the caller a page of {key: row} every
+// pageSize rows. It is the shared body of ScanBatches and ScanFiltered. The scanner
+// fetches successive server batches as it advances. The pageSize batching here is
+// the streaming contract to fn.
 func (s *Store) pageScan(req *hrpc.Scan, fn func(batch map[string]any) error) error {
 	scanner := s.client.Scan(req)
 	page := make(map[string]any, s.pageSize)
@@ -354,11 +356,12 @@ func eachRow(scanner hrpc.Scanner, op string, fn func(res *hrpc.Result) (stop bo
 	}
 }
 
-// Query runs a raw HBase verb: HBase has no query language, so this is a small,
-// fixed set of shell-style commands mapped straight onto RPC — get, scan, count
-// (reads), and put, delete (writes) — each naming its own table. Values are encoded
-// through the same typed contract as the structured write path and passed as RPC
-// arguments, never concatenated into a query, so the surface is injection-safe.
+// Query runs a raw HBase verb. HBase has no query language. So this is a small,
+// fixed set of shell-style commands mapped straight onto RPC: get, scan, count
+// (reads), and put, delete (writes). Each command names its own table. Values are
+// encoded through the same typed contract as the structured write path and passed
+// as RPC arguments, never concatenated into a query. So the surface is
+// injection-safe.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("hbase: empty command")
@@ -443,8 +446,8 @@ func scanLimit(args []string) (int, error) {
 	return n, nil
 }
 
-// execCount runs `count <table>`, returning the number of rows. It scans key-only
-// (one cell per row) so it never ships cell values just to count.
+// execCount runs `count <table>` and returns the number of rows. It scans
+// key-only (one cell per row), so it never ships cell values only to count.
 func (s *Store) execCount(ctx context.Context, args []string) (any, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("hbase: count needs <table>")
@@ -536,7 +539,7 @@ func parseColumn(column string) (family, qualifier string, err error) {
 }
 
 // rawValue coerces a raw CLI string argument to the value shape encodeCell expects
-// for a column's type: a numeric type parses the string, a bool reads "true", and
+// for a column's type. A numeric type parses the string, a bool reads "true", and
 // text/bytes take the string as-is (encodeCell validates base64 for bytes).
 func rawValue(t colType, s string) any {
 	switch t {
@@ -564,7 +567,8 @@ func (s *Store) Close() error {
 }
 
 // traceOp writes one line to the --verbose trace when enabled. Only the operation
-// and table are written; cell values are never traced, since they may carry data.
+// and table are written. Cell values are never traced, because they can carry
+// data.
 func (s *Store) traceOp(format string, args ...any) {
 	if s.trace == nil {
 		return

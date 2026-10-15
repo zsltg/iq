@@ -107,8 +107,8 @@ func TestParseURLWrapsTheURLFailure(t *testing.T) {
 }
 
 func TestOpenRejectsAMalformedURL(t *testing.T) {
-	// A bad source URL fails at parse time with the parser's own message, before
-	// any connection is attempted, so the user is told what is wrong with the URL
+	// A bad source URI fails at parse time with the parser's own message, before
+	// any connection is attempted. The user is told what is wrong with the URI
 	// rather than that some server is unreachable.
 	tests := []struct {
 		name string

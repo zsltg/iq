@@ -15,11 +15,11 @@ import (
 	"github.com/zsltg/iq/internal/rawpred"
 )
 
-// TestScanFilteredSkipsFullyDroppedPage pins the empty-page guard: when every
-// RedisJSON key on a page is a provable non-match, ScanFiltered advances the cursor
-// without ever handing fn an empty batch. It runs in the redis package so it can
-// lower the unexported pageSize, and flushes its reserved database first so the
-// keyspace is exactly the fully-dropped docs.
+// TestScanFilteredSkipsFullyDroppedPage pins the empty-page guard. When every
+// RedisJSON key on a page is a provable non-match, ScanFiltered advances the
+// cursor without handing fn an empty batch. The test runs in the redis package so
+// it can lower the unexported pageSize. It flushes its reserved database first,
+// so the keyspace is exactly the fully-dropped docs.
 func TestScanFilteredSkipsFullyDroppedPage(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping redis integration test in -short mode")
@@ -56,8 +56,8 @@ func TestScanFilteredSkipsFullyDroppedPage(t *testing.T) {
 }
 
 // TestGetFilteredFailsFastOnTypeError pins that a filtered page aborts when the
-// TYPE pipeline fails: without its own type for every key the read cannot choose a
-// reader, so it must surface the failure rather than read on with none.
+// TYPE pipeline fails. Without its own type for every key, the read cannot choose
+// a reader. So it must surface the failure and not read on with none.
 func TestGetFilteredFailsFastOnTypeError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -71,10 +71,11 @@ func TestGetFilteredFailsFastOnTypeError(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled, "the pipeline's cause survives the wrap")
 }
 
-// TestGetFilteredToleratesAVanishedKey stages the race the filtered read path's
-// redis.Nil tolerance exists for: a key TYPE saw is deleted before the value
-// pipeline runs, so the pipeline itself reports redis.Nil. That is one key's
-// absence, not a transport failure, and the page must still be delivered.
+// TestGetFilteredToleratesAVanishedKey stages the race that the redis.Nil
+// tolerance of the filtered read path exists for. A key that TYPE saw is
+// deleted before the value pipeline runs, so the pipeline itself reports
+// redis.Nil. That is the absence of one key and not a transport failure. The
+// page must still be delivered.
 func TestGetFilteredToleratesAVanishedKey(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -82,8 +83,8 @@ func TestGetFilteredToleratesAVanishedKey(t *testing.T) {
 	const key = "iq:test:vanish"
 	const survivor = "iq:test:survivor"
 	require.NoError(t, store.client.MSet(ctx, key, "gone", survivor, "here").Err())
-	// The value pipeline is the one whose first command is a GET; delete the key
-	// just before it executes, exactly as a concurrent writer would.
+	// The value pipeline is the one whose first command is a GET. Delete the key
+	// right before it executes, exactly as a concurrent writer does.
 	store.client.AddHook(beforePipelineHook{before: func(cmds []goredis.Cmder) {
 		if len(cmds) > 0 && cmds[0].Name() == "get" {
 			require.NoError(t, store.client.Del(ctx, key).Err())
@@ -97,10 +98,11 @@ func TestGetFilteredToleratesAVanishedKey(t *testing.T) {
 	require.Equal(t, "here", got[survivor], "the rest of the page still arrives")
 }
 
-// TestGetFilteredNamesTheKeyThatFailedToRead pins the other half of that tolerance:
-// a genuine per-key read failure (here a key retyped mid-read, so its GET answers
-// WRONGTYPE) is reported and names the key, even when an earlier key's redis.Nil
-// was what the pipeline returned.
+// TestGetFilteredNamesTheKeyThatFailedToRead pins the other half of that
+// tolerance. A genuine per-key read failure is reported and names the key. An
+// example is a key retyped mid-read, so that its GET answers WRONGTYPE. The
+// failure is reported even when the redis.Nil of an earlier key was what the
+// pipeline returned.
 func TestGetFilteredNamesTheKeyThatFailedToRead(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

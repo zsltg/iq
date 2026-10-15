@@ -19,8 +19,8 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// books returns a small fixture keyed by document ID, using []any and int values so a
-// round-trip through JSON compares equal to what the driver decodes.
+// books returns a small fixture keyed by document ID. It uses []any and int
+// values, so a round-trip through JSON compares equal to what the driver decodes.
 func books() map[string]map[string]any {
 	return map[string]map[string]any{
 		"1": {"title": "The Go Programming Language", "year": 2015, "price": 39, "tags": []any{"go", "programming"}},
@@ -34,8 +34,8 @@ func TestGet(t *testing.T) {
 	st := seedCollectionKV(t, fixture)
 	ctx := skipShort(t)
 
-	// The absent key comes first: a not-found document must skip to the next key, never
-	// end the walk, so the two documents behind it still arrive.
+	// The absent key comes first. A not-found document must skip to the next key and
+	// never end the walk. So the two documents behind it still arrive.
 	out, err := st.Get(ctx, []string{"missing", "1", "3"})
 	require.NoError(t, err)
 	require.Equal(t, fixture["1"], out["1"])
@@ -69,9 +69,9 @@ func TestGetKeyValidation(t *testing.T) {
 	require.ErrorContains(t, err, "couchbase document key exceeds")
 }
 
-// TestGetOnAMissingCollection drives the per-document error path: a key sent to a
-// collection that does not exist fails with a KV error that is not "document not found",
-// so Get must report it and keep the cause reachable through the wrap.
+// TestGetOnAMissingCollection drives the per-document error path. A key sent to a
+// collection that does not exist fails with a KV error that is not "document not
+// found". So Get must report it and keep the cause reachable through the wrap.
 func TestGetOnAMissingCollection(t *testing.T) {
 	ctx := skipShort(t)
 	st, err := Open(ctx, testURL(), "iq_no_such_collection", nil, numfmt.DecimalAuto)
@@ -118,8 +118,9 @@ func TestScanBatchesCallbackError(t *testing.T) {
 	require.Equal(t, 1, calls, "the scan must stop at the first callback error")
 }
 
-// TestQueryRequestErrors pins the two ways a raw query fails before it streams a row: the
-// service refuses the statement, and the context ends before the call.
+// TestQueryRequestErrors pins the two ways a raw query fails before it streams a
+// row. These are two cases: the service refuses the statement, and the context ends
+// before the call.
 func TestQueryRequestErrors(t *testing.T) {
 	st := seedCollection(t, books())
 	ctx := tightCtx(t, skipShort(t))
@@ -138,10 +139,11 @@ func TestQueryRequestErrors(t *testing.T) {
 	})
 }
 
-// TestScanBatchesContextCancelled pins that the context ScanBatches is handed flows all
-// the way into the gocb query execution: a context cancelled before the scan starts must
-// surface the cancellation instead of being ignored. It uses an explicit Cancel (never a
-// timeout duration) so the cancellation is deterministic and immediate.
+// TestScanBatchesContextCancelled pins that the context handed to ScanBatches
+// flows all the way into the gocb query execution. A context cancelled before the
+// scan starts must surface the cancellation instead of being ignored. It uses an
+// explicit Cancel (never a timeout duration), so the cancellation is deterministic
+// and immediate.
 func TestScanBatchesContextCancelled(t *testing.T) {
 	st := seedCollection(t, books())
 	ctx := skipShort(t)
@@ -155,13 +157,14 @@ func TestScanBatchesContextCancelled(t *testing.T) {
 	require.ErrorIs(t, err, gocb.ErrRequestCanceled)
 }
 
-// TestKVBulkContextCancelled pins that the caller's context bounds a KV batch. gocb's core
-// KV provider reads BulkOpOptions.Timeout only and ignores BulkOpOptions.Context, so the
-// driver converts a deadline and refuses a context that is already done. Without that work
-// a cancelled caller still completes the read or the write, because the batch obeys the SDK
-// default alone. The scan checks cover the query path, which honours the context itself;
-// this covers the KV path, which they never reach. The driver stops before it calls the
-// SDK, so the error is context.Canceled and not the gocb sentinel.
+// TestKVBulkContextCancelled pins that the caller's context bounds a KV batch.
+// gocb's core KV provider reads BulkOpOptions.Timeout only and ignores
+// BulkOpOptions.Context. So the driver converts a deadline and refuses a context
+// that is already done. Without that work, a cancelled caller still completes the
+// read or the write, because the batch obeys the SDK default alone. The scan checks
+// cover the query path, which honors the context itself. This test covers the KV
+// path, which they never reach. The driver stops before it calls the SDK, so the
+// error is context.Canceled and not the gocb sentinel.
 func TestKVBulkContextCancelled(t *testing.T) {
 	st := seedCollectionKV(t, books())
 	ctx := skipShort(t)
@@ -220,7 +223,7 @@ func TestQueryScopeQualified(t *testing.T) {
 	ctx := skipShort(t)
 
 	// A bare (unqualified) collection name resolves only under a scope-qualified query
-	// (Scope.Query), never Cluster.Query — so this pins that a bucket-selected source
+	// (Scope.Query), never Cluster.Query. So this pins that a bucket-selected source
 	// runs statements against its scope.
 	// The predicate is necessary. Without a WHERE clause the planner answers COUNT(*)
 	// with a CountScan, which reads the collection's KV document count. That count
@@ -262,10 +265,11 @@ func TestQueryArgErrors(t *testing.T) {
 	require.ErrorAs(t, err, &syntax, "the JSON cause must stay reachable through the wrap")
 }
 
-// TestQueryStreamError drives the streaming-error path: the query service answers HTTP
-// 200 and reports the failure in the payload it streams, so the error surfaces only when
-// the row stream is checked after the loop. A driver that reads the rows and never checks
-// the stream returns an empty result and calls the query a success.
+// TestQueryStreamError drives the streaming-error path. The query service answers
+// HTTP 200 and reports the failure in the payload it streams. So the error
+// surfaces only when the row stream is checked after the loop. A driver that reads
+// the rows and never checks the stream returns an empty result and calls the query
+// a success.
 func TestQueryStreamError(t *testing.T) {
 	ctx := skipShort(t)
 	st := openIntegration(t, collName(t))
@@ -276,9 +280,9 @@ func TestQueryStreamError(t *testing.T) {
 	require.ErrorContains(t, err, "couchbase query")
 }
 
-// TestOpenCarriesTheDecimalMode pins that the decimal mode chosen at the composition root
-// reaches every decode: in string mode a fractional number keeps its exact literal
-// instead of becoming a float.
+// TestOpenCarriesTheDecimalMode pins that the decimal mode chosen at the
+// composition root reaches every decode. In string mode, a fractional number keeps
+// its exact literal instead of becoming a float.
 func TestOpenCarriesTheDecimalMode(t *testing.T) {
 	seedCollectionKV(t, map[string]map[string]any{"1": {"price": 19.99}})
 	ctx := skipShort(t)
@@ -292,10 +296,10 @@ func TestOpenCarriesTheDecimalMode(t *testing.T) {
 	require.Equal(t, "19.99", got["1"].(map[string]any)["price"])
 }
 
-// TestClusterOptionsDisableTelemetry pins the SDK options the driver connects with.
-// Application telemetry reports metrics to the cluster unless it is disabled, and the
-// zero value of the config leaves it on, so the flag must be set. parseURL is pure, so
-// this needs no cluster.
+// TestClusterOptionsDisableTelemetry pins the SDK options the driver connects
+// with. Application telemetry reports metrics to the cluster unless it is
+// disabled. The zero value of the config leaves it on, so the flag must be set.
+// parseURL is pure, so this needs no cluster.
 func TestClusterOptionsDisableTelemetry(t *testing.T) {
 	cc, err := parseURL("couchbase://user:pass@localhost/?bucket=iq", "")
 	require.NoError(t, err)
@@ -357,9 +361,9 @@ func TestOpenUnreachableNoBucket(t *testing.T) {
 	require.Less(t, time.Since(start), connectTimeout, "the caller's deadline must bound the readiness probe")
 }
 
-// TestOpenMissingBucket pins the bucket probe: the cluster is healthy, so only the bucket
-// readiness check can fail, and Open must report that instead of handing back a store
-// that is scoped to a keyspace which does not exist.
+// TestOpenMissingBucket pins the bucket probe. The cluster is healthy, so only the
+// bucket readiness check can fail. Open must report that instead of handing back a
+// store that is scoped to a keyspace which does not exist.
 func TestOpenMissingBucket(t *testing.T) {
 	ctx := skipShort(t)
 	u, err := url.Parse(sharedBase)
@@ -393,10 +397,11 @@ func TestTraceRedaction(t *testing.T) {
 	require.NotContains(t, trace, "password")
 }
 
-// TestTraceSites pins the trace line of every op that writes one. Get is covered by
-// TestTraceRedaction; the scan, the raw query, the two bulk writes, the clear and the
-// drop each have their own line, and every statement carries parameter placeholders
-// only. The ops run in order because clear empties the collection and drop removes it.
+// TestTraceSites pins the trace line of every op that writes one.
+// TestTraceRedaction covers Get. The scan, the raw query, the two bulk writes, the
+// clear and the drop each have their own line. Every statement carries parameter
+// placeholders only. The ops run in order because clear empties the collection and
+// drop removes it.
 func TestTraceSites(t *testing.T) {
 	st := seedCollection(t, books())
 	ctx := skipShort(t)
@@ -465,10 +470,12 @@ func TestTraceSites(t *testing.T) {
 	}
 }
 
-// TestOpsAfterClose drives every op against a closed store. The SDK refuses each call, so
-// each op must report that failure with its own context. These are the error guards that
-// the package cannot reach in any other way: a shared bulk-op guard (three identical
-// sites, of which the gate can flag one), the query guards, and the four inspect guards.
+// TestOpsAfterClose drives every op against a closed store. The SDK refuses each
+// call, so each op must report that failure with its own context. These are the
+// error guards that the package cannot reach in any other way:
+//   - A shared bulk-op guard (three identical sites, of which the gate can flag one).
+//   - The query guards.
+//   - The four inspect guards.
 func TestOpsAfterClose(t *testing.T) {
 	st := seedCollectionKV(t, books())
 	ctx := skipShort(t)
@@ -496,7 +503,7 @@ func TestOpsAfterClose(t *testing.T) {
 			name: "upsert of a keyless record reports the write failure",
 			op: func() error {
 				// A keyless record needs no pre-read, so the bulk upsert is the first call
-				// that can fail, and its own guard is the one under test.
+				// that can fail. Its own guard is the one under test.
 				_, err := st.Put(ctx, []query.Record{{Value: map[string]any{"n": 1}}}, query.Upsert)
 				return err
 			},

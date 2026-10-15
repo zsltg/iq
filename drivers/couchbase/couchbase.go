@@ -31,8 +31,8 @@ import (
 )
 
 // scanBatch is the default page size for the SQL++ keyset scan (ScanBatches,
-// ScanFiltered, TypedScan): how many documents to fetch per page, bounding streaming
-// memory and the keyset loop's step.
+// ScanFiltered, TypedScan). It is how many documents to fetch per page, which
+// bounds streaming memory and the keyset loop's step.
 const scanBatch = 100
 
 // connectTimeout bounds Open's readiness probe when the caller's context carries no
@@ -48,19 +48,19 @@ const defaultScope, defaultCollection = "_default", "_default"
 // 250. Both are validated at entry so a malformed name fails before any network call.
 const maxIdentBytes, maxKeyBytes = 251, 250
 
-// queryNoIndex is the SQL++ error code the query service returns when a scan finds no
-// usable index (code 4000). It is mapped to an actionable CREATE PRIMARY INDEX hint,
-// since on 7.6+ sequential scan answers index-free queries and the code only surfaces
-// where creating an index is the fix.
+// queryNoIndex is the SQL++ error code (code 4000) that the query service returns
+// when a scan finds no usable index. It is mapped to an actionable CREATE PRIMARY
+// INDEX hint. On 7.6+, sequential scan answers index-free queries, so the code
+// only surfaces where creating an index is the fix.
 const queryNoIndex = 4000
 
 // errNoBucket is returned when a keyspace-scoped operation runs without a bucket
 // selected. It is a sentinel so the CLI can surface a clear hint.
 var errNoBucket = errors.New("couchbase: no bucket selected; set ?bucket= in the source url or address it as handle.collection")
 
-// Store adapts one Couchbase collection to the query ports. The jq and write paths are
-// scoped to a single bucket.scope.collection (the keyspace); the raw path runs an
-// arbitrary SQL++ statement and the inspect path reads cluster- and bucket-level
+// Store adapts one Couchbase collection to the query ports. The jq and write paths
+// are scoped to a single bucket.scope.collection (the keyspace). The raw path runs
+// an arbitrary SQL++ statement. The inspect path reads cluster- and bucket-level
 // metadata. collection is nil when no bucket is selected (raw/inspect-only use).
 type Store struct {
 	cluster    *gocb.Cluster
@@ -79,9 +79,10 @@ type Store struct {
 	prefilterSkipped int
 }
 
-// connConfig is the parsed form of a couchbase:// source URL: the connection string
-// gocb dials (iq-owned params and userinfo stripped), the credentials, and the
-// selected keyspace. bucket is empty for a raw/inspect-only source.
+// connConfig is the parsed form of a couchbase:// source URI. It holds the
+// connection string gocb dials (iq-owned params and userinfo stripped), the
+// credentials, and the selected keyspace. bucket is empty for a raw/inspect-only
+// source.
 type connConfig struct {
 	connStr  string
 	username string
@@ -92,13 +93,13 @@ type connConfig struct {
 }
 
 // Open connects to the Couchbase cluster named by a couchbase:// (or couchbases://)
-// URL. A bounded readiness probe fails fast on a bad URL, an unreachable cluster, or
-// bad credentials. The bucket (the keyspace, can be empty for raw or inspect-only
-// use) comes from ?bucket=. The collection is the dotted address override if
-// non-empty, else ?collection=, else _default._default. Application telemetry is
-// off. If trace is non-nil, the driver logs each statement and op to it (the CLI's
-// --verbose trace) with parameter placeholders only. dec sets how the filter sees
-// fractional numbers.
+// URI. A bounded readiness probe fails fast on a bad URI, an unreachable cluster,
+// or bad credentials. The bucket (the keyspace, can be empty for raw or
+// inspect-only use) comes from ?bucket=. The collection is the dotted address
+// override if non-empty, else ?collection=, else _default._default. Application
+// telemetry is off. If trace is non-nil, the driver logs each statement and op to
+// it, with parameter placeholders only. The CLI's --verbose trace uses this. The
+// dec argument sets how the filter sees fractional numbers.
 func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	cc, err := parseURL(rawURL, address)
 	if err != nil {
@@ -136,11 +137,11 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 	return st, nil
 }
 
-// clusterOptions builds the SDK options a parsed source connects with: the password
-// authenticator from the URL userinfo, and application telemetry off. App telemetry
-// reports SDK metrics to the connected cluster by default since gocb v2.10. A read-only
-// data tool must not emit it, and the zero value of the config leaves it on, so the flag
-// is set explicitly here and asserted by a test.
+// clusterOptions builds the SDK options that a parsed source connects with: the
+// password authenticator from the URI userinfo, and application telemetry off.
+// Since gocb v2.10, app telemetry reports SDK metrics to the connected cluster by
+// default. A read-only data tool must not emit it, and the zero value of the config
+// leaves it on. So the flag is set explicitly here and asserted by a test.
 func clusterOptions(cc connConfig) gocb.ClusterOptions {
 	return gocb.ClusterOptions{
 		Authenticator:      gocb.PasswordAuthenticator{Username: cc.username, Password: cc.password},
@@ -185,8 +186,8 @@ func parseURL(rawURL, address string) (connConfig, error) {
 		return connConfig{}, err
 	}
 
-	// The connection string gocb dials is the cluster address with iq-owned params and
-	// userinfo removed; any remaining query stays as gocb connstr options.
+	// The connection string gocb dials is the cluster address with iq-owned params
+	// and userinfo removed. Any remaining query stays as gocb connstr options.
 	q.Del(paramBucket)
 	q.Del(paramCollection)
 	dial := url.URL{Scheme: u.Scheme, Host: u.Host, RawQuery: q.Encode()}
@@ -363,10 +364,10 @@ func (s *Store) collectGets(getOps []*gocb.GetOp, out map[string]any) error {
 }
 
 // ScanBatches streams the whole collection and hands the caller each page of
-// {id: document}. It walks a SQL++ keyset scan ordered by document ID and never uses
-// OFFSET/LIMIT. The last ID of each page is the cursor, so a streaming caller keeps
-// one page in memory and the loop ends on a short page. ctx bounds the scan. The scan
-// stops at the first error from fn or the driver.
+// {id: document}. It walks a SQL++ keyset scan ordered by document ID and never
+// uses OFFSET/LIMIT. The last ID of each page is the cursor. So a streaming caller
+// keeps one page in memory, and the loop ends on a short page. ctx bounds the scan.
+// The scan stops at the first error from fn or the driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
 	return s.scan(ctx, scanSpec{}, fn)
 }
@@ -433,7 +434,7 @@ type scanSpec struct {
 // a named parameter, never concatenated.
 //
 // If spec.matcher is non-nil, the scan runs each row's raw value through it before
-// decode and skips a row that the matcher proves the predicate rejects (counted in
+// decode. It skips a row that the matcher proves the predicate rejects (counted in
 // prefilterSkipped). The keyset cursor advances past every row, skipped or kept. The
 // scan never hands an empty batch to fn, even if the prefilter empties a page.
 func (s *Store) scan(ctx context.Context, spec scanSpec, fn func(batch map[string]any) error) error {
@@ -452,7 +453,7 @@ func (s *Store) scan(ctx context.Context, spec scanSpec, fn func(batch map[strin
 				return err
 			}
 		}
-		// A page shorter than the limit is the last one; otherwise advance the cursor
+		// A page shorter than the limit is the last one. Otherwise advance the cursor
 		// past the last ID read. IDs are unique and strictly increasing, so the walk
 		// makes progress and terminates.
 		if n < s.pageSize {
@@ -489,10 +490,10 @@ func (s *Store) scanPage(ctx context.Context, spec scanSpec, after string) (map[
 	return s.readPage(rows, spec.matcher)
 }
 
-// Query runs a raw SQL++ statement against the selected scope (or the cluster when no
-// bucket is selected). args[0] is the statement; an optional args[1] is a JSON object
-// of named parameters, bound end-to-end — never string-built. Rows are returned
-// normalized, in order.
+// Query runs a raw SQL++ statement against the selected scope (or the cluster when
+// no bucket is selected). args[0] is the statement. An optional args[1] is a JSON
+// object of named parameters, bound end-to-end and never string-built. Rows are
+// returned normalized, in order.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	stmt, params, err := parseQueryArgs(args)
 	if err != nil {
@@ -514,8 +515,8 @@ func parseQueryArgs(args []string) (string, map[string]any, error) {
 		return "", nil, fmt.Errorf("couchbase raw expects a SQL++ statement and an optional JSON named-parameters object")
 	}
 	var params map[string]any
-	// args[1:] is the optional parameters object (at most one, per the guard above);
-	// ranging avoids an index the SAST cannot prove in bounds.
+	// args[1:] is the optional parameters object (at most one, per the guard above).
+	// Ranging avoids an index that the SAST cannot prove in bounds.
 	for _, raw := range args[1:] {
 		if err := json.Unmarshal([]byte(raw), &params); err != nil {
 			return "", nil, fmt.Errorf("parse couchbase query parameters: %w", err)
@@ -541,10 +542,10 @@ func (s *Store) collectRows(rows pageRows) ([]any, error) {
 	return out, nil
 }
 
-// query runs one SQL++ statement with named parameters, scope-qualified when a bucket
-// is selected so unqualified keyspace names resolve. Scan consistency is RequestPlus
-// so a scan reads the tool's own just-written documents (read-your-writes), the
-// behaviour a data-inspection tool needs.
+// query runs one SQL++ statement with named parameters, scope-qualified when a
+// bucket is selected so unqualified keyspace names resolve. Scan consistency is
+// RequestPlus, so a scan reads the tool's own freshly written documents
+// (read-your-writes). A data-inspection tool needs this behavior.
 func (s *Store) query(ctx context.Context, stmt string, params map[string]any) (*gocb.QueryResult, error) {
 	opts := &gocb.QueryOptions{
 		NamedParameters: params,

@@ -237,8 +237,8 @@ func TestScanDeletesBatchBoundariesAndContext(t *testing.T) {
 }
 
 // TestInsertOnlyKeepsTheStatusOfAPerDocumentFailure pins that an insert fails on a
-// per-document error that is not a conflict, and that the HTTP status of that
-// error is still readable from the returned error.
+// per-document error that is not a conflict. It also pins that the HTTP
+// status of that error is still readable from the returned error.
 func TestInsertOnlyKeepsTheStatusOfAPerDocumentFailure(t *testing.T) {
 	st, _, mdb := newMockStore(t, 10, 1)
 	rec := &bulkRecorder{t: t, results: [][]driver.BulkResult{

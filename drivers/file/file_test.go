@@ -158,7 +158,7 @@ func TestGetOmitsMissing(t *testing.T) {
 
 func TestFormatOverride(t *testing.T) {
 	// A typed-jsonl body forced to be read as mongoexport still parses (each line is
-	// a valid object); the override wins over detection.
+	// a valid object). The override wins over detection.
 	u := writeDump(t, "ambiguous", []byte(`{"_id":"x","v":1}`+"\n"), "format=mongoexport")
 	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
@@ -200,12 +200,12 @@ func TestDetectFormat(t *testing.T) {
 		{"mongoexport array", []byte(`  [{"_id":"a"}]`), FormatMongoexport},
 		{"bson binary", mustBSON(t, bson.M{"_id": "a"}), FormatBSON},
 		{"bson empty doc (min length)", mustBSON(t, bson.M{}), FormatBSON},
-		// A header whose length field is exactly the 16 MiB cap is still BSON-shaped;
-		// detection only peeks the header, so no full-size body is needed. This pins
+		// A header whose length field is exactly the 16 MiB cap is still BSON-shaped.
+		// Detection only peeks the header, so no full-size body is needed. This pins
 		// the upper `size <= maxDoc` boundary.
 		{"bson at max-length boundary", []byte{0x00, 0x00, 0x00, 0x01, 0x00}, FormatBSON},
 		// iq's typed YAML is block-style text with a {key,…,value} envelope, so it is
-		// content-sniffable without a .yaml extension; the document marker is optional.
+		// content-sniffable without a .yaml extension. The document marker is optional.
 		{"typed yaml envelope", []byte("key: a\ntype: string\nvalue: hi\n"), FormatYAML},
 		{"typed yaml with document marker", []byte("---\nkey: a\ntype: string\nvalue: hi\n"), FormatYAML},
 	}
@@ -237,7 +237,7 @@ func TestDetectFormat(t *testing.T) {
 		require.ErrorContains(t, err, "cannot detect")
 	})
 	t.Run("yaml mapping without the key+value envelope is undetectable", func(t *testing.T) {
-		// A plain YAML mapping is not an iq dump; only the {key,…,value} envelope is.
+		// A plain YAML mapping is not an iq dump. Only the {key,…,value} envelope is.
 		p := filepath.Join(t.TempDir(), "cfg")
 		require.NoError(t, os.WriteFile(p, []byte("foo: bar\nbaz: qux\n"), 0o600))
 		_, err := detectFormat(p)
@@ -318,9 +318,10 @@ func TestParseFileURLVariants(t *testing.T) {
 	require.ErrorContains(t, err, "no path")
 }
 
-// TestURLRoundTrip pins URL as the inverse of DumpPath: a Unix path takes the
-// triple-slash form, a drive path the RFC 8089 form, and DumpPath folds each
-// back to a native path (the drive form only on Windows, where it is native).
+// TestURLRoundTrip pins URL as the inverse of DumpPath. A Unix path takes the
+// triple-slash form, and a drive path takes the RFC 8089 form. DumpPath folds
+// each back to a native path (the drive form only on Windows, where it is
+// native).
 func TestURLRoundTrip(t *testing.T) {
 	tests := []struct {
 		name, path, url, back string
@@ -427,11 +428,12 @@ func TestGetMultipleAndEarlyStop(t *testing.T) {
 }
 
 // bigCount exceeds the scan page size so the flush-at-page-boundary path runs
-// with a trailing partial page — and the exact page sizes pin the >= boundary.
+// with a trailing partial page. The exact page sizes pin the >= boundary.
 const bigCount = pageSize + 100
 
-// pageSizes records the length of each batch a scan emits, so a test can assert
-// the store flushes a full page at the size boundary and a trailing partial page.
+// pageSizes records the length of each batch a scan emits. A test can then
+// assert that the store flushes a full page at the size boundary and a trailing
+// partial page.
 func pageSizes(t *testing.T, st *Store) []int {
 	t.Helper()
 	var sizes []int
@@ -505,7 +507,7 @@ func TestPagingExactMultipleBSON(t *testing.T) {
 
 func TestBSONEmptyDocValid(t *testing.T) {
 	// A minimal 5-byte empty document is valid (length == 5, the boundary), so it
-	// must parse to one record rather than be rejected as too short.
+	// must parse to one record, not be rejected as too short.
 	u := writeDump(t, "empty.bson", mustBSON(t, bson.M{}), "format=bson")
 	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
@@ -600,7 +602,7 @@ func TestDetectTypedArrayVsMongoArray(t *testing.T) {
 func TestYAMLFileByExtensionAndRoundTrip(t *testing.T) {
 	body := "key: a\ntype: string\nvalue: hi\n---\nkey: b\ntype: set\nvalue:\n    - x\n    - y\n"
 	// A .yaml extension forces YAML, covering a dump whose first record overflows the
-	// content-sniff window; content detection is exercised separately below.
+	// content-sniff window. Content detection is exercised separately below.
 	st, err := Open(writeDump(t, "d.yaml", []byte(body), ""), numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
 	require.Equal(t, FormatYAML, st.format)
@@ -611,7 +613,7 @@ func TestYAMLFileByExtensionAndRoundTrip(t *testing.T) {
 
 func TestYAMLContentDetectedWithoutExtension(t *testing.T) {
 	// iq is YAML's only producer, so a typed dump is recognized by its {key,type,value}
-	// envelope even without a .yaml/.yml name — and still decodes end to end.
+	// envelope even without a .yaml/.yml name. It still decodes end to end.
 	body := "key: a\ntype: string\nvalue: hi\n---\nkey: b\ntype: string\nvalue: yo\n"
 	st, err := Open(writeDump(t, "dump.dat", []byte(body), ""), numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
@@ -652,9 +654,9 @@ func TestOpenReaderBufferedStdin(t *testing.T) {
 	require.Len(t, collect(t, st), 2) // a second scan re-reads the buffer
 }
 
-// TestOpenReaderCarriesTheDecimalMode confirms the buffered (stdin) store keeps the
-// decimal mode it was opened with: dropping it would silently decode a piped dump
-// under a different number policy than the same dump read from a path.
+// TestOpenReaderCarriesTheDecimalMode confirms that the buffered (stdin) store
+// keeps the decimal mode it was opened with. Dropping it silently decodes a
+// piped dump under a different number policy than the same dump read from a path.
 func TestOpenReaderCarriesTheDecimalMode(t *testing.T) {
 	for _, dec := range []numfmt.DecimalMode{numfmt.DecimalAuto, numfmt.DecimalString} {
 		t.Run(fmt.Sprintf("mode %d survives", dec), func(t *testing.T) {
@@ -680,9 +682,10 @@ func TestParseFileURLOpaqueForm(t *testing.T) {
 	require.Equal(t, "id", hints.Keys)
 }
 
-// TestMaybeGunzip pins the two-byte gzip sniff. Both magic bytes must match before
-// the stream is unwrapped — a dump whose first byte happens to be 0x1f is not gzip —
-// and a stream too short to sniff passes through for the decoder to report.
+// TestMaybeGunzip pins the two-byte gzip sniff. Both magic bytes must match
+// before the stream is unwrapped. A dump whose first byte happens to be 0x1f is
+// not gzip. A stream too short to sniff passes through for the decoder to
+// report.
 func TestMaybeGunzip(t *testing.T) {
 	gz := gzipBytes(t, []byte("payload"))
 	tests := []struct {
@@ -722,9 +725,9 @@ func TestMaybeGunzip(t *testing.T) {
 	})
 }
 
-// TestGetWithNoKeysNeverTouchesTheDump proves the empty-request fast path is a real
-// short circuit and not merely a scan that happens to find nothing: the store points
-// at a path that does not exist, so any decode would fail.
+// TestGetWithNoKeysNeverTouchesTheDump proves that the empty-request fast path
+// is a real short circuit, and not merely a scan that happens to find nothing.
+// The store points at a path that does not exist, so any decode fails.
 func TestGetWithNoKeysNeverTouchesTheDump(t *testing.T) {
 	st := &Store{path: filepath.Join(t.TempDir(), "absent.json"), format: FormatJSONL}
 	got, err := st.Get(context.Background(), nil)
@@ -736,10 +739,10 @@ func TestGetWithNoKeysNeverTouchesTheDump(t *testing.T) {
 	require.ErrorIs(t, err, fs.ErrNotExist)
 }
 
-// TestGetStopsOnceEveryKeyIsFound pins the early stop. The dump holds a full page of
-// good records followed by a corrupt one, so a scan that runs past the point where
-// every requested key is found fails — the only way to observe a stop that is
-// otherwise invisible in the result.
+// TestGetStopsOnceEveryKeyIsFound pins the early stop. The dump holds a full
+// page of good records followed by a corrupt one. A scan that runs past the
+// point where every requested key is found then fails. This is the only way to
+// observe a stop that is otherwise invisible in the result.
 func TestGetStopsOnceEveryKeyIsFound(t *testing.T) {
 	var b strings.Builder
 	for i := range pageSize {
@@ -758,9 +761,9 @@ func TestGetStopsOnceEveryKeyIsFound(t *testing.T) {
 	require.Error(t, err, "a key that is never found runs the scan into the corrupt record")
 }
 
-// TestExplainPlanRouting pins which plan each request shape produces: only a bounded
-// (non-scan) request with at least one key reports the key-filter plan, a scan reports
-// the scan plan even when keys are present.
+// TestExplainPlanRouting pins which plan each request shape produces. Only a
+// bounded (non-scan) request with at least one key reports the key-filter plan.
+// A scan reports the scan plan even when keys are present.
 func TestExplainPlanRouting(t *testing.T) {
 	tests := []struct {
 		name string
@@ -874,9 +877,9 @@ func TestZSetValueOrdering(t *testing.T) {
 	}
 }
 
-// TestStreamValueOrdering pins the stream rendering: id order (milliseconds, then
-// sequence), tombstoned and id-less messages skipped, and equal ids left in the order
-// the dump recorded them.
+// TestStreamValueOrdering pins the stream rendering. Messages sort by id
+// (milliseconds, then sequence). Tombstoned and id-less messages are skipped.
+// Equal ids stay in the order that the dump recorded them.
 func TestStreamValueOrdering(t *testing.T) {
 	tests := []struct {
 		name string
@@ -924,9 +927,10 @@ func TestStreamValueOrdering(t *testing.T) {
 	}
 }
 
-// TestRDBSourceFailures pins the two ways an RDB read stops: a cancelled scan
-// reports the cancellation, and an undecodable snapshot reports the parse failure.
-// Both are carried out of the parser's callback, so neither may be dropped.
+// TestRDBSourceFailures pins the two ways an RDB read stops. A cancelled scan
+// reports the cancellation, and an undecodable snapshot reports the parse
+// failure. Both are carried out of the parser's callback, so the source must not
+// drop either.
 func TestRDBSourceFailures(t *testing.T) {
 	good := buildRDB(t)
 	t.Run("a cancelled scan reports the cancellation", func(t *testing.T) {
@@ -937,8 +941,8 @@ func TestRDBSourceFailures(t *testing.T) {
 	})
 	t.Run("a consumer error stops the scan", func(t *testing.T) {
 		boom := errors.New("consumer said no")
-		// The consumer refuses only its first page, so a reader that dropped the
-		// error and let the trailing flush run would report success.
+		// The consumer refuses only its first page. A reader that drops the
+		// error and lets the trailing flush run reports success.
 		f := &failFirstCall{err: boom}
 		err := rdbSource(bytes.NewReader(good), 1)(context.Background(), f.accept)
 		require.ErrorIs(t, err, boom)
@@ -950,9 +954,9 @@ func TestRDBSourceFailures(t *testing.T) {
 	})
 }
 
-// failFirstCall is a page consumer that refuses only its first page, so a test can
-// tell a source that propagates a consumer error from one that swallows it and
-// happens to succeed on a later flush.
+// failFirstCall is a page consumer that refuses only its first page. A test can
+// then tell a source that propagates a consumer error from one that swallows it
+// and happens to succeed on a later flush.
 type failFirstCall struct {
 	calls int
 	err   error
@@ -966,10 +970,10 @@ func (f *failFirstCall) accept([]query.Record) error {
 	return nil
 }
 
-// TestBSONSourceFailures pins the framed reader's two failure points: a document
-// whose declared length outruns the file is a read failure, and a well-framed but
-// undecodable document is a decode failure. Each keeps its own message, so a
-// truncated dump is never reported as a corrupt one.
+// TestBSONSourceFailures pins the two failure points of the framed reader. A
+// document whose declared length outruns the file is a read failure. A
+// well-framed but undecodable document is a decode failure. Each keeps its own
+// message, so a truncated dump is never reported as a corrupt one.
 func TestBSONSourceFailures(t *testing.T) {
 	drain := func(r io.Reader) error {
 		return bsonSource(r, pageSize, numfmt.DecimalAuto)(context.Background(), func([]query.Record) error { return nil })
@@ -1007,11 +1011,11 @@ func TestBSONSourceFailures(t *testing.T) {
 	})
 }
 
-// TestExtJSONSourceFailures pins the mongoexport reader's error handling. The
-// line-oriented form must report a malformed record rather than stopping quietly at
-// it, an unexpected closing bracket is malformed input and not an end of stream, an
-// undecodable document is a decode failure, and a consumer error propagates even
-// when a later page would have succeeded.
+// TestExtJSONSourceFailures pins the error handling of the mongoexport reader.
+// The line-oriented form must report a malformed record, not stop quietly at
+// it. An unexpected closing bracket is malformed input, not an end of stream. An
+// undecodable document is a decode failure. A consumer error propagates even
+// when a later page succeeds.
 func TestExtJSONSourceFailures(t *testing.T) {
 	drain := func(body string, size int, fn func([]query.Record) error) error {
 		return extJSONSource(strings.NewReader(body), size, numfmt.DecimalAuto)(context.Background(), fn)
@@ -1066,10 +1070,10 @@ func TestExtJSONSourceFailures(t *testing.T) {
 	})
 }
 
-// TestExtJSONIsCanonical pins the extended-JSON dialect the reader accepts. It
-// decodes in canonical mode, so a canonical $date (a $numberLong wrapper) is read
-// and the relaxed spelling (an ISO-8601 string) is refused rather than silently
-// read under a different dialect than a live scan uses.
+// TestExtJSONIsCanonical pins the extended-JSON dialect that the reader accepts.
+// It decodes in canonical mode. So a canonical $date (a $numberLong wrapper) is
+// read, and the relaxed spelling (an ISO-8601 string) is refused. The reader
+// does not silently read it under a different dialect than a live scan uses.
 func TestExtJSONIsCanonical(t *testing.T) {
 	recs := map[string]query.Record{}
 	collectInto := func(batch []query.Record) error {

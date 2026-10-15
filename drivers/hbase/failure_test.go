@@ -19,9 +19,10 @@ func rowRecord(key string) query.Record {
 	return query.Record{Key: key, Type: "row", Value: map[string]any{"cf": map[string]any{"title": "Dune"}}}
 }
 
-// TestBackendFailuresSurfaceWrapped drives every guarded RPC to failure and requires
-// the driver to report it, wrapped with the operation that failed and still unwrapping
-// to the backend's own error. A cleared guard would return success instead.
+// TestBackendFailuresSurfaceWrapped drives every guarded RPC to failure. It
+// requires the driver to report the failure, wrapped with the operation that failed
+// and still unwrapping to the backend's own error. A cleared guard returns success
+// instead.
 func TestBackendFailuresSurfaceWrapped(t *testing.T) {
 	tests := []struct {
 		name string

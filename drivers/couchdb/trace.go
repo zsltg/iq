@@ -12,7 +12,7 @@ import (
 
 // traceOption returns a kivik option that routes the driver's HTTP through a
 // transport logging each request to w, backing the CLI's --verbose trace. Only the
-// method and path are written — never headers — so the Authorization header that
+// method and path are written, never headers, so the Authorization header that
 // carries the basic-auth credential is never logged. Writes are serialized against
 // tearing.
 func traceOption(w io.Writer) kivik.Option {

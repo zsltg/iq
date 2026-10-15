@@ -17,12 +17,12 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// decodeDoc parses a CouchDB document body into JSON-ready Go values, decoding
-// numbers deliberately (UseNumber) so precision survives: an integer becomes an
-// exact int or *big.Int, and a fractional number follows the decimal mode. Plain
-// json.Unmarshal would collapse every number to a float64 and silently lose
-// precision beyond 2^53. _id and _rev are kept in the value — they are legitimate
-// CouchDB document fields, so a round-trip stays honest.
+// decodeDoc parses a CouchDB document body into JSON-ready Go values. It decodes
+// numbers with UseNumber so precision survives: an integer becomes an exact int
+// or *big.Int, and a fractional number follows the decimal mode. Plain
+// json.Unmarshal collapses every number to a float64 and silently loses precision
+// beyond 2^53. _id and _rev are kept in the value. They are legitimate CouchDB
+// document fields, so a round-trip stays honest.
 func decodeDoc(raw json.RawMessage, mode numfmt.DecimalMode) (map[string]any, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()

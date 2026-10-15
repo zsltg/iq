@@ -18,7 +18,7 @@ import (
 	"github.com/zsltg/iq/internal/testimage"
 )
 
-// couchAuth is the admin credential the container is configured with; it also puts
+// couchAuth is the admin credential the container is configured with. It also puts
 // CouchDB into single-node mode.
 const couchUser, couchPassword = "admin", "password"
 
@@ -90,8 +90,9 @@ func testURL() string {
 	return fmt.Sprintf("couchdb://%s:%s@localhost:5984/", couchUser, couchPassword)
 }
 
-// adminClient builds a raw kivik client against the test server, used by the harness
-// to create, seed, and drop databases (operations distinct from the Store under test).
+// adminClient builds a raw kivik client against the test server. The harness uses
+// it to create, seed, and drop databases (operations distinct from the Store under
+// test).
 func adminClient(t *testing.T) *kivik.Client {
 	t.Helper()
 	cc, err := parseURL(testURL(), "")
@@ -113,9 +114,9 @@ func skipShort(t *testing.T) context.Context {
 	return ctx
 }
 
-// seedDB creates a fresh database named after the test, inserts the supplied
-// documents (each a map, keyed by its _id), registers a drop on cleanup, and returns
-// a database-scoped Store for it. It skips under -short.
+// seedDB creates a fresh database named after the test and inserts the supplied
+// documents (each a map, keyed by its _id). It registers a drop on cleanup and
+// returns a database-scoped Store for it. It skips under -short.
 func seedDB(t *testing.T, docs ...map[string]any) *Store {
 	t.Helper()
 	ctx := skipShort(t)

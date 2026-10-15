@@ -36,9 +36,9 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 // equalities are pushed. An And pushes the conjuncts that compile and drops the
 // rest. Ranges, regex, existence, size, negation, and Or are never pushed. A path
 // is not pushable if it is not a two-segment family:qualifier, or its literal will
-// not encode to the column type. types declares column encodings, so the
-// comparator bytes match the stored bytes. The connection-free plan runs it with the
-// type map of the URI.
+// not encode to the column type. The types map declares column encodings, so the
+// comparator bytes match the stored bytes. The connection-free plan runs it with
+// the type map of the URI.
 func toFilter(types typeMap, n predicate.Node) (filter.Filter, bool) {
 	switch t := n.(type) {
 	case predicate.Eq:
@@ -51,8 +51,8 @@ func toFilter(types typeMap, n predicate.Node) (filter.Filter, bool) {
 }
 
 // eqToFilter renders a single column equality as a SingleColumnValueFilter. The
-// literal is encoded through the column's declared type so the binary comparison
-// matches the stored bytes; filterIfMissing excludes rows lacking the column, which
+// literal is encoded through the column's declared type, so the binary comparison
+// matches the stored bytes. filterIfMissing excludes rows lacking the column. This
 // is exact for equality (a missing column never equals a value).
 func eqToFilter(types typeMap, eq predicate.Eq) (filter.Filter, bool) {
 	if len(eq.Path) != 2 {
@@ -65,7 +65,7 @@ func eqToFilter(types typeMap, eq predicate.Eq) (filter.Filter, bool) {
 	}
 	comparator := filter.NewBinaryComparator(filter.NewByteArrayComparable(b))
 	// Named rather than passed as bare trailing literals: the two booleans are
-	// meaningless at the call site otherwise, and an inline-comment form here is
+	// meaningless at the call site otherwise. An inline-comment form here is
 	// mangled by the mutation printer into code that does not parse.
 	const (
 		filterIfMissing   = true
@@ -78,8 +78,8 @@ func eqToFilter(types typeMap, eq predicate.Eq) (filter.Filter, bool) {
 }
 
 // andToFilter conjoins the pushable conjuncts of an And into a MustPassAll list,
-// dropping any that do not compile. It reports ok when at least one conjunct pushed;
-// dropping conjuncts only widens the pre-filter.
+// dropping any that do not compile. It reports ok when at least one conjunct
+// pushed. Dropping conjuncts only widens the pre-filter.
 func andToFilter(types typeMap, and predicate.And) (filter.Filter, bool) {
 	filters := make([]filter.Filter, 0, len(and))
 	for _, n := range and {

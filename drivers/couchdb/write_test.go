@@ -83,8 +83,8 @@ func TestDocumentBodySkipsIdentityWithoutEndingTheWalk(t *testing.T) {
 }
 
 func TestCurrentRevsForKeysEmptyShortCircuits(t *testing.T) {
-	// No keys means no _all_docs round trip at all, so the store needs no client;
-	// the short-circuit still hands back an empty map, never a nil one.
+	// No keys means no _all_docs round trip at all, so the store needs no client.
+	// The short-circuit still hands back an empty map, never a nil one.
 	st := &Store{}
 	revs, err := st.currentRevsForKeys(context.Background(), nil)
 	require.NoError(t, err)

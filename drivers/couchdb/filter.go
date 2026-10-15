@@ -8,9 +8,10 @@ import (
 )
 
 // ScanFiltered lets the server narrow the scan with a Mango _find for pred. See
-// query.FilteredScanner. If pred has no safe selector (an operator whose Mango
-// semantics could wrongly exclude a jq match, such as !=), the scan is a plain
-// _all_docs walk. That walk is cheaper than a match-everything _find.
+// query.FilteredScanner. If pred has no safe selector, the scan is a plain
+// _all_docs walk. An operator whose Mango semantics can wrongly exclude a jq
+// match (such as !=) has no safe selector. A plain walk is cheaper than a
+// match-everything _find.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if s.db == "" {
 		return errNoDatabase
@@ -33,7 +34,7 @@ func (s *Store) findPaged(ctx context.Context, selector map[string]any, fn func(
 
 		page := make(map[string]any, s.pageSize)
 		n, err := s.readFind(rows, func(doc map[string]any) {
-			// A _find row does not expose ID() the way _all_docs does; the document
+			// A _find row does not expose ID() the way _all_docs does. The document
 			// carries its own _id.
 			id, _ := doc["_id"].(string)
 			if strings.HasPrefix(id, designPrefix) {
@@ -86,13 +87,13 @@ var mangoOp = map[predicate.Op]string{
 }
 
 // toSelector translates a neutral predicate into a Mango selector. The second
-// return is false if the selector does not narrow the scan: the node, or an unsafe
-// part of it, cannot be pushed without risk of wrongly excluding a jq match. Only
-// pure-superset nodes are pushed: equality, ranges, existence, a byte-safe regex,
-// and a polymorphic length as a $size-plus-$type superset. The exact negations
-// (!=, NoneMatch), an array any (ElemMatch), and a regex outside the byte-safe
-// subset do not narrow, because their Mango semantics could exclude a document
-// that jq keeps.
+// return is false if the selector does not narrow the scan. In that case the node,
+// or an unsafe part of it, cannot be pushed without risk of wrongly excluding a jq
+// match. Only pure-superset nodes are pushed: equality, ranges, existence, a
+// byte-safe regex, and a polymorphic length as a $size-plus-$type superset. The
+// exact negations (!=, NoneMatch) do not narrow. An array any (ElemMatch) and a
+// regex outside the byte-safe subset do not narrow either. Each one does not
+// narrow because its Mango semantics can exclude a document that jq keeps.
 func toSelector(n predicate.Node) (map[string]any, bool) {
 	switch t := n.(type) {
 	case predicate.And:
@@ -132,8 +133,9 @@ func leafSelector(n predicate.Node) (map[string]any, bool) {
 // that CouchDB's byte-mode Erlang re reads like gojq's RE2. CouchDB runs $regex
 // over raw UTF-8 bytes with no unicode option. A non-string field does not match,
 // as in jq. So an ASCII, byte-safe pattern selects the same strings in both
-// engines. The i flag is declined: byte-mode caseless folds only ASCII, so it
-// could drop a non-ASCII string that jq keeps. The m (dotall) flag needs no
+// engines. The i flag is declined, because byte-mode caseless folds only
+// ASCII, so it can drop a non-ASCII string that jq keeps. The m (dotall) flag
+// needs no
 // handling, because a byte-safe pattern has no unescaped dot.
 func regexSelector(r predicate.Regex) (map[string]any, bool) {
 	if strings.ContainsRune(r.Flags, 'i') || !byteSafeRegex(r.Pattern) {
@@ -145,11 +147,11 @@ func regexSelector(r predicate.Regex) (map[string]any, bool) {
 // byteSafeRegex reports whether a portable regex is also safe for CouchDB's
 // byte-mode $regex. The core portableRegex gate admits only cross-engine
 // constructs, but CouchDB runs over raw bytes, so "one character" and "not this
-// class" diverge on multi-byte UTF-8. This gate rejects a non-ASCII byte, an
-// unescaped dot (it matches one byte, not one rune), a negated class [^…] or the
-// shorthands \D \W \S (their byte complement includes UTF-8 continuation bytes),
-// and a trailing backslash. A surviving pattern matches byte for byte in both
-// engines.
+// class" diverge on multi-byte UTF-8. This gate rejects a non-ASCII byte. It
+// rejects an unescaped dot (it matches one byte, not one rune). It rejects a
+// negated class [^…] or the shorthands \D \W \S (their byte complement includes
+// UTF-8 continuation bytes). It rejects a trailing backslash. A surviving
+// pattern matches byte for byte in both engines.
 func byteSafeRegex(p string) bool {
 	escaped := false
 	for i := 0; i < len(p); i++ {
@@ -159,7 +161,7 @@ func byteSafeRegex(p string) bool {
 			return false
 		case escaped:
 			// c is the character after a backslash. A negated shorthand class is
-			// unsafe over bytes; anything else is a literal, so it is fine.
+			// unsafe over bytes. Anything else is a literal, so it is fine.
 			if negatedShorthand(c) {
 				return false
 			}
@@ -188,10 +190,10 @@ func negatedShorthand(c byte) bool {
 }
 
 // sizeSelector mirrors the Mongo size push. The jq length is polymorphic (array,
-// string, object, number), so an array $size alone would drop a string, object, or
-// number of that length. It pushes a superset: arrays of exactly N via $size, plus
-// every string, object, and number as a separate $type clause (Mango's $type takes
-// one string, unlike Mongo's list). Length 0 also matches null and a missing
+// string, object, number), so an array $size alone drops a string, object, or
+// number of that length. It pushes a superset: arrays of exactly N via $size. It
+// adds every string, object, and number as a separate $type clause (Mango's $type
+// takes one string, unlike Mongo's list). Length 0 also matches null and a missing
 // field, which jq reads as length 0.
 func sizeSelector(s predicate.Size) (map[string]any, bool) {
 	path := field(s.Path)
@@ -213,7 +215,7 @@ func sizeSelector(s predicate.Size) (map[string]any, bool) {
 
 // eqSelector builds a field-equality selector. A nil value must also match an
 // absent field, because jq reads a missing field as null and `== null` is true for
-// it, whereas Mango's $eq:null matches only an explicit null.
+// it. Mango's $eq:null matches only an explicit null.
 func eqSelector(path string, value any) map[string]any {
 	if value == nil {
 		return map[string]any{"$or": []any{
@@ -253,8 +255,8 @@ func cmpSelector(c predicate.Cmp) map[string]any {
 }
 
 // andSelector conjoins the children that narrow, dropping any that do not (an AND
-// with a match-everything term is just the rest). It narrows if at least one child
-// does; with none it reduces to nothing pushable.
+// with a match-everything term is the same as the rest). It narrows if at least
+// one child does. With none, it reduces to nothing pushable.
 func andSelector(and predicate.And) (map[string]any, bool) {
 	var parts []any
 	for _, child := range and {
@@ -272,9 +274,9 @@ func andSelector(and predicate.And) (map[string]any, bool) {
 	}
 }
 
-// orSelector disjoins the children. An OR narrows only if *every* branch does:
-// a branch that cannot be pushed matches everything, which would make the whole OR
-// match everything, so a single unpushable branch drops the OR to a full scan.
+// orSelector disjoins the children. An OR narrows only if *every* branch does.
+// A branch that cannot be pushed matches everything. That makes the whole OR match
+// everything, so a single unpushable branch drops the OR to a full scan.
 func orSelector(or predicate.Or) (map[string]any, bool) {
 	parts := make([]any, 0, len(or))
 	for _, child := range or {

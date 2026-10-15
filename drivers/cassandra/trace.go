@@ -10,9 +10,10 @@ import (
 )
 
 // queryObserver logs each executed CQL statement to a writer, backing the CLI's
-// --verbose command trace. Only the statement text is written; the bound values are
-// redacted, since they may carry data or a value that should not reach the log.
-// Authentication is a SASL exchange, not a CQL query, so no credential is observed.
+// --verbose command trace. Only the statement text is written. The bound values
+// are redacted, because they can carry data or a value that must not reach the
+// log. Authentication is a SASL exchange, not a CQL query, so no credential is
+// observed.
 type queryObserver struct {
 	mu sync.Mutex
 	w  io.Writer

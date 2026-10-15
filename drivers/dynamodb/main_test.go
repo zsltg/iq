@@ -21,15 +21,16 @@ import (
 	"github.com/zsltg/iq/internal/testimage"
 )
 
-// sharedURL is the base dynamodb:// URL (region + endpoint, no table) the integration
-// tests connect to: an ephemeral DynamoDB Local container started once for the whole
-// package. It stays empty when integration tests are skipped (-short) or an external
-// endpoint is supplied (IQ_DYNAMODB_URL).
+// sharedURL is the base dynamodb:// URI (region + endpoint, no table) that the
+// integration tests connect to. It points at an ephemeral DynamoDB Local
+// container that starts once for the whole package. It stays empty when
+// integration tests are skipped (-short) or an external endpoint is supplied
+// (IQ_DYNAMODB_URL).
 var sharedURL string
 
-// TestMain provisions DynamoDB Local before the suite runs. flag.Parse must run before
-// testing.Short is read, and os.Exit skips deferred cleanup, so the work lives in
-// runTests where the defer fires before the process exits.
+// TestMain provisions DynamoDB Local before the suite runs. flag.Parse must run
+// before testing.Short is read. os.Exit skips deferred cleanup. So the work lives
+// in runTests, where the defer fires before the process exits.
 func TestMain(m *testing.M) {
 	os.Exit(runTests(m))
 }
@@ -87,9 +88,10 @@ func testURL() string {
 	return "dynamodb://us-east-1/?endpoint=http://localhost:8000"
 }
 
-// adminClient builds a raw DynamoDB client against the test endpoint, used by the
-// harness to create, seed, and drop tables (operations the driver under test does not
-// expose). It mirrors the driver's own local-endpoint credential handling.
+// adminClient builds a raw DynamoDB client against the test endpoint. The harness
+// uses it to create, seed, and drop tables (operations that the driver under test
+// does not expose). It mirrors the driver's own local-endpoint credential
+// handling.
 func adminClient(t *testing.T) *dynamodb.Client {
 	t.Helper()
 	cc, err := parseURL(testURL(), "")
@@ -120,9 +122,10 @@ func openIntegration(t *testing.T, table string) *Store {
 	return st
 }
 
-// seedTable creates a table with the given key schema and attribute definitions, seeds
-// the supplied items, registers a drop on cleanup, and returns a table-scoped Store for
-// it. It skips under -short. The table is on-demand so no throughput must be specified.
+// seedTable creates a table with the given key schema and attribute definitions.
+// It seeds the supplied items, registers a drop on cleanup, and returns a
+// table-scoped Store for the table. It skips under -short. The table is on-demand,
+// so no throughput must be specified.
 func seedTable(t *testing.T, name string, keySchema []types.KeySchemaElement, attrs []types.AttributeDefinition, items ...map[string]types.AttributeValue) *Store {
 	t.Helper()
 	if testing.Short() {

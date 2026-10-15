@@ -79,10 +79,11 @@ func cassandraCSVSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hin
 	}, nil
 }
 
-// recordForCSVRow turns one CSV row into the record a live Cassandra scan yields. Each
-// field is re-typed to the value gocql would bind for its column (text when the column
-// has no ?types= entry), so the key and the normalized value match a live scan exactly.
-// An empty field is the CQL null cqlsh writes by default.
+// recordForCSVRow turns one CSV row into the record that a live Cassandra scan
+// yields. Each field is re-typed to the value gocql binds for its column (text
+// when the column has no ?types= entry). So the key and the normalized value
+// match a live scan exactly. An empty field is the CQL null that cqlsh writes by
+// default.
 func recordForCSVRow(header, fields, keyCols []string, types map[string]gocql.Type, dec numfmt.DecimalMode) (query.Record, error) {
 	if len(fields) != len(header) {
 		return query.Record{}, fmt.Errorf("cassandra csv row has %d field(s), header has %d", len(fields), len(header))

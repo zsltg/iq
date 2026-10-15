@@ -26,8 +26,9 @@ import (
 
 type ctxKey struct{}
 
-// ctxFake records the context and the request of each call, then delegates to the
-// embedded fakeDDB, so a test can prove that a helper passes both on unchanged.
+// ctxFake records the context and the request of each call, then delegates to
+// the embedded fakeDDB. A test can then prove that a helper passes both on
+// unchanged.
 type ctxFake struct {
 	*fakeDDB
 	puts      []*awsdynamodb.PutItemInput
@@ -372,10 +373,10 @@ func openServer(t *testing.T, answer func(w http.ResponseWriter, calls int)) (*h
 }
 
 // TestOpenWithEnvironmentCredentialsAndNoEndpoint opens a source that has no
-// ?endpoint=, so the SDK resolves credentials with its default chain. With keys in the
-// environment the chain reads values from the context that Open passes in, so a nil
-// context would panic. The SDK service endpoint variable sends the request to a local
-// stub, so the test never reaches AWS.
+// ?endpoint=, so the SDK resolves credentials with its default chain. With keys in
+// the environment, the chain reads values from the context that Open passes in, so
+// a nil context panics. The SDK service endpoint variable sends the request to a
+// local stub, so the test never reaches AWS.
 func TestOpenWithEnvironmentCredentialsAndNoEndpoint(t *testing.T) {
 	srv, headers := openServer(t, func(w http.ResponseWriter, _ int) { _, _ = w.Write([]byte(`{"TableNames":[]}`)) })
 	empty := filepath.Join(t.TempDir(), "empty")

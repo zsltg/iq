@@ -7,11 +7,12 @@ import (
 	"sync"
 )
 
-// traceTransport logs method+path for each request, then delegates to the wrapped
-// transport (http.DefaultTransport when none is set). It backs the CLI's --verbose
-// trace: only the method and path are written — never headers — so the Authorization
-// header that carries the basic-auth credential is never logged. The prefix names the
-// backend (es or os). Writes are serialized against tearing.
+// traceTransport logs method+path for each request, then delegates to the
+// wrapped transport (http.DefaultTransport when none is set). It backs the
+// --verbose trace of the CLI. It writes only the method and path and never
+// headers. So the Authorization header that carries the basic-auth credential is
+// never logged. The prefix names the backend (es or os). Writes are serialized
+// against tearing.
 type traceTransport struct {
 	w      io.Writer
 	prefix string

@@ -19,18 +19,18 @@ import (
 // tests are skipped (-short) or an external server is supplied (IQ_MONGO_URL).
 var sharedURI string
 
-// TestMain provisions the test MongoDB before the suite runs. flag.Parse must run
-// before testing.Short is read, and os.Exit skips deferred cleanup, so the work
-// lives in runTests where the defer fires before the process exits.
+// TestMain provisions the test MongoDB before the suite runs. flag.Parse must
+// run before testing.Short is read, and os.Exit skips deferred cleanup. So the
+// work lives in runTests, where the defer fires before the process exits.
 func TestMain(m *testing.M) {
 	os.Exit(runTests(m))
 }
 
 func runTests(m *testing.M) int {
 	flag.Parse()
-	// Only stand up a container when integration tests will actually run and no
-	// external server was named; otherwise the default URI or the env override
-	// stands in.
+	// Only stand up a container when integration tests will run and no external
+	// server was named. Otherwise the default URI or the env override stands
+	// in.
 	if !testing.Short() && os.Getenv("IQ_MONGO_URL") == "" {
 		ctx := context.Background()
 		image, err := testimage.Ref("mongo")

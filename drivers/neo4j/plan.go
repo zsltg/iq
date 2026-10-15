@@ -8,11 +8,11 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Cypher a classified query would run, without connecting.
-// A bounded query matches the named nodes by key; a scan pages the label with ORDER
-// BY elementId (keyset), narrowed by a WHERE clause when the pushed predicate
-// narrows, else a full label walk. It reuses the same translation the scan path
-// uses so the shown filter is exactly what the server would receive.
+// ExplainPlan describes the Cypher a classified query runs, without connecting.
+// A bounded query matches the named nodes by key. A scan pages the label with ORDER
+// BY elementId (keyset). It is narrowed by a WHERE clause when the pushed predicate
+// narrows, else it is a full label walk. ExplainPlan reuses the same translation
+// the scan path uses, so the shown filter is exactly what the server receives.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -41,8 +41,8 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	}
 }
 
-// ExplainWrite describes, without connecting, the write a copy into this label would
-// make: a MERGE on the key property that sets the node's properties, or a
+// ExplainWrite describes, without connecting, the write that a copy into this label
+// makes. It is a MERGE on the key property that sets the node's properties, or a
 // guarded CREATE that skips an existing key.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := fmt.Sprintf("MERGE (n:<label> {<key>}) SET n += props: replace-upsert by key, batches of %d", scanBatch)
@@ -58,9 +58,9 @@ func ExplainClear() query.AccessPlan {
 	return query.AccessPlan{Ops: []string{"MATCH (n:<label>) DETACH DELETE n: empty the label (nodes and their relationships)"}}
 }
 
-// ExplainDrop describes the `iq data drop` op and reports it unsupported: a label is
+// ExplainDrop describes the `iq data drop` op and reports it unsupported. A label is
 // not a droppable container in Neo4j (it exists only while some node carries it), so
-// there is nothing to drop — clearing the label is the closest operation.
+// there is nothing to drop. Clearing the label is the closest operation.
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{}, false
 }

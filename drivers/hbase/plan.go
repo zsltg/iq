@@ -16,13 +16,14 @@ type Source struct {
 	Address string
 }
 
-// ExplainPlan describes the HBase RPCs this driver would run for a classified query,
-// without connecting. A bounded query reads the named rows by key with point Gets; a
-// scan runs a table Scan, pre-filtered by a server-side SingleColumnValueFilter when
-// the predicate has pushable equalities, else a full-table scan. It parses the URI for
-// the column types and runs toFilter, as ScanFiltered does, so the plan shows what the
-// scan pushes. It parses the source as Open does, so an address wins over the saved
-// ?table=. A source that does not parse is an error.
+// ExplainPlan describes the HBase RPCs this driver runs for a classified query,
+// without connecting. A bounded query reads the named rows by key with point Gets.
+// A scan runs a table Scan. When the predicate has pushable equalities, a
+// server-side SingleColumnValueFilter pre-filters the scan. Otherwise it is a
+// full-table scan. ExplainPlan parses the URI for the column types and runs
+// toFilter, as ScanFiltered does, so the plan shows what the scan pushes. It parses
+// the source as Open does, so an address wins over the saved ?table=. A source that
+// does not parse is an error.
 func ExplainPlan(src Source, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
 	cc, err := parseURL(src.URI, src.Address)
 	if err != nil {
@@ -53,9 +54,9 @@ func ExplainPlan(src Source, keys selector.KeySet, pred predicate.Node, unbounde
 	}, nil
 }
 
-// ExplainWrite describes, without connecting, the write a copy into this table would
-// make: a plain Put upsert by row key, or a CheckAndPut that skips rows whose guard
-// cell already exists.
+// ExplainWrite describes, without connecting, the write that a copy into this
+// table makes. It is a plain Put upsert by row key, or a CheckAndPut that skips
+// rows whose guard cell already exists.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := "Put: upsert cells by row key"
 	if mode == query.InsertOnly {
@@ -70,15 +71,16 @@ func ExplainClear() query.AccessPlan {
 	return query.AccessPlan{Ops: []string{"Scan (key-only) + Delete per row: empty the table, keep its schema"}}
 }
 
-// ExplainDrop describes the `iq data drop` op for a table and reports it supported —
-// an HBase table is a removable container, disabled then deleted.
+// ExplainDrop describes the `iq data drop` op for a table and reports it
+// supported, because an HBase table is a removable container, disabled then
+// deleted.
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"DisableTable then DeleteTable: remove the table and its data"}}, true
 }
 
-// ExplainDelete describes the `iq data delete` op for a table: a whole-row Delete
-// per key, with an existence-only pre-read for the present-vs-absent count (Del is
-// silent on it).
+// ExplainDelete describes the `iq data delete` op for a table. It is a whole-row
+// Delete per key, with an existence-only pre-read for the present-vs-absent count
+// (Del is silent on it).
 func ExplainDelete() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{
 		"exists-only Get per key (accounting only, for present-vs-absent)",

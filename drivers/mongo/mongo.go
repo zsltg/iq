@@ -26,7 +26,7 @@ const scanBatch = 100
 var errNoCollection = errors.New("mongodb: no collection selected; address it as handle.collection or set ?collection= in the source url")
 
 // Store adapts one MongoDB database to the query ports. The jq path is scoped to
-// a single collection (the keyspace); the raw path runs database commands and
+// a single collection (the keyspace). The raw path runs database commands and
 // needs no collection.
 type Store struct {
 	client     *mongo.Client
@@ -36,17 +36,19 @@ type Store struct {
 	decimal    numfmt.DecimalMode
 }
 
-// collectionParam is the URL query key a mongodb:// source uses to carry its
-// default collection, e.g. mongodb://host/db?collection=orders. It mirrors the
-// file driver's ?format=: a per-source option stored in the location string, so
-// the CLI core stays free of any collection vocabulary.
+// collectionParam is the URI query key that a mongodb:// source uses to carry
+// its default collection, for example mongodb://host/db?collection=orders. It
+// mirrors the ?format= of the file driver. That is a per-source option stored
+// in the location string, so the CLI core stays free of any collection
+// vocabulary.
 const collectionParam = "collection"
 
-// SplitCollection separates a mongodb:// URI's ?collection= default from the
-// connection URI. It returns the URI with the param removed — safe to hand the
-// driver, which rejects unknown URI options — and the collection it carried (""
-// when absent). A URI that does not parse is returned unchanged with no
-// collection, leaving the parse error to surface at connect time.
+// SplitCollection separates the ?collection= default of a mongodb:// URI from
+// the connection URI. It returns the URI with the param removed, which is safe
+// to hand the driver. The driver rejects unknown URI options. It also returns
+// the collection that the URI carried ("" when absent). A URI that does not
+// parse is returned unchanged with no collection. The parse error then surfaces
+// at connect time.
 func SplitCollection(uri string) (clean, collection string) {
 	u, err := url.Parse(uri)
 	if err != nil {
@@ -155,7 +157,8 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 
 // ScanBatches streams the whole collection, handing the caller each page of
 // {_id: document} as the cursor yields it. A streaming caller keeps only one
-// page in memory. Bounded by ctx; stops at the first error from fn or the driver.
+// page in memory. It is bounded by ctx and stops at the first error from fn or
+// the driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
 	return s.scanWith(ctx, bson.M{}, fn)
 }
@@ -202,12 +205,13 @@ func (s *Store) scanWith(ctx context.Context, filter bson.M, fn func(batch map[s
 	return nil
 }
 
-// EstimateCount returns a cheap, approximate count of the collection's documents
-// from the server's cached metadata (estimatedDocumentCount), so a full scan can
-// show a rough total without a second pass over the data. It is meaningful only
-// for an unfiltered whole-collection scan — the engine requests it only then —
-// and may be stale under concurrent writes, so the caller treats it as a hint.
-// A missing collection is the same error the scan paths return.
+// EstimateCount returns a cheap, approximate count of the documents of the
+// collection. It reads the count from the cached metadata of the server
+// (estimatedDocumentCount). So a full scan can show a rough total without a
+// second pass over the data. It is meaningful only for an unfiltered
+// whole-collection scan, and the engine requests it only then. It can be stale
+// under concurrent writes, so the caller treats it as a hint. A missing
+// collection is the same error that the scan paths return.
 func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
 	if s.collection == "" {
 		return 0, errNoCollection
@@ -220,8 +224,9 @@ func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
 }
 
 // Query runs a raw database command. args must be a single JSON command document
-// (for example `{"find":"books","filter":{...}}`); it is decoded order-preserving
-// so the command name stays first, run with RunCommand, and the reply normalized.
+// (for example `{"find":"books","filter":{...}}`). The driver decodes it
+// order-preserving so the command name stays first. It runs the command with
+// RunCommand and normalizes the reply.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("mongodb raw expects one JSON command document")

@@ -64,10 +64,10 @@ func TestPutInsertOnly(t *testing.T) {
 	require.Equal(t, query.WriteStat{Written: 1, Skipped: 1}, stat)
 }
 
-// TestPutEncodeError pins that a document the SDK cannot encode fails the batch in both
-// write modes. The SDK reports the failure on the single operation, and the batch call
-// itself succeeds, so a Put that reads only the batch result counts the document as
-// written.
+// TestPutEncodeError pins that a document the SDK cannot encode fails the batch in
+// both write modes. The SDK reports the failure on the single operation, and the
+// batch call itself succeeds. So a Put that reads only the batch result counts the
+// document as written.
 func TestPutEncodeError(t *testing.T) {
 	st := seedCollectionKV(t, nil)
 	ctx := tightCtx(t, skipShort(t))
@@ -125,10 +125,10 @@ func TestPutEmptyBatch(t *testing.T) {
 	require.Empty(t, buf.String(), "an empty batch must not reach the cluster")
 }
 
-// TestPutKeyValidation pins that Put validates the key it was given before any write. The
-// read path has the same guard, and only that one was covered. An empty key never reaches
-// the guard, because a record without a key gets a minted UUID, so the case is a key over
-// the length limit.
+// TestPutKeyValidation pins that Put validates the key it was given before any
+// write. The read path has the same guard, and only that one was covered. An empty
+// key never reaches the guard, because a record without a key gets a minted UUID.
+// So the case is a key over the length limit.
 func TestPutKeyValidation(t *testing.T) {
 	st := seedCollectionKV(t, nil)
 	ctx := skipShort(t)
@@ -182,11 +182,12 @@ func TestDropDefaultRejected(t *testing.T) {
 	require.ErrorContains(t, err, "default collection cannot be dropped")
 }
 
-// TestWritePathContextCancelled pins that the context each write op is handed reaches the
-// call it makes: a context cancelled before the op starts must surface the cancellation
-// instead of a completed write. The collection exists, so cancellation is the only reason
-// these ops can fail. It mirrors the read-path checks over ScanBatches and ScanFiltered.
-// Drop runs last, because it removes the collection the other cases need.
+// TestWritePathContextCancelled pins that the context each write op is handed
+// reaches the call it makes. A context cancelled before the op starts must surface
+// the cancellation instead of a completed write. The collection exists, so
+// cancellation is the only reason these ops can fail. It mirrors the read-path
+// checks over ScanBatches and ScanFiltered. Drop runs last, because it removes the
+// collection the other cases need.
 func TestWritePathContextCancelled(t *testing.T) {
 	st := seedCollectionKV(t, books())
 	ctx := skipShort(t)

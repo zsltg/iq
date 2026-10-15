@@ -12,22 +12,22 @@ import (
 )
 
 // errWriteNeedsKey is returned when a write runs on a source with no ?key=. A node's
-// elementId is server-assigned, so it cannot be a MERGE key; an upsert needs a
+// elementId is server-assigned, so it cannot be a MERGE key. An upsert needs a
 // stable property key to reconcile a record against an existing node.
 var errWriteNeedsKey = errors.New("neo4j: writing needs a key property; set ?key= in the source url so nodes upsert on a stable key")
 
 // errRelWriteUnsupported marks the deferred relationship-write path. Reading and
-// copying relationships out works; creating them needs endpoint resolution (which
-// nodes to connect, by which key) that is a further follow-up, so a write into a
-// relationship collection is refused rather than half-done.
+// copying relationships out works. Creating them needs endpoint resolution (which
+// nodes to connect, by which key), which is a further follow-up. A write into a
+// relationship collection is therefore refused rather than half-done.
 var errRelWriteUnsupported = errors.New("neo4j: writing relationships is not yet supported; a relationship source (?rel= / handle.:TYPE) is read-only — write nodes with ?label=")
 
 // Put upserts a batch of nodes, MERGE-ing each on the key property so a re-run
-// converges. Upsert sets every matched node's properties; InsertOnly sets only newly
-// created nodes and counts the rest skipped. It requires a ?key= source and a
-// uniqueness constraint behind it: without the constraint a MERGE could match — and
-// then set — several nodes at once, so the write is refused up front rather than
-// silently fanning out.
+// converges. Upsert sets every matched node's properties. InsertOnly sets only
+// newly created nodes and counts the rest skipped. It requires a ?key= source and a
+// uniqueness constraint behind it. Without the constraint, a MERGE can match several
+// nodes and then set them all at once. The write is therefore refused up front
+// rather than silently fanning out.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	var stat query.WriteStat
 	if s.target.kind == relTarget {
@@ -84,10 +84,10 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 }
 
 // recordProps derives the property map and merge-key value for one write record. The
-// value must be a JSON object (a node's properties); iq's reserved envelope keys are
-// stripped. The merge key is the record value's own key property when present (so its
-// type is preserved), else the record key string, and it is always written onto the
-// node so the stored node carries its key.
+// value must be a JSON object (a node's properties). iq's reserved envelope keys are
+// stripped. The merge key is the record value's own key property when present (so
+// its type is preserved), else the record key string. It is always written onto the
+// node, so the stored node carries its key.
 func recordProps(rec query.Record, key string) (map[string]any, any, error) {
 	obj, ok := rec.Value.(map[string]any)
 	if !ok {
@@ -187,9 +187,9 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 		return query.DeleteStat{}, fmt.Errorf("neo4j delete resolve: %w", err)
 	}
 
-	// DETACH DELETE with an empty $eids matches nothing, so it runs unconditionally:
-	// a guard on len(eids) would only be an equivalent mutant boundary, never a
-	// behaviour change (the resolve above already recorded matched vs missing).
+	// DETACH DELETE with an empty $eids matches nothing, so it runs unconditionally.
+	// Adding a guard on len(eids) creates only an equivalent mutant boundary, never
+	// a behavior change (the resolve above already recorded matched vs missing).
 	del := s.target.match() + " WHERE elementId(" + v + ") IN $eids DETACH DELETE " + v
 	dr, err := s.run(ctx, sess, del, map[string]any{"eids": eids})
 	if err != nil {

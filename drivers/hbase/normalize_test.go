@@ -105,7 +105,8 @@ func TestEncodeCellRejectsBadShapes(t *testing.T) {
 }
 
 func TestEncodeCellAcceptsFloatIntegers(t *testing.T) {
-	// A JSON number decodes to float64; a whole float is a valid int/long literal.
+	// A JSON number decodes to float64, and a whole float is a valid int/long
+	// literal.
 	b, err := encodeCell(ctLong, float64(1234))
 	require.NoError(t, err)
 	require.Equal(t, 1234, decodeCell(ctLong, b))
@@ -239,7 +240,7 @@ func TestToFloat64(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			// A zero delta is exact equality; a double column must not round.
+			// A zero delta is exact equality. A double column must not round.
 			require.InDelta(t, tt.want, got, 0)
 		})
 	}

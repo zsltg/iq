@@ -8,7 +8,7 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Couchbase calls this driver would make for a classified
+// ExplainPlan describes the Couchbase calls this driver makes for a classified
 // query, without connecting. A bounded query fetches the named documents by ID in a
 // KV bulk get. A scan walks a SQL++ keyset scan ordered by document ID, with the
 // pushed predicate when one narrows. It reuses toWhere, so the shown WHERE is what
@@ -46,9 +46,10 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	}
 }
 
-// ExplainWrite describes, without connecting, the write a copy into this collection
-// would make: a KV bulk upsert by document ID (reading which keys pre-exist first, to
-// count overwrites), or a KV bulk insert that skips existing IDs.
+// ExplainWrite describes, without connecting, the write that a copy into this
+// collection makes. One form is a KV bulk upsert by document ID (reading which keys
+// pre-exist first, to count overwrites). The other is a KV bulk insert that skips
+// existing IDs.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	if mode == query.InsertOnly {
 		return query.AccessPlan{Ops: []string{"KV bulk insert: insert new document IDs, skip existing (ErrDocumentExists)"}}
@@ -65,9 +66,9 @@ func ExplainClear() query.AccessPlan {
 	return query.AccessPlan{Ops: []string{"DELETE FROM <keyspace>: empty the collection, keep it"}}
 }
 
-// ExplainDrop describes the `iq data drop` op for a collection and reports it supported
-// — a Couchbase collection is a removable container (the default collection excepted at
-// run time).
+// ExplainDrop describes the `iq data drop` op for a collection and reports it
+// supported. A Couchbase collection is a removable container (the default
+// collection excepted at run time).
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"DropCollection: remove the collection and everything in it"}}, true
 }

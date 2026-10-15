@@ -19,14 +19,14 @@ import (
 type colType int
 
 const (
-	// ctAuto is the default for an undeclared column: decode valid UTF-8 as a bare
-	// string, else a base64 string; encode a string as its UTF-8 bytes. It never
-	// guesses a numeric type. A value read back as base64 (non-UTF-8 bytes) does not
-	// round-trip through a write — declare the column as bytes for that.
+	// ctAuto is the default for an undeclared column. It decodes valid UTF-8 as a
+	// bare string, else a base64 string, and it encodes a string as its UTF-8 bytes.
+	// It never guesses a numeric type. A value read back as base64 (non-UTF-8 bytes)
+	// does not round-trip through a write. Declare the column as bytes for that.
 	ctAuto colType = iota
 	// ctText decodes bytes as a UTF-8 string and encodes a string as its UTF-8
-	// bytes, unconditionally (no base64 fallback): the caller asserts the column is
-	// text.
+	// bytes, unconditionally (no base64 fallback). The caller asserts that the
+	// column is text.
 	ctText
 	// ctBytes decodes bytes to a base64 string and encodes a base64 string back to
 	// raw bytes, the lossless representation for binary columns.
@@ -74,8 +74,8 @@ func parseColType(name string) (colType, error) {
 
 // decodeCell renders a raw cell value as a JSON-ready value under its declared
 // type. A declared numeric type whose bytes are the wrong width falls back to the
-// honest ctAuto rendering rather than aborting a scan, since a single malformed
-// cell must not fail the whole query.
+// honest ctAuto rendering rather than aborting a scan. This is because a single
+// malformed cell must not fail the whole query.
 func decodeCell(t colType, b []byte) any {
 	switch t {
 	case ctText:
@@ -130,9 +130,9 @@ func decodeAuto(b []byte) any {
 }
 
 // encodeCell reverses decodeCell: it turns a JSON value back into the raw cell
-// bytes its column expects. A value of the wrong shape for the declared type is a
-// returned error, never a silent coercion, so a write never corrupts a typed
-// column. An undeclared (ctAuto) column encodes a string as its UTF-8 bytes; a
+// bytes that its column expects. A value of the wrong shape for the declared type
+// is a returned error, never a silent coercion. So a write never corrupts a typed
+// column. An undeclared (ctAuto) column encodes a string as its UTF-8 bytes. A
 // value read back as base64 does not round-trip through ctAuto (declare bytes).
 func encodeCell(t colType, v any) ([]byte, error) {
 	switch t {
@@ -218,9 +218,9 @@ func encodeBool(v any) ([]byte, error) {
 }
 
 // toInt64 coerces a JSON scalar to an int64 for an int/long column. It accepts the
-// shapes a decoded JSON number can take (float64, the gojq int, json.Number, or a
-// numeric string), and rejects a fractional float so a long column never silently
-// truncates.
+// shapes that a decoded JSON number can take (float64, the gojq int, json.Number,
+// or a numeric string). It rejects a fractional float, so a long column never
+// silently truncates.
 func toInt64(v any) (int64, error) {
 	switch n := v.(type) {
 	case int:
@@ -290,21 +290,22 @@ func colTypeFor(types typeMap, family, qualifier string) colType {
 	return ctAuto
 }
 
-// rowKeyString renders a raw row key as the string the table is keyed by under the
-// row-key type: valid UTF-8 as itself, else base64 (or as declared).
+// rowKeyString renders a raw row key as the string that the table is keyed by
+// under the row-key type. Valid UTF-8 renders as itself, else base64 (or as
+// declared).
 func rowKeyString(t colType, key []byte) string {
 	v := decodeCell(t, key)
 	if s, ok := v.(string); ok {
 		return s
 	}
-	// A declared numeric row-key type decodes to a number; render it canonically so
+	// A declared numeric row-key type decodes to a number. Render it canonically so
 	// the map key stays a string, reversible by encodeRowKey under the same type.
 	return fmt.Sprintf("%v", v)
 }
 
-// encodeRowKey reverses rowKeyString: it turns the string map key back into the raw
-// row-key bytes under the row-key type, so a bounded Get or a write addresses the
-// same physical row that a scan surfaced.
+// encodeRowKey reverses rowKeyString: it turns the string map key back into the
+// raw row-key bytes under the row-key type. So a bounded Get or a write addresses
+// the same physical row that a scan surfaced.
 func encodeRowKey(t colType, key string) ([]byte, error) {
 	switch t {
 	case ctAuto, ctText:
@@ -314,9 +315,9 @@ func encodeRowKey(t colType, key string) ([]byte, error) {
 	}
 }
 
-// rowKeyValue coerces a string map key to the value shape encodeCell expects for a
-// declared row-key type: a base64 string stays a string for ctBytes; a numeric key
-// is parsed so encodeCell can pack it.
+// rowKeyValue coerces a string map key to the value shape that encodeCell expects
+// for a declared row-key type. A base64 string stays a string for ctBytes. A
+// numeric key is parsed so encodeCell can pack it.
 func rowKeyValue(t colType, key string) any {
 	switch t {
 	case ctBytes:

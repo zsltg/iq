@@ -81,8 +81,8 @@ func TestColumnTypesIndexesEveryColumn(t *testing.T) {
 }
 
 func TestToCQLRefusesWhatItCannotPush(t *testing.T) {
-	// Each predicate here would push a wrong or a wider WHERE if one of the guards in
-	// the translation were gone. None of them may push.
+	// Each predicate here pushes a wrong or a wider WHERE if one of the guards in
+	// the translation is gone. None of them is allowed to push.
 	eq := func(v string, path ...string) predicate.Eq { return predicate.Eq{Path: path, Value: v} }
 	tests := []struct {
 		name string
@@ -194,7 +194,7 @@ func TestDecodeKeyEdgeCases(t *testing.T) {
 
 func TestBindKeyValueKeepsTheParseCause(t *testing.T) {
 	// A key part that does not parse is an error with the parser's own error behind
-	// the wrap, so a caller can tell a range fault from a syntax fault.
+	// the wrap. So a caller can tell a range fault from a syntax fault.
 	tests := []struct {
 		name    string
 		typ     gocql.Type
@@ -269,8 +269,8 @@ func TestBindValueReportsABadElement(t *testing.T) {
 }
 
 // TestToIntGivesZeroWithTheError pins that toInt returns 0 and a named error for
-// each value that is not a valid int: a fraction, a number past int64, or a
-// wrong kind of value.
+// each value that is not a valid int. These are a fraction, a number past
+// int64, or a wrong kind of value.
 func TestToIntGivesZeroWithTheError(t *testing.T) {
 	tests := []struct {
 		name    string

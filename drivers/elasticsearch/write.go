@@ -11,12 +11,13 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// Put writes a batch of records into the index, keyed by _id, with a _bulk request
-// that refreshes so the writes are immediately searchable. Upsert indexes each record
-// (replacing an existing document by _id); InsertOnly creates each and skips (counts)
-// those whose _id already exists, reported by Elasticsearch as a per-item 409
-// conflict. A keyless record lets Elasticsearch mint the _id. Every value is
-// marshalled as JSON by the driver — never string-built.
+// Put writes a batch of records into the index, keyed by _id. It uses a _bulk
+// request that refreshes, so the writes are immediately searchable. Upsert
+// indexes each record (replacing an existing document by _id). InsertOnly
+// creates each record and skips (counts) those whose _id already exists.
+// Elasticsearch reports such a record as a per-item 409 conflict. A keyless
+// record lets Elasticsearch mint the _id. The driver marshals every value as
+// JSON. It never builds a value as a string.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if s.index == "" {
 		return query.WriteStat{}, errNoIndex
@@ -105,11 +106,11 @@ func writeBulkLine(buf *bytes.Buffer, v any) error {
 	return nil
 }
 
-// documentBody builds the JSON document to write for a record, with the injected _id
-// stripped so identity is carried by the record key, not the value (Elasticsearch
-// reserves _id as a metadata field and rejects it inside _source). The value must be a
-// JSON object: a scalar is rejected rather than wrapped as {value: ...}, so a successful
-// Put round-trips exactly.
+// documentBody builds the JSON document to write for a record. It strips the
+// injected _id, so the record key carries the identity and not the value.
+// Elasticsearch reserves _id as a metadata field and rejects it inside _source.
+// The value must be a JSON object. A scalar is rejected and not wrapped as
+// {value: ...}, so a successful Put round-trips exactly.
 func documentBody(r query.Record) (map[string]any, error) {
 	obj, ok := r.Value.(map[string]any)
 	if !ok {
@@ -125,9 +126,10 @@ func documentBody(r query.Record) (map[string]any, error) {
 	return doc, nil
 }
 
-// Clear empties the index, keeping it and its mapping/settings (the `iq data clear`
-// semantics for a document store): it deletes every document with a match-all
-// _delete_by_query and refreshes so the emptiness is immediately visible.
+// Clear empties the index and keeps it and its mapping and settings (the
+// `iq data clear` semantics for a document store). It deletes every document
+// with a match-all _delete_by_query and refreshes, so the emptiness is
+// immediately visible.
 func (s *Store) Clear(ctx context.Context) error {
 	if s.index == "" {
 		return errNoIndex
@@ -139,9 +141,9 @@ func (s *Store) Clear(ctx context.Context) error {
 	return s.request(ctx, "delete by query", http.MethodPost, "/"+s.index+"/_delete_by_query?refresh=true", body, nil)
 }
 
-// Drop removes the index entirely — documents, mapping, and settings (the `iq data
-// drop` semantics). The Store implements Dropper because an Elasticsearch index is a
-// removable container.
+// Drop removes the index entirely: documents, mapping, and settings (the
+// `iq data drop` semantics). The Store implements Dropper because an
+// Elasticsearch index is a removable container.
 func (s *Store) Drop(ctx context.Context) error {
 	if s.index == "" {
 		return errNoIndex
@@ -149,12 +151,13 @@ func (s *Store) Drop(ctx context.Context) error {
 	return s.request(ctx, "delete index", http.MethodDelete, "/"+s.index, nil, nil)
 }
 
-// Delete removes the named keys with a _bulk of {"delete":{"_id":k}} actions that
-// refreshes so the removal is immediately visible, chunked to pageSize so a large
-// list is bounded per request. Each item's result is exact — "deleted" for a document
-// that existed, "not_found" for one already absent (not an error) — so Deleted and
-// Missing come straight from the response. Each _id rides as a marshalled JSON field,
-// never string-built.
+// Delete removes the named keys with a _bulk of {"delete":{"_id":k}} actions
+// that refreshes, so the removal is immediately visible. It is chunked to
+// pageSize, so a large list is bounded per request. The result of each item is
+// exact. It is "deleted" for a document that existed, and "not_found" for one
+// already absent (not an error). So Deleted and Missing come straight from the
+// response. Each _id rides as a marshalled JSON field and is never built as a
+// string.
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
 	if s.index == "" {
 		return query.DeleteStat{}, errNoIndex
@@ -207,9 +210,9 @@ func tallyBulkDelete(items []map[string]bulkItem) (query.DeleteStat, error) {
 	return stat, nil
 }
 
-// TypedScan streams the whole index as typed records, reusing the ScanBatches walk.
-// Every item is a document, so the type tag is "document"; the key is the _id and the
-// value is the normalized document.
+// TypedScan streams the whole index as typed records, reusing the ScanBatches
+// walk. Every item is a document, so the type tag is "document". The key is the
+// _id and the value is the normalized document.
 func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) error) error {
 	return s.ScanBatches(ctx, func(batch map[string]any) error {
 		recs := make([]query.Record, 0, len(batch))

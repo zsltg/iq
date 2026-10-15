@@ -41,8 +41,8 @@ func TestDecodeSource(t *testing.T) {
 }
 
 func TestFormatRaw(t *testing.T) {
-	// A successful render returns indented JSON (quoted keys), not the Go %v form the
-	// error fallback would produce.
+	// A successful render returns indented JSON (quoted keys), not the Go %v form
+	// that the error fallback produces.
 	out := (&Store{}).FormatRaw(map[string]any{"a": 1}, false)
 	require.Contains(t, out, `"a"`)
 	require.Contains(t, out, "1")

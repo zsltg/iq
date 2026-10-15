@@ -53,7 +53,7 @@ func (s *Store) getFiltered(ctx context.Context, keys []string, matcher *rawpred
 }
 
 // filteredReaderFor is readerFor with the RedisJSON case swapped for a
-// predicate-aware reader; every other type uses the same reader as an unfiltered
+// predicate-aware reader. Every other type uses the same reader as an unfiltered
 // read, so mixed-keyspace normalization is unchanged.
 func filteredReaderFor(ctx context.Context, p goredis.Pipeliner, key, typ string, dec numfmt.DecimalMode, matcher *rawpred.Matcher) (reader, error) {
 	if typ == "ReJSON-RL" {
@@ -62,11 +62,12 @@ func filteredReaderFor(ctx context.Context, p goredis.Pipeliner, key, typ string
 	return readerFor(ctx, p, typedKey{key: key, typ: typ}, dec)
 }
 
-// filterJSONReader is jsonReader plus the prefilter: it runs the raw JSON.GET reply
-// through rawpred and reports a provable non-match as not-present, otherwise
-// decoding the survivor exactly as jsonReader does. A dropped document and an
-// absent key are the same thing to the caller — neither is in the map — so the
-// presence flag carries both and no sentinel value is needed.
+// filterJSONReader is jsonReader plus the prefilter. It runs the raw JSON.GET
+// reply through rawpred and reports a provable non-match as not-present.
+// Otherwise it decodes the survivor exactly as jsonReader does. A dropped
+// document and an absent key are the same thing to the caller, because neither
+// is in the map. So the presence flag carries both and no sentinel value is
+// needed.
 type filterJSONReader struct {
 	cmd     *goredis.JSONCmd
 	decimal numfmt.DecimalMode

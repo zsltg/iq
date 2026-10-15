@@ -42,7 +42,7 @@ func TestRecordPagerBuffersAPageInOneAllocation(t *testing.T) {
 }
 
 // TestStreamRecordsStopsOnAFailedPage fails only the first page. The final flush
-// would succeed, so the stream must return the error of the page that filled up.
+// succeeds, so the stream must return the error of the page that filled up.
 func TestStreamRecordsStopsOnAFailedPage(t *testing.T) {
 	st, m, h := cacheFixture(t)
 	path := plantCache(t, st, m, cacheBytes(t, h, nRecords(pageSize), true, nil))

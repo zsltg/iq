@@ -26,8 +26,9 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	return s.pageScan(ctx, cql, args, fn)
 }
 
-// columnTypes indexes a table's columns by name to their CQL type, so toCQL can
-// confirm a predicate names a real column and coerce its literal to the column type.
+// columnTypes indexes a table's columns by name to their CQL type. The toCQL
+// function uses it to confirm that a predicate names a real column and to
+// coerce its literal to the column type.
 func columnTypes(meta *gocql.TableMetadata) map[string]gocql.TypeInfo {
 	out := make(map[string]gocql.TypeInfo, len(meta.Columns))
 	for name, col := range meta.Columns {
@@ -36,14 +37,15 @@ func columnTypes(meta *gocql.TableMetadata) map[string]gocql.TypeInfo {
 	return out
 }
 
-// toCQL translates the pushable part of a neutral predicate into a CQL WHERE clause
-// and its bind values. Only equality (Eq) and a same-column or of equalities (to
-// IN) are pushed. An And pushes the conjuncts that compile and drops the rest.
-// Ranges, regex, existence, size, element matches, and negations are never pushed.
-// A path is not pushable if it is not a single top-level column. It is also not
-// pushable if cols is non-nil and the column is not real, or if its literal will
-// not coerce to the column type. cols can be nil for a connection-free
-// description, which skips validation and coercion.
+// toCQL translates the pushable part of a neutral predicate into a CQL WHERE
+// clause and its bind values. Only equality (Eq) and a same-column or of
+// equalities (to IN) are pushed. An And pushes the conjuncts that compile and
+// drops the rest. Ranges, regex, existence, size, element matches, and
+// negations are never pushed. A path is not pushable if it is not a single
+// top-level column. It is also not pushable if cols is non-nil and the column
+// is not real. A path is also not pushable if its literal will not coerce to
+// the column type. The cols index can be nil for a connection-free
+// description. A nil index skips validation and coercion.
 func toCQL(cols map[string]gocql.TypeInfo, n predicate.Node) (where string, args []any, ok bool) {
 	switch t := n.(type) {
 	case predicate.Eq:
@@ -71,11 +73,11 @@ func eqToCQL(cols map[string]gocql.TypeInfo, eq predicate.Eq) (string, []any, bo
 	return quoteIdent(col) + " = ?", []any{arg}, true
 }
 
-// orToIN collapses an or of equalities on one column into a single IN membership
-// test, the only or CQL can express (it has no general OR before 5.0). Every branch
-// must be a pushable equality on the same column, else the whole or is dropped —
-// dropping a branch would narrow the result and lose rows, which the superset
-// contract forbids.
+// orToIN collapses an or of equalities on one column into a single IN
+// membership test. It is the only or that CQL can express (CQL has no general
+// OR before 5.0). Every branch must be a pushable equality on the same column.
+// Otherwise the whole or is dropped. Dropping a single branch narrows the result
+// and loses rows, which the superset contract forbids.
 func orToIN(cols map[string]gocql.TypeInfo, or predicate.Or) (string, []any, bool) {
 	if len(or) < 2 {
 		return "", nil, false
@@ -104,7 +106,7 @@ func orToIN(cols map[string]gocql.TypeInfo, or predicate.Or) (string, []any, boo
 
 // andToCQL conjoins the pushable conjuncts of an and, dropping any that do not
 // compile. It reports ok when at least one conjunct pushed, so the caller adds a
-// WHERE; dropping conjuncts only widens the pre-filter.
+// WHERE. Dropping conjuncts only widens the pre-filter.
 func andToCQL(cols map[string]gocql.TypeInfo, and predicate.And) (string, []any, bool) {
 	clauses := make([]string, 0, len(and))
 	args := make([]any, 0, len(and))
@@ -122,10 +124,10 @@ func andToCQL(cols map[string]gocql.TypeInfo, and predicate.And) (string, []any,
 	return strings.Join(clauses, " AND "), args, true
 }
 
-// bindArg validates and coerces a predicate literal against a column. With no column
-// index (a connection-free description) it passes the literal through unchanged;
-// otherwise the column must exist and the literal must coerce to its type, else the
-// predicate is not pushable.
+// bindArg validates and coerces a predicate literal against a column. With no
+// column index (a connection-free description) it passes the literal through
+// unchanged. Otherwise the column must exist and the literal must coerce to its
+// type. If either fails, the predicate is not pushable.
 func bindArg(cols map[string]gocql.TypeInfo, col string, value any) (any, bool) {
 	if cols == nil {
 		return value, true

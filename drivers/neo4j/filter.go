@@ -10,10 +10,10 @@ import (
 )
 
 // ScanFiltered lets the server narrow the scan with a Cypher WHERE clause for
-// pred. See query.FilteredScanner. If pred has no safe clause (a nested path with
-// no Neo4j property, or an operator whose Cypher semantics could wrongly exclude a
-// jq match), the scan is a plain label walk. That walk is cheaper than a
-// match-everything filter.
+// pred. See query.FilteredScanner. If pred has no safe clause, the scan is a plain
+// label walk. A nested path with no Neo4j property has no safe clause. An operator
+// whose Cypher semantics can wrongly exclude a jq match has none either. A plain
+// walk is cheaper than a match-everything filter.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if s.target.name == "" {
 		return errNoLabel
@@ -26,10 +26,10 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	return s.pagedScan(ctx, where, b.params, fn)
 }
 
-// cypherBuilder accumulates the parameters for a translated predicate, naming them
-// f0, f1, … so they never collide with the scan's own after/limit/key parameters.
-// variable is the entity the WHERE clause is over (n for a node, r for a
-// relationship).
+// cypherBuilder accumulates the parameters for a translated predicate. It names
+// them f0, f1, and so on, so they never collide with the scan's own
+// after/limit/key parameters. The variable field is the entity the WHERE clause is
+// over (n for a node, r for a relationship).
 type cypherBuilder struct {
 	n        int
 	params   map[string]any
@@ -46,12 +46,13 @@ func (b *cypherBuilder) param(v any) string {
 
 // translate renders a neutral predicate as a Cypher boolean expression over the
 // bound node n. The second return is false if the expression does not narrow the
-// scan: the node, or an unsafe part of it, cannot be pushed without risk of
-// wrongly excluding a jq match. Only pure-superset nodes are pushed: equality, key
-// presence, and their AND/OR combinations. Range comparisons (Cmp) are not pushed.
-// Cypher compares different types as null, not by the cross-type ordering of jq,
-// so a range clause could exclude a value that jq keeps. The exact negations (Ne,
-// NoneMatch) and the polymorphic length, regex, and any tests do not narrow.
+// scan. In that case the node, or an unsafe part of it, cannot be pushed without
+// risk of wrongly excluding a jq match. Only pure-superset nodes are pushed:
+// equality, key presence, and their AND/OR combinations. Range comparisons (Cmp)
+// are not pushed. Cypher compares different types as null, not by the cross-type
+// ordering of jq, so a range clause can exclude a value that jq keeps. The exact
+// negations (Ne, NoneMatch) and the polymorphic length, regex, and any tests do
+// not narrow.
 func (b *cypherBuilder) translate(n predicate.Node) (string, bool) {
 	switch t := n.(type) {
 	case predicate.Eq:
@@ -60,7 +61,7 @@ func (b *cypherBuilder) translate(n predicate.Node) (string, bool) {
 		}
 		prop := b.param(t.Path[0])
 		if t.Value == nil {
-			// jq reads a missing field as null and `== null` is true for it; a Neo4j
+			// jq reads a missing field as null and `== null` is true for it. A Neo4j
 			// property is absent rather than explicitly null, so IS NULL matches exactly.
 			return fmt.Sprintf("%s[%s] IS NULL", b.variable, prop), true
 		}
@@ -85,8 +86,9 @@ func (b *cypherBuilder) translate(n predicate.Node) (string, bool) {
 	}
 }
 
-// andClause conjoins the children that narrow, dropping any that do not (an AND with
-// a match-everything term is just the rest). It narrows if at least one child does.
+// andClause conjoins the children that narrow, dropping any that do not (an AND
+// with a match-everything term is the same as the rest). It narrows if at least one
+// child does.
 func (b *cypherBuilder) andClause(and predicate.And) (string, bool) {
 	var parts []string
 	for _, child := range and {
@@ -100,8 +102,8 @@ func (b *cypherBuilder) andClause(and predicate.And) (string, bool) {
 	return "(" + strings.Join(parts, " AND ") + ")", true
 }
 
-// orClause disjoins the children. An OR narrows only if every branch does: a branch
-// that cannot be pushed matches everything, which would make the whole OR match
+// orClause disjoins the children. An OR narrows only if every branch does. A branch
+// that cannot be pushed matches everything. That makes the whole OR match
 // everything, so a single unpushable branch drops the OR to a full scan.
 func (b *cypherBuilder) orClause(or predicate.Or) (string, bool) {
 	if len(or) == 0 {
@@ -120,7 +122,7 @@ func (b *cypherBuilder) orClause(or predicate.Or) (string, bool) {
 
 // pushablePath reports whether a predicate path names a single stored property that
 // can be pushed. Neo4j properties are flat, so a nested path (.author.name) has no
-// property to match; the reserved envelope keys (_id/_labels/_type/_start/_end) are
+// property to match. The reserved envelope keys (_id/_labels/_type/_start/_end) are
 // computed, not stored, so they are not pushable either.
 func pushablePath(path []string) bool {
 	if len(path) != 1 {

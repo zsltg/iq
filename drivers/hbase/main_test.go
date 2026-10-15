@@ -13,11 +13,12 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// testURL returns the base hbase:// URL integration tests connect to, from
-// IQ_HBASE_URL, or "" when unset. HBase native RPC requires the region server to be
-// reachable at the hostname ZooKeeper advertises, which testcontainers' random port
-// mapping breaks, so there is no ephemeral-container fallback: integration tests run
-// against a fixed-port stack (docker compose up -d --wait) named by IQ_HBASE_URL.
+// testURL returns the base hbase:// URI that integration tests connect to,
+// from IQ_HBASE_URL, or "" when unset. HBase native RPC requires the
+// region server to be reachable at the hostname ZooKeeper advertises. The
+// random port mapping of testcontainers breaks this. So there is no
+// ephemeral-container fallback. Integration tests run against a fixed-port
+// stack (docker compose up -d --wait) named by IQ_HBASE_URL.
 func testURL() string {
 	return os.Getenv("IQ_HBASE_URL")
 }
@@ -45,9 +46,10 @@ func adminClient(t *testing.T, rawURL string) gohbase.AdminClient {
 	return gohbase.NewAdminClient(cc.zkquorum, gohbase.ZookeeperRoot(cc.znode))
 }
 
-// createTable creates a table with the given column families, registers a drop on
-// cleanup, and returns nothing — tests open their own Store against it. It waits
-// briefly for the table to become available, since CreateTable is asynchronous.
+// createTable creates a table with the given column families, registers a drop
+// on cleanup, and returns nothing. Tests open their own Store against it. It
+// waits briefly for the table to become available, because CreateTable is
+// asynchronous.
 func createTable(t *testing.T, rawURL, table string, families ...string) {
 	t.Helper()
 	admin := adminClient(t, rawURL)
@@ -69,8 +71,9 @@ func createTable(t *testing.T, rawURL, table string, families ...string) {
 	})
 }
 
-// openIntegration opens a table-scoped Store against the test cluster, with an
-// optional URL query suffix (e.g. "&types=cf:n=long") appended for typed columns.
+// openIntegration opens a table-scoped Store against the test cluster. It appends
+// an optional URL query suffix (for example "&types=cf:n=long") for typed
+// columns.
 func openIntegration(t *testing.T, rawURL, table, querySuffix string) *Store {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

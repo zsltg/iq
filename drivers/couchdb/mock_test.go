@@ -15,17 +15,17 @@ import (
 )
 
 // A CouchDB server cannot be told to fail a single row, lose a revision, or
-// answer a bulk write with a per-document conflict, so the driver's failure and
-// skip paths are driven through kivik's own mock driver instead: the Store holds
-// a *kivik.Client, and mockdb hands back one whose every call is scripted. These
-// tests need no container and run under -short.
+// answer a bulk write with a per-document conflict. The driver's failure and
+// skip paths are therefore driven through kivik's own mock driver instead. The
+// Store holds a *kivik.Client, and mockdb hands back one whose every call is
+// scripted. These tests need no container and run under -short.
 
 // newMockStore returns a Store backed by mockdb, the mock client, and the mock
-// database handle that every s.client.DB(...) call resolves to. dbCalls is how
-// many times the method under test resolves that handle (upsert, Clear and
-// Delete each resolve it twice, once for the revision read); each resolution
-// consumes one expectation. Expectation order is not enforced, so a test reads
-// as the call sequence rather than as bookkeeping.
+// database handle that every s.client.DB(...) call resolves to. The dbCalls
+// argument is how many times the method under test resolves that handle.
+// Upsert, Clear and Delete each resolve it twice, once for the revision read.
+// Each resolution consumes one expectation. Expectation order is not enforced,
+// so a test reads as the call sequence rather than as bookkeeping.
 func newMockStore(t *testing.T, pageSize, dbCalls int) (*Store, *mockdb.Client, *mockdb.DB) {
 	t.Helper()
 	client, mock, err := mockdb.New()
@@ -92,8 +92,8 @@ func TestGetSurfacesAnIterationFailure(t *testing.T) {
 }
 
 func TestGetWithNoKeysMakesNoRequest(t *testing.T) {
-	// No keys short-circuits before the client is touched at all: the mock has no
-	// expectation, so any request would fail the call.
+	// No keys short-circuits before the client is touched at all. The mock has no
+	// expectation, so any request fails the call.
 	st, mock, _ := newMockStore(t, 10, 0)
 
 	got, err := st.Get(context.Background(), nil)
@@ -114,7 +114,7 @@ func TestPutWithAnEmptyBatchMakesNoRequest(t *testing.T) {
 }
 
 func TestQueryOmitsAnEmptyBookmark(t *testing.T) {
-	// The bookmark is surfaced only when the server actually sent one; a reply
+	// The bookmark is surfaced only when the server sent one. A reply
 	// without one carries no bookmark key at all, so a caller cannot page on "".
 	st, _, mdb := newMockStore(t, 10, 1)
 	mdb.ExpectFind().WillReturn(mockdb.NewRows().AddRow(docRow("1", `{"_id":"1","a":1}`)))
@@ -143,7 +143,7 @@ func TestQueryRejectsUnparsableJSON(t *testing.T) {
 }
 
 func TestCloseSurfacesTheClientError(t *testing.T) {
-	// Close reports what the client reports; it is not a silent success.
+	// Close reports what the client reports. It is not a silent success.
 	client, mock, err := mockdb.New()
 	require.NoError(t, err)
 	boom := errors.New("close failed")
@@ -195,8 +195,8 @@ func TestFindPagedSurfacesIterationFailure(t *testing.T) {
 }
 
 func TestFindPagedStopsWhenTheServerSendsNoBookmark(t *testing.T) {
-	// A full page with no bookmark to follow ends the walk: only one _find is
-	// issued, so the single expectation is enough and a second request would fail.
+	// A full page with no bookmark to follow ends the walk. Only one _find is
+	// issued, so the single expectation is enough and a second request fails.
 	st, mock, mdb := newMockStore(t, 1, 1)
 	mdb.ExpectFind().WillReturn(mockdb.NewRows().AddRow(docRow("1", `{"_id":"1","a":1}`)))
 
@@ -366,8 +366,8 @@ func TestInspectIndexesReportsEveryIndex(t *testing.T) {
 
 func TestScanBatchesSurfacesARowFailure(t *testing.T) {
 	// Each failure on the _all_docs walk is returned with its own message, and no
-	// page reaches the caller. A row with an error fails at its id, a row with no
-	// body fails at the scan, and a body that is not an object fails at the decode.
+	// page reaches the caller. A row with an error fails at its id. A row with no
+	// body fails at the scan. A body that is not an object fails at the decode.
 	boom := errors.New("row failed")
 	tests := []struct {
 		name    string

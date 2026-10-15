@@ -38,7 +38,7 @@ const defaultPort = "9042"
 var errNoTable = errors.New("cassandra: no table selected; address it as handle.table or set ?table= in the source url")
 
 // Store adapts one Cassandra keyspace to the query ports. The jq and write paths
-// are scoped to a single table (the keyspace of the KV model); the raw path runs
+// are scoped to a single table (the keyspace of the KV model). The raw path runs
 // arbitrary CQL and needs no table.
 type Store struct {
 	session  *gocql.Session
@@ -298,10 +298,11 @@ func tableMeta(session *gocql.Session, keyspace, table string) (*gocql.TableMeta
 	return meta, nil
 }
 
-// Get fetches the rows whose primary key matches one of keys and returns them keyed
-// by the same string key. A key with no row is absent from the map. A single-column primary
-// key uses one WHERE ... IN query; a composite key uses one point query per key
-// (each bounded by ctx). Empty keys short-circuit with no round-trip.
+// Get fetches the rows whose primary key matches one of keys and returns them
+// keyed by the same string key. A key with no row is absent from the map. A
+// single-column primary key uses one WHERE ... IN query. A composite key uses
+// one point query per key (each bounded by ctx). Empty keys return at once with
+// no round-trip.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	if s.meta == nil {
 		return nil, errNoTable
@@ -375,9 +376,10 @@ func (s *Store) drain(iter *gocql.Iter, out map[string]any) error {
 	return nil
 }
 
-// ScanBatches streams the whole table, handing the caller each page of {key: row}
-// as the server-side cursor yields it, so a streaming caller keeps only one page in
-// memory. Bounded by ctx; stops at the first error from fn or the driver.
+// ScanBatches streams the whole table. It hands the caller each page of
+// {key: row} as the server-side cursor yields it. A streaming caller keeps only
+// one page in memory. The scan is bounded by ctx. It stops at the first error
+// from fn or the driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
 	if s.meta == nil {
 		return errNoTable
@@ -386,9 +388,9 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 	return s.pageScan(ctx, cql, nil, fn)
 }
 
-// pageScan runs a paged SELECT and hands the caller a page of {key: row} every
-// pageSize rows, the shared body of ScanBatches and ScanFiltered. The driver
-// transparently fetches successive server pages as the iterator advances; the
+// pageScan runs a paged SELECT. It hands the caller a page of {key: row} every
+// pageSize rows. ScanBatches and ScanFiltered share this body. The driver
+// transparently fetches successive server pages as the iterator advances. The
 // pageSize batching here is the streaming contract to fn.
 func (s *Store) pageScan(ctx context.Context, cql string, binds []any, fn func(batch map[string]any) error) error {
 	iter := s.session.Query(cql, binds...).PageSize(s.pageSize).IterContext(ctx)
@@ -424,9 +426,9 @@ func normalizeRow(row map[string]any, dec numfmt.DecimalMode) map[string]any {
 }
 
 // Query runs a raw CQL statement. The forwarded args are joined back into one
-// statement (the CLI splits a command line into operands), executed bound to ctx,
-// and any result rows are normalized. A statement with no result set (a write, DDL)
-// returns an empty list rather than an error.
+// statement, because the CLI splits a command line into operands. The statement
+// runs bound to ctx, and any result rows are normalized. A statement with no
+// result set (a write, DDL) returns an empty list, not an error.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("cassandra: empty statement")
@@ -467,9 +469,9 @@ func (s *Store) tableRef() string {
 	return quoteIdent(s.keyspace) + "." + quoteIdent(s.table)
 }
 
-// quoteIdent renders a CQL identifier as a double-quoted literal, doubling any
-// embedded quote, so a keyspace, table, or column name is interpolated
-// injection-safe (identifiers cannot be bound as parameters).
+// quoteIdent renders a CQL identifier as a double-quoted literal and doubles
+// any embedded quote. A keyspace, table, or column name is then interpolated
+// injection-safe, because identifiers cannot be bound as parameters.
 func quoteIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }

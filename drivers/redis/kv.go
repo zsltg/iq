@@ -14,15 +14,16 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// scanCount is the COUNT hint for each SCAN round; it bounds work per round-trip
-// without changing the result, which is the full keyspace.
+// scanCount is the COUNT hint for each SCAN round. It bounds work per
+// round-trip without changing the result, which is the full keyspace.
 const scanCount = 100
 
 // Get fetches each key and returns it normalized to JSON-ready Go values, keyed
-// by key name. It reads the type of every key in one pipeline, then the value of
-// every key with its type-appropriate reader in a second pipeline, so the whole
-// batch costs two round-trips regardless of key count. A missing key is absent
-// from the map. Keys are read once each; duplicates in the input collapse.
+// by key name. It reads the type of every key in one pipeline. Then it reads the
+// value of every key with its type-appropriate reader in a second pipeline. So
+// the whole batch costs two round-trips regardless of key count. A missing key
+// is absent from the map. Keys are read once each, and duplicates in the input
+// collapse.
 func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) {
 	if len(keys) == 0 {
 		return map[string]any{}, nil
@@ -83,8 +84,8 @@ func (s *Store) readPipelined(ctx context.Context, keys []string, queue func(p g
 		return nil
 	})
 	// A pipeline surfaces a per-command error (for example goredis.Nil) through
-	// Pipelined's return; the per-reader normalize handles those, so only a
-	// transport error should abort here.
+	// Pipelined's return. The per-reader normalize handles those errors, so
+	// only a transport error aborts here.
 	if err != nil && !errors.Is(err, goredis.Nil) {
 		return nil, fmt.Errorf("redis read: %w", err)
 	}
@@ -110,8 +111,8 @@ func normalizeAll(keys []string, readers []reader) (map[string]any, error) {
 
 // reader normalizes one key's pipelined reply into a JSON-ready value, and
 // reports whether the key was there to read. Presence cannot be inferred from
-// the value: a RedisJSON document may legitimately be the JSON null, so nil is
-// a real value here and absence needs its own channel.
+// the value. A RedisJSON document can be the JSON null, so nil is a real value
+// here and absence needs its own channel.
 type reader interface {
 	normalize() (any, bool, error)
 }
@@ -164,13 +165,13 @@ type missingReader struct{}
 
 func (missingReader) normalize() (any, bool, error) { return nil, false, nil }
 
-// stringReader normalizes a string value. The raw string is preserved; numeric
+// stringReader normalizes a string value. The raw string is preserved. Numeric
 // strings are not coerced, so a jq filter decides whether to `tonumber`.
 type stringReader struct{ cmd *goredis.StringCmd }
 
 func (r stringReader) normalize() (any, bool, error) {
 	v, err := r.cmd.Result()
-	// The key expired or was deleted between the TYPE and GET pipelines; it is
+	// The key expired or was deleted between the TYPE and GET pipelines. It is
 	// absent, not a null value.
 	if errors.Is(err, goredis.Nil) {
 		return nil, false, nil
@@ -190,7 +191,8 @@ func (r hashReader) normalize() (any, bool, error) {
 		return nil, false, err
 	}
 	// Redis deletes a hash when its last field goes, so an empty reply means the
-	// key vanished after TYPE saw it — absent, not an empty object.
+	// key vanished after TYPE saw it. The key is absent, not an
+	// empty object.
 	if len(m) == 0 {
 		return nil, false, nil
 	}
@@ -240,7 +242,8 @@ func nonEmptyStrings(cmd *goredis.StringSliceCmd) ([]string, bool, error) {
 }
 
 // zsetReader normalizes a sorted set to an array of {member, score} objects in
-// score-ascending order, preserving rank — the frozen canonical encoding.
+// score-ascending order, preserving rank. This is the frozen canonical
+// encoding.
 type zsetReader struct{ cmd *goredis.ZSliceCmd }
 
 func (r zsetReader) normalize() (any, bool, error) {
@@ -248,7 +251,7 @@ func (r zsetReader) normalize() (any, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	// An empty sorted set cannot exist in Redis; the key went away after TYPE.
+	// An empty sorted set cannot exist in Redis. The key went away after TYPE.
 	if len(zs) == 0 {
 		return nil, false, nil
 	}
@@ -261,9 +264,9 @@ func (r zsetReader) normalize() (any, bool, error) {
 }
 
 // streamReader normalizes a stream to an array of {id, fields} objects in entry
-// order. Fields are an object, matching the hash encoding; go-redis already
-// returns an entry's fields as a map, so field order and any duplicate field
-// names are not available to preserve.
+// order. Fields are an object, matching the hash encoding. go-redis already
+// returns the fields of an entry as a map. So the field order and any
+// duplicate field names are not available to preserve.
 type streamReader struct{ cmd *goredis.XMessageSliceCmd }
 
 func (r streamReader) normalize() (any, bool, error) {
@@ -283,8 +286,8 @@ func (r streamReader) normalize() (any, bool, error) {
 }
 
 // jsonReader normalizes a RedisJSON document by parsing its JSON.GET reply. The
-// stored value is already JSON; decimal chooses how a fractional number is
-// presented to the filter.
+// stored value is already JSON. The decimal mode chooses how a fractional
+// number is presented to the filter.
 type jsonReader struct {
 	cmd     *goredis.JSONCmd
 	decimal numfmt.DecimalMode
@@ -299,8 +302,8 @@ func (r jsonReader) normalize() (any, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	// A stored JSON null decodes to nil and is a present value, which is why
-	// presence rides beside the value rather than being read off it.
+	// A stored JSON null decodes to nil and is a present value. This is why
+	// presence rides beside the value and is not read off it.
 	v, err := decodeJSON(s, r.decimal)
 	if err != nil {
 		return nil, false, err
@@ -308,10 +311,10 @@ func (r jsonReader) normalize() (any, bool, error) {
 	return v, true, nil
 }
 
-// decodeJSON parses a JSON document into JSON-ready Go values, decoding numbers
-// deliberately (UseNumber) so precision survives: an integer becomes an exact int
+// decodeJSON parses a JSON document into JSON-ready Go values. It decodes
+// numbers with UseNumber so precision survives: an integer becomes an exact int
 // or *big.Int, and a fractional number follows the decimal mode. Plain
-// json.Unmarshal would collapse every number to a float64 and silently lose
+// json.Unmarshal collapses every number to a float64 and silently loses
 // precision beyond 2^53.
 func decodeJSON(s string, mode numfmt.DecimalMode) (any, error) {
 	dec := json.NewDecoder(strings.NewReader(s))
@@ -323,22 +326,22 @@ func decodeJSON(s string, mode numfmt.DecimalMode) (any, error) {
 	return numfmt.ConvertNumbers(v, mode), nil
 }
 
-// ScanBatches walks the keyspace with a cursor — never blocking the server the
-// way KEYS would — fetching the values of each page and handing them to fn as
-// {key: value}. A streaming caller keeps only one page in memory. SCAN may
-// return a key more than once if the keyspace is resized mid-scan, so a page may
-// repeat a key; the caller opts into that trade for bounded memory. The walk is
+// ScanBatches walks the keyspace with a cursor. It never blocks the server the
+// way KEYS does. It fetches the values of each page and hands them to fn as
+// {key: value}. A streaming caller keeps only one page in memory. SCAN can
+// return a key more than once if the keyspace is resized mid-scan, so a page can
+// repeat a key. The caller opts into that trade for bounded memory. The walk is
 // bounded by ctx and stops at the first error from fn or the store.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
 	return s.scanPages(ctx, s.Get, fn)
 }
 
-// scanPages is the shared cursor walk under ScanBatches and ScanFiltered: it pages
-// the keyspace with SCAN, builds each page's {key: value} batch with build, and
-// hands the batch to fn. It bounds memory to one page and is bounded by ctx,
-// stopping at the first error from build, fn, or the store. A page that build
-// reduces to an empty batch (every key filtered out) advances the cursor without
-// calling fn, so a caller never sees an empty batch.
+// scanPages is the shared cursor walk under ScanBatches and ScanFiltered. It
+// pages the keyspace with SCAN, builds the {key: value} batch of each page with
+// build, and hands the batch to fn. It bounds memory to one page and is bounded
+// by ctx. It stops at the first error from build, fn, or the store. If build
+// reduces a page to an empty batch (every key filtered out), the walk advances
+// the cursor without calling fn. So a caller never sees an empty batch.
 func (s *Store) scanPages(ctx context.Context, build func(context.Context, []string) (map[string]any, error), fn func(batch map[string]any) error) error {
 	return s.walkKeyPages(ctx, func(page []string) error {
 		batch, err := build(ctx, page)
@@ -382,11 +385,11 @@ func (s *Store) walkKeyPages(ctx context.Context, handle func(page []string) err
 	return flush()
 }
 
-// EstimateCount answers the Estimator port with DBSIZE — the number of keys in
+// EstimateCount answers the Estimator port with DBSIZE, the number of keys in
 // the selected database. ScanBatches walks the same database with MATCH *, so
-// DBSIZE is exactly that unfiltered-scan universe, and it is O(1) server-side
-// metadata rather than a scan, which is what the port requires. It stays a hint:
-// a concurrent write moves it, so the running scan may exceed it.
+// DBSIZE is exactly that unfiltered-scan universe. It is O(1) server-side
+// metadata and not a scan, which is what the port requires. It stays a hint,
+// because a concurrent write moves it. So the running scan can exceed it.
 func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
 	n, err := s.client.DBSize(ctx).Result()
 	if err != nil {

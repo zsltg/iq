@@ -47,8 +47,8 @@ func cacheFiles(t *testing.T, dir string) []string {
 }
 
 // corruptBody returns a same-length copy of an RDB dump with its body zeroed but
-// its leading signature ("REDIS" + version) intact, so format detection still
-// classifies it as RDB while any attempt to decode its contents fails.
+// its leading signature ("REDIS" + version) intact. Format detection still
+// classifies it as RDB, while any attempt to decode its contents fails.
 func corruptBody(content []byte) []byte {
 	out := make([]byte, len(content))
 	const sig = 9 // "REDIS" magic (5) + 4-byte version.
@@ -109,9 +109,9 @@ func TestCacheIndexedGet(t *testing.T) {
 
 // TestCacheGetMatchesStreamedGet pins the two bounded-read paths against each
 // other. The indexed cache and the streaming pass build their result maps
-// independently, so a presence rule applied to one and forgotten in the other
-// would make the same query answer differently depending on whether a cache
-// happened to be warm.
+// independently. A presence rule applied to one and forgotten in the other
+// makes the same query answer differently. The answer then depends on whether
+// a cache is warm.
 func TestCacheGetMatchesStreamedGet(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "big.rdb")
 	require.NoError(t, os.WriteFile(path, buildBigRDB(t, bigCount), 0o600))
@@ -161,10 +161,10 @@ func TestCacheFlatModeFallsBack(t *testing.T) {
 	require.Equal(t, "v7", got["k7"])
 }
 
-// TestCacheGetSkipsNonCandidatePages is the behavioral proof the index prunes: a
-// page that cannot hold the wanted key is corrupted on disk, yet the Get still
-// succeeds — which is only possible if that page was never decoded. If pruning
-// failed, the streaming fallback would hit the corrupt bytes and error.
+// TestCacheGetSkipsNonCandidatePages is the behavioral proof that the index
+// prunes. A page that cannot hold the wanted key is corrupted on disk, yet the
+// Get still succeeds. That is only possible if the page was never decoded.
+// Without pruning, the streaming fallback hits the corrupt bytes and errors.
 func TestCacheGetSkipsNonCandidatePages(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "big.rdb")
 	require.NoError(t, os.WriteFile(path, buildBigRDB(t, bigCount), 0o600))
@@ -181,8 +181,8 @@ func TestCacheGetSkipsNonCandidatePages(t *testing.T) {
 	require.True(t, ok)
 	cf := st.cacheFile(m)
 
-	// Read the index and find a page whose filter does not hold "k0" (deterministic
-	// — we inspect the real filters, so no false-positive flakiness).
+	// Read the index and find a page whose filter does not hold "k0". The result is
+	// deterministic: we inspect the real filters, so no false-positive flakiness.
 	f, err := os.Open(cf)
 	require.NoError(t, err)
 	size, err := fileSize(f)
@@ -224,10 +224,10 @@ func corruptFileRange(t *testing.T, path string, off, end int64) {
 	require.NoError(t, err)
 }
 
-// TestCacheDifferential proves a warm-cache decode yields the exact same records
-// as a cold decode, for every dump format — the drift backstop. Each case is
-// decoded cold (no cache), then populated and re-read warm, and the two record
-// sets must be deep-equal, types included.
+// TestCacheDifferential proves that a warm-cache decode yields the exact same
+// records as a cold decode, for every dump format. It is the drift backstop.
+// Each case is decoded cold (no cache), then populated and re-read warm. The
+// two record sets must be deep-equal, types included.
 func TestCacheDifferential(t *testing.T) {
 	binVal := string([]byte{0xff, 0xfe, 0x00, 0x41}) // non-UTF-8 Redis string.
 	tests := []struct {
@@ -283,11 +283,11 @@ func TestCacheDifferential(t *testing.T) {
 	}
 }
 
-// TestCacheServedFromCacheFile proves the warm path actually reads the cache and
-// not the original: after populating, the original dump is overwritten with
-// garbage of the same length and its mtime restored, so the cache key still
-// matches. Decoding the garbage would fail; returning the original records proves
-// the cache file was used.
+// TestCacheServedFromCacheFile proves that the warm path reads the cache and not
+// the original. After populating, the original dump is overwritten with garbage
+// of the same length and its mtime restored, so the cache key still matches.
+// Decoding the garbage fails. Returning the original records proves that the
+// cache file was used.
 func TestCacheServedFromCacheFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "d.rdb")
 	writeRDBWithString(t, path, "s", []byte("hello"))
@@ -304,7 +304,7 @@ func TestCacheServedFromCacheFile(t *testing.T) {
 
 	// Corrupt the body but keep the RDB signature (so Open still detects the
 	// format) and the length and mtime (so the cache key still matches). Decoding
-	// this would fail; returning the original records proves the cache was read.
+	// this fails. Returning the original records proves the cache was read.
 	require.NoError(t, os.WriteFile(path, corruptBody(content), 0o600))
 	require.NoError(t, os.Chtimes(path, fi.ModTime(), fi.ModTime()))
 
@@ -314,8 +314,9 @@ func TestCacheServedFromCacheFile(t *testing.T) {
 	require.Equal(t, "hello", collect(t, w2)["s"].Value)
 }
 
-// TestCacheGetDoesNotPopulate confirms a bounded Get never writes a cache — its
-// early stop would persist a partial dump — while a full scan does.
+// TestCacheGetDoesNotPopulate confirms that a bounded Get never writes a cache,
+// because a cache written at its early stop holds a partial dump. A full scan
+// does write one.
 func TestCacheGetDoesNotPopulate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "d.rdb")
 	writeRDBWithString(t, path, "s", []byte("hello"))
@@ -352,8 +353,8 @@ func TestCacheWarmGet(t *testing.T) {
 	require.NoError(t, warm.TypedScan(context.Background(), func([]query.Record) error { return nil }))
 	require.Len(t, cacheFiles(t, dir), 1)
 
-	// Corrupt the original, same length and mtime, so a Get that decoded it would
-	// fail; a correct value proves the Get read the cache.
+	// Corrupt the original, same length and mtime, so a Get that decodes it
+	// fails. A correct value proves that the Get read the cache.
 	fi, err := os.Stat(path)
 	require.NoError(t, err)
 	content, err := os.ReadFile(path)
@@ -368,9 +369,9 @@ func TestCacheWarmGet(t *testing.T) {
 	require.Equal(t, "hello", got["s"])
 }
 
-// TestCacheInvalidatesOnChange confirms an edited dump is never served from a
-// stale cache: after the file changes size, a query reflects the new content and
-// a fresh cache is written alongside the now-orphaned one.
+// TestCacheInvalidatesOnChange confirms that an edited dump is never served from
+// a stale cache. After the file changes size, a query reflects the new content
+// and a fresh cache is written alongside the now-orphaned one.
 func TestCacheInvalidatesOnChange(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "d.rdb")
 	writeRDBWithString(t, path, "s", []byte("first"))
@@ -409,9 +410,9 @@ func TestCacheCorruptFallsBack(t *testing.T) {
 	require.Equal(t, "hello", collect(t, st)["s"].Value)
 }
 
-// TestCacheableGuards checks the conditions under which a store refuses to cache:
-// stdin (no stable path), a disabled policy, no cache dir, and a dump below the
-// size floor.
+// TestCacheableGuards checks the conditions under which a store refuses to
+// cache. The conditions are stdin (no stable path), a disabled policy, no cache
+// dir, and a dump below the size floor.
 func TestCacheableGuards(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "d.rdb")
@@ -481,8 +482,8 @@ func TestListAndRemoveCache(t *testing.T) {
 	require.Empty(t, entries)
 }
 
-// TestListCacheSameDumpSorted covers the listing's secondary sort: after an edit
-// leaves a stale and a fresh cache for the same dump path, both entries share a
+// TestListCacheSameDumpSorted covers the secondary sort of the listing. An edit
+// leaves a stale and a fresh cache for the same dump path. Both entries share a
 // DumpPath, so they order by cache file name deterministically.
 func TestListCacheSameDumpSorted(t *testing.T) {
 	dir := t.TempDir()

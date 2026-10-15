@@ -12,8 +12,9 @@ import (
 
 var errStop = errors.New("stop the scan")
 
-// scanCase is one scan or clear run over a fake table: how the fake fails, what the
-// call returns, and how many times the scanner must be closed.
+// scanCase is one scan or clear run over a fake table. Its fields say how the
+// fake fails, what the call returns, and how many times the scanner must be
+// closed.
 type scanCase struct {
 	name       string
 	rows       []string

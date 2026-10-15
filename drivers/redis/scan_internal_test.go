@@ -14,16 +14,17 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// TestScanBatchesBoundsPageSize checks the memory-bounding heart of ScanBatches:
-// keys accumulate into a page and flush at exactly pageSize. It runs in the redis
-// package (not redis_test) so it can lower the unexported pageSize, and flushes
-// its own database first so the batch sizes are deterministic regardless of what
+// TestScanBatchesBoundsPageSize checks the memory bound of ScanBatches: keys
+// accumulate into a page and flush at exactly pageSize. It runs in the redis
+// package (not redis_test) so it can lower the unexported pageSize. It flushes
+// its own database first, so the batch sizes are deterministic regardless of what
 // other tests left behind.
 func TestScanBatchesBoundsPageSize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping redis integration test in -short mode")
 	}
-	// TestMain pins IQ_REDIS_URL to a reserved database; the default matches it so
+	// TestMain pins IQ_REDIS_URL to a reserved database. The default matches it,
+	// so
 	// a stray run never flushes DB 0, which developers seed for manual exploration.
 	url := os.Getenv("IQ_REDIS_URL")
 	if url == "" {
@@ -70,9 +71,9 @@ func bigInt(t *testing.T, s string) *big.Int {
 	return v
 }
 
-// TestDecodeJSONNumbers is the precision heart of the RedisJSON path: integers are
-// always exact (int or *big.Int, so gojq does exact arithmetic), while a
-// fractional number follows the decimal mode. It is a pure unit test — no server —
+// TestDecodeJSONNumbers covers the precision of the RedisJSON path. Integers are
+// always exact (int or *big.Int, so gojq does exact arithmetic). A fractional
+// number follows the decimal mode. It is a pure unit test with no server,
 // because jsonReader only wraps a JSON.GET reply that decodeJSON then parses.
 func TestDecodeJSONNumbers(t *testing.T) {
 	t.Parallel()
@@ -105,9 +106,9 @@ func TestDecodeJSONNumbers(t *testing.T) {
 	}
 }
 
-// TestDecodeJSONRejectsMalformedDocument pins the decode guard: a reply that is not
-// JSON is an error naming the stage and carrying the parser's own cause, never a
-// silent nil value that would read as a stored JSON null.
+// TestDecodeJSONRejectsMalformedDocument pins the decode guard. A reply that is
+// not JSON is an error that names the stage and carries the cause from the
+// parser. It is never a silent nil value that reads as a stored JSON null.
 func TestDecodeJSONRejectsMalformedDocument(t *testing.T) {
 	t.Parallel()
 
@@ -121,7 +122,8 @@ func TestDecodeJSONRejectsMalformedDocument(t *testing.T) {
 }
 
 // TestConvertNumbersRecurses checks that number conversion reaches into nested
-// objects and arrays, not just the top-level value.
+// objects and arrays, and not only the top-level
+// value.
 func TestConvertNumbersRecurses(t *testing.T) {
 	t.Parallel()
 	got, err := decodeJSON(`{"n": 9007199254740993, "xs": [1.5, {"m": 2.5}]}`, numfmt.DecimalString)

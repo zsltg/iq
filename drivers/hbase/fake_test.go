@@ -38,18 +38,18 @@ func requireTestCtx(t *testing.T, ctx context.Context) {
 	require.Equal(t, ctxMarker, ctx.Value(ctxKey{}))
 }
 
-// rpcCall is one request the fake received, kept so a test can assert what the Store
-// asked the region server for — the context it bound, the table it named, and the
-// protobuf the server would see — not only what came back.
+// rpcCall is one request the fake received. A test keeps it to assert what the
+// Store asked the region server for, not only what came back. That means the
+// context it bound, the table it named, and the protobuf the server sees.
 type rpcCall struct {
 	ctx   context.Context
 	table string
 	req   any
 }
 
-// recordCall snapshots a request. ToProto needs a routed region, which only the real
-// client assigns, so a stub one is attached first; the fake dispatches nothing, so
-// the stub is used for nothing else.
+// recordCall snapshots a request. ToProto needs a routed region, which only the
+// real client assigns, so a stub one is attached first. The fake dispatches
+// nothing, so the stub is used for nothing else.
 func recordCall(c hrpc.Call) rpcCall {
 	c.SetRegion(region.NewInfo(0, nil, c.Table(), []byte("region"), nil, nil))
 	return rpcCall{ctx: c.Context(), table: string(c.Table()), req: c.ToProto()}
@@ -76,15 +76,16 @@ func getPB(t *testing.T, rec rpcCall) *pb.Get {
 }
 
 // requireDefaultMaxVersions requires a request to ask for exactly one version. The
-// gohbase default is one, so the option leaves the proto field unset; any other count
-// sets it, which is what distinguishes MaxVersions(1) from its neighbours.
+// gohbase default is one, so the option leaves the proto field unset. Any other
+// count sets it, which is what distinguishes MaxVersions(1) from its neighbors.
 func requireDefaultMaxVersions(t *testing.T, versions *uint32) {
 	t.Helper()
 	require.Nil(t, versions, "the request asked for a version count other than one")
 }
 
-// requireFilter requires a request's filter to be exactly the wire form of want, name
-// and serialized body alike, so a differently-configured filter of the same kind fails.
+// requireFilter requires a request's filter to be exactly the wire form of want,
+// name and serialized body alike. So a differently-configured filter of the same
+// kind fails.
 func requireFilter(t *testing.T, got *pb.Filter, want filterConstructor) {
 	t.Helper()
 	require.NotNil(t, got, "the request carried no server-side filter")
@@ -99,13 +100,14 @@ type filterConstructor interface {
 	ConstructPBFilter() (*pb.Filter, error)
 }
 
-// fakeClient is an in-memory hbaseClient: it models one table as
-// rowkey → family → qualifier → value, so the Store's read, write, and scan paths
-// run deterministically without a region server. It applies no server-side filter (a
-// scan returns every row), which is correct for the Store's plumbing — filter
-// translation is unit-tested separately in filter_test.go, the request it issues is
-// asserted from the recorded calls, and the query engine re-runs the full jq over
-// whatever a scan returns.
+// fakeClient is an in-memory hbaseClient. It models one table as
+// rowkey → family → qualifier → value. So the Store's read, write, and scan paths
+// run deterministically without a region server. It applies no server-side filter
+// (a scan returns every row). This is correct for the Store's plumbing, for these
+// reasons:
+//   - Filter translation is unit-tested separately in filter_test.go.
+//   - The recorded calls assert the request that the Store issues.
+//   - The query engine re-runs the full jq over whatever a scan returns.
 type fakeClient struct {
 	rows       map[string]map[string]map[string][]byte
 	scanErr    error // when set, a scan's Next returns this once scanFailAt rows are read

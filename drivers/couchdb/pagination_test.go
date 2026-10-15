@@ -15,7 +15,8 @@ import (
 )
 
 // kindDocs builds n documents with sortable ids "d00".."d<n>" all sharing a field,
-// so a selector matches every one — used to drive multi-page scans deterministically.
+// so a selector matches every one. The tests use it to drive multi-page scans
+// deterministically.
 func kindDocs(n int) []map[string]any {
 	docs := make([]map[string]any, n)
 	for i := range docs {
@@ -24,8 +25,9 @@ func kindDocs(n int) []map[string]any {
 	return docs
 }
 
-// scanPages records the size of each page a scan emits and the union of keys,
-// asserting no page is ever empty (which pins the final len(page) > 0 guard).
+// scanPages records the size of each page a scan emits and the union of keys.
+// It asserts that no page is ever empty (which pins the final len(page) > 0
+// guard).
 func scanPages(t *testing.T, scan func(func(map[string]any) error) error) (sizes []int, keys []string) {
 	t.Helper()
 	seen := map[string]any{}
@@ -67,7 +69,7 @@ func TestScanBatchesExactMultiple(t *testing.T) {
 	st.pageSize = 2
 	ctx := skipShort(t)
 
-	// Four docs at pageSize 2 is exactly two full pages; the trailing partial page
+	// Four docs at pageSize 2 is exactly two full pages. The trailing partial page
 	// must not be emitted (no empty final page).
 	sizes, keys := scanPages(t, func(fn func(map[string]any) error) error { return st.ScanBatches(ctx, fn) })
 	require.Equal(t, []int{2, 2}, sizes)
@@ -134,7 +136,8 @@ func TestClearPaginates(t *testing.T) {
 }
 
 // scanDeleteBatches records the size of each delete batch scanDeletes yields, and
-// the total, asserting no batch is ever empty (pinning the trailing len > 0 guard).
+// the total. It asserts that no batch is ever empty (pinning the trailing len > 0
+// guard).
 func scanDeleteBatches(t *testing.T, st *Store, ctx context.Context) (sizes []int, total int) {
 	t.Helper()
 	require.NoError(t, st.scanDeletes(ctx, func(batch []any) error {
@@ -152,7 +155,8 @@ func TestScanDeletesBatchStructure(t *testing.T) {
 	ctx := skipShort(t)
 
 	// Five tombstones at pageSize 2: batches fill to pageSize, the last is the
-	// remainder — the boundary that pins the flush threshold.
+	// remainder. This is the boundary that pins the flush
+	// threshold.
 	sizes, total := scanDeleteBatches(t, st, ctx)
 	require.Equal(t, []int{2, 2, 1}, sizes)
 	require.Equal(t, 5, total)
@@ -163,7 +167,7 @@ func TestScanDeletesExactMultiple(t *testing.T) {
 	st.pageSize = 2
 	ctx := skipShort(t)
 
-	// Four tombstones at pageSize 2 is exactly two full batches; no empty trailing
+	// Four tombstones at pageSize 2 is exactly two full batches. No empty trailing
 	// batch is yielded.
 	sizes, total := scanDeleteBatches(t, st, ctx)
 	require.Equal(t, []int{2, 2}, sizes)
@@ -186,7 +190,7 @@ func TestQueryReturnsBookmark(t *testing.T) {
 
 	res, err := st.Query(ctx, []string{`{"selector": {"year": {"$gt": 2000}}}`})
 	require.NoError(t, err)
-	// CouchDB _find always returns a paging bookmark; the driver surfaces it.
+	// CouchDB _find always returns a paging bookmark. The driver surfaces it.
 	require.NotEmpty(t, res.(map[string]any)["bookmark"])
 }
 
@@ -202,8 +206,8 @@ func TestInspectServerReportsFeatures(t *testing.T) {
 }
 
 func TestFormatRawFallsBackOnUnserializable(t *testing.T) {
-	// A value JSON cannot render (a channel) exercises the FormatRaw error branch:
-	// it must fall back to a plain string rather than return empty or panic. No
+	// A value JSON cannot render (a channel) exercises the FormatRaw error branch.
+	// It must fall back to a plain string rather than return empty or panic. No
 	// server is needed.
 	st := &Store{}
 	out := st.FormatRaw(make(chan int), false)

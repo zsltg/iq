@@ -16,7 +16,7 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// bsonSource streams a mongodump .bson file — concatenated raw BSON documents,
+// bsonSource streams a mongodump .bson file: concatenated raw BSON documents,
 // each framed by a leading little-endian int32 length. Each document is decoded
 // and normalized to the exact shape a live collection scan produces (see
 // drivers/mongo), keyed by its _id.

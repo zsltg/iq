@@ -49,9 +49,9 @@ func newRecorder(t *testing.T) *recorder {
 }
 
 func TestNewClientSendsBasicAuth(t *testing.T) {
-	// Both flavors must put the URL's credentials on every request. A config that
-	// loses the user name or the password still builds a client and still reaches
-	// the server, so only the Authorization header shows the difference.
+	// Both flavors must put the credentials of the URI on every request. A config
+	// that loses the user name or the password still builds a client and still
+	// reaches the server. So only the Authorization header shows the difference.
 	tests := []struct {
 		name   string
 		flavor flavor
@@ -220,9 +220,9 @@ func TestOpenPITRejectsAnEmptyIdentifier(t *testing.T) {
 }
 
 func TestDecodeIntoWrapsTheTransportFailure(t *testing.T) {
-	// A server that is not there gives a transport failure. The message must name the
-	// backend and the operation, and the cause must stay reachable, so a caller can
-	// tell a network fault from a refusal.
+	// A server that is not there gives a transport failure. The message must name
+	// the backend and the operation, and the cause must stay reachable. So a caller
+	// can tell a network fault from a refusal.
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	addr := srv.URL
 	srv.Close()

@@ -14,8 +14,8 @@ import (
 )
 
 // TestMain provisions the test Redis before the suite runs. flag.Parse must run
-// before testing.Short is read, and os.Exit skips deferred cleanup, so the work
-// lives in runTests where the defer fires before the process exits.
+// before testing.Short is read, and os.Exit skips deferred cleanup. So the work
+// lives in runTests, where the defer fires before the process exits.
 func TestMain(m *testing.M) {
 	os.Exit(runTests(m))
 }
@@ -45,12 +45,12 @@ func runTests(m *testing.M) int {
 				return 1
 			}
 		}
-		// Pin the tests to a reserved database, then export it through
-		// IQ_REDIS_URL so both this (redis_test) and the internal redis test
-		// package in this binary pick it up: an internal package test cannot see
-		// this file's variables. The reserved DB keeps integration runs off DB 0,
-		// which developers seed for manual exploration, even when IQ_REDIS_URL
-		// names a shared server (as the mutation gate does).
+		// Pin the tests to a reserved database. Then export it through
+		// IQ_REDIS_URL, so both this (redis_test) and the internal redis test
+		// package in this binary pick it up. An internal package test cannot see
+		// the variables of this file. The reserved DB keeps integration runs off
+		// DB 0, which developers seed for manual exploration. This holds even
+		// when IQ_REDIS_URL names a shared server (as the mutation gate does).
 		pinned, err := withRedisDB(url, testRedisDB)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "pin redis test database: %v\n", err)

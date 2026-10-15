@@ -13,14 +13,15 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// scanTestDB is the private database the keyspace-wide read tests below own. They
-// flush it, so it must not be the reserved database the rest of the suite shares
-// (15) nor the one the write tests flush (13).
+// scanTestDB is the private database that the keyspace-wide read tests below
+// own. They flush it. So it must not be the reserved database that the rest of
+// the suite shares (15). It must not be the one that the write tests flush
+// (13).
 const scanTestDB = 14
 
-// openOnDB opens a Store against the private scan database and empties it, so a
-// test that walks or counts the whole keyspace sees exactly the keys it seeded. It
-// skips under -short like every other container-backed test here.
+// openOnDB opens a Store against the private scan database and empties it. So a
+// test that walks or counts the whole keyspace sees exactly the keys that it
+// seeded. It skips under -short like every other container-backed test here.
 func openOnDB(t *testing.T, ctx context.Context, dec numfmt.DecimalMode) *Store { //nolint:revive // t first matches the other helpers in this package.
 	t.Helper()
 	if testing.Short() {
@@ -46,9 +47,9 @@ func seedStrings(t *testing.T, store *Store, prefix string, n int) {
 	require.NoError(t, err)
 }
 
-// TestDedupe pins the collapse a page of SCAN keys relies on: a key repeated by a
-// keyspace resize is read once, and first-seen order survives so a key lines up
-// with its type in the parallel slices the read pipelines build.
+// TestDedupe pins the collapse that a page of SCAN keys relies on. A key that a
+// keyspace resize repeats is read once. The first-seen order survives, so a key
+// lines up with its type in the parallel slices that the read pipelines build.
 func TestDedupe(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -70,9 +71,9 @@ func TestDedupe(t *testing.T) {
 }
 
 // TestScanBatchesWalksEveryCursorRound pins that the keyspace walk is a cursor
-// loop, not a single round: with more keys than the SCAN COUNT hint, the iterator
-// must fetch further rounds under the caller's context and still deliver every key
-// exactly once.
+// loop and not a single round. With more keys than the SCAN COUNT hint, the
+// iterator must fetch further rounds under the context of the caller. It must
+// still deliver every key exactly once.
 func TestScanBatchesWalksEveryCursorRound(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -161,9 +162,10 @@ func TestReadCommandsSurfaceTheCancelledContext(t *testing.T) {
 	}
 }
 
-// TestGetHonorsDecimalMode pins that the store's decimal mode reaches the RedisJSON
-// reader on the plain read path, the way ScanFiltered's reader already proves it on
-// the filtered one: in string mode a fractional number stays its exact literal.
+// TestGetHonorsDecimalMode pins that the decimal mode of the store reaches the
+// RedisJSON reader on the plain read path. The reader of ScanFiltered already
+// proves this on the filtered path. In string mode, a fractional number stays its
+// exact literal.
 func TestGetHonorsDecimalMode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -177,9 +179,9 @@ func TestGetHonorsDecimalMode(t *testing.T) {
 	require.Equal(t, map[string]any{"r": "1.5"}, got[key], "string mode keeps the exact literal")
 }
 
-// beforePipelineHook runs before each pipeline executes, which is the only place a
-// test can stage what happens between the driver's TYPE pipeline and its value
-// pipeline: the mid-read race both read paths are written to tolerate.
+// beforePipelineHook runs before each pipeline executes. It is the only place
+// where a test can stage what happens between the TYPE pipeline of the driver and
+// its value pipeline. That is the mid-read race that both read paths tolerate.
 type beforePipelineHook struct {
 	before func(cmds []goredis.Cmder)
 }
@@ -195,9 +197,10 @@ func (h beforePipelineHook) ProcessPipelineHook(next goredis.ProcessPipelineHook
 	}
 }
 
-// TestGetToleratesAVanishedKey stages the race on the plain read path: a key that
-// TYPE saw is deleted before the value pipeline runs, so the pipeline returns
-// redis.Nil. That is the absence of one key, and the other keys still arrive.
+// TestGetToleratesAVanishedKey stages the race on the plain read path. A key
+// that TYPE saw is deleted before the value pipeline runs, so the pipeline
+// returns redis.Nil. That is the absence of one key, and the other keys still
+// arrive.
 func TestGetToleratesAVanishedKey(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

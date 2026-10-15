@@ -15,12 +15,13 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// maxFuzzInput bounds one fuzz input, maxFuzzRecords bounds how much of a dump one
-// input decodes, and fuzzDrainBudget bounds how long a drain runs. A dump reader
-// streams, and the binary readers size a buffer from a length field the input
-// controls, so an unbounded drain would spend the -fuzztime budget on one input.
-// maxDumpFuzzInput is tighter than maxFuzzInput for the same reason: a larger blob
-// of hostile bytes reaches no new reader state.
+// The constant maxFuzzInput bounds one fuzz input. The constant maxFuzzRecords
+// bounds how much of a dump one input decodes. The constant fuzzDrainBudget
+// bounds how long a drain runs. A dump reader streams, and the binary readers
+// size a buffer from a length field that the input controls. So an unbounded
+// drain spends the -fuzztime budget on one input. The constant maxDumpFuzzInput
+// is tighter than maxFuzzInput for the same reason: a larger blob of hostile
+// bytes reaches no new reader state.
 const (
 	maxFuzzInput     = 64 << 10
 	maxDumpFuzzInput = 4 << 10
@@ -116,11 +117,11 @@ func FuzzOpenReader(f *testing.F) {
 	})
 }
 
-// FuzzCBORRecord drives the decode cache's record codec with arbitrary bytes, which
-// is what a corrupted or truncated cache file hands it. The oracle is that a
-// decoded record survives a re-encode: decodeRecord never panics, and encoding what
-// it produced and decoding that again gives an identical record, so narrowInts is
-// idempotent over everything the decoder can build.
+// FuzzCBORRecord drives the record codec of the decode cache with arbitrary
+// bytes, which is what a corrupted or truncated cache file hands it. The oracle
+// is that a decoded record survives a re-encode. decodeRecord never panics.
+// Encoding what it produced and decoding that again gives an identical record,
+// so narrowInts is idempotent over everything the decoder can build.
 func FuzzCBORRecord(f *testing.F) {
 	// Seeds are real encodeRecord output over the closed value set, plus hostile
 	// bytes: empty, a truncated array header and an invalid UTF-8 text string.
