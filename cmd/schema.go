@@ -69,18 +69,9 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 			if err := validateSchemaFormat(format); err != nil {
 				return err
 			}
-			arg := ""
-			if len(args) > 0 {
-				arg = args[0]
-			}
-			// The address half selects the source. The filter half (from the "=" of
-			// the spec or --filter) scopes which items the shape is inferred from.
-			addr, specFilter, _ := strings.Cut(arg, "=")
-			if strings.TrimSpace(specFilter) == "" && strings.Contains(arg, "=") {
-				return fmt.Errorf("invalid source %q: empty filter", arg)
-			}
-			if specFilter != "" {
-				filter = specFilter
+			addr, scope, err := schemaSpec(args, filter)
+			if err != nil {
+				return err
 			}
 			if err := resolveInspectSource(cfg, addr); err != nil {
 				return err
@@ -92,9 +83,9 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 				return redactErr(err, cfg.url)
 			}
 			defer func() { _ = st.Close() }()
-			items, err := sampleItems(ctx, st, sampleRequest{filter: filter, sample: sample, opts: cfg.runOptions()})
+			items, err := sampleItems(ctx, st, sampleRequest{filter: scope, sample: sample, opts: cfg.runOptions()})
 			if err != nil {
-				return fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(filter, err), cfg.url))
+				return fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(scope, err), cfg.url))
 			}
 			doc, asYAML, err := schemaDocument(shape.Infer(items), schemaTitle(cfg), format, yamlOut)
 			if err != nil {
@@ -121,6 +112,25 @@ func validateSchemaFormat(format string) error {
 	default:
 		return fmt.Errorf("invalid --format %q: want jsonschema or odcs", format)
 	}
+}
+
+// schemaSpec splits the optional `source[=<jq>]` argument into its address and
+// filter. The address selects the source. The filter scopes which items the
+// shape is inferred from. A filter in the spec replaces flagFilter (--filter). An
+// "=" with an empty filter is an error.
+func schemaSpec(args []string, flagFilter string) (addr, filter string, err error) {
+	arg := ""
+	if len(args) > 0 {
+		arg = args[0]
+	}
+	addr, specFilter, hasFilter := strings.Cut(arg, "=")
+	if hasFilter && strings.TrimSpace(specFilter) == "" {
+		return "", "", fmt.Errorf("invalid source %q: empty filter", arg)
+	}
+	if specFilter != "" {
+		return addr, specFilter, nil
+	}
+	return addr, flagFilter, nil
 }
 
 // schemaDocument projects the shape sh into the contract format named format,

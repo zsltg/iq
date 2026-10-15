@@ -349,3 +349,35 @@ func TestSchemaYAMLOutput(t *testing.T) {
 	require.Contains(t, out, "$schema:")
 	require.NotContains(t, out, `"$schema"`)
 }
+
+// TestSchemaSpec pins how schemaSpec splits the optional `source[=<jq>]`
+// argument: no argument keeps the active source and --filter, a spec filter
+// replaces --filter, and an "=" with an empty filter fails.
+func TestSchemaSpec(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		flagFilter string
+		wantAddr   string
+		wantFilter string
+		wantErr    string
+	}{
+		{"no argument keeps the flag filter", nil, ".[]", "", ".[]", ""},
+		{"address only keeps the flag filter", []string{"shop.orders"}, ".[]", "shop.orders", ".[]", ""},
+		{"spec filter replaces the flag filter", []string{"shop=.[] | .a"}, ".[]", "shop", ".[] | .a", ""},
+		{"empty spec filter fails", []string{"shop="}, "", "", "", "empty filter"},
+		{"blank spec filter fails", []string{"shop=  "}, "", "", "", "empty filter"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr, filter, err := schemaSpec(tt.args, tt.flagFilter)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantAddr, addr)
+			require.Equal(t, tt.wantFilter, filter)
+		})
+	}
+}
