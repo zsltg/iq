@@ -65,9 +65,9 @@ func TestInfer(t *testing.T) {
 	})
 
 	t.Run("presence is parent-relative: an optional parent keeps an always-present child required", func(t *testing.T) {
-		// addr appears in 2 of 3 items; every addr that appears has a city. The
-		// global-denominator bug would read city as optional (2/3); parent-relative
-		// presence reads it required (2/2 addr instances).
+		// addr appears in 2 of 3 items. Every addr that appears has a city. The
+		// global-denominator bug reads city as optional (2/3). Parent-relative
+		// presence reads it as required (2/2 addr instances).
 		items := map[string]any{
 			"1": map[string]any{"addr": map[string]any{"city": "A"}},
 			"2": map[string]any{"addr": map[string]any{"city": "B"}},
@@ -195,8 +195,8 @@ func TestInferFeedsTree(t *testing.T) {
 }
 
 func TestInferFloatKindInfinities(t *testing.T) {
-	// +Inf and -Inf are not integral, so floatKind must classify both as number:
-	// the IsInf guard cannot be dropped, widened to ||, or narrowed to one sign.
+	// +Inf and -Inf are not integral, so floatKind must classify both as number.
+	// The IsInf guard cannot be dropped, widened to ||, or narrowed to one sign.
 	tests := []struct {
 		name string
 		val  any
@@ -213,17 +213,17 @@ func TestInferFloatKindInfinities(t *testing.T) {
 
 func TestInferMixedKindFormat(t *testing.T) {
 	// A field holding formatted dates and an integer renders the string kind as
-	// string(date) but the integer kind as integer: the format decoration is gated
+	// string(date) but the integer kind as integer. The format decoration is gated
 	// on the string kind and is never applied to a non-string kind.
 	require.Equal(t, []any{"integer", "string(date)"}, fieldTypes("2020-01-02", "1999-12-31", 5))
 }
 
 func TestInferFormatObserveOrder(t *testing.T) {
-	// Array elements are observed in deterministic slice order, so a format a later
-	// element breaks must fall away. Both orders per format pin every operand of the
-	// all-or-nothing intersection: the format-first order catches a stale-carry (a
-	// dropped current-value operand), the format-last order catches a dropped
-	// accumulated-value operand.
+	// Array elements are observed in deterministic slice order, so a format that a
+	// later element breaks must fall away. Both orders per format pin every operand
+	// of the all-or-nothing intersection. The format-first order catches a
+	// stale-carry (a dropped current-value operand). The format-last order catches
+	// a dropped accumulated-value operand.
 	const (
 		dt   = "2020-01-02T03:04:05Z"
 		date = "2020-01-02"

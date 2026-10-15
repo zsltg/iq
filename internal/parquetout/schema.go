@@ -1,13 +1,14 @@
-// Package parquetout streams a normalized value sequence to Apache Parquet. It buffers
-// the first sample of values, infers their structural shape with internal/shape,
-// projects that shape's JSON Schema onto an Arrow schema, and writes one Parquet record
-// batch per page with pqarrow. It consumes only the closed normalized value set (nil,
-// bool, int/*big.Int, float64, json.Number, string, []any, map[string]any) that crosses
-// the query boundary, never a driver row.
+// Package parquetout streams a normalized value sequence to Apache Parquet. It
+// buffers the first sample of values and infers their structural shape with
+// internal/shape. It projects that shape's JSON Schema onto an Arrow schema. It
+// writes one Parquet record batch per page with pqarrow. It consumes only the
+// closed normalized value set that crosses the query boundary, never a driver
+// row. The set is nil, bool, int/*big.Int, float64, json.Number, string, []any,
+// and map[string]any.
 //
-// The Arrow dependency stays in this package: internal/shape and the query core never
-// import it. The schema comes from shape.JSONSchema (the public lattice projection),
-// not from the shape's private node tree.
+// The Arrow dependency stays in this package: internal/shape and the query core
+// never import it. The schema comes from shape.JSONSchema (the public lattice
+// projection), not from the private node tree of the shape.
 package parquetout
 
 import (
@@ -20,12 +21,13 @@ import (
 )
 
 // jsonEnc pairs the arrow.json fallback type with its encoder plan. The storage is
-// plain utf8 that carries byte-lossless canonical JSON. Field metadata marks the column
-// as the arrow.json canonical extension (see fieldMetadata). The code does not use the
-// registered Arrow extension type, because arrow-go's registry rewrites a column with
-// the reserved ARROW:extension:name key to a JSON Parquet logical type that it cannot
-// read back (storage reads as binary, the extension demands utf8). The marker therefore
-// uses iq's namespace, and the utf8 storage round-trips.
+// plain utf8 that carries byte-lossless canonical JSON. Field metadata marks the
+// column as the arrow.json canonical extension (see fieldMetadata). The code does
+// not use the registered Arrow extension type, because the registry of arrow-go
+// rewrites a column with the reserved ARROW:extension:name key. It writes a JSON
+// Parquet logical type that it cannot read back: the storage reads as binary, and
+// the extension demands utf8. So the marker uses the namespace of iq, and the
+// utf8 storage round-trips.
 func jsonEnc() (arrow.DataType, *enc) {
 	// kind defaults to encJSON, the zero value of encKind.
 	return arrow.BinaryTypes.String, &enc{}
@@ -34,7 +36,7 @@ func jsonEnc() (arrow.DataType, *enc) {
 // sampleBufferSize is how many leading values are buffered before the schema is
 // inferred and the first page is written. It mirrors the schema-inference sample
 // default (cmd schema/diff --sample), so the exported shape matches iq schema.
-// It is a constant, not a flag, for v1: a wider sample yields a truer shape, but
+// It is a constant, not a flag, for v1. A wider sample yields a truer shape, but
 // the trade-off is fixed until a real need surfaces.
 const sampleBufferSize = 1000
 
@@ -47,10 +49,10 @@ const pageBatchSize = 500
 // or unknown column carries, recorded as the value of the metaExtName marker.
 const jsonExtName = "arrow.json"
 
-// Metadata keys attached to a column or struct field. Both live in iq's
-// namespace: metaExtName deliberately avoids the reserved ARROW:extension:name
-// key, which arrow-go's registry reconstructs into an unreadable JSON Parquet
-// column.
+// Metadata keys attached to a column or struct field. Both live in the namespace
+// of iq. The key metaExtName avoids the reserved ARROW:extension:name key on
+// purpose, because the registry of arrow-go reconstructs that key into an
+// unreadable JSON Parquet column.
 const (
 	metaPresence = "iq:presence"  // required|optional, parent-relative from shape.
 	metaExtName  = "iq:extension" // arrow.json for the byte-lossless JSON fallback.
@@ -74,9 +76,9 @@ const (
 	encMap // map<utf8, elem>.
 )
 
-// enc is the encoder plan for one value position: its kind, and for composites
-// the child plans. afields holds the Arrow fields of a struct so the schema can
-// be built and, at the root, flattened into columns.
+// enc is the encoder plan for one value position. It holds the kind and, for
+// composites, the child plans. The field afields holds the Arrow fields of a
+// struct, so the schema can be built and, at the root, flattened into columns.
 type enc struct {
 	kind    encKind
 	afields []arrow.Field
@@ -90,9 +92,10 @@ type encField struct {
 	enc  *enc
 }
 
-// plan is the resolved write plan: the Arrow schema, the per-column encoders,
-// and whether the whole value is a single "value" column (the root shape was not
-// an object with fields) rather than one column per field.
+// plan is the resolved write plan. It holds the Arrow schema, the per-column
+// encoders, and a flag. The flag is true when the whole value is a single
+// "value" column, because the root shape was not an object with fields. Otherwise
+// there is one column per field.
 type plan struct {
 	schema      *arrow.Schema
 	columns     []encField
@@ -117,7 +120,7 @@ func inferPlan(sample []any) *plan {
 			columns: e.fields,
 		}
 	}
-	// A non-object (or heterogeneous) root has no columns to spread; the whole
+	// A non-object (or heterogeneous) root has no columns to spread. The whole
 	// value becomes one "value" column.
 	f := arrow.Field{Name: "value", Type: dt, Nullable: true, Metadata: fieldMetadata("required", e.kind == encJSON)}
 	return &plan{
@@ -129,8 +132,8 @@ func inferPlan(sample []any) *plan {
 
 // typeFor resolves one JSON Schema subschema to its Arrow data type and encoder
 // plan. A position with more than one non-null type, no type, or only null
-// collapses to the arrow.json fallback — byte-lossless canonical JSON in utf8
-// storage, per the Arrow canonical-extensions spec.
+// collapses to the arrow.json fallback. The fallback is byte-lossless canonical
+// JSON in utf8 storage, per the Arrow canonical-extensions spec.
 func typeFor(sub map[string]any) (arrow.DataType, *enc) {
 	names := nonNullTypes(sub["type"])
 	if len(names) != 1 {
@@ -154,8 +157,8 @@ func typeFor(sub map[string]any) (arrow.DataType, *enc) {
 	}
 }
 
-// stringType maps a string subschema, promoting the shape's date-time and date
-// formats to native temporal Arrow types; uuid stays utf8 for v1.
+// stringType maps a string subschema. It promotes the date-time and date formats
+// of the shape to native temporal Arrow types. A uuid stays utf8 for v1.
 func stringType(sub map[string]any) (arrow.DataType, *enc) {
 	switch format(sub) {
 	case "date-time":
@@ -168,7 +171,7 @@ func stringType(sub map[string]any) (arrow.DataType, *enc) {
 }
 
 // arrayType maps an array subschema to a list of its element type. An array with
-// no observed elements has no items schema; its element falls back to arrow.json.
+// no observed elements has no items schema. Its element falls back to arrow.json.
 func arrayType(sub map[string]any) (arrow.DataType, *enc) {
 	items, ok := sub["items"].(map[string]any)
 	if !ok {
@@ -178,17 +181,17 @@ func arrayType(sub map[string]any) (arrow.DataType, *enc) {
 	return arrow.ListOf(elemDT), &enc{kind: encList, elem: elemEnc}
 }
 
-// objectType maps an object subschema: an id-keyed map (additionalProperties)
-// becomes map<utf8, elem>; a fixed record (properties) becomes a struct; an
+// objectType maps an object subschema. An id-keyed map (additionalProperties)
+// becomes map<utf8, elem>. A fixed record (properties) becomes a struct. An
 // object with neither observed falls back to arrow.json.
 func objectType(sub map[string]any) (arrow.DataType, *enc) {
 	if ap, ok := sub["additionalProperties"].(map[string]any); ok {
 		valDT, valEnc := typeFor(ap)
 		return arrow.MapOf(arrow.BinaryTypes.String, valDT), &enc{kind: encMap, elem: valEnc}
 	}
-	// shape.JSONSchema only emits "properties" for an object with at least one
-	// field, so a present map is never empty; !ok (no properties) is the only
-	// no-field case and folds to the arrow.json fallback.
+	// shape.JSONSchema emits "properties" only for an object with at least one
+	// field, so a present map is never empty. The case !ok (no properties) is the
+	// only no-field case, and it folds to the arrow.json fallback.
 	props, ok := sub["properties"].(map[string]any)
 	if !ok {
 		return jsonEnc()
@@ -220,10 +223,11 @@ func objectType(sub map[string]any) (arrow.DataType, *enc) {
 	return arrow.StructOf(afields...), &enc{kind: encStruct, afields: afields, fields: fields}
 }
 
-// nonNullTypes returns the subschema's declared JSON Schema types with "null"
-// removed: a JSON null rides in the Arrow validity bitmap, so integer-or-null is
-// a nullable int64, not a heterogeneous column. A single remaining type maps to
-// its Arrow type; zero or several remaining collapse to arrow.json.
+// nonNullTypes returns the declared JSON Schema types of the subschema with
+// "null" removed. A JSON null rides in the Arrow validity bitmap, so
+// integer-or-null is a nullable int64, not a heterogeneous column. A single
+// remaining type maps to its Arrow type. Zero or several remaining types
+// collapse to arrow.json.
 func nonNullTypes(raw any) []string {
 	var names []string
 	switch t := raw.(type) {

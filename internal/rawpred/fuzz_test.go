@@ -18,18 +18,18 @@ import (
 // nothing new and it makes the -fuzztime budget dishonest.
 const maxFuzzInput = 64 << 10
 
-// FuzzMatch drives the raw-byte prefilter with an arbitrary jq filter and an
-// arbitrary document. The filter goes through the real front end, gojq.Parse then
-// pushdown.Compile, so only predicates a scan can actually push are tested.
+// FuzzMatch drives the raw-byte prefilter with an arbitrary jq filter and an arbitrary
+// document. The filter goes through the real front end, gojq.Parse then
+// pushdown.Compile. So the test covers only predicates that a scan can push.
 //
-// Two oracles hold. The load-bearing one is the drop invariant: if Match reports
-// CannotMatch, the decoded document must NOT match the same predicate under the
-// independent reference evaluator in property_test.go. The second is that the
-// prepared Matcher agrees with the package-level Match on every pair.
+// Two oracles hold. The first is the drop invariant. Every drop depends on it. If Match
+// reports CannotMatch, the decoded document must NOT match the same predicate under the
+// independent reference evaluator in property_test.go. The second is that the prepared
+// Matcher agrees with the package-level Match on every pair.
 func FuzzMatch(f *testing.F) {
-	// Seeds pair a pushable filter from the pushdown_test.go tables with a document
-	// from the rawpred tables, plus hostile documents: empty, deep nesting, invalid
-	// UTF-8 and an integer beyond float64.
+	// Seeds pair a pushable filter from the pushdown_test.go tables with a document from
+	// the rawpred tables. They also include hostile documents: empty, deep nesting,
+	// invalid UTF-8 and an integer beyond float64.
 	exprs := []string{
 		`.[] | select(.a == "x")`,
 		`.[] | select(.["a"] == 1)`,
@@ -98,11 +98,11 @@ func FuzzMatch(f *testing.F) {
 	})
 }
 
-// refCompilable reports whether every Regex node in pred has a pattern the
-// reference evaluator can compile. pushdown accepts a pattern that jq and PCRE read
-// the same way, which is not the same set RE2 accepts, so refRegexp can panic on a
-// pattern rawpred handles by degrading the node to a decode. Such a pair proves
-// nothing about the drop invariant, so the fuzz target passes over it.
+// refCompilable reports whether every Regex node in pred has a pattern that the
+// reference evaluator can compile. The pushdown package accepts a pattern that jq and
+// PCRE read the same way. That set differs from the set that RE2 accepts. So refRegexp
+// can panic on a pattern that rawpred handles by degrading the node to a decode. Such a
+// pair proves nothing about the drop invariant, so the fuzz target passes over it.
 func refCompilable(node predicate.Node) bool {
 	switch n := node.(type) {
 	case predicate.Regex:

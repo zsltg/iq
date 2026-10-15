@@ -125,8 +125,8 @@ func TestOptionListSortsByKey(t *testing.T) {
 		{Key: "gamma", Value: "gamma-value"},
 	}
 
-	// Map iteration order is randomized per range, so a comparison that never
-	// orders anything returns the keys in a different order each call; repeat
+	// Map iteration order is randomized per range. A comparison that never
+	// orders anything returns the keys in a different order each call. Repeat
 	// until landing on the sorted one by chance is impossible.
 	for range 10 {
 		opts, err := c.OptionList("")

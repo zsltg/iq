@@ -11,12 +11,12 @@ type Option struct {
 	Value string
 }
 
-// SetOption stores an option value. An empty handle targets the base config; a
-// non-empty one targets that source (resolved like a query would, so an "@"
-// prefix or a group-relative name works), and errors if it names no source. The
-// key must be non-empty; the value is stored verbatim. The config package does
-// not know which keys or values are valid — the CLI validates both before it
-// calls here, mirroring how URL-scheme support lives in the CLI, not here.
+// SetOption stores an option value. An empty handle targets the base config. A
+// non-empty one targets that source and errors if it names no source. The handle
+// is resolved like a query, so an "@" prefix or a group-relative name works. The
+// key must be non-empty. The value is stored verbatim. The config package does
+// not know which keys or values are valid. The CLI validates both before it
+// calls here, mirroring how URI-scheme support lives in the CLI, not here.
 func (c *Config) SetOption(handle, key, value string) error {
 	if key == "" {
 		return ErrEmptyOption
@@ -41,8 +41,8 @@ func (c *Config) SetOption(handle, key, value string) error {
 }
 
 // GetOption returns a stored option value and whether it was set. An empty
-// handle reads the base config; a non-empty one reads that source (returning
-// false, with no error, when the source or the key is absent).
+// handle reads the base config. A non-empty one reads that source. It returns
+// false, with no error, when the source or the key is absent.
 func (c *Config) GetOption(handle, key string) (string, bool) {
 	m, ok := c.optionsFor(handle)
 	if !ok {
@@ -53,7 +53,7 @@ func (c *Config) GetOption(handle, key string) (string, bool) {
 }
 
 // UnsetOption removes a stored option, reporting whether it was present. An
-// empty handle targets the base config; a non-empty one targets that source and
+// empty handle targets the base config. A non-empty one targets that source and
 // errors if it names no source.
 func (c *Config) UnsetOption(handle, key string) (bool, error) {
 	if handle == "" {
@@ -76,7 +76,7 @@ func (c *Config) UnsetOption(handle, key string) (bool, error) {
 }
 
 // OptionList returns the stored options at the given scope, sorted by key. An
-// empty handle lists the base config; a non-empty one lists that source and
+// empty handle lists the base config. A non-empty one lists that source and
 // errors if it names no source.
 func (c *Config) OptionList(handle string) ([]Option, error) {
 	m, ok := c.optionsFor(handle)
@@ -92,8 +92,8 @@ func (c *Config) OptionList(handle string) ([]Option, error) {
 }
 
 // optionsFor returns the option map for a scope and whether the scope exists. An
-// empty handle is the base config (always exists); a non-empty one is a source,
-// existing only when resolved.
+// empty handle is the base config, which always exists. A non-empty one is a
+// source, which exists only when resolved.
 func (c *Config) optionsFor(handle string) (map[string]string, bool) {
 	if handle == "" {
 		return c.Options, true

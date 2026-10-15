@@ -102,7 +102,7 @@ func (f *filterKV) ScanFiltered(ctx context.Context, pred predicate.Node, fn fun
 	f.filterCalls++
 	f.gotPred = pred
 	f.gotCtx = ctx
-	// Deliver the keyspace directly (a real store would pre-filter here); this
+	// Deliver the keyspace directly (a real store pre-filters here). This
 	// stays distinct from ScanBatches so a test can tell which path ran.
 	batch := make(map[string]any, len(f.scanKeys))
 	for _, k := range f.scanKeys {
@@ -111,7 +111,7 @@ func (f *filterKV) ScanFiltered(ctx context.Context, pred predicate.Node, fn fun
 	return fn(batch)
 }
 
-// TestJQEngineScanStrategyRecord pins the DEBUG "scan strategy" record: it
+// TestJQEngineScanStrategyRecord pins the DEBUG "scan strategy" record. It
 // reports the runtime pushdown decision (pushed true/false) and a precise reason
 // for each fallback, so a log consumer sees whether the store pre-filtered.
 func TestJQEngineScanStrategyRecord(t *testing.T) {
@@ -179,8 +179,8 @@ func TestJQEngineScanStrategyRecord(t *testing.T) {
 	}
 }
 
-// TestJQEngineNilLoggerIsSafe checks a run with no RunOptions.Logger does not
-// panic — the core defaults to a discard sink.
+// TestJQEngineNilLoggerIsSafe checks that a run with no RunOptions.Logger does
+// not panic. The core defaults to a discard sink.
 func TestJQEngineNilLoggerIsSafe(t *testing.T) {
 	store := &fakeKV{scanKeys: []string{"1"}, values: map[string]any{"1": 1}}
 	_, err := collectOpts(t, store, ".[]", query.RunOptions{Compile: true})
@@ -220,9 +220,9 @@ func TestJQEngineFetchesReferencedKeys(t *testing.T) {
 }
 
 // TestJQEngineForwardsContextToStore pins that every read path hands the store
-// the caller's context rather than a substituted nil: a bounded Get, a streaming
-// ScanBatches, and the materialized ScanBatches behind --unbounded. A nil there
-// silently unbounds the call the caller asked to be bounded.
+// the caller's context and not a substituted nil. The paths are a bounded Get, a
+// streaming ScanBatches, and the materialized ScanBatches behind --unbounded. A
+// nil there silently unbounds the call the caller asked to be bounded.
 func TestJQEngineForwardsContextToStore(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -249,11 +249,11 @@ func TestJQEngineForwardsContextToStore(t *testing.T) {
 }
 
 // TestJQEngineReadsAbsentKeyAsNull pins the query-visible half of the KVStore
-// presence contract: Get omits a missing key, and indexing an absent map key is
-// null in jq, so a bounded read of a key that is not there still emits null —
-// exactly what it emitted when the store filled the key in with nil. A store
-// that holds the key with a nil value is indistinguishable here, which is the
-// point: the difference is visible to a caller reading the map, never to jq.
+// presence contract. Get omits a missing key, and indexing an absent map key is
+// null in jq. So a bounded read of a key that is not there still emits null.
+// That is exactly what it emitted when the store filled the key in with nil. A
+// store that holds the key with a nil value is indistinguishable here, which is
+// the point. The difference is visible to a caller reading the map, never to jq.
 func TestJQEngineReadsAbsentKeyAsNull(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -365,7 +365,7 @@ func TestJQEngineCompileFallsBackWhenNotPushable(t *testing.T) {
 
 func TestJQEngineCompileSkipsSelectOnDerivedValue(t *testing.T) {
 	// The select tests .b, not the element. A predicate on the element (.c == 2)
-	// would drop "1", whose .b.c is 2, so the engine must not push it.
+	// drops "1", whose .b.c is 2, so the engine must not push it.
 	store := &filterKV{
 		scanKeys: []string{"1", "2"},
 		values: map[string]any{
@@ -412,8 +412,8 @@ func TestJQEnginePropagatesParseError(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "parse expression")
 	require.Nil(t, store.gotGetKeys)
-	// Naming the step is done by wrapping, so gojq's own parse error has to stay
-	// reachable underneath; formatting it in reads the same and severs errors.As.
+	// The code names the step by wrapping, so gojq's own parse error has to stay
+	// reachable underneath. Formatting it in reads the same and severs errors.As.
 	require.Error(t, errors.Unwrap(err), "the parse error must stay unwrappable")
 }
 
@@ -440,7 +440,7 @@ func TestJQEnginePropagatesScanError(t *testing.T) {
 }
 
 func TestJQEnginePropagatesRuntimeError(t *testing.T) {
-	// .a is a string; arithmetic on a string is a jq runtime error.
+	// .a is a string, and arithmetic on a string is a jq runtime error.
 	store := &fakeKV{values: map[string]any{"a": "not a number"}}
 
 	_, err := collect(t, store, ".a + 1", false)

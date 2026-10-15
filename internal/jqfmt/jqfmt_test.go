@@ -66,9 +66,9 @@ func TestFormatRoundTrip(t *testing.T) {
 }
 
 func TestFormatGolden(t *testing.T) {
-	// Exact-output cases pin the break policy and indentation: an object with one
-	// entry stays inline but a second entry breaks it; an array/reduce/select breaks
-	// only when its body contains a pipe; if/try multi-line only when they must.
+	// Exact-output cases pin the break policy and indentation. An object with one entry
+	// stays inline, but a second entry breaks it. An array/reduce/select breaks only
+	// when its body contains a pipe. An if/try is multi-line only when it must be.
 	tests := []struct {
 		src, want string
 	}{
@@ -84,8 +84,8 @@ func TestFormatGolden(t *testing.T) {
 		{`reduce .[] as $x (0; . + $x)`, "reduce .[] as $x (0; . + $x)"},
 		{`reduce .[] as $x (0; .a|.b)`, "reduce .[] as $x (\n  0;\n  .a\n  | .b\n)"},
 		{`select(.a|.b)`, "select(\n  .a\n  | .b\n)"},
-		// A call whose argument breaks reports the break to the enclosing form too, so
-		// the array around it opens its own block rather than collapsing to one line.
+		// A call whose argument breaks reports the break to the enclosing form too. So
+		// the array around it opens its own block, rather than collapsing to one line.
 		{`[select(.a|.b)]`, "[\n  select(\n    .a\n    | .b\n  )\n]"},
 		{`try .a catch (.b|.c)`, "try .a\ncatch\n  (\n    .b\n    | .c\n  )"},
 		{`foreach .[] as $x (0; . + $x)`, "foreach .[] as $x (0; . + $x)"},
@@ -105,8 +105,8 @@ func TestFormatGolden(t *testing.T) {
 		{`if .a then .b elif .c then .d end`, "if .a\nthen .b\nelif .c\nthen .d\nend"},
 		// A try with no catch keeps the catch clause out of the break decision.
 		{`try .a`, "try .a"},
-		// reduce/foreach break on any clause: the accumulator seed, the update, or
-		// foreach's optional extract; a foreach whose three clauses are all simple
+		// reduce/foreach break on any clause: the accumulator seed, the update, or the
+		// optional extract of foreach. A foreach whose three clauses are all simple
 		// stays inline.
 		{`reduce .[] as $x ((.a|.b); 0)`, "reduce .[] as $x (\n  (\n    .a\n    | .b\n  );\n  0\n)"},
 		{`foreach .[] as $x (0; .a; (.b|.c))`, "foreach .[] as $x (\n  0;\n  .a;\n  (\n    .b\n    | .c\n  )\n)"},
@@ -132,7 +132,7 @@ func TestFormatGolden(t *testing.T) {
 		{`env.HOME`, "env.HOME"},
 		{`first(.a).b`, "first(.a).b"},
 		// Only a call literally named source with two string literals gets the
-		// nested-filter treatment; anything else takes the ordinary path.
+		// nested-filter treatment. Anything else takes the ordinary path.
 		{`foo("a"; "b")`, `foo("a"; "b")`},
 		{`source(.x; ".a")`, `source(.x; ".a")`},
 	}
@@ -186,11 +186,11 @@ func stripANSI(s string) string {
 }
 
 func TestFormatNestedSource(t *testing.T) {
-	// A static source("name"; "<sub>") call unquotes and pretty-prints the nested jq
-	// inline as its own indented block: the sub-filter's own line breaks are re-indented
-	// under the call, the closing paren returns to the call's own indent, and a suffix
-	// on the call still follows it. Exact output, so a dropped token or a dropped
-	// re-indent is visible.
+	// A static `source("name"; "<sub>")` call unquotes and pretty-prints the nested jq
+	// inline as its own indented block. The own line breaks of the sub-filter are
+	// re-indented under the call, and the closing paren returns to the call's own
+	// indent. A suffix on the call still follows it. The output is exact, so a dropped
+	// token or a dropped re-indent is visible.
 	tests := []struct {
 		name, src, want string
 	}{
@@ -233,9 +233,9 @@ func TestFormatNestedSource(t *testing.T) {
 func paint(r role, text string) string { return ansi[r] + text + ansiReset }
 
 func TestFormatNestedSourceColored(t *testing.T) {
-	// The nested block and the source() call around it are colored by the same setting,
-	// so the call's own name, parens, separator and quoted source name carry color too,
-	// not just the sub-filter. Exact escape stream, token by token.
+	// The nested block and the source() call around it are colored by the same setting.
+	// So the call's own name, parens, separator and quoted source name carry color too,
+	// not only the sub-filter. Exact escape stream, token by token.
 	out, err := Format(`source("n"; ".a")`, true)
 	require.NoError(t, err)
 	want := paint(roleFunc, "source") + paint(rolePunc, "(") + paint(roleString, `"n"`) +
@@ -258,9 +258,9 @@ func TestFormatParseError(t *testing.T) {
 }
 
 func TestExplain(t *testing.T) {
-	// Each filter breaks into ordered pipe stages; a recognized stage carries a
-	// terse description, an unrecognized one carries "". Text is asserted structurally
-	// in TestExplainStagesJoinToFormat, so here only the count and per-stage Desc bind.
+	// Each filter breaks into ordered pipe stages. A recognized stage carries a terse
+	// description. An unrecognized one carries "". Text is asserted structurally in
+	// TestExplainStagesJoinToFormat, so here only the count and per-stage Desc bind.
 	tests := []struct {
 		name  string
 		src   string
@@ -334,9 +334,9 @@ func TestExplainBuiltinTable(t *testing.T) {
 }
 
 func TestExplainStagesJoinToFormat(t *testing.T) {
-	// The stage Texts are the exact per-stage pretty print, so joining a pipe chain's
-	// stages with the printer's own "\n| " separator reproduces Format verbatim — the
-	// stage split adds no rendering of its own, and each stage re-parses.
+	// The stage Texts are the exact per-stage pretty print. So joining the stages of a
+	// pipe chain with the printer's own "\n| " separator reproduces Format verbatim.
+	// The stage split adds no rendering of its own, and each stage re-parses.
 	srcs := []string{
 		`.`,
 		`.users[] | select(.age > 30) | {name, city: .addr.city}`,
@@ -375,10 +375,10 @@ func TestExplainColoredStageText(t *testing.T) {
 }
 
 func TestExplainPeelsLeadingDeclarations(t *testing.T) {
-	// Module + imports + func-defs collapse into stage 0 verbatim; the body then keeps
-	// only its non-declaration content. A single-query body makes that split observable:
-	// if any declaration field leaked into the body it would re-render here, so this
-	// pins both the decls text and the field clearing.
+	// Module + imports + func-defs collapse into stage 0 verbatim. The body then keeps
+	// only its non-declaration content. A single-query body makes that split
+	// observable. If any declaration field leaked into the body, it re-renders here. So
+	// this pins both the decls text and the field clearing.
 	stages := ExplainQuery(mustParse(t, `module {v: 1}; import "m" as m; def f: .+1; .a`), false)
 	require.Len(t, stages, 2)
 	require.Equal(t, "module { v: 1 };\nimport \"m\" as m;\ndef f: . + 1;", stages[0].Text)
@@ -388,9 +388,9 @@ func TestExplainPeelsLeadingDeclarations(t *testing.T) {
 }
 
 func TestHasLeadingDecls(t *testing.T) {
-	// Each declaration kind alone makes ExplainQuery peel a leading stage, so a query
+	// Each declaration kind alone makes ExplainQuery peel a leading stage. So a query
 	// with only a module, only an import, or only a func-def still splits into two
-	// stages; a plain filter stays one. This pins every operand of the predicate.
+	// stages. A plain filter stays one. This pins every operand of the predicate.
 	tests := []struct {
 		name       string
 		src        string
@@ -412,15 +412,15 @@ func TestHasLeadingDecls(t *testing.T) {
 
 func TestExplainEmptyObject(t *testing.T) {
 	// An empty object has no keys, so its description is the bare form, never the
-	// parenthesized key list — this pins the len(keys)==0 branch.
+	// parenthesized key list. This pins the len(keys)==0 branch.
 	stages := ExplainQuery(mustParse(t, `{}`), false)
 	require.Len(t, stages, 1)
 	require.Equal(t, "build an object", stages[0].Desc)
 }
 
 func TestVisibleWidth(t *testing.T) {
-	// The visible width ignores this package's ANSI escapes, so a colored stage and
-	// its plain form measure identically; a multi-byte rune counts as one column.
+	// The visible width ignores this package's ANSI escapes, so a colored stage and its
+	// plain form measure identically. A multi-byte rune counts as one column.
 	src := `.[] | select(.a == 1) | {id, total}`
 	plain, err := Format(src, false)
 	require.NoError(t, err)
@@ -433,8 +433,8 @@ func TestVisibleWidth(t *testing.T) {
 }
 
 func TestVisibleWidthBoundaries(t *testing.T) {
-	// The escape-skipping loop is exercised at its boundaries so an off-by-one in the
-	// index math changes the count: a complete escape is skipped whole, a truncated one
+	// The escape-skipping loop is exercised at its boundaries, so an off-by-one in the
+	// index math changes the count. A complete escape is skipped whole. A truncated one
 	// (no '[', no terminating 'm', or a lone trailing ESC) is not, and its bytes count.
 	tests := []struct {
 		name string
@@ -456,9 +456,9 @@ func TestVisibleWidthBoundaries(t *testing.T) {
 }
 
 func TestStringLiteral(t *testing.T) {
-	// Only a plain, uninterpolated, unsuffixed string literal standing alone is a static
-	// source() argument; every other query shape is rejected so the ordinary printing
-	// path keeps it verbatim.
+	// Only a plain, uninterpolated, unsuffixed string literal standing alone is a
+	// static source() argument. Every other query shape is rejected, so the ordinary
+	// printing path keeps it verbatim.
 	tests := []struct {
 		name, src, want string
 		ok              bool
@@ -482,8 +482,8 @@ func TestStringLiteral(t *testing.T) {
 }
 
 func TestStringLiteralRejectsMalformedQueries(t *testing.T) {
-	// The parser never emits these shapes — it sets Op only on a composition, whose Term
-	// is nil, and always fills Str on a string term — so each guard is pinned here on a
+	// The parser never emits these shapes. It sets Op only on a composition, whose Term
+	// is nil, and always fills Str on a string term. So each guard is pinned here on a
 	// hand-built query. Rejection, not a nil dereference, is the contract.
 	strTerm := &gojq.Term{Type: gojq.TermTypeString, Str: &gojq.String{Str: "x"}}
 	tests := []struct {
@@ -504,9 +504,9 @@ func TestStringLiteralRejectsMalformedQueries(t *testing.T) {
 }
 
 func TestSourceCallRejectsMalformedTerms(t *testing.T) {
-	// The shape check reads t.Func only after the term type says it is a call, and only
-	// a call actually named source is rewritten. Each guard is pinned on a hand-built
-	// term the parser would never produce, so none of them can be dropped silently.
+	// The shape check reads t.Func only after the term type says it is a call. Only a
+	// call named source is rewritten. Each guard is pinned on a hand-built term that
+	// the parser never produces, so none of them can be dropped silently.
 	args := []*gojq.Query{mustParse(t, `"orders"`), mustParse(t, `".a"`)}
 	tests := []struct {
 		name string
@@ -530,9 +530,9 @@ func TestSourceCallRejectsMalformedTerms(t *testing.T) {
 }
 
 func TestTokColorsOnlyMappedRoles(t *testing.T) {
-	// A role with no entry in the ansi table writes its text plain even with coloring on,
-	// so the printer never opens a color it cannot name; a mapped role is wrapped in its
-	// code and a reset.
+	// A role with no entry in the ansi table writes its text plain even with coloring
+	// on. So the printer never opens a color it cannot name. A mapped role is wrapped
+	// in its code and a reset.
 	unmapped := role(len(ansi))
 	tests := []struct {
 		name    string
@@ -575,7 +575,7 @@ func TestQueryNeedsBreakOnDeclarations(t *testing.T) {
 
 func TestPrinterEmptyContainers(t *testing.T) {
 	// An empty literal stays on one line and opens no indented block. termNeedsBreak
-	// keeps an empty object or array on the leaf path, so these forms are pinned by
+	// keeps an empty object or array on the leaf path. So these forms are pinned by
 	// calling the descending printer directly.
 	tests := []struct {
 		name  string

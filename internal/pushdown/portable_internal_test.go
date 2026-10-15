@@ -53,15 +53,15 @@ func TestPortableRegex(t *testing.T) {
 }
 
 func TestPortableEscape(t *testing.T) {
-	// Every whitelisted escape letter is portable. \S is deliberately absent: RE2's
-	// \s omits the vertical tab PCRE's includes, so RE2's \S matches it and PCRE's
-	// does not, and pushing \S to a PCRE backend would narrow the match. \s stays
-	// because it diverges the other way (a superset the client re-run corrects).
-	// The rejected bytes pin the alphanumeric range checks. Escaped punctuation is a
-	// literal in both engines. The bytes next to each alphanumeric range edge are
-	// portable: '@' before 'A', '[' after 'Z', '`' before 'a', '{' after 'z', '/'
-	// before '0', ':' after '9'. A byte at 0x80 or above is not an ASCII letter or
-	// digit, so it is portable too.
+	// Every whitelisted escape letter is portable. \S is absent, because RE2's \s omits
+	// the vertical tab that PCRE's includes. So RE2's \S matches it and PCRE's does
+	// not. Pushing \S to a PCRE backend narrows the match. \s stays, because it
+	// diverges the other way (a superset that the client re-run corrects). The rejected
+	// bytes pin the alphanumeric range checks. Escaped punctuation is a literal in both
+	// engines. The bytes next to each alphanumeric range edge are portable. They are
+	// '@' before 'A', '[' after 'Z', '`' before 'a', '{' after 'z', '/' before '0', and
+	// ':' after '9'. A byte at 0x80 or above is not an ASCII letter or digit, so it is
+	// portable too.
 	tests := []struct {
 		name string
 		b    byte

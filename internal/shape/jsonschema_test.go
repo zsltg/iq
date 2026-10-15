@@ -67,8 +67,8 @@ func TestJSONSchemaEnumThresholds(t *testing.T) {
 }
 
 func TestJSONSchemaEnumNeedsAllStrings(t *testing.T) {
-	// 16 low-cardinality strings would qualify, but one integer value breaks the
-	// all-string gate, so no enum — and the type is a mixed array.
+	// 16 low-cardinality strings qualify, but one integer value breaks the
+	// all-string gate. So there is no enum, and the type is a mixed array.
 	got := fieldSchema(append(vals(map[string]int{"a": 8, "b": 7}), 1))
 	require.Equal(t, []any{"integer", "string"}, got["type"])
 	require.NotContains(t, got, "enum")
@@ -181,7 +181,7 @@ func TestJSONSchemaObjectRequired(t *testing.T) {
 	})
 }
 
-// TestJSONSchemaEnumInMap projects an enum through a map collapse: the id-keyed
+// TestJSONSchemaEnumInMap projects an enum through a map collapse. The id-keyed
 // values fold into the map value's enum accumulator, so a low-cardinality set
 // still surfaces as additionalProperties.enum with its full sorted value set.
 func TestJSONSchemaEnumInMap(t *testing.T) {
@@ -197,7 +197,7 @@ func TestJSONSchemaEnumInMap(t *testing.T) {
 }
 
 // mapEnumSchema infers field m as a one-key object per instance, so m collapses
-// to a map and every value folds into the map value through enumAcc.mergeFrom.
+// to a map. Every value folds into the map value through enumAcc.mergeFrom.
 // Instance i holds keys[i] with the string values[i]. It returns the
 // additionalProperties schema of m.
 func mapEnumSchema(keys, values []string) map[string]any {

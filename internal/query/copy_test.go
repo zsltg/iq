@@ -99,8 +99,8 @@ func TestTransformKeyField(t *testing.T) {
 
 // TestTransformBadFilter pins that a malformed expression is reported with the
 // context of which expression failed. A bare gojq parse error says only what the
-// syntax problem was, never which of the two expressions carried it, so the
-// wrapper is the whole message from the caller's point of view.
+// syntax problem was. It never says which of the two expressions carried it. So
+// the wrapper is the whole message from the caller's point of view.
 func TestTransformBadFilter(t *testing.T) {
 	for _, tt := range []struct {
 		name string
@@ -109,8 +109,8 @@ func TestTransformBadFilter(t *testing.T) {
 	}{
 		{"item filter", query.TransformOptions{Filter: "this is not jq ("}, "parse item filter"},
 		{"key expression", query.TransformOptions{Key: "this is not jq ("}, "parse --key"},
-		// An undefined function parses cleanly and fails at compile instead, which
-		// is a separate guard with its own wording; a parse-only check never sees it.
+		// An undefined function parses cleanly and fails at compile instead. That is
+		// a separate guard with its own wording, and a parse-only check never sees it.
 		{"item filter compile", query.TransformOptions{Filter: "nosuchfunc"}, "compile item filter"},
 		{"key expression compile", query.TransformOptions{Key: "nosuchfunc"}, "compile --key"},
 	} {
@@ -118,17 +118,17 @@ func TestTransformBadFilter(t *testing.T) {
 			_, err := query.NewTransform(tt.opts)
 
 			require.ErrorContains(t, err, tt.want, "the failing expression must be named")
-			// Naming the expression is done by wrapping, so gojq's own parse error
-			// has to stay reachable underneath; formatting it in instead reads the
+			// The code names the expression by wrapping, so gojq's own parse error
+			// must stay reachable underneath. Formatting it in instead reads the
 			// same but severs errors.Is/As for every caller.
 			require.Error(t, errors.Unwrap(err), "the parse error must stay unwrappable")
 		})
 	}
 }
 
-// capturePutter records the batches and modes it is asked to write. stat, when
-// set, is the per-batch outcome it reports instead of the default "everything
-// written", so a test can drive the counters a Copier totals.
+// capturePutter records the batches and modes it is asked to write. When stat is
+// set, it is the per-batch outcome the putter reports instead of the default
+// "everything written". So a test can drive the counters a Copier totals.
 type capturePutter struct {
 	batches  [][]query.Record
 	mode     query.WriteMode
@@ -243,8 +243,8 @@ func TestCopierPassesKeylessRecordToPutter(t *testing.T) {
 }
 
 func TestCopierDefaultPageSize(t *testing.T) {
-	// A zero PageSize defaults to a large page, so three records arrive as one batch
-	// — distinguishing the <= 0 default from an off-by-one that would flush per item.
+	// A zero PageSize defaults to a large page, so three records arrive as one batch.
+	// This distinguishes the <= 0 default from an off-by-one that flushes per item.
 	dst := &capturePutter{}
 	c := query.Copier{Dst: dst, PageSize: 0}
 	recs := []query.Record{{Key: "a", Value: 1}, {Key: "b", Value: 2}, {Key: "c", Value: 3}}
@@ -327,9 +327,9 @@ func TestCopierPropagatesPutError(t *testing.T) {
 }
 
 // TestCopierTotalsEveryWriteStatField pins that a copy accumulates all three
-// counters across pages, not just the one the default putter reports. Overwritten
-// and Skipped are what make a non-atomic multi-key write honest, and a copy that
-// summed only Written would report the same total as one that dropped them.
+// counters across pages, not only the one the default putter reports.
+// Overwritten and Skipped make a non-atomic multi-key write honest. A copy that
+// summed only Written reports the same total as one that dropped them.
 func TestCopierTotalsEveryWriteStatField(t *testing.T) {
 	dst := &capturePutter{stat: &query.WriteStat{Written: 1, Overwritten: 2, Skipped: 3}}
 	c := query.Copier{Dst: dst, PageSize: 1}
@@ -352,11 +352,11 @@ func TestCopierPageBoundaries(t *testing.T) {
 		records  int
 		want     []int
 	}{
-		// 101 records straddle the default 100: a default of 99 would split 99/2 and
-		// one of 101 would send a single batch.
+		// 101 records straddle the default 100. A default of 99 splits 99/2, and
+		// one of 101 sends a single batch.
 		{name: "zero page size defaults to one hundred", pageSize: 0, records: 101, want: []int{100, 1}},
-		// A page size of 1 must flush per record; treating "<= 1" as unset would
-		// send one batch of 3 instead.
+		// A page size of 1 must flush per record. Treating "<= 1" as unset
+		// sends one batch of 3 instead.
 		{name: "page size one flushes per record", pageSize: 1, records: 3, want: []int{1, 1, 1}},
 		// Records that divide evenly must not produce a trailing empty batch: the
 		// final flush has nothing buffered and must not reach the store at all.
@@ -377,8 +377,8 @@ func TestCopierPageBoundaries(t *testing.T) {
 }
 
 // TestCopierDryRunCountsEveryPage pins that a dry run's count is the real record
-// count across several pages. The dry branch keeps its own buffer bookkeeping, so
-// a reset that leaves a record behind, or a total that assigns instead of adding,
+// count across several pages. The dry branch keeps its own buffer bookkeeping.
+// A reset that leaves a record behind, or a total that assigns instead of adding,
 // reports a plausible but wrong number from a single-page run.
 func TestCopierDryRunCountsEveryPage(t *testing.T) {
 	dst := &capturePutter{}
@@ -392,8 +392,8 @@ func TestCopierDryRunCountsEveryPage(t *testing.T) {
 }
 
 // TestCopierStopsOnMidCopyPutError pins that a page flushed inside the read loop
-// propagates its error immediately, rather than the copy running on and only the
-// final flush being checked.
+// propagates its error immediately. The copy does not run on with only the
+// final flush checked.
 func TestCopierStopsOnMidCopyPutError(t *testing.T) {
 	sentinel := errors.New("put boom")
 	dst := &capturePutter{err: sentinel}
@@ -406,8 +406,8 @@ func TestCopierStopsOnMidCopyPutError(t *testing.T) {
 
 // TestCopierReportsWhatItWroteBeforeFailing pins that a copy interrupted partway
 // still returns the stat for the pages that landed. Writes are not atomic across
-// keys, so a caller shown a zero total after two of three pages were written has
-// been told the destination is untouched when it is not.
+// keys. A caller shown a zero total after two of three pages were written is
+// told the destination is untouched when it is not.
 func TestCopierReportsWhatItWroteBeforeFailing(t *testing.T) {
 	sentinel := errors.New("put boom")
 	dst := &capturePutter{err: sentinel, failFrom: 3}
@@ -437,8 +437,8 @@ func TestCopierStopsOnTransformError(t *testing.T) {
 }
 
 // TestCopierForwardsContext pins that the caller's context reaches both edges of
-// a copy — the source it reads through and the putter it writes to — rather than
-// either being handed a nil.
+// a copy: the source it reads through and the putter it writes to. Neither
+// receives a nil.
 func TestCopierForwardsContext(t *testing.T) {
 	ctx := context.WithValue(context.Background(), ctxMarker{}, "marker")
 	var srcCtx context.Context
@@ -459,7 +459,7 @@ func TestCopierForwardsContext(t *testing.T) {
 
 // TestTransformWithoutFilterKeepsSourceType pins that a transform that does not
 // reshape the value leaves the record's native type alone. Only a reshaping
-// filter may restamp it, so a copy that merely re-keys a Redis hash must not
+// filter can restamp it. A copy that only re-keys a Redis hash must not
 // arrive at the destination as an untyped record.
 func TestTransformWithoutFilterKeepsSourceType(t *testing.T) {
 	fn, err := query.NewTransform(query.TransformOptions{KeyPrefix: "p:"})
@@ -507,7 +507,7 @@ func (p *modesPutter) Put(_ context.Context, batch []query.Record, mode query.Wr
 }
 
 // TestCopierPassesTheModeToPut sets InsertOnly, which is not the zero mode. A full
-// page and the last page both reach Put with it, so a copy that drops the mode
+// page and the last page both reach Put with it. So a copy that drops the mode
 // fails here, where an Upsert test cannot see it.
 func TestCopierPassesTheModeToPut(t *testing.T) {
 	dst := &modesPutter{}

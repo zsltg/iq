@@ -8,9 +8,9 @@ import (
 	"github.com/zsltg/iq/internal/neo4jenvelope"
 )
 
-// TestFieldNames pins the reserved envelope keys: they are a frozen wire contract
-// shared by the live Bolt driver and the offline APOC-JSON reader, so a rename here
-// would silently diverge the two and break every jq filter that references them.
+// TestFieldNames pins the reserved envelope keys. They are a frozen wire contract
+// shared by the live Bolt driver and the offline APOC-JSON reader. A rename here
+// silently diverges the two and breaks every jq filter that references them.
 func TestFieldNames(t *testing.T) {
 	require.Equal(t, "_id", neo4jenvelope.FieldID)
 	require.Equal(t, "_labels", neo4jenvelope.FieldLabels)

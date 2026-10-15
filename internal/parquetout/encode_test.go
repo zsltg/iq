@@ -172,8 +172,8 @@ func TestToInt64(t *testing.T) {
 		{"big.Int in range", big.NewInt(123), 123, true},
 		{"big.Int overflow", new(big.Int).Lsh(big.NewInt(1), 100), 0, false},
 		{"json.Number integer", json.Number("15"), 15, true},
-		// Int64() keeps full precision here; the float fallback would round 2^63-1
-		// up to 2^63 and reject it, so this pins the integer-first branch.
+		// Int64() keeps full precision here. The float fallback rounds 2^63-1
+		// up to 2^63 and rejects it, so this pins the integer-first branch.
 		{"json.Number max int64", json.Number("9223372036854775807"), math.MaxInt64, true},
 		{"json.Number integral float", json.Number("16.0"), 16, true},
 		{"json.Number fractional", json.Number("1.5"), 0, false},
@@ -346,7 +346,7 @@ func TestAppendJSONMarshalError(t *testing.T) {
 }
 
 func TestCanonicalJSONError(t *testing.T) {
-	// NaN has no JSON representation; canonicalJSON must surface the marshal error
+	// NaN has no JSON representation. canonicalJSON must surface the marshal error
 	// with context, wrapping the cause.
 	_, err := canonicalJSON(math.NaN())
 	require.Error(t, err)

@@ -13,8 +13,8 @@ import (
 // with the pushdown compiler's decision about it. Expr is the conjunct's jq source, for
 // display. Pred is the pushable predicate that the compiler extracted, or nil when the
 // conjunct cannot be pushed. Reason then gives a short, backend-neutral explanation. A
-// backend translator can still decline a non-nil Pred, so Pred means "the compiler
-// could push this", not "the backend did".
+// backend translator can still decline a non-nil Pred. So a non-nil Pred means that the
+// compiler can push the conjunct, not that the backend did.
 type Conjunct struct {
 	Expr   string
 	Pred   predicate.Node
@@ -51,17 +51,17 @@ func Conjuncts(q *gojq.Query) ([]Conjunct, bool) {
 	return out, true
 }
 
-// maxNestDepth bounds how deep unwrap peels parenthesizing wrappers before it gives
-// up. Real filters nest a handful deep, so the cap only ever fires on a pathological
-// or synthetic input, where declining the conjunct is safe (the full jq re-runs
-// client-side). Bounding the peel loop by construction also means a mutant that
-// removes the loop's progress cannot spin forever — it terminates at the cap.
+// maxNestDepth bounds how deep unwrap peels parenthesizing wrappers before it gives up.
+// Real filters nest a handful deep. So the cap fires only on a pathological or
+// synthetic input, where declining the conjunct is safe (the full jq re-runs
+// client-side). Bounding the peel loop by construction also means that a mutant that
+// removes the progress of the loop cannot spin forever. It terminates at the cap.
 const maxNestDepth = 512
 
 // topConjuncts splits e into its top-level and-conjuncts and unwraps parentheses, so
 // `(a and b) and c` yields [a, b, c]. Splitting stops at any other operator: a
 // comparison, a `path | builtin` pipe, or an `or` stays whole, because its parts are
-// not independently droppable (an or must push every branch or none). An expression
+// not independently droppable. An or must push every branch or none. An expression
 // nested past maxNestDepth contributes no conjunct. This affects only the --explain
 // breakdown, never execution, which compiles independently. The client-side jq still
 // runs.
@@ -93,14 +93,14 @@ func unwrap(e *gojq.Query) (*gojq.Query, bool) {
 }
 
 // declineReason returns a short, backend-neutral explanation of why the pushdown
-// compiler could not turn conjunct e into a pushable predicate. It inspects only
-// the conjunct's top-level shape, mapping the compiler's own gate points — an
-// inexact negation, a non-portable regex, an unsafe field name — to a human reason,
-// and reports anything else as an unpushable construct. It is best-effort display
-// text, never a control signal, so an imperfect classification only affects wording.
+// compiler cannot turn conjunct e into a pushable predicate. It inspects only the
+// top-level shape of the conjunct. It maps the compiler's own gate points to a human
+// reason: an inexact negation, a non-portable regex, an unsafe field name. It reports
+// anything else as an unpushable construct. It is best-effort display text, never a
+// control signal, so an imperfect classification only affects wording.
 func declineReason(e *gojq.Query) string {
-	// e arrives already unwrapped from topConjuncts, so it is inspected directly.
-	// A trailing `| not` the compiler could not extract exactly (a negation cannot
+	// e arrives already unwrapped from topConjuncts, so it is inspected directly. A
+	// trailing `| not` that the compiler cannot extract exactly (a negation cannot
 	// widen, so an inexact inner predicate is dropped entirely).
 	if _, ok := negatedPipe(e); ok {
 		return "negation is not exactly expressible"
@@ -147,7 +147,7 @@ func unsafeFieldName(e *gojq.Query) (string, bool) {
 }
 
 // firstUnsafeComponent returns the first component of q's leading field path that
-// safeField rejects, or ok=false when q is not a plain field path or every
+// safeField rejects. It returns ok=false when q is not a plain field path or every
 // component is safe.
 func firstUnsafeComponent(q *gojq.Query) (string, bool) {
 	for _, c := range rawPath(q) {

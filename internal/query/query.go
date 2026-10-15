@@ -12,7 +12,7 @@ import (
 var ErrEmptyQuery = errors.New("empty query: expected a command")
 
 // Store is the port the core depends on. A driver adapter (Redis, and later
-// others) implements it; the core never imports a concrete driver.
+// others) implements it. The core never imports a concrete driver.
 type Store interface {
 	// Query forwards the parsed command arguments to the store and returns the
 	// raw result. args[0] is the command, the rest its operands.

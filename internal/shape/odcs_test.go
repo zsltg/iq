@@ -27,11 +27,11 @@ func odcsField(vals ...any) map[string]any {
 }
 
 // TestODCSScalarTypes pins the scalar shape->ODCS logicalType mapping, including
-// the format demotions ODCS's nine-type lattice forces: date-time and date carry
-// logicalType date with a JDK format pattern, a UUID stays string with the uuid
-// format, and iq's canonical decimal-string and base64-binary values (plain
-// strings in the shape) stay logicalType string with no invented decimal/binary
-// type or non-enum format.
+// the format demotions that ODCS's nine-type lattice forces. Date-time and date
+// carry logicalType date with a JDK format pattern. A UUID stays string with the
+// uuid format. The canonical decimal-string and base64-binary values of iq (plain
+// strings in the shape) stay logicalType string. They get no invented
+// decimal/binary type and no non-enum format.
 func TestODCSScalarTypes(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -67,8 +67,8 @@ func TestODCSScalarTypes(t *testing.T) {
 	}
 }
 
-// TestODCSEmptyObject pins the object-boundary guard: an empty object carries
-// logicalType object but no properties key — the properties slot is emitted only
+// TestODCSEmptyObject pins the object-boundary guard. An empty object carries
+// logicalType object but no properties key. The properties slot is emitted only
 // for a strictly non-empty field set, so an empty object never yields an empty
 // properties array.
 func TestODCSEmptyObject(t *testing.T) {
@@ -77,9 +77,9 @@ func TestODCSEmptyObject(t *testing.T) {
 	require.NotContains(t, prop, "properties", "an empty object has no properties slot")
 }
 
-// TestODCSEmptyArray pins the array-boundary guard: an empty array carries
-// logicalType array but no items key — items is emitted only when the array has a
-// unified element, which an empty array never accumulates.
+// TestODCSEmptyArray pins the array-boundary guard. An empty array carries
+// logicalType array but no items key. The items key is emitted only when the array
+// has a unified element, which an empty array never accumulates.
 func TestODCSEmptyArray(t *testing.T) {
 	prop := odcsField([]any{})
 	require.Equal(t, "array", prop["logicalType"])
@@ -94,8 +94,8 @@ func TestODCSNumberIntegerCollapse(t *testing.T) {
 }
 
 // TestODCSNestedObject pins that a nested object projects logicalType object with
-// a properties array, and that presence maps to the per-property required flag:
-// a field in every instance is required, an optional one omits the flag.
+// a properties array. It also pins that presence maps to the per-property required
+// flag. A field in every instance is required. An optional one omits the flag.
 func TestODCSNestedObject(t *testing.T) {
 	items := map[string]any{
 		"1": map[string]any{"addr": map[string]any{"city": "A", "zip": "1"}},
@@ -125,8 +125,8 @@ func TestODCSNestedObject(t *testing.T) {
 }
 
 // TestODCSArray pins that an array field projects logicalType array with an items
-// element carrying the element's logicalType, and that the item element is
-// nameless (ODCS array items are unnamed element definitions).
+// element carrying the element's logicalType. It also pins that the item element
+// is nameless (ODCS array items are unnamed element definitions).
 func TestODCSArray(t *testing.T) {
 	t.Run("scalar elements", func(t *testing.T) {
 		prop := odcsField([]any{1, 2, 3})
@@ -145,10 +145,10 @@ func TestODCSArray(t *testing.T) {
 	})
 }
 
-// TestODCSMapValue pins the map projection directly: a nested id-keyed object
-// collapsed into a map is a dynamic-keyed object with no properties array — ODCS
+// TestODCSMapValue pins the map projection directly. A nested id-keyed object
+// collapsed into a map is a dynamic-keyed object with no properties array. ODCS
 // v3.1.0 has no additionalProperties analog, so the value shape is not named. The
-// root holds field "m" whose distinct per-instance keys make it collapse.
+// root holds field "m", whose distinct per-instance keys make it collapse.
 func TestODCSMapValue(t *testing.T) {
 	items := make(map[string]any, 12)
 	for i := range 12 {
@@ -178,7 +178,7 @@ func TestODCSNonObjectRoot(t *testing.T) {
 }
 
 // TestODCSDeterministic pins that two independent samples of the same shape
-// project byte-identical ODCS schema objects — property order is sorted, so the
+// project byte-identical ODCS schema objects. Property order is sorted, so the
 // contract is reproducible under resampling.
 func TestODCSDeterministic(t *testing.T) {
 	build := func(seed int) map[string]any {

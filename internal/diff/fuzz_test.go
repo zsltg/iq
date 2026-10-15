@@ -10,7 +10,7 @@ import (
 )
 
 // maxFuzzInput bounds one fuzz input. Both walks are recursive over the decoded
-// value, so an unbounded document would spend the -fuzztime budget on one input.
+// value, so an unbounded document spends the -fuzztime budget on one input.
 const maxFuzzInput = 64 << 10
 
 // FuzzPatch drives the two diff engines with a pair of arbitrary JSON documents,
@@ -21,8 +21,8 @@ const maxFuzzInput = 64 << 10
 // differ at all.
 func FuzzPatch(f *testing.F) {
 	// Seeds cover the walk branches (scalars, objects, arrays, added and removed
-	// keys, a type mismatch) plus hostile input: empty, deep nesting, invalid UTF-8
-	// and a number beyond float64.
+	// keys, a type mismatch) plus hostile input. The hostile input is empty, deep
+	// nesting, invalid UTF-8, and a number beyond float64.
 	pairs := [][2]string{
 		{`{"a":1}`, `{"a":2}`},
 		{`{"a":1}`, `{"a":1}`},

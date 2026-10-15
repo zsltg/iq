@@ -50,8 +50,8 @@ func TestCombinerRun(t *testing.T) {
 	t.Run("parse error", func(t *testing.T) {
 		_, err := runCombine("@@@ not jq", nil, nil)
 		require.ErrorContains(t, err, "parse combine")
-		// Naming the step is done by wrapping, so gojq's own error has to stay
-		// reachable underneath; formatting it in reads the same and severs
+		// The code names the step by wrapping, so gojq's own error has to stay
+		// reachable underneath. Formatting it in reads the same and severs
 		// errors.Is/As for every caller.
 		require.Error(t, errors.Unwrap(err), "the parse error must stay unwrappable")
 	})
@@ -75,9 +75,9 @@ func TestCombinerRun(t *testing.T) {
 	})
 }
 
-// TestNewCombinerReturnsCombiner pins the constructor: Run has a pointer receiver
-// that never dereferences it, so a nil Combiner would work by accident today and
-// break the moment the type gains a field.
+// TestNewCombinerReturnsCombiner pins the constructor. Run has a pointer receiver
+// that never dereferences it, so a nil Combiner works by accident today. It
+// breaks the moment the type gains a field.
 func TestNewCombinerReturnsCombiner(t *testing.T) {
 	require.NotNil(t, query.NewCombiner())
 }

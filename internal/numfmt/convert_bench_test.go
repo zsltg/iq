@@ -10,8 +10,8 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// benchShape names a local document size for the conversion benchmark. numfmt is a
-// separate package from query, so it cannot share the query corpus helper and
+// benchShape names a local document size for the conversion benchmark. The numfmt
+// package is separate from query, so it cannot share the query corpus helper. It
 // keeps its own small generator here.
 type benchShape struct {
 	name string
@@ -54,7 +54,7 @@ func buildNumfmtCorpus() []benchShape {
 	}
 }
 
-// mustMarshal marshals v or panics; benchmark setup, not production code.
+// mustMarshal marshals v or panics. It is benchmark setup, not production code.
 func mustMarshal(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -77,10 +77,10 @@ func decodeUseNumber(raw []byte) any {
 
 // BenchmarkConvertNumbers measures numfmt.ConvertNumbers in isolation per shape.
 // ConvertNumbers mutates its argument in place (json.Number becomes int/float), so
-// a value cannot be converted twice. Rather than reset per iteration (which forces
-// an expensive untimed decode into every step), it pre-decodes a fresh
-// json.Number-laden value per iteration before the timer starts, leaving the timed
-// loop to run only the conversion over never-before-converted inputs.
+// a value cannot be converted twice. Resetting per iteration forces an
+// expensive untimed decode into every step. Instead the benchmark pre-decodes a
+// fresh json.Number-laden value per iteration before the timer starts. The timed
+// loop then runs only the conversion over never-before-converted inputs.
 func BenchmarkConvertNumbers(b *testing.B) {
 	for _, shape := range buildNumfmtCorpus() {
 		b.Run(shape.name, func(b *testing.B) {

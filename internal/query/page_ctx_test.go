@@ -40,8 +40,8 @@ func copyProbe(t *testing.T, pageSize, n int) *pageProbePutter {
 }
 
 // TestCopyGivesTheCallerContextToEveryPut copies five records in pages of two. The
-// first two Puts come from a page that fills up, the last one from the final flush,
-// and each of them must see the caller's context.
+// first two Puts come from a page that fills up. The last one comes from the final
+// flush. Each of them must see the caller's context.
 func TestCopyGivesTheCallerContextToEveryPut(t *testing.T) {
 	dst := copyProbe(t, 2, 5)
 	require.Equal(t, []any{"marker", "marker", "marker"}, dst.markers)

@@ -8,8 +8,8 @@ import (
 )
 
 // UsesSource reports whether filter calls the in-filter source() function. Such a
-// filter reads entirely through named sources and runs over a null input, so the caller
-// routes it to a CrossEngine and not to a primary store.
+// filter reads entirely through named sources and runs over a null input. So the
+// caller routes it to a CrossEngine and not to a primary store.
 //
 // It compiles twice and does not match gojq's error text. A filter that compiles as-is
 // cannot reference source() (unbound here), so it is not cross-source. A filter that
@@ -28,12 +28,12 @@ func UsesSource(filter string) (bool, error) {
 	return err == nil, nil
 }
 
-// probeSource is a stub source() binding used only to test-compile a filter in
-// UsesSource; it is never run, so it yields nothing.
+// probeSource is a stub source() binding. UsesSource uses it only to test-compile
+// a filter. The binding never runs, so it yields nothing.
 func probeSource(any, []any) gojq.Iter { return gojq.NewIter[any]() }
 
-// CrossEngine runs a jq filter whose data comes entirely from source(name;
-// filter) calls, over a null input — there is no primary store. It is the engine
+// CrossEngine runs a jq filter whose data comes entirely from
+// `source(name; filter)` calls, over a null input. There is no primary store. It is the engine
 // for a cross-source filter (one UsesSource reports true for).
 type CrossEngine struct {
 	opener SourceOpener
@@ -74,12 +74,14 @@ func (e *CrossEngine) Run(ctx context.Context, filter string, opts RunOptions, e
 	}
 }
 
-// sourceFunc builds the source(name; filter) implementation for one run. It resolves
-// name through opener, runs the string sub-filter against that source with a nested
-// engine (so a nested source() works too), and yields the results. It yields errors as
-// jq error values. Both arguments are string values, so the sub-filter is passed
-// quoted, for example source("orders"; ".[] | select(.total > 99)"). A one-argument
-// source("name") yields the whole source (equivalent to source("name"; ".")).
+// sourceFunc builds the `source(name; filter)` implementation for one run. It
+// resolves name through opener. It runs the string sub-filter against that
+// source with a nested engine (so a nested source() works too), and yields the
+// results. It yields errors as jq error values. Both arguments are string
+// values, so the sub-filter is passed quoted, for example
+// `source("orders"; ".[] | select(.total > 99)")`. A one-argument
+// `source("name")` yields the whole source (equivalent to
+// `source("name"; ".")`).
 func sourceFunc(ctx context.Context, opts RunOptions, opener SourceOpener) func(any, []any) gojq.Iter {
 	return func(_ any, args []any) gojq.Iter {
 		name, ok := args[0].(string)
@@ -99,8 +101,8 @@ func sourceFunc(ctx context.Context, opts RunOptions, opener SourceOpener) func(
 		}
 		var out []any
 		// opts flows through unchanged, so a RunOptions.OnPage progress hook set
-		// by the CLI ticks for each source's scan too (counts aggregate across
-		// sources, which is the intended cross-source scan total).
+		// by the CLI ticks for each source's scan too. Counts aggregate across
+		// sources, which is the intended cross-source scan total.
 		if err := NewJQEngine(store).Run(ctx, filter, opts, func(v any) error {
 			out = append(out, v)
 			return nil

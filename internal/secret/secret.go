@@ -1,7 +1,7 @@
 // Package secret stores a source's password in the OS keyring, keeping the
 // plaintext out of the config file. The config records only that a source is
-// keyring-backed; the password is fetched here at connect time and spliced back
-// into the URL by the composition root. Keyring is a port so tests can inject an
+// keyring-backed. The password is fetched here at connect time and spliced back
+// into the URI by the composition root. Keyring is a port so tests can inject an
 // in-memory fake and never touch the real OS secret store.
 package secret
 
@@ -12,8 +12,8 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-// service is the keyring service name every iq credential is stored under; the
-// per-source account is the source's full handle.
+// service is the keyring service name that every iq credential is stored under.
+// The per-source account is the full handle of the source.
 const service = "iq"
 
 // ErrNotFound is returned by Get when no credential is stored for the handle.

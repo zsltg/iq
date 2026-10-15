@@ -7,10 +7,9 @@ import (
 	"github.com/itchyny/gojq"
 )
 
-// matchedBuiltins lists the gojq builtins, as name/arity, that the compiler
-// recognizes by name. A user definition with one of these signatures replaces
-// the builtin, so a predicate read from the call would not match what the
-// query does.
+// matchedBuiltins lists the gojq builtins, as name/arity, that the compiler recognizes
+// by name. A user definition with one of these signatures replaces the builtin. So a
+// predicate read from the call does not match what the query does.
 var matchedBuiltins = map[string]struct{}{
 	"select/1": {},
 	"not/0":    {},

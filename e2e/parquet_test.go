@@ -17,9 +17,9 @@ import (
 	iqfile "github.com/zsltg/iq/drivers/file"
 )
 
-// TestParquetExportRoundTrip drives the built binary black-box: it exports a
+// TestParquetExportRoundTrip drives the built binary black-box. It exports a
 // file-backed source as Parquet, then reads the bytes back in-process and
-// asserts the row count and a value survived.
+// asserts that the row count and a value survived.
 func TestParquetExportRoundTrip(t *testing.T) {
 	skipShort(t)
 	dir := t.TempDir()
@@ -48,7 +48,7 @@ func TestParquetExportRoundTrip(t *testing.T) {
 	defer tbl.Release()
 	require.Equal(t, int64(2), tbl.NumRows())
 
-	// age is an int64 column; assert both values are present (scan order is not
+	// age is an int64 column. Assert that both values are present (scan order is not
 	// guaranteed for a file source).
 	require.True(t, arrow.TypeEqual(arrow.PrimitiveTypes.Int64, colType(t, tbl, "age")))
 	ages := intColumn(t, tbl, "age")

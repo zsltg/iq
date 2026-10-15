@@ -9,8 +9,9 @@ import (
 	"github.com/itchyny/gojq"
 )
 
-// scanPage is one page of the scan: parallel keys and raw document bytes, the unit
-// both the baseline and the pre-filter process before handing survivors to gojq.
+// scanPage is one page of the scan: parallel keys and raw document bytes. It is
+// the unit both the baseline and the pre-filter process before handing survivors
+// to gojq.
 type scanPage struct {
 	keys []string
 	raw  [][]byte
@@ -33,9 +34,9 @@ func buildScanPages(docs []map[string]any, pageSize int) []scanPage {
 	return pages
 }
 
-// scanBaseline is today's path: fully decode every document in the page (UseNumber
-// + convertNumbers, via decodeValue) then run the residual gojq filter over the
-// whole page.
+// scanBaseline is today's path. It fully decodes every document in the page
+// (UseNumber + convertNumbers, via decodeValue). Then it runs the residual gojq
+// filter over the whole page.
 func scanBaseline(ctx context.Context, code *gojq.Code, page scanPage, emit func(any) error) error {
 	root := make(map[string]any, len(page.raw))
 	for i, raw := range page.raw {
@@ -48,12 +49,13 @@ func scanBaseline(ctx context.Context, code *gojq.Code, page scanPage, emit func
 	return runCode(ctx, code, root, emit)
 }
 
-// scanPrefilter is the prototype: extract the top-level "status" from raw bytes
-// with jsonparser and decode only documents that could match (status=="active"),
-// falling back to a full decode on any extraction error so the pre-filter stays a
-// conservative superset — it may keep a document, never wrongly drop one. The
-// residual gojq filter still re-runs over the survivors, so correctness is gojq's,
-// not the raw evaluator's. Hand-coded top-level Eq only; this is a measurement rig.
+// scanPrefilter is the prototype. It extracts the top-level "status" from raw
+// bytes with jsonparser and decodes only documents that can match
+// (status=="active"). It falls back to a full decode on any extraction error, so
+// the pre-filter stays a conservative superset. It can keep a document, and never
+// wrongly drops one. The residual gojq filter still re-runs over the survivors,
+// so correctness is gojq's, not the raw evaluator's. It is hand-coded top-level
+// Eq only. It is a measurement rig.
 func scanPrefilter(ctx context.Context, code *gojq.Code, page scanPage, emit func(any) error) error {
 	root := make(map[string]any, len(page.raw))
 	for i, raw := range page.raw {
@@ -72,8 +74,8 @@ func scanPrefilter(ctx context.Context, code *gojq.Code, page scanPage, emit fun
 
 // BenchmarkScanFilter compares the baseline decode-everything scan against the
 // jsonparser pre-filter, per shape and match rate. The residual gojq filter is
-// identical in both arms; only the amount decoded differs. A win shows up as fewer
-// ns/op, B/op, and allocs/op at low selectivity with no regression at 100%.
+// identical in both arms. Only the amount decoded differs. A win shows up as
+// fewer ns/op, B/op, and allocs/op at low selectivity with no regression at 100%.
 func BenchmarkScanFilter(b *testing.B) {
 	code := mustCompile(b, residualFilterExpr)
 	ctx := context.Background()

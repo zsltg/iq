@@ -35,9 +35,9 @@ func isJSONField(f arrow.Field) bool {
 }
 
 func TestInferPlanScalarProjection(t *testing.T) {
-	// Ten object rows exercise every scalar mapping row plus presence: "req" in
-	// all ten, "opt" in half. "mix" sees an integer and a fractional number, so
-	// integer∪number collapses to double.
+	// Ten object rows exercise every scalar mapping row plus presence. The field
+	// "req" is in all ten and "opt" in half. The field "mix" sees an integer and a
+	// fractional number, so integer∪number collapses to double.
 	sample := make([]any, 0, 10)
 	for i := range 10 {
 		row := map[string]any{
@@ -182,8 +182,8 @@ func TestWriterSingleValueRoundTrip(t *testing.T) {
 }
 
 // TestWriterSingleValuePostSampleError pins the single-value error path, which
-// names the "value" column: a sample of valid timestamps locks the column, then
-// a non-timestamp past the sample fails naming that column.
+// names the "value" column. A sample of valid timestamps locks the column. Then
+// a non-timestamp past the sample fails and names that column.
 func TestWriterSingleValuePostSampleError(t *testing.T) {
 	pw := NewWriter(&bytes.Buffer{})
 	for range sampleBufferSize {

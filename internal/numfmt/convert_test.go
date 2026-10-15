@@ -59,8 +59,8 @@ func TestConvertNumbers(t *testing.T) {
 }
 
 // TestConvertNumberNegativeZero pins that the literal -0 becomes the float64
-// negative zero in every mode, not the int 0 (require.Equal cannot tell them
-// apart, so the sign bit is checked directly).
+// negative zero in every mode, not the int 0. The test checks the sign bit
+// directly, because require.Equal cannot tell them apart.
 func TestConvertNumberNegativeZero(t *testing.T) {
 	for _, mode := range []numfmt.DecimalMode{numfmt.DecimalAuto, numfmt.DecimalNumber, numfmt.DecimalString} {
 		got := numfmt.ConvertNumber(json.Number("-0"), mode)

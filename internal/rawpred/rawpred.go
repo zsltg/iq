@@ -1,8 +1,9 @@
 // Package rawpred is a client-side, raw-byte predicate prefilter. Given a document's
 // raw JSON bytes and a pushed-down predicate, Match decides whether the document can be
-// dropped before it is decoded, without parsing it into Go values.
+// dropped before it is decoded. It does this without parsing the document into Go
+// values.
 //
-// The invariant is one-directional: Match returns CannotMatch only when the decoded
+// The invariant is one-directional. Match returns CannotMatch only when the decoded
 // document provably fails the predicate. Every uncertainty, every unhandled node, and
 // every structural surprise collapses to MayMatch, so the prefilter skips only a decode
 // it can justify. Dropping a document that the predicate provably rejects never changes
@@ -31,9 +32,9 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// Verdict is Match's two-valued answer. It is a closed type: a caller drops a
-// document only on CannotMatch, and the zero value is the safe MayMatch, so an
-// unset verdict never drops.
+// Verdict is the two-valued answer of Match. It is a closed type. A caller drops a
+// document only on CannotMatch. The zero value is the safe MayMatch, so an unset
+// verdict never drops.
 type Verdict int
 
 const (
@@ -45,19 +46,19 @@ const (
 	CannotMatch
 )
 
-// Match reports whether raw can be dropped against pred without decoding it. It
-// returns CannotMatch only when the decoded document provably fails pred; every
-// other case — a match, an ambiguity, an unhandled node, malformed JSON — is
-// MayMatch. It is the convenience path: it prepares a fresh Matcher, so a caller
-// evaluating many documents against one predicate should build a Matcher once with
-// NewMatcher and reuse it instead.
+// Match reports whether raw can be dropped against pred without decoding it. It returns
+// CannotMatch only when the decoded document provably fails pred. Every other case is
+// MayMatch: a match, an ambiguity, an unhandled node, or malformed JSON. It is the
+// convenience path, and it prepares a fresh Matcher on each call. A caller that
+// evaluates many documents against one predicate can build a Matcher once with
+// NewMatcher and reuse it instead. Then the Matcher is not prepared again per call.
 func Match(raw []byte, pred predicate.Node) Verdict {
 	return NewMatcher(pred).Match(raw)
 }
 
-// Matcher is a predicate prepared for repeated matching. NewMatcher walks the tree
-// once and compiles every Regex pattern, so the per-document Match never compiles a
-// pattern again; a driver builds one per scan and reuses it across every document.
+// Matcher is a predicate prepared for repeated matching. NewMatcher walks the tree once
+// and compiles every Regex pattern. So the per-document Match never compiles a pattern
+// again. A driver builds one per scan and reuses it across every document.
 type Matcher struct {
 	pred    predicate.Node
 	regexes map[regexKey]*regexp.Regexp
@@ -81,10 +82,10 @@ func NewMatcher(pred predicate.Node) *Matcher {
 	return m
 }
 
-// prepare walks the predicate tree compiling every Regex reachable through And/Or
-// nodes and through an ElemMatch or NoneMatch Cond. Those container nodes now
-// evaluate their Cond against each element on raw bytes, so a Regex nested in one is
-// compiled here too, deduplicated by (pattern, flags) exactly like a top-level one.
+// prepare walks the predicate tree and compiles every Regex reachable through And/Or
+// nodes and through an ElemMatch or NoneMatch Cond. Those container nodes now evaluate
+// their Cond against each element on raw bytes. So a Regex nested in one is compiled
+// here too, deduplicated by (pattern, flags) exactly like a top-level one.
 func (m *Matcher) prepare(node predicate.Node) {
 	switch n := node.(type) {
 	case predicate.Regex:
@@ -113,10 +114,10 @@ func (m *Matcher) prepareRegex(n predicate.Regex) {
 	}
 	re, ok := compileRegex(n.Pattern, n.Flags)
 	if !ok {
-		// A pattern portableRegex passed but Go's RE2 rejects: leave it
-		// uncompiled so evalRegex reads the missing key as unknown and the
-		// document is decoded. The failure is deliberately not surfaced as an
-		// error — a prefilter that cannot evaluate a node keeps the document.
+		// A pattern that portableRegex passed but Go's RE2 rejects stays uncompiled. So
+		// evalRegex reads the missing key as unknown and the document is decoded. The code
+		// does not surface the failure as an error, because a prefilter that cannot evaluate
+		// a node keeps the document.
 		return
 	}
 	m.regexes[key] = re
@@ -168,15 +169,15 @@ func isSurrogateDigit(c byte) bool {
 	return (c >= '8' && c <= '9') || ((c|0x20) >= 'a' && (c|0x20) <= 'f')
 }
 
-// compileRegex translates a jq test() pattern and flag string to a Go RE2 matcher, the
-// way gojq's own compileRegexp does (github.com/itchyny/gojq func.go). The i flag
-// prepends the (?i) inline group (case-insensitive). jq's m flag prepends (?s), because
-// jq's m means "dot matches newline" (Go's dotall), NOT PCRE's line-anchor multiline.
-// Matching is unanchored, like test()'s regexp.MatchString. The pushdown compiler emits
-// only i and m (portableFlags) over an engine-portable pattern (portableRegex), so this
-// never narrows which documents match against jq. If RE2 rejects the pattern,
-// compileRegex returns ok=false and no error. The failure is never surfaced (the node
-// degrades to a decode), so an error is discarded.
+// compileRegex translates a jq test() pattern and flag string to a Go RE2 matcher. It
+// works the way gojq's own compileRegexp does (github.com/itchyny/gojq func.go). The i
+// flag prepends the (?i) inline group (case-insensitive). The m flag of jq prepends
+// (?s), because jq's m means "dot matches newline" (Go's dotall), NOT PCRE's
+// line-anchor multiline. Matching is unanchored, like test()'s regexp.MatchString. The
+// pushdown compiler emits only i and m (portableFlags) over an engine-portable pattern
+// (portableRegex). So this never narrows which documents match against jq. If RE2
+// rejects the pattern, compileRegex returns ok=false and no error. The failure is never
+// surfaced, because the node degrades to a decode. So the code discards the error.
 func compileRegex(pattern, flags string) (re *regexp.Regexp, ok bool) {
 	if strings.ContainsRune(flags, 'i') {
 		pattern = "(?i)" + pattern
@@ -238,8 +239,8 @@ func (m *Matcher) eval(raw []byte, node predicate.Node) triple {
 	case predicate.Or:
 		return m.evalOr(raw, n)
 	default:
-		// A nil predicate, or any node type added later, is not evaluated on raw
-		// bytes; the document is decoded and re-filtered.
+		// A nil predicate, or any node type added later, is not evaluated on raw bytes. The
+		// document is decoded and re-filtered.
 		return unknown
 	}
 }
@@ -248,7 +249,7 @@ func (m *Matcher) eval(raw []byte, node predicate.Node) triple {
 // result is definiteNo only when the field is a present string that the pattern does
 // not match. It is definiteYes when the field is a present string that the pattern
 // matches. Every other case is unknown: a missing, ambiguous, or non-string field, or a
-// pattern that failed to compile. jq's test() errors on a non-string, so a non-string
+// pattern that failed to compile. In jq, test() errors on a non-string, so a non-string
 // field must reach the client unchanged. Leaving it unknown keeps the document, so the
 // prefilter never suppresses that error.
 func (m *Matcher) evalRegex(raw []byte, n predicate.Regex) triple {
@@ -284,9 +285,9 @@ func negate(t triple) triple {
 	}
 }
 
-// evalEq decides `field == value`. A cleanly-absent field is jq's null, so it
-// equals a nil (null) value and differs from any scalar; a found value is compared
-// by type and, for numbers, by the numeric rule.
+// evalEq decides `field == value`. A cleanly-absent field is jq's null, so it equals a
+// nil (null) value and differs from any scalar. A found value is compared by type and,
+// for numbers, by the numeric rule.
 func evalEq(raw []byte, n predicate.Eq) triple {
 	val, typ, st := getField(raw, n.Path)
 	switch st {
@@ -304,10 +305,9 @@ func evalEq(raw []byte, n predicate.Eq) triple {
 	}
 }
 
-// eqFound compares a present value (its raw bytes and jsonparser type) to a scalar
-// pred value. A type mismatch is a definite non-match; a same-type comparison is
-// decided exactly, except a number the numeric rule cannot pin down, which is
-// unknown.
+// eqFound compares a present value (its raw bytes and jsonparser type) to a scalar pred
+// value. A type mismatch is a definite non-match. A same-type comparison is decided
+// exactly, except a number that the numeric rule cannot pin down, which is unknown.
 func eqFound(val []byte, typ jsonparser.ValueType, value any) triple {
 	want, ok := scalarType(value)
 	if !ok {
@@ -366,8 +366,8 @@ func eqSameType(val []byte, value any) triple {
 	}
 }
 
-// evalExists decides Exists (want=true) or NotExists (want=false). A clean
-// key-path miss is definitively absent; a structural surprise is unknown.
+// evalExists decides Exists (want=true) or NotExists (want=false). A clean key-path
+// miss is definitively absent. A structural surprise is unknown.
 func evalExists(raw []byte, path []string, want bool) triple {
 	_, _, st := getField(raw, path)
 	switch st {
@@ -381,8 +381,8 @@ func evalExists(raw []byte, path []string, want bool) triple {
 }
 
 // evalCmp decides `field OP value` under jq's total type ordering. A cleanly-absent
-// field is null, the least value, so it ranks below every number and string
-// value; a found value is ranked by type, then compared within a type.
+// field is null, the least value. So it ranks below every number and string value. A
+// found value is ranked by type, then compared within a type.
 func evalCmp(raw []byte, n predicate.Cmp) triple {
 	vr, ok := valueRank(n.Value)
 	if !ok {
@@ -402,9 +402,9 @@ func evalCmp(raw []byte, n predicate.Cmp) triple {
 }
 
 // cmpFound compares a present value to a number or string pred value under jq's
-// ordering. A cross-type comparison is settled by type rank alone; a same-type
-// comparison is settled within the type — numbers by the numeric rule (unknown
-// when it cannot decide), strings by their unescaped bytes.
+// ordering. Type rank alone settles a cross-type comparison. A same-type comparison is
+// settled within the type. Numbers use the numeric rule (unknown when it cannot
+// decide). Strings use their unescaped bytes.
 func cmpFound(val []byte, typ jsonparser.ValueType, n predicate.Cmp, vr int) triple {
 	dr, ok := docRank(typ)
 	if !ok {
@@ -431,8 +431,8 @@ func cmpFound(val []byte, typ jsonparser.ValueType, n predicate.Cmp, vr int) tri
 	}
 }
 
-// evalAnd decides an And: it fails as soon as one child fails, and holds only when
-// every child holds; anything else is unknown. An empty And matches everything.
+// evalAnd decides an And. It fails as soon as one child fails, and holds only when
+// every child holds. Anything else is unknown. An empty And matches everything.
 func (m *Matcher) evalAnd(raw []byte, children predicate.And) triple {
 	all := definiteYes
 	for _, c := range children {
@@ -446,9 +446,9 @@ func (m *Matcher) evalAnd(raw []byte, children predicate.And) triple {
 	return all
 }
 
-// evalOr decides an Or: it holds as soon as one child holds, and fails only when
-// every child fails; anything else is unknown. An empty Or is left unknown rather
-// than dropping everything, since the pushdown compiler never emits one.
+// evalOr decides an Or. It holds as soon as one child holds, and fails only when every
+// child fails. Anything else is unknown. An empty Or is left unknown rather than
+// dropping everything, since the pushdown compiler never emits one.
 func (m *Matcher) evalOr(raw []byte, children predicate.Or) triple {
 	if len(children) == 0 {
 		return unknown
@@ -465,11 +465,12 @@ func (m *Matcher) evalOr(raw []byte, children predicate.Or) triple {
 	return all
 }
 
-// evalSize decides a Size node, jq's `.path | length == n`, from raw bytes. jq's length
-// is polymorphic, so the field's jsonparser type picks the count: array elements,
-// object keys, the rune length of a string, 0 for null, and |literal| for an integral
-// number. A cleanly-absent field is jq's null, whose length is 0. A boolean, a number
-// that the numeric rule cannot pin down, or an ambiguous path is unknown.
+// evalSize decides a Size node, jq's `.path | length == n`, from raw bytes. In jq,
+// length is polymorphic. So the field's jsonparser type picks the count. The count is
+// array elements, object keys, the rune length of a string, 0 for null, and |literal|
+// for an integral number. A cleanly-absent field is jq's null, whose length is 0. A
+// boolean, a number that the numeric rule cannot pin down, or an ambiguous path is
+// unknown.
 func evalSize(raw []byte, path []string, n int) triple {
 	val, typ, st := getField(raw, path)
 	switch st {
@@ -484,9 +485,9 @@ func evalSize(raw []byte, path []string, n int) triple {
 	}
 }
 
-// sizeFound decides `length == n` for a present value from its jsonparser type. Only
-// a boolean (jq's length errors on it) and a number the numeric rule cannot pin down
-// stay unknown; every other type counts definitively.
+// sizeFound decides `length == n` for a present value from its jsonparser type. Only a
+// boolean (jq's length errors on it) and a number that the numeric rule cannot pin down
+// stay unknown. Every other type counts definitively.
 func sizeFound(val []byte, typ jsonparser.ValueType, n int) triple {
 	switch typ {
 	case jsonparser.Array:
@@ -507,9 +508,9 @@ func sizeFound(val []byte, typ jsonparser.ValueType, n int) triple {
 	case jsonparser.Number:
 		return sizeOfNumber(val, n)
 	default:
-		// Boolean: jq's length errors on a boolean, so the error must reach the
-		// client — unknown, exactly as Regex over a non-string stays unknown. An
-		// unknown/malformed type is unknown too.
+		// Boolean: jq's length errors on a boolean, so the error must reach the client. The
+		// verdict is unknown, exactly as Regex over a non-string stays unknown. An unknown or
+		// malformed type is unknown too.
 		return unknown
 	}
 }
@@ -548,10 +549,10 @@ func countKeys(val []byte) (int, bool) {
 	return count, true
 }
 
-// walkObject calls fn with each value of the JSON object val and its type. It
-// reports false when jsonparser cannot walk the object or a key occurs twice,
-// after it has visited every value: a decoder keeps one entry per name, so a walk
-// over a repeated key does not see the decoded object.
+// walkObject calls fn with each value of the JSON object val and its type. It reports
+// false when jsonparser cannot walk the object or a key occurs twice. It reports this
+// after it has visited every value. A decoder keeps one entry per name, so a walk over
+// a repeated key does not see the decoded object.
 func walkObject(val []byte, fn func(v []byte, typ jsonparser.ValueType)) bool {
 	seen := map[string]struct{}{}
 	repeated := false
@@ -566,19 +567,19 @@ func walkObject(val []byte, fn func(v []byte, typ jsonparser.ValueType)) bool {
 	return err == nil && !repeated
 }
 
-// sizeOfNumber decides `length == n` for a number field. jq's length of a number is its
-// magnitude, so the field matches only when |literal| == n. The code strips an optional
-// leading sign and reads the absolute value with ParseUint at bitSize 63. This accepts
-// exactly the magnitudes that fit in an int64 (0 .. 2^63-1). It rejects everything else
-// and leaves it to the full jq: a fractional number, an exponent form, an integer
-// beyond int64 (a *big.Int once decoded), and MinInt64, whose magnitude 2^63 needs a
-// 64th bit. Parsing the magnitude directly avoids a separate sign negation and its
-// MinInt64 overflow corner.
+// sizeOfNumber decides `length == n` for a number field. In jq, the length of a number
+// is its magnitude, so the field matches only when |literal| == n. The code strips an
+// optional leading sign and reads the absolute value with ParseUint at bitSize 63. This
+// accepts exactly the magnitudes that fit in an int64 (0 .. 2^63-1). It rejects
+// everything else and leaves it to the full jq. That covers a fractional number, an
+// exponent form, an integer beyond int64 (a *big.Int once decoded), and MinInt64, whose
+// magnitude 2^63 needs a 64th bit. Parsing the magnitude directly avoids a separate
+// sign negation and its MinInt64 overflow corner.
 func sizeOfNumber(raw []byte, n int) triple {
 	if n < 0 {
-		// A number's length is its magnitude, never negative, so it cannot equal a
-		// negative n — jq would reject the document. Handling this first also makes the
-		// uint64(n) conversion below provably non-negative.
+		// A number's length is its magnitude, never negative, so it cannot equal a negative
+		// n, and jq rejects the document. Handling this first also makes the uint64(n)
+		// conversion below provably non-negative.
 		return definiteNo
 	}
 	mag, err := strconv.ParseUint(strings.TrimPrefix(string(raw), "-"), 10, 63)
@@ -613,9 +614,9 @@ func (m *Matcher) evalElemMatch(raw []byte, n predicate.ElemMatch) triple {
 }
 
 // evalNoneMatch decides a NoneMatch node, jq's `.path | any(Cond) | not`, from raw
-// bytes. NoneMatch is exact, so it drops (definiteNo) only when a definitely matching
-// element exists AND no element is undecidable. jq's any short-circuits in order
-// (isempty over the first match), so an undecidable element ahead of a match can make
+// bytes. NoneMatch is exact. So it drops (definiteNo) only when a definitely matching
+// element exists AND no element is undecidable. In jq, any short-circuits in order
+// (isempty over the first match). So an undecidable element ahead of a match can make
 // jq error and not return true. That case must reach the client. When every element
 // definitely fails, any is definitely false and any|not is definitely true.
 func (m *Matcher) evalNoneMatch(raw []byte, n predicate.NoneMatch) triple {
@@ -625,8 +626,8 @@ func (m *Matcher) evalNoneMatch(raw []byte, n predicate.NoneMatch) triple {
 	}
 	switch {
 	case s.sawUnknown:
-		// An undecidable element: jq's any may error before reaching a match, so the
-		// negation cannot be proven either way — keep the document.
+		// An undecidable element: jq's any can error before reaching a match, so the negation
+		// cannot be proven either way. Keep the document.
 		return unknown
 	case s.sawYes:
 		// A definite match and no undecidable element: any is definitely true, so
@@ -637,9 +638,9 @@ func (m *Matcher) evalNoneMatch(raw []byte, n predicate.NoneMatch) triple {
 	}
 }
 
-// anyState folds element verdicts for jq's any(): whether some element definitely
-// matched Cond, and whether some element could not be decided. The pair decides both
-// ElemMatch (any) and NoneMatch (any|not), which read it differently.
+// anyState folds element verdicts for jq's any(). It records whether some element
+// definitely matched Cond, and whether some element cannot be decided. The pair decides
+// both ElemMatch (any) and NoneMatch (any|not), which read it differently.
 type anyState struct {
 	sawYes     bool
 	sawUnknown bool
@@ -657,10 +658,10 @@ func (s *anyState) add(t triple) {
 	}
 }
 
-// evalAny folds Cond over the elements of the container at path, the shared core of
-// ElemMatch and NoneMatch. It reports ok=false when the field is not a definite array
-// or object (absent, ambiguous, a scalar, or a container jsonparser cannot walk):
-// jq's any errors on a non-container, so neither node can be decided there.
+// evalAny folds Cond over the elements of the container at path. It is the shared core
+// of ElemMatch and NoneMatch. It reports ok=false when the field is not a definite
+// array or object (absent, ambiguous, a scalar, or a container jsonparser cannot walk).
+// In jq, any errors on a non-container, so neither node can be decided there.
 func (m *Matcher) evalAny(raw []byte, path []string, cond predicate.Node) (anyState, bool) {
 	val, typ, st := getField(raw, path)
 	if st != fieldFound {
@@ -693,9 +694,10 @@ func (m *Matcher) foldArray(val []byte, cond predicate.Node) (anyState, bool) {
 	return s, true
 }
 
-// foldObject evaluates Cond against every object value, folding the verdicts, since
-// jq's any iterates an object's values. A key that occurs twice makes the fold unusable (ok=false): a decoder keeps only
-// one of the values, so a verdict from the shadowed one proves nothing.
+// foldObject evaluates Cond against every object value and folds the verdicts, because
+// jq's any iterates an object's values. A key that occurs twice makes the fold unusable
+// (ok=false). A decoder keeps only one of the values, so a verdict from the shadowed
+// one proves nothing.
 func (m *Matcher) foldObject(val []byte, cond predicate.Node) (anyState, bool) {
 	var s anyState
 	ok := walkObject(val, func(v []byte, typ jsonparser.ValueType) {
@@ -709,9 +711,10 @@ func (m *Matcher) foldObject(val []byte, cond predicate.Node) (anyState, bool) {
 
 // evalElement evaluates Cond against one container element. Only an object element can
 // be re-walked as a JSON root by Cond's field paths. Every other type is not indexable
-// the way jq's cond needs: an array, a string (jsonparser hands back its bytes
-// unquoted, so they must never be re-read as an object), a number, a boolean, or null.
-// jq errors on it, so the element stays unknown and the document stays.
+// the way jq's cond needs. That covers an array, a number, a boolean, null, and a
+// string. For a string, jsonparser hands back its bytes unquoted, so they must never be
+// re-read as an object. In jq, each of these is an error, so the element stays unknown
+// and the document stays.
 func (m *Matcher) evalElement(elem []byte, typ jsonparser.ValueType, cond predicate.Node) triple {
 	if typ != jsonparser.Object {
 		return unknown
@@ -745,23 +748,23 @@ func applyOp(op predicate.Op, ord int) triple {
 }
 
 // fieldState is the outcome of walking a field path: found, cleanly absent, or
-// structurally ambiguous. Only a clean absence lets a predicate treat the field as
-// jq's null; ambiguity always decodes.
+// structurally ambiguous. Only a clean absence lets a predicate treat the field as jq's
+// null. Ambiguity always decodes.
 type fieldState int
 
 const (
-	// The zero value is reserved and never returned, so a mutated `return …, 0` is
-	// an observably-wrong state the eval switches route to unknown, not a silent
+	// The zero value is reserved and never returned. So a mutated `return …, 0` is an
+	// observably-wrong state. The eval switches route it to unknown. It is not a silent
 	// alias of fieldFound.
 	_ fieldState = iota
 	// fieldFound means the leaf value is present.
 	fieldFound
-	// fieldAbsent means a key was cleanly missing from an object along the path —
-	// jq would read the field as null.
+	// fieldAbsent means a key was cleanly missing from an object along the path. jq reads
+	// the field as null.
 	fieldAbsent
-	// fieldAmbiguous means the path could not be resolved cleanly: an intermediate
-	// value was not an object, or the JSON was malformed. jq's behaviour here is
-	// not a plain absence, so the document must be decoded.
+	// fieldAmbiguous means the path cannot be resolved cleanly: an intermediate value was
+	// not an object, or the JSON was malformed. The behavior of jq here is not a plain
+	// absence, so the document must be decoded.
 	fieldAmbiguous
 )
 
@@ -770,7 +773,7 @@ const (
 // not a clean absence, so it is ambiguous. A key cleanly missing from an object is a
 // clean absence. Any other jsonparser error is ambiguous. If the leaf is not found, the
 // returned type is jsonparser.Unknown. A non-null value has no meaningful type, and
-// callers read the type only on fieldFound, so this keeps the not-found type an
+// callers read the type only on fieldFound. So this keeps the not-found type an
 // explicit, testable sentinel and not the zero value.
 func getField(raw []byte, path []string) ([]byte, jsonparser.ValueType, fieldState) {
 	cur := raw
@@ -785,9 +788,9 @@ func getField(raw []byte, path []string) ([]byte, jsonparser.ValueType, fieldSta
 			}
 			return nil, jsonparser.Unknown, fieldAmbiguous
 		}
-		// A key that occurs twice in one object has no single value: a decoder
-		// that keeps the last occurrence (encoding/json) can disagree with the
-		// first occurrence jsonparser returns (FuzzMatch).
+		// A key that occurs twice in one object has no single value. A decoder that keeps the
+		// last occurrence (encoding/json) can disagree with the first occurrence that
+		// jsonparser returns (FuzzMatch).
 		if duplicateKey(cur, key) {
 			return nil, jsonparser.Unknown, fieldAmbiguous
 		}
@@ -796,16 +799,16 @@ func getField(raw []byte, path []string) ([]byte, jsonparser.ValueType, fieldSta
 		}
 		cur = val
 	}
-	// A field path from the pushdown compiler is never empty; an empty path has no
-	// field to resolve, so it is ambiguous rather than a clean absence.
+	// A field path from the pushdown compiler is never empty. An empty path has no field
+	// to resolve, so it is ambiguous rather than a clean absence.
 	return nil, jsonparser.Unknown, fieldAmbiguous
 }
 
-// duplicateKey reports whether key occurs more than once among the top-level keys
-// of the object obj. ObjectEach hands over each key already unescaped, the form
-// jsonparser.Get matches, so it compares as is: unescaping it again would turn
-// the literal key \u0061 into "a" and miss its duplicate. An object that does
-// not iterate cleanly reports true, so the caller treats it as ambiguous.
+// duplicateKey reports whether key occurs more than once among the top-level keys of
+// the object obj. ObjectEach hands over each key already unescaped, the form
+// jsonparser.Get matches, so the code compares it as is. Unescaping it again turns the
+// literal key \u0061 into "a" and misses its duplicate. An object that does not iterate
+// cleanly reports true, so the caller treats it as ambiguous.
 func duplicateKey(obj []byte, key string) bool {
 	seen := 0
 	err := jsonparser.ObjectEach(obj, func(k, _ []byte, _ jsonparser.ValueType, _ int) error {
@@ -833,12 +836,11 @@ func isObject(b []byte) bool {
 	return false
 }
 
-// The jq type ranks used to order values across types
-// (null < bool < number < string < array < object). Only the relative order
-// matters — a boolean value ranks below every number and string, so its exact
-// false/true split never matters here (a Cmp value is only ever a number or a
-// string). The ranks start at 1 so none is the zero value, keeping every docRank
-// return an observable, non-zero constant.
+// The jq type ranks used to order values across types (null < bool < number < string <
+// array < object). Only the relative order matters. A boolean value ranks below every
+// number and string. So its exact false/true split never matters here, because a Cmp
+// value is only ever a number or a string. The ranks start at 1 so none is the zero
+// value, keeping every docRank return an observable, non-zero constant.
 const (
 	nullRank = iota + 1
 	boolRank
@@ -849,7 +851,8 @@ const (
 )
 
 // docRank returns the jq type rank of a present document value from its jsonparser
-// type, or ok=false for a type that cannot be ranked (an unknown/malformed value).
+// type. It returns ok=false for a type that cannot be ranked (an unknown/malformed
+// value).
 func docRank(typ jsonparser.ValueType) (int, bool) {
 	switch typ {
 	case jsonparser.Null:
@@ -891,20 +894,20 @@ const maxExactInt = 1 << 53
 // the jq-comparison ordering (doc<pv: -1, ==: 0, doc>pv: +1) and ok=true only where the
 // ordering provably equals gojq's own. It gives up (ok=false) wherever raw and pv alone
 // cannot give the exact result:
-//   - a fractional document number, whose decoded type depends on the decimal mode
-//     that Match is not told (a float64, or an exact string that jq orders above
-//     every number).
+//   - a fractional document number. Its decoded type depends on the decimal mode
+//     that Match is not told. The type is a float64, or an exact string that jq
+//     orders above every number.
 //   - a document integer beyond int64, decoded to a *big.Int, left to the full jq.
-//   - a pred value past the exact float64 integer range, which the pushdown compiler
-//     can already have rounded, so it need not equal gojq's own literal.
+//   - a pred value past the exact float64 integer range. The pushdown compiler
+//     can already have rounded it, so it need not equal gojq's own literal.
 //   - a document integer past that range when the pred value is integral, where int
 //     and float comparison can disagree at the rounding boundary.
 //
 // It never replicates gojq's arithmetic. It only proves an ordering or gives up.
 func numOrd(raw []byte, pv float64) (int, bool) {
-	// A NaN pred value would slip past the integral/fractional split (NaN != Trunc
-	// (NaN)) into a float comparison whose result is meaningless, so reject it up
-	// front. An infinity needs no guard: it is caught by the exact-range bound below.
+	// A NaN pred value slips past the integral/fractional split (NaN != Trunc (NaN)) into
+	// a float comparison whose result is meaningless. So reject it up front. An infinity
+	// needs no guard, because the exact-range bound below catches it.
 	if math.IsNaN(pv) {
 		return 0, false
 	}

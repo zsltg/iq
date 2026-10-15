@@ -10,11 +10,11 @@ import (
 	"github.com/zsltg/iq/internal/shape"
 )
 
-// mapCorpus builds items where each instance carries field as an object; the i-th
+// mapCorpus builds items where each instance carries field as an object. The i-th
 // entry of instances lists that instance's child keys, each mapped to a fixed
-// {"v":1} value. It gives precise control over the object count (len(instances)),
-// the distinct child keys, and the key-slots (Σ len), so a threshold can be
-// pinned exactly.
+// {"v":1} value. It gives precise control over three counts. These are the object
+// count (len(instances)), the distinct child keys, and the key-slots (Σ len). So a
+// test can pin a threshold exactly.
 func mapCorpus(field string, instances [][]string) map[string]any {
 	items := make(map[string]any, len(instances))
 	for i, keys := range instances {
@@ -50,7 +50,7 @@ func mapTypeOf(items map[string]any, path string) []any {
 	return shape.Infer(items).Comparable()[path].(map[string]any)["types"].([]any)
 }
 
-// TestInferMapsCorpus is the E3 four-way sanity check: a wide fixed record, an
+// TestInferMapsCorpus is the E3 four-way sanity check. A wide fixed record, an
 // id-keyed map, an enum-ish status, and a free-text field classify correctly
 // under the 8/8/0.75 defaults.
 func TestInferMapsCorpus(t *testing.T) {
@@ -88,7 +88,7 @@ func TestInferMapsCorpus(t *testing.T) {
 func TestInferMapsThresholds(t *testing.T) {
 	t.Run("instances gate: 8 collapses, 7 does not", func(t *testing.T) {
 		// Each instance carries 8 globally-unique keys, so distinct and ratio always
-		// pass; only the object-instance count crosses the boundary.
+		// pass. Only the object-instance count crosses the boundary.
 		eight := make([][]string, 8)
 		seven := make([][]string, 7)
 		for i := range 8 {
@@ -102,7 +102,7 @@ func TestInferMapsThresholds(t *testing.T) {
 	})
 
 	t.Run("distinct-keys gate: 8 collapses, 7 does not", func(t *testing.T) {
-		// One key per instance; ratio 1.0 and objCount>=8 always pass, only the
+		// One key per instance. Ratio 1.0 and objCount>=8 always pass. Only the
 		// distinct-key count crosses the boundary.
 		eight := singleKeyInstances(nKeys(8))                           // objCount 8, distinct 8
 		seven := append(singleKeyInstances(nKeys(7)), []string{"key0"}) // objCount 8, distinct 7
@@ -112,7 +112,7 @@ func TestInferMapsThresholds(t *testing.T) {
 
 	t.Run("distinct ratio gate: 0.75 collapses, below does not", func(t *testing.T) {
 		// 12 single-key instances (objCount 12, slots 12). 9 distinct -> ratio 0.75
-		// collapses; 8 distinct -> ratio 0.667 does not (both clear the key gate).
+		// collapses. 8 distinct -> ratio 0.667 does not collapse. Both clear the key gate.
 		at := singleKeyInstances(nKeys(9))
 		at = append(at, []string{"key0"}, []string{"key1"}, []string{"key2"}) // 12 instances, 9 distinct
 		below := singleKeyInstances(nKeys(8))
@@ -122,8 +122,8 @@ func TestInferMapsThresholds(t *testing.T) {
 	})
 
 	t.Run("the root never collapses even when id-keyed", func(t *testing.T) {
-		// Each item has one unique field name, so the root would look like a map;
-		// collapsing it would hide the whole collection, so it must stay an object.
+		// Each item has one unique field name, so the root looks like a map.
+		// Collapsing it hides the whole collection, so it must stay an object.
 		items := map[string]any{}
 		for i := range 12 {
 			items[strconv.Itoa(i)] = map[string]any{"field" + strconv.Itoa(i): 1}
@@ -172,9 +172,9 @@ func TestInferMapsArrayElement(t *testing.T) {
 	require.Contains(t, got, ".arr[]{}", "the collapsed element's value shape is projected")
 }
 
-// TestInferMapsSlotsBoundary pins shouldCollapse's slots seed at 0: a corpus whose
-// real distinct/slots ratio is just under 0.75 stays an object; a slots seed of -1
-// would read the ratio as exactly 0.75 and wrongly collapse.
+// TestInferMapsSlotsBoundary pins shouldCollapse's slots seed at 0. A corpus whose
+// real distinct/slots ratio is slightly under 0.75 stays an object. A slots seed of -1
+// reads the ratio as exactly 0.75 and wrongly collapses it.
 func TestInferMapsSlotsBoundary(t *testing.T) {
 	// 9 single-key instances then 4 repeats: 13 instances, 9 distinct, 13 slots ->
 	// ratio 9/13 = 0.692 (object). A -1 seed reads 9/12 = 0.75 and collapses.
@@ -183,11 +183,11 @@ func TestInferMapsSlotsBoundary(t *testing.T) {
 	require.Equal(t, []any{"object"}, mapTypeOf(mapCorpus("m", inst), ".m"))
 }
 
-// TestInferMapsFormatMerge folds string formats across a map collapse: a format
-// held by every id-keyed value survives; a format any value breaks falls away.
+// TestInferMapsFormatMerge folds string formats across a map collapse. A format
+// held by every id-keyed value survives. A format that any value breaks falls away.
 func TestInferMapsFormatMerge(t *testing.T) {
 	// mapValues makes a corpus where field m is a one-key object per instance (so it
-	// collapses) holding the i-th value; the id-keyed values fold together through
+	// collapses) and holds the i-th value. The id-keyed values fold together through
 	// formats.mergeFrom.
 	mapValues := func(values []string) map[string]any {
 		items := make(map[string]any, len(values))
@@ -205,10 +205,10 @@ func TestInferMapsFormatMerge(t *testing.T) {
 		}
 		return out
 	}
-	// oneCarrier: a single format-carrying value among many plain strings. The
+	// oneCarrier is a single format-carrying value among many plain strings. The
 	// intersection (an all-or-nothing &&) must drop the format regardless of merge
-	// order, so a && folded into || is caught deterministically (|| keeps the lone
-	// carrier's format); the order-dependent operand-drop mutants are left as
+	// order. So a && folded into || is caught deterministically, because || keeps the
+	// lone carrier's format. The order-dependent operand-drop mutants are left as
 	// documented residue.
 	oneCarrier := func(v string) []string {
 		out := make([]string, 0, 41)
@@ -269,11 +269,11 @@ func TestInferMapsFormatMergeOnePlain(t *testing.T) {
 }
 
 func TestInferMapsKeepsAFormatAcrossAValueThatSawNoString(t *testing.T) {
-	// Twenty id-keyed dates plus one null: the null side saw no string, so under
-	// the all-or-nothing rule it contributes nothing and the date format holds
-	// for the merged map value. Go randomises the merge order, so the corpus is
-	// re-inferred ten times; the null being merged first every pass is
-	// impossible, and merging it after any date is what the guard has to absorb.
+	// Twenty id-keyed dates plus one null. The null side saw no string, so under
+	// the all-or-nothing rule it contributes nothing, and the date format holds
+	// for the merged map value. Go randomizes the merge order, so the corpus is
+	// re-inferred ten times. The null cannot be merged first on every pass. Merging
+	// it after any date is what the guard has to absorb.
 	const dates = 20
 	items := make(map[string]any, dates+1)
 	for i := range dates {

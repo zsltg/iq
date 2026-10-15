@@ -79,9 +79,9 @@ func TestWriterRoundTrip(t *testing.T) {
 	require.True(t, arrow.TypeEqual(&arrow.TimestampType{Unit: arrow.Nanosecond, TimeZone: "UTC"}, field(t, s, "ts").Type))
 	_, isStruct := field(t, s, "obj").Type.(*arrow.StructType)
 	require.True(t, isStruct)
-	// The heterogeneous column round-trips as arrow.json (isJSONField reads the
-	// read-back schema, so it confirms the iq:extension marker and utf8 storage
-	// survived), and its presence metadata survives too.
+	// The heterogeneous column round-trips as arrow.json. The helper isJSONField
+	// reads the read-back schema, so it confirms that the iq:extension marker and
+	// utf8 storage survived. Its presence metadata survives too.
 	miscField := field(t, s, "misc")
 	require.True(t, isJSONField(miscField), "misc should round-trip as arrow.json, got %s", miscField.Type)
 	require.Equal(t, "required", presenceOf(t, miscField))
@@ -109,7 +109,7 @@ func TestWriterRoundTrip(t *testing.T) {
 }
 
 func TestWriterListAndMapRoundTrip(t *testing.T) {
-	// Eight rows so "cfg" trips the id-keyed-map heuristic; "tags" is a list.
+	// Eight rows so "cfg" trips the id-keyed-map heuristic. "tags" is a list.
 	vals := make([]any, 0, 8)
 	for i := range 8 {
 		vals = append(vals, map[string]any{
@@ -138,7 +138,7 @@ func TestWriterEmptyStream(t *testing.T) {
 
 func TestWriterPostSampleMismatch(t *testing.T) {
 	// Fill the sample with homogeneous integer rows so the schema locks "age" to
-	// int64, then feed a string past the sample boundary: it must fail, never
+	// int64. Then feed a string past the sample boundary. It must fail and never
 	// coerce. This exercises the real post-sample encode path (Add after start).
 	var buf bytes.Buffer
 	pw := NewWriter(&buf)
@@ -185,9 +185,9 @@ func TestWriterSampleSize(t *testing.T) {
 // error survives wrapping (errors.Is), pinning the %w in the wrapping Errorf.
 var errSink = errors.New("sink boom")
 
-// failAfterWriter succeeds for the first ok writes (enough for the Parquet magic
-// header, which pqarrow writes eagerly and panics on if it fails) and then fails,
-// so a test can force fw.Write or fw.Close to error.
+// failAfterWriter succeeds for the first ok writes and then fails. The first
+// writes are enough for the Parquet magic header, which pqarrow writes eagerly
+// and panics on if it fails. So a test can force fw.Write or fw.Close to error.
 type failAfterWriter struct {
 	ok    int
 	calls int
@@ -202,9 +202,9 @@ func (w *failAfterWriter) Write(p []byte) (int, error) {
 }
 
 func TestWriterFlushWriteErrorPropagates(t *testing.T) {
-	// The magic header write succeeds; the record-batch write fails. Close must
-	// surface it (with context, wrapping the cause) rather than swallowing the
-	// failed page.
+	// The magic header write succeeds. The record-batch write fails. Close must
+	// surface the error (with context, wrapping the cause) rather than swallowing
+	// the failed page.
 	pw := NewWriter(&failAfterWriter{ok: 1})
 	require.NoError(t, pw.Add(map[string]any{"n": 1}))
 	require.NoError(t, pw.Add(map[string]any{"n": 2}))
@@ -226,7 +226,7 @@ func TestWriterCloseErrorPropagates(t *testing.T) {
 
 func TestWriterCloseSurfacesEncodeError(t *testing.T) {
 	// A heterogeneous column (integer in one row, string in another) becomes
-	// arrow.json; a NaN in it cannot be marshalled to canonical JSON, so the
+	// arrow.json. A NaN in it cannot be marshalled to canonical JSON, so the
 	// buffered sample fails to drain at Close and the error propagates.
 	var buf bytes.Buffer
 	pw := NewWriter(&buf)
@@ -239,7 +239,7 @@ func TestWriterCloseSurfacesEncodeError(t *testing.T) {
 }
 
 func TestWriterPostSampleObjectExpected(t *testing.T) {
-	// An all-object sample locks a columnar schema; a scalar past the sample has
+	// An all-object sample locks a columnar schema. A scalar past the sample has
 	// no object fields to spread, so it fails rather than being coerced.
 	pw := NewWriter(&bytes.Buffer{})
 	for range sampleBufferSize {
@@ -253,7 +253,7 @@ func TestWriterPostSampleObjectExpected(t *testing.T) {
 
 func TestWriterTimestampParseFailurePropagates(t *testing.T) {
 	// The sample sees only valid RFC3339 timestamps, so the column locks to
-	// timestamp[ns, UTC]; a malformed timestamp past the sample fails the export
+	// timestamp[ns, UTC]. A malformed timestamp past the sample fails the export
 	// rather than coercing to a wrong instant.
 	var buf bytes.Buffer
 	pw := NewWriter(&buf)

@@ -52,9 +52,9 @@ type StagePlan struct {
 }
 
 // AccessPlan describes the backend calls a source will make for one query. A CLI
-// adapter uses it to show a query plan without executing the query. It is a plain type
-// that crosses the driver boundary: a driver builds one from the route classification
-// and the pushed predicate, and the CLI renders it.
+// adapter uses it to show a query plan without executing the query. It is a plain
+// type that crosses the driver boundary. A driver builds one from the route
+// classification and the pushed predicate, and the CLI renders it.
 //
 // Ops holds the human-readable planned operations in execution order. Filter is the
 // server filter only, as a JSON-ready value (a MongoDB find filter, for example). It

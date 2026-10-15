@@ -10,11 +10,11 @@ import (
 	"github.com/zsltg/iq/internal/pushdown"
 )
 
-// A user definition with the name and arity of a builtin replaces that builtin
-// in gojq. Pushdown matches select/1, not/0, has/1, test/1, test/2, any/1 and
-// length/0 by name, so it must refuse a query where a definition in scope
-// shadows one of them: the pushed predicate would drop records that the full
-// query keeps. A want of nil means the query must not push.
+// A user definition with the name and arity of a builtin replaces that builtin in gojq.
+// Pushdown matches select/1, not/0, has/1, test/1, test/2, any/1 and length/0 by name.
+// So it must refuse a query where a definition in scope shadows one of them. Otherwise
+// the pushed predicate drops records that the full query keeps. A want of nil means the
+// query must not push.
 func TestCompileUserDefinitionShadowsBuiltin(t *testing.T) {
 	tests := []struct {
 		name string
@@ -88,7 +88,7 @@ func TestCompileUserDefinitionShadowsBuiltin(t *testing.T) {
 			predicate.Eq{Path: []string{"a"}, Value: 1.0},
 		},
 		// The rule matches a definition to the matched builtins by name and arity
-		// alone, not to the call it shadows, so it refuses a bit more than needed.
+		// alone, not to the call it shadows. So it refuses a bit more than needed.
 		{"test/2 defined beside a test/1 call", `def test(re; f): true; .[] | select(.a | test("x"))`, nil},
 		{
 			"has/2 definition leaves a has/1 call alone",
@@ -113,9 +113,9 @@ func TestCompileUserDefinitionShadowsBuiltin(t *testing.T) {
 	}
 }
 
-// Conjuncts feeds the explain breakdown, so it must agree with Compile: a
-// shadowing definition anywhere yields no breakdown, and a definition that
-// shadows nothing leaves the conjunct pushed.
+// Conjuncts feeds the explain breakdown, so it must agree with Compile. A shadowing
+// definition anywhere yields no breakdown. A definition that shadows nothing leaves the
+// conjunct pushed.
 func TestConjunctsUserDefinitionShadowsBuiltin(t *testing.T) {
 	tests := []struct {
 		name   string

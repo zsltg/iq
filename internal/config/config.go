@@ -1,9 +1,9 @@
 // Package config persists the CLI's named connection sources and which source
-// and group are active, so a query need not repeat a connection URL. It stores
-// no secrets of its own, but a source URL may carry credentials, so the file is
-// written 0600. The backend is inferred from a source's URL scheme, so this
-// package stays driver-agnostic: it never imports a driver and never validates
-// which schemes are supported (that belongs to the CLI's composition root).
+// and group are active, so a query need not repeat a connection URI. It stores
+// no secrets of its own, but a source URI can carry credentials, so the file is
+// written 0600. The backend is inferred from the URI scheme of a source, so this
+// package stays driver-agnostic. It never imports a driver and never validates
+// which schemes are supported. That belongs to the composition root of the CLI.
 package config
 
 import (
@@ -40,11 +40,11 @@ var (
 	ErrEmptyOption = errors.New("empty option name")
 )
 
-// Source is a named connection target. The backend is inferred from the URL
-// scheme, so no driver field is stored. A driver-specific default (e.g. a
-// MongoDB collection) rides in the URL as a query param the driver owns. When
-// Keyring is set the source's password lives in the OS keyring rather than in
-// URL, and the composition root splices it back in at connect time.
+// Source is a named connection target. The backend is inferred from the URI
+// scheme, so no driver field is stored. A driver-specific default (for example a
+// MongoDB collection) rides in the URI as a query param that the driver owns.
+// When Keyring is set, the password of the source lives in the OS keyring rather
+// than in URL. The composition root splices it back in at connect time.
 type Source struct {
 	URL string `toml:"url"`
 	// Collection is deprecated: it is folded into the URL as ?collection= on load
@@ -59,9 +59,10 @@ type Source struct {
 	Options map[string]string `toml:"options,omitempty"`
 }
 
-// Config is the persisted CLI state: the named sources keyed by their full
-// handle, the active source, the active group (each empty when unset), and the
-// base options — stored flag defaults that apply when no source overrides them.
+// Config is the persisted CLI state. It holds the named sources keyed by their
+// full handle, the active source, and the active group (each empty when unset).
+// It also holds the base options, which are stored flag defaults that apply when
+// no source overrides them.
 type Config struct {
 	Active  string            `toml:"active,omitempty"`
 	Group   string            `toml:"group,omitempty"`
@@ -114,7 +115,7 @@ func Load() (*Config, error) {
 }
 
 // migrateCollections folds a legacy per-source `collection` field into the URL as
-// ?collection=, the driver-owned form, then clears the field so nothing else
+// ?collection=, the driver-owned form. Then it clears the field, so nothing else
 // reads it and the next Save drops it (omitempty). It is a one-time compat shim
 // for config files written before drivers owned their URL params.
 func (c *Config) migrateCollections() {
@@ -128,9 +129,9 @@ func (c *Config) migrateCollections() {
 	}
 }
 
-// appendCollection returns rawURL with ?collection=collection added, unless it
-// already carries a collection param or does not parse (left as-is; a connect
-// later surfaces any malformed URL).
+// appendCollection returns rawURL with ?collection=collection added. It leaves
+// rawURL as-is if it already carries a collection param or does not parse. A
+// connect later surfaces any malformed URL.
 func appendCollection(rawURL, collection string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -145,8 +146,8 @@ func appendCollection(rawURL, collection string) string {
 	return u.String()
 }
 
-// Save writes c to Path() atomically (a temp file in the same directory then a
-// rename) with 0600 permissions, creating the parent directory (0700) if needed.
+// Save writes c to Path() atomically (a temp file in the same directory, then a
+// rename) with 0600 permissions. It creates the parent directory (0700) if needed.
 func (c *Config) Save() error {
 	p, err := Path()
 	if err != nil {
@@ -161,7 +162,7 @@ func (c *Config) Save() error {
 		return fmt.Errorf("create temp config: %w", err)
 	}
 	tmp := f.Name()
-	// Remove the temp file on any error path; a no-op once the rename succeeds.
+	// Remove the temp file on any error path. It is a no-op once the rename succeeds.
 	defer func() { _ = os.Remove(tmp) }()
 	if err := f.Chmod(0o600); err != nil {
 		_ = f.Close()
@@ -297,9 +298,9 @@ func (c *Config) moveCollision(members []string, oldGroup, newGroup string) erro
 }
 
 // repointGroup moves the active group to its new prefix when it is oldGroup or
-// lies below it. It cannot become empty here: every source in it was just
-// re-prefixed, so the remapped group still has members (moveSource handles the
-// emptying case).
+// lies below it. It cannot become empty here, because every source in it was
+// re-prefixed, so the remapped group still has members. moveSource handles the
+// emptying case.
 func (c *Config) repointGroup(oldGroup, newGroup string) {
 	switch {
 	case c.Group == oldGroup:
@@ -314,9 +315,9 @@ func reprefix(key, oldGroup, newGroup string) string {
 	return newGroup + "/" + strings.TrimPrefix(key, oldGroup+"/")
 }
 
-// UseKeyring marks the named source as keyring-backed: its password lives in the
+// UseKeyring marks the named source as keyring-backed. Its password lives in the
 // OS keyring, not the stored URL. It errors if the source is unknown. The caller
-// owns storing the password in the keyring; this only records the flag.
+// owns storing the password in the keyring. This function only records the flag.
 func (c *Config) UseKeyring(handle string) error {
 	h, s, err := c.lookup(handle)
 	if err != nil {
@@ -329,8 +330,8 @@ func (c *Config) UseKeyring(handle string) error {
 
 // ClearKeyring marks the named source as no longer keyring-backed, so a
 // subsequent connect reads the stored URL as-is. It errors if the source is
-// unknown. The caller owns deleting the password from the keyring; this only
-// clears the flag.
+// unknown. The caller owns deleting the password from the keyring. This function
+// only clears the flag.
 func (c *Config) ClearKeyring(handle string) error {
 	h, s, err := c.lookup(handle)
 	if err != nil {
@@ -392,11 +393,11 @@ type Removed struct {
 	Source Source
 }
 
-// RemoveAll deletes every named source and group atomically: if any name is
-// neither a known source nor a non-empty group, nothing is removed and the error
+// RemoveAll deletes every named source and group atomically. If any name is
+// neither a known source nor a non-empty group, nothing is removed, and the error
 // names each unknown one. A group name removes all of its members. It returns
-// what it removed (sorted by handle, de-duplicated across overlapping names),
-// clearing the active source if removed and the active group if it ends up empty.
+// what it removed, sorted by handle and de-duplicated across overlapping names.
+// It clears the active source if removed and the active group if it ends up empty.
 func (c *Config) RemoveAll(names []string) ([]Removed, error) {
 	set := make(map[string]Source)
 	var unknown []string
@@ -477,8 +478,8 @@ func (c *Config) SetGroup(group string) error {
 	return nil
 }
 
-// Resolve looks up a source by name, applying active-group namespacing: a name
-// containing "/" is absolute; otherwise, when a group is active, "<group>/<name>"
+// Resolve looks up a source by name and applies active-group namespacing. A name
+// containing "/" is absolute. Otherwise, when a group is active, "<group>/<name>"
 // is tried first and the bare name second. It returns the source, the full
 // handle it matched, and whether it was found.
 func (c *Config) Resolve(name string) (Source, string, bool) {
@@ -558,8 +559,8 @@ func CleanHandle(h string) string {
 	return cleanHandle(h)
 }
 
-// cleanHandle trims surrounding space and a single leading "@" (accepted for
-// sq muscle memory; handles are stored without it).
+// cleanHandle trims surrounding space and a single leading "@". The "@" is
+// accepted for sq muscle memory. Handles are stored without it.
 func cleanHandle(h string) string {
 	return strings.TrimPrefix(strings.TrimSpace(h), "@")
 }

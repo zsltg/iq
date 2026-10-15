@@ -18,10 +18,10 @@ func NonObjectValueError(driver, key string) error {
 }
 
 // Record is one typed item crossing the write boundary. Type is a driver-neutral
-// discriminator: "" (or "document") for a schemaless store such as MongoDB; the
-// native Redis type ("string", "hash", "list", "set", "zset", "stream", "json")
-// for Redis. Value is the JSON-ready normalized value, the same shape the read
-// path produces, so a copy is a read followed by its inverse write.
+// discriminator. It is "" (or "document") for a schemaless store such as MongoDB.
+// For Redis it is the native Redis type ("string", "hash", "list", "set", "zset",
+// "stream", "json"). Value is the JSON-ready normalized value, the same shape the
+// read path produces, so a copy is a read followed by its inverse write.
 type Record struct {
 	Key   string
 	Type  string
@@ -33,22 +33,22 @@ type WriteMode int
 
 const (
 	// Upsert overwrites an existing key and inserts a new one. It is idempotent,
-	// so a re-run of the same copy converges — the default for migration/backfill.
+	// so a re-run of the same copy converges. It is the default for migration/backfill.
 	Upsert WriteMode = iota
 	// InsertOnly writes only keys that do not yet exist, skipping the rest and
 	// counting them, so an accidental clobber is impossible.
 	InsertOnly
 )
 
-// A --replace copy is not a WriteMode: it is Clear (the destination once) followed
-// by an Upsert copy, so the command composes Clearer with the copy rather than the
-// Putter carrying a per-batch replace mode.
+// A --replace copy is not a WriteMode. It is Clear (the destination once) followed
+// by an Upsert copy. So the command composes Clearer with the copy, and the
+// Putter does not carry a per-batch replace mode.
 
 // WriteStat reports the outcome of a batch of writes. A copy accumulates it across all
-// batches and renders it to the user, so a non-atomic multi-key write reports what it
+// batches and renders it to the user. So a non-atomic multi-key write reports what it
 // did and does not pretend to be all-or-nothing. If a backend cannot report an
 // overwrite natively, the driver counts Overwritten from a key pre-read taken before
-// the batch. This is accounting only: it never changes which records are written. It is
+// the batch. This is accounting only. It never changes which records are written. It is
 // not atomic with the writes, so it can be off by one under a concurrent write to the
 // same key.
 type WriteStat struct {
@@ -83,7 +83,7 @@ type Clearer interface {
 }
 
 // Dropper removes the container entirely (the `iq data drop` command). A backend
-// whose container cannot be removed, only emptied (a Redis DB index), simply does
+// whose container cannot be removed, only emptied (a Redis DB index), does
 // not implement it, and the command reports the operation unsupported.
 type Dropper interface {
 	Drop(ctx context.Context) error
@@ -91,8 +91,8 @@ type Dropper interface {
 
 // Deleter removes a named set of keys from the container, keeping the container
 // (the `iq data delete` command). A backend whose model has no per-key delete (an
-// InfluxDB point has no stable row identity) simply does not implement it, and the
-// command reports the operation unsupported — the Dropper idiom.
+// InfluxDB point has no stable row identity) does not implement it. The
+// command reports the operation unsupported, like the Dropper idiom.
 type Deleter interface {
 	// Delete removes each key in keys, returning how many were removed and how
 	// many were already absent. A missing key is not an error (delete is
@@ -103,21 +103,22 @@ type Deleter interface {
 
 // DeleteStat reports the outcome of a delete batch and, like WriteStat, is honest about
 // non-atomicity. Deleted counts keys that existed and were removed. Missing counts keys
-// that were already absent. If a backend cannot tell the two apart without a pre-read
-// (DynamoDB BatchWriteItem is silent on absence), the driver takes a bounded key
-// pre-read. Its count is accounting only: it never changes which keys are removed, and
-// it is not atomic with the delete, so it can be off by one under a concurrent write.
+// that were already absent. If a backend cannot tell the two apart without a
+// pre-read (DynamoDB BatchWriteItem is silent on absence), the driver takes a
+// bounded key pre-read. Its count is accounting only. It never changes which
+// keys are removed. It is not atomic with the delete, so it can be off by one
+// under a concurrent write.
 type DeleteStat struct {
 	Deleted int
 	Missing int
 }
 
 // TypedReader lets a copy read each item with its native type preserved, so a
-// round-trip reconstructs the exact structure. MongoDB's is trivial (every item
-// is a document); Redis carries the TYPE it already reads per key.
+// round-trip reconstructs the exact structure. For MongoDB this is trivial
+// because every item is a document. Redis carries the TYPE it already reads per key.
 type TypedReader interface {
 	// TypedScan walks the whole source, handing fn each page of records as it is
-	// fetched, so a streaming caller holds only one page in memory. Bounded by ctx;
-	// it stops at the first error from fn or the store.
+	// fetched, so a streaming caller holds only one page in memory. Bounded by ctx.
+	// It stops at the first error from fn or the store.
 	TypedScan(ctx context.Context, fn func(batch []Record) error) error
 }

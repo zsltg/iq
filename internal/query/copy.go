@@ -10,22 +10,22 @@ import (
 	"github.com/itchyny/gojq"
 )
 
-// ErrNoKey is returned when a record reaches the write boundary without a key —
-// a transform emitted more than one value per source item with no --key to key
-// them by, or foreign input carried no key field.
+// ErrNoKey is returned when a record reaches the write boundary without a key.
+// Either a transform emitted more than one value per source item with no --key
+// to key them by, or foreign input carried no key field.
 var ErrNoKey = errors.New("record has no key")
 
 // RecordSource walks records in pages, the read side a Copier consumes. A store
-// adapter supplies TypedReader.TypedScan directly; a file reader supplies a
-// closure over the decoded stream, so a copy from a source and from a file share
+// adapter supplies TypedReader.TypedScan directly. A file reader supplies a
+// closure over the decoded stream. So a copy from a source and from a file share
 // one path.
 type RecordSource func(ctx context.Context, fn func(batch []Record) error) error
 
 // Copier moves records from a RecordSource into a Putter in bounded pages,
 // applying an optional per-record Transform (the item filter and --key logic)
 // between them. It accumulates a WriteStat and streams, so memory stays O(page).
-// Writes are non-atomic across keys — the WriteStat reports honestly rather
-// than pretending all-or-nothing.
+// Writes are non-atomic across keys. The WriteStat reports that honestly and
+// does not pretend all-or-nothing.
 type Copier struct {
 	Dst       Putter
 	Mode      WriteMode
@@ -35,9 +35,9 @@ type Copier struct {
 
 // Copy streams src through the Transform into Dst and returns the totalled stat.
 // A Transform error, a store error, or a record with no key stops the copy and is
-// returned with context. When dry is true nothing is written: the records are
-// still read and transformed (so the reported counts are real), but every batch
-// is counted as would-be writes instead of being sent to Dst.
+// returned with context. When dry is true, nothing is written. The records are
+// still read and transformed, so the reported counts are real. But the copy
+// counts every batch as a planned write and does not send it to Dst.
 func (c *Copier) Copy(ctx context.Context, src RecordSource, dry bool) (WriteStat, error) {
 	size := c.PageSize
 	if size <= 0 {
@@ -50,7 +50,7 @@ func (c *Copier) Copy(ctx context.Context, src RecordSource, dry bool) (WriteSta
 			if err != nil {
 				return err
 			}
-			// A keyless record is not rejected here: a schemaless destination
+			// A keyless record is not rejected here. A schemaless destination
 			// (MongoDB) can mint an identity, while a keyed one (Redis) rejects it
 			// at its own Put. The Copier stays driver-agnostic.
 			if err := pages.add(ctx, outs); err != nil {
@@ -108,7 +108,7 @@ func (p *copyPages) flush(ctx context.Context) error {
 		return nil
 	}
 	if p.dry {
-		// A dry run reports what would be written without touching the store; it
+		// A dry run reports the planned writes without touching the store. It
 		// cannot know overwrite-vs-insert without writing, so it counts intent.
 		p.total.Written += len(p.buf)
 		p.buf = p.buf[:0]
@@ -121,7 +121,7 @@ func (p *copyPages) flush(ctx context.Context) error {
 }
 
 // TransformOptions configures a per-record transform for a copy. All fields are
-// optional; the zero value is the identity transform (inherit key, type, value).
+// optional. The zero value is the identity transform (inherit key, type, value).
 type TransformOptions struct {
 	Filter    string // jq expression applied to each value; "" is identity
 	Key       string // jq expression yielding each output's key; "" inherits
@@ -212,7 +212,7 @@ func (t transform) apply(r Record) ([]Record, error) {
 
 // applyFilter runs code over one value and collects its outputs. A nil code is
 // the identity (the value passes through unchanged). A jq runtime error stops the
-// copy — a filter that fails on one document must not silently drop it.
+// copy. A filter that fails on one document must not silently drop it.
 func applyFilter(code *gojq.Code, value any) ([]any, error) {
 	if code == nil {
 		return []any{value}, nil
@@ -232,8 +232,8 @@ func applyFilter(code *gojq.Code, value any) ([]any, error) {
 }
 
 // keyFor resolves the destination key for one output value under the keying
-// rules. single reports whether the value is the sole output of its source item,
-// which is what lets a 1:1 transform inherit the source key.
+// rules. The argument single reports whether the value is the sole output of its
+// source item. That is what lets a 1:1 transform inherit the source key.
 func (t transform) keyFor(sourceKey string, value any, single bool) (string, error) {
 	var key string
 	switch {

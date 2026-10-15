@@ -15,20 +15,20 @@ import (
 )
 
 // KeySet is the outcome of classification. Scan is true when the expression
-// needs the whole keyspace; then Keys is empty and the caller must scan.
+// needs the whole keyspace. Then Keys is empty and the caller must scan.
 // Otherwise Keys holds the referenced keys in first-seen order with duplicates
 // removed. Streamable (meaningful only when Scan) is true when the expression is
-// rooted at `.[]`, so it processes each value independently and can run over the
-// keyspace in batches instead of materializing the whole dataset.
+// rooted at `.[]`. Such an expression processes each value independently and can
+// run over the keyspace in batches instead of materializing the whole dataset.
 type KeySet struct {
 	Scan       bool
 	Streamable bool
 	Keys       []string
 }
 
-// Keys walks q and classifies it. It never executes the expression; it only
-// inspects the AST. A key is a leading index evaluated against the root, so the
-// walk descends only into positions fed the root value and treats suffixes and
+// Keys walks q and classifies it. It never executes the expression. It only
+// inspects the AST. A key is a leading index evaluated against the root. So the
+// walk descends only into positions fed the root value. It treats suffixes and
 // the right side of a pipe as sub-navigation, not keys. Any construct that
 // cannot be pinned to a specific key marks the whole expression as a scan.
 func Keys(q *gojq.Query) KeySet {
@@ -40,12 +40,13 @@ func Keys(q *gojq.Query) KeySet {
 	return KeySet{Keys: e.keys}
 }
 
-// streamable reports whether q is rooted at `.[]`: its top-level structure is value
-// iteration over the root, optionally piped into a per-element residual (`.[]`, `.[] |
-// select(...)`, `.[].name`). Such a filter distributes over any partition of the input,
-// so the engine can run it batch by batch and concatenate the outputs. A filter that
-// collapses the collection into one value (`.`, `keys`, `map(...)`, an aggregate, or a
-// top-level comma) is not streamable and must be materialized.
+// streamable reports whether q is rooted at `.[]`. Its top-level structure is
+// value iteration over the root, optionally piped into a per-element residual
+// (`.[]`, `.[] | select(...)`, `.[].name`). Such a filter distributes over any
+// partition of the input, so the engine can run it batch by batch and
+// concatenate the outputs. A filter that collapses the collection into one value
+// (`.`, `keys`, `map(...)`, an aggregate, or a top-level comma) is not
+// streamable and must be materialized.
 func streamable(q *gojq.Query) bool {
 	// A nil query names nothing to stream (Keys(nil) is a scan).
 	if q == nil {
@@ -79,8 +80,8 @@ func streamable(q *gojq.Query) bool {
 }
 
 // extractor accumulates the referenced keys while walking the AST. Once scan is
-// set the concrete keys no longer matter, but the walk simply stops adding them;
-// there is nothing left to refuse.
+// set, the concrete keys no longer matter, so the walk stops adding them.
+// There is nothing left to refuse.
 type extractor struct {
 	scan bool
 	keys []string
@@ -98,12 +99,12 @@ func (e *extractor) add(key string) {
 }
 
 // visitQuery walks a node whose input is the root value. A pipe feeds only its
-// left side the root; the right side navigates the left's output, so its leading
+// left side the root. The right side navigates the left's output, so its leading
 // indices are not keys. Every other binary operator feeds both operands the root.
 func (e *extractor) visitQuery(q *gojq.Query) {
 	if q == nil {
-		// gojq parses a source with no expression in it — empty, whitespace, or a
-		// comment alone — into a query with no term and no operands. That filter
+		// gojq parses a source with no expression in it (empty, whitespace, or a
+		// comment alone) into a query with no term and no operands. That filter
 		// names no key, so it is a scan. gojq.Compile rejects it later with
 		// "missing query", which is the message the user gets.
 		e.scan = true
@@ -121,10 +122,10 @@ func (e *extractor) visitQuery(q *gojq.Query) {
 	e.visitQuery(q.Right)
 }
 
-// visitTerm walks a term whose input is the root value; its leading index, if
+// visitTerm walks a term whose input is the root value. Its leading index, if
 // any, is a key. Any construct that cannot be pinned to a specific key marks the
-// expression as a scan. The suffix list is deliberately ignored: it navigates
-// within the term's value, not the root.
+// expression as a scan. The walk ignores the suffix list on purpose. The suffix list
+// navigates within the value of the term, not the root.
 func (e *extractor) visitTerm(t *gojq.Term) {
 	switch t.Type {
 	case gojq.TermTypeIndex:
@@ -160,12 +161,12 @@ func (e *extractor) visitArray(a *gojq.Array) {
 	}
 }
 
-// visitIndex records the key named by a leading index. A bare field (`.foo`), a quoted
-// field (`."a.b"`), or a bracketed string literal (`.["book:1"]`) resolves to a
-// specific key. A slice, a numeric or computed subscript, or an interpolated string
-// does not, and forces a scan. gojq stores the three literal forms in three places: a
-// bare field in Name, a quoted field in Str, and a bracketed subscript in Start (as a
-// sub-query).
+// visitIndex records the key named by a leading index. A bare field (`.foo`), a
+// quoted field (`."a.b"`), or a bracketed string literal (`.["book:1"]`) resolves
+// to a specific key. A slice, a numeric or computed subscript, or an
+// interpolated string does not. It forces a scan. gojq stores the three literal
+// forms in three places. A bare field is in Name, a quoted field is in Str, and a
+// bracketed subscript is in Start (as a sub-query).
 func (e *extractor) visitIndex(idx *gojq.Index) {
 	switch {
 	case idx.Name != "":
@@ -193,8 +194,8 @@ func (e *extractor) visitSubscript(idx *gojq.Index) {
 }
 
 // constString reports the literal value of q when q is exactly a plain string
-// literal with no interpolation, navigation, or operators; otherwise it reports
-// false. It is how a bracketed key like `.["book:1"]` is recognised as specific.
+// literal with no interpolation, navigation, or operators. Otherwise it reports
+// false. It is how a bracketed key like `.["book:1"]` is recognized as specific.
 func constString(q *gojq.Query) (string, bool) {
 	if q.Term == nil || q.Op != 0 {
 		return "", false
@@ -213,9 +214,9 @@ func constString(q *gojq.Query) (string, bool) {
 }
 
 // visitObject walks an object constructor. Its values, and any computed keys,
-// are evaluated against the root, so they are traversed for keys; a plain string
+// are evaluated against the root, so they are traversed for keys. A plain string
 // key names a field of the result, not a store key. A shorthand entry (`{a}`,
-// `{"foo"}`) carries no explicit value: its implied value is the same-named
+// `{"foo"}`) carries no explicit value. Its implied value is the same-named
 // index, so the key name is itself a store key. The `{$x}` shorthand instead
 // pulls from a variable and references no store key.
 func (e *extractor) visitObject(o *gojq.Object) {
@@ -232,8 +233,8 @@ func (e *extractor) visitObject(o *gojq.Object) {
 }
 
 // visitShorthand records the store key implied by a valueless object entry. A
-// bare identifier or plain string names the same-named key; a `$`-prefixed
-// identifier is a variable, not a key; an interpolated string cannot be pinned
+// bare identifier or plain string names the same-named key. A `$`-prefixed
+// identifier is a variable, not a key. An interpolated string cannot be pinned
 // and forces a scan.
 func (e *extractor) visitShorthand(kv *gojq.ObjectKeyVal) {
 	switch {
@@ -251,7 +252,7 @@ func (e *extractor) visitShorthand(kv *gojq.ObjectKeyVal) {
 	}
 }
 
-// visitString walks the queries embedded in an interpolated string; a plain
+// visitString walks the queries embedded in an interpolated string. A plain
 // string literal has none and references no key.
 func (e *extractor) visitString(s *gojq.String) {
 	for _, q := range s.Queries {

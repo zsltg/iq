@@ -22,17 +22,22 @@ import (
 
 // Shape is the accumulated result of Infer over a sample: a tree of nodes rooted
 // at the whole collection. The accumulation is the single source of truth per
-// fact; Comparable and JSONSchema are pure projections of it.
+// fact. Comparable and JSONSchema are pure projections of it.
 type Shape struct {
 	root *node
 }
 
-// node accumulates what was observed at one position in the shape tree: the distinct
-// JSON kinds seen there, how many values landed there (seen), how many of those were
-// objects (objCount, the denominator for the presence of this node's fields), the
-// object children, the unified array-element child (elem), and all-or-nothing format
-// tracking for string values. Every tree position maps to a unique path, so presence
-// lives on the edge: the child's seen count measured against its parent's objCount.
+// node accumulates what was observed at one position in the shape tree:
+//   - The distinct JSON kinds seen there.
+//   - How many values landed there (seen).
+//   - How many of those were objects (objCount, the denominator for the presence of
+//     this node's fields).
+//   - The object children.
+//   - The unified array-element child (elem).
+//   - All-or-nothing format tracking for string values.
+//
+// Every tree position maps to a unique path, so presence lives on the edge. Presence
+// is the child's seen count measured against its parent's objCount.
 type node struct {
 	kinds    kindSet
 	seen     int
@@ -73,7 +78,7 @@ func (n *node) elemNode() *node {
 }
 
 // Infer reduces a set of sampled items into a Shape. Each item is accumulated at
-// the root; object items descend into their fields, building the tree. The map
+// the root. Object items descend into their fields and build the tree. The map
 // key (the store's key) is not part of the value shape and is not walked.
 func Infer(items map[string]any) *Shape {
 	root := newNode()
@@ -84,13 +89,14 @@ func Infer(items map[string]any) *Shape {
 	return &Shape{root: root}
 }
 
-// Map-detection and enum thresholds, kept together as the one place to tune inference.
-// Map detection collapses an object path into a map when it has enough object instances
-// (mapMinInstances), enough distinct child keys (mapMinKeys), and mostly unique keys
-// across the key-slots seen (mapMinDistinctRatio). That is the signature of id-keyed
-// data, not of a fixed record whose few keys repeat in every instance. The ratio is the
-// real discriminator: a wide fixed record clears the count gates, but its keys repeat,
-// so its ratio is low. Repeat-heavy maps below the ratio stay literal.
+// Map-detection and enum thresholds, kept together as the one place to tune
+// inference. Map detection collapses an object path into a map when it has three
+// things. It needs enough object instances (mapMinInstances). It needs enough
+// distinct child keys (mapMinKeys). It needs mostly unique keys across the
+// key-slots seen (mapMinDistinctRatio). That is the signature of id-keyed data,
+// not of a fixed record whose few keys repeat in every instance. The ratio is the
+// key test. A wide fixed record clears the count gates, but its keys repeat, so
+// its ratio is low. Repeat-heavy maps below the ratio stay literal.
 const (
 	mapMinInstances     = 8
 	mapMinKeys          = 8
@@ -102,10 +108,10 @@ const (
 )
 
 // inferMaps collapses id-keyed object nodes into maps, depth-first. The root is
-// never collapsed: a genuinely heterogeneous top-level collection folding to one
-// map value would hide everything. A collapsed node merges its literal children
+// never collapsed, because a heterogeneous top-level collection that folds to one
+// map value hides everything. A collapsed node merges its literal children
 // into a single map-value node (path segment "{}"), drops the literal child
-// paths, and reads as kind map; recursion continues into the merged value, so a
+// paths, and reads as kind map. Recursion continues into the merged value, so a
 // nested id-keyed map is still detected.
 func inferMaps(n *node, root bool) {
 	if !root && shouldCollapse(n) {
@@ -128,8 +134,8 @@ func inferMaps(n *node, root bool) {
 }
 
 // shouldCollapse reports whether an object node's children look id-keyed enough to
-// be a map. slots is the total key-slots seen (Σ child presence); distinct/slots
-// is the fraction of keys that are distinct.
+// be a map. slots is the total key-slots seen (Σ child presence). The value
+// distinct/slots is the fraction of keys that are distinct.
 func shouldCollapse(n *node) bool {
 	distinct := len(n.fields)
 	if n.objCount < mapMinInstances || distinct < mapMinKeys {
@@ -164,13 +170,13 @@ func mergeNode(dst, src *node) {
 
 // accumulate records value v at node n and recurses into an object's fields and an
 // array's elements. A field's presence is counted against n.objCount. Each object
-// occurrence visits each of its keys once, so a child's seen count over the parent's
-// object count is exactly the fraction of parent instances that carried the field. The
-// fraction is parent-relative, so an optional parent never makes an always-present
-// child look optional. Array elements unify into a single elem node (path segment
-// "[]"), so the path space stays bounded by the sample, not by element count. An object
-// element's fields then count against the elements seen. An empty array records the
-// array kind and nothing below it.
+// occurrence visits each of its keys once. So a child's seen count over the
+// parent's object count is exactly the fraction of parent instances that carried
+// the field. The fraction is parent-relative, so an optional parent never makes an
+// always-present child look optional. Array elements unify into a single elem node
+// (path segment "[]"). So the path space stays bounded by the sample, not by
+// element count. An object element's fields then count against the elements seen.
+// An empty array records the array kind and nothing below it.
 func accumulate(n *node, v any) {
 	n.seen++
 	n.kinds.add(kindOf(v))
@@ -190,12 +196,13 @@ func accumulate(n *node, v any) {
 	}
 }
 
-// Comparable projects the shape to a flat path->node map: "$root" plus every dotted
-// field path. Each node carries its sorted distinct types and (for fields) a presence
-// of "required" or "optional". Presence is a stable attribute, not a sample-count
-// fraction, so two independently drawn samples of the same schema project identically
-// and a schema diff stays quiet under resampling. The result is a map[string]any, so it
-// runs through the structural Tree like any other value.
+// Comparable projects the shape to a flat path->node map: "$root" plus every
+// dotted field path. Each node carries its sorted distinct types and (for fields)
+// a presence of "required" or "optional". Presence is a stable attribute, not a
+// sample-count fraction. So two independently drawn samples of the same schema
+// project identically, and a schema diff stays quiet under resampling. The result
+// is a map[string]any, so it runs through the structural Tree like any other
+// value.
 func (s *Shape) Comparable() map[string]any {
 	out := map[string]any{"$root": map[string]any{"types": s.root.comparableTypes()}}
 	projectComparable(out, "", s.root)
@@ -204,8 +211,8 @@ func (s *Shape) Comparable() map[string]any {
 
 // projectComparable emits one node per field and array element of parent under
 // prefix, recursing to build dotted paths with "[]" array-element segments. A
-// field carries presence (against the parent's object count); the "[]" element
-// node is typed only — the object fields under it carry the presence.
+// field carries presence (against the parent's object count). The "[]" element
+// node is typed only. The object fields under it carry the presence.
 func projectComparable(out map[string]any, prefix string, parent *node) {
 	for name, child := range parent.fields {
 		path := prefix + "." + name
@@ -227,9 +234,9 @@ func projectComparable(out map[string]any, prefix string, parent *node) {
 	}
 }
 
-// comparableTypes renders a node's kind set as the sorted []any the shape nodes
-// and the structural diff consume. A field that saw both integer and number
-// collapses to "number" alone (integer ∪ double = double); an all-or-nothing
+// comparableTypes renders a node's kind set as the sorted []any that the shape
+// nodes and the structural diff consume. A field that saw both integer and number
+// collapses to "number" alone (integer ∪ double = double). An all-or-nothing
 // string format renders into the type name, so "string(date-time)" reads as one
 // value and format drift is a single visible row.
 func (n *node) comparableTypes() []any {
@@ -268,8 +275,8 @@ func presence(seen, total int) string {
 // title: $schema and title, then the root value schema. Object properties carry
 // per-object required arrays, strings carry format and a low-cardinality enum,
 // maps carry additionalProperties, and arrays carry items. A non-object root is
-// legal (a string keyspace yields {"type":"string"}); a mixed root uses a type
-// array. It describes values only — key shape is the driver's display concern.
+// legal (a string keyspace yields {"type":"string"}). A mixed root uses a type
+// array. It describes values only. Key shape is the driver's display concern.
 func (s *Shape) JSONSchema(title string) map[string]any {
 	doc := schemaFor(s.root)
 	doc["$schema"] = "https://json-schema.org/draft/2020-12/schema"
@@ -277,10 +284,10 @@ func (s *Shape) JSONSchema(title string) map[string]any {
 	return doc
 }
 
-// schemaFor renders one node as a JSON Schema object, attaching the detail of
-// each kind it holds: additionalProperties for a map, properties+required for a
-// plain object, items for an array, and format/enum for a string. Integer
-// collapses into number when both are present; an unknown-only node has no type.
+// schemaFor renders one node as a JSON Schema object. It attaches the detail of
+// each kind the node holds. A map gets additionalProperties. A plain object gets
+// properties+required. An array gets items. A string gets format/enum. Integer
+// collapses into number when both are present. An unknown-only node has no type.
 func schemaFor(n *node) map[string]any {
 	schema := map[string]any{}
 	setType(schema, n.schemaTypes())
@@ -342,9 +349,9 @@ func setType(schema map[string]any, types []string) {
 	}
 }
 
-// schemaTypes renders a node's kind set as sorted JSON Schema type names, with
-// integer collapsed into number when both are present and object/map both
-// rendering "object" (a map is a JSON object with additionalProperties).
+// schemaTypes renders a node's kind set as sorted JSON Schema type names. Integer
+// collapses into number when both are present. Object and map both render
+// "object" (a map is a JSON object with additionalProperties).
 func (n *node) schemaTypes() []string {
 	names := make([]string, 0, len(n.kinds))
 	for _, k := range n.kinds.collapsed() {
@@ -400,8 +407,9 @@ func (s kindSet) replace(from, to kind) {
 }
 
 // kind is a canonical JSON kind. It splits integer from number and reserves map
-// for the id-keyed-map post-pass; each projection renders it in its own
-// vocabulary (Comparable: "bool"/"integer"; JSON Schema: "boolean"/"integer").
+// for the id-keyed-map post-pass. Each projection renders it in its own
+// vocabulary. Comparable uses "bool"/"integer". JSON Schema uses
+// "boolean"/"integer".
 type kind int
 
 const (
@@ -436,8 +444,8 @@ func (k kind) String() string {
 	return "unknown"
 }
 
-// schemaName renders a kind in the JSON Schema vocabulary: "bool" becomes
-// "boolean", a map is a JSON "object" (with additionalProperties), and an unknown
+// schemaName renders a kind in the JSON Schema vocabulary. "bool" becomes
+// "boolean". A map is a JSON "object" (with additionalProperties). An unknown
 // kind contributes no type name.
 func (k kind) schemaName() string {
 	switch k {
@@ -462,7 +470,7 @@ func (k kind) schemaName() string {
 
 // kindOf classifies a normalized value. Integers (every Go int/uint width plus
 // *big.Int for values past int64, and any float or JSON number holding an
-// integral value) are "integer"; a fractional float or JSON number is "number".
+// integral value) are "integer". A fractional float or JSON number is "number".
 // Integral-value counting makes the split uniform whether a driver hands an int
 // or a JSON-decoded float64 for the same 5.
 func kindOf(v any) kind {
@@ -512,7 +520,7 @@ func floatKind(f float64) kind {
 
 // numberKind splits a json.Number (from a decoder configured with UseNumber that
 // reached Infer unconverted) into integer or number. An exact integer literal is
-// integer; otherwise its float value decides by integrality.
+// integer. Otherwise its float value decides by integrality.
 func numberKind(n json.Number) kind {
 	if !strings.ContainsAny(n.String(), ".eE") {
 		return kindInteger
@@ -524,9 +532,9 @@ func numberKind(n json.Number) kind {
 	return floatKind(f)
 }
 
-// Format matchers. The three are structurally disjoint (a bare date has no "T",
-// so it fails RFC3339; a date-time fails the date anchor; a UUID matches neither),
-// so at most one survives the all-or-nothing intersection.
+// Format matchers. The three are structurally disjoint. A bare date has no "T",
+// so it fails RFC3339. A date-time fails the date anchor. A UUID matches neither.
+// So at most one survives the all-or-nothing intersection.
 var (
 	reDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 	reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -538,8 +546,8 @@ func matchDateTime(s string) bool {
 	return err == nil
 }
 
-// matchDate reports whether s is a YYYY-MM-DD calendar date (a real one — the
-// regexp gates the shape, time.Parse rejects 2006-13-40).
+// matchDate reports whether s is a YYYY-MM-DD calendar date. It must be a real
+// date: the regexp gates the shape, and time.Parse rejects 2006-13-40.
 func matchDate(s string) bool {
 	if !reDate.MatchString(s) {
 		return false
@@ -552,8 +560,8 @@ func matchDate(s string) bool {
 func matchUUID(s string) bool { return reUUID.MatchString(s) }
 
 // formats tracks, for one node, whether every string seen so far matched a given
-// format — quicktype's all-or-nothing transform rule: one mismatch drops the
-// format for the field.
+// format. This is quicktype's all-or-nothing transform rule: one mismatch drops
+// the format for the field.
 type formats struct {
 	hasString bool
 	dateTime  bool
@@ -573,9 +581,9 @@ func (f *formats) observe(s string) {
 	f.uuid = f.uuid && u
 }
 
-// mergeFrom folds another node's format state into f, keeping a format only if it
-// held for every string across both sides — the all-or-nothing rule extended over
-// a map collapse. A side that saw no string contributes nothing.
+// mergeFrom folds another node's format state into f. It keeps a format only if
+// it held for every string across both sides. This is the all-or-nothing rule
+// extended over a map collapse. A side that saw no string contributes nothing.
 func (f *formats) mergeFrom(o formats) {
 	if !o.hasString {
 		return
@@ -609,9 +617,9 @@ func (f *formats) resolve() string {
 }
 
 // enumAcc tracks, for one node, the count of string values seen and the distinct
-// ones (capped at the enum ceiling), so a low-cardinality string field can
-// project an enum. Once the distinct count exceeds the ceiling it stops
-// collecting and marks itself over — past that it cannot be an enum.
+// ones (capped at the enum ceiling). This lets a low-cardinality string field
+// project an enum. Once the distinct count exceeds the ceiling, it stops
+// collecting and marks itself over. Past that point it cannot be an enum.
 type enumAcc struct {
 	count int
 	vals  map[string]struct{}
@@ -652,9 +660,9 @@ func (e *enumAcc) mergeFrom(o enumAcc) {
 	}
 }
 
-// values returns the node's sorted enum values when it qualifies — at least
-// enumMinInstances strings, not over the distinct ceiling, and a distinct/count
-// ratio no greater than enumMaxRatio — else nil.
+// values returns the node's sorted enum values when it qualifies. It needs at
+// least enumMinInstances strings, a distinct count not over the ceiling, and a
+// distinct/count ratio no greater than enumMaxRatio. Otherwise it returns nil.
 func (e *enumAcc) values() []string {
 	if e.over || e.count < enumMinInstances {
 		return nil

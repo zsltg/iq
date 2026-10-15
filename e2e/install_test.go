@@ -38,9 +38,9 @@ func TestManCommand(t *testing.T) {
 	require.Equal(t, byte('.'), out[0], "the page must start with the .TH request")
 }
 
-// TestDynamicCompletionListsHandle drives cobra's hidden __complete protocol with
-// a seeded config: the saved source handle must appear as a candidate for --src
-// and for a positional source argument, with the NoFileComp directive (:4).
+// TestDynamicCompletionListsHandle drives the hidden __complete protocol of cobra
+// with a seeded config. The saved source handle must appear as a candidate for
+// --src and for a positional source argument, with the NoFileComp directive (:4).
 func TestDynamicCompletionListsHandle(t *testing.T) {
 	skipShort(t)
 	dir := t.TempDir()
@@ -61,8 +61,8 @@ func TestDynamicCompletionListsHandle(t *testing.T) {
 	require.Contains(t, out, "warehouse")
 }
 
-// TestCompletionsMatchCommitted is the drift guard: the binary's completion
-// output must equal the committed docs/completions/iq.<ext> files, so a cobra
+// TestCompletionsMatchCommitted is the drift guard. The completion output of the
+// binary must equal the committed docs/completions/iq.<ext> files. So a cobra
 // bump or help-text edit that changes them fails until `make completions` reruns.
 func TestCompletionsMatchCommitted(t *testing.T) {
 	skipShort(t)

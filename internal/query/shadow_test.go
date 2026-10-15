@@ -9,8 +9,8 @@ import (
 )
 
 // A user definition named select/1 replaces the builtin, so the query keeps
-// every record. The store must see a plain scan, not a pushed predicate, or it
-// would drop the record with a = 2.
+// every record. The store must see a plain scan, not a pushed predicate. A pushed
+// predicate drops the record with a = 2.
 func TestJQEngineShadowedSelectKeepsEveryRecord(t *testing.T) {
 	store := &filterKV{
 		scanKeys: []string{"1", "2"},

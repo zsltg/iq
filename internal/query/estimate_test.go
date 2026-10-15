@@ -30,7 +30,7 @@ func (f *estimatorKV) EstimateCount(ctx context.Context) (int64, error) {
 }
 
 // filterEstimatorKV pushes filters down and also estimates, so a test can assert
-// a pushed-down scan skips the whole-keyspace estimate (it would overshoot).
+// that a pushed-down scan skips the whole-keyspace estimate (it overshoots).
 type filterEstimatorKV struct {
 	filterKV
 	estimate      int64
@@ -79,8 +79,8 @@ func TestJQEngineEstimateReportsTotal(t *testing.T) {
 }
 
 // TestJQEngineEstimateSkippedForPushedScan asserts a pushed-down filtered scan
-// does not request the whole-keyspace estimate, which would overshoot the subset
-// the store actually walks.
+// does not request the whole-keyspace estimate, which overshoots the subset
+// the store walks.
 func TestJQEngineEstimateSkippedForPushedScan(t *testing.T) {
 	store := &filterEstimatorKV{
 		scanKeys: []string{"1"},
@@ -98,9 +98,9 @@ func TestJQEngineEstimateSkippedForPushedScan(t *testing.T) {
 	require.Nil(t, got, "no total is reported for a pushed-down scan")
 }
 
-// TestJQEngineEstimateBestEffort asserts the estimate never breaks the query: a
-// non-estimator store, a nil callback, and a failing estimate all run to full
-// results with no total, and a failing estimate is not requested twice.
+// TestJQEngineEstimateBestEffort asserts the estimate never breaks the query.
+// A non-estimator store, a nil callback, and a failing estimate all run to full
+// results with no total. A failing estimate is not requested twice.
 func TestJQEngineEstimateBestEffort(t *testing.T) {
 	t.Run("non-estimator store reports no total", func(t *testing.T) {
 		store := &fakeKV{scanKeys: []string{"a"}, values: map[string]any{"a": 1}}
@@ -145,9 +145,9 @@ func TestJQEngineEstimateBestEffort(t *testing.T) {
 }
 
 // TestJQEngineEstimateForwardsContext pins that the estimate is bounded by the
-// caller's context on both paths that request one. It is a best-effort hint, but
-// a hint handed a nil context is an unbounded call the caller never asked for,
-// and it is made before the scan it precedes.
+// caller's context on both paths that request one. It is a best-effort hint. But
+// a hint handed a nil context is an unbounded call the caller never asked for.
+// The call is made before the scan it precedes.
 func TestJQEngineEstimateForwardsContext(t *testing.T) {
 	tests := []struct {
 		name      string
