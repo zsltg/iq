@@ -107,11 +107,15 @@ def main() -> int:
         print("postrender: no cursor blink to remove, has termsvg changed its output?", file=sys.stderr)
         return 1
 
+    return freeze_and_write(svg_path, svg)
+
+
+def freeze_and_write(svg_path: Path, svg: str) -> int:
+    """Add the reduced-motion freeze, then write the finished SVG. It returns the exit code."""
     svg, err = freeze_for_reduced_motion(svg)
     if err:
         print(f"postrender: {err}", file=sys.stderr)
         return 1
-
     svg_path.write_text(svg, encoding="utf-8")
     print(f"postrender: embedded {FONT.name} ({FONT.stat().st_size} bytes) into {svg_path}, cursor blink removed, reduced-motion freeze added")
     return 0
@@ -123,6 +127,26 @@ def frame_lines(body: str) -> list[str]:
     for y, text in re.findall(r'<text[^>]*\by="([0-9.]+)"[^>]*>(.*?)</text>', body):
         rows.setdefault(float(y), []).append(html.unescape(re.sub(r"<[^>]+>", "", text)))
     return ["".join(parts).rstrip() for _, parts in sorted(rows.items())]
+
+
+def is_freeze_frame(lines: list[str]) -> bool:
+    """Report whether a frame shows FREEZE_QUERIES queries and ends in a bare prompt."""
+    queries = sum(line.startswith(QUERY_PROMPT) for line in lines)
+    ends_in_prompt = bool(lines) and lines[-1] == "$"
+    return queries == FREEZE_QUERIES and ends_in_prompt
+
+
+def freeze_delay(steps: list[tuple[float, int]], frames: dict[int, list[str]], duration: float) -> float | None:
+    """Return the time in seconds at the middle of the first freeze frame, or None.
+
+    steps lists the keyframe stops in order, as (percent, frame offset). frames maps a
+    frame offset to the text rows of that frame.
+    """
+    for (pct, offset), (next_pct, _) in zip(steps, steps[1:]):
+        lines = [line for line in frames.get(offset, []) if line]
+        if is_freeze_frame(lines):
+            return (pct + next_pct) / 2 / 100 * duration
+    return None
 
 
 def freeze_for_reduced_motion(svg: str) -> tuple[str, str]:
@@ -148,23 +172,19 @@ def freeze_for_reduced_motion(svg: str) -> tuple[str, str]:
         int(x): frame_lines(body)
         for x, body in re.findall(r'<g transform="translate\((\d+),0\)">(.*?)</g>', svg)
     }
-    for i, (pct, offset) in enumerate(steps[:-1]):
-        lines = [line for line in frames.get(offset, []) if line]
-        queries = sum(line.startswith(QUERY_PROMPT) for line in lines)
-        if queries == FREEZE_QUERIES and lines and lines[-1] == "$":
-            delay = (pct + steps[i + 1][0]) / 2 / 100 * duration
-            rule = (
-                "@media (prefers-reduced-motion: reduce){"
-                f'g[style*="animation:{name} "]'
-                "{animation-play-state:paused!important;"
-                f"animation-delay:-{delay:.3f}s!important}}}}"
-            )
-            return svg.replace("</style>", rule + "</style>", 1), ""
-    return svg, (
-        f"no frame shows {FREEZE_QUERIES} queries and ends in a bare prompt, so the "
-        "reduced-motion freeze has no frame to hold. Has scripts/demo/basic.exp changed?"
+    delay = freeze_delay(steps, frames, duration)
+    if delay is None:
+        return svg, (
+            f"no frame shows {FREEZE_QUERIES} queries and ends in a bare prompt, so the "
+            "reduced-motion freeze has no frame to hold. Has scripts/demo/basic.exp changed?"
+        )
+    rule = (
+        "@media (prefers-reduced-motion: reduce){"
+        f'g[style*="animation:{name} "]'
+        "{animation-play-state:paused!important;"
+        f"animation-delay:-{delay:.3f}s!important}}}}"
     )
-
+    return svg.replace("</style>", rule + "</style>", 1), ""
 
 if __name__ == "__main__":
     sys.exit(main())
