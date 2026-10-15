@@ -95,8 +95,18 @@ from Codex's own options. The same entry can be written by hand as
 codex mcp add iq -- iq mcp --timeout 30s
 ```
 
-[Gemini CLI](https://geminicli.com) (the `--` matters here too. A `--timeout`
-before it is Gemini's own connection timeout in milliseconds, not iq's):
+[Antigravity CLI](https://antigravity.google) (flags for `agy` go before the name. The
+`--` separates the server command. The entry goes to `~/.gemini/config/mcp_config.json`, or
+to `.agents/mcp_config.json` in the workspace):
+
+```sh
+agy mcp add iq -- iq mcp --timeout 30s
+```
+
+[Gemini CLI](https://geminicli.com) (since 2026-06-18, Gemini CLI serves only a paid Gemini API
+key or a Gemini Code Assist Standard or Enterprise plan. Antigravity CLI replaces it for
+other users. The `--` matters here too. A `--timeout` before it is Gemini's own connection
+timeout in milliseconds, not iq's):
 
 ```sh
 gemini mcp add iq iq mcp -- --timeout 30s

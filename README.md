@@ -252,39 +252,14 @@ Codex CLI:
 codex mcp add iq -- iq mcp --timeout 30s
 ```
 
-Gemini CLI:
+Antigravity CLI:
 ```sh
-gemini mcp add iq iq mcp -- --timeout 30s
+agy mcp add iq -- iq mcp --timeout 30s
 ```
 
-OpenCode, which names the map `mcp` and takes the command as one array:
-```json
-{
-  "mcp": {
-    "iq": {
-      "type": "local",
-      "command": ["iq", "mcp", "--timeout", "30s"],
-      "enabled": true
-    }
-  }
-}
-```
-
-Cursor, Cline and Antigravity:
-```json
-{
-  "mcpServers": {
-    "iq": {
-      "command": "iq",
-      "args": ["mcp", "--timeout", "30s"]
-    }
-  }
-}
-```
-
-Copilot in VS Code names the map `servers` and needs the transport type. Read
-[AI agents](https://zsltg.github.io/iq/agents/#client-configuration) for its block and for
-the configuration file of each client.
+OpenCode, Cursor, Cline, the Antigravity IDE and Copilot in VS Code take a JSON block. Read
+[AI agents](https://zsltg.github.io/iq/agents/#client-configuration) for the block and the
+configuration file of each client.
 
 ## Usage
 
