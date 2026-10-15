@@ -914,15 +914,16 @@ jobs:
         with:
           restore: 'false'
       # The history scan covers only the commits of the pull request. The weekly
-      # deep-scan job keeps the only scan of the full history.
+      # deep-scan job keeps the only scan of the full history. Every scan passes
+      # --validation=false, so a found secret never goes to a provider API.
       - name: betterleaks (working tree + pull request commits)
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           . scripts/tool-versions.env
-          go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" dir --no-banner --config .betterleaks.toml .
-          go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" git --no-banner --config .betterleaks.toml --log-opts="$BASE..$HEAD" .
+          go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" dir --no-banner --validation=false --config .betterleaks.toml .
+          go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" git --no-banner --validation=false --config .betterleaks.toml --log-opts="$BASE..$HEAD" .
 
   # What the dependency tree can *do* (google/capslock, scripts/capabilities.sh).
   # The wrapper self-skips unless go.mod or go.sum moved against the base, so this
@@ -1267,7 +1268,7 @@ jobs:
       - name: Secret history scan
         run: |
           . scripts/tool-versions.env
-          go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" git --no-banner --config .betterleaks.toml .
+          go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" git --no-banner --validation=false --config .betterleaks.toml .
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       # The online audits read the advisory data of GitHub, so a re-run on
       # unchanged workflows finds a newly vulnerable or yanked action.
