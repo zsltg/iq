@@ -247,6 +247,29 @@ Claude Code:
 claude mcp add iq -- iq mcp --timeout 30s
 ```
 
+Codex CLI:
+```sh
+codex mcp add iq -- iq mcp --timeout 30s
+```
+
+Gemini CLI:
+```sh
+gemini mcp add iq iq mcp -- --timeout 30s
+```
+
+OpenCode, which names the map `mcp` and takes the command as one array:
+```json
+{
+  "mcp": {
+    "iq": {
+      "type": "local",
+      "command": ["iq", "mcp", "--timeout", "30s"],
+      "enabled": true
+    }
+  }
+}
+```
+
 Cursor, Cline and Antigravity:
 ```json
 {
@@ -259,9 +282,9 @@ Cursor, Cline and Antigravity:
 }
 ```
 
-Codex CLI, Gemini CLI, Copilot in VS Code and OpenCode use a different command or a different
-key around the block. Read [AI agents](https://zsltg.github.io/iq/agents/#client-configuration)
-for the configuration file and the block of each client.
+Copilot in VS Code names the map `servers` and needs the transport type. Read
+[AI agents](https://zsltg.github.io/iq/agents/#client-configuration) for its block and for
+the configuration file of each client.
 
 ## Usage
 
