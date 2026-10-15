@@ -147,7 +147,8 @@ module proxy:
 - `osv-scanner` scans vulnerabilities and every Go module against
   `scripts/license-allowlist.txt`. The CI `osv` job reads the same allowlist.
 - `betterleaks` scans the working tree and Git history for secrets. It reads
-  `.betterleaks.toml`, which skips the fake passwords of the tests.
+  `.betterleaks.toml`, which skips the fake passwords of the tests. Every scan
+  passes `--validation=false`, so a found secret never goes to a provider API.
 - `zizmor` audits `.github/` through `uvx`, with the version pinned by
   `ZIZMOR_VERSION` in `scripts/tool-versions.env`. Without `GH_TOKEN` or `GITHUB_TOKEN`, it runs only offline audits.
 - `syft` writes a software bill of materials (SBOM) to `dist/`. The SBOM lists the Go module graph only.

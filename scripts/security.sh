@@ -48,8 +48,10 @@ bash scripts/third-party-licenses.sh || { echo "security: the third-party licens
 rm -rf third-party-licenses
 
 step "betterleaks (secrets: working tree + git history)"
-betterleaks dir . --no-banner --config .betterleaks.toml || { echo "security: betterleaks found secrets in the working tree" >&2; fail=1; }
-betterleaks git . --no-banner --config .betterleaks.toml || { echo "security: betterleaks found secrets in git history" >&2; fail=1; }
+# --validation=false keeps every found secret local. Betterleaks never sends one to
+# a provider API to test it. The default is off, and the flag pins it.
+betterleaks dir . --no-banner --validation=false --config .betterleaks.toml || { echo "security: betterleaks found secrets in the working tree" >&2; fail=1; }
+betterleaks git . --no-banner --validation=false --config .betterleaks.toml || { echo "security: betterleaks found secrets in git history" >&2; fail=1; }
 
 step "zizmor (GitHub Actions workflow audit)"
 uvx "zizmor==$ZIZMOR_VERSION" .github/ || { echo "security: zizmor reported workflow findings" >&2; fail=1; }
