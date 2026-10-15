@@ -25,13 +25,13 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// driver describes one backend iq can talk to: a stable name, a description,
-// the URI schemes that select it, its upstream docs, and the opener. The
-// drivers registry below is the single source of truth. openStore,
-// supportedScheme, driverForScheme, driverName, and `iq driver ls` all derive
-// from it, so a new backend is one entry. It lives in cmd, the composition
-// root, because open returns the cmd-local store port and takes the
-// per-invocation config.
+// driver describes one backend that iq can talk to. It holds a stable name, a
+// description, the URI schemes that select it, its upstream docs, and the
+// opener. The drivers registry below is the single source of truth.
+// openStore, supportedScheme, driverForScheme, driverName, and `iq driver ls`
+// all derive from it. So a new backend is one entry. It lives in cmd, the
+// composition root. The reason is that open returns the cmd-local store port
+// and takes the per-invocation config.
 type driver struct {
 	name    string
 	desc    string
@@ -45,19 +45,22 @@ type driver struct {
 	// and has no upstream server to suggest. So doc and versions can be empty,
 	// and the connection-scheme hint in error messages leaves it out.
 	readOnly bool
-	// formats is the dump-format catalogue a read-only file driver advertises under
-	// `iq driver ls -v`; it keeps the summary description short while the format
-	// detail stays discoverable. Empty for a live backend, which reads one wire format.
+	// formats is the dump-format catalogue that a read-only file driver advertises
+	// under `iq driver ls -v`. It keeps the summary description short while the
+	// format detail stays discoverable. Empty for a live backend, which reads one
+	// wire format.
 	formats []iqfile.FormatInfo
 	// addressable marks a backend whose sources take a dotted address suffix
-	// (handle.address) naming a sub-container — MongoDB's collection. A
-	// non-addressable backend (Redis, file) rejects an address at resolve time.
+	// (handle.address) that names a sub-container, such as the collection of
+	// MongoDB. A non-addressable backend (Redis, file) rejects an address at
+	// resolve time.
 	addressable bool
-	// params is the catalogue of URI query options iq itself reads for this
-	// backend, owned by the driver package so its parse code and this registry share
-	// one list. Options that a backend SDK parses are not listed. The keyspace
-	// options, in catalogue order (most specific first, Couchbase's ?collection=
-	// outranks its ?bucket=), pin a source's default keyspace: see addressParams.
+	// params is the catalogue of URI query options that iq itself reads for this
+	// backend. The driver package owns it, so its parse code and this registry
+	// share one list. Options that a backend SDK parses are not listed. The
+	// keyspace options pin the default keyspace of a source: see addressParams.
+	// They are in catalogue order (most specific first, so ?collection= of
+	// Couchbase outranks its ?bucket=).
 	params []query.URIParam
 	// uriExample is a sample URI for the `iq add` help. uriNote says what the host
 	// part names, when the host is not a plain server.
@@ -69,10 +72,11 @@ type driver struct {
 	// second round-trip.
 	verifiesOnOpen bool
 	open           func(ctx context.Context, cfg *config) (store, error)
-	// explainPlan describes, without connecting, the backend calls this driver
-	// would make for a classified query and pushed predicate — the data the query
-	// plan (--explain/--verbose) shows. Only a driver whose plan depends on the URI
-	// reads it, and only that driver returns an error.
+	// explainPlan describes, without connecting, the backend calls that this
+	// driver makes if it runs a classified query and pushed predicate. That is
+	// the data that the query plan (--explain/--verbose) shows. Only a driver
+	// whose plan depends on the URI reads it, and only that driver returns an
+	// error.
 	explainPlan func(src planSource, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error)
 	// explainWrite, explainClear, explainDrop, and explainDelete are the
 	// write-side counterparts. Each describes an `iq data` operation without
@@ -280,7 +284,7 @@ var drivers = []driver{
 		params:         iqelasticsearch.URIParams,
 		uriExample:     "opensearch://host:9200/?index=books",
 		verifiesOnOpen: true,
-		// OpenSearch shares the Elasticsearch driver; the source scheme selects the
+		// OpenSearch shares the Elasticsearch driver. The source scheme selects the
 		// opensearch-go client behind the same query ports.
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqelasticsearch.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
@@ -362,10 +366,11 @@ func driverForScheme(scheme string) (driver, bool) {
 	return driver{}, false
 }
 
-// driverName returns the canonical driver name for a connection URL — the stable
-// identity shown by `iq driver ls`, `iq ls`, `ping`, `inspect`, and `diff`, so a
-// rediss:// and a redis:// source read as the same "redis" driver. An unknown or
-// schemeless URL falls back to its raw scheme rather than an empty label.
+// driverName returns the canonical driver name for a connection URL. It is the
+// stable identity shown by `iq driver ls`, `iq ls`, `ping`, `inspect`, and
+// `diff`. So a rediss:// and a redis:// source read as the same "redis" driver.
+// An unknown or schemeless URL falls back to its raw scheme and not an empty
+// label.
 func driverName(url string) string {
 	scheme := schemeOf(url)
 	if d, ok := driverForScheme(scheme); ok {
@@ -374,11 +379,11 @@ func driverName(url string) string {
 	return scheme
 }
 
-// urlAddressName returns the keyspace a source URL pins through a driver-owned
-// query param: the value of the first of the driver's addressParams() the URL sets,
-// most specific first. It is what `iq add` names a source after when -n is
-// omitted. Empty when the driver declares no keyspace param, the URL sets none,
-// or the URL does not parse.
+// urlAddressName returns the keyspace that a source URL pins through a driver-owned
+// query param. That is the value of the first param that the URL sets, from the
+// addressParams() of the driver, most specific first. It is what `iq add` names a
+// source after when -n is omitted. Empty when the driver declares no keyspace
+// param, when the URL sets none, or when the URL does not parse.
 func urlAddressName(rawURL string) string {
 	d, ok := driverForScheme(schemeOf(rawURL))
 	if !ok {
@@ -396,11 +401,12 @@ func urlAddressName(rawURL string) string {
 	return ""
 }
 
-// foreignAddressParam returns the name of a keyspace param a URL sets that its
-// backend cannot honour: any spelling in the registry's union on a backend that
-// declares none (Redis, file), minus the params that backend reads itself. It is
-// the guard `iq add` runs so a mistaken default fails fast rather than being
-// silently ignored at connect time. Empty when the URL carries no such param.
+// foreignAddressParam returns the name of a keyspace param that a URL sets and
+// that its backend cannot honor. That is any spelling in the union of the
+// registry on a backend that declares none (Redis, file), minus the params that
+// backend reads itself. It is the guard that `iq add` runs, so a mistaken
+// default fails fast and is not silently ignored at connect time. Empty when
+// the URL carries no such param.
 func foreignAddressParam(rawURL string) string {
 	d, ok := driverForScheme(schemeOf(rawURL))
 	if !ok || len(d.addressParams()) > 0 {
@@ -423,8 +429,8 @@ func foreignAddressParam(rawURL string) string {
 }
 
 // allAddressParams returns every keyspace param name in the registry, deduped and
-// in registry order, so the guard's report is deterministic and a new backend's
-// spelling joins it without a second edit.
+// in registry order. So the report of the guard is deterministic, and the
+// spelling of a new backend joins it without a second edit.
 func allAddressParams() []string {
 	params := make([]string, 0, len(drivers))
 	for _, d := range drivers {
@@ -499,9 +505,9 @@ func wrapText(text string) string {
 	return strings.Join(append(lines, line), "\n")
 }
 
-// urlQuery parses a source URL's query string. An unparseable URL yields false
-// rather than an error: every caller treats it as "names nothing", leaving the
-// driver to report the real parse failure at open time.
+// urlQuery parses the query string of a source URL. An unparseable URL yields
+// false and not an error. Every caller treats it as "names nothing", which
+// leaves the driver to report the real parse failure at open time.
 func urlQuery(rawURL string) (url.Values, bool) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -539,11 +545,11 @@ func driverNames() string {
 	return strings.Join(driverNameList(), ", ")
 }
 
-// expectedSchemes renders the registry's primary schemes as an error fragment
-// ("expected mongodb:// or redis://"), so the message an unsupported URL yields
-// stays in sync with the drivers that actually exist.
+// expectedSchemes renders the primary schemes of the registry as an error
+// fragment ("expected mongodb:// or redis://"). So the message that an
+// unsupported URL yields stays in sync with the drivers that exist.
 func expectedSchemes() string {
-	// Only connectable backends are suggested for a bad connection URL; a local
+	// Only connectable backends are suggested for a bad connection URL. A local
 	// read-only driver (file://) is discoverable via `iq driver ls`, not here.
 	primaries := make([]string, 0, len(drivers))
 	for _, d := range drivers {
@@ -574,9 +580,9 @@ type driverRow struct {
 	Formats     []driverFormatRow `json:"formats,omitempty"`
 }
 
-// driverFormatRow is the JSON shape of one dump format under `iq driver ls -v --json`.
-// Auto reports whether content detection recognizes it; when false it must be forced
-// with ?format=/--from-format.
+// driverFormatRow is the JSON shape of one dump format under `iq driver ls -v
+// --json`. Auto reports whether content detection recognizes it. When false, the
+// format must be forced with ?format=/--from-format.
 type driverFormatRow struct {
 	Name   string `json:"name"`
 	Auto   bool   `json:"auto"`
@@ -621,9 +627,10 @@ func newDriverLsCmd(cfg *config) *cobra.Command {
 	return c
 }
 
-// listDrivers renders the driver registry as an aligned table (with a header row) or,
-// with jsonOut/yamlOut set, as machine-readable output. verbose appends each
-// format-bearing driver's dump-format catalogue (the file driver's readers).
+// listDrivers renders the driver registry as an aligned table (with a header row).
+// With jsonOut/yamlOut set, it renders machine-readable output instead. verbose
+// appends the dump-format catalogue of each format-bearing driver (the readers of the
+// file driver).
 func listDrivers(out io.Writer, verbose, jsonOut, yamlOut bool) error {
 	if jsonOut || yamlOut {
 		return writeStructured(out, driverRows(verbose), yamlOut)
@@ -693,12 +700,12 @@ func driverTable() [][]tableCell {
 	return rows
 }
 
-// writeDriverFormats appends a driver's dump-format catalogue under `iq driver ls -v`:
-// a caption teaching the URL shape, then an aligned name/source block rendered as its
-// own table so the main grid's column widths are untouched. A content-detected format
-// shows a bare name (usable as file:///<path>); one that must be forced shows the full
-// ?format=<name> to paste onto file:///<path>?format=<name>. Nothing for a driver
-// without formats.
+// writeDriverFormats appends the dump-format catalogue of a driver under `iq driver ls
+// -v`. First comes a caption that teaches the URL shape. Then comes an aligned
+// name/source block, rendered as its own table so the column widths of the main grid
+// are untouched. A content-detected format shows a bare name (usable as
+// file:///<path>). A format that must be forced shows the full ?format=<name> to paste
+// onto file:///<path>?format=<name>. A driver without formats gets nothing.
 func writeDriverFormats(out io.Writer, d driver) error {
 	if len(d.formats) == 0 {
 		return nil

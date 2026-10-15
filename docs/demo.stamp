@@ -6,13 +6,13 @@
 # longer prints. Re-record with `make demo`; commit the SVG and this file together.
 #
 # sha256 of each file's bytes (CR stripped), sorted by path.
-c362b3204fb8284c6c3f793b35d2f042581174e84d79cf773a0471c3441987d8  cmd/color.go
-e8d5807f124ea563424e9f269990c089e96e36490593b8c51a18c3b21bcd1797  cmd/errrender.go
-6de4dcd352d023d4ccedc914dcf513349d313de9d3ec8f8ccac81f807285219b  cmd/explain.go
-9db8a26305f9fced37fd86ea7fd92097a9ee4234d5449254362e1e01435d49f7  cmd/explain_stages.go
-fa281cbad0544e1749758d274b4c5fb4976a25232c5347373ccc844f2fffe722  cmd/gron.go
-7236595a394c95b6aaf937a78777e825d63e8eb095d14386f8125ed563af72cc  cmd/output.go
-6ab03f0edcc420e8d72ddf12ac61b6967af3dcb49a8dedca88d4bc5b1acb99f6  cmd/source.go
+aa1e4ee4f29ee9d45b3c99a36a6f1e4accc5d2a54a715803446a64fa1a4e2399  cmd/color.go
+20c62b26a1d06cfd1b4d7b6c6087cd1227ea9f4f2a6e780d75fc7bba893ff030  cmd/errrender.go
+eff77fdbc8edd052965c996b2884d92d95ce744d13624a2955fab2dd16a9efb6  cmd/explain.go
+386c30133025f460a833ef36e71c8f433a93545028e302a476a0eafbbf1ea345  cmd/explain_stages.go
+2b6fadc9eb122820128471ab26581d91224ee650cc1c193d876445b51963008e  cmd/gron.go
+47065a77e4ffeda6a99b36f977a5d4546da8701ff63cd63bf3d3c5d3bf34921b  cmd/output.go
+f18f7df879cd4fa3e4e70c8867d74c24c6d29f21b6732f7998f0e2d89c351521  cmd/source.go
 6e059197fbf3f7d9c8ad2f2e5d974e5b9cacc59f7c6853bba04e507f6a9487c1  internal/jqfmt/jqfmt.go
 c8d84d1c02e31663aa047065e421e53fb4ebb630a5c82ab012d5ede4bc363f45  internal/render/json.go
 ab177e0ee5cf86bbd531fe9fca29c63115963184775f652a7a98b36c64cad907  scripts/demo/basic.exp

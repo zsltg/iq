@@ -175,8 +175,8 @@ func TestMCPInsertCheckOrder(t *testing.T) {
 }
 
 // TestMoveSourceErrors pins the two callers of the typed source open, the CLI
-// move and iq_insert: the same text for a source that cannot be read, and a
-// redacted URI for a source that cannot be opened.
+// move and iq_insert. Both give the same text for a source that cannot be
+// read, and a redacted URI for a source that cannot be opened.
 func TestMoveSourceErrors(t *testing.T) {
 	t.Run("iq_insert", func(t *testing.T) {
 		useMoveDrivers(t)

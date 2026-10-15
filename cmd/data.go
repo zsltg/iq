@@ -61,8 +61,9 @@ func newDataCmd(cfg *config) *cobra.Command {
 	return c
 }
 
-// endpoint is one side of a copy: either a registered source (a connectable
-// keyspace) or a file path (a typed JSONL dump, "-" or "" meaning stdin/stdout).
+// endpoint is one side of a copy. It is either a registered source (a
+// connectable keyspace) or a file path. A file path is a typed JSONL dump,
+// where "-" or "" means stdin or stdout.
 type endpoint struct {
 	isFile  bool
 	path    string // for a file endpoint; "" or "-" is stdin (source) / stdout (dest)
@@ -73,10 +74,10 @@ type endpoint struct {
 }
 
 // resolveEndpoint turns one positional (or an empty dst) into an endpoint. A
-// positional is always a saved source handle — never a bare file path, so a handle
+// positional is always a saved source handle, never a bare file path. So a handle
 // can never be shadowed by, or confused with, a like-named file. A dump file is
-// used by registering it as a `file://` source; file output goes through -o and
-// stdio through "-". An empty argument is only valid for a destination, where it
+// used by registering it as a `file://` source. File output goes through -o and
+// stdio through "-". An empty argument is valid only for a destination, where it
 // means stdout.
 func resolveEndpoint(cf *iqconfig.Config, arg string, isDst bool) (endpoint, error) {
 	if arg == "" {
@@ -134,10 +135,10 @@ func openFileInput(cmd *cobra.Command, path string) (io.Reader, func() error, er
 	return f, f.Close, nil
 }
 
-// confirmDestruction asks the user to confirm a destructive operation, unless
-// --force is set. In a non-interactive context (stdin is not a terminal) it
-// refuses rather than block, requiring --force, so a script never hangs on a
-// prompt or destroys data silently.
+// confirmDestruction asks the user to confirm a destructive operation,
+// unless --force is set. In a non-interactive context (stdin is not a
+// terminal) it refuses rather than block, and it requires --force. So a
+// script never hangs on a prompt or destroys data silently.
 func confirmDestruction(cmd *cobra.Command, action string, force bool) error {
 	if force {
 		return nil
@@ -154,10 +155,11 @@ func confirmDestruction(cmd *cobra.Command, action string, force bool) error {
 	return nil
 }
 
-// stdinIsTerminal reports whether stdin is an interactive terminal (not a pipe), so
-// a confirmation prompt only appears where a human can answer it, and a piped stdin
-// can be used as an implicit source. It checks the character-device bit of stdin's
-// mode. It is a package var so a test can force pipe/terminal mode deterministically.
+// stdinIsTerminal reports whether stdin is an interactive terminal (not a pipe). So a
+// confirmation prompt only appears where a human can answer it, and a piped stdin can
+// be used as an implicit source. It checks the character-device bit of the mode of
+// stdin. It is a package var so a test can force pipe or terminal mode
+// deterministically.
 var stdinIsTerminal = func() bool {
 	info, err := os.Stdin.Stat()
 	if err != nil {

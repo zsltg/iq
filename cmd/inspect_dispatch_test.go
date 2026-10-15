@@ -25,9 +25,9 @@ func listDispatch(t *testing.T, url string) []string {
 }
 
 // TestDispatchInspectRoutesEveryScheme pins the driver table. Each scheme,
-// including the alias schemes, reaches the inspector of its own driver, and
-// the names that the inspector lists equal the names that completion offers for
-// the driver. A wrong entry sends a driver to another inspector.
+// including the alias schemes, reaches the inspector of its own driver. The
+// names that the inspector lists equal the names that completion offers for the
+// driver. A wrong entry sends a driver to another inspector.
 func TestDispatchInspectRoutesEveryScheme(t *testing.T) {
 	tests := []struct {
 		driver string

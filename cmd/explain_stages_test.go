@@ -335,7 +335,7 @@ jq (after decode, the full filter, every conjunct again):
 }
 
 func TestBuildJQPlanStageColorKeepsAlignment(t *testing.T) {
-	// With color on, the notes are faint and the section keys are colored, but the
+	// With color on, the notes are faint and the section keys are colored. The
 	// padding comes from the plain left text, so the note starts in the same column.
 	orig := color.NoColor
 	color.NoColor = false

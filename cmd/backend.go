@@ -11,18 +11,19 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// store is the backend a command talks to. One adapter satisfies both the jq
-// port (KVStore) and the raw port (Store), plus FormatRaw for the raw reply, so
-// the CLI is written once against this interface and the composition root picks
-// the concrete adapter by URL scheme.
+// store is the backend that a command talks to. One adapter satisfies both the
+// jq port (KVStore) and the raw port (Store), plus FormatRaw for the raw reply.
+// So the CLI is written once against this interface, and the composition root
+// picks the concrete adapter by URL scheme.
 type store interface {
 	query.KVStore
 	query.Store
 	FormatRaw(v any, colored bool) string
 }
 
-// openStore connects to the backend named by cfg.url, logging the attempt and
-// the outcome at the cmd boundary (the driver is safe; the URL is never logged).
+// openStore connects to the backend named by cfg.url. It logs the attempt and
+// the outcome at the cmd boundary. The driver is safe, and the URL is never
+// logged.
 func openStore(ctx context.Context, cfg *config) (store, error) {
 	cfg.log().Debug("opening store", "driver", schemeOf(cfg.url))
 	st, err := dialStore(ctx, cfg)
@@ -34,10 +35,10 @@ func openStore(ctx context.Context, cfg *config) (store, error) {
 }
 
 // wrapStoreLogging returns st wrapped in the DEBUG port-call decorator when a
-// DEBUG sink is listening, else st unchanged: with logging off the native store
-// is returned, so behaviour and cost are unchanged. The wrapper preserves the
-// store's optional capabilities (FilteredScanner/Estimator), so pushdown and
-// estimates still work through it. The ctx gates the Enabled check.
+// DEBUG sink is listening, else st unchanged. With logging off the native store
+// is returned, so behavior and cost are unchanged. The wrapper preserves the
+// optional capabilities of the store (FilteredScanner/Estimator), so pushdown
+// and estimates still work through it. The ctx gates the Enabled check.
 func wrapStoreLogging(ctx context.Context, st store, lg *slog.Logger) store {
 	if lg.Enabled(ctx, slog.LevelDebug) {
 		return newLoggingStore(st, lg)
@@ -78,10 +79,10 @@ type loggingStore struct {
 	lg *slog.Logger
 }
 
-// record emits one "store call" DEBUG record for a finished port call: the op
-// name, the elapsed time, the caller's op-specific counts, and the error when the
-// call failed. The message is a fixed literal; every datum is an attr, the
-// documented stable-key contract.
+// record emits one "store call" DEBUG record for a finished port call. The
+// record holds the op name, the elapsed time, the op-specific counts of the
+// caller, and the error when the call failed. The message is a fixed literal,
+// and every datum is an attr. This is the documented stable-key contract.
 func (s *loggingStore) record(op string, start time.Time, err error, attrs ...any) {
 	args := make([]any, 0, len(attrs)+6)
 	args = append(args, "op", op, "elapsed", time.Since(start))
@@ -116,8 +117,8 @@ func (s *loggingStore) ScanBatches(ctx context.Context, fn func(map[string]any) 
 	return err
 }
 
-// Query delegates the raw exec call, logging the command verb and operand count
-// only — never the operands themselves, which may carry data values.
+// Query delegates the raw exec call. It logs the command verb and operand count
+// only, never the operands themselves, which can carry data values.
 func (s *loggingStore) Query(ctx context.Context, args []string) (any, error) {
 	start := time.Now()
 	out, err := s.st.Query(ctx, args)
@@ -161,8 +162,8 @@ func (s *loggingFilter) ScanFiltered(ctx context.Context, pred predicate.Node, f
 }
 
 // loggingEstimator adds the Estimator capability to the base decorator. The count
-// is a progress hint, not a port call, so it is delegated unlogged; the wrapper
-// exists only to keep the capability visible to the engine's probe.
+// is a progress hint, not a port call, so it is delegated unlogged. The wrapper
+// exists only to keep the capability visible to the probe of the engine.
 type loggingEstimator struct {
 	loggingStore
 	est query.Estimator
@@ -186,9 +187,9 @@ func (s *loggingFilterEstimator) EstimateCount(ctx context.Context) (int64, erro
 	return s.est.EstimateCount(ctx)
 }
 
-// dialStore connects to the backend named by cfg.url, dispatching on the URL
-// scheme through the drivers registry — the single source of truth for which
-// concrete adapters exist.
+// dialStore connects to the backend named by cfg.url, and dispatches on the
+// URL scheme through the drivers registry. The registry is the single source
+// of truth for which concrete adapters exist.
 func dialStore(ctx context.Context, cfg *config) (store, error) {
 	scheme := schemeOf(cfg.url)
 	if scheme == "" {
@@ -208,9 +209,10 @@ func supportedScheme(url string) bool {
 	return ok
 }
 
-// schemeOf returns the lowercased scheme of a connection URL — the text before
-// "://" — or "" if there is none. It does not use net/url so that a multi-host
-// MongoDB URI (mongodb://h1,h2/db), which net/url rejects, still dispatches.
+// schemeOf returns the lowercased scheme of a connection URL, which is the
+// text before "://", or "" if there is none. It does not use net/url, so that
+// a multi-host MongoDB URI (mongodb://h1,h2/db), which net/url rejects, still
+// dispatches.
 func schemeOf(raw string) string {
 	before, _, found := strings.Cut(raw, "://")
 	if !found {

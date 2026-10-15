@@ -8,9 +8,9 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// flagGroupKey is the pflag annotation key under which each root flag records
-// its help section. groupedFlagUsages reads it to render flags in labeled
-// sections instead of one flat alphabetical list.
+// flagGroupKey is the pflag annotation key under which each root flag
+// records its help section. The groupedFlagUsages function reads it to
+// render flags in labeled sections instead of one flat alphabetical list.
 const flagGroupKey = "iq_flag_group"
 
 // Help section titles. A flag with no group annotation (Cobra's auto-added
@@ -37,8 +37,8 @@ var flagGroupOrder = []string{
 }
 
 // rootFlagGroups maps each root flag name to its help section. Every persistent
-// and local flag registered in newRootCmd appears here exactly once; a flag left
-// out would silently land in groupOther, which the coverage-guard test rejects.
+// and local flag registered in newRootCmd appears here exactly once. A flag left
+// out silently lands in groupOther, which the coverage-guard test rejects.
 var rootFlagGroups = map[string]string{
 	"src":     groupSource,
 	"config":  groupSource,
@@ -100,9 +100,9 @@ func annotateFlagGroups(cmd *cobra.Command) {
 		if fs.Lookup(name) == nil {
 			fs = cmd.Flags()
 		}
-		// SetAnnotation errors only on an unknown flag name; every key in
+		// SetAnnotation errors only on an unknown flag name. Every key in
 		// rootFlagGroups matches a registered flag, so the error cannot fire on
-		// shipped code and swallowing it keeps help rendering panic-free.
+		// shipped code. Swallowing it keeps help rendering panic-free.
 		_ = fs.SetAnnotation(name, flagGroupKey, []string{group})
 	}
 }
@@ -149,7 +149,7 @@ func groupedFlagUsages(fs *pflag.FlagSet) string {
 			b.WriteString("\n")
 		}
 		b.WriteString("  " + group + ":\n")
-		// pflag indents flag lines by two spaces; add two more so they sit under
+		// pflag indents flag lines by two spaces. Add two more so they sit under
 		// the section header.
 		for line := range strings.SplitSeq(usage, "\n") {
 			b.WriteString("  " + line + "\n")
@@ -158,8 +158,9 @@ func groupedFlagUsages(fs *pflag.FlagSet) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// hasGroupedFlag reports whether any visible flag in fs carries a group
-// annotation, i.e. whether grouped rendering applies at all.
+// hasGroupedFlag reports whether any visible flag in fs
+// carries a group annotation. That test decides whether
+// grouped rendering applies at all.
 func hasGroupedFlag(fs *pflag.FlagSet) bool {
 	found := false
 	fs.VisitAll(func(f *pflag.Flag) {
@@ -170,10 +171,11 @@ func hasGroupedFlag(fs *pflag.FlagSet) bool {
 	return found
 }
 
-// groupedFlagsFuncOnce serializes the one cobra.AddTemplateFunc call:
-// cobra's template-func registry is an unsynchronized process global, so
-// concurrent newRootCmd calls (parallel tests) racing on it crash the process
-// with concurrent map writes. The registration is idempotent, so once is enough.
+// groupedFlagsFuncOnce serializes the one cobra.AddTemplateFunc call. The
+// template-func registry of cobra is an unsynchronized process global.
+// Concurrent newRootCmd calls (parallel tests) that race on it crash the
+// process with concurrent map writes. The registration is idempotent, so once
+// is enough.
 var groupedFlagsFuncOnce sync.Once
 
 // installGroupedHelp registers the groupedFlags template func and rewrites the
@@ -191,10 +193,11 @@ func installGroupedHelp(root *cobra.Command) {
 	root.SetUsageTemplate(tmpl)
 }
 
-// Command group IDs for the root's "Available Commands" section in --help.
-// Cobra (v1.4+) renders these as labeled sections natively once a command's
-// GroupID is set, so unlike the flag grouping above this needs no template
-// surgery: defaultUsageTemplate already branches on len(.Groups).
+// Command group IDs for the "Available Commands" section of the root in
+// --help. Cobra (v1.4+) renders these as labeled sections natively once the
+// GroupID of a command is set. So, unlike the flag grouping above, this
+// needs no template surgery: defaultUsageTemplate already branches on
+// len(.Groups).
 const (
 	cmdGroupSources = "sources"
 	cmdGroupQuery   = "query"
@@ -203,7 +206,8 @@ const (
 )
 
 // rootCommandGroupOrder fixes both the set of groups and their render order in
-// --help (Cobra renders groups in root.Groups() order, i.e. AddGroup call order).
+// --help (Cobra renders groups in root.Groups() order, that is, AddGroup call
+// order).
 var rootCommandGroupOrder = []*cobra.Group{
 	{ID: cmdGroupSources, Title: "Sources:"},
 	{ID: cmdGroupQuery, Title: "Query & Data:"},
@@ -211,12 +215,12 @@ var rootCommandGroupOrder = []*cobra.Group{
 	{ID: cmdGroupInfo, Title: "Info:"},
 }
 
-// rootCommandGroups maps each root subcommand's name to its help group. Every
-// command added in newRootCmd's root.AddCommand call appears here exactly once;
-// a command left out would silently land in Cobra's ungrouped "Additional
-// Commands:" section, which the coverage-guard test rejects. Cobra's own
-// auto-added help/completion commands are deliberately absent and fall through
-// to "Additional Commands:".
+// rootCommandGroups maps the name of each root subcommand to its help group.
+// Every command added in the root.AddCommand call of newRootCmd appears here
+// exactly once. A command left out silently lands in the ungrouped "Additional
+// Commands:" section of Cobra, which the coverage-guard test rejects. The
+// auto-added help/completion commands of Cobra are absent on purpose and fall
+// through to "Additional Commands:".
 var rootCommandGroups = map[string]string{
 	"add":   cmdGroupSources,
 	"ls":    cmdGroupSources,
@@ -242,9 +246,9 @@ var rootCommandGroups = map[string]string{
 	"man":     cmdGroupInfo,
 }
 
-// installCommandGroups registers the root's command groups and assigns each
-// already-added subcommand its GroupID, so --help renders "Available Commands"
-// as labeled sections instead of one flat alphabetical list.
+// installCommandGroups registers the command groups of the root and assigns
+// each already-added subcommand its GroupID. So --help renders "Available
+// Commands" as labeled sections instead of one flat alphabetical list.
 func installCommandGroups(root *cobra.Command) {
 	root.AddGroup(rootCommandGroupOrder...)
 	for _, sub := range root.Commands() {

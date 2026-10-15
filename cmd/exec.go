@@ -11,10 +11,11 @@ import (
 
 // newExecCmd builds the `iq exec` subcommand: an escape hatch that forwards a
 // command verbatim to the database and prints the reply. It exists for the
-// writes, administration, and server-side queries the jq read path does not
-// cover. What it accepts depends on the backend: for Redis a command and its
-// operands (`iq exec HGETALL book:2`); for MongoDB a single JSON command document
-// run with runCommand (`iq exec '{"find":"books","filter":{...}}'`).
+// writes, administration, and server-side queries that the jq read path does not
+// cover. What it accepts depends on the backend. For Redis it accepts a command
+// and its operands (`iq exec HGETALL book:2`). For MongoDB it accepts a single
+// JSON command document, run with runCommand (`iq exec
+// '{"find":"books","filter":{...}}'`).
 func newExecCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
 		Use: "exec <command> [args...]",
@@ -54,7 +55,7 @@ func newExecCmd(cfg *config) *cobra.Command {
 			"  $ iq --src cluster exec put books 42 cf:title Dune",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Log only the command verb: Redis operands (SET greeting hello) may
+			// Log only the command verb. Redis operands (SET greeting hello) can
 			// carry values, so they are never logged.
 			cfg.log().Info("exec forward", "verb", args[0])
 			if err := resolveSource(cfg); err != nil {
@@ -80,7 +81,7 @@ func newExecCmd(cfg *config) *cobra.Command {
 			return nil
 		},
 	}
-	// Redis operands may start with a dash (negative indices such as `-1`), so
+	// Redis operands can start with a dash (negative indices such as `-1`), so
 	// stop flag parsing at the first positional and forward the rest verbatim.
 	c.Flags().SetInterspersed(false)
 	return c

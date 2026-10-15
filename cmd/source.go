@@ -89,8 +89,8 @@ func newAddCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVarP(&o.passwordPrompt, "password", "p", false, "prompt for the URI password (or read it from stdin)")
 	c.Flags().BoolVar(&o.skipVerify, "skip-verify", false, "skip the post-add reachability check")
 	c.Flags().StringVar(&o.store, "store", "keyring", "where the URI's password is kept: keyring (the OS keyring) or inline (in the config file); without this flag, inline when no keyring is available")
-	// Both flags take a closed set; --driver's comes from the registry, so a new
-	// backend completes without a second edit.
+	// Both flags take a closed set. The set for --driver comes from the
+	// registry, so a new backend completes without a second edit.
 	_ = c.RegisterFlagCompletionFunc("driver", fixedValues(driverNameList()...))
 	_ = c.RegisterFlagCompletionFunc("store", fixedValues(passwordStoreNames...))
 	return c
@@ -116,9 +116,9 @@ func runAdd(cmd *cobra.Command, cfg *config, o addOptions) error {
 	if err := cf.Add(src.name, plan.stored); err != nil {
 		return err
 	}
-	// Verify reachability before persisting so a failed add leaves no
-	// trace. src.uri still carries the password (stripped from plan.stored
-	// for a keyring source), so it is what we dial.
+	// Verify reachability before persisting, so a failed add leaves no
+	// trace. The src.uri field still carries the password (stripped from
+	// plan.stored for a keyring source), so it is what we dial.
 	if !o.skipVerify {
 		if err := verifyAdd(cmd.Context(), src, cfg.timeout); err != nil {
 			return err
@@ -147,8 +147,8 @@ func prepareAddURI(cmd *cobra.Command, o addOptions) (string, error) {
 }
 
 // validateAddURI makes sure that o.uri names a known driver scheme that matches
-// the --driver flag, and that its query holds no keyspace parameter the driver
-// cannot use.
+// the --driver flag. It also makes sure that the query of o.uri holds no
+// keyspace parameter that the driver cannot use.
 func validateAddURI(o addOptions) error {
 	if o.driver != "" {
 		if _, ok := driverByName(o.driver); !ok {
@@ -192,9 +192,9 @@ func verifyAdd(ctx context.Context, src addedSource, timeout time.Duration) erro
 	return nil
 }
 
-// addedSource is a source that `iq add` has put in the config in memory: its
-// handle, the URI to dial (with the password), whether to make it active, and
-// where its password goes.
+// addedSource is a source that `iq add` has put in the config in memory. It
+// holds the handle, the URI to dial (with the password), whether to make the
+// source active, and where its password goes.
 type addedSource struct {
 	name, uri string
 	active    bool
@@ -216,10 +216,10 @@ func finishAdd(cmd *cobra.Command, cf *iqconfig.Config, src addedSource) error {
 }
 
 // suggestHandle derives a source handle from rawURL when -n is omitted, mirroring
-// sq: the most specific container the URL names (see handleBase), falling back to
-// the driver name (redis, mongo). The candidate is sanitized to the handle
-// alphabet and made unique against existing sources by appending 2, 3, … on
-// collision.
+// sq. It takes the most specific container that the URL names (see handleBase),
+// and falls back to the driver name (redis, mongo). The candidate is sanitized to
+// the handle alphabet. It is made unique against existing sources by appending 2,
+// 3, and so on on collision.
 func suggestHandle(cf *iqconfig.Config, rawURL string) string {
 	base := sanitizeHandle(handleBase(rawURL))
 	if base == "" {
@@ -288,8 +288,8 @@ func fileStem(rawURL string) (string, bool) {
 	return stem, true
 }
 
-// isAllDigits reports whether s is non-empty and every rune is a decimal digit,
-// so a Redis "/0" database index is not mistaken for a handle stem.
+// isAllDigits reports whether s is non-empty and every rune is a decimal digit.
+// So a Redis "/0" database index is not mistaken for a handle stem.
 func isAllDigits(s string) bool {
 	if s == "" {
 		return false
@@ -316,10 +316,10 @@ func sanitizeHandle(s string) string {
 	return b.String()
 }
 
-// readPassword obtains a password for -p: read a line from stdin when it is piped
-// (so scripts and tests can feed one in), otherwise prompt without echo on the
-// terminal. The prompt and trailing newline go to stderr so redirected stdout
-// stays clean.
+// readPassword obtains a password for -p. It reads a line from stdin when stdin
+// is piped (so scripts and tests can feed one in). Otherwise it prompts without
+// echo on the terminal. The prompt and trailing newline go to stderr, so
+// redirected stdout stays clean.
 func readPassword(cmd *cobra.Command) (string, error) {
 	if f, ok := cmd.InOrStdin().(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		errOut := cmd.ErrOrStderr()
@@ -338,8 +338,8 @@ func readPassword(cmd *cobra.Command) (string, error) {
 	return strings.TrimRight(line, "\r\n"), nil
 }
 
-// parseStore validates the --store value, returning whether the password should
-// go to the OS keyring (the default). inline keeps it in the stored URL.
+// parseStore validates the --store value. It returns whether the password goes
+// to the OS keyring (the default). inline keeps it in the stored URL.
 func parseStore(store string) (keyring bool, err error) {
 	switch store {
 	case "inline":
@@ -389,7 +389,7 @@ func newLsCmd(cfg *config) *cobra.Command {
 			return listSources(out, cf, lsOptions{filter: filter, verbose: cfg.verbose, reveal: cfg.reveal, expand: cfg.expand, jsonOut: jsonOut, yamlOut: yamlOut})
 		},
 	}
-	// -v is the global --verbose (registered on the root); `iq ls -v` reuses it
+	// -v is the global --verbose (registered on the root). `iq ls -v` reuses it
 	// for the driver column, so no local -v is declared here.
 	c.Flags().BoolVarP(&groups, "group", "g", false, "list groups instead of sources")
 	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")

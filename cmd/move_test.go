@@ -83,9 +83,10 @@ func TestMoveFlagConflicts(t *testing.T) {
 	}
 }
 
-// TestTypedDumpAppliesEveryTransformOption asserts each transform option reaches
-// the records: the filter reshapes the value, --key and --key-field replace the
-// key, --key-prefix is prepended, and --type stamps a reshaped record.
+// TestTypedDumpAppliesEveryTransformOption asserts that each transform option
+// reaches the records. The filter reshapes the value, --key and --key-field
+// replace the key, --key-prefix is prepended, and --type stamps a reshaped
+// record.
 func TestTypedDumpAppliesEveryTransformOption(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -147,8 +148,8 @@ func TestTypedRejectsUnimportableFormats(t *testing.T) {
 }
 
 // TestTypedJSONDumpReimports guards the claim that every accepted --typed
-// rendering round-trips: the pretty-json dump is re-read as a file:// source and
-// yields the records it was built from.
+// rendering round-trips. The pretty-json dump is re-read as a file:// source and
+// yields the records that it was built from.
 func TestTypedJSONDumpReimports(t *testing.T) {
 	seedFileSource(t, moveDump)
 	root, _ := newRootCmd()
@@ -257,8 +258,8 @@ func TestInsertRequestFor(t *testing.T) {
 	}
 }
 
-// TestApplyInsertRedisIntegration drives applyInsert against a reachable Redis:
-// a dry-run replace neither asks nor clears, insert-only skips an existing key,
+// TestApplyInsertRedisIntegration drives applyInsert against a reachable Redis.
+// A dry-run replace neither asks nor clears, insert-only skips an existing key,
 // and the transform shapes what is written.
 func TestApplyInsertRedisIntegration(t *testing.T) {
 	if testing.Short() {

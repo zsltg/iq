@@ -11,9 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestNewProgressMeterGating asserts the meter is a no-op (nil) whenever it
-// should not draw: when disabled, and when stderr is not a terminal (a buffer,
-// a pipe, a redirected file). A nil meter's methods must stay safe.
+// TestNewProgressMeterGating asserts that the meter is a no-op (nil) whenever
+// it is not meant to draw. That is when it is disabled, and when stderr is not
+// a terminal (a buffer, a pipe, a redirected file). A nil meter's methods must
+// stay safe.
 func TestNewProgressMeterGating(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -39,7 +40,7 @@ func TestNewProgressMeterGating(t *testing.T) {
 
 // TestNewProgressMeterOnATerminal is the other half of the gate: a terminal gets
 // a meter, but --no-progress still turns it off. A pty master is the terminal, so
-// the test needs no real console; it skips where none can be opened.
+// the test needs no real console. It skips where none can be opened.
 func TestNewProgressMeterOnATerminal(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		t.Skip("macOS does not report a pty master as a terminal")
@@ -83,10 +84,10 @@ func TestProgressMeterShownClearsLine(t *testing.T) {
 	require.Contains(t, buf.String(), "\x1b[2K", "a shown spinner's line is erased on Stop")
 }
 
-// TestProgressMeterSpinnerNeverCompletes pins the spinner as indeterminate: even
+// TestProgressMeterSpinnerNeverCompletes pins the spinner as indeterminate. Even
 // after a large scanned count is set, the bar must not complete, because its
 // total is negative ("unknown"). This kills any mutation that flips the total to
-// a non-negative value (which would turn the spinner into a completing bar).
+// a non-negative value, which turns the spinner into a completing bar.
 func TestProgressMeterSpinnerNeverCompletes(t *testing.T) {
 	var buf bytes.Buffer
 	m := newMeter(&buf, 0) // show on the first tick
@@ -112,9 +113,9 @@ func TestProgressMeterLabel(t *testing.T) {
 	require.Equal(t, "3 scanned (~50 est)", m.label(), "an estimate is shown as an approximate total")
 }
 
-// TestProgressMeterSetEstimate asserts a non-positive estimate is ignored: it
-// neither sets a total from nothing nor clears one already set, so the boundary
-// of the n<=0 guard is pinned exactly. A nil meter is safe.
+// TestProgressMeterSetEstimate asserts that a non-positive estimate is ignored.
+// It neither sets a total from nothing nor clears one already set, so the
+// boundary of the n<=0 guard is pinned exactly. A nil meter is safe.
 func TestProgressMeterSetEstimate(t *testing.T) {
 	t.Run("non-positive estimate is ignored", func(t *testing.T) {
 		m := newMeter(&bytes.Buffer{}, time.Hour)

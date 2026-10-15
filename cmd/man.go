@@ -9,10 +9,11 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// newManCmd builds `iq man`: print the iq(1) manual page in roff to stdout, for
-// `iq man | sudo tee /usr/share/man/man1/iq.1`. The page is a deterministic
-// function of the command tree — no date or version — so its committed copy
-// (docs/man/iq.1) is byte-stable and a drift-guard test can catch staleness.
+// newManCmd builds `iq man`: print the iq(1) manual page in roff to stdout,
+// for `iq man | sudo tee /usr/share/man/man1/iq.1`. The page is a
+// deterministic function of the command tree, with no date or version. So
+// its committed copy (docs/man/iq.1) is byte-stable, and a drift-guard test
+// can catch staleness.
 func newManCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "man",
@@ -28,14 +29,14 @@ func newManCmd() *cobra.Command {
 
 // writeManPage renders the iq(1) manual page in roff to w, derived from the
 // Cobra command tree so it cannot drift from --help. It embeds no version or
-// date: the page is a static function of the command definitions, which keeps
+// date. The page is a static function of the command definitions, which keeps
 // regeneration deterministic and the golden test meaningful. The build version
 // is available via `iq version`.
 //
 // The page walks only the grouped commands (every real iq command) and omits
 // the auto-added help flag. This keeps it independent of the execute-time
 // initialization of Cobra (auto help and completion commands, per-command
-// --help flags), so the CLI output and the direct-call golden test are
+// --help flags). So the CLI output and the direct-call golden test are
 // byte-identical.
 func writeManPage(w io.Writer, root *cobra.Command) error {
 	var b strings.Builder
@@ -82,10 +83,11 @@ func writeManPage(w io.Writer, root *cobra.Command) error {
 	return err
 }
 
-// writeManGlobalFlags renders the root's persistent and local flags as .TP
-// entries, grouped and ordered exactly as the --help screen (flagGroupOrder /
-// rootFlagGroups), so the page mirrors the help output. Auto-added flags
-// (--help/--version) carry no group annotation and are omitted.
+// writeManGlobalFlags renders the persistent and local flags of the root as
+// .TP entries. They are grouped and ordered exactly as the --help screen
+// (flagGroupOrder / rootFlagGroups), so the page mirrors the help output.
+// Auto-added flags (--help/--version) carry no group annotation and are
+// omitted.
 func writeManGlobalFlags(b *strings.Builder, root *cobra.Command) {
 	for _, group := range flagGroupOrder {
 		names := make([]string, 0, len(rootFlagGroups))
@@ -127,11 +129,12 @@ func writeManCommands(b *strings.Builder, root *cobra.Command) {
 			writeManCommandTree(b, sub)
 		}
 	}
-	// Cobra adds the completion command at Execute time, so a fresh root does not
-	// carry it yet; initialize it explicitly so the page is identical whether it
-	// is generated through `iq man` or straight from newRootCmd. It carries no
-	// group, so the grouped walk above misses it, and the README and docs tell
-	// users to run it, so the page documents it after the grouped commands.
+	// Cobra adds the completion command at Execute time, so a fresh root does
+	// not carry it yet. Initialize it explicitly, so the page is identical
+	// whether it is generated through `iq man` or straight from newRootCmd. It
+	// carries no group, so the grouped walk above misses it. The README and
+	// docs tell users to run it, so the page documents it after the grouped
+	// commands.
 	root.InitDefaultCompletionCmd()
 	for _, sub := range root.Commands() {
 		if !sub.Hidden && sub.Name() == "completion" {
@@ -140,10 +143,10 @@ func writeManCommands(b *strings.Builder, root *cobra.Command) {
 	}
 }
 
-// writeManCommandTree renders one command as a .SS subsection — full path, one-
-// line summary, usage line, long description, local flags, and examples — then
-// recurses into its visible subcommands (Cobra returns them name-sorted, so the
-// order is deterministic).
+// writeManCommandTree renders one command as a .SS subsection: full path,
+// one-line summary, usage line, long description, local flags, and examples.
+// Then it recurses into its visible subcommands (Cobra returns them
+// name-sorted, so the order is deterministic).
 func writeManCommandTree(b *strings.Builder, cmd *cobra.Command) {
 	b.WriteString(".SS " + manEsc(cmd.CommandPath()) + "\n")
 	b.WriteString(manLine(cmd.Short) + "\n")
@@ -178,10 +181,10 @@ func manUsageLine(cmd *cobra.Command) string {
 	return cmd.CommandPath()
 }
 
-// writeManLocalFlags renders a command's own (non-inherited) flags as a .TP list,
-// lexical by name (pflag's default), skipping hidden flags and the auto-added
-// --help so the output is independent of Cobra's execute-time initialization. A
-// command with no own flags renders nothing.
+// writeManLocalFlags renders the own (non-inherited) flags of a command as a .TP
+// list, lexical by name (the default of pflag). It skips hidden flags and the
+// auto-added --help, so the output is independent of the execute-time
+// initialization of Cobra. A command with no own flags renders nothing.
 func writeManLocalFlags(b *strings.Builder, cmd *cobra.Command) {
 	var flags []*pflag.Flag
 	cmd.LocalFlags().VisitAll(func(f *pflag.Flag) {
@@ -200,7 +203,7 @@ func writeManLocalFlags(b *strings.Builder, cmd *cobra.Command) {
 }
 
 // writeManFlag renders one flag as a roff tagged paragraph (.TP): its name(s) in
-// bold, then the usage text with the default appended when it is meaningful.
+// bold, then the usage text. The default is appended when it is meaningful.
 func writeManFlag(b *strings.Builder, f *pflag.Flag) {
 	b.WriteString(".TP\n")
 	b.WriteString(manFlagNames(f) + "\n")
@@ -221,10 +224,10 @@ func manFlagNames(f *pflag.Flag) string {
 	return long
 }
 
-// writeManProse renders a description block: each blank-line-separated paragraph
-// as a filled .PP paragraph, except an indented block (an inline example, whose
-// first line begins with whitespace) which is rendered verbatim in a no-fill
-// region so its layout survives.
+// writeManProse renders a description block. Each blank-line-separated paragraph
+// becomes a filled .PP paragraph. An indented block (an inline example, whose
+// first line begins with whitespace) is the exception. It is rendered verbatim
+// in a no-fill region, so its layout survives.
 func writeManProse(b *strings.Builder, text string) {
 	for para := range strings.SplitSeq(text, "\n\n") {
 		if para == "" {
@@ -270,7 +273,7 @@ func manLine(para string) string {
 }
 
 // manPunct maps the non-ASCII punctuation that appears in the command prose to its
-// roff escape, so the page stays 7-bit ASCII and renders identically under any
+// roff escape. So the page stays 7-bit ASCII and renders identically under any
 // locale (a raw UTF-8 em-dash is an "invalid input character" to -Tascii troff).
 var manPunct = strings.NewReplacer(
 	"—", "\\(em", // em dash
@@ -301,9 +304,9 @@ func manEsc(s string) string {
 	return manVerbatim(s)
 }
 
-// guardControl prefixes the zero-width \& when a line would otherwise begin with
-// a roff control character ('.' or a single quote), which would make roff treat
-// the line as a request rather than text.
+// guardControl prefixes the zero-width \& when a line otherwise begins with a
+// roff control character ('.' or a single quote). Without the prefix, roff
+// treats the line as a request and not as text.
 func guardControl(s string) string {
 	if strings.HasPrefix(s, ".") || strings.HasPrefix(s, "'") {
 		return "\\&" + s

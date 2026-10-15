@@ -17,9 +17,10 @@ import (
 
 // skillPath locates the agent skill from the cmd package directory, the way
 // TestManPageMatchesCommitted reads ../docs/man/iq.1. The skill is hand-written
-// (nothing generates it), so the guard here is not a golden comparison: it
-// checks that the file still parses as an Agent Skill and that every command
-// line it teaches still resolves against the real cobra tree.
+// (nothing generates it), so the guard here is not a golden comparison. It
+// checks that the file still parses as an Agent Skill. It also checks that
+// every command line that the skill teaches still resolves against the real
+// cobra tree.
 const skillPath = "../skills/iq/SKILL.md"
 
 // skillFrontmatter is the subset of the Agent Skills frontmatter this repo sets.
@@ -52,9 +53,9 @@ func readSkill(t *testing.T) (skillFrontmatter, string) {
 	return fm, rest[end+len("\n---\n"):]
 }
 
-// TestSkillFrontmatter pins the fields the Agent Skills format requires and the
-// size limits a loader enforces: the description is what an agent reads to
-// decide whether to load the skill, so an empty or overlong one breaks
+// TestSkillFrontmatter pins the fields that the Agent Skills format requires
+// and the size limits that a loader enforces. The description is what an agent
+// reads to decide whether to load the skill. So an empty or overlong one breaks
 // discovery.
 func TestSkillFrontmatter(t *testing.T) {
 	fm, _ := readSkill(t)
@@ -97,9 +98,9 @@ func TestSkillBodyStaysShort(t *testing.T) {
 	require.Less(t, strings.Count(body, "\n"), 500, "skill body must stay under 500 lines")
 }
 
-// TestSkillCommandsResolve is the drift guard: every command line the skill
-// teaches is walked against the tree newRootCmd builds, so a renamed flag or
-// subcommand fails here instead of misleading an agent.
+// TestSkillCommandsResolve is the drift guard. Every command line that the
+// skill teaches is walked against the tree that newRootCmd builds. So a
+// renamed flag or subcommand fails here instead of misleading an agent.
 func TestSkillCommandsResolve(t *testing.T) {
 	root, _ := newRootCmd()
 	_, body := readSkill(t)
@@ -114,9 +115,9 @@ func TestSkillCommandsResolve(t *testing.T) {
 	}
 }
 
-// TestSkillTokenCheckerRejects proves the checker above fails on the shapes it
-// is there to catch: an unknown flag, an unknown subcommand, a flag left without
-// its value, and a flag borrowed from another command.
+// TestSkillTokenCheckerRejects proves that the checker above fails on the shapes
+// that it exists to catch. These are an unknown flag, an unknown subcommand, a
+// flag left without its value, and a flag borrowed from another command.
 func TestSkillTokenCheckerRejects(t *testing.T) {
 	root, _ := newRootCmd()
 
@@ -163,15 +164,15 @@ func skillCommandTokens(body string) []string {
 	return out
 }
 
-// skillWord is one shell-style word of a token; a quoted word is always an
+// skillWord is one shell-style word of a token. A quoted word is always an
 // operand (a jq filter, a URI), never a subcommand name.
 type skillWord struct {
 	text   string
 	quoted bool
 }
 
-// splitSkillWords splits a token the way a shell would, keeping a single- or
-// double-quoted span as one word so `select(.a == "b")` does not fragment.
+// splitSkillWords splits a token the way a shell does. It keeps a single- or
+// double-quoted span as one word, so `select(.a == "b")` does not fragment.
 func splitSkillWords(token string) ([]skillWord, error) {
 	var s skillSplitter
 	for _, r := range token {
@@ -221,10 +222,10 @@ func (s *skillSplitter) flush() {
 	s.open, s.quoted = false, false
 }
 
-// resolveSkillToken walks one token against the cobra tree. A token opening with
-// `iq` walks from the root, so a flag must be known on the command reached so
-// far or inherited from its parents and a bare word must name a subcommand until
-// the first operand; a bare flag fragment carries no command context, so its
+// resolveSkillToken walks one token against the cobra tree. A token that opens
+// with `iq` walks from the root. A flag must be known on the command reached so
+// far or inherited from its parents. A bare word must name a subcommand until
+// the first operand. A bare flag fragment carries no command context, so its
 // flags are looked up across the whole tree.
 func resolveSkillToken(root *cobra.Command, token string) error {
 	words, err := splitSkillWords(token)
@@ -268,7 +269,7 @@ func startSkillWalk(root *cobra.Command, words []skillWord) (*skillWalk, bool) {
 		return nil, false
 	}
 	// A token that is nothing but a flag name mentions the flag in prose, so it
-	// carries no value; every longer fragment is an invocation and must.
+	// carries no value. Every longer fragment is an invocation and must.
 	w.mention = w.cur == nil && len(words) == 1
 	return w, true
 }

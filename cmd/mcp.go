@@ -12,10 +12,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Capability names --allow accepts. The set is closed, so a misspelling fails at
-// command entry rather than silently leaving a tool unregistered. Each name gates
-// a group of tools: writes the --insert copy, exec the verbatim backend command,
-// destructive the container lifecycle (and --replace, which empties a destination).
+// Capability names that --allow accepts. The set is closed, so a misspelling fails
+// at command entry and does not silently leave a tool unregistered. Each name gates
+// a group of tools. The writes name gates the --insert copy. The exec name gates
+// the verbatim backend command. The destructive name gates the container lifecycle
+// (and --replace, which empties a destination).
 const (
 	allowWrites      = "writes"
 	allowExec        = "exec"
@@ -26,9 +27,10 @@ const (
 // completion offer it.
 var allowNames = []string{allowWrites, allowExec, allowDestructive}
 
-// Server-side result caps, the defaults for --max-items and --max-bytes. 200
-// items and 256 KiB is roughly the upper end of what a tool result should inject
-// into an agent's context; a per-call value may lower them, never raise them.
+// Server-side result caps, the defaults for --max-items and --max-bytes. The
+// values are 200 items and 256 KiB. That is roughly the upper end of what a tool
+// result is meant to inject into the context of an agent. A per-call value can
+// lower them. It can never raise them.
 const (
 	defaultMCPMaxItems = 200
 	defaultMCPMaxBytes = 256 * 1024
@@ -39,11 +41,11 @@ const (
 // freshness window.
 const mcpListTTLMs = 3600_000
 
-// mcpServer is the delivery mechanism `iq mcp` builds: the inherited run config,
-// the hard result caps, and the capability set --allow opened. It holds no
-// protocol state — the tool set is fixed at process start and every call resolves
-// its own source and opens its own store — so concurrent calls share nothing
-// mutable.
+// mcpServer is the delivery mechanism that `iq mcp` builds: the inherited run
+// config, the hard result caps, and the capability set that --allow opened. It
+// holds no protocol state. The tool set is fixed at process start, and every call
+// resolves its own source and opens its own store. So concurrent calls share
+// nothing mutable.
 type mcpServer struct {
 	cfg      *config
 	maxItems int
@@ -69,10 +71,10 @@ func (s *mcpServer) callConfig() *config {
 	}
 }
 
-// mcpInstructions is the server's guidance to a connected client, a condensed
-// form of the agent skill's workflow and rules. It is the one place an agent
-// reads before its first call, so it states the plan-first habit, the bounds, and
-// what the destructive tools cost.
+// mcpInstructions is the guidance of the server to a connected client, a
+// condensed form of the workflow and rules of the agent skill. It is the one
+// place that an agent reads before its first call. So it states the plan-first
+// habit, the bounds, and what the destructive tools cost.
 const mcpInstructions = `iq runs a jq filter against a saved NoSQL source (Redis, MongoDB, Cassandra,
 DynamoDB, Elasticsearch, OpenSearch, CouchDB, Couchbase, HBase, Neo4j) or a dump
 file, and normalizes every backend's values to one JSON, so a filter means the
@@ -109,10 +111,10 @@ Rules:
   no_overwrite: true, and never confirm a destructive call on your own.`
 
 // newMCPCmd builds `iq mcp`: the query core served as a Model Context Protocol
-// server over stdio, a second thin delivery mechanism beside the CLI over the
-// same core. It is read-only by default; --allow opens the write, exec and
-// destructive tools, and a tool that is not allowed is not registered, so it is
-// absent from tools/list.
+// server over stdio. It is a second thin delivery mechanism beside the CLI
+// over the same core. It is read-only by default. --allow opens the write,
+// exec and destructive tools. A tool that is not allowed is not registered, so
+// it is absent from tools/list.
 func newMCPCmd(cfg *config) *cobra.Command {
 	var (
 		allow    []string
@@ -178,9 +180,9 @@ func newMCPCmd(cfg *config) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// stdout is the protocol channel: the spinner shares no stream with it,
-			// but it repaints over stderr on a run that must stay quiet, and plan
-			// text is rendered into a JSON result, where an ANSI escape is noise.
+			// stdout is the protocol channel. The spinner shares no stream with it,
+			// but it repaints over stderr on a run that must stay quiet. Plan text
+			// is rendered into a JSON result, where an ANSI escape is noise.
 			cfg.noProgress = true
 			resolveColor(true, false, io.Discard)
 			s := &mcpServer{cfg: cfg, maxItems: maxItems, maxBytes: maxBytes, allow: allowed}
@@ -195,17 +197,17 @@ func newMCPCmd(cfg *config) *cobra.Command {
 }
 
 // refuseStdoutLog rejects a log sink pointed at stdout. stdout carries the MCP
-// protocol, so a log record written there corrupts every frame after it, and a
-// client would see a parse error rather than a diagnostic. The sink is
-// re-resolved through the same function PersistentPreRunE used, which validates
-// and opens nothing, so this reads exactly the target that is about to be used.
+// protocol, so a log record written there corrupts every frame after it. A
+// client then sees a parse error and not a diagnostic. The sink is re-resolved
+// through the same function that PersistentPreRunE used, which validates and
+// opens nothing. So this reads exactly the target that is about to be used.
 func refuseStdoutLog(cmd *cobra.Command, cfg *config) error {
 	o, err := resolveLogOptions(cmd, cfg)
 	if err != nil {
 		return err
 	}
-	// Matched exactly as logSink matches it: any other spelling is a filesystem
-	// path, not the stream, and refusing one would refuse a legitimate log file.
+	// Matched exactly as logSink matches it. Any other spelling is a filesystem
+	// path, not the stream, and refusing one refuses a legitimate log file.
 	if o.fileActive() && o.file == "stdout" {
 		return errors.New("iq mcp writes the protocol to stdout, so it cannot also log there; point --log.file at a path or at stderr")
 	}
@@ -241,10 +243,10 @@ func (s *mcpServer) serve(ctx context.Context, t mcp.Transport) error {
 	return nil
 }
 
-// newServer assembles the MCP server: the identity, the instructions, the tools
-// --allow permits, and the tools/list cache hint. It advertises the tools
-// capability only — logging, roots and sampling are deprecated as of the
-// 2026-07-28 revision, and iq needs none of them.
+// newServer assembles the MCP server: the identity, the instructions, the
+// tools that --allow permits, and the tools/list cache hint. It
+// advertises the tools capability only. Logging, roots and sampling are
+// deprecated as of the 2026-07-28 revision, and iq needs none of them.
 func (s *mcpServer) newServer() *mcp.Server {
 	srv := mcp.NewServer(
 		&mcp.Implementation{Name: "iq", Title: "iq", Version: buildVersion()},
@@ -259,9 +261,10 @@ func (s *mcpServer) newServer() *mcp.Server {
 	return srv
 }
 
-// listToolsCacheHint stamps the tools/list result with the cache hint the
-// 2026-07-28 revision expects. The scope is private: the list is exactly what
-// this process's --allow opened, so no intermediary may serve it to another user.
+// listToolsCacheHint stamps the tools/list result with the cache hint that the
+// 2026-07-28 revision expects. The scope is private. The list is exactly what the
+// --allow set of this process opened, so no intermediary is allowed to serve it
+// to another user.
 func listToolsCacheHint(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		res, err := next(ctx, method, req)

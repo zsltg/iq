@@ -38,8 +38,8 @@ func TestFanoutHandleJoinsChildErrors(t *testing.T) {
 	require.ErrorIs(t, err, boom)
 }
 
-// TestFanoutRoutesByChildLevel pins the core fanout contract: each child gates on
-// its own level, so a DEBUG record reaches the DEBUG child only while an INFO
+// TestFanoutRoutesByChildLevel pins the core fanout contract. Each child gates on
+// its own level, so a DEBUG record reaches the DEBUG child only, while an INFO
 // record reaches both.
 func TestFanoutRoutesByChildLevel(t *testing.T) {
 	var info, debug bytes.Buffer
@@ -119,7 +119,7 @@ func resolveWith(t *testing.T, args []string, env map[string]string) (logOptions
 }
 
 func TestResolveLogOptions(t *testing.T) {
-	// Isolate from an ambient IQ_LOG* that a developer may have exported.
+	// Isolate from an ambient IQ_LOG* that a developer can have exported.
 	for _, k := range []string{envLog, envLogFile, envLogLevel, envLogFormat} {
 		t.Setenv(k, "")
 		require.NoError(t, os.Unsetenv(k))
@@ -195,7 +195,7 @@ func TestResolveLogOptions(t *testing.T) {
 			wantLevel: slog.LevelDebug, wantFormat: "json",
 		},
 		{
-			// A lingering exported IQ_LOG_FILE must not silently start logging;
+			// A lingering exported IQ_LOG_FILE must not silently start logging.
 			// env vars alone still require IQ_LOG.
 			name:       "IQ_LOG_FILE alone does not enable",
 			env:        map[string]string{envLogFile: "/tmp/y.log"},
@@ -274,9 +274,9 @@ func TestResolveLogOptions(t *testing.T) {
 	}
 }
 
-// TestBuildVerboseOnly checks the verbose sink: INFO reaches stderr, DEBUG does
-// not, no file is opened (nil closer), the timestamp is stripped, and the color
-// flag drives whether the line carries ANSI escapes.
+// TestBuildVerboseOnly checks the verbose sink. INFO reaches stderr and DEBUG
+// does not. No file is opened (nil closer), and the timestamp is stripped. The
+// color flag drives whether the line carries ANSI escapes.
 func TestBuildVerboseOnly(t *testing.T) {
 	const esc = "\x1b[" // ANSI CSI introducer emitted by tint when tinting.
 	tests := []struct {
@@ -320,13 +320,14 @@ func nonEmptyLines(s string) int {
 	return n
 }
 
-// TestBuildSameStreamSuppression pins FIX 2 by observable output: with --verbose
+// TestBuildSameStreamSuppression pins FIX 2 by observable output. With --verbose
 // and the structured sink both targeting the literal "stderr" stream, one Info
-// record must render exactly ONCE on stderr (the structured JSON wins; the tinted
-// duplicate is suppressed). "stdout" is a different stream, so both sinks stay and
-// the record renders on each. Verbose alone tints stderr; the structured sink alone
-// renders structured only. It asserts renderings, never handler internals, so it
-// kills the o.file == "stderr" comparison mutant and the suppression-branch mutant.
+// record must render exactly ONCE on stderr. The structured JSON wins, and the
+// tinted duplicate is suppressed. "stdout" is a different stream, so both sinks
+// stay and the record renders on each. Verbose alone tints stderr. The structured
+// sink alone renders structured only. The test asserts renderings, never handler
+// internals. So it kills the o.file == "stderr" comparison mutant and the
+// suppression-branch mutant.
 func TestBuildSameStreamSuppression(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -343,8 +344,8 @@ func TestBuildSameStreamSuppression(t *testing.T) {
 		},
 		{
 			// Suppression requires the structured sink to be ACTIVE, not merely a
-			// "stderr" spelling: with --log=false the tinted sink must survive, or
-			// -v --log=false --log.file=stderr would silently log nothing.
+			// "stderr" spelling. With --log=false the tinted sink must survive.
+			// Otherwise -v --log=false --log.file=stderr silently logs nothing.
 			name:    "verbose with disabled stderr sink keeps the tinted rendering",
 			verbose: true, file: "stderr", disabled: true, wantStderr: 1, wantStdout: 0,
 		},
@@ -390,9 +391,9 @@ func TestBuildSameStreamSuppression(t *testing.T) {
 				require.Equal(t, "m", rec["msg"])
 			}
 			if tt.verbose && tt.file == "stdout" {
-				// The comparison must match "stderr" only: the verbose (tinted) sink
-				// stays on stderr as text (no JSON braces) and the structured JSON goes
-				// to stdout. A mutated comparison would suppress the tint here.
+				// The comparison must match "stderr" only. The verbose (tinted) sink
+				// stays on stderr as text (no JSON braces), and the structured JSON
+				// goes to stdout. A mutated comparison suppresses the tint here.
 				require.NotContains(t, stderr.String(), "{", "stderr carries the tinted text, not JSON")
 				require.Contains(t, stdout.String(), `"msg":"m"`, "the structured JSON goes to stdout")
 			}
@@ -424,8 +425,8 @@ func TestBuildFileSink(t *testing.T) {
 }
 
 // TestBuildStreamTarget checks that a literal stderr/stdout file target writes to
-// the given stream, opens no file, and returns a nil closer (the stream must never
-// be closed).
+// the given stream and opens no file. It also checks that it returns a nil closer
+// (the stream must never be closed).
 func TestBuildStreamTarget(t *testing.T) {
 	tests := []struct {
 		name string
@@ -455,9 +456,9 @@ func TestBuildStreamTarget(t *testing.T) {
 	}
 }
 
-// TestTraceLogWriter checks the trace-bridge splits its input into one DEBUG
-// "backend cmd" record per complete line, splitting the driver prefix from the
-// command, buffering a partial line until its newline arrives, and dropping blank
+// TestTraceLogWriter checks that the trace bridge splits its input into one DEBUG
+// "backend cmd" record per complete line. It splits the driver prefix from the
+// command, buffers a partial line until its newline arrives, and drops blank
 // lines.
 func TestTraceLogWriter(t *testing.T) {
 	var buf bytes.Buffer
@@ -505,12 +506,13 @@ func TestTraceLogWriter(t *testing.T) {
 	require.NotContains(t, recs[2], "driver")
 }
 
-// lockProbeHandler records whether traceLogWriter's mutex was free at the instant a
-// record was handled. traceLogWriter emits its records from inside the drain loop,
-// which runs while the write lock is held, so on correct code the probe never finds
-// the mutex free. A mutant that releases the lock early (before the drain) leaves it
-// free during Handle, which the probe observes deterministically on a single
-// goroutine — no -race, no timing, no flakiness.
+// lockProbeHandler records whether the mutex of traceLogWriter was free at the
+// instant a record was handled. The traceLogWriter type emits its records from
+// inside the drain loop, which runs while the write lock is held. So on correct
+// code the probe never finds the mutex free. A mutant that releases the lock early
+// (before the drain) leaves it free during Handle. The probe observes this
+// deterministically on a single goroutine. It needs no -race, no timing, and no
+// flakiness.
 type lockProbeHandler struct {
 	slog.Handler
 	w        *traceLogWriter
@@ -527,7 +529,7 @@ func (h lockProbeHandler) Handle(ctx context.Context, r slog.Record) error {
 
 // TestTraceLogWriterHoldsLockWhileEmitting pins that the writer emits its records
 // under the buffer lock, so a concurrent write can never observe (or corrupt) a
-// half-drained buffer. It kills the mutex defer-remove mutant deterministically: a
+// half-drained buffer. It kills the mutex defer-remove mutant deterministically. A
 // single Write drives one record through the probe, which sees the lock held on
 // correct code and free on the mutant.
 func TestTraceLogWriterHoldsLockWhileEmitting(t *testing.T) {
@@ -544,9 +546,10 @@ func TestTraceLogWriterHoldsLockWhileEmitting(t *testing.T) {
 	require.False(t, freeSeen, "the buffer lock must be held while a record is emitted")
 }
 
-// cappedHandler collects the records it receives and panics once their count passes
-// max. A Write loop that fails to consume its buffer logs one record per pass, so
-// the cap turns an endless loop into a fast failure instead of a full disk.
+// cappedHandler collects the records that it receives and panics once their count
+// passes max. A Write loop that fails to consume its buffer logs one record per
+// pass. So the cap turns an endless loop into a fast failure instead of a full
+// disk.
 type cappedHandler struct {
 	slog.Handler // optional, receives every record the cap lets through.
 	recs         *[]string
@@ -624,13 +627,14 @@ func TestTraceLogWriterDrainsBuffer(t *testing.T) {
 	}
 }
 
-// TestTraceSinkGating checks traceSink returns the input unchanged when no DEBUG
-// sink is listening, and, when one is, a working tee that carries the caller's
-// context to the Enabled gate. It writes through each returned writer so a broken
-// bridge (nil logger, a nil MultiWriter member, a nil return) is caught.
+// TestTraceSinkGating checks that traceSink returns the input unchanged when no
+// DEBUG sink is listening. When one is, it checks for a working tee that carries
+// the context of the caller to the Enabled gate. It writes through each returned
+// writer, so a broken bridge (nil logger, a nil MultiWriter member, a nil return)
+// is caught.
 func TestTraceSinkGating(t *testing.T) {
 	// gateHandler enables only for a non-nil context, so a substituted nil ctx in
-	// traceSink's Enabled check would fall to the "off" path.
+	// the Enabled check of traceSink falls to the "off" path.
 	debug := slog.New(&gateHandler{inner: slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug})})
 	off := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
@@ -668,7 +672,7 @@ func TestTraceSinkGating(t *testing.T) {
 
 	t.Run("gate carries the caller context (nil ctx falls to off)", func(t *testing.T) {
 		// With the gate handler, DEBUG is enabled only when a non-nil ctx reaches
-		// Enabled; traceSink must pass a real context, so it returns a bridge.
+		// Enabled. traceSink must pass a real context, so it returns a bridge.
 		require.NotNil(t, traceSink(nil, debug), "a real context must enable the bridge")
 	})
 }
@@ -720,9 +724,9 @@ func TestBuildFileOpenError(t *testing.T) {
 	require.Error(t, err)
 }
 
-// ctxProbe is a slog handler that records whether the contexts it received carry
-// the test marker, so a test can prove a wrapper forwards the caller's context.
-// enabled is the answer that Enabled gives.
+// ctxProbe is a slog handler that records whether the contexts that it received
+// carry the test marker. So a test can prove that a wrapper forwards the context
+// of the caller. enabled is the answer that Enabled gives.
 type ctxProbe struct {
 	enabled                      bool
 	enabledMarked, handledMarked bool

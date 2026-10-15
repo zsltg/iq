@@ -91,9 +91,9 @@ func TestPlanCombine(t *testing.T) {
 		require.ErrorContains(t, err, "no collections")
 	})
 
-	// A spec with no "=" is legal and means the whole keyspace, the same as it
-	// does for diff and schema; "." is holistic, so the engine's scan guard — not
-	// this parser — is what decides whether the read is allowed.
+	// A spec with no "=" is legal and means the whole keyspace, the same as for
+	// diff and schema. "." is holistic. So the scan guard of the engine, not this
+	// parser, decides whether the read is allowed.
 	t.Run("bare address binds the whole keyspace", func(t *testing.T) {
 		stages, err := planCombine(cf, []string{"users"})
 		require.NoError(t, err)
@@ -109,8 +109,8 @@ func TestPlanCombine(t *testing.T) {
 		wrapped bool // the spec error wraps a cause, so the chain must survive
 	}{
 		// Every row asserts the spec context too: the inner message alone never
-		// says which spec was malformed, and a combine may carry several. The
-		// rows that wrap a cause also assert the chain survives.
+		// says which spec was malformed, and a combine can carry several. The
+		// rows that wrap a cause also assert that the chain survives.
 		{"empty name", "=.a", `invalid source "=.a": `, true},
 		{"empty filter", "users=", `invalid source "users=": `, true},
 		{"unknown source", "nope=.a", `invalid source "nope=.a": `, true},
@@ -120,8 +120,8 @@ func TestPlanCombine(t *testing.T) {
 			_, err := planCombine(cf, []string{tt.spec})
 			require.ErrorContains(t, err, tt.want)
 			// The clause context is added by wrapping, so the underlying cause has
-			// to stay reachable: formatting it into the message instead would read
-			// identically and silently break errors.Is/As for every caller.
+			// to stay reachable. Formatting it into the message instead reads
+			// identically and silently breaks errors.Is/As for every caller.
 			if tt.wrapped {
 				require.Error(t, errors.Unwrap(err), "the cause must stay unwrappable")
 			}
@@ -164,9 +164,9 @@ func TestCombineCmdRequiresASource(t *testing.T) {
 	require.NoError(t, c.Args(c, []string{"users=."}))
 }
 
-// TestCombineTransform pins the two shapes --insert refuses before any source is
-// opened. A combine emits over a null input, so no record carries a key to
-// inherit: without --key or --key-field every record would die at the write
+// TestCombineTransform pins the two shapes that --insert refuses before any
+// source is opened. A combine emits over a null input, so no record carries a
+// key to inherit. Without --key or --key-field, every record dies at the write
 // boundary mid-copy, which is worse than refusing up front.
 func TestCombineTransform(t *testing.T) {
 	tests := []struct {
@@ -186,8 +186,8 @@ func TestCombineTransform(t *testing.T) {
 		})
 	}
 
-	// Each write mode alone is legal — only the pair conflicts. Asserting just the
-	// conflicting pair would let the guard widen to either flag unnoticed.
+	// Each write mode alone is legal. Only the pair conflicts. Asserting only the
+	// conflicting pair lets the guard widen to either flag unnoticed.
 	t.Run("each write mode alone is accepted", func(t *testing.T) {
 		for _, cfg := range []*config{
 			{insert: "dest", moveKey: ".id", noOverwrite: true},
@@ -198,8 +198,8 @@ func TestCombineTransform(t *testing.T) {
 		}
 	})
 
-	// A transform that is merely non-nil proves nothing: these drive it and assert
-	// the key it actually mints, so dropping --key-prefix cannot pass unseen.
+	// A transform that is merely non-nil proves nothing. These tests drive it and
+	// assert the key that it mints. So dropping --key-prefix cannot pass unseen.
 	keyed := func(t *testing.T, cfg *config, value any) query.Record {
 		t.Helper()
 		tr, err := combineTransform(cfg)
@@ -227,9 +227,9 @@ func TestCombineTransform(t *testing.T) {
 	})
 }
 
-// TestCombineRecordsStreamsKeylessRecords pins the adapter between the combine's
-// value stream and the write path: every emitted value becomes one keyless
-// record, in order, and the combine's own error propagates instead of being
+// TestCombineRecordsStreamsKeylessRecords pins the adapter between the value
+// stream of the combine and the write path. Every emitted value becomes one
+// keyless record, in order. The own error of the combine propagates and is not
 // swallowed into a short copy.
 func TestCombineRecordsStreamsKeylessRecords(t *testing.T) {
 	collect := func(t *testing.T, src query.RecordSource) []query.Record {
@@ -247,9 +247,9 @@ func TestCombineRecordsStreamsKeylessRecords(t *testing.T) {
 		require.Equal(t, []query.Record{{Value: 1}, {Value: 2}, {Value: 3}}, got)
 	})
 
-	// --type rides on the record, not on the transform: NewTransform stamps its
-	// own Type only on a value its filter reshaped, and this transform has no
-	// filter, so a type passed there would be silently dropped.
+	// --type rides on the record, not on the transform. NewTransform stamps its
+	// own Type only on a value that its filter reshaped, and this transform has
+	// no filter. So a type passed there is silently dropped.
 	t.Run("--type is stamped on every record", func(t *testing.T) {
 		got := collect(t, combineRecords("$a[]", []string{"$a"}, []any{[]any{1, 2}}, "json"))
 		require.Equal(t, []query.Record{{Value: 1, Type: "json"}, {Value: 2, Type: "json"}}, got)
@@ -263,8 +263,8 @@ func TestCombineRecordsStreamsKeylessRecords(t *testing.T) {
 }
 
 // TestCombineRejectsWriteFlagsWithoutInsert pins that a write flag on a
-// rendering run is refused rather than read and dropped — the exact defect the
-// retired --from/--combine surface had.
+// rendering run is refused and not read and dropped. That is the exact defect
+// of the retired --from/--combine surface.
 func TestCombineRejectsWriteFlagsWithoutInsert(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("users", "redis://127.0.0.1:1/0"))
@@ -280,7 +280,7 @@ func TestCombineRejectsWriteFlagsWithoutInsert(t *testing.T) {
 }
 
 // TestCombineRefusesParquetToTerminal exercises the binary-format guard inside
-// runCombine: parquet to an interactive terminal must be refused before any
+// runCombine. Parquet to an interactive terminal must be refused before any
 // source is opened, exactly as the plain query path refuses it. The format is
 // resolved ahead of the first connection, so the refusal costs no I/O.
 func TestCombineRefusesParquetToTerminal(t *testing.T) {
@@ -315,11 +315,11 @@ func TestCombineExplainSurfacesAPlanError(t *testing.T) {
 	require.NotContains(t, err.Error(), "connect", "the plan must fail before any dial")
 }
 
-// TestCombineVerboseWritesThePlanToStderr pins that --verbose alone renders the
-// plan: it shares the branch with --explain but keeps running afterwards, so a
-// guard that only honored --explain would silently drop the trace a -v run is
-// asked for. The run itself then fails on the unreachable source, which is not
-// what this asserts.
+// TestCombineVerboseWritesThePlanToStderr pins that --verbose alone renders
+// the plan. It shares the branch with --explain but keeps running afterwards.
+// So a guard that only honored --explain silently drops the trace that a -v
+// run asks for. The run itself then fails on the unreachable source, which
+// this test does not assert.
 func TestCombineVerboseWritesThePlanToStderr(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("users", "redis://127.0.0.1:1/0"))

@@ -12,10 +12,10 @@ import (
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
-// cacheDir returns the directory the file:// decode cache lives in:
-// <user cache dir>/iq/dumps. It returns "" when the cache dir cannot be located,
-// which disables caching rather than failing an otherwise-valid run — the same
-// fallback the log file uses.
+// cacheDir returns the directory that the file:// decode cache lives in: <user
+// cache dir>/iq/dumps. It returns "" when the cache dir cannot be located. That
+// disables caching and does not fail an otherwise-valid run, the same fallback
+// that the log file uses.
 func cacheDir() string {
 	dir, err := os.UserCacheDir()
 	if err != nil {
@@ -25,8 +25,8 @@ func cacheDir() string {
 }
 
 // fileCacheConfig builds the decode-cache policy for a file:// store from the
-// invocation flags: disabled by --no-cache or when no cache dir is available,
-// otherwise on with the default size floor.
+// invocation flags. The cache is disabled by --no-cache or when no cache dir
+// is available. Otherwise it is on with the default size floor.
 func (c *config) fileCacheConfig() iqfile.CacheConfig {
 	if c.noCache {
 		return iqfile.CacheConfig{}
@@ -39,8 +39,8 @@ func (c *config) fileCacheConfig() iqfile.CacheConfig {
 }
 
 // newCacheCmd builds `iq cache`: inspect and clear the file:// dump decode cache,
-// mirroring sq's `cache` group. Caching is transparent — these commands only let
-// a user see where it lives, what it holds, and reset it.
+// mirroring the `cache` group of sq. Caching is transparent. These commands only
+// let a user see where the cache lives, what it holds, and reset it.
 func newCacheCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "cache",
@@ -172,8 +172,8 @@ func newCacheClearCmd() *cobra.Command {
 	}
 }
 
-// dumpPathArg maps a `cache clear` argument to a dump path: a saved file:// source
-// resolves to its dump path; anything else is taken as a filesystem path.
+// dumpPathArg maps a `cache clear` argument to a dump path. A saved file:// source
+// resolves to its dump path. Anything else is taken as a filesystem path.
 func dumpPathArg(arg string) string {
 	if cf, err := iqconfig.Load(); err == nil {
 		if src, _, ok := cf.Resolve(arg); ok && schemeOf(src.URL) == "file" {
@@ -185,8 +185,8 @@ func dumpPathArg(arg string) string {
 	return arg
 }
 
-// humanBytes renders a byte count as a compact binary-unit string (e.g. 4.0 MiB),
-// so a cache listing is readable at a glance rather than a raw byte count.
+// humanBytes renders a byte count as a compact binary-unit string (for example
+// 4.0 MiB). So a cache listing is readable at a glance and not a raw byte count.
 func humanBytes(n int64) string {
 	const unit = 1024
 	if n < unit {

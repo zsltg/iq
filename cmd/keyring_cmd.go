@@ -194,10 +194,10 @@ func newConfigKeyringGetCmd(cfg *config) *cobra.Command {
 }
 
 // newConfigKeyringSetCmd builds `iq config keyring set <handle> [value]`: write
-// or update a source's keyring secret. The value is taken from the positional or,
-// when omitted, read from stdin/prompt like `iq add -p`. A source that carries an
-// inline password is left untouched (use `migrate`); a password-less source is
-// marked keyring-backed so the new secret takes effect.
+// or update the keyring secret of a source. The value is taken from the
+// positional or, when omitted, read from stdin or the prompt like `iq add -p`. A
+// source that carries an inline password is left untouched (use `migrate`). A
+// password-less source is marked keyring-backed, so the new secret takes effect.
 func newConfigKeyringSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "set <handle> [value]",
@@ -263,8 +263,8 @@ func secretValue(cmd *cobra.Command, args []string) (string, error) {
 }
 
 // adoptKeyring flips a password-less source to keyring-backed and persists the
-// config. On a failure the just-written entry is new, so deleting it fully rolls
-// back. A source that is already keyring-backed needs no change.
+// config. On a failure the newly written entry is new, so deleting it fully
+// rolls back. A source that is already keyring-backed needs no change.
 func adoptKeyring(cf *iqconfig.Config, src iqconfig.Source, full string) error {
 	if src.Keyring {
 		return nil
@@ -308,9 +308,9 @@ func runKeyringRm(cmd *cobra.Command, args []string) error {
 	if err := requireKeyring(src, full); err != nil {
 		return err
 	}
-	// Clear the flag and persist before deleting the secret: at worst this
-	// leaves an orphaned entry (which `prune` removes), never a source that
-	// claims a keyring secret it no longer has.
+	// Clear the flag and persist before deleting the secret. At worst this
+	// leaves an orphaned entry (which `prune` removes). It never leaves a
+	// source that claims a keyring secret that it no longer has.
 	if err := cf.ClearKeyring(full); err != nil {
 		return err
 	}
@@ -322,10 +322,10 @@ func runKeyringRm(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-// newConfigKeyringMigrateCmd builds `iq config keyring migrate [handle]`: move a
-// source's inline password into the keyring, rewriting its stored URL to the
-// password-less form. --all migrates every inline source that has a password;
-// --dry-run reports what it would do without writing.
+// newConfigKeyringMigrateCmd builds `iq config keyring migrate [handle]`: move
+// the inline password of a source into the keyring, and rewrite its stored URL
+// to the password-less form. --all migrates every inline source that has a
+// password. --dry-run reports what it does if it runs, without writing.
 func newConfigKeyringMigrateCmd() *cobra.Command {
 	var o migrateOptions
 	c := &cobra.Command{
@@ -447,10 +447,10 @@ type migrateItem struct {
 
 // migrateSecret returns the migrateItem of the source full when the source can
 // move to the keyring. It fails when the URL has no password (only for an
-// explicit handle, --all filters these out) or when the keyring already holds a
-// password for the handle. That entry can belong to a source in another config
-// file, so a migration does not replace it and tells the user to rename the
-// source.
+// explicit handle, because --all filters these out). It also fails when the
+// keyring already holds a password for the handle. That entry can belong to a
+// source in another config file. So a migration does not replace it, and it
+// tells the user to rename the source.
 func migrateSecret(src iqconfig.Source, full string) (migrateItem, error) {
 	stripped, password, ok, err := splitPassword(src.URL)
 	if err != nil {
@@ -470,10 +470,10 @@ func migrateSecret(src iqconfig.Source, full string) (migrateItem, error) {
 	return migrateItem{keyringStaged{full, clean}, stripped, password}, nil
 }
 
-// migrateTargets resolves the source handles a migrate run should act on: the one
-// explicit handle (which must exist and be inline), or, with --all, every inline
-// source that carries a password. It errors on an unknown or already-keyring
-// handle.
+// migrateTargets resolves the source handles that a migrate run must act on.
+// That is the one explicit handle (which must exist and be inline). With --all,
+// it is every inline source that carries a password. It errors on an unknown or
+// already-keyring handle.
 func migrateTargets(cf *iqconfig.Config, args []string, all bool) ([]string, error) {
 	if all {
 		return inlinePasswordSources(cf)
@@ -515,9 +515,10 @@ func migrateRollback(done []keyringStaged) {
 
 // newConfigKeyringPruneCmd builds `iq config keyring prune`: delete keyring
 // entries that no live source uses. The keyring cannot be enumerated. So
-// "stale" is detectable only for a source that is still in the config, is not
-// keyring-backed, and still has an entry (left by a crash, a failed rm, or a
-// migrate). Entries for deleted sources cannot be found.
+// "stale" is detectable only for one kind of source. It is still in the
+// config and is not keyring-backed. It also still has an entry (left by a
+// crash, a failed rm, or a migrate). Entries for deleted sources cannot be
+// found.
 func newConfigKeyringPruneCmd() *cobra.Command {
 	var dryRun bool
 	c := &cobra.Command{
@@ -551,7 +552,8 @@ func runKeyringPrune(cmd *cobra.Command, dryRun bool) error {
 		}
 	}
 	// The keyring has no enumeration API, so entries whose source was deleted
-	// are undetectable; say so rather than imply the store is fully clean.
+	// are undetectable. Say so rather than imply that the store is fully
+	// clean.
 	_, err = fmt.Fprintln(cmd.ErrOrStderr(), "note: keyring entries for deleted sources cannot be detected and are not pruned")
 	return err
 }

@@ -10,10 +10,11 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// sourceOpener resolves a source name to a store for the in-filter source()
-// function, caching by resolved handle so a repeated source() reuses one
-// connection. gojq drives the query iterator on a single goroutine, so the
-// cache needs no locking. Every opened store is released by closeAll.
+// sourceOpener resolves a source name to a store for the in-filter
+// source() function. It caches by resolved handle, so a repeated source()
+// reuses one connection. A single goroutine drives the query iterator of
+// gojq, so the cache needs no locking. The closeAll method releases every
+// opened store.
 type sourceOpener struct {
 	cf    *iqconfig.Config
 	cache map[string]store
@@ -29,19 +30,20 @@ type sourceOpener struct {
 	noCacheIndex bool
 }
 
-// newSourceOpener returns an opener backed by the source registry cf; trace (may
-// be nil) is passed to each opened source for the --verbose command trace,
-// decimal for --format.decimal, and the cache flags to bypass or unindex the
-// file:// decode cache.
+// newSourceOpener returns an opener backed by the source registry cf. The trace
+// argument (can be nil) is passed to each opened source for the --verbose
+// command trace. The decimal argument is for --format.decimal. The cache flags
+// bypass or unindex the file:// decode cache.
 func newSourceOpener(cf *iqconfig.Config, trace io.Writer, decimal numfmt.DecimalMode, noCache, noCacheIndex bool) *sourceOpener {
 	return &sourceOpener{cf: cf, cache: map[string]store{}, trace: trace, decimal: decimal, noCache: noCache, noCacheIndex: noCacheIndex}
 }
 
 // Open resolves name through the registry (applying active-group namespacing)
-// and opens its store, reusing a store already opened for the same handle and
-// address. A dotted name (source("shop.orders")) resolves the base handle and
-// passes the address to the driver; the cache key includes the address so
-// source("shop.orders") and source("shop.users") do not alias one connection.
+// and opens its store. It reuses a store already opened for the same handle
+// and address. A dotted name (source("shop.orders")) resolves the base handle
+// and passes the address to the driver. The cache key includes the address,
+// so source("shop.orders") and source("shop.users") do not alias one
+// connection.
 func (o *sourceOpener) Open(ctx context.Context, name string) (query.KVStore, error) {
 	base, addr, _ := splitSourceArg(o.cf, name)
 	src, handle, ok := o.cf.Resolve(base)

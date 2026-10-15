@@ -25,8 +25,9 @@ const noteColumn = 34
 // from there.
 const sectionIndent = 2
 
-// conjunctContext is what the planner of one conjunct needs besides the conjunct:
-// the driver, the source, the keys, and the access plan of the whole predicate.
+// conjunctContext is what the planner of one conjunct needs besides the conjunct.
+// That is the driver, the source, the keys, and the access plan of the whole
+// predicate.
 type conjunctContext struct {
 	driver driver
 	src    planSource
@@ -35,10 +36,11 @@ type conjunctContext struct {
 }
 
 // conjunctStages plans the stages of one conjunct on a streaming route. A conjunct
-// that did not compile is for jq only. A compiled conjunct goes to the server if the
-// translator of the driver gives it a fragment, to the prefilter if that stage runs,
-// and always to jq. The stage states of the whole predicate (cx.plan) decide which
-// stages the plan names. The plan never names a stage whose state is none.
+// that did not compile is for jq only. A compiled conjunct always goes to jq. It
+// also goes to the server if the translator of the driver gives it a fragment, and
+// to the prefilter if that stage runs. The stage states of the whole predicate
+// (cx.plan) decide which stages the plan names. The plan never names a stage whose
+// state is none.
 func conjunctStages(cx conjunctContext, cj pushdown.Conjunct) (conjunctPlan, error) {
 	if cj.Pred == nil {
 		return conjunctPlan{Expr: cj.Expr, Stages: []string{stageJQ}, Reason: "not compiled: " + cj.Reason}, nil
@@ -141,7 +143,7 @@ func writeKeyFetchFilter(b *strings.Builder, sp sourcePlan) error {
 
 // writeStageHeader writes the header of a stage that has rows, or its one-line form
 // for a stage that is none or off. It returns true if rows follow. name is the stage
-// label, and header is the text of the section header for an on or conditional stage.
+// label. header is the text of the section header for an on or conditional stage.
 func writeStageHeader(b *strings.Builder, name string, st query.StagePlan, header string) bool {
 	switch st.State {
 	case query.StageNone, query.StageOff:
@@ -195,12 +197,13 @@ func writeFragmentRow(b *strings.Builder, frag map[string]any, expr string) erro
 // line.
 const maxJSONWidth = 80
 
-// fitJSON lays out a JSON value as lines, each with the given indent. The value is
-// one line in compact form (": " after a key, ", " between elements, keys sorted,
-// no HTML escaping) if the line fits in width. Else an object or array opens on the
-// first line, each member goes on its own line two spaces deeper, and the closing
-// bracket goes on its own line. Each member fits in maxJSONWidth or breaks the same
-// way. A scalar never breaks. It fails for a value that JSON cannot encode.
+// fitJSON lays out a JSON value as lines, each with the given indent. If the line
+// fits in width, the value is one line in compact form. The compact form uses ": "
+// after a key and ", " between elements, sorts keys, and does no HTML escaping.
+// Else an object or array opens on the first line. Each member goes on its own
+// line two spaces deeper, and the closing bracket goes on its own line. Each
+// member fits in maxJSONWidth or breaks the same way. A scalar never breaks. It
+// fails for a value that JSON cannot encode.
 func fitJSON(v any, indent, width int) ([]string, error) {
 	data, err := json.Marshal(v)
 	var norm any
@@ -215,8 +218,8 @@ func fitJSON(v any, indent, width int) ([]string, error) {
 	return layoutJSON(norm, jsonSlot{indent: indent, width: width}), nil
 }
 
-// jsonSlot is where a value sits in the layout: the indent and the width of its line,
-// the key text before it (the prefix), and the comma after it (the suffix).
+// jsonSlot is where a value sits in the layout. It holds the indent and the width of
+// its line, the key text before it (the prefix), and the comma after it (the suffix).
 type jsonSlot struct {
 	indent int
 	width  int
@@ -486,7 +489,7 @@ func jqOnlyReason(sp sourcePlan, c conjunctPlan) string {
 // writeNoteRow writes one row: the indent, the left text padded to noteColumn, and
 // the note in the faint color. The padding comes before the color, so ANSI escapes
 // never skew the column. A left text that fills the column gets two spaces. An empty
-// note writes the left text alone. The left text may carry its own color.
+// note writes the left text alone. The left text can carry its own color.
 func writeNoteRow(b *strings.Builder, indent int, left, note string) {
 	b.WriteString(strings.Repeat(" ", indent) + left)
 	if note == "" {

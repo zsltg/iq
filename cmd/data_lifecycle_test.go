@@ -46,9 +46,9 @@ func (s *lifeStore) EstimateCount(ctx context.Context) (int64, error) {
 	return 7, nil
 }
 
-// useLifeDriver registers the life:// driver with a lifeStore and the plain
-// bare:// driver whose store has no destructive capability, and seeds one source
-// on each, plus a source whose backend is down.
+// useLifeDriver registers the life:// driver with a lifeStore. It also registers
+// the plain bare:// driver, whose store has no destructive capability. It seeds
+// one source on each driver, plus a source whose backend is down.
 func useLifeDriver(t *testing.T) *lifeStore {
 	t.Helper()
 	st := &lifeStore{fakeStore: &fakeStore{}}

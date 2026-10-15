@@ -17,9 +17,9 @@ import (
 
 // addRenderFlags registers the output-rendering flags on c, writing into cfg.
 // Both the default jq action and `iq combine` emit a stream of values through the
-// same formatter, so they must offer the same renderings; registering them from
-// one place is what keeps the two surfaces from drifting. One rendering per run:
-// the flags are mutually exclusive and default to pretty json when none is set.
+// same formatter, so they must offer the same renderings. Registering them from
+// one place keeps the two surfaces from drifting. One rendering per run: the
+// flags are mutually exclusive and default to pretty json when none is set.
 func addRenderFlags(c *cobra.Command, cfg *config) {
 	c.Flags().BoolVarP(&cfg.json, "json", "j", false, "output pretty JSON, one value per result (the default rendering)")
 	c.Flags().BoolVarP(&cfg.jsonArray, "jsona", "A", false, "output every result wrapped in one [ ... ] JSON document (iq's --jsona wraps the whole stream; sq's emits per-row value-arrays)")
@@ -95,11 +95,11 @@ func validateFormat(s string) error {
 }
 
 // selectFormat resolves the chosen rendering from the mutually exclusive
-// output-format flags, defaulting to pretty json when none is set (--raw selects
-// the values rendering, mirroring jq's --raw-output). Cobra marks the flags
-// mutually exclusive, so at most one is set on the real CLI; the >1 guard keeps
-// the invariant enforced when a config is built directly (tests) and lets both
-// run paths validate before any store I/O.
+// output-format flags. It defaults to pretty json when none is set (--raw
+// selects the values rendering, mirroring jq's --raw-output). Cobra marks the
+// flags mutually exclusive, so at most one is set on the real CLI. The >1 guard
+// keeps the invariant enforced when a config is built directly (tests). It also
+// lets both run paths validate before any store I/O.
 func selectFormat(cfg *config) (outputFormat, error) {
 	set := make([]outputFormat, 0, 1)
 	if cfg.format != "" {
@@ -146,9 +146,9 @@ func selectFormat(cfg *config) (outputFormat, error) {
 var binaryTTYCheck = isTerminalWriter
 
 // guardBinaryFormat refuses to write a binary format to an interactive terminal,
-// where the bytes would corrupt the screen. Parquet is the only binary format;
-// the check runs on the raw destination (before any progress-meter wrapping), so
-// a redirect or pipe passes. Redirecting to a file or piping is the fix.
+// where the bytes corrupt the screen. Parquet is the only binary format. The
+// check runs on the raw destination (before any progress-meter wrapping), so a
+// redirect or pipe passes. Redirecting to a file or piping is the fix.
 func guardBinaryFormat(f outputFormat, w io.Writer) error {
 	if f == formatParquet && binaryTTYCheck(w) {
 		return errors.New("refusing to write parquet to the terminal: redirect it to a file (iq '<filter>' --format parquet > out.parquet) or pipe it")
@@ -156,17 +156,17 @@ func guardBinaryFormat(f outputFormat, w io.Writer) error {
 	return nil
 }
 
-// formatter renders each value the query engine emits and, on flush, completes
-// the output. Most formatters stream and flush is a no-op; jsona closes its
-// bracket and yaml closes its encoder, so callers must flush once the engine has
-// finished.
+// formatter renders each value that the query engine emits and, on flush,
+// completes the output. Most formatters stream, and flush is a no-op for them.
+// jsona closes its bracket and yaml closes its encoder. So callers must flush
+// once the engine has finished.
 type formatter interface {
 	emit(v any) error
 	flush() error
 }
 
 // newFormatter builds the formatter for f, writing to w. When compact is set,
-// the pretty renderings (json, jsona) collapse to single-line output; the
+// the pretty renderings (json, jsona) collapse to single-line output. The
 // already-condensed formats (jsonl, values, yaml, gron, grona) ignore it.
 func newFormatter(f outputFormat, w io.Writer, compact bool) formatter {
 	switch f {
@@ -192,11 +192,12 @@ func newFormatter(f outputFormat, w io.Writer, compact bool) formatter {
 	}
 }
 
-// newJSONEncoder builds a JSON encoder that never HTML-escapes (<, >, and &
-// stay verbatim; the sink is a terminal, not a web page). It indents two spaces
-// when pretty is set, and otherwise emits one compact value per line. Coloring
-// follows the invocation's color mode via render, which returns the plain stdlib
-// encoder when color is off, so uncolored output is byte-for-byte unchanged.
+// newJSONEncoder builds a JSON encoder that never HTML-escapes. The characters
+// <, >, and & stay verbatim, because the sink is a terminal, not a web page. It
+// indents two spaces when pretty is set, and otherwise emits one compact value
+// per line. Coloring follows the color mode of the invocation via render. The
+// render function returns the plain stdlib encoder when color is off. So
+// uncolored output is byte-for-byte unchanged.
 func newJSONEncoder(w io.Writer, pretty bool) render.Encoder {
 	indent := ""
 	if pretty {
@@ -206,10 +207,10 @@ func newJSONEncoder(w io.Writer, pretty bool) render.Encoder {
 }
 
 // writeStructured renders a single value as pretty JSON (the default) or as YAML
-// when yamlOut is set, for the info commands (ls, inspect, diff, driver ls,
-// config keyring ls). It reuses the query path's encoders so color and formatting
-// stay consistent; callers invoke it only in structured mode (-j or -y), which
-// Cobra marks mutually exclusive.
+// when yamlOut is set. It serves the info commands (ls, inspect, diff, driver
+// ls, config keyring ls). It reuses the encoders of the query path, so color and
+// formatting stay consistent. Callers invoke it only in structured mode (-j or
+// -y), which Cobra marks mutually exclusive.
 func writeStructured(w io.Writer, v any, yamlOut bool) error {
 	format := formatJSON
 	if yamlOut {
@@ -232,10 +233,10 @@ func (f *jsonFormatter) emit(v any) error {
 
 func (f *jsonFormatter) flush() error { return nil }
 
-// jsonArrayFormatter streams a single JSON array wrapping every emitted value,
-// pretty by default and single-line when compact is set. It writes incrementally,
-// tracking whether an element has been written so it can place separators; flush
-// closes the array, emitting [] for an empty result.
+// jsonArrayFormatter streams a single JSON array that wraps every emitted value,
+// pretty by default and single-line when compact is set. It writes incrementally
+// and tracks whether an element has been written, so it can place separators.
+// flush closes the array. It emits [] for an empty result.
 type jsonArrayFormatter struct {
 	w       io.Writer
 	compact bool
@@ -311,10 +312,10 @@ func encodeElem(v any, indent bool) (string, error) {
 
 // valuesFormatter prints jq scalars unquoted, one per line, for shell
 // substitution. A composite value (object or array) has no bare form, so it
-// falls back to compact JSON on its line; nothing is lost. Bare strings and
-// nulls always print uncolored (that bareness is the format's contract), but the
-// composite fallback and non-string scalars follow the invocation's color mode,
-// like jq -r.
+// falls back to compact JSON on its line, and nothing is lost. Bare strings and
+// nulls always print uncolored (that bareness is the contract of the format).
+// The composite fallback and non-string scalars follow the color mode of the
+// invocation, like jq -r.
 type valuesFormatter struct {
 	w   io.Writer
 	buf bytes.Buffer
@@ -361,7 +362,7 @@ func (f *valuesFormatter) line(s string) error {
 	return nil
 }
 
-// yamlFormatter writes each value as a YAML document; yaml.v3 separates the
+// yamlFormatter writes each value as a YAML document. yaml.v3 separates the
 // documents with `---`, so a stream renders as a valid multi-document file.
 type yamlFormatter struct{ enc *yaml.Encoder }
 
@@ -379,8 +380,8 @@ func (f *yamlFormatter) emit(v any) (err error) {
 	return nil
 }
 
-// flush closes the encoder, writing any buffered document; the output is not
-// complete until it runs.
+// flush closes the encoder and writes any buffered document. The output is
+// not complete until it runs.
 func (f *yamlFormatter) flush() error {
 	if err := f.enc.Close(); err != nil {
 		return fmt.Errorf("close yaml: %w", err)
@@ -388,11 +389,12 @@ func (f *yamlFormatter) flush() error {
 	return nil
 }
 
-// colorYAMLFormatter is the colored twin of yamlFormatter. It encodes each value
-// to a single document with yaml.v3 (so the rendering matches the plain path),
-// colorizes that document's tokens, and writes it, prefixing the `---` document
-// separator for every document after the first. It buffers one document at a
-// time, so a stream renders in bounded memory like the plain encoder.
+// colorYAMLFormatter is the colored twin of yamlFormatter. It encodes each
+// value to a single document with yaml.v3 (so the rendering matches the plain
+// path). It colorizes the tokens of that document and writes it. It prefixes
+// the `---` document separator for every document after the first. It buffers
+// one document at a time, so a stream renders in bounded memory like the plain
+// encoder.
 type colorYAMLFormatter struct {
 	w       io.Writer
 	started bool
@@ -421,11 +423,11 @@ func (f *colorYAMLFormatter) emit(v any) error {
 func (f *colorYAMLFormatter) flush() error { return nil }
 
 // parquetFormatter streams the emitted values to Parquet. Unlike the text
-// formatters, it buffers a leading sample to infer the schema, then writes one
-// record batch per page in bounded memory. flush writes the final page and the
-// file footer, so callers must flush once the engine has finished. The work
-// lives in internal/parquetout, which keeps the Arrow dependency out of the
-// core query path.
+// formatters, it buffers a leading sample to infer the schema. Then it writes
+// one record batch per page in bounded memory. The flush method writes the
+// final page and the file footer. So callers must flush once the engine has
+// finished. The work lives in internal/parquetout, which keeps the Arrow
+// dependency out of the core query path.
 type parquetFormatter struct{ pw *parquetout.Writer }
 
 func (f *parquetFormatter) emit(v any) error {

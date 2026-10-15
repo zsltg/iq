@@ -123,13 +123,14 @@ func TestSplitSourceArg(t *testing.T) {
 		{"unknown bare name passes through", "nope", "nope", "", false},
 		{"leading dot is not a split", ".x", ".x", "", false},
 		{"trailing dot is not a split", "x.", "x.", "", false},
-		// The trailing dot must be rejected even when what precedes it names a
-		// real source, or the walk would hand back an empty collection.
+		// The trailing dot must be rejected even when what precedes it
+		// names a real source. Otherwise a walk that accepts it hands
+		// back an empty collection.
 		{"trailing dot on a known source is not a split", "books.", "books.", "", false},
 		{"trailing dot after a dotted address is not a split", "books.sales.", "books.sales.", "", false},
 		// A dotted address: the source is the longest prefix that resolves, and
 		// everything after it stays whole. Couchbase addresses a scope.collection
-		// this way, and a MongoDB collection name may itself contain a dot.
+		// this way, and a MongoDB collection name can itself contain a dot.
 		{"dotted address keeps its own dots", "books.sales.orders", "books", "sales.orders", true},
 		{"deeply dotted address", "books.a.b.c", "books", "a.b.c", true},
 		{"dotted handle takes a collection", "a.b.chapters", "a.b", "chapters", true},
@@ -152,7 +153,7 @@ func TestSplitSourceArg(t *testing.T) {
 	}
 
 	// With both a source and a longer dotted source registered, the longest one
-	// that resolves wins, so registering `books.sales` cannot be shadowed by the
+	// that resolves wins. So registering `books.sales` cannot be shadowed by the
 	// shorter `books`.
 	t.Run("the longest resolvable prefix wins", func(t *testing.T) {
 		cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{

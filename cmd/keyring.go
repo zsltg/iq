@@ -9,15 +9,15 @@ import (
 	"github.com/zsltg/iq/internal/secret"
 )
 
-// keyringStore is the credential store the source commands use. It is a package
-// variable so a test can swap in an in-memory fake and never touch the real OS
-// keyring; production wiring is the OS-backed store.
+// keyringStore is the credential store that the source commands use. It is a
+// package variable so that a test can swap in an in-memory fake and never touch
+// the real OS keyring. Production wiring is the OS-backed store.
 var keyringStore secret.Keyring = secret.OSKeyring{}
 
 // effectiveURL returns the connection URI to open for src: src.URL as stored.
 // If the source is keyring-backed, it fetches the password from the keyring
-// under handle and splices it back into the URI. handle is the full resolved
-// handle, the keyring account name.
+// under handle and splices it back into the URI. The handle argument is the
+// full resolved handle, the keyring account name.
 func effectiveURL(src iqconfig.Source, handle string) (string, error) {
 	if !src.Keyring {
 		return src.URL, nil
@@ -33,8 +33,8 @@ func effectiveURL(src iqconfig.Source, handle string) (string, error) {
 var errInvalidURI = errors.New("parse URI: the URI is not valid")
 
 // parseURI parses raw with net/url. The error does not quote raw or a part of
-// it: the url.Error carries the whole URI, and an EscapeError carries the bad
-// escape, both of which can hold a part of the password.
+// it. The url.Error carries the whole URI, and an EscapeError carries the bad
+// escape. Both of these can hold a part of the password.
 func parseURI(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err == nil {

@@ -135,9 +135,10 @@ func TestPingIntegration(t *testing.T) {
 	require.Contains(t, out, "ok")
 }
 
-// TestRedactErr proves the URI is masked only when the message carries it, and
-// that an empty URI (a cross-source run resolves none) leaves the error chain
-// untouched instead of flattening it: strings.Contains matches "" everywhere.
+// TestRedactErr proves the URI is masked only when the message carries it. It
+// also proves that an empty URI (a cross-source run resolves none) leaves the
+// error chain untouched instead of flattening it. The reason is that
+// strings.Contains matches "" everywhere.
 func TestRedactErr(t *testing.T) {
 	sentinel := errors.New("boom")
 	tests := []struct {

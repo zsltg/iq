@@ -110,7 +110,7 @@ func TestSampleItemsReturnsScanError(t *testing.T) {
 	require.Nil(t, items)
 }
 
-// infoStore answers every query with a fixed reply, as a Redis INFO would.
+// infoStore answers every query with a fixed reply, as a Redis INFO does.
 type infoStore struct {
 	*fakeStore
 	reply string

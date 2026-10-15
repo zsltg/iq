@@ -48,10 +48,10 @@ func TestRootHelpGroupsFlags(t *testing.T) {
 	}
 }
 
-// TestRootHelpEveryFlagGrouped is the coverage guard: every root flag (bar the
-// auto-added help/version) carries a group annotation naming a real section, so
-// a future flag added without a group fails here instead of silently landing in
-// "Options".
+// TestRootHelpEveryFlagGrouped is the coverage guard. Every root flag (bar the
+// auto-added help/version) carries a group annotation that names a real
+// section. So a future flag added without a group fails here instead of
+// silently landing in "Options".
 func TestRootHelpEveryFlagGrouped(t *testing.T) {
 	root, _ := newRootCmd()
 
@@ -98,9 +98,9 @@ func TestSubcommandHelpGroupsGlobalFlags(t *testing.T) {
 	require.NotContains(t, local, "  Source:")
 }
 
-// TestGroupedFlagUsages exercises the template func directly: an annotated set
-// renders sections in order; an unannotated set is byte-identical to pflag's
-// default so subcommand-local flags are untouched.
+// TestGroupedFlagUsages exercises the template func directly. An annotated set
+// renders sections in order. An unannotated set is byte-identical to the
+// default of pflag, so subcommand-local flags are untouched.
 func TestGroupedFlagUsages(t *testing.T) {
 	t.Run("annotated set is grouped", func(t *testing.T) {
 		fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
@@ -121,9 +121,9 @@ func TestGroupedFlagUsages(t *testing.T) {
 		require.Contains(t, sectionAfter(got, "  Source:"), "--src")
 		require.Contains(t, sectionAfter(got, "  Options:"), "--loose")
 
-		// The first section starts flush (no leading blank line) and consecutive
-		// sections are separated by exactly one blank line — pins the b.Len() > 0
-		// separator guard.
+		// The first section starts flush (no leading blank line). Consecutive
+		// sections are separated by exactly one blank line. This pins the b.Len()
+		// > 0 separator guard.
 		require.True(t, strings.HasPrefix(got, "  Source:"), "unexpected leading blank line: %q", got)
 		require.Contains(t, got, "\n\n  Output:")
 		require.Contains(t, got, "\n\n  Options:")
@@ -151,9 +151,9 @@ func requireHeadersInOrder(t *testing.T, out string, headers []string) {
 	}
 }
 
-// sectionAfter returns the slice of s starting just past header and ending at the
-// next two-space-indented section header (or end of string), i.e. the flag lines
-// that belong to that section.
+// sectionAfter returns the slice of s that starts right after header. The slice
+// ends at the next two-space-indented section header (or end of string). That is
+// the flag lines that belong to that section.
 func sectionAfter(s, header string) string {
 	start := strings.Index(s, header)
 	if start == -1 {
@@ -161,7 +161,7 @@ func sectionAfter(s, header string) string {
 	}
 	start += len(header)
 	rest := s[start:]
-	// The next section starts at a blank line followed by "  <Title>:"; scan
+	// The next section starts at a blank line followed by "  <Title>:". Scan
 	// line by line for the next header at the same indent.
 	lines := strings.Split(rest, "\n")
 	var b strings.Builder
@@ -176,8 +176,8 @@ func sectionAfter(s, header string) string {
 }
 
 // isSectionHeader reports whether line is a "  <Title>:" group header (two-space
-// indent, single word, trailing colon), distinguishing it from a "    --flag"
-// entry indented four spaces.
+// indent, single word, trailing colon). This tells it apart from a flag entry
+// that has four spaces of indent (`    --flag`).
 func isSectionHeader(line string) bool {
 	indent := len(line) - len(strings.TrimLeft(line, " "))
 	if indent != 2 {
@@ -229,16 +229,16 @@ func TestRootHelpGroupsCommands(t *testing.T) {
 		})
 	}
 
-	// help/completion are Cobra's own, deliberately ungrouped.
+	// help/completion are Cobra's own, ungrouped on purpose.
 	additional := out[strings.Index(out, "Additional Commands:"):]
 	require.Contains(t, additional, "completion")
 	require.Contains(t, additional, "help")
 }
 
-// TestRootHelpEveryCommandGrouped is the coverage guard: every root subcommand
-// (bar Cobra's auto-added help/completion) carries a GroupID naming a real
-// group, so a future command added to root.AddCommand without a group fails
-// here instead of silently landing in "Additional Commands:".
+// TestRootHelpEveryCommandGrouped is the coverage guard. Every root subcommand
+// (bar the auto-added help/completion of Cobra) carries a GroupID that names a
+// real group. So a future command added to root.AddCommand without a group
+// fails here instead of silently landing in "Additional Commands:".
 func TestRootHelpEveryCommandGrouped(t *testing.T) {
 	root, _ := newRootCmd()
 
@@ -254,11 +254,11 @@ func TestRootHelpEveryCommandGrouped(t *testing.T) {
 	}
 }
 
-// TestExamplesUseLiveFlags is the drift guard for --help: every flag spelled in
-// an Example block resolves against the command that example actually invokes,
-// so help text that still advertises a retired flag fails here. The root example
-// outlived the --from/--combine pair that `iq combine` replaced, and shipped
-// teaching a spelling the binary rejects.
+// TestExamplesUseLiveFlags is the drift guard for --help. Every flag spelled in
+// an Example block resolves against the command that the example invokes. So
+// help text that still advertises a retired flag fails here. The root example
+// outlived the --from/--combine pair that `iq combine` replaced. It shipped
+// teaching a spelling that the binary rejects.
 func TestExamplesUseLiveFlags(t *testing.T) {
 	root, _ := newRootCmd()
 
@@ -301,10 +301,10 @@ func allCommands(cmd *cobra.Command) []*cobra.Command {
 }
 
 // exampleInvocations extracts the `iq ...` invocations from an Example block as
-// token slices, with the leading "iq" dropped so each slice is what Find takes.
-// A trailing "\" continues an invocation onto the next line; single-quoted spans
-// (jq programs, URLs) are dropped whole, since a flag is never spelled inside
-// one and their contents would otherwise tokenize into noise.
+// token slices. The leading "iq" is dropped, so each slice is what Find takes. A
+// trailing "\" continues an invocation onto the next line. Single-quoted spans
+// (jq programs, URLs) are dropped whole, because a flag is never spelled inside
+// one and their contents otherwise tokenize into noise.
 func exampleInvocations(example string) [][]string {
 	var out [][]string
 	var pending string
@@ -348,8 +348,9 @@ func invocationTokens(line string) []string {
 	return toks
 }
 
-// endsInvocation reports whether tok is a pipe, redirect, "&&" or the start of a
-// trailing comment, so it and everything after it is not an argument to iq.
+// endsInvocation reports whether tok is a pipe, redirect, "&&" or the start
+// of a trailing comment. So tok and everything after it is not an argument
+// to iq.
 func endsInvocation(tok string) bool {
 	return slices.Contains([]string{"|", ">", ">>", "&&"}, tok) || strings.HasPrefix(tok, "#")
 }
@@ -393,7 +394,8 @@ func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {
 type groupBounds struct{ header, next string }
 
 // sectionBetween returns the slice of s between the end of the header and the
-// start of the next header, i.e. the content of one command group's section.
+// start of the next header. That is the content of one command group's
+// section.
 func sectionBetween(s string, b groupBounds) string {
 	start := strings.Index(s, b.header)
 	if start == -1 {

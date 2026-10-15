@@ -15,9 +15,10 @@ import (
 	"github.com/zsltg/iq/internal/diff"
 )
 
-// palette names the semantic roles the CLI colors. Each *color.Color consults
-// the global color.NoColor at render time, so one package-level palette renders
-// plain or colored according to the mode resolved for the current invocation.
+// palette names the semantic roles that the CLI colors. Each *color.Color
+// consults the global color.NoColor at render time. So one package-level
+// palette renders plain or colored according to the mode resolved for the
+// current invocation.
 type palette struct {
 	ok       *color.Color
 	fail     *color.Color
@@ -32,8 +33,8 @@ type palette struct {
 }
 
 // pal is the shared palette. Colors are stateless: they read color.NoColor when
-// Sprint runs, not when constructed, so building this at load time is safe even
-// though the mode is decided later in the root PersistentPreRunE.
+// Sprint runs, not when constructed. So building this at load time is safe,
+// even though the root PersistentPreRunE decides the mode later.
 var pal = palette{
 	ok:     color.New(color.FgGreen),
 	fail:   color.New(color.FgRed),
@@ -50,18 +51,18 @@ var pal = palette{
 	faint:    color.New(color.Faint),
 }
 
-// resolveColor sets the global color mode for the invocation, honoring the
-// -M/-C flags (mutually exclusive, rejected in the root PreRun), the NO_COLOR
-// convention, and whether w is a terminal. It drives fatih/color's global
-// NoColor so every palette color and the colored JSON/YAML encoders follow one
-// decision.
+// resolveColor sets the global color mode for the invocation. It honors
+// the -M/-C flags (mutually exclusive, rejected in the root PreRun), the
+// NO_COLOR convention, and whether w is a terminal. It drives the global
+// NoColor of fatih/color, so every palette color and the colored JSON/YAML
+// encoders follow one decision.
 func resolveColor(monochrome, force bool, w io.Writer) {
 	color.NoColor = !wantColor(monochrome, force, w)
 }
 
 // wantColor reports whether to emit ANSI color. -M forces off and wins over
-// everything; -C forces on and overrides NO_COLOR and the terminal check;
-// otherwise color is on only when NO_COLOR is unset and w is a real terminal.
+// everything. -C forces on and overrides NO_COLOR and the terminal check.
+// Otherwise color is on only when NO_COLOR is unset and w is a real terminal.
 func wantColor(monochrome, force bool, w io.Writer) bool {
 	if monochrome {
 		return false
@@ -133,9 +134,9 @@ func colorizeYAML(doc string) string {
 	return out
 }
 
-// tableCell is one column of a row: its text and the color to render it in (nil
-// for none). The color is applied only in the colored renderer; the plain
-// tabwriter path ignores it.
+// tableCell is one column of a row: its text and the color to render it
+// in (nil for none). Only the colored renderer applies the color. The
+// plain tabwriter path ignores it.
 type tableCell struct {
 	text string
 	c    *color.Color
@@ -148,9 +149,9 @@ func cell(text string) tableCell { return tableCell{text: text} }
 func coloredCell(text string, c *color.Color) tableCell { return tableCell{text: text, c: c} }
 
 // renderTable writes an aligned table. With color off it uses text/tabwriter,
-// preserving the exact uncolored layout. With color on it pads columns by their
-// visible (uncolored) width and then colors each cell, so ANSI escapes never
-// distort the alignment the way they would inside tabwriter.
+// which preserves the exact uncolored layout. With color on it pads columns by
+// their visible (uncolored) width and then colors each cell. So ANSI escapes
+// never distort the alignment as they do inside tabwriter.
 func renderTable(out io.Writer, rows [][]tableCell) error {
 	if !colorOn() {
 		return renderPlainTable(out, rows)
@@ -164,9 +165,10 @@ func renderTable(out io.Writer, rows [][]tableCell) error {
 				text = c.c.Sprint(c.text)
 			}
 			b.WriteString(text)
-			// A column has a width only if it is non-terminal; the trailing cell
-			// of each row is never padded. widths is the single source of that
-			// distinction, so the pad guard reads its length, not len(row).
+			// A column has a width only if it is non-terminal. The trailing cell
+			// of each row is never padded. The widths slice is the single source
+			// of that distinction. So the pad guard reads its length, not
+			// len(row).
 			if j < len(widths) {
 				b.WriteString(strings.Repeat(" ", widths[j]-utf8.RuneCountInString(c.text)+2))
 			}

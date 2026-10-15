@@ -20,10 +20,11 @@ import (
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
-// closeResources releases the diagnostics handles a root run opened in
-// PersistentPreRunE (the --output file, the log file), as Execute does after
-// ExecuteContext; a test that runs the root directly registers it so the temp
-// dir can be removed on Windows, where an open file cannot be deleted.
+// closeResources releases the diagnostics handles that a root run
+// opened in PersistentPreRunE (the --output file, the log file), as
+// Execute does after ExecuteContext. A test that runs the root
+// directly registers it, so the temp dir can be removed on Windows,
+// where an open file cannot be deleted.
 func closeResources(t *testing.T, cfg *config) {
 	t.Helper()
 	t.Cleanup(func() {
@@ -36,9 +37,10 @@ func closeResources(t *testing.T, cfg *config) {
 	})
 }
 
-// runCmd executes c with args, capturing its combined output. The root PreRun
-// resolves the global color mode for the invocation, so the prior value is
-// restored after the test: a -C run must not tint a later test's output.
+// runCmd executes c with args, capturing its combined output. The root
+// PreRun resolves the global color mode for the invocation, so the prior
+// value is restored after the test. A -C run must not tint the output of
+// a later test.
 func runCmd(t *testing.T, c *cobra.Command, args ...string) (string, error) {
 	t.Helper()
 	orig := color.NoColor
@@ -147,7 +149,7 @@ func TestAddRefusesADuplicateHandle(t *testing.T) {
 	require.Equal(t, "redis://first:6379/0", cf.Sources["cache"].URL, "the stored source is untouched")
 }
 
-// TestAddReportsAKeyringFailure drives a keyring that refuses the write: the add
+// TestAddReportsAKeyringFailure drives a keyring that refuses the write. The add
 // must fail and save nothing, so no source points at a password that is not there.
 func TestAddReportsAKeyringFailure(t *testing.T) {
 	seedConfig(t, newSeed())
@@ -248,8 +250,8 @@ func TestSuggestHandle(t *testing.T) {
 		{"file dump stem ignores the format param", "file:///home/user/dump.bin?format=bson", "dump"},
 		{"file hint params are not a keyspace", "file:///home/user/graph.json?label=Movie", "graph"},
 		{"file without an extension", "file:///dumps/books", "books"},
-		// file://segment/... puts the first segment in the host; DumpPath folds it
-		// back into the path, so the stem is still the file's.
+		// file://segment/... puts the first segment in the host. DumpPath folds it
+		// back into the path, so the stem is still the stem of the file.
 		{"file two-slash form", "file://dumps/books.json", "books"},
 		// A file url naming no usable stem falls through to the path, then the driver.
 		{"file bare root falls back to driver", "file:///", "file"},

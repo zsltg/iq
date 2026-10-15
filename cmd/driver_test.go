@@ -80,7 +80,7 @@ func TestDriverRegistryInvariants(t *testing.T) {
 		require.NotNil(t, d.open)
 		if !d.readOnly {
 			// A connectable backend advertises upstream docs and a supported server
-			// version range; a read-only local driver (file://) has neither.
+			// version range. A read-only local driver (file://) has neither.
 			require.NotEmpty(t, d.doc)
 			require.NotEmpty(t, d.versions)
 		}
@@ -171,7 +171,7 @@ func TestDriverLsVerbose(t *testing.T) {
 	// The caption teaches both URL shapes.
 	require.Contains(t, out, "file:///<file_path>")
 	require.Contains(t, out, "file:///<file_path>?format=<source_format>")
-	// An auto-detected format shows a bare name; a forced one shows the full,
+	// An auto-detected format shows a bare name. A forced one shows the full,
 	// copy-pasteable ?format=<name>.
 	require.NotContains(t, lineWith(t, out, "jsonl"), "?format=")
 	require.NotContains(t, lineWith(t, out, "yaml"), "?format=") // YAML now content-detects
@@ -199,7 +199,7 @@ func TestDriverLsVerboseJSON(t *testing.T) {
 	for _, r := range rows {
 		byName[r.Driver] = r
 	}
-	// Only the read-only file driver advertises formats; a live backend has none.
+	// Only the read-only file driver advertises formats. A live backend has none.
 	require.Empty(t, byName["redis"].Formats)
 	byFmt := map[string]driverFormatRow{}
 	for _, f := range byName["file"].Formats {
@@ -224,9 +224,9 @@ func lineWith(t *testing.T, out, sub string) string {
 	return ""
 }
 
-// TestRegistryAddressParams pins the registry invariant the handle derivation and
-// the keyspace guard both rely on: a backend is addressable exactly when it
-// declares a keyspace param.
+// TestRegistryAddressParams pins the registry invariant that the handle
+// derivation and the keyspace guard both rely on. A backend is addressable
+// exactly when it declares a keyspace param.
 func TestRegistryAddressParams(t *testing.T) {
 	for _, d := range drivers {
 		t.Run(d.name, func(t *testing.T) {
@@ -245,19 +245,20 @@ func TestAllAddressParams(t *testing.T) {
 		"every keyspace spelling in the registry, deduped, in registry order")
 }
 
-// TestWriteDriverFormatsPropagatesACaptionWriteError asserts the caption's write
-// result is returned. failAt fails only the first write, so a dropped error
-// return shows up as a nil result when the table below still writes cleanly.
+// TestWriteDriverFormatsPropagatesACaptionWriteError asserts that the write
+// result of the caption is returned. failAt fails only the first write. So a
+// dropped error return shows up as a nil result when the table below still
+// writes cleanly.
 func TestWriteDriverFormatsPropagatesACaptionWriteError(t *testing.T) {
 	d, ok := driverByName("file")
 	require.True(t, ok, "the file driver is the one with dump formats")
 	require.Error(t, writeDriverFormats(&failAt{at: 1}, d))
 }
 
-// TestDriverRegistryCapabilities pins each backend's capability flags and the
-// write-side explain describers it registers. A flag or describer that drops out
-// of the registry changes what `--explain`, `iq ping` and `iq add` do for that
-// backend, so each row is one backend's contract.
+// TestDriverRegistryCapabilities pins the capability flags of each backend and
+// the write-side explain describers that it registers. A flag or describer that
+// drops out of the registry changes what `--explain`, `iq ping` and `iq add` do
+// for that backend. So each row is the contract of one backend.
 func TestDriverRegistryCapabilities(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -301,10 +302,10 @@ func TestDriverRegistryCapabilities(t *testing.T) {
 	}
 }
 
-// TestDriverOpenHonoursContext checks each connectable backend gets the caller's
-// context. A cancelled context must make Open fail fast with a context error, so a
-// registry opener that drops the context (and so could wait without a bound)
-// fails here instead of hanging a real run.
+// TestDriverOpenHonoursContext checks that each connectable backend gets the
+// context of the caller. A cancelled context must make Open fail fast with a
+// context error. A registry opener that drops the context (and so can wait without
+// a bound) fails here instead of hanging a real run.
 func TestDriverOpenHonoursContext(t *testing.T) {
 	urls := map[string]string{
 		"mongo":         "mongodb://127.0.0.1:1/db",

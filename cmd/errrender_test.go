@@ -311,9 +311,9 @@ func TestRedactorPatternStep(t *testing.T) {
 		},
 		{
 			// The advice iq itself prints for an unknown source: a scheme literal
-			// inside a code span, which the closing backtick used to make
-			// unparseable, collapsing the URI to "(unparseable URI)" and swallowing
-			// the backtick that closed the span.
+			// inside a code span. The closing backtick used to make it unparseable.
+			// That collapsed the URI to "(unparseable URI)" and swallowed the
+			// backtick that closed the span.
 			"our own scheme-literal advice survives intact",
 			"unknown source \"nosuch\"; run `iq ls` (register a dump with `iq add file:///path/to/dump.json` to read one)",
 			"unknown source \"nosuch\"; run `iq ls` (register a dump with `iq add file:///path/to/dump.json` to read one)",
@@ -384,7 +384,7 @@ func TestSyntaxReportCaretClamp(t *testing.T) {
 	mid := (&filterSyntaxError{filter: ".x foo", offset: 4, token: "foo"}).report()
 	require.Equal(t, "    .x foo\n     ^\n", mid)
 
-	// offset 1, token "long" (len 4) -> col would be -3, clamped to 0.
+	// offset 1, token "long" (len 4) -> col is -3, clamped to 0.
 	start := (&filterSyntaxError{filter: "abc", offset: 1, token: "long"}).report()
 	require.Equal(t, "    abc\n    ^\n", start)
 }
