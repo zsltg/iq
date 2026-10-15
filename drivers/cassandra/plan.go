@@ -8,11 +8,12 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Cassandra statements that this driver will run for a
-// classified query, without connecting. A bounded query reads the named rows by
-// primary key. A scan runs a SELECT. The pushed predicate pre-filters the SELECT
-// (with ALLOW FILTERING) when one compiles. Otherwise the scan reads the full
-// table. It reuses toCQL so the shown WHERE is exactly what ScanFiltered issues.
+// ExplainPlan describes the Cassandra statements that this driver runs if it
+// executes a classified query, without connecting. A bounded query reads the named
+// rows by primary key. A scan runs a SELECT. The pushed predicate pre-filters the
+// SELECT (with ALLOW FILTERING) when one compiles. Otherwise the scan reads the
+// full table. It reuses toCQL so the shown WHERE is exactly what ScanFiltered
+// issues if the scan runs.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -42,9 +43,9 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	return query.AccessPlan{Ops: []string{desc, mode}, Filter: filter, Server: server}
 }
 
-// ExplainWrite describes, without connecting, the write that a copy into this
-// table will make: a plain INSERT upsert by primary key, or an INSERT ... IF NOT
-// EXISTS that skips existing keys.
+// ExplainWrite describes, without connecting, the write that a copy into this table
+// makes if it runs. The write is a plain INSERT upsert by primary key, or an
+// INSERT ... IF NOT EXISTS that skips existing keys.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := "INSERT: upsert by primary key"
 	if mode == query.InsertOnly {

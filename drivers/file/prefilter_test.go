@@ -81,9 +81,9 @@ func TestPrefilterParity(t *testing.T) {
 	blankLines := "\n\n" + `{"key":"a","type":"string","value":"x"}` + "\n\n\n" +
 		`{"key":"b","type":"string","value":"y"}` + "\n\n"
 
-	// ~20 KB value: well past bufio.Reader's 4 KiB default, so the raw reader
-	// must refill its buffer several times mid-record. A larger value takes the
-	// same span-the-buffer code path. This value avoids the memory churn of a
+	// ~20 KB value: well past bufio.Reader's 4 KiB default, so the raw reader must
+	// refill its buffer several times mid-record. A larger value takes the same
+	// span-the-buffer code path. The 20 KB fixture avoids the memory churn of a
 	// huge literal under mutation.
 	bigRecord := `{"key":"big","type":"string","value":"` + strings.Repeat("z", 20000) + `"}` + "\n"
 

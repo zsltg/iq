@@ -8,13 +8,13 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Elasticsearch calls that this driver will make for a
-// classified query, without connecting. A bounded query fetches the named
-// documents by _id with _mget. A scan pages a point-in-time with search_after,
-// with a bool query when the pushed predicate narrows. It does not connect, so it
-// does not resolve the equality gate (a term is pushed only on an exactly
-// matchable field). The shown filter is the query that the driver attempts, and
-// the description says so.
+// ExplainPlan describes the Elasticsearch calls that this driver makes if it runs a
+// classified query, without connecting. A bounded query fetches the named documents
+// by _id with _mget. A scan pages a point-in-time with search_after, with a bool
+// query when the pushed predicate narrows. It does not connect, so it does not
+// resolve the equality gate (a term is pushed only on an exactly matchable field).
+// The shown filter is the query that the driver attempts, and the description says
+// so.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -117,9 +117,9 @@ func explainQuery(n predicate.Node) (map[string]any, bool) {
 	}
 }
 
-// ExplainWrite describes, without connecting, the write that a copy into this
-// index will make. The write is a refreshing _bulk that indexes each document by _id
-// (replace-upsert), or one that creates new _ids and skips existing ones.
+// ExplainWrite describes, without connecting, the write that a copy into this index
+// makes if it runs. The write is a refreshing _bulk that indexes each document by
+// _id (replace-upsert), or one that creates new _ids and skips existing ones.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := "_bulk (refresh): index by _id (replace-upsert)"
 	if mode == query.InsertOnly {

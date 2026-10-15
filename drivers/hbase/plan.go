@@ -16,9 +16,9 @@ type Source struct {
 	Address string
 }
 
-// ExplainPlan describes the HBase RPCs this driver will run for a classified query,
-// without connecting. A bounded query reads the named rows by key with point Gets.
-// A scan runs a table Scan. When the predicate has pushable equalities, a
+// ExplainPlan describes the HBase RPCs this driver runs if it executes a classified
+// query, without connecting. A bounded query reads the named rows by key with point
+// Gets. A scan runs a table Scan. When the predicate has pushable equalities, a
 // server-side SingleColumnValueFilter pre-filters the scan. Otherwise it is a
 // full-table scan. ExplainPlan parses the URI for the column types and runs
 // toFilter, as ScanFiltered does, so the plan shows what the scan pushes. It parses
@@ -54,9 +54,9 @@ func ExplainPlan(src Source, keys selector.KeySet, pred predicate.Node, unbounde
 	}, nil
 }
 
-// ExplainWrite describes, without connecting, the write that a copy into this
-// table will make. It is a plain Put upsert by row key, or a CheckAndPut that skips
-// rows whose guard cell already exists.
+// ExplainWrite describes, without connecting, the write that a copy into this table
+// makes if it runs. It is a plain Put upsert by row key, or a CheckAndPut that
+// skips rows whose guard cell already exists.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := "Put: upsert cells by row key"
 	if mode == query.InsertOnly {

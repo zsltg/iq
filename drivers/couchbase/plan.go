@@ -8,12 +8,12 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Couchbase calls this driver will make for a classified
-// query, without connecting. A bounded query fetches the named documents by ID in a
-// KV bulk get. A scan walks a SQL++ keyset scan ordered by document ID, with the
-// pushed predicate when one narrows. It reuses toWhere, so the shown WHERE is what
-// the query service will receive. It asks prefilterStage, as ScanFiltered does, whether
-// a rawpred prefilter trims the rows before decode.
+// ExplainPlan describes the Couchbase calls this driver makes if it runs a
+// classified query, without connecting. A bounded query fetches the named documents
+// by ID in a KV bulk get. A scan walks a SQL++ keyset scan ordered by document ID,
+// with the pushed predicate when one narrows. It reuses toWhere, so the shown WHERE
+// is what the query service receives if the query runs. It asks prefilterStage, as
+// ScanFiltered does, whether a rawpred prefilter trims the rows before decode.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -47,9 +47,9 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 }
 
 // ExplainWrite describes, without connecting, the write that a copy into this
-// collection will make. One form is a KV bulk upsert by document ID (reading which keys
-// pre-exist first, to count overwrites). The other is a KV bulk insert that skips
-// existing IDs.
+// collection makes if it runs. One form is a KV bulk upsert by document ID (reading
+// which keys pre-exist first, to count overwrites). The other is a KV bulk insert
+// that skips existing IDs.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	if mode == query.InsertOnly {
 		return query.AccessPlan{Ops: []string{"KV bulk insert: insert new document IDs, skip existing (ErrDocumentExists)"}}
