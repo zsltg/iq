@@ -41,9 +41,10 @@ func TestReportRenderHuman(t *testing.T) {
 	require.Contains(t, out, "+ .email")
 }
 
-// coloredDiffReport builds a report exercising every colored op across a
-// tree-diff layer (stats) and a data layer: an add, a remove, a tree change,
-// plus a data-mode item add and an item change carrying a nested field change.
+// coloredDiffReport builds a report that exercises every colored op across a
+// tree-diff layer (stats) and a data layer. The ops are an add, a remove, a
+// tree change, plus a data-mode item add and an item change that carries a
+// nested field change.
 func coloredDiffReport() report {
 	return report{
 		Data: []diff.ItemDelta{
@@ -61,10 +62,11 @@ func coloredDiffReport() report {
 	}
 }
 
-// TestReportRenderColoredStripsToPlain proves the colored human report reduces
-// byte-for-byte to the uncolored one across every op — an add, a remove, and a
-// change in a tree diff, plus a data-mode item add and an item change with a
-// nested field change — and that color off emits zero escapes.
+// TestReportRenderColoredStripsToPlain proves that the colored human report
+// reduces byte-for-byte to the uncolored one across every op. The ops are an
+// add, a remove, and a change in a tree diff. They also include a data-mode
+// item add and an item change with a nested field change. It also proves
+// that color off emits zero escapes.
 func TestReportRenderColoredStripsToPlain(t *testing.T) {
 	// Not parallel: flips the global color mode.
 	orig := color.NoColor
@@ -88,9 +90,9 @@ func TestReportRenderColoredStripsToPlain(t *testing.T) {
 	require.Equal(t, plain, stripANSI(got), "stripANSI must equal the plain rendering")
 }
 
-// TestReportRenderColoredRoles pins the palette role each op carries: add rows
-// green, remove rows red, the change symbol+path yellow with the old value red,
-// the new value green, and the arrow left plain.
+// TestReportRenderColoredRoles pins the palette role that each op carries. Add
+// rows are green and remove rows are red. The change symbol+path is yellow,
+// with the old value red and the new value green. The arrow stays plain.
 func TestReportRenderColoredRoles(t *testing.T) {
 	// Not parallel: flips the global color mode.
 	orig := color.NoColor
@@ -116,7 +118,8 @@ func TestReportRenderColoredRoles(t *testing.T) {
 		pal.change.Sprintf("%s %s", "~", "mem.used")+": "+pal.remove.Sprint("1")+" → "+pal.add.Sprint("2"),
 		"change line pins yellow path, red old, green new, plain arrow")
 
-	// Data-mode item add colored across the line; the change item header yellow.
+	// Data-mode item add colored across the line. The change item header is
+	// yellow.
 	require.Contains(t, got, pal.add.Sprint(`+ new  {"v":3}`), "data item add line green")
 	require.Contains(t, got, pal.change.Sprint("~ keep"), "data item change header yellow")
 }
@@ -158,8 +161,8 @@ func (w *errAfter) Write(p []byte) (int, error) {
 }
 
 // failAt is an io.Writer that fails on exactly the at-th write (1-indexed) and
-// succeeds on every other. It isolates a single error return: if a helper wrongly
-// swallowed that error and continued, the later writes still succeed, so the
+// succeeds on every other. It isolates a single error return. If a helper wrongly
+// swallowed that error and continued, the later writes still succeed. So the
 // missing propagation surfaces as a nil result.
 type failAt struct{ at, n int }
 
@@ -190,8 +193,8 @@ func TestRenderPropagatesWriteErrors(t *testing.T) {
 		require.Error(t, renderChanges(&errAfter{1}, "t", []diff.Change{change}))
 	})
 	t.Run("renderChanges body error is returned not swallowed", func(t *testing.T) {
-		// Fail only the change-line write (2nd): heading and summary succeed, so a
-		// helper that dropped the renderChangeLine error would return nil.
+		// Fail only the change-line write (2nd). The heading and summary succeed,
+		// so a helper that dropped the renderChangeLine error returns nil.
 		require.Error(t, renderChanges(&failAt{at: 2}, "t", []diff.Change{change}))
 	})
 	t.Run("renderItems change-line error is returned not swallowed", func(t *testing.T) {
@@ -200,8 +203,8 @@ func TestRenderPropagatesWriteErrors(t *testing.T) {
 		require.Error(t, renderItems(&failAt{at: 3}, "t", []diff.ItemDelta{item}))
 	})
 	t.Run("renderItems change-header error is returned not swallowed", func(t *testing.T) {
-		// Fail only the item key line (2nd): the change line and summary succeed, so
-		// a helper that dropped the header error would return nil.
+		// Fail only the item key line (2nd). The change line and summary succeed, so
+		// a helper that dropped the header error returns nil.
 		require.Error(t, renderItems(&failAt{at: 2}, "t", []diff.ItemDelta{item}))
 	})
 	t.Run("renderItems add-row error is returned not swallowed", func(t *testing.T) {

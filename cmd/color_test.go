@@ -15,9 +15,10 @@ import (
 	"github.com/zsltg/iq/internal/render"
 )
 
-// TestValuesFormatterColored proves the --raw rendering colors its composite
-// fallback and non-string scalars but keeps bare strings and nulls uncolored,
-// and that with color on the visible bytes still equal the plain rendering.
+// TestValuesFormatterColored proves that the --raw rendering colors its
+// composite fallback and non-string scalars but keeps bare strings and nulls
+// uncolored. It also proves that with color on, the visible bytes still equal
+// the plain rendering.
 func TestValuesFormatterColored(t *testing.T) {
 	// Not parallel: flips the global color mode.
 	orig := color.NoColor
@@ -50,9 +51,10 @@ func TestValuesFormatterColored(t *testing.T) {
 	}
 }
 
-// TestGronFormatterColored proves both gron variants strip back to their plain,
-// ungron-safe output byte-for-byte and that a *big.Int still renders bare under
-// color (it implements json.Marshaler; the colored encoder must not break that).
+// TestGronFormatterColored proves that both gron variants strip back to their
+// plain, ungron-safe output byte-for-byte. It also proves that a *big.Int still
+// renders bare under color. It implements json.Marshaler, and the colored
+// encoder must not break that.
 func TestGronFormatterColored(t *testing.T) {
 	// Not parallel: flips the global color mode.
 	orig := color.NoColor
@@ -79,9 +81,11 @@ func TestGronFormatterColored(t *testing.T) {
 	}
 }
 
-// TestGronColoredSegmentRoles pins the exact palette roles: the json root and a
-// bare key segment in the Key role, an array index in the Number role (brackets
-// plain), a string rhs in the String role, and grona's leading declaration.
+// TestGronColoredSegmentRoles pins the exact palette roles:
+//   - the json root and a bare key segment in the Key role.
+//   - an array index in the Number role (brackets plain).
+//   - a string rhs in the String role.
+//   - the leading declaration of grona.
 func TestGronColoredSegmentRoles(t *testing.T) {
 	// Not parallel: flips the global color mode.
 	orig := color.NoColor
@@ -133,7 +137,7 @@ func TestWantColor(t *testing.T) {
 			if tt.noColor {
 				t.Setenv("NO_COLOR", "1")
 			} else {
-				// A parent process may export NO_COLOR; clear it for the auto cases.
+				// A parent process can export NO_COLOR. Clear it for the auto cases.
 				t.Setenv("NO_COLOR", "")
 				require.NoError(t, os.Unsetenv("NO_COLOR"))
 			}
@@ -160,7 +164,7 @@ func TestColorYAMLFormatterStreamsDocuments(t *testing.T) {
 	require.NoError(t, f.emit("second"))
 	require.NoError(t, f.flush())
 	plain := stripANSI(buf.String())
-	// The second and later documents carry the `---` separator; the first does not.
+	// The second and later documents carry the `---` separator. The first does not.
 	require.Equal(t, "first\n---\nsecond\n", plain)
 }
 
@@ -178,7 +182,7 @@ func TestColorLine(t *testing.T) {
 	color.NoColor = false
 	t.Cleanup(func() { color.NoColor = orig })
 
-	// A colored op wraps the whole line; an op with no color returns it plain.
+	// A colored op wraps the whole line. An op with no color returns it plain.
 	require.Equal(t, pal.add.Sprint("+ k  1"), colorLine(diff.OpAdd, "+ k  1"))
 	require.Contains(t, colorLine(diff.OpRemove, "- k  1"), "\x1b[")
 	require.Equal(t, "? k  1", colorLine(diff.Op(99), "? k  1"))

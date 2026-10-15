@@ -27,8 +27,8 @@ func seedLs(t *testing.T) {
 }
 
 // TestLsDefaultColumns pins the default layout: marker+handle, driver, then the
-// url — no header, driver no longer verbose-only. One source keeps the tabwriter
-// widths exact.
+// url. There is no header, and the driver is no longer verbose-only. One source
+// keeps the tabwriter widths exact.
 func TestLsDefaultColumns(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("cache", "redis://h:6379/0"))
@@ -40,8 +40,8 @@ func TestLsDefaultColumns(t *testing.T) {
 	require.Equal(t, "* cache  redis  redis://h:6379/0\n", out)
 }
 
-// TestLsVerbose exercises `iq ls -v` through the root tree: -v is now the global
-// --verbose (ls no longer owns a local -v), and it adds the header row plus the
+// TestLsVerbose exercises `iq ls -v` through the root tree. Now -v is the global
+// --verbose (ls no longer owns a local -v). It adds the header row plus the
 // FORMAT and OPTIONS columns on top of the default driver column.
 func TestLsVerbose(t *testing.T) {
 	seedLs(t)
@@ -78,9 +78,9 @@ func TestLsVerboseFileFormat(t *testing.T) {
 	require.Contains(t, out, "?")   // undetectable (missing) dump, without failing the listing
 }
 
-// TestLsColorRoles pins the sq-mirrored color of each column when color is on, so
-// a swapped or dropped role is caught (the plain-text tests can't see color). The
-// exact escape sequences match fatih/color's output for each attribute.
+// TestLsColorRoles pins the sq-mirrored color of each column when color is on. So
+// a swapped or dropped role is caught (the plain-text tests cannot see color).
+// The exact escape sequences match the output of fatih/color for each attribute.
 func TestLsColorRoles(t *testing.T) {
 	// Not parallel: flips the global color mode.
 	orig := color.NoColor
@@ -291,7 +291,7 @@ func TestLsGroupsMarksActiveAndListsAll(t *testing.T) {
 
 	out, err := runCmd(t, newLsCmd(&config{}), "-g")
 	require.NoError(t, err)
-	// Both groups are listed (a broken loop that stopped early would drop one).
+	// Both groups are listed (a broken loop that stopped early drops one).
 	require.Contains(t, out, "prod")
 	require.Contains(t, out, "dev")
 	// The active group is marked, and only it.

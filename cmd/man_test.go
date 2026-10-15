@@ -85,14 +85,15 @@ func TestManPageHasStructure(t *testing.T) {
 	require.Contains(t, out, ".SS iq add")
 	require.Contains(t, out, ".SS iq config set")
 	require.Contains(t, out, ".SS iq man")
-	// The auto-added completion command is documented (the README and docs tell
-	// users to run it); cobra's help command stays omitted.
+	// The auto-added completion command is documented (the
+	// README and docs tell users to run it). The help
+	// command of cobra stays omitted.
 	require.Contains(t, out, ".SS iq completion")
 	require.NotContains(t, out, ".SS iq help")
 }
 
-// TestManOmitsHiddenCompletion pins the Hidden guard on the completion walk: a
-// deliberately hidden completion command (cobra's CompletionOptions
+// TestManOmitsHiddenCompletion pins the Hidden guard on the completion walk. A
+// completion command that is hidden on purpose (cobra's CompletionOptions
 // HiddenDefaultCmd) stays out of the page.
 func TestManOmitsHiddenCompletion(t *testing.T) {
 	root, _ := newRootCmd()
@@ -119,9 +120,9 @@ func TestManPageDeterministic(t *testing.T) {
 	require.Equal(t, a.String(), b.String())
 }
 
-// TestManPageMatchesCommitted is the drift guard: the generated page must equal
-// the committed docs/man/iq.1 byte-for-byte, so a help-text edit or a cobra bump
-// that changes the page fails until it is regenerated.
+// TestManPageMatchesCommitted is the drift guard. The generated page must equal
+// the committed docs/man/iq.1 byte-for-byte. So a help-text edit or a cobra bump
+// that changes the page fails until the page is regenerated.
 func TestManPageMatchesCommitted(t *testing.T) {
 	root, _ := newRootCmd()
 	var b strings.Builder
@@ -135,7 +136,7 @@ func TestManPageMatchesCommitted(t *testing.T) {
 
 // TestManCommandWiring pins the `man` command literal: it takes no positional
 // args, suppresses file completion, and its RunE prints the roff page. A dropped
-// field would make one of these fail.
+// field makes one of these fail.
 func TestManCommandWiring(t *testing.T) {
 	root, _ := newRootCmd()
 	man, _, err := root.Find([]string{"man"})
@@ -176,13 +177,14 @@ func TestManCommandWiring(t *testing.T) {
 	})
 }
 
-// TestManGlobalFlagsSkipsNilAndHidden covers writeManGlobalFlags' guard: a
-// rootFlagGroups-mapped flag that is missing on the root is skipped without a
-// nil dereference, and a mapped flag marked Hidden is omitted from the page.
+// TestManGlobalFlagsSkipsNilAndHidden covers the guard of
+// writeManGlobalFlags. A rootFlagGroups-mapped flag that is missing on the
+// root is skipped without a nil dereference. A mapped flag marked Hidden is
+// omitted from the page.
 func TestManGlobalFlagsSkipsNilAndHidden(t *testing.T) {
 	t.Run("missing mapped flag is skipped, not dereferenced", func(t *testing.T) {
 		// A bare root declares none of the mapped flags, so every rootFlag lookup
-		// returns nil; the guard must skip them all without panicking.
+		// returns nil. The guard must skip them all without panicking.
 		root := &cobra.Command{Use: "iq"}
 		var b strings.Builder
 		require.NotPanics(t, func() { writeManGlobalFlags(&b, root) })
@@ -207,7 +209,7 @@ func TestManGlobalFlagsSkipsNilAndHidden(t *testing.T) {
 func TestRootFlagPrefersPersistent(t *testing.T) {
 	root := &cobra.Command{Use: "iq"}
 	root.PersistentFlags().String("ponly", "", "persistent only")
-	// The flag is not in the local set, so a broken lookup would return nil.
+	// The flag is not in the local set, so a broken lookup returns nil.
 	require.Nil(t, root.Flags().Lookup("ponly"))
 	f := rootFlag(root, "ponly")
 	require.NotNil(t, f, "rootFlag did not return the persistent flag")

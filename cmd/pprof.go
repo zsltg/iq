@@ -11,15 +11,15 @@ import (
 	"strings"
 )
 
-// pprofModes are the profiles --debug.pprof can capture, mirroring sq's
-// cli/pprofile mode set but implemented with the standard library
-// (runtime/pprof and runtime/trace) so no dependency is added.
+// pprofModes are the profiles that --debug.pprof can capture. They
+// mirror the mode set of cli/pprofile in sq, but use the standard
+// library (runtime/pprof and runtime/trace), so no dependency is added.
 var pprofModes = []string{"cpu", "mem", "block", "mutex", "goroutine", "thread", "trace"}
 
-// startProfile begins the profile named by mode, writing to a file in the
-// current directory, and returns a stop func that finalizes and closes it while
-// reporting the written path to msg. An empty mode is a no-op (nil stop, no
-// error); an unknown mode errors before any file is created so a typo fails fast.
+// startProfile begins the profile named by mode, writing to a file in the current
+// directory. It returns a stop func that finalizes and closes the file while it
+// reports the written path to msg. An empty mode is a no-op (nil stop, no error).
+// An unknown mode errors before any file is created, so a typo fails fast.
 func startProfile(mode string, msg io.Writer) (func(), error) {
 	switch mode {
 	case "":
@@ -45,8 +45,9 @@ func startProfile(mode string, msg io.Writer) (func(), error) {
 		}
 		return func() { trace.Stop(); finishProfile(f, mode, msg) }, nil
 	case "mem", "block", "mutex", "goroutine", "thread":
-		// These profiles are sampled over the run and written at stop. block and
-		// mutex must be armed up front; heap is dumped after a GC for accuracy.
+		// These profiles are sampled over the run and written at stop. The block
+		// and mutex profiles must be armed up front. The heap profile is dumped
+		// after a GC for accuracy.
 		switch mode {
 		case "block":
 			runtime.SetBlockProfileRate(1)
@@ -58,8 +59,9 @@ func startProfile(mode string, msg io.Writer) (func(), error) {
 			return nil, err
 		}
 		return func() {
-			// GC before dumping so the heap profile reflects live memory; it is a
-			// harmless no-op cost for the other sampled profiles.
+			// GC before dumping so the heap profile reflects live memory. For
+			// the other sampled profiles, the GC does nothing useful and does
+			// no harm.
 			runtime.GC()
 			if p := pprof.Lookup(lookupName(mode)); p != nil {
 				_ = p.WriteTo(f, 0)

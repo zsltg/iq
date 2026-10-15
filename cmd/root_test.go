@@ -33,7 +33,7 @@ func TestRootTimeoutDefault(t *testing.T) {
 }
 
 // TestRootRejectsBadDiagnosticsFlags drives a bad value for each validated
-// diagnostics flag through the root PreRun, pinning that each failure aborts the
+// diagnostics flag through the root PreRun. It pins that each failure aborts the
 // invocation (the invalid modes error before any file is created).
 func TestRootRejectsBadDiagnosticsFlags(t *testing.T) {
 	cases := [][]string{
@@ -55,11 +55,11 @@ func TestRootRejectsBadDiagnosticsFlags(t *testing.T) {
 
 // TestCombineWriteFlagsAreExplicit pins that a combine never writes by accident.
 // Its results come out of one program over a null input and carry no keys, so a
-// destination needs a key expression; when combine was a mode of the root command
-// the write flags parsed happily and were then silently dropped. Now --insert
-// demands a key, a key flag without --insert is refused, --typed does not exist
-// here at all, and a plain move — the root action that owns these flags — still
-// dispatches.
+// destination needs a key expression. When combine was a mode of the root
+// command, the write flags parsed happily and were then silently dropped. Now
+// --insert demands a key, a key flag without --insert is refused, and --typed
+// does not exist here at all. A plain move, the root action that owns these
+// flags, still dispatches.
 func TestCombineWriteFlagsAreExplicit(t *testing.T) {
 	t.Setenv("IQ_CONFIG", filepath.Join(t.TempDir(), "absent.toml"))
 	tests := []struct {
@@ -84,8 +84,8 @@ func TestCombineWriteFlagsAreExplicit(t *testing.T) {
 }
 
 // TestRootTakesNoCombineFlags pins that the retired --from/--combine spellings
-// are gone outright rather than quietly accepted: the cross-source action is
-// `iq combine` now, and a stale script must fail loudly instead of running a
+// are gone outright and not quietly accepted. The cross-source action is `iq
+// combine` now. A stale script must fail loudly instead of running a
 // single-source query that ignores the flags.
 func TestRootTakesNoCombineFlags(t *testing.T) {
 	t.Setenv("IQ_CONFIG", filepath.Join(t.TempDir(), "absent.toml"))
@@ -122,7 +122,7 @@ func TestRootVerboseShorthand(t *testing.T) {
 }
 
 // TestRootVersionFlagIsBare pins the scriptable contract: --version prints the
-// version alone, with no name or "version" prefix; `iq version` is the rich form.
+// version alone, with no name or "version" prefix. `iq version` is the rich form.
 func TestRootVersionFlagIsBare(t *testing.T) {
 	root, _ := newRootCmd()
 	out, err := runCmd(t, root, "--version")
@@ -190,10 +190,11 @@ func TestOpenOutputFile(t *testing.T) {
 	})
 }
 
-// TestRootOutputRedirectsToFile pins that --output redirects a command's stdout
-// to the file (leaving the captured out/err buffer empty of the payload) and,
-// because a regular file is not a terminal, turns color off. version runs the
-// root PreRun without a backend, so it isolates the redirect.
+// TestRootOutputRedirectsToFile pins that --output redirects the stdout of a
+// command to the file, which leaves the captured out/err buffer empty of the
+// payload. It also pins that color turns off, because a regular file is not a
+// terminal. The version command runs the root PreRun without a backend, so it
+// isolates the redirect.
 func TestRootOutputRedirectsToFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "out.txt")
 	root, cfg := newRootCmd()

@@ -15,7 +15,7 @@ import (
 )
 
 func TestKeyringStatusCell(t *testing.T) {
-	// Present is green, missing is red — swapping them (a negated condition) must
+	// Present is green, missing is red. Swapping them (a negated condition) must
 	// change the rendered color, so the two cells never share a palette entry.
 	require.Equal(t, pal.add, keyringStatusCell("present").c)
 	require.Equal(t, pal.remove, keyringStatusCell("missing").c)
@@ -218,7 +218,7 @@ func TestConfigKeyringMigrate(t *testing.T) {
 		require.Equal(t, "pb", fk.m["b"])
 		_, ok := fk.m["nopw"]
 		require.False(t, ok)
-		// Every migrated source is reported (a short-circuited loop would drop one).
+		// Every migrated source is reported (a short-circuited loop drops one).
 		require.Contains(t, out, "migrated a")
 		require.Contains(t, out, "migrated b")
 	})
@@ -302,8 +302,8 @@ func TestConfigKeyringPrune(t *testing.T) {
 	configEnv(t)
 	c := newSeed()
 	fk := useFakeKeyring(t)
-	// A non-keyring source that nonetheless has a stray keyring entry (e.g. left
-	// by a crash between Set and Save) is the one prunable case.
+	// A non-keyring source that still has a stray keyring entry (for example
+	// left by a crash between Set and Save) is the one prunable case.
 	seedKeyringSource(t, c, fk, "stale", "redis://h:6379/0", false, "orphan")
 	seedKeyringSource(t, c, fk, "live", "redis://u@h:6379/1", true, "secret")
 	seedConfig(t, c)

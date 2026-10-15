@@ -12,10 +12,11 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// lifecycleOp captures the difference between the two lifecycle verbs so clear
-// and drop share one runner. supported reports whether an opened store has the
-// capability (Clearer or Dropper). run performs it. describe returns the static
-// --explain plan and whether the backend supports the op at all.
+// lifecycleOp captures the difference between the two lifecycle verbs, so clear
+// and drop share one runner. The supported field reports whether an opened
+// store has the capability (Clearer or Dropper). The run field performs it. The
+// describe field returns the static --explain plan. It also returns whether the
+// backend supports the op at all.
 type lifecycleOp struct {
 	name      string
 	past      string // past tense of name, for the report line
@@ -50,11 +51,11 @@ var dropOp = lifecycleOp{
 	},
 }
 
-// deleteOp reuses the lifecycleOp shape only for the parts the delete command
-// shares with clear/drop: the capability probe (Deleter) and the --explain
-// describer. Its run field stays nil deliberately — delete carries a key list and
-// returns a DeleteStat, so applyDataDelete calls Deleter.Delete directly rather
-// than through the operand-less lifecycleOp.run.
+// deleteOp reuses the lifecycleOp shape only for the parts that the delete
+// command shares with clear/drop. These are the capability probe (Deleter) and
+// the --explain describer. Its run field stays nil on purpose. delete carries a
+// key list and returns a DeleteStat. So applyDataDelete calls Deleter.Delete
+// directly and not through the operand-less lifecycleOp.run.
 var deleteOp = lifecycleOp{
 	name:      "delete",
 	supported: func(st store) bool { _, ok := st.(query.Deleter); return ok },
@@ -72,7 +73,7 @@ func newDataClearCmd(cfg *config, df *dataFlags) *cobra.Command {
 	var force bool
 	c := &cobra.Command{
 		Use: "clear <target>...",
-		// Every positional is a target, so the helper completes each one; without
+		// Every positional is a target, so the helper completes each one. Without
 		// it the shell offers filenames on a command that destroys data.
 		ValidArgsFunction: completeSourceHandles,
 		Short:             "Empty one or more containers (keep them)",
@@ -92,8 +93,8 @@ func newDataClearCmd(cfg *config, df *dataFlags) *cobra.Command {
 }
 
 // newDataDropCmd builds `iq data drop <target>...`: remove one or more containers.
-// It is offered only where a backend can remove its container — MongoDB drops a
-// collection; Redis, whose DB index is not removable, is rejected via the absent
+// It is offered only where a backend can remove its container. MongoDB drops a
+// collection. Redis, whose DB index is not removable, is rejected via the absent
 // Dropper capability.
 func newDataDropCmd(cfg *config, df *dataFlags) *cobra.Command {
 	var force bool
@@ -118,14 +119,15 @@ func newDataDropCmd(cfg *config, df *dataFlags) *cobra.Command {
 }
 
 // newDataDeleteCmd builds `iq data delete <target> <key>...`: remove a named set of
-// keys from a container, keeping the container. Offered only where a backend removes
-// a record by its canonical key (the Deleter capability); a backend without one (a
-// dump file, an InfluxDB point with no row identity) is rejected. Unlike clear/drop,
-// it does not prompt: the explicit key list the user typed is its own confirmation.
+// keys from a container, and keep the container. It is offered only where a backend
+// removes a record by its canonical key (the Deleter capability). A backend without
+// one (a dump file, an InfluxDB point with no row identity) is rejected. Unlike
+// clear/drop, it does not prompt: the explicit key list that the user typed is its
+// own confirmation.
 func newDataDeleteCmd(cfg *config, df *dataFlags) *cobra.Command {
 	c := &cobra.Command{
 		Use: "delete <target> <key>...",
-		// Only the first positional is a source; the keys that follow are opaque
+		// Only the first positional is a source. The keys that follow are opaque
 		// values, so they get no candidates and no filename fallback.
 		ValidArgsFunction: firstArgOnly(completeSourceHandles),
 		Short:             "Remove specific keys from a container (keep the container)",
@@ -178,9 +180,10 @@ func runDataDelete(cmd *cobra.Command, cfg *config, df *dataFlags, arg string, r
 	return applyDataDelete(cmd, ctx, t, keys, df.dryRun)
 }
 
-// dedupeKeys drops repeated keys, preserving first-seen order so each key is deleted
-// once and the DeleteStat's Deleted+Missing==len(keys) invariant holds. An empty key
-// is rejected at entry — no backend has an empty canonical key, so it is bad input.
+// dedupeKeys drops repeated keys and preserves first-seen order, so each key is
+// deleted once and the DeleteStat invariant Deleted+Missing==len(keys) holds. An
+// empty key is rejected at entry. No backend has an empty canonical key, so it is
+// bad input.
 func dedupeKeys(raw []string) ([]string, error) {
 	seen := make(map[string]struct{}, len(raw))
 	keys := make([]string, 0, len(raw))
@@ -279,10 +282,11 @@ func applyLifecycle(cmd *cobra.Command, ctx context.Context, op lifecycleOp, t e
 	return nil
 }
 
-// applyLifecycleOp opens the target, checks the capability, then reports (dry) or
-// performs the op after confirm returns nil, returning the outcome line. It is
-// the one implementation both `iq data clear`/`drop` and the MCP iq_data_clear /
-// iq_data_drop tools drive; confirm is never called on a dry run.
+// applyLifecycleOp opens the target, checks the capability, then reports (dry)
+// or performs the op after confirm returns nil. It returns the outcome line. It
+// is the one implementation that both `iq data clear`/`drop` and the MCP
+// iq_data_clear / iq_data_drop tools drive. confirm is never called on a dry
+// run.
 func applyLifecycleOp(ctx context.Context, op lifecycleOp, t endpoint, dry bool, confirm func(action string) error) (string, error) {
 	st, err := openStore(ctx, &config{url: t.url, address: t.address})
 	if err != nil {
@@ -306,7 +310,7 @@ func applyLifecycleOp(ctx context.Context, op lifecycleOp, t endpoint, dry bool,
 }
 
 // affectedSuffix appends an approximate item count to a dry-run line when the store
-// can estimate one cheaply, so a dry run hints at the blast radius without a scan.
+// can estimate one cheaply. So a dry run hints at the blast radius without a scan.
 func affectedSuffix(ctx context.Context, st store) string {
 	est, ok := st.(query.Estimator)
 	if !ok {
@@ -320,8 +324,8 @@ func affectedSuffix(ctx context.Context, st store) string {
 }
 
 // printLifecyclePlan renders the static --explain output for one target: the op,
-// the target, and the driver's describer lines (which state "unsupported" for a
-// backend that cannot perform the op).
+// the target, and the describer lines of the driver. The describer lines state
+// "unsupported" for a backend that cannot perform the op.
 func printLifecyclePlan(cmd *cobra.Command, op lifecycleOp, t endpoint) {
 	var b strings.Builder
 	b.WriteString(planHeader(op.name+" plan") + "\n")

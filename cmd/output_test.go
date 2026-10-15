@@ -295,7 +295,7 @@ func TestFormatterOutput(t *testing.T) {
 
 func TestFlushCompletesDocument(t *testing.T) {
 	t.Parallel()
-	// Without flush, jsona and yaml leave the document unterminated; flush is
+	// Without flush, jsona and yaml leave the document unterminated. flush is
 	// what closes them, so callers must run it after the engine finishes.
 	t.Run("jsona is unterminated before flush", func(t *testing.T) {
 		t.Parallel()
@@ -308,7 +308,7 @@ func TestFlushCompletesDocument(t *testing.T) {
 	})
 	t.Run("yaml flush closes the encoder cleanly", func(t *testing.T) {
 		t.Parallel()
-		// yaml.v3 writes each document on emit, so flush adds no bytes; it must
+		// yaml.v3 writes each document on emit, so flush adds no bytes. It must
 		// still close the encoder without error to release it.
 		var b bytes.Buffer
 		fm := newFormatter(formatYAML, &b, false)
@@ -356,10 +356,11 @@ func (w *sentinelFailAt) Write(p []byte) (int, error) {
 func TestGronFormatterPropagatesWriteErrors(t *testing.T) {
 	t.Parallel()
 	// Each gron statement is one Write, so failing the at-th write isolates a
-	// single guard: if any error return were dropped, the later writes still
-	// succeed and the missing propagation surfaces as a nil result. The value/at
-	// pairs cover every write-error guard in emit, walk, and line, and ErrorIs
-	// asserts the cause survives the %w wrap (not just the message).
+	// single guard. If any error return were dropped, the later writes still
+	// succeed. Then the missing propagation surfaces as a nil result. The
+	// value/at pairs cover every write-error guard in emit, walk, and line.
+	// ErrorIs asserts that the cause survives the %w wrap (not only the
+	// message).
 	tests := []struct {
 		name string
 		fmt  outputFormat
@@ -386,9 +387,10 @@ func TestGronFormatterPropagatesWriteErrors(t *testing.T) {
 
 func TestGronFormatterPropagatesEncodeError(t *testing.T) {
 	t.Parallel()
-	// A value that cannot JSON-encode (a channel) must surface the compact
-	// encoder's error rather than being swallowed on the walk's default path, and
-	// keep the encoder's cause reachable through the %w wrap (not just the message).
+	// A value that cannot JSON-encode (a channel) must surface the error of the
+	// compact encoder. The default path of the walk must not swallow it. The error
+	// must also keep the cause of the encoder reachable through the %w wrap (not
+	// only the message).
 	for _, f := range []outputFormat{formatGron, formatGronArray} {
 		t.Run(string(f), func(t *testing.T) {
 			t.Parallel()
@@ -405,8 +407,9 @@ func TestGronFormatterPropagatesEncodeError(t *testing.T) {
 // command, whose PreRun writes the process-wide color.NoColor, and parallel
 // formatter tests read that variable. The race detector reports the overlap.
 func TestRootRejectsMutuallyExclusiveFormatFlags(t *testing.T) {
-	// Cobra's MarkFlagsMutuallyExclusive rejects conflicting format flags during
-	// Execute, before any store I/O; the new gron/grona flags join that group.
+	// MarkFlagsMutuallyExclusive of cobra rejects conflicting format flags
+	// during Execute, before any store I/O. The new gron/grona flags join that
+	// group.
 	tests := []struct {
 		name string
 		args []string
@@ -566,9 +569,9 @@ func TestFormatterWriteErrors(t *testing.T) {
 	}
 }
 
-// TestYAMLFormatterFlushError checks the encoder close error is reported. yaml.v3
-// writes each document during Encode, so a failing destination fails the emit
-// first, and the close then reports the same write error.
+// TestYAMLFormatterFlushError checks that the encoder close error is reported.
+// yaml.v3 writes each document during Encode, so a failing destination fails the
+// emit first. The close then reports the same write error.
 func TestYAMLFormatterFlushError(t *testing.T) {
 	withColor(t, false)
 	f := newFormatter(formatYAML, &errAfter{0}, false)
@@ -588,9 +591,10 @@ func TestYAMLFormatterEmitRejectsUnencodableValue(t *testing.T) {
 	require.Empty(t, buf.String())
 }
 
-// TestYAMLFormatterEmitWrapsTheWriteError checks that a failed write stays wrapped
-// with %w under the "encode result" prefix. yaml.v3 flattens the write error into a
-// string, so the sentinel is not reachable; the wrapped yaml error is.
+// TestYAMLFormatterEmitWrapsTheWriteError checks that a failed write
+// stays wrapped with %w under the "encode result" prefix. yaml.v3
+// flattens the write error into a string. So the sentinel is not
+// reachable. The wrapped yaml error is reachable.
 func TestYAMLFormatterEmitWrapsTheWriteError(t *testing.T) {
 	f := &yamlFormatter{enc: yaml.NewEncoder(&sentinelFailAt{at: 1})}
 

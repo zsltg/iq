@@ -22,8 +22,8 @@ import (
 )
 
 // config holds the per-invocation settings. url, source, and handle are not
-// flags: they come from the selected source (--src or the active source) before
-// the store opens. source and handle carry the stored source so a command can
+// flags. They come from the selected source (--src or the active source) before
+// the store opens. source and handle carry the stored source. So a command can
 // render its location with --reveal/--expand.
 type config struct {
 	src        string
@@ -32,9 +32,9 @@ type config struct {
 	source     iqconfig.Source
 	handle     string
 	// address is the opaque dotted suffix on a source reference (shop.orders ->
-	// address "orders"), "" when absent. The core never interprets it; the driver
-	// does (MongoDB treats it as a collection). It overrides the source URL's own
-	// default (mongo's ?collection=).
+	// address "orders"), "" when absent. The core never interprets it. The driver
+	// does (MongoDB treats it as a collection). It overrides the own default of
+	// the source URL (the ?collection= of mongo).
 	address   string
 	timeout   time.Duration
 	unbounded bool
@@ -49,7 +49,7 @@ type config struct {
 	gron      bool
 	gronArray bool
 	compact   bool
-	// Write/movement flags (runMove): --insert names a destination source handle;
+	// Write/movement flags (runMove): --insert names a destination source handle.
 	// --typed emits {key,type,value} records instead of the jq value stream. The rest
 	// mirror the retired `iq data copy`: key derivation, write mode, dry-run, and the
 	// import-side --from-format hint (needed for YAML, which is not content-sniffable).
@@ -67,8 +67,9 @@ type config struct {
 	// stdin marks that the source is piped stdin (no --src, stdin not a terminal),
 	// buffered once and served through the drivers/file decoders.
 	stdin bool
-	// decimal is the raw --format.decimal flag; decimalMode is it resolved once in
-	// PersistentPreRunE and passed as a plain type into the driver adapters.
+	// decimal is the raw --format.decimal flag. decimalMode is the same value,
+	// resolved once in PersistentPreRunE and passed as a plain type into the
+	// driver adapters.
 	decimal      string
 	decimalMode  numfmt.DecimalMode
 	monochrome   bool
@@ -78,9 +79,9 @@ type config struct {
 	noCacheIndex bool
 	reveal       bool
 	expand       bool
-	// output, when non-empty, redirects the command's stdout to this file (sq's
-	// -o); progress and errors still go to stderr. outClose closes that file in
-	// Execute's finalize and is nil when --output is unset.
+	// output, when non-empty, redirects the stdout of the command to this file
+	// (the -o of sq). Progress and errors still go to stderr. outClose closes
+	// that file in the finalize of Execute and is nil when --output is unset.
 	output   string
 	outClose func() error
 	// Diagnostics flags, adopted from sq: a global verbose stderr mode, a
@@ -95,18 +96,19 @@ type config struct {
 	errorTextVerbose bool
 	pprofMode        string
 	// Finalize handles resolved once in PersistentPreRunE and consumed by
-	// Execute after the command returns. logger is never nil (a discard logger
-	// when every sink is off); logClose and pprofStop are nil when unused.
+	// Execute after the command returns. The logger field is never nil (a
+	// discard logger when every sink is off). logClose and pprofStop are
+	// nil when unused.
 	logger    *slog.Logger
 	logClose  func() error
 	pprofStop func()
 	// logStructured is true when the structured file/stream sink is active
-	// (logOptions.fileActive). It gates the INFO "query plan" record, so a bare
+	// (logOptions.fileActive). It gates the INFO "query plan" record. So a bare
 	// --verbose run, whose tinted sink already renders the pretty plan, does
 	// not also emit the structured record.
 	logStructured bool
 	// trace, when non-nil, is where a driver writes its live command trace (set
-	// to stderr for the duration of a --verbose run); nil disables tracing.
+	// to stderr for the duration of a --verbose run). nil disables tracing.
 	trace io.Writer
 }
 
@@ -171,7 +173,7 @@ const rootExample = "  # Register a Redis source (active) and a Mongo source who
 // newRootCmd builds the root command and its subcommands. The default action is
 // the jq query: a bare `iq '<filter>'` runs the filter against the active source,
 // whose top-level paths name the keys to fetch. The `add`/`ls`/`rm`/`src`/`group`
-// subcommands manage saved sources; `exec` forwards a command verbatim.
+// subcommands manage saved sources. `exec` forwards a command verbatim.
 func newRootCmd() (*cobra.Command, *config) {
 	cfg := &config{}
 	root := &cobra.Command{
@@ -184,11 +186,11 @@ func newRootCmd() (*cobra.Command, *config) {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// PersistentPreRunE runs for the root action and every subcommand (none
-		// override it), so the color decision and the diagnostics setup (logging,
+		// override it). So the color decision and the diagnostics setup (logging,
 		// error format, profiling) are made once, in one place, for the whole
 		// invocation. All values are validated before any resource opens, so a bad
-		// flag fails fast; resources that do open are stored on cfg immediately so
-		// Execute's finalize closes them on every path.
+		// flag fails fast. Resources that do open are stored on cfg immediately,
+		// so the finalize of Execute closes them on every path.
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return preRun(cmd, cfg)
 		},
@@ -196,9 +198,9 @@ func newRootCmd() (*cobra.Command, *config) {
 			return runRoot(cmd, cfg, args)
 		},
 	}
-	// --version prints the bare version for scripts; `iq version` is the human form.
-	// The flag is declared here (instead of cobra's lazy default) so its help text
-	// says that, rather than the generic "version for iq".
+	// --version prints the bare version for scripts. `iq version` is the human form.
+	// The flag is declared here (instead of the lazy default of cobra), so its help
+	// text says that and not the generic "version for iq".
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.Flags().Bool("version", false, "print the bare version and exit (for scripts; iq version is the human form)")
 	addRootFlags(root, cfg)
@@ -263,9 +265,9 @@ func preRun(cmd *cobra.Command, cfg *config) error {
 }
 
 // applyConfigPath makes --config the config path for the whole run by setting
-// IQ_CONFIG, the single mechanism every Load/Save already honors (and a child
-// editor inherits it). Precedence: flag > env > default. An empty path changes
-// nothing.
+// IQ_CONFIG. That is the single mechanism that every Load/Save already honors
+// (and a child editor inherits it). Precedence: flag > env > default. An empty
+// path changes nothing.
 func applyConfigPath(path string) error {
 	if path == "" {
 		return nil
@@ -277,8 +279,8 @@ func applyConfigPath(path string) error {
 }
 
 // warnOpenConfig warns, and continues, when the config file holds an inline
-// password that other users can read. stderr only, so stdout stays clean for a
-// pipe or for the MCP protocol.
+// password that other users can read. It writes to stderr only, so stdout
+// stays clean for a pipe or for the MCP protocol.
 func warnOpenConfig(cmd *cobra.Command) {
 	if msg := iqconfig.ModeWarning(); msg != "" {
 		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), msg)
@@ -295,10 +297,10 @@ func resolveColorFlags(cmd *cobra.Command, cfg *config) error {
 	return nil
 }
 
-// redirectOutput redirects every command's stdout to the --output file. It
-// resolves color again against the file so a regular file drops color (unless -C
-// forces it), matching a pipe; Execute closes the file on every exit path. It
-// does nothing when --output is not set.
+// redirectOutput redirects the stdout of every command to the --output file. It
+// resolves color again against the file, so a regular file drops color (unless
+// -C forces it), which matches a pipe. Execute closes the file on every exit
+// path. It does nothing when --output is not set.
 func redirectOutput(cmd *cobra.Command, cfg *config) error {
 	if cfg.output == "" {
 		return nil
@@ -357,10 +359,10 @@ func startDiagnostics(cmd *cobra.Command, cfg *config) error {
 
 // runRoot is the default action: a data move, the help text, or a jq query.
 func runRoot(cmd *cobra.Command, cfg *config, args []string) error {
-	// --insert/--typed turn the command into a data move: the source's items
-	// are transformed by the optional positional filter and written to a
-	// destination source (--insert) or emitted as a typed dump (--typed). A
-	// move needs no filter, so it runs even with no positional.
+	// --insert/--typed turn the command into a data move. The optional
+	// positional filter transforms the items of the source. They are written
+	// to a destination source (--insert) or emitted as a typed dump
+	// (--typed). A move needs no filter, so it runs even with no positional.
 	if cfg.insert != "" || cfg.typed {
 		filter := ""
 		if len(args) > 0 {
@@ -385,22 +387,24 @@ func addRootFlags(root *cobra.Command, cfg *config) {
 	root.PersistentFlags().BoolVarP(&cfg.monochrome, "monochrome", "M", false, "disable colored output (also honored via NO_COLOR); color is on by default only when writing to a terminal")
 	root.PersistentFlags().BoolVarP(&cfg.forceColor, "color", "C", false, "force colored output even when the destination is not a terminal (e.g. a pager)")
 	root.PersistentFlags().BoolVar(&cfg.noProgress, "no-progress", false, "disable the scan progress spinner (shown on stderr for long scans when it is a terminal)")
-	// --no-cache bypasses the file:// dump decode cache for one run; it is
+	// --no-cache bypasses the file:// dump decode cache for one run. It is
 	// persistable (`iq config set no-cache true`) to turn caching off by default.
 	root.PersistentFlags().BoolVar(&cfg.noCache, "no-cache", false, "disable the file:// dump decode cache (on by default for local dump files above 4 MiB; a cached decode skips re-parsing the dump on later queries)")
 	// --no-cache-index keeps the flat decode cache but skips its per-page Bloom
-	// index — the escape hatch for a very large keyspace where the index build
-	// memory is unwelcome; persistable via `iq config set no-cache-index true`.
+	// index. It is the escape hatch for a very large keyspace where the memory
+	// for the index build is unwelcome. It is persistable via `iq config set
+	// no-cache-index true`.
 	root.PersistentFlags().BoolVar(&cfg.noCacheIndex, "no-cache-index", false, "skip the file:// cache's per-page key index (still caches the decode; a bounded key read streams the whole cache instead of decoding only candidate pages)")
-	// --output (sq's -o) is persistent so it redirects every command's stdout to a
-	// file; progress and errors stay on stderr, and color turns off for the file.
+	// --output (the -o of sq) is persistent, so it redirects the stdout of every
+	// command to a file. Progress and errors stay on stderr, and color turns off
+	// for the file.
 	root.PersistentFlags().StringVarP(&cfg.output, "output", "o", "", "write output to <file> instead of stdout (color off unless -C; progress and errors still go to stderr)")
-	// --format.decimal is persistent so it reaches every store the drivers open; it
-	// is resolved to cfg.decimalMode in PersistentPreRunE and honored at
-	// normalization time, so it changes what the filter computes on, not just the print.
+	// --format.decimal is persistent, so it reaches every store that the drivers open.
+	// It is resolved to cfg.decimalMode in PersistentPreRunE and honored at
+	// normalization time. So it changes what the filter computes on, not only the print.
 	root.PersistentFlags().StringVar(&cfg.decimal, "format.decimal", "auto", "how to present a non-integer decimal to the filter: auto (Mongo Decimal128 exact string, Redis fractional number), number (bare, may lose precision), or string (exact, quoted; use tonumber)")
-	// Diagnostics flags (sq-compatible). -v is global; the listing commands reuse
-	// it for extra columns. --log* also honor IQ_LOG/IQ_LOG_FILE/IQ_LOG_LEVEL/IQ_LOG_FORMAT.
+	// Diagnostics flags (sq-compatible). -v is global, and the listing commands reuse it for
+	// extra columns. --log* also honor IQ_LOG/IQ_LOG_FILE/IQ_LOG_LEVEL/IQ_LOG_FORMAT.
 	root.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "verbose output: for a query, the formatted plan and a live backend trace on stderr (disables the progress spinner); for a listing, extra columns")
 	root.PersistentFlags().BoolVar(&cfg.logEnable, "log", false, "enable logging to a file (also via IQ_LOG)")
 	root.PersistentFlags().StringVar(&cfg.logFile, "log.file", "", "log file path; empty disables logging (default <user cache dir>/iq/iq.log)")
@@ -415,9 +419,9 @@ func addRootFlags(root *cobra.Command, cfg *config) {
 	root.Flags().BoolVar(&cfg.noCompile, "no-compile", false, "disable predicate pushdown; run the full .[]|select(...) filter client-side (pushdown is on by default where the backend supports it, see iq --explain; results are unchanged either way)")
 	root.Flags().BoolVar(&cfg.explain, "explain", false, "print the formatted query plan (pretty jq, nested filters, and the backend calls) and exit without connecting or executing")
 	addRenderFlags(root, cfg)
-	// Write/movement flags for the default action: --insert redirects results into a
-	// destination source (sq's --insert); --typed emits {key,type,value} records — a
-	// re-importable dump. The rest mirror the retired `iq data copy`.
+	// Write/movement flags for the default action. --insert redirects results into a
+	// destination source (the --insert of sq). --typed emits {key,type,value}
+	// records, a re-importable dump. The rest mirror the retired `iq data copy`.
 	root.Flags().StringVar(&cfg.insert, "insert", "", "write each item into this destination `source` (copy/restore/import) instead of rendering")
 	root.Flags().BoolVar(&cfg.typed, "typed", false, "emit typed {key,type,value} records, a re-importable dump (needed for Redis; Mongo's plain output already restores)")
 	root.Flags().StringVar(&cfg.moveKey, "key", "", "jq expression yielding each written item's key (--insert/--typed)")
@@ -433,9 +437,9 @@ func addRootFlags(root *cobra.Command, cfg *config) {
 
 // registerRootCompletions registers the value completion of the root flags.
 func registerRootCompletions(root *cobra.Command) {
-	// RegisterFlagCompletionFunc errors only on an unknown flag; every name below is
-	// registered above, so the error cannot fire and swallowing it keeps setup
-	// panic-free. --src and --insert both name a saved source; the rest take a
+	// RegisterFlagCompletionFunc errors only on an unknown flag. Every name below is
+	// registered above, so the error cannot fire, and swallowing it keeps setup
+	// panic-free. --src and --insert both name a saved source. The rest take a
 	// closed set of values, each mirroring the validator that rejects the others.
 	_ = root.RegisterFlagCompletionFunc("src", completeSourceHandles)
 	_ = root.RegisterFlagCompletionFunc("insert", completeSourceHandles)
@@ -460,9 +464,9 @@ func validateErrorFormat(f string) error {
 }
 
 // openOutputFile opens the --output target for writing, truncating an existing
-// file (sq's -o is a fresh write, not an append). A missing parent directory is
-// an error; the flag does not create directories. The error is wrapped so it
-// anchors at the CLI, not deep in os.
+// file (the -o of sq is a fresh write, not an append). A missing parent
+// directory is an error, because the flag does not create directories. The
+// error is wrapped, so it anchors at the CLI, not deep in os.
 func openOutputFile(path string) (*os.File, error) {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644) //nolint:gosec // G302: the --output file uses conventional 0644; the user names the path.
 	if err != nil {
@@ -481,10 +485,10 @@ func logFailure(cfg *config, err error) {
 	}
 }
 
-// Execute runs the CLI. It is the composition root: it builds a signal-aware
-// context, runs the root command, finalizes the diagnostics resources opened in
-// PersistentPreRunE (on success and error), and maps any error to a rendered
-// stderr message and a non-zero exit code.
+// Execute runs the CLI. It is the composition root. It builds a signal-aware
+// context, runs the root command, and finalizes the diagnostics resources that
+// PersistentPreRunE opened (on success and error). It maps any error to a
+// rendered stderr message and a non-zero exit code.
 func Execute() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -500,8 +504,8 @@ func Execute() {
 	if cfg.logClose != nil {
 		_ = cfg.logClose()
 	}
-	// Close the --output file after the command has returned; results are already
-	// on disk (os.File writes are unbuffered), so this just releases the fd.
+	// Close the --output file after the command has returned. Results are already
+	// on disk (os.File writes are unbuffered), so this only releases the fd.
 	if cfg.outClose != nil {
 		_ = cfg.outClose()
 	}

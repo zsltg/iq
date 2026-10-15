@@ -12,10 +12,10 @@ import (
 
 // sourceSpec is a source paired with the jq that reduces it. The address half
 // names a saved source (with an optional dotted keyspace) and resolves to a
-// connectable endpoint. filter is the expression run against it, "" meaning the
-// whole keyspace. Every command that reads several sources shares this shape,
-// so `handle`, `handle.keyspace` and `handle=<jq>` mean the same wherever they
-// appear.
+// connectable endpoint. The filter field is the expression run against it,
+// where "" means the whole keyspace. Every command that reads several sources
+// shares this shape. So `handle`, `handle.keyspace` and `handle=<jq>` mean the
+// same wherever they appear.
 type sourceSpec struct {
 	endpoint
 	filter string
@@ -53,18 +53,18 @@ func (s sourceSpec) runConfig(cfg *config) *config {
 	}
 }
 
-// runOptions builds the engine options a spec read runs under, so pushdown and
-// the structured logger reach the engine the same way they do on a plain query.
+// runOptions builds the engine options that a spec read runs under. So pushdown
+// and the structured logger reach the engine the same way as on a plain query.
 func (cfg *config) runOptions() query.RunOptions {
 	return query.RunOptions{Compile: !cfg.noCompile, Logger: cfg.logger}
 }
 
-// parseSourceSpec resolves one `<source>[=<jq filter>]` spec. The cut is at the
-// first "=", never the last: every realistic filter contains "==", so a
-// right-most split would swallow the expression. Everything left of the cut is
-// an address and never reaches gojq; everything right of it is jq and never
-// sees the address. A spec with no "=" takes defaultFilter, so an unfiltered
-// spelling stays the whole keyspace.
+// parseSourceSpec resolves one `<source>[=<jq filter>]` spec. The cut is at
+// the first "=", never the last. Every realistic filter contains "==", so
+// splitting at the right-most "=" cuts into the filter and swallows the
+// expression. Everything left of the cut is an address and never reaches gojq.
+// Everything right of it is jq and never sees the address. A spec with no "="
+// takes defaultFilter, so an unfiltered spelling stays the whole keyspace.
 func parseSourceSpec(cf *iqconfig.Config, spec, defaultFilter string) (sourceSpec, error) {
 	name, filter, hasFilter := strings.Cut(spec, "=")
 	switch {
@@ -88,13 +88,14 @@ func resolveSourceSpec(cf *iqconfig.Config, name string) (endpoint, error) {
 	if strings.TrimSpace(name) == "" {
 		return endpoint{}, errors.New("invalid source spec: expected <source>[=<jq filter>]")
 	}
-	// resolveEndpoint serves copy endpoints too, so its miss advises -o and "-";
-	// a read spec has no such fallbacks, and says so before delegating.
+	// resolveEndpoint serves copy endpoints too, so its miss advises -o and "-".
+	// A read spec has no such fallbacks, and says so before delegating.
 	base, _, _ := splitSourceArg(cf, name)
 	if _, _, ok := cf.Resolve(base); !ok {
-		// The example URI is spelled out rather than elided: newRedactor trims
-		// trailing prose punctuation off a URI match, so a "file://..." here would
-		// lose its ellipsis to that trim and print as "file:".
+		// The example URI is spelled out and not elided. newRedactor trims
+		// trailing prose punctuation off a URI match. If the text used
+		// "file://..." here, the trim cuts the ellipsis and the text prints as
+		// "file:".
 		return endpoint{}, fmt.Errorf("unknown source %q; run `iq ls` (register a dump with `iq add file:///path/to/dump.json` to read one)", base)
 	}
 	ep, err := resolveEndpoint(cf, name, false)

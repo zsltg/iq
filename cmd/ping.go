@@ -19,7 +19,7 @@ type pingTarget struct {
 }
 
 // newPingCmd builds `iq ping [name...]`: check that sources are reachable. With
-// no arguments it pings the active source; otherwise each argument names a source
+// no arguments it pings the active source. Otherwise each argument names a source
 // or a group (which pings every member), and --all pings every saved source. Each
 // check is bounded by --timeout.
 func newPingCmd(cfg *config) *cobra.Command {
@@ -75,8 +75,9 @@ func runPing(cmd *cobra.Command, cfg *config, args []string, all bool) error {
 	return nil
 }
 
-// pingRow builds the table row of one check: the handle, the driver, and either
-// "ok" with the elapsed time or "error" with the message on one line.
+// pingRow builds the table row of one check: the handle, the driver, and a
+// result. The result is either "ok" with the elapsed time or "error" with the
+// message on one line.
 func pingRow(t pingTarget, elapsed time.Duration, err error) []tableCell {
 	driver := driverName(t.source.URL)
 	if err != nil {
@@ -85,11 +86,12 @@ func pingRow(t pingTarget, elapsed time.Duration, err error) []tableCell {
 	return []tableCell{cell(t.handle), cell(driver), coloredCell("ok", pal.ok), cell(elapsed.Round(time.Millisecond).String())}
 }
 
-// pingTargets resolves the ping arguments to sources: every saved source when all
-// is set, the active source when no arguments are given, otherwise each argument
-// as a source or a group (expanded to its members). It errors if --all is
-// combined with arguments, --all finds no saved sources, there is no active
-// source, or an argument is unknown.
+// pingTargets resolves the ping arguments to sources. When all is set, the
+// targets are every saved source. When no arguments are given, the target is the
+// active source. Otherwise each argument is a source or a group (expanded to its
+// members). It errors if --all is combined with arguments or finds no saved
+// sources. It also errors if there is no active source or an argument is
+// unknown.
 func pingTargets(cf *iqconfig.Config, args []string, all bool) ([]pingTarget, error) {
 	switch {
 	case all:
@@ -219,7 +221,7 @@ func verifySource(ctx context.Context, rawURL string, timeout time.Duration) err
 
 // opensAreEnough reports whether opening the backend already proves that it is
 // reachable. A read-only local source (a dump file) has no server to round-trip a
-// command against, and a verifiesOnOpen backend (DynamoDB) already round-tripped a
+// command against. A verifiesOnOpen backend (DynamoDB) already round-tripped a
 // reachability probe at open.
 func opensAreEnough(rawURL string) bool {
 	d, ok := driverForScheme(schemeOf(rawURL))

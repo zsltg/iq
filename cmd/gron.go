@@ -23,10 +23,10 @@ var gronIdent = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 // result at a repeated `json` (ungron is last-write-wins across results). The
 // indexed variant (grona) roots result N at json[N] and prefixes a `json = [];`
 // declaration, so the whole stream ungrons back to one array. On a terminal,
-// path segments and scalar rhs values are highlighted (bare keys and the json
-// root in the Key role, array indices in the Number role, rhs scalars via the
-// colored encoder). With color off every byte is unchanged, so the output stays
-// ungron-safe.
+// path segments and scalar rhs values are highlighted. Bare keys and the json
+// root use the Key role, array indices use the Number role, and rhs scalars go
+// through the colored encoder. With color off every byte is unchanged, so the
+// output stays ungron-safe.
 type gronFormatter struct {
 	w       io.Writer
 	indexed bool // grona: root result N at json[N] instead of repeating json.
@@ -35,7 +35,7 @@ type gronFormatter struct {
 	enc     render.Encoder
 }
 
-// emit flattens v into gron statements. Plain gron roots at json; grona writes a
+// emit flattens v into gron statements. Plain gron roots at json. grona writes a
 // single leading `json = [];` declaration before the first result, then roots
 // result N at json[N].
 func (f *gronFormatter) emit(v any) error {
@@ -54,8 +54,8 @@ func (f *gronFormatter) emit(v any) error {
 	return nil
 }
 
-// flush completes the stream. Plain gron streams fully, so flush is a no-op;
-// grona with zero emits writes the leading `json = [];` so an empty stream
+// flush completes the stream. Plain gron streams fully, so flush is a no-op.
+// grona with zero emits writes the leading `json = [];`. So an empty stream
 // ungrons to [] (mirroring an empty --jsona rendering []).
 func (f *gronFormatter) flush() error {
 	if f.indexed && f.n == 0 {
@@ -64,11 +64,11 @@ func (f *gronFormatter) flush() error {
 	return nil
 }
 
-// walk writes the gron statements for v at path, depth-first and parent-before-
-// children: an object emits its `= {};` declaration then recurses into sorted
-// keys, an array emits `= [];` then recurses by index, and any other value emits
-// `path = <compact JSON>;`. An empty container emits only its declaration; a
-// top-level nil yields `path = null;`.
+// walk writes the gron statements for v at path, depth-first and
+// parent-before-children. An object emits its `= {};` declaration, then recurses
+// into sorted keys. An array emits `= [];`, then recurses by index. Any other
+// value emits `path = <compact JSON>;`. An empty container emits only its
+// declaration. A top-level nil yields `path = null;`.
 func (f *gronFormatter) walk(path string, v any) error {
 	switch t := v.(type) {
 	case map[string]any:
@@ -106,27 +106,28 @@ func (f *gronFormatter) walk(path string, v any) error {
 }
 
 // key renders an object key as a path segment: a bare `.key` when it is an ASCII
-// identifier, else a bracketed `["<JSON-escaped>"]`. compact keeps HTML-escaping
-// off, so a key like a<b stays verbatim like every other formatter. A bare
-// segment carries the Key color; a bracketed key's quoted string is colored by
-// compact (the String role) and the brackets stay plain.
+// identifier, else a bracketed `["<JSON-escaped>"]`. The compact function keeps
+// HTML-escaping off, so a key like a<b stays verbatim like every other
+// formatter. A bare segment carries the Key color. compact colors the quoted
+// string of a bracketed key (the String role). The brackets stay plain.
 func (f *gronFormatter) key(k string) string {
 	if gronIdent.MatchString(k) {
 		return sgr(render.ColorKey, "."+k)
 	}
 	quoted, err := f.compact(k)
 	if err != nil {
-		// A string always JSON-encodes; fall back to a Go-quoted form defensively.
+		// A string always JSON-encodes. Fall back to a Go-quoted form defensively.
 		quoted = strconv.Quote(k)
 	}
 	return "[" + quoted + "]"
 }
 
-// compact renders v as single-line JSON without HTML escaping, reusing one
-// buffer and encoder across calls and trimming the trailing newline (so a
+// compact renders v as single-line JSON without HTML escaping. It reuses
+// one buffer and encoder across calls and trims the trailing newline (so a
 // *big.Int renders bare). It mirrors valuesFormatter.compact. The encoder
-// syntax-highlights the rhs when the invocation's color mode is on and is the
-// plain stdlib encoder otherwise, keeping color-off output byte-identical.
+// syntax-highlights the rhs when the color mode of the invocation is on.
+// Otherwise it is the plain stdlib encoder, which keeps color-off output
+// byte-identical.
 func (f *gronFormatter) compact(v any) (string, error) {
 	f.buf.Reset()
 	if f.enc == nil {

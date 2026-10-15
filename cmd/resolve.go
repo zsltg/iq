@@ -15,10 +15,10 @@ import (
 var errNoSource = errors.New("no source selected")
 
 // resolveSource fills cfg.url and cfg.address from the selected source before the
-// store opens. Precedence: the --src flag, then the active source; with neither
-// it errors — there is no URL or environment fallback. The name may carry a
-// dotted address (--src shop.orders), passed opaquely to the driver; the source's
-// own default lives in its URL. openStore stays unchanged.
+// store opens. Precedence: the --src flag, then the active source. With neither
+// it errors, because there is no URL or environment fallback. The name can carry
+// a dotted address (--src shop.orders), passed opaquely to the driver. The own
+// default of the source lives in its URL. openStore stays unchanged.
 func resolveSource(cfg *config) error {
 	cf, err := iqconfig.Load()
 	if err != nil {
@@ -47,7 +47,7 @@ func resolveSource(cfg *config) error {
 	cfg.source = src
 	cfg.handle = full
 	cfg.address = addr
-	// Log the resolved source with its location redacted — never the raw URL, so
+	// Log the resolved source with its location redacted, never the raw URL, so
 	// a stored credential cannot reach a log file.
 	cfg.log().Info("source resolved", "handle", cfg.handle, "driver", schemeOf(cfg.url), "location", redactURL(cfg.url))
 	return nil
@@ -80,8 +80,9 @@ func urlAddressUnsupported(rawURL string) error {
 
 // resolveInspectSource fills cfg from the source named by the inspect positional,
 // or --src, or the active source (in that precedence). The chosen name accepts
-// sq-style `<source>.<collection>` addressing; the address overrides the source's
-// URL default for MongoDB, but is rejected for a backend that takes none (Redis).
+// sq-style `<source>.<collection>` addressing. The address overrides the URL
+// default of the source for MongoDB, but is rejected for a backend that takes
+// none (Redis).
 func resolveInspectSource(cfg *config, arg string) error {
 	cf, err := iqconfig.Load()
 	if err != nil {
@@ -127,9 +128,10 @@ func mongoCollection(cfg *config) string {
 }
 
 // cassandraTarget returns the effective Cassandra keyspace and table for a resolved
-// source: the keyspace from the URL path and the table from the dotted address
-// override or the URL's ?table= default. Only the Cassandra-aware inspect path calls
-// it; a parse error yields empty strings, leaving the store open to surface it.
+// source. The keyspace comes from the URL path. The table comes from the dotted
+// address override or the ?table= default of the URL. Only the Cassandra-aware
+// inspect path calls it. A parse error yields empty strings, which leaves the store
+// open to surface it.
 func cassandraTarget(cfg *config) (keyspace, table string) {
 	ks, tbl, err := iqcassandra.Target(cfg.url, cfg.address)
 	if err != nil {
@@ -154,8 +156,8 @@ func splitSourceArg(cf *iqconfig.Config, arg string) (name, collection string, h
 		return arg, "", false
 	}
 	// A trailing dot names no collection, so there is nothing to split. Checking
-	// it once up front keeps it out of the walk below, where it could only ever
-	// match the first step anyway.
+	// it once up front keeps it out of the walk below, where it can only match
+	// the first step anyway.
 	if strings.HasSuffix(arg, ".") {
 		return arg, "", false
 	}

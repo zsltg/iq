@@ -82,7 +82,7 @@ const diffExample = "  # Item-level diff (the default layer) of two collections 
 	"  $ iq diff prod/shop staging/shop -j"
 
 // newDiffCmd builds `iq diff <a> <b>`: compare two saved sources. --data (the
-// default) diffs items key by key; --stats diffs native introspection; --schema
+// default) diffs items key by key. --stats diffs native introspection. --schema
 // diffs an inferred field/type shape. Layers combine. Bounded by --timeout.
 func newDiffCmd(cfg *config) *cobra.Command {
 	var (
@@ -137,7 +137,7 @@ func newDiffCmd(cfg *config) *cobra.Command {
 	c.Flags().BoolVar(&schemaMode, "schema", false, "diff an inferred field/type shape (cross-driver allowed)")
 	c.Flags().StringSliceVar(&sections, "section", nil, "introspection sections or subcommands for --stats (comma-separated or repeatable; iq inspect --list names them; default: the source's full set)")
 	// --section names the same introspection subcommands as `inspect --only`, so
-	// it shares that completion and its comma-separated list shape; the driver
+	// it shares that completion and its comma-separated list shape. The driver
 	// comes offline from the first target.
 	_ = c.RegisterFlagCompletionFunc("section", completeInspectOnly)
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled per side for --schema (0 = all)")
@@ -296,8 +296,8 @@ func bothSides(left, right sourceSpec, read func(sourceSpec) (map[string]any, er
 }
 
 // readAll materializes one side as key -> value: the whole keyspace, or the
-// items a spec filter keeps. A key repeated across scan pages (the store's weak
-// scan guarantee) simply overwrites.
+// items that a spec filter keeps. A key repeated across scan pages (the weak
+// scan guarantee of the store) overwrites the earlier value.
 func readAll(ctx context.Context, cfg *config, t sourceSpec, onPage func(int)) (map[string]any, error) {
 	st, err := openStore(ctx, t.runConfig(cfg))
 	if err != nil {
@@ -313,8 +313,8 @@ func readAll(ctx context.Context, cfg *config, t sourceSpec, onPage func(int)) (
 }
 
 // readKeyed keeps each surviving item under its own key, so the diff still
-// matches by key; a pushable predicate narrows the scan at the store, making a
-// scoped diff read less rather than merely report less.
+// matches by key. A pushable predicate narrows the scan at the store. So a
+// scoped diff reads less and does not merely report less.
 func readKeyed(ctx context.Context, st store, t sourceSpec, opts query.RunOptions) (map[string]any, error) {
 	all := map[string]any{}
 	err := query.NewJQEngine(st).RunKeyed(ctx, t.filter, opts, func(k string, v any) error {
@@ -372,7 +372,7 @@ func (r diffRun) statsTrees(ctx context.Context) (a, b map[string]any, err error
 }
 
 // collectInspect runs the introspection commands for a source and returns the
-// replies as one tree: Mongo keys each diagnostic reply by subcommand; Redis
+// replies as one tree. Mongo keys each diagnostic reply by subcommand. Redis
 // parses INFO into section -> key -> value.
 func collectInspect(ctx context.Context, t sourceSpec, sections []string) (map[string]any, error) {
 	st, err := openStore(ctx, &config{url: t.url, address: t.address})
@@ -438,11 +438,12 @@ func redisInfoTree(info string) map[string]any {
 }
 
 // diffSchema samples each source, infers a field/type shape, and diffs the
-// shapes. It is allowed across drivers: the inferred vocabulary (integer/number/
-// string(format)/map/array + required/optional + wildcards) measures logical
-// shape, not per-driver introspection, so two backends compare meaningfully. Two
-// backends that genuinely normalize a native type differently still diff — that
-// is the JSON each serves back, and the format tags make the row legible.
+// shapes. It is allowed across drivers. The inferred vocabulary
+// (integer/number/string(format)/map/array + required/optional + wildcards)
+// measures logical shape, not per-driver introspection, so two backends compare
+// meaningfully. Two backends that genuinely normalize a native type differently
+// still diff. That is the JSON that each serves back, and the format tags make
+// the row legible.
 func (r diffRun) diffSchema(ctx context.Context) ([]diff.Change, error) {
 	a, b, err := r.schemaShapes(ctx)
 	if err != nil {
@@ -470,10 +471,10 @@ func layerCount(dataMode, statsMode, schemaMode bool) int {
 	return n
 }
 
-// patchLayer collects the one selected layer's two trees and renders their delta
-// as an RFC 6902 JSON Patch. With neither statsMode nor schemaMode it is the data
-// layer (the default), so onPage ticks the read spinner; the stats and schema
-// layers ignore onPage.
+// patchLayer collects the two trees of the one selected layer and renders their
+// delta as an RFC 6902 JSON Patch. With neither statsMode nor schemaMode it is
+// the data layer (the default), so onPage ticks the read spinner. The stats and
+// schema layers ignore onPage.
 func (r diffRun) patchLayer(ctx context.Context, statsMode, schemaMode bool, onPage func(int)) (json.RawMessage, error) {
 	var a, b map[string]any
 	var err error
@@ -492,8 +493,8 @@ func (r diffRun) patchLayer(ctx context.Context, statsMode, schemaMode bool, onP
 }
 
 // renderPatch pretty-prints an RFC 6902 patch through the shared structured writer
-// and applies the diff(1) exit contract: a non-empty patch returns errQuietExit
-// (non-zero exit) while still printing, an empty patch prints [] and exits zero.
+// and applies the diff(1) exit contract. A non-empty patch returns errQuietExit
+// (non-zero exit) while still printing. An empty patch prints [] and exits zero.
 func renderPatch(out io.Writer, raw json.RawMessage) error {
 	var ops []any
 	if err := json.Unmarshal(raw, &ops); err != nil {
@@ -598,10 +599,11 @@ func sampleFull(count, sample int) bool {
 	return sample > 0 && count >= sample
 }
 
-// report bundles the per-layer results a single `diff` run produced. The *Run
-// flags record which layers were requested, so a selected layer that found no
-// differences still renders "no differences" rather than vanishing (an empty
-// diff is a nil slice, indistinguishable on its own from a layer not run).
+// report bundles the per-layer results that a single `diff` run produced. The
+// *Run flags record which layers were requested. So a selected layer that
+// found no differences still renders "no differences" and does not vanish. An
+// empty diff is a nil slice, indistinguishable on its own from a layer not
+// run.
 type report struct {
 	Data   []diff.ItemDelta `json:"data,omitempty"`
 	Stats  []diff.Change    `json:"stats,omitempty"`
@@ -686,7 +688,7 @@ func renderItem(out io.Writer, d diff.ItemDelta) error {
 		_, err := fmt.Fprintf(out, "%s\n", line)
 		return err
 	}
-	// The item header (symbol + key) takes the change color; the nested
+	// The item header (symbol + key) takes the change color. The nested
 	// field lines below color by their own op.
 	header := colorLine(d.Op, fmt.Sprintf("%s %s", d.Op.Symbol(), d.Key))
 	if _, err := fmt.Fprintf(out, "%s\n", header); err != nil {
@@ -717,8 +719,8 @@ func renderChangeLine(out io.Writer, prefix string, ch diff.Change) error {
 	path := strings.Join(ch.Path, ".")
 	switch ch.Op {
 	case diff.OpChange:
-		// Symbol and path in the change color; the old value red and the new
-		// value green, with the colon and arrow left plain.
+		// Symbol and path in the change color. The old value is red and the
+		// new value is green, with the colon and arrow left plain.
 		_, err := fmt.Fprintf(out, "%s%s: %s → %s\n",
 			prefix,
 			pal.change.Sprintf("%s %s", ch.Op.Symbol(), path),
@@ -765,7 +767,8 @@ func compact(v any) string {
 }
 
 // diffSpec resolves one diff operand. Diff compares whole keyspaces, so the
-// operand is an address only; the spec's filter half arrives with --filter.
+// operand is an address only. The filter half of the spec arrives with
+// --filter.
 func diffSpec(cf *iqconfig.Config, arg string) (sourceSpec, error) {
 	ep, err := resolveSourceSpec(cf, arg)
 	if err != nil {

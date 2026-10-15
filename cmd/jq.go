@@ -38,23 +38,24 @@ func openJQStore(cmd *cobra.Command, ctx context.Context, cfg *config) (store, e
 	return st, nil
 }
 
-// runJQ is the default command's body: it runs the jq filter through the engine
-// and renders each produced value with the selected-format formatter. A filter that
-// calls source() reads entirely from named sources over a null input
-// (cross-source, no primary store); any other filter runs against the selected
-// source. Formatting lives here, in the CLI adapter, so the core stays free of
-// any output format.
+// runJQ is the body of the default command. It runs the jq filter through the
+// engine and renders each produced value with the formatter of the selected format.
+// A filter that calls source() reads entirely from named sources over a null input
+// (cross-source, no primary store). Any other filter runs against the selected
+// source. Formatting lives here, in the CLI adapter, so the core stays free of any
+// output format.
 func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	cross, err := query.UsesSource(filter)
 	if err != nil {
 		// UsesSource parses the filter, so this is the first place a syntax error
-		// surfaces; enrich it so --error.format.text.verbose can draw the caret.
+		// surfaces. Enrich it so --error.format.text.verbose can draw the caret.
 		return asSyntaxError(filter, err)
 	}
 
-	// Resolve the output format before any source work, so conflicting format flags
-	// fail fast rather than after a source is resolved — runCombine already orders
-	// it this way, and the two entry points must reject the same flags alike.
+	// Resolve the output format before any source work, so conflicting format
+	// flags fail fast and not after a source is resolved. The runCombine function
+	// already orders it this way. The two entry points must reject the same flags
+	// alike.
 	fm, err := selectFormat(cfg)
 	if err != nil {
 		return err
@@ -77,7 +78,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		}
 	}
 
-	// --explain prints the plan to stdout and stops before any connection; --verbose
+	// --explain prints the plan to stdout and stops before any connection. --verbose
 	// prints it to stderr and turns on the live command trace for the run below.
 	if (cfg.explain || cfg.verbose) && cfg.stdin {
 		plan := planHeader("query plan") + "\n  decode stdin dump\n  scan client-side\n"
@@ -100,17 +101,18 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	}
 
 	// When logging is active, tee the driver command trace into the log and emit
-	// the structured query plan, so a --log run captures both without --explain/-v.
+	// the structured query plan. So a --log run captures both without --explain/-v.
 	cfg.trace = traceSink(cfg.trace, cfg.log())
 	cfg.logQueryPlan(filter, cross)
 
 	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
 	defer cancel()
 
-	// The scan-progress spinner renders on stderr; wrapping stdout lets it hold
-	// its repaint while rows stream, so the two never collide. A nil meter (progress
+	// The scan-progress spinner renders on stderr. Wrapping stdout lets it hold its
+	// repaint while rows stream, so the two never collide. A nil meter (progress
 	// off, or stderr not a terminal) makes every call below a no-op. --verbose
-	// disables it: the command trace shares stderr and is the progress signal.
+	// disables it, because the command trace shares stderr and is the progress
+	// signal.
 	meter := newProgressMeter(cmd.ErrOrStderr(), cfg.noProgress || cfg.verbose)
 	defer meter.Stop()
 	f := newFormatter(fm, meter.wrapStdout(cmd.OutOrStdout()), cfg.compact)
@@ -142,10 +144,10 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		return err
 	}
 	defer func() { _ = store.Close() }()
-	// Only the single-source scan gets a total: it walks one keyspace, so a
-	// backend's cheap estimate is a valid denominator for the spinner. The
-	// cross-source path aggregates several scans, where a per-source estimate
-	// would mislead, so it is left off there.
+	// Only the single-source scan gets a total. It walks one keyspace, so a
+	// cheap estimate from the backend is a valid denominator for the spinner.
+	// The cross-source path aggregates several scans, where a per-source
+	// estimate misleads. So the estimate is left off there.
 	opts.OnEstimate = meter.SetEstimate
 	runErr := query.NewJQEngine(store).Run(ctx, filter, opts, f.emit)
 	cfg.logQueryComplete(scanned, start)
@@ -159,11 +161,11 @@ func (cfg *config) logQueryComplete(scanned int, start time.Time) {
 }
 
 // logQueryPlan emits the structured "query plan" record at INFO when the
-// structured file/stream sink is active, so a CI run captures the
+// structured file/stream sink is active. So a CI run captures the
 // classification, planned ops, pushed filter, and per-conjunct decisions that
-// --explain shows. It is gated on the structured sink, not the verbose sink: a
-// bare -v already prints the pretty plan to stderr, so the record renders
-// it twice. It shares buildSourcePlan with the --explain text, so the two never
+// --explain shows. It is gated on the structured sink, not the verbose sink. A
+// bare -v already prints the pretty plan to stderr, so the record renders it
+// twice. It shares buildSourcePlan with the --explain text, so the two never
 // drift. A cross-source source() filter has no single driver, and a stdin dump
 // has no backend, so those log a minimal plan. It skips building the plan when
 // the structured sink is off or below INFO.
@@ -190,8 +192,9 @@ func (cfg *config) logQueryPlan(filter string, cross bool) {
 	}
 }
 
-// finish returns the engine's run error if any; otherwise it flushes the
-// formatter, closing jsona and yaml documents that the last emit left open.
+// finish returns the run error of the engine if any. Otherwise it flushes
+// the formatter, which closes jsona and yaml documents that the last emit
+// left open.
 func finish(f formatter, runErr error) error {
 	if runErr != nil {
 		return runErr

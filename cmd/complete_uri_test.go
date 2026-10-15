@@ -40,7 +40,7 @@ const (
 	dirDone = ":4"
 )
 
-// secretPassword is a synthetic password. No completion output may hold it.
+// secretPassword is a synthetic password. Completion output never holds it.
 const secretPassword = "dummysecret"
 
 func TestCompleteURI(t *testing.T) {

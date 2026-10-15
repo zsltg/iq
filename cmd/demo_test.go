@@ -13,16 +13,16 @@ import (
 // directory, the way skillPath reaches ../skills/iq/SKILL.md.
 const demoScriptPath = "../scripts/demo/basic.exp"
 
-// demoEnteredLine matches one command line the demo enters. basic.exp spells every
-// one as `type {iq …}` or `recall {…}` on a line of its own, with nothing computed,
-// so this is the whole grammar: the recording enters literals, and the literals are
-// what this test resolves.
+// demoEnteredLine matches one command line that the demo enters. basic.exp spells
+// every one as `type {iq …}` or `recall {…}` on a line of its own. Nothing is
+// computed. So this is the whole grammar. The recording enters literals, and this
+// test resolves the literals.
 var demoEnteredLine = regexp.MustCompile(`(?m)^(type|recall) \{(.*)\}$`)
 
-// demoCommandTokens returns the command lines basic.exp enters, in order. A `type`
-// line is the command; a `recall` line presses the up arrow and appends its suffix,
-// so what the shell runs is the previous line with that suffix on the end, and that
-// is the line this returns.
+// demoCommandTokens returns the command lines that basic.exp enters, in order. A
+// `type` line is the command. A `recall` line presses the up arrow and appends its
+// suffix. So what the shell runs is the previous line with that suffix on the end,
+// and this function returns that line.
 func demoCommandTokens(t *testing.T) []string {
 	t.Helper()
 
@@ -43,12 +43,12 @@ func demoCommandTokens(t *testing.T) []string {
 	return out
 }
 
-// demoIQHead returns the part of an entered line iq itself runs: everything up to
-// the first pipe outside quotes. The plan is paged (`… --explain -v -C | less -R`),
-// and only the head of that line is iq's, the tail is the shell's and has no CLI
-// surface to drift. The cut has to be quote-aware because the demo's jq filter
-// carries pipes of its own inside single quotes, and cutting at the first `|` of all
-// would hand cobra half a filter.
+// demoIQHead returns the part of an entered line that iq itself runs: everything up
+// to the first pipe outside quotes. The plan is paged (`… --explain -v -C | less
+// -R`). Only the head of that line is iq's. The tail is the shell's and has no CLI
+// surface to drift. The cut has to be quote-aware. The jq filter of the demo carries
+// pipes of its own inside single quotes. A cut at the first `|` of all, without
+// the quote check, gives cobra half a filter.
 func demoIQHead(line string) string {
 	var quote rune
 	for i, r := range line {
@@ -66,8 +66,9 @@ func demoIQHead(line string) string {
 	return strings.TrimSpace(line)
 }
 
-// TestDemoIQHead proves the cut above splits on the shell's pipe and only on it: a
-// pipe inside the jq filter's quotes is part of the command, not a cut point.
+// TestDemoIQHead proves that the cut above splits on the pipe of the shell and
+// only on it. A pipe inside the quotes of the jq filter is part of the command,
+// not a cut point.
 func TestDemoIQHead(t *testing.T) {
 	tests := []struct {
 		name string
@@ -102,11 +103,12 @@ func TestDemoIQHead(t *testing.T) {
 	}
 }
 
-// TestDemoCommandsResolve is the drift guard for docs/docs/assets/demo.svg: every
-// command line the recording enters is walked against the tree newRootCmd builds,
-// so a renamed flag or subcommand fails here instead of being recorded into an SVG
-// that shows a command iq no longer accepts. The stamp gate catches the same drift
-// only after the file has changed; this catches it in the unit suite.
+// TestDemoCommandsResolve is the drift guard for docs/docs/assets/demo.svg. Every
+// command line that the recording enters is walked against the tree that
+// newRootCmd builds. So a renamed flag or subcommand fails here instead of being
+// recorded into an SVG that shows a command that iq no longer accepts. The stamp
+// gate catches the same drift only after the file has changed. This test catches
+// it in the unit suite.
 func TestDemoCommandsResolve(t *testing.T) {
 	root, _ := newRootCmd()
 

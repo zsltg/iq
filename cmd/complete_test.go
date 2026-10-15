@@ -152,8 +152,8 @@ func TestCompleteEmptyConfig(t *testing.T) {
 }
 
 func TestCompleteConfigLoadError(t *testing.T) {
-	// Point IQ_CONFIG at a directory so Load fails; completion yields no candidates
-	// rather than erroring.
+	// Point IQ_CONFIG at a directory so Load fails. Completion yields no candidates
+	// and does not error.
 	t.Setenv("IQ_CONFIG", t.TempDir())
 	got, dir := completeSourceHandles(nil, nil, "")
 	require.Nil(t, got)
@@ -170,8 +170,8 @@ func TestCompleteConfigLoadError(t *testing.T) {
 }
 
 // TestWithPrefixEmptyPreservesSlice pins that an empty toComplete returns the
-// candidates slice unchanged — including a nil slice, which must stay nil rather
-// than becoming a freshly allocated empty slice.
+// candidates slice unchanged. That includes a nil slice, which must stay nil and
+// not become a freshly allocated empty slice.
 func TestWithPrefixEmptyPreservesSlice(t *testing.T) {
 	require.Nil(t, withPrefix(nil, ""))
 	both := plainCandidates([]string{"a", "b"})
@@ -290,8 +290,8 @@ func TestSourceDriverName(t *testing.T) {
 	})
 
 	// Cobra always hands a completion its command, but the helper must not
-	// dereference one it was not given: without the nil guard the --src lookup
-	// panics here instead of falling through to the active source.
+	// dereference one that it was not given. Without the nil guard the --src
+	// lookup panics here instead of falling through to the active source.
 	t.Run("a nil command falls through to the active source", func(t *testing.T) {
 		require.Equal(t, "mongo", sourceDriverName(nil, nil))
 		require.Equal(t, "redis", sourceDriverName(nil, []string{"cache"}))
@@ -299,9 +299,9 @@ func TestSourceDriverName(t *testing.T) {
 }
 
 // TestSourceDriverNameSkipsKeyring pins that the resolver reads the stored URL
-// directly rather than through effectiveURL: a completion runs on a keypress, so
-// a keyring read could block or prompt for an unlock. The keyring here holds no
-// password, so a resolver that consulted it would fail and yield no driver.
+// directly and not through effectiveURL. A completion runs on a keypress, so a
+// keyring read can block or prompt for an unlock. The keyring here holds no
+// password, so a resolver that consulted it fails and yields no driver.
 func TestSourceDriverNameSkipsKeyring(t *testing.T) {
 	fk := useFakeKeyring(t)
 	c := newSeed()
@@ -391,8 +391,9 @@ func TestCompleteConfigSet(t *testing.T) {
 }
 
 // TestEnumAllowlistsMatchValidators feeds every completion candidate back
-// through the validator it mirrors. The validators are switches, not slices, so
-// this is what stops a candidate the CLI would reject from being offered.
+// through the validator that it mirrors. The validators are switches, not
+// slices. So this test stops a candidate that the CLI rejects from being
+// offered.
 func TestEnumAllowlistsMatchValidators(t *testing.T) {
 	t.Run("format names round-trip", func(t *testing.T) {
 		for _, name := range formatNames() {
@@ -438,10 +439,10 @@ func TestEnumAllowlistsMatchValidators(t *testing.T) {
 		}
 	})
 
-	// --debug.pprof has no pure validator to round-trip against: startProfile
+	// --debug.pprof has no pure validator to round-trip against. startProfile
 	// begins real profiling and writes a file. pprofModes is already the one
-	// source of truth its switch and error message share, so completing from it
-	// cannot drift; only its distinctness is worth pinning.
+	// source of truth. Its switch and error message share it, so completing
+	// from it cannot drift. Only its distinctness is worth pinning.
 	t.Run("pprof modes are distinct", func(t *testing.T) {
 		seen := map[string]bool{}
 		for _, mode := range pprofModes {
@@ -462,10 +463,10 @@ func findCmd(t *testing.T, root *cobra.Command, path ...string) *cobra.Command {
 }
 
 // TestCommandArgsAndCompletionWiring pins the Args validators and
-// ValidArgsFunctions wired onto the leaf commands, so dropping either field (or
-// perturbing an argument-count bound) is caught. Completion helpers are exercised
-// against a seeded config so the wiring resolves to the right helper, not just a
-// non-nil placeholder.
+// ValidArgsFunctions wired onto the leaf commands. So dropping either field (or
+// perturbing an argument-count bound) is caught. Completion helpers are
+// exercised against a seeded config. So the wiring resolves to the right helper,
+// not only a non-nil placeholder.
 func TestCommandArgsAndCompletionWiring(t *testing.T) {
 	seedTwoGroups(t)
 	handles := []string{"cache", "prod/books", "prod/users", "shop"}
@@ -500,7 +501,7 @@ func TestCommandArgsAndCompletionWiring(t *testing.T) {
 		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 	})
 
-	// The lifecycle commands destroy data; without completion the shell offers
+	// The lifecycle commands destroy data. Without completion the shell offers
 	// filenames there, so the wiring is pinned per command.
 	for _, name := range []string{"clear", "drop"} {
 		t.Run("data "+name+" completes every target", func(t *testing.T) {
@@ -509,7 +510,7 @@ func TestCommandArgsAndCompletionWiring(t *testing.T) {
 			got, dir := c.ValidArgsFunction(c, nil, "")
 			require.Equal(t, handles, candidateValues(got))
 			require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
-			// A second target completes too — clear/drop take a list.
+			// A second target completes too. clear/drop take a list.
 			got, _ = c.ValidArgsFunction(c, []string{"shop"}, "")
 			require.Equal(t, handles, candidateValues(got))
 		})
@@ -528,8 +529,8 @@ func TestCommandArgsAndCompletionWiring(t *testing.T) {
 		require.Equal(t, cobra.ShellCompDirectiveNoFileComp, dir)
 	})
 
-	// combine takes one spec per source, so every positional completes handles —
-	// not just the first — and the arg validator demands at least one.
+	// combine takes one spec per source, so every positional completes handles,
+	// not only the first. The arg validator demands at least one.
 	t.Run("combine completes handles for every spec", func(t *testing.T) {
 		c := findCmd(t, root, "combine")
 		require.NotNil(t, c.ValidArgsFunction, "combine completion wiring dropped")
@@ -595,8 +596,8 @@ func TestRootCompletionWiring(t *testing.T) {
 }
 
 // TestFlagCompletionWiring pins the registered flag completions. Every one is
-// registered with its error swallowed (it can only report an unknown flag), so a
-// renamed flag would silently drop its completion without this.
+// registered with its error swallowed (it can only report an unknown flag). So a
+// renamed flag silently drops its completion without this test.
 func TestFlagCompletionWiring(t *testing.T) {
 	seedMixedDrivers(t)
 	root, _ := newRootCmd()
@@ -687,8 +688,8 @@ func TestCompleteCacheClearList(t *testing.T) {
 }
 
 // writeCompletionConfig writes raw TOML to a private config file and points
-// IQ_CONFIG at it, so a test can store a handle or URI that iq itself would
-// refuse to write.
+// IQ_CONFIG at it. So a test can store a handle or URI that iq itself
+// refuses to write.
 func writeCompletionConfig(t *testing.T, toml string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "iq.toml")
@@ -934,8 +935,8 @@ func TestWithPrefixIgnoresDescription(t *testing.T) {
 }
 
 // TestCompleteCSVKeepsDescriptions pins that the description stays with its
-// value, that the chosen set holds values only, and that the typed head joins
-// the value and not the description.
+// value. It also pins that the chosen set holds values only, and that the
+// typed head joins the value and not the description.
 func TestCompleteCSVKeepsDescriptions(t *testing.T) {
 	const both = cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 	fn := completeCSV(func(_ *cobra.Command, _ []string, toComplete string) ([]candidate, cobra.ShellCompDirective) {

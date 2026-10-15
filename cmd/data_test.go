@@ -122,7 +122,7 @@ func TestDedupeKeys(t *testing.T) {
 func TestRunDataDeleteRejectsFile(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
-	// "-" resolves to a stdin file endpoint before any connection; delete needs a source.
+	// "-" resolves to a stdin file endpoint before any connection. Delete needs a source.
 	err := runDataDelete(cmd, &config{}, &dataFlags{}, "-", []string{"k"})
 	require.ErrorContains(t, err, "not a file")
 }

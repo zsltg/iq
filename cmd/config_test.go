@@ -99,7 +99,7 @@ func TestConfigSetGetPerSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "set prod format = jsonl")
 
-	// The source value wins for that source; the base value stands elsewhere.
+	// The source value wins for that source. The base value stands elsewhere.
 	root3, _ := newRootCmd()
 	out, err = runCmd(t, root3, "config", "get", "--src", "prod", "format")
 	require.NoError(t, err)
@@ -123,7 +123,7 @@ func TestConfigGetSourceFallsBackToBase(t *testing.T) {
 	configEnv(t)
 	seedSource(t, "prod")
 
-	// Only the base value is set; a source `get` inherits it.
+	// Only the base value is set. A source `get` inherits it.
 	root, _ := newRootCmd()
 	_, err := runCmd(t, root, "config", "set", "format", "yaml")
 	require.NoError(t, err)
@@ -146,10 +146,11 @@ func TestConfigSetRejects(t *testing.T) {
 		{"invalid log format", []string{"config", "set", "log.format", "xml"}, "invalid log.format"},
 		{"invalid decimal", []string{"config", "set", "format.decimal", "bogus"}, "decimal"},
 		{"unknown option", []string{"config", "set", "nope", "x"}, "unknown option"},
-		// A real root flag that is not on the persistable allowlist. `nope` above is
-		// no flag at all, so it is caught later, by the nil-flag branch; only a
-		// non-persistable flag exercises the allowlist guard itself. Stored, it
-		// would be applied at query time, which the guard exists to prevent.
+		// A real root flag that is not on the persistable allowlist. `nope`
+		// above is no flag at all, so the nil-flag branch catches it later.
+		// Only a non-persistable flag exercises the allowlist guard itself. If
+		// stored, it is applied at query time, which the guard exists to
+		// prevent.
 		{"non-persistable flag", []string{"config", "set", "force", "true"}, "unknown option"},
 		{"unknown source", []string{"config", "set", "--src", "ghost", "format", "yaml"}, "unknown source"},
 	}
@@ -183,8 +184,8 @@ func TestConfigSetDelete(t *testing.T) {
 
 func TestConfigSetArgErrors(t *testing.T) {
 	configEnv(t)
-	// A plain set needs a value; -D takes an option only. (The retired `unset`
-	// subcommand is gone — deletion is `set -D`.)
+	// A plain set needs a value. -D takes an option only. (The retired `unset`
+	// subcommand is gone. Deletion is `set -D`.)
 	root, _ := newRootCmd()
 	_, err := runCmd(t, root, "config", "set", "compact")
 	require.ErrorContains(t, err, "set takes <option> <value>")
@@ -215,8 +216,8 @@ func TestConfigSetArgCount(t *testing.T) {
 }
 
 // TestConfigSetReportsASaveFailure makes the write fail after the value
-// validates: an unwritable config dir must fail the command, so `set` never
-// reports a default it did not store.
+// validates. An unwritable config dir must fail the command, so `set` never
+// reports a default that it did not store.
 func TestConfigSetReportsASaveFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
@@ -314,7 +315,7 @@ func TestConfigEdit(t *testing.T) {
 }
 
 func TestConfigPathFlagOverridesEnv(t *testing.T) {
-	// An env path is set; --config must win over it.
+	// An env path is set. --config must win over it.
 	t.Setenv(iqconfig.EnvConfig, filepath.Join(t.TempDir(), "env.toml"))
 	flagPath := filepath.Join(t.TempDir(), "flag.toml")
 
@@ -505,8 +506,8 @@ func TestConfigSubcommandsRejectArgs(t *testing.T) {
 	for _, sub := range []string{"ls", "view", "edit"} {
 		t.Run(sub, func(t *testing.T) {
 			configEnv(t)
-			// A mutant that drops the guard would run the editor, so give it one
-			// that returns at once instead of waiting on a terminal.
+			// A mutant that drops the guard runs the editor, so give it one that
+			// returns at once instead of waiting on a terminal.
 			t.Setenv("IQ_EDITOR", "true")
 			root, _ := newRootCmd()
 			_, err := runCmd(t, root, "config", sub, "extra")
@@ -515,9 +516,9 @@ func TestConfigSubcommandsRejectArgs(t *testing.T) {
 	}
 }
 
-// TestConfigCommandsReportACorruptConfig checks that each command which reads the
+// TestConfigCommandsReportACorruptConfig checks that each command that reads the
 // config file stops with the load error. The commands run without the root, whose
-// pre-run step would hit the same parse error first.
+// pre-run step hits the same parse error first.
 func TestConfigCommandsReportACorruptConfig(t *testing.T) {
 	tests := []struct {
 		name  string

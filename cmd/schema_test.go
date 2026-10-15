@@ -48,15 +48,15 @@ func TestSchemaFileSource(t *testing.T) {
 	require.Equal(t, "string", props["name"].(map[string]any)["type"])
 	require.Equal(t, "integer", props["age"].(map[string]any)["type"])
 	require.Equal(t, "boolean", props["active"].(map[string]any)["type"])
-	// name and age are in every document; active is in one, so it is optional.
+	// name and age are in every document. active is in one, so it is optional.
 	require.Equal(t, []any{"age", "name"}, doc["required"])
 }
 
-// TestSchemaFilterScopesTheShape pins the spec form end to end: only the items
-// the filter keeps reach the inference, so a field that lives solely on the
-// excluded documents disappears from the schema, and a field the survivors all
-// carry becomes required. --filter is the same knob without the spec syntax, and
-// a spec's own "=" wins over it.
+// TestSchemaFilterScopesTheShape pins the spec form end to end. Only the items
+// that the filter keeps reach the inference. So a field that lives solely on the
+// excluded documents disappears from the schema, and a field that all the
+// survivors carry becomes required. --filter is the same knob without the spec
+// syntax, and the own "=" of a spec wins over it.
 func TestSchemaFilterScopesTheShape(t *testing.T) {
 	path := writeJSONL(t, `{"key":"1","value":{"kind":"live","n":1}}
 {"key":"2","value":{"kind":"archived","legacy":true}}
@@ -143,11 +143,12 @@ func TestSchemaSampleCap(t *testing.T) {
 	}
 }
 
-// TestSchemaSampleCapFiltered is the cap test for the *filtered* branch, which
-// counts its own emissions and keys them synthetically rather than inheriting
-// the store's keys. Both halves matter: the counter decides when the cap trips,
-// and the stop sentinel must be swallowed rather than surfaced as an error —
-// mutate either and an over- or under-filled sample passes silently.
+// TestSchemaSampleCapFiltered is the cap test for the *filtered* branch. That
+// branch counts its own emissions and keys them synthetically, and does not
+// inherit the keys of the store. Both halves matter. The counter decides when
+// the cap trips, and the stop sentinel must be swallowed and not surfaced as an
+// error. If a mutant changes either, an over- or under-filled sample passes
+// silently.
 func TestSchemaSampleCapFiltered(t *testing.T) {
 	path := writeJSONL(t, `{"key":"1","value":{"a":1}}
 {"key":"2","value":{"a":2}}
@@ -214,8 +215,8 @@ func TestSchemaUnknownSource(t *testing.T) {
 	require.ErrorContains(t, err, "unknown source")
 }
 
-// TestSchemaCmdMetadata pins the command's help metadata — the Short line and the
-// Example block — which the mutation gate clears field by field.
+// TestSchemaCmdMetadata pins the help metadata of the command, which is the Short
+// line and the Example block. The mutation gate clears them field by field.
 func TestSchemaCmdMetadata(t *testing.T) {
 	c := newSchemaCmd(&config{})
 	require.Equal(t, "Emit a draft 2020-12 JSON Schema inferred from a sampled source", c.Short)
@@ -224,7 +225,7 @@ func TestSchemaCmdMetadata(t *testing.T) {
 }
 
 // TestSchemaCmdSampleFlag pins the --sample flag: it is registered and defaults to
-// 1000; the gate off-by-ones the default and removes the registration.
+// 1000. The gate off-by-ones the default and removes the registration.
 func TestSchemaCmdSampleFlag(t *testing.T) {
 	c := newSchemaCmd(&config{})
 	f := c.Flags().Lookup("sample")
@@ -233,7 +234,7 @@ func TestSchemaCmdSampleFlag(t *testing.T) {
 }
 
 // TestSchemaCmdFormatFlag pins the --format flag: registered and defaulting to
-// jsonschema; the gate mutates the default and removes the registration.
+// jsonschema. The gate mutates the default and removes the registration.
 func TestSchemaCmdFormatFlag(t *testing.T) {
 	c := newSchemaCmd(&config{})
 	f := c.Flags().Lookup("format")
@@ -252,9 +253,10 @@ func TestSchemaInvalidFormat(t *testing.T) {
 }
 
 // TestSchemaODCSOutput drives `iq schema --format odcs` end-to-end against a
-// file source and asserts the emitted YAML parses and carries a valid ODCS
-// v3.1.0 fundamentals envelope and one schema object projecting the inferred
-// shape (types, nested properties, and per-property required flags).
+// file source. It asserts that the emitted YAML parses and carries a valid
+// ODCS v3.1.0 fundamentals envelope. It also asserts one schema object that
+// projects the inferred shape (types, nested properties, and per-property
+// required flags).
 func TestSchemaODCSOutput(t *testing.T) {
 	path := writeJSONL(t, `{"key":"1","value":{"name":"alice","age":30,"active":true}}
 {"key":"2","value":{"name":"bob","age":25}}
@@ -290,7 +292,7 @@ func TestSchemaODCSOutput(t *testing.T) {
 	require.Equal(t, "string", byName["name"]["logicalType"])
 	require.Equal(t, "integer", byName["age"]["logicalType"])
 	require.Equal(t, "boolean", byName["active"]["logicalType"])
-	// name and age are in every document (required); active is in one (optional).
+	// name and age are in every document (required). active is in one (optional).
 	require.True(t, byName["name"]["required"].(bool))
 	require.True(t, byName["age"]["required"].(bool))
 	require.NotContains(t, byName["active"], "required")

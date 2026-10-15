@@ -18,8 +18,9 @@ import (
 )
 
 // Environment overrides for the logging flags, read at bootstrap when the
-// matching flag was not set on the command line. They mirror sq's SQ_LOG family
-// so the muscle memory carries over; precedence is explicit flag > env > default.
+// matching flag was not set on the command line. They mirror the SQ_LOG family of
+// sq, so the muscle memory carries over. Precedence is explicit flag > env >
+// default.
 const (
 	envLog       = "IQ_LOG"
 	envLogFile   = "IQ_LOG_FILE"
@@ -28,11 +29,11 @@ const (
 )
 
 // logOptions is the resolved, validated logging configuration for one
-// invocation. The verbose stderr sink and the file sink are independent and
-// each has its own level, so a DEBUG record can reach the file while the INFO
-// stderr sink skips it. file is empty when file logging is off. color tints the
-// verbose stderr sink (never the file sink) when stderr is a color-eligible
-// terminal.
+// invocation. The verbose stderr sink and the file sink are independent, and
+// each has its own level. So a DEBUG record can reach the file while the INFO
+// stderr sink skips it. The file field is empty when file logging is off. The
+// color field tints the verbose stderr sink (never the file sink) when stderr
+// is a color-eligible terminal.
 type logOptions struct {
 	verbose bool
 	color   bool
@@ -43,14 +44,15 @@ type logOptions struct {
 }
 
 // resolveLogOptions computes the logging configuration from the flags and the
-// IQ_LOG* environment, validating the level and format so a bad value fails fast
-// before any file is opened. It never opens a file itself.
+// IQ_LOG* environment. It validates the level and format, so a bad value fails
+// fast before any file is opened. It never opens a file itself.
 func resolveLogOptions(cmd *cobra.Command, cfg *config) (logOptions, error) {
 	o := logOptions{verbose: cfg.verbose}
 
 	// The verbose sink writes to stderr, so its color eligibility is decided
-	// against stderr's own TTY-ness, independent of resolveColor's stdout-based
-	// global mode (the two writers can differ). -M/-C/NO_COLOR still apply.
+	// against the own TTY-ness of stderr. It is independent of the global mode
+	// that resolveColor decides from stdout (the two writers can differ).
+	// -M/-C/NO_COLOR still apply.
 	o.color = wantColor(cfg.monochrome, cfg.forceColor, cmd.ErrOrStderr())
 
 	o.enable = cfg.logEnable
@@ -63,11 +65,12 @@ func resolveLogOptions(cmd *cobra.Command, cfg *config) (logOptions, error) {
 			o.enable = b
 		}
 		// An explicitly set --log.file/--log.level/--log.format implies enable even
-		// without --log: configuring the logger is intent to use it. This runs only
-		// when --log was not given (an explicit --log, true or false, is
-		// authoritative), and only for a command-line flag — a lingering exported
-		// IQ_LOG_FILE must never silently start logging, so env vars still require
-		// IQ_LOG. An explicit flag thus beats env here, keeping flag > env > default.
+		// without --log, because configuring the logger is intent to use it. This
+		// runs only when --log was not given (an explicit --log, true or false, is
+		// authoritative). It also runs only for a command-line flag. A lingering
+		// exported IQ_LOG_FILE must never silently start logging, so env vars still
+		// require IQ_LOG. An explicit flag thus beats env here, which keeps flag >
+		// env > default.
 		if !o.enable {
 			o.enable = cmd.Flags().Changed("log.file") ||
 				cmd.Flags().Changed("log.level") ||
@@ -75,8 +78,9 @@ func resolveLogOptions(cmd *cobra.Command, cfg *config) (logOptions, error) {
 		}
 	}
 
-	// An explicit --log.file wins (empty explicitly disables); otherwise
-	// IQ_LOG_FILE, then the default cache path (empty when it cannot be located).
+	// An explicit --log.file wins (empty explicitly disables). Otherwise the
+	// order is IQ_LOG_FILE, then the default cache path (empty when it cannot be
+	// located).
 	switch {
 	case cmd.Flags().Changed("log.file"):
 		o.file = cfg.logFile
@@ -124,8 +128,8 @@ func (o logOptions) fileActive() bool { return o.enable && o.file != "" }
 // The logger is never nil: with no sink it discards, so every log point is a
 // cheap no-op. The verbose sink writes to stderr at INFO, tinted when o.color
 // is set. The file sink honors the resolved level and format and is never
-// tinted. stderr and stdout are the writers that a literal "stderr" or "stdout"
-// file target resolves to.
+// tinted. A literal "stderr" or "stdout" file target resolves to the stderr and
+// stdout writers.
 //
 // If the verbose sink and the structured sink both target the stderr stream,
 // each record renders twice on it. The user configured the structured sink
@@ -166,12 +170,12 @@ func (o logOptions) build(stderr, stdout io.Writer) (*slog.Logger, func() error,
 	return slog.New(newFanout(handlers...)), closer, nil
 }
 
-// logSink resolves the file target to its writer and a closer. A literal
-// "stderr" or "stdout" is a portable stream target (unlike the "/dev/stderr" path
-// trap): it writes to the provided stream, is never closed — closing os.Stderr or
-// os.Stdout would break the process — and creates no directory. Any other value is
-// a filesystem path, opened (and its parent created) by openLogFile, whose Close
-// is returned so the caller releases it.
+// logSink resolves the file target to its writer and a closer. A literal "stderr"
+// or "stdout" is a portable stream target (unlike the "/dev/stderr" path trap). It
+// writes to the provided stream and creates no directory. It is never closed,
+// because closing os.Stderr or os.Stdout breaks the process. Any other value is a
+// filesystem path, opened (and its parent created) by openLogFile. The Close of
+// that file is returned, so the caller releases it.
 func (o logOptions) logSink(stderr, stdout io.Writer) (io.Writer, func() error, error) {
 	switch o.file {
 	case "stderr":
@@ -187,8 +191,8 @@ func (o logOptions) logSink(stderr, stdout io.Writer) (io.Writer, func() error, 
 	}
 }
 
-// dropTimeAttr removes the top-level time attribute so the verbose stderr sink
-// stays terse (the wall clock is noise on an interactive stream); the file sink
+// dropTimeAttr removes the top-level time attribute, so the verbose stderr sink
+// stays terse (the wall clock is noise on an interactive stream). The file sink
 // keeps its timestamp.
 func dropTimeAttr(groups []string, a slog.Attr) slog.Attr {
 	if len(groups) == 0 && a.Key == slog.TimeKey {
@@ -264,9 +268,10 @@ func defaultLogFile() string {
 	return filepath.Join(dir, "iq", "iq.log")
 }
 
-// openLogFile opens (creating and appending to) the log file, creating its
-// parent directory. Both are 0600/0700 because a log line may carry a redacted
-// but still sensitive location, matching the config file's secret-aware perms.
+// openLogFile opens (creating and appending to) the log file, and creates its
+// parent directory. Both use 0600/0700, because a log line can carry a
+// redacted but still sensitive location. This matches the secret-aware perms
+// of the config file.
 func openLogFile(path string) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create log dir: %w", err)
@@ -283,7 +288,7 @@ func openLogFile(path string) (*os.File, error) {
 var discardLogger = slog.New(slog.DiscardHandler)
 
 // log returns the invocation logger, or the shared discard logger when none was
-// set, so every log point is nil-safe without a guard at the call site.
+// set. So every log point is nil-safe without a guard at the call site.
 func (c *config) log() *slog.Logger {
 	if c.logger != nil {
 		return c.logger
@@ -291,11 +296,11 @@ func (c *config) log() *slog.Logger {
 	return discardLogger
 }
 
-// traceSink returns the writer for the live command trace of a driver. It tees
-// the existing trace (the --verbose stderr sink, or nil) with a DEBUG "backend
-// cmd" log bridge when a DEBUG sink is listening, so a plain --log run captures
-// the wire trace without --verbose. Drivers redact credentials before they
-// reach the trace, so the bridge logs exactly what --verbose shows. With
+// traceSink returns the writer for the live command trace of a driver. When a
+// DEBUG sink is listening, it tees the existing trace (the --verbose stderr
+// sink, or nil) with a DEBUG "backend cmd" log bridge. So a plain --log run
+// captures the wire trace without --verbose. Drivers redact credentials before
+// they reach the trace, so the bridge logs exactly what --verbose shows. With
 // no DEBUG sink it returns the input unchanged.
 func traceSink(existing io.Writer, lg *slog.Logger) io.Writer {
 	if !lg.Enabled(context.Background(), slog.LevelDebug) {
@@ -308,12 +313,12 @@ func traceSink(existing io.Writer, lg *slog.Logger) io.Writer {
 	return io.MultiWriter(existing, bridge)
 }
 
-// traceLogWriter adapts the drivers' line-oriented command trace to structured
-// logging: it buffers partial writes and emits one DEBUG "backend cmd" record per
-// complete line. A line is split on the driver's "> " prefix into a driver attr
-// and a cmd attr; a line without that shape logs the whole text as cmd. Writes are
-// serialized so a trace produced from several goroutines never interleaves a
-// record's parsing.
+// traceLogWriter adapts the line-oriented command trace of the drivers to
+// structured logging. It buffers partial writes and emits one DEBUG "backend cmd"
+// record per complete line. A line is split on the "> " prefix of the driver into
+// a driver attr and a cmd attr. A line without that shape logs the whole text as
+// cmd. Writes are serialized, so a trace produced from several goroutines never
+// interleaves the parsing of a record.
 type traceLogWriter struct {
 	lg  *slog.Logger
 	mu  sync.Mutex
@@ -346,10 +351,10 @@ func (w *traceLogWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// fanoutHandler dispatches each record to several slog handlers, so one logger
-// drives both the verbose stderr sink and the file sink from a single set of log
-// points. Each child gates on its own Enabled, keeping the two thresholds
-// independent.
+// fanoutHandler dispatches each record to several slog handlers. So one
+// logger drives both the verbose stderr sink and the file sink from a
+// single set of log points. Each child gates on its own Enabled. This
+// keeps the two thresholds independent.
 type fanoutHandler struct {
 	handlers []slog.Handler
 }
@@ -360,7 +365,7 @@ func newFanout(handlers ...slog.Handler) *fanoutHandler {
 }
 
 // Enabled reports whether any child handles this level, so a record is dropped
-// only when every sink would ignore it.
+// only when every sink ignores it.
 func (h *fanoutHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	for _, c := range h.handlers {
 		if c.Enabled(ctx, level) {
@@ -370,8 +375,9 @@ func (h *fanoutHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return false
 }
 
-// Handle forwards the record to each child that accepts its level, cloning per
-// child because a Record shares backing storage its handler may append to.
+// Handle forwards the record to each child that accepts its level. It clones
+// per child, because a Record shares backing storage that its handler can
+// append to.
 func (h *fanoutHandler) Handle(ctx context.Context, r slog.Record) error {
 	var errs []error
 	for _, c := range h.handlers {

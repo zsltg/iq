@@ -28,9 +28,9 @@ import (
 	iqconfig "github.com/zsltg/iq/internal/config"
 )
 
-// mcpDump is the seeded keyspace every unit test reads: a typed JSONL dump, the
-// same record shape a `--typed` export writes, so a file:// source serves it with
-// no container.
+// mcpDump is the seeded keyspace that every unit test reads: a typed JSONL dump,
+// the same record shape that a `--typed` export writes. So a file:// source
+// serves it with no container.
 const mcpDump = `{"key":"alpha","value":{"id":"alpha","status":"new","total":150}}
 {"key":"beta","value":{"id":"beta","status":"done","total":10}}
 {"key":"gamma","value":{"id":"gamma","status":"new","total":99}}
@@ -53,7 +53,8 @@ func seedMCP(t *testing.T) string {
 }
 
 // newTestMCPServer builds the server under test with the given --allow set and
-// the caps a test wants, at a timeout long enough for a local dump decode.
+// the caps that a test wants. The timeout is long enough for a local dump
+// decode.
 func newTestMCPServer(allow []string, maxItems, maxBytes int) *mcpServer {
 	allowed := map[string]bool{}
 	for _, a := range allow {
@@ -88,8 +89,8 @@ func connectMCPServer(t *testing.T, srv *mcp.Server, opts *mcp.ClientOptions) *m
 	return cs
 }
 
-// callMCP calls one tool and returns the result, failing on a protocol error (a
-// tool-level failure comes back as a result with IsError, not as an error).
+// callMCP calls one tool and returns the result. It fails on a protocol error
+// (a tool-level failure comes back as a result with IsError, not as an error).
 func callMCP(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: args})
@@ -279,9 +280,9 @@ func TestMCPQueryRejectsBadInput(t *testing.T) {
 	}
 }
 
-// TestMCPErrorRedactsPassword proves a stored credential never reaches a client:
-// the source URI carries one, the driver's open failure echoes it, and every
-// string in the rendered error is redacted.
+// TestMCPErrorRedactsPassword proves that a stored credential never reaches a
+// client. The source URI carries one, the open failure of the driver echoes it,
+// and every string in the rendered error is redacted.
 func TestMCPErrorRedactsPassword(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("secret", "redis://user:hunter2@127.0.0.1:1/0"))
@@ -299,9 +300,9 @@ func TestMCPErrorRedactsPassword(t *testing.T) {
 	}
 }
 
-// TestMCPExplainRejectsAnUnknownSource proves the explain tool resolves the
-// source before it builds a plan: an unknown handle is an error result, not a
-// plan that names no source.
+// TestMCPExplainRejectsAnUnknownSource proves that the explain tool resolves
+// the source before it builds a plan. An unknown handle is an error result,
+// not a plan that names no source.
 func TestMCPExplainRejectsAnUnknownSource(t *testing.T) {
 	seedMCP(t)
 	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
@@ -331,9 +332,10 @@ func TestMCPExplainStructuredPlan(t *testing.T) {
 	require.NotContains(t, out.Plan, "\x1b[", "plan text must render with color off")
 }
 
-// TestMCPExplainCompilesByDefault proves the pushdown compile is on unless the
-// call turns it off: a Mongo plan (no connection is made) reports the pushed
-// conjuncts and the server-side filter by default, and neither without compile.
+// TestMCPExplainCompilesByDefault proves that the pushdown compile is on unless
+// the call turns it off. A Mongo plan (no connection is made) reports the
+// pushed conjuncts and the server-side filter by default, and neither without
+// compile.
 func TestMCPExplainCompilesByDefault(t *testing.T) {
 	seedMCP(t)
 	cf, err := iqconfig.Load()
@@ -354,9 +356,9 @@ func TestMCPExplainCompilesByDefault(t *testing.T) {
 	require.Empty(t, plain.Filter)
 }
 
-// TestMCPSourcesListsVerboseWithoutExpanding proves the listing is the verbose
-// projection (options included) over the saved URIs: a keyring-backed source
-// shows its stored URI, never the password the keyring would inject.
+// TestMCPSourcesListsVerboseWithoutExpanding proves that the listing is the
+// verbose projection (options included) over the saved URIs. A keyring-backed
+// source shows its stored URI, never the password that the keyring holds.
 func TestMCPSourcesListsVerboseWithoutExpanding(t *testing.T) {
 	seedMCP(t)
 	fk := useFakeKeyring(t)
@@ -380,7 +382,7 @@ func TestMCPSourcesListsVerboseWithoutExpanding(t *testing.T) {
 	require.Equal(t, "redis://u@h:6379/0", byHandle["kr"].Location)
 }
 
-// TestMCPInspectLiveSource drives iq_inspect against a reachable MongoDB: the
+// TestMCPInspectLiveSource drives iq_inspect against a reachable MongoDB. The
 // result is the JSON rendering keyed by section, narrowed by only, never the text
 // or YAML forms or the --list summary.
 func TestMCPInspectLiveSource(t *testing.T) {
@@ -409,9 +411,9 @@ func TestMCPInspectLiveSource(t *testing.T) {
 	require.Contains(t, stats, "db")
 }
 
-// TestMCPProgressReportsEstimate proves the progress a client sees carries the
-// store's estimated total when the driver can count, so a client can render a
-// fraction and not only a running count.
+// TestMCPProgressReportsEstimate proves that the progress that a client sees
+// carries the estimated total of the store when the driver can count. So a
+// client can render a fraction and not only a running count.
 func TestMCPProgressReportsEstimate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: needs a reachable MongoDB")
@@ -455,9 +457,9 @@ func TestMCPProgressReportsEstimate(t *testing.T) {
 	}
 }
 
-// TestMCPCrossSource proves a filter that reads entirely through source() runs
-// and explains without a primary source, and that its plan still validates
-// against the declared output schema.
+// TestMCPCrossSource proves that a filter that reads entirely through source()
+// runs and explains without a primary source. It also proves that its plan
+// still validates against the declared output schema.
 func TestMCPCrossSource(t *testing.T) {
 	t.Run("query reads through source()", func(t *testing.T) {
 		seedMCP(t)
@@ -508,7 +510,7 @@ func TestMCPCrossSource(t *testing.T) {
 	})
 }
 
-// TestMCPRefusesStdoutLogSink proves the one flag combination that would corrupt
+// TestMCPRefusesStdoutLogSink proves that the one flag combination that corrupts
 // the protocol is refused before the server starts.
 func TestMCPRefusesStdoutLogSink(t *testing.T) {
 	tests := []struct {
@@ -566,8 +568,8 @@ func TestMCPRefusesStdoutLogSink(t *testing.T) {
 // fields the "query plan" log record emits, so the two renderings of one plan
 // cannot drift apart.
 func TestMCPExplainKeysMatchLogAttrs(t *testing.T) {
-	// A Mongo plan is the one that emits every key: the file driver pushes no
-	// server-side filter, so its plan would leave "filter" out.
+	// A Mongo plan is the one that emits every key. The file driver pushes no
+	// server-side filter, so its plan leaves "filter" out.
 	sp, err := buildSourcePlan(planSource{url: "mongodb://h/db?collection=c"}, `.[] | select(.a == 1)`, true, false)
 	require.NoError(t, err)
 	require.True(t, sp.hasPlan)
@@ -580,10 +582,9 @@ func TestMCPExplainKeysMatchLogAttrs(t *testing.T) {
 		require.True(t, ok)
 		want = append(want, attr.Key)
 	}
-	// The plan text is the explain tool's own addition; every other key is the
-	// log record's.
-	// filter, server, prefilter, and conjuncts are omitempty, so a zero value omits
-	// them. They are part of the contract either way.
+	// The plan text is an addition of the explain tool. Every other key is from the
+	// log record. filter, server, prefilter, and conjuncts are omitempty, so a zero
+	// value omits them. They are part of the contract either way.
 	got := jsonFieldNames(t, mcpExplainOutput{}, "filter", "server", "prefilter", "conjuncts")
 	require.Contains(t, got, "plan")
 	got = slices.DeleteFunc(got, func(s string) bool { return s == "plan" })
@@ -592,9 +593,9 @@ func TestMCPExplainKeysMatchLogAttrs(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
-// jsonFieldNames returns the sorted JSON object keys a value marshals to, plus
-// any extra names the caller knows are part of the contract but omitted from a
-// zero value.
+// jsonFieldNames returns the sorted JSON object keys that a value marshals to.
+// It adds any extra names that the caller knows are part of the contract but
+// omitted from a zero value.
 func jsonFieldNames(t *testing.T, v any, extra ...string) []string {
 	t.Helper()
 	raw, err := json.Marshal(v)
@@ -795,9 +796,9 @@ func TestMCPToolListIsSortedAndCacheable(t *testing.T) {
 	require.Equal(t, "private", res.GetCacheScope())
 }
 
-// TestMCPToolsCarryTitleAndAnnotations proves every advertised tool names itself
-// for a human and states all four behaviour hints explicitly, so a client never
-// falls back to the spec's defaults.
+// TestMCPToolsCarryTitleAndAnnotations proves that every advertised tool names
+// itself for a human and states all four behavior hints explicitly. So a client
+// never falls back to the defaults of the spec.
 func TestMCPToolsCarryTitleAndAnnotations(t *testing.T) {
 	seedMCP(t)
 	cs := connectMCP(t, newTestMCPServer(allowNames, 200, 256*1024), nil)
@@ -927,9 +928,9 @@ func TestMCPStructuredContentValidatesAgainstOutputSchema(t *testing.T) {
 	}
 }
 
-// TestMCPDestructiveNeedsConfirmation proves the gate on a destructive call: it
-// is refused without confirm, told exactly what to pass when the client cannot
-// ask its user, and proceeds once confirmed.
+// TestMCPDestructiveNeedsConfirmation proves the gate on a destructive call.
+// The call is refused without confirm, and is told exactly what to pass when
+// the client cannot ask its user. It proceeds once confirmed.
 func TestMCPDestructiveNeedsConfirmation(t *testing.T) {
 	// A file source has no container to clear, so the call fails on the
 	// capability, not the confirmation. That is the point: the refusal below
@@ -1039,9 +1040,9 @@ func TestMCPDestructiveElicitsConfirmation(t *testing.T) {
 
 // TestMCPProtocolRevisions runs the same list-and-call against a session on the
 // current revision and one negotiated down to the previous one. The SDK exposes
-// no client-side version pin, so the older session is produced the way an older
-// server produces it: server/discover is unavailable, which sends the client
-// through the legacy initialize handshake at 2025-11-25.
+// no client-side version pin. So the older session is produced the way an older
+// server produces it. For that, server/discover is unavailable, which sends the
+// client through the legacy initialize handshake at 2025-11-25.
 func TestMCPProtocolRevisions(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -1061,7 +1062,7 @@ func TestMCPProtocolRevisions(t *testing.T) {
 			}
 			cs := connectMCPServer(t, srv, nil)
 			require.Equal(t, tc.wantVersion, cs.InitializeResult().ProtocolVersion)
-			// Tools only on both revisions: the SDK's default set would add the
+			// Tools only on both revisions: the default set of the SDK adds the
 			// deprecated logging capability, which the legacy handshake still shows.
 			require.Equal(t, []string{"tools"}, jsonFieldNames(t, cs.InitializeResult().Capabilities))
 
@@ -1150,19 +1151,20 @@ func TestMCPServerIdentity(t *testing.T) {
 	require.Equal(t, buildVersion(), res.ServerInfo.Version)
 	require.NotNil(t, res.Capabilities.Tools)
 	// The tool set is fixed at process start, so the server must not promise a
-	// list-changed notification; the SDK's own default would.
+	// list-changed notification. The default of the SDK does.
 	require.False(t, res.Capabilities.Tools.ListChanged)
-	// Tools alone: the SDK would otherwise default to advertising logging, which
-	// the 2026-07-28 revision deprecates. Asserted over the wire shape so the
+	// Tools alone: otherwise the SDK defaults to advertising logging, which the
+	// 2026-07-28 revision deprecates. Asserted over the wire shape, so the
 	// deprecated fields are never named.
 	require.Equal(t, []string{"tools"}, jsonFieldNames(t, res.Capabilities))
 	require.Equal(t, mcpInstructions, res.Instructions)
 	require.Less(t, strings.Count(mcpInstructions, "\n"), 40, "the instructions must stay short enough to read before a first call")
 }
 
-// TestMCPServerLogsThroughTheRunLogger proves the SDK's own activity log is the
-// invocation logger, so --log captures the server's session events alongside
-// iq's own records rather than losing them to a default sink.
+// TestMCPServerLogsThroughTheRunLogger proves that the own activity log of the
+// SDK is the invocation logger. So --log captures the session events of the
+// server alongside the own records of iq, and does not lose them to a default
+// sink.
 func TestMCPServerLogsThroughTheRunLogger(t *testing.T) {
 	seedMCP(t)
 	var buf bytes.Buffer
@@ -1537,9 +1539,10 @@ func TestDecodeJSONObject(t *testing.T) {
 	}
 }
 
-// TestMCPCallConfigCarriesRunSettings proves every run-wide setting the core
-// needs reaches a per-call config, on a fresh struct rather than the server's
-// own, so concurrent calls cannot race on the source each resolved.
+// TestMCPCallConfigCarriesRunSettings proves that every run-wide setting that
+// the core needs reaches a per-call config. The config is a fresh struct and
+// not the own struct of the server, so concurrent calls cannot race on the
+// source that each resolved.
 func TestMCPCallConfigCarriesRunSettings(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	s := &mcpServer{cfg: &config{
@@ -1577,9 +1580,9 @@ func TestMCPCommandWiring(t *testing.T) {
 	require.Error(t, c.Args(c, []string{"extra"}))
 }
 
-// TestMCPCommandAcceptsBoundaryCaps proves a cap of exactly one is the smallest
-// accepted value: the run passes both cap checks and fails only on the capability
-// set, which is validated after them.
+// TestMCPCommandAcceptsBoundaryCaps proves that a cap of exactly one is the
+// smallest accepted value. The run passes both cap checks and fails only on the
+// capability set, which is validated after them.
 func TestMCPCommandAcceptsBoundaryCaps(t *testing.T) {
 	seedMCP(t)
 	root, _ := newRootCmd()
@@ -1619,8 +1622,9 @@ func TestMCPServeReportsTransportError(t *testing.T) {
 	})
 }
 
-// TestMCPPingNamesTheSource proves a source named in the call is the one pinged,
-// not the active one: the active source is the CLI's default, never the tool's.
+// TestMCPPingNamesTheSource proves that a source named in the call is the one
+// pinged, not the active one. The active source is the default of the CLI, never
+// of the tool.
 func TestMCPPingNamesTheSource(t *testing.T) {
 	data := seedMCP(t)
 	cf, err := iqconfig.Load()
@@ -1635,9 +1639,9 @@ func TestMCPPingNamesTheSource(t *testing.T) {
 	require.Equal(t, "other", out.Results[0].Handle)
 }
 
-// TestMCPQuerySyntaxErrorNeverConnects proves a filter that does not parse is
-// refused before any store is opened: against an unreachable source the error
-// is the parse error, not a connection failure.
+// TestMCPQuerySyntaxErrorNeverConnects proves that a filter that does not
+// parse is refused before any store is opened. Against an unreachable source
+// the error is the parse error, not a connection failure.
 func TestMCPQuerySyntaxErrorNeverConnects(t *testing.T) {
 	seedMCP(t)
 	cf, err := iqconfig.Load()
@@ -1683,9 +1687,9 @@ func TestMCPQueryByteCapIsCumulative(t *testing.T) {
 	require.Equal(t, 1, short.Count)
 }
 
-// TestMCPProgressAccumulatesAcrossPages proves the progress a client sees is the
-// running total of items scanned, not the size of the latest page: a keyspace
-// larger than one page ends at its full count.
+// TestMCPProgressAccumulatesAcrossPages proves that the progress a client sees
+// is the running total of items scanned, not the size of the latest page. A
+// keyspace larger than one page ends at its full count.
 func TestMCPProgressAccumulatesAcrossPages(t *testing.T) {
 	const rows = 1200 // the file driver pages 500 at a time
 	seedMCP(t)
@@ -1727,7 +1731,7 @@ func TestMCPProgressAccumulatesAcrossPages(t *testing.T) {
 	require.IsIncreasing(t, progress)
 	require.InDelta(t, float64(rows), progress[len(progress)-1], 0)
 
-	// The item cap ends the scan on the page that fills it: no later page is
+	// The item cap ends the scan on the page that fills it. No later page is
 	// read, so no progress report ever nears the keyspace size.
 	capped := make(chan float64, 64)
 	cs2 := connectMCP(t, newTestMCPServer(nil, 10, 1<<20), &mcp.ClientOptions{
@@ -1754,9 +1758,10 @@ func TestMCPProgressAccumulatesAcrossPages(t *testing.T) {
 	}
 }
 
-// TestMCPQueryNoMatchReturnsEmptyList proves a query matching nothing returns an
-// empty items array, never null: the output schema promises an array, and a
-// client iterating the result must not have to special-case the empty case.
+// TestMCPQueryNoMatchReturnsEmptyList proves that a query that matches nothing
+// returns an empty items array, never null. The output schema promises an array,
+// so a client that iterates the result must not have to special-case the empty
+// case.
 func TestMCPQueryNoMatchReturnsEmptyList(t *testing.T) {
 	seedMCP(t)
 	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
@@ -1782,9 +1787,9 @@ func TestMCPExplainBoundedReadNamesKeys(t *testing.T) {
 	require.False(t, out.Classification.Scan)
 }
 
-// TestMCPDiffStatsWithoutFilter proves the stats layer runs when no filter is
-// given: the refusal is for a filter that has nothing to scope, not for the
-// layer itself.
+// TestMCPDiffStatsWithoutFilter proves that the stats layer runs when no
+// filter is given. The refusal is for a filter that has nothing to scope, not
+// for the layer itself.
 func TestMCPDiffStatsWithoutFilter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: needs a reachable MongoDB")
@@ -1823,9 +1828,9 @@ func TestMCPDiffStatsWithoutFilter(t *testing.T) {
 	})
 }
 
-// TestMCPPingReportsFailure proves an unreachable source is a row with ok false
-// and a redacted reason, not a tool error, so one dead member never hides the
-// live ones.
+// TestMCPPingReportsFailure proves that an unreachable source is a row with ok
+// false and a redacted reason, not a tool error. So one dead member never hides
+// the live ones.
 func TestMCPPingReportsFailure(t *testing.T) {
 	seedMCP(t)
 	cf, err := iqconfig.Load()
@@ -1845,9 +1850,9 @@ func TestMCPPingReportsFailure(t *testing.T) {
 	require.Zero(t, out.Results[0].ElapsedMs)
 }
 
-// TestMCPPingLiveRedis proves a reachable source reports the round trip it
-// measured: a fraction of a millisecond on localhost, never a rounded zero,
-// and never the whole timeout.
+// TestMCPPingLiveRedis proves that a reachable source reports the round
+// trip that it measured. That is a fraction of a millisecond on localhost,
+// never a rounded zero, and never the whole timeout.
 func TestMCPPingLiveRedis(t *testing.T) {
 	u := liveRedisURL(t)
 	seedMCP(t)
@@ -1913,7 +1918,7 @@ func liveRedisURL(t *testing.T) string {
 }
 
 // TestMCPInspectLiveRedis drives iq_inspect against a reachable Redis, whose
-// client refuses a nil context: the call runs under the per-call deadline, in
+// client refuses a nil context. The call runs under the per-call deadline, in
 // the open and in every introspection command.
 func TestMCPInspectLiveRedis(t *testing.T) {
 	u := liveRedisURL(t)
@@ -1945,7 +1950,7 @@ func TestMCPDiffStatsLiveRedis(t *testing.T) {
 	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
 
 	// The server section carries uptime, so even one server differs from
-	// itself; the assertion is that the layer ran.
+	// itself. The assertion is that the layer ran.
 	var out mcpDiffOutput
 	structOf(t, callMCP(t, cs, "iq_diff", map[string]any{
 		"a": "live", "b": "live", "stats": true, "section": []string{"server"},
@@ -1953,9 +1958,9 @@ func TestMCPDiffStatsLiveRedis(t *testing.T) {
 	require.Empty(t, out.Data)
 }
 
-// TestMCPInsertFromLiveRedis proves a write runs under the per-call deadline:
-// the source scan and the destination open both go through a client that
-// refuses a nil context.
+// TestMCPInsertFromLiveRedis proves that a write runs under the per-call
+// deadline. The source scan and the destination open both go through a client
+// that refuses a nil context.
 func TestMCPInsertFromLiveRedis(t *testing.T) {
 	u := liveRedisURL(t)
 	seedRedis(t, u, map[string]string{"k": "v"})
@@ -2001,10 +2006,11 @@ func TestMCPInsertFromLiveRedis(t *testing.T) {
 	structOf(t, res, &out)
 	require.Equal(t, mcpWriteOutput{Destination: "live1", Overwritten: 1}, out)
 
-	// Under --allow destructive a dry run of a replace is accepted outright:
-	// the capability gate lets it through and a dry run has nothing to confirm.
-	// The file-backed source cannot show this, a file destination is refused
-	// before the write, so only a live store proves the gate opens.
+	// Under --allow destructive a dry run of a replace is accepted outright.
+	// The capability gate lets it through, and a dry run has nothing to
+	// confirm. The file-backed source cannot show this, because a file
+	// destination is refused before the write. So only a live store proves that
+	// the gate opens.
 	cs = connectMCP(t, newTestMCPServer([]string{allowWrites, allowDestructive}, 200, 256*1024), nil)
 	res = callMCP(t, cs, "iq_insert", map[string]any{
 		"source": "live", "destination": "live", "replace": true, "dry_run": true,
@@ -2015,9 +2021,9 @@ func TestMCPInsertFromLiveRedis(t *testing.T) {
 	require.True(t, out.DryRun)
 }
 
-// TestConfirmationWithoutClientCapabilities proves a request from a session that
-// declared no capabilities at all is refused with the confirm-hint, not asked:
-// there is no elicitation to fall back on, and no capability set to read.
+// TestConfirmationWithoutClientCapabilities proves that a request from a session
+// that declared no capabilities at all is refused with the confirm-hint, not
+// asked. There is no elicitation to fall back on, and no capability set to read.
 func TestConfirmationWithoutClientCapabilities(t *testing.T) {
 	s := newTestMCPServer([]string{allowDestructive}, 200, 256*1024)
 	req := &mcp.CallToolRequest{Session: &mcp.ServerSession{}, Params: &mcp.CallToolParamsRaw{}}
@@ -2070,8 +2076,8 @@ func TestInsertTransformOptions(t *testing.T) {
 }
 
 // TestInsertRequestFrom pins how the tool inputs become the shared write
-// request: insert-only unless no_overwrite is turned off, replace and dry_run
-// pass through, and the confirmation never prompts.
+// request. It is insert-only unless no_overwrite is turned off. replace and
+// dry_run pass through, and the confirmation never prompts.
 func TestInsertRequestFrom(t *testing.T) {
 	no := false
 	yes := true
@@ -2146,7 +2152,7 @@ func TestMCPDiffForwardsContextToBothSides(t *testing.T) {
 }
 
 // TestMCPToolsReportFailures drives the failure branches of the read and write
-// tools through the protocol: each must come back as an error result that names
+// tools through the protocol. Each must come back as an error result that names
 // the cause, never as a success with an empty body.
 func TestMCPToolsReportFailures(t *testing.T) {
 	tests := []struct {

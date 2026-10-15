@@ -18,15 +18,16 @@ import (
 )
 
 // errTruncated stops a run once a result cap is reached. The core returns the
-// moment an emit callback errors and every driver's scan stops on the first
-// callback error, so this is how a consumer-side cap ends a scan mid-page. It is
-// a control signal, never surfaced to a client.
+// moment an emit callback errors, and the scan of every driver stops on the
+// first callback error. So this is how a consumer-side cap ends a scan mid-page.
+// It is a control signal, never surfaced to a client.
 var errTruncated = errors.New("result cap reached")
 
-// mcpToolError carries an already-rendered iq error as the JSON body a client
-// sees. The SDK sets a tool result's single text content to err.Error() and marks
-// it isError, so making Error() the redacted {"error":{...}} document is how the
-// MCP surface reuses the CLI's --error.format json shape exactly.
+// mcpToolError carries an already-rendered iq error as the JSON body that a
+// client sees. The SDK sets the single text content of a tool result to
+// err.Error() and marks it isError. So making Error() the redacted
+// {"error":{...}} document is how the MCP surface reuses the --error.format json
+// shape of the CLI exactly.
 type mcpToolError struct{ body string }
 
 // Error returns the rendered error document.
@@ -44,10 +45,11 @@ func toolError(err error) error {
 	return &mcpToolError{body: strings.TrimRight(b.String(), "\n")}
 }
 
-// addTools registers every tool the server's --allow set permits. The SDK lists
-// tools sorted by name, so tools/list is deterministic. A tool that is not
-// allowed is never registered, so it is absent from tools/list and cannot be
-// called: the annotations are display hints, and --allow is the only gate.
+// addTools registers every tool that the --allow set of the server permits. The
+// SDK lists tools sorted by name, so tools/list is deterministic. A tool that
+// is not allowed is never registered, so it is absent from tools/list and
+// cannot be called. The annotations are display hints, and --allow is the only
+// gate.
 func (s *mcpServer) addTools(srv *mcp.Server) {
 	if s.allows(allowDestructive) {
 		s.addLifecycleTools(srv)
@@ -61,10 +63,10 @@ func (s *mcpServer) addTools(srv *mcp.Server) {
 	s.addReadTools(srv)
 }
 
-// readOnlyAnnotations returns the display hints of a tool that only reads.
-// The title is set twice on purpose: Tool.Title is the current field, and
-// Annotations.Title is the only one a client on a revision older than
-// 2025-06-18 reads, which the SDK still negotiates down to.
+// readOnlyAnnotations returns the display hints of a tool that only
+// reads. The title is set twice on purpose. Tool.Title is the current
+// field. Annotations.Title is the only one that a client on a revision
+// older than 2025-06-18 reads, which the SDK still negotiates down to.
 func readOnlyAnnotations(title string) *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{
 		Title: title, ReadOnlyHint: true, IdempotentHint: true,
@@ -223,9 +225,9 @@ type mcpPingOutput struct {
 	Results []mcpPingResult `json:"results"`
 }
 
-// toolPing checks reachability through the same round-trip `iq ping` performs.
-// A per-source failure is reported in the row, not as a tool error, so one
-// unreachable member of a group does not hide the reachable ones.
+// toolPing checks reachability through the same round-trip that `iq ping`
+// performs. A per-source failure is reported in the row, not as a tool error.
+// So one unreachable member of a group does not hide the reachable ones.
 func (s *mcpServer) toolPing(ctx context.Context, _ *mcp.CallToolRequest, in mcpPingInput) (*mcp.CallToolResult, mcpPingOutput, error) {
 	cf, err := iqconfig.Load()
 	if err != nil {
@@ -328,8 +330,8 @@ func (s *mcpServer) toolExplain(_ context.Context, _ *mcp.CallToolRequest, in mc
 // explainResult builds the structured plan for filter. text is the rendered plan.
 func explainResult(cfg *config, filter, text string) (mcpExplainOutput, error) {
 	// keys and ops are always-present arrays in the result schema, so they start
-	// empty rather than nil: a nil slice would serialize as null and fail the
-	// output schema for a cross-source filter or a driver with no describer. A
+	// empty and not nil. A nil slice serializes as null and fails the output
+	// schema for a cross-source filter or a driver with no describer. A
 	// cross-source filter has no URI, so the source plan below has no driver and
 	// leaves every per-source field at that empty value.
 	out := mcpExplainOutput{Plan: text, Ops: []string{}, Classification: mcpClassification{Keys: []string{}}}
@@ -364,7 +366,7 @@ func (o *mcpExplainOutput) addSourcePlan(sp sourcePlan) {
 }
 
 // filterTarget is what iq_query and iq_explain share: the source to read, the
-// pushdown switch, and whether the filter may load the whole keyspace.
+// pushdown switch, and whether the filter can load the whole keyspace.
 type filterTarget struct {
 	source    string
 	compile   *bool
@@ -388,7 +390,7 @@ func (s *mcpServer) targetConfig(t filterTarget, cross bool) (*config, error) {
 }
 
 // mcpQueryInput is a query request: the source, the filter, and the per-call
-// bounds, each of which may only tighten the server's own caps.
+// bounds. Each bound can only tighten the caps of the server.
 type mcpQueryInput struct {
 	Source    string `json:"source,omitempty" jsonschema:"the source handle to query, optionally handle.keyspace; omit only for a filter that reads entirely through source()"`
 	Filter    string `json:"filter" jsonschema:"the jq filter to run; single top-level paths name the keys to fetch"`
@@ -407,10 +409,11 @@ type mcpQueryOutput struct {
 	Truncated bool  `json:"truncated"`
 }
 
-// toolQuery runs the filter through the same engine the CLI query uses, with an
-// emit closure that collects values until a cap is reached. Reaching a cap is a
-// successful, truncated result, not an error; a filter that needs the whole
-// keyspace without unbounded surfaces the core's refusal as an error result.
+// toolQuery runs the filter through the same engine that the CLI query uses,
+// with an emit closure that collects values until a cap is reached. Reaching a
+// cap is a successful, truncated result, not an error. A filter that needs the
+// whole keyspace without unbounded surfaces the refusal of the core as an error
+// result.
 func (s *mcpServer) toolQuery(ctx context.Context, req *mcp.CallToolRequest, in mcpQueryInput) (*mcp.CallToolResult, mcpQueryOutput, error) {
 	if strings.TrimSpace(in.Filter) == "" {
 		return nil, mcpQueryOutput{}, toolError(errors.New("query: a filter is required"))
@@ -474,7 +477,7 @@ type queryCollector struct {
 }
 
 // emit adds v to the result. It returns errTruncated, and marks the result
-// truncated, when v would pass the item cap or the byte cap.
+// truncated, when adding v goes over the item cap or the byte cap.
 func (c *queryCollector) emit(v any) error {
 	if len(c.out.Items) >= c.bounds.maxItems {
 		c.out.Truncated = true
@@ -539,7 +542,7 @@ func (r queryRun) finish(err error) error {
 		return nil
 	}
 	// No store echoes its URI into a run error, and the rendered error is
-	// redacted by shape anyway, so the chain goes through intact: a parse
+	// redacted by shape anyway. So the chain goes through intact: a parse
 	// error keeps its position and a scan refusal keeps its hint.
 	return toolError(scanHint(asSyntaxError(r.filter, err)))
 }
@@ -630,9 +633,9 @@ type mcpDiffOutput struct {
 	Differ bool           `json:"differ"`
 }
 
-// mcpItemDelta is one keyed item's delta. It projects diff.ItemDelta with the op
-// named rather than numbered: the core's Op marshals to its name but is a Go
-// integer, so a schema inferred from it would promise the wrong type.
+// mcpItemDelta is the delta of one keyed item. It projects diff.ItemDelta with
+// the op named and not numbered. The Op of the core marshals to its name but is
+// a Go integer, so a schema inferred from it promises the wrong type.
 type mcpItemDelta struct {
 	Key     string      `json:"key"`
 	Op      string      `json:"op" jsonschema:"add, remove or change"`
@@ -723,9 +726,9 @@ func diffSpecs(in mcpDiffInput) (left, right sourceSpec, err error) {
 }
 
 // collectDiff runs the selected layers in order (data, stats, schema) and
-// projects the deltas. run carries every input. The data layer ignores sections
-// and sample, the stats layer ignores cfg and sample, and the schema layer
-// ignores sections, so each layer reads only its own inputs.
+// projects the deltas. run carries every input. The data layer ignores
+// sections and sample. The stats layer ignores cfg and sample. The schema
+// layer ignores sections. So each layer reads only its own inputs.
 func collectDiff(ctx context.Context, run diffRun, layers diffModes) (mcpDiffOutput, error) {
 	var out mcpDiffOutput
 	if layers.data {
@@ -775,7 +778,7 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	if err := resolveSource(cfg); err != nil {
 		return nil, mcpExecOutput{}, toolError(err)
 	}
-	// Log only the verb: operands may carry data values.
+	// Log only the verb: operands can carry data values.
 	cfg.log().Info("exec forward", "verb", in.Args[0])
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
@@ -840,9 +843,10 @@ type mcpWriteOutput struct {
 	DryRun      bool   `json:"dry_run"`
 }
 
-// toolInsert copies a source's items into a destination through the same write
-// path `iq --insert` drives. replace empties the destination first, so it needs
-// the destructive capability and a confirmation.
+// toolInsert copies the items of a source into a destination through the same
+// write path that `iq --insert` drives. The replace flag empties the
+// destination first, so it needs the destructive capability and a
+// confirmation.
 func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in mcpInsertInput) (*mcp.CallToolResult, mcpWriteOutput, error) {
 	if err := s.checkInsert(in); err != nil {
 		return nil, mcpWriteOutput{}, toolError(err)
@@ -927,9 +931,9 @@ func (s *mcpServer) toolDataDrop(ctx context.Context, req *mcp.CallToolRequest, 
 	return s.runLifecycleTool(ctx, req, in, dropOp)
 }
 
-// runLifecycleTool is the shared body of the clear and drop tools: resolve the
-// target, take the confirmation unless the call is a dry run, then apply the op
-// through the same implementation `iq data` drives.
+// runLifecycleTool is the shared body of the clear and drop tools. It resolves
+// the target, takes the confirmation unless the call is a dry run, then applies
+// the op through the same implementation that `iq data` drives.
 func (s *mcpServer) runLifecycleTool(ctx context.Context, req *mcp.CallToolRequest, in mcpLifecycleInput, op lifecycleOp) (*mcp.CallToolResult, mcpLifecycleOutput, error) {
 	t, err := s.lifecycleTarget(in.Source, op.name)
 	if err != nil {
@@ -1074,10 +1078,10 @@ func errorResult(err error) *mcp.CallToolResult {
 	return &res
 }
 
-// progressHooks turns the request's progress token, when it carries one, into the
-// engine's per-page and estimate callbacks, so a long scan reports on the
-// request's own stream. Without a token both are nil and the engine calls
-// nothing.
+// progressHooks turns the progress token of the request, when it carries one,
+// into the per-page and estimate callbacks of the engine. So a long scan reports
+// on the own stream of the request. Without a token both are nil, and the engine
+// calls nothing.
 func (s *mcpServer) progressHooks(ctx context.Context, req *mcp.CallToolRequest) (onPage func(int), onEstimate func(int64)) {
 	if req == nil || req.Params == nil {
 		return nil, nil
@@ -1101,9 +1105,9 @@ func (s *mcpServer) progressHooks(ctx context.Context, req *mcp.CallToolRequest)
 		}
 }
 
-// callTimeout resolves one call's deadline: the server's --timeout, lowered by a
-// per-call duration when the caller passes a shorter one. A per-call value may
-// only tighten the bound, never loosen it.
+// callTimeout resolves the deadline of one call: the --timeout of the server,
+// lowered by a per-call duration when the caller passes a shorter one. A
+// per-call value can only tighten the bound, never loosen it.
 func (s *mcpServer) callTimeout(raw string) (time.Duration, error) {
 	if strings.TrimSpace(raw) == "" {
 		return s.cfg.timeout, nil
@@ -1118,9 +1122,10 @@ func (s *mcpServer) callTimeout(raw string) (time.Duration, error) {
 	return min(d, s.cfg.timeout), nil
 }
 
-// capValue resolves one per-call cap against the server's own: unset takes the
-// server's, a positive value lowers it, and a value above it is clamped back
-// down. A negative value is bad input and is refused at entry.
+// capValue resolves one per-call cap against the cap of the server. Unset
+// takes the cap of the server, a positive value lowers it, and a value above
+// it is clamped back down. A negative value is bad input and is refused at
+// entry.
 func capValue(name string, want, limit int) (int, error) {
 	if want < 0 {
 		return 0, fmt.Errorf("invalid %s %d: want a positive count", name, want)

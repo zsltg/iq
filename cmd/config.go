@@ -17,11 +17,13 @@ import (
 
 // persistableOptions is the allowlist of flag names that can be stored as
 // config defaults. Each option is keyed by the name of its flag, so it is a 1:1
-// alias (same name, type, help, and validation). Excluded: per-invocation
-// targeting (src, collection, from, combine, explain), display-only toggles
-// (reveal, expand), live-only diagnostics (debug.pprof), the config path, the
-// -j/-J/-A/-y/-r aliases (the canonical selector is format), and the query
-// safety gates (unbounded, no-compile), which apply to one run.
+// alias (same name, type, help, and validation). These are excluded:
+//   - per-invocation targeting (src, collection, from, combine, explain).
+//   - display-only toggles (reveal, expand).
+//   - live-only diagnostics (debug.pprof).
+//   - the config path.
+//   - the -j/-J/-A/-y/-r aliases (the canonical selector is format).
+//   - the query safety gates (unbounded, no-compile), which apply to one run.
 var persistableOptions = []string{
 	"format", "format.decimal", "compact",
 	"timeout",
@@ -54,7 +56,7 @@ func applyStoredOptions(cmd *cobra.Command, cfg *config) error {
 	var srcOpts map[string]string
 	if selected != "" {
 		// Strip a dotted collection suffix (--src shop.orders) before resolving,
-		// as every other resolve site does; otherwise the per-source options of a
+		// as every other resolve site does. Otherwise the per-source options of a
 		// collection-addressed source are silently skipped.
 		base, _, _ := splitSourceArg(cf, selected)
 		if s, _, ok := cf.Resolve(base); ok {
@@ -82,9 +84,9 @@ func applyStoredOptions(cmd *cobra.Command, cfg *config) error {
 
 // newConfigCmd builds `iq config`: inspect and edit the config file, and get or
 // set (or remove, with `set -D`) the stored option defaults. With --src an option
-// is scoped to one source, overriding the base for a query against it; without
-// --src it is a base default. The precedence at query time is explicit flag >
-// source option > base option > built-in default.
+// is scoped to one source, which overrides the base for a query against it.
+// Without --src it is a base default. The precedence at query time is explicit
+// flag > source option > base option > built-in default.
 func newConfigCmd(cfg *config) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "config",
@@ -136,9 +138,9 @@ func newConfigLocationCmd() *cobra.Command {
 }
 
 // newConfigGetCmd builds `iq config get [--src @x] <key>`: print the effective
-// value of one option at that scope — the stored value if set, else the flag's
-// built-in default (for a source, the source value falls back to the base value
-// then the default).
+// value of one option at that scope. That is the stored value if set, else the
+// built-in default of the flag. For a source, the source value falls back to
+// the base value, then the default.
 func newConfigGetCmd(cfg *config) *cobra.Command {
 	return &cobra.Command{
 		Use:               "get <option>",
@@ -375,9 +377,9 @@ func newConfigViewCmd(cfg *config) *cobra.Command {
 }
 
 // redactedConfig returns a copy of cf with every source URL replaced by its
-// display location, so `view` never prints a stored credential unless --reveal
+// display location. So `view` never prints a stored credential unless --reveal
 // or --expand asks for it. Option maps are shared by reference (they hold no
-// secrets), which is safe because the copy is only marshaled, never mutated.
+// secrets). This is safe because the copy is only marshaled, never mutated.
 func redactedConfig(cf *iqconfig.Config, reveal, expand bool) *iqconfig.Config {
 	out := &iqconfig.Config{Active: cf.Active, Group: cf.Group, Options: cf.Options}
 	if len(cf.Sources) > 0 {
@@ -390,7 +392,7 @@ func redactedConfig(cf *iqconfig.Config, reveal, expand bool) *iqconfig.Config {
 	return out
 }
 
-// effectiveOption returns the value that would apply for key at the scope and
+// effectiveOption returns the value that applies for key at the scope, and
 // whether it was explicitly set at that scope. For a source: its own value if
 // set, else the base value, else the flag default. For the base: its value if
 // set, else the flag default.
@@ -413,9 +415,9 @@ func effectiveOption(cf *iqconfig.Config, handle, key string) (value string, set
 
 // canonicalOptionValue validates value for key and returns its canonical stored
 // form. It runs the value through the real flag (catching bad booleans and
-// durations and normalizing) and then the same semantic validators PreRunE uses
-// for the plain-string flags, so a stored value can never be one a live run
-// would reject.
+// durations and normalizing). Then it runs the same semantic validators that
+// PreRunE uses for the plain-string flags. So a stored value can never be one
+// that a live run rejects.
 func canonicalOptionValue(key, value string) (string, error) {
 	if !isPersistableOption(key) {
 		return "", unknownOptionErr(key)
@@ -461,9 +463,9 @@ func validateOptionSemantics(key, value string) error {
 	}
 }
 
-// resolveEditor picks the editor command and its leading arguments, honoring
-// IQ_EDITOR, then VISUAL, then EDITOR (each may carry arguments, e.g. "code
-// --wait"), falling back to vi.
+// resolveEditor picks the editor command and its leading arguments. It
+// honors IQ_EDITOR, then VISUAL, then EDITOR (each can carry arguments, for
+// example "code --wait"), and falls back to vi.
 func resolveEditor() (string, []string) {
 	for _, env := range []string{"IQ_EDITOR", "VISUAL", "EDITOR"} {
 		if v := strings.TrimSpace(os.Getenv(env)); v != "" {

@@ -37,10 +37,10 @@ func seedDiffFiles(t *testing.T, sources map[string][]string) {
 	seedConfig(t, c)
 }
 
-// TestDiffValidationOrder pins the order of the checks in the diff command:
-// load the config, parse the left side, parse the right side, check --patch
-// against the layer count, then check --stats against a filter. Each row trips
-// two checks, and only the first one reports.
+// TestDiffValidationOrder pins the order of the checks in the diff command.
+// The order is: load the config, parse the left side, parse the right side.
+// Then check --patch against the layer count, then check --stats against a
+// filter. Each row trips two checks, and only the first one reports.
 func TestDiffValidationOrder(t *testing.T) {
 	const (
 		patchLayerErr  = "--patch renders one JSON Patch, so it needs a single layer; choose exactly one of --data, --stats, --schema"
@@ -93,7 +93,7 @@ func TestDiffReadsLeftBeforeRight(t *testing.T) {
 }
 
 // TestDiffOutputAndQuietExit pins the rendered delta and the exit contract of
-// the human path: the sources differ, so the output renders in full and the run
+// the human path. The sources differ, so the output renders in full and the run
 // returns errQuietExit.
 func TestDiffOutputAndQuietExit(t *testing.T) {
 	tests := []struct {
@@ -234,9 +234,10 @@ func TestDiffStatsCrossDriverText(t *testing.T) {
 }
 
 // ctxRecorder records the context of each open and each read, by source URI.
-// It also records each raw query and each scan page that a read takes. pages
-// sets how many one-item pages a scan offers; zero means one. replies sets the
-// raw query reply for a source URI; no entry means {"ok": 1}.
+// It also records each raw query and each scan page that a read takes. The
+// pages field sets how many one-item pages a scan offers, and zero means one.
+// The replies field sets the raw query reply for a source URI. No entry means
+// {"ok": 1}.
 type ctxRecorder struct {
 	mu      sync.Mutex
 	ctxs    map[string][]context.Context
@@ -330,9 +331,9 @@ func requireSideContexts(t *testing.T, rec *ctxRecorder, check func(t *testing.T
 // diffCtxKey is the context key that marks the context of the caller.
 type diffCtxKey struct{}
 
-// TestDiffForwardsContextToBothSides proves that every layer, on the human path
-// and on the patch path, opens and reads both sides under the context of the
-// command, with the --timeout deadline.
+// TestDiffForwardsContextToBothSides proves that every layer opens and reads
+// both sides under the context of the command, with the --timeout deadline.
+// This holds on the human path and on the patch path.
 func TestDiffForwardsContextToBothSides(t *testing.T) {
 	for _, layer := range [][]string{{"--data"}, {"--stats"}, {"--schema"}, {"--data", "--patch"}, {"--stats", "--patch"}, {"--schema", "--patch"}} {
 		t.Run(strings.Join(layer, " "), func(t *testing.T) {
@@ -387,8 +388,9 @@ func TestDiffDataTicksBothSides(t *testing.T) {
 }
 
 // TestDiffRunGivesOptionsToBothSides proves that the stats layer runs the
-// --section list on both sides, and that the schema layer samples both sides
-// with --sample, on the human path and on the patch path.
+// --section list on both sides. It also proves that the schema layer samples
+// both sides with --sample. Both hold on the human path and on the patch
+// path.
 func TestDiffRunGivesOptionsToBothSides(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -483,8 +485,8 @@ func TestDiffStatsReportsTheChange(t *testing.T) {
 }
 
 // TestDiffFirstFailingLayerWins pins the layer order: the stats layer runs
-// before the schema layer, and its error returns unchanged. A run that went on
-// to the schema layer would replace it with no error.
+// before the schema layer, and its error returns unchanged. If a run went on
+// to the schema layer, that layer returns no error and hides this error.
 func TestDiffFirstFailingLayerWins(t *testing.T) {
 	const unknownSection = `unknown inspect subcommand "bogus"; want one of dbStats, serverStatus, listCollections, collStats, buildInfo, hostInfo`
 	seedDiffFiles(t, map[string][]string{"a": {`{"key":"1","value":{}}`}, "b": {`{"key":"1","value":{}}`}})

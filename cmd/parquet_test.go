@@ -60,9 +60,9 @@ func TestSelectTypedFormatRejectsParquet(t *testing.T) {
 	require.Contains(t, err.Error(), "parquet")
 }
 
-// TestParquetFormatterWiring drives the formatter as the query path does — emit
-// per value, then flush — and asserts a real Parquet file lands in the sink (the
-// PAR1 magic bookends the format).
+// TestParquetFormatterWiring drives the formatter as the query path does: emit
+// per value, then flush. It asserts that a real Parquet file lands in the sink
+// (the PAR1 magic bookends the format).
 func TestParquetFormatterWiring(t *testing.T) {
 	var buf bytes.Buffer
 	f := newFormatter(formatParquet, &buf, false)
@@ -77,11 +77,11 @@ func TestParquetFormatterWiring(t *testing.T) {
 }
 
 // TestParquetFormatterPropagatesEncodeError drives the formatter as the query
-// path does and forces a post-sample type mismatch, so emit must surface the
-// encoder's error rather than swallowing it.
+// path does and forces a post-sample type mismatch. So emit must surface the
+// error of the encoder rather than swallow it.
 func TestParquetFormatterPropagatesEncodeError(t *testing.T) {
 	f := newFormatter(formatParquet, &bytes.Buffer{}, false)
-	// The parquetout sample is 1000 values; fill it with an int column, then a
+	// The parquetout sample is 1000 values. Fill it with an int column, then a
 	// string in that column past the sample fails.
 	for range 1000 {
 		require.NoError(t, f.emit(map[string]any{"n": 1}))

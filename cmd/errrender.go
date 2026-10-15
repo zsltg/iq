@@ -13,10 +13,10 @@ import (
 	"github.com/itchyny/gojq"
 )
 
-// filterSyntaxError enriches a gojq parse error with the filter text the CLI
-// boundary owns, so the renderer can draw a caret under the offending token when
-// --error.format.text.verbose is on. The query core returns only gojq's
-// *ParseError (the filter string is a CLI concern); runJQ/runCombine splice it in
+// filterSyntaxError enriches a gojq parse error with the filter text that the CLI
+// boundary owns. So the renderer can draw a caret under the offending token when
+// --error.format.text.verbose is on. The query core returns only the *ParseError
+// of gojq (the filter string is a CLI concern). runJQ/runCombine splice it in
 // here. It is transparent to errors.Is/As via Unwrap.
 type filterSyntaxError struct {
 	filter string
@@ -49,13 +49,13 @@ func asSyntaxError(filter string, err error) error {
 
 // report renders the two-line caret span for a syntax error: the filter, then a
 // caret under the offending token. The Offset of gojq counts bytes read when
-// the error fired (just past the token), so the caret goes at the token start.
-// The filter is treated as one line. A multi-line filter still renders, with
-// the caret measured from the start.
+// the error fired (right after the token), so the caret goes at the start of
+// the token. The filter is treated as one line. A multi-line filter still
+// renders. The caret is measured from the start.
 func (e *filterSyntaxError) report() string {
 	// offset counts bytes read up to the error, so col = offset - len(token) is
-	// the token's start and never exceeds len(filter); it can only underflow if a
-	// token is reported at offset 0, which max clamps to column 0.
+	// the start of the token and never exceeds len(filter). It can underflow only
+	// if a token is reported at offset 0, which max clamps to column 0.
 	col := max(0, e.offset-len(e.token))
 	var b strings.Builder
 	b.WriteString("    ")
@@ -67,9 +67,10 @@ func (e *filterSyntaxError) report() string {
 	return b.String()
 }
 
-// renderError writes err to w in the format cfg selects. text (the default and
-// the fallback for any unresolved format) preserves the historical `iq: <err>`
-// line; json emits a machine-readable object. It is a no-op on a nil error.
+// renderError writes err to w in the format that cfg selects. text preserves
+// the historical `iq: <err>` line. It is the default and the fallback for any
+// unresolved format. json emits a machine-readable object. It is a no-op on a
+// nil error.
 func renderError(w io.Writer, cfg *config, err error) {
 	if err == nil {
 		return
@@ -104,7 +105,7 @@ type errorJSON struct {
 	Error errorBody `json:"error"`
 }
 
-// errorBody carries the message and, for a syntax error, the parse position; the
+// errorBody carries the message and, for a syntax error, the parse position. The
 // cause chain is always included in json (matching sq, where json always prints
 // the stack).
 type errorBody struct {
@@ -115,7 +116,7 @@ type errorBody struct {
 }
 
 // renderErrorJSON writes the error as a JSON object. The cause chain is always
-// present; a syntax error also carries its byte offset and token.
+// present. A syntax error also carries its byte offset and token.
 func renderErrorJSON(w io.Writer, err error) {
 	redact := newRedactor(err)
 	body := errorBody{Message: redact(err.Error())}
@@ -133,8 +134,8 @@ func renderErrorJSON(w io.Writer, err error) {
 }
 
 // stackFrames returns the cause breakdown to print for --error.stack (and json
-// causes), or nil when the error has a single frame — in that case the frame
-// equals the already-printed message, so a one-line "stack" would only repeat it.
+// causes), or nil when the error has a single frame. In that case the frame
+// equals the already-printed message, so a one-line "stack" only repeats it.
 func stackFrames(err error) []string {
 	frames := causeChain(err)
 	if len(frames) <= 1 {
@@ -144,10 +145,10 @@ func stackFrames(err error) []string {
 }
 
 // causeChain reduces the %w unwrap chain of err to distinct frames, outermost
-// first. Each layer is trimmed to the prefix it added over the layer it wraps.
-// So the chain reads "combine", "open source", "<leaf>" and does not repeat the
-// leaf at every level. iq wraps with %w and carries no goroutine traces, so
-// this is its analog of a stack.
+// first. Each layer is trimmed to the prefix that it added over the layer that
+// it wraps. So the chain reads "combine", "open source", "<leaf>". It does not
+// repeat the leaf at every level. iq wraps with %w and carries no goroutine
+// traces. So this is its analog of a stack.
 func causeChain(err error) []string {
 	var msgs []string
 	for e := err; e != nil; e = errors.Unwrap(e) {
@@ -171,17 +172,18 @@ func causeChain(err error) []string {
 // can scrub a connection URI in an error before iq prints it. The stop set is
 // whitespace and the double quote. A single quote is valid in the userinfo
 // (RFC 3986 sub-delims), so the match continues past it. If the match stopped
-// there, a quoted password would pass through unmasked. Trailing punctuation
-// that the class admits (a URI in parentheses, before a comma or inside single
-// quotes) is split off before the parse.
+// there, a quoted password passes through unmasked. The class also admits
+// trailing punctuation, for example a URI in parentheses, before a comma, or
+// inside single quotes. The pattern step splits that punctuation off before
+// the parse.
 var urlLike = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"]+`)
 
-// trailingDelims is what a URI match can pick up when it is in a sentence:
-// prose punctuation, the single quote that closes a quoted URI, and the backtick
-// that closes a code span in our own advice strings. The pattern step trims it
-// before url.Parse. If the closing single quote or backtick stays on, it goes
-// into the port or the host and the parse fails, or it goes into the path and
-// stays as an escape that the URI did not have.
+// trailingDelims is what a URI match can pick up when it is in a sentence. That
+// is prose punctuation, the single quote that closes a quoted URI, and the
+// backtick that closes a code span in our own advice strings. The pattern step
+// trims it before url.Parse. If the closing single quote or backtick stays on,
+// it goes into the port or the host and the parse fails. Or it goes into the
+// path and stays as an escape that the URI did not have.
 //
 // The trim is a run, not a single byte, because a URI can close a parenthetical
 // and a sentence at once ("(mongodb://host/db)."). The cost is that a URI that
@@ -199,9 +201,9 @@ const trailingDelims = ".,;:!?)]}>`'"
 //
 //  1. The typed step. It finds each *url.Error in the unwrap chain of err and
 //     replaces the quoted URI in its message with the redacted form. This step
-//     is necessary because url.Parse puts the full input in its error, and a
-//     URI that does not parse can hold a password with a space or a double
-//     quote that the pattern step cannot find.
+//     is necessary because url.Parse puts the full input in its error. A URI
+//     that does not parse can hold a password with a space or a double
+//     quote. The pattern step cannot find such a password.
 //  2. The pattern step. It finds each scheme://... substring and replaces it
 //     with redactURL of that substring. A URI that does not parse becomes a
 //     placeholder, so the step can remove too much but it never leaks.

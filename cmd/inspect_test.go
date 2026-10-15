@@ -17,7 +17,7 @@ import (
 )
 
 func TestInspectFileSourceErrors(t *testing.T) {
-	// A file source has no live server metadata to introspect; inspect points the
+	// A file source has no live server metadata to introspect. Inspect points the
 	// user at query/diff instead of connecting.
 	seedFileSource(t, moveDump)
 	root, _ := newRootCmd()
@@ -25,11 +25,11 @@ func TestInspectFileSourceErrors(t *testing.T) {
 	require.ErrorContains(t, err, "live server metadata")
 }
 
-// TestDispatchInspectForwardsContext proves the dispatch hands the caller's
-// context to the driver's inspector rather than one of its own, so a deadline or
-// a cancellation reaches the backend commands. The default branch (MongoDB) is
-// the one exercised: it issues its diagnostic commands through Store.Query, and
-// the fake records the context each call received.
+// TestDispatchInspectForwardsContext proves that the dispatch hands the context
+// of the caller to the inspector of the driver rather than one of its own. So a
+// deadline or a cancellation reaches the backend commands. The default branch
+// (MongoDB) is the one exercised. It issues its diagnostic commands through
+// Store.Query, and the fake records the context that each call received.
 func TestDispatchInspectForwardsContext(t *testing.T) {
 	st := &fakeStore{}
 	cfg := &config{url: "mongodb://h/db?collection=books", handle: "shop"}
@@ -248,7 +248,7 @@ func TestInspectMongoIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, noCollText, "dbStats")
 
-	// No args runs every subcommand; the text output must show them all, not stop
+	// No args runs every subcommand. The text output must show them all, not stop
 	// after the first.
 	allText, err := runCmd(t, newInspectCmd(cfg))
 	require.NoError(t, err)
@@ -395,7 +395,7 @@ func TestDispatchInspectListComesFirst(t *testing.T) {
 }
 
 // TestDispatchInspectStoreCheckBeforeValidation pins the order in the
-// driver-method inspectors: the store check comes before the name check, so a
+// driver-method inspectors. The store check comes before the name check, so a
 // store without the port reports that, even for an unknown name.
 func TestDispatchInspectStoreCheckBeforeValidation(t *testing.T) {
 	for _, url := range []string{"dynamodb://h", "hbase://h", "couchdb://h", "couchbase://h", "elasticsearch://h", "neo4j://h"} {
@@ -691,7 +691,7 @@ func TestDispatchInspectReadErrors(t *testing.T) {
 
 // TestDispatchInspectStatementMissingTarget pins rule 5 for the statement
 // inspectors. In run-all mode, a name that needs a missing target is skipped.
-// In explicit mode, the run stops at that name: the reads before it run, their
+// In explicit mode, the run stops at that name. The reads before it run, their
 // results are discarded, nothing renders, and the error has one frame.
 func TestDispatchInspectStatementMissingTarget(t *testing.T) {
 	const (

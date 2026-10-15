@@ -28,9 +28,9 @@ func markedCtx() context.Context {
 }
 
 // fakeStore is a minimal in-memory store for the logging-decorator tests. It
-// records the ctx each port call received, so a test can prove the caller's ctx
-// was forwarded; scanErr fires from ScanBatches after its pages, distinct from a
-// per-batch fn error.
+// records the ctx that each port call received. So a test can prove that the ctx
+// of the caller was forwarded. The scanErr field fires from ScanBatches after
+// its pages, distinct from a per-batch fn error.
 type fakeStore struct {
 	pages    []map[string]any
 	getVal   map[string]any
@@ -135,13 +135,13 @@ func TestLoggingStorePreservesCapabilities(t *testing.T) {
 	}
 }
 
-// TestWrapStoreLogging pins the Enabled gate: with a DEBUG sink the store is
-// wrapped (and the ctx is forwarded to Enabled), without one it is returned as-is.
+// TestWrapStoreLogging pins the Enabled gate. With a DEBUG sink the store is
+// wrapped (and the ctx is forwarded to Enabled). Without one it is returned as-is.
 func TestWrapStoreLogging(t *testing.T) {
 	base := &fakeStore{}
 
 	// A DEBUG sink -> wrapped. gateHandler enables only when the ctx is non-nil, so
-	// a substituted nil ctx would leave the store unwrapped.
+	// a substituted nil ctx leaves the store unwrapped.
 	debug := slog.New(&gateHandler{inner: slog.NewJSONHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelDebug})})
 	wrapped := wrapStoreLogging(markedCtx(), base, debug)
 	require.NotSame(t, store(base), wrapped, "a DEBUG sink must wrap the store")
@@ -245,7 +245,7 @@ func TestLoggingStoreRecordsScanCounts(t *testing.T) {
 }
 
 func TestLoggingStoreQueryCommandSplit(t *testing.T) {
-	// The command verb and operand count are logged; the operand values never are.
+	// The command verb and operand count are logged. The operand values never are.
 	// The count math is pinned across the len 0 / 1 / >1 boundaries.
 	tests := []struct {
 		name         string
@@ -276,9 +276,9 @@ func TestLoggingStoreQueryCommandSplit(t *testing.T) {
 // assertions, keeping the comparison off testifylint's float-compare radar.
 func jsonInt(v any) int { return int(v.(float64)) }
 
-// TestLoggingStoreCloseDelegates pins that the decorator's Close reaches the
-// wrapped store and propagates its error: a decorator that swallows Close would
-// leak the backend connection silently.
+// TestLoggingStoreCloseDelegates pins that the Close of the decorator reaches
+// the wrapped store and propagates its error. A decorator that swallows Close
+// leaks the backend connection silently.
 func TestLoggingStoreCloseDelegates(t *testing.T) {
 	closeBoom := errors.New("close failed")
 
@@ -437,9 +437,10 @@ func TestLoggingStoreRedactsErrorRecord(t *testing.T) {
 	}
 }
 
-// gateHandler enables a level only when the record's context is non-nil, so a
-// test can prove that the caller's real context (not a substituted nil) reached
-// the handler's Enabled. It delegates Handle to an inner handler.
+// gateHandler enables a level only when the context of the record is non-nil.
+// So a test can prove that the real context of the caller (not a substituted
+// nil) reached the Enabled of the handler. It delegates Handle to an inner
+// handler.
 type gateHandler struct{ inner slog.Handler }
 
 func (h *gateHandler) Enabled(ctx context.Context, l slog.Level) bool {
@@ -475,10 +476,10 @@ func findRecord(t *testing.T, buf *bytes.Buffer, msg, keyAttr, want string) map[
 }
 
 // TestTraceTeeLogsBackendCmdIntegration pins that a --log run tees the driver
-// command trace into the log (jq.go's traceSink wiring): a query against a real
-// Redis backend with --log.file=stderr --log.format=json must emit "backend cmd"
-// DEBUG records for the wire commands, even without --verbose. It needs a reachable
-// Redis (the file driver has no wire trace to observe).
+// command trace into the log (the traceSink wiring in jq.go). A query against a
+// real Redis backend with --log.file=stderr --log.format=json must emit "backend
+// cmd" DEBUG records for the wire commands, even without --verbose. It needs a
+// reachable Redis (the file driver has no wire trace to observe).
 func TestTraceTeeLogsBackendCmdIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: needs a reachable Redis")
@@ -499,7 +500,7 @@ func TestTraceTeeLogsBackendCmdIntegration(t *testing.T) {
 	root.SetArgs([]string{"--src", "live", "--timeout", "5s", "--log.file=stderr", "--log.format=json", ".[]"})
 	require.NoError(t, root.Execute())
 
-	// Every stderr line is a JSON record; a scan issues at least one wire command,
+	// Every stderr line is a JSON record. A scan issues at least one wire command,
 	// which the trace tee turns into a "backend cmd" record tagged with the driver.
 	var sawBackendCmd bool
 	for line := range strings.SplitSeq(strings.TrimSpace(stderr.String()), "\n") {
@@ -535,10 +536,10 @@ func parseLogRecords(t *testing.T, s string) map[string]map[string]any {
 }
 
 // TestRunJQWiresRunOptionsFileSource pins that runJQ passes the Logger and OnPage
-// fields of RunOptions to the engine, using the offline file driver so it runs in
-// this package (no container). Each field's observable effect is asserted
-// separately: the Logger surfaces a "scan strategy" record, OnPage drives the
-// "query complete" scanned count.
+// fields of RunOptions to the engine. It uses the offline file driver, so it runs
+// in this package (no container). The test asserts the observable effect of each
+// field separately. The Logger surfaces a "scan strategy" record. OnPage drives
+// the "query complete" scanned count.
 func TestRunJQWiresRunOptionsFileSource(t *testing.T) {
 	seedFileSource(t, `{"key":"a","type":"hash","value":{"total":150}}`+"\n"+
 		`{"key":"b","type":"hash","value":{"total":10}}`+"\n")
@@ -573,8 +574,9 @@ func TestRunJQWiresRunOptionsFileSource(t *testing.T) {
 }
 
 // countJSONRecords counts the newline-delimited JSON records in s whose msg equals
-// want. Non-JSON lines (e.g. the pretty --verbose plan text interleaved on the same
-// stream) are skipped, so it isolates the structured records from the human text.
+// want. Non-JSON lines (for example the pretty --verbose plan text interleaved on
+// the same stream) are skipped. So it isolates the structured records from the
+// human text.
 func countJSONRecords(t *testing.T, s, want string) int {
 	t.Helper()
 	n := 0
@@ -592,11 +594,11 @@ func countJSONRecords(t *testing.T, s, want string) int {
 	return n
 }
 
-// TestBareVerbosePlanNotDuplicated pins FIX 1: a bare -v run (structured sink off)
+// TestBareVerbosePlanNotDuplicated pins FIX 1. A bare -v run (structured sink off)
 // prints the pretty "query plan" text to stderr exactly once and emits NO structured
 // "query plan" record. Before the fix the INFO record was emitted whenever any sink
-// accepted INFO, so the tinted verbose sink rendered it a second time — two "query
-// plan" occurrences on stderr. The file driver runs offline, so no container.
+// accepted INFO. So the tinted verbose sink rendered it a second time. Then "query
+// plan" occurred twice on stderr. The file driver runs offline, so no container.
 func TestBareVerbosePlanNotDuplicated(t *testing.T) {
 	seedFileSource(t, `{"key":"a","type":"hash","value":{"total":150}}`+"\n"+
 		`{"key":"b","type":"hash","value":{"total":10}}`+"\n")
@@ -610,8 +612,8 @@ func TestBareVerbosePlanNotDuplicated(t *testing.T) {
 
 	stderr := errb.String()
 	// The pretty plan is present (its sections prove it is the formatted text, not a
-	// one-line record), and "query plan" appears exactly once: the pretty header. A
-	// re-emitted tinted record would add a second occurrence.
+	// one-line record). "query plan" appears exactly once: the pretty header. A
+	// re-emitted tinted record adds a second occurrence.
 	require.Contains(t, stderr, "jq filter", "the pretty plan text must be printed under -v")
 	require.Equal(t, 1, strings.Count(stderr, "query plan"),
 		"the query plan must render once (pretty text only), never a duplicated tinted record")
@@ -620,9 +622,9 @@ func TestBareVerbosePlanNotDuplicated(t *testing.T) {
 }
 
 // TestVerbosePlusStderrStructuredPlanOnce pins the "both" matrix cell: -v together
-// with --log.file=stderr. FIX 2 suppresses the tinted sink (same stream), so stderr
-// carries the pretty plan text once plus exactly one structured "query plan" JSON
-// record — no tinted duplicate of either.
+// with --log.file=stderr. FIX 2 suppresses the tinted sink (same stream). So stderr
+// carries the pretty plan text once, plus exactly one structured "query plan" JSON
+// record, with no tinted duplicate of either.
 func TestVerbosePlusStderrStructuredPlanOnce(t *testing.T) {
 	seedFileSource(t, `{"key":"a","type":"hash","value":{"total":150}}`+"\n"+
 		`{"key":"b","type":"hash","value":{"total":10}}`+"\n")
@@ -659,7 +661,7 @@ func jsonLinesOnly(s string) string {
 }
 
 // TestRunJQWiresUnboundedFileSource pins that runJQ passes RunOptions.Unbounded to
-// the engine: a holistic filter (keys) materializes only when Unbounded is set, so
+// the engine. A holistic filter (keys) materializes only when Unbounded is set, so
 // with --unbounded the run must succeed. Without the field wired, the engine refuses
 // the holistic scan and Execute returns an error.
 func TestRunJQWiresUnboundedFileSource(t *testing.T) {
@@ -697,9 +699,9 @@ func TestSchemeOf(t *testing.T) {
 	}
 }
 
-// maxCapturedOutput bounds what a test may capture from a command. A defect that
-// logs the same record forever would otherwise grow the buffer until the process
-// runs out of memory.
+// maxCapturedOutput bounds what a test can capture from a command. A defect that
+// logs the same record forever otherwise grows the buffer until the process runs
+// out of memory.
 const maxCapturedOutput = 1 << 20
 
 // cappedBuffer is a capture buffer that panics once more than maxCapturedOutput

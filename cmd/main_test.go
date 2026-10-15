@@ -16,11 +16,12 @@ import (
 	"github.com/zsltg/iq/internal/testimage"
 )
 
-// TestMain provisions the Redis and MongoDB the cmd integration tests connect to:
-// ephemeral containers started once for the package, their URLs exported as
-// IQ_REDIS_URL / IQ_MONGO_URL so the tests' env fallbacks pick them up. flag.Parse
-// must run before testing.Short is read, and os.Exit skips deferred cleanup, so
-// the work lives in runTests where the defers fire before the process exits.
+// TestMain provisions the Redis and MongoDB that the cmd integration tests connect
+// to. They are ephemeral containers started once for the package. Their URLs are
+// exported as IQ_REDIS_URL / IQ_MONGO_URL, so the env fallbacks of the tests pick
+// them up. The flag.Parse call must run before testing.Short is read. Also,
+// os.Exit skips deferred cleanup. So the work lives in runTests, where the defers
+// fire before the process exits.
 func TestMain(m *testing.M) {
 	os.Exit(runTests(m))
 }
@@ -29,10 +30,10 @@ func runTests(m *testing.M) int {
 	flag.Parse()
 	// `iq add` stores a password in the OS keyring by default. A test that does
 	// not swap in a fake with useFakeKeyring gets a keyring that refuses every
-	// write, so no test can write to the real keyring of the developer.
+	// write. So no test can write to the real keyring of the developer.
 	keyringStore = &fakeKeyring{m: map[string]string{}, setErr: errors.New("no OS keyring in tests")}
-	// Only stand up containers when integration tests will actually run and no
-	// external server was named; otherwise the env override or default stands in.
+	// Only stand up containers when integration tests will run and no external
+	// server was named. Otherwise the env override or default stands in.
 	if !testing.Short() {
 		ctx := context.Background()
 		if os.Getenv("IQ_REDIS_URL") == "" {
@@ -82,8 +83,8 @@ func runTests(m *testing.M) int {
 	return m.Run()
 }
 
-// withMongoDatabase names the database in a mongodb URI; the query core requires
-// it in the path, but the container's connection string carries none.
+// withMongoDatabase names the database in a mongodb URI. The query core requires
+// it in the path, but the connection string of the container carries none.
 func withMongoDatabase(raw, db string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {

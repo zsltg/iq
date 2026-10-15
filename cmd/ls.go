@@ -40,10 +40,10 @@ type lsOptions struct {
 	jsonOut, yamlOut        bool
 }
 
-// listSources renders the sources, optionally limited to a group, marking the
-// active one. reveal un-redacts inline passwords and expand resolves keyring
-// passwords; verbose adds a driver column; jsonOut/yamlOut emit machine-readable
-// output.
+// listSources renders the sources, optionally limited to a group, and marks the
+// active one. The reveal flag un-redacts inline passwords, and the expand flag
+// resolves keyring passwords. The verbose flag adds a driver column. The
+// jsonOut and yamlOut flags emit machine-readable output.
 func listSources(out io.Writer, cf *iqconfig.Config, opts lsOptions) error {
 	list := inGroup(cf.List(), opts.filter)
 
@@ -173,10 +173,10 @@ func fileFormat(driver, url string) string {
 	return f.String()
 }
 
-// formatCell renders the FORMAT column of a source for `iq ls -v`: the detected
-// dump format of a file source, an em dash for a non-file source, or a faint
-// "?" when the format of a file cannot be detected (a moved or unreadable
-// dump). One bad source never fails the whole listing.
+// formatCell renders the FORMAT column of a source for `iq ls -v`. A file
+// source shows its detected dump format. A non-file source shows an em dash. A
+// file whose format cannot be detected (a moved or unreadable dump) shows a
+// faint "?". One bad source never fails the whole listing.
 func formatCell(driver, url string) tableCell {
 	if driver != "file" {
 		return coloredCell("—", pal.faint)
@@ -188,8 +188,9 @@ func formatCell(driver, url string) tableCell {
 	return coloredCell(f.String(), pal.change)
 }
 
-// optionsCell renders a source's OPTIONS column, faint, or an uncolored empty
-// cell when the source stores none (so color mode emits no stray escapes for it).
+// optionsCell renders the OPTIONS column of a source, faint. It renders an
+// uncolored empty cell when the source stores none, so color mode emits no
+// stray escapes for it.
 func optionsCell(opts map[string]string) tableCell {
 	s := renderSourceOptions(opts)
 	if s == "" {
@@ -219,8 +220,8 @@ func renderSourceOptions(opts map[string]string) string {
 	return b.String()
 }
 
-// listGroups renders the distinct groups. verbose adds a source count;
-// jsonOut/yamlOut emit machine-readable output.
+// listGroups renders the distinct groups. verbose adds a source count.
+// jsonOut and yamlOut emit machine-readable output.
 func listGroups(out io.Writer, cf *iqconfig.Config, opts lsOptions) error {
 	groups := cf.Groups()
 	if opts.jsonOut || opts.yamlOut {
@@ -264,11 +265,12 @@ func groupJSON(cf *iqconfig.Config, groups []string) []groupRow {
 }
 
 // displayLocation returns the URI of a source for display, redacted by default
-// so a stored password never prints. expand resolves a keyring-backed password
-// and inlines it. If the lookup fails, it keeps the stored password-less URI
-// and returns no error. reveal prints the result verbatim. Otherwise any
-// password is redacted to xxxxx. So reveal un-redacts inline passwords and
-// expand resolves keyring ones, mirroring the --reveal/--expand split of sq.
+// so a stored password never prints. The expand flag resolves a keyring-backed
+// password and inlines it. If the lookup fails, it keeps the stored
+// password-less URI and returns no error. The reveal flag prints the result
+// verbatim. Otherwise any password is redacted to xxxxx. So reveal un-redacts
+// inline passwords, and expand resolves keyring ones. This mirrors the
+// --reveal/--expand split of sq.
 func displayLocation(src iqconfig.Source, handle string, reveal, expand bool) string {
 	raw := src.URL
 	if expand && src.Keyring {

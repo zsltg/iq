@@ -13,13 +13,13 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// Dynamic shell completions. Every function here is offline: it reads only the
-// config file (via iqconfig.Load, honoring $IQ_CONFIG). It never opens a
-// driver, touches the network, or reads the OS keyring (so never effectiveURL),
-// because a keypress must not block on an unlock prompt. A load error yields no
-// candidates, because completion is best-effort help. Cobra does not
-// prefix-filter the results of a ValidArgsFunction, so each helper filters by
-// toComplete itself.
+// Dynamic shell completions. Every function here is offline. It reads only the
+// config file (via iqconfig.Load, honoring $IQ_CONFIG). It never opens a driver
+// or touches the network. It never reads the OS keyring (so never
+// effectiveURL), because a keypress must not block on an unlock prompt. A load
+// error yields no candidates, because completion is best-effort help. Cobra
+// does not prefix-filter the results of a ValidArgsFunction, so each helper
+// filters by toComplete itself.
 
 // candidate is one completion proposal: the text the shell inserts and an
 // optional description that it shows next to the text. Helpers build candidates
@@ -45,11 +45,11 @@ func asCompletion(fn candidateFunc) cobra.CompletionFunc {
 
 // candidateStrings turns candidates into the strings that cobra sends to the
 // shell. It omits a candidate whose value holds a control character. It never
-// changes a value, because a changed value would select a different handle. A
-// tab in a value would also split the value from a false description. It
-// escapes the control characters in each description, since description text
-// can come from a stored URI. Percent-encoded bytes such as %09 are plain text
-// and stay as they are.
+// changes a value, because a changed value selects a different handle. A tab
+// in a value also splits the value from a false description. It escapes the
+// control characters in each description, since description text can come from
+// a stored URI. Percent-encoded bytes such as %09 are plain text and stay as
+// they are.
 func candidateStrings(cands []candidate) []string {
 	out := make([]string, 0, len(cands))
 	for _, c := range cands {
@@ -65,9 +65,10 @@ func candidateStrings(cands []candidate) []string {
 	return out
 }
 
-// escapeControl replaces each control character with a visible escape: \t, \n,
-// and \r by name, and any other one as \xNN. unicode.IsControl matches only
-// C0, DEL, and C1, so two hex digits are always enough.
+// escapeControl replaces each control character with a visible escape. It
+// writes \t, \n, and \r by name, and any other one as \xNN. The reason is
+// that unicode.IsControl matches only C0, DEL, and C1. So two hex digits are
+// always enough.
 func escapeControl(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -211,8 +212,8 @@ func completeDumpFormats(_ *cobra.Command, _ []string, toComplete string) ([]str
 var (
 	// decimalModeNames mirrors numfmt.ParseDecimalMode (--format.decimal).
 	decimalModeNames = []string{"auto", "number", "string"}
-	// logLevelNames mirrors parseLogLevel (--log.level); the WARNING alias is
-	// left out, since completion offers the canonical spelling only.
+	// logLevelNames mirrors parseLogLevel (--log.level). The WARNING alias is
+	// left out, because completion offers the canonical spelling only.
 	logLevelNames = []string{"DEBUG", "INFO", "WARN", "ERROR"}
 	// textJSONNames serves both --log.format and --error.format, whose
 	// validators (newLogHandler, validateErrorFormat) take the same pair.
@@ -256,8 +257,8 @@ func fixedCandidates(values ...string) candidateFunc {
 // put so another comma and segment can follow.
 func completeCSV(fn candidateFunc) cobra.CompletionFunc {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		// LastIndex returns -1 when no comma has been typed yet, which splits into
-		// an empty head and the whole word — the same as not splitting at all — so
+		// LastIndex returns -1 when no comma has been typed yet. That splits into
+		// an empty head and the whole word, the same as not splitting at all. So
 		// the split needs no guard.
 		i := strings.LastIndex(toComplete, ",")
 		head, tail := toComplete[:i+1], toComplete[i+1:]
@@ -296,12 +297,13 @@ func completeInspectOnly(cmd *cobra.Command, args []string, toComplete string) (
 	return completeCSV(fixedCandidates(subs...))(cmd, args, toComplete)
 }
 
-// sourceDriverName resolves, offline, the driver behind the source a command is
-// about to act on: the positional argument when present, else --src, else the
-// active source — the precedence resolveInspectSource uses. It reads the stored
-// URL directly and must never call effectiveURL, whose keyring read can block or
-// prompt for an unlock; a completion runs on a keypress and stays
-// non-interactive. An unresolvable source yields an empty name.
+// sourceDriverName resolves, offline, the driver behind the source that a
+// command is about to act on. The source is the positional argument when
+// present, else --src, else the active source. That is the precedence that
+// resolveInspectSource uses. It reads the stored URL directly and must never
+// call effectiveURL, whose keyring read can block or prompt for an unlock. A
+// completion runs on a keypress and stays non-interactive. An unresolvable
+// source yields an empty name.
 func sourceDriverName(cmd *cobra.Command, args []string) string {
 	cf, err := iqconfig.Load()
 	if err != nil {
@@ -327,9 +329,10 @@ func completionSource(cmd *cobra.Command, args []string, active string) string {
 		name = args[0]
 	}
 	if name == "" && cmd != nil {
-		// --src is declared once, on the root's persistent flags; cobra's merge
-		// into a subcommand shares the same *Flag, so the root lookup reads the
-		// value parsing wrote — and works on an unexecuted command tree too.
+		// --src is declared once, on the persistent flags of the root. The
+		// merge of cobra into a subcommand shares the same *Flag, so the root
+		// lookup reads the value that parsing wrote. It also works on an
+		// unexecuted command tree.
 		if f := cmd.Root().PersistentFlags().Lookup("src"); f != nil {
 			name = f.Value.String()
 		}
@@ -349,10 +352,11 @@ func completeConfigSet(cmd *cobra.Command, args []string, toComplete string) ([]
 	return firstArgOnly(completeConfigKeys)(cmd, args, toComplete)
 }
 
-// optionValues returns the completion candidates for a persistable option's
-// value: its enum allowlist when it has one, else true/false when the flag the
-// option aliases is a boolean, else nothing (a free-form duration or path). The
-// boolean case reads the flag itself, so an option cannot drift from its flag.
+// optionValues returns the completion candidates for the value of a persistable
+// option. That is its enum allowlist when it has one. Otherwise it is
+// true/false when the flag that the option aliases is a boolean. Otherwise it
+// is nothing (a free-form duration or path). The boolean case reads the flag
+// itself, so an option cannot drift from its flag.
 func optionValues(cmd *cobra.Command, key string) []string {
 	if vals, ok := enumOptionValues[key]; ok {
 		return vals
@@ -373,12 +377,12 @@ func completeCacheClear(_ *cobra.Command, _ []string, toComplete string) ([]stri
 	return completeConfigNames(toComplete, cobra.ShellCompDirectiveDefault, handleCandidates)
 }
 
-// completeURI completes the connection URI of `iq add <uri>`, one part at a
-// time: the scheme, then the names and closed values of the URI options that iq
-// reads. It reads only the typed word. It never reads the config file or the
-// keyring, and it never puts the typed text in a description or an error. Each
-// candidate is the typed word up to the completed part plus that part, built from
-// the original bytes, so earlier options and their escapes stay unchanged.
+// completeURI completes the connection URI of `iq add <uri>`, one part at a time.
+// It completes the scheme, then the names and closed values of the URI options
+// that iq reads. It reads only the typed word. It never reads the config file or
+// the keyring, and it never puts the typed text in a description or an error.
+// Each candidate is the typed word up to the completed part plus that part, built
+// from the original bytes. So earlier options and their escapes stay unchanged.
 func completeURI(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	none := func() ([]string, cobra.ShellCompDirective) { return nil, cobra.ShellCompDirectiveNoFileComp }
 	if strings.ContainsFunc(toComplete, unicode.IsControl) {
@@ -410,10 +414,10 @@ func completeURI(_ *cobra.Command, _ []string, toComplete string) ([]string, cob
 	return uriValueCandidates(d.params, head+name+"=", plain, typed)
 }
 
-// uriBlocked reports whether the text after "://" must get no candidates. The
-// password guard reads the raw text. A password with an unescaped "/", "?", or
-// "#" moves the authority boundary, so a parsed URI would miss it. The guard
-// also stops a "#", since a fragment is not part of the query.
+// uriBlocked reports whether the text after "://" must get no candidates.
+// The password guard reads the raw text. A password with an unescaped "/",
+// "?", or "#" moves the authority boundary, so a parsed URI misses it. The
+// guard also stops a "#", because a fragment is not part of the query.
 func uriBlocked(rest string) bool {
 	if before, _, ok := strings.CutLast(rest, "@"); ok && strings.Contains(before, ":") {
 		return true

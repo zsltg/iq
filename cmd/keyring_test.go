@@ -15,11 +15,12 @@ import (
 	"github.com/zsltg/iq/internal/secret"
 )
 
-// fakeKeyring is an in-memory Keyring for tests; it never touches the OS store.
-// setErr, when set, makes every Set fail, and getErr every Get, which is how a
-// test drives the keyring failure paths of a command. deleted records each
-// Delete call. calls records every Get, Set and Delete as "op handle", so a test
-// can assert that a command left the keyring alone.
+// fakeKeyring is an in-memory Keyring for tests. It never touches the OS store.
+// When setErr is set, every Set fails. When getErr is set, every Get fails.
+// This is how a test drives the keyring failure paths of a command. The deleted
+// field records each Delete call. The calls field records every Get, Set and
+// Delete as "op handle", so a test can assert that a command left the keyring
+// alone.
 type fakeKeyring struct {
 	m       map[string]string
 	setErr  error
@@ -195,8 +196,8 @@ const fallbackWarning = "warning: could not write the password of sec to the OS 
 	"to move it later, unlock or set up the keyring and run: iq config keyring migrate sec\n" +
 	"to keep a password in the config file without this warning, add the source with --store inline\n"
 
-// TestAddDefaultStore drives `iq add` without --store: the password goes to the
-// keyring, a URI with no password stays as it is, and a keyring that cannot be
+// TestAddDefaultStore drives `iq add` without --store. The password goes to the
+// keyring, and a URI with no password stays as it is. A keyring that cannot be
 // read or written leaves the password in the config file with one warning.
 func TestAddDefaultStore(t *testing.T) {
 	tests := []struct {
@@ -303,7 +304,7 @@ func TestAddStoreInline(t *testing.T) {
 
 // TestAddSaveFailureKeyringCleanup makes the config save fail at the end of an
 // add. A password that iq wrote to the keyring is deleted again, so the failed
-// add leaves no trace. After a fallback, iq wrote nothing to the keyring, so it
+// add leaves no trace. After a fallback, iq wrote nothing to the keyring. So it
 // does not call the keyring again, and it prints no warning that the password
 // is in the config file.
 func TestAddSaveFailureKeyringCleanup(t *testing.T) {
@@ -413,7 +414,7 @@ func TestLsRevealKeyringSource(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, plain, "secret")
 
-	// --reveal alone un-redacts inline passwords only; a keyring password is not
+	// --reveal alone un-redacts inline passwords only. A keyring password is not
 	// resolved, so the secret still never appears.
 	revealed, err := runCmd(t, newLsCmd(&config{}), "--reveal")
 	require.NoError(t, err)

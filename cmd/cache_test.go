@@ -35,7 +35,7 @@ func TestHumanBytes(t *testing.T) {
 	}
 }
 
-// seedCache populates one cache file for a small RDB-shaped dump in dir and
+// seedCache populates one cache file for a small RDB-shaped dump in dir. It
 // returns the dump path, so a cache-command test has something to list and clear.
 func seedCache(t *testing.T, cacheDir string) string {
 	t.Helper()
@@ -88,8 +88,8 @@ func TestCacheStatJSONFields(t *testing.T) {
 	var rows []cacheStatRow
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &rows))
 	require.Len(t, rows, 1)
-	// Every column carries a value: a dropped field would serialize as an empty
-	// string or a zero size and still parse.
+	// Every column carries a value. Dropping a field serializes it as an empty
+	// string or a zero size, and the row still parses.
 	require.Equal(t, dump, rows[0].Dump)
 	require.Positive(t, rows[0].DumpBytes)
 	require.NotEmpty(t, rows[0].CacheFile)
@@ -130,7 +130,7 @@ func TestCacheStatTotalsEveryEntry(t *testing.T) {
 	require.NoError(t, cacheStat(&buf, dir, false, false))
 	total := lineWith(t, buf.String(), "TOTAL")
 	require.Contains(t, total, humanBytes(want))
-	// The TOTAL row holds only the label and the size, so a minus sign there can
+	// The TOTAL row holds only the label and the size. So a minus sign there can
 	// only come from a subtracted total, which "contains" the same digits.
 	require.NotContains(t, total, "-", "the total adds the entries")
 }
@@ -164,7 +164,7 @@ func TestCacheClearRemovesEntries(t *testing.T) {
 	dump := seedCache(t, dir)
 	require.Len(t, cacheFilesIn(t, dir), 1)
 
-	// Clear by path removes just that entry.
+	// Clear by path removes only that entry.
 	n, err := iqfile.RemoveCache(dir, dump)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)

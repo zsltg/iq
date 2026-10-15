@@ -23,9 +23,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// quietDiff builds a diff command that suppresses cobra's error/usage printing,
-// as the real Execute() does for errQuietExit, so a differing-source run leaves
-// only the rendered delta in the captured buffer for decoding.
+// quietDiff builds a diff command that suppresses the error/usage printing of
+// cobra, as the real Execute() does for errQuietExit. So a differing-source run
+// leaves only the rendered delta in the captured buffer for decoding.
 func quietDiff(cfg *config) *cobra.Command {
 	dc := newDiffCmd(cfg)
 	dc.SilenceErrors, dc.SilenceUsage = true, true
@@ -130,9 +130,9 @@ func TestDiffDataRedisIntegration(t *testing.T) {
 	require.Equal(t, map[string]string{"k1": "remove", "k2": "add", "shared": "change"}, deltas)
 }
 
-// TestDiffStatsRunsOnlyThatLayerRedisIntegration proves --stats selects one
-// layer: the stats section is reported and the default data layer stays off, so
-// no keyspace is read for a run that asked for introspection.
+// TestDiffStatsRunsOnlyThatLayerRedisIntegration proves that --stats selects
+// one layer: the stats section is reported and the default data layer stays
+// off. So no keyspace is read for a run that asked for introspection.
 func TestDiffStatsRunsOnlyThatLayerRedisIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: needs a reachable Redis")
@@ -152,8 +152,8 @@ func TestDiffStatsRunsOnlyThatLayerRedisIntegration(t *testing.T) {
 
 	cfg := &config{timeout: 5 * time.Second}
 	out, err := runCmd(t, quietDiff(cfg), "a", "b", "--stats")
-	// The two databases hold different keys, so a data layer that ran would
-	// report them; the stats layer may or may not differ, so either exit is fine.
+	// The two databases hold different keys, so a data layer that ran reports
+	// them. The stats layer can differ or not, so either exit is fine.
 	if err != nil {
 		require.ErrorIs(t, err, errQuietExit)
 	}
@@ -191,10 +191,10 @@ func TestDiffExitCodeRedisIntegration(t *testing.T) {
 	require.ErrorIs(t, err, errQuietExit)
 }
 
-// TestDiffFilterSurface pins the command-level filter rules without touching a
-// store: --filter supplies a default that a side's own "=" overrides, and
-// --stats refuses a filter on both the human and the --patch path (they reach
-// the stats collector by different routes).
+// TestDiffFilterSurface pins the command-level filter rules without
+// touching a store. --filter supplies a default that the own "=" of a
+// side overrides. --stats refuses a filter on both the human and the
+// --patch path (they reach the stats collector by different routes).
 func TestDiffFilterSurface(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("a", "redis://h:6379/0"))
@@ -286,8 +286,9 @@ func TestDiffDataAndSchemaMongoIntegration(t *testing.T) {
 
 // TestDiffSchemaCrossDriverMongoIntegration pins that --schema now compares two
 // different drivers: a connection-free file dump against a live MongoDB source.
-// The mongo value carries an _id field the file value lacks, so the shapes differ
-// — a legible cross-driver row rather than the old same-driver rejection.
+// The mongo value carries an _id field that the file value lacks, so the shapes
+// differ. This is a legible cross-driver row and not the old same-driver
+// rejection.
 func TestDiffSchemaCrossDriverMongoIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: needs a reachable MongoDB")
@@ -305,7 +306,7 @@ func TestDiffSchemaCrossDriverMongoIntegration(t *testing.T) {
 
 	cfg := &config{timeout: 8 * time.Second}
 	out, err := runCmd(t, quietDiff(cfg), "f", "m", "--schema")
-	// Allowed across drivers (no same-driver rejection); the shapes differ on _id,
+	// Allowed across drivers (no same-driver rejection). The shapes differ on _id,
 	// so diff exits with the quiet-exit sentinel and renders the schema section.
 	require.ErrorIs(t, err, errQuietExit)
 	require.NotContains(t, out, "same driver")
@@ -313,10 +314,10 @@ func TestDiffSchemaCrossDriverMongoIntegration(t *testing.T) {
 	require.Contains(t, out, "_id")
 }
 
-// TestReadAllFilteredRedisIntegration pins the scoped read: only the items the
-// spec's filter keeps come back, and each keeps its own key so the diff can
-// still match by key. The unfiltered control reads the same keyspace whole, so
-// the filter is what narrows it rather than the seeding.
+// TestReadAllFilteredRedisIntegration pins the scoped read. Only the items
+// that the filter of the spec keeps come back. Each keeps its own key, so
+// the diff can still match by key. The unfiltered control reads the same
+// keyspace whole, so the filter is what narrows it and not the seeding.
 func TestReadAllFilteredRedisIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: needs a reachable Redis")
@@ -356,7 +357,7 @@ func TestReadAllFilteredRedisIntegration(t *testing.T) {
 
 // TestReadAllFilteredReportsPagesRedisIntegration pins that a filtered read
 // still ticks the progress meter. The filtered path builds its own engine
-// options, so it would be easy to drop the callback there and leave the spinner
+// options. So it is easy to drop the callback there and leave the spinner
 // frozen on exactly the reads that take longest.
 func TestReadAllFilteredReportsPagesRedisIntegration(t *testing.T) {
 	if testing.Short() {
@@ -384,9 +385,9 @@ func TestReadAllFilteredReportsPagesRedisIntegration(t *testing.T) {
 	require.Equal(t, len(kv), sum, "the ticks count the items scanned")
 }
 
-// TestReadAllRejectsUnkeyedFilterRedisIntegration pins that a filter which
-// cannot keep a key is refused rather than quietly producing an unattributable
-// value: a keyed diff has nowhere to put it.
+// TestReadAllRejectsUnkeyedFilterRedisIntegration pins that a filter that
+// cannot keep a key is refused and does not quietly produce an unattributable
+// value. A keyed diff has nowhere to put it.
 func TestReadAllRejectsUnkeyedFilterRedisIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: needs a reachable Redis")
@@ -404,11 +405,11 @@ func TestReadAllRejectsUnkeyedFilterRedisIntegration(t *testing.T) {
 	require.ErrorIs(t, err, query.ErrNotKeyed)
 }
 
-// TestReadAllReportsPagesRedisIntegration pins readAll's onPage contract: a
-// non-nil callback receives one tick per scanned page whose sizes sum to the
-// keyspace, and a nil callback is simply skipped. Without the non-nil case the
-// `if onPage != nil` guard reads as dead (a mutant dropping the tick survives);
-// the nil case guards against the inverse mutant that would call through nil.
+// TestReadAllReportsPagesRedisIntegration pins the onPage contract of readAll.
+// A non-nil callback receives one tick per scanned page whose sizes sum to the
+// keyspace, and a nil callback is skipped. Without the non-nil case the `if
+// onPage != nil` guard reads as dead (a mutant that drops the tick survives).
+// The nil case guards against the inverse mutant that calls through nil.
 func TestReadAllReportsPagesRedisIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: needs a reachable Redis")
@@ -470,8 +471,8 @@ func decodeData(t *testing.T, out string) map[string]string {
 	return got
 }
 
-// Integration tests operate on reserved Redis databases so a run never flushes
-// DB 0, which developers seed (scripts/seed-redis.sh) for manual exploration. diff
+// Integration tests operate on reserved Redis databases, so a run never flushes DB
+// 0. Developers seed DB 0 (scripts/seed-redis.sh) for manual exploration. diff
 // needs two sources, hence two reserved databases.
 const (
 	testRedisDB    = 15 // primary scratch database
@@ -570,15 +571,15 @@ func TestRenderPatch(t *testing.T) {
 		var buf bytes.Buffer
 		err := renderPatch(&buf, json.RawMessage(`{not a patch`))
 		require.ErrorContains(t, err, "decode json patch")
-		// %w keeps the json cause reachable for errors.As; %v would sever it.
+		// %w keeps the json cause reachable for errors.As. %v severs it.
 		var syn *json.SyntaxError
 		require.ErrorAs(t, err, &syn)
 	})
 	t.Run("write error propagates", func(t *testing.T) {
 		err := renderPatch(&errAfter{0}, json.RawMessage(`[{"op":"add","path":"/x","value":1}]`))
 		require.Error(t, err)
-		// The write error itself, not the quiet-exit sentinel a dropped guard
-		// would fall through to.
+		// The write error itself, not the quiet-exit sentinel that a dropped
+		// guard falls through to.
 		require.NotErrorIs(t, err, errQuietExit)
 	})
 }
@@ -642,7 +643,7 @@ func TestDiffPatchSingleLayer(t *testing.T) {
 		t.Run(layer, func(t *testing.T) {
 			cfg := &config{timeout: 5 * time.Second}
 			// Exactly one explicit layer passes the single-layer gate and renders
-			// a real RFC 6902 patch; the differing sources signal the quiet exit,
+			// a real RFC 6902 patch. The differing sources signal the quiet exit,
 			// never the layer-gate message.
 			out, err := runCmd(t, quietDiff(cfg), "a", "b", layer, "--patch")
 			require.ErrorIs(t, err, errQuietExit)
@@ -672,7 +673,7 @@ func TestDiffPatchStatsCrossDriverError(t *testing.T) {
 	seedConfig(t, c)
 
 	cfg := &config{timeout: time.Second}
-	// statsTrees rejects the cross-driver pair before dialing; the patch path
+	// statsTrees rejects the cross-driver pair before dialing. The patch path
 	// must surface that error, not fall through to decoding an absent patch.
 	_, err := runCmd(t, quietDiff(cfg), "f", "r", "--stats", "--patch")
 	require.ErrorContains(t, err, "same driver")
@@ -685,7 +686,7 @@ func TestDiffSchemaSelfIsEmpty(t *testing.T) {
 
 	cfg := &config{timeout: 5 * time.Second}
 	// A source diffed against itself has identical shapes on both sides: exit
-	// zero. A collector that loses a side would report every field as a delta.
+	// zero. A collector that loses a side reports every field as a delta.
 	out, err := runCmd(t, newDiffCmd(cfg), "a", "a", "--schema")
 	require.NoError(t, err)
 	require.Contains(t, out, "no differences")
@@ -695,8 +696,8 @@ func TestDiffSchemaSelfIsEmpty(t *testing.T) {
 	require.NotContains(t, out, "# data", "the default data layer applies only when no layer is chosen")
 }
 
-// TestDiffArgCount pins the ExactArgs(2) bound: a diff needs two sides, so any
-// other count is a usage error rather than a run over the first two words.
+// TestDiffArgCount pins the ExactArgs(2) bound. A diff needs two sides, so any
+// other count is a usage error and not a run over the first two words.
 func TestDiffArgCount(t *testing.T) {
 	tests := []struct {
 		name, want string
@@ -750,7 +751,7 @@ func TestDiffCombinedLayersAllowed(t *testing.T) {
 	seedConfig(t, c)
 
 	cfg := &config{timeout: 5 * time.Second}
-	// Two layers without --patch combine freely; only --patch demands a single
+	// Two layers without --patch combine freely. Only --patch demands a single
 	// layer. The self-diff is empty on both layers, so the run exits zero.
 	out, err := runCmd(t, newDiffCmd(cfg), "a", "a", "--data", "--schema")
 	require.NoError(t, err)
@@ -786,8 +787,8 @@ func TestPatchLayerCanceledContext(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// The canceled context fails each arm's collector before any dial; an
-			// arm that drops the context would reach the network and fail
+			// The canceled context fails the collector of each arm before any
+			// dial. An arm that drops the context reaches the network and fails
 			// differently.
 			_, err := diffRun{cfg: &config{}, left: left, right: right}.patchLayer(ctx, tt.statsMode, tt.schemaMode, nil)
 			require.ErrorIs(t, err, context.Canceled)
@@ -798,10 +799,11 @@ func TestPatchLayerCanceledContext(t *testing.T) {
 func TestDiffOneSideUnreachable(t *testing.T) {
 	c := newSeed()
 	require.NoError(t, c.Add("good", fileSource(t, `{"key":"1","value":{"name":"a"}}`)))
-	// The bad side must fail instantly and without consuming the shared context:
-	// a connect-refused endpoint burns the whole deadline in driver retries, and
-	// then the good side fails on the expired context too, masking a dropped
-	// error guard. A missing file errors immediately, context untouched.
+	// The bad side must fail instantly and without consuming the shared context.
+	// A connect-refused endpoint burns the whole deadline in driver retries.
+	// Then the good side fails on the expired context too, which masks a dropped
+	// error guard. A missing file errors immediately, with the context
+	// untouched.
 	require.NoError(t, c.Add("bad", "file:///nonexistent-iq-test/d.jsonl"))
 	seedConfig(t, c)
 
@@ -818,9 +820,9 @@ func TestDiffOneSideUnreachable(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &config{timeout: time.Second}
-			// The failing side's read error must surface as-is: a dropped guard
-			// either turns it into a spurious all-added/all-removed delta (quiet
-			// exit) or swallows it into a clean zero exit.
+			// The read error of the failing side must surface as-is. A dropped
+			// guard either turns it into a spurious all-added/all-removed delta
+			// (quiet exit) or swallows it into a clean zero exit.
 			_, err := runCmd(t, quietDiff(cfg), tt.left, tt.right, tt.layer)
 			require.Error(t, err)
 			require.NotErrorIs(t, err, errQuietExit)
@@ -876,14 +878,14 @@ func TestDiffStatsSelfSectionRedisIntegration(t *testing.T) {
 	cfg := &config{timeout: 5 * time.Second}
 	// The cluster section is a single stable field (cluster_enabled:0), so a
 	// self-diff is deterministically empty and exits zero. A collector that
-	// loses either side would report the whole section as added or removed.
+	// loses either side reports the whole section as added or removed.
 	out, err := runCmd(t, newDiffCmd(cfg), "a", "a", "--stats", "--section", "cluster")
 	require.NoError(t, err)
 	require.Contains(t, out, "no differences")
 }
 
 // TestDiffSectionFlagList pins --section as a comma-separated list flag, the
-// shape `inspect --only` has and the shape its shared completion offers: a
+// shape that `inspect --only` has and that its shared completion offers. A
 // repeated flag must keep accumulating, and a comma must split.
 func TestDiffSectionFlagList(t *testing.T) {
 	tests := []struct {
@@ -921,8 +923,8 @@ func TestDiffStatsCanceledContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	// The already-canceled context fails the collectors before any dial; a
-	// collector that drops the context would reach the network and fail
+	// The already-canceled context fails the collectors before any dial. A
+	// collector that drops the context reaches the network and fails
 	// differently.
 	_, err = diffRun{left: left, right: right}.diffStats(ctx)
 	require.ErrorIs(t, err, context.Canceled)
@@ -965,7 +967,7 @@ func TestDiffPatchRedisIntegration(t *testing.T) {
 }
 
 // TestDiffSetArraysMongoIntegration pins that --set-arrays threads into the data
-// layer: a document whose only difference is a reordered array reads as changed by
+// layer. A document whose only difference is a reordered array reads as changed by
 // default but equal under --set-arrays.
 func TestDiffSetArraysMongoIntegration(t *testing.T) {
 	if testing.Short() {

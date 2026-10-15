@@ -26,10 +26,10 @@ func buildVersion() string {
 	return resolveVersion(version, info, ok)
 }
 
-// resolveVersion picks the most specific version available: the injected value
-// when it was set, otherwise the module version, otherwise a dev marker carrying
-// the VCS revision. It is pure so every branch is testable without depending on
-// how the test binary itself was built.
+// resolveVersion picks the most specific version available. It uses the injected
+// value when it was set, otherwise the module version, otherwise a dev marker
+// that carries the VCS revision. It is pure, so every branch is testable without
+// depending on how the test binary itself was built.
 func resolveVersion(injected string, info *debug.BuildInfo, ok bool) string {
 	if injected != "dev" {
 		return injected

@@ -20,9 +20,10 @@ func specConfig(t *testing.T) *iqconfig.Config {
 	return cf
 }
 
-// TestParseSourceSpecSplitsAtFirstEquals is the load-bearing case: a jq filter
-// almost always contains "==", so cutting at the last "=" would truncate the
-// address and swallow the expression. Each row pins where the boundary falls.
+// TestParseSourceSpecSplitsAtFirstEquals is the case that the whole design
+// depends on. A jq filter almost always contains "==", so cutting at the last
+// "=" truncates the address and swallows the expression. Each row pins where
+// the boundary falls.
 func TestParseSourceSpecSplitsAtFirstEquals(t *testing.T) {
 	cf := specConfig(t)
 	tests := []struct {
@@ -77,9 +78,10 @@ func TestParseSourceSpecRejects(t *testing.T) {
 	}
 }
 
-// TestResolveSourceSpecRefusesFileEndpoints pins the one behavior the shared
-// address resolver has that a read spec must not inherit: "" and "-" resolve to
-// stdout and stdin endpoints for a copy, which nothing can query.
+// TestResolveSourceSpecRefusesFileEndpoints pins the one behavior that the
+// shared address resolver has and a read spec must not inherit. A copy
+// resolves "" and "-" to stdout and stdin endpoints, which nothing can
+// query.
 func TestResolveSourceSpecRefusesFileEndpoints(t *testing.T) {
 	cf := specConfig(t)
 	for _, arg := range []string{"-", ""} {
@@ -91,11 +93,12 @@ func TestResolveSourceSpecRefusesFileEndpoints(t *testing.T) {
 	}
 }
 
-// TestSourceSpecRunConfigPropagates pins that a spec read inherits the run-wide
-// settings. Decimal mode is the one that changes results — it decides how a
-// fractional number reaches the filter — so a spec dropped here would quietly
-// match different documents in `iq diff` than in `iq`. The rest keep the store
-// decorator logging and tracing as it does on a plain query.
+// TestSourceSpecRunConfigPropagates pins that a spec read inherits the
+// run-wide settings. Decimal mode is the one that changes results, because it
+// decides how a fractional number reaches the filter. A spec that drops it
+// here quietly matches different documents in `iq diff` than in `iq`. The
+// other settings keep the store decorator logging and tracing as it does on a
+// plain query.
 func TestSourceSpecRunConfigPropagates(t *testing.T) {
 	var trace bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -119,9 +122,9 @@ func TestSourceSpecRunConfigPropagates(t *testing.T) {
 	require.True(t, got.noCacheIndex)
 }
 
-// TestConfigRunOptions pins the engine options a spec read runs under: pushdown
-// follows --no-compile inverted, and the logger is handed through so the scan
-// strategy record still fires.
+// TestConfigRunOptions pins the engine options that a spec read runs under.
+// Pushdown follows --no-compile inverted, and the logger is handed through, so
+// the scan strategy record still fires.
 func TestConfigRunOptions(t *testing.T) {
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 

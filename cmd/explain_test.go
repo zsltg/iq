@@ -36,15 +36,16 @@ func TestBuildJQPlanSingleSourceMongo(t *testing.T) {
 
 func TestBuildJQPlanDescribedAnnotatesStages(t *testing.T) {
 	// With describe set (--explain --verbose), the jq-filter block annotates each pipe
-	// stage with a right-aligned dimmed em-dash note; the dashes align on the widest
-	// stage first line. Color is off under `go test`, so the exact bytes are asserted.
+	// stage with a right-aligned dimmed em-dash note. The dashes align on the widest
+	// stage first line. Color is off under `go test`, so the test asserts the exact
+	// bytes.
 	cfg := &config{url: "mongodb://localhost:27017/shop", handle: "orders"}
 	filter := ".users[] | select(.age > 30) | {name, city: .addr.city}"
 	out, err := buildJQPlan(cfg, filter, false, true)
 	require.NoError(t, err)
 
 	// The root .users[] stage shows its dimmed jq description followed by its route in
-	// parentheses (leading .users key → bounded read); later stages stay plain notes.
+	// parentheses (leading .users key → bounded read). Later stages stay plain notes.
 	want := "  .users[]" + strings.Repeat(" ", 13) + "— each element of .users (bounded read)\n" +
 		"  | select(.age > 30)  — keep inputs where .age > 30\n" +
 		"  | {" + strings.Repeat(" ", 18) + "— build an object (name, city)\n" +
@@ -206,9 +207,9 @@ func TestBuildCombinePlanShowsTheWrite(t *testing.T) {
 	})
 
 	// The plan has to refuse exactly what the run refuses. A file:// source is
-	// read-only — the file driver registers no write describer — so a plan that
-	// rendered a write section for one would describe a run that cannot happen,
-	// and would have no operations to list under it either.
+	// read-only, because the file driver registers no write describer. So a
+	// plan that rendered a write section for one describes a run that cannot
+	// happen. It also has no operations to list under that section.
 	t.Run("a read-only destination is refused, as the run refuses it", func(t *testing.T) {
 		dump := filepath.Join(t.TempDir(), "dump.jsonl")
 		require.NoError(t, os.WriteFile(dump, []byte("{\"key\":\"k\",\"value\":1}\n"), 0o600))
@@ -236,20 +237,20 @@ func TestBuildCombinePlanDescribedAnnotatesStages(t *testing.T) {
 	}
 	out, err := buildCombinePlan(cfg, stages, "$orders | length", true)
 	require.NoError(t, err)
-	// The reducer's root .[] stage is marked with its route (a mongo scan streams);
-	// its select stays a dimmed note, and the source-less combine program is dimmed too.
+	// The root .[] stage of the reducer is marked with its route (a mongo scan streams).
+	// Its select stays a dimmed note, and the source-less combine program is dimmed too.
 	require.Contains(t, out, "— each element (streaming scan)")
 	require.Contains(t, out, "— keep inputs where .total > 10")
 	require.Contains(t, out, "— length")
 	// The final combine program runs over null input, not a store, so it carries no
-	// route mark even though it is annotated — its markable flag is false.
+	// route mark even though it is annotated. Its markable flag is false.
 	require.Equal(t, 1, strings.Count(out, "streaming scan"), "only the reducer stage is a marked scan")
 	require.NotContains(t, out, "materialized scan")
 }
 
 func TestClassifyAccess(t *testing.T) {
-	// The selector's route classification maps to one of three named costs; --unbounded
-	// downgrades a streamable scan to a materialized one.
+	// The route classification of the selector maps to one of three named costs.
+	// --unbounded downgrades a streamable scan to a materialized one.
 	tests := []struct {
 		name      string
 		filter    string
@@ -275,8 +276,9 @@ func TestClassifyAccess(t *testing.T) {
 }
 
 func TestBuildJQPlanAccessMarkColorsRootStage(t *testing.T) {
-	// The root stage's note leads with its route name in the route color; other stages
-	// stay dimmed. Color is forced on so the escape wrapping is asserted, not just text.
+	// The note of the root stage leads with its route name in the route color. Other
+	// stages stay dimmed. Color is forced on, so the test asserts the escape wrapping,
+	// not only text.
 	restore := color.NoColor
 	color.NoColor = false
 	defer func() { color.NoColor = restore }()
@@ -307,7 +309,7 @@ func TestBuildJQPlanCrossSourceHasNoRouteMark(t *testing.T) {
 }
 
 func TestBuildJQPlanFuncDefMarksBodyStage(t *testing.T) {
-	// A leading func-def is stage 0; the route mark must land on the first body stage
+	// A leading func-def is stage 0. The route mark must land on the first body stage
 	// (the .foo read), never on the declaration line.
 	cfg := &config{url: "redis://localhost:6379", handle: "cache"}
 	out, err := buildJQPlan(cfg, "def f: .+1; .foo | f", false, true)
@@ -326,9 +328,10 @@ func TestBuildJQPlanMarkedStageWithoutDescription(t *testing.T) {
 	require.NotContains(t, out, "(bounded read)")
 }
 
-// planLogRecord builds a sourcePlan through the shared assembly, emits it as the
-// "query plan" record, and returns the parsed JSON so a test asserts the exact
-// structured attrs — the same data the pretty --explain text is built from.
+// planLogRecord builds a sourcePlan through the shared assembly, emits it as
+// the "query plan" record, and returns the parsed JSON. So a test asserts the
+// exact structured attrs, which are the same data that the pretty --explain
+// text is built from.
 func planLogRecord(t *testing.T, url, handle, filter string, compile bool) map[string]any {
 	t.Helper()
 	sp, err := buildSourcePlan(planSource{url: url}, filter, compile, false)
@@ -413,12 +416,12 @@ func TestQueryPlanLogAttrs(t *testing.T) {
 }
 
 // TestLogQueryPlanEmitsRecord pins that logQueryPlan emits the "query plan" record
-// for a resolved single-source query when an INFO sink is listening, and that the
-// caller's (non-nil) context reaches the Enabled gate.
+// for a resolved single-source query when an INFO sink is listening. It also pins
+// that the (non-nil) context of the caller reaches the Enabled gate.
 func TestLogQueryPlanEmitsRecord(t *testing.T) {
 	var buf bytes.Buffer
 	// gateHandler enables only for a non-nil context, so a substituted nil ctx in
-	// the Enabled gate would drop the record.
+	// the Enabled gate drops the record.
 	lg := slog.New(&gateHandler{inner: slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})})
 	// logStructured true: the record is gated on the structured sink being active.
 	cfg := &config{url: "redis://h", handle: "cache", logger: lg, logStructured: true}
@@ -432,8 +435,9 @@ func TestLogQueryPlanEmitsRecord(t *testing.T) {
 	require.Equal(t, "redis", rec["driver"])
 }
 
-// TestLogQueryPlanSkipsWhenNoInfoSink pins that the plan is not built (no record)
-// when the structured sink is active but below INFO — the cheap no-op path.
+// TestLogQueryPlanSkipsWhenNoInfoSink pins that the plan is not built (no
+// record) when the structured sink is active but below INFO. This is the
+// cheap no-op path.
 func TestLogQueryPlanSkipsWhenNoInfoSink(t *testing.T) {
 	var buf bytes.Buffer
 	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -442,10 +446,11 @@ func TestLogQueryPlanSkipsWhenNoInfoSink(t *testing.T) {
 	require.Empty(t, buf.String(), "a structured sink below INFO must emit no plan record")
 }
 
-// TestLogQueryPlanSkipsWithoutStructuredSink pins the FIX-1 gate: even with an INFO
-// sink listening (e.g. a bare -v tinted sink), no "query plan" record is emitted
-// when the structured sink is off, so the pretty plan text is never duplicated as a
-// tinted one-liner. Removing the cfg.logStructured guard would emit the record here.
+// TestLogQueryPlanSkipsWithoutStructuredSink pins the FIX-1 gate. Even with an INFO
+// sink listening (for example a bare -v tinted sink), no "query plan" record is
+// emitted when the structured sink is off. So the pretty plan text is never
+// duplicated as a tinted one-liner. Without the cfg.logStructured guard, the record
+// is emitted here.
 func TestLogQueryPlanSkipsWithoutStructuredSink(t *testing.T) {
 	var buf bytes.Buffer
 	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -456,8 +461,8 @@ func TestLogQueryPlanSkipsWithoutStructuredSink(t *testing.T) {
 
 // TestLogQueryPlanSkipsUnknownScheme pins that logQueryPlan emits no record when the
 // source has no registered driver (buildSourcePlan returns hasPlan false with no
-// error): the guard must require BOTH no error AND a plan before logging, so a
-// bare-error or a bare-hasPlan condition would wrongly log an empty plan.
+// error). The guard must require BOTH no error AND a plan before logging. A
+// bare-error or a bare-hasPlan condition wrongly logs an empty plan.
 func TestLogQueryPlanSkipsUnknownScheme(t *testing.T) {
 	var buf bytes.Buffer
 	lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))

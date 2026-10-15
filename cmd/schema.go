@@ -10,10 +10,11 @@ import (
 	"github.com/zsltg/iq/internal/shape"
 )
 
-// Schema output formats: the contract dialect `iq schema` projects the inferred
-// shape into. jsonschema is the default (JSON Schema draft 2020-12); odcs is an
-// Open Data Contract Standard v3.1.0 contract, emitted as YAML (canonical for
-// data contracts). The set is closed so an unknown format fails fast at entry.
+// Schema output formats: the contract dialect that `iq schema` projects the
+// inferred shape into. The jsonschema format is the default (JSON Schema draft
+// 2020-12). The odcs format is an Open Data Contract Standard v3.1.0 contract,
+// emitted as YAML (canonical for data contracts). The set is closed, so an
+// unknown format fails fast at entry.
 const (
 	schemaFormatJSONSchema = "jsonschema"
 	schemaFormatODCS       = "odcs"
@@ -71,8 +72,8 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 			if len(args) > 0 {
 				arg = args[0]
 			}
-			// The address half selects the source; the filter half (from the spec's
-			// "=" or --filter) scopes which items the shape is inferred from.
+			// The address half selects the source. The filter half (from the "=" of
+			// the spec or --filter) scopes which items the shape is inferred from.
 			addr, specFilter, _ := strings.Cut(arg, "=")
 			if strings.TrimSpace(specFilter) == "" && strings.Contains(arg, "=") {
 				return fmt.Errorf("invalid source %q: empty filter", arg)
@@ -122,12 +123,12 @@ func validateSchemaFormat(format string) error {
 	}
 }
 
-// odcsContract wraps a shape's ODCS schema object in an ODCS v3.1.0 fundamentals
-// envelope. Every field is deterministic — no timestamps or random ids: the id,
-// name, and schema-object name all derive from the resolved source handle and
-// keyspace (schemaTitle), and version and status take fixed initial values. The
-// handle, never the URL, sources the identifiers, so no stored credential can
-// reach the contract.
+// odcsContract wraps the ODCS schema object of a shape in an ODCS v3.1.0
+// fundamentals envelope. Every field is deterministic, with no timestamps or
+// random ids. The id, name, and schema-object name all derive from the resolved
+// source handle and keyspace (schemaTitle). Version and status take fixed
+// initial values. The handle, never the URL, sources the identifiers, so no
+// stored credential can reach the contract.
 func odcsContract(cfg *config, sh *shape.Shape) map[string]any {
 	name := schemaTitle(cfg)
 	return map[string]any{

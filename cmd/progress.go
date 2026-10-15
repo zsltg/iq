@@ -13,7 +13,7 @@ import (
 	"github.com/vbauerster/mpb/v8/decor"
 )
 
-// Progress tuning. A scan gives no upfront total (Redis SCAN, Mongo cursor), so
+// Progress tuning. A scan gives no upfront total (Redis SCAN, Mongo cursor). So
 // the meter is an indeterminate spinner plus a running "scanned" count, never a
 // percentage bar.
 const (
@@ -30,10 +30,10 @@ const (
 // progressMeter renders a scan-progress spinner on stderr while a query walks a
 // keyspace. The per-page RunOptions.OnPage hook of the core drives it (see
 // Tick), so the core stays UI-agnostic. A nil *progressMeter is a working
-// no-op: every method is nil-safe, and the constructor returns nil when
+// no-op. Every method is nil-safe, and the constructor returns nil when
 // progress is off or stderr is not a terminal.
 //
-// Coordination with streamed stdout: the container uses manual refresh, and the
+// Coordination with streamed stdout: the container uses manual refresh. The
 // animation ticker skips a repaint when stdout was written within
 // progressQuietWindow. In a sparse streaming scan stdout is quiet, so the
 // spinner animates. In a dense burst the spinner holds still and does not
@@ -58,8 +58,8 @@ type progressMeter struct {
 	wg   sync.WaitGroup
 }
 
-// newProgressMeter builds a meter that renders on errOut, or returns nil (a
-// no-op) when disabled or when errOut is not a terminal — so piped or redirected
+// newProgressMeter builds a meter that renders on errOut. It returns nil (a
+// no-op) when disabled or when errOut is not a terminal. So piped or redirected
 // runs never draw a spinner and never touch the output stream.
 func newProgressMeter(errOut io.Writer, disabled bool) *progressMeter {
 	if disabled || !isTerminalWriter(errOut) {
@@ -86,9 +86,9 @@ func newMeter(out io.Writer, delay time.Duration) *progressMeter {
 	return m
 }
 
-// isTerminalWriter reports whether w is a real terminal, mirroring the color
-// package's detection: a non-*os.File writer (a pipe, a buffer, a file) is never
-// a terminal.
+// isTerminalWriter reports whether w is a real terminal, mirroring the detection
+// of the color package. A non-*os.File writer (a pipe, a buffer, a file) is
+// never a terminal.
 func isTerminalWriter(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	if !ok {
@@ -97,9 +97,9 @@ func isTerminalWriter(w io.Writer) bool {
 	return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
 }
 
-// animate drives the spinner: on each tick it requests a repaint, unless stdout
-// was written within the quiet window (then it skips, so a row burst is not
-// interleaved with the spinner). It exits when Stop closes m.stop.
+// animate drives the spinner. On each tick it requests a repaint, unless stdout
+// was written within the quiet window. Then it skips, so a row burst is not
+// interleaved with the spinner. It exits when Stop closes m.stop.
 func (m *progressMeter) animate() {
 	defer m.wg.Done()
 	t := time.NewTicker(progressRefreshRate)
@@ -121,15 +121,16 @@ func (m *progressMeter) animate() {
 	}
 }
 
-// quiet reports whether stdout has been idle long enough to repaint the spinner:
-// idle from the start, or last written at least a full quiet window ago.
+// quiet reports whether stdout has been idle long enough to repaint the spinner.
+// It has been idle from the start, or last written at least a full quiet window
+// ago.
 func (m *progressMeter) quiet(now time.Time) bool {
 	last := m.lastOut.Load()
 	return last == 0 || now.UnixNano()-last >= int64(progressQuietWindow)
 }
 
-// elapsed reports whether the show delay has passed by now, so the spinner may
-// appear. Pulled out of Tick so the boundary is exercisable in a test.
+// elapsed reports whether the show delay has passed by now, so the spinner can
+// appear. It is pulled out of Tick so a test can exercise the boundary.
 func (m *progressMeter) elapsed(now time.Time) bool {
 	return now.Sub(m.start) >= m.delay
 }
@@ -159,17 +160,19 @@ func (m *progressMeter) Tick(n int) {
 	}
 	bar := m.bar
 	m.mu.Unlock()
-	// Advance the bar's current. With an indeterminate (negative) total it never
-	// completes, so it keeps spinning; the count is displayed by the decorator.
+	// Advance the current value of the bar. With an indeterminate (negative)
+	// total it never completes, so it keeps spinning. The decorator displays the
+	// count.
 	bar.SetCurrent(total)
 }
 
-// SetEstimate records a cheap, approximate total the backend supplied before the
-// scan, rendered next to the running count as "(~N est)". It is a hint only: the
-// estimate may be stale and the actual scan can exceed it, so it never drives a
-// percentage or completes the spinner. A zero or negative value is ignored,
-// leaving the label the bare count and never clearing a total already set. It is
-// the RunOptions.OnEstimate callback, invoked at most once per run. Nil-safe.
+// SetEstimate records a cheap, approximate total that the backend supplied
+// before the scan. It is rendered next to the running count as "(~N est)". It is
+// a hint only. The estimate can be stale and the actual scan can exceed it. So
+// it never drives a percentage or completes the spinner. A zero or negative
+// value is ignored. That leaves the label as the bare count and never clears a
+// total already set. It is the RunOptions.OnEstimate callback, invoked at most
+// once per run. Nil-safe.
 func (m *progressMeter) SetEstimate(n int64) {
 	if m == nil || n <= 0 {
 		return
@@ -187,9 +190,9 @@ func (m *progressMeter) label() string {
 	return fmt.Sprintf("%d scanned", scanned)
 }
 
-// spinnerIndeterminate is the mpb total for an unbounded spinner: a negative
+// spinnerIndeterminate is the mpb total for an unbounded spinner. A negative
 // total means "no known total", so the bar never triggers completion and stays
-// a spinner rather than a percentage bar.
+// a spinner and not a percentage bar.
 const spinnerIndeterminate = -1
 
 // wrapStdout wraps w so each write marks stdout active for the quiet window,

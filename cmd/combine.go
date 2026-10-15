@@ -22,8 +22,8 @@ type combineStage struct {
 
 // newCombineCmd builds `iq combine <spec>... --with <jq>`: query several sources
 // and join their results in one jq program. Each positional is an ordinary source
-// spec — the same `<source>[=<jq>]` grammar `iq diff` and `iq schema` take — and
-// binds its results to $name. Bounded by --timeout.
+// spec, the same `<source>[=<jq>]` grammar that `iq diff` and `iq schema` take.
+// It binds its results to $name. Bounded by --timeout.
 func newCombineCmd(cfg *config) *cobra.Command {
 	var with string
 	long := "Query several sources and combine their results with one jq program.\n\n" +
@@ -100,8 +100,8 @@ func combineTransform(cfg *config) (func(query.Record) ([]query.Record, error), 
 	if cfg.noOverwrite && cfg.replace {
 		return nil, errors.New("--no-overwrite and --replace are mutually exclusive")
 	}
-	// Type is deliberately absent: NewTransform stamps opts.Type only on a value
-	// its own filter reshaped, and this transform has no filter — the --with
+	// Type is absent on purpose. NewTransform stamps opts.Type only on a value
+	// that its own filter reshaped, and this transform has no filter. The --with
 	// program is the filter. --type rides on the record instead (combineRecords),
 	// where the identity transform carries it through untouched.
 	return query.NewTransform(query.TransformOptions{
@@ -110,7 +110,7 @@ func combineTransform(cfg *config) (func(query.Record) ([]query.Record, error), 
 }
 
 // guardWriteFlags refuses a write flag on a run that renders. Each one only has
-// meaning against a destination, so accepting it silently would repeat the defect
+// meaning against a destination. Accepting it silently repeats the defect that
 // --from/--combine had: a flag read, ignored, and dropped without a word.
 func guardWriteFlags(cmd *cobra.Command) error {
 	for _, name := range combineWriteFlags {
@@ -121,11 +121,11 @@ func guardWriteFlags(cmd *cobra.Command) error {
 	return nil
 }
 
-// combineRecords adapts the combine's value stream to a RecordSource: each
-// emitted value becomes a keyless record carrying recType (--type), and the
-// transform's --key/--key-field mints the key the write path needs. The Copier
-// batches to its own page size, so the write side stays O(page) even though each
-// source's reduced result is already resident.
+// combineRecords adapts the value stream of the combine to a RecordSource. Each
+// emitted value becomes a keyless record that carries recType (--type). The
+// --key/--key-field of the transform mints the key that the write path needs.
+// The Copier batches to its own page size, so the write side stays O(page) even
+// though the reduced result of each source is already resident.
 func combineRecords(with string, names []string, values []any, recType string) query.RecordSource {
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
 		return query.NewCombiner().Run(ctx, with, names, values, func(v any) error {
@@ -134,16 +134,16 @@ func combineRecords(with string, names []string, values []any, recType string) q
 	}
 }
 
-// runCombine runs each spec's jq against its own source (reduced and, where the
-// backend allows, pushed down), binds the result set to $name, then runs the
-// --with program over the bound variables. Each source reduces at the source, so
-// this never copies whole datasets.
+// runCombine runs the jq of each spec against its own source (reduced and, where
+// the backend allows, pushed down). It binds the result set to $name, then runs
+// the --with program over the bound variables. Each source reduces at the
+// source, so this never copies whole datasets.
 func runCombine(cmd *cobra.Command, cfg *config, args []string, with string) error {
 	if strings.TrimSpace(with) == "" {
 		return errors.New("combine needs --with to say how to combine the results")
 	}
-	// The write path and the render path resolve different things, but both do it
-	// before any source work so a bad flag fails fast rather than after opening
+	// The write path and the render path resolve different things, but both do
+	// it before any source work. So a bad flag fails fast and not after opening
 	// and scanning every source.
 	var (
 		fm        outputFormat
@@ -174,7 +174,7 @@ func runCombine(cmd *cobra.Command, cfg *config, args []string, with string) err
 		return err
 	}
 
-	// --explain prints the plan to stdout and stops before any connection; --verbose
+	// --explain prints the plan to stdout and stops before any connection. --verbose
 	// prints it to stderr and turns on the live command trace for the run below.
 	if cfg.explain || cfg.verbose {
 		plan, err := buildCombinePlan(cfg, stages, with, cfg.verbose)
@@ -219,7 +219,7 @@ func runCombine(cmd *cobra.Command, cfg *config, args []string, with string) err
 
 	if cfg.insert != "" {
 		// The combine runs inside the record source, so its values stream into the
-		// copier rather than being collected first; a jq error surfaces from Copy.
+		// copier and are not collected first. A jq error surfaces from Copy.
 		err := runInsert(cmd, ctx, cfg, combineRecords(with, names, values, cfg.moveType), transform)
 		cfg.log().Info("combine complete", "stages", len(stages))
 		return asSyntaxError(with, err)
@@ -231,11 +231,11 @@ func runCombine(cmd *cobra.Command, cfg *config, args []string, with string) err
 	return finish(f, asSyntaxError(with, runErr))
 }
 
-// planCombine parses and resolves the positional specs into stages, rejecting a
-// malformed spec, an unknown source, or two specs that would bind the same
-// variable. A spec with no filter binds the whole keyspace: "." is what the
-// grammar's omitted filter means everywhere, and the engine's own scan guard
-// decides whether that holistic read is allowed.
+// planCombine parses and resolves the positional specs into stages. It rejects
+// a malformed spec, an unknown source, or two specs that bind the same
+// variable. A spec with no filter binds the whole keyspace. "." is what the
+// omitted filter of the grammar means everywhere. The own scan guard of the
+// engine decides whether that holistic read is allowed.
 func planCombine(cf *iqconfig.Config, specs []string) ([]combineStage, error) {
 	stages := make([]combineStage, 0, len(specs))
 	bound := make(map[string]string, len(specs))
@@ -292,9 +292,10 @@ func collectSource(ctx context.Context, cfg *config, filter string, opts query.R
 	return out, err
 }
 
-// varName derives the jq variable a combine spec binds to: its name with group
-// separators and dots or dashes replaced by "_", and a leading digit escaped, so
-// "orders" binds $orders and "prod/books" binds $prod_books.
+// varName derives the jq variable that a combine spec binds to. It takes the
+// name of the spec, replaces group separators and dots or dashes with "_",
+// and escapes a leading digit. So "orders" binds $orders and "prod/books"
+// binds $prod_books.
 func varName(name string) string {
 	v := strings.NewReplacer("/", "_", ".", "_", "-", "_").Replace(name)
 	if v != "" && v[0] >= '0' && v[0] <= '9' {

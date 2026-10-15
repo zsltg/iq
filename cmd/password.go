@@ -10,19 +10,21 @@ import (
 )
 
 // This file holds where `iq add` and `iq config keyring migrate` keep a source
-// password: the plan for one add, the keyring write with its fallback, and the
-// check that does not replace a keyring entry of another source.
+// password. It has three parts. The first is the plan for one add. The second
+// is the keyring write with its fallback. The third is the check that does not
+// replace a keyring entry of another source.
 
 // errKeyringTaken reports that the OS keyring already holds a password for a
 // handle. The keyring account is the handle alone, so the entry can belong to a
 // source with the same handle in another config file.
 var errKeyringTaken = errors.New("the OS keyring already holds a password for this handle, and a source in another config file can use it")
 
-// keyringFree returns nil when the OS keyring holds no password for handle,
-// errKeyringTaken when it holds one, and the read error when it cannot be read.
-// A command calls it before it writes a new entry, so that it does not replace
-// the password of another source. The read and the write are two calls, so two
-// iq processes that add the same handle at the same time can both pass it.
+// keyringFree returns nil when the OS keyring holds no password for handle. It
+// returns errKeyringTaken when the keyring holds one, and the read error when
+// the keyring cannot be read. A command calls it before it writes a new entry,
+// so that it does not replace the password of another source. The read and the
+// write are two calls. Two iq processes that add the same handle at the same
+// time can both pass it.
 func keyringFree(handle string) error {
 	_, err := keyringStore.Get(handle)
 	switch {

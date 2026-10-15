@@ -19,10 +19,10 @@ import (
 const movePageSize = 500
 
 // runMove is the write side of the default command. With --insert it copies each
-// source item into a destination source; with --typed it emits {key,type,value}
-// records — a re-importable dump. The optional positional filter transforms each
-// item (keys preserved via the source's typed scan), so a straight copy or dump
-// needs no filter. This is the sq-style replacement for `iq data copy`.
+// source item into a destination source. With --typed it emits {key,type,value}
+// records, a re-importable dump. The optional positional filter transforms each
+// item (keys preserved via the typed scan of the source), so a straight copy or
+// dump needs no filter. This is the sq-style replacement for `iq data copy`.
 func runMove(cmd *cobra.Command, cfg *config, filter string) error {
 	if err := validateMoveFlags(cfg); err != nil {
 		return err
@@ -114,9 +114,9 @@ func openTypedSource(ctx context.Context, cfg *config) (query.TypedReader, func(
 	return tr, st.Close, nil
 }
 
-// stdinRecordSource decodes piped stdin into records. Foreign JSON (unkeyed) is
-// signalled by --key-field; otherwise the stream defaults to iq's typed JSONL dump
-// unless --from-format names another (rdb/bson/mongoexport/yaml/json).
+// stdinRecordSource decodes piped stdin into records. --key-field signals foreign
+// JSON (unkeyed). Otherwise the stream defaults to the typed JSONL dump of iq,
+// unless --from-format names another format (rdb/bson/mongoexport/yaml/json).
 func stdinRecordSource(r io.Reader, cfg *config) (query.RecordSource, error) {
 	if cfg.keyField != "" && cfg.fromFormat == "" {
 		return query.JSONLSource(r, movePageSize, true), nil
@@ -132,17 +132,18 @@ func stdinRecordSource(r io.Reader, cfg *config) (query.RecordSource, error) {
 	return iqfile.RecordSourceFor(r, format, cfg.decimalMode, iqfile.Hints{})
 }
 
-// insertRequest is the write side of a move, stated without any CLI type so `iq
-// --insert` and the MCP iq_insert tool share one implementation. It holds the
-// destination handle, the write mode, whether the destination is emptied first,
-// whether the run only reports, and how a destructive step is confirmed.
+// insertRequest is the write side of a move, stated without any CLI type, so
+// `iq --insert` and the MCP iq_insert tool share one implementation. It holds
+// the destination handle, the write mode, and whether the destination is
+// emptied first. It also holds whether the run only reports, and how a
+// destructive step is confirmed.
 type insertRequest struct {
 	dst     string
 	mode    query.WriteMode
 	replace bool
 	dryRun  bool
 	// confirm gates emptying the destination for replace. It returns nil to
-	// proceed and an error to abort; it is never called on a dry run.
+	// proceed and an error to abort. It is never called on a dry run.
 	confirm func(action string) error
 }
 
@@ -269,16 +270,16 @@ func runTypedDump(cmd *cobra.Command, ctx context.Context, cfg *config, recSrc q
 	return f.flush()
 }
 
-// typedRecord is the {key,type,value} envelope emitted by --typed; it matches the
-// on-disk dump shape (internal/query dumpRecord) so a dump re-imports.
+// typedRecord is the {key,type,value} envelope that --typed emits. It matches the
+// on-disk dump shape (internal/query dumpRecord), so a dump re-imports.
 type typedRecord struct {
 	Key   string `json:"key" yaml:"key"`
 	Type  string `json:"type" yaml:"type"`
 	Value any    `json:"value" yaml:"value"`
 }
 
-// typedPutter is a Putter that renders each record through an output formatter,
-// letting --typed reuse the Copier pipeline (source scan + transform) to emit a dump.
+// typedPutter is a Putter that renders each record through an output formatter. It
+// lets --typed reuse the Copier pipeline (source scan + transform) to emit a dump.
 type typedPutter struct{ f formatter }
 
 func (p typedPutter) Put(_ context.Context, batch []query.Record, _ query.WriteMode) (query.WriteStat, error) {
@@ -290,8 +291,9 @@ func (p typedPutter) Put(_ context.Context, batch []query.Record, _ query.WriteM
 	return query.WriteStat{Written: len(batch)}, nil
 }
 
-// typedFormatChoices names the renderings a typed dump can use, for the rejection
-// messages below; every one of them re-imports through a file:// source.
+// typedFormatChoices names the renderings that a typed dump can use, for the
+// rejection messages below. Every one of them re-imports through a file://
+// source.
 const typedFormatChoices = "choose --jsonl (default), --json, --jsona, or --yaml"
 
 // selectTypedFormat resolves the record serialization for --typed: the chosen

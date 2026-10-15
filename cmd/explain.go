@@ -17,15 +17,15 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// sourcePlan is the computed access plan for one source: the driver name, the
-// query classification, the planned backend operations, the merged server filter
-// (nil when none is planned), the server and prefilter stages of the whole
-// predicate, and the per-conjunct stage plans. The pretty --explain/--verbose text
-// and the structured "query plan" log record both read from this one assembly
-// (buildSourcePlan), so they never drift. hasPlan is false when the scheme has no
-// registered describer. Then the caller adds no backend section and logs no plan.
-// On the materialized route the stage plans stay empty, because the scan runs
-// neither stage.
+// sourcePlan is the computed access plan for one source. It holds the driver name,
+// the query classification, the planned backend operations, and the merged server
+// filter (nil when none is planned). It also holds the server and prefilter stages
+// of the whole predicate, and the per-conjunct stage plans. The pretty
+// --explain/--verbose text and the structured "query plan" log record both read
+// from this one assembly (buildSourcePlan). So they never drift. hasPlan is false
+// when the scheme has no registered describer. Then the caller adds no backend
+// section and logs no plan. On the materialized route the stage plans stay empty,
+// because the scan runs neither stage.
 type sourcePlan struct {
 	hasPlan      bool
 	driver       string
@@ -38,11 +38,12 @@ type sourcePlan struct {
 	conjuncts    []conjunctPlan
 }
 
-// conjunctPlan is the stage plan of one top-level conjunct: its jq source, the
-// one-line form of its compiled node, its server fragment, the ordered stages that
-// evaluate it, the stages that skip it with the reason, and the reason that only
-// jq sees it. Its fields are exported so slog.Any renders it as a JSON object under
-// the json format. That is the CI-parseable per-conjunct contract.
+// conjunctPlan is the stage plan of one top-level conjunct. It holds the jq source
+// of the conjunct, the one-line form of its compiled node, and its server fragment.
+// It also holds the ordered stages that evaluate it, the stages that skip it with
+// the reason, and the reason that only jq sees it. Its fields are exported, so
+// slog.Any renders it as a JSON object under the json format. That is the
+// CI-parseable per-conjunct contract.
 type conjunctPlan struct {
 	Expr     string            `json:"expr"`
 	Compiled string            `json:"compiled,omitempty"`
@@ -55,12 +56,13 @@ type conjunctPlan struct {
 	node predicate.Node
 }
 
-// buildSourcePlan computes the access plan for one source without connecting: it
-// classifies filter, compiles the pushable predicate (only when compile is set,
-// matching how execution gates the push), and asks the driver's describer what
-// backend calls it would make. An unrecognized scheme or a driver with no
-// describer yields hasPlan false. A filter parse failure is returned as a syntax
-// error. It is the single source both the text renderer and the log record use.
+// buildSourcePlan computes the access plan for one source without connecting. It
+// classifies filter. It compiles the pushable predicate (only when compile is
+// set, matching how execution gates the push). It asks the describer of the
+// driver which backend calls it makes if the query runs. An unrecognized scheme
+// or a driver with no describer yields hasPlan false. A filter parse failure is
+// returned as a syntax error. It is the single source that both the text
+// renderer and the log record use.
 func buildSourcePlan(src planSource, filter string, compile, unbounded bool) (sourcePlan, error) {
 	q, err := gojq.Parse(filter)
 	if err != nil {
@@ -155,13 +157,13 @@ func conjunctPlans(cx conjunctContext, conjuncts []pushdown.Conjunct, materializ
 	return plans, nil
 }
 
-// logAttrs renders the source plan as the structured attributes of the "query
-// plan" log record: the source handle, the driver, a classification group
-// {keys, streamable, scan}, the planned ops, the server-side filter (a nested
-// object, omitted when none), the server and prefilter stage plans of a scan
-// (omitted on the materialized route), and the per-conjunct stage plans. Keys are attrs
-// only, never interpolated into the message. This is the documented stable-key
-// contract.
+// logAttrs renders the source plan as the structured attributes of the "query plan" log
+// record. The attributes are the source handle and the driver. They also include a
+// classification group {keys, streamable, scan}, the planned ops, and the server-side
+// filter (a nested object, omitted when none). The record also holds the server and
+// prefilter stage plans of a scan (omitted on the materialized route), and the
+// per-conjunct stage plans. Keys are attrs only, never interpolated into the message.
+// This is the documented stable-key contract.
 func (sp sourcePlan) logAttrs(handle string) []any {
 	attrs := []any{
 		slog.String("handle", handle),
@@ -186,12 +188,12 @@ func (sp sourcePlan) logAttrs(handle string) []any {
 	return attrs
 }
 
-// buildJQPlan renders the query plan for the default jq action: the pretty-printed
-// filter (with any nested source() sub-filters inlined) and, for a single-source
-// filter, the backend calls its store will make. The source must already be
-// resolved for the non-cross case, so the plan can name the driver without
-// connecting. It is shown by --explain (to stdout, no execution) and --verbose (to
-// stderr, before executing).
+// buildJQPlan renders the query plan for the default jq action. The plan shows
+// the pretty-printed filter (with any nested source() sub-filters inlined). For a
+// single-source filter, it also shows the backend calls that its store makes if
+// the query runs. The source must already be resolved for the non-cross case, so
+// the plan can name the driver without connecting. --explain shows the plan to
+// stdout, with no execution. --verbose shows it to stderr, before executing.
 func buildJQPlan(cfg *config, filter string, cross, describe bool) (string, error) {
 	q, err := gojq.Parse(filter)
 	if err != nil {
@@ -236,8 +238,8 @@ func buildCombinePlan(cfg *config, stages []combineStage, with string, describe 
 	if err != nil {
 		return "", asSyntaxError(with, err)
 	}
-	// The combine program runs over the bound $vars with null input — no source, so
-	// no data-access mark (markable is false).
+	// The combine program runs over the bound $vars with null input. It has no
+	// source, so no data-access mark (markable is false).
 	writeJQFilterQuery(&b, cq, describe, cfg.unbounded, false)
 	if cfg.insert != "" {
 		if err := writeCombineWritePlan(&b, cfg); err != nil {
@@ -281,10 +283,10 @@ func writeCombineWritePlan(b *strings.Builder, cfg *config) error {
 }
 
 // writeJQFilterQuery renders a parsed filter under the "jq filter" section: annotated
-// per pipe stage when describe is set, otherwise the compact pretty print. When
-// markable (a resolved single source), the root data-access stage is tagged with its
-// route; a cross-source or source-less program (the combine --with step) passes markable
-// false. The query is already parsed, so this path re-uses it and never re-parses.
+// per pipe stage when describe is set, otherwise the compact pretty print. When markable
+// (a resolved single source), the root data-access stage is tagged with its route. A
+// cross-source or source-less program (the combine --with step) passes markable false.
+// The query is already parsed, so this path re-uses it and never re-parses.
 func writeJQFilterQuery(b *strings.Builder, q *gojq.Query, describe, unbounded, markable bool) {
 	pretty := jqfmt.FormatQuery(q, colorOn())
 	if !describe {
@@ -298,22 +300,22 @@ func writeJQFilterQuery(b *strings.Builder, q *gojq.Query, describe, unbounded, 
 	writeJQExplained(b, pretty, jqfmt.ExplainQuery(q, colorOn()), 2, mark)
 }
 
-// accessMark labels the pipe stage that reads from the store: the index of that
-// stage in the Explain stage list, the human name of the route, and the color
-// of its cost (green bounded read, yellow streaming scan, red materialized
-// scan).
+// accessMark labels the pipe stage that reads from the store. It holds the
+// index of that stage in the Explain stage list and the human name of the
+// route. It also holds the color of its cost (green bounded read, yellow
+// streaming scan, red materialized scan).
 type accessMark struct {
 	stage int
 	label string
 	c     *color.Color
 }
 
-// accessMarkForQuery classifies a single-source query's root data access into an
-// accessMark. The route comes from the selector's key/scan classification — the same
-// driver-agnostic verdict the access plan uses — with --unbounded downgrading a
-// streamable scan to a materialized one, since it buffers the whole dataset. The
-// responsible stage is the first body stage: index 1 when leading declarations
-// (module/imports/func-defs) occupy stage 0, otherwise stage 0.
+// accessMarkForQuery classifies the root data access of a single-source query into
+// an accessMark. The route comes from the key/scan classification of the selector.
+// That is the same driver-agnostic verdict that the access plan uses. --unbounded
+// downgrades a streamable scan to a materialized one, because it buffers the whole
+// dataset. The responsible stage is the first body stage: index 1 when leading
+// declarations (module/imports/func-defs) occupy stage 0, otherwise stage 0.
 func accessMarkForQuery(q *gojq.Query, unbounded bool) *accessMark {
 	label, c := classifyAccess(selector.Keys(q), unbounded)
 	stage := 0
@@ -342,7 +344,7 @@ func classifyAccess(keys selector.KeySet, unbounded bool) (string, *color.Color)
 // em-dash note on the first line of each pipe stage, in the style of
 // writeConjunctLine. The body is the compact render (jqfmt.Format) verbatim, so
 // the annotated form differs from the plain form only by the note column. A
-// stage spans the same number of lines inline as standalone, so each note
+// stage spans the same number of lines inline as standalone. So each note
 // attaches to the physical line where its stage begins, found by accumulating
 // stage line counts. The stage named by mark (the root data access) is colored
 // by its route cost and leads with the route name. Every other note is dimmed.
@@ -378,10 +380,10 @@ func writeJQExplained(b *strings.Builder, pretty string, stages []jqfmt.Stage, i
 	}
 }
 
-// stageNote builds one stage's note. Every stage shows its dimmed jq description; the
-// root data-access stage (mark.stage) appends its route name in parentheses, colored
-// by cost. When that stage has no description, the colored route stands alone as the
-// note. Returns "" when there is nothing to show.
+// stageNote builds the note of one stage. Every stage shows its dimmed jq
+// description. The root data-access stage (mark.stage) appends its route name in
+// parentheses, colored by cost. When that stage has no description, the colored route
+// stands alone as the note. It returns "" when there is nothing to show.
 func stageNote(desc string, stage int, mark *accessMark) string {
 	marked := mark != nil && stage == mark.stage
 	switch {

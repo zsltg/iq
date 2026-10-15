@@ -14,14 +14,16 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// mongoInspectCmds is the supported set of MongoDB diagnostic commands `inspect`
-// runs. With no --only, it runs them all; --only narrows to the named ones.
+// mongoInspectCmds is the supported set of MongoDB diagnostic commands that
+// `inspect` runs. With no --only, it runs them all. --only narrows to the named
+// ones.
 var mongoInspectCmds = []string{"dbStats", "serverStatus", "listCollections", "collStats", "buildInfo", "hostInfo"}
 
-// redisInfoCommonSections is the set of INFO sections a Redis server commonly
-// reports. Unlike the other backends' lists it is advisory, not exhaustive — the
-// authoritative set is whatever the live reply carries (redisInfoSections) — so
-// it backs only the long help and --only completion, never validation.
+// redisInfoCommonSections is the set of INFO sections that a Redis server
+// commonly reports. Unlike the lists of the other backends, it is advisory, not
+// exhaustive. The authoritative set is whatever the live reply carries
+// (redisInfoSections). So it backs only the long help and --only completion,
+// never validation.
 var redisInfoCommonSections = []string{"server", "clients", "memory", "persistence", "stats", "replication", "cpu", "keyspace"}
 
 // inspectDriver is the inspect entry of one driver: the names --only and
@@ -48,9 +50,9 @@ var inspectDrivers = map[string]inspectDriver{
 }
 
 // inspectSubcommands returns the --only candidates for a driver, from the
-// inspectDrivers table. It takes the canonical driver name so the caller can
-// resolve it offline from a source URL, and returns nil for a driver with no
-// introspection (file) or an unknown one.
+// inspectDrivers table. It takes the canonical driver name, so the caller
+// can resolve it offline from a source URL. It returns nil for a driver with
+// no introspection (file) or an unknown one.
 func inspectSubcommands(driver string) []string {
 	return inspectDrivers[driver].names
 }
@@ -103,10 +105,10 @@ func inspectLong() string {
 		"default: --reveal prints an inline password verbatim, --expand resolves a keyring-backed one."
 }
 
-// newInspectCmd builds `iq inspect [source]`: show a source's native
-// server/database introspection. The positional names the source (sq-style
-// `<source>.<collection>` addressing); with none it uses --src or the active
-// source. --only narrows the output. Bounded by --timeout.
+// newInspectCmd builds `iq inspect [source]`: show the native
+// server/database introspection of a source. The positional names the source
+// (sq-style `<source>.<collection>` addressing). With none it uses --src or
+// the active source. --only narrows the output. Bounded by --timeout.
 func newInspectCmd(cfg *config) *cobra.Command {
 	var (
 		jsonOut bool
@@ -148,9 +150,10 @@ func newInspectCmd(cfg *config) *cobra.Command {
 	c.MarkFlagsMutuallyExclusive("json", "yaml")
 	c.Flags().BoolVar(&list, "list", false, "list the subcommands/sections available for the source")
 	c.Flags().StringSliceVar(&only, "only", nil, "narrow to these sections or subcommands (--list names the source's set)")
-	// --only's candidates depend on the source's backend, which the completion
-	// derives offline from the stored URL scheme; the error can only fire for an
-	// unknown flag name, so swallowing it keeps setup panic-free (as at root).
+	// The --only candidates depend on the backend of the source, which the
+	// completion derives offline from the stored URL scheme. The error can only
+	// fire for an unknown flag name, so swallowing it keeps setup panic-free (as
+	// at root).
 	_ = c.RegisterFlagCompletionFunc("only", completeInspectOnly)
 	c.Flags().BoolVar(&cfg.reveal, "reveal", false, "print an inline-stored password verbatim in the location header instead of redacting it")
 	c.Flags().BoolVar(&cfg.expand, "expand", false, "resolve a keyring-backed password and inline it in the location header")
@@ -163,8 +166,8 @@ func newInspectCmd(cfg *config) *cobra.Command {
 func dispatchInspect(ctx context.Context, req inspectRequest) error {
 	name := driverName(req.cfg.url)
 	if name == "file" {
-		// inspect reports live server metadata; a dump file has none. Point the
-		// user at the operations that do work on a file source.
+		// inspect reports live server metadata, and a dump file has none. Point
+		// the user at the operations that do work on a file source.
 		return errors.New("inspect reports live server metadata, and a file source has none; " +
 			"query it with a jq filter (`iq '.[]' --src <name>`) or compare it with `iq diff`")
 	}
@@ -361,7 +364,7 @@ func redisInfoSections(info string) []string {
 }
 
 // parseRedisInfo turns an INFO reply into section → key → value. Lines like
-// "# Server" open a section; "key:value" lines populate it.
+// "# Server" open a section. "key:value" lines populate it.
 func parseRedisInfo(info string) map[string]map[string]string {
 	sections := make(map[string]map[string]string)
 	section := "default"
@@ -411,7 +414,7 @@ func inspectMongo(ctx context.Context, req inspectRequest) error {
 }
 
 // mongoInspectDoc builds the JSON command document for a MongoDB diagnostic
-// subcommand. collStats takes the collection name; the rest take 1.
+// subcommand. collStats takes the collection name. The rest take 1.
 func mongoInspectDoc(sub, collection string) string {
 	if sub == "collStats" {
 		return fmt.Sprintf(`{%q:%q}`, sub, collection)
@@ -424,15 +427,15 @@ func isMongoInspectCmd(sub string) bool {
 	return slices.Contains(mongoInspectCmds, sub)
 }
 
-// cassandraInspectCmds is the supported set of Cassandra system-table reads inspect
-// runs. With no --only it runs them all; --only narrows to the named ones.
+// cassandraInspectCmds is the supported set of Cassandra system-table reads that
+// inspect runs. With no --only it runs them all. --only narrows to the named ones.
 var cassandraInspectCmds = []string{"local", "tables", "columns"}
 
 // inspectCassandra runs the requested Cassandra system-table reads (all supported
-// when none are named) and renders each reply keyed by subcommand. "local" shows the
-// coordinator's cluster and version row; "tables" lists the keyspace's tables;
-// "columns" describes the selected table's columns. With list, it prints the
-// supported names without touching the store.
+// when none are named) and renders each reply keyed by subcommand. The "local" read
+// shows the cluster and version row of the coordinator. The "tables" read lists the
+// tables of the keyspace. The "columns" read describes the columns of the selected
+// table. With list, it prints the supported names without touching the store.
 func inspectCassandra(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
 		names: cassandraInspectCmds,
@@ -475,29 +478,31 @@ func cassandraInspectStmt(sub, keyspace, table string) (string, bool) {
 	}
 }
 
-// cqlString renders s as a single-quoted CQL string literal, doubling an embedded
-// quote so an interpolated keyspace or table name cannot break out of the literal.
+// cqlString renders s as a single-quoted CQL string literal. It doubles an
+// embedded quote, so an interpolated keyspace or table name cannot break out of
+// the literal.
 func cqlString(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
-// dynamoInspectCmds is the supported set of DynamoDB introspection reads inspect runs.
-// With no --only it runs them all; --only narrows to the named ones.
+// dynamoInspectCmds is the supported set of DynamoDB introspection reads that inspect
+// runs. With no --only it runs them all. --only narrows to the named ones.
 var dynamoInspectCmds = []string{"tables", "table"}
 
-// dynamoInspector is the introspection capability inspectDynamo needs from the store.
-// DynamoDB's introspection is API calls (ListTables, DescribeTable), not a PartiQL
-// statement, so unlike Cassandra it is a driver method the CLI calls directly rather
-// than a statement routed through the raw Query path.
+// dynamoInspector is the introspection capability that inspectDynamo needs from the
+// store. The introspection of DynamoDB is API calls (ListTables, DescribeTable), not
+// a PartiQL statement. So, unlike Cassandra, it is a driver method that the CLI calls
+// directly, and not a statement routed through the raw Query path.
 type dynamoInspector interface {
 	InspectTables(ctx context.Context) (any, error)
 	InspectTable(ctx context.Context) (any, error)
 }
 
 // inspectDynamo runs the requested DynamoDB introspection reads (all supported when
-// none are named) and renders each reply keyed by subcommand. "tables" lists the
-// region's tables; "table" describes the selected table's schema and size. With list,
-// it prints the supported names without touching the store.
+// none are named) and renders each reply keyed by subcommand. The "tables" read
+// lists the tables of the region. The "table" read describes the schema and size of
+// the selected table. With list, it prints the supported names without touching the
+// store.
 func inspectDynamo(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
 		names: dynamoInspectCmds,
@@ -516,17 +521,17 @@ func inspectDynamo(ctx context.Context, req inspectRequest) error {
 // set is table listing only.
 var hbaseInspectCmds = []string{"tables"}
 
-// hbaseInspector is the introspection capability inspectHBase needs from the store.
-// HBase introspection is an admin RPC (ListTableNames), not a query-language
-// statement, so like DynamoDB it is a driver method the CLI calls directly rather than
-// a statement routed through Query.
+// hbaseInspector is the introspection capability that inspectHBase needs from the
+// store. HBase introspection is an admin RPC (ListTableNames), not a query-language
+// statement. So, like DynamoDB, it is a driver method that the CLI calls directly, and
+// not a statement routed through Query.
 type hbaseInspector interface {
 	InspectTables(ctx context.Context) (any, error)
 }
 
-// inspectHBase runs the HBase introspection reads (currently just "tables", which
-// lists the source namespace's tables) and renders each reply keyed by subcommand.
-// With list, it prints the supported names without touching the store.
+// inspectHBase runs the HBase introspection reads (currently only "tables", which
+// lists the tables of the source namespace) and renders each reply keyed by
+// subcommand. With list, it prints the supported names without touching the store.
 func inspectHBase(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
 		names: hbaseInspectCmds,
@@ -536,15 +541,16 @@ func inspectHBase(ctx context.Context, req inspectRequest) error {
 	})
 }
 
-// couchInspectCmds is the supported set of CouchDB introspection reads `inspect`
-// runs. "server" and "databases" are server-level; "dbinfo" and "indexes" need a
-// database selected. With no --only it runs them all; --only narrows.
+// couchInspectCmds is the supported set of CouchDB introspection reads that
+// `inspect` runs. "server" and "databases" are server-level. "dbinfo" and
+// "indexes" need a database selected. With no --only it runs them all. --only
+// narrows.
 var couchInspectCmds = []string{"server", "databases", "dbinfo", "indexes"}
 
-// couchInspector is the introspection capability inspectCouch needs from the store.
-// CouchDB's introspection is HTTP API reads (GET /, GET /_all_dbs, GET /{db}, GET
-// /{db}/_index), not a Mango query, so it is a driver method the CLI calls directly
-// rather than a statement routed through the raw Query path.
+// couchInspector is the introspection capability that inspectCouch needs from the
+// store. The introspection of CouchDB is HTTP API reads (GET /, GET /_all_dbs, GET
+// /{db}, GET /{db}/_index), not a Mango query. So it is a driver method that the
+// CLI calls directly, and not a statement routed through the raw Query path.
 type couchInspector interface {
 	InspectServer(ctx context.Context) (any, error)
 	InspectDatabases(ctx context.Context) (any, error)
@@ -553,9 +559,10 @@ type couchInspector interface {
 }
 
 // inspectCouch runs the requested CouchDB introspection reads (all supported when
-// none are named) and renders each reply keyed by subcommand. "dbinfo" and "indexes"
-// need a database selected and are skipped in the run-all case when none is. With
-// list, it prints the supported names without touching the store.
+// none are named) and renders each reply keyed by subcommand. The "dbinfo" and
+// "indexes" reads need a database selected. Both are skipped in the run-all case
+// when none is selected. With list, it prints the supported names without touching
+// the store.
 func inspectCouch(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
 		names: couchInspectCmds,
@@ -571,9 +578,9 @@ func inspectCouch(ctx context.Context, req inspectRequest) error {
 	})
 }
 
-// couchbaseInspectCmds is the supported set of Couchbase introspection reads `inspect`
-// runs. "cluster", "buckets", and "indexes" are cluster-level; "collections" needs a
-// bucket selected. With no --only it runs them all; --only narrows.
+// couchbaseInspectCmds is the supported set of Couchbase introspection reads that
+// `inspect` runs. "cluster", "buckets", and "indexes" are cluster-level. "collections"
+// needs a bucket selected. With no --only it runs them all. --only narrows.
 var couchbaseInspectCmds = []string{"cluster", "buckets", "collections", "indexes"}
 
 // couchbaseInspector is the introspection capability inspectCouchbase needs from the
@@ -588,7 +595,7 @@ type couchbaseInspector interface {
 
 // inspectCouchbase runs the requested Couchbase introspection reads (all supported when
 // none are named) and renders each reply keyed by subcommand. "collections" needs a
-// bucket selected and is skipped in the run-all case when none is. With list, it prints
+// bucket selected. It is skipped in the run-all case when none is. With list, it prints
 // the supported names without touching the store.
 func inspectCouchbase(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
@@ -606,14 +613,16 @@ func inspectCouchbase(ctx context.Context, req inspectRequest) error {
 }
 
 // elasticInspectCmds is the supported set of Elasticsearch introspection reads
-// `inspect` runs. "server", "indices", and "aliases" are server-level; "mapping"
-// needs an index selected. With no --only it runs them all; --only narrows.
+// that `inspect` runs. "server", "indices", and "aliases" are server-level.
+// "mapping" needs an index selected. With no --only it runs them all. --only
+// narrows.
 var elasticInspectCmds = []string{"server", "indices", "mapping", "aliases"}
 
-// elasticInspector is the introspection capability inspectElastic needs from the
-// store. Elasticsearch's introspection is HTTP API reads (GET /, GET /_cat/indices,
-// GET /{index}/_mapping, GET /_cat/aliases), not a search, so it is a driver method
-// the CLI calls directly rather than a query routed through the raw Query path.
+// elasticInspector is the introspection capability that inspectElastic needs from
+// the store. The introspection of Elasticsearch is HTTP API reads (GET /, GET
+// /_cat/indices, GET /{index}/_mapping, GET /_cat/aliases), not a search. So it is
+// a driver method that the CLI calls directly, and not a query routed through the
+// raw Query path.
 type elasticInspector interface {
 	InspectServer(ctx context.Context) (any, error)
 	InspectIndices(ctx context.Context) (any, error)
@@ -623,7 +632,7 @@ type elasticInspector interface {
 
 // inspectElastic runs the requested Elasticsearch introspection reads (all supported
 // when none are named) and renders each reply keyed by subcommand. "mapping" needs an
-// index selected and is skipped in the run-all case when none is. With list, it
+// index selected. It is skipped in the run-all case when none is. With list, it
 // prints the supported names without touching the store.
 func inspectElastic(ctx context.Context, req inspectRequest) error {
 	return runInspect(ctx, req, inspectSpec{
@@ -640,15 +649,16 @@ func inspectElastic(ctx context.Context, req inspectRequest) error {
 	})
 }
 
-// neo4jInspectCmds is the supported set of Neo4j introspection reads `inspect` runs.
-// All are database-level metadata procedures, so none needs a label selected. With
-// no --only it runs them all; --only narrows.
+// neo4jInspectCmds is the supported set of Neo4j introspection reads that `inspect`
+// runs. All are database-level metadata procedures, so none needs a label selected.
+// With no --only it runs them all. --only narrows.
 var neo4jInspectCmds = []string{"server", "databases", "labels", "reltypes", "constraints"}
 
-// neo4jInspector is the introspection capability inspectNeo4j needs from the store.
-// Neo4j's introspection is metadata procedures (dbms.components, db.labels,
-// db.relationshipTypes, SHOW DATABASES, SHOW CONSTRAINTS), which the driver runs
-// itself rather than routing an arbitrary statement through the raw Query path.
+// neo4jInspector is the introspection capability that inspectNeo4j needs from the
+// store. The introspection of Neo4j is metadata procedures (dbms.components,
+// db.labels, db.relationshipTypes, SHOW DATABASES, SHOW CONSTRAINTS). The driver
+// runs them itself and does not route an arbitrary statement through the raw Query
+// path.
 type neo4jInspector interface {
 	InspectServer(ctx context.Context) (any, error)
 	InspectDatabases(ctx context.Context) (any, error)
