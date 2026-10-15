@@ -83,7 +83,7 @@ func TestRefWithoutModuleRoot(t *testing.T) {
 
 func TestRefWorkingDirectoryGone(t *testing.T) {
 	// Only Linux reports an error for a removed working directory. macOS still returns
-	// its path, and Windows does not remove a directory that is in use.
+	// its path. Windows does not remove a directory that is in use.
 	if runtime.GOOS != "linux" {
 		t.Skip("needs a removable working directory that os.Getwd then rejects")
 	}

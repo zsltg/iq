@@ -1,13 +1,13 @@
 // Package jqfmt pretty-prints a jq filter. It parses the source with gojq and re-emits
-// the AST with line breaks, indentation, and optional syntax coloring. gojq itself only
-// offers single-line canonical output ((*Query).String via an unexported writer), so
-// this package does the multi-line layout.
+// the AST with line breaks, indentation, and optional syntax coloring. The gojq library
+// itself offers only single-line canonical output ((*Query).String via an unexported
+// writer). So this package does the multi-line layout.
 //
 // The printer controls layout only at structural break points: pipes, multi-entry
 // objects, piped array bodies, if/try/reduce/foreach clauses, and breakable function
 // arguments. It delegates every leaf token (indexes, strings, numbers, formats,
 // patterns, suffixes) to gojq's own String(), so the emitted text always re-parses to
-// the same query. The one exception is a nested source("name"; "<sub>") call. The
+// the same query. The one exception is a nested `source("name"; "<sub>")` call. The
 // printer unquotes the string sub-filter and pretty-prints it inline as its own
 // indented block, so the nested jq is readable.
 package jqfmt
@@ -128,9 +128,9 @@ func (p *printer) query(q *gojq.Query) {
 	}
 }
 
-// composed prints a `Left Op Right` query. A pipe (and the `as` binding that rides
-// on it) breaks onto a new line so each stage reads on its own row; every other
-// operator stays inline.
+// composed prints a `Left Op Right` query. A pipe (and the `as` binding that rides on
+// it) breaks onto a new line, so each stage reads on its own row. Every other operator
+// stays inline.
 func (p *printer) composed(q *gojq.Query) {
 	p.query(q.Left)
 	if q.Op == gojq.OpPipe {
@@ -184,10 +184,9 @@ func (p *printer) funcDef(fd *gojq.FuncDef) {
 	p.tok(rolePunc, ";")
 }
 
-// term prints a single term. A leaf that needs no internal break is delegated to
-// gojq's own String() (exact, re-parseable) and colored by its kind; a term with
-// breakable structure is descended into so its layout and inner colors are
-// controlled here.
+// term prints a single term. A leaf that needs no internal break is delegated to gojq's
+// own String() (exact, re-parseable) and colored by its kind. A term with breakable
+// structure is descended into, so its layout and inner colors are controlled here.
 func (p *printer) term(t *gojq.Term) {
 	if src, ok := p.sourceCall(t); ok {
 		p.b.WriteString(src)
@@ -225,7 +224,7 @@ func (p *printer) term(t *gojq.Term) {
 	case gojq.TermTypeForeach:
 		p.foreachTerm(t.Foreach)
 	default:
-		// No breakable layout for this kind; fall back to the exact form.
+		// No breakable layout for this kind. Fall back to the exact form.
 		p.leafTerm(t)
 		return
 	}
@@ -265,8 +264,8 @@ func (p *printer) funcCall(f *gojq.Func) {
 	p.parenClauses(f.Args...)
 }
 
-// object prints an object literal. An empty object stays `{}`; otherwise every
-// entry is broken onto its own indented line.
+// object prints an object literal. An empty object stays `{}`. Otherwise every entry is
+// broken onto its own indented line.
 func (p *printer) object(o *gojq.Object) {
 	if len(o.KeyVals) == 0 {
 		p.tok(rolePunc, "{}")
@@ -419,9 +418,9 @@ func (p *printer) parenClauses(clauses ...*gojq.Query) {
 	p.tok(rolePunc, ")")
 }
 
-// clauseBody prints a keyword's body: a simple body follows on the same line after
-// a space; a body that breaks moves to its own indented line, so no trailing space
-// is left on the keyword line.
+// clauseBody prints the body of a keyword. A simple body follows on the same line after
+// a space. A body that breaks moves to its own indented line, so no trailing space is
+// left on the keyword line.
 func (p *printer) clauseBody(q *gojq.Query) {
 	if !queryNeedsBreak(q) {
 		p.space()
@@ -434,9 +433,9 @@ func (p *printer) clauseBody(q *gojq.Query) {
 	p.indent--
 }
 
-// suffixes appends a term's suffix list (`.a`, `[]`, `[k]`, `?`) after a descended
-// base. Each suffix is delegated to gojq for exact text; adjacency after `)`/`]`/`}`
-// never needs the space gojq inserts only after `.` or a digit.
+// suffixes appends the suffix list of a term (`.a`, `[]`, `[k]`, `?`) after a descended
+// base. Each suffix is delegated to gojq for exact text. Adjacency after `)`/`]`/`}`
+// never needs the space that gojq inserts only after `.` or a digit.
 func (p *printer) suffixes(t *gojq.Term) {
 	for _, s := range t.SuffixList {
 		p.tok(rolePath, s.String())
@@ -515,9 +514,9 @@ func stringLiteral(q *gojq.Query) (string, bool) {
 }
 
 // termNeedsBreak reports whether a term has internal structure worth breaking onto
-// multiple lines. Leaves (indexes, scalars, formats) never break; composites break
-// when they contain a pipe, a multi-entry/complex object, a piped array, a
-// breakable control form, or a function argument that itself breaks.
+// multiple lines. Leaves (indexes, scalars, formats) never break. Composites break when
+// they contain a pipe, a multi-entry/complex object, a piped array, a breakable control
+// form, or a function argument that itself breaks.
 func termNeedsBreak(t *gojq.Term) bool {
 	switch t.Type {
 	case gojq.TermTypeObject:
@@ -537,8 +536,9 @@ func termNeedsBreak(t *gojq.Term) bool {
 	}
 }
 
-// controlNeedsBreak reports whether an if, try, reduce, or foreach term breaks:
-// when one of its clauses breaks, or for an if, when it has an elif or an else.
+// controlNeedsBreak reports whether an if, try, reduce, or foreach term breaks. It
+// breaks when one of its clauses breaks. An if also breaks when it has an elif or an
+// else.
 func controlNeedsBreak(t *gojq.Term) bool {
 	switch t.Type {
 	case gojq.TermTypeIf:
@@ -560,7 +560,7 @@ func controlNeedsBreak(t *gojq.Term) bool {
 // ifNeedsBreak reports whether an if term breaks.
 func ifNeedsBreak(e *gojq.If) bool {
 	// An elif or an else clause breaks the form on its own, whatever those clauses
-	// hold, so their contents never need asking: only a bare if/then can stay inline,
+	// hold, so their contents never need asking. Only a bare if/then can stay inline,
 	// and only when neither of its two parts breaks.
 	if len(e.Elif) > 0 || e.Else != nil {
 		return true
@@ -577,9 +577,8 @@ func optBreaks(q *gojq.Query) bool {
 	return queryNeedsBreak(q)
 }
 
-// queryNeedsBreak reports whether a query would span multiple lines: a pipe always
-// breaks, func-defs break, and a binary/comma composition breaks when either side
-// does.
+// queryNeedsBreak reports whether a query spans multiple lines. A pipe always breaks,
+// func-defs break, and a binary/comma composition breaks when either side does.
 func queryNeedsBreak(q *gojq.Query) bool {
 	if len(q.FuncDefs) > 0 || q.Meta != nil {
 		return true
@@ -596,8 +595,8 @@ func queryNeedsBreak(q *gojq.Query) bool {
 	return queryNeedsBreak(q.Left) || queryNeedsBreak(q.Right)
 }
 
-// objectNeedsBreak reports whether an object literal should break: more than one
-// entry, or any value/computed-key that itself breaks.
+// objectNeedsBreak reports whether an object literal breaks: more than one entry, or
+// any value/computed-key that itself breaks.
 func objectNeedsBreak(o *gojq.Object) bool {
 	if len(o.KeyVals) > 1 {
 		return true
@@ -618,9 +617,9 @@ func anyQueryBreaks(args []*gojq.Query) bool {
 	return slices.ContainsFunc(args, queryNeedsBreak)
 }
 
-// Stage is one top-level pipe stage of an explained filter: its pretty-printed
-// Text (possibly multi-line, colored per the Explain call) and a short human Desc.
-// Desc is empty when no confident description applies — a wrong note is worse than
+// Stage is one top-level pipe stage of an explained filter. It holds its pretty-printed
+// Text (possibly multi-line, colored per the Explain call) and a short human Desc. Desc
+// is empty when no confident description applies, because a wrong note is worse than
 // none.
 type Stage struct {
 	Text string
@@ -640,10 +639,10 @@ func HasLeadingDecls(q *gojq.Query) bool {
 // once and reuses q, so no parse (and no parse error) happens here.
 func ExplainQuery(q *gojq.Query, colored bool) []Stage {
 	var stages []Stage
-	// Leading declarations (module/imports/func-defs) ride on the top query; peel
-	// them into their own stage so the pipe split below sees only the body. The body
-	// is the whole query with just those declaration fields cleared, so every other
-	// field (term, pipe operands, patterns, op) carries over untouched.
+	// Leading declarations (module/imports/func-defs) ride on the top query. Peel them
+	// into their own stage, so the pipe split below sees only the body. The body is the
+	// whole query with only those declaration fields cleared. So every other field
+	// (term, pipe operands, patterns, op) carries over untouched.
 	if HasLeadingDecls(q) {
 		decls := &gojq.Query{Meta: q.Meta, Imports: q.Imports, FuncDefs: q.FuncDefs}
 		stages = append(stages, Stage{Text: strings.TrimRight(FormatQuery(decls, colored), "\n")})
@@ -665,12 +664,12 @@ type pipeStage struct {
 }
 
 // splitPipes unwinds a left-leaning top-level pipe chain into ordered operands,
-// left-most first. Each pipe contributes its Left operand plus the patterns that
-// ride on it; the final non-pipe query is the last stage.
+// left-most first. Each pipe contributes its Left operand plus the patterns that ride
+// on it. The final non-pipe query is the last stage.
 func splitPipes(q *gojq.Query) []pipeStage {
 	var out []pipeStage
 	// A parsed OpPipe query always carries a Right operand, so the loop needs no nil
-	// guard: every pipe contributes its Left, and the final non-pipe query is the tail.
+	// guard. Every pipe contributes its Left, and the final non-pipe query is the tail.
 	for {
 		if q.Op == gojq.OpPipe {
 			out = append(out, pipeStage{q: q.Left, pats: q.Patterns})
@@ -685,17 +684,17 @@ func splitPipes(q *gojq.Query) []pipeStage {
 // stageText pretty-prints one stage, appending its `as $pat` binding exactly as
 // composed renders it (`<left> as <pat>`), so the binding stays with its operand.
 func stageText(q *gojq.Query, pats []*gojq.Pattern, colored bool) string {
-	// With no patterns this is exactly FormatQuery(q); the loop below simply adds
-	// nothing, so there is no separate fast path to keep in sync.
+	// With no patterns this is exactly FormatQuery(q). The loop below adds nothing, so
+	// there is no separate fast path to keep in sync.
 	p := &printer{colored: colored}
 	p.query(q)
 	p.bindings(pats)
 	return p.b.String()
 }
 
-// describe returns a short lowercase description of a stage, or "" when the shape
-// is not confidently recognized. A composition describes by its operator; a single
-// term dispatches on its kind.
+// describe returns a short lowercase description of a stage, or "" when the shape is
+// not confidently recognized. A composition describes by its operator. A single term
+// dispatches on its kind.
 func describe(q *gojq.Query) string {
 	// A stage is either a single term or a top-level composition (Term nil): the
 	// composition is described by its operator, the term by its kind.
@@ -858,9 +857,9 @@ var builtinDesc = map[string]string{
 	"last":           "last element",
 }
 
-// describeFunc describes a function call: the argument-taking builtins first (their
-// note renders the argument inline), then the static table, then a safe "call
-// <name>" fallback that is never misleading.
+// describeFunc describes a function call. It tries the argument-taking builtins first
+// (their note renders the argument inline). Then it tries the static table. Last, it
+// uses a safe "call <name>" fallback that is never misleading.
 func describeFunc(f *gojq.Func) string {
 	if n, ok := argNotes[f.Name]; ok && n.accepts(len(f.Args)) {
 		return n.render(f.Args)
@@ -882,9 +881,9 @@ func inlineArg(q *gojq.Query) string {
 // counted like any other text.
 var sgrEscape = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
-// VisibleWidth returns the display width of s ignoring this package's ANSI SGR escape
-// runs: it strips every complete `\x1b[…m` sequence, then counts the remaining runes,
-// so a colored stage aligns against a plain one.
+// VisibleWidth returns the display width of s, ignoring the ANSI SGR escape runs of
+// this package. It strips every complete `\x1b[…m` sequence, then counts the remaining
+// runes. So a colored stage aligns against a plain one.
 func VisibleWidth(s string) int {
 	return utf8.RuneCountInString(sgrEscape.ReplaceAllString(s, ""))
 }

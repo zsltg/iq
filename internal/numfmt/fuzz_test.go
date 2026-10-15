@@ -22,7 +22,7 @@ var fuzzModes = []numfmt.DecimalMode{numfmt.DecimalAuto, numfmt.DecimalNumber, n
 
 // FuzzConvertNumber drives the number conversion with arbitrary literals, which is
 // what a backend document hands it. The package documents that an integer is never
-// lossy in any mode, so the oracle holds every integer literal to its exact value
+// lossy in any mode. So the oracle holds every integer literal to its exact value
 // as an int or a *big.Int, whichever mode is asked for. A fractional literal keeps
 // its exact text in string mode. Nothing panics, whatever the bytes say.
 func FuzzConvertNumber(f *testing.F) {

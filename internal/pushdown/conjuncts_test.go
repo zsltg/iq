@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// wantConjunct is the expected shape of one enumerated conjunct: its jq source,
-// whether the compiler produced a pushable predicate, and (for a declined one) a
-// substring the reason must contain.
+// wantConjunct is the expected shape of one enumerated conjunct. It holds its jq
+// source, whether the compiler produced a pushable predicate, and (for a declined one)
+// a substring that the reason must contain.
 type wantConjunct struct {
 	expr   string
 	pushed bool
@@ -145,11 +145,11 @@ func TestConjuncts(t *testing.T) {
 			want:   []wantConjunct{{expr: ".active", pushed: false, reason: "not a pushable comparison"}},
 		},
 		{
-			// A bare `not` is a single-stage conjunct (no pipe): the negation reason
-			// is gated on a `path | not` pipe of at least two stages, so a lone `not`
-			// must fall through to the generic reason. This pins the `len(stages) >= 2`
-			// threshold in declineReason — a decrementer or removal of it would
-			// misreport this as "negation is not exactly expressible".
+			// A bare `not` is a single-stage conjunct (no pipe). The negation reason is
+			// gated on a `path | not` pipe of at least two stages, so a lone `not` must
+			// fall through to the generic reason. This pins the `len(stages) >= 2`
+			// threshold in declineReason. A decrementer or removal of it misreports
+			// this as "negation is not exactly expressible".
 			name:   "declined bare not is generic, not a negation reason",
 			filter: `.[] | select(not)`,
 			ok:     true,
@@ -209,17 +209,17 @@ func TestUnwrapIsDepthBounded(t *testing.T) {
 	require.True(t, ok)
 	require.Same(t, inner, got)
 
-	// Boundary: nesting exactly at the cap still unwraps to the exact inner node.
-	// This is the last depth the loop reaches, so a decrementer on the init (start
-	// at 1) or a `<=`→`<` on the bound would stop one peel short and decline it.
+	// Boundary: nesting exactly at the cap still unwraps to the exact inner node. This
+	// is the last depth that the loop reaches. So a decrementer on the init (start at
+	// 1) or a `<=`→`<` on the bound stops one peel short and declines it.
 	got, ok = unwrap(wrapQuery(inner, maxNestDepth))
 	require.True(t, ok)
 	require.Same(t, inner, got)
 
-	// Boundary: one past the cap is declined rather than peeled forever — the guard
-	// that stops a progress-removal mutant from spinning past the timeout. Testing
-	// exactly cap+1 (not far past) also pins the init: an incrementer starting the
-	// counter below 0 would grant one extra peel and wrongly accept this depth.
+	// Boundary: one past the cap is declined rather than peeled forever. This is the
+	// guard that stops a progress-removal mutant from spinning past the timeout.
+	// Testing exactly cap+1 (not far past) also pins the init. An incrementer that
+	// starts the counter below 0 grants one extra peel and wrongly accepts this depth.
 	_, ok = unwrap(wrapQuery(inner, maxNestDepth+1))
 	require.False(t, ok)
 
@@ -253,12 +253,12 @@ func TestUnwrapDepthCap(t *testing.T) {
 	}
 }
 
-// TestUnwrapStopsAtNonWrapper drives unwrap directly with hand-built ASTs where
-// exactly one clause of its stop-guard is true, so each clause is load-bearing:
-// removing or misjoining it would make unwrap peel a node it must return as-is
-// (yielding a different node, or a nil-pointer panic on the next peel). Such
-// shapes (an operator carrying a term, a term with no query) cannot come from the
-// parser, so they are constructed rather than parsed.
+// TestUnwrapStopsAtNonWrapper drives unwrap directly with hand-built ASTs where exactly
+// one clause of its stop-guard is true. So each clause has its own test. Removing or
+// misjoining a clause makes unwrap peel a node that it must return as-is. The result is
+// a different node, or a nil-pointer panic on the next peel. Such shapes (an operator
+// carrying a term, a term with no query) cannot come from the parser, so they are
+// constructed rather than parsed.
 func TestUnwrapStopsAtNonWrapper(t *testing.T) {
 	inner, err := gojq.Parse(".a == 1")
 	require.NoError(t, err)
@@ -274,7 +274,7 @@ func TestUnwrapStopsAtNonWrapper(t *testing.T) {
 			in:   &gojq.Query{Op: gojq.OpAnd, Term: &gojq.Term{Type: gojq.TermTypeQuery, Query: inner}},
 		},
 		{
-			// e.Term == nil: nothing to peel; must stop before dereferencing Term.
+			// e.Term == nil: nothing to peel. Stop before dereferencing Term.
 			name: "term nil",
 			in:   &gojq.Query{},
 		},
@@ -306,9 +306,9 @@ func TestUnwrapStopsAtNonWrapper(t *testing.T) {
 }
 
 // TestIsTestPipe drives isTestPipe directly. Its false-returning guard rejects any
-// right-hand pipe stage that is not exactly a bare `test(...)` call; each clause of
-// that guard is isolated by a hand-built shape so removing or misjoining one lets a
-// non-test (or malformed) right side be misread as a portable-regex decline.
+// right-hand pipe stage that is not exactly a bare `test(...)` call. A hand-built shape
+// isolates each clause of that guard. So removing or misjoining one lets a non-test (or
+// malformed) right side be misread as a portable-regex decline.
 func TestIsTestPipe(t *testing.T) {
 	leftPath, err := gojq.Parse(".name")
 	require.NoError(t, err)
@@ -345,8 +345,8 @@ func TestIsTestPipe(t *testing.T) {
 			want: false,
 		},
 		{
-			// rhs.Term.Func == nil: a non-call right side (here a plain field) is
-			// not a test, and reaching Func.Name would panic.
+			// rhs.Term.Func == nil: a non-call right side (here a plain field) is not a
+			// test, and reaching Func.Name panics.
 			name: "rhs term is not a call",
 			in:   pipe(&gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeIdentity}}),
 			want: false,
@@ -370,11 +370,11 @@ func TestIsTestPipe(t *testing.T) {
 	}
 }
 
-// TestRawPath drives rawPath directly. It returns a plain relative field path or
-// nil for anything with an operator, extra function defs, a non-index term, a
-// missing index, an iterating suffix, or a computed suffix. Each guard clause is
-// isolated by a hand-built shape so removing or misjoining one would either surface
-// a path that must stay nil, or panic on a nil index.
+// TestRawPath drives rawPath directly. It returns a plain relative field path. It
+// returns nil for anything with an operator, extra function defs, a non-index term, a
+// missing index, an iterating suffix, or a computed suffix. A hand-built shape isolates
+// each guard clause. So removing or misjoining one either surfaces a path that must
+// stay nil, or panics on a nil index.
 func TestRawPath(t *testing.T) {
 	tests := []struct {
 		name string

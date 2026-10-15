@@ -9,13 +9,13 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// The compiler's shape guards reject AST nodes the jq parser can produce (a
-// builtin carrying a suffix, a two-argument select) and AST nodes only a
-// programmatic caller can build (a query holding both an operator and a term, a
-// term with no string payload). Compile cannot reach the second class, so these
-// tests exercise the helpers directly: the guards are load-bearing — dropping one
-// makes the compiler push a predicate the filter never asked for, or dereference
-// a nil field — and a unit test is the only place their contract is observable.
+// The compiler's shape guards reject AST nodes that the jq parser can produce (a
+// builtin carrying a suffix, a two-argument select). They also reject AST nodes that
+// only a programmatic caller can build. Examples are a query holding both an operator
+// and a term, and a term with no string payload. Compile cannot reach the second class,
+// so these tests exercise the helpers directly. The guards matter: dropping one makes
+// the compiler push a predicate that the filter never asked for, or dereference a nil
+// field. A unit test is the only place where their contract is observable.
 
 // mustParse parses a jq expression, failing the test if it does not parse.
 func mustParse(t *testing.T, src string) *gojq.Query {
@@ -47,7 +47,7 @@ func TestSelectArg(t *testing.T) {
 		},
 		{
 			"an operator stage is not a select even when it carries a select term",
-			// Only a programmatic caller can build a query holding both; the guard
+			// Only a programmatic caller can build a query holding both. The guard
 			// keeps the operator authoritative over the term.
 			func(t *testing.T) *gojq.Query {
 				return &gojq.Query{
@@ -124,9 +124,9 @@ func TestExtractPredShapeGuards(t *testing.T) {
 		},
 		{
 			"an operator wins over a parenthesized term",
-			// A query with both an operator and a term is unreachable from the
-			// parser; the guard makes the operator authoritative rather than
-			// silently compiling the term's inner expression instead.
+			// A query with both an operator and a term is unreachable from the parser.
+			// The guard makes the operator authoritative, rather than silently
+			// compiling the inner expression of the term instead.
 			func(t *testing.T) *gojq.Query {
 				return &gojq.Query{
 					Op:    gojq.OpEq,
@@ -451,8 +451,8 @@ func TestIntLiteral(t *testing.T) {
 		{
 			"a negative integer",
 			// jq spells -1 as a unary minus over 1, so only a programmatic caller
-			// reaches the sign check; a negative size would be a predicate no
-			// backend can satisfy.
+			// reaches the sign check. A negative size is a predicate that no backend
+			// can satisfy.
 			func(t *testing.T) *gojq.Query {
 				return &gojq.Query{Term: &gojq.Term{Type: gojq.TermTypeNumber, Number: "-1"}}
 			},
@@ -508,8 +508,8 @@ func TestStringLit(t *testing.T) {
 		},
 		{
 			"a non-string term carrying a string payload",
-			// The parser never fills Str on a number term; the type check is what
-			// keeps a term's payload from being read as its value.
+			// The parser never fills Str on a number term. The type check keeps the
+			// payload of a term from being read as its value.
 			func(t *testing.T) *gojq.Query {
 				return &gojq.Query{Term: &gojq.Term{
 					Type:   gojq.TermTypeNumber,

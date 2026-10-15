@@ -23,8 +23,8 @@ func TestJSONPlainIsByteIdentical(t *testing.T) {
 	// The plain encoder never HTML-escapes and matches the two-space stdlib form.
 	got, err := render.JSON(map[string]any{"a": "<b>", "n": 1}, false)
 	require.NoError(t, err)
-	// Line by line, not JSONEq: the literal pins both the two-space layout and
-	// the unescaped `<`, either of which a semantic comparison would forgive.
+	// Line by line, not JSONEq. The literal pins both the two-space layout and
+	// the unescaped `<`, and a semantic comparison forgives either of them.
 	require.Equal(t, []string{"{", `  "a": "<b>",`, `  "n": 1`, "}"}, strings.Split(got, "\n"))
 	require.NotContains(t, got, "\x1b[", "plain output has no escapes")
 }
@@ -41,7 +41,7 @@ func TestJSONColoredSortsAndColors(t *testing.T) {
 
 func TestJSONColoredIndentsWhenPretty(t *testing.T) {
 	t.Parallel()
-	// The colored pretty form is multi-line with two-space indentation; stripping
+	// The colored pretty form is multi-line with two-space indentation. Stripping
 	// the ANSI leaves the same layout as the plain encoder.
 	got, err := render.JSON(map[string]any{"a": 1}, true)
 	require.NoError(t, err)
@@ -77,8 +77,8 @@ func TestJSONColoredNeverHTMLEscapes(t *testing.T) {
 
 func TestNewJSONEncoderColoredSortsMapKeys(t *testing.T) {
 	t.Parallel()
-	// Go randomises map iteration, so one pass over a sorted-looking result
-	// proves nothing; eight keys re-encoded ten times cannot land in order by
+	// Go randomizes map iteration, so one pass over a sorted-looking result
+	// proves nothing. Eight keys re-encoded ten times cannot land in order by
 	// chance if the encoder is not sorting.
 	v := map[string]any{"h": 8, "g": 7, "f": 6, "e": 5, "d": 4, "c": 3, "b": 2, "a": 1}
 	const want = `{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8}` + "\n"

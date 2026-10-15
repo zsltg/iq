@@ -17,11 +17,11 @@ import (
 // encoder and the colored encoder satisfy it.
 type Encoder interface{ Encode(v any) error }
 
-// The Color* constants are the SGR escape sequences for each JSON syntax role,
-// the single source of truth for both the colored encoder here and the CLI's own
-// per-segment coloring (gron path segments reuse the Key and Number roles). Only
-// the roles the CLI reuses are exported; the rest stay package-private but still
-// feed jsonColors so the palette has one definition.
+// The Color* constants are the SGR escape sequences for each JSON syntax role.
+// They are the single source of truth for the colored encoder here. They are also
+// the source for the CLI's own per-segment coloring (gron path segments reuse the
+// Key and Number roles). Only the roles the CLI reuses are exported. The rest stay
+// package-private but still feed jsonColors, so the palette has one definition.
 const (
 	// ColorKey is the SGR code for an object key (blue-bold).
 	ColorKey = "\x1b[34;1m"
@@ -38,11 +38,11 @@ const (
 )
 
 // jsonColors is the JSON syntax palette. It mirrors jsoncolor.DefaultColors but
-// dims punctuation rather than leaving it uncolored: the encoder always writes a
-// reset after each punctuation mark, so an empty punctuation color yields a
+// dims punctuation rather than leaving it uncolored. The encoder always writes a
+// reset after each punctuation mark. So an empty punctuation color yields a
 // stray, unpaired reset (`{` followed by a bare \x1b[0m). A real, faint color
-// keeps every reset paired and the escape stream well-formed, and reads well —
-// structural punctuation recedes so the values stand out.
+// keeps every reset paired and the escape stream well-formed. It also reads
+// well, because structural punctuation recedes so the values stand out.
 var jsonColors = &jsoncolor.Colors{
 	Key:    jsoncolor.Color(ColorKey),
 	String: jsoncolor.Color(ColorString),
@@ -55,11 +55,12 @@ var jsonColors = &jsoncolor.Colors{
 }
 
 // NewJSONEncoder returns a streaming JSON encoder writing to w. When colored is
-// set it syntax-highlights and sorts map keys (so the colored order matches the
-// stdlib encoder's default); otherwise it is the stdlib encoder, byte-for-byte
-// the pre-color output. It never HTML-escapes — the sink is a terminal, not a
-// web page. indent is the per-level indentation ("" for compact) and prefix is
-// prepended to every line after the first, nesting a value inside an array.
+// set, it syntax-highlights and sorts map keys (so the colored order matches the
+// stdlib encoder's default). Otherwise it is the stdlib encoder, byte-for-byte
+// the pre-color output. It never HTML-escapes, because the sink is a terminal,
+// not a web page. The argument indent is the per-level indentation ("" for
+// compact). The argument prefix is prepended to every line after the first,
+// nesting a value inside an array.
 func NewJSONEncoder(w io.Writer, prefix, indent string, colored bool) Encoder {
 	if colored {
 		enc := jsoncolor.NewEncoder(w)

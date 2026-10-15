@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// rowGroups reports how many Parquet row groups a buffer holds — one per written
-// record batch, so it pins the page-flush cadence.
+// rowGroups reports how many Parquet row groups a buffer holds. It is one per
+// written record batch, so it pins the page-flush cadence.
 func rowGroups(t *testing.T, b []byte) int {
 	t.Helper()
 	r, err := file.NewParquetReader(bytes.NewReader(b))
@@ -25,10 +25,10 @@ func rowGroups(t *testing.T, b []byte) int {
 
 // TestWriterFullRoundTrip writes eight rows spanning every scalar mapping, a
 // nested struct, a list, an id-keyed map, a heterogeneous arrow.json column, and
-// an optional column, then reads back and asserts the COMPLETE content of every
-// column for every row. A single mutated field, dropped loop iteration, or
-// wrong enc.kind changes an asserted value, so the whole projection and encoder
-// are pinned by observable behaviour.
+// an optional column. Then it reads back and asserts the COMPLETE content of
+// every column for every row. A single mutated field, dropped loop iteration, or
+// wrong enc.kind changes an asserted value. So observable behavior pins the whole
+// projection and encoder.
 func TestWriterFullRoundTrip(t *testing.T) {
 	const n = 8
 	vals := make([]any, 0, n)
@@ -123,8 +123,8 @@ func TestWriterFullRoundTrip(t *testing.T) {
 		}
 	}
 
-	// The full schema — every column's type, nullability, presence, and the
-	// arrow.json marker — survives the round-trip exactly.
+	// The full schema survives the round-trip exactly. This covers every column's
+	// type, nullability, presence, and the arrow.json marker.
 	assertColumn(t, tbl.Schema(), "i", arrow.PrimitiveTypes.Int64, "required", false)
 	assertColumn(t, tbl.Schema(), "f", arrow.PrimitiveTypes.Float64, "required", false)
 	assertColumn(t, tbl.Schema(), "b", arrow.FixedWidthTypes.Boolean, "required", false)
@@ -137,8 +137,8 @@ func TestWriterFullRoundTrip(t *testing.T) {
 	// never the arrow.json fallback.
 	assertColumn(t, tbl.Schema(), "narb", arrow.PrimitiveTypes.Int64, "required", false)
 
-	// Columns come out in sorted name order (objectType sorts the field names);
-	// with a dozen columns a lost sort would almost never land sorted by chance.
+	// Columns come out in sorted name order (objectType sorts the field names).
+	// With a dozen columns, a lost sort almost never lands sorted by chance.
 	names := make([]string, tbl.Schema().NumFields())
 	for i, f := range tbl.Schema().Fields() {
 		names[i] = f.Name
@@ -157,11 +157,12 @@ func assertColumn(t *testing.T, s *arrow.Schema, name string, dt arrow.DataType,
 	require.Equalf(t, isJSON, isJSONField(f), "column %q arrow.json marker", name)
 }
 
-// TestWriterMapKeysSorted pins appendMap's sort.Strings: a map column with ten
-// keys per row must serialize with keys in ascending order. Go randomizes map
-// iteration, so dropping the sort yields a random order that matches the sorted
-// expectation only 1/10! of the time — the assertion is order-sensitive (a JSON
-// array), so a lost sort fails with overwhelming probability.
+// TestWriterMapKeysSorted pins the sort.Strings call of appendMap. A map column
+// with ten keys per row must serialize with keys in ascending order. Go
+// randomizes map iteration, so dropping the sort yields a random order that
+// matches the sorted expectation only 1/10! of the time. The assertion is
+// order-sensitive (a JSON array), so a lost sort fails with overwhelming
+// probability.
 func TestWriterMapKeysSorted(t *testing.T) {
 	const rows, keysPerRow = 8, 10
 	vals := make([]any, 0, rows)
@@ -199,11 +200,14 @@ func TestWriterSingleRow(t *testing.T) {
 }
 
 // TestWriterCrossesPageBoundary pins the flush cadence at two page sizes so every
-// counter mutation is observable: a full page plus a one-row tail (pageBatchSize
-// +1) and two full pages (2*pageBatchSize) both yield exactly two row groups with
-// every row present. Flushing every row, never mid-stream, resetting the counter
-// to one (boundary drifts high) or minus one (drops the tail row) all change the
-// row-group count or lose a row.
+// counter mutation is observable. The first size is a full page plus a one-row
+// tail (pageBatchSize+1). The second is two full pages (2*pageBatchSize). Both
+// yield exactly two row groups with every row present. Each of these mutations
+// changes the row-group count or loses a row:
+//   - Flushing every row.
+//   - Never flushing mid-stream.
+//   - Resetting the counter to one (the boundary drifts high).
+//   - Resetting it to minus one (drops the tail row).
 func TestWriterCrossesPageBoundary(t *testing.T) {
 	for _, total := range []int{pageBatchSize + 1, 2 * pageBatchSize} {
 		t.Run(fmt.Sprintf("%d rows", total), func(t *testing.T) {

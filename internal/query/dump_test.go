@@ -185,7 +185,7 @@ func TestYAMLSourceRoundTrip(t *testing.T) {
 
 // TestYAMLSourcePlainKeepsTheWholeValue pins plain mode: each YAML document is the
 // record value, with no key and no type. A record that drops the value (the
-// recordFromDecoded plain return) would come back empty.
+// recordFromDecoded plain return) comes back empty.
 func TestYAMLSourcePlainKeepsTheWholeValue(t *testing.T) {
 	src := query.YAMLSource(strings.NewReader("a: 1\nb: [x, y]\n---\n- 7\n"), 10, true)
 	recs := drainSource(t, src)
@@ -224,8 +224,8 @@ func TestWriteJSONLReportsEncodeFailure(t *testing.T) {
 }
 
 // TestJSONLSourcePageBoundaries pins the page arithmetic exactly. Counting
-// batches over five lines cannot see an off-by-one in the default page size, so
-// the sizes are compared against a line count that straddles it.
+// batches over five lines cannot see an off-by-one in the default page size. So
+// the test compares the sizes against a line count that straddles it.
 func TestJSONLSourcePageBoundaries(t *testing.T) {
 	line := func(i int) string { return fmt.Sprintf(`{"key":"k%d","type":"string","value":"v"}`, i) }
 	lines := func(n int) string {
@@ -241,11 +241,11 @@ func TestJSONLSourcePageBoundaries(t *testing.T) {
 		count    int
 		want     []int
 	}{
-		// 101 lines straddle the default 100: a default of 99 would split 99/2 and
-		// one of 101 would deliver a single page.
+		// 101 lines straddle the default 100. A default of 99 splits 99/2, and
+		// one of 101 delivers a single page.
 		{name: "zero page size defaults to one hundred", pageSize: 0, count: 101, want: []int{100, 1}},
-		// A page size of 1 must deliver per line; treating "<= 1" as unset would
-		// hand over one page of three.
+		// A page size of 1 must deliver per line. Treating "<= 1" as unset
+		// hands over one page of three.
 		{name: "page size one delivers per line", pageSize: 1, count: 3, want: []int{1, 1, 1}},
 	}
 	for _, tt := range tests {
@@ -263,10 +263,10 @@ func TestJSONLSourcePageBoundaries(t *testing.T) {
 	}
 }
 
-// TestJSONLSourceLineCap pins the scanner's line budget, which is a deliberate
-// choice on both sides: it is raised well above bufio's 64 KiB default so a large
-// document reloads, and it is still a cap, so a runaway line is refused rather
-// than read into memory unbounded.
+// TestJSONLSourceLineCap pins the scanner's line budget. The budget is a choice
+// on both sides. It is raised well above the bufio 64 KiB default, so a large
+// document reloads. It is still a cap, so the scanner refuses a runaway line
+// and does not read it into memory unbounded.
 func TestJSONLSourceLineCap(t *testing.T) {
 	record := func(payload int) string {
 		return `{"key":"k","type":"string","value":"` + strings.Repeat("a", payload) + `"}`
@@ -327,8 +327,8 @@ func TestJSONLSourcePropagatesReadError(t *testing.T) {
 
 // TestJSONLSourceMalformedLineNamesTheEnvelope pins which failure a malformed
 // typed line reports. Both the decode failure and the missing-key check produce
-// an error mentioning the line, so a substring assertion on the line number alone
-// cannot tell a dropped decode guard from a working one.
+// an error that mentions the line. So a substring assertion on the line number
+// alone cannot tell a dropped decode guard from a working one.
 func TestJSONLSourceMalformedLineNamesTheEnvelope(t *testing.T) {
 	input := `{"key":"a","type":"string","value":"x"}` + "\n" + `not json`
 	_, err := drainSourceErr(query.JSONLSource(strings.NewReader(input), 10, false))
@@ -351,8 +351,8 @@ func TestJSONLSourcePlainRejectsMalformedValue(t *testing.T) {
 }
 
 // TestConvertNumbersWalksEveryEntry pins that number conversion reaches every
-// element of a composite, not just the first: a walk that stopped early would
-// leave the rest as json.Number, which no consumer of the normalized shape
+// element of a composite, not only the first. A walk that stopped early leaves
+// the rest as json.Number, which no consumer of the normalized shape
 // expects.
 func TestConvertNumbersWalksEveryEntry(t *testing.T) {
 	t.Run("every key of an object", func(t *testing.T) {
@@ -368,15 +368,15 @@ func TestConvertNumbersWalksEveryEntry(t *testing.T) {
 }
 
 // TestJSONSourceRejectsTrailingGarbage pins that a stream of concatenated values
-// is decoded to its end and refuses what it cannot read, rather than stopping
+// is decoded to its end and refuses what it cannot read. It does not stop
 // quietly at the first byte that does not begin a value.
 func TestJSONSourceRejectsTrailingGarbage(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
 	}{
-		// ']' is where the decoder's own "is there more?" probe says no, so a walk
-		// that trusted that probe outside array mode would stop here and report
+		// ']' is where the decoder's own "is there more?" probe says no. A walk
+		// that trusted that probe outside array mode stops here and reports
 		// success on a truncated read.
 		{name: "stray closing bracket", input: `{"key":"a","type":"string","value":1}]`},
 		{name: "unparsable trailer", input: `{"key":"a","type":"string","value":1} @@@`},
@@ -394,8 +394,8 @@ func TestJSONSourceRejectsTrailingGarbage(t *testing.T) {
 }
 
 // TestJSONSourceReadsASingleByteDocument pins that the array probe peeks exactly
-// one byte: a whole document can be one byte long, and peeking further would read
-// past the end and report an empty stream.
+// one byte. A whole document can be one byte long, and peeking further reads
+// past the end and reports an empty stream.
 func TestJSONSourceReadsASingleByteDocument(t *testing.T) {
 	got := drainSource(t, query.JSONSource(strings.NewReader("1"), 10, true))
 	require.Equal(t, []query.Record{{Value: 1}}, got)
@@ -413,7 +413,7 @@ func TestTypedDumpKeepsNegativeZero(t *testing.T) {
 }
 
 // TestTypedDumpKeepsAnOutOfRangeNumberAsText pins the last fallback of the
-// number rule: a number that float64 cannot hold (1e400) reads back as its
+// number rule. A number that float64 cannot hold (1e400) reads back as its
 // literal text, not as an empty string or an infinity.
 func TestTypedDumpKeepsAnOutOfRangeNumberAsText(t *testing.T) {
 	got := drainSource(t, query.JSONLSource(strings.NewReader(`{"key":"k","type":"","value":1e400}`), 10, false))
@@ -450,7 +450,7 @@ func docSources() []docSource {
 }
 
 // TestDocSourcePageBoundaries pins the page sizes of JSONSource and YAMLSource.
-// A page size of zero or less selects 100, a full page goes out at once, and the
+// A page size of zero or less selects 100. A full page goes out at once. The
 // last page goes out only when it holds a record.
 func TestDocSourcePageBoundaries(t *testing.T) {
 	tests := []struct {
@@ -602,10 +602,11 @@ func TestJSONSourceReadsAnArrayAfterLeadingWhiteSpace(t *testing.T) {
 	}, got)
 }
 
-// TestDecodeTypedRecord pins the full Record contract of the typed decode: a valid
-// record keeps its key, type, and exact-number value, with the sign of a negative zero.
-// A non-object fails with the {key,type,value} hint and stays unwrappable to the
-// underlying decode error. A keyless record fails with the no-key hint.
+// TestDecodeTypedRecord pins the full Record contract of the typed decode. A
+// valid record keeps its key, type, and exact-number value, with the sign of a
+// negative zero. A non-object fails with the {key,type,value} hint and stays
+// unwrappable to the underlying decode error. A keyless record fails with the
+// no-key hint.
 func TestDecodeTypedRecord(t *testing.T) {
 	const hint = "expected a {key,type,value} record (use --key-field for foreign JSON)"
 	tests := []struct {

@@ -14,16 +14,17 @@ import (
 	iqfile "github.com/zsltg/iq/drivers/file"
 )
 
-// e2eRedisDB is the logical Redis database the live e2e round-trip owns. The reserved
-// databases are partitioned so no suite flushes another's data: 15 and 14 are the cmd
-// integration scratch pair (cmd/diff_test.go), 13 is the redis driver's private DB
-// (drivers/redis), and 12 belongs to these black-box e2e flows.
+// e2eRedisDB is the logical Redis database that the live e2e round-trip owns. The
+// reserved databases are partitioned so no suite flushes the data of another.
+// Databases 15 and 14 are the cmd integration scratch pair (cmd/diff_test.go).
+// Database 13 is the private DB of the redis driver (drivers/redis). Database 12
+// belongs to these black-box e2e flows.
 const e2eRedisDB = 12
 
-// requireLive returns the backend URL from envVar, skipping the test under -short
-// (where the binary is never built) or when envVar is unset. There is deliberately no
-// localhost fallback: a live flow runs only when its URL is explicitly provided, so the
-// offline suite never depends on a reachable server.
+// requireLive returns the backend URI from envVar. It skips the test under -short
+// (where the binary is never built) or when envVar is unset. There is no localhost
+// fallback on purpose. A live flow runs only when its URI is explicitly provided,
+// so the offline suite never depends on a reachable server.
 func requireLive(t *testing.T, envVar string) string {
 	t.Helper()
 	skipShort(t)
@@ -34,8 +35,8 @@ func requireLive(t *testing.T, envVar string) string {
 	return u
 }
 
-// withRedisDB rewrites the database number in a redis URL's path, so a flow runs
-// against its reserved DB rather than whatever the base URL points at.
+// withRedisDB rewrites the database number in the path of a Redis URI, so a flow
+// runs against its reserved DB. It does not use whatever the base URI points at.
 func withRedisDB(raw string, db int) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -67,7 +68,7 @@ func TestLiveRedisRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	env := []string{"IQ_CONFIG=" + filepath.Join(dir, "iq.toml")}
 
-	// A typed dump carries a Redis string and a hash — their types live outside the
+	// A typed dump carries a Redis string and a hash. Their types live outside the
 	// value, so a typed record is what round-trips them.
 	dump := filepath.Join(dir, "seed.jsonl")
 	require.NoError(t, os.WriteFile(dump, []byte(
@@ -75,7 +76,7 @@ func TestLiveRedisRoundTrip(t *testing.T) {
 			`{"key":"iq_e2e:book","type":"hash","value":{"title":"Dune"}}`+"\n",
 	), 0o600))
 
-	// add echoes the URL, so its failure message must not; the rest carry only handles.
+	// add echoes the URI, so its failure message must not. The rest carry only handles.
 	// --store inline: IQ_REDIS_URL and IQ_MONGO_URL can carry a password, and a test
 	// must not write it to the real OS keyring.
 	if _, stderr, code := run(t, env, "add", redisURL, "-n", "rlive", "--store", "inline"); code != 0 {
@@ -102,12 +103,12 @@ func TestLiveRedisRoundTrip(t *testing.T) {
 	require.Zerof(t, code, "exec TYPE failed: %s", stderr)
 	require.Contains(t, out, "hash")
 
-	// data delete removes named keys; the report is honest about a key already absent,
-	// and no prompt is needed since the key list is the confirmation.
+	// data delete removes named keys. The report is honest about a key already absent,
+	// and no prompt is needed because the key list is the confirmation.
 	_, stderr, code = run(t, env, "data", "delete", "rlive", "iq_e2e:greeting", "iq_e2e:absent")
 	require.Zerof(t, code, "delete failed: %s", stderr)
 	require.Contains(t, stderr, "deleted 1 key(s), 1 already absent")
-	// The deleted key now reads null; the untouched key still resolves.
+	// The deleted key now reads null. The untouched key still resolves.
 	out, stderr, code = run(t, env, "--src", "rlive", `.["iq_e2e:greeting"]`)
 	require.Zerof(t, code, "get after delete failed: %s", stderr)
 	require.Contains(t, out, "null")
@@ -115,7 +116,7 @@ func TestLiveRedisRoundTrip(t *testing.T) {
 	require.Zerof(t, code, "exec TYPE after delete failed: %s", stderr)
 	require.Contains(t, out, "hash")
 
-	// Clear empties the DB; DBSIZE proves nothing is left.
+	// Clear empties the DB. DBSIZE proves nothing is left.
 	mustRun(t, env, "data", "clear", "rlive", "--force")
 	out, stderr, code = run(t, env, "--src", "rlive", "exec", "DBSIZE")
 	require.Zerof(t, code, "exec DBSIZE failed: %s", stderr)
@@ -124,7 +125,7 @@ func TestLiveRedisRoundTrip(t *testing.T) {
 
 func TestLiveMongoRoundTrip(t *testing.T) {
 	base := requireLive(t, "IQ_MONGO_URL")
-	// A per-process collection keeps concurrent runs from colliding; it is dropped at
+	// A per-process collection keeps concurrent runs from colliding. It is dropped at
 	// the end regardless of how the test exits.
 	coll := fmt.Sprintf("iq_e2e_%d", os.Getpid())
 	mongoURL, err := withMongoTarget(base, "iq_e2e", coll)
@@ -139,7 +140,7 @@ func TestLiveMongoRoundTrip(t *testing.T) {
 	// Cleanup runs after t.Context() is canceled, so drop under a background context.
 	t.Cleanup(func() { _, _, _ = runCtx(t, context.Background(), "", env, "data", "drop", "mlive", "--force") })
 
-	// Typed JSONL on stdin is an implicit source; each value is a document.
+	// Typed JSONL on stdin is an implicit source. Each value is a document.
 	seed := `{"key":"1","type":"document","value":{"title":"Dune","year":1965}}` + "\n" +
 		`{"key":"2","type":"document","value":{"title":"Hyperion","year":1989}}` + "\n"
 	_, stderr, code := runIn(t, seed, env, "--insert", "mlive")
@@ -162,8 +163,8 @@ func TestLiveMongoRoundTrip(t *testing.T) {
 	require.Zerof(t, code, "exec count failed: %s", stderr)
 	require.Contains(t, out, `"n": 2`)
 
-	// data delete removes one document by _id; a key already absent is reported, not an
-	// error, and the surviving document still reads back.
+	// data delete removes one document by _id. A key already absent is reported, not an
+	// error. The surviving document still reads back.
 	_, stderr, code = run(t, env, "data", "delete", "mlive", "1", "absent")
 	require.Zerof(t, code, "delete failed: %s", stderr)
 	require.Contains(t, stderr, "deleted 1 key(s), 1 already absent")
@@ -174,7 +175,7 @@ func TestLiveMongoRoundTrip(t *testing.T) {
 	require.Zerof(t, code, "get survivor after delete failed: %s", stderr)
 	require.Contains(t, out, "Hyperion")
 
-	// Clear empties the collection; the count drops to zero.
+	// Clear empties the collection. The count drops to zero.
 	mustRun(t, env, "data", "clear", "mlive", "--force")
 	out, stderr, code = run(t, env, "--src", "mlive", "exec", countCmd)
 	require.Zerof(t, code, "exec count after clear failed: %s", stderr)

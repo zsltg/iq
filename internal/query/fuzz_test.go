@@ -13,7 +13,7 @@ import (
 )
 
 // maxFuzzInput bounds one fuzz input, and maxFuzzRecords bounds how many records
-// one input round-trips. A dump source streams, so an unbounded drain would spend
+// one input round-trips. A dump source streams, so an unbounded drain spends
 // the -fuzztime budget on one input.
 const (
 	maxFuzzInput   = 64 << 10
@@ -24,8 +24,8 @@ const (
 var errFuzzEnough = errors.New("fuzz record cap reached")
 
 // FuzzJSONLRoundTrip drives the typed dump codec with arbitrary JSON Lines. The
-// values come in through the plain reader, which is the foreign-input path, and go
-// back out through WriteJSONL, which documents itself as that reader's inverse.
+// values come in through the plain reader, which is the foreign-input path. They
+// go back out through WriteJSONL, which documents itself as that reader's inverse.
 //
 // Two oracles hold. A typed dump is a fixpoint: writing what the typed reader read
 // gives byte-identical output, so a dump reloads and re-dumps without drifting.
@@ -67,7 +67,7 @@ func FuzzJSONLRoundTrip(f *testing.F) {
 			return // nothing to dump.
 		}
 		// The plain reader keys nothing, and the typed dump refuses a record with no
-		// key, so give each record a key of its own before writing it.
+		// key. So give each record a key of its own before writing it.
 		for i := range recs {
 			recs[i].Key = "k" + strconv.Itoa(i)
 		}

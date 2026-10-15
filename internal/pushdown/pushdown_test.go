@@ -178,7 +178,7 @@ func TestCompileNotPushable(t *testing.T) {
 		expr string
 	}{
 		// A select that tests a value derived from the element. A predicate on the
-		// element itself would drop an element that the filter keeps.
+		// element itself drops an element that the filter keeps.
 		{"select after a field stage", `.[] | .b | select(.c == 2)`},
 		{"select after a field on the head", `.[].b | select(.c == 2)`},
 		{"select after a field on the head, compared to itself", `.[].a | select(. == 1)`},

@@ -77,7 +77,7 @@ func TestPatchMarshalError(t *testing.T) {
 	_, err := diff.Patch(map[string]any{"c": make(chan int)}, map[string]any{})
 	require.Error(t, err)
 	require.ErrorContains(t, err, "json patch")
-	// %w keeps the json cause reachable for errors.As; %v would sever it.
+	// %w keeps the json cause reachable for errors.As. %v severs it.
 	var ute *json.UnsupportedTypeError
 	require.ErrorAs(t, err, &ute)
 }

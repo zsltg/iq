@@ -18,12 +18,13 @@ import (
 	"github.com/zsltg/iq/internal/rawpred"
 )
 
-// TestMatchNeverDropsAMatch is the load-bearing invariant test: for every
-// generated (document, predicate) pair rawpred.Match reports CannotMatch, the
-// document decoded exactly as the driver decodes it and evaluated against the same
-// predicate by an independent reference evaluator must NOT match. A single
-// counterexample is a wrong drop — a document the full jq would have kept. It runs
-// without a container, on a fixed seed, so it is deterministic and repeatable.
+// TestMatchNeverDropsAMatch is the invariant test that the correctness of every drop
+// depends on. Whenever rawpred.Match reports CannotMatch for a generated (document,
+// predicate) pair, the document must NOT match. The test decodes the document exactly
+// as the driver decodes it. It then evaluates the document against the same predicate
+// with an independent reference evaluator. A single counterexample is a wrong drop: a
+// document that the full jq keeps. The test runs without a container, on a fixed seed,
+// so it is deterministic and repeatable.
 func TestMatchNeverDropsAMatch(t *testing.T) {
 	t.Parallel()
 	rng := rand.New(rand.NewSource(0xC0FFEE))
@@ -57,9 +58,9 @@ func TestMatchNeverDropsAMatch(t *testing.T) {
 }
 
 // TestMatcherEqualsMatch pins that the prepared Matcher and the package-level Match
-// agree on every (document, predicate) pair the generator emits: NewMatcher(pred)
-// reused across a scan must return exactly what a fresh Match(raw, pred) would, so
-// the driver's prepared path is behaviourally identical to the convenience path.
+// agree on every (document, predicate) pair the generator emits. NewMatcher(pred),
+// reused across a scan, must return exactly what a fresh Match(raw, pred) returns. So
+// the prepared path of the driver is behaviorally identical to the convenience path.
 func TestMatcherEqualsMatch(t *testing.T) {
 	t.Parallel()
 	rng := rand.New(rand.NewSource(0xBADF00D))
@@ -88,9 +89,9 @@ func TestMatcherEqualsMatch(t *testing.T) {
 	require.Equal(t, docs*preds, checked, "every pair is compared")
 }
 
-// decodeDoc decodes a raw JSON document exactly as the Redis driver does — UseNumber
-// plus numfmt conversion under the default decimal mode — so the reference sees the
-// same Go values gojq will.
+// decodeDoc decodes a raw JSON document exactly as the Redis driver does: UseNumber
+// plus numfmt conversion under the default decimal mode. So the reference sees the same
+// Go values that gojq will see.
 func decodeDoc(t *testing.T, s string) any {
 	t.Helper()
 	dec := json.NewDecoder(strings.NewReader(s))
@@ -100,9 +101,9 @@ func decodeDoc(t *testing.T, s string) any {
 	return numfmt.ConvertNumbers(v, numfmt.DecimalAuto)
 }
 
-// refMatch is the independent oracle: it evaluates a predicate over decoded Go
-// values with gojq.Compare as ground truth for jq's cross-type ordering, mirroring
-// predicate semantics directly rather than through rawpred's byte logic.
+// refMatch is the independent oracle. It evaluates a predicate over decoded Go values,
+// with gojq.Compare as ground truth for the cross-type ordering of jq. It mirrors the
+// predicate semantics directly, not through the byte logic of rawpred.
 func refMatch(v any, node predicate.Node) bool {
 	switch n := node.(type) {
 	case predicate.Eq:
@@ -130,23 +131,23 @@ func refMatch(v any, node predicate.Node) bool {
 	case predicate.Regex:
 		s, ok := pathValue(v, n.Path).(string)
 		if !ok {
-			// jq's test() errors on a non-string, so such a document must never be
-			// dropped; the oracle treats it as a match (must-keep), which would flag
-			// any wrong drop as a failed invariant.
+			// jq's test() errors on a non-string, so such a document must never be dropped. The
+			// oracle treats it as a match (must-keep). So any wrong drop shows as a failed
+			// invariant.
 			return true
 		}
 		return refRegexp(n.Pattern, n.Flags).MatchString(s)
 	case predicate.Size:
 		return refSize(pathValue(v, n.Path), n.N)
 	case predicate.ElemMatch:
-		// jq's `.path | any(Cond)`: an error evaluating any (a non-container, or a
-		// cond that indexes a non-indexable element) must never drop the document, so
-		// an erroring fold counts as a match (must-keep).
+		// jq's `.path | any(Cond)`: an error evaluating any must never drop the document.
+		// That covers a non-container, and a cond that indexes a non-indexable element. So an
+		// erroring fold counts as a match (must-keep).
 		match, errored := refAny(pathValue(v, n.Path), n.Cond)
 		return errored || match
 	case predicate.NoneMatch:
-		// jq's `.path | any(Cond) | not`: an erroring any still errors under not, so
-		// an erroring fold is must-keep; otherwise it is the negation of the match.
+		// jq's `.path | any(Cond) | not`: an erroring any still errors under not, so an
+		// erroring fold is must-keep. Otherwise it is the negation of the match.
 		match, errored := refAny(pathValue(v, n.Path), n.Cond)
 		return errored || !match
 	case predicate.And:
@@ -168,9 +169,9 @@ func refMatch(v any, node predicate.Node) bool {
 	}
 }
 
-// refSize mirrors jq's polymorphic length compared to n: array elements, object
-// keys, the rune count of a string, 0 for null, and |value| for a number. jq's
-// length errors on a boolean, which the driver must not drop, so a boolean (and any
+// refSize mirrors jq's polymorphic length compared to n. The count is array elements,
+// object keys, the rune count of a string, 0 for null, and |value| for a number. In jq,
+// length errors on a boolean, which the driver must not drop. So a boolean (and any
 // unexpected decoded type) is treated as a match (must-keep).
 func refSize(v any, n int) bool {
 	switch t := v.(type) {
@@ -198,11 +199,12 @@ func refSize(v any, n int) bool {
 	}
 }
 
-// refAny mirrors jq's `any(Cond)`: isempty over `.[] | select(Cond)` short-circuits
-// in element order, so it stops at the first match and errors if an earlier element
-// cannot be iterated or indexed. It returns match=true at the first element that
-// satisfies Cond, and errored=true when the container is a non-container or an
-// element ahead of any match is not indexable the way Cond needs (jq would error).
+// refAny mirrors jq's `any(Cond)`. In jq, isempty over `.[] | select(Cond)`
+// short-circuits in element order. So it stops at the first match and errors if an
+// earlier element cannot be iterated or indexed. It returns match=true at the first
+// element that satisfies Cond. It returns errored=true when the container is a
+// non-container. It also returns errored=true when an element ahead of any match is not
+// indexable the way Cond needs, because jq errors there.
 func refAny(v any, cond predicate.Node) (match, errored bool) {
 	var elems []any
 	switch t := v.(type) {
@@ -227,8 +229,8 @@ func refAny(v any, cond predicate.Node) (match, errored bool) {
 }
 
 // refIndexable reports whether jq can apply a field-path condition to an element
-// without erroring: only an object (indexed to a value) and null (indexed to null)
-// qualify; a scalar or array errors on `.field`.
+// without erroring. Only an object (indexed to a value) and null (indexed to null)
+// qualify. A scalar or array errors on `.field`.
 func refIndexable(v any) bool {
 	if v == nil {
 		return true
@@ -237,9 +239,10 @@ func refIndexable(v any) bool {
 	return ok
 }
 
-// refRegexp compiles a test() pattern the way gojq does — i -> (?i), jq m -> (?s)
-// dotall, unanchored MatchString — as an independent restatement of the mapping
-// rawpred must match. It is the oracle's regex, so it never shares rawpred's code.
+// refRegexp compiles a test() pattern the way gojq does: i -> (?i), jq m -> (?s)
+// dotall, unanchored MatchString. It is an independent restatement of the mapping that
+// rawpred must match. It is the regex of the oracle, so it never shares the code of
+// rawpred.
 func refRegexp(pattern, flags string) *regexp.Regexp {
 	if strings.ContainsRune(flags, 'i') {
 		pattern = "(?i)" + pattern
@@ -277,9 +280,9 @@ func pathLookup(v any, path []string) (any, bool) {
 	return cur, true
 }
 
-// valueSnippets are the raw JSON field values the document generator draws from,
-// spanning every type and both integer and fractional numbers, precision edges,
-// and escaped strings.
+// valueSnippets are the raw JSON field values that the document generator draws from.
+// They span every type, both integer and fractional numbers, precision edges, and
+// escaped strings.
 var valueSnippets = []string{
 	`5`, `6`, `0`, `-3`, `10`, `9007199254740993`, `100000000000000000001`,
 	`1.5`, `-2.5`, `1e2`,
@@ -310,9 +313,9 @@ func genDoc(rng *rand.Rand) string {
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-// xsSnippets are the raw values the "xs" field draws from for ElemMatch/NoneMatch:
-// arrays and objects of element objects (definite folds), empty containers, mixes
-// with scalars and nulls (undecidable folds), and non-containers (jq any errors).
+// xsSnippets are the raw values that the "xs" field draws from for ElemMatch/NoneMatch.
+// They are arrays and objects of element objects (definite folds), empty containers,
+// mixes with scalars and nulls (undecidable folds), and non-containers (jq any errors).
 var xsSnippets = []string{
 	`[{"k":1},{"k":2}]`, `[{"k":1}]`, `[{"k":2},{"k":3}]`, `[]`,
 	`[{"k":1},5]`, `[5,{"k":1}]`, `[1,2]`, `[null,{"k":1}]`,
@@ -324,17 +327,17 @@ var xsSnippets = []string{
 // counts of the generated values, and misses.
 var sizeNs = []int{0, 1, 2, 3, 5}
 
-// elemCondValues and elemCondNums are the scalars an element condition compares the
-// element's own k (or absent j) against, spanning the element key values and a type
-// mismatch.
+// elemCondValues and elemCondNums are the scalars that an element condition compares
+// against the element's own k (or absent j). They span the element key values and a
+// type mismatch.
 var (
 	elemCondValues = []any{1.0, 2.0, 5.0, "x"}
 	elemCondNums   = []any{1.0, 2.0}
 )
 
-// genElemCond builds the element condition of an ElemMatch/NoneMatch over the
-// element's own fields, covering Eq, Cmp, and And/Or of equalities — the exact
-// shapes pushdown emits as an any(cond) argument.
+// genElemCond builds the element condition of an ElemMatch/NoneMatch over the element's
+// own fields. It covers Eq, Cmp, and And/Or of equalities. These are the exact shapes
+// that pushdown emits as an any(cond) argument.
 func genElemCond(rng *rand.Rand) predicate.Node {
 	k := []string{"k"}
 	j := []string{"j"}
@@ -363,21 +366,22 @@ func genElemCond(rng *rand.Rand) predicate.Node {
 // one nested.
 var predPaths = [][]string{{"a"}, {"b"}, {"c"}, {"n", "x"}}
 
-// eqValues are the scalar values Eq/Ne are generated with, spanning every scalar
-// type; the numbers stay in the exact float64 range so the reference stays a sound
+// eqValues are the scalar values that Eq/Ne are generated with, spanning every scalar
+// type. The numbers stay in the exact float64 range, so the reference stays a sound
 // oracle for the cases rawpred can decide.
 var eqValues = []any{5.0, 6.0, 0.0, -3.0, "x", "apple", true, false, nil}
 
 // cmpValues are the number/string values Cmp is generated with.
 var cmpValues = []any{5.0, 0.0, -3.0, "banana", "b"}
 
-// regexPatterns are portable test() patterns the generator draws from: literals,
-// anchors, a dot (to exercise the dotall flag against the newline snippets), and a
-// character class. Each is valid RE2 so NewMatcher always compiles it.
+// regexPatterns are portable test() patterns that the generator draws from. They are
+// literals, anchors, a dot (to exercise the dotall flag against the newline snippets),
+// and a character class. Each is valid RE2, so NewMatcher always compiles it.
 var regexPatterns = []string{"a", "x", "pp", "^a", "an", "n$", "a.b", "[0-9]"}
 
-// regexFlags are the flag strings the generator draws from, covering none, each of
-// i and m, and both together, so the translation is exercised in every combination.
+// regexFlags are the flag strings that the generator draws from. They cover none, each
+// of i and m, and both together. So the tests exercise the translation in every
+// combination.
 var regexFlags = []string{"", "i", "m", "im"}
 
 // genPred builds a random predicate tree up to the given depth over predPaths,
@@ -394,7 +398,7 @@ func genPred(rng *rand.Rand, depth int) predicate.Node {
 }
 
 // genLeaf builds a random leaf predicate. Scalar-field nodes draw a path from
-// predPaths; the container nodes ElemMatch/NoneMatch always target the "xs" field,
+// predPaths. The container nodes ElemMatch/NoneMatch always target the "xs" field,
 // whose values span arrays, objects, and non-containers.
 func genLeaf(rng *rand.Rand) predicate.Node {
 	path := predPaths[rng.Intn(len(predPaths))]

@@ -7,7 +7,7 @@ import (
 	"github.com/itchyny/gojq"
 )
 
-// residualFilterExpr is the client-side residual filter the pre-filter would sit
+// residualFilterExpr is the client-side residual filter that the pre-filter sits
 // in front of: a streamable, `.[]`-rooted top-level equality select.
 const residualFilterExpr = `.[] | select(.status=="active")`
 
@@ -27,8 +27,8 @@ func mustCompile(b *testing.B, expr string) *gojq.Code {
 
 // BenchmarkResidualFilter measures the client-side residual filter cost: running
 // the compiled gojq program over already-decoded pages, per shape and match rate.
-// This is the full-gojq work the engine does today over every scanned page and the
-// cost a raw-byte pre-filter would try to avoid for non-matching documents.
+// This is the full-gojq work the engine does today over every scanned page. A
+// raw-byte pre-filter tries to avoid that cost for non-matching documents.
 func BenchmarkResidualFilter(b *testing.B) {
 	code := mustCompile(b, residualFilterExpr)
 	ctx := context.Background()
@@ -52,12 +52,12 @@ func BenchmarkResidualFilter(b *testing.B) {
 	}
 }
 
-// BenchmarkSingletonFilter measures what a keyed run pays: the same compiled
-// residual over the same corpus, but one gojq iterator per item instead of one
-// per page, which is how RunKeyed applies a spec filter to keep every item's key.
-// Read it against BenchmarkResidualFilter — the delta between the two is the cost
-// of the per-item application, and it is why the unfiltered read path still
-// collects pages rather than routing through RunKeyed.
+// BenchmarkSingletonFilter measures what a keyed run pays. It uses the same
+// compiled residual over the same corpus, but one gojq iterator per item instead
+// of one per page. That is how RunKeyed applies a spec filter to keep every
+// item's key. Read it against BenchmarkResidualFilter. The delta between the two
+// is the cost of the per-item application. It is also why the unfiltered read
+// path still collects pages rather than routing through RunKeyed.
 func BenchmarkSingletonFilter(b *testing.B) {
 	code := mustCompile(b, residualFilterExpr)
 	ctx := context.Background()

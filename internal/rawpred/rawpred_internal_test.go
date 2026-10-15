@@ -68,8 +68,8 @@ func TestEvalEq(t *testing.T) {
 		{"fractional doc", `{"a":1.5}`, predicate.Eq{Path: []string{"a"}, Value: 1.5}, unknown},
 		{"leading whitespace object", "  {\"a\":5}", predicate.Eq{Path: []string{"a"}, Value: 5.0}, definiteYes},
 		{"exact 2^53 equal", `{"a":9007199254740992}`, predicate.Eq{Path: []string{"a"}, Value: 9007199254740992.0}, definiteYes},
-		// A pred value of a Go type that the pushdown compiler never emits (an int,
-		// not a float64) is unknown, whatever the type of the document value.
+		// A pred value of a Go type that the pushdown compiler never emits (an int, not a
+		// float64) is unknown. This holds whatever the type of the document value.
 		{"int value vs number doc", `{"a":5}`, predicate.Eq{Path: []string{"a"}, Value: 5}, unknown},
 		{"int value vs string doc", `{"a":"5"}`, predicate.Eq{Path: []string{"a"}, Value: 5}, unknown},
 		{"int value vs null doc", `{"a":null}`, predicate.Eq{Path: []string{"a"}, Value: 5}, unknown},
@@ -252,17 +252,17 @@ func TestEvalSize(t *testing.T) {
 		{"zero number matches zero", `{"a":0}`, a(0), definiteYes},
 		{"negative uses absolute value", `{"a":-3}`, a(3), definiteYes},
 		{"negative absolute value drops", `{"a":-3}`, a(2), definiteNo},
-		// The digit 9 must parse in base 10 (a base-9 parse would reject it), and a
-		// multi-digit value must read in base 10 (base 11 would read "19" as 20).
+		// The digit 9 must parse in base 10. A base-9 parse rejects it. A multi-digit value
+		// must read in base 10. Base 11 reads "19" as 20.
 		{"single digit nine decides", `{"a":9}`, a(9), definiteYes},
 		{"two-digit value decides in base ten", `{"a":19}`, a(19), definiteYes},
 		{"two-digit value miss drops in base ten", `{"a":19}`, a(20), definiteNo},
 		{"negative nine uses magnitude", `{"a":-9}`, a(9), definiteYes},
-		// int64 max needs the full 63 magnitude bits: a narrower parse would reject it.
+		// int64 max needs the full 63 magnitude bits. A narrower parse rejects it.
 		{"int64 max magnitude decides", `{"a":9223372036854775807}`, a(9223372036854775807), definiteYes},
 		{"int64 max magnitude miss drops", `{"a":9223372036854775807}`, a(5), definiteNo},
-		// A number's length is never negative, so a negative n drops it definitively
-		// even for a value the numeric rule would otherwise leave unknown.
+		// A number's length is never negative. So a negative n drops it definitively, even
+		// for a value that the numeric rule otherwise leaves unknown.
 		{"integer vs negative n drops", `{"a":5}`, a(-1), definiteNo},
 		{"fractional vs negative n drops", `{"a":1.5}`, a(-1), definiteNo},
 		{"fractional number unknown", `{"a":1.5}`, a(1), unknown},
@@ -310,9 +310,9 @@ func TestEvalElemMatch(t *testing.T) {
 		{"array of scalars unknown", `{"xs":[1,2]}`, xs(elemCondK), unknown},
 		{"array null element blocks drop", `{"xs":[null,{"k":2}]}`, xs(elemCondK), unknown},
 		{"array nested-array element match", `{"xs":[[1],{"k":1}]}`, xs(elemCondK), definiteYes},
-		// jsonparser hands a string element back without its quotes, so the
-		// string "{}" reads as an empty object. jq's .k errors on a string, so the
-		// element must stay unknown and must not fail the cond as an absent k.
+		// jsonparser hands a string element back without its quotes, so the string "{}" reads
+		// as an empty object. In jq, .k errors on a string. So the element must stay unknown
+		// and must not fail the cond as an absent k.
 		{"string element that looks like an object unknown", `{"xs":["{}"]}`, xs(elemCondK), unknown},
 		// Object container: jq any iterates the values.
 		{"object value match", `{"xs":{"a":{"k":1},"b":{"k":2}}}`, xs(elemCondK), definiteYes},
@@ -362,8 +362,9 @@ func TestEvalNoneMatch(t *testing.T) {
 		// Object with a repeated key: the first value is shadowed after decoding,
 		// so a match in it proves nothing.
 		{"object with a repeated key is unknown", `{"xs":{"p":{"k":1},"p":{"k":2}}}`, xs(elemCondK), unknown},
-		// The load-bearing exactness case: a match beside an undecidable element must
-		// NOT drop, because jq's any short-circuits in order and may error first.
+		// This is the exactness case that the design depends on. A match beside an
+		// undecidable element must NOT drop, because jq's any short-circuits in order and can
+		// error first.
 		{"array match plus scalar keeps", `{"xs":[{"k":1},5]}`, xs(elemCondK), unknown},
 		{"array fail plus scalar keeps", `{"xs":[{"k":2},5]}`, xs(elemCondK), unknown},
 		{"empty array holds", `{"xs":[]}`, xs(elemCondK), definiteYes},
@@ -464,7 +465,7 @@ func TestEvalRegexUnderAndOr(t *testing.T) {
 
 func TestCompileRegex(t *testing.T) {
 	t.Run("translation matches gojq", func(t *testing.T) {
-		// i -> (?i) case-insensitive; jq m -> (?s) dotall; both prepend, matching is
+		// i -> (?i) case-insensitive. jq m -> (?s) dotall. Both prepend. Matching is
 		// unanchored (MatchString). These assertions pin the exact flag mapping.
 		cases := []struct {
 			flags   string
@@ -494,9 +495,9 @@ func TestCompileRegex(t *testing.T) {
 }
 
 func TestNewMatcherCompileFailureLeavesNodeUncompiled(t *testing.T) {
-	// A pattern portableRegex would never emit but that RE2 rejects is left
-	// uncompiled: the key is absent, so evalRegex reads it as unknown and the
-	// document is kept. A valid pattern is stored.
+	// A pattern that portableRegex never emits, but that RE2 rejects, is left uncompiled.
+	// The key is absent, so evalRegex reads it as unknown and the document is kept. A
+	// valid pattern is stored.
 	bad := predicate.Regex{Path: []string{"s"}, Pattern: "("}
 	mBad := NewMatcher(bad)
 	_, ok := mBad.regexes[regexKey{pattern: "(", flags: ""}]
@@ -512,10 +513,10 @@ func TestNewMatcherCompileFailureLeavesNodeUncompiled(t *testing.T) {
 }
 
 func TestNewMatcherDeduplicatesAndDescendsCond(t *testing.T) {
-	// Identical (pattern, flags) share one compilation, and prepare now descends into
-	// an ElemMatch and a NoneMatch Cond, compiling nested regexes. The NoneMatch
-	// Cond here repeats the top-level (^h, i), so it deduplicates into the same entry
-	// rather than adding a third; only the distinct ElemMatch Cond (deep, "") is new.
+	// Identical (pattern, flags) share one compilation. Also, prepare now descends into an
+	// ElemMatch and a NoneMatch Cond, compiling nested regexes. The NoneMatch Cond here
+	// repeats the top-level (^h, i), so it deduplicates into the same entry rather than
+	// adding a third. Only the distinct ElemMatch Cond (deep, "") is new.
 	pred := predicate.And{
 		predicate.Regex{Path: []string{"s"}, Pattern: "^h", Flags: "i"},
 		predicate.Regex{Path: []string{"t"}, Pattern: "^h", Flags: "i"},
@@ -529,9 +530,9 @@ func TestNewMatcherDeduplicatesAndDescendsCond(t *testing.T) {
 	_, ok = m.regexes[regexKey{pattern: "deep", flags: ""}]
 	require.True(t, ok, "a Regex under an ElemMatch Cond is compiled now that prepare descends")
 
-	// Dedup means reuse, not recompilation: preparing the same (pattern, flags)
-	// again must leave the stored pointer untouched, which a re-store of an equal
-	// but freshly compiled Regexp would not.
+	// Dedup means reuse, not recompilation. Preparing the same (pattern, flags) again must
+	// leave the stored pointer untouched. A re-store of an equal but freshly compiled
+	// Regexp changes the pointer.
 	first := m.regexes[regexKey{pattern: "^h", flags: "i"}]
 	require.NotNil(t, first)
 
@@ -748,8 +749,8 @@ func TestMatchVerdict(t *testing.T) {
 		{"missing key null eq kept", `{"b":1}`, predicate.Eq{Path: []string{"absent"}, Value: nil}, MayMatch},
 		// An ambiguous path (a structural mismatch) is never provable, so it is kept.
 		{"ambiguous path kept", `{"a":5}`, predicate.Eq{Path: []string{"a", "b"}, Value: "x"}, MayMatch},
-		// A JSON-null field ranks below every number in jq, so `> 5` provably fails;
-		// this drives docRank's null case (rank and ok) to the Verdict.
+		// A JSON-null field ranks below every number in jq, so `> 5` provably fails. This
+		// drives the null case of docRank (rank and ok) to the Verdict.
 		{"null field gt number drops", `{"a":null}`, predicate.Cmp{Path: []string{"a"}, Op: predicate.Gt, Value: 5.0}, CannotMatch},
 		{"null field lt number kept", `{"a":null}`, predicate.Cmp{Path: []string{"a"}, Op: predicate.Lt, Value: 5.0}, MayMatch},
 		{"and drop", `{"a":5,"b":1}`, predicate.And{

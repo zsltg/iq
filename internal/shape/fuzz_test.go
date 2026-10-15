@@ -11,22 +11,23 @@ import (
 )
 
 // maxFuzzInput bounds one fuzz input, and maxFuzzItems bounds how many items one
-// input infers over. Inference walks every value, so an unbounded item set would
-// spend the -fuzztime budget on one input.
+// input infers over. Inference walks every value, so an unbounded item set
+// spends the -fuzztime budget on one input.
 const (
 	maxFuzzInput = 64 << 10
 	maxFuzzItems = 200
 )
 
-// FuzzInfer drives schema inference with an arbitrary batch of items, which is what
-// a scan of a foreign keyspace hands it. Inference reads the values and never the
-// keys, and a Go map hands them over in a random order, so the oracle is that the
-// comparable projection does not depend on either: the same values under different
-// names, visited in a different order, must give an identical projection.
+// FuzzInfer drives schema inference with an arbitrary batch of items, which is
+// what a scan of a foreign keyspace hands it. Inference reads the values and
+// never the keys. A Go map hands the values over in a random order. So the
+// oracle is that the comparable projection depends on neither. The same values
+// under different names, visited in a different order, must give an identical
+// projection.
 func FuzzInfer(f *testing.F) {
 	// Seeds cover the shape branches (scalars, objects, arrays, mixed types, an
-	// absent field) plus hostile input: empty, deep nesting, invalid UTF-8 and a
-	// number beyond float64.
+	// absent field) plus hostile input. The hostile input is empty, deep nesting,
+	// invalid UTF-8, and a number beyond float64.
 	seeds := []string{
 		`{"a":{"n":1,"s":"x"}}`,
 		`{"a":{"n":1},"b":{"n":2,"opt":true}}`,
@@ -58,8 +59,8 @@ func FuzzInfer(f *testing.F) {
 		second, ok := fuzzItems(data)
 		require.True(t, ok, "the same bytes must decode twice")
 
-		// The second batch carries the same values under generated names, and a map
-		// hands them over in a random order, so this compares two independent walks.
+		// The second batch carries the same values under generated names. A map hands
+		// them over in a random order, so this compares two independent walks.
 		renamed := make(map[string]any, len(second))
 		i := 0
 		for _, v := range second {
@@ -71,8 +72,8 @@ func FuzzInfer(f *testing.F) {
 	})
 }
 
-// fuzzItems decodes data as a batch of items, reporting false when it is not a JSON
-// object or it holds more items than the fuzz bound allows.
+// fuzzItems decodes data as a batch of items. It reports false when data is not a
+// JSON object or it holds more items than the fuzz bound allows.
 func fuzzItems(data []byte) (map[string]any, bool) {
 	var items map[string]any
 	if err := json.Unmarshal(data, &items); err != nil || items == nil {

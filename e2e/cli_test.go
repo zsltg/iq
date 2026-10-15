@@ -26,8 +26,8 @@ func TestMain(m *testing.M) {
 }
 
 // runTests builds iq once for the whole package. flag.Parse must run before
-// testing.Short is read, and os.Exit skips deferred cleanup, so the build's temp
-// dir is removed here rather than by the caller. Under -short every test skips,
+// testing.Short is read. os.Exit skips deferred cleanup. So this function
+// removes the temp dir of the build, not the caller. Under -short every test skips,
 // so the build cost is not paid.
 func runTests(m *testing.M) int {
 	flag.Parse()
@@ -73,9 +73,9 @@ func runIn(t *testing.T, stdin string, env []string, args ...string) (stdout, st
 	return runCtx(t, t.Context(), stdin, env, args...)
 }
 
-// runCtx runs the binary under an explicit context. Body steps pass t.Context(); a
-// t.Cleanup step must pass context.Background(), since t.Context() is already canceled
-// by the time cleanups run.
+// runCtx runs the binary under an explicit context. Body steps pass t.Context().
+// A t.Cleanup step must pass context.Background(), because t.Context() is already
+// canceled by the time cleanups run.
 func runCtx(t *testing.T, ctx context.Context, stdin string, env []string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	cmd := exec.CommandContext(ctx, iqBin, args...)
@@ -97,8 +97,8 @@ func runCtx(t *testing.T, ctx context.Context, stdin string, env []string, args 
 	return out.String(), errb.String(), code
 }
 
-// mustRun runs the binary and fails the test if it exits non-zero, for setup steps
-// whose arguments carry no secret (never a raw URL) so echoing them is safe.
+// mustRun runs the binary and fails the test if it exits non-zero. It is for setup
+// steps whose arguments carry no secret (never a raw URI), so echoing them is safe.
 func mustRun(t *testing.T, env []string, args ...string) string {
 	t.Helper()
 	out, stderr, code := run(t, env, args...)
@@ -167,7 +167,7 @@ func TestStructuredLoggingToStderr(t *testing.T) {
 	require.Zerof(t, code, "add failed: %s", stderr)
 	require.Contains(t, out, "added source snap")
 
-	// --log.file=stderr implies enable (no --log needed); --log.format=json makes
+	// --log.file=stderr implies enable (no --log needed). --log.format=json makes
 	// stderr one JSON object per line, parseable in CI. Query output stays on stdout.
 	out, stderr, code = run(t, env,
 		"--src", "snap", "--log.file=stderr", "--log.format=json",
@@ -175,7 +175,7 @@ func TestStructuredLoggingToStderr(t *testing.T) {
 	require.Zerof(t, code, "query failed: %s", stderr)
 	require.Contains(t, out, "150", "the matching value is on stdout")
 
-	// Every stderr line must be a JSON object; index the records by msg.
+	// Every stderr line must be a JSON object. Index the records by msg.
 	byMsg := map[string]map[string]any{}
 	for line := range strings.SplitSeq(strings.TrimSpace(stderr), "\n") {
 		if line == "" {
@@ -224,13 +224,13 @@ func TestUnboundedLogsHolisticScan(t *testing.T) {
 	_, stderr, code := run(t, env, "add", iqfile.URL(data), "-n", "snap")
 	require.Zerof(t, code, "add failed: %s", stderr)
 
-	// keys is holistic (materializes), so it needs --unbounded; the run must succeed.
+	// keys is holistic (materializes), so it needs --unbounded. The run must succeed.
 	out, stderr, code := run(t, env,
 		"--src", "snap", "--unbounded", "--log.file=stderr", "--log.format=json", "keys")
 	require.Zerof(t, code, "unbounded holistic query failed: %s", stderr)
 	require.Contains(t, out, "alpha", "the keys must be emitted")
 
-	// Sanity: without --unbounded the same filter is refused, so the flag is load-bearing.
+	// Sanity check: without --unbounded the same filter is refused, so the flag is required.
 	_, _, code = run(t, env, "--src", "snap", "keys")
 	require.NotZero(t, code, "a holistic scan without --unbounded must be refused")
 }
@@ -257,6 +257,6 @@ func TestSchemaEmitsJSONSchema(t *testing.T) {
 	props := doc["properties"].(map[string]any)
 	require.Equal(t, "string", props["name"].(map[string]any)["type"])
 	require.Equal(t, "integer", props["age"].(map[string]any)["type"])
-	// name is in both documents (required); age is in one (optional).
+	// name is in both documents (required). age is in one (optional).
 	require.Equal(t, []any{"name"}, doc["required"])
 }

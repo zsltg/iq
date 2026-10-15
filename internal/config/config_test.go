@@ -56,9 +56,9 @@ func TestPathWithoutUserConfigDir(t *testing.T) {
 	require.EqualError(t, errors.Unwrap(err), want.Error(), "the cause is wrapped, not flattened")
 }
 
-// unsetConfigDir removes every variable that os.UserConfigDir reads, so Path fails.
-// It also moves the test into a temp dir: if a broken Path returned a relative
-// path, a save must not write into the source tree.
+// unsetConfigDir removes every variable that os.UserConfigDir reads, so Path
+// fails. It also moves the test into a temp dir. If a broken Path returned a
+// relative path, a save must not write into the source tree.
 func unsetConfigDir(t *testing.T) {
 	t.Helper()
 	t.Chdir(t.TempDir())
@@ -149,9 +149,9 @@ func TestLoadMigratesLegacyCollection(t *testing.T) {
 		}
 		require.NoError(t, os.WriteFile(p, []byte(raw.String()), 0o600))
 
-		// Map iteration order is randomized per range, so a migration that gave
-		// up at the first collection-less source instead of skipping it would
-		// only sometimes miss one; repeat until that is certain.
+		// Map iteration order is randomized per range. A migration that gives up at
+		// the first collection-less source instead of skipping it misses one only
+		// sometimes. So repeat until that is certain.
 		for range 10 {
 			c, err := config.Load()
 			require.NoError(t, err)
@@ -524,9 +524,9 @@ func TestMoveGroup(t *testing.T) {
 		require.NoError(t, c.Add("a/b/x", "redis://bx"))
 
 		// Moving group "a" under "a/b" re-targets "a/x" onto the existing
-		// "a/b/x", which is itself part of the moved set and about to vacate
+		// "a/b/x". That source is itself part of the moved set and about to vacate
 		// the name, so it is not a duplicate. Which member lands where depends
-		// on map iteration order, so only order-independent facts are asserted.
+		// on map iteration order, so the test asserts only order-independent facts.
 		moved, err := c.Move("a", "a/b")
 		require.NoError(t, err)
 		require.Len(t, moved, 2)
@@ -621,8 +621,8 @@ func TestRemoveAll(t *testing.T) {
 
 	t.Run("removed sources come out sorted", func(t *testing.T) {
 		// The handles are collected by ranging a map, whose iteration order is
-		// randomized per range, so an unsorted result would pass by chance now
-		// and then; repeat until that is impossible.
+		// randomized per range. So an unsorted result passes by chance now
+		// and then. Repeat until that is impossible.
 		for range 10 {
 			c := &config.Config{Sources: map[string]config.Source{}}
 			for _, h := range []string{"b", "a", "e", "c", "d"} {
@@ -661,8 +661,8 @@ func TestGroupsSorted(t *testing.T) {
 	want := []string{"alpha", "beta", "delta", "epsilon", "gamma"}
 
 	// The groups are collected by ranging a map, whose iteration order is
-	// randomized per range, so an unsorted result would pass by chance now and
-	// then; repeat until that is impossible.
+	// randomized per range. So an unsorted result passes by chance now and
+	// then. Repeat until that is impossible.
 	for range 10 {
 		require.Equal(t, want, c.Groups())
 	}
@@ -713,7 +713,7 @@ func TestRemove(t *testing.T) {
 
 func TestList(t *testing.T) {
 	// The sources are collected by ranging a map, whose iteration order is
-	// randomized per range, so an unsorted result would pass by chance now
+	// randomized per range. So an unsorted result passes by chance now
 	// and then. Repeat until that is impossible.
 	for range 10 {
 		c := &config.Config{Sources: map[string]config.Source{}}
@@ -776,8 +776,8 @@ func TestResolveNamespacing(t *testing.T) {
 	})
 
 	t.Run("no active group prepends no separator", func(t *testing.T) {
-		// A hand-written config file can hold a handle the API would reject;
-		// with no group active, a bare name must not reach it as "/name".
+		// A hand-written config file can hold a handle that the API rejects.
+		// With no group active, a bare name must not reach it as "/name".
 		c := &config.Config{Sources: map[string]config.Source{"/books": {URL: "redis://h"}}}
 
 		_, _, ok := c.Resolve("books")

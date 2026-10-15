@@ -44,10 +44,10 @@ const (
 	Le           // <=
 )
 
-// Cmp matches documents whose field at Path compares to Value under Op, using
+// Cmp matches documents whose field at Path compares to Value under Op. It uses
 // jq's total type ordering (null < bool < number < string < array < object).
-// Value is a number (float64) or a string; the ordering across types is what a
-// backend must reproduce to stay a superset.
+// Value is a number (float64) or a string. A backend must reproduce the
+// ordering across types to stay a superset.
 type Cmp struct {
 	Path  []string
 	Op    Op
@@ -55,12 +55,12 @@ type Cmp struct {
 }
 
 // Regex matches documents whose field at Path is a string that Pattern matches
-// (unanchored, like jq's test). Flags is a subset of "im" with jq's meaning: i is
-// case-insensitive and m is "dot matches newline" (dotall). jq's m is not PCRE's
-// line-anchor multiline. Only patterns with identical meaning, or a superset, across
-// regex engines are put here. A backend hands Pattern to its own engine and translates
-// Flags to that engine's spelling (for example jq m to PCRE s), so the matched set
-// never narrows against jq.
+// (unanchored, like jq's test). Flags is a subset of "im" with jq's meaning.
+// The flag i is case-insensitive. The flag m is "dot matches newline" (dotall).
+// jq's m is not PCRE's line-anchor multiline. Only patterns with identical meaning, or a superset,
+// across regex engines are put here. A backend hands Pattern to its own engine
+// and translates Flags to that engine's spelling (for example jq m to PCRE s).
+// So the matched set never narrows against jq.
 type Regex struct {
 	Path    []string
 	Pattern string
@@ -75,17 +75,17 @@ type Exists struct {
 }
 
 // Size matches documents whose field at Path has jq length N. jq's length is
-// polymorphic (array elements, string characters, object keys, |number|, null→0), so a
-// backend must not treat this as an array-only test. It is a superset in the same way
-// as Cmp.
+// polymorphic (array elements, string characters, object keys, |number|,
+// null to 0). So a backend must not treat this as an array-only test. It is a
+// superset in the same way as Cmp.
 type Size struct {
 	Path []string
 	N    int
 }
 
-// Ne matches documents whose field at Path is not the scalar Value — the exact
-// negation of Eq (jq's !=). Unlike Eq it must be exact, not a superset, because
-// re-running jq cannot recover a document a negation wrongly excluded.
+// Ne matches documents whose field at Path is not the scalar Value. It is the
+// exact negation of Eq (jq's !=). Unlike Eq it must be exact, not a superset.
+// Re-running jq cannot recover a document that a negation wrongly excluded.
 type Ne struct {
 	Path  []string
 	Value any

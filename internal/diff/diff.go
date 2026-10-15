@@ -19,9 +19,9 @@ import (
 	"strconv"
 )
 
-// lcsCellCap bounds the longest-common-subsequence dynamic-programming table:
-// above this many cells (len(a)·len(b)) walkSlice falls back to the positional
-// index walk, trading alignment quality for bounded memory on pathologically
+// lcsCellCap bounds the longest-common-subsequence dynamic-programming table.
+// Above this many cells (len(a)·len(b)), walkSlice falls back to the positional
+// index walk. This trades alignment quality for bounded memory on pathologically
 // large arrays. The assumption is that two arrays whose product exceeds ~1e6
 // elements are rare in a diff and not worth an O(n·m) table.
 const lcsCellCap = 1 << 20
@@ -35,8 +35,9 @@ type Options struct {
 	SetArrays bool
 }
 
-// Op is the kind of a single delta: a value present only on the right (Add),
-// only on the left (Remove), or differing between the two (Change).
+// Op is the kind of a single delta. Add is a value present only on the right.
+// Remove is a value present only on the left. Change is a value that differs between
+// the two.
 type Op uint8
 
 // The three delta kinds. The zero value is Add so an unset Op is never a silent
@@ -92,12 +93,12 @@ type Change struct {
 	New  any      `json:"new,omitempty"`
 }
 
-// Tree returns the deltas that turn a into b under the default options: maps
-// compared key by key, arrays aligned by longest common subsequence, scalars by
-// equality. A map-versus-array or map-versus-scalar mismatch is one Change of the
-// whole subtree. The result is deterministic — map keys are visited in sorted
-// order and array deltas in aligned-position order — so output and tests are
-// stable.
+// Tree returns the deltas that turn a into b under the default options. Maps
+// are compared key by key, arrays are aligned by longest common subsequence, and
+// scalars are compared by equality. A map-versus-array or map-versus-scalar
+// mismatch is one Change of the whole subtree. The result is deterministic. Map
+// keys are visited in sorted order and array deltas in aligned-position order, so
+// output and tests are stable.
 func Tree(a, b any) []Change { return TreeOpt(a, b, Options{}) }
 
 // TreeOpt is Tree under explicit Options: Options{SetArrays:true} compares every
@@ -149,16 +150,17 @@ func walkMap(path []string, a, b map[string]any, out *[]Change, o Options) {
 }
 
 // walkSlice diffs two arrays at path, aligned by their longest common subsequence
-// (lcsPairs). Elements that appear in both, in order, are anchors and produce no delta.
-// Between two anchors, the left and right leftovers are paired by position and recursed
-// (so a changed element reports its field-level deltas). The surplus is Remove
-// (left-only) or Add (right-only).
+// (lcsPairs). Elements that appear in both, in order, are anchors and produce no
+// delta. Between two anchors, the left and right leftovers are paired by position
+// and recursed, so a changed element reports its field-level deltas. The surplus
+// is Remove (left-only) or Add (right-only).
 //
-// Every emitted delta advances one aligned position. A delta's index is therefore its
-// position in the LCS-aligned overlay of the two arrays, not its raw index in either
-// side. An inserted element shifts the reported index of the anchors after it (the "i +
-// adds" convention): a front insertion is a single Add at [0]. Above lcsCellCap DP
-// cells, walkSlice falls back to the positional index walk to bound memory.
+// Every emitted delta advances one aligned position. A delta's index is therefore
+// its position in the LCS-aligned overlay of the two arrays, not its raw index in
+// either side. An inserted element shifts the reported index of the anchors after
+// it (the "i + adds" convention). A front insertion is a single Add at [0]. Above
+// lcsCellCap DP cells, walkSlice falls back to the positional index walk to bound
+// memory.
 func walkSlice(path []string, a, b []any, out *[]Change, o Options) {
 	if len(a)*len(b) > lcsCellCap {
 		walkPositional(path, a, b, out, o)
@@ -190,9 +192,9 @@ func walkSlice(path []string, a, b []any, out *[]Change, o Options) {
 	block(len(a), len(b)) // the tail leftover after the last anchor
 }
 
-// walkPositional diffs two arrays at path by raw index: the memory-bounded
+// walkPositional diffs two arrays at path by raw index. It is the memory-bounded
 // fallback for arrays too large for the LCS table. Trailing elements present on
-// only one side are Add or Remove; overlapping indexes recurse.
+// only one side are Add or Remove. Overlapping indexes recurse.
 func walkPositional(path []string, a, b []any, out *[]Change, o Options) {
 	n := max(len(a), len(b))
 	for i := range n {
@@ -232,9 +234,10 @@ func walkSet(path []string, a, b []any, out *[]Change) {
 	}
 }
 
-// bag is a multiset of elements keyed by canonical serialization: counts holds the
-// occurrence count per key, sample the first element seen for a key (any
-// occurrence serves as the reported value, since equal keys are equal values).
+// bag is a multiset of elements keyed by canonical serialization. The field
+// counts holds the occurrence count per key. The field sample holds the first
+// element seen for a key. Any occurrence serves as the reported value, because
+// equal keys are equal values.
 type bag struct {
 	counts map[string]int
 	sample map[string]any
@@ -253,9 +256,9 @@ func multiset(xs []any) bag {
 	return b
 }
 
-// canonicalKey serializes v to its canonical JSON form for multiset bucketing,
-// falling back to fmt formatting when v cannot be marshaled (same spirit as the
-// CLI's compact helper).
+// canonicalKey serializes v to its canonical JSON form for multiset bucketing.
+// It falls back to fmt formatting when v cannot be marshaled (same approach as
+// the compact helper of the CLI).
 func canonicalKey(v any) string {
 	if bs, err := json.Marshal(v); err == nil {
 		return string(bs)
@@ -264,9 +267,10 @@ func canonicalKey(v any) string {
 }
 
 // lcsPairs returns the index pairs (i in a, j in b) of a longest common
-// subsequence of a and b, matched by same, in increasing order. The backtrack over
-// the suffix table uses the deterministic tie-break "advance a when the skip-a
-// subsequence is at least as long as skip-b", so the alignment is stable.
+// subsequence of a and b, in increasing order. The pairs are matched by same.
+// The backtrack over the suffix table uses a deterministic tie-break: advance a
+// when the skip-a subsequence is at least as long as skip-b. So the alignment is
+// stable.
 func lcsPairs(a, b []any) [][2]int {
 	la, lb := len(a), len(b)
 	dp := lcsLengths(a, b)
@@ -309,9 +313,10 @@ func lcsLengths(a, b []any) [][]int {
 	return dp
 }
 
-// same reports whether two normalized values are deeply equal for LCS anchoring:
-// maps by key, arrays by position, scalars via equal (so an int and a float64 of
-// the same magnitude anchor together, matching the rest of the package).
+// same reports whether two normalized values are deeply equal for LCS anchoring.
+// Maps compare by key, arrays by position, and scalars via equal. So an int and a
+// float64 of the same magnitude anchor together, matching the rest of the
+// package.
 func same(a, b any) bool {
 	switch av := a.(type) {
 	case map[string]any:
@@ -356,7 +361,7 @@ func sameSlice(a, b []any) bool {
 }
 
 // ItemDelta is the difference for one keyed item between two sets. Op Add and
-// Remove carry the whole New or Old value; Op Change carries the field-level
+// Remove carry the whole New or Old value. Op Change carries the field-level
 // Changes within the item.
 type ItemDelta struct {
 	Key     string   `json:"key"`
@@ -367,12 +372,12 @@ type ItemDelta struct {
 }
 
 // Keyed aligns two keyed item sets under the default options and reports one
-// ItemDelta per differing key, sorted by key. A key only in a is Remove, only in b
-// is Add, and a key in both whose values differ is Change carrying the per-field
-// Tree of that item. Keys whose values are equal produce no delta.
+// ItemDelta per differing key, sorted by key. A key only in a is Remove. A key
+// only in b is Add. A key in both whose values differ is Change, carrying the
+// per-field Tree of that item. Keys whose values are equal produce no delta.
 func Keyed(a, b map[string]any) []ItemDelta { return KeyedOpt(a, b, Options{}) }
 
-// KeyedOpt is Keyed under explicit Options: the per-item Change tree of a changed
+// KeyedOpt is Keyed under explicit Options. The per-item Change tree of a changed
 // key is computed with o, so Options{SetArrays:true} compares each item's arrays
 // as multisets.
 func KeyedOpt(a, b map[string]any, o Options) []ItemDelta {
@@ -452,9 +457,9 @@ func unionKeys[V any](a, b map[string]V) []string {
 }
 
 // equal reports whether two scalar (or mismatched-composite) values are equal.
-// Numbers compare by value so an int and a float64 holding the same number match
-// — the two adapters can normalize the same magnitude to different Go numeric
-// types. Everything else falls back to a deep comparison.
+// Numbers compare by value, so an int and a float64 holding the same number
+// match. The two adapters can normalize the same magnitude to different Go
+// numeric types. Everything else falls back to a deep comparison.
 func equal(a, b any) bool {
 	if an, ok := asFloat(a); ok {
 		bn, ok := asFloat(b)
@@ -494,8 +499,8 @@ func addition(path []string, v any) Change {
 	return Change{Path: clone(path), Op: OpAdd, New: v}
 }
 
-// indexed returns path with the array index segment "[i]" appended. The result may
-// share the backing array of path, so a caller that stores it must clone it.
+// indexed returns path with the array index segment "[i]" appended. The result
+// can share the backing array of path, so a caller that stores it must clone it.
 func indexed(path []string, i int) []string {
 	return append(path, "["+strconv.Itoa(i)+"]") //nolint:gocritic // cloned before storage
 }

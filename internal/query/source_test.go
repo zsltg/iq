@@ -11,9 +11,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// fakeOpener resolves names to fake KVStores for the source() function. openErr,
-// when set, is the failure Open reports for an unknown name, so a test can follow
-// one specific error out through the wraps.
+// fakeOpener resolves names to fake KVStores for the source() function. When
+// openErr is set, it is the failure Open reports for an unknown name. So a test
+// can follow one specific error out through the wraps.
 type fakeOpener struct {
 	stores  map[string]query.KVStore
 	openErr error
@@ -56,7 +56,7 @@ func TestUsesSource(t *testing.T) {
 		// A user-defined source is the user's own function, not the cross-source
 		// builtin, so it is not routed to the cross engine.
 		{`def source: .x; source`, false},
-		// An unknown non-source function is not cross-source; the primary path
+		// An unknown non-source function is not cross-source. The primary path
 		// surfaces its compile error unchanged.
 		{`.foo | nope("x")`, false},
 	}
@@ -77,9 +77,9 @@ func TestUsesSource(t *testing.T) {
 }
 
 // TestUsesSourceArity pins the arity the probe binding declares. source() takes
-// one or two arguments, so a call outside that range is not the cross-source
-// builtin at all and must not be routed to the cross engine — a widened probe
-// would claim a filter that the real binding then refuses to compile.
+// one or two arguments. A call outside that range is not the cross-source
+// builtin at all and must not be routed to the cross engine. A widened probe
+// claims a filter that the real binding then refuses to compile.
 func TestUsesSourceArity(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -159,8 +159,8 @@ func TestSourceFunction(t *testing.T) {
 	t.Run("non-string name errors", func(t *testing.T) {
 		_, err := runCross(opener, `source(1; ".")`, query.RunOptions{})
 		require.ErrorContains(t, err, "name must be a string")
-		// The message reports the type of the offending argument, the name; naming
-		// the filter's type instead would read as "got string" for this call.
+		// The message reports the type of the offending argument, the name.
+		// Naming the filter's type instead reads as "got string" for this call.
 		require.ErrorContains(t, err, "got int", "the reported type is the name's, not the filter's")
 	})
 
@@ -176,7 +176,7 @@ func TestSourceFunction(t *testing.T) {
 		failing := fakeOpener{stores: map[string]query.KVStore{}, openErr: sentinel}
 		_, err := runCross(failing, `source("gone"; ".")`, query.RunOptions{})
 		require.ErrorContains(t, err, `source "gone"`)
-		// The opener's failure crosses two wraps on its way out; formatting it in
+		// The opener's failure crosses two wraps on its way out. Formatting it in
 		// at either one severs errors.Is for the caller that has to classify it.
 		require.ErrorIs(t, err, sentinel)
 	})
@@ -196,9 +196,9 @@ func TestSourceFunction(t *testing.T) {
 }
 
 // TestCrossEngineSourceArity pins the arity of the bound source() function. One
-// or two arguments are the whole surface: a zero-argument call has no name to
-// resolve and a three-argument one carries an argument the implementation would
-// silently ignore, so both must fail at compile rather than run.
+// or two arguments are the whole surface. A zero-argument call has no name to
+// resolve. A three-argument call carries an argument that the implementation
+// silently ignores. So both must fail at compile rather than run.
 func TestCrossEngineSourceArity(t *testing.T) {
 	opener := fakeOpener{stores: map[string]query.KVStore{
 		"users": &fakeKV{values: map[string]any{"u1": 1}, scanKeys: []string{"u1"}},

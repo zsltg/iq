@@ -17,10 +17,10 @@ import (
 	iqfile "github.com/zsltg/iq/drivers/file"
 )
 
-// tappedPipe wraps the server's stdout so the test can both feed it to the MCP
-// client and, afterwards, inspect every byte the process wrote. stdout is the
-// protocol channel, so a stray print would corrupt the stream, and this is how
-// the test proves none happened.
+// tappedPipe wraps the server's stdout. The test can then feed it to the MCP
+// client and, afterwards, inspect every byte that the process wrote. stdout is the
+// protocol channel. A stray print corrupts the stream. This is how the test
+// proves none happened.
 type tappedPipe struct {
 	r  io.ReadCloser
 	mu sync.Mutex
@@ -70,10 +70,11 @@ func (l *lockedBuffer) String() string {
 	return l.b.String()
 }
 
-// startMCP launches `iq mcp` as a long-lived child process and connects an MCP
+// startMCP launches `iq mcp` as a long-lived child process. It connects an MCP
 // client to it over its real stdin and stdout, the way a client such as Claude
 // Code or Codex does. It returns the live session, the stdout tap, and the
-// process's stderr (safe to read while the process runs), all torn down on cleanup.
+// stderr of the process (safe to read while the process runs). Cleanup tears all
+// of them down.
 func startMCP(t *testing.T, env []string, args ...string) (*mcp.ClientSession, *tappedPipe, *lockedBuffer) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), iqBin, append([]string{"mcp"}, args...)...)
@@ -93,7 +94,7 @@ func startMCP(t *testing.T, env []string, args ...string) (*mcp.ClientSession, *
 
 	t.Cleanup(func() {
 		_ = cs.Close()
-		// Closing stdin ends the server's read loop, so it exits on its own; the
+		// Closing stdin ends the read loop of the server, so it exits on its own. The
 		// context kill is the backstop for a server that does not.
 		_ = stdin.Close()
 		_ = cmd.Wait()
@@ -101,9 +102,9 @@ func startMCP(t *testing.T, env []string, args ...string) (*mcp.ClientSession, *
 	return cs, tap, stderr
 }
 
-// TestMCPStdioSession drives the built binary as an MCP server over real stdio:
-// list the tools, run a query against a file:// dump, and prove that the write
-// tool is absent and that stdout carried nothing but protocol frames.
+// TestMCPStdioSession drives the built binary as an MCP server over real stdio.
+// It lists the tools and runs a query against a file:// dump. It proves that the
+// write tool is absent and that stdout carried nothing but protocol frames.
 func TestMCPStdioSession(t *testing.T) {
 	skipShort(t)
 	dir := t.TempDir()
@@ -161,8 +162,8 @@ func TestMCPStdioSession(t *testing.T) {
 	require.Empty(t, stderr.String(), "diagnostics must not be written without --log or --verbose")
 }
 
-// assertProtocolOnly proves every line the server wrote to stdout is a JSON-RPC
-// frame: one stray fmt.Print would desynchronize the client.
+// assertProtocolOnly proves that every line the server wrote to stdout is a
+// JSON-RPC frame. One stray fmt.Print desynchronizes the client.
 func assertProtocolOnly(t *testing.T, out string) {
 	t.Helper()
 	require.NotEmpty(t, out, "the server wrote nothing to stdout")

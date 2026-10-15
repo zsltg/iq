@@ -16,8 +16,8 @@ import (
 )
 
 // dumpRecord is the on-disk envelope for one item in a typed JSONL dump. The type
-// tag is what makes a Redis round-trip lossless: the normalized JSON of a hash and
-// of a document are both objects, so only the tag says which to reconstruct.
+// tag makes a Redis round-trip lossless. The normalized JSON of a hash and of a
+// document are both objects, so only the tag says which to reconstruct.
 type dumpRecord struct {
 	Key   string `json:"key"`
 	Type  string `json:"type"`
@@ -37,15 +37,15 @@ func WriteJSONL(w io.Writer, recs []Record) error {
 }
 
 // JSONLSource returns a RecordSource that streams a JSONL reader in pages of
-// pageSize. In typed mode each line is a {key,type,value} envelope; in plain mode
+// pageSize. In typed mode each line is a {key,type,value} envelope. In plain mode
 // (foreign input) each line's whole JSON value becomes the record value with no
-// key or type, leaving the caller's transform to key it. Numbers decode
+// key or type, and the caller's transform keys it. Numbers decode
 // precisely: an integer stays exact (int or *big.Int), never a lossy float.
 func JSONLSource(r io.Reader, pageSize int, plain bool) RecordSource {
 	return func(ctx context.Context, fn func(batch []Record) error) error {
 		sc := bufio.NewScanner(r)
-		// A JSONL line can be a large document; raise the scanner's line cap well
-		// above bufio's 64 KiB default. Bit-shift sizes so the constants are one
+		// A JSONL line can be a large document. Raise the scanner's line cap well
+		// above the bufio 64 KiB default. Bit-shift sizes so the constants are one
 		// value each, not a product.
 		const initBuf, maxLine = 64 << 10, 16 << 20
 		sc.Buffer(make([]byte, 0, initBuf), maxLine)
@@ -76,7 +76,7 @@ func JSONLSource(r io.Reader, pageSize int, plain bool) RecordSource {
 }
 
 // decodeLine parses one JSONL line into a Record. Typed mode expects the dump
-// envelope and rejects a bare value with a hint; plain mode takes the whole value.
+// envelope and rejects a bare value with a hint. Plain mode takes the whole value.
 func decodeLine(raw string, plain bool) (Record, error) {
 	if plain {
 		v, err := decodeValue(raw)
@@ -137,12 +137,12 @@ func convertNumbers(v any) any {
 	}
 }
 
-// convertNumber turns one json.Number into an exact Go number: an integer becomes
-// an int or *big.Int, a fractional number a float64, and a number that float64
-// cannot hold stays its literal text.
+// convertNumber turns one json.Number into an exact Go number. An integer becomes
+// an int or *big.Int, and a fractional number becomes a float64. A number that
+// float64 cannot hold stays its literal text.
 func convertNumber(t json.Number) any {
 	s := t.String()
-	// -0 is the one integer literal an int cannot hold: keep it as the float64
+	// -0 is the one integer literal an int cannot hold. Keep it as the float64
 	// negative zero, so a dump of -0.0 reads back with its sign (numfmt does
 	// the same for the backend adapters).
 	if s == "-0" {
@@ -162,10 +162,11 @@ func convertNumber(t json.Number) any {
 	return s
 }
 
-// JSONSource streams typed {key,type,value} records (or, in plain mode, whole values)
-// from a JSON reader that holds concatenated objects (JSON Lines) or a single top-level
-// array. It is the array-tolerant counterpart of JSONLSource, so a --typed dump written
-// as --jsonl or --jsona re-imports. Integers stay exact.
+// JSONSource streams typed {key,type,value} records (or, in plain mode, whole
+// values) from a JSON reader. The reader holds concatenated objects (JSON Lines)
+// or a single top-level array. It is the array-tolerant counterpart of
+// JSONLSource, so a --typed dump written as --jsonl or --jsona re-imports.
+// Integers stay exact.
 func JSONSource(r io.Reader, pageSize int, plain bool) RecordSource {
 	return func(ctx context.Context, fn func(batch []Record) error) error {
 		stream, err := NewJSONStream(r)
@@ -329,8 +330,8 @@ func (p *pager) flush() error {
 	return p.fn(p.page)
 }
 
-// recordFromDecoded turns an already-decoded value (a YAML document) into a Record:
-// in plain mode the whole value; in typed mode a {key,type,value} map envelope.
+// recordFromDecoded turns an already-decoded value (a YAML document) into a Record.
+// In plain mode it is the whole value. In typed mode it is a {key,type,value} map envelope.
 func recordFromDecoded(v any, plain bool) (Record, error) {
 	if plain {
 		return Record{Value: convertNumbers(v)}, nil

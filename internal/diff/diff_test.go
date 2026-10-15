@@ -84,7 +84,7 @@ func TestTree(t *testing.T) {
 			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpAdd, New: 1}},
 		},
 		{
-			// The deleted middle element aligns out, so it is a single Remove; the
+			// The deleted middle element aligns out, so it is a single Remove. The
 			// trailing 3 anchors and reports nothing.
 			name: "mid deletion is a single remove",
 			a:    []any{1, 2, 3},
@@ -93,7 +93,7 @@ func TestTree(t *testing.T) {
 		},
 		{
 			// No shared subsequence, so the two elements pair positionally and the
-			// change recurses into the object: the delta lands at [0].v, not on the
+			// change recurses into the object. The delta lands at [0].v, not on the
 			// whole element.
 			name: "changed element between anchors recurses",
 			a:    []any{map[string]any{"v": 1}},
@@ -102,8 +102,8 @@ func TestTree(t *testing.T) {
 		},
 		{
 			// An insertion before an anchor shifts the reported index of the later
-			// paired change: add 0 at [0], then 2->9 lands at [2] in the aligned
-			// overlay (1 anchors at [1]), pinning the i+adds index arithmetic.
+			// paired change. Add 0 at [0], then 2->9 lands at [2] in the aligned
+			// overlay (1 anchors at [1]). This pins the i+adds index arithmetic.
 			name: "insertion before a change pins the aligned index",
 			a:    []any{1, 2, 3},
 			b:    []any{0, 1, 9, 3},
@@ -114,8 +114,8 @@ func TestTree(t *testing.T) {
 		},
 		{
 			// A paired block of two changed elements after an anchor pins the
-			// recursion offsets (a[ai+k], b[bi+k]) at k=1 with ai,bi > 0: a lost or
-			// negated offset walks the anchor against a later element and reports a
+			// recursion offsets (a[ai+k], b[bi+k]) at k=1 with ai,bi > 0. A lost or
+			// negated offset walks the anchor against a later element. It then reports a
 			// whole-subtree change instead of these field-level deltas.
 			name: "anchored paired block recurses at the right offsets",
 			a:    []any{true, map[string]any{"v": 1}, map[string]any{"w": 1}},
@@ -126,9 +126,9 @@ func TestTree(t *testing.T) {
 			},
 		},
 		{
-			// An equal map must anchor across an insertion: if the anchor
+			// An equal map must anchor across an insertion. If the anchor
 			// predicate stops recognizing equal maps, the map pairs with the
-			// inserted scalar instead and the single Add becomes a change pair.
+			// inserted scalar instead, and the single Add becomes a change pair.
 			name: "equal map anchors across an insertion",
 			a:    []any{map[string]any{"v": 1}},
 			b:    []any{0, map[string]any{"v": 1}},
@@ -143,10 +143,10 @@ func TestTree(t *testing.T) {
 			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpAdd, New: 0}},
 		},
 		{
-			// Numeric parity must survive inside an anchored composite: {v:1} and
+			// Numeric parity must survive inside an anchored composite. {v:1} and
 			// {v:1.0} are the same map, so they anchor across the insertion. A
-			// predicate that fell back to a plain deep comparison would treat the
-			// int and the float64 as different and pair the map with the inserted
+			// predicate that falls back to a plain deep comparison treats the
+			// int and the float64 as different. It then pairs the map with the inserted
 			// scalar instead.
 			name: "equal map anchors across an insertion despite int/float spelling",
 			a:    []any{map[string]any{"v": 1}},
@@ -161,9 +161,9 @@ func TestTree(t *testing.T) {
 			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpAdd, New: 0}},
 		},
 		{
-			// Anchoring compares every element of a nested array, not just the
-			// first: these inner arrays agree at index 0 and differ at index 1, so
-			// they must not anchor — the outer arrays pair positionally instead.
+			// Anchoring compares every element of a nested array, not only the
+			// first. These inner arrays agree at index 0 and differ at index 1, so
+			// they must not anchor. The outer arrays pair positionally instead.
 			name: "nested array anchoring compares beyond the first element",
 			a:    []any{[]any{1, 2}},
 			b:    []any{0, []any{1, 3}},
@@ -173,8 +173,8 @@ func TestTree(t *testing.T) {
 			},
 		},
 		{
-			// A nested array that is a prefix of the other is not equal to it:
-			// the left inner array matches the first element of the right one,
+			// A nested array that is a prefix of the other is not equal to it.
+			// The left inner array matches the first element of the right one,
 			// but the lengths differ, so they must not anchor.
 			name: "nested array anchoring compares lengths",
 			a:    []any{[]any{1}},
@@ -195,9 +195,9 @@ func TestTree(t *testing.T) {
 			},
 		},
 		{
-			// A scalar and an empty map are not the same: the anchor predicate's
-			// one-sided type rejects must hold even when the composite side is
-			// empty (a lost reject makes the nil range-loop vacuously agree).
+			// A scalar and an empty map are not the same. The one-sided type reject of
+			// the anchor predicate must hold even when the composite side is
+			// empty. A lost reject makes the nil range-loop vacuously agree.
 			name: "scalar and empty map pair as a change",
 			a:    []any{5},
 			b:    []any{map[string]any{}},
@@ -222,8 +222,8 @@ func TestTree(t *testing.T) {
 			want: []diff.Change{{Path: []string{"[0]"}, Op: diff.OpChange, Old: []any{}, New: 5}},
 		},
 		{
-			// A map that is a strict subset of the other must NOT anchor: the size
-			// fast-reject in the anchor predicate is what keeps {a:1} and
+			// A map that is a strict subset of the other must NOT anchor. The size
+			// fast-reject in the anchor predicate keeps {a:1} and
 			// {a:1,b:2} paired-and-recursed instead of silently equal.
 			name: "subset map does not anchor",
 			a:    []any{map[string]any{"a": 1}},
@@ -232,7 +232,7 @@ func TestTree(t *testing.T) {
 		},
 		{
 			// Aligning [1,1,1] with [2,1] exercises the skip-a branch of the DP
-			// fill: its value must flow into the table for the backtrack to pick
+			// fill. Its value must flow into the table for the backtrack to pick
 			// the two-delta alignment.
 			name: "duplicate run against shorter array",
 			a:    []any{1, 1, 1},
@@ -284,8 +284,8 @@ func TestTreeSetArrays(t *testing.T) {
 		},
 		{
 			// Elements are bucketed by canonical JSON, so the string "1" and the
-			// int 1 are different members ("1" vs 1); a fmt-style key would
-			// collide them into a spurious match.
+			// int 1 are different members ("1" vs 1). A fmt-style key
+			// collides them into a spurious match.
 			name: "string and number of the same spelling differ",
 			a:    []any{"1"},
 			b:    []any{1},
@@ -375,11 +375,11 @@ func TestTreeArrayMemoryGuard(t *testing.T) {
 		return out
 	}
 	t.Run("exactly at the cap still aligns by LCS", func(t *testing.T) {
-		// 1024*1024 = 1<<20 cells, exactly the cap and so not over it: two
+		// 1024*1024 = 1<<20 cells, exactly the cap and so not over it. Two
 		// equal-length arrays sharing a 1023-element run align to a single Remove at
 		// [0] and a single Add. The removed head and the 1023 anchors each hold one
 		// aligned slot, so the trailing Add lands at [1024]. The positional fallback
-		// would instead report all 1024 indexes as changed, so this pins the strict
+		// reports all 1024 indexes as changed instead. So this pins the strict
 		// ">" boundary.
 		a := append([]any{"L"}, seq(1023, 0)...)
 		b := append(seq(1023, 0), "R")
@@ -390,11 +390,11 @@ func TestTreeArrayMemoryGuard(t *testing.T) {
 		}, got)
 	})
 	t.Run("over the cap falls back to the positional walk", func(t *testing.T) {
-		// 1100*1101 = 1211100 cells, above the cap: the positional fallback compares
+		// 1100*1101 = 1211100 cells, above the cap. The positional fallback compares
 		// by raw index, so the same front insertion cascades to one delta per index
-		// plus a trailing Add — proving the guard engaged. The surplus-right delta
-		// is compared whole, Op and New together: an Add that reported the index but
-		// dropped the value it added would satisfy a path-and-op-only assertion.
+		// plus a trailing Add. This proves the guard engaged. The surplus-right delta
+		// is compared whole, Op and New together. An Add that reports the index but
+		// drops the value it added satisfies a path-and-op-only assertion.
 		a := seq(1100, 0)
 		b := seq(1100, 1)
 		got := diff.Tree(a, b)
@@ -405,8 +405,8 @@ func TestTreeArrayMemoryGuard(t *testing.T) {
 	t.Run("over the cap reports the surplus left as removes", func(t *testing.T) {
 		// The mirror of the case above: the longer side is the left one, so the
 		// positional walk ends in the surplus-left arm instead. It is the only
-		// caller that reaches that arm with the fallback engaged, and the delta is
-		// compared whole so the removed value is pinned alongside its op.
+		// caller that reaches that arm with the fallback engaged. The delta is
+		// compared whole, so the removed value is pinned alongside its op.
 		a := seq(1100, 1)
 		b := seq(1100, 0)
 		got := diff.Tree(a, b)
@@ -417,8 +417,8 @@ func TestTreeArrayMemoryGuard(t *testing.T) {
 }
 
 func TestTreeDeterministicKeyOrder(t *testing.T) {
-	// Enough keys that Go's randomized map iteration would have to hit the sorted
-	// permutation by chance (1 in 20!) for an unsorted walk to look ordered, so
+	// Enough keys that Go's randomized map iteration must hit the sorted
+	// permutation by chance (1 in 20!) for an unsorted walk to look ordered. So
 	// the assertion pins the sort rather than getting lucky on three keys.
 	const keys = 20
 	a := make(map[string]any, keys)
@@ -493,9 +493,9 @@ func TestSummarize(t *testing.T) {
 }
 
 // TestSummaryEmptyNeedsEveryCount pins Empty as the conjunction of all three
-// counters: one non-zero counter alone must make a summary non-empty, so a
+// counters. One non-zero counter alone must make a summary non-empty, so a
 // disjunction, a dropped conjunct, or a re-associated one is visible. A single
-// all-zero and a single all-non-zero row cannot see any of that, since every
+// all-zero row and a single all-non-zero row cannot see any of that. Every
 // rewriting of the guard agrees on those two.
 func TestSummaryEmptyNeedsEveryCount(t *testing.T) {
 	tests := []struct {
@@ -551,10 +551,10 @@ func TestOpStringAndSymbol(t *testing.T) {
 	}
 }
 
-// lcsLenOracle returns the length of a longest common subsequence of a and b,
-// computed independently of the package under test: a forward DP over prefixes,
-// where the production code fills a backward table over suffixes. Agreement
-// between two differently-shaped implementations is what makes it an oracle.
+// lcsLenOracle returns the length of a longest common subsequence of a and b.
+// It is computed independently of the package under test. It is a forward DP
+// over prefixes, where the production code fills a backward table over suffixes.
+// Agreement between two differently-shaped implementations makes it an oracle.
 func lcsLenOracle(a, b []int) int {
 	dp := make([][]int, len(a)+1)
 	for i := range dp {
@@ -573,8 +573,8 @@ func lcsLenOracle(a, b []int) int {
 }
 
 // enumerateArrays returns every array of length 0..maxLen over the alphabet
-// 1..symbols, so a property holds over the whole small-input space rather than a
-// handful of hand-picked rows.
+// 1..symbols. So a property holds over the whole small-input space rather than
+// over a handful of hand-picked rows.
 func enumerateArrays(symbols, maxLen int) [][]int {
 	out := [][]int{{}}
 	frontier := [][]int{{}}
@@ -594,11 +594,12 @@ func enumerateArrays(symbols, maxLen int) [][]int {
 
 // TestTreeArrayAlignmentIsMinimal pins the defining property of the LCS walk over
 // every pair of small scalar arrays: the alignment is minimal. Anchors are the
-// longest common subsequence, so the elements each side does NOT contribute to it
-// are exactly the ones reported — changes+removes on the left, changes+adds on
-// the right (a scalar pair reports one Change, never a nested fan-out). Any
-// mutation that degrades the table, the backtrack, or its bounds yields a
-// non-minimal alignment and fails here, which a fixed table of rows cannot pin.
+// longest common subsequence. So the elements that each side does NOT contribute
+// to it are exactly the ones reported. These are changes+removes on the left and
+// changes+adds on the right (a scalar pair reports one Change, never a nested
+// fan-out). Any mutation that degrades the table, the backtrack, or its bounds
+// yields a non-minimal alignment and fails here. A fixed table of rows cannot pin
+// this.
 func TestTreeArrayAlignmentIsMinimal(t *testing.T) {
 	arrays := enumerateArrays(3, 4)
 	for _, ai := range arrays {
@@ -631,9 +632,9 @@ func TestTreeArrayAlignmentIsMinimal(t *testing.T) {
 }
 
 // TestTreeSetArraysDeterministicOrder pins that set-mode deltas are emitted in
-// canonical-key order. Enough distinct members are used that Go's randomized map
-// iteration would have to land on the sorted permutation by chance for an
-// unsorted walk to look ordered.
+// canonical-key order. The test uses enough distinct members that Go's
+// randomized map iteration must land on the sorted permutation by chance. Only
+// then can an unsorted walk look ordered.
 func TestTreeSetArraysDeterministicOrder(t *testing.T) {
 	const members = 20
 	a := make([]any, 0, members)
@@ -659,11 +660,11 @@ func TestTreeSetArraysDeterministicOrder(t *testing.T) {
 }
 
 // TestTreeArrayAlignmentIsMinimalAtScale extends the minimality property past the
-// sizes an exhaustive enumeration can reach. Arrays up to length 12 over four
-// symbols expose a degraded DP table that small inputs hide: a table that is
-// merely wrong rather than differently-tie-broken still finds a minimal path
-// through a handful of elements, but not through a dozen. The seed is fixed, so
-// a failure reproduces exactly.
+// sizes that an exhaustive enumeration can reach. Arrays up to length 12 over
+// four symbols expose a degraded DP table that small inputs hide. A table that is
+// wrong, rather than differently tie-broken, still finds a minimal path through a
+// handful of elements. It does not find one through a dozen. The seed is fixed,
+// so a failure reproduces exactly.
 func TestTreeArrayAlignmentIsMinimalAtScale(t *testing.T) {
 	rng := rand.New(rand.NewSource(20260720)) //nolint:gosec // deterministic test input, not security
 	for range 4000 {
@@ -708,7 +709,7 @@ func anySlice(xs []int) []any {
 
 // TestTreeStoredPathsAreIndependent pins that every stored Path is its own copy.
 // The walk appends path segments into a shared backing array, so a delta that
-// kept the shared slice would be rewritten by a later sibling. Depth two and
+// keeps the shared slice is rewritten by a later sibling. Depth two and
 // three siblings give the shared array spare capacity.
 func TestTreeStoredPathsAreIndependent(t *testing.T) {
 	t.Run("map siblings under a nested map", func(t *testing.T) {

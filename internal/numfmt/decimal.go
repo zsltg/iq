@@ -11,8 +11,8 @@ import (
 
 // DecimalMode chooses how a non-integer decimal value from a backend is presented
 // to the jq filter (and therefore to output). Because iq runs jq client-side, the
-// choice is made at normalization time — it changes what the filter computes on,
-// not just the printed form.
+// choice is made at normalization time. It changes what the filter computes on,
+// and not only the printed form.
 type DecimalMode int
 
 const (
@@ -23,14 +23,14 @@ const (
 	// DecimalNumber renders decimals as bare jq numbers (float64), convenient for
 	// arithmetic but lossy beyond float64's range.
 	DecimalNumber
-	// DecimalString renders decimals as jq strings holding the exact literal,
-	// precision-safe; a filter uses tonumber to compute.
+	// DecimalString renders decimals as jq strings holding the exact literal.
+	// It is precision-safe. A filter uses tonumber to compute.
 	DecimalString
 )
 
 // ParseDecimalMode resolves the --format.decimal flag value to a DecimalMode,
-// case-insensitively, returning an error that lists the valid values for anything
-// else so a bad flag fails fast at the CLI boundary.
+// case-insensitively. For anything else it returns an error that lists the valid
+// values, so a bad flag fails fast at the CLI boundary.
 func ParseDecimalMode(s string) (DecimalMode, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "auto":

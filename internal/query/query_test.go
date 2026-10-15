@@ -38,8 +38,8 @@ func TestRunnerForwardsArgsAndReturnsResult(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "hello", got)
 	require.Equal(t, []string{"GET", "greeting"}, store.gotArgs)
-	// The store's call must stay bounded by the caller's context; a substituted
-	// nil would silently unbound it.
+	// The store's call must stay bounded by the caller's context. A substituted
+	// nil silently unbounds it.
 	require.NotNil(t, store.gotCtx, "Query must receive a non-nil context")
 	require.Equal(t, "marker", store.gotCtx.Value(ctxMarker{}), "the caller's context must reach Query")
 }
@@ -63,7 +63,7 @@ func TestRunnerPropagatesStoreError(t *testing.T) {
 	require.ErrorContains(t, err, "boom")
 	require.ErrorContains(t, err, "GET", "the error should name the command for context")
 	require.Nil(t, got)
-	// Naming the command is done by wrapping, so the store's error has to stay
-	// reachable underneath; formatting it in reads the same and severs errors.Is.
+	// The code names the command by wrapping, so the store's error has to stay
+	// reachable underneath. Formatting it in reads the same and severs errors.Is.
 	require.ErrorIs(t, err, store.err, "the store error must stay unwrappable")
 }

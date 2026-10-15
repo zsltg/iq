@@ -7,9 +7,9 @@ import (
 	"github.com/itchyny/gojq"
 )
 
-// Combiner runs a jq program over named, in-memory inputs — the combine step of
-// a cross-source query, where each source's reduced result set is bound to a
-// variable. It holds no store: the per-source reads happen before it, and the
+// Combiner runs a jq program over named, in-memory inputs. This is the combine
+// step of a cross-source query, where each source's reduced result set is bound
+// to a variable. It holds no store: the per-source reads happen before it, and the
 // combine runs over a null input with the sources bound as variables.
 type Combiner struct{}
 
@@ -17,8 +17,8 @@ type Combiner struct{}
 func NewCombiner() *Combiner { return &Combiner{} }
 
 // Run compiles src with names bound to values (names include the leading "$",
-// matched positionally to values), runs it over a null input, and calls emit for
-// each produced value. A blank program, a parse or compile failure, or a jq
+// matched positionally to values). It runs src over a null input and calls emit
+// for each produced value. A blank program, a parse or compile failure, or a jq
 // runtime error is returned with context.
 func (*Combiner) Run(ctx context.Context, src string, names []string, values []any, emit func(v any) error) error {
 	if src == "" {

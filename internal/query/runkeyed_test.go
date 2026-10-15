@@ -38,15 +38,15 @@ func values(m map[string]any) []any {
 	return out
 }
 
-// TestRunKeyedMatchesRunPerPartition is the invariant the whole design rests on:
-// a streamable filter distributes over any partition of the input, so running it
-// against one single-entry root per item must give the same values as running it
-// over a page, or over the whole keyspace at once. If that ever stops holding,
-// keyed reads silently disagree with plain reads.
+// TestRunKeyedMatchesRunPerPartition is the invariant the whole design rests on.
+// A streamable filter distributes over any partition of the input. So running it
+// against one single-entry root per item must give the same values. Running it
+// over a page, or over the whole keyspace at once, gives those values too. If
+// that ever stops holding, keyed reads silently disagree with plain reads.
 //
-// Each residual exercises a construct that could plausibly reach past its own
-// element — an aggregate, a generator-consumer, a binding, a length — and none
-// of them may.
+// Each residual exercises a construct that can plausibly reach past its own
+// element: an aggregate, a generator-consumer, a binding, a length. None
+// of them is allowed to do so.
 func TestRunKeyedMatchesRunPerPartition(t *testing.T) {
 	keyspace := map[string]any{
 		"a": map[string]any{"n": 1, "tags": []any{"x", "y"}},
@@ -113,9 +113,9 @@ func TestRunKeyedProjectionKeepsKeys(t *testing.T) {
 	require.Equal(t, map[string]any{"a": map[string]any{"n": 1}}, got)
 }
 
-// TestRunKeyedRepeatedKeyOverwrites pins the weak scan guarantee: a keyspace
-// resized mid-scan may repeat a key across pages, and that must overwrite as a
-// plain read does, never look like one key fanning out into two values.
+// TestRunKeyedRepeatedKeyOverwrites pins the weak scan guarantee. A keyspace
+// resized mid-scan can repeat a key across pages. That must overwrite as a
+// plain read does, and never look like one key fanning out into two values.
 func TestRunKeyedRepeatedKeyOverwrites(t *testing.T) {
 	store := &fakeKV{
 		values:    map[string]any{"a": map[string]any{"n": 1}},
@@ -167,8 +167,8 @@ func TestRunKeyedBounded(t *testing.T) {
 }
 
 // TestRunKeyedBoundedDistinguishesAbsentFromNull is the case the KVStore
-// presence contract exists for: a key holding null is a value, a key that is not
-// there is not, and a keyed read must be able to tell them apart even though jq
+// presence contract exists for. A key holding null is a value. A key that is not
+// there is not. A keyed read must be able to tell them apart even though jq
 // renders both as null.
 func TestRunKeyedBoundedDistinguishesAbsentFromNull(t *testing.T) {
 	held, err := collectKeyed(t, &fakeKV{values: map[string]any{"a": nil}}, `.["a"]`, query.RunOptions{})
@@ -207,9 +207,9 @@ func TestRunKeyedRejectsUnkeyable(t *testing.T) {
 }
 
 // TestRunKeyedForwardsCtx pins that the caller's context reaches the store on
-// both routes. A keyed read is the one a diff makes, and a diff is bounded by
-// --timeout; a dropped context there would turn a bounded read into an
-// unbounded one that no test would otherwise notice.
+// both routes. A keyed read is the one a diff makes, and --timeout bounds a
+// diff. A dropped context there turns a bounded read into an
+// unbounded one that no test otherwise notices.
 func TestRunKeyedForwardsCtx(t *testing.T) {
 	ctx := context.WithValue(context.Background(), ctxMarker{}, "marker")
 
@@ -246,7 +246,7 @@ func TestRunKeyedRejectsEmptyExpression(t *testing.T) {
 }
 
 // TestRunKeyedPushesPredicate pins that a keyed read still narrows the scan at
-// the store: filtering inside a keyed read is meant to read less, not merely
+// the store. Filtering inside a keyed read is meant to read less, and not only
 // report less.
 func TestRunKeyedPushesPredicate(t *testing.T) {
 	store := &filterKV{

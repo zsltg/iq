@@ -8,10 +8,10 @@ import (
 )
 
 // ConvertNumbers walks a value decoded from JSON with json.Number tokens (a
-// decoder configured with UseNumber), converting every json.Number to its
-// precision-aware Go form and leaving other values untouched, recursing into
+// decoder configured with UseNumber). It converts every json.Number to its
+// precision-aware Go form, leaves other values untouched, and recurses into
 // objects and arrays. The adapters that decode JSON documents (Redis, CouchDB,
-// Elasticsearch) share it so a number is normalized identically everywhere.
+// Elasticsearch) share it, so a number is normalized identically everywhere.
 func ConvertNumbers(v any, mode DecimalMode) any {
 	switch t := v.(type) {
 	case json.Number:
@@ -32,15 +32,15 @@ func ConvertNumbers(v any, mode DecimalMode) any {
 }
 
 // ConvertNumber resolves one JSON number token. An integer (no '.', 'e', or 'E')
-// is always exact: an int when it fits, else a *big.Int — gojq does exact
-// arithmetic on both, so integers are never lossy regardless of the mode. The
+// is always exact: an int when it fits, else a *big.Int. gojq does exact
+// arithmetic on both. So integers are never lossy regardless of the mode. The
 // literal -0 is the float64 negative zero, the one integer an int cannot hold. A
 // fractional number is a float64 in auto and number mode, or its exact literal
 // string in string mode.
 func ConvertNumber(n json.Number, mode DecimalMode) any {
 	s := n.String()
-	// -0 is the one integer literal that an int cannot hold: it would become 0,
-	// and a dump of that value would then read back without its sign. Keep it as
+	// -0 is the one integer literal that an int cannot hold. An int turns -0
+	// into 0, and a dump of that int reads back without the sign. Keep it as
 	// the float64 negative zero, as jq does.
 	if s == "-0" {
 		return math.Copysign(0, -1)

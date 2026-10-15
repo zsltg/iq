@@ -14,24 +14,24 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// discardLogger is the no-op logger the engine uses when RunOptions carries none, so no
-// log point needs a nil guard. slog is a stdlib type, so logging keeps the core free of
-// any driver or CLI framework.
+// discardLogger is the no-op logger the engine uses when RunOptions carries none,
+// so no log point needs a nil guard. The slog type is in the standard library,
+// so logging keeps the core free of any driver or CLI framework.
 var discardLogger = slog.New(slog.DiscardHandler)
 
 // ErrEmptyExpression is returned when Run is called with a blank jq expression.
 var ErrEmptyExpression = errors.New("empty expression: expected a jq filter")
 
-// ErrScanNotAllowed is returned when an expression can only be answered by
-// materializing the whole keyspace in memory but the caller did not permit an
-// unbounded read. The message names no flag so the core stays independent of the
-// CLI; the caller translates it into whatever opt-in it exposes.
+// ErrScanNotAllowed is returned when an expression needs the whole keyspace in
+// memory and the caller did not permit an unbounded read.
+// The message names no flag, so the core stays independent of the CLI. The
+// caller translates it into whatever opt-in it exposes.
 var ErrScanNotAllowed = errors.New("query requires materializing the whole dataset")
 
 // ErrNotKeyed is returned by RunKeyed for an expression whose output cannot be
-// attributed to a key: one that collapses the keyspace into a single value, or
-// one bounded to several keys at once. The message names no flag so the core
-// stays independent of the CLI.
+// attributed to a key. Two kinds of expression fail this way. One collapses the
+// keyspace into a single value. The other is bounded to several keys at once.
+// The message names no flag, so the core stays independent of the CLI.
 var ErrNotKeyed = errors.New("expression does not keep each item's key")
 
 // ErrMultiValued is returned by RunKeyed when a filter emits more than one value
@@ -40,8 +40,8 @@ var ErrNotKeyed = errors.New("expression does not keep each item's key")
 var ErrMultiValued = errors.New("filter emits multiple values for one key")
 
 // KVStore is the port the jq use case depends on. A driver adapter implements
-// it; the core never imports a concrete driver. The jq expression names the keys
-// to read, so the store fetches a caller-supplied, bounded set with Get, or
+// it, and the core never imports a concrete driver. The jq expression names the
+// keys to read. The store fetches a caller-supplied, bounded set with Get, or
 // walks the whole keyspace in pages with ScanBatches.
 type KVStore interface {
 	// Get fetches the named keys and returns a map from key to its value normalized as
@@ -51,8 +51,8 @@ type KVStore interface {
 	// caller deduplicates the keys.
 	Get(ctx context.Context, keys []string) (map[string]any, error)
 	// ScanBatches walks the whole keyspace, invoking fn with each page of
-	// {key: value} as it is fetched, so a streaming caller never holds more than
-	// one page in memory. A page may repeat a key if the keyspace is resized
+	// {key: value} as it is fetched. A streaming caller never holds more than
+	// one page in memory. A page can repeat a key if the keyspace is resized
 	// mid-scan (the store's weak scan guarantee). It stops and returns the first
 	// error from fn or the store.
 	ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error
@@ -73,38 +73,40 @@ type FilteredScanner interface {
 	ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error
 }
 
-// Estimator is an optional capability a KVStore can implement: a cheap, approximate
-// count of the items that a full unfiltered scan will walk. A CLI adapter uses it to
-// show the running scan count against a rough total. The call must be cheap (a metadata
-// read, not a scan or a second query pass), so a store that can only answer by scanning
-// does not implement it. The count is a hint. It can be stale and can drift as the
-// keyspace changes during the scan. It is meaningful only for an unfiltered scan, which
-// is the only case where the engine requests it. A pushed-down filtered scan walks
-// fewer items than the whole keyspace.
+// Estimator is an optional capability a KVStore can implement: a cheap,
+// approximate count of the items that a full unfiltered scan will walk. A CLI
+// adapter uses it to show the running scan count against a rough total. The call
+// must be cheap (a metadata read, not a scan or a second query pass). A store
+// that can only answer by scanning does not implement it. The count is a hint.
+// It can be stale and can drift as the keyspace changes during the scan. It is
+// meaningful only for an unfiltered scan, which is the only case where the
+// engine requests it. A pushed-down filtered scan walks fewer items than the
+// whole keyspace.
 type Estimator interface {
 	EstimateCount(ctx context.Context) (int64, error)
 }
 
-// SourceOpener resolves a named source to a KVStore, so the in-filter
-// source(name; filter) function can read from sources other than the primary.
-// The CLI implements it over the source registry; the core stays driver-agnostic.
+// SourceOpener resolves a named source to a KVStore. The in-filter
+// `source(name; filter)` function uses it to read from sources other than the
+// primary. The CLI implements it over the source registry. The core stays
+// driver-agnostic.
 type SourceOpener interface {
 	Open(ctx context.Context, name string) (KVStore, error)
 }
 
 // RunOptions carries the per-run policy flags. Unbounded permits materializing
-// the whole dataset in memory; Compile asks the engine to push a filter's
+// the whole dataset in memory. Compile asks the engine to push a filter's
 // predicate to the store when it can. OnPage, when non-nil, is called once per
 // scanned page with the page's item count, so a CLI adapter can report scan
-// progress; the core stays UI-agnostic (it only ever calls a plain func).
+// progress. The core stays UI-agnostic because it only ever calls a plain func.
 type RunOptions struct {
 	Unbounded bool
 	Compile   bool
 	OnPage    func(n int)
 	// OnEstimate, when non-nil, is called at most once before an unfiltered scan
 	// starts with a cheap approximate item count, when the store is an Estimator.
-	// It is a best-effort hint for a progress display: it never fires for a
-	// bounded read or a pushed-down filtered scan, and a store that cannot
+	// It is a best-effort hint for a progress display. It never fires for a
+	// bounded read or a pushed-down filtered scan. A store that cannot
 	// estimate cheaply leaves it uncalled. The core stays UI-agnostic.
 	OnEstimate func(n int64)
 	// Logger, when non-nil, receives the engine's structured records: a DEBUG
@@ -116,7 +118,7 @@ type RunOptions struct {
 }
 
 // logger returns the run's logger, or the shared discard logger when none was
-// set, so every log point is nil-safe without a guard at the call site.
+// set. Every log point is then nil-safe without a guard at the call site.
 func (o RunOptions) logger() *slog.Logger {
 	if o.Logger != nil {
 		return o.Logger
@@ -125,8 +127,8 @@ func (o RunOptions) logger() *slog.Logger {
 }
 
 // JQEngine runs a jq expression against a KVStore. The expression is both the
-// key selector and the transform: its root-level paths name the keys to fetch,
-// then the same expression runs client-side over the assembled {key: value}
+// key selector and the transform. Its root-level paths name the keys to fetch.
+// Then the same expression runs client-side over the assembled {key: value}
 // object. Keeping the filter fully client-side makes the semantics identical for
 // any backend behind the KVStore port.
 type JQEngine struct {
@@ -171,13 +173,13 @@ func (e *JQEngine) Run(ctx context.Context, src string, opts RunOptions, emit fu
 	case keys.Streamable && !opts.Unbounded:
 		scan, pushed := e.scanner(q, opts)
 		// A pushed-down filter walks a subset of the keyspace, so a whole-keyspace
-		// estimate would overshoot; only an unfiltered scan gets a total.
+		// estimate overshoots. Only an unfiltered scan gets a total.
 		if !pushed {
 			e.estimate(ctx, opts.OnEstimate)
 		}
 		return e.runStreaming(ctx, code, scan, opts.OnPage, emit)
 	case !opts.Unbounded:
-		// A holistic scan has no batched form; it must materialize, which the
+		// A holistic scan has no batched form. It must materialize, which the
 		// caller has not permitted.
 		return ErrScanNotAllowed
 	default:
@@ -189,9 +191,9 @@ func (e *JQEngine) Run(ctx context.Context, src string, opts RunOptions, emit fu
 
 // scanner picks how the streamable pages are produced and reports whether it
 // pushed a filter down. With Compile set, a pushable predicate and a store that
-// supports FilteredScanner let the store pre-filter (returns true); otherwise it
+// supports FilteredScanner let the store pre-filter (returns true). Otherwise it
 // is a plain full scan (returns false). Either way the full filter re-runs per
-// page, so the choice only affects how much the store returns; the bool also
+// page, so the choice only affects how much the store returns. The bool also
 // tells Run whether a whole-keyspace estimate is a valid total for the scan.
 func (e *JQEngine) scanner(q *gojq.Query, opts RunOptions) (func(context.Context, func(map[string]any) error) error, bool) {
 	log := opts.logger()
@@ -235,28 +237,29 @@ func (e *JQEngine) estimate(ctx context.Context, onEstimate func(int64)) {
 	onEstimate(n)
 }
 
-// RunKeyed runs src the way Run does but keeps each output attached to the key it came
-// from, calling emit once per surviving key. A keyed comparison needs this read: a diff
-// matches items by key, and Run's value stream has dropped the key by the time it
-// emits.
+// RunKeyed runs src the way Run does but keeps each output attached to the key
+// it came from, calling emit once per surviving key. A keyed comparison needs
+// this read. A diff matches items by key, and Run's value stream has dropped the
+// key by the time it emits.
 //
 // It routes two ways, and both preserve the key:
-//   - streamable (`.[]`-rooted): the whole expression runs against a single-entry
-//     root per item, page by page. A streamable filter distributes over any partition
-//     of the input, and one element is a partition, so the result equals a whole-
-//     keyspace run. With Compile, a pushable predicate still pre-filters at the
-//     store.
-//   - key-bounded naming exactly one key: the store fetches the key, and the whole
-//     expression runs against it, so `.["k"].field` projects as written. A key the
-//     store does not have emits nothing, so a diff can say removed and not changed-
-//     to-null.
+//   - Streamable (`.[]`-rooted): the whole expression runs against a single-entry
+//     root per item, page by page. A streamable filter distributes over any
+//     partition of the input, and one element is a partition. So the result
+//     equals a whole-keyspace run. With Compile, a pushable predicate still
+//     pre-filters at the store.
+//   - Key-bounded, naming exactly one key: the store fetches the key. The whole
+//     expression runs against it, so `.["k"].field` projects as written. A key
+//     the store does not have emits nothing. So a diff can say removed and not
+//     changed-to-null.
 //
-// Anything else returns ErrNotKeyed. A holistic filter collapses the keyspace into one
-// value with no key to attribute it to. A bounded filter that names several keys yields
-// one output over several candidate keys, and no attribution rule can settle that.
+// Anything else returns ErrNotKeyed. A holistic filter collapses the keyspace
+// into one value with no key to attribute it to. A bounded filter that names
+// several keys yields one output over several candidate keys. No attribution
+// rule can settle that.
 //
-// A filter that emits more than one value for a key is an error, not a silent pick,
-// because a keyed set holds one value per key.
+// A filter that emits more than one value for a key is an error, not a silent
+// pick. A keyed set holds one value per key.
 func (e *JQEngine) RunKeyed(ctx context.Context, src string, opts RunOptions, emit func(key string, v any) error) error {
 	if src == "" {
 		return ErrEmptyExpression
@@ -314,9 +317,9 @@ func (e *JQEngine) RunKeyed(ctx context.Context, src string, opts RunOptions, em
 }
 
 // emitKeyed runs code over the single-entry root {key: value} and forwards the
-// one value it produces. Zero outputs means the filter dropped the item; more
-// than one means the filter fans a single key out into several values, which a
-// keyed set cannot hold, so it is refused with the key named.
+// one value it produces. Zero outputs means the filter dropped the item. More
+// than one means the filter fans a single key out into several values. A keyed
+// set cannot hold that, so it is refused with the key named.
 func emitKeyed(ctx context.Context, code *gojq.Code, key string, value any, emit func(string, any) error) error {
 	var out any
 	n := 0
@@ -383,8 +386,8 @@ func (e *JQEngine) runMaterialized(ctx context.Context, code *gojq.Code, onPage 
 }
 
 // runCode drives the compiled iterator, forwarding each value to emit. gojq
-// signals a runtime error by yielding an error value, which is wrapped and
-// returned; the context bounds the run.
+// signals a runtime error by yielding an error value. The code wraps that error
+// and returns it. The context bounds the run.
 func runCode(ctx context.Context, code *gojq.Code, root map[string]any, emit func(v any) error) error {
 	iter := code.RunWithContext(ctx, root)
 	for {

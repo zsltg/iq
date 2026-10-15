@@ -6,9 +6,9 @@ import (
 	"math/rand"
 )
 
-// docShape names the three synthetic document sizes the benchmarks sweep, so a
-// benchmark can report cost against a realistic spread of payload sizes rather
-// than one arbitrary document.
+// docShape names the three synthetic document sizes the benchmarks sweep. A
+// benchmark can then report cost against a realistic spread of payload sizes
+// rather than one arbitrary document.
 type docShape int
 
 const (
@@ -57,9 +57,9 @@ func benchDocCount(shape docShape) int {
 }
 
 // genCorpus builds a deterministic slice of documents for a shape at a match rate.
-// The seed is fixed so a run is repeatable — no wall-clock or global-rand
-// nondeterminism — and matches are spread evenly across the slice (not clustered
-// at the front) via a floor-step so the count is exactly round(n*rate). Each
+// The seed is fixed, so a run is repeatable with no wall-clock or global-rand
+// nondeterminism. A floor-step spreads the matches evenly across the slice (not
+// clustered at the front), so the count is exactly round(n*rate). Each
 // document is a plain map[string]any of Go-native scalars, the same shape a decode
 // followed by numfmt normalization produces.
 func genCorpus(shape docShape, n int, rate float64) []map[string]any {
@@ -79,9 +79,9 @@ func genCorpus(shape docShape, n int, rate float64) []map[string]any {
 }
 
 // genDoc builds one document of the given shape. It always carries a top-level
-// "status" field ("active" when match, else "inactive") so the pre-filter can
-// extract it from raw bytes, plus a spread of scalar, nested, and array fields to
-// exercise the number-conversion and decode paths.
+// "status" field ("active" when match, else "inactive"). The pre-filter can then
+// extract it from raw bytes. The document also holds a spread of scalar, nested,
+// and array fields to exercise the number-conversion and decode paths.
 func genDoc(rng *rand.Rand, shape docShape, match bool) map[string]any {
 	status := "inactive"
 	if match {
@@ -140,7 +140,7 @@ func genDoc(rng *rand.Rand, shape docShape, match bool) map[string]any {
 	return doc
 }
 
-// randAlphabet is the alphabet randString draws from; it stays ASCII so encoded
+// randAlphabet is the alphabet randString draws from. It stays ASCII so encoded
 // sizes are predictable.
 const randAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 

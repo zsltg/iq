@@ -1,9 +1,9 @@
 // Package pushdown compiles the predicate of a jq select(...) filter into a
-// backend-neutral predicate, so a backend can pre-filter on the server and not stream
+// backend-neutral predicate. So a backend can pre-filter on the server and not stream
 // its whole collection. It extracts only what is provably a conservative *superset* of
-// the jq semantics. The caller always re-runs the full jq client-side, which can strip
-// extra results but cannot recover missing ones. The client-side pass handles
-// everything that the compiler cannot prove.
+// the jq semantics. The caller always re-runs the full jq client-side. That pass can
+// strip extra results but cannot recover missing ones. It also handles everything that
+// the compiler cannot prove.
 package pushdown
 
 import (
@@ -16,11 +16,11 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// Compile returns a superset equality predicate for a streamable `.[]`-rooted
-// filter's select(...) stages, or ok=false when nothing can be pushed. Multiple
-// selects are ANDed; a select whose predicate cannot be compiled is dropped
-// (widening the result, still a superset). Only the selects that test the element
-// itself count (see elementSelects).
+// Compile returns a superset equality predicate for the select(...) stages of a
+// streamable `.[]`-rooted filter, or ok=false when nothing can be pushed. Multiple
+// selects are ANDed. A select whose predicate cannot be compiled is dropped (widening
+// the result, still a superset). Only the selects that test the element itself count
+// (see elementSelects).
 func Compile(q *gojq.Query) (predicate.Node, bool) {
 	if !selector.Keys(q).Streamable || shadowsAny(q) {
 		return nil, false
@@ -42,13 +42,13 @@ func Compile(q *gojq.Query) (predicate.Node, bool) {
 }
 
 // elementSelects returns the arguments of the select(...) stages that test the element
-// itself. stages[0] must be a bare `.[]` (or `.[]?`): a head such as `.[].b` already
+// itself. stages[0] must be a bare `.[]` (or `.[]?`). A head such as `.[].b` already
 // hands a derived value to the next stage. The element reaches a stage unchanged only
 // through select(...) and identity (`.`) stages, so the walk stops at the first other
-// stage. A select after `.b`, `map(...)` or `{b: .a}` tests a derived value, and a
-// predicate on the element drops an element that the filter keeps. The selects
-// before that stage hold for every element that reaches the output, so their predicates
-// stay a superset.
+// stage. A select after `.b`, `map(...)` or `{b: .a}` tests a derived value. A
+// predicate on the element drops an element that the filter keeps. The selects before
+// that stage hold for every element that reaches the output, so their predicates stay a
+// superset.
 func elementSelects(stages []*gojq.Query) []*gojq.Query {
 	if head := stages[0].String(); head != ".[]" && head != ".[]?" {
 		return nil
@@ -73,10 +73,9 @@ func isIdentity(s *gojq.Query) bool {
 	return s.Term != nil && s.Term.Type == gojq.TermTypeIdentity && len(s.Term.SuffixList) == 0
 }
 
-// pipeStages flattens a pipe chain into its stages in order, so
-// `.[] | select(a) | .b` becomes [`.[]`, `select(a)`, `.b`]. gojq builds pipes
-// right-associatively (`a | b | c` == `a | (b | c)`), so the chain descends the
-// right operand.
+// pipeStages flattens a pipe chain into its stages in order. So `.[] | select(a) | .b`
+// becomes [`.[]`, `select(a)`, `.b`]. The gojq library builds pipes right-associatively
+// (`a | b | c` == `a | (b | c)`), so the chain descends the right operand.
 func pipeStages(q *gojq.Query) []*gojq.Query {
 	if q.Op == gojq.OpPipe {
 		return append([]*gojq.Query{q.Left}, pipeStages(q.Right)...)
@@ -103,15 +102,15 @@ func selectArg(s *gojq.Query) (*gojq.Query, bool) {
 }
 
 // extractPred builds a superset predicate from a select's boolean expression, or
-// ok=false when it is not one we push. An and may drop an uncompilable conjunct
-// (widening); an or must compile every branch (dropping one would lose matches).
+// ok=false when it is not one we push. An and can drop an uncompilable conjunct
+// (widening). An or must compile every branch, because dropping one loses matches.
 func extractPred(e *gojq.Query) (predicate.Node, bool) {
 	// Unwrap a parenthesized sub-expression, which a piped clause needs when
 	// combined (`.a == 1 and (.name | test("x"))`).
 	if inner, ok := parenQuery(e); ok {
 		return extractPred(inner)
 	}
-	// A bare builtin fed the document itself, i.e. has("field").
+	// A bare builtin fed the document itself, for example has("field").
 	if f, ok := bareFunc(e); ok {
 		return existsFrom(nil, f)
 	}
@@ -136,8 +135,8 @@ func extractPred(e *gojq.Query) (predicate.Node, bool) {
 	}
 }
 
-// negatedPipe returns the pipe before a trailing `| not` stage, or ok=false when
-// e does not end in a `not` stage after at least one other stage.
+// negatedPipe returns the pipe before a trailing `| not` stage. It returns ok=false
+// when e does not end in a `not` stage after at least one other stage.
 func negatedPipe(e *gojq.Query) (*gojq.Query, bool) {
 	stages := pipeStages(e)
 	n := len(stages)
@@ -204,10 +203,10 @@ func compareAtom(e *gojq.Query) (predicate.Node, bool) {
 	}
 }
 
-// cmpAtom builds a Cmp from a `path OP literal` comparison. When the path is on
-// the right (`literal OP path`), the operator is flipped so Value stays on the
-// right. Only number and string literals are pushed — a range against a boolean
-// or null has no useful type-order superset.
+// cmpAtom builds a Cmp from a `path OP literal` comparison. When the path is on the
+// right (`literal OP path`), the operator is flipped so Value stays on the right. Only
+// number and string literals are pushed. A range against a boolean or null has no
+// useful type-order superset.
 func cmpAtom(op predicate.Op, a, b *gojq.Query) (predicate.Node, bool) {
 	path, v, flipped, ok := pathAndLiteral(a, b, rangeLiteral)
 	if !ok {
@@ -312,10 +311,10 @@ func elemMatchFrom(path []string, f *gojq.Func) (predicate.Node, bool) {
 	return predicate.ElemMatch{Path: path, Cond: cond}, true
 }
 
-// regexFrom builds a Regex for `path | test(pattern[; flags])`. It is only pushed
-// when the pattern uses a subset of regex syntax every engine interprets
-// identically (see portableRegex), so the push stays exactly equivalent to jq's
-// own Oniguruma engine.
+// regexFrom builds a Regex for `path | test(pattern[; flags])`. It is pushed only when
+// the pattern uses a subset of regex syntax that every engine interprets identically
+// (see portableRegex). So the push stays exactly equivalent to jq's own Oniguruma
+// engine.
 func regexFrom(path []string, f *gojq.Func) (predicate.Node, bool) {
 	if len(f.Args) < 1 || len(f.Args) > 2 {
 		return nil, false
@@ -334,9 +333,9 @@ func regexFrom(path []string, f *gojq.Func) (predicate.Node, bool) {
 	return predicate.Regex{Path: path, Pattern: pattern, Flags: flags}, true
 }
 
-// existsFrom builds an Exists for has("key"): the field key exists under base
-// (empty base means the document root). A key containing a dot is not pushed, as
-// a backend joining the path with dots would read it as a nested path.
+// existsFrom builds an Exists for has("key"): the field key exists under base (empty
+// base means the document root). A key containing a dot is not pushed, because a
+// backend that joins the path with dots reads it as a nested path.
 func existsFrom(base []string, f *gojq.Func) (predicate.Node, bool) {
 	if f.Name != "has" || len(f.Args) != 1 {
 		return nil, false
@@ -435,9 +434,9 @@ func parenQuery(q *gojq.Query) (*gojq.Query, bool) {
 }
 
 // negate pushes `inner | not`. Negating a superset yields a subset that silently drops
-// matching documents, so the superset-and-re-run safety net does not apply. negate
-// extracts inner through extractExact, which never widens, and pushes only equality,
-// existence, or an any() over an exact condition.
+// matching documents. So the superset-and-re-run safety net does not apply. It extracts
+// inner through extractExact, which never widens. It pushes only equality, existence,
+// or an any() over an exact condition.
 func negate(inner *gojq.Query) (predicate.Node, bool) {
 	p, ok := extractExact(inner)
 	if !ok {
@@ -457,8 +456,8 @@ func negate(inner *gojq.Query) (predicate.Node, bool) {
 
 // extractExact builds a predicate that represents e *exactly*, never a widened
 // superset, or returns ok=false if none exists. It is the negation-safe counterpart of
-// extractPred. extractPred can drop an uncompilable conjunct of an `and`, which is safe
-// positively because the client re-runs jq, but negating that widened result yields a
+// extractPred. extractPred can drop an uncompilable conjunct of an `and`. This is safe
+// positively, because the client re-runs jq. But negating that widened result yields a
 // subset that drops matching documents. Only positive equality, existence, an any()
 // over an exact condition, and an and/or of those are exact. A range, regex, !=, size,
 // or a widened `and` is not.
@@ -493,8 +492,8 @@ func extractExact(e *gojq.Query) (predicate.Node, bool) {
 	}
 }
 
-// exactPipe extracts the exact predicate of a `path | builtin` expression, the
-// only pipe forms that stay exact under negation: has(key) existence, or an
+// exactPipe extracts the exact predicate of a `path | builtin` expression. These are
+// the only pipe forms that stay exact under negation: has(key) existence, or an
 // any(cond) whose element condition is itself exact.
 func exactPipe(pathQ, rhs *gojq.Query) (predicate.Node, bool) {
 	path, ok := pathOf(pathQ)
@@ -594,9 +593,9 @@ func portableRegex(p string) bool {
 	i := 0
 	for i < len(p) {
 		if p[i] == '\\' {
-			// A backslash must be followed by a portable escape; the pair is
-			// consumed together. Explicit advancement (rather than a loop-post
-			// increment) keeps a bad index step a panic, not an infinite loop.
+			// A backslash must be followed by a portable escape. The pair is consumed
+			// together. Explicit advancement (rather than a loop-post increment) keeps
+			// a bad index step a panic, not an infinite loop.
 			if !escapeOK(p, i) {
 				return false
 			}
@@ -641,12 +640,12 @@ func badPair(p string, i int) bool {
 // portableEscape reports whether a backslash escape means the same, or a superset,
 // across engines. Pushing it must never drop a document that jq keeps. The ASCII
 // shorthand classes and word boundaries qualify, except \S. Go's RE2 \s omits the
-// vertical tab (U+000B) that PCRE's \s includes, so RE2's \S matches a vertical tab
-// that PCRE's \S does not. Pushing \S to a PCRE backend narrows the match. \s
-// diverges the other way (the pushed set is a superset), which the client-side re-run
-// corrects, so it stays. An escaped punctuation character is a literal and qualifies. A
-// digit (backreference) or any other letter (engine-specific, for example \p, \h, \A)
-// does not.
+// vertical tab (U+000B) that PCRE's \s includes. So RE2's \S matches a vertical tab
+// that PCRE's \S does not. Pushing \S to a PCRE backend narrows the match. \s diverges
+// the other way (the pushed set is a superset). The client-side re-run corrects that,
+// so \s stays. An escaped punctuation character is a literal and qualifies. A digit
+// (backreference) or any other letter (engine-specific, for example \p, \h, \A) does
+// not.
 func portableEscape(b byte) bool {
 	switch b {
 	case 'd', 'D', 'w', 'W', 's', 'b', 'B', 'n', 't', 'r', 'f', 'v':
@@ -678,9 +677,9 @@ func eqAtom(a, b *gojq.Query) (predicate.Node, bool) {
 	return predicate.Eq{Path: path, Value: v}, true
 }
 
-// pathOf returns the field path of a plain relative index expression (`.a`,
-// `.a.b`, `.["a"]`), or ok=false for anything with iteration, a computed index,
-// or extra operators.
+// pathOf returns the field path of a plain relative index expression (`.a`, `.a.b`,
+// `.["a"]`). It returns ok=false for anything with iteration, a computed index, or
+// extra operators.
 func pathOf(q *gojq.Query) ([]string, bool) {
 	path := rawPath(q)
 	if path == nil {
@@ -694,8 +693,8 @@ func pathOf(q *gojq.Query) ([]string, bool) {
 	return path, true
 }
 
-// rawPath returns the field path of a plain relative index expression, like pathOf
-// but without the safeField gate, so declineReason can name the exact component
+// rawPath returns the field path of a plain relative index expression. It works like
+// pathOf but without the safeField gate, so declineReason can name the exact component
 // that made the path unsafe. It returns nil for anything with iteration, a computed
 // index, or extra operators.
 func rawPath(q *gojq.Query) []string {
@@ -734,10 +733,10 @@ func suffixName(s *gojq.Suffix) (string, bool) {
 }
 
 // safeField reports whether a field name is safe to push as a backend path component.
-// It rejects a name that contains a dot, because a backend that joins the path with
-// dots (Mongo) reads it as a nested path and queries the wrong field. It rejects a name
-// that begins with '$', because it lands in operator position in a document-query
-// backend (Mongo's `$where` or `$expr`, a CouchDB Mango selector key) and turns an
+// It rejects a name that contains a dot. A backend that joins the path with dots
+// (Mongo) reads such a name as a nested path and queries the wrong field. It rejects a
+// name that begins with '$'. Such a name lands in operator position in a document-query
+// backend (Mongo's `$where` or `$expr`, a CouchDB Mango selector key). It turns an
 // unsanitized field name into a server-side operator. The client-side pass handles such
 // fields.
 func safeField(name string) bool {

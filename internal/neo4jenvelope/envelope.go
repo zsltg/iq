@@ -8,7 +8,7 @@ package neo4jenvelope
 
 const (
 	// FieldID is a node's or relationship's identity. The live driver stores its
-	// elementId; the APOC-JSON reader stores the export's numeric id.
+	// elementId. The APOC-JSON reader stores the numeric id of the export.
 	FieldID = "_id"
 	// FieldLabels is a node's label list.
 	FieldLabels = "_labels"

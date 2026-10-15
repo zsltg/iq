@@ -10,10 +10,11 @@ import (
 )
 
 // ModeWarning returns a warning when the config file holds an inline password
-// and other users can access it (a mode wider than 0600), or "" when there is
-// nothing to report. Save writes the file with mode 0600, but an editor or a copy
-// can widen it. A file that cannot be read or parsed gives no warning: Load
-// reports that error. Windows has no such mode bits (modewarning_windows.go).
+// and other users can access it (a mode wider than 0600). It returns "" when
+// there is nothing to report. Save writes the file with mode 0600, but an editor
+// or a copy can widen it. A file that cannot be read or parsed gives no warning,
+// because Load reports that error. Windows has no such mode bits
+// (modewarning_windows.go).
 func ModeWarning() string {
 	p, err := Path()
 	if err != nil {
@@ -31,8 +32,8 @@ func ModeWarning() string {
 		p, info.Mode().Perm(), shellQuote(p))
 }
 
-// shellQuote returns s as one POSIX shell word, so a suggested command works for
-// a path with spaces (the default macOS config path has one) or quotes.
+// shellQuote returns s as one POSIX shell word, so a suggested command works
+// for a path with spaces or quotes. The default macOS config path has a space.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
@@ -49,11 +50,11 @@ func (c *Config) hasInlinePassword() bool {
 	return false
 }
 
-// hasPassword reports whether raw has a password in its userinfo. A URL that
-// net/url rejects (a bad escape, for example) can still hold a password, so it
-// falls back to a plain scan: text before the last "@" of the authority part
-// that contains a ":". The fallback can report a password that is not there,
-// which only adds a warning, and it never misses one.
+// hasPassword reports whether raw has a password in its userinfo. A URI that
+// net/url rejects (a bad escape, for example) can still hold a password. So it
+// falls back to a plain scan. The scan looks at the text before the last "@" of
+// the authority part and checks that it contains a ":". The fallback can report a
+// password that is not there, which only adds a warning. It never misses one.
 func hasPassword(raw string) bool {
 	if u, err := url.Parse(raw); err == nil {
 		_, ok := u.User.Password() // nil-safe: no user info has no password

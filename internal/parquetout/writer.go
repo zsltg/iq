@@ -18,9 +18,9 @@ import (
 )
 
 // Writer streams normalized values to Parquet. It buffers the first
-// sampleBufferSize values to infer the schema, then writes one record batch per
-// page so memory stays bounded to a single page after the sample drains. Add
-// each value in order; Close writes the final page and the file footer. It is
+// sampleBufferSize values to infer the schema. Then it writes one record batch
+// per page, so memory stays bounded to a single page after the sample drains. Add
+// each value in order. Close writes the final page and the file footer. It is
 // not safe for concurrent use.
 type Writer struct {
 	w       io.Writer
@@ -40,8 +40,8 @@ func NewWriter(w io.Writer) *Writer {
 	return &Writer{w: w, mem: memory.NewGoAllocator()}
 }
 
-// Add encodes one value as a row. Until the sample fills it only buffers; the
-// schema is inferred and the first page written once the buffer is full.
+// Add encodes one value as a row. Until the sample fills, it only buffers. Once
+// the buffer is full, the schema is inferred and the first page is written.
 func (pw *Writer) Add(v any) error {
 	if !pw.started {
 		pw.sample = append(pw.sample, v)
@@ -54,9 +54,9 @@ func (pw *Writer) Add(v any) error {
 }
 
 // Close writes any buffered sample and the final partial page, then closes the
-// Parquet file. Calling it on a Writer that never saw sampleBufferSize values
-// infers the schema from the partial (or empty) sample first, so a short or
-// empty result still produces a valid file.
+// Parquet file. If the Writer never saw sampleBufferSize values, Close infers
+// the schema from the partial (or empty) sample first. So a short or empty
+// result still produces a valid file.
 func (pw *Writer) Close() error {
 	if !pw.started {
 		if err := pw.start(); err != nil {
@@ -72,9 +72,9 @@ func (pw *Writer) Close() error {
 	return nil
 }
 
-// start infers the schema from the buffered sample, opens the Parquet writer
-// with the Arrow schema stored under ARROW:schema (WithStoreSchema) so exact
-// types round-trip, then drains the sample through the encoder.
+// start infers the schema from the buffered sample. It opens the Parquet writer
+// with the Arrow schema stored under ARROW:schema (WithStoreSchema), so exact
+// types round-trip. Then it drains the sample through the encoder.
 func (pw *Writer) start() error {
 	p := inferPlan(pw.sample)
 	fw, err := pqarrow.NewFileWriter(
@@ -113,7 +113,7 @@ func (pw *Writer) encodeRow(v any) error {
 }
 
 // appendRow appends one value to the column builders. A single-value plan
-// appends the whole value to the one column; otherwise each column reads its
+// appends the whole value to the one column. Otherwise each column reads its
 // field from the value, which must be an object.
 func (pw *Writer) appendRow(v any) error {
 	if pw.plan.singleValue {
@@ -148,9 +148,9 @@ func (pw *Writer) flushPage() error {
 }
 
 // appendVal appends v to builder b following the encoder plan e. A nil value is
-// a null in every column (Arrow's validity bitmap); a value that does not fit
-// the inferred column type fails the export, naming the path — the exact-round-
-// trip ethos, never a silent coercion.
+// a null in every column (Arrow's validity bitmap). A value that does not fit
+// the inferred column type fails the export and names the path. This keeps the
+// exact round trip and never coerces silently.
 func appendVal(b array.Builder, e *enc, v any, path string) error {
 	if v == nil {
 		b.AppendNull()
@@ -200,9 +200,9 @@ func appendScalar(b array.Builder, e *enc, v any, path string) error {
 	}
 }
 
-// scalar describes one leaf column type: the Arrow type name that a mismatch
-// error shows, and how to convert a normalized value to the Go type T that the
-// column builder takes.
+// scalar describes one leaf column type. It holds two things. One is the
+// Arrow type name that a mismatch error shows. The other is how to convert a
+// normalized value to the Go type T that the column builder takes.
 type scalar[T any] struct {
 	arrow string
 	conv  func(any) (T, bool)
@@ -239,7 +239,7 @@ func appendJSON(b array.Builder, v any, path string) error {
 	if err != nil {
 		return fmt.Errorf("parquet: encode %q as json: %w", path, err)
 	}
-	// The arrow.json column is plain utf8 storage; append the canonical text.
+	// The arrow.json column is plain utf8 storage. Append the canonical text.
 	b.(*array.StringBuilder).Append(s)
 	return nil
 }
@@ -325,8 +325,9 @@ func appendList(b array.Builder, e *enc, v any, path string) error {
 	return nil
 }
 
-// appendMap appends an object's entries to a map builder, keys sorted for a
-// deterministic layout. Keys are always utf8; the value follows the elem plan.
+// appendMap appends the entries of an object to a map builder, with keys sorted
+// for a deterministic layout. Keys are always utf8. The value follows the elem
+// plan.
 func appendMap(b array.Builder, e *enc, v any, path string) error {
 	m, ok := v.(map[string]any)
 	if !ok {
@@ -358,7 +359,7 @@ func mismatch(path, arrowType string, v any) error {
 
 // toInt64 converts an integral normalized number to int64, reporting whether it
 // fits. A fractional float, an out-of-range big.Int, or a non-number does not
-// fit — the caller then fails the export.
+// fit. The caller then fails the export.
 func toInt64(v any) (int64, bool) {
 	n, u, kind := widenInteger(v)
 	switch kind {
@@ -455,8 +456,8 @@ func uintToInt64(u uint64) (int64, bool) {
 }
 
 // floatToInt64 converts a finite, integral float to int64 when it fits. The
-// integrality check also rejects NaN (NaN != NaN), and the range check also
-// rejects ±Inf (Inf is neither < MinInt64 nor < MaxInt64), so no separate
+// integrality check also rejects NaN (NaN != NaN). The range check also
+// rejects ±Inf (Inf is neither < MinInt64 nor < MaxInt64). So no separate
 // IsNaN/IsInf guard is needed.
 func floatToInt64(f float64) (int64, bool) {
 	if f != math.Trunc(f) {
@@ -509,8 +510,8 @@ func canonicalJSON(v any) (string, error) {
 	return string(bytes.TrimRight(buf.Bytes(), "\n")), nil
 }
 
-// jsonTypeName names v's JSON kind for an error message, never leaking the value
-// itself (which may be sensitive).
+// jsonTypeName names the JSON kind of v for an error message. It never leaks the
+// value itself, which can be sensitive.
 func jsonTypeName(v any) string {
 	switch v.(type) {
 	case nil:
