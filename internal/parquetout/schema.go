@@ -23,11 +23,11 @@ import (
 // jsonEnc pairs the arrow.json fallback type with its encoder plan. The storage is
 // plain utf8 that carries byte-lossless canonical JSON. Field metadata marks the
 // column as the arrow.json canonical extension (see fieldMetadata). The code does
-// not use the registered Arrow extension type. The registry of arrow-go rewrites
-// a column with the reserved ARROW:extension:name key to a JSON Parquet logical
-// type. It cannot read that type back, because the storage reads as binary and
-// the extension demands utf8. The marker therefore uses the namespace of iq, and the utf8 storage
-// round-trips.
+// not use the registered Arrow extension type, because the registry of arrow-go
+// rewrites a column with the reserved ARROW:extension:name key. It writes a JSON
+// Parquet logical type that it cannot read back: the storage reads as binary, and
+// the extension demands utf8. So the marker uses the namespace of iq, and the
+// utf8 storage round-trips.
 func jsonEnc() (arrow.DataType, *enc) {
 	// kind defaults to encJSON, the zero value of encKind.
 	return arrow.BinaryTypes.String, &enc{}
