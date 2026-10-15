@@ -330,11 +330,18 @@ func setStringDetail(schema map[string]any, n *node) {
 	if f := n.fmt.resolve(); f != "" {
 		schema["format"] = f
 	}
-	if len(n.kinds) == 1 { // enum only where every value is a string
-		if vals := n.enum.values(); vals != nil {
-			schema["enum"] = toAnySlice(vals)
-		}
+	if vals := n.stringEnum(); vals != nil {
+		schema["enum"] = toAnySlice(vals)
 	}
+}
+
+// stringEnum returns the sorted enum values of a node, or nil. A node has an enum
+// only when every value is a string and the values pass the enum thresholds.
+func (n *node) stringEnum() []string {
+	if len(n.kinds) != 1 {
+		return nil
+	}
+	return n.enum.values()
 }
 
 // setType sets the JSON Schema "type": a bare string for a single type, a type

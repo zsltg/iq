@@ -12,7 +12,7 @@ import (
 
 // Schema output formats: the contract dialect that `iq schema` projects the
 // inferred shape into. The jsonschema format is the default (JSON Schema draft
-// 2020-12). The odcs format is an Open Data Contract Standard v3.1.0 contract,
+// 2020-12). The odcs format is an Open Data Contract Standard v3.2.0 contract,
 // emitted as YAML (canonical for data contracts). The set is closed, so an
 // unknown format fails fast at entry.
 const (
@@ -48,8 +48,9 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 		"--format picks the contract dialect the shape projects into:\n" +
 		"  jsonschema  JSON Schema draft 2020-12 (default), for interop with code generators,\n" +
 		"              iq schema prod.orders > orders.schema.json && quicktype -s schema orders.schema.json -l go\n" +
-		"  odcs        Open Data Contract Standard v3.1.0, a YAML data contract for tools such\n" +
-		"              as datacontract-cli, Soda, and Great Expectations\n\n" +
+		"  odcs        Open Data Contract Standard v3.2.0, a YAML data contract for tools such\n" +
+		"              as datacontract-cli, Soda, and Great Expectations. It needs objects at the\n" +
+		"              root, so a keyspace of other values fails. Use jsonschema for those.\n\n" +
 		"jsonschema honors -y to emit YAML instead of JSON; odcs is always YAML (its canonical\n" +
 		"form). A schema is field names and types, a few hundred bytes, not a dump of documents."
 	c := &cobra.Command{
@@ -62,24 +63,15 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 			"  $ iq schema prod --sample 5000   # widen the sample\n" +
 			"  $ iq schema 'prod.orders=.[] | select(.active)'  # shape of a subset\n" +
 			"  $ iq schema prod.orders > orders.schema.json  # save for quicktype\n" +
-			"  $ iq schema prod.orders --format odcs > orders.odcs.yaml  # emit an ODCS v3.1.0 contract",
+			"  $ iq schema prod.orders --format odcs > orders.odcs.yaml  # emit an ODCS v3.2.0 contract",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := validateSchemaFormat(format); err != nil {
 				return err
 			}
-			arg := ""
-			if len(args) > 0 {
-				arg = args[0]
-			}
-			// The address half selects the source. The filter half (from the "=" of
-			// the spec or --filter) scopes which items the shape is inferred from.
-			addr, specFilter, _ := strings.Cut(arg, "=")
-			if strings.TrimSpace(specFilter) == "" && strings.Contains(arg, "=") {
-				return fmt.Errorf("invalid source %q: empty filter", arg)
-			}
-			if specFilter != "" {
-				filter = specFilter
+			addr, scope, err := schemaSpec(args, filter)
+			if err != nil {
+				return err
 			}
 			if err := resolveInspectSource(cfg, addr); err != nil {
 				return err
@@ -91,16 +83,15 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 				return redactErr(err, cfg.url)
 			}
 			defer func() { _ = st.Close() }()
-			items, err := sampleItems(ctx, st, sampleRequest{filter: filter, sample: sample, opts: cfg.runOptions()})
+			items, err := sampleItems(ctx, st, sampleRequest{filter: scope, sample: sample, opts: cfg.runOptions()})
 			if err != nil {
-				return fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(filter, err), cfg.url))
+				return fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(scope, err), cfg.url))
 			}
-			sh := shape.Infer(items)
-			if format == schemaFormatODCS {
-				// ODCS is a YAML data contract: emit YAML regardless of -y.
-				return writeStructured(cmd.OutOrStdout(), odcsContract(cfg, sh), true)
+			doc, asYAML, err := schemaDocument(shape.Infer(items), schemaTitle(cfg), format, yamlOut)
+			if err != nil {
+				return err
 			}
-			return writeStructured(cmd.OutOrStdout(), sh.JSONSchema(schemaTitle(cfg)), yamlOut)
+			return writeStructured(cmd.OutOrStdout(), doc, asYAML)
 		},
 	}
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled (0 = all)")
@@ -123,23 +114,39 @@ func validateSchemaFormat(format string) error {
 	}
 }
 
-// odcsContract wraps the ODCS schema object of a shape in an ODCS v3.1.0
-// fundamentals envelope. Every field is deterministic, with no timestamps or
-// random ids. The id, name, and schema-object name all derive from the resolved
-// source handle and keyspace (schemaTitle). Version and status take fixed
-// initial values. The handle, never the URL, sources the identifiers, so no
-// stored credential can reach the contract.
-func odcsContract(cfg *config, sh *shape.Shape) map[string]any {
-	name := schemaTitle(cfg)
-	return map[string]any{
-		"apiVersion": "v3.1.0",
-		"kind":       "DataContract",
-		"id":         name,
-		"name":       name,
-		"version":    "1.0.0",
-		"status":     "draft",
-		"schema":     []any{sh.ODCSSchemaObject(name)},
+// schemaSpec splits the optional `source[=<jq>]` argument into its address and
+// filter. The address selects the source. The filter scopes which items the
+// shape is inferred from. A filter in the spec replaces flagFilter (--filter). An
+// "=" with an empty filter is an error.
+func schemaSpec(args []string, flagFilter string) (addr, filter string, err error) {
+	arg := ""
+	if len(args) > 0 {
+		arg = args[0]
 	}
+	addr, specFilter, hasFilter := strings.Cut(arg, "=")
+	if hasFilter && strings.TrimSpace(specFilter) == "" {
+		return "", "", fmt.Errorf("invalid source %q: empty filter", arg)
+	}
+	if specFilter != "" {
+		return addr, specFilter, nil
+	}
+	return addr, flagFilter, nil
+}
+
+// schemaDocument projects the shape sh into the contract format named format,
+// titled title, and reports whether to write it as YAML. ODCS is a YAML data
+// contract, so it is always YAML, whatever yamlOut says. JSON Schema is YAML only
+// when yamlOut is true. If the shape has no valid ODCS contract, the error points
+// to --format jsonschema.
+func schemaDocument(sh *shape.Shape, title, format string, yamlOut bool) (any, bool, error) {
+	if format != schemaFormatODCS {
+		return sh.JSONSchema(title), yamlOut, nil
+	}
+	contract, err := sh.ODCSContract(title)
+	if err != nil {
+		return nil, false, fmt.Errorf("cannot write the odcs contract: %w (use --format jsonschema for this source)", err)
+	}
+	return contract, true, nil
 }
 
 // schemaTitle names the schema after the resolved source: the handle plus any

@@ -381,7 +381,7 @@ refuse it.
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
 | | `--filter <string>` | none | jq filter scoping which items the shape is inferred from. The spec form `source=<jq>` sets it per source |
-| | `--format <string>` | `jsonschema` | picks the contract dialect the shape projects into: JSON Schema draft 2020-12[^4] (`jsonschema`) or Open Data Contract Standard v3.1.0[^5] (`odcs`) |
+| | `--format <string>` | `jsonschema` | picks the contract dialect the shape projects into: JSON Schema draft 2020-12[^4] (`jsonschema`) or Open Data Contract Standard v3.2.0[^5] (`odcs`) |
 | | `--sample <int>` | `1000` | max items sampled (0 = all) |
 | `-y` | `--yaml` | ✗ | emit YAML instead of JSON (`jsonschema` only, `odcs` is always YAML) |
 
@@ -401,7 +401,7 @@ iq schema 'dev.orders=.[] | select(.active)'
 iq schema dev.orders > orders.schema.json
 ```
 ```sh { title='Save schema into a file from keyspace "orders" from the source "dev" in ODCS format' }
-iq schema dev.orders --format odcs > orders.odcs.yaml  # emit an ODCS v3.1.0 contract
+iq schema dev.orders --format odcs > orders.odcs.yaml  # emit an ODCS v3.2.0 contract
 ```
 
 !!! tip "Scoped schema"
@@ -423,16 +423,27 @@ iq schema dev.orders --format odcs > orders.odcs.yaml  # emit an ODCS v3.1.0 con
 
 !!! note "Open Data Contract Standard"
 
-    Open Data Contract Standard v3.1.0 (`odcs`) is a YAML data contract for
+    Open Data Contract Standard v3.2.0 (`odcs`) is a YAML data contract for
     tools like
     [`datacontract-cli`](https://github.com/datacontract/datacontract-cli),
     [Soda](https://github.com/sodadata/soda-core)
     and [Great Expectations](https://greatexpectations.io/).
 
-    It carries nine logical types with no binary or decimal member. As a
-    result, `iq`'s date-time and date formats demote to `logicalType: date`
-    with a JDK format pattern. A UUID stays `string` with the `uuid` format.
-    Base64-binary and exact-decimal values stay plain `string`.
+    It has eleven logical types, with no binary or decimal member. `iq` never
+    writes `vector`, because sampled values cannot prove an embedding.
+    A date-time becomes `logicalType: timestamp` with no format option. A
+    calendar date becomes `logicalType: date` with the format `yyyy-MM-dd`. A
+    UUID stays `string` with the `uuid` format. Base64-binary and exact-decimal
+    values stay plain `string`.
+
+    An id-keyed object becomes `logicalType: map` with a `string` key and the
+    value element. A string field with a small set of repeated values gets an
+    `enum`.
+
+    A field is `required` only when every object holds it and it never held
+    null. The root must hold objects. If the sample holds other values, such as
+    strings or arrays, `iq schema --format odcs` fails and writes no output.
+    Use `--format jsonschema` for those sources.
 
     The contract's identifiers (`id`, `name`, schema-object name) derive
     deterministically from the source handle and keyspace. They use no

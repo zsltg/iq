@@ -14,6 +14,7 @@ import (
 
 	iqfile "github.com/zsltg/iq/drivers/file"
 	"github.com/zsltg/iq/internal/query"
+	"github.com/zsltg/iq/internal/shape"
 )
 
 // writeJSONL writes keyed-JSONL lines to a temp file and returns its path.
@@ -254,7 +255,7 @@ func TestSchemaInvalidFormat(t *testing.T) {
 
 // TestSchemaODCSOutput drives `iq schema --format odcs` end-to-end against a
 // file source. It asserts that the emitted YAML parses and carries a valid
-// ODCS v3.1.0 fundamentals envelope. It also asserts one schema object that
+// ODCS v3.2.0 fundamentals envelope. It also asserts one schema object that
 // projects the inferred shape (types, nested properties, and per-property
 // required flags).
 func TestSchemaODCSOutput(t *testing.T) {
@@ -271,7 +272,7 @@ func TestSchemaODCSOutput(t *testing.T) {
 
 	var doc map[string]any
 	require.NoError(t, yaml.Unmarshal([]byte(out), &doc), "odcs output must be valid YAML")
-	require.Equal(t, "v3.1.0", doc["apiVersion"])
+	require.Equal(t, "v3.2.0", doc["apiVersion"])
 	require.Equal(t, "DataContract", doc["kind"])
 	require.Equal(t, "snap", doc["id"], "id derives from the handle, never the url")
 	require.Equal(t, "snap", doc["name"])
@@ -298,6 +299,25 @@ func TestSchemaODCSOutput(t *testing.T) {
 	require.NotContains(t, byName["active"], "required")
 }
 
+// TestSchemaODCSRejectsNonRecordRoot pins that a keyspace of non-object values
+// fails with a message that points to --format jsonschema and writes no output.
+func TestSchemaODCSRejectsNonRecordRoot(t *testing.T) {
+	path := writeJSONL(t, `{"key":"1","value":"plain"}
+{"key":"2","value":"text"}
+`)
+	c := newSeed()
+	require.NoError(t, c.Add("snap", iqfile.URL(path)))
+	seedConfig(t, c)
+
+	cfg := &config{timeout: 5 * time.Second}
+	out, err := runCmd(t, newSchemaCmd(cfg), "snap", "--format", "odcs")
+	require.ErrorIs(t, err, shape.ErrODCSNotRecords)
+	require.ErrorContains(t, err, "cannot write the odcs contract")
+	require.ErrorContains(t, err, "the root holds string values")
+	require.ErrorContains(t, err, "(use --format jsonschema for this source)")
+	require.NotContains(t, out, "apiVersion", "no contract is written")
+}
+
 // TestSchemaODCSAlwaysYAML pins that `--format odcs` emits YAML even without -y:
 // a data contract is canonically YAML, so the flag is not required.
 func TestSchemaODCSAlwaysYAML(t *testing.T) {
@@ -310,7 +330,7 @@ func TestSchemaODCSAlwaysYAML(t *testing.T) {
 	cfg := &config{timeout: 5 * time.Second}
 	out, err := runCmd(t, newSchemaCmd(cfg), "snap", "--format", "odcs")
 	require.NoError(t, err)
-	require.Contains(t, out, "apiVersion: v3.1.0")
+	require.Contains(t, out, "apiVersion: v3.2.0")
 	require.NotContains(t, out, `"apiVersion"`, "must be YAML, not JSON")
 }
 
@@ -328,4 +348,36 @@ func TestSchemaYAMLOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "$schema:")
 	require.NotContains(t, out, `"$schema"`)
+}
+
+// TestSchemaSpec pins how schemaSpec splits the optional `source[=<jq>]`
+// argument: no argument keeps the active source and --filter, a spec filter
+// replaces --filter, and an "=" with an empty filter fails.
+func TestSchemaSpec(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		flagFilter string
+		wantAddr   string
+		wantFilter string
+		wantErr    string
+	}{
+		{"no argument keeps the flag filter", nil, ".[]", "", ".[]", ""},
+		{"address only keeps the flag filter", []string{"shop.orders"}, ".[]", "shop.orders", ".[]", ""},
+		{"spec filter replaces the flag filter", []string{"shop=.[] | .a"}, ".[]", "shop", ".[] | .a", ""},
+		{"empty spec filter fails", []string{"shop="}, "", "", "", "empty filter"},
+		{"blank spec filter fails", []string{"shop=  "}, "", "", "", "empty filter"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr, filter, err := schemaSpec(tt.args, tt.flagFilter)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantAddr, addr)
+			require.Equal(t, tt.wantFilter, filter)
+		})
+	}
 }

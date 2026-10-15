@@ -27,7 +27,7 @@ databases, and their dump files, from a single static binary. See
   [`iq schema`](sources.md#schema-schema), as
   [JSON Schema draft 2020-12](https://json-schema.org/draft/2020-12) or an
   [Open Data Contract Standard](https://bitol-io.github.io/open-data-contract-standard)
-  v3.1.0 contract.
+  v3.2.0 contract.
 - Copy typed data across stores in one command, with no export script and no conversion
   script.
 - Give an AI agent access to every store with one
