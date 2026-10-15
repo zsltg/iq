@@ -65,16 +65,16 @@ func (s *Shape) ODCSContract(name string) (map[string]any, error) {
 // an items element, and per-property required flags. It uses the same inferred
 // tree as JSONSchema, so the two stay consistent per fact. A root that holds a
 // kind other than object and null has no valid schema object, so the function
-// returns ErrODCSNotRecords.
+// returns ErrODCSNotRecords. The error names those kinds in ascending kind
+// order (collapsed), so the message does not depend on map order.
 func (s *Shape) odcsSchemaObject(name string) (map[string]any, error) {
 	var others []string
-	for k := range s.root.kinds {
+	for _, k := range s.root.kinds.collapsed() {
 		if k != kindObject && k != kindNull {
 			others = append(others, k.String())
 		}
 	}
 	if len(others) > 0 {
-		sort.Strings(others)
 		return nil, fmt.Errorf("the root holds %s values: %w", strings.Join(others, " and "), ErrODCSNotRecords)
 	}
 	return s.root.odcsElement(name), nil

@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -97,7 +96,11 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(filter, err), cfg.url))
 			}
-			return writeSchema(cmd.OutOrStdout(), shape.Infer(items), schemaTitle(cfg), format, yamlOut)
+			doc, asYAML, err := schemaDocument(shape.Infer(items), schemaTitle(cfg), format, yamlOut)
+			if err != nil {
+				return err
+			}
+			return writeStructured(cmd.OutOrStdout(), doc, asYAML)
 		},
 	}
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled (0 = all)")
@@ -120,19 +123,20 @@ func validateSchemaFormat(format string) error {
 	}
 }
 
-// writeSchema writes the shape sh in the contract format named format, titled
-// title. ODCS is a YAML data contract, so it is always YAML, whatever yamlOut
-// says. JSON Schema is YAML only when yamlOut is true. If the shape has no valid
-// ODCS contract, the error points to --format jsonschema and nothing is written.
-func writeSchema(w io.Writer, sh *shape.Shape, title, format string, yamlOut bool) error {
+// schemaDocument projects the shape sh into the contract format named format,
+// titled title, and reports whether to write it as YAML. ODCS is a YAML data
+// contract, so it is always YAML, whatever yamlOut says. JSON Schema is YAML only
+// when yamlOut is true. If the shape has no valid ODCS contract, the error points
+// to --format jsonschema.
+func schemaDocument(sh *shape.Shape, title, format string, yamlOut bool) (any, bool, error) {
 	if format != schemaFormatODCS {
-		return writeStructured(w, sh.JSONSchema(title), yamlOut)
+		return sh.JSONSchema(title), yamlOut, nil
 	}
 	contract, err := sh.ODCSContract(title)
 	if err != nil {
-		return fmt.Errorf("cannot write the odcs contract: %w (use --format jsonschema for this source)", err)
+		return nil, false, fmt.Errorf("cannot write the odcs contract: %w (use --format jsonschema for this source)", err)
 	}
-	return writeStructured(w, contract, true)
+	return contract, true, nil
 }
 
 // schemaTitle names the schema after the resolved source: the handle plus any

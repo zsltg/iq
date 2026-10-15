@@ -308,7 +308,7 @@ func TestODCSRootRejected(t *testing.T) {
 		{"integer root", map[string]any{"1": 1}, "the root holds integer values"},
 		{"boolean root", map[string]any{"1": true}, "the root holds bool values"},
 		{"object plus string root", map[string]any{"1": obj, "2": "x"}, "the root holds string values"},
-		{"several kinds sort by name", map[string]any{"1": obj, "2": "x", "3": []any{1}}, "the root holds array and string values"},
+		{"several kinds in kind order", map[string]any{"1": obj, "2": "x", "3": []any{1}}, "the root holds string and array values"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
