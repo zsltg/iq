@@ -46,7 +46,7 @@ This contract binds backend adapters, driver plan documents, and reviews of eith
 - Require the query shape to fit the selector classification and the pushdown-to-predicate mapping.
 - Raise hard constraints before implementation if they force a redesign or defeat pushdown.
   These include required partition keys, costs charged per request, and queries restricted to row-key ranges.
-- If the model changes, update the README Architecture Mermaid diagram in the same change.
+- If the model changes, update the Mermaid diagram in `docs/docs/how-it-works.md` in the same change.
 
 ## URL contract
 
@@ -176,8 +176,8 @@ This contract binds backend adapters, driver plan documents, and reviews of eith
 
 ## Docs
 
-- A driver change touches its README surface in the same change: the `driver ls` row, the scheme lists, the driver details block with its push/not-push table, and the Architecture prose.
-- The README Mermaid diagrams are port-level: edit one only when a port or a diagram arm changes, never for a backend-adapter change.
+- A driver change touches its README surface in the same change: the `driver ls` row, the scheme lists, the driver details block with its push/not-push table, and the prose in `docs/docs/how-it-works.md`.
+- The Mermaid diagrams in `docs/docs/how-it-works.md` are port-level: edit one only when a port or a diagram arm changes, never for a backend-adapter change.
 - Environment variables land in `.env.example` in the same change.
 - Plan docs open with the preamble line "Working document, untracked. Plan only; no code has been written." and use the canonical headings: Context (with Decisions locked with the user), Gate assessment, Design decisions, Package layout, Wiring & repo surface, Tests, Explicit experiments (E-numbered), Implementation order, Follow-ups (optional), Definition of Done & honest v1 cuts.
 - A plan carrying unverified claims appends Unverified facts (flagged) and Sources sections.

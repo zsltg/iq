@@ -27,6 +27,17 @@
   <a href="https://github.com/zsltg/iq/blob/main/LICENSE"><img src="https://img.shields.io/github/license/zsltg/iq" alt="License: MIT"></a>
 </p>
 
+<p align="center">
+  <a href="https://zsltg.github.io/iq/">Documentation</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#use-with-ai-agents">AI agents</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#drivers">Drivers</a> ·
+  <a href="#backups-and-dumps">Dumps</a> ·
+  <a href="#contributing">Contributing</a>
+</p>
+
 # iq
 
 `iq` runs [jq](https://jqlang.github.io/jq/) filters to query, dump, copy, diff and write data
@@ -35,30 +46,72 @@ across NoSQL databases, and their dump files, from a single static binary. See
 
 <p align="center"><img src="docs/docs/assets/demo.svg" width="100%" alt="iq registers a MongoDB source, reads one document by key, filters a scan with a pushed-down predicate, explains the plan, and prints the result as gron"></p>
 
-`iq` normalizes fetched values to JSON. The filter runs entirely client-side,
-so one filter means the same thing everywhere.
+## Why iq
 
-The filter is also the key selector. Its top-level paths name the keys to fetch. As a result, a
-query reads only what it asks for (see [Architecture](#architecture)).
-
-Typed dumps carry native types across stores. As a result, a copy, a restore or a
-migration is one command instead of an export plus a conversion script.
+- Query any supported store with one language. The same jq filter runs on Redis, MongoDB,
+  Cassandra, DynamoDB and the other [drivers](#drivers), and gives the same result on each. One
+  filter can also [join data from several sources](https://zsltg.github.io/iq/query-data/#cross-source-queries),
+  with `source()` or `iq combine`.
+- A filter that names keys fetches only those keys. A `.[]` filter scans the source in
+  pages.
+- Query and compare dumps without a database server. Restore them to a live store.
+- Compare two sources, or a source and a dump, by data, stats, or inferred schema.
+  [`iq diff`](https://zsltg.github.io/iq/sources/#diff-diff) returns `diff(1)` exit codes, so a
+  CI job can fail on drift.
+- Infer a schema from a sample of any source with
+  [`iq schema`](https://zsltg.github.io/iq/sources/#schema-schema), as JSON Schema draft 2020-12
+  or an Open Data Contract Standard v3.1.0 contract.
+- Copy typed data across stores in one command, with no export script and no conversion
+  script.
+- Give an AI agent access to every store with one
+  [Agent Skill and one MCP server](#use-with-ai-agents). The skill works with any agent that
+  reads the Agent Skills format. The server is read-only by default.
 
 `iq` is inspired by [sq](https://github.com/neilotoole/sq), whose command set it
-deliberately follows to make the tool feel familiar.
+deliberately follows to make the tool feel familiar. Read
+[Comparison](https://zsltg.github.io/iq/comparison/) for how `iq` relates to other tools,
+and [How it works](https://zsltg.github.io/iq/how-it-works/) for the read routes and
+pushdown.
 
 > [!NOTE]
-> `iq` is built with AI assistance, every change passes the full test suite,
-> container-backed integration tests for every backend and a mutation gate before it lands
+> `iq` is built with AI assistance. Every change passes the full test suite,
+> container-backed integration tests for every backend, and a mutation gate before it lands
 > (see [CONTRIBUTING.md](CONTRIBUTING.md)).
->
-> Queries are read-only. `--insert`, `--replace`, `iq data clear`, `iq data drop` and
-> `iq data delete` write to the target. `iq exec` forwards a native command to the database,
-> so it can write too. Use `--explain` to see the query plan or `--dry-run` to report the
-> effect of a write, without changing anything. `iq exec` has no dry run.
 >
 > Feedback and bug reports are very welcome. Report security problems privately, see the
 > [security policy](https://github.com/zsltg/iq/security/policy).
+
+## Quick start
+
+Install `iq` on Linux or macOS:
+```sh
+curl -fsSL https://raw.githubusercontent.com/zsltg/iq/main/install.sh | sh
+```
+
+For other platforms, see [Install](#install). Make sure that `iq` is on your `PATH` before
+you continue.
+
+Write two sample records to a JSON Lines file:
+```sh
+printf '%s\n' '{"id":1,"title":"Dune","year":1965,"price":9.99}' \
+              '{"id":2,"title":"Project Hail Mary","year":2021,"price":14.5}' > books.jsonl
+```
+
+Filter the records. `iq` reads piped stdin as a source, so you do not need a database:
+```sh
+cat books.jsonl | iq '.[] | select(.year > 2015) | {title, price}'
+```
+
+Output:
+```json
+{
+  "price": 14.5,
+  "title": "Project Hail Mary"
+}
+```
+
+To connect a real database, follow the
+[MongoDB walkthrough](https://zsltg.github.io/iq/#connect-a-database).
 
 ## Install
 
@@ -105,6 +158,16 @@ git clone https://github.com/zsltg/iq
 cd iq && make build
 ```
 
+### Shell completions and man page
+
+The `.deb`, `.rpm`, `.apk` and `.pkg.tar.zst` packages install bash, zsh and fish
+completions and the `iq(1)` man page. For a brew, scoop, go-install or source build,
+`iq completion <shell>` prints a completion script and `iq man` prints the man page. Read
+[Shell completions](https://zsltg.github.io/iq/#shell-completions) for the setup of each
+shell.
+
+## Use with AI agents
+
 ### Agent Skill
 
 `iq` ships an [Agent Skill](https://agentskills.io), a single Markdown file
@@ -121,7 +184,7 @@ can load. It covers these topics:
 npx skills add zsltg/iq
 ```
 
-### Agent MCP
+### MCP server
 
 For an agent that speaks [MCP](https://modelcontextprotocol.io), `iq mcp`
 serves the same core over stdio.
@@ -133,16 +196,6 @@ error is redacted, and every destructive call is confirmed.
 Claude Code:
 ```sh
 claude mcp add iq -- iq mcp --timeout 30s
-```
-
-Codex CLI:
-```sh
-codex mcp add iq -- iq mcp --timeout 30s
-```
-
-Gemini CLI:
-```sh
-gemini mcp add iq iq mcp -- --timeout 30s
 ```
 
 Cursor, Cline and Antigravity:
@@ -157,107 +210,11 @@ Cursor, Cline and Antigravity:
 }
 ```
 
-Copilot in VS Code, which names the map `servers` and wants the transport spelled out:
-```json
-{
-  "servers": {
-    "iq": {
-      "type": "stdio",
-      "command": "iq",
-      "args": ["mcp", "--timeout", "30s"]
-    }
-  }
-}
-```
+Codex CLI, Gemini CLI, Copilot in VS Code and OpenCode use a different command or a different
+key around the block. Read [AI agents](https://zsltg.github.io/iq/agents/#client-configuration)
+for the configuration file and the block of each client.
 
-OpenCode, which names it `mcp` and takes the command as one array:
-```json
-{
-  "mcp": {
-    "iq": {
-      "type": "local",
-      "command": ["iq", "mcp", "--timeout", "30s"],
-      "enabled": true
-    }
-  }
-}
-```
-
-Check [AI agents](https://zsltg.github.io/iq/agents/#client-configuration) for each client's
-config file and the key it wants around the block.
-
-<details>
-<summary><strong>Shell completions</strong></summary>
-
-The `.deb`, `.rpm`, `.apk` and `.pkg.tar.zst` packages install bash, zsh and fish completions
-for you. For a brew, scoop, go-install or source build, `iq completion <shell>` prints a script to install by
-hand:
-
-```sh
-# bash: load in the current session, or drop it on the completion path
-eval "$(iq completion bash)"
-iq completion bash | sudo tee /usr/share/bash-completion/completions/iq >/dev/null
-
-# zsh: write to a directory on your $fpath, then restart the shell
-iq completion zsh > ~/.zsh/completions/_iq
-
-# fish
-iq completion fish > ~/.config/fish/completions/iq.fish
-
-# powershell: append to your profile
-iq completion powershell >> $PROFILE
-```
-
-Completions cover the commands, their sub-subcommands and flags. They also cover your saved
-source handles, groups, and config-option keys, which they read live from your config. As a
-result, `iq --src <TAB>` offers the sources `iq ls` lists.
-
-In zsh, fish, and PowerShell, a candidate shows a short description next to it. Bash shows the
-descriptions when it lists more than one candidate. A source handle shows its driver, its keyspace,
-and `active` for the active source, for example `prod/books  mongo, orders, active`. It never shows
-the host, the user, or the URI. A group shows its number of sources, and a config key shows the
-help text of its flag. To turn the descriptions off, generate the script with
-`iq completion <shell> --no-descriptions`.
-
-A flag that takes a closed set completes its values (`--format`, `--from-format`,
-`--format.decimal`, `--log.level`, `--log.format`, `--error.format`, `--debug.pprof`,
-`iq add --driver/--store`, `iq schema --format`). `iq config set <option> <TAB>` offers that
-option's own values. `iq inspect --only <TAB>` and `iq diff --section <TAB>` offer the
-introspection subcommands of the selected source's backend, worked out from its saved URI.
-
-`iq add <TAB>` completes the connection URI part by part. It offers the schemes, then the names
-of the URI options that `iq` itself reads, then the values of an option that has a closed set of
-values. A shell gives `?` and `&` a special meaning, so type them with a backslash, for example
-`iq add cassandra://host/ks\?consistency=lo<TAB>`, which offers `local_quorum` and `local_one`.
-Completion does not work inside quotes, because the bash and zsh completion scripts pass the quote
-character to `iq`. A quoted URI still runs correctly. Completion does not offer the host, the path,
-or the options that a backend SDK reads, such as `authSource` for MongoDB. It also offers nothing
-when the typed text holds a password, so a password never appears in a candidate.
-
-The jq filter itself is a program, not a completable value. As a result, `iq` offers no
-candidates there (and never falls back to filenames). `iq` also offers no candidates for the
-backend verb of `iq exec` and its operands.
-
-Every completion is offline. It reads your config file and nothing else. As a result, a `<TAB>`
-never opens a connection, never reads the OS keyring, and cannot hang. That is why a collection
-suffix does not complete. `iq --src shop.<TAB>` offers nothing, because listing collections
-needs a connection.
-
-</details>
-
-<details>
-<summary><strong>Man page</strong></summary>
-
-The packages also install an `iq(1)` manual page, so `man iq` works after a package install. For
-a non-package install, pipe it into your man path:
-
-```sh
-iq man | sudo tee /usr/share/man/man1/iq.1 >/dev/null
-```
-
-</details>
-
-## Get started
+## Usage
 
 ### Sources
 
@@ -322,6 +279,12 @@ iq diff dev qa
 Check [Diff](https://zsltg.github.io/iq/sources/#diff-diff) for more details.
 
 ### Write data
+
+> [!IMPORTANT]
+> Queries are read-only. `--insert`, `--replace`, `iq data clear`, `iq data drop` and
+> `iq data delete` write to the target. `iq exec` forwards a native command to the database,
+> so it can write too. Use `--explain` to see the query plan, or `--dry-run` to report the
+> effect of a write without changing anything. `iq exec` has no dry run.
 
 Copy one source into another, keys preserved (a cross-driver copy carries values only):
 ```sh
@@ -494,85 +457,6 @@ you must pass the `?format=` form (`file:///<file_path>?format=<source_format>`)
 [Drivers page](https://zsltg.github.io/iq/drivers/#file-dumps) documents what produces each
 format, the options some of them need, and the round-trip caveats.
 
-## Architecture
-
-The URI scheme chooses the backend. The query core is driver-agnostic, so further backends
-slot in behind the same port.
-
-The filter is both the transform and the key selector. Its top-level paths name the keys to
-fetch, so a normal query reads a bounded set of keys. A `.[]`-rooted filter streams the
-keyspace in pages. A filter that collapses the keyspace into one value materializes only behind
-`--unbounded`. `iq` normalizes fetched values to JSON. The filter then runs entirely
-client-side, so its semantics are identical for every backend.
-
-The CLI and `iq mcp` are two thin delivery mechanisms over that one core. The MCP server
-exposes the CLI's own operations as tools, resolves the same saved sources, and runs the same
-engine. As a result, it adds no port and changes no classification. It adds only its own bounds,
-a tool set fixed at startup by `--allow`, per-result item and byte caps, and the CLI's redacted
-error shape.
-
-### Query routes
-
-The **selector** classifies a jq filter. `iq` optionally **decomposes** a scan
-into a native predicate. Each backend then maps that predicate its own way.
-
-Regardless of pushdown, the full jq re-runs client-side. As a result, the pushed
-predicate is only ever a conservative pre-filter, and results are identical with
-or without it.
-
-Pushdown reads only the `select()` stages that test each item itself: the stages
-after `.[]` up to the first stage that changes the item, such as `.b`, `map(...)`
-or an object construction. A `select()` after such a stage tests a derived value,
-so pushdown leaves it to the client-side filter.
-
-```mermaid
-graph TD
-  F["jq filter (CLI)"] --> SEL["selector.Keys<br/>(AST analysis)"]
-  SEL -->|bounded| GET["KVStore.Get(keys)"]
-  SEL -->|"streamable scan"| CMP{"FilteredScanner?<br/>(pushdown on)"}
-  SEL -->|"holistic scan"| MAT["materialize<br/>(--unbounded)"]
-
-  CMP -->|yes| PD["pushdown.Compile → predicate.Node<br/>(adapter pre-filters server-side)"]
-  CMP -->|no| RS["KVStore.ScanBatches<br/>(full scan, no pushdown)"]
-
-  GET --> JQ["run full jq<br/>client-side, per batch"]
-  MAT --> JQ
-  PD --> JQ
-  RS --> JQ
-  JQ --> OUT["format renderer<br/>→ output"]
-```
-
-A scan emits per-page progress to a stderr spinner (CLI only, off unless
-attached to a terminal). An unfiltered scan can also fetch a cheap up-front total
-estimate (where the backend metadata makes it possible).
-
-A bounded filter runs client-side over only the named keys, so its cost is `O(keys requested)`. A
-streamable scan runs in `O(page)` memory.
-
-[gojq](https://github.com/itchyny/gojq) (pure Go, no cgo) provides jq and exposes the AST the key
-selector walks.
-
-### Write routes
-
-Writes ride the query command. There is no separate copy tool. Items arrive
-from `--src` (a live source or a `file://` dump) or piped stdin. `iq` reads
-each item as a typed record, so the native type survives the trip.
-
-The `jq` filter transforms each item with its key preserved. This transform is
-the one place where a filter runs per item rather than over the whole keyspace.
-Iteration is implicit, and you do not write `.[]`.
-
-```mermaid
-graph TD
-  MV["iq --insert / --typed (CLI)"] --> MSRC["source: --src (live or file:// dump) / stdin → TypedScan"]
-  MSRC --> TX["per-item jq transform + re-key"]
-  TX --> DST{"--insert or --typed?"}
-  DST -->|--insert| PUT["Putter.Put (upsert / insert-only)"]
-  DST -->|--typed| ENC["emit {key,type,value} → jsonl / json / jsona / yaml"]
-  PUT --> BW["backend adapter:<br/>type-aware native writes"]
-  LF["iq data clear / drop / delete (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop / Deleter.Delete (capability-gated)"]
-```
-
 ## See also
 
 Where `iq` sits among other tools, and the jq ecosystem its filter language carries over.
@@ -587,3 +471,13 @@ Where `iq` sits among other tools, and the jq ecosystem its filter language carr
 - [jc](https://github.com/kellyjonbrazil/jc): converts classic CLI output to JSON.
 - [jqp](https://github.com/noahgorstein/jqp): a TUI playground that live-previews a filter as you type.
 - [ijq](https://github.com/gpanders/ijq): interactive jq with a side-by-side input and output view.
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) to start, and [DEVELOPMENT.md](DEVELOPMENT.md) for the
+build, test and gate commands. Report security problems privately through the
+[security policy](https://github.com/zsltg/iq/security/policy).
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -10,34 +10,43 @@ databases, and their dump files, from a single static binary. See
 
 <p align="center"><img src="assets/demo.svg" width="100%" alt="iq registers a MongoDB source, reads one document by key, filters a scan with a pushed-down predicate, explains the plan, and prints the result as gron"></p>
 
-`iq` normalizes fetched values to JSON. The filter runs entirely client-side,
-so one filter means the same thing everywhere.
+## Why iq
 
-The URI scheme[^4] chooses the backend. The filter is both the *transform* and
-the *key selector*. The selector walks the parsed `jq` AST[^ast]. Based on the
-AST, the selector executes a *bounded read*, a *streaming scan* (with
-*pushdown*[^pushdown]), or a *materialized scan* (see
-[How it works](how-it-works.md#how-it-works)).
+- Query any supported store with one language. The same jq filter runs on Redis, MongoDB,
+  Cassandra, DynamoDB and the other [drivers](drivers.md#drivers), and gives the same result on
+  each. One filter can also
+  [join data from several sources](query-data.md#cross-source-queries), with `source()` or
+  `iq combine`.
+- A filter that names keys fetches only those keys. A `.[]` filter scans the source in
+  pages.
+- Query and compare dumps without a database server. Restore them to a live store.
+- Compare two sources, or a source and a dump, by data, stats, or inferred schema.
+  [`iq diff`](sources.md#diff-diff) returns `diff(1)` exit codes, so a CI job can fail on
+  drift.
+- Infer a schema from a sample of any source with [`iq schema`](sources.md#schema-schema), as
+  JSON Schema draft 2020-12 or an Open Data Contract Standard v3.1.0 contract.
+- Copy typed data across stores in one command, with no export script and no conversion
+  script.
+- Give an AI agent access to every store with one
+  [Agent Skill and one MCP server](agents.md). The skill works with any agent that reads the
+  Agent Skills format. The server is read-only by default.
 
-Typed dumps carry native types across stores. As a result, a copy, a restore or a
-migration is one command instead of an export plus a conversion script.
+`iq` normalizes fetched values to JSON and runs the filter on the client. The URI scheme[^4]
+chooses the backend. The selector walks the parsed `jq` AST[^ast]. Based on the AST, it
+runs a bounded read, a streaming scan (with pushdown[^pushdown]), or a materialized scan.
+See [How it works](how-it-works.md#how-it-works).
 
 `iq` is inspired by [`sq`](https://sq.io "Command-line tool giving jq-style
 access to SQL databases and files like CSV or Excel"), whose command set it
-deliberately follows.
+deliberately follows to make the tool feel familiar. Read
+[Comparison](comparison.md) for how `iq` relates to other tools.
 
 !!! note
 
-    `iq` is built with AI assistance, and every change passes the full test
-    suite, container-backed integration tests for every backend, and a mutation
-    gate before it lands (see
+    `iq` is built with AI assistance. Every change passes the full test suite,
+    container-backed integration tests for every backend, and a mutation gate
+    before it lands (see
     [CONTRIBUTING.md](https://github.com/zsltg/iq/blob/main/CONTRIBUTING.md)).
-
-    Queries are read-only. `--insert`, `--replace`, `iq data clear`,
-    `iq data drop` and `iq data delete` write to the target. `iq exec` forwards
-    a native command to the database, so it can write too. Use `--explain` to
-    see the [query plan](query-plan.md#query-plan) or `--dry-run` to report the
-    effect of a write, without changing anything. `iq exec` has no dry run.
 
     Feedback and bug reports are very welcome. Report security problems privately,
     see the [security policy](https://github.com/zsltg/iq/security/policy).
@@ -122,6 +131,143 @@ git clone https://github.com/zsltg/iq
 cd iq && make build
 ```
 
+## Quick start
+
+Install `iq` as described in [Installation](#installation). Make sure that `iq` is on your
+`PATH` before you continue. If the installer prints a note about `PATH`, add the directory
+that the note names.
+
+Write two sample records to a JSON Lines file:
+
+```sh
+printf '%s\n' '{"id":1,"title":"Dune","year":1965,"price":9.99}' \
+              '{"id":2,"title":"Project Hail Mary","year":2021,"price":14.5}' > books.jsonl
+```
+
+Filter the records. `iq` reads piped stdin as a source, so you do not need a database:
+
+```sh
+cat books.jsonl | iq '.[] | select(.year > 2015) | {title, price}'
+```
+
+Output:
+
+```json
+{
+  "price": 14.5,
+  "title": "Project Hail Mary"
+}
+```
+
+## Connect a database
+
+This walkthrough is optional and needs Docker. It reuses `books.jsonl` from the
+[Quick start](#quick-start). Run each step on its own, and read its result before you run
+the next step.
+
+1.  Start a disposable MongoDB that only this machine can reach. If this command fails,
+    stop here.
+
+    ```sh
+    docker run -d --name iq-quickstart -p 127.0.0.1:27018:27017 mongo:8.2
+    ```
+
+2.  Wait until MongoDB answers. If this step prints an error, stop here and do not continue
+    to step 3. The `exit` ends only the subshell, so it does not close your shell. A
+    successful run prints nothing.
+
+    ```sh
+    (
+      for i in $(seq 30); do
+        docker exec iq-quickstart mongosh --quiet --eval 'db.runCommand({ping: 1}).ok' >/dev/null 2>&1 && exit 0
+        sleep 1
+      done
+      echo "MongoDB did not answer after 30 tries. Stop here. Run: docker logs iq-quickstart" >&2
+      exit 1
+    )
+    ```
+
+3.  Register the database as a source and make it active. If this step fails, stop here.
+
+    ```sh
+    iq add -a 'mongodb://localhost:27018/iq?collection=books'
+    ```
+
+    Output:
+
+    ```text
+    added source books
+    ```
+
+4.  Write the sample records. This command writes the two books from `books.jsonl` to the
+    disposable database from step 1.
+
+    ```sh
+    cat books.jsonl | iq --insert books --key-field id
+    ```
+
+    Output:
+
+    ```text
+    wrote 2 item(s) to books (new 2, overwritten 0, skipped 0)
+    ```
+
+    If the insert fails, stop here. Some records can already be stored in the example
+    database.
+
+5.  Read one book by key. Then show the query plan of a scan.
+
+    ```sh
+    iq '.["2"]'
+    ```
+
+    ```json
+    {
+      "_id": "2",
+      "id": 2,
+      "price": 14.5,
+      "title": "Project Hail Mary",
+      "year": 2021
+    }
+    ```
+
+    ```sh
+    iq '.[] | select(.year > 2015) | {title, price}' --explain
+    ```
+
+    ```text
+    query plan
+    source: books (mongo)
+
+    jq filter:
+      .[]
+      | select(.year > 2015)
+      | {
+        title,
+        price
+      }
+
+    mongo calls:
+      find(<filter>): server-side pre-filter, then the full jq re-runs client-side
+      cursor streamed in batches of 100
+
+    server filter (mongo find):
+      {                                 — .year > 2015
+        "$or": [
+          {"year": {"$gt": 2015}},
+          {"year": {"$type": ["string", "array", "object"]}}
+        ]
+      }
+
+    jq (after decode, the full filter, every conjunct again)
+    ```
+
+6.  Remove the container.
+
+    ```sh
+    docker rm -f iq-quickstart
+    ```
+
 ## The basics
 
 Register a source for each store you work with. Then make one of them active:
@@ -161,6 +307,14 @@ iq --src orders --insert cache
 ```sh { title='Diff two environments, data or inferred schema' }
 iq diff orders staging --schema
 ```
+
+!!! warning "Writes"
+
+    Queries are read-only. `--insert`, `--replace`, `iq data clear`,
+    `iq data drop` and `iq data delete` write to the target. `iq exec` forwards
+    a native command to the database, so it can write too. Use `--explain` to
+    see the [query plan](query-plan.md#query-plan) or `--dry-run` to report the
+    effect of a write, without changing anything. `iq exec` has no dry run.
 
 You can find detailed examples in [Sources](sources.md#sources), [Query data](query-data.md#query-data) and [Write data](write-data.md#write-data).
 

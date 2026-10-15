@@ -110,14 +110,13 @@ Before publication and before merge, all required checks must pass:
 - If the recorded demo becomes stale, run `make demo` and include both the SVG and `docs/demo.stamp`.
 - Never hand-edit the stamp or bypass the recording assertions. Read [the demo procedure](DEVELOPMENT.md#recorded-demo).
 - For docs site changes, run `make docs`.
-- For a new datastore, delivery mechanism, or connection contract, update the README Architecture section.
-- For selector classification, pushdown-to-predicate mapping, or core port changes, update the existing Architecture Mermaid diagram.
-- For adapter-only changes, update Architecture prose and the driver table, not the diagram.
+- For a new datastore, delivery mechanism, or connection contract, update `docs/docs/how-it-works.md`.
+- For selector classification, pushdown-to-predicate mapping, or core port changes, update the existing Mermaid diagram in `docs/docs/how-it-works.md`.
+- For adapter-only changes, update the `docs/docs/how-it-works.md` prose and the driver table, not the diagram.
 
 Keep these pairs synchronized in the same change:
 
-- README intro paragraphs and NOTE with `docs/docs/index.md`.
-- README Architecture prose and diagrams with `docs/docs/how-it-works.md`.
+- README intro, Why iq and NOTE with `docs/docs/index.md`.
 - README Guarantees with `docs/docs/drivers.md`.
 - README See also with `docs/docs/see-also.md`.
 
