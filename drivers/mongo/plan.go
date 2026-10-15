@@ -8,11 +8,11 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the MongoDB calls that this driver makes for a
+// ExplainPlan describes the MongoDB calls that this driver will make for a
 // classified query, without connecting. A bounded query fetches the named
 // documents by _id. A scan runs a find. The find is pre-filtered by the pushed
 // predicate when one compiles (else a full-collection scan). It reuses toFilter,
-// so the shown filter is exactly what the server receives.
+// so the shown filter is exactly what the server will receive.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -39,7 +39,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 }
 
 // ExplainWrite describes, without connecting, the write that a copy into this
-// collection makes. The write is an unordered bulk replace-upsert by _id, or an
+// collection will make. The write is an unordered bulk replace-upsert by _id, or an
 // unordered insert that skips existing _ids.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := fmt.Sprintf("bulkWrite: replaceOne upsert by _id, batches of %d", scanBatch)

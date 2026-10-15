@@ -233,8 +233,9 @@ func seedPrefilterIndex(t *testing.T, baseURL string) *Store {
 	st, err := Open(ctx, baseURL, name, nil, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
-	// A page size of one, so a document that the prefilter drops produces an empty
-	// page. This exercises (and guards) the "never hand fn an empty batch" path.
+	// The page size is one, so a document that the prefilter drops produces an
+	// empty page. This exercises (and guards) the "never hand fn an empty
+	// batch" path.
 	st.pageSize = 1
 	return st
 }

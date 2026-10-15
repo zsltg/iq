@@ -8,11 +8,11 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the CouchDB calls this driver makes for a classified
+// ExplainPlan describes the CouchDB calls this driver will make for a classified
 // query, without connecting. A bounded query fetches the named documents by _id via
 // _all_docs. A scan runs a Mango _find pre-filtered by the pushed predicate when
 // one narrows, else a full _all_docs walk. ExplainPlan reuses toSelector, so the
-// shown filter is exactly what the server receives.
+// shown filter is exactly what the server will receive.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -41,7 +41,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 }
 
 // ExplainWrite describes, without connecting, the write that a copy into this
-// database makes. It is an unordered _bulk_docs replace-upsert by _id (fetching
+// database will make. It is an unordered _bulk_docs replace-upsert by _id (fetching
 // current revs first), or an unordered _bulk_docs insert that skips existing _ids.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := fmt.Sprintf("_bulk_docs: replace-upsert by _id (read current _rev first), batches of %d", scanBatch)

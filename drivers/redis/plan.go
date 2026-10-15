@@ -8,7 +8,7 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Redis calls that this driver makes for a classified
+// ExplainPlan describes the Redis calls that this driver will make for a classified
 // query, without connecting. Redis pushes no filter to the server (a scan always
 // uses MATCH *). The ops show the pipelined TYPE and per-type read. A compiled
 // predicate also runs the rawpred prefilter on RedisJSON values. A bounded key
@@ -40,7 +40,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.Access
 }
 
 // ExplainWrite describes, without connecting, the write that a copy into this
-// keyspace makes: a pipelined, type-aware reconstruction of each key. Upsert
+// keyspace will make: a pipelined, type-aware reconstruction of each key. Upsert
 // DEL's an aggregate before rewriting it (so it is replaced, not appended).
 // InsertOnly writes only absent keys.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {

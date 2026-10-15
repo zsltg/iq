@@ -88,12 +88,13 @@ type Store struct {
 	cache  CacheConfig // decode-cache policy; zero value disables caching.
 
 	// prefilterChecked counts records that the client-side raw-byte prefilter
-	// evaluated (ran rawpred over) across this store's filtered scans. The counter
-	// prefilterSkipped counts the subset that it dropped before decode. They are
-	// test-only observability. A query never reads them. They prove that the
-	// prefilter engages exactly when it must. Here checked stays zero on a bypassed
-	// scan (a non-JSONL format, or a fresh CBOR cache) and rises on a prefiltered
-	// one. They are never part of the public surface.
+	// evaluated (ran rawpred over) across this store's filtered scans. The
+	// counter prefilterSkipped counts the subset that it dropped before decode.
+	// They are test-only observability. A query never reads them. They prove
+	// that the prefilter engages in exactly the intended cases. Here checked
+	// stays zero on a bypassed scan (a non-JSONL format, or a fresh CBOR cache)
+	// and rises on a prefiltered one. They are never part of the public
+	// surface.
 	prefilterChecked int
 	prefilterSkipped int
 }

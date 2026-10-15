@@ -24,8 +24,8 @@ const testRedisDB = 15
 
 // testURL returns the Redis URI for integration tests. It is IQ_REDIS_URL,
 // which TestMain points at the reserved database on the ephemeral container or
-// named server. When tests are skipped, it is a local default on the same
-// database.
+// named server. If IQ_REDIS_URL is empty (for example when tests are skipped),
+// it is a local default on the same database.
 func testURL() string {
 	if url := os.Getenv("IQ_REDIS_URL"); url != "" {
 		return url

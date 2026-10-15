@@ -8,7 +8,7 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Elasticsearch calls that this driver makes for a
+// ExplainPlan describes the Elasticsearch calls that this driver will make for a
 // classified query, without connecting. A bounded query fetches the named
 // documents by _id with _mget. A scan pages a point-in-time with search_after,
 // with a bool query when the pushed predicate narrows. It does not connect, so it
@@ -118,7 +118,7 @@ func explainQuery(n predicate.Node) (map[string]any, bool) {
 }
 
 // ExplainWrite describes, without connecting, the write that a copy into this
-// index makes. The write is a refreshing _bulk that indexes each document by _id
+// index will make. The write is a refreshing _bulk that indexes each document by _id
 // (replace-upsert), or one that creates new _ids and skips existing ones.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := "_bulk (refresh): index by _id (replace-upsert)"

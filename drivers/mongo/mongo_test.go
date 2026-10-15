@@ -282,8 +282,9 @@ func TestScanFilteredReturnsMatchingSubset(t *testing.T) {
 
 func TestCompileEquivalentToClientSide(t *testing.T) {
 	store := openIntegration(t, "range_docs")
-	// A document whose field f takes every jq type, plus a missing field. So a
-	// pushed filter that is ever a subset (missing one) diverges from client-side.
+	// The documents give field f every jq type, plus a missing field. So a
+	// pushed filter that is ever a subset (missing one) diverges from
+	// client-side.
 	seedDocs(t, store, []any{
 		bson.M{"_id": "num_lo", "f": int32(10)},
 		bson.M{"_id": "num_hi", "f": int32(100)},

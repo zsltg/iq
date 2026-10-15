@@ -100,10 +100,10 @@ func insertOnly(ctx context.Context, coll *mongo.Collection, batch []query.Recor
 }
 
 // documentFor builds the BSON document to write for a record, with _id set from
-// the key. So the key carries the identity and not the value. A 24-hex key
-// restores an ObjectID _id. A keyless record (foreign JSON with no key field)
-// lets MongoDB mint the _id. The value must be a JSON object. A scalar is
-// rejected and not wrapped as {value: ...}, so a successful Put round-trips
+// the key. So the record key, not the value, supplies the identity. A 24-hex
+// key restores an ObjectID _id. A keyless record (foreign JSON with no key
+// field) lets MongoDB mint the _id. The value must be a JSON object. A scalar
+// is rejected and not wrapped as {value: ...}, so a successful Put round-trips
 // exactly.
 func documentFor(r query.Record) (bson.M, error) {
 	obj, ok := r.Value.(map[string]any)

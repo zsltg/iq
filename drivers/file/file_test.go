@@ -1013,9 +1013,9 @@ func TestBSONSourceFailures(t *testing.T) {
 
 // TestExtJSONSourceFailures pins the error handling of the mongoexport reader.
 // The line-oriented form must report a malformed record, not stop quietly at
-// it. An unexpected closing bracket is malformed input, not an end of stream. An
-// undecodable document is a decode failure. A consumer error propagates even
-// when a later page succeeds.
+// it. An unexpected closing bracket is malformed input, not an end of stream.
+// An undecodable document is a decode failure. A consumer error propagates even
+// if a later page can succeed.
 func TestExtJSONSourceFailures(t *testing.T) {
 	drain := func(body string, size int, fn func([]query.Record) error) error {
 		return extJSONSource(strings.NewReader(body), size, numfmt.DecimalAuto)(context.Background(), fn)

@@ -256,9 +256,10 @@ func TestGetUnprocessedExhausted(t *testing.T) {
 }
 
 func TestScanPaginatesAndBatchesPages(t *testing.T) {
-	// Two server pages. The second page is reached only if ExclusiveStartKey is
-	// threaded and the break condition is correct. The 250 items across the pages must
-	// arrive in pages of 100 (the pageSize batching).
+	// The fake serves two pages. The second is reached only if
+	// ExclusiveStartKey is threaded and the break condition is correct. The 250
+	// items across the pages must arrive in pages of 100 (the pageSize
+	// batching).
 	page := 0
 	fake := &fakeDDB{scanFn: func(in *awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
 		page++

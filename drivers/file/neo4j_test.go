@@ -34,7 +34,8 @@ func TestNeo4jNodeScanEnvelope(t *testing.T) {
 	require.Equal(t, FormatNeo4jJSON, st.format)
 
 	recs := collect(t, st)
-	// Only the two Person nodes. The Book node and the relationship are other keyspaces.
+	// Only the two Person nodes come back. The Book node and the relationship
+	// are other keyspaces.
 	require.Len(t, recs, 2)
 	// Integers narrow to int, floats stay float, and the reserved _id overwrites the
 	// same-named property with the export id.

@@ -45,10 +45,10 @@ const collectionParam = "collection"
 
 // SplitCollection separates the ?collection= default of a mongodb:// URI from
 // the connection URI. It returns the URI with the param removed, which is safe
-// to hand the driver. The driver rejects unknown URI options. It also returns
-// the collection that the URI carried ("" when absent). A URI that does not
-// parse is returned unchanged with no collection. The parse error then surfaces
-// at connect time.
+// to hand the driver. The driver rejects unknown URI options. SplitCollection
+// also returns the collection that the URI carried ("" when absent). A URI that
+// does not parse is returned unchanged with no collection. The parse error then
+// surfaces at connect time.
 func SplitCollection(uri string) (clean, collection string) {
 	u, err := url.Parse(uri)
 	if err != nil {

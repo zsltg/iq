@@ -107,7 +107,7 @@ func writeBulkLine(buf *bytes.Buffer, v any) error {
 }
 
 // documentBody builds the JSON document to write for a record. It strips the
-// injected _id, so the record key carries the identity and not the value.
+// injected _id, so the record key, not the value, supplies the identity.
 // Elasticsearch reserves _id as a metadata field and rejects it inside _source.
 // The value must be a JSON object. A scalar is rejected and not wrapped as
 // {value: ...}, so a successful Put round-trips exactly.

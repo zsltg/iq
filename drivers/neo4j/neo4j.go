@@ -262,9 +262,10 @@ func (s *Store) session(ctx context.Context, mode neo4j.AccessMode) neo4j.Sessio
 	return s.driver.NewSession(ctx, neo4j.SessionConfig{DatabaseName: s.database, AccessMode: mode})
 }
 
-// run executes one parameterized Cypher statement. When set, it logs the statement
-// to the trace writer, never its parameters, because they can hold stored values.
-// The error is wrapped at our boundary so it anchors here, not deep in the driver.
+// run executes one parameterized Cypher statement. If the trace writer is set,
+// run logs the statement to it, never its parameters, because they can hold
+// stored values. The error is wrapped at our boundary so it anchors here, not
+// deep in the driver.
 func (s *Store) run(ctx context.Context, sess neo4j.SessionWithContext, cypher string, params map[string]any) (neo4j.ResultWithContext, error) {
 	if s.trace != nil {
 		_, _ = fmt.Fprintf(s.trace, "cypher: %s\n", cypher)

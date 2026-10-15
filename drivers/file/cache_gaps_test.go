@@ -41,8 +41,9 @@ func TestRecordPagerBuffersAPageInOneAllocation(t *testing.T) {
 	require.Equal(t, []int{5}, caps)
 }
 
-// TestStreamRecordsStopsOnAFailedPage fails only the first page. The final flush
-// succeeds, so the stream must return the error of the page that filled up.
+// TestStreamRecordsStopsOnAFailedPage fails only the first page. The final
+// flush succeeds if the stream reaches it, so the stream must return the error
+// of the page that filled up.
 func TestStreamRecordsStopsOnAFailedPage(t *testing.T) {
 	st, m, h := cacheFixture(t)
 	path := plantCache(t, st, m, cacheBytes(t, h, nRecords(pageSize), true, nil))

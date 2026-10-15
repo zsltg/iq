@@ -111,9 +111,10 @@ func TestIntegrationScanPaging(t *testing.T) {
 	admin := openStore(t, ctx, "", "")
 	exec(t, ctx, admin, "CREATE CONSTRAINT itPage_id IF NOT EXISTS FOR (p:ItPage) REQUIRE p.id IS UNIQUE")
 	exec(t, ctx, admin, "MATCH (p:ItPage) DETACH DELETE p")
-	// Exactly two scanBatch (100) pages. This pins the paging arithmetic (skip += n,
-	// n < scanBatch). The total is an exact multiple, so the final zero-row query
-	// must not emit an empty page. The page count is exactly 2, not 3.
+	// The scan makes exactly two scanBatch (100) pages. This pins the paging
+	// arithmetic (skip += n, n < scanBatch). The total is an exact multiple, so
+	// the final zero-row query must not emit an empty page. The page count is
+	// exactly 2, not 3.
 	exec(t, ctx, admin, "UNWIND range(1, 200) AS i CREATE (:ItPage {id: toString(i)})")
 
 	st := openStore(t, ctx, "ItPage", "id")

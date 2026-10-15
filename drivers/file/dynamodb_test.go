@@ -113,7 +113,7 @@ func TestDynamoFormatString(t *testing.T) {
 // TestDynamoSourceFailures pins the error handling of the dump reader. An
 // "Items" value that is not an array is a decode failure, not a silently empty
 // page. A malformed top-level object is reported. A consumer error propagates
-// even when a later page succeeds.
+// even if a later page can succeed.
 func TestDynamoSourceFailures(t *testing.T) {
 	drain := func(t *testing.T, body string, size int, fn func([]query.Record) error) error {
 		t.Helper()

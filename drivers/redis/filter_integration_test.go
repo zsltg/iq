@@ -29,14 +29,13 @@ func seedFilterKeyspace(t *testing.T, store *iqredis.Store) (jsonKeys, otherKeys
 	t.Helper()
 	flushKeyspace(t, store)
 
-	// The s field spans the Regex prefilter's cases. Documents doc1 and doc3 are
-	// strings that match ^h (case-insensitively). Document doc2 is a string that
+	// The s field spans the Regex prefilter's cases. In doc1 and doc3, s is a
+	// string that matches ^h (case-insensitively). In doc2, s is a string that
 	// does not match. Document doc4 omits s (missing). Document doc5 carries a
 	// non-string s, so jq test() errors and the prefilter must never drop it.
-	// The items array spans the Size, ElemMatch, and
-	// NoneMatch cases. doc1 has an element q==1 (any matches). doc2 has none (any
-	// fails). The rest omit items entirely (a missing array has length 0, and
-	// any over null errors).
+	// The items array spans the Size, ElemMatch, and NoneMatch cases. doc1 has
+	// an element q==1 (any matches). doc2 has none (any fails). The rest omit
+	// items entirely (a missing array has length 0, and any over null errors).
 	docs := map[string]string{
 		"iq:test:sf:doc1": `{"author":{"name":"Rob"},"year":2015,"lang":"go","s":"hello","items":[{"q":1},{"q":2}]}`,
 		"iq:test:sf:doc2": `{"author":{"name":"Ken"},"year":1978,"lang":"c","s":"World","items":[{"q":5}]}`,

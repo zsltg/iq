@@ -8,11 +8,11 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Cypher a classified query runs, without connecting.
+// ExplainPlan describes the Cypher a classified query will run, without connecting.
 // A bounded query matches the named nodes by key. A scan pages the label with ORDER
 // BY elementId (keyset). It is narrowed by a WHERE clause when the pushed predicate
 // narrows, else it is a full label walk. ExplainPlan reuses the same translation
-// the scan path uses, so the shown filter is exactly what the server receives.
+// the scan path uses, so the shown filter is exactly what the server will receive.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -42,7 +42,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 }
 
 // ExplainWrite describes, without connecting, the write that a copy into this label
-// makes. It is a MERGE on the key property that sets the node's properties, or a
+// will make. It is a MERGE on the key property that sets the node's properties, or a
 // guarded CREATE that skips an existing key.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := fmt.Sprintf("MERGE (n:<label> {<key>}) SET n += props: replace-upsert by key, batches of %d", scanBatch)

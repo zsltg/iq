@@ -8,7 +8,7 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Cassandra statements that this driver runs for a
+// ExplainPlan describes the Cassandra statements that this driver will run for a
 // classified query, without connecting. A bounded query reads the named rows by
 // primary key. A scan runs a SELECT. The pushed predicate pre-filters the SELECT
 // (with ALLOW FILTERING) when one compiles. Otherwise the scan reads the full
@@ -43,7 +43,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 }
 
 // ExplainWrite describes, without connecting, the write that a copy into this
-// table makes: a plain INSERT upsert by primary key, or an INSERT ... IF NOT
+// table will make: a plain INSERT upsert by primary key, or an INSERT ... IF NOT
 // EXISTS that skips existing keys.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := "INSERT: upsert by primary key"

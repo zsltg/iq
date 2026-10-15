@@ -8,7 +8,7 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the DynamoDB calls this driver runs for a classified
+// ExplainPlan describes the DynamoDB calls this driver will run for a classified
 // query, without connecting. A bounded query reads the named items with
 // BatchGetItem. A scan runs a Scan. When a pushed predicate compiles, its
 // FilterExpression pre-filters the scan. Otherwise it is a full-table scan.
@@ -39,7 +39,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 }
 
 // ExplainWrite describes, without connecting, the write that a copy into this
-// table makes. It is a plain PutItem upsert by primary key, or a PutItem with an
+// table will make. It is a plain PutItem upsert by primary key, or a PutItem with an
 // attribute_not_exists condition that skips existing keys.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := "PutItem: upsert by primary key"
