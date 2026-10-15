@@ -98,6 +98,17 @@ UNSAFE_POINTER}` and `internal/jqfmt` `{FILES, REFLECT, UNANALYZED, UNSAFE_POINT
 every row above comes purely from the whole-tree scope. They were the last two json-calling
 packages not already saturated, which is why the toolchain bump moved only these two.
 
+## github.com/zsltg/iq/internal/predicate — ARBITRARY_EXECUTION, EXEC, FILES, MODIFY_SYSTEM_STATE/ENV, MODIFY_SYSTEM_STATE/SIGNALS, NETWORK, OPERATING_SYSTEM, READ_SYSTEM_STATE, REFLECT, RUNTIME, SYSTEM_CALLS, UNANALYZED, UNSAFE_POINTER (FALSE POSITIVE, encoding/json through io.Writer)
+The same interface-dispatch artifact as `internal/render` and `internal/diff`. #143 (explain
+filter stages, 2026-10-14) added `valueString`, which renders a predicate value with a
+`json.Encoder` over a `bytes.Buffer` (`predicate.go:161`). capslock resolves the `io.Writer`
+of `(*json.Encoder).Encode` against every implementation in the whole tree. The printed
+paths reach `net/http.response.Write` (the `NETWORK` row), and `gorilla/websocket` through
+`cmd.traceLogWriter` and the MCP SDK's `LoggingHandler` (the `EXEC` row). The writer is
+always the local `bytes.Buffer`, so the package only formats an in-memory value. The drift
+reached `main` unseen, because the gate skips itself when `go.mod` and `go.sum` do not
+change. It surfaced on the next pull request that changed `go.mod`.
+
 ## Tree-wide EXEC / MODIFY_SYSTEM_STATE/ENV / READ_SYSTEM_STATE / SYSTEM_CALLS (FALSE POSITIVE, the MCP SDK's callback surface)
 The same interface-dispatch artifact as `internal/render` and `internal/diff` above, surfaced
 by `github.com/modelcontextprotocol/go-sdk` v1.7.0 (2026-08-28, `iq mcp`). Thirty-six rows
