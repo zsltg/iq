@@ -13,7 +13,7 @@ import (
 )
 
 // The file store answers the optional filtered-scan port with a client-side
-// raw-byte prefilter, so the engine prefers it over a plain ScanBatches when a
+// raw-byte prefilter. So the engine prefers it over a plain ScanBatches when a
 // filter compiles.
 var _ query.FilteredScanner = (*Store)(nil)
 
@@ -76,7 +76,7 @@ type recordFilter struct {
 // matcher sees only the raw `value` bytes, because the engine filters over the
 // value and not over the whole {key,type,value} line. If the value cannot be
 // extracted (a malformed line, no value, or a repeated one), drop keeps the
-// record. query.DecodeTypedRecord then reports the same error as the plain scan.
+// record. Then query.DecodeTypedRecord reports the same error as the plain scan.
 func (f recordFilter) drop(raw []byte) bool {
 	val, ok := typedValue(raw)
 	if !ok {
@@ -140,9 +140,9 @@ func recordBatch(recs []query.Record) map[string]any {
 
 // typedValue returns the raw `value` of a typed record envelope. It returns
 // ok=false if the envelope is malformed, has no `value`, or repeats it.
-// encoding/json matches field names without case and keeps the last match, so
-// `value`, `Value` and `VALUE` all count. Raw bytes cannot judge a repeated
-// field, so the record goes to the full decode.
+// The encoding/json package matches field names without case and keeps the
+// last match, so `value`, `Value` and `VALUE` all count. Raw bytes cannot
+// judge a repeated field, so the record goes to the full decode.
 func typedValue(raw []byte) ([]byte, bool) {
 	var val []byte
 	count := 0

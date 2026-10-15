@@ -12,15 +12,15 @@ import (
 	"github.com/zsltg/iq/internal/rawpred"
 )
 
-// TestReaderPresence pins the presence half of every reader's contract, which a
-// live keyspace cannot exercise: Redis deletes a hash, list, set or sorted set
-// the moment it empties, so an empty reply only ever arrives when the key went
-// away between the TYPE and value pipelines. Driving the readers over
+// TestReaderPresence pins the presence half of the contract of every reader,
+// which a live keyspace cannot exercise. Redis deletes a hash, list, set or
+// sorted set the moment it empties. So an empty reply only arrives when the key
+// went away between the TYPE and value pipelines. Driving the readers over
 // preset replies stages exactly that race.
 //
-// A stream is the exception — it survives losing every entry — and a RedisJSON
-// document may legitimately be the JSON null, which is why presence rides beside
-// the value rather than being read off it.
+// A stream is the exception, because it survives losing every entry. A RedisJSON
+// document can be the JSON null. This is why presence rides beside the value and
+// is not read off it.
 func TestReaderPresence(t *testing.T) {
 	ctx := context.Background()
 	hash := func(v map[string]string) reader {
@@ -96,9 +96,9 @@ func TestReaderPresence(t *testing.T) {
 	}
 }
 
-// TestReaderRaceReadsAsAbsent covers the other way a key can vanish mid-read:
-// the value command itself comes back with redis.Nil because the key was deleted
-// after TYPE reported it. That is absence, not a null value.
+// TestReaderRaceReadsAsAbsent covers the other way that a key can vanish
+// mid-read. The value command itself comes back with redis.Nil because the key
+// was deleted after TYPE reported it. That is absence, not a null value.
 func TestReaderRaceReadsAsAbsent(t *testing.T) {
 	ctx := context.Background()
 

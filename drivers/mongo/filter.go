@@ -33,17 +33,17 @@ func toFilter(n predicate.Node) bson.M {
 		return sizeFilter(t)
 	case predicate.ElemMatch:
 		path := strings.Join(t.Path, ".")
-		// $elemMatch matches an array element satisfying the condition. jq's any
-		// also iterates an object's values, so an object at the path is a possible
-		// match too; the client-side re-run confirms it.
+		// $elemMatch matches an array element that satisfies the condition. jq's
+		// any also iterates the values of an object. So an object at the path is a
+		// possible match too. The client-side re-run confirms it.
 		return bson.M{"$or": bson.A{
 			bson.M{path: bson.M{"$elemMatch": toFilter(t.Cond)}},
 			bson.M{path: bson.M{"$type": "object"}},
 		}}
 	case predicate.Ne:
-		// jq's != excludes only the scalar value; an array is never equal to a
-		// scalar in jq, so it must still match even though Mongo's $ne would
-		// exclude an array that contains the value.
+		// jq's != excludes only the scalar value. In jq, an array is never
+		// equal to a scalar, so an array must still match. Mongo's $ne
+		// differs: it excludes an array that contains the value.
 		p := strings.Join(t.Path, ".")
 		return bson.M{"$or": bson.A{
 			bson.M{p: bson.M{"$ne": t.Value}},
@@ -64,17 +64,17 @@ func toFilter(n predicate.Node) bson.M {
 		}
 		return bson.M{"$or": toFilters(t)}
 	default:
-		// An unknown node type would be a programming error in the compiler;
-		// fall back to matching everything so the client-side jq still runs.
+		// An unknown node type is a programming error in the compiler. Fall
+		// back to matching everything, so the client-side jq still runs.
 		return bson.M{}
 	}
 }
 
-// mongoOptions translates the jq flags of a neutral Regex into MongoDB's $options
-// (PCRE) spelling. The jq flag i (case-insensitive) is PCRE's i. The jq flag m
-// (dotall) is PCRE's s, not PCRE's m: that is line-anchor multiline, which would
-// leave . not matching a newline and narrow the match against jq. The pushdown gate
-// admits only i and m.
+// mongoOptions translates the jq flags of a neutral Regex into the $options
+// spelling (PCRE) of MongoDB. The jq flag i (case-insensitive) is the i of PCRE.
+// The jq flag m (dotall) is the s of PCRE, not the m of PCRE. The m of PCRE is
+// line-anchor multiline. Mapping the jq m to it leaves . not matching a newline,
+// which narrows the match against jq. The pushdown gate admits only i and m.
 func mongoOptions(flags string) string {
 	var b strings.Builder
 	for _, f := range flags {
@@ -89,8 +89,8 @@ func mongoOptions(flags string) string {
 }
 
 // sameFieldEqs reports whether every branch of an or is an equality on the same
-// field, and if so returns that field's dotted path and the values, so the or can
-// collapse to a single $in.
+// field. If so, it returns the dotted path of that field and the values, so the
+// or can collapse to a single $in.
 func sameFieldEqs(or predicate.Or) (string, bson.A, bool) {
 	if len(or) < 2 {
 		return "", nil, false
@@ -114,9 +114,9 @@ func sameFieldEqs(or predicate.Or) (string, bson.A, bool) {
 }
 
 // exactFilter renders an equality condition exactly (not as the array-containment
-// superset Eq uses), so it can be safely negated. `{field: value}` alone would
-// also match an array element containing value; the extra guard excludes arrays,
-// leaving exactly "field is the scalar value".
+// superset that Eq uses), so it can be safely negated. `{field: value}` alone
+// also matches an array element that contains value. The extra guard excludes
+// arrays, and leaves exactly "field is the scalar value".
 func exactFilter(n predicate.Node) bson.M {
 	switch t := n.(type) {
 	case predicate.Eq:
@@ -153,9 +153,10 @@ func toFilters(nodes []predicate.Node) bson.A {
 	return out
 }
 
-// jqTypes lists the BSON $type names in jq's total order, so index i is the type
-// jq ranks at position i (null lowest, object highest). "number" and "bool" are
-// the Mongo aliases covering every numeric / boolean BSON type.
+// jqTypes lists the BSON $type names in the total order of jq. So index i is the
+// type that jq ranks at position i (null lowest, object highest). The names
+// "number" and "bool" are the Mongo aliases. They cover every numeric and
+// boolean BSON type.
 var jqTypes = []string{"null", "bool", "number", "string", "array", "object"}
 
 // mongoOp maps a range operator to its Mongo query operator.
@@ -178,7 +179,8 @@ func cmpFilter(c predicate.Cmp) bson.M {
 	clauses := bson.A{bson.M{path: bson.M{mongoOp[c.Op]: c.Value}}}
 
 	// The literal is always a number (rank 2) or string (rank 3), so the type
-	// lists below are always non-empty — no guard needed.
+	// lists below are always non-empty. No guard is
+	// needed.
 	rank := valueRank(c.Value)
 	if c.Op == predicate.Gt || c.Op == predicate.Ge {
 		clauses = append(clauses, bson.M{path: bson.M{"$type": asA(jqTypes[rank+1:])}})
@@ -190,8 +192,8 @@ func cmpFilter(c predicate.Cmp) bson.M {
 	return bson.M{"$or": clauses}
 }
 
-// sizeFilter translates a jq `length == n` test. The jq length is polymorphic, so
-// $size (array element count) alone would miss a string of n characters, an object
+// sizeFilter translates a jq `length == n` test. The jq length is polymorphic.
+// So $size (array element count) alone misses a string of n characters, an object
 // of n keys, or a number with absolute value n. The filter matches arrays of
 // exactly n via $size, plus every string, object, and number. Length 0 also
 // matches null and a missing field, which jq reads as length 0.

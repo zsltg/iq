@@ -19,8 +19,8 @@ import (
 )
 
 func TestOpenStopsAtTheCallersDeadline(t *testing.T) {
-	// Nothing listens on port 1, so ClusterStatus would retry without end. The probe
-	// has to give up at the caller's deadline instead.
+	// Nothing listens on port 1, so ClusterStatus retries without end. The probe has
+	// to give up at the caller's deadline instead.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	t.Cleanup(cancel)
 	before := runtime.NumGoroutine()

@@ -8,11 +8,12 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Cassandra statements this driver would run for a
-// classified query, without connecting. A bounded query reads the named rows by
-// primary key; a scan runs a SELECT, pre-filtered by the pushed predicate (with
-// ALLOW FILTERING) when one compiles, else a full-table scan. It reuses toCQL so the
-// shown WHERE is exactly what ScanFiltered would issue.
+// ExplainPlan describes the Cassandra statements that this driver runs if it
+// executes a classified query, without connecting. A bounded query reads the named
+// rows by primary key. A scan runs a SELECT. The pushed predicate pre-filters the
+// SELECT (with ALLOW FILTERING) when one compiles. Otherwise the scan reads the
+// full table. It reuses toCQL so the shown WHERE is exactly what ScanFiltered
+// issues if the scan runs.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -42,9 +43,9 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	return query.AccessPlan{Ops: []string{desc, mode}, Filter: filter, Server: server}
 }
 
-// ExplainWrite describes, without connecting, the write a copy into this table would
-// make: a plain INSERT upsert by primary key, or an INSERT ... IF NOT EXISTS that
-// skips existing keys.
+// ExplainWrite describes, without connecting, the write that a copy into this table
+// makes if it runs. The write is a plain INSERT upsert by primary key, or an
+// INSERT ... IF NOT EXISTS that skips existing keys.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := "INSERT: upsert by primary key"
 	if mode == query.InsertOnly {
@@ -58,14 +59,15 @@ func ExplainClear() query.AccessPlan {
 	return query.AccessPlan{Ops: []string{"TRUNCATE: empty the table, keep its schema"}}
 }
 
-// ExplainDrop describes the `iq data drop` op for a table and reports it supported —
-// a Cassandra table is a removable container.
+// ExplainDrop describes the `iq data drop` op for a table and reports it
+// supported. A Cassandra table is a removable container.
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"DROP TABLE: remove the table and its data"}}, true
 }
 
-// ExplainDelete describes the `iq data delete` op for a table: a per-key DELETE by
-// primary key, with a pre-read for the present-vs-absent count (CQL is silent on it).
+// ExplainDelete describes the `iq data delete` op for a table. It is a per-key
+// DELETE by primary key. A pre-read gives the present-vs-absent count, because
+// CQL is silent on it.
 func ExplainDelete() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{
 		"pre-read the keys (accounting only, for present-vs-absent)",

@@ -11,9 +11,10 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// putItem is one record resolved for writing: its document body and its key. keyed
-// is true if the key came from the record, so it can overwrite an existing document.
-// It is false if the driver minted the key for a keyless record (always an insert).
+// putItem is one record resolved for writing: its document body and its key. The
+// keyed field is true if the key came from the record, so it can overwrite an
+// existing document. It is false if the driver minted the key for a keyless record
+// (always an insert).
 type putItem struct {
 	key   string
 	keyed bool
@@ -23,9 +24,9 @@ type putItem struct {
 // Put writes a batch of records into the collection, keyed by document ID. Upsert
 // overwrites an existing document and inserts a new one. InsertOnly inserts new
 // documents and counts the skipped ones whose ID exists. A keyless record gets a
-// client-side UUIDv4 key. The driver builds every document before the bulk call, so
-// a record that cannot be represented (a non-object value) fails the whole batch
-// before any write lands. The SDK JSON-encodes every value.
+// client-side UUIDv4 key. The driver builds every document before the bulk call.
+// So a record that cannot be represented (a non-object value) fails the whole
+// batch before any write lands. The SDK JSON-encodes every value.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if s.collection == nil {
 		return query.WriteStat{}, errNoBucket
@@ -55,9 +56,9 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 	return s.upsert(ctx, items)
 }
 
-// documentBody returns the JSON document to write for a record. The value must be a
-// JSON object: a scalar or array is rejected rather than wrapped as {value: …}, so a
-// successful Put round-trips exactly (the uniform keyed-store contract).
+// documentBody returns the JSON document to write for a record. The value must be
+// a JSON object. A scalar or array is rejected rather than wrapped as {value: …},
+// so a successful Put round-trips exactly (the uniform keyed-store contract).
 func documentBody(r query.Record) (map[string]any, error) {
 	obj, ok := r.Value.(map[string]any)
 	if !ok {
@@ -66,11 +67,12 @@ func documentBody(r query.Record) (map[string]any, error) {
 	return obj, nil
 }
 
-// upsert overwrites each record's document by ID, creating it when absent. It first
-// reads which keyed IDs already exist (a KV pre-read, accounting only), bulk-upserts
-// every document, then counts a pre-existing key as overwritten and the rest as
-// written. The pre-read is not atomic with the writes, so the overwrite count can skew
-// by one under a concurrent write to the same key — accounting, never correctness.
+// upsert overwrites each record's document by ID, creating it when absent. It
+// first reads which keyed IDs already exist (a KV pre-read, accounting only). Then
+// it bulk-upserts every document. Then it counts a pre-existing key as overwritten
+// and the rest as written. The pre-read is not atomic with the writes, so the
+// overwrite count can skew by one under a concurrent write to the same key. This
+// affects accounting, never correctness.
 func (s *Store) upsert(ctx context.Context, items []putItem) (query.WriteStat, error) {
 	keyed := make([]string, 0, len(items))
 	for _, it := range items {
@@ -108,9 +110,9 @@ func (s *Store) upsert(ctx context.Context, items []putItem) (query.WriteStat, e
 	return stat, nil
 }
 
-// insertOnly inserts new documents and counts an ID that already exists as a skip. Each
-// collision surfaces as a per-document ErrDocumentExists in the bulk result, so the
-// batch continues past a collision; any other per-document error fails it.
+// insertOnly inserts new documents and counts an ID that already exists as a skip.
+// Each collision surfaces as a per-document ErrDocumentExists in the bulk result,
+// so the batch continues past a collision. Any other per-document error fails it.
 func (s *Store) insertOnly(ctx context.Context, items []putItem) (query.WriteStat, error) {
 	ops := make([]gocb.BulkOp, len(items))
 	inserts := make([]*gocb.InsertOp, len(items))
@@ -137,9 +139,10 @@ func (s *Store) insertOnly(ctx context.Context, items []putItem) (query.WriteSta
 	return stat, nil
 }
 
-// existingKeys returns which of keys currently have a document, via one KV bulk get.
-// It reads only existence (the content is ignored), so an upsert can count overwrites
-// without a query pass. A key with no document is simply absent from the result.
+// existingKeys returns which of keys currently have a document, via one KV bulk
+// get. It reads only existence (the content is ignored), so an upsert can count
+// overwrites without a query pass. A key with no document is absent from the
+// result.
 func (s *Store) existingKeys(ctx context.Context, keys []string) (map[string]struct{}, error) {
 	exist := make(map[string]struct{}, len(keys))
 	if len(keys) == 0 {
@@ -211,9 +214,9 @@ func (s *Store) Drop(ctx context.Context) error {
 	return nil
 }
 
-// TypedScan streams the whole collection as typed records, reusing the ScanBatches
-// walk. Every item is a document, so the type tag is "document"; the key is the
-// document ID and the value is the normalized document.
+// TypedScan streams the whole collection as typed records and reuses the
+// ScanBatches walk. Every item is a document, so the type tag is "document". The
+// key is the document ID, and the value is the normalized document.
 func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) error) error {
 	return s.ScanBatches(ctx, func(batch map[string]any) error {
 		recs := make([]query.Record, 0, len(batch))

@@ -8,7 +8,7 @@ package file
 // of hash/maphash breaks that.
 
 const (
-	// bloomBitsPerKey sizes each page filter; ~10 bits/key gives roughly a 1%
+	// bloomBitsPerKey sizes each page filter. ~10 bits/key gives roughly a 1%
 	// false-positive rate at bloomHashCount hashes.
 	bloomBitsPerKey = 10
 	// bloomHashCount is the number of bit positions set per key (k), tuned for
@@ -23,8 +23,9 @@ func newBloom(n int) []byte {
 	return make([]byte, (bits+7)/8)
 }
 
-// bloomAdd records key in filter. filter must be non-empty; its bit length is
-// len(filter)*8, so add and test agree by reading that length back off the bytes.
+// bloomAdd records key in filter. The filter argument must be non-empty. Its
+// bit length is len(filter)*8, so add and test agree by reading that length
+// back off the bytes.
 func bloomAdd(filter []byte, key string) {
 	m := uint32(len(filter) * 8) //nolint:gosec // G115: a page's bloom filter is a few KB, so len*8 fits uint32.
 	h1, h2 := bloomHashes(key)
@@ -34,10 +35,10 @@ func bloomAdd(filter []byte, key string) {
 	}
 }
 
-// bloomHas reports whether key may be in filter: true if every bit is set (a
-// possible member, subject to false positives), false if any is clear (a
-// definite non-member). An empty filter (a page that stored nothing) never
-// matches.
+// bloomHas reports whether key can be in filter. It returns true if every
+// bit is set (a possible member, subject to false positives). It returns
+// false if any bit is clear (a definite non-member). An empty filter (a page
+// that stored nothing) never matches.
 func bloomHas(filter []byte, key string) bool {
 	if len(filter) == 0 {
 		return false
@@ -54,8 +55,9 @@ func bloomHas(filter []byte, key string) bool {
 }
 
 // bloomHashes derives two 32-bit hashes from one allocation-free FNV-1a pass over
-// key, then combines them (Kirsch-Mitzenmacher) into the k positions. h2 is
-// forced non-zero so the k positions do not collapse onto one bit.
+// key. It then combines them (Kirsch-Mitzenmacher) into the k positions.
+// The h2 hash is forced non-zero, so the k positions do not collapse onto
+// one bit.
 func bloomHashes(key string) (uint32, uint32) {
 	const (
 		offset64 = 14695981039346656037

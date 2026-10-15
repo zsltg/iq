@@ -19,8 +19,8 @@ type connConfig struct {
 	zkquorum string
 	// znode is the ZooKeeper parent znode HBase registers under.
 	znode string
-	// table is the [namespace:]table the jq and write paths are scoped to; empty for
-	// raw-only or list-only use.
+	// table is the [namespace:]table that the jq and write paths are scoped to. It
+	// is empty for raw-only or list-only use.
 	table string
 	// types declares the encoding of specific columns, keyed "family:qualifier".
 	types typeMap
@@ -92,8 +92,8 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	}, nil
 }
 
-// withPort appends the default ZooKeeper port to a bare host, leaving a host that
-// already carries a port (or a bracketed IPv6 literal with one) untouched.
+// withPort appends the default ZooKeeper port to a bare host. It leaves untouched
+// a host that already carries a port (or a bracketed IPv6 literal with one).
 func withPort(host string) string {
 	if strings.HasPrefix(host, "[") {
 		if strings.Contains(host, "]:") {
@@ -107,10 +107,11 @@ func withPort(host string) string {
 	return host + ":" + defaultZKPort
 }
 
-// parseTypeMap parses the ?types= parameter — a comma-separated list of
-// family:qualifier=type entries, e.g. "cf:age=long,cf:price=double" — into a
-// typeMap. An empty parameter yields an empty map (every column ctAuto). A
-// malformed entry or unknown type is an error, failing fast at connect.
+// parseTypeMap parses the ?types= parameter into a typeMap. The parameter is
+// a comma-separated list of family:qualifier=type entries, for example
+// "cf:age=long,cf:price=double". An empty parameter yields an empty map
+// (every column ctAuto). A malformed entry or unknown type is an error,
+// failing fast at connect.
 func parseTypeMap(s string) (typeMap, error) {
 	out := typeMap{}
 	if s == "" {

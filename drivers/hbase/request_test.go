@@ -18,9 +18,9 @@ func seedBooks(f *fakeClient) {
 	f.seed("2", cell("cf", "title", "Hyperion"))
 }
 
-// wantSingleColumnFilter is the filter eqToFilter builds for cf:author = "Herbert":
-// a binary-comparator equality that also excludes rows lacking the column and reads
-// only the latest version.
+// wantSingleColumnFilter is the filter eqToFilter builds for cf:author =
+// "Herbert". It is a binary-comparator equality that also excludes rows lacking the
+// column and reads only the latest version.
 func wantSingleColumnFilter(value string) filterConstructor {
 	return filter.NewSingleColumnValueFilter(
 		[]byte("cf"), []byte("author"), filter.Equal,
@@ -118,7 +118,8 @@ func TestExecGetIssuesTheNamedTablesGet(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fc.gets, 1)
 	requireTestCtx(t, fc.gets[0].ctx)
-	// The verb names its own table; the row key is the second argument, not the table.
+	// The verb names its own table. The row key is the second argument, not the
+	// table.
 	require.Equal(t, "other", fc.gets[0].table)
 	require.Equal(t, []byte("42"), getPB(t, fc.gets[0]).Row)
 	requireDefaultMaxVersions(t, getPB(t, fc.gets[0]).MaxVersions)

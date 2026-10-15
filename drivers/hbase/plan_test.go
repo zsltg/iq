@@ -102,7 +102,7 @@ func TestExplainClearDrop(t *testing.T) {
 func TestExplainDelete(t *testing.T) {
 	plan, ok := ExplainDelete()
 	require.True(t, ok)
-	// The exists-only pre-read supplies the present-vs-absent split; the whole-row
+	// The exists-only pre-read supplies the present-vs-absent split. The whole-row
 	// Delete removes the named rows.
 	require.Contains(t, plan.Ops[0], "exists-only Get")
 	require.Contains(t, plan.Ops[1], "Delete (whole row)")

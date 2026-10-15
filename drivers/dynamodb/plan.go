@@ -8,11 +8,12 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the DynamoDB calls this driver would run for a classified
-// query, without connecting. A bounded query reads the named items with BatchGetItem;
-// a scan runs a Scan, pre-filtered by the pushed predicate's FilterExpression when one
-// compiles, else a full-table scan. It reuses the same compiler as ScanFiltered (via
-// its readable display form) so the shown filter is exactly what the scan would issue.
+// ExplainPlan describes the DynamoDB calls this driver runs if it executes a
+// classified query, without connecting. A bounded query reads the named items with
+// BatchGetItem. A scan runs a Scan. When a pushed predicate compiles, its
+// FilterExpression pre-filters the scan. Otherwise it is a full-table scan.
+// ExplainPlan reuses the same compiler as ScanFiltered (via its readable display
+// form), so the shown filter is exactly what the scan issues if it runs.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -37,9 +38,9 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	}
 }
 
-// ExplainWrite describes, without connecting, the write a copy into this table would
-// make: a plain PutItem upsert by primary key, or a PutItem with an
-// attribute_not_exists condition that skips existing keys.
+// ExplainWrite describes, without connecting, the write that a copy into this table
+// makes if it runs. It is a plain PutItem upsert by primary key, or a PutItem with
+// an attribute_not_exists condition that skips existing keys.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := "PutItem: upsert by primary key"
 	if mode == query.InsertOnly {
@@ -57,8 +58,8 @@ func ExplainClear() query.AccessPlan {
 	}}
 }
 
-// ExplainDrop describes the `iq data drop` op for a table and reports it supported — a
-// DynamoDB table is a removable container.
+// ExplainDrop describes the `iq data drop` op for a table and reports it
+// supported, because a DynamoDB table is a removable container.
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"DeleteTable: remove the table and its data"}}, true
 }

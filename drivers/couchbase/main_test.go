@@ -18,14 +18,16 @@ import (
 	"github.com/zsltg/iq/internal/testimage"
 )
 
-// sharedBucketName is the one bucket the integration tests share; buckets are
-// expensive, so per-test isolation is a fresh collection inside it, not a fresh bucket.
+// sharedBucketName is the one bucket the integration tests share. Buckets are
+// expensive, so per-test isolation is a fresh collection inside it, not a fresh
+// bucket.
 const sharedBucketName = "iq_test"
 
-// sharedBase is the base couchbase:// URL (credentials in userinfo, ?bucket= set) the
-// integration tests connect to: an ephemeral Couchbase container started once for the
-// whole package, or the IQ_COUCHBASE_URL override. It stays empty when integration
-// tests are skipped (-short).
+// sharedBase is the base couchbase:// URI (credentials in userinfo, ?bucket= set)
+// that the integration tests connect to. It points at an ephemeral Couchbase
+// container that starts once for the whole package, or at the IQ_COUCHBASE_URL
+// override. It stays
+// empty when integration tests are skipped (-short).
 var (
 	sharedBase   string
 	sharedBucket string
@@ -76,7 +78,7 @@ func runTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "couchbase connection string: %v\n", err)
 		return 1
 	}
-	// ConnectionString has no credentials; inject the admin userinfo the module set.
+	// ConnectionString has no credentials. Inject the admin userinfo the module set.
 	u, err := url.Parse(connStr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parse couchbase connection string: %v\n", err)
@@ -87,9 +89,10 @@ func runTests(m *testing.M) int {
 	return m.Run()
 }
 
-// splitBucket peels the ?bucket= off an override URL into the base URL (bucket removed)
-// and the bucket name, so the shared harness knows which bucket to create collections
-// in. An override without a bucket is an error, since the keyspace tests need one.
+// splitBucket peels the ?bucket= off an override URI into the base URI (bucket
+// removed) and the bucket name. The shared harness uses these to know which bucket
+// to create collections in. An override without a bucket is an error, because the
+// keyspace tests need one.
 func splitBucket(raw string) (base, bucket string, err error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -105,9 +108,9 @@ func splitBucket(raw string) (base, bucket string, err error) {
 	return u.String(), bucket, nil
 }
 
-// testURL returns the base couchbase:// URL (bucket added back as ?bucket=) for
-// integration tests, so Open sees the shared bucket and the per-test collection rides
-// as the dotted address.
+// testURL returns the base couchbase:// URI (bucket added back as ?bucket=) for
+// integration tests. So Open sees the shared bucket, and the per-test collection
+// rides as the dotted address.
 func testURL() string {
 	u, _ := url.Parse(sharedBase)
 	q := u.Query()
@@ -127,9 +130,9 @@ func skipShort(t *testing.T) context.Context {
 	return ctx
 }
 
-// adminCluster opens a raw gocb cluster against the test server, used by the harness to
-// create collections, seed documents, and drop them (operations distinct from the
-// Store under test).
+// adminCluster opens a raw gocb cluster against the test server. The harness uses
+// it to create collections, seed documents, and drop them (operations distinct from
+// the Store under test).
 func adminCluster(t *testing.T) *gocb.Cluster {
 	t.Helper()
 	cc, err := parseURL(testURL(), "")
@@ -144,11 +147,11 @@ func adminCluster(t *testing.T) *gocb.Cluster {
 	return cluster
 }
 
-// seedCollection creates a fresh collection named after the test in the shared bucket,
-// creates its primary index and waits for it online, seeds the supplied documents by
-// KV upsert, registers a drop on cleanup, and returns a Store scoped to it. Buckets are
-// expensive and collections are cheap, so each test gets its own collection. It skips
-// under -short.
+// seedCollection creates a fresh collection named after the test in the shared
+// bucket. It creates its primary index and waits for it online. It seeds the
+// supplied documents by KV upsert, registers a drop on cleanup, and returns a Store
+// scoped to it. Buckets are expensive and collections are cheap, so each test gets
+// its own collection. It skips under -short.
 func seedCollection(t *testing.T, docs map[string]map[string]any) *Store {
 	t.Helper()
 	ctx := skipShort(t)
@@ -162,9 +165,9 @@ func seedCollection(t *testing.T, docs map[string]map[string]any) *Store {
 	t.Cleanup(func() { _ = mgr.DropCollection(spec, nil) })
 
 	ref := fmt.Sprintf("`%s`.`%s`.`%s`", sharedBucket, defaultScope, name)
-	// A freshly created collection is not immediately queryable; retry until the query
-	// service sees it. CREATE PRIMARY INDEX is synchronous — the index is built and
-	// online when the statement returns — so no separate online-poll is needed.
+	// A freshly created collection is not immediately queryable. Retry until the query
+	// service sees it. CREATE PRIMARY INDEX is synchronous: the index is built and
+	// online when the statement returns. So no separate online-poll is needed.
 	requireEventually(t, ctx, func() error {
 		_, err := cluster.Query("CREATE PRIMARY INDEX ON "+ref, &gocb.QueryOptions{Context: ctx})
 		return err
@@ -178,10 +181,10 @@ func seedCollection(t *testing.T, docs map[string]map[string]any) *Store {
 	return openIntegration(t, name)
 }
 
-// seedCollectionKV creates a fresh collection named after the test and seeds it by KV
-// upsert, without a primary index — the fast path for KV-only tests (Get/Put), which
-// never run a SQL++ scan and so pay none of the query-service index propagation. It
-// skips under -short.
+// seedCollectionKV creates a fresh collection named after the test and seeds it by
+// KV upsert, without a primary index. It is the fast path for KV-only tests
+// (Get/Put), which never run a SQL++ scan and so pay none of the query-service
+// index propagation. It skips under -short.
 func seedCollectionKV(t *testing.T, docs map[string]map[string]any) *Store {
 	t.Helper()
 	ctx := skipShort(t)
@@ -195,8 +198,8 @@ func seedCollectionKV(t *testing.T, docs map[string]map[string]any) *Store {
 	t.Cleanup(func() { _ = mgr.DropCollection(spec, nil) })
 
 	col := cluster.Bucket(sharedBucket).Scope(defaultScope).Collection(name)
-	// A freshly created collection is not immediately usable for KV; retry until a probe
-	// succeeds, then seed.
+	// A freshly created collection is not immediately usable for KV. Retry until a
+	// probe succeeds, then seed.
 	requireEventually(t, ctx, func() error {
 		_, err := col.Exists("__probe__", &gocb.ExistsOptions{Context: ctx})
 		return err

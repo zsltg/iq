@@ -8,11 +8,11 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Redis calls this driver would make for a classified
-// query, without connecting. Redis pushes no filter to the server (a scan always
-// uses MATCH *). The ops show the pipelined TYPE and per-type read. A compiled
-// predicate also runs the rawpred prefilter on RedisJSON values. A bounded key read
-// has no filter stages.
+// ExplainPlan describes the Redis calls that this driver makes if it runs a
+// classified query, without connecting. Redis pushes no filter to the server (a
+// scan always uses MATCH *). The ops show the pipelined TYPE and per-type read. A
+// compiled predicate also runs the rawpred prefilter on RedisJSON values. A bounded
+// key read has no filter stages.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.AccessPlan {
 	const typedReads = "then per key by type: GET / HGETALL / LRANGE 0 -1 / SMEMBERS / ZRANGE 0 -1 WITHSCORES / JSON.GET"
 	if !keys.Scan {
@@ -39,10 +39,10 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.Access
 	}
 }
 
-// ExplainWrite describes, without connecting, the write a copy into this keyspace
-// would make: a pipelined, type-aware reconstruction of each key. Upsert DEL's an
-// aggregate before rewriting it (so it is replaced, not appended); InsertOnly
-// writes only absent keys.
+// ExplainWrite describes, without connecting, the write that a copy into this
+// keyspace makes if it runs: a pipelined, type-aware reconstruction of each key.
+// Upsert DEL's an aggregate before rewriting it (so it is replaced, not appended).
+// InsertOnly writes only absent keys.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := "pipeline per key: DEL then SET / HSET / RPUSH / SADD / ZADD / XADD / JSON.SET by type (replace)"
 	if mode == query.InsertOnly {

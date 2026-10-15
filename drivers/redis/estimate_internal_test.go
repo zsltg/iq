@@ -11,11 +11,11 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// TestEstimateCountReflectsDBSize checks EstimateCount answers DBSIZE exactly and
-// tracks the keyspace: five seeded keys read back as five, and a sixth as six,
-// which pins the count against a hard-coded constant or an off-by-one. It runs on
-// the private database (13) so its FLUSHDB never races other packages under
-// `go test ./...`.
+// TestEstimateCountReflectsDBSize checks that EstimateCount answers DBSIZE
+// exactly and tracks the keyspace. Five seeded keys read back as five, and a
+// sixth as six. This pins the count against a hard-coded constant or an
+// off-by-one. The test runs on the private database (13), so its FLUSHDB never
+// races other packages under `go test ./...`.
 func TestEstimateCountReflectsDBSize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping redis integration test in -short mode")

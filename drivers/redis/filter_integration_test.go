@@ -20,20 +20,22 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// seedFilterKeyspace flushes the reserved database and loads a mixed keyspace:
-// several RedisJSON documents (the only type the prefilter inspects) alongside a
-// plain string and a hash (which it must always pass through). It returns the
-// RedisJSON and non-JSON key sets for the assertions.
+// seedFilterKeyspace flushes the reserved database and loads a mixed keyspace.
+// It holds several RedisJSON documents (the only type that the prefilter
+// inspects), a plain string, and a hash. The prefilter must always pass the
+// string and the hash through. The function returns the RedisJSON and non-JSON
+// key sets for the assertions.
 func seedFilterKeyspace(t *testing.T, store *iqredis.Store) (jsonKeys, otherKeys []string) {
 	t.Helper()
 	flushKeyspace(t, store)
 
-	// The s field spans the Regex prefilter's cases: doc1/doc3 are strings that
-	// match ^h (case-insensitively), doc2 a string that does not, doc4 omits s
-	// (missing), and doc5 carries a non-string s (jq test() would error, so it must
-	// never be dropped). The items array spans the Size/ElemMatch/NoneMatch cases:
-	// doc1 has an element q==1 (any matches), doc2 has none (any fails), and the rest
-	// omit items entirely (a missing array — length 0, any over null errors).
+	// The s field spans the Regex prefilter's cases. In doc1 and doc3, s is a
+	// string that matches ^h (case-insensitively). In doc2, s is a string that
+	// does not match. Document doc4 omits s (missing). Document doc5 carries a
+	// non-string s, so jq test() errors and the prefilter must never drop it.
+	// The items array spans the Size, ElemMatch, and NoneMatch cases. doc1 has
+	// an element q==1 (any matches). doc2 has none (any fails). The rest omit
+	// items entirely (a missing array has length 0, and any over null errors).
 	docs := map[string]string{
 		"iq:test:sf:doc1": `{"author":{"name":"Rob"},"year":2015,"lang":"go","s":"hello","items":[{"q":1},{"q":2}]}`,
 		"iq:test:sf:doc2": `{"author":{"name":"Ken"},"year":1978,"lang":"c","s":"World","items":[{"q":5}]}`,
@@ -93,11 +95,12 @@ func collect(t *testing.T, scan func(context.Context, func(map[string]any) error
 	return out
 }
 
-// TestScanFilteredMatchesRefilteredScanBatches is the driver-level invariant: for
-// several predicates, re-applying the full filter to ScanFiltered's output yields
-// exactly the same set as re-applying it to a plain ScanBatches — the prefilter
-// only ever drops documents the filter rejects. It also checks the prefilter never
-// touches non-RedisJSON keys and never alters a surviving document's decode.
+// TestScanFilteredMatchesRefilteredScanBatches is the driver-level invariant.
+// For several predicates, re-applying the full filter to the output of
+// ScanFiltered yields exactly the same set as re-applying it to a plain
+// ScanBatches. The prefilter only drops documents that the filter rejects. The
+// test also checks that the prefilter never touches non-RedisJSON keys and never
+// alters the decode of a surviving document.
 func TestScanFilteredMatchesRefilteredScanBatches(t *testing.T) {
 	store := openIntegration(t)
 	_, otherKeys := seedFilterKeyspace(t, store)
@@ -117,7 +120,8 @@ func TestScanFilteredMatchesRefilteredScanBatches(t *testing.T) {
 		// non-string (doc5, kept), and missing (doc4, kept) all exercised at once.
 		{"regex on s, mixed string/non-string/missing", predicate.Regex{Path: []string{"s"}, Pattern: "^h", Flags: "i"}},
 		// Size over items: doc1 (length 2, kept), doc2 (length 1, dropped), and the
-		// items-less docs (length 0, dropped) — a missing array is jq's null length 0.
+		// items-less docs (length 0, dropped). A missing array is the jq null with
+		// length 0.
 		{"size on items array", predicate.Size{Path: []string{"items"}, N: 2}},
 		// ElemMatch over items: doc1 has an element q==1 (kept), doc2's elements all
 		// fail (dropped), and the items-less docs stay (any over a missing array errors).
@@ -142,8 +146,8 @@ func TestScanFilteredMatchesRefilteredScanBatches(t *testing.T) {
 			for _, k := range otherKeys {
 				require.Contains(t, filtered, k, "a non-JSON key is never prefiltered out")
 			}
-			// The load-bearing equivalence: the full filter over each scan's output
-			// selects the same keys.
+			// The equivalence that the test depends on: the full filter over each
+			// scan's output selects the same keys.
 			require.Equal(t, matchingKeys(baseline, tt.pred), matchingKeys(filtered, tt.pred),
 				"re-filtering ScanFiltered and ScanBatches must agree")
 		})
@@ -151,8 +155,9 @@ func TestScanFilteredMatchesRefilteredScanBatches(t *testing.T) {
 }
 
 // TestScanFilteredHonorsDecimalMode pins that a surviving RedisJSON document is
-// decoded under the store's decimal mode, not a default: under DecimalString a
-// fractional number in a kept document must be its exact literal string.
+// decoded under the decimal mode of the store, not a default. Under
+// DecimalString, a fractional number in a kept document must be its exact
+// literal string.
 func TestScanFilteredHonorsDecimalMode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping redis integration test in -short mode")
@@ -166,7 +171,7 @@ func TestScanFilteredHonorsDecimalMode(t *testing.T) {
 	flushKeyspace(t, store)
 	mustQuery(t, store, "JSON.SET", "iq:test:dec", "$", `{"a":1,"r":1.5}`)
 
-	// a == 1 keeps the document, so it is decoded — under DecimalString, r is "1.5".
+	// a == 1 keeps the document, so it is decoded. Under DecimalString, r is "1.5".
 	pred := predicate.Eq{Path: []string{"a"}, Value: 1.0}
 	got := collect(t, func(ctx context.Context, fn func(map[string]any) error) error {
 		return store.ScanFiltered(ctx, pred, fn)
@@ -176,9 +181,9 @@ func TestScanFilteredHonorsDecimalMode(t *testing.T) {
 	require.Equal(t, "1.5", doc["r"], "fractional decoded under the store's decimal mode")
 }
 
-// TestScanFilteredRejectsUnsupportedType pins that a filtered scan fails fast on a
-// type with no frozen JSON encoding, exactly as an unfiltered read does, rather
-// than silently skipping it.
+// TestScanFilteredRejectsUnsupportedType pins that a filtered scan fails fast on
+// a type with no frozen JSON encoding, exactly as an unfiltered read does. It
+// does not skip the key silently.
 func TestScanFilteredRejectsUnsupportedType(t *testing.T) {
 	store := openIntegration(t)
 	ctx := context.Background()
@@ -227,7 +232,7 @@ func refMatchValue(v any, pred predicate.Node) bool {
 		return refSizeValue(lookup(v, n.Path), n.N)
 	case predicate.ElemMatch:
 		// jq's any errors on a non-container or a non-indexable element ahead of a
-		// match; such an error must not drop the document, so it counts as must-keep.
+		// match. Such an error must not drop the document, so it counts as must-keep.
 		match, errored := refAnyValue(lookup(v, n.Path), n.Cond)
 		return errored || match
 	case predicate.NoneMatch:
@@ -256,7 +261,7 @@ func refCmpHolds(c int, op predicate.Op) bool {
 func refRegexValue(v any, n predicate.Regex) bool {
 	s, ok := v.(string)
 	if !ok {
-		// jq test() errors on a non-string; the oracle treats it as non-matching,
+		// jq test() errors on a non-string. The oracle treats it as non-matching,
 		// and rawpred keeps it (MayMatch), so it is never wrongly dropped.
 		return false
 	}
@@ -270,9 +275,10 @@ func refRegexValue(v any, n predicate.Regex) bool {
 	return regexp.MustCompile(pat).MatchString(s)
 }
 
-// refSizeValue mirrors jq's length compared to n over a decoded value: array
-// elements, object keys, string runes, 0 for null, |value| for a number; a boolean
-// (jq length errors) and any unexpected type are must-keep.
+// refSizeValue mirrors jq's length compared to n over a decoded value. The
+// length is the count of elements for an array, keys for an object, and runes for
+// a string. It is 0 for null and |value| for a number. A boolean (jq length
+// errors) and any unexpected type are must-keep.
 func refSizeValue(v any, n int) bool {
 	switch t := v.(type) {
 	case nil:
@@ -308,9 +314,10 @@ func refAbsEquals(v any, n int) bool {
 	}
 }
 
-// refAnyValue mirrors jq's any(Cond), short-circuiting in element order: match=true
-// at the first element satisfying Cond, errored=true on a non-container or a
-// non-indexable element reached before any match (jq would error there).
+// refAnyValue mirrors jq's any(Cond), short-circuiting in element order. It
+// returns match=true at the first element that satisfies Cond. It returns
+// errored=true on a non-container or a non-indexable element that it reaches
+// before any match (jq errors there).
 func refAnyValue(v any, cond predicate.Node) (match, errored bool) {
 	elems, ok := refElements(v)
 	if !ok {

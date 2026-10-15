@@ -17,10 +17,10 @@ var seededKeys = []string{
 	"iq:test:zset", "iq:test:stream", "iq:test:json",
 }
 
-// seedKV loads a fixed set of iq:test:* keys spanning every supported type, so
-// Get's normalization can be asserted without depending on scripts/seed-redis.sh. It
-// removes the keys when the test finishes: a stream or a leftover key would
-// otherwise surface in a later `iq '.'` scan.
+// seedKV loads a fixed set of iq:test:* keys that span every supported type. So
+// the normalization of Get can be asserted without depending on
+// scripts/seed-redis.sh. It removes the keys when the test finishes. Otherwise a
+// stream or a leftover key surfaces in a later `iq '.'` scan.
 func seedKV(t *testing.T, store *iqredis.Store) {
 	t.Helper()
 	ctx := context.Background()
@@ -72,9 +72,9 @@ func TestGetNormalizesEveryType(t *testing.T) {
 }
 
 // TestGetKeepsStoredJSONNull pins the case that forces presence to ride beside
-// the value rather than being read off it: a RedisJSON document may legitimately
-// be the JSON null, so its normalized value is nil while the key exists. Reading
-// absence off the value would silently drop it.
+// the value and not be read off it. A RedisJSON document can be the JSON null,
+// so its normalized value is nil while the key exists. Reading absence off the
+// value silently drops the key.
 func TestGetKeepsStoredJSONNull(t *testing.T) {
 	store := openIntegration(t)
 	ctx := context.Background()

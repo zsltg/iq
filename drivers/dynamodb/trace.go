@@ -11,11 +11,11 @@ import (
 )
 
 // traceMiddleware returns an AWS SDK API option that logs each executed DynamoDB
-// operation to w, backing the CLI's --verbose command trace — the analogue of the
-// Cassandra query observer. Only the operation name and the target table are written;
-// the request parameters (which carry item data and filter values) are redacted, so no
-// data or credential reaches the log. Writes are serialized against tearing, as the
-// SDK invokes the middleware from multiple goroutines.
+// operation to w. It backs the CLI's --verbose command trace and is the analogue of
+// the Cassandra query observer. Only the operation name and the target table are
+// written. The request parameters (which carry item data and filter values) are
+// redacted, so no data or credential reaches the log. Writes are serialized against
+// tearing, because the SDK invokes the middleware from multiple goroutines.
 func traceMiddleware(w io.Writer) func(*smithymw.Stack) error {
 	var mu sync.Mutex
 	mw := smithymw.InitializeMiddlewareFunc("iqTrace",
@@ -36,10 +36,10 @@ func traceMiddleware(w io.Writer) func(*smithymw.Stack) error {
 	}
 }
 
-// tableOf extracts the TableName from an operation's input parameters when it carries
-// one, so the trace names the table an operation touched. It reflects over the input
-// struct rather than type-switching every operation, since only the common TableName
-// field is of interest and it appears on most inputs.
+// tableOf extracts the TableName from an operation's input parameters when it
+// carries one, so the trace names the table an operation touched. It reflects over
+// the input struct rather than type-switching every operation. Only the common
+// TableName field is of interest, and it appears on most inputs.
 func tableOf(params any) string {
 	rv := reflect.ValueOf(params)
 	if rv.Kind() == reflect.Pointer {

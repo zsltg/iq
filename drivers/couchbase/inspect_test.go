@@ -87,9 +87,10 @@ func TestInspect(t *testing.T) {
 	})
 }
 
-// TestInspectContextCancelled pins that the context each probe is handed reaches its
-// request: a context cancelled before the probe starts must surface the cancellation
-// instead of a completed read. It also pins that each probe names itself in the error.
+// TestInspectContextCancelled pins that the context each probe is handed reaches
+// its request. A context cancelled before the probe starts must surface the
+// cancellation instead of a completed read. It also pins that each probe names
+// itself in the error.
 func TestInspectContextCancelled(t *testing.T) {
 	ctx := skipShort(t)
 	st := openIntegration(t, collName(t))
@@ -116,7 +117,7 @@ func TestInspectContextCancelled(t *testing.T) {
 		},
 		{
 			// The gocb scope manager does not put ErrRequestCanceled in the chain for a
-			// cancelled context, so this row checks only that a cause stays in the chain.
+			// cancelled context. So this row checks only that a cause stays in the chain.
 			name: "collections",
 			op:   func() error { _, err := st.InspectCollections(cctx); return err },
 			want: "couchbase inspect collections",
@@ -143,9 +144,10 @@ func TestInspectContextCancelled(t *testing.T) {
 	}
 }
 
-// TestInspectIndexesNoBucket confirms a bucket-less source lists the cluster's indexes
-// unscoped: it must return the seeded primary index rather than filter to an empty
-// bucket, pinning that the bucket filter is applied only when a bucket is selected.
+// TestInspectIndexesNoBucket confirms a bucket-less source lists the cluster's
+// indexes unscoped. It must return the seeded primary index rather than filter to
+// an empty bucket. This pins that the bucket filter is applied only when a bucket
+// is selected.
 func TestInspectIndexesNoBucket(t *testing.T) {
 	seedCollection(t, books()) // creates a primary index that lives for the test
 	ctx := skipShort(t)

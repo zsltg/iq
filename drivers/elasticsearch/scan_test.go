@@ -172,8 +172,8 @@ func TestCloseReportsTheClientFailure(t *testing.T) {
 
 func TestPrefilteredScanKeepsTheCursorOfASkippedLastHit(t *testing.T) {
 	// The cursor moves past every hit, kept or skipped. If the last hit of a page is
-	// skipped, the next search must still start after that hit, or the scan reads it
-	// again for ever.
+	// skipped, the next search must still start after that hit. Otherwise the scan
+	// reads it again for ever.
 	stub := &pitStub{pages: []string{
 		`{"pit_id":"PIT-1","hits":{"hits":[{"_id":"a","_source":{"n":1},"sort":[10]},{"_id":"b","_source":{"n":2},"sort":[20]}]}}`,
 		`{"pit_id":"PIT-1","hits":{"hits":[]}}`,

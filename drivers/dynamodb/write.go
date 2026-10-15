@@ -95,19 +95,21 @@ func (s *Store) putItem(ctx context.Context, item map[string]types.AttributeValu
 	return false, nil
 }
 
-// existingKeys returns which of a batch's keys already have an item, so an upsert can
-// report them as Overwritten. It reads with a key-only projected BatchGetItem — the same
-// drain loop as Get, but the response carries only key attributes, never values — over the
-// distinct keys of the batch. The read is accounting only: it never changes what Put
-// writes, and it is not atomic with the writes that follow, so a concurrent insert between
-// the two can skew the count by one. The items written are always correct.
+// existingKeys returns which of a batch's keys already have an item, so an upsert
+// can report them as Overwritten. It reads the distinct keys of the batch with a
+// key-only projected BatchGetItem. This is the same drain loop as Get, but the
+// response carries only key attributes, never values. The read is accounting only.
+// It never changes what Put writes. It is not atomic with the writes that follow,
+// so a concurrent insert between the two can skew the count by one. The items
+// written are always correct.
 func (s *Store) existingKeys(ctx context.Context, batch []query.Record) (map[string]bool, error) {
 	seen := make(map[string]bool, len(batch))
 	keys := make([]string, 0, len(batch))
 	for _, r := range batch {
-		// A keyless record has no key to pre-read; DynamoDB requires one, so toItem has
-		// already rejected it. Deduplicate: BatchGetItem rejects a request with duplicate
-		// keys, and a repeated key is present-or-absent exactly once regardless.
+		// A keyless record has no key to pre-read. DynamoDB requires one, so toItem has
+		// already rejected it. Deduplicate, because BatchGetItem rejects a request with
+		// duplicate keys, and a repeated key is present-or-absent exactly once
+		// regardless.
 		if r.Key == "" || seen[r.Key] {
 			continue
 		}
@@ -117,10 +119,10 @@ func (s *Store) existingKeys(ctx context.Context, batch []query.Record) (map[str
 	return s.existingKeySet(ctx, keys)
 }
 
-// existingKeySet returns which of the given distinct keys already have an item,
-// reading with the same key-only projected BatchGetItem drain as existingKeys. It is
+// existingKeySet returns which of the given distinct keys already have an item. It
+// reads with the same key-only projected BatchGetItem drain as existingKeys. It is
 // the accounting pre-read shared by Put's overwrite count and Delete's
-// present-vs-absent count; the same non-atomic caveat applies. Callers pass keys
+// present-vs-absent count. The same non-atomic caveat applies. Callers pass keys
 // already deduped.
 func (s *Store) existingKeySet(ctx context.Context, keys []string) (map[string]bool, error) {
 	proj, names := s.keyProjection()
@@ -145,11 +147,12 @@ func (s *Store) existingKeySet(ctx context.Context, keys []string) (map[string]b
 	return existing, nil
 }
 
-// Clear empties the table, keeping its schema (the `iq data clear` semantics), by
-// scanning every item's primary key and deleting them with BatchWriteItem. DynamoDB has
-// no TRUNCATE, and recreating the table would lose its indexes, throughput, and other
-// settings — so the table definition is kept and only its items removed. This consumes
-// read and write capacity proportional to the item count, which `--explain` surfaces.
+// Clear empties the table and keeps its schema (the `iq data clear` semantics). It
+// scans every item's primary key and deletes the items with BatchWriteItem.
+// DynamoDB has no TRUNCATE, and recreating the table loses its indexes,
+// throughput, and other settings. So the table definition is kept and only its
+// items are removed. This consumes read and write capacity proportional to the item
+// count, which `--explain` surfaces.
 func (s *Store) Clear(ctx context.Context) error {
 	if len(s.keys) == 0 {
 		return errNoTable
@@ -237,8 +240,8 @@ func (s *Store) drainBatchWrite(ctx context.Context, pending map[string][]types.
 	return fmt.Errorf("dynamodb batch write: %d attempt(s) left items unprocessed", maxUnprocessed)
 }
 
-// keyAttrs extracts just the primary-key attributes from an item, the key a delete or
-// point operation needs.
+// keyAttrs extracts only the primary-key attributes from an item: the key that a
+// delete or point operation needs.
 func (s *Store) keyAttrs(item map[string]types.AttributeValue) map[string]types.AttributeValue {
 	key := make(map[string]types.AttributeValue, len(s.keys))
 	for _, k := range s.keys {
@@ -281,11 +284,12 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 	return stat, nil
 }
 
-// Drop removes the table entirely — its items and schema (the `iq data drop`
-// semantics) — via DeleteTable. The Store implements Dropper because a DynamoDB table
-// is a removable container, like a Cassandra table. DeleteTable is asynchronous:
-// DynamoDB accepts the request and removes the table in the background, so this returns
-// once the request is accepted, matching DROP TABLE's fire-and-forget shape.
+// Drop removes the table entirely: its items and schema (the `iq data drop`
+// semantics). It uses DeleteTable. The Store implements Dropper because a DynamoDB
+// table is a removable container, like a Cassandra table. DeleteTable is
+// asynchronous. DynamoDB accepts the request and removes the table in the
+// background. So this returns once the request is accepted, which matches the
+// fire-and-forget shape of DROP TABLE.
 func (s *Store) Drop(ctx context.Context) error {
 	if len(s.keys) == 0 {
 		return errNoTable
@@ -296,9 +300,9 @@ func (s *Store) Drop(ctx context.Context) error {
 	return nil
 }
 
-// TypedScan streams the whole table as typed records, reusing the ScanBatches pager.
-// Every item is a document, so the type tag is "item"; the key is the encoded primary
-// key and the value is the normalized item.
+// TypedScan streams the whole table as typed records and reuses the ScanBatches
+// pager. Every item is a document, so the type tag is "item". The key is the
+// encoded primary key, and the value is the normalized item.
 func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) error) error {
 	return s.ScanBatches(ctx, func(batch map[string]any) error {
 		recs := make([]query.Record, 0, len(batch))

@@ -10,10 +10,11 @@ import (
 )
 
 // InspectTables lists the tables in the source's region, the DynamoDB analogue of
-// listing a keyspace's tables. It paginates over ListTables' ExclusiveStartTableName
-// cursor and returns the names as a JSON-ready list. It backs the CLI `iq inspect`
-// tables subcommand; a raw PartiQL surface cannot express it, so it is a driver method
-// the CLI calls directly rather than a statement routed through Query.
+// listing a keyspace's tables. It paginates over ListTables'
+// ExclusiveStartTableName cursor and returns the names as a JSON-ready list. It
+// backs the CLI `iq inspect` tables subcommand. A raw PartiQL surface cannot
+// express it, so it is a driver method that the CLI calls directly rather than a
+// statement routed through Query.
 func (s *Store) InspectTables(ctx context.Context) (any, error) {
 	names := []any{}
 	p := dynamodb.NewListTablesPaginator(s.client, &dynamodb.ListTablesInput{})
@@ -29,10 +30,10 @@ func (s *Store) InspectTables(ctx context.Context) (any, error) {
 	return map[string]any{"tables": names}, nil
 }
 
-// InspectTable describes the selected table's schema and size, the DynamoDB analogue of
-// describing a table's columns: its status, key schema, attribute definitions, item
-// count and size, billing mode, and any secondary index names. It needs a table
-// selected and errors cleanly when none is.
+// InspectTable describes the selected table's schema and size, the DynamoDB
+// analogue of describing a table's columns. It reports the status, key schema,
+// attribute definitions, item count and size, billing mode, and any secondary index
+// names. It needs a table selected and errors cleanly when none is.
 func (s *Store) InspectTable(ctx context.Context) (any, error) {
 	if s.table == "" {
 		return nil, fmt.Errorf("table needs a table; address it as handle.table or set ?table= on the source url")

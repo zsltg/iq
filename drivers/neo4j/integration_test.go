@@ -111,9 +111,10 @@ func TestIntegrationScanPaging(t *testing.T) {
 	admin := openStore(t, ctx, "", "")
 	exec(t, ctx, admin, "CREATE CONSTRAINT itPage_id IF NOT EXISTS FOR (p:ItPage) REQUIRE p.id IS UNIQUE")
 	exec(t, ctx, admin, "MATCH (p:ItPage) DETACH DELETE p")
-	// Exactly two scanBatch (100) pages: this pins the paging arithmetic (skip += n,
-	// n < scanBatch) and, because the total is an exact multiple, the final zero-row
-	// query must NOT emit an empty page — so the page count is exactly 2, not 3.
+	// The scan makes exactly two scanBatch (100) pages. This pins the paging
+	// arithmetic (skip += n, n < scanBatch). The total is an exact multiple, so
+	// the final zero-row query must not emit an empty page. The page count is
+	// exactly 2, not 3.
 	exec(t, ctx, admin, "UNWIND range(1, 200) AS i CREATE (:ItPage {id: toString(i)})")
 
 	st := openStore(t, ctx, "ItPage", "id")
@@ -172,8 +173,8 @@ func TestIntegrationWriteRoundTrip(t *testing.T) {
 	require.Equal(t, 0, stat.Overwritten)
 
 	// A mixed Upsert batch: one existing key (1) and one new (3). created=1, so
-	// Written=1 and Overwritten = len-created = 1 — a mutant using len+created (=3)
-	// would not match.
+	// Written=1 and Overwritten = len-created = 1. A mutant using len+created (=3)
+	// does not match.
 	stat, err = st.Put(ctx, []query.Record{
 		{Key: "1", Value: map[string]any{"id": "1", "name": "Ada L."}},
 		{Key: "3", Value: map[string]any{"id": "3", "name": "Edsger"}},
@@ -199,7 +200,7 @@ func TestIntegrationWriteRoundTrip(t *testing.T) {
 	}
 
 	// A mixed InsertOnly batch: one existing (1) and one new (4). created=1, so
-	// Written=1 and Skipped = len-created = 1, and the existing node is NOT changed.
+	// Written=1 and Skipped = len-created = 1. The existing node is not changed.
 	stat, err = st.Put(ctx, []query.Record{
 		{Key: "1", Value: map[string]any{"id": "1", "name": "should-not-apply"}},
 		{Key: "4", Value: map[string]any{"id": "4", "name": "Barbara"}},
@@ -238,15 +239,15 @@ func TestDeleteIntegration(t *testing.T) {
 	require.Equal(t, 3, stat.Written)
 
 	// Delete a mix of existing (1, 3) and absent (missing) keys. Deleted counts the
-	// distinct matched keys (2), Missing the rest (1), and the two always sum to the
-	// request size — a mutant swapping either would break the exact assertions.
+	// distinct matched keys (2). Missing counts the rest (1). The two always sum to
+	// the request size, so a mutant swapping either breaks the exact assertions.
 	del, err := st.Delete(ctx, []string{"1", "3", "missing"})
 	require.NoError(t, err)
 	require.Equal(t, 2, del.Deleted)
 	require.Equal(t, 1, del.Missing)
 	require.Equal(t, len([]string{"1", "3", "missing"}), del.Deleted+del.Missing)
 
-	// The deleted nodes are gone; the untouched node survives.
+	// The deleted nodes are gone. The untouched node survives.
 	got, err := st.Get(ctx, []string{"1", "2", "3"})
 	require.NoError(t, err)
 	require.Nil(t, got["1"])
@@ -271,7 +272,7 @@ func TestDeleteIntegrationKeyless(t *testing.T) {
 
 	st := openStore(t, ctx, "ItDeleteEid", "") // keyless: matched and deleted by elementId
 
-	// A keyless store keys each node by its elementId; collect both via a scan.
+	// A keyless store keys each node by its elementId. Collect both via a scan.
 	var eids []string
 	require.NoError(t, st.ScanBatches(ctx, func(p map[string]any) error {
 		for k := range p {
@@ -287,7 +288,7 @@ func TestDeleteIntegrationKeyless(t *testing.T) {
 	require.Equal(t, 1, del.Deleted)
 	require.Equal(t, 1, del.Missing)
 
-	// The named node is gone; the other survives.
+	// The named node is gone. The other survives.
 	got, err := st.Get(ctx, []string{eids[0], eids[1]})
 	require.NoError(t, err)
 	require.Nil(t, got[eids[0]])
@@ -317,8 +318,8 @@ func TestIntegrationClearPagesLargeLabel(t *testing.T) {
 	ctx := integrationOrSkip(t)
 	admin := openStore(t, ctx, "", "")
 	exec(t, ctx, admin, "MATCH (n:ItBig) DETACH DELETE n")
-	// More than scanBatch (100) nodes so Clear must loop over more than one delete
-	// batch; a mutant that stops after the first batch would leave nodes behind.
+	// More than scanBatch (100) nodes, so Clear must loop over more than one
+	// delete batch. A mutant that stops after the first batch leaves nodes behind.
 	exec(t, ctx, admin, "UNWIND range(1, 150) AS i CREATE (:ItBig {n: i})")
 
 	st := openStore(t, ctx, "ItBig", "")
@@ -490,8 +491,8 @@ func TestIntegrationKeyIntegrity(t *testing.T) {
 
 // TestIntegrationOpenReadsTheNamedDatabase pins which database a source addresses. A
 // keyed source reads its constraint metadata at Open, so a database the deployment
-// does not host fails Open. A store that ignored ?database= would read the default
-// database and open without a word.
+// does not host fails Open. If a store ignored ?database=, it reads the default
+// database and opens without a word.
 func TestIntegrationOpenReadsTheNamedDatabase(t *testing.T) {
 	ctx := integrationOrSkip(t)
 	st, err := Open(ctx, testURL()+"?database=it_no_such_db&label=ItGhost&key=id", "", nil, numfmt.DecimalAuto)
@@ -516,9 +517,9 @@ func TestIntegrationOpenAppliesTheDecimalMode(t *testing.T) {
 	require.Equal(t, "3.5", got["1"].(map[string]any)["ratio"])
 }
 
-// TestIntegrationScanEndsOnAShortPage pins the keyset loop's exit and the trace writer
-// Open keeps: 99 nodes are one short page, so the scan runs exactly one statement and
-// spends no round trip on an empty page after it.
+// TestIntegrationScanEndsOnAShortPage pins the keyset loop's exit and the trace
+// writer Open keeps. 99 nodes are one short page. The scan runs exactly one
+// statement and spends no round trip on an empty page after it.
 func TestIntegrationScanEndsOnAShortPage(t *testing.T) {
 	ctx := integrationOrSkip(t)
 	admin := openStore(t, ctx, "", "")
@@ -539,8 +540,9 @@ func TestIntegrationScanEndsOnAShortPage(t *testing.T) {
 	require.Equal(t, 1, strings.Count(trace.String(), "cypher:"), "a short page ends the scan, so the trace holds one scan statement")
 }
 
-// TestIntegrationReadSessionRefusesAWrite pins the access mode the read paths ask for:
-// the server rejects a write on a read session, so no read path can change data.
+// TestIntegrationReadSessionRefusesAWrite pins the access mode the read paths ask
+// for. The server rejects a write on a read session, so no read path can change
+// data.
 func TestIntegrationReadSessionRefusesAWrite(t *testing.T) {
 	ctx := integrationOrSkip(t)
 	admin := openStore(t, ctx, "", "")
@@ -614,7 +616,7 @@ func TestIntegrationScanStopsOnACallbackError(t *testing.T) {
 	require.Equal(t, 1, pages)
 }
 
-// TestIntegrationCloseReleasesTheDriver pins that Close really closes the driver: the
+// TestIntegrationCloseReleasesTheDriver pins that Close closes the driver. The
 // store cannot run another statement after it.
 func TestIntegrationCloseReleasesTheDriver(t *testing.T) {
 	ctx := integrationOrSkip(t)

@@ -112,9 +112,9 @@ func TestToWhere(t *testing.T) {
 			wantNarrow: true,
 		},
 		{
-			// A null equality is not a value an IN list can hold: it widens to null-or-
-			// missing, which the general disjunction renders and the IN collapse must
-			// decline.
+			// A null equality is not a value that an IN list can hold. It widens to
+			// null-or-missing, which the general disjunction renders. The IN collapse
+			// must decline it.
 			name:       "or with a null equality stays a disjunction",
 			node:       predicate.Or{predicate.Eq{Path: []string{"a"}, Value: nil}, predicate.Eq{Path: []string{"a"}, Value: 1}},
 			wantWhere:  "((`t`.`a` IS NULL OR `t`.`a` IS MISSING) OR `t`.`a` = $p0)",
@@ -188,11 +188,12 @@ func TestFieldRef(t *testing.T) {
 	}
 }
 
-// TestScanFilteredContextCancelled pins that the context ScanFiltered is handed flows all
-// the way into the gocb query execution — the structural twin of the ScanBatches check,
-// on ScanFiltered's delegation to scan. It uses a non-exact predicate (Ne) so the residual
-// prefilter path is taken, and an explicit Cancel (never a timeout duration) so the
-// cancellation is deterministic and immediate.
+// TestScanFilteredContextCancelled pins that the context handed to ScanFiltered
+// flows all the way into the gocb query execution. It is the structural twin of
+// the ScanBatches check, on ScanFiltered's delegation to scan. It uses a non-exact
+// predicate (Ne), so the residual prefilter path is taken. It also uses an
+// explicit Cancel (never a timeout duration), so the cancellation is deterministic
+// and immediate.
 func TestScanFilteredContextCancelled(t *testing.T) {
 	st := seedCollection(t, books())
 	ctx := skipShort(t)
@@ -206,9 +207,10 @@ func TestScanFilteredContextCancelled(t *testing.T) {
 	require.ErrorIs(t, err, gocb.ErrRequestCanceled)
 }
 
-// TestScanFilteredParity checks the server-side pushdown returns a superset of the true
-// matches (the client re-runs the full jq, so extra rows are safe, missing rows are a
-// bug) and that an unpushable predicate falls back to a full scan.
+// TestScanFilteredParity checks that the server-side pushdown returns a superset
+// of the true matches. The client re-runs the full jq, so extra rows are safe and
+// missing rows are a bug. It also checks that an unpushable predicate falls back to
+// a full scan.
 func TestScanFilteredParity(t *testing.T) {
 	fixture := books()
 	st := seedCollection(t, fixture)

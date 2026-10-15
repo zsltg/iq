@@ -25,8 +25,8 @@ func TestGetReturnsRowsAndOmitsMissing(t *testing.T) {
 	fc.seed("2", cell("cf", "title", "Hyperion"))
 	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
 
-	// The missing key sits between two present ones, so a walk that stopped at it
-	// rather than skipping it would lose the row behind it.
+	// The missing key sits between two present ones. A walk that stops at it
+	// rather than skipping it loses the row behind it.
 	got, err := st.Get(context.Background(), []string{"1", "missing", "2"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{
@@ -116,8 +116,8 @@ func TestScanFilteredStreamsRows(t *testing.T) {
 			return nil
 		})
 	require.NoError(t, err)
-	// The fake ignores the server-side filter; the plumbing yields every row and the
-	// engine (not the Store) re-runs the jq. Assert the rows decode and stream.
+	// The fake ignores the server-side filter. The plumbing yields every row, and
+	// the engine (not the Store) re-runs the jq. Assert the rows decode and stream.
 	require.Len(t, seen, 2)
 }
 
@@ -286,7 +286,7 @@ func TestPutRejectsNonRowValue(t *testing.T) {
 func TestColumnsForDropsEmptyFamily(t *testing.T) {
 	st := newFakeStore(newFakeClient(), &fakeAdmin{}, "books", typeMap{}, ctAuto)
 	// A family with no qualifiers is dropped from the write, not sent as an empty
-	// column family; the guard cell comes from the family that does have cells.
+	// column family. The guard cell comes from the family that does have cells.
 	rec := query.Record{Key: "1", Value: map[string]any{
 		"empty": map[string]any{},
 		"cf":    map[string]any{"title": "Dune"},
@@ -370,7 +370,7 @@ func TestVerifyTable(t *testing.T) {
 	require.NoError(t, st.verifyTable(context.Background(), "books"))
 	require.NoError(t, st.verifyTable(context.Background(), "app:events"))
 	require.ErrorContains(t, st.verifyTable(context.Background(), "missing"), "not found")
-	// Namespace scoping itself is gohbase's ListNamespace (server-side); the fake
+	// Namespace scoping itself is gohbase's ListNamespace (server-side). The fake
 	// returns every table, so this test covers only the qualifier match and error.
 }
 

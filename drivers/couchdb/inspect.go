@@ -12,7 +12,7 @@ func (s *Store) InspectServer(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("couchdb server version: %w", err)
 	}
-	// Features is empty on CouchDB before 2.1; it is always reported (as []) so the
+	// Features is empty on CouchDB before 2.1. It is always reported (as []) so the
 	// shape is stable across versions.
 	features := make([]any, len(v.Features))
 	for i, f := range v.Features {
@@ -39,9 +39,9 @@ func (s *Store) InspectDatabases(ctx context.Context) (any, error) {
 	return map[string]any{"databases": dbs}, nil
 }
 
-// InspectDBInfo describes the selected database's size and sequence, the analogue of
-// describing a collection's stats: its document and deleted counts, on-disk and data
-// sizes, and update sequence. It needs a database selected.
+// InspectDBInfo describes the selected database's size and sequence. It is the
+// analogue of describing a collection's stats: its document and deleted counts,
+// on-disk and data sizes, and update sequence. It needs a database selected.
 func (s *Store) InspectDBInfo(ctx context.Context) (any, error) {
 	if s.db == "" {
 		return nil, errNoDatabase

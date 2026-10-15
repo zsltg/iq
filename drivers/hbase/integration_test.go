@@ -160,8 +160,9 @@ func TestDeleteIntegration(t *testing.T) {
 	}, query.Upsert)
 	require.NoError(t, err)
 
-	// Delete a mix: 1 and 2 exist, "absent" never did. Del is silent on absence, so
-	// the pre-read supplies the split; 3 is left untouched.
+	// Delete a mix: 1 and 2 exist, "absent" never did. Del
+	// is silent on absence, so the pre-read supplies the
+	// split. Key 3 is left untouched.
 	stat, err := st.Delete(ctx, []string{"1", "absent", "2"})
 	require.NoError(t, err)
 	require.Equal(t, query.DeleteStat{Deleted: 2, Missing: 1}, stat)
@@ -203,9 +204,11 @@ func TestIntegrationOpenConfiguresTheStoreFromTheURL(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 
-	// Everything the URL decides has to reach the Store: the table it is scoped to,
-	// the declared column and row-key encodings, the streaming page size, and the
-	// trace writer the CLI's --verbose hands in.
+	// Everything the URI decides must reach the Store:
+	//   - The table it is scoped to.
+	//   - The declared column and row-key encodings.
+	//   - The streaming page size.
+	//   - The trace writer that the CLI's --verbose hands in.
 	require.Equal(t, table, st.table)
 	require.Equal(t, typeMap{cellKey("cf", "pages"): ctLong}, st.types)
 	require.Equal(t, ctLong, st.rowkeyType)

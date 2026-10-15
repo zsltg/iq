@@ -22,9 +22,10 @@ import (
 // a test run never flushes data out from under them.
 const testRedisDB = 15
 
-// testURL returns the Redis URL for integration tests: IQ_REDIS_URL, which
-// TestMain points at the reserved database on the ephemeral container or named
-// server, then a local default on the same database when tests are skipped.
+// testURL returns the Redis URI for integration tests. It is IQ_REDIS_URL,
+// which TestMain points at the reserved database on the ephemeral container or
+// named server. If IQ_REDIS_URL is empty (for example when tests are skipped),
+// it is a local default on the same database.
 func testURL() string {
 	if url := os.Getenv("IQ_REDIS_URL"); url != "" {
 		return url
@@ -111,8 +112,8 @@ func TestStoreReturnsCommandError(t *testing.T) {
 }
 
 // TestCloseReportsTheClientError pins that Close reports what the client says
-// rather than swallowing it: closing an already-closed store is the observable
-// case, and a silent nil there would hide a genuine shutdown failure too.
+// and does not swallow it. Closing an already-closed store is the observable
+// case, and a silent nil there hides a genuine shutdown failure too.
 func TestCloseReportsTheClientError(t *testing.T) {
 	store := openIntegration(t)
 
@@ -131,8 +132,8 @@ func TestStoreUsesRESP2FlatReplies(t *testing.T) {
 	got, err := store.Query(context.Background(), []string{"HGETALL", "iq:test:hash"})
 	require.NoError(t, err)
 
-	// RESP2 returns HGETALL as a flat array; RESP3 would return a map, so this
-	// pins the Protocol=2 default set in Open.
+	// RESP2 returns HGETALL as a flat array. RESP3 returns a map. So this pins
+	// the Protocol=2 default set in Open.
 	require.IsType(t, []any{}, got)
 	require.ElementsMatch(t, []any{"f1", "v1", "f2", "v2"}, got)
 }

@@ -15,9 +15,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// TestPageMayHold pins the per-page skip decision: a page is worth decoding only
-// for a key that is still outstanding and that its filter admits, so neither the
-// found check nor the filter test may be dropped.
+// TestPageMayHold pins the per-page skip decision. A page is worth decoding only
+// for a key that is still outstanding and that its filter admits. So both the
+// found check and the filter test must stay.
 func TestPageMayHold(t *testing.T) {
 	filter := newBloom(4)
 	bloomAdd(filter, "a")
@@ -46,9 +46,9 @@ func TestPageMayHold(t *testing.T) {
 	})
 }
 
-// TestDecodePage confirms a decoded page copies exactly the wanted keys into the
-// result and records each as found — the bookkeeping that lets the caller stop
-// early and skip later pages.
+// TestDecodePage confirms that a decoded page copies exactly the wanted keys
+// into the result and records each as found. This bookkeeping lets the caller
+// stop early and skip later pages.
 func TestDecodePage(t *testing.T) {
 	var body bytes.Buffer
 	for _, r := range nRecords(3) {
@@ -131,9 +131,10 @@ func TestCacheKeyIgnoresTheRecordedPath(t *testing.T) {
 	})
 }
 
-// TestCacheGetCountsDistinctKeys asks for the same key twice. The request is complete
-// when the one distinct key is found, so the read stops at the page boundary and
-// never reaches the second page, where the canceled context would fail it.
+// TestCacheGetCountsDistinctKeys asks for the same key twice. The request is
+// complete when the one distinct key is found. So the read stops at the page
+// boundary and never reaches the second page, where the canceled context fails
+// it.
 func TestCacheGetCountsDistinctKeys(t *testing.T) {
 	st, m, h := cacheFixture(t)
 	plantCache(t, st, m, cacheBytes(t, h, nRecords(pageSize+1), true, nil))
@@ -169,10 +170,10 @@ func TestCacheGetFallsBackOnAnUnreadablePage(t *testing.T) {
 	require.Nil(t, out)
 }
 
-// TestGetKeepsTheLaterValueUntilEveryKeyIsFound streams a dump where a wanted key
-// repeats before the last wanted key shows up. Get stores every wanted record inside
-// a page and stops at the record that completes the request, so a repeat before that
-// record wins and a repeat after it is never read.
+// TestGetKeepsTheLaterValueUntilEveryKeyIsFound streams a dump where a wanted
+// key repeats before the last wanted key shows up. Get stores every wanted
+// record inside a page and stops at the record that completes the request. So a
+// repeat before that record wins, and a repeat after it is never read.
 func TestGetKeepsTheLaterValueUntilEveryKeyIsFound(t *testing.T) {
 	body := strings.Join([]string{
 		`{"key":"a","type":"string","value":"1"}`,

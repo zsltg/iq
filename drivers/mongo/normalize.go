@@ -56,9 +56,10 @@ func Normalize(v any, dec numfmt.DecimalMode) any {
 	case []any:
 		return normalizeSlice(t, dec)
 	default:
-		// A BSON type without a first-class JSON form (timestamp, regex, …) is
-		// rendered as its Go string form rather than dropped, so nothing is lost
-		// silently. Extend with a dedicated case when one needs a stable shape.
+		// A BSON type without a first-class JSON form (timestamp, regex, and so
+		// on) is rendered as its Go string form and not dropped. So nothing is
+		// lost silently. Extend with a dedicated case when one needs a stable
+		// shape.
 		return fmt.Sprintf("%v", t)
 	}
 }
@@ -105,11 +106,11 @@ func normalizeSlice(a []any, dec numfmt.DecimalMode) []any {
 	return out
 }
 
-// KeyOf renders a document's _id to the string key the collection is keyed by,
-// the inverse of how idValues turns a key back into candidate _id matches. An
-// ObjectID becomes its hex string; a string _id is itself; other scalars use
-// their natural form. Exported so a dump reader keys mongodump/mongoexport
-// documents exactly as a live collection scan does.
+// KeyOf renders the _id of a document to the string key that the collection is
+// keyed by. It is the inverse of how idValues turns a key back into candidate
+// _id matches. An ObjectID becomes its hex string. A string _id is itself.
+// Other scalars use their natural form. It is exported so a dump reader keys
+// mongodump/mongoexport documents exactly as a live collection scan does.
 func KeyOf(id any) string {
 	switch t := id.(type) {
 	case bson.ObjectID:
@@ -127,10 +128,11 @@ func KeyOf(id any) string {
 	}
 }
 
-// idValues turns a requested string key into the candidate _id values to match:
-// the string itself and, when the key is a 24-character hex string, the ObjectID
-// it encodes. This matches both string-keyed and ObjectID-keyed collections
-// without the caller having to know which a collection uses.
+// idValues turns a requested string key into the candidate _id values to match.
+// These are the string itself and, when the key is a 24-character hex string,
+// the ObjectID that it encodes. This matches both string-keyed and
+// ObjectID-keyed collections without the caller having to know which a
+// collection uses.
 func idValues(keys []string) bson.A {
 	out := make(bson.A, 0, len(keys))
 	for _, k := range keys {

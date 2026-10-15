@@ -105,7 +105,8 @@ func numberValue(s string, mode numfmt.DecimalMode) any {
 }
 
 // isIntLiteral reports whether s is a plain base-10 integer literal (optional sign,
-// then digits), so a fractional or exponential N is routed to the decimal path.
+// then digits). The result routes a fractional or exponential N to the decimal
+// path.
 func isIntLiteral(s string) bool {
 	if s == "" {
 		return false
@@ -125,18 +126,19 @@ func isIntLiteral(s string) bool {
 	return true
 }
 
-// keyOf renders an item's full primary key to the string key the table is keyed by,
-// delegating to KeyOf so the live scan and an offline dump reader share one contract.
+// keyOf renders an item's full primary key to the string key the table is keyed by.
+// It delegates to KeyOf, so the live scan and an offline dump reader share one
+// contract.
 func (s *Store) keyOf(item map[string]types.AttributeValue) string {
 	return KeyOf(s.keys, item)
 }
 
-// KeyOf renders an item's full primary key to the string key the table is keyed by. A
-// partition-key-only table becomes that attribute's bare canonical string (the
-// DynamoDB analogue of Mongo's _id); a table with a sort key becomes a compact JSON
+// KeyOf renders an item's full primary key to the string key the table is keyed by.
+// A partition-key-only table becomes that attribute's bare canonical string (the
+// DynamoDB analogue of Mongo's _id). A table with a sort key becomes a compact JSON
 // array of the two key attributes in schema order, so identity is reversible by
-// decodeKey. It is the inverse of decodeKey and the frozen key contract, exported so a
-// dump reader keys an item exactly as a live scan does.
+// decodeKey. KeyOf is the inverse of decodeKey and the frozen key contract. It is
+// exported so a dump reader keys an item exactly as a live scan does.
 func KeyOf(keys []KeyAttr, item map[string]types.AttributeValue) string {
 	if len(keys) == 1 {
 		return keyString(item[keys[0].name])
@@ -147,15 +149,15 @@ func KeyOf(keys []KeyAttr, item map[string]types.AttributeValue) string {
 	}
 	b, err := json.Marshal(parts)
 	if err != nil {
-		// A slice of strings always marshals; the guard keeps the contract total.
+		// A slice of strings always marshals. The guard keeps the contract total.
 		return fmt.Sprintf("%v", parts)
 	}
 	return string(b)
 }
 
-// keyString renders a single primary-key attribute to its canonical string form, the
-// scalar building block of keyOf. A key attribute is only ever S, N, or B; anything
-// else falls back to its Go string form so the contract stays total.
+// keyString renders a single primary-key attribute to its canonical string form,
+// the scalar building block of keyOf. A key attribute is only ever S, N, or B.
+// Anything else falls back to its Go string form, so the contract stays total.
 func keyString(av types.AttributeValue) string {
 	switch t := av.(type) {
 	case *types.AttributeValueMemberS:
@@ -172,9 +174,9 @@ func keyString(av types.AttributeValue) string {
 }
 
 // decodeKey reverses keyOf: it parses a string key back into the typed DynamoDB key
-// attributes. A partition-key-only key is the whole string; a table with a sort key
-// takes a JSON array whose element count must match the two key attributes. It is the
-// read/write-side inverse used by Get and Put.
+// attributes. A partition-key-only key is the whole string. A table with a sort key
+// takes a JSON array whose element count must match the two key attributes. Get and
+// Put use it as the read/write-side inverse.
 func (s *Store) decodeKey(key string) (map[string]types.AttributeValue, error) {
 	if len(s.keys) == 0 {
 		return nil, errNoTable
@@ -205,10 +207,10 @@ func (s *Store) decodeKey(key string) (map[string]types.AttributeValue, error) {
 	return out, nil
 }
 
-// keyAV parses a primary-key string component into the DynamoDB attribute value for
-// the key attribute's scalar type. It is the typed reverse of keyString; a component
-// that is not a valid number or base64 blob for its column type is an error, so a bad
-// key fails fast rather than binding a wrong value.
+// keyAV parses a primary-key string component into the DynamoDB attribute value
+// for the key attribute's scalar type. It is the typed reverse of keyString. A
+// component that is not a valid number or base64 blob for its column type is an
+// error. So a bad key fails fast rather than binding a wrong value.
 func keyAV(k KeyAttr, s string) (types.AttributeValue, error) {
 	switch k.typ {
 	case types.ScalarAttributeTypeN:
@@ -230,7 +232,7 @@ func keyAV(k KeyAttr, s string) (types.AttributeValue, error) {
 
 // isNumberLiteral reports whether s is a well-formed DynamoDB number (an integer or
 // a decimal, of any precision). It validates a numeric key component before
-// binding. big.Float rejects a fraction like "1/2" that big.Rat would accept.
+// binding. big.Float rejects a fraction like "1/2" that big.Rat accepts.
 func isNumberLiteral(s string) bool {
 	if s == "" {
 		return false

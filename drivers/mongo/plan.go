@@ -8,11 +8,11 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the MongoDB calls this driver would make for a classified
-// query, without connecting. A bounded query fetches the named documents by _id; a
-// scan runs a find, pre-filtered by the pushed predicate when one compiles (else a
-// full-collection scan). It reuses toFilter so the shown filter is exactly what the
-// server would receive.
+// ExplainPlan describes the MongoDB calls that this driver makes if it runs a
+// classified query, without connecting. A bounded query fetches the named documents
+// by _id. A scan runs a find. The find is pre-filtered by the pushed predicate when
+// one compiles (else a full-collection scan). It reuses toFilter, so the shown
+// filter is exactly what the server receives if the query runs.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
@@ -38,9 +38,9 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	}
 }
 
-// ExplainWrite describes, without connecting, the write a copy into this collection
-// would make: an unordered bulk replace-upsert by _id, or an unordered insert that
-// skips existing _ids.
+// ExplainWrite describes, without connecting, the write that a copy into this
+// collection makes if it runs. The write is an unordered bulk replace-upsert by
+// _id, or an unordered insert that skips existing _ids.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := fmt.Sprintf("bulkWrite: replaceOne upsert by _id, batches of %d", scanBatch)
 	if mode == query.InsertOnly {
@@ -55,7 +55,7 @@ func ExplainClear() query.AccessPlan {
 }
 
 // ExplainDrop describes the `iq data drop` op for a collection and reports it
-// supported — a MongoDB collection is a removable container.
+// supported. A MongoDB collection is a removable container.
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"drop(): remove the collection and its indexes"}}, true
 }

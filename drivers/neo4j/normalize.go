@@ -49,7 +49,7 @@ func (s *Store) normalizeNode(node neo4j.Node) map[string]any {
 
 // normalizeRelationship renders a relationship as its properties plus the reserved
 // _type/_start/_end envelope (the endpoint elementIds). Only the raw Cypher path
-// emits relationships in v1; the collection path is node-only.
+// emits relationships in v1. The collection path is node-only.
 func (s *Store) normalizeRelationship(rel neo4j.Relationship) map[string]any {
 	out := make(map[string]any, len(rel.Props))
 	for k, v := range rel.Props {
@@ -64,8 +64,8 @@ func (s *Store) normalizeRelationship(rel neo4j.Relationship) map[string]any {
 
 // normalizeValue converts one Cypher value into a precision-aware, JSON-ready Go
 // value. Integers stay exact (Cypher integers are int64, which fit an int on the
-// 64-bit builds iq targets); fractional numbers follow the decimal mode; bytes
-// become base64; temporal and spatial values become their canonical strings and
+// 64-bit builds iq targets). Fractional numbers follow the decimal mode. Bytes
+// become base64. Temporal and spatial values become their canonical strings and
 // objects. This is the frozen encoding contract, identical for every fetch path.
 func (s *Store) normalizeValue(v any) any {
 	switch t := v.(type) {
@@ -137,8 +137,8 @@ func (s *Store) normalizePath(p dbtype.Path) map[string]any {
 	return map[string]any{"nodes": nodes, "relationships": rels}
 }
 
-// labelsToAny copies a node's labels into an []any so the value is homogeneous with
-// the rest of the decoded JSON tree (gojq works over []any, not []string).
+// labelsToAny copies a node's labels into an []any. The value is then homogeneous
+// with the rest of the decoded JSON tree (gojq works over []any, not []string).
 func labelsToAny(labels []string) []any {
 	out := make([]any, len(labels))
 	for i, l := range labels {

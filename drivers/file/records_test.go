@@ -14,9 +14,9 @@ import (
 	"github.com/zsltg/iq/internal/rawpred"
 )
 
-// TestRecordPager checks the page rules: a full page goes to fn at once, the tail goes
-// on flush, an empty tail goes nowhere, one slice backs every page, and an error of fn
-// comes back from the call that handed the page over.
+// TestRecordPager checks the page rules. A full page goes to fn at once. The
+// tail goes on flush. An empty tail goes nowhere. One slice backs every page.
+// An error of fn comes back from the call that handed the page over.
 func TestRecordPager(t *testing.T) {
 	boom := errors.New("page refused")
 	t.Run("full pages, then the tail", func(t *testing.T) {
@@ -56,9 +56,9 @@ func TestRecordPager(t *testing.T) {
 	})
 }
 
-// TestKeyLookupTake checks the lookup rules: an unwanted key is ignored, a repeat of a
-// wanted key replaces the value, and take reports completion once every wanted key is
-// found. A repeated request key counts once.
+// TestKeyLookupTake checks the lookup rules. An unwanted key is ignored. A
+// repeat of a wanted key replaces the value. The take method reports completion
+// once every wanted key is found. A repeated request key counts once.
 func TestKeyLookupTake(t *testing.T) {
 	l := newKeyLookup([]string{"a", "b", "a"})
 	require.False(t, l.done())
@@ -105,9 +105,9 @@ func TestCacheIndexPageEnd(t *testing.T) {
 	require.Equal(t, int64(99), ix.pageEnd(2))
 }
 
-// TestCacheEntries checks the listing rules shared by ListCache and RemoveCache: a
-// missing dir is empty, a directory and a file without the .cbor extension are left
-// out, and a read failure names the dir.
+// TestCacheEntries checks the listing rules shared by ListCache and RemoveCache.
+// A missing dir is empty. A directory and a file without the .cbor extension are
+// left out. A read failure names the dir.
 func TestCacheEntries(t *testing.T) {
 	t.Run("a missing dir has no entries", func(t *testing.T) {
 		des, err := cacheEntries(filepath.Join(t.TempDir(), "none"))

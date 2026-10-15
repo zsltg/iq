@@ -43,8 +43,8 @@ func openIntegration(t *testing.T, collection string) *Store {
 	return openIntegrationTraced(t, collection, nil)
 }
 
-// openIntegrationTraced is openIntegration with a command trace, so a test can
-// assert which commands a call issues — or that it issues none.
+// openIntegrationTraced is openIntegration with a command trace. So a test can
+// assert which commands a call issues, or that it issues none.
 func openIntegrationTraced(t *testing.T, collection string, trace io.Writer) *Store {
 	t.Helper()
 	if testing.Short() {
@@ -235,8 +235,8 @@ func TestEstimateCountWithoutCollectionFails(t *testing.T) {
 
 func TestScanBatchesBoundsPageSize(t *testing.T) {
 	store := openIntegration(t, "page_docs")
-	// Four documents at pageSize 2 means two full pages and an empty final page:
-	// exact sizes pin the flush boundary — a page must flush at exactly pageSize,
+	// Four documents at pageSize 2 means two full pages and an empty final page.
+	// Exact sizes pin the flush boundary: a page must flush at exactly pageSize,
 	// and an empty final page must not be handed to fn.
 	docs := make([]any, 4)
 	for i := range docs {
@@ -282,8 +282,9 @@ func TestScanFilteredReturnsMatchingSubset(t *testing.T) {
 
 func TestCompileEquivalentToClientSide(t *testing.T) {
 	store := openIntegration(t, "range_docs")
-	// A document whose field f takes every jq type, plus a missing field, so a
-	// pushed filter that is ever a subset (missing one) diverges from client-side.
+	// The documents give field f every jq type, plus a missing field. So a
+	// pushed filter that is ever a subset (missing one) diverges from
+	// client-side.
 	seedDocs(t, store, []any{
 		bson.M{"_id": "num_lo", "f": int32(10)},
 		bson.M{"_id": "num_hi", "f": int32(100)},
@@ -322,8 +323,8 @@ func TestCompileEquivalentToClientSide(t *testing.T) {
 
 func TestCompileExistsAndSizeEquivalentToClientSide(t *testing.T) {
 	store := openIntegration(t, "sizeexists_docs")
-	// f takes every type jq length handles (array, string, object, number, null,
-	// and a missing field); opt is present on only one document.
+	// f takes every type that jq length handles (array, string, object, number,
+	// null, and a missing field). opt is present on only one document.
 	seedDocs(t, store, []any{
 		bson.M{"_id": "a3", "f": bson.A{int32(1), int32(2), int32(3)}, "opt": int32(1)},
 		bson.M{"_id": "a2", "f": bson.A{int32(1), int32(2)}},
@@ -408,8 +409,9 @@ func TestCompileNoneMatchEquivalentToClientSide(t *testing.T) {
 
 func TestCompileElemMatchEquivalentToClientSide(t *testing.T) {
 	store := openIntegration(t, "elemmatch_docs")
-	// items is an array of objects for most docs, but an object for one — jq's any
-	// iterates an object's values too, so the pushed filter must still match it.
+	// items is an array of objects for most docs, but an object for one. jq's any
+	// iterates the values of an object too. So the pushed filter must still match
+	// it.
 	seedDocs(t, store, []any{
 		bson.M{"_id": "arr_hit", "items": bson.A{bson.M{"p": int32(6), "q": int32(1)}, bson.M{"p": int32(2)}}},
 		bson.M{"_id": "arr_miss", "items": bson.A{bson.M{"p": int32(2)}, bson.M{"p": int32(3)}}},
@@ -437,8 +439,8 @@ func TestCompileElemMatchEquivalentToClientSide(t *testing.T) {
 
 func TestCompileRegexEquivalentToClientSide(t *testing.T) {
 	store := openIntegration(t, "regex_docs")
-	// test() requires string input, so every doc's name is a string; the pushed
-	// $regex must select exactly the same names as jq's own engine.
+	// test() requires string input, so the name of every doc is a string. The
+	// pushed $regex must select exactly the same names as the own engine of jq.
 	seedDocs(t, store, []any{
 		bson.M{"_id": "1", "name": "Alpha"},
 		bson.M{"_id": "2", "name": "alpha"},
@@ -457,12 +459,13 @@ func TestCompileRegexEquivalentToClientSide(t *testing.T) {
 		`.[] | select(.name | test("\\d")) | ._id`,
 		`.[] | select(.name | test("[AB]")) | ._id`,
 		`.[] | select((.name | test("^A")) or .name == "xA") | ._id`,
-		// jq's m flag is dotall, so "a.c" matches "a\nc"; the pushed $regex must use
-		// PCRE's s option, not m, or it drops _id 6 and diverges (the narrowing bug).
+		// jq's m flag is dotall, so "a.c" matches "a\nc". The pushed $regex must use
+		// the s option of PCRE, not m. Otherwise it drops _id 6 and diverges (the
+		// narrowing bug).
 		`.[] | select(.name | test("a.c"; "m")) | ._id`,
-		// \s is a superset in PCRE (matches the vertical tab in _id 7 that RE2 does
-		// not); the pushed pre-filter over-matches, and the client re-run corrects it
-		// to jq's result — _id 8 only.
+		// \s is a superset in PCRE (it matches the vertical tab in _id 7 that RE2
+		// does not). The pushed pre-filter over-matches, and the client re-run
+		// corrects it to the result of jq: _id 8 only.
 		`.[] | select(.name | test("x\\sy")) | ._id`,
 	}
 	eng := query.NewJQEngine(store)
@@ -692,9 +695,9 @@ func TestScanBatchesPropagatesCallbackError(t *testing.T) {
 	require.Equal(t, 1, pages, "the scan stops at the failing page")
 }
 
-// TestScanBatchesStopsWhenContextCancelsMidScan proves the cursor's own paging is
-// bound by the caller's context, not just the initial find: cancelling between
-// pages fails the scan instead of draining the collection.
+// TestScanBatchesStopsWhenContextCancelsMidScan proves that the own paging of the
+// cursor is bound by the context of the caller, and not only the initial find.
+// Cancelling between pages fails the scan. It does not drain the collection.
 func TestScanBatchesStopsWhenContextCancelsMidScan(t *testing.T) {
 	store := openIntegration(t, "midscan_cancel_docs")
 	seedDocs(t, store, []any{
@@ -719,8 +722,8 @@ func TestScanBatchesStopsWhenContextCancelsMidScan(t *testing.T) {
 	require.Equal(t, 1, pages, "no page is handed over after the cancellation")
 }
 
-// TestCloseDisconnects proves Close actually tears the client down: a later call
-// on the closed store fails rather than silently working.
+// TestCloseDisconnects proves that Close tears the client down. A later call on
+// the closed store fails. It does not silently work.
 func TestCloseDisconnects(t *testing.T) {
 	store := openIntegration(t, "close_docs")
 
@@ -730,9 +733,9 @@ func TestCloseDisconnects(t *testing.T) {
 	require.ErrorContains(t, err, "client is disconnected")
 }
 
-// TestRawAcceptsRelaxedExtendedJSON proves the command document is parsed in
-// relaxed Extended JSON, the form a user types: a canonical-only parse would
-// reject the relaxed $date spelling outright.
+// TestRawAcceptsRelaxedExtendedJSON proves that the command document is
+// parsed in relaxed Extended JSON, the form that a user types. A
+// canonical-only parse rejects the relaxed $date spelling outright.
 func TestRawAcceptsRelaxedExtendedJSON(t *testing.T) {
 	store := openIntegration(t, "raw_relaxed_docs")
 	seedDocs(t, store, []any{
@@ -765,9 +768,10 @@ func TestRawRejectsUnknownCommand(t *testing.T) {
 	require.Nil(t, res)
 }
 
-// cancelOnCommand cancels a context the first time the named command is traced,
-// giving a test a deterministic cancellation point between two round trips of one
-// call. It is an io.Writer because that is how the driver's command trace is wired.
+// cancelOnCommand cancels a context the first time that the named command is
+// traced. This gives a test a deterministic cancellation point between two round
+// trips of one call. It is an io.Writer because that is how the command trace of
+// the driver is wired.
 type cancelOnCommand struct {
 	name   string
 	cancel context.CancelFunc
@@ -786,10 +790,11 @@ func (c *cancelOnCommand) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// TestGetStopsWhenContextCancelsMidFetch proves the by-_id fetch stays bound by the
-// caller's context across every round trip: a find's first batch holds 101
-// documents, so a larger result needs a getMore, and cancelling at that point must
-// fail the fetch instead of draining the cursor under an unbounded context.
+// TestGetStopsWhenContextCancelsMidFetch proves that the by-_id fetch stays
+// bound by the context of the caller across every round trip. The first batch of
+// a find holds 101 documents, so a larger result needs a getMore. Cancelling at
+// that point must fail the fetch. It must not drain the cursor under an
+// unbounded context.
 func TestGetStopsWhenContextCancelsMidFetch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -830,9 +835,9 @@ type writerFunc func(p []byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
-// TestCommandMonitorSerializesWrites proves the monitor holds its lock for the whole
-// write: two concurrent commands must never be inside the trace writer at once, or
-// their lines would tear into each other.
+// TestCommandMonitorSerializesWrites proves that the monitor holds its lock for
+// the whole write. Two concurrent commands must never be inside the trace writer
+// at once. Otherwise their lines tear into each other.
 func TestCommandMonitorSerializesWrites(t *testing.T) {
 	raw, err := bson.Marshal(bson.M{"find": "books"})
 	require.NoError(t, err)

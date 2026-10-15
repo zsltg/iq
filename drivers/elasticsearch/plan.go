@@ -8,7 +8,7 @@ import (
 	"github.com/zsltg/iq/internal/selector"
 )
 
-// ExplainPlan describes the Elasticsearch calls this driver would make for a
+// ExplainPlan describes the Elasticsearch calls that this driver makes if it runs a
 // classified query, without connecting. A bounded query fetches the named documents
 // by _id with _mget. A scan pages a point-in-time with search_after, with a bool
 // query when the pushed predicate narrows. It does not connect, so it does not
@@ -117,9 +117,9 @@ func explainQuery(n predicate.Node) (map[string]any, bool) {
 	}
 }
 
-// ExplainWrite describes, without connecting, the write a copy into this index would
-// make: a refreshing _bulk that indexes each document by _id (replace-upsert), or one
-// that creates new _ids and skips existing ones.
+// ExplainWrite describes, without connecting, the write that a copy into this index
+// makes if it runs. The write is a refreshing _bulk that indexes each document by
+// _id (replace-upsert), or one that creates new _ids and skips existing ones.
 func ExplainWrite(mode query.WriteMode) query.AccessPlan {
 	op := "_bulk (refresh): index by _id (replace-upsert)"
 	if mode == query.InsertOnly {
@@ -134,8 +134,8 @@ func ExplainClear() query.AccessPlan {
 	return query.AccessPlan{Ops: []string{"_delete_by_query {match_all} (refresh): empty the index, keep its mapping"}}
 }
 
-// ExplainDrop describes the `iq data drop` op for an index and reports it supported —
-// an Elasticsearch index is a removable container.
+// ExplainDrop describes the `iq data drop` op for an index and reports it
+// supported. An Elasticsearch index is a removable container.
 func ExplainDrop() (query.AccessPlan, bool) {
 	return query.AccessPlan{Ops: []string{"DELETE /{index}: remove the index and everything in it"}}, true
 }

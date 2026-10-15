@@ -39,7 +39,7 @@ func TestFormatReplyNestedArrayIndents(t *testing.T) {
 }
 
 func TestFormatReplyColorsValueTokens(t *testing.T) {
-	// Colored value tokens are wrapped in ANSI; the numbered-list index, which is
+	// Colored value tokens are wrapped in ANSI. The numbered-list index, which is
 	// structure, stays plain.
 	require.Equal(t, "\x1b[90m(nil)\x1b[0m", iqredis.FormatReply(nil, true))
 	require.Equal(t, "\x1b[35m(integer) 42\x1b[0m", iqredis.FormatReply(int64(42), true))

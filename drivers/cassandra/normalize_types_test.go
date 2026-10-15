@@ -176,9 +176,10 @@ func typeName(typ gocql.Type) string {
 	return fmt.Sprintf("%s", nativeType(typ))
 }
 
-// scalarBindCases lists every scalar CQL type that bindValue handles. ok is a value the
-// column accepts. mismatch is a value of the wrong kind and mismatchErr is the exact
-// error it gets. The error value that comes with a failure is not part of the contract.
+// scalarBindCases lists every scalar CQL type that bindValue handles. Field ok
+// is a value the column accepts. Field mismatch is a value of the wrong kind.
+// Field mismatchErr is the exact error that it gets. The error value that comes
+// with a failure is not part of the contract.
 var scalarBindCases = []struct {
 	name        string
 	typ         gocql.Type

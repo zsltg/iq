@@ -12,13 +12,13 @@ import (
 
 // The decode cache serializes the normalized record stream with CBOR. The codec
 // options matter. The defaults of fxamacker decode a CBOR map to
-// map[interface{}]interface{} and a CBOR integer to uint64/int64. They also reject a
-// text string that is not valid UTF-8. None of that matches the value model that
-// gojq accepts, and the last is fatal for Redis values and hash-field keys, which
-// are arbitrary bytes decoded to a Go string. The pinned options plus narrowInts
-// reproduce the closed set of Normalize: nil, bool, int, float64, string,
-// map[string]any, []any. cbordump_test.go proves that the round-trip is
-// type-identical for every member of that set.
+// map[interface{}]interface{} and a CBOR integer to uint64/int64. They also
+// reject a text string that is not valid UTF-8. None of that matches the value
+// model that gojq accepts. The last default is fatal for Redis values and
+// hash-field keys, which are arbitrary bytes decoded to a Go string. The pinned
+// options plus narrowInts reproduce the closed set of Normalize: nil, bool, int,
+// float64, string, map[string]any, []any. The test file cbordump_test.go proves
+// that the round-trip is type-identical for every member of that set.
 
 // cborEnc marshals with default options. It does not validate UTF-8, so a binary
 // Redis string encodes verbatim. It does not shrink floats, so a float64 stays
@@ -94,11 +94,11 @@ func decodeRecord(dec *cbor.Decoder) (query.Record, error) {
 	return query.Record{Key: w.Key, Type: w.Type, Value: narrowInts(w.Value)}, nil
 }
 
-// narrowInts converts every integer a CBOR decode produced (uint64 or int64) to
-// Go int, recursing through maps and slices, so a cached value's type model
-// matches Normalize's, which narrows all integers to int. A uint64 beyond int's
-// range (unreachable from normalized data, which is int-bounded before caching)
-// degrades to float64 rather than overflowing.
+// narrowInts converts every integer that a CBOR decode produced (uint64 or
+// int64) to Go int, recursing through maps and slices. So a cached value's type
+// model matches Normalize's, which narrows all integers to int. A uint64 beyond
+// int's range (unreachable from normalized data, which is int-bounded before
+// caching) degrades to float64 rather than overflowing.
 func narrowInts(v any) any {
 	switch t := v.(type) {
 	case uint64:

@@ -53,8 +53,8 @@ func TestGetEmptyKeys(t *testing.T) {
 	ctx := skipShort(t)
 	got, err := st.Get(ctx, nil)
 	require.NoError(t, err)
-	// An empty request short-circuits with no round-trip, but it still returns a usable
-	// empty map: a nil map would make the caller's write path panic.
+	// An empty request short-circuits with no round-trip, but it still returns a
+	// usable empty map. A nil map makes the write path of the caller panic.
 	require.Equal(t, map[string]any{}, got)
 	require.NotNil(t, got)
 }
@@ -108,10 +108,11 @@ func TestScanFilteredFallsBackForRange(t *testing.T) {
 	st := seedIndex(t, books()...)
 	ctx := skipShort(t)
 
-	// A range does not push server-side, so ScanFiltered falls back to a full walk —
-	// but the client-side raw-byte prefilter then drops the documents it can prove the
-	// range rejects before they are decoded. year > 1970 keeps 1984 and 1985 and drops
-	// the 1965 document; the survivors are still a superset the caller re-filters.
+	// A range does not push server-side, so ScanFiltered falls back to a full walk.
+	// But the client-side raw-byte prefilter then drops the documents that it can
+	// prove the range rejects. It drops them before they are decoded. year > 1970
+	// keeps 1984 and 1985 and drops the 1965 document. The survivors are still a
+	// superset that the caller re-filters.
 	pred := predicate.Cmp{Path: []string{"year"}, Op: predicate.Gt, Value: 1970.0}
 	got := collect(t, func(fn func(map[string]any) error) error {
 		return st.ScanFiltered(ctx, pred, fn)
@@ -276,7 +277,8 @@ func TestInspect(t *testing.T) {
 
 	server, err := st.InspectServer(ctx)
 	require.NoError(t, err)
-	// Assert every field the report promises, not the version alone: a dropped
+	// Assert every field that the report promises, not the version alone. A
+	// dropped
 	// field still leaves a usable map, so only a per-key check sees the loss.
 	info, ok := server.(map[string]any)
 	require.True(t, ok, "the server report is an object")
@@ -300,8 +302,8 @@ func TestInspect(t *testing.T) {
 func TestErrorMessageSurfacesTypeAndReason(t *testing.T) {
 	ctx := skipShort(t)
 	// A store on an index that does not exist opens fine (the mapping read is
-	// best-effort), but a query surfaces the Elasticsearch error type and reason —
-	// a clean message, never a raw body.
+	// best-effort). But a query surfaces the Elasticsearch error type and reason,
+	// as a clean message and never a raw body.
 	st, err := Open(ctx, testURL(), "iq_test_missing_index_zzz", nil, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })

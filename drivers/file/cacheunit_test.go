@@ -19,10 +19,11 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// cacheBytes assembles a whole cache file — magic, version, header, the CBOR
-// records paged at pageSize, the page index, and the index-offset trailer — so a
-// test can hand the readers a file whose every field it controls. junk is spliced
-// into the record region after the records, standing in for a corrupted record.
+// cacheBytes assembles a whole cache file: magic, version, header, the CBOR
+// records paged at pageSize, the page index, and the index-offset trailer. A
+// test can then hand the readers a file whose every field it controls. The junk
+// argument is spliced into the record region after the records, standing in for
+// a corrupted record.
 func cacheBytes(t *testing.T, h cacheHeader, recs []query.Record, indexed bool, junk []byte) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -53,8 +54,9 @@ func cacheBytes(t *testing.T, h cacheHeader, recs []query.Record, indexed bool, 
 	return buf.Bytes()
 }
 
-// cacheFixture builds a small dump, a store configured to cache it, the meta the
-// store keys that dump by, and the header a matching cache file carries.
+// cacheFixture builds a small dump and a store that is configured to cache it.
+// It also builds the meta that the store keys that dump by, and the header that
+// a matching cache file carries.
 func cacheFixture(t *testing.T) (*Store, cacheMeta, cacheHeader) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "d.rdb")
@@ -66,8 +68,8 @@ func cacheFixture(t *testing.T) (*Store, cacheMeta, cacheHeader) {
 	return st, m, cacheHeader{Path: m.path, Size: m.size, MTimeNano: m.mtime, Format: int(st.format), Decimal: int(st.dec)}
 }
 
-// plantCache writes assembled cache bytes at the exact path the store keys m by,
-// so a later read finds a cache whose header the test chose.
+// plantCache writes assembled cache bytes at the exact path the store keys m by.
+// A later read then finds a cache whose header the test chose.
 func plantCache(t *testing.T, s *Store, m cacheMeta, content []byte) string {
 	t.Helper()
 	path := s.cacheFile(m)
@@ -85,18 +87,18 @@ func nRecords(n int) []query.Record {
 	return out
 }
 
-// requireWrapped asserts an error carries its cause: every boundary in this package
-// wraps with %w so a caller can still classify the failure with errors.Is/As, and a
-// message-only wrap would silently break that.
+// requireWrapped asserts that an error carries its cause. Every boundary in this
+// package wraps with %w, so a caller can still classify the failure with
+// errors.Is/As. A message-only wrap silently breaks that.
 func requireWrapped(t *testing.T, err error) {
 	t.Helper()
 	require.Error(t, err)
 	require.Error(t, errors.Unwrap(err), "the underlying cause must stay reachable")
 }
 
-// TestCacheMinSize pins the size floor's fallback: only a positive MinSize is a
-// policy, so a zero or negative one selects the built-in default rather than
-// caching every one-byte dump.
+// TestCacheMinSize pins the size floor's fallback. Only a positive MinSize is a
+// policy. A zero or negative one selects the built-in default, not a cache of
+// every one-byte dump.
 func TestCacheMinSize(t *testing.T) {
 	tests := []struct {
 		name string
@@ -117,9 +119,9 @@ func TestCacheMinSize(t *testing.T) {
 }
 
 // TestCacheableRules covers every reason a dump is not cacheable and the identity
-// a cacheable one reports. Each guard is exercised alone, so dropping any one of
-// them either starts caching something that must never be cached or panics on the
-// nil FileInfo a failed stat returns.
+// that a cacheable one reports. Each guard is exercised alone. Dropping any one
+// of them either starts caching something that must never be cached, or panics on
+// the nil FileInfo that a failed stat returns.
 func TestCacheableRules(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(t.TempDir(), "d.rdb")
@@ -156,9 +158,9 @@ func TestCacheableRules(t *testing.T) {
 	}
 }
 
-// TestCacheSourceIgnoresAnUncacheableStore plants a cache file at the path a
-// zero-identity lookup would key, so a store that must not consult the cache is
-// caught reading one anyway rather than merely finding nothing.
+// TestCacheSourceIgnoresAnUncacheableStore plants a cache file at the path that
+// a zero-identity lookup keys. A store that must not consult the cache is then
+// caught reading one anyway, and not merely finding nothing.
 func TestCacheSourceIgnoresAnUncacheableStore(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(t.TempDir(), "d.rdb")
@@ -175,9 +177,9 @@ func TestCacheSourceIgnoresAnUncacheableStore(t *testing.T) {
 }
 
 // TestCacheFresh pins every field of the freshness check. A cache is fresh only
-// when all four recorded facts still match, so each is perturbed alone: dropping
-// or loosening any one would serve records decoded from a different dump, a
-// different format, or a different decimal mode.
+// when all four recorded facts still match, so each is perturbed alone. Dropping
+// or loosening any one serves records decoded from a different dump, a different
+// format, or a different decimal mode.
 func TestCacheFresh(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -243,9 +245,9 @@ func TestReadCacheRejectsAMismatchedHeader(t *testing.T) {
 	})
 }
 
-// TestReadCacheStreamFailures covers the streaming loop's error and paging paths:
-// a cancelled scan stops, a corrupt record is a real error rather than a silent
-// zero record, a consumer error propagates, and a run that ends exactly on a page
+// TestReadCacheStreamFailures covers the error and paging paths of the streaming
+// loop. A cancelled scan stops. A corrupt record is a real error, not a silent
+// zero record. A consumer error propagates. A run that ends exactly on a page
 // boundary never hands the consumer an empty page.
 func TestReadCacheStreamFailures(t *testing.T) {
 	t.Run("a cancelled context stops the stream", func(t *testing.T) {
@@ -320,7 +322,7 @@ func TestReadCacheStreamFailures(t *testing.T) {
 	})
 }
 
-// errWriteBoom is the sentinel a deliberately failing writer returns.
+// errWriteBoom is the sentinel that a failing writer returns.
 var errWriteBoom = errors.New("write refused")
 
 // failAfter accepts n writes and then fails, so a test can aim a write failure at
@@ -335,9 +337,9 @@ func (w *failAfter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// TestWriteHeaderReportsEachWriteFailure walks the header's three writes and fails
-// each in turn, so every one of them keeps its own guard and its own message: a
-// dropped guard would install a cache whose header was never written.
+// TestWriteHeaderReportsEachWriteFailure walks the header's three writes and
+// fails each in turn, so every one of them keeps its own guard and its own
+// message. A dropped guard installs a cache whose header was never written.
 func TestWriteHeaderReportsEachWriteFailure(t *testing.T) {
 	tests := []struct {
 		name string
@@ -360,9 +362,9 @@ func TestWriteHeaderReportsEachWriteFailure(t *testing.T) {
 	})
 }
 
-// TestReadHeader covers each way a file fails to be a current-version iq cache, so
-// a truncated, foreign, or old-layout file is a miss with its own message rather
-// than a decoder fed arbitrary bytes.
+// TestReadHeader covers each way a file fails to be a current-version iq cache.
+// A truncated, foreign, or old-layout file is then a miss with its own message,
+// not a decoder fed arbitrary bytes.
 func TestReadHeader(t *testing.T) {
 	good := cacheBytes(t, cacheHeader{Path: "p", Size: 7, MTimeNano: 9, Format: 3, Decimal: 1}, nRecords(1), false, nil)
 	badVersion := bytes.Clone(good)
@@ -410,10 +412,10 @@ func trailerOver(size int, off uint64) []byte {
 	return b
 }
 
-// TestReadTrailer pins the index-offset trailer's bounds. The offset is read back
-// from stored bytes, so it is untrusted: it must lie inside the file and never
-// name a position inside the trailer itself, and a file too small to hold one is
-// refused before any read.
+// TestReadTrailer pins the bounds of the index-offset trailer. The offset is
+// read back from stored bytes, so it is untrusted. It must lie inside the file
+// and never name a position inside the trailer itself. A file too small to hold
+// one is refused before any read.
 func TestReadTrailer(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -448,8 +450,9 @@ func TestReadTrailer(t *testing.T) {
 }
 
 // TestReadIndex pins the index block's span. The block ends where the trailer
-// begins, so a reader that overshoots that bound would decode bytes belonging to
-// the trailer (or past the file) and accept an index the writer never finished.
+// begins. A reader that overshoots that bound decodes bytes that belong to the
+// trailer (or lie past the file). It then accepts an index that the writer never
+// finished.
 func TestReadIndex(t *testing.T) {
 	blk, err := cborEnc.Marshal(indexBlock{Pages: []pageIndex{{Offset: 12, Filter: []byte{1, 2, 3}}}})
 	require.NoError(t, err)
@@ -475,10 +478,10 @@ func TestReadIndex(t *testing.T) {
 	})
 }
 
-// TestCacheGetIndexPolicy pins when the bounded read consults the page index. The
-// index is only read when the policy asks for one and the file actually carries
-// pages, so a flat cache falls back to streaming and an indexed cache read under a
-// disabled policy does too — even though its pages are right there.
+// TestCacheGetIndexPolicy pins when the bounded read consults the page index.
+// The index is only read when the policy asks for one and the file carries
+// pages. So a flat cache falls back to streaming. An indexed cache read under a
+// disabled policy falls back too, even though its pages are right there.
 func TestCacheGetIndexPolicy(t *testing.T) {
 	t.Run("a disabled index never consults the pages", func(t *testing.T) {
 		st, m, h := cacheFixture(t)
@@ -522,8 +525,8 @@ func TestCacheGetIndexPolicy(t *testing.T) {
 		idx, err := readIndex(f, indexOffset, size)
 		require.NoError(t, err)
 		require.Len(t, idx.Pages, 3)
-		// The key lives only in the last page, and the first page's filter really does
-		// exclude it, so a read that stopped at the first non-candidate would lose it.
+		// The key lives only in the last page, and the first page's filter excludes
+		// it. A read that stops at the first non-candidate loses it.
 		require.False(t, bloomHas(idx.Pages[0].Filter, "k1000"))
 
 		out, ok := st.cacheGet(context.Background(), []string{"k1000"})
@@ -554,8 +557,8 @@ func TestCacheGetIndexPolicy(t *testing.T) {
 }
 
 // TestCacheGetRejectsAMismatchedHeader covers the bounded read's own freshness
-// check. Every recorded fact is perturbed alone so no term can be dropped: a
-// loosened check would answer a bounded query from a cache built for a different
+// check. Every recorded fact is perturbed alone so no term can be dropped. A
+// loosened check answers a bounded query from a cache built for a different
 // dump, format, or decimal mode.
 func TestCacheGetRejectsAMismatchedHeader(t *testing.T) {
 	tests := []struct {
@@ -591,10 +594,10 @@ func TestCacheGetRejectsAMismatchedHeader(t *testing.T) {
 	})
 }
 
-// TestCacheWriterWriteReportsBytesWritten pins the io.Writer contract the header,
-// record, and index writers all share: the count they see is the count the file
-// took, and the tracked position advances by exactly that much so each page's
-// recorded start offset is real.
+// TestCacheWriterWriteReportsBytesWritten pins the io.Writer contract that the
+// header, record, and index writers all share. The count they see is the count
+// that the file took. The tracked position advances by exactly that much, so
+// each page's recorded start offset is real.
 func TestCacheWriterWriteReportsBytesWritten(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "w-*.tmp")
 	require.NoError(t, err)
@@ -617,8 +620,8 @@ func TestCacheWriterWriteReportsBytesWritten(t *testing.T) {
 }
 
 // TestNewCacheWriterCannotCreateTheCacheDir names the failure that stops a cache
-// before any temp file exists, so it is reported as a directory problem rather
-// than surfacing later as a confusing temp-file failure.
+// before any temp file exists. The failure is reported as a directory problem,
+// not as a confusing temp-file failure that surfaces later.
 func TestNewCacheWriterCannotCreateTheCacheDir(t *testing.T) {
 	blocker := filepath.Join(t.TempDir(), "file")
 	require.NoError(t, os.WriteFile(blocker, []byte("x"), 0o600))
@@ -629,9 +632,9 @@ func TestNewCacheWriterCannotCreateTheCacheDir(t *testing.T) {
 	require.Nil(t, w)
 }
 
-// TestPopulateDiscardsAnIncompleteDecode is the cache's central safety rule: a
-// decode that fails partway must leave nothing installed, so a later run re-reads
-// the dump instead of serving a truncated one.
+// TestPopulateDiscardsAnIncompleteDecode is the central safety rule of the cache.
+// A decode that fails partway must leave nothing installed, so a later run
+// re-reads the dump instead of serving a truncated one.
 func TestPopulateDiscardsAnIncompleteDecode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(t.TempDir(), "d.rdb")
@@ -665,9 +668,9 @@ func tempFiles(t *testing.T, dir string) []string {
 }
 
 // TestPopulateDiscardsWhenTheInstallFails blocks the atomic install by occupying
-// the final cache path with a directory. The commit cannot rename over it, so the
-// run must report failure and clean its temp up rather than leaving a stray one
-// behind on every query.
+// the final cache path with a directory. The commit cannot rename over it. The
+// run must report failure and clean its temp up, not leave a stray one behind on
+// every query.
 func TestPopulateDiscardsWhenTheInstallFails(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(t.TempDir(), "d.rdb")
@@ -684,9 +687,9 @@ func TestPopulateDiscardsWhenTheInstallFails(t *testing.T) {
 	require.False(t, fresh, "and installs nothing a later read could serve")
 }
 
-// TestCacheHeaderRecordsTheDecimalMode confirms the decimal mode reaches the file
-// it keys: a header that omitted it would let a run under one mode serve records
-// normalized under another.
+// TestCacheHeaderRecordsTheDecimalMode confirms that the decimal mode reaches
+// the file that it keys. A header that omits it lets a run under one mode serve
+// records normalized under another.
 func TestCacheHeaderRecordsTheDecimalMode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(t.TempDir(), "d.rdb")
@@ -705,18 +708,18 @@ func TestCacheHeaderRecordsTheDecimalMode(t *testing.T) {
 }
 
 // plantNamedCache writes a valid cache file called name into dir, recording dump
-// as the dump it caches, so a listing test controls both the file name and the
-// dump path the entries sort by.
+// as the dump it caches. A listing test then controls both the file name and
+// the dump path that the entries sort by.
 func plantNamedCache(t *testing.T, dir, name, dump string) {
 	t.Helper()
 	h := cacheHeader{Path: dump, Size: 4096, MTimeNano: 7, Format: int(FormatRDB)}
 	require.NoError(t, os.WriteFile(filepath.Join(dir, name), cacheBytes(t, h, nRecords(1), true, nil), 0o600))
 }
 
-// TestListCacheSelectsAndSorts pins what `iq cache stat` shows: only readable
-// current-version .cbor files count, a directory or a foreign file in the cache
-// dir is skipped rather than fatal, each entry reports the dump size its header
-// recorded, and the listing is ordered by dump path rather than by file name.
+// TestListCacheSelectsAndSorts pins what `iq cache stat` shows. Only readable
+// current-version .cbor files count. A directory or a foreign file in the cache
+// dir is skipped, not fatal. Each entry reports the dump size that its header
+// recorded. The listing is ordered by dump path, not by file name.
 func TestListCacheSelectsAndSorts(t *testing.T) {
 	dir := t.TempDir()
 	plantNamedCache(t, dir, "a.cbor", "/dumps/z.rdb")
@@ -751,9 +754,9 @@ func TestListCacheTieBreaksByFileName(t *testing.T) {
 	require.Equal(t, []string{"1.cbor", "2.cbor", "3.cbor"}, []string{entries[0].File, entries[1].File, entries[2].File})
 }
 
-// TestListCacheTieBreaksByFileNameAtScale lists 40 caches of two dumps. sort.Slice
-// is not stable above 12 entries, so only the file name tiebreak keeps the caches
-// of one dump in file name order.
+// TestListCacheTieBreaksByFileNameAtScale lists 40 caches of two dumps. The
+// function sort.Slice is not stable above 12 entries. So only the file name
+// tiebreak keeps the caches of one dump in file name order.
 func TestListCacheTieBreaksByFileNameAtScale(t *testing.T) {
 	dir := t.TempDir()
 	var wantA, wantB []string
@@ -777,7 +780,7 @@ func TestListCacheTieBreaksByFileNameAtScale(t *testing.T) {
 }
 
 // TestListCacheUnreadableDir reports a dir that exists but cannot be read as an
-// error, distinct from the missing dir that simply means nothing is cached.
+// error. A missing dir differs: it means that nothing is cached.
 func TestListCacheUnreadableDir(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
@@ -796,8 +799,8 @@ func TestListCacheUnreadableDir(t *testing.T) {
 }
 
 // TestRemoveCacheResolvesARelativeDumpPath confirms `iq cache clear ./dump.rdb`
-// matches the absolute path a cache header records; matching the argument verbatim
-// would silently remove nothing.
+// matches the absolute path that a cache header records. Matching the argument
+// verbatim silently removes nothing.
 func TestRemoveCacheResolvesARelativeDumpPath(t *testing.T) {
 	dir := t.TempDir()
 	dumpDir := t.TempDir()
@@ -832,10 +835,10 @@ func TestRemoveCacheReportsARemoveFailure(t *testing.T) {
 	require.Zero(t, n)
 }
 
-// TestGetUsesTheIndexWithoutDecodingTheCache proves the bounded read is really
-// answered from the page index rather than falling through to a streaming pass that
-// happens to agree. The planted cache ends in corrupt bytes, and the requested key is
-// one every page filter excludes: the index answers it without decoding a page, while
+// TestGetUsesTheIndexWithoutDecodingTheCache proves that the page index answers
+// the bounded read. A streaming pass that happens to agree does not answer it.
+// The planted cache ends in corrupt bytes. The requested key is one that every
+// page filter excludes. The index answers it without decoding a page, while
 // streaming the same file runs into the corruption.
 func TestGetUsesTheIndexWithoutDecodingTheCache(t *testing.T) {
 	st, m, h := cacheFixture(t)

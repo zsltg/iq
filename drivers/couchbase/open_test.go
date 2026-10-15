@@ -32,9 +32,9 @@ func boundedCtx(t *testing.T) context.Context {
 	return ctx
 }
 
-// TestConnectTimeoutIsLiteral pins the readiness bound at 15 seconds. A test that waits
-// for the bound would add 15 seconds to every run of the suite, so the test reads the
-// constant.
+// TestConnectTimeoutIsLiteral pins the readiness bound at 15 seconds. A test that
+// waits for the bound adds 15 seconds to every run of the suite, so the test reads
+// the constant.
 func TestConnectTimeoutIsLiteral(t *testing.T) {
 	require.Equal(t, 15*time.Second, connectTimeout)
 }

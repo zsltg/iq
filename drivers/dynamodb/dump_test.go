@@ -147,9 +147,10 @@ func TestKeyOfParity(t *testing.T) {
 	require.Equal(t, `["a","3"]`, KeyOf(composite, item))
 }
 
-// TestParseItemTypedValues pins the typed attribute values ParseItem builds, not just
-// their normalized form: a NULL's payload, for one, normalizes to nil whatever the
-// decoded boolean was, so only the attribute value itself proves the payload was read.
+// TestParseItemTypedValues pins the typed attribute values ParseItem builds, not
+// only their normalized form. A NULL's payload, for one, normalizes to nil whatever
+// the decoded boolean was. So only the attribute value itself proves that the
+// payload was read.
 func TestParseItemTypedValues(t *testing.T) {
 	tests := []struct {
 		name string
@@ -191,9 +192,9 @@ func TestParseItemTypedValues(t *testing.T) {
 	}
 }
 
-// TestParseItemErrorsUnwrap pins that a decode failure keeps the standard-library
-// cause in the chain, so a caller can inspect it with errors.As rather than only
-// reading a rendered string.
+// TestParseItemErrorsUnwrap pins that a decode failure keeps the
+// standard-library cause in the chain. A caller can then inspect it with
+// errors.As rather than only reading a rendered string.
 func TestParseItemErrorsUnwrap(t *testing.T) {
 	t.Run("json cause", func(t *testing.T) {
 		tests := []struct {

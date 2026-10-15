@@ -13,12 +13,13 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// Put writes a batch of records back into Redis, reconstructing each key's native
-// structure from its type tag — the inverse of the typed readers in kv.go. Upsert
-// replaces the whole value: an aggregate is DEL'd before it is rewritten, so a
-// list/set/hash is replaced rather than appended into. InsertOnly writes only keys
-// that do not yet exist. Every argument is passed discretely through the pipeline,
-// never concatenated into a command string.
+// Put writes a batch of records back into Redis. It reconstructs the native
+// structure of each key from its type tag, as the inverse of the typed readers in
+// kv.go. Upsert replaces the whole value: an aggregate is DEL'd before it is
+// rewritten, so a list, set, or hash is replaced and not appended into.
+// InsertOnly writes only keys that do not yet exist. Every argument is passed
+// discretely through the pipeline and is never concatenated into a command
+// string.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if len(batch) == 0 {
 		return query.WriteStat{}, nil
@@ -137,10 +138,10 @@ func (s *Store) writeAbsent(ctx context.Context, batch []query.Record, exists []
 	return stat, nil
 }
 
-// queueWrite queues the command(s) that reconstruct one record's value, chosen by
-// its resolved type. It fails fast — before the pipeline executes — on a type it
-// cannot write or a value whose shape does not match its type, so a bad record
-// never half-writes.
+// queueWrite queues the commands that reconstruct the value of one record, chosen
+// by its resolved type. It fails fast, before the pipeline executes, on a type
+// that it cannot write or a value whose shape does not match its type. So a bad
+// record never half-writes.
 func queueWrite(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
 	switch resolveType(r) {
 	case "string":
@@ -182,10 +183,10 @@ func queueJSON(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
 	return nil
 }
 
-// resolveType picks the Redis type to write a record as: its tag when set, else
-// inferred from the value's shape — a scalar as a string, an object or array as
-// JSON. A reshaping copy leaves the tag empty, so this is where an untyped value
-// lands on a concrete Redis type.
+// resolveType picks the Redis type to write a record as. It uses the tag when
+// set. Otherwise it infers the type from the shape of the value: a scalar as a
+// string, an object or array as JSON. A reshaping copy leaves the tag empty, so
+// this is where an untyped value lands on a concrete Redis type.
 func resolveType(r query.Record) string {
 	if r.Type != "" {
 		if r.Type == "document" {
@@ -377,10 +378,10 @@ func asFloat(v any) (float64, error) {
 	}
 }
 
-// Clear empties the connected Redis logical database with FLUSHDB — the `iq data
-// clear` semantics for a keyspace. Redis has no removable container (the DB index
-// always exists), so the Store implements Clearer but not Dropper; `iq data drop`
-// rejects a Redis target through the absent capability.
+// Clear empties the connected Redis logical database with FLUSHDB. This is the
+// `iq data clear` semantics for a keyspace. Redis has no removable container (the
+// DB index always exists), so the Store implements Clearer but not Dropper.
+// `iq data drop` rejects a Redis target through the absent capability.
 func (s *Store) Clear(ctx context.Context) error {
 	if err := s.client.FlushDB(ctx).Err(); err != nil {
 		return fmt.Errorf("redis flushdb: %w", err)
@@ -389,9 +390,9 @@ func (s *Store) Clear(ctx context.Context) error {
 }
 
 // Delete removes the named keys with DEL, chunked to pageSize so a large list is
-// bounded per round-trip. The DEL reply is the count of keys that actually existed,
-// so Deleted is exact and Missing is the remainder — no pre-read needed. Each key is
-// passed discretely as a command argument, never concatenated.
+// bounded per round-trip. The DEL reply is the count of keys that existed. So
+// Deleted is exact and Missing is the remainder, and no pre-read is needed. Each
+// key is passed discretely as a command argument and is never concatenated.
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
 	var stat query.DeleteStat
 	for chunk := range slices.Chunk(keys, s.pageSize) {
@@ -418,9 +419,10 @@ func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) err
 	})
 }
 
-// typedGet reads a page of keys into typed records, reusing the read pipelines but
-// keeping each key's type so the value can later be reconstructed exactly. The
-// module type "ReJSON-RL" is surfaced as the neutral tag "json".
+// typedGet reads a page of keys into typed records. It reuses the read
+// pipelines but keeps the type of each key, so the value can later be
+// reconstructed exactly. The module type "ReJSON-RL" is surfaced as the neutral
+// tag "json".
 func (s *Store) typedGet(ctx context.Context, keys []string) ([]query.Record, error) {
 	unique := dedupe(keys)
 	types, err := s.pipeTypes(ctx, unique)
@@ -434,7 +436,7 @@ func (s *Store) typedGet(ctx context.Context, keys []string) ([]query.Record, er
 	recs := make([]query.Record, 0, len(unique))
 	for i, k := range unique {
 		// A key that vanished between SCAN and read is absent from values, whether
-		// TYPE already said so or the value read raced; skip it rather than write
+		// TYPE already said so or the value read raced. Skip it and do not write
 		// a null. A stored JSON null is present, so it still becomes a record.
 		v, ok := values[k]
 		if !ok {

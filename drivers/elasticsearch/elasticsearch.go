@@ -27,13 +27,14 @@ const keepAlive = "1m"
 // selected. It is a sentinel so the CLI can surface a clear hint.
 var errNoIndex = errors.New("no index selected; address it as handle.index or set ?index= in the source url")
 
-// Store adapts one Elasticsearch or OpenSearch index to the query ports. The jq and
-// write paths use a single index (the keyspace). The raw path runs a _search, and the
-// inspect path reads server and index metadata. The source scheme picks the wire
-// client (Elasticsearch or OpenSearch), which the esClient port hides, so everything
-// below the transport is shared. exact holds the top-level fields whose mapping makes
-// an equality pushable as a term query. It is read once at open. It is nil if no
-// index is selected or the mapping cannot be read, and then no equality is pushed.
+// Store adapts one Elasticsearch or OpenSearch index to the query ports. The jq
+// and write paths use a single index (the keyspace). The raw path runs a
+// _search, and the inspect path reads server and index metadata. The source
+// scheme picks the wire client (Elasticsearch or OpenSearch), which the esClient
+// port hides. So everything below the transport is shared. The field exact holds
+// the top-level fields whose mapping makes an equality pushable as a term query.
+// It is read once at open. It is nil if no index is selected or the mapping
+// cannot be read, and then no equality is pushed.
 type Store struct {
 	client   esClient
 	index    string
@@ -48,8 +49,9 @@ type Store struct {
 	prefilterSkipped int
 }
 
-// connConfig is the parsed form of a source URL: the wire flavor, the server address
-// the client connects to, the basic-auth credentials, and the default index.
+// connConfig is the parsed form of a source URI. It holds the wire flavor, the
+// server address that the client connects to, the basic-auth credentials, and the
+// default index.
 type connConfig struct {
 	flavor   flavor
 	addr     string
@@ -59,13 +61,13 @@ type connConfig struct {
 }
 
 // Open connects to the server named by an elasticsearch:// / elasticsearch+s:// /
-// opensearch:// / opensearch+s:// URL. An info request fails fast on a bad URL, an
-// unreachable server, or bad credentials. The index (the jq keyspace, can be empty
-// for raw or inspect-only use) is the dotted address override if non-empty, else the
-// URL's ?index= default, else the URL path. If trace is non-nil, it logs each HTTP
-// request (the CLI's --verbose trace) as method and path only, so no credential from
-// the Authorization header is written. dec sets how the filter sees fractional
-// numbers.
+// opensearch:// / opensearch+s:// URI. An info request fails fast on a bad URI,
+// an unreachable server, or bad credentials. The index is the jq keyspace and can
+// be empty for raw or inspect-only use. It is the dotted address override if
+// non-empty, else the ?index= default of the URI, else the URI path. If trace is
+// non-nil, it logs each HTTP request (the --verbose trace of the CLI) as method
+// and path only. So no credential from the Authorization header is written. dec
+// sets how the filter sees fractional numbers.
 func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numfmt.DecimalMode) (*Store, error) {
 	cc, err := parseURL(rawURL, address)
 	if err != nil {
@@ -82,18 +84,19 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 	}
 	if cc.index != "" {
 		// Best-effort: the field types drive equality pushdown only. If the mapping
-		// cannot be read (permissions, an absent index), equality is simply not
-		// pushed and the full jq still runs client-side — never a wrong result.
+		// cannot be read (permissions, an absent index), equality is not pushed
+		// and the full jq still runs client-side. The result is never wrong.
 		s.exact, _ = s.readExactFields(ctx)
 	}
 	return s, nil
 }
 
-// parseURL splits a source URL into the wire flavor, server address, basic-auth
-// credentials, and the default index. elasticsearch:// and opensearch:// map to an
-// http:// address, and the +s variants to https://. The index is the dotted address
-// override, else ?index=, else the URL path. A missing scheme, host, or malformed
-// index is an error, so a bad source fails at parse time.
+// parseURL splits a source URI into the wire flavor, server address, basic-auth
+// credentials, and the default index. The schemes elasticsearch:// and
+// opensearch:// map to an http:// address. The +s variants map to https://. The
+// index is the dotted address override, else ?index=, else the URI path. A
+// missing scheme, host, or malformed index is an error, so a bad source fails at
+// parse time.
 func parseURL(rawURL, address string) (connConfig, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -157,15 +160,16 @@ func resolveIndex(address string, u *url.URL) (string, error) {
 	return index, nil
 }
 
-// badIndexChars are the bytes Elasticsearch and OpenSearch forbid in an index name;
-// ',' and '*' also matter to us because they would select several indices, breaking
-// the single-keyspace model. Rejecting them up front also keeps the name safe to
-// place in a request path.
+// badIndexChars are the bytes that Elasticsearch and OpenSearch forbid in an
+// index name. The bytes ',' and '*' also matter to us because they select several
+// indices, which breaks the single-keyspace model. Rejecting them up front also
+// keeps the name safe to place in a request path.
 const badIndexChars = "\\/*?\"<>| ,#:"
 
-// validateIndex rejects an index name the backend would refuse, or one that would
-// address more than one index, before it reaches a request path — the "never build a
-// query from unsanitized input" rule for the index segment.
+// validateIndex rejects an index name that the backend refuses, or one that
+// addresses more than one index. It rejects the name before it reaches a request
+// path. This is the "never build a query from unsanitized input" rule for the
+// index segment.
 func validateIndex(name string) error {
 	if name == "" {
 		return errors.New("index name is empty")
@@ -229,15 +233,17 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 
 // ScanBatches streams the whole index, handing the caller each page of
 // {_id: document}. It pages with a point-in-time and search_after (keyset
-// pagination), so it never re-reads from an offset and holds only one page in
-// memory. Bounded by ctx; stops at the first error from fn or the driver.
+// pagination). So it never re-reads from an offset and holds only one page in
+// memory. It is bounded by ctx and stops at the first error from fn or the
+// driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
 	return s.pagedSearch(ctx, nil, nil, fn)
 }
 
-// searchResponse is the subset of a _search reply the scan needs: the (possibly
-// refreshed) point-in-time id, and each hit's _id, _source, and sort values (fed
-// back as the next page's search_after).
+// searchResponse is the subset of a _search reply that the scan needs. It holds
+// the (possibly refreshed) point-in-time id, and the _id, _source, and sort
+// values of each hit. The sort values are fed back as the search_after of the
+// next page.
 type searchResponse struct {
 	PitID string `json:"pit_id"`
 	Hits  struct {
@@ -257,17 +263,17 @@ type searchHit struct {
 }
 
 // pagedSearch pages a _search over an optional query and hands fn each page of
-// {_id: document}. It opens a point-in-time and sorts by the flavor's keyset
-// tiebreaker (a total, stable order only inside a PIT). It advances with
-// search_after, so a resized index cannot make the walk skip or loop. query is nil
-// for a full scan and a bool query for a pushed-down scan. The PIT always closes,
-// even on error or a cancelled ctx.
+// {_id: document}. It opens a point-in-time and sorts by the keyset tiebreaker of
+// the flavor (a total, stable order only inside a PIT). It advances with
+// search_after, so a resized index cannot make the walk skip or loop. The
+// argument query is nil for a full scan and a bool query for a pushed-down scan.
+// The PIT always closes, even on error or a cancelled ctx.
 //
-// If prefilter is non-nil, the scan runs each hit's raw _source through it before
-// decode and skips a hit that it proves the predicate rejects (counted in
-// prefilterSkipped). ScanFiltered builds the matcher once per scan. The keyset
-// cursor advances past every hit, skipped or kept. The scan never hands an empty
-// batch to fn, even if the prefilter empties a page.
+// If prefilter is non-nil, the scan runs the raw _source of each hit through it
+// before decode. It skips a hit that the prefilter proves the predicate rejects
+// (counted in prefilterSkipped). ScanFiltered builds the matcher once per scan.
+// The keyset cursor advances past every hit, skipped or kept. The scan never
+// hands an empty batch to fn, even if the prefilter empties a page.
 func (s *Store) pagedSearch(ctx context.Context, query map[string]any, prefilter *rawpred.Matcher, fn func(batch map[string]any) error) error {
 	if s.index == "" {
 		return errNoIndex
@@ -276,8 +282,8 @@ func (s *Store) pagedSearch(ctx context.Context, query map[string]any, prefilter
 	if err != nil {
 		return err
 	}
-	// Close the latest PIT id (a search may rotate it) on every exit path, detached
-	// from ctx so a cancelled scan still frees the server-side resource.
+	// Close the latest PIT id (a search can rotate it) on every exit path, detached
+	// from ctx. So a cancelled scan still frees the server-side resource.
 	defer func() { s.client.closePIT(context.WithoutCancel(ctx), pit) }()
 
 	var after json.RawMessage
@@ -373,10 +379,10 @@ func (s *Store) keep(h searchHit, prefilter *rawpred.Matcher) bool {
 	return true
 }
 
-// EstimateCount returns the index's document count (GET /{index}/_count), a cheap
-// approximate total for a full scan's progress. It may be stale under concurrent
-// writes, so the caller treats it as a hint. A missing index is the same error the
-// scan paths return.
+// EstimateCount returns the document count of the index (GET /{index}/_count).
+// It is a cheap approximate total for the progress of a full scan. It can be
+// stale under concurrent writes, so the caller treats it as a hint. A missing
+// index is the same error that the scan paths return.
 func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
 	if s.index == "" {
 		return 0, errNoIndex
@@ -390,12 +396,13 @@ func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
 	return cr.Count, nil
 }
 
-// Query runs a raw _search against the index. args must be one JSON document: a full
-// search body (`{"query":{…},"size":…,"aggs":…}`) or a bare query object
-// (`{"match":{"title":"dune"}}`), which the driver wraps as `{"query":…}`. The driver
-// decodes it and passes it as a parameter object, never string-built. It returns the
-// whole _search reply (hits and aggregations) with exact number precision, as an
-// escape hatch for what the jq read path does not cover.
+// Query runs a raw _search against the index. args must be one JSON document.
+// The document is a full search body (`{"query":{…},"size":…,"aggs":…}`) or a
+// bare query object (`{"match":{"title":"dune"}}`), which the driver wraps as
+// `{"query":…}`. The driver decodes it and passes it as a parameter object. It
+// never builds it as a string. It returns the whole _search reply (hits and
+// aggregations) with exact number precision. It is an escape hatch for what the
+// jq read path does not cover.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if s.index == "" {
 		return nil, errNoIndex

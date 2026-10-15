@@ -17,36 +17,36 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// cacheVersion is bumped whenever the on-disk cache layout OR the normalized
-// record shape changes — including any change to drivers/mongo Normalize or the
-// drivers/file record builders. It is folded into the cache key, so a bump makes
-// every prior cache a miss (a different filename) rather than serving records in
-// a stale shape. The differential test (cold vs warm output) is the backstop for
-// a forgotten bump.
+// cacheVersion is bumped whenever the on-disk cache layout or the normalized
+// record shape changes. This includes any change to drivers/mongo Normalize or
+// the drivers/file record builders. It is folded into the cache key. So a bump
+// makes every prior cache a miss (a different filename), not a source of
+// records in a stale shape. The differential test (cold vs warm output) is the
+// backstop for a forgotten bump.
 const cacheVersion = 2
 
 // cacheMagic prefixes every cache file so a truncated or foreign file is
 // rejected cheaply before any CBOR decode.
 var cacheMagic = [8]byte{'I', 'Q', 'C', 'A', 'C', 'H', 'E', '\n'}
 
-// defaultCacheMinSize is the size floor below which a dump is not cached: its
-// decode is already sub-perceptible, so a cache write would be pure overhead.
+// defaultCacheMinSize is the size floor below which a dump is not cached. Its
+// decode is already sub-perceptible, so a cache write is pure overhead.
 const defaultCacheMinSize = 4 << 20 // 4 MiB.
 
 // CacheConfig is the decode-cache policy the composition root passes into a file
 // Store. A zero value (or Enabled false, or empty Dir) disables caching, so a
 // caller that wires nothing keeps today's always-decode behavior.
 type CacheConfig struct {
-	// Dir is the directory cache files live in; empty disables caching.
+	// Dir is the directory cache files live in. Empty disables caching.
 	Dir string
-	// Enabled turns caching on; false disables it regardless of Dir.
+	// Enabled turns caching on. False disables it regardless of Dir.
 	Enabled bool
 	// Index builds a per-page Bloom index so a bounded Get decodes only the pages
-	// that may hold a wanted key. When false the flat cache is still written, but a
-	// Get streams the whole cache — the escape hatch for a very large keyspace
-	// where the index build memory is unwelcome.
+	// that can hold a wanted key. When false the flat cache is still written, but a
+	// Get streams the whole cache. This is the escape hatch for a very large
+	// keyspace where the index build memory is unwelcome.
 	Index bool
-	// MinSize is the size floor in bytes; a dump smaller than it is not cached.
+	// MinSize is the size floor in bytes. A dump smaller than it is not cached.
 	// Zero selects defaultCacheMinSize.
 	MinSize int64
 }
@@ -68,17 +68,18 @@ func (c CacheConfig) minSize() int64 {
 //
 //	magic[8] version[4] header(CBOR)   record… record   index(CBOR) trailer[8]
 //
-// The records are the flat body that a scan streams. The index holds, per page, the
-// byte offset of the page and a Bloom filter of its keys, so a bounded Get decodes
-// only candidate pages. The 8-byte trailer is the little-endian offset of the index
-// block. The reader finds it from the end, so the writer can stream the body without
-// final offsets. It also ends the record region for a scan. A flat-mode cache writes
-// an empty index and a trailer, so every cache file has the same shape and a Get
-// falls back to streaming.
+// The records are the flat body that a scan streams. The index holds, per page,
+// the byte offset of the page and a Bloom filter of its keys. A bounded Get
+// therefore decodes only candidate pages. The 8-byte trailer is the
+// little-endian offset of the index block. The reader finds it from the end, so
+// the writer can stream the body without final offsets. It also ends the record
+// region for a scan. A flat-mode cache writes an empty index and a trailer. So
+// every cache file has the same shape, and a Get falls back to streaming.
 
-// cacheHeader is the metadata prefix of a cache file: enough to re-verify the
-// cache still matches its dump (size, mtime, format, decimal mode) and to report
-// the entry in `iq cache stat`. Encoded as a fixed-order CBOR array.
+// cacheHeader is the metadata prefix of a cache file. It holds enough to
+// re-verify that the cache still matches its dump (size, mtime, format, decimal
+// mode) and to report the entry in `iq cache stat`. It is encoded as a
+// fixed-order CBOR array.
 type cacheHeader struct {
 	_         struct{} `cbor:",toarray"`
 	Path      string
@@ -108,8 +109,9 @@ func (s *Store) keyFor(m cacheMeta) cacheKey {
 // trailerLen is the fixed width of the index-offset trailer at a cache file's end.
 const trailerLen = 8
 
-// pageIndex locates one record page in a cache file: the byte offset where the
-// page's records start, and a Bloom filter of the keys it holds.
+// pageIndex locates one record page in a cache file. It holds the byte offset
+// where the page's records start, and a Bloom filter of the keys that the page
+// holds.
 type pageIndex struct {
 	_      struct{} `cbor:",toarray"`
 	Offset int64
@@ -125,16 +127,16 @@ type indexBlock struct {
 
 // cacheMeta is the identity of a dump for cache-keying: its absolute path, size,
 // and mtime. Two runs over an unmodified dump produce the same meta, hence the
-// same cache file; any edit changes size or mtime and invalidates it.
+// same cache file. Any edit changes size or mtime and invalidates it.
 type cacheMeta struct {
 	path  string
 	size  int64
 	mtime int64
 }
 
-// cacheable reports the dump's cache identity and whether it may be cached at
-// all: never for stdin (no stable path), a disabled policy, an unstattable path,
-// or a dump below the size floor.
+// cacheable reports the dump's cache identity and whether it can be cached at
+// all. It reports false for stdin (no stable path), a disabled policy, an
+// unstattable path, and a dump below the size floor.
 func (s *Store) cacheable() (cacheMeta, bool) {
 	if s.data != nil || !s.cache.active() {
 		return cacheMeta{}, false
@@ -162,11 +164,12 @@ func (s *Store) cacheFile(m cacheMeta) string {
 	return filepath.Join(s.cache.Dir, hex.EncodeToString(h[:])+".cbor")
 }
 
-// cacheSource returns a RecordSource streaming the fresh cache for this dump, and
-// true, when one exists and validates. Any miss — not cacheable, no file, wrong
-// magic/version, or a header that no longer matches the dump — returns false so
-// the caller decodes the original. It never returns an error: a bad cache is an
-// optimization that did not apply, never a query failure.
+// cacheSource returns a RecordSource streaming the fresh cache for this dump,
+// and true, when one exists and validates. Any miss returns false, so the
+// caller decodes the original. A miss is any of these: not cacheable, no file,
+// wrong magic/version, or a header that no longer matches the dump. It never
+// returns an error. A bad cache is an optimization that did not apply, never a
+// query failure.
 func (s *Store) cacheSource() (query.RecordSource, bool) {
 	m, ok := s.cacheable()
 	if !ok {
@@ -200,7 +203,7 @@ func (s *Store) cacheFresh(path string, m cacheMeta) bool {
 // at the index block (the trailer names its offset), not at end-of-file. It checks
 // the header again, because the file can change after cacheFresh. Once records
 // stream, the caller is committed to the cache, so any read error is a real error
-// and not a silent miss. readCache returns it wrapped.
+// and not a silent miss. The function wraps it.
 func (s *Store) readCache(ctx context.Context, path string, m cacheMeta, fn func(batch []query.Record) error) error {
 	f, err := os.Open(path) //nolint:gosec // G304: opens the user's dump cache file, by design.
 	if err != nil {
@@ -251,15 +254,15 @@ func streamRecords(ctx context.Context, dec *cbor.Decoder, path string, fn func(
 }
 
 // populate decodes the original dump once, teeing each record into a temp cache
-// file, and installs it atomically only if the decode ran to completion. A
+// file. It installs the cache atomically only if the decode completed. A
 // short-circuited Get, a cancelled scan, or a decode error leaves the temp
 // discarded, so a partial dump is never cached. A cache write failure is
-// swallowed — the query still streams from the live decode — so caching never
+// swallowed. The query still streams from the live decode, so caching never
 // makes a query fail.
 func (s *Store) populate(ctx context.Context, m cacheMeta, fn func(batch []query.Record) error) error {
 	w, err := s.newCacheWriter(m)
 	if err != nil {
-		// Cannot open a temp cache; fall back to a plain decode, no failure.
+		// Cannot open a temp cache. Fall back to a plain decode, no failure.
 		return s.recordsDirect(ctx, fn)
 	}
 	teed := func(batch []query.Record) error {
@@ -276,11 +279,12 @@ func (s *Store) populate(ctx context.Context, m cacheMeta, fn func(batch []query
 	return nil
 }
 
-// cacheWriter buffers a dump's records into a temp file, then renames it over the
-// final cache path on commit, appending the page index and trailer. After a write
-// error it goes inert: every later write is a no-op and commit reports failure, so
-// a broken cache is discarded rather than installed. It tracks the byte position
-// as it writes so each page's start offset is recorded for the index.
+// cacheWriter buffers a dump's records into a temp file, then renames it over
+// the final cache path on commit. The commit also appends the page index and
+// trailer. After a write error the writer goes inert. Every later write is a
+// no-op and commit reports failure, so a broken cache is discarded, not
+// installed. It tracks the byte position as it writes, so each page's start
+// offset is recorded for the index.
 type cacheWriter struct {
 	f      *os.File
 	tmp    string
@@ -397,12 +401,12 @@ func writeHeader(w io.Writer, h cacheHeader) error {
 	return nil
 }
 
-// readHeader reads and validates the magic and version (via ReadFull, which reads
-// exactly the fixed-width prefix), then decodes the CBOR header. It returns the
-// decoder it used, positioned at the first record, so a record reader continues
-// with the same decoder — a fresh one would drop the bytes this decoder buffered
-// past the header. A wrong magic or version is an error, so an old-layout or
-// foreign file is treated as a miss.
+// readHeader reads and validates the magic and version (via ReadFull, which
+// reads exactly the fixed-width prefix), then decodes the CBOR header. It
+// returns the decoder that it used, positioned at the first record. A record
+// reader continues with the same decoder, because a fresh one drops the bytes
+// that this decoder buffered past the header. A wrong magic or version is an
+// error, so an old-layout or foreign file is treated as a miss.
 func readHeader(r io.Reader) (cacheHeader, *cbor.Decoder, error) {
 	var magic [8]byte
 	if _, err := io.ReadFull(r, magic[:]); err != nil {
@@ -435,8 +439,8 @@ func fileSize(f *os.File) (int64, error) {
 	return fi.Size(), nil
 }
 
-// readTrailer reads the index-block offset from the fixed-width trailer at the end
-// of a cache file, rejecting an offset that does not lie within the file.
+// readTrailer reads the index-block offset from the fixed-width trailer at the
+// end of a cache file. It rejects an offset that does not lie within the file.
 func readTrailer(r io.ReaderAt, size int64) (int64, error) {
 	if size < trailerLen {
 		return 0, errors.New("cache file too small for trailer")
@@ -462,12 +466,13 @@ func readIndex(r io.ReaderAt, indexOffset, size int64) (indexBlock, error) {
 	return blk, nil
 }
 
-// cacheGet resolves keys from a fresh indexed cache, decoding only the pages whose
-// Bloom filter may hold a requested key, and returns true when it handled the
-// request. It returns false — so the caller falls back to streaming — when the
-// dump is not cacheable, the cache is missing or stale, carries no index (flat
-// mode), or any read fails partway. It never returns an error: the cache is an
-// optimization, and the streaming path re-derives the answer (and any real error).
+// cacheGet resolves keys from a fresh indexed cache. It decodes only the pages
+// whose Bloom filter can hold a requested key, and returns true when it handled
+// the request. It returns false, so the caller falls back to streaming. This
+// happens when the dump is not cacheable or the cache is missing or stale. It
+// also happens when the cache carries no index (flat mode) or any read fails
+// partway. It never returns an error. The cache is an optimization, and the
+// streaming path re-derives the answer (and any real error).
 func (s *Store) cacheGet(ctx context.Context, keys []string) (map[string]any, bool) {
 	if !s.cache.Index {
 		return nil, false // index disabled: a bounded read streams the flat cache.
@@ -530,9 +535,9 @@ func (s *Store) openIndex(f *os.File, m cacheMeta) (cacheIndex, bool) {
 	return cacheIndex{pages: idx.Pages, end: indexOffset}, true
 }
 
-// lookupPages decodes the pages whose filter may hold a wanted key into l. It checks
-// for completion between pages, never inside one, and the context before each page.
-// It reports false when the context ends or a page fails to decode.
+// lookupPages decodes the pages whose filter can hold a wanted key into l. It
+// checks for completion between pages, never inside one, and the context before
+// each page. It reports false when the context ends or a page fails to decode.
 func lookupPages(ctx context.Context, r io.ReaderAt, ix cacheIndex, l *keyLookup) bool {
 	for i, p := range ix.pages {
 		if l.done() {
@@ -587,8 +592,8 @@ func (l *keyLookup) done() bool {
 	return len(l.found) == len(l.want)
 }
 
-// mayHold reports whether a page's filter may contain any still-unfound key, so a
-// page relevant to no outstanding key is skipped without a decode.
+// mayHold reports whether a page's filter can contain any still-unfound key. A
+// page relevant to no outstanding key is then skipped without a decode.
 func (l *keyLookup) mayHold(filter []byte) bool {
 	for k := range l.want {
 		if !l.found[k] && bloomHas(filter, k) {
@@ -625,7 +630,7 @@ type CacheEntry struct {
 }
 
 // ListCache returns the valid cache entries in dir, sorted by dump path. A dir
-// that does not exist yields no entries and no error (nothing cached yet); an
+// that does not exist yields no entries and no error (nothing cached yet). An
 // unreadable or foreign file in it is skipped, not fatal.
 func ListCache(dir string) ([]CacheEntry, error) {
 	des, err := cacheEntries(dir)
@@ -655,9 +660,9 @@ func ListCache(dir string) ([]CacheEntry, error) {
 }
 
 // RemoveCache deletes cache files in dir. When dumpPath is empty it removes every
-// cache file; otherwise only the entry whose header names that dump (matched by
-// absolute path). It returns how many files it removed. A missing dir is not an
-// error (nothing to remove).
+// cache file. Otherwise it removes only the entry whose header names that dump
+// (matched by absolute path). It returns how many files it removed. A missing
+// dir is not an error (nothing to remove).
 func RemoveCache(dir, dumpPath string) (int, error) {
 	des, err := cacheEntries(dir)
 	if err != nil {

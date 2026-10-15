@@ -49,7 +49,7 @@ func TestDynamoScanOutputParity(t *testing.T) {
 }
 
 func TestDynamoExportNDJSONGzipCompositeKey(t *testing.T) {
-	// Native S3 export: NDJSON, one {"Item":{…}} per line; gzipped; composite key.
+	// Native S3 export: NDJSON, one {"Item":{…}} per line, gzipped, composite key.
 	export := `{"Item":{"pk":{"S":"a"},"sk":{"N":"3"},"v":{"S":"z"}}}
 {"Item":{"pk":{"S":"a"},"sk":{"N":"10"},"v":{"S":"w"}}}
 `
@@ -110,10 +110,10 @@ func TestDynamoFormatString(t *testing.T) {
 	require.Equal(t, FormatDynamoDBJSON, f)
 }
 
-// TestDynamoSourceFailures pins the dump reader's error handling: an "Items" value
-// that is not an array is a decode failure rather than a silently empty page, a
-// malformed top-level object is reported, and a consumer error propagates even when
-// a later page would have succeeded.
+// TestDynamoSourceFailures pins the error handling of the dump reader. An
+// "Items" value that is not an array is a decode failure, not a silently empty
+// page. A malformed top-level object is reported. A consumer error propagates
+// even if a later page can succeed.
 func TestDynamoSourceFailures(t *testing.T) {
 	drain := func(t *testing.T, body string, size int, fn func([]query.Record) error) error {
 		t.Helper()

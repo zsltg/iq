@@ -17,8 +17,8 @@ import (
 // ScanFiltered translates the pushable part of pred to a DynamoDB Scan
 // FilterExpression. See query.FilteredScanner. Only equality and existence are
 // pushed. Ranges are never pushed: in jq a string is greater than every number, so
-// a typed comparison would wrongly exclude items. If nothing is pushable, the scan
-// is the same as ScanBatches.
+// a typed comparison wrongly excludes items. If nothing is pushable, the scan is
+// the same as ScanBatches.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
 	if len(s.keys) == 0 {
 		return errNoTable
@@ -53,12 +53,13 @@ func (c *counter) next() int {
 	return c.n
 }
 
-// compile translates the pushable part of a neutral predicate into a DynamoDB filter
-// fragment. Only equality (Eq on a scalar), existence (Exists, NotExists), and their
-// And/Or combinations are pushed, on a single top-level attribute path. An And keeps
-// the conjuncts that compile and drops the rest. An Or must compile every branch, or
-// it is dropped whole, because dropping one branch would lose items. Ranges, regex,
-// size, element matches, and the other negations (Ne, NoneMatch) are never pushed.
+// compile translates the pushable part of a neutral predicate into a DynamoDB
+// filter fragment. Only these forms are pushed, on a single top-level attribute
+// path: equality (Eq on a scalar), existence (Exists, NotExists), and their And/Or
+// combinations. An And keeps the conjuncts that compile and drops the rest. An Or
+// must compile every branch, or it is dropped whole, because dropping one branch
+// loses items. Ranges, regex, size, element matches, and the other negations (Ne,
+// NoneMatch) are never pushed.
 func compile(pred predicate.Node) (frag, bool) {
 	return build(&counter{}, pred)
 }
@@ -80,10 +81,10 @@ func build(c *counter, node predicate.Node) (frag, bool) {
 	}
 }
 
-// leafEq compiles a single-attribute equality against a scalar literal. A null value
-// is never pushed: DynamoDB `#a = :null` matches only items whose attribute is the
-// NULL type, missing the absent-attribute items jq's `== null` also matches, which
-// would drop rows.
+// leafEq compiles a single-attribute equality against a scalar literal. A null
+// value is never pushed. DynamoDB `#a = :null` matches only items whose attribute
+// is the NULL type. It misses the absent-attribute items that jq's `== null` also
+// matches, so pushing it drops rows.
 func leafEq(c *counter, eq predicate.Eq) (frag, bool) {
 	if len(eq.Path) != 1 {
 		return frag{}, false
@@ -128,9 +129,9 @@ func buildAnd(c *counter, and predicate.And) (frag, bool) {
 	return join(c, and, " AND ", false)
 }
 
-// buildOr disjoins the branches of an Or, but only if every branch compiles; a single
-// uncompilable branch drops the whole Or, because keeping the rest would narrow the
-// match and lose items.
+// buildOr disjoins the branches of an Or, but only if every branch compiles. A
+// single uncompilable branch drops the whole Or, because keeping the rest narrows
+// the match and loses items.
 func buildOr(c *counter, or predicate.Or) (frag, bool) {
 	if len(or) == 0 {
 		return frag{}, false
@@ -138,10 +139,10 @@ func buildOr(c *counter, or predicate.Or) (frag, bool) {
 	return join(c, or, " OR ", true)
 }
 
-// join builds a boolean junction of the child fragments. When allRequired is set (Or),
-// a single failing child fails the whole junction; otherwise (And) failing children are
-// dropped. A single surviving child is returned unparenthesized; two or more are wrapped
-// so precedence is explicit.
+// join builds a boolean junction of the child fragments. When allRequired is set
+// (Or), a single failing child fails the whole junction. Otherwise (And), failing
+// children are dropped. A single surviving child is returned unparenthesized. Two
+// or more are wrapped so precedence is explicit.
 func join(c *counter, nodes []predicate.Node, sep string, allRequired bool) (frag, bool) {
 	exprs := make([]string, 0, len(nodes))
 	displays := make([]string, 0, len(nodes))
@@ -175,10 +176,11 @@ func join(c *counter, nodes []predicate.Node, sep string, allRequired bool) (fra
 	}, true
 }
 
-// scalarAV converts a predicate literal into the DynamoDB attribute value an equality
-// binds. Only a string, boolean, or number pushes; a null (or any richer value) is not
-// pushable, so the equality is dropped and the full jq re-runs client-side. A number
-// arrives as a float64 from the jq compiler, but an int is accepted defensively.
+// scalarAV converts a predicate literal into the DynamoDB attribute value an
+// equality binds. Only a string, boolean, or number pushes. A null (or any richer
+// value) is not pushable, so the equality is dropped and the full jq re-runs
+// client-side. A number arrives as a float64 from the jq compiler, but an int is
+// accepted defensively.
 func scalarAV(v any) (types.AttributeValue, bool) {
 	switch t := v.(type) {
 	case string:

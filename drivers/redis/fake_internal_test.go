@@ -11,11 +11,12 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// fakeKey is one key of the in-memory keyspace behind fakeRedis. typ is the
-// Redis TYPE the fake reports. val is the reply of the type's value command: a
-// string, a map[string]string, a []string, a []goredis.Z, a []goredis.XMessage,
-// or the JSON text of a RedisJSON document. err, when set, is the error of the
-// value command, as a key that vanished mid-read would give.
+// fakeKey is one key of the in-memory keyspace behind fakeRedis. The field typ
+// is the Redis TYPE that the fake reports. The field val is the reply of the
+// value command of the type. It is JSON text for a RedisJSON document, or
+// one of these Go values: a string, a map[string]string, a []string, a
+// []goredis.Z, or a []goredis.XMessage. The field err, when set, is the error
+// of the value command, as a key that vanished mid-read gives.
 type fakeKey struct {
 	typ string
 	val any
@@ -50,7 +51,7 @@ type fakeRedis struct {
 }
 
 // newFakeStore returns a Store whose client talks to a fake. The page size and
-// the decimal mode are the same as an opened Store would have, except that the
+// the decimal mode are the same as those of an opened Store, except that the
 // test sets pageSize.
 func newFakeStore(t *testing.T, f *fakeRedis, pageSize int) *Store {
 	t.Helper()

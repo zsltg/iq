@@ -75,9 +75,9 @@ func (s *Store) InspectCollections(ctx context.Context) (any, error) {
 	return map[string]any{"bucket": s.bucket, "scopes": out}, nil
 }
 
-// InspectIndexes lists the query indexes on the selected bucket (or the whole cluster
-// when none is selected) from the system:indexes catalog, so a user can see what a
-// pushdown scan can use. Every value rides as a named parameter.
+// InspectIndexes lists the query indexes on the selected bucket (or the whole
+// cluster when none is selected) from the system:indexes catalog. This lets a user
+// see what a pushdown scan can use. Every value rides as a named parameter.
 func (s *Store) InspectIndexes(ctx context.Context) (any, error) {
 	stmt := "SELECT idx.* FROM system:indexes AS idx"
 	opts := &gocb.QueryOptions{Context: ctx}

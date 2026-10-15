@@ -34,10 +34,10 @@ import (
 	"github.com/zsltg/iq/internal/render"
 )
 
-// scanBatch is the page size for ScanBatches and TypedScan: how many items to
-// accumulate before handing a page to the caller, bounding streaming memory. A
-// single DynamoDB Scan returns up to 1MB regardless; this re-batches that into
-// even pages for the caller.
+// scanBatch is the page size for ScanBatches and TypedScan. It is how many
+// items to accumulate before handing a page to the caller, which bounds
+// streaming memory. A single DynamoDB Scan returns up to 1MB regardless. This
+// re-batches that into even pages for the caller.
 const scanBatch = 100
 
 // batchGetMax and batchWriteMax are DynamoDB's hard per-request item limits for
@@ -57,18 +57,19 @@ const maxUnprocessed = 8
 var errNoTable = errors.New("dynamodb: no table selected; address it as handle.table or set ?table= in the source url")
 
 // KeyAttr is one primary-key attribute: its name and its DynamoDB scalar type
-// (S, N, or B), used to encode and decode the string key. It is exported (built live
-// from DescribeTable, or offline from a ?keys= hint via ParseKeySchema) so a dump
-// reader keys an item exactly as a live scan does.
+// (S, N, or B). It is used to encode and decode the string key. It is exported so a
+// dump reader keys an item exactly as a live scan does. DescribeTable builds it
+// live, and ParseKeySchema builds it offline from a ?keys= hint.
 type KeyAttr struct {
 	name string
 	typ  types.ScalarAttributeType
 }
 
 // ddbAPI is the subset of the DynamoDB client the Store calls. The concrete
-// *dynamodb.Client satisfies it; abstracting it lets the retry, pagination, and
-// batching loops be tested with a fake that returns UnprocessedKeys/Items and
-// multi-page scans, paths a throttling-free backend like DynamoDB Local never drives.
+// *dynamodb.Client satisfies it. This abstraction lets a fake test the retry,
+// pagination, and batching loops. The fake returns UnprocessedKeys/Items and
+// multi-page scans, paths that a throttling-free backend like DynamoDB Local never
+// drives.
 type ddbAPI interface {
 	ListTables(context.Context, *dynamodb.ListTablesInput, ...func(*dynamodb.Options)) (*dynamodb.ListTablesOutput, error)
 	DescribeTable(context.Context, *dynamodb.DescribeTableInput, ...func(*dynamodb.Options)) (*dynamodb.DescribeTableOutput, error)
@@ -81,7 +82,7 @@ type ddbAPI interface {
 }
 
 // Store adapts one DynamoDB table to the query ports. The jq and write paths are
-// scoped to a single table (the keyspace of the KV model); the raw path runs
+// scoped to a single table (the keyspace of the KV model). The raw path runs
 // arbitrary PartiQL and needs no table.
 type Store struct {
 	client   ddbAPI
@@ -116,8 +117,9 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 		return nil, err
 	}
 
-	// Bounded reachability probe: validates region, endpoint, and credentials, the
-	// DynamoDB analogue of establishing a session — Open fails fast on a bad source.
+	// Bounded reachability probe: validates region, endpoint, and credentials. It is
+	// the DynamoDB analogue of establishing a session. Open fails fast on a bad
+	// source.
 	if _, err := client.ListTables(ctx, &dynamodb.ListTablesInput{Limit: aws.Int32(1)}); err != nil {
 		return nil, fmt.Errorf("connect dynamodb: %w", err)
 	}
@@ -142,8 +144,8 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 func newClient(ctx context.Context, cc connConfig, trace io.Writer) (*dynamodb.Client, error) {
 	loadOpts := []func(*config.LoadOptions) error{config.WithRegion(cc.region)}
 	if cc.endpoint != "" {
-		// DynamoDB Local ignores credentials but the SDK still requires a provider;
-		// supply non-secret static dummies so credential resolution never fails.
+		// DynamoDB Local ignores credentials but the SDK still requires a provider.
+		// Supply non-secret static dummies so credential resolution never fails.
 		loadOpts = append(loadOpts, config.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider("dummy", "dummy", ""),
 		))
@@ -205,10 +207,10 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	return connConfig{region: region, table: table, endpoint: q.Get(paramEndpoint)}, nil
 }
 
-// loadKeySchema reads the selected table's primary-key schema (partition key, then
-// sort key when present) with each key attribute's scalar type, so keys can be
-// encoded and reversed. A table that does not exist is an error the CLI surfaces
-// cleanly.
+// loadKeySchema reads the selected table's primary-key schema (partition key,
+// then sort key when present). It reads each key attribute's scalar type, so
+// keys can be encoded and reversed. A table that does not exist is an error that
+// the CLI surfaces cleanly.
 func (s *Store) loadKeySchema(ctx context.Context) error {
 	out, err := s.client.DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: &s.table})
 	if err != nil {
@@ -323,9 +325,9 @@ func (s *Store) drainBatchGet(ctx context.Context, pending map[string]types.Keys
 	return fmt.Errorf("dynamodb batch get: %d attempt(s) left items unprocessed", maxUnprocessed)
 }
 
-// ScanBatches streams the whole table, handing the caller each page of {key: item}
-// as the server-side cursor yields it, so a streaming caller keeps only one page in
-// memory. Bounded by ctx; stops at the first error from fn or the driver.
+// ScanBatches streams the whole table. It hands the caller each page of {key: item}
+// as the server-side cursor yields it. A streaming caller keeps only one page in
+// memory. ctx bounds the scan. It stops at the first error from fn or the driver.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
 	if len(s.keys) == 0 {
 		return errNoTable
@@ -334,9 +336,10 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 }
 
 // scan runs a paged Scan and hands the caller a page of {key: item} every pageSize
-// items, the shared body of ScanBatches and ScanFiltered. The SDK paginator walks the
-// LastEvaluatedKey cursor (each Scan returns up to 1MB); this re-batches those items
-// into even pages for fn, so a page here is a streaming unit, not a server page.
+// items. It is the shared body of ScanBatches and ScanFiltered. The SDK paginator
+// walks the LastEvaluatedKey cursor (each Scan returns up to 1MB). This re-batches
+// those items into even pages for fn, so a page here is a streaming unit, not a
+// server page.
 func (s *Store) scan(ctx context.Context, in *dynamodb.ScanInput, fn func(batch map[string]any) error) error {
 	page := make(map[string]any, s.pageSize)
 	p := dynamodb.NewScanPaginator(s.client, in)
@@ -403,9 +406,10 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	return rows, nil
 }
 
-// EstimateCount returns the table's approximate item count from its metadata, a cheap
-// hint for scan progress. DynamoDB updates ItemCount about every six hours, so it is
-// honestly stale — which the Estimator contract permits (it is only a progress hint).
+// EstimateCount returns the table's approximate item count from its metadata, a
+// cheap hint for scan progress. DynamoDB updates ItemCount about every six hours,
+// so the count can be stale. The Estimator contract permits this, because the count
+// is only a progress hint.
 func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
 	if len(s.keys) == 0 {
 		return 0, errNoTable

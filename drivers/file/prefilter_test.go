@@ -43,16 +43,18 @@ func scanFilteredPages(t *testing.T, st *Store, pred predicate.Node) []map[strin
 	return pages
 }
 
-// matchEverything is a predicate rawpred can never prove CannotMatch: an empty And
-// evaluates to a definite yes, so Match always returns MayMatch and no record is ever
-// dropped. It drives the differential parity test — with nothing dropped, ScanFiltered's
-// prefilter path must reproduce ScanBatches page-for-page.
+// matchEverything is a predicate that rawpred can never prove CannotMatch. An
+// empty And evaluates to a definite yes, so Match always returns MayMatch and no
+// record is ever dropped. It drives the differential parity test. With nothing
+// dropped, ScanFiltered's prefilter path must reproduce ScanBatches
+// page-for-page.
 var matchEverything = predicate.And{}
 
-// TestPrefilterParity is the load-bearing contract: for every corpus dump, the
-// prefilter path (ScanFiltered with a match-everything predicate) must produce byte-
-// identical pages, and byte-identical errors, to the plain ScanBatches path. It proves
-// the driver-owned raw reader and its decode duplicate the core JSONSource exactly.
+// TestPrefilterParity pins the central contract of the prefilter. For every
+// corpus dump, the prefilter path (ScanFiltered with a match-everything
+// predicate) must produce byte-identical pages, and byte-identical errors, to
+// the plain ScanBatches path. It proves that the driver-owned raw reader and its
+// decode duplicate the core JSONSource exactly.
 func TestPrefilterParity(t *testing.T) {
 	// bigInt is beyond int64, so convertNumbers must keep it a *big.Int, not a float.
 	bigInt, _ := new(big.Int).SetString("123456789012345678901234567890", 10)
@@ -80,12 +82,13 @@ func TestPrefilterParity(t *testing.T) {
 		`{"key":"b","type":"string","value":"y"}` + "\n\n"
 
 	// ~20 KB value: well past bufio.Reader's 4 KiB default, so the raw reader must
-	// refill its buffer several times mid-record — the same span-the-buffer code path a
-	// larger value would take, without the memory churn of a huge literal under mutation.
+	// refill its buffer several times mid-record. A larger value takes the same
+	// span-the-buffer code path. The 20 KB fixture avoids the memory churn of a
+	// huge literal under mutation.
 	bigRecord := `{"key":"big","type":"string","value":"` + strings.Repeat("z", 20000) + `"}` + "\n"
 
 	// More records than a page, so both scans flush a full page at the boundary and a
-	// trailing partial page — the page partitioning must match exactly.
+	// trailing partial page. The page partitioning must match exactly.
 	var multi strings.Builder
 	for i := range pageSize + 50 {
 		fmt.Fprintf(&multi, `{"key":"m%d","type":"document","value":{"n":%d}}`+"\n", i, i)
@@ -145,9 +148,9 @@ func TestScanFilteredKeepsNegativeZero(t *testing.T) {
 	}
 }
 
-// TestPrefilterParityErrors pins that the prefilter path reports the same error, with
-// the same message, as the plain scan on a malformed dump — the raw reader must never
-// mask or reword a decode failure the plain scan would raise.
+// TestPrefilterParityErrors pins that the prefilter path reports the same error,
+// with the same message, as the plain scan on a malformed dump. The raw reader
+// must never mask or reword a decode failure that the plain scan raises.
 func TestPrefilterParityErrors(t *testing.T) {
 	tests := []struct {
 		name string
@@ -211,10 +214,11 @@ func TestPrefilterEnvelopeFieldErrors(t *testing.T) {
 	}
 }
 
-// TestPrefilterClasses pins the counters and the survivor set per predicate class: a
-// class rawpred can decide drops the exact provable non-matches (checked equals the
-// record count, skipped equals the dropped count, and the survivors are exactly the
-// records the predicate keeps); an undecidable class keeps everything (skipped zero).
+// TestPrefilterClasses pins the counters and the survivor set per predicate
+// class. A class that rawpred can decide drops the exact provable non-matches.
+// In that case checked equals the record count and skipped equals the dropped
+// count. The survivors are exactly the records that the predicate keeps. An
+// undecidable class keeps everything (skipped zero).
 func TestPrefilterClasses(t *testing.T) {
 	// Ten records k0..k9, each value {"n":i,"s":<even->"apple", odd->"banana">}.
 	var lines []string
@@ -283,10 +287,10 @@ func TestPrefilterClasses(t *testing.T) {
 	}
 }
 
-// TestPrefilterClassesMultiPage exercises the survivor-paging path under drops that
-// span more than one page: with over pageSize records and roughly half provably
-// dropped, the prefilter must still deliver exactly the surviving keys and count every
-// record checked and every provable non-match skipped.
+// TestPrefilterClassesMultiPage exercises the survivor-paging path under drops
+// that span more than one page. With over pageSize records and roughly half
+// provably dropped, the prefilter must still deliver exactly the surviving keys.
+// It must also count every record checked and every provable non-match skipped.
 func TestPrefilterClassesMultiPage(t *testing.T) {
 	const n = pageSize*2 + 5
 	var b strings.Builder
@@ -304,10 +308,10 @@ func TestPrefilterClassesMultiPage(t *testing.T) {
 	require.ElementsMatch(t, wantKeys, keysOf(got))
 }
 
-// TestPrefilterFreshCacheFallback proves a fresh decode cache bypasses the prefilter:
-// the first scan populates the cache, and the second ScanFiltered — now cache-fresh —
-// takes the plain ScanBatches path (checked stays zero) yet still returns every record
-// for the engine to re-filter.
+// TestPrefilterFreshCacheFallback proves that a fresh decode cache bypasses the
+// prefilter. The first scan populates the cache. The second ScanFiltered is now
+// cache-fresh, so it takes the plain ScanBatches path (checked stays zero). It
+// still returns every record for the engine to re-filter.
 func TestPrefilterFreshCacheFallback(t *testing.T) {
 	dir := t.TempDir()
 	body := `{"key":"a","type":"document","value":{"n":1}}` + "\n" +
@@ -320,7 +324,7 @@ func TestPrefilterFreshCacheFallback(t *testing.T) {
 	require.NotEmpty(t, cacheFiles(t, dir), "the scan populated the cache")
 	require.False(t, st.prefilterable(), "fresh cache: prefilter is bypassed")
 
-	// A drop-everything predicate would empty a prefiltered scan, but the fallback must
+	// A drop-everything predicate empties a prefiltered scan. But the fallback must
 	// still return both records (the engine re-filters), and never run the prefilter.
 	checkedBefore := st.prefilterChecked
 	got := flatten(scanFilteredPages(t, st, predicate.Eq{Path: []string{"n"}, Value: 999.0}))
@@ -328,9 +332,9 @@ func TestPrefilterFreshCacheFallback(t *testing.T) {
 	require.ElementsMatch(t, []string{"a", "b"}, keysOf(got))
 }
 
-// TestPrefilterNonJSONLFallback proves a non-JSONL format bypasses the prefilter: a
-// YAML typed dump takes the plain scan path (checked stays zero) and returns every
-// record for the engine to re-filter.
+// TestPrefilterNonJSONLFallback proves that a non-JSONL format bypasses the
+// prefilter. A YAML typed dump takes the plain scan path (checked stays zero)
+// and returns every record for the engine to re-filter.
 func TestPrefilterNonJSONLFallback(t *testing.T) {
 	yamlBody := "key: a\ntype: document\nvalue:\n  n: 1\n---\nkey: b\ntype: document\nvalue:\n  n: 2\n"
 	u := writeDump(t, "dump.yaml", []byte(yamlBody), "")
@@ -345,8 +349,8 @@ func TestPrefilterNonJSONLFallback(t *testing.T) {
 	require.ElementsMatch(t, []string{"a", "b"}, keysOf(got))
 }
 
-// TestPrefilterable pins the route decision across format, cache freshness, and source
-// kind — the three inputs that decide whether the raw-byte prefilter engages.
+// TestPrefilterable pins the route decision across format, cache freshness, and
+// source kind. These three inputs decide whether the raw-byte prefilter engages.
 func TestPrefilterable(t *testing.T) {
 	dir := t.TempDir()
 
@@ -376,8 +380,9 @@ func TestPrefilterable(t *testing.T) {
 	}
 }
 
-// jsonlStore writes a typed-JSONL body to a temp file and opens it as a forced-JSONL
-// Store with the given cache policy, so a test controls both the bytes and caching.
+// jsonlStore writes a typed-JSONL body to a temp file and opens it as a
+// forced-JSONL Store with the given cache policy. A test then controls both the
+// bytes and caching.
 func jsonlStore(t *testing.T, body string, cache CacheConfig) *Store {
 	t.Helper()
 	u := writeDump(t, "dump.jsonl", []byte(body), "format=jsonl")
@@ -415,19 +420,20 @@ func everything(checked, skipped *int) recordFilter {
 	return recordFilter{matcher: rawpred.NewMatcher(matchEverything), checked: checked, skipped: skipped}
 }
 
-// errReader is an io.Reader whose every Read fails with a fixed non-EOF error, so a
-// test can drive scanFilteredJSON's prologue read failure directly — the one path the
-// corpus-backed tests cannot reach, since a bytes reader only ever ends in io.EOF.
+// errReader is an io.Reader whose every Read fails with a fixed non-EOF error. A
+// test can then drive the prologue read failure of scanFilteredJSON directly.
+// The corpus-backed tests cannot reach that path, because a bytes reader only
+// ever ends in io.EOF.
 type errReader struct{ err error }
 
 func (e errReader) Read([]byte) (int, error) { return 0, e.err }
 
-// TestScanFilteredReadError pins the prologue read-failure path: a reader that fails
-// with a non-EOF error must surface as a "read json"-wrapped error before any record is
-// evaluated. It kills the mutants that swallow the query.NewJSONStream error (the EOF-branch
-// removal at the prologue) or drop it to nil (the query.NewJSONStream error return), both of
-// which would re-route the failure into the decode loop and mislabel it "decode json
-// record" instead.
+// TestScanFilteredReadError pins the prologue read-failure path. A reader that
+// fails with a non-EOF error must surface as a "read json"-wrapped error before
+// any record is evaluated. The test kills two mutants. One swallows the
+// query.NewJSONStream error (the EOF-branch removal at the prologue). The other
+// drops it to nil (the query.NewJSONStream error return). Both re-route the
+// failure into the decode loop and mislabel it "decode json record" instead.
 func TestScanFilteredReadError(t *testing.T) {
 	boom := errors.New("disk boom")
 	var checked, skipped int
@@ -440,9 +446,10 @@ func TestScanFilteredReadError(t *testing.T) {
 	require.Equal(t, 0, checked, "no record is evaluated when the prologue read fails")
 }
 
-// TestScanFilteredEmptyInput pins that a truly empty stream returns nil with no page and
-// nothing checked — the EOF branch of the prologue. It is the counterpart to the read-
-// error test: together they pin both directions of the prologue's error handling.
+// TestScanFilteredEmptyInput pins that a truly empty stream returns nil with no
+// page and nothing checked. This is the EOF branch of the prologue. The test is
+// the counterpart to the read-error test. Together they pin both directions of
+// the prologue's error handling.
 func TestScanFilteredEmptyInput(t *testing.T) {
 	var checked, skipped int
 	var pages int
@@ -456,10 +463,11 @@ func TestScanFilteredEmptyInput(t *testing.T) {
 }
 
 // TestScanFilteredLeadingWhitespaceArray drives the whitespace-skip loop of
-// query.NewJSONStream with a single leading space before a top-level array. Detecting the
-// array demands the loop discard exactly one byte and keep looping to the '['; a mutant
-// that bails after the first space (negated Discard guard) or over-discards the '[' too
-// (incremented Discard count) mis-reads the array as line mode and mangles the scan.
+// query.NewJSONStream with a single leading space before a top-level array.
+// Detecting the array demands that the loop discards exactly one byte and keeps
+// looping to the '['. A mutant that bails after the first space (negated Discard
+// guard) mis-reads the array as line mode and mangles the scan. A mutant that
+// over-discards the '[' too (incremented Discard count) does the same.
 func TestScanFilteredLeadingWhitespaceArray(t *testing.T) {
 	body := " [\n" +
 		`{"key":"a","type":"string","value":"x"},` + "\n" +
@@ -469,10 +477,11 @@ func TestScanFilteredLeadingWhitespaceArray(t *testing.T) {
 	require.ElementsMatch(t, []string{"a", "b"}, keysOf(got))
 }
 
-// TestScanFilteredSingleByteInput pins the Peek width in query.NewJSONStream: a one-byte,
-// malformed stream must reach the decode loop and fail there ("decode json record"),
-// exactly as the plain scan does. A mutant that peeks two bytes instead of one turns the
-// short read into an io.EOF and silently returns nil — masking the malformed input.
+// TestScanFilteredSingleByteInput pins the Peek width in query.NewJSONStream. A
+// one-byte, malformed stream must reach the decode loop and fail there ("decode
+// json record"), exactly as the plain scan does. A mutant that peeks two bytes
+// instead of one turns the short read into an io.EOF and silently returns nil.
+// That masks the malformed input.
 func TestScanFilteredSingleByteInput(t *testing.T) {
 	var checked, skipped int
 	err := scanFilteredJSON(
@@ -483,10 +492,11 @@ func TestScanFilteredSingleByteInput(t *testing.T) {
 	require.ErrorContains(t, err, "decode json record")
 }
 
-// TestScanFilteredTrailingGarbage pins that a line-mode scan keeps decoding past every
-// record and reports a trailing malformed byte as a decode error — it never treats the
-// stream as an array and breaks early on the "no more elements" check. A mutant that
-// drops the array guard on that check breaks out at the stray '}' and hides the error.
+// TestScanFilteredTrailingGarbage pins that a line-mode scan keeps decoding past
+// every record and reports a trailing malformed byte as a decode error. It never
+// treats the stream as an array and breaks early on the "no more elements"
+// check. A mutant that drops the array guard on that check breaks out at the
+// stray '}' and hides the error.
 func TestScanFilteredTrailingGarbage(t *testing.T) {
 	st := jsonlStore(t, `{"key":"a","type":"","value":1}}`+"\n", CacheConfig{})
 	err := st.ScanFiltered(context.Background(), matchEverything, func(map[string]any) error { return nil })
@@ -505,10 +515,11 @@ func TestScanFilteredDecodeErrorWraps(t *testing.T) {
 	require.ErrorAs(t, err, &se, "the decode error must stay unwrappable to *json.SyntaxError")
 }
 
-// TestScanFilteredPageEmitError pins that a page-flush error inside the loop halts the
-// scan at once: with more than pageSize survivors and a sink that fails on its first
-// page, exactly one page must be emitted and its error returned. A mutant that ignores
-// the intermediate emit's error keeps scanning and flushes a second page before failing.
+// TestScanFilteredPageEmitError pins that a page-flush error inside the loop
+// halts the scan at once. With more than pageSize survivors and a sink that
+// fails on its first page, exactly one page must be emitted and its error
+// returned. A mutant that ignores the error of the intermediate emit keeps
+// scanning and flushes a second page before failing.
 func TestScanFilteredPageEmitError(t *testing.T) {
 	var b strings.Builder
 	for i := range pageSize + 10 {
@@ -525,10 +536,11 @@ func TestScanFilteredPageEmitError(t *testing.T) {
 	require.Equal(t, 1, calls, "the scan must stop at the first failing page flush")
 }
 
-// TestScanFilteredDropAllEmitsNoPage pins that a scan whose every record is provably
-// dropped emits no page at all — the final flush of an empty page is a no-op, not an
-// empty batch handed to the sink. A mutant that compares the page length against -1
-// instead of 0 loses that guard and emits a spurious empty page.
+// TestScanFilteredDropAllEmitsNoPage pins that a scan whose every record is
+// provably dropped emits no page at all. The final flush of an empty page is a
+// no-op, not an empty batch handed to the sink. A mutant that compares the page
+// length against -1 instead of 0 loses that guard and emits a spurious empty
+// page.
 func TestScanFilteredDropAllEmitsNoPage(t *testing.T) {
 	var lines []string
 	for i := range 5 {
@@ -546,9 +558,10 @@ func TestScanFilteredDropAllEmitsNoPage(t *testing.T) {
 	require.Equal(t, 5, st.prefilterSkipped)
 }
 
-// TestScanFilteredRepeatedValueEnvelope pins a typed record whose envelope repeats
-// the value field. jsonparser reads the first value and encoding/json keeps the
-// last, so the prefilter must not judge such a record: it goes to the full decode.
+// TestScanFilteredRepeatedValueEnvelope pins a typed record whose envelope
+// repeats the value field. The jsonparser package reads the first value, and
+// encoding/json keeps the last. So the prefilter must not judge such a record.
+// It goes to the full decode.
 func TestScanFilteredRepeatedValueEnvelope(t *testing.T) {
 	body := `{"key":"k","type":"document","value":{"a":1},"value":{"a":0}}` + "\n"
 	st := jsonlStore(t, body, CacheConfig{})

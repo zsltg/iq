@@ -1,11 +1,12 @@
-// Package file adapts a local database dump file to the query ports, so a dump is
-// queried, inspected, diffed, and copied from like a live backend. It is read-only:
-// it implements the read and typed-scan ports and no writer, so a file:// endpoint
-// is never a copy destination. Content detects the format, or a ?format= URL query
-// forces it: iq's own typed JSONL, mongoexport Extended JSON, mongodump BSON, and
-// Redis RDB. The Store holds only the path and reopens it per operation. Scans
-// stream, and no more than one page of values is in memory. Whole-dataset queries
-// obey the --unbounded contract of the core.
+// Package file adapts a local database dump file to the query ports. A dump is
+// then queried, inspected, diffed, and copied from like a live backend. It is
+// read-only. It implements the read and typed-scan ports and no writer, so a
+// file:// endpoint is never a copy destination. Content detects the format. A
+// ?format= URI query can force it. The formats are iq's own typed JSONL,
+// mongoexport Extended JSON, mongodump BSON, and Redis RDB. The Store holds only
+// the path and reopens it per operation. Scans stream, and no more than one page
+// of values is in memory. Whole-dataset queries obey the --unbounded contract of
+// the core.
 package file
 
 import (
@@ -73,8 +74,8 @@ func (p *recordPager) flush() error {
 // can skip their server-info sections and still run their scan-based work.
 var ErrRawUnsupported = errors.New("raw commands are not available for a file source")
 
-// errStopScan unwinds a filtered scan early once every requested key is found; it
-// is caught in Get and never surfaces to the caller.
+// errStopScan unwinds a filtered scan early once every requested key is found.
+// Get catches it, and it never surfaces to the caller.
 var errStopScan = errors.New("file: stop scan")
 
 // Store is a read-only view over a dump file.
@@ -86,21 +87,23 @@ type Store struct {
 	hints  Hints       // schema hints (?types=/?keys=) a native dump omits; empty for self-describing formats.
 	cache  CacheConfig // decode-cache policy; zero value disables caching.
 
-	// prefilterChecked counts records the client-side raw-byte prefilter evaluated
-	// (ran rawpred over) across this store's filtered scans, and prefilterSkipped
-	// counts the subset it dropped before decode. They are test-only observability —
-	// never read by a query — proving the prefilter engages exactly when it should:
-	// checked stays zero on a bypassed scan (a non-JSONL format, or a fresh CBOR
-	// cache) and rises on a prefiltered one. Never part of the public surface.
+	// prefilterChecked counts records that the client-side raw-byte prefilter
+	// evaluated (ran rawpred over) across this store's filtered scans. The
+	// counter prefilterSkipped counts the subset that it dropped before decode.
+	// They are test-only observability. A query never reads them. They prove
+	// that the prefilter engages in exactly the intended cases. Here checked
+	// stays zero on a bypassed scan (a non-JSONL format, or a fresh CBOR cache)
+	// and rises on a prefiltered one. They are never part of the public
+	// surface.
 	prefilterChecked int
 	prefilterSkipped int
 }
 
-// Hints carries the schema metadata a native dump does not itself record but a reader
-// needs to reproduce the live shape: the ?types= column-type map and the ?keys= key
-// schema from a file:// URL. Both are the raw query values; each format's reader parses
-// what it needs and ignores the rest. Self-describing formats (JSONL, RDB, BSON,
-// mongoexport) leave them empty.
+// Hints carries the schema metadata that a native dump does not itself record.
+// A reader needs it to reproduce the live shape. It holds the ?types= column-type
+// map and the ?keys= key schema from a file:// URI. Both are the raw query
+// values. Each format's reader parses what it needs and ignores the rest.
+// Self-describing formats (JSONL, RDB, BSON, mongoexport) leave them empty.
 type Hints struct {
 	Types   string
 	Keys    string
@@ -110,11 +113,11 @@ type Hints struct {
 	Key     string // Neo4j: the node/relationship property to key records by (?key=); default is the export id.
 }
 
-// Open resolves a file:// URL to a read-only dump Store. The URL path is the dump
-// file; an optional ?format= (rdb|bson|mongoexport|jsonl|yaml) overrides content
-// detection for the ambiguous text formats. cache is the decode-cache policy; a
-// zero CacheConfig disables caching, so a caller that wires none keeps the
-// always-decode behavior.
+// Open resolves a file:// URI to a read-only dump Store. The URI path is the
+// dump file. An optional ?format= (rdb|bson|mongoexport|jsonl|yaml) overrides
+// content detection for the ambiguous text formats. The cache argument is the
+// decode-cache policy. A zero CacheConfig disables caching, so a caller that
+// wires none keeps the always-decode behavior.
 func Open(rawURL string, dec numfmt.DecimalMode, cache CacheConfig) (*Store, error) {
 	path, forced, hints, err := parseFileURL(rawURL)
 	if err != nil {
@@ -130,10 +133,10 @@ func Open(rawURL string, dec numfmt.DecimalMode, cache CacheConfig) (*Store, err
 	return &Store{path: path, format: format, dec: dec, hints: hints, cache: cache}, nil
 }
 
-// OpenReader builds a read-only Store over an in-memory dump buffer — used for
-// piped stdin, which is not seekable, so it is read once into data and re-scanned
-// from a bytes.Reader per operation. The format is content-sniffed from the buffer
-// unless forced.
+// OpenReader builds a read-only Store over an in-memory dump buffer. It serves
+// piped stdin. Stdin is not seekable, so the dump is read once into data and
+// re-scanned from a bytes.Reader per operation. The format is content-sniffed
+// from the buffer unless forced.
 func OpenReader(data []byte, format Format, dec numfmt.DecimalMode) (*Store, error) {
 	if format == FormatUnknown {
 		var err error
@@ -145,10 +148,10 @@ func OpenReader(data []byte, format Format, dec numfmt.DecimalMode) (*Store, err
 	return &Store{data: data, format: format, dec: dec}, nil
 }
 
-// URL returns the file:// URL for a filesystem path, the inverse of DumpPath:
-// an absolute Unix path becomes file:///abs/path, a Windows drive path the RFC
-// 8089 form file:///C:/dir/file (slash-separated, percent-escaped), which
-// parseFileURL folds back to the native path.
+// URL returns the file:// URI for a filesystem path, the inverse of DumpPath.
+// An absolute Unix path becomes file:///abs/path. A Windows drive path becomes
+// the RFC 8089 form file:///C:/dir/file (slash-separated, percent-escaped).
+// The parseFileURL function folds that form back to the native path.
 func URL(path string) string {
 	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
 	if isDrivePath(u.Path) {
@@ -166,9 +169,9 @@ func isDrivePath(p string) bool {
 	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
 }
 
-// nativePath maps the path of a parsed file:// URL to the filesystem path for
+// nativePath maps the path of a parsed file:// URI to the filesystem path for
 // goos. On Windows the RFC 8089 drive form file:///C:/dir/file parses to
-// /C:/dir/file: the leading slash separates the empty host from the drive, so
+// /C:/dir/file. The leading slash separates the empty host from the drive, so
 // the native path starts at the drive letter. Every other path is returned as
 // is.
 func nativePath(goos, path string) string {
@@ -204,9 +207,9 @@ func DetectFormat(rawURL string) (Format, error) {
 	return detectFormat(path)
 }
 
-// parseFileURL splits a file:// URL into its path, an optional forced format from the
-// ?format= query, and the ?types=/?keys= schema hints a native dump reader may need. It
-// rejects a non-file scheme and an empty path.
+// parseFileURL splits a file:// URI into its path, an optional forced format
+// from the ?format= query, and the ?types=/?keys= schema hints. A native dump
+// reader can need these hints. It rejects a non-file scheme and an empty path.
 func parseFileURL(raw string) (path string, format Format, hints Hints, err error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -230,16 +233,17 @@ func parseFileURL(raw string) (path string, format Format, hints Hints, err erro
 	return path, format, hintsFrom(q), nil
 }
 
-// urlPath returns the path a parsed file:// URL names: its path, else its opaque
-// part (the file:relative form), with a host other than localhost folded back in.
+// urlPath returns the path that a parsed file:// URI names. That is its path,
+// else its opaque part (the file:relative form). A host other than localhost is
+// folded back in.
 func urlPath(u *url.URL) string {
 	path := u.Path
 	if path == "" {
 		path = u.Opaque // file:relative form.
 	}
 	if u.Host != "" && u.Host != "localhost" {
-		// file://segment/... puts the first segment in Host; fold it back so a
-		// two-slash relative-looking url still names a path rather than being lost.
+		// file://segment/... puts the first segment in Host. Fold it back, so a
+		// two-slash relative-looking URI still names a path and is not lost.
 		path = u.Host + path
 	}
 	return path
@@ -257,11 +261,12 @@ func hintsFrom(q url.Values) Hints {
 	}
 }
 
-// records is the cache-aware decode entry point of every read path. If a fresh decode
-// cache exists, it streams the cache. Otherwise it decodes the dump. If populate is
-// set and the dump is cacheable, it also tees the decode into a new cache, installed
-// only after a complete pass. populate is false for Get, because its early stop
-// persists a partial dump. Only a full scan populates.
+// records is the cache-aware decode entry point of every read path. If a fresh
+// decode cache exists, it streams the cache. Otherwise it decodes the dump. If
+// populate is set and the dump is cacheable, it also tees the decode into a new
+// cache, installed only after a complete pass. The populate flag is false for
+// Get, because its early stop persists a partial dump. Only a full scan
+// populates.
 func (s *Store) records(ctx context.Context, populate bool, fn func(batch []query.Record) error) error {
 	if src, ok := s.cacheSource(); ok {
 		return src(ctx, fn)
@@ -295,7 +300,7 @@ func (s *Store) recordsDirect(ctx context.Context, fn func(batch []query.Record)
 
 // maybeGunzip transparently unwraps a gzip stream so a compressed dump (a DynamoDB S3
 // export ships gzipped NDJSON) decodes like a plain one. It peeks the two-byte gzip
-// magic without consuming it; a non-gzip stream passes through untouched.
+// magic without consuming it. A non-gzip stream passes through untouched.
 func maybeGunzip(r io.Reader) (io.Reader, error) {
 	br := bufio.NewReader(r)
 	magic, err := br.Peek(2)
@@ -315,8 +320,9 @@ func maybeGunzip(r io.Reader) (io.Reader, error) {
 	return gz, nil
 }
 
-// reader yields a fresh reader over the dump: a bytes.Reader over the buffered
-// stdin, or a freshly reopened file (so scans and Get each re-read from the start).
+// reader yields a fresh reader over the dump. It is a bytes.Reader over the
+// buffered stdin, or a freshly reopened file. So scans and Get each re-read from
+// the start.
 func (s *Store) reader() (io.Reader, func() error, error) {
 	if s.data != nil {
 		return bytes.NewReader(s.data), func() error { return nil }, nil
@@ -328,9 +334,9 @@ func (s *Store) reader() (io.Reader, func() error, error) {
 	return f, f.Close, nil
 }
 
-// RecordSourceFor returns the RecordSource that decodes r for a given format. It is
-// the one decoder-dispatch shared by the file:// store, the buffered stdin store,
-// and the cmd move importer, so every reader honors the same format set.
+// RecordSourceFor returns the RecordSource that decodes r for a given format.
+// It is the one decoder-dispatch shared by the file:// store, the buffered stdin
+// store, and the cmd move importer. So every reader honors the same format set.
 func RecordSourceFor(r io.Reader, format Format, dec numfmt.DecimalMode, hints Hints) (query.RecordSource, error) {
 	switch format {
 	case FormatJSONL:
@@ -375,7 +381,7 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	if len(keys) == 0 {
 		return map[string]any{}, nil
 	}
-	// A fresh indexed cache resolves the keys by decoding only candidate pages; on
+	// A fresh indexed cache resolves the keys by decoding only candidate pages. On
 	// any miss it reports false and the streaming path below runs unchanged.
 	if out, ok := s.cacheGet(ctx, keys); ok {
 		return out, nil

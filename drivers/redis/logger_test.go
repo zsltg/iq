@@ -14,20 +14,23 @@ import (
 	_ "github.com/zsltg/iq/drivers/redis"
 )
 
-// loggerProbeEnv marks the child process this test re-executes; see
+// loggerProbeEnv marks the child process that this test
+// re-executes. See
 // TestPackageSilencesGoRedisLogger.
 const loggerProbeEnv = "IQ_TEST_REDIS_LOGGER_PROBE"
 
-// TestPackageSilencesGoRedisLogger pins the package init's SetLogger: go-redis
-// prints its internal warnings to stderr through a package global, which would
-// interleave raw library noise into iq's own output.
+// TestPackageSilencesGoRedisLogger pins the SetLogger call in the package
+// init. go-redis prints its internal warnings to stderr through a package
+// global. Without the SetLogger call, that global mixes raw library noise into
+// the output of iq.
 //
 // That global has no getter, so the only way to observe it is to make go-redis
-// want to log: a sub-millisecond expiration makes it warn while the command is
-// still being built, before any I/O, so a queued pipeline command is enough and no
-// server is involved. Its default logger captured os.Stderr when the library's own
-// init ran, so reassigning os.Stderr here would not catch the write; the probe runs
-// in a child copy of this test binary instead, whose stderr this process owns.
+// want to log. A sub-millisecond expiration makes it warn while the command is
+// still being built, before any I/O. So a queued pipeline command is enough and
+// no server is involved. Its default logger captured os.Stderr when the init of
+// the library ran. So reassigning os.Stderr here does not catch the write.
+// Instead, the probe runs in a child copy of this test binary, whose stderr this
+// process owns.
 func TestPackageSilencesGoRedisLogger(t *testing.T) {
 	if os.Getenv(loggerProbeEnv) == "1" {
 		// Child: queue a command whose expiration go-redis warns about. The pipeline

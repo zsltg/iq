@@ -7,10 +7,11 @@ import (
 	gocql "github.com/apache/cassandra-gocql-driver/v2"
 )
 
-// BindString parses one string field (a cell of a cqlsh COPY dump, where all
-// values are text) into the Go value that gocql yields for a live column of CQL
-// type t. The dump reader can then give Normalize and KeyOf the same typed values
-// as a live scan. A type without a dedicated parse binds as the raw string.
+// BindString parses one string field into the Go value that gocql yields for a
+// live column of CQL type t. The field is a cell of a cqlsh COPY dump, where all
+// values are text. The dump reader can then give Normalize and KeyOf the same
+// typed values as a live scan. A type without a dedicated parse binds as the raw
+// string.
 func BindString(t gocql.Type, s string) (any, error) {
 	return bindKeyValue(t, s)
 }
@@ -44,10 +45,10 @@ func ParseColumnTypes(hint string) (map[string]gocql.Type, error) {
 	return out, nil
 }
 
-// parseCQLType maps a scalar CQL type name to its gocql type id, the offline analogue of
-// the type a live column carries. Only the scalar types bindKeyValue handles are
-// accepted; collections and other complex types are rejected rather than silently
-// mistyped.
+// parseCQLType maps a scalar CQL type name to its gocql type id, the offline
+// analogue of the type a live column carries. Only the scalar types that
+// bindKeyValue handles are accepted. Collections and other complex types are
+// rejected, not silently mistyped.
 func parseCQLType(name string) (gocql.Type, error) {
 	switch strings.ToLower(name) {
 	case "text", "varchar":
