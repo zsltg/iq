@@ -83,35 +83,94 @@ pushdown.
 
 ## Quick start
 
-Install `iq` on Linux or macOS:
+You need Docker, and `iq` on your `PATH`. To install `iq` on Linux or macOS:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zsltg/iq/main/install.sh | sh
 ```
 
-For other platforms, see [Install](#install). Make sure that `iq` is on your `PATH` before
-you continue.
+For other platforms, see [Install](#install). If the installer prints a note about `PATH`, add
+the directory that the note names.
 
-Write two sample records to a JSON Lines file:
+Run each command on its own. If a command fails, stop and read its error.
+
+Start a disposable MongoDB that only this machine can reach:
+```sh
+docker run -d --name iq-quickstart -p 127.0.0.1:27018:27017 mongo:8.2
+```
+
+Register the database as the active source. `iq add` connects to make sure that the source
+works. `--timeout 30s` gives the new server time to start:
+```sh
+iq add -a --timeout 30s 'mongodb://localhost:27018/iq?collection=books'
+```
+```text
+added source books
+```
+
+Write two sample books. `iq` reads piped stdin as a source and takes each key from the `id`
+field:
 ```sh
 printf '%s\n' '{"id":1,"title":"Dune","year":1965,"price":9.99}' \
-              '{"id":2,"title":"Project Hail Mary","year":2021,"price":14.5}' > books.jsonl
+              '{"id":2,"title":"Project Hail Mary","year":2021,"price":14.5}' |
+  iq --insert books --key-field id
+```
+```text
+wrote 2 item(s) to books (new 2, overwritten 0, skipped 0)
 ```
 
-Filter the records. `iq` reads piped stdin as a source, so you do not need a database:
+Read one book by its key. `iq` fetches only that document:
 ```sh
-cat books.jsonl | iq '.[] | select(.year > 2015) | {title, price}'
+iq '.["2"]'
 ```
-
-Output:
 ```json
 {
+  "_id": "2",
+  "id": 2,
   "price": 14.5,
-  "title": "Project Hail Mary"
+  "title": "Project Hail Mary",
+  "year": 2021
 }
 ```
 
-To connect a real database, follow the
-[MongoDB walkthrough](https://zsltg.github.io/iq/#connect-a-database).
+Filter a scan. `--explain` shows the part of the filter that MongoDB runs. The full filter
+then runs again on the client, so the result is the same with or without pushdown:
+```sh
+iq '.[] | select(.year > 2015) | {title, price}' --explain
+```
+```text
+query plan
+source: books (mongo)
+
+jq filter:
+  .[]
+  | select(.year > 2015)
+  | {
+    title,
+    price
+  }
+
+mongo calls:
+  find(<filter>): server-side pre-filter, then the full jq re-runs client-side
+  cursor streamed in batches of 100
+
+server filter (mongo find):
+  {                                 — .year > 2015
+    "$or": [
+      {"year": {"$gt": 2015}},
+      {"year": {"$type": ["string", "array", "object"]}}
+    ]
+  }
+
+jq (after decode, the full filter, every conjunct again)
+```
+
+Without `--explain`, the same command prints `{"price": 14.5, "title": "Project Hail Mary"}`.
+
+When you are done, remove the container and the source:
+```sh
+docker rm -f iq-quickstart
+iq rm books
+```
 
 ## Install
 

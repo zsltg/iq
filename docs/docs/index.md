@@ -133,140 +133,99 @@ cd iq && make build
 
 ## Quick start
 
-Install `iq` as described in [Installation](#installation). Make sure that `iq` is on your
-`PATH` before you continue. If the installer prints a note about `PATH`, add the directory
-that the note names.
+You need Docker, and `iq` on your `PATH` (see [Installation](#installation)). If the
+installer prints a note about `PATH`, add the directory that the note names.
 
-Write two sample records to a JSON Lines file:
+Run each command on its own. If a command fails, stop and read its error.
+
+Start a disposable MongoDB that only this machine can reach:
+
+```sh
+docker run -d --name iq-quickstart -p 127.0.0.1:27018:27017 mongo:8.2
+```
+
+Register the database as the active source. `iq add` connects to make sure that the source
+works. `--timeout 30s` gives the new server time to start:
+
+```sh
+iq add -a --timeout 30s 'mongodb://localhost:27018/iq?collection=books'
+```
+
+```text
+added source books
+```
+
+Write two sample books. `iq` reads piped stdin as a source and takes each key from the `id`
+field:
 
 ```sh
 printf '%s\n' '{"id":1,"title":"Dune","year":1965,"price":9.99}' \
-              '{"id":2,"title":"Project Hail Mary","year":2021,"price":14.5}' > books.jsonl
+              '{"id":2,"title":"Project Hail Mary","year":2021,"price":14.5}' |
+  iq --insert books --key-field id
 ```
 
-Filter the records. `iq` reads piped stdin as a source, so you do not need a database:
+```text
+wrote 2 item(s) to books (new 2, overwritten 0, skipped 0)
+```
+
+Read one book by its key. `iq` fetches only that document:
 
 ```sh
-cat books.jsonl | iq '.[] | select(.year > 2015) | {title, price}'
+iq '.["2"]'
 ```
-
-Output:
 
 ```json
 {
+  "_id": "2",
+  "id": 2,
   "price": 14.5,
-  "title": "Project Hail Mary"
+  "title": "Project Hail Mary",
+  "year": 2021
 }
 ```
 
-## Connect a database
+Filter a scan. `--explain` shows the part of the filter that MongoDB runs. The full filter
+then runs again on the client, so the result is the same with or without pushdown:
 
-This walkthrough is optional and needs Docker. It reuses `books.jsonl` from the
-[Quick start](#quick-start). Run each step on its own, and read its result before you run
-the next step.
+```sh
+iq '.[] | select(.year > 2015) | {title, price}' --explain
+```
 
-1.  Start a disposable MongoDB that only this machine can reach. If this command fails,
-    stop here.
+```text
+query plan
+source: books (mongo)
 
-    ```sh
-    docker run -d --name iq-quickstart -p 127.0.0.1:27018:27017 mongo:8.2
-    ```
+jq filter:
+  .[]
+  | select(.year > 2015)
+  | {
+    title,
+    price
+  }
 
-2.  Wait until MongoDB answers. If this step prints an error, stop here and do not continue
-    to step 3. The `exit` ends only the subshell, so it does not close your shell. A
-    successful run prints nothing.
+mongo calls:
+  find(<filter>): server-side pre-filter, then the full jq re-runs client-side
+  cursor streamed in batches of 100
 
-    ```sh
-    (
-      for i in $(seq 30); do
-        docker exec iq-quickstart mongosh --quiet --eval 'db.runCommand({ping: 1}).ok' >/dev/null 2>&1 && exit 0
-        sleep 1
-      done
-      echo "MongoDB did not answer after 30 tries. Stop here. Run: docker logs iq-quickstart" >&2
-      exit 1
-    )
-    ```
+server filter (mongo find):
+  {                                 — .year > 2015
+    "$or": [
+      {"year": {"$gt": 2015}},
+      {"year": {"$type": ["string", "array", "object"]}}
+    ]
+  }
 
-3.  Register the database as a source and make it active. If this step fails, stop here.
+jq (after decode, the full filter, every conjunct again)
+```
 
-    ```sh
-    iq add -a 'mongodb://localhost:27018/iq?collection=books'
-    ```
+Without `--explain`, the same command prints `{"price": 14.5, "title": "Project Hail Mary"}`.
 
-    Output:
+When you are done, remove the container and the source:
 
-    ```text
-    added source books
-    ```
-
-4.  Write the sample records. This command writes the two books from `books.jsonl` to the
-    disposable database from step 1.
-
-    ```sh
-    cat books.jsonl | iq --insert books --key-field id
-    ```
-
-    Output:
-
-    ```text
-    wrote 2 item(s) to books (new 2, overwritten 0, skipped 0)
-    ```
-
-    If the insert fails, stop here. Some records can already be stored in the example
-    database.
-
-5.  Read one book by key. Then show the query plan of a scan.
-
-    ```sh
-    iq '.["2"]'
-    ```
-
-    ```json
-    {
-      "_id": "2",
-      "id": 2,
-      "price": 14.5,
-      "title": "Project Hail Mary",
-      "year": 2021
-    }
-    ```
-
-    ```sh
-    iq '.[] | select(.year > 2015) | {title, price}' --explain
-    ```
-
-    ```text
-    query plan
-    source: books (mongo)
-
-    jq filter:
-      .[]
-      | select(.year > 2015)
-      | {
-        title,
-        price
-      }
-
-    mongo calls:
-      find(<filter>): server-side pre-filter, then the full jq re-runs client-side
-      cursor streamed in batches of 100
-
-    server filter (mongo find):
-      {                                 — .year > 2015
-        "$or": [
-          {"year": {"$gt": 2015}},
-          {"year": {"$type": ["string", "array", "object"]}}
-        ]
-      }
-
-    jq (after decode, the full filter, every conjunct again)
-    ```
-
-6.  Remove the container.
-
-    ```sh
-    docker rm -f iq-quickstart
-    ```
+```sh
+docker rm -f iq-quickstart
+iq rm books
+```
 
 ## The basics
 
