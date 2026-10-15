@@ -93,15 +93,17 @@ the directory that the note names.
 
 Run each command on its own. If a command fails, stop and read its error.
 
-Start a disposable MongoDB that only this machine can reach:
+Start a disposable MongoDB that only this machine can reach. The second line returns when
+MongoDB answers, and gives up after 60 tries. If the command fails, stop here:
 ```sh
-docker run -d --name iq-quickstart -p 127.0.0.1:27018:27017 mongo:8.2
+docker run -d --name iq-quickstart -p 127.0.0.1:27018:27017 mongo:8.2 &&
+  docker exec iq-quickstart mongosh --nodb --quiet --eval 'for (let i = 0; i < 60; i++) { try { new Mongo("localhost").getDB("admin").runCommand({ping: 1}); quit(0) } catch (e) { sleep(500) } } quit(1)'
 ```
 
 Register the database as the active source. `iq add` connects to make sure that the source
-works. `--timeout 30s` gives the new server time to start:
+works:
 ```sh
-iq add -a --timeout 30s 'mongodb://localhost:27018/iq?collection=books'
+iq add -a 'mongodb://localhost:27018/iq?collection=books'
 ```
 ```text
 added source books
