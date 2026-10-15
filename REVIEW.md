@@ -126,9 +126,9 @@ filters, dump file content, and every database response.
   or the docs site in the same pull request.
 - A change to the selector, the pushdown mapping or a core port updates the
   Mermaid diagram in `docs/docs/how-it-works.md`.
-- These pairs change together: the README head and `docs/docs/index.md`, README
-  Guarantees and `docs/docs/drivers.md`, README See also and
-  `docs/docs/see-also.md`.
+- These pairs change together: the README head and `docs/docs/index.md`, the
+  README Guarantees (a summary) and the Guarantees section of
+  `docs/docs/drivers.md`, README See also and `docs/docs/see-also.md`.
 - A command or help text change regenerates `docs/man/iq.1` and the shell
   completions in the same pull request.
 
