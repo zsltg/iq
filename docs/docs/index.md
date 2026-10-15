@@ -16,15 +16,18 @@ databases, and their dump files, from a single static binary. See
   Cassandra, DynamoDB and the other [drivers](drivers.md#drivers), and gives the same result on
   each. One filter can also
   [join data from several sources](query-data.md#cross-source-queries), with `source()` or
-  `iq combine`.
+  [`iq combine`](query-data.md#combine-combine).
 - A filter that names keys fetches only those keys. A `.[]` filter scans the source in
   pages.
 - Query and compare dumps without a database server. Restore them to a live store.
 - Compare two sources, or a source and a dump, by data, stats, or inferred schema.
   [`iq diff`](sources.md#diff-diff) returns `diff(1)` exit codes, so a CI job can fail on
   drift.
-- Infer a schema from a sample of any source with [`iq schema`](sources.md#schema-schema), as
-  JSON Schema draft 2020-12 or an Open Data Contract Standard v3.1.0 contract.
+- Infer a schema from a sample of any source with
+  [`iq schema`](sources.md#schema-schema), as
+  [JSON Schema draft 2020-12](https://json-schema.org/draft/2020-12) or an
+  [Open Data Contract Standard](https://bitol-io.github.io/open-data-contract-standard)
+  v3.1.0 contract.
 - Copy typed data across stores in one command, with no export script and no conversion
   script.
 - Give an AI agent access to every store with one
