@@ -13,7 +13,7 @@ semantics are identical across backends.
 | Job | What people use today | What `iq` changes |
 | --- | --- | --- |
 | Query a live store from a shell | `redis-cli`, `mongosh`, `cqlsh`, `aws dynamodb`, `curl` against Elasticsearch, each piped into `jq` | one language and one config over all of them. The filter names the keys. Paging and normalization are handled |
-| Inspect a backup | `redis-rdb-tools`, `bsondump`, `mongoexport` files, DynamoDB export JSON, `cqlsh COPY` CSV, APOC JSON, each read by its own tool or by hand | one reader over six formats, queryable, diffable, restorable, with no server |
+| Inspect a backup | `redis-rdb-tools`, `bsondump`, `mongoexport` files, DynamoDB export JSON, `cqlsh COPY` CSV, APOC JSON, each read by its own tool or by hand | one reader over six formats. You query and compare a dump with no server, and restore it to a live store |
 | Copy or migrate between stores | ad-hoc scripts, `mongodump`/`mongorestore` and `elasticdump` for one store at a time, Redpanda Connect or Bento for any-to-any (a YAML pipeline plus the Bloblang mapping language), Airbyte for a platform | one command, a typed round-trip, an inline jq transform, cross-driver |
 | Compare environments, watch schema drift | export both sides, then `diff`, `jd` or `jq` by hand | `iq diff` over data, stats, or inferred schema, with `diff(1)` exit codes for CI |
 | Give an AI agent database access | one MCP server per backend (MongoDB's own, Google's MCP Toolbox for Databases), each speaking its native dialect behind a server process | one binary and one language for all of them. `--explain` as a dry run. A skill that any agent that reads the Agent Skills format can install. An MCP server, read-only by default (see [AI agents](agents.md)) |

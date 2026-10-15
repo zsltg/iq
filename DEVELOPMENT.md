@@ -1082,8 +1082,8 @@ published, add the ID to the GitHub release text and publish the advisory.
 ## Architecture
 
 Ports and adapters: a driver-agnostic query core behind ports, backend
-adapters and the CLI at the edge. Depth lives in the README's Architecture
-section and the docs site's How it works page; the adapter contract in
+adapters and the CLI at the edge. Depth lives in the docs site's How it works
+page (`docs/docs/how-it-works.md`); the adapter contract in
 `.agents/driver-contract.md`.
 
 - `internal/selector`: pure jq-AST analysis. Classifies a filter as a
