@@ -144,16 +144,11 @@ Start a disposable MongoDB that only this machine can reach:
 docker run -d --name iq-quickstart -p 127.0.0.1:27018:27017 mongo:8.2
 ```
 
-!!! note
-
-    MongoDB needs a few seconds to start. Wait about 10 seconds before the next step. If
-    `iq add` fails with `server selection error`, wait a few seconds and run it again.
-
 Register the database as the active source. `iq add` connects to make sure that the source
-works:
+works, and `--timeout 30s` gives MongoDB time to start:
 
 ```sh
-iq add -a 'mongodb://localhost:27018/iq?collection=books'
+iq add -a --timeout 30s 'mongodb://localhost:27018/iq?collection=books'
 ```
 
 Write two sample books. `iq` reads piped stdin as a source and takes each key from the `id`
