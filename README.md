@@ -107,9 +107,6 @@ works:
 ```sh
 iq add -a 'mongodb://localhost:27018/iq?collection=books'
 ```
-```text
-added source books
-```
 
 Write two sample books. `iq` reads piped stdin as a source and takes each key from the `id`
 field:
@@ -118,14 +115,13 @@ printf '%s\n' '{"id":1,"title":"Dune","year":1965,"price":9.99}' \
               '{"id":2,"title":"Project Hail Mary","year":2021,"price":14.5}' |
   iq --insert books --key-field id
 ```
-```text
-wrote 2 item(s) to books (new 2, overwritten 0, skipped 0)
-```
 
 Read one book by its key. `iq` fetches only that document:
 ```sh
 iq '.["2"]'
 ```
+
+The output is similar to the following:
 ```json
 {
   "_id": "2",
@@ -136,23 +132,18 @@ iq '.["2"]'
 }
 ```
 
-Filter a scan. `--explain` shows the part of the filter that MongoDB runs. The full filter
-then runs again on the client, so the result is the same with or without pushdown:
+Filter a scan, and show the query plan:
 ```sh
 iq '.[] | select(.year > 2015) | {title, price}' --explain
 ```
+
+The output is similar to the following, where `server filter` shows the part of the filter
+that MongoDB runs. The full filter then runs again on the client, so the result is the same
+with or without pushdown:
 ```text
 query plan
 source: books (mongo)
-
-jq filter:
-  .[]
-  | select(.year > 2015)
-  | {
-    title,
-    price
-  }
-
+...
 mongo calls:
   find(<filter>): server-side pre-filter, then the full jq re-runs client-side
   cursor streamed in batches of 100
@@ -164,8 +155,7 @@ server filter (mongo find):
       {"year": {"$type": ["string", "array", "object"]}}
     ]
   }
-
-jq (after decode, the full filter, every conjunct again)
+...
 ```
 
 Without `--explain`, the same command prints `{"price": 14.5, "title": "Project Hail Mary"}`.
