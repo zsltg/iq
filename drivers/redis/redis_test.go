@@ -56,10 +56,16 @@ func TestOpenRejectsBadURL(t *testing.T) {
 }
 
 func TestOpenFailsFastWhenUnreachable(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	// go-redis retries a failed dial up to three times, with a backoff between
+	// the tries. In a local run, the PING to a closed port takes about two
+	// seconds. The deadline leaves room for the retries. If the deadline ends
+	// first, go-redis reports the context error and not the dial error that the
+	// test checks.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Port 1 has no listener, so the PING must fail fast.
+	// Port 1 has no listener, so the PING fails after the retries. It does not
+	// hang.
 	_, err := iqredis.Open(ctx, "redis://localhost:1", nil, numfmt.DecimalAuto)
 
 	require.Error(t, err)
