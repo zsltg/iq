@@ -436,34 +436,25 @@ supports.
 
 ### Guarantees
 
-Drivers differ in encoding and pushdown detail, but every backend honors the
-same contract:
+Every backend honors the same contract. The
+[Drivers page](https://zsltg.github.io/iq/drivers/#guarantees) gives the details for each
+driver.
 
-- **One URI, native nouns.** The URI scheme picks the driver. The keyspace rides in the URI as the
-  backend's own noun (`?collection=`, `?table=`, `?database=`, `?label=`/`?rel=`, `?index=`). A
-  query overrides it per run with the dotted `handle.<keyspace>` suffix.
-- **One jq interface.** A bounded filter fetches exactly the named keys. A missing key reads as
-  `null`, never an error. A `.[]`-rooted filter streams the keyspace in bounded pages. A filter
-  that collapses the keyspace into one value materializes only behind `--unbounded`.
-- **Pushdown never changes results.** A pushed predicate is only ever a conservative pre-filter.
-  Where the backend can filter, the pre-filter is server-side. Where the backend cannot, the
-  pre-filter is a client-side raw-byte prefilter that drops a provable non-match before decode
-  (Redis, on RedisJSON values, Elasticsearch/OpenSearch and Couchbase, over the residual their
-  server-side query cannot narrow). The full jq always re-runs client-side. As a result, output is
-  identical with or without the pushed predicate, and `--explain` shows which stage evaluates each conjunct.
-- **Capabilities are explicit.** Filtered scans, count estimates, writes, clear, drop and per-key
-  delete are opt-in ports. A backend implements what its model supports. A command against a
-  missing capability fails with a clear message instead of emulating it. For example, Redis, whose
-  DB index cannot be removed, has no `drop`. The read-only file dump has no per-key `delete`.
-- **Values round-trip.** Every value normalizes to JSON under a frozen per-backend encoding
-  contract. A `--typed` dump restores through `--insert` losslessly.
-- **Bounded and redacted.** `--timeout` bounds every backend call. `iq` redacts a URI's password
-  from every listing, log line and error.
-- **Native commands.** `iq exec` speaks the backend's own language, verbatim where one exists
-  (Redis commands, Mongo command documents, CQL, PartiQL, Cypher, Mango, the Elasticsearch DSL).
-  Where none exists, `iq exec` speaks a small fixed verb set (HBase). See each driver's Raw
-  commands section on the [Drivers page](https://zsltg.github.io/iq/drivers/). Every `iq` flag
-  must come before `exec`. `iq` forwards everything after `exec` to the backend untouched.
+- **One URI, native nouns.** The URI scheme picks the driver. The keyspace is the backend's
+  own noun, such as `?collection=`, `?table=` or `?index=`.
+- **One jq interface.** A filter that names keys fetches only those keys, and a missing key
+  reads as `null`. A `.[]` filter streams the keyspace in pages. A filter that needs the
+  whole keyspace at once runs only with `--unbounded`.
+- **Pushdown never changes results.** A pushed predicate only pre-filters. The full jq
+  filter always runs again on the client, and `--explain` shows where each condition runs.
+- **Capabilities are explicit.** If a backend cannot support a command, the command fails
+  with a clear message instead of emulating it. For example, Redis has no `drop`.
+- **Values round-trip.** Every value normalizes to JSON under a fixed encoding for each
+  backend. A `--typed` dump restores losslessly through `--insert`.
+- **Bounded and redacted.** `--timeout` bounds every backend call. `iq` removes a URI's
+  password from every listing, log line and error.
+- **Native commands.** `iq exec` sends a command in the backend's own language, such as CQL,
+  Cypher or a MongoDB command document, to the backend unchanged.
 
 ## Backups and dumps
 

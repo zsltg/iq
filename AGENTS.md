@@ -117,7 +117,7 @@ Before publication and before merge, all required checks must pass:
 Keep these pairs synchronized in the same change:
 
 - README intro, Why iq and NOTE with `docs/docs/index.md`.
-- README Guarantees with `docs/docs/drivers.md`.
+- README Guarantees, a summary, with the Guarantees section of `docs/docs/drivers.md`.
 - README See also with `docs/docs/see-also.md`.
 
 ## Task-specific reading
