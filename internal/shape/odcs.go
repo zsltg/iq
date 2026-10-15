@@ -95,12 +95,31 @@ func (n *node) odcsElement(name string) map[string]any {
 		el["name"] = name
 	}
 	lt, opts := n.odcsLogicalType()
-	if lt != "" {
-		el["logicalType"] = lt
-		if len(opts) > 0 {
-			el["logicalTypeOptions"] = opts
-		}
+	setODCSType(el, lt, opts)
+	n.setODCSComposite(el, lt)
+	if enum := n.odcsEnum(); enum != nil {
+		el["enum"] = enum
 	}
+	return el
+}
+
+// setODCSType sets the logical type of el and its options. An empty type sets
+// nothing. Empty options set no logicalTypeOptions key.
+func setODCSType(el map[string]any, lt string, opts map[string]any) {
+	if lt == "" {
+		return
+	}
+	el["logicalType"] = lt
+	if len(opts) > 0 {
+		el["logicalTypeOptions"] = opts
+	}
+}
+
+// setODCSComposite sets the composite slot of the logical type lt on el. An
+// object gets a properties array, a map gets a map element with a string key, and
+// an array gets an items element. Other types get no slot. An empty object has no
+// fields, and an empty array has no element, so neither gets a slot.
+func (n *node) setODCSComposite(el map[string]any, lt string) {
 	switch lt {
 	case odcsTypeObject:
 		if len(n.fields) > 0 {
@@ -116,14 +135,20 @@ func (n *node) odcsElement(name string) map[string]any {
 			el["items"] = n.elem.odcsElement("")
 		}
 	}
-	if vals := n.stringEnum(); vals != nil {
-		enum := make([]any, len(vals))
-		for i, v := range vals {
-			enum[i] = map[string]any{"value": v}
-		}
-		el["enum"] = enum
+}
+
+// odcsEnum renders the inferred enum of a string node as ODCS enum values, one
+// {value: v} object per value. A node with no enum returns nil.
+func (n *node) odcsEnum() []any {
+	vals := n.stringEnum()
+	if vals == nil {
+		return nil
 	}
-	return el
+	enum := make([]any, len(vals))
+	for i, v := range vals {
+		enum[i] = map[string]any{"value": v}
+	}
+	return enum
 }
 
 // odcsProperties renders a node's object fields as a sorted array of ODCS

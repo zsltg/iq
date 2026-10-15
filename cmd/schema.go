@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -96,16 +97,7 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(filter, err), cfg.url))
 			}
-			sh := shape.Infer(items)
-			if format == schemaFormatODCS {
-				// ODCS is a YAML data contract: emit YAML regardless of -y.
-				contract, err := sh.ODCSContract(schemaTitle(cfg))
-				if err != nil {
-					return fmt.Errorf("cannot write the odcs contract: %w (use --format jsonschema for this source)", err)
-				}
-				return writeStructured(cmd.OutOrStdout(), contract, true)
-			}
-			return writeStructured(cmd.OutOrStdout(), sh.JSONSchema(schemaTitle(cfg)), yamlOut)
+			return writeSchema(cmd.OutOrStdout(), shape.Infer(items), schemaTitle(cfg), format, yamlOut)
 		},
 	}
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled (0 = all)")
@@ -126,6 +118,21 @@ func validateSchemaFormat(format string) error {
 	default:
 		return fmt.Errorf("invalid --format %q: want jsonschema or odcs", format)
 	}
+}
+
+// writeSchema writes the shape sh in the contract format named format, titled
+// title. ODCS is a YAML data contract, so it is always YAML, whatever yamlOut
+// says. JSON Schema is YAML only when yamlOut is true. If the shape has no valid
+// ODCS contract, the error points to --format jsonschema and nothing is written.
+func writeSchema(w io.Writer, sh *shape.Shape, title, format string, yamlOut bool) error {
+	if format != schemaFormatODCS {
+		return writeStructured(w, sh.JSONSchema(title), yamlOut)
+	}
+	contract, err := sh.ODCSContract(title)
+	if err != nil {
+		return fmt.Errorf("cannot write the odcs contract: %w (use --format jsonschema for this source)", err)
+	}
+	return writeStructured(w, contract, true)
 }
 
 // schemaTitle names the schema after the resolved source: the handle plus any
