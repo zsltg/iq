@@ -57,11 +57,13 @@ func TestOpenRejectsBadURL(t *testing.T) {
 }
 
 func TestOpenFailsFastWhenUnreachable(t *testing.T) {
-	// go-redis retries a failed dial up to three times, with a backoff between
-	// the tries. In a local run, the PING to a closed port takes about two
-	// seconds. The deadline leaves room for the retries. If the deadline ends
-	// first, go-redis reports the context error and not the dial error that the
-	// test checks.
+	// go-redis retries at two layers. Each connection attempt dials up to five
+	// times, 100 ms apart (DialerRetries, DialerRetryTimeout). The PING itself
+	// is retried up to three more times, with a backoff between the tries
+	// (MaxRetries). In a local run, the PING to a closed port takes about two
+	// seconds. The deadline leaves room for all the retries. If the deadline
+	// ends first, go-redis reports the context error and not the dial error that
+	// the test checks.
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
