@@ -12,7 +12,7 @@ import (
 
 // Schema output formats: the contract dialect that `iq schema` projects the
 // inferred shape into. The jsonschema format is the default (JSON Schema draft
-// 2020-12). The odcs format is an Open Data Contract Standard v3.1.0 contract,
+// 2020-12). The odcs format is an Open Data Contract Standard v3.2.0 contract,
 // emitted as YAML (canonical for data contracts). The set is closed, so an
 // unknown format fails fast at entry.
 const (
@@ -48,8 +48,9 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 		"--format picks the contract dialect the shape projects into:\n" +
 		"  jsonschema  JSON Schema draft 2020-12 (default), for interop with code generators,\n" +
 		"              iq schema prod.orders > orders.schema.json && quicktype -s schema orders.schema.json -l go\n" +
-		"  odcs        Open Data Contract Standard v3.1.0, a YAML data contract for tools such\n" +
-		"              as datacontract-cli, Soda, and Great Expectations\n\n" +
+		"  odcs        Open Data Contract Standard v3.2.0, a YAML data contract for tools such\n" +
+		"              as datacontract-cli, Soda, and Great Expectations. It needs objects at the\n" +
+		"              root, so a keyspace of other values fails. Use jsonschema for those.\n\n" +
 		"jsonschema honors -y to emit YAML instead of JSON; odcs is always YAML (its canonical\n" +
 		"form). A schema is field names and types, a few hundred bytes, not a dump of documents."
 	c := &cobra.Command{
@@ -62,7 +63,7 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 			"  $ iq schema prod --sample 5000   # widen the sample\n" +
 			"  $ iq schema 'prod.orders=.[] | select(.active)'  # shape of a subset\n" +
 			"  $ iq schema prod.orders > orders.schema.json  # save for quicktype\n" +
-			"  $ iq schema prod.orders --format odcs > orders.odcs.yaml  # emit an ODCS v3.1.0 contract",
+			"  $ iq schema prod.orders --format odcs > orders.odcs.yaml  # emit an ODCS v3.2.0 contract",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := validateSchemaFormat(format); err != nil {
@@ -98,7 +99,11 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 			sh := shape.Infer(items)
 			if format == schemaFormatODCS {
 				// ODCS is a YAML data contract: emit YAML regardless of -y.
-				return writeStructured(cmd.OutOrStdout(), odcsContract(cfg, sh), true)
+				contract, err := sh.ODCSContract(schemaTitle(cfg))
+				if err != nil {
+					return fmt.Errorf("cannot write the odcs contract: %w (use --format jsonschema for this source)", err)
+				}
+				return writeStructured(cmd.OutOrStdout(), contract, true)
 			}
 			return writeStructured(cmd.OutOrStdout(), sh.JSONSchema(schemaTitle(cfg)), yamlOut)
 		},
@@ -120,25 +125,6 @@ func validateSchemaFormat(format string) error {
 		return nil
 	default:
 		return fmt.Errorf("invalid --format %q: want jsonschema or odcs", format)
-	}
-}
-
-// odcsContract wraps the ODCS schema object of a shape in an ODCS v3.1.0
-// fundamentals envelope. Every field is deterministic, with no timestamps or
-// random ids. The id, name, and schema-object name all derive from the resolved
-// source handle and keyspace (schemaTitle). Version and status take fixed
-// initial values. The handle, never the URL, sources the identifiers, so no
-// stored credential can reach the contract.
-func odcsContract(cfg *config, sh *shape.Shape) map[string]any {
-	name := schemaTitle(cfg)
-	return map[string]any{
-		"apiVersion": "v3.1.0",
-		"kind":       "DataContract",
-		"id":         name,
-		"name":       name,
-		"version":    "1.0.0",
-		"status":     "draft",
-		"schema":     []any{sh.ODCSSchemaObject(name)},
 	}
 }
 

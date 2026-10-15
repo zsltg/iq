@@ -743,7 +743,7 @@ The positional argument names the source, like `iq schema prod`; with none it us
 .PP
 It describes values, not keys; a non\-object keyspace is legal (a string keyspace emits {"type":"string"}).
 .PP
-\-\-format picks the contract dialect the shape projects into:   jsonschema  JSON Schema draft 2020\-12 (default), for interop with code generators,               iq schema prod.orders > orders.schema.json && quicktype \-s schema orders.schema.json \-l go   odcs        Open Data Contract Standard v3.1.0, a YAML data contract for tools such               as datacontract\-cli, Soda, and Great Expectations
+\-\-format picks the contract dialect the shape projects into:   jsonschema  JSON Schema draft 2020\-12 (default), for interop with code generators,               iq schema prod.orders > orders.schema.json && quicktype \-s schema orders.schema.json \-l go   odcs        Open Data Contract Standard v3.2.0, a YAML data contract for tools such               as datacontract\-cli, Soda, and Great Expectations. It needs objects at the               root, so a keyspace of other values fails. Use jsonschema for those.
 .PP
 jsonschema honors \-y to emit YAML instead of JSON; odcs is always YAML (its canonical form). A schema is field names and types, a few hundred bytes, not a dump of documents.
 .PP
@@ -769,7 +769,7 @@ emit YAML instead of JSON (jsonschema only; odcs is always YAML)
   $ iq schema prod \-\-sample 5000   # widen the sample
   $ iq schema 'prod.orders=.[] | select(.active)'  # shape of a subset
   $ iq schema prod.orders > orders.schema.json  # save for quicktype
-  $ iq schema prod.orders \-\-format odcs > orders.odcs.yaml  # emit an ODCS v3.1.0 contract
+  $ iq schema prod.orders \-\-format odcs > orders.odcs.yaml  # emit an ODCS v3.2.0 contract
 .fi
 .RE
 .SS iq cache

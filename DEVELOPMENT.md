@@ -1108,8 +1108,10 @@ page (`docs/docs/how-it-works.md`); the adapter contract in
 - `internal/render`: the output renderers behind the format flags.
 - `internal/diff`: driver-agnostic structural diff (LCS-aligned arrays,
   optional multiset arrays, RFC 6902 patch rendering); no I/O.
-- `internal/shape`: schema inference (JSON Schema draft 2020-12, ODCS
-  projection, parent-relative presence); no I/O.
+- `internal/shape`: schema inference (JSON Schema draft 2020-12, ODCS v3.2.0
+  projection, parent-relative presence); no I/O. Its tests use
+  `github.com/santhosh-tekuri/jsonschema/v6`, a test-only validator, to check each
+  ODCS contract against the vendored official schema in `internal/shape/testdata`.
 - `internal/parquetout`: the parquet export; contains the Arrow dependency.
 - `internal/config` / `internal/secret`: TOML store for sources and option
   defaults; keyring port so passwords never enter the config file.
