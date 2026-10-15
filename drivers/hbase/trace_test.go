@@ -10,9 +10,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// TestTraceLines pins the whole --verbose trace of every traced operation, line for
-// line. The comparison is exact rather than a substring, so a dropped, extra or
-// reworded line fails: the trace is the only record of what the driver did, and it
+// TestTraceLines pins the whole --verbose trace of every traced operation, line
+// for line. The comparison is exact rather than a substring, so a dropped, extra or
+// reworded line fails. The trace is the only record of what the driver did, and it
 // must never carry a cell value.
 func TestTraceLines(t *testing.T) {
 	tests := []struct {

@@ -10,9 +10,9 @@ import (
 )
 
 func TestInspectReportsARefusedRead(t *testing.T) {
-	// Each inspect call must give a refused read back to the caller. A guard that stops
-	// looking at the error returns an empty result and no error, which the caller cannot
-	// tell from a server that holds nothing.
+	// Each inspect call must give a refused read back to the caller. A guard that
+	// stops looking at the error returns an empty result and no error. The caller
+	// cannot tell that result from a server that holds nothing.
 	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
 		esJSON(w, http.StatusForbidden, `{"error":{"type":"security_exception","reason":"denied"}}`)
 	})
@@ -36,9 +36,10 @@ func TestInspectReportsARefusedRead(t *testing.T) {
 }
 
 func TestInspectCopiesEveryCatRow(t *testing.T) {
-	// The _cat tables are copied row by row into the returned list. A loop that stops
-	// before the first copy, or one that drops the copy, still returns a list of the
-	// correct length with empty rows in it. Only the content of each row shows this.
+	// The _cat tables are copied row by row into the returned list. A loop that
+	// stops before the first copy, or one that drops the copy, still returns a list
+	// with empty rows in it. That list has the correct length. Only the content of
+	// each row shows this.
 	st := newStubStore(t, "books", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/_cat/indices":

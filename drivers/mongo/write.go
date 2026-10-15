@@ -18,11 +18,12 @@ import (
 // collision, used to count InsertOnly skips without treating them as failures.
 const duplicateKeyCode = 11000
 
-// Put writes a batch of records into the collection, keyed by _id. Upsert replaces
-// an existing document and inserts a new one; InsertOnly inserts new documents and
-// skips (counts) those whose _id already exists. Every value is marshalled through
-// bson — never string-built — and a value that is not a JSON object is a returned
-// error, so a scalar is never silently wrapped and a copy round-trips exactly.
+// Put writes a batch of records into the collection, keyed by _id. Upsert
+// replaces an existing document and inserts a new one. InsertOnly inserts new
+// documents and skips (counts) those whose _id already exists. Every value is
+// marshalled through bson and is never built as a string. A value that is not a
+// JSON object is a returned error. So a scalar is never silently wrapped and a
+// copy round-trips exactly.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
 	if s.collection == "" {
 		return query.WriteStat{}, errNoCollection
@@ -69,7 +70,7 @@ func upsert(ctx context.Context, coll *mongo.Collection, batch []query.Record) (
 }
 
 // insertOnly inserts new documents and counts duplicate-key collisions as skips.
-// The unordered insert continues past a collision; any non-duplicate write error
+// The unordered insert continues past a collision. Any non-duplicate write error
 // fails the batch.
 func insertOnly(ctx context.Context, coll *mongo.Collection, batch []query.Record) (query.WriteStat, error) {
 	docs := make([]any, len(batch))
@@ -98,11 +99,12 @@ func insertOnly(ctx context.Context, coll *mongo.Collection, batch []query.Recor
 	return query.WriteStat{Written: len(batch) - skipped, Skipped: skipped}, nil
 }
 
-// documentFor builds the BSON document to write for a record, with _id set from the
-// key so identity is carried by the key, not the value. A 24-hex key restores an
-// ObjectID _id; a keyless record (foreign JSON with no key field) lets MongoDB mint the
-// _id. The value must be a JSON object: a scalar is rejected rather than wrapped as
-// {value: ...}, so a successful Put round-trips exactly.
+// documentFor builds the BSON document to write for a record, with _id set from
+// the key. So the record key, not the value, supplies the identity. A 24-hex
+// key restores an ObjectID _id. A keyless record (foreign JSON with no key
+// field) lets MongoDB mint the _id. The value must be a JSON object. A scalar
+// is rejected and not wrapped as {value: ...}, so a successful Put round-trips
+// exactly.
 func documentFor(r query.Record) (bson.M, error) {
 	obj, ok := r.Value.(map[string]any)
 	if !ok {
@@ -148,10 +150,10 @@ func bsonValue(v any) any {
 	}
 }
 
-// idValue turns a string key into the _id to match or insert: the ObjectID it
-// encodes when the key is 24-character hex (restoring an ObjectID-keyed
-// collection's identity), else the string itself. It is the write-side inverse of
-// keyOf.
+// idValue turns a string key into the _id to match or insert. It returns the
+// ObjectID that the key encodes when the key is 24-character hex (restoring the
+// identity of an ObjectID-keyed collection). Otherwise it returns the string
+// itself. It is the write-side inverse of keyOf.
 func idValue(key string) any {
 	if oid, err := bson.ObjectIDFromHex(key); err == nil {
 		return oid
@@ -171,9 +173,9 @@ func (s *Store) Clear(ctx context.Context) error {
 	return nil
 }
 
-// Drop removes the collection entirely — documents and indexes (the `iq data drop`
-// semantics). The Store implements Dropper because a MongoDB collection is a
-// removable container, unlike a Redis DB index.
+// Drop removes the collection entirely: documents and indexes (the `iq data
+// drop` semantics). The Store implements Dropper because a MongoDB collection is
+// a removable container, unlike a Redis DB index.
 func (s *Store) Drop(ctx context.Context) error {
 	if s.collection == "" {
 		return errNoCollection
@@ -187,8 +189,9 @@ func (s *Store) Drop(ctx context.Context) error {
 // Delete removes the named keys with deleteMany({_id: {$in: ids}}), chunked to
 // pageSize so a large list is bounded per round-trip. Each key is mapped through
 // idValue (24-hex restores an ObjectID). DeletedCount is exact, so Deleted is the
-// removed count and Missing the remainder; keys are deduped by the caller, so the
-// count maps one-to-one. The ids ride as a bound bson value, never concatenated.
+// removed count and Missing is the remainder. The caller dedupes the keys, so the
+// count maps one-to-one. The ids ride as a bound bson value and are never
+// concatenated.
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
 	if s.collection == "" {
 		return query.DeleteStat{}, errNoCollection
@@ -210,9 +213,9 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 	return stat, nil
 }
 
-// TypedScan streams the whole collection as typed records, reusing the ScanBatches
-// cursor. Every item is a document, so the type tag is "document"; the key is the
-// _id string and the value is the normalized document.
+// TypedScan streams the whole collection as typed records, reusing the
+// ScanBatches cursor. Every item is a document, so the type tag is "document".
+// The key is the _id string and the value is the normalized document.
 func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) error) error {
 	return s.ScanBatches(ctx, func(batch map[string]any) error {
 		recs := make([]query.Record, 0, len(batch))

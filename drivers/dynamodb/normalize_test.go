@@ -71,11 +71,11 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestNumberValue(t *testing.T) {
-	// The largest int must still parse as an int (a narrower parse would spill it to
-	// the big.Int path and present it as a string), and an integer beyond int must
-	// keep its exact decimal string in every mode, number mode included, where the
-	// float path would round it. The int bounds come from math.MaxInt and
-	// math.MinInt, so the same rows are correct on 32-bit and 64-bit targets.
+	// The largest int must still parse as an int (a narrower parse spills it to the
+	// big.Int path and presents it as a string). An integer beyond int must keep its
+	// exact decimal string in every mode, number mode included, where the float path
+	// rounds it. The int bounds come from math.MaxInt and math.MinInt, so the same
+	// rows are correct on 32-bit and 64-bit targets.
 	pastMax := new(big.Int).Add(big.NewInt(math.MaxInt), big.NewInt(1)).String()
 	pastMin := new(big.Int).Sub(big.NewInt(math.MinInt), big.NewInt(1)).String()
 	tests := []struct {

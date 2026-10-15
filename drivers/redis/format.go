@@ -14,12 +14,12 @@ const (
 	colorNil     = "90"
 )
 
-// FormatReply renders a query result in redis-cli's cooked style: bulk strings
-// quoted, integers as `(integer) N`, a nil reply as `(nil)`, and arrays as a
-// numbered, indented list. Status replies such as OK and PONG are shown quoted
-// because go-redis collapses RESP simple and bulk strings into one Go type. When
-// colored is set, value tokens are wrapped in ANSI color; the numbered-list
-// index stays plain, as it is structure rather than a value.
+// FormatReply renders a query result in the cooked style of redis-cli. Bulk
+// strings are quoted, integers are `(integer) N`, a nil reply is `(nil)`, and
+// arrays are a numbered, indented list. Status replies such as OK and PONG are
+// shown quoted, because go-redis collapses RESP simple and bulk strings into one
+// Go type. When colored is set, value tokens are wrapped in ANSI color. The
+// numbered-list index stays plain, as it is structure and not a value.
 func FormatReply(v any, colored bool) string {
 	switch t := v.(type) {
 	case nil:
@@ -70,9 +70,9 @@ func indent(s string, n int) string {
 	return strings.ReplaceAll(s, "\n", "\n"+strings.Repeat(" ", n))
 }
 
-// quote wraps a string in double quotes and escapes it the way redis-cli does:
-// backslash, quote and the common control characters symbolically, anything
-// else non-printable as \xHH.
+// quote wraps a string in double quotes and escapes it the way redis-cli does.
+// It escapes backslash, quote and the common control characters symbolically,
+// and anything else non-printable as \xHH.
 func quote(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')

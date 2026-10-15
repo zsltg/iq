@@ -22,9 +22,9 @@ import (
 )
 
 // fakeDDB is a programmable ddbAPI for testing the retry, pagination, and batching
-// loops deterministically — paths a throttling-free DynamoDB Local never drives. Each
-// operation delegates to a func field (nil funcs return a zero output) and counts its
-// calls.
+// loops deterministically. A throttling-free DynamoDB Local never drives these
+// paths. Each operation delegates to a func field (nil funcs return a zero output)
+// and counts its calls.
 type fakeDDB struct {
 	listTablesFn  func(*awsdynamodb.ListTablesInput) (*awsdynamodb.ListTablesOutput, error)
 	scanFn        func(*awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error)
@@ -135,7 +135,7 @@ func TestLoadKeySchema(t *testing.T) {
 	t.Run("composite orders partition then sort", func(t *testing.T) {
 		fake := &fakeDDB{describeFn: func(*awsdynamodb.DescribeTableInput) (*awsdynamodb.DescribeTableOutput, error) {
 			return &awsdynamodb.DescribeTableOutput{Table: &types.TableDescription{
-				// Deliberately list the sort key first to prove ordering is by KeyType, not input order.
+				// List the sort key first to prove ordering is by KeyType, not input order.
 				KeySchema: []types.KeySchemaElement{
 					{AttributeName: aws.String("sk"), KeyType: types.KeyTypeRange},
 					{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
@@ -174,9 +174,9 @@ func TestLoadKeySchema(t *testing.T) {
 }
 
 func TestGetChunksKeysWithoutMisrouting(t *testing.T) {
-	// 150 requested keys must split into two BatchGetItem calls (100 then 50); each key
-	// must resolve to its own item, so a mis-computed chunk index (wrong slice bounds)
-	// leaves some keys unresolved and fails the value assertions.
+	// 150 requested keys must split into two BatchGetItem calls (100 then 50). Each
+	// key must resolve to its own item, so a mis-computed chunk index (wrong slice
+	// bounds) leaves some keys unresolved and fails the value assertions.
 	var sizes []int
 	fake := &fakeDDB{batchGetFn: func(in *awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
 		ka := in.RequestItems["t"]
@@ -204,8 +204,8 @@ func TestGetChunksKeysWithoutMisrouting(t *testing.T) {
 }
 
 func TestGetExactChunkBoundary(t *testing.T) {
-	// Exactly batchGetMax keys must issue exactly one BatchGetItem call — an off-by-one
-	// on the chunk boundary would add a second, empty request.
+	// Exactly batchGetMax keys must issue exactly one BatchGetItem call. An off-by-one
+	// on the chunk boundary adds a second, empty request.
 	fake := &fakeDDB{batchGetFn: func(in *awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
 		ka := in.RequestItems["t"]
 		return &awsdynamodb.BatchGetItemOutput{
@@ -228,7 +228,8 @@ func TestGetRetriesUnprocessedThenSucceeds(t *testing.T) {
 		calls++
 		ka := in.RequestItems["t"]
 		if calls == 1 {
-			// Resolve nothing; return the whole request as unprocessed to force a retry.
+			// Resolve nothing and return the whole request as unprocessed to force a
+			// retry.
 			return &awsdynamodb.BatchGetItemOutput{UnprocessedKeys: map[string]types.KeysAndAttributes{"t": ka}}, nil
 		}
 		return &awsdynamodb.BatchGetItemOutput{
@@ -255,9 +256,10 @@ func TestGetUnprocessedExhausted(t *testing.T) {
 }
 
 func TestScanPaginatesAndBatchesPages(t *testing.T) {
-	// Two server pages; the second is reached only if ExclusiveStartKey is threaded and
-	// the break condition is correct. 250 items across the pages must arrive in pages of
-	// 100 (the pageSize batching).
+	// The fake serves two pages. The second is reached only if
+	// ExclusiveStartKey is threaded and the break condition is correct. The 250
+	// items across the pages must arrive in pages of 100 (the pageSize
+	// batching).
 	page := 0
 	fake := &fakeDDB{scanFn: func(in *awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
 		page++
@@ -294,8 +296,9 @@ func TestScanPaginatesAndBatchesPages(t *testing.T) {
 }
 
 func TestScanNoTrailingEmptyPage(t *testing.T) {
-	// 200 items (an exact multiple of the page size) must arrive as two full pages with
-	// no trailing empty page — the final flush must be guarded on a non-empty page.
+	// 200 items (an exact multiple of the page size) must arrive as two full pages
+	// with no trailing empty page. The final flush must be guarded on a non-empty
+	// page.
 	fake := &fakeDDB{scanFn: func(*awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
 		items := make([]map[string]types.AttributeValue, 0, 200)
 		for i := 1; i <= 200; i++ {
@@ -326,8 +329,8 @@ func TestScanFilteredSetsFilterExpression(t *testing.T) {
 }
 
 func TestClearMultiBatchAndRetry(t *testing.T) {
-	// One scan page of 26 items forces two BatchWriteItem chunks (25 + 1); the first
-	// chunk returns an unprocessed leftover once, forcing a retry.
+	// One scan page of 26 items forces two BatchWriteItem chunks (25 + 1). The first
+	// chunk returns an unprocessed leftover once, which forces a retry.
 	scanned := false
 	firstWrite := true
 	var writeSizes []int
@@ -383,7 +386,7 @@ func TestClearBackoffHonorsContextCancel(t *testing.T) {
 
 func TestClearExactBatchBoundary(t *testing.T) {
 	// Exactly 50 items (two full batches of 25) must issue exactly two BatchWriteItem
-	// calls — an off-by-one on the chunk boundary would add a third, empty batch.
+	// calls. An off-by-one on the chunk boundary adds a third, empty batch.
 	var sizes []int
 	fake := &fakeDDB{
 		scanFn: func(*awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
@@ -455,8 +458,8 @@ func TestInspectTableMetadata(t *testing.T) {
 	require.Equal(t, int64(234), m["sizeBytes"])
 	require.Equal(t, "ACTIVE", m["status"])
 	require.Equal(t, string(types.BillingModeProvisioned), m["billingMode"]) // absent summary defaults to PROVISIONED
-	// Each schema entry carries both its attribute name and its type, so a dropped
-	// field or a skipped loop body is visible, not just a length change.
+	// Each schema entry carries both its attribute name and its type. So a dropped
+	// field or a skipped loop body is visible, not only a length change.
 	require.Equal(t, []any{map[string]any{"attribute": "id", "keyType": "HASH"}}, m["keySchema"])
 	require.Equal(t, []any{map[string]any{"attribute": "id", "type": "N"}}, m["attributeDefinitions"])
 	require.NotContains(t, m, "globalSecondaryIndexes") // omitted when the table has none
@@ -606,7 +609,8 @@ func TestPutUpsertCountsOverwritesFromKeyOnlyPreRead(t *testing.T) {
 		ka := in.RequestItems["t"]
 		gotProj = aws.ToString(ka.ProjectionExpression)
 		gotNames = ka.ExpressionAttributeNames
-		// Key 1 already exists; key 2 does not.
+		// Key 1 already exists, but key 2 does
+		// not.
 		return &awsdynamodb.BatchGetItemOutput{
 			Responses: map[string][]map[string]types.AttributeValue{"t": {idItem(1)}},
 		}, nil
@@ -626,8 +630,8 @@ func TestPutUpsertCountsOverwritesFromKeyOnlyPreRead(t *testing.T) {
 }
 
 func TestPutUpsertPreReadExactChunkBoundary(t *testing.T) {
-	// Exactly batchGetMax keys must pre-read in exactly one BatchGetItem call — an
-	// off-by-one on the chunk boundary would add a second, empty request.
+	// Exactly batchGetMax keys must pre-read in exactly one BatchGetItem call. An
+	// off-by-one on the chunk boundary adds a second, empty request.
 	fake := &fakeDDB{batchGetFn: func(in *awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
 		ka := in.RequestItems["t"]
 		require.NotEmpty(t, ka.Keys) // never a spurious empty pre-read
@@ -756,8 +760,8 @@ func TestScanWrapsScanError(t *testing.T) {
 }
 
 func TestScanStopsOnCallbackError(t *testing.T) {
-	// 150 items fill one page mid-scan; the callback's error must abort the scan there,
-	// so the second (trailing) page is never handed over.
+	// 150 items fill one page mid-scan. The callback's error must abort the scan
+	// there, so the second (trailing) page is never handed over.
 	fake := &fakeDDB{scanFn: func(*awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
 		items := make([]map[string]types.AttributeValue, 0, 150)
 		for i := 1; i <= 150; i++ {
@@ -810,9 +814,9 @@ func TestBackoffGrowsAndCaps(t *testing.T) {
 	prev := backoffUnit
 	backoffUnit = 2 * time.Millisecond
 	t.Cleanup(func() { backoffUnit = prev })
-	// The wait is jittered upward by up to half the base, so the base is a hard lower
-	// bound and twice the base a hard upper one. maxWait is 0 where only the lower
-	// bound is meaningful (a short wait cannot be timed tightly from above).
+	// The wait is jittered upward by up to half the base. So the base is a hard lower
+	// bound, and twice the base is a hard upper bound. A maxWait of 0 means only the
+	// lower bound is meaningful (a short wait cannot be timed tightly from above).
 	tests := []struct {
 		name             string
 		attempt          int
@@ -825,10 +829,11 @@ func TestBackoffGrowsAndCaps(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// A timer never fires early, so the lower bound holds for every sample. It
-			// can fire late under load, so the upper bound is asserted on the fastest
-			// sample, taken as soon as one lands under the bound and giving up only
-			// after ten consecutive late ones, which no scheduling hiccup produces.
+			// A timer never fires early, so the lower bound holds for every sample.
+			// It can fire late under load. So the upper bound is asserted on the
+			// fastest sample. The test takes that sample as soon as one lands under
+			// the bound. It gives up only after ten consecutive late ones, which no
+			// scheduling hiccup produces.
 			var fastest time.Duration
 			for i := range 10 {
 				start := time.Now()
@@ -850,8 +855,9 @@ func TestBackoffGrowsAndCaps(t *testing.T) {
 }
 
 func TestPutInsertOnlyContinuesPastASkip(t *testing.T) {
-	// The first record's key exists (a conditional-check failure); the rest of the
-	// batch must still be written, so the skip continues the loop rather than ending it.
+	// The first record's key exists (a conditional-check failure). The rest of the
+	// batch must still be written, so the skip continues the loop rather than ending
+	// it.
 	calls := 0
 	fake := &fakeDDB{putFn: func(*awsdynamodb.PutItemInput) (*awsdynamodb.PutItemOutput, error) {
 		calls++
@@ -896,8 +902,8 @@ func TestPutErrorsAreNotSilentSkips(t *testing.T) {
 }
 
 func TestPutUpsertSkipsTheKeylessRecordInThePreRead(t *testing.T) {
-	// A keyless record carries its key attributes in the object; it has no string key
-	// to pre-read, and sending an empty one would fail the numeric key decode.
+	// A keyless record carries its key attributes in the object. It has no string key
+	// to pre-read, and sending an empty one fails the numeric key decode.
 	fake := &fakeDDB{batchGetFn: func(*awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
 		return &awsdynamodb.BatchGetItemOutput{}, nil
 	}}
@@ -958,10 +964,10 @@ func TestDropSurfacesTheDeleteTableError(t *testing.T) {
 	require.ErrorIs(t, err, errBoom)
 }
 
-// TestOpenProbeIsBounded pins the reachability probe Open issues: a ListTables capped
-// at one table, so connecting never pages a whole account's table list. The SDK is
-// pointed at a local stub rather than a fake client because the probe runs inside
-// Open, before the Store (and its injectable client) exists.
+// TestOpenProbeIsBounded pins the reachability probe Open issues: a ListTables
+// capped at one table, so connecting never pages a whole account's table list. The
+// test points the SDK at a local stub rather than a fake client. The probe runs
+// inside Open, before the Store (and its injectable client) exists.
 func TestOpenProbeIsBounded(t *testing.T) {
 	var target string
 	var body []byte

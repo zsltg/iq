@@ -40,7 +40,7 @@ func TestParseURL(t *testing.T) {
 	})
 
 	t.Run("legacy rowkeytype is inert, not the key type", func(t *testing.T) {
-		// The param was renamed to keytype; the old spelling is now an unknown param,
+		// The param was renamed to keytype. The old spelling is now an unknown param,
 		// ignored like any other, so the row key stays the text-or-base64 default.
 		cc, err := parseURL("hbase://zk/?table=t&rowkeytype=long", "")
 		require.NoError(t, err)
@@ -53,8 +53,9 @@ func TestParseURL(t *testing.T) {
 		require.Equal(t, "ns:t", cc.table)
 	})
 
-	// Each row names the message it must produce: several of these inputs would still
-	// fail one guard further on, so only the message tells the guards apart.
+	// Each row names the message it must produce. Without the guard under test,
+	// several of these inputs still fail a later guard. So only the message tells
+	// the guards apart.
 	tests := []struct {
 		name string
 		url  string
@@ -133,8 +134,8 @@ func TestTarget(t *testing.T) {
 }
 
 func TestParseURLKeepsTheQueryParseCause(t *testing.T) {
-	// The query string is net/url's to parse, and its own error is what says which
-	// escape was bad, so it has to survive the wrap rather than be flattened into text.
+	// The query string is net/url's to parse, and its own error says which escape was
+	// bad. So the error must survive the wrap rather than be flattened into text.
 	_, err := parseURL("hbase://zk/?table=t&%zz=1", "")
 	var escape url.EscapeError
 	require.ErrorAs(t, err, &escape)

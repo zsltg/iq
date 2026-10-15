@@ -18,10 +18,11 @@ func esJSON(w http.ResponseWriter, status int, body string) {
 	_, _ = w.Write([]byte(body))
 }
 
-// newStubStore starts a stub server with the given handler and returns a Store that
-// speaks to it. A live server answers correctly, so a stub is the only way to reach the
-// failure paths: a refused read, a malformed body, or a rotated point-in-time id. Each
-// test that uses it asserts what the path produces, never only that the path runs.
+// newStubStore starts a stub server with the given handler and returns a Store
+// that speaks to it. A live server answers correctly. So a stub is the only way
+// to reach the failure paths: a refused read, a malformed body, or a rotated
+// point-in-time id. Each test that uses it asserts what the path produces. It
+// never asserts only that the path runs.
 func newStubStore(t *testing.T, index string, h http.HandlerFunc) *Store {
 	t.Helper()
 	srv := httptest.NewServer(h)

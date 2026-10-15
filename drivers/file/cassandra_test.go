@@ -35,7 +35,7 @@ func TestCassandraCSVParity(t *testing.T) {
 			"age": 30, "active": true, "ts": "2021-01-02T03:04:05Z",
 		},
 	}, recs["11111111-1111-1111-1111-111111111111"])
-	// An empty field is CQL null; the row still decodes.
+	// An empty field is CQL null. The row still decodes.
 	require.Equal(t, map[string]any{
 		"id": "22222222-2222-2222-2222-222222222222", "name": "Bob",
 		"age": nil, "active": false, "ts": nil,
@@ -57,7 +57,7 @@ func TestCassandraCSVCompositeKey(t *testing.T) {
 }
 
 func TestCassandraCSVHeaderless(t *testing.T) {
-	// A dump exported without HEADER=TRUE; ?columns= names the columns in order.
+	// A dump exported without HEADER=TRUE: ?columns= names the columns in order.
 	csv := "x1,7\nx2,8\n"
 	u := writeDump(t, "h.csv", []byte(csv), "format=cassandra-csv&keys=id&columns=id,age&types=age=int")
 	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
@@ -86,7 +86,7 @@ func TestCassandraCSVBadType(t *testing.T) {
 
 func TestCassandraCSVFieldCountMismatch(t *testing.T) {
 	// A ragged row (fewer fields than the header) is a clear error, not a silent
-	// short row; recordForCSVRow validates each row's width against the header.
+	// short row. recordForCSVRow validates each row's width against the header.
 	u := writeDump(t, "c.csv", []byte("id,name,age\na,b\n"), "format=cassandra-csv&keys=id")
 	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
 	require.NoError(t, err)
@@ -127,10 +127,11 @@ func TestCassandraFormatString(t *testing.T) {
 	require.Equal(t, FormatCassandraCSV, f)
 }
 
-// TestCassandraCSVFailures pins the CSV reader's error handling. A header that
-// cannot be parsed is reported as a header failure and a bad row as a row failure,
-// a bad value keeps the underlying parse cause reachable so a caller can classify
-// it, and a cancelled scan stops rather than decoding the whole dump.
+// TestCassandraCSVFailures pins the error handling of the CSV reader. A header
+// that cannot be parsed is reported as a header failure, and a bad row as a row
+// failure. A bad value keeps the underlying parse cause reachable so that a
+// caller can classify it. A cancelled scan stops and does not decode the whole
+// dump.
 func TestCassandraCSVFailures(t *testing.T) {
 	drain := func(t *testing.T, body, query string, ctx context.Context, fn func([]query.Record) error) error {
 		t.Helper()

@@ -13,12 +13,13 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// TestExactWhere pins the exactness gate: exactWhere is true only when toWhere pushes the
-// whole predicate into a WHERE that returns precisely jq's matching set, so the
-// client-side prefilter can be bypassed as pure overhead. Unlike Elasticsearch, Couchbase
-// pushes equality (including a null literal), the ISTYPE-widened range, and existence all
-// exactly; exactness is lost only when a conjunct is dropped, a node is refused (!=,
-// regex, length), or a field path cannot be referenced.
+// TestExactWhere pins the exactness gate. exactWhere is true only when toWhere
+// pushes the whole predicate into a WHERE that returns precisely jq's matching
+// set. Then the client-side prefilter can be bypassed as pure overhead. Unlike
+// Elasticsearch, Couchbase pushes equality (including a null literal), the
+// ISTYPE-widened range, and existence all exactly. Exactness is lost only when a
+// conjunct is dropped, a node is refused (!=, regex, length), or a field path
+// cannot be referenced.
 func TestExactWhere(t *testing.T) {
 	tests := []struct {
 		name string
@@ -86,9 +87,10 @@ func TestExactWhere(t *testing.T) {
 }
 
 // prefilterDocs is the mixed corpus the prefilter equivalence test seeds, keyed by
-// document ID. lang is a plain string (equality-pushable), year is type-mixed (an int in
-// most documents, a string in "4") to exercise the ISTYPE-widened range, and note is
-// absent from "4" so the absent-field class reads a clean jq null.
+// document ID. The lang field is a plain string (equality-pushable). The year field
+// is type-mixed (an int in most documents, a string in "4") to exercise the
+// ISTYPE-widened range. The note field is absent from "4", so the absent-field
+// class reads a clean jq null.
 func prefilterDocs() map[string]map[string]any {
 	return map[string]map[string]any{
 		"1": {"lang": "go", "year": 2015, "note": "a"},
@@ -99,21 +101,25 @@ func prefilterDocs() map[string]map[string]any {
 	}
 }
 
-// TestScanFilteredPrefilterEquivalence is the driver-level invariant: for each predicate
-// class, re-applying the full predicate to ScanFiltered's output selects exactly the same
-// keys as applying it to a plain ScanBatches, and the prefilter's checked/skipped counts
-// match whether the class is expected to engage it. Classes: a control equality and a
-// type-mixed range (both exact pushes, prefilter bypassed — checked 0); a partial-push And
-// whose regex conjunct the server drops (prefilter catches the residual); an inequality
-// and an inequality on an absent field (both fall back to a full scan, the prefilter
-// engages over every row). It runs against the couchbase container only, skipping under
-// -short.
+// TestScanFilteredPrefilterEquivalence is the driver-level invariant. For each
+// predicate class, re-applying the full predicate to ScanFiltered's output selects
+// exactly the same keys as applying it to a plain ScanBatches. The prefilter's
+// checked/skipped counts match whether the class is expected to engage it. The
+// classes are:
+//   - A control equality and a type-mixed range (both exact pushes, prefilter
+//     bypassed, checked 0).
+//   - A partial-push And whose regex conjunct the server drops (prefilter catches
+//     the residual).
+//   - An inequality and an inequality on an absent field (both fall back to a full
+//     scan, and the prefilter engages over every row).
+//
+// It runs against the couchbase container only, skipping under -short.
 func TestScanFilteredPrefilterEquivalence(t *testing.T) {
 	fixture := prefilterDocs()
 	st := seedCollection(t, fixture)
 	ctx := skipShort(t)
-	// A page size of one so a row the prefilter drops produces an empty page, exercising
-	// (and guarding) the "never hand fn an empty batch" path.
+	// Use a page size of one. A row the prefilter drops then produces an empty page,
+	// which exercises (and guards) the "never hand fn an empty batch" path.
 	st.pageSize = 1
 
 	baseline := collectScan(ctx, t, st.ScanBatches)
@@ -122,16 +128,16 @@ func TestScanFilteredPrefilterEquivalence(t *testing.T) {
 	tests := []struct {
 		name string
 		pred predicate.Node
-		// wantKeys is the set the full predicate selects; wantChecked is how many rows the
-		// prefilter must evaluate (0 exactly when the scan bypasses it); wantSkipped is how
-		// many of those it must drop.
+		// The wantKeys field is the set the full predicate selects. The wantChecked field
+		// is how many rows the prefilter must evaluate (0 exactly when the scan bypasses
+		// it). The wantSkipped field is how many of those it must drop.
 		wantKeys    []string
 		wantChecked int
 		wantSkipped int
 	}{
 		{
 			// Exact push: the WHERE returns only matches, so the prefilter is bypassed
-			// entirely — it evaluates nothing (checked 0), not merely skips nothing.
+			// entirely. It evaluates nothing (checked 0), not merely skips nothing.
 			name:        "control eq (exact push, prefilter bypassed)",
 			pred:        predicate.Eq{Path: []string{"lang"}, Value: "go"},
 			wantKeys:    []string{"1", "3", "5"},
@@ -160,7 +166,7 @@ func TestScanFilteredPrefilterEquivalence(t *testing.T) {
 			wantSkipped: 1,
 		},
 		{
-			// Refused node: != cannot push, so the scan falls back to a full walk and the
+			// Refused node: != cannot push, so the scan falls back to a full walk. The
 			// prefilter evaluates all five rows, dropping the one that equals the value.
 			name:        "inequality (fallback + prefilter)",
 			pred:        predicate.Ne{Path: []string{"year"}, Value: 2015.0},
@@ -169,8 +175,8 @@ func TestScanFilteredPrefilterEquivalence(t *testing.T) {
 			wantSkipped: 1,
 		},
 		{
-			// Absent field: note is missing from "4"; jq reads it as null (!= "b" holds),
-			// which the prefilter must keep — it drops only the two rows that equal "b".
+			// Absent field: note is missing from "4". jq reads it as null (!= "b" holds),
+			// which the prefilter must keep. It drops only the two rows that equal "b".
 			name:        "inequality on an absent field (fallback + prefilter)",
 			pred:        predicate.Ne{Path: []string{"note"}, Value: "b"},
 			wantKeys:    []string{"1", "3", "4"},
@@ -194,12 +200,13 @@ func TestScanFilteredPrefilterEquivalence(t *testing.T) {
 				require.Contains(t, baseline, k)
 				require.Equal(t, baseline[k], v, "prefilter must not change a surviving decode")
 			}
-			// The prefilter drops every provable non-match the WHERE let through and keeps
-			// every match, so the delivered survivors are exactly the matching set — a
-			// leaked skip (a dropped row still delivered) or an over-drop fails here.
+			// The prefilter drops every provable non-match the WHERE let through and
+			// keeps every match. So the delivered survivors are exactly the matching
+			// set. A leaked skip (a dropped row still delivered) or an over-drop fails
+			// here.
 			require.Equal(t, tt.wantKeys, sortedAnyKeys(filtered),
 				"the prefilter's survivors are exactly the matching set")
-			// The load-bearing equivalence: the full predicate over each scan's output
+			// This is the core equivalence. The full predicate over each scan's output
 			// selects the same keys, and that set is what the corpus dictates.
 			require.Equal(t, matchingKeys(baseline, tt.pred), matchingKeys(filtered, tt.pred),
 				"re-filtering ScanFiltered and ScanBatches must agree")
@@ -208,10 +215,11 @@ func TestScanFilteredPrefilterEquivalence(t *testing.T) {
 	}
 }
 
-// TestScanFilteredSkipsMidPage pins that a row the prefilter drops only drops that row:
-// the walk must read the rows behind it in the same page. The equivalence test above
-// pages one row at a time, where dropping the row and ending the page have the same
-// result, so this case puts every document in one page and drops the first of them.
+// TestScanFilteredSkipsMidPage pins that a row the prefilter drops only drops that
+// row. The walk must read the rows behind it in the same page. The equivalence test
+// above pages one row at a time, where dropping the row and ending the page have
+// the same result. So this case puts every document in one page and drops the first
+// of them.
 func TestScanFilteredSkipsMidPage(t *testing.T) {
 	fixture := prefilterDocs()
 	st := seedCollection(t, fixture)
@@ -228,8 +236,9 @@ func TestScanFilteredSkipsMidPage(t *testing.T) {
 	require.Equal(t, 1, st.prefilterSkipped, "exactly the one provable non-match is dropped")
 }
 
-// collectScan drains a scan into one {key: value} map, asserting the driver never hands a
-// caller an empty batch — the guard that a page emptied by the prefilter is dropped.
+// collectScan drains a scan into one {key: value} map. It asserts the driver never
+// hands a caller an empty batch, which guards that a page emptied by the prefilter
+// is dropped.
 func collectScan(ctx context.Context, t *testing.T, scan func(context.Context, func(map[string]any) error) error) map[string]any {
 	t.Helper()
 	out := map[string]any{}
@@ -253,9 +262,10 @@ func matchingKeys(batch map[string]any, pred predicate.Node) map[string]bool {
 	return out
 }
 
-// refMatch evaluates pred over a decoded document, the reference semantics the prefilter
-// must never diverge from. It uses gojq.Compare as the oracle for jq's cross-type
-// ordering, so the type-mixed and absent-field classes are judged exactly as jq would.
+// refMatch evaluates pred over a decoded document. It is the reference semantics
+// that the prefilter must never diverge from. It uses gojq.Compare as the oracle
+// for jq's cross-type ordering, so the type-mixed and absent-field classes are
+// judged exactly as jq judges them.
 func refMatch(v any, pred predicate.Node) bool {
 	switch n := pred.(type) {
 	case predicate.Eq:
@@ -275,7 +285,7 @@ func refMatch(v any, pred predicate.Node) bool {
 			return c <= 0
 		}
 	case predicate.Regex:
-		// jq test() matches only over a string field; a non-string reads as a non-match
+		// jq test() matches only over a string field. A non-string reads as a non-match
 		// for the corpus this oracle judges (flags are unused by the test predicates).
 		s, ok := lookup(v, n.Path).(string)
 		if !ok {

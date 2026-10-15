@@ -20,27 +20,29 @@ const (
 	boolClass                     // boolean
 )
 
-// exactField is a top-level field an equality can push as a term query: the concrete
-// term path (the field, or its .keyword sub-field for a text field) and the literal
-// class the field accepts.
+// exactField is a top-level field that an equality can push as a term query. It
+// holds the concrete term path (the field, or its .keyword sub-field for a text
+// field) and the literal class that the field accepts.
 type exactField struct {
 	path  string
 	class fieldClass
 }
 
-// mappingProperty is the subset of an index-mapping property the driver reads: its
-// type, any multi-fields (a text field's keyword sub-field), and whether it is an
-// object (has nested properties, so not a scalar term target).
+// mappingProperty is the subset of an index-mapping property that the driver
+// reads. It holds the type and any multi-fields (the keyword sub-field of a text
+// field). It also holds whether the property is an object (has nested
+// properties, so not a scalar term target).
 type mappingProperty struct {
 	Type       string                     `json:"type"`
 	Fields     map[string]mappingProperty `json:"fields"`
 	Properties map[string]json.RawMessage `json:"properties"`
 }
 
-// exact reports whether a top-level field named name can back an exact term match,
-// and how. A keyword/numeric/boolean/ip field matches on itself; a text field
-// matches on its keyword sub-field when it has one; everything else (object, nested,
-// date, geo, or a text field with no keyword sub-field) cannot be pushed safely.
+// exact reports whether a top-level field named name can back an exact term
+// match, and how. A keyword, numeric, boolean, or ip field matches on itself. A
+// text field matches on its keyword sub-field when it has one. Everything else
+// cannot be pushed safely: object, nested, date, geo, or a text field with no
+// keyword sub-field.
 func (p mappingProperty) exact(name string) (exactField, bool) {
 	if len(p.Properties) > 0 {
 		return exactField{}, false // an object/nested field is not a scalar term target.
@@ -84,9 +86,9 @@ func (s *Store) readExactFields(ctx context.Context) (map[string]exactField, err
 }
 
 // exactFieldsFrom reduces a GET _mapping reply to the top-level fields where an
-// equality can push as a term query. If the index resolves to several mappings (an
-// alias), a field stays only if every mapping agrees that it is exact and of the
-// same class. This keeps a term off a field that is analyzed text, or a different
+// equality can push as a term query. If the index resolves to several mappings
+// (an alias), a field stays only if all mappings agree that it is exact and of
+// one class. This keeps a term off a field that is analyzed text, or a different
 // exact type, in part of the fan-out.
 func exactFieldsFrom(raw map[string]indexMapping) map[string]exactField {
 	seen := map[string]exactField{}
@@ -144,9 +146,10 @@ func (s *Store) prefilterMatcher(pred predicate.Node) *rawpred.Matcher {
 	return rawpred.NewMatcher(pred)
 }
 
-// neverExact reports whether the predicate has a leaf that no mapping makes exact:
-// a leaf that is not an Eq, an Eq with a null value, or an Eq on a nested path. An
-// empty composite counts as never exact. It mirrors exactPush without the mapping.
+// neverExact reports whether the predicate has a leaf that no mapping makes
+// exact. Such a leaf is not an Eq, is an Eq with a null value, or is an Eq on a
+// nested path. An empty composite counts as never exact. The function mirrors
+// exactPush without the mapping.
 func neverExact(n predicate.Node) bool {
 	switch t := n.(type) {
 	case predicate.Eq:
@@ -246,12 +249,12 @@ func rootedAtID(path []string) bool {
 }
 
 // toQuery translates a neutral predicate into an Elasticsearch query. The second
-// return is false if the query does not narrow the scan: the node, or an unsafe
-// part of it, cannot be pushed without risk of wrongly excluding a jq match.
-// Only pure-superset nodes are pushed: equality on an exactly-matchable field and
-// existence. An Elasticsearch range excludes a missing field and orders types
-// differently from jq, so ranges stay on the client. So do negations and the
-// polymorphic length, regex, and any tests.
+// return is false if the query does not narrow the scan. In that case the node,
+// or an unsafe part of it, cannot be pushed without the risk of wrongly
+// excluding a jq match. Only pure-superset nodes are pushed: equality on an
+// exactly-matchable field and existence. An Elasticsearch range excludes a
+// missing field and orders types differently from jq, so ranges stay on the
+// client. So do negations and the polymorphic length, regex, and any tests.
 func (s *Store) toQuery(n predicate.Node) (map[string]any, bool) {
 	switch t := n.(type) {
 	case predicate.Eq:
@@ -272,10 +275,11 @@ func (s *Store) toQuery(n predicate.Node) (map[string]any, bool) {
 	}
 }
 
-// eqQuery builds a term query for an equality, but only when the field is a single
-// top-level scalar the mapping makes exactly matchable and the literal's type matches
-// the field's class. A null literal is never pushed: jq reads a missing field as null
-// so `== null` matches absent-or-null, which no single term query reproduces safely.
+// eqQuery builds a term query for an equality. It builds the query only when
+// two things hold. The field is a single top-level scalar that the mapping makes
+// exactly matchable. The type of the literal matches the class of the field. It
+// never pushes a null literal. jq reads a missing field as null, so `== null`
+// matches absent-or-null, which no single term query reproduces safely.
 func (s *Store) eqQuery(e predicate.Eq) (map[string]any, bool) {
 	if e.Value == nil || len(e.Path) != 1 {
 		return nil, false
@@ -287,10 +291,11 @@ func (s *Store) eqQuery(e predicate.Eq) (map[string]any, bool) {
 	return map[string]any{"term": map[string]any{ef.path: e.Value}}, true
 }
 
-// matchesLiteral reports whether a pushdown literal's Go type matches the field's
-// class, so a term is only pushed when Elasticsearch will not reject or coerce it. A
-// mismatch (e.g. a string literal against a numeric field) is left client-side, where
-// jq also treats the cross-type comparison as unequal.
+// matchesLiteral reports whether the Go type of a pushdown literal matches the
+// class of the field. So a term is only pushed when Elasticsearch does not reject
+// or coerce it. A mismatch (for example a string literal against a numeric
+// field) is left client-side. There jq also treats the cross-type comparison as
+// unequal.
 func matchesLiteral(class fieldClass, v any) bool {
 	switch class {
 	case stringClass:
@@ -312,9 +317,9 @@ func existsQuery(path string) map[string]any {
 	return map[string]any{"exists": map[string]any{"field": path}}
 }
 
-// andQuery conjoins the children that narrow into a bool.must, dropping any that do
-// not (an AND with a match-everything term is just the rest). It narrows if at least
-// one child does.
+// andQuery conjoins the children that narrow into a bool.must, dropping any that
+// do not. An AND with a match-everything term is the same as the rest. The
+// result narrows if at least one child does.
 func (s *Store) andQuery(and predicate.And) (map[string]any, bool) {
 	var parts []any
 	for _, child := range and {
@@ -332,10 +337,10 @@ func (s *Store) andQuery(and predicate.And) (map[string]any, bool) {
 	}
 }
 
-// orQuery disjoins the children into a bool.should. An OR narrows only if every
-// branch does: a branch that cannot be pushed matches everything, which would make
-// the whole OR match everything, so a single unpushable branch drops it to a full
-// scan.
+// orQuery disjoins the children into a `bool.should`. An OR narrows only if
+// every branch does. A branch that cannot be pushed matches everything. That
+// makes the whole OR match everything. So a single unpushable branch drops it to
+// a full scan.
 func (s *Store) orQuery(or predicate.Or) (map[string]any, bool) {
 	parts := make([]any, 0, len(or))
 	for _, child := range or {

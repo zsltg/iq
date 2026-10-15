@@ -98,10 +98,10 @@ const (
 	relKind
 )
 
-// neo4jKeyspace resolves the ?label=/?rel= hints to the single kind and name the
-// read exposes. Exactly one selector is required — both is a contradiction and
-// neither leaves the keyspace unnamed — so either is a clear, up-front error rather
-// than a silent full-graph dump.
+// neo4jKeyspace resolves the ?label=/?rel= hints to the single kind and name that
+// the read exposes. Exactly one selector is required. Both is a contradiction,
+// and neither leaves the keyspace unnamed. So either case is a clear, up-front
+// error, not a silent full-graph dump.
 func neo4jKeyspace(hints Hints) (neo4jKind, string, error) {
 	switch {
 	case hints.Label != "" && hints.Rel != "":
@@ -128,16 +128,17 @@ type apocEntry struct {
 	End        apocEndpoint   `json:"end"`
 }
 
-// apocEndpoint is a relationship endpoint reference in an APOC export; iq keeps only
-// its id for the _start/_end envelope.
+// apocEndpoint is a relationship endpoint reference in an APOC export. iq keeps
+// only its id for the _start/_end envelope.
 type apocEndpoint struct {
 	ID string `json:"id"`
 }
 
-// recordForEntry turns one export entry into the record a live scan of the selected
-// keyspace yields, reporting keep=false for an entry of the other kind or a
-// non-matching label/type (a dump interleaves every label and type). An unrecognized
-// "type" is a hard error, so a wrong ?format= or a corrupt line fails fast.
+// recordForEntry turns one export entry into the record that a live scan of the
+// selected keyspace yields. It reports keep=false for an entry of the other kind
+// or a non-matching label/type (a dump interleaves every label and type). An
+// unrecognized "type" is a hard error, so a wrong ?format= or a corrupt line
+// fails fast.
 func recordForEntry(e apocEntry, mode neo4jKind, name, keyProp string, dec numfmt.DecimalMode) (query.Record, bool, error) {
 	switch e.Type {
 	case "node":
@@ -155,9 +156,9 @@ func recordForEntry(e apocEntry, mode neo4jKind, name, keyProp string, dec numfm
 	}
 }
 
-// nodeRecord renders one node entry as the live driver's node envelope: its
-// normalized properties plus _id (the export id) and _labels, keyed by the export id
-// or the ?key= property.
+// nodeRecord renders one node entry as the node envelope of the live driver. The
+// envelope holds its normalized properties plus _id (the export id) and _labels,
+// keyed by the export id or the ?key= property.
 func nodeRecord(e apocEntry, keyProp string, dec numfmt.DecimalMode) query.Record {
 	val := normalizeProps(e.Properties, dec)
 	key := recordKey(e.ID, e.Properties, keyProp)
@@ -166,9 +167,9 @@ func nodeRecord(e apocEntry, keyProp string, dec numfmt.DecimalMode) query.Recor
 	return query.Record{Key: key, Type: "node", Value: val}
 }
 
-// relRecord renders one relationship entry as the live driver's relationship
-// envelope: its normalized properties plus _id, _type, and the _start/_end endpoint
-// ids, keyed by the export id or the ?key= property.
+// relRecord renders one relationship entry as the relationship envelope of the
+// live driver. The envelope holds its normalized properties plus _id, _type, and
+// the _start/_end endpoint ids, keyed by the export id or the ?key= property.
 func relRecord(e apocEntry, keyProp string, dec numfmt.DecimalMode) query.Record {
 	val := normalizeProps(e.Properties, dec)
 	key := recordKey(e.ID, e.Properties, keyProp)
@@ -194,8 +195,9 @@ func recordKey(id string, props map[string]any, keyProp string) string {
 	return keyString(v)
 }
 
-// keyString renders a property value as a map key the way Cypher's toString would:
-// a string as-is, a number by its literal, a bool as true/false.
+// keyString renders a property value as a map key the way Cypher's toString
+// does. It renders a string as-is, a number by its literal, and a bool as
+// true/false.
 func keyString(v any) string {
 	switch t := v.(type) {
 	case string:
@@ -209,8 +211,9 @@ func keyString(v any) string {
 	}
 }
 
-// normalizeProps copies a property map with each value normalized, so a node's
-// stored properties survive as a fresh map the envelope keys can be added to.
+// normalizeProps copies a property map with each value normalized. A node's
+// stored properties then survive as a fresh map that the envelope keys can be
+// added to.
 func normalizeProps(props map[string]any, dec numfmt.DecimalMode) map[string]any {
 	out := make(map[string]any, len(props))
 	for k, v := range props {
@@ -244,9 +247,10 @@ func normalizeJSONValue(v any, dec numfmt.DecimalMode) any {
 	}
 }
 
-// normalizeNumber converts a json.Number to the same Go value a live Cypher fetch
-// yields: an integral literal to an int (a *big.Int when it overflows int64), a
-// fractional one to a float64, or its exact literal string under DecimalString.
+// normalizeNumber converts a json.Number to the same Go value that a live Cypher
+// fetch yields. An integral literal becomes an int (a *big.Int when it overflows
+// int64). A fractional one becomes a float64. Under DecimalString it becomes its
+// exact literal string.
 func normalizeNumber(n json.Number, dec numfmt.DecimalMode) any {
 	s := n.String()
 	if !strings.ContainsAny(s, ".eE") {
@@ -267,9 +271,9 @@ func normalizeNumber(n json.Number, dec numfmt.DecimalMode) any {
 	return f
 }
 
-// labelsToAny copies a node's labels into an []any so the value is homogeneous with
-// the rest of the decoded JSON tree (gojq works over []any, not []string), matching
-// the live driver's node envelope.
+// labelsToAny copies a node's labels into an []any. The value is then
+// homogeneous with the rest of the decoded JSON tree (gojq works over []any,
+// not []string). It matches the node envelope of the live driver.
 func labelsToAny(labels []string) []any {
 	out := make([]any, len(labels))
 	for i, l := range labels {

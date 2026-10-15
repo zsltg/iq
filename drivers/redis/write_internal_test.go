@@ -17,11 +17,12 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// TestTypedScanBoundsPageSize checks TypedScan's memory-bounding: keys accumulate
-// into a page and flush at exactly pageSize. It runs in the redis package so it can
-// lower the unexported pageSize, mirroring TestScanBatchesBoundsPageSize. It flushes
-// its own private database (13) — not the reserved DB other tests share — so its
-// FLUSHDB never races the cmd package under `go test ./...`.
+// TestTypedScanBoundsPageSize checks the memory bound of TypedScan: keys
+// accumulate into a page and flush at exactly pageSize. It runs in the redis
+// package so it can lower the unexported pageSize, mirroring
+// TestScanBatchesBoundsPageSize. It flushes its own private database (13), not
+// the reserved database that other tests share. So its FLUSHDB never races the
+// cmd package under `go test ./...`.
 func TestTypedScanBoundsPageSize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping redis integration test in -short mode")
@@ -163,10 +164,10 @@ func TestExplainWriteClearDrop(t *testing.T) {
 }
 
 // TestQueueWriteClearsAnyExpiry pins that rewriting a string replaces the whole
-// value, its time to live included: Put's contract is replacement, so a rewritten
-// key must not inherit the expiry of the value it replaced. Only queueWrite can
-// show it — Put deletes an existing key before rewriting it, which would clear the
-// expiry either way.
+// value, its time to live included. The contract of Put is replacement, so a
+// rewritten key must not inherit the expiry of the value it replaced. Only
+// queueWrite can show this. Put deletes an existing key before rewriting it, and
+// that clears the expiry either way.
 func TestQueueWriteClearsAnyExpiry(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -187,9 +188,9 @@ func TestQueueWriteClearsAnyExpiry(t *testing.T) {
 	require.Equal(t, "new", got)
 }
 
-// TestDeleteAccumulatesAcrossChunks pins the chunked DEL accounting: both counts
+// TestDeleteAccumulatesAcrossChunks pins the chunked DEL accounting. Both counts
 // are summed over every chunk, so a delete larger than one round-trip reports the
-// whole batch rather than only its last chunk.
+// whole batch and not only its last chunk.
 func TestDeleteAccumulatesAcrossChunks(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -210,12 +211,12 @@ func TestDeleteAccumulatesAcrossChunks(t *testing.T) {
 
 // TestWriteCommandsSurfaceTheCancelledContext pins that each command reports the
 // failure of its call, with the cause kept in the chain, when its context is dead.
-// Clear answers `iq data clear`, so reporting success on a keyspace it did not
-// empty would be the worst possible lie. A failed DEL is reported with a zero
-// count, not read as a delete of keys that were missing. TypedScan reports a
-// failed SCAN, so a cut keyspace is not taken for a complete one. typedGet stops
-// when the TYPE pipeline fails, because with no type for each key it cannot choose
-// a reader.
+// Clear answers `iq data clear`, so reporting success on a keyspace that it did
+// not empty is the worst possible lie. A failed DEL is reported with a zero count
+// and is not read as a delete of keys that were missing. TypedScan reports a
+// failed SCAN, so a cut keyspace is not taken for a complete one. The function
+// typedGet stops when the TYPE pipeline fails, because with no type for each key
+// it cannot choose a reader.
 func TestWriteCommandsSurfaceTheCancelledContext(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -275,10 +276,10 @@ func TestWriteCommandsSurfaceTheCancelledContext(t *testing.T) {
 	}
 }
 
-// TestQueueWriteRejectsANonScalarPart proves queueWrite rejects a value whose
-// parts do not have the shape of the type, before it queues a command, and keeps
-// the cause of the rejection in the chain. Each case puts an object where the
-// type needs a scalar or a number.
+// TestQueueWriteRejectsANonScalarPart proves that queueWrite rejects a value
+// whose parts do not have the shape of the type. It rejects the value before it
+// queues a command, and it keeps the cause of the rejection in the chain. Each
+// case puts an object where the type needs a scalar or a number.
 func TestQueueWriteRejectsANonScalarPart(t *testing.T) {
 	obj := map[string]any{"a": 1}
 	tests := []struct {

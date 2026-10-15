@@ -15,11 +15,12 @@ import (
 )
 
 // dynamoSource streams a DynamoDB native dump: a table's S3 export (NDJSON, one
-// {"Item":{…}} object per line) or `aws dynamodb scan`/`query` output (a {"Items":[…]}
-// object). Both carry items as typed attribute-value JSON, which is decoded and
-// normalized to the exact shape a live scan produces (see drivers/dynamodb), keyed by
-// the primary key the ?keys= hint names. A dump records items but not the key schema,
-// so ?keys= is required — without it items cannot be keyed and would collide.
+// {"Item":{…}} object per line) or `aws dynamodb scan`/`query` output (a
+// {"Items":[…]} object). Both carry items as typed attribute-value JSON. Each
+// item is decoded and normalized to the exact shape that a live scan produces
+// (see drivers/dynamodb). It is keyed by the primary key that the ?keys= hint
+// names. A dump records items but not the key schema, so ?keys= is required.
+// Without it, items cannot be keyed, so they collide.
 func dynamoSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hints) (query.RecordSource, error) {
 	if hints.Keys == "" {
 		return nil, errors.New("dynamodb dump needs a key schema: add ?keys=pk[:S][,sk[:N]] to the file url")
@@ -49,8 +50,9 @@ func dynamoSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hints) (q
 			return nil
 		}
 		// Each top-level object is either a scan/query wrapper ({"Items":[…]}) or one
-		// export line ({"Item":{…}}); decode them in sequence so a single reader handles
-		// a scan file, a multi-page scan (several wrappers), and NDJSON export alike.
+		// export line ({"Item":{…}}). Decode them in sequence, so a single reader
+		// handles a scan file, a multi-page scan (several wrappers), and NDJSON
+		// export alike.
 		for {
 			if err := ctx.Err(); err != nil {
 				return err

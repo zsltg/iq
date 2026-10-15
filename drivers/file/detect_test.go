@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// typedObjectOfSize renders a typed {key,…,value} JSON object of exactly n bytes,
-// so a test can place a record's closing brace on either side of the sniff
-// window. The envelope is 20 bytes, the rest is key padding.
+// typedObjectOfSize renders a typed {key,…,value} JSON object of exactly n
+// bytes. A test can then place a record's closing brace on either side of the
+// sniff window. The envelope is 20 bytes, and the rest is key padding.
 func typedObjectOfSize(t *testing.T, n int) string {
 	t.Helper()
 	const envelope = len(`{"key":"","value":1}`)
@@ -20,9 +20,9 @@ func typedObjectOfSize(t *testing.T, n int) string {
 	return `{"key":"` + strings.Repeat("p", n-envelope) + `","value":1}`
 }
 
-// TestParseFormat covers every ?format= / --from-format synonym the reader
-// advertises plus the rejection, so a dropped synonym or a mistyped mapping is a
-// failure rather than a silently different reader.
+// TestParseFormat covers every ?format= / --from-format synonym that the reader
+// advertises, plus the rejection. A dropped synonym or a mistyped mapping is
+// then a failure, not a silently different reader.
 func TestParseFormat(t *testing.T) {
 	tests := []struct {
 		name string
@@ -73,12 +73,12 @@ func TestParseFormat(t *testing.T) {
 	})
 }
 
-// TestClassify pins the content sniffer's whole decision table: the RDB magic wins
-// outright, a .yaml/.yml name forces YAML, a leading brace or bracket routes into
-// the JSON family where the {key,…,value} envelope separates iq's typed dump from
-// mongoexport, a .bson name or a plausible length frame selects BSON, and a typed
-// YAML document is recognized by the same envelope. Anything else is a named
-// error rather than a guess.
+// TestClassify pins the whole decision table of the content sniffer. The RDB
+// magic wins outright. A .yaml/.yml name forces YAML. A leading brace or
+// bracket routes into the JSON family, where the {key,…,value} envelope
+// separates iq's typed dump from mongoexport. A .bson name or a plausible
+// length frame selects BSON. A typed YAML document is recognized by the same
+// envelope. Anything else is a named error, not a guess.
 func TestClassify(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -128,8 +128,9 @@ func TestClassify(t *testing.T) {
 	}
 }
 
-// TestFirstJSONObject covers the helper classify leans on directly, including the
-// empty input its callers never pass: an unguarded index into it would panic.
+// TestFirstJSONObject covers the helper that classify leans on directly,
+// including the empty input that its callers never pass. An unguarded index into
+// it panics.
 func TestFirstJSONObject(t *testing.T) {
 	tests := []struct {
 		name string
@@ -160,8 +161,8 @@ func TestFirstJSONObject(t *testing.T) {
 	}
 }
 
-// TestLooksLikeBSON pins the four-byte little-endian length frame byte by byte and
-// at both bounds: each byte carries its own weight, the minimum is the empty
+// TestLooksLikeBSON pins the four-byte little-endian length frame byte by byte
+// and at both bounds. Each byte carries its own weight. The minimum is the empty
 // document's five bytes, and the maximum is BSON's 16 MiB cap.
 func TestLooksLikeBSON(t *testing.T) {
 	tests := []struct {
@@ -186,10 +187,10 @@ func TestLooksLikeBSON(t *testing.T) {
 	}
 }
 
-// TestDetectFormatFileErrors covers the two failure paths of the file sniffer: an
-// unopenable path is reported as an open failure whose cause survives the wrap,
-// and a path that opens but cannot be read (a directory) is reported as a head
-// read failure rather than misclassified.
+// TestDetectFormatFileErrors covers the two failure paths of the file sniffer.
+// An unopenable path is reported as an open failure whose cause survives the
+// wrap. A path that opens but cannot be read (a directory) is reported as a
+// head read failure, not misclassified.
 func TestDetectFormatFileErrors(t *testing.T) {
 	t.Run("missing file reports the open failure", func(t *testing.T) {
 		got, err := detectFormat(filepath.Join(t.TempDir(), "nope.jsonl"))
@@ -208,9 +209,9 @@ func TestDetectFormatFileErrors(t *testing.T) {
 }
 
 // TestDetectSniffWindow pins the 512-byte sniff window from both sides. A first
-// record that ends exactly on the boundary is decodable and identifies the dump; a
-// record one byte longer is truncated in the window, so the head is undecidable and
-// the sniffer falls back to mongoexport rather than guessing.
+// record that ends exactly on the boundary is decodable and identifies the dump.
+// A record one byte longer is truncated in the window, so the head is
+// undecidable and the sniffer falls back to mongoexport rather than guessing.
 func TestDetectSniffWindow(t *testing.T) {
 	const trailer = "\n" + `{"key":"b","value":2}` + "\n"
 	tests := []struct {

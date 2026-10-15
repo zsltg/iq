@@ -24,7 +24,7 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 		return s.putInsertOnly(ctx, batch)
 	}
 	// An upsert pre-reads which keys already have a row so it can report an
-	// overwrite; see existingKeys for the accounting-only, non-atomic caveat.
+	// overwrite. See existingKeys for the accounting-only, non-atomic caveat.
 	var existing map[string]bool
 	if mode == query.Upsert {
 		var err error
@@ -111,14 +111,14 @@ func (s *Store) existingKeys(ctx context.Context, batch []query.Record) (map[str
 
 // existingKeySet returns which of the given keys already have a row, reusing Get.
 // It is the accounting pre-read shared by Put's overwrite count and Delete's
-// present-vs-absent count; the same non-atomic caveat applies.
+// present-vs-absent count. The same non-atomic caveat applies.
 func (s *Store) existingKeySet(ctx context.Context, keys []string) (map[string]bool, error) {
 	rows, err := s.Get(ctx, keys)
 	if err != nil {
 		return nil, err
 	}
-	// Get omits a key with no row, so membership is the existence answer; a row
-	// that normalizes to nil would still be a row.
+	// Get omits a key with no row, so membership is the existence answer. A row
+	// that normalizes to nil is still a row.
 	found := make(map[string]bool, len(rows))
 	for k := range rows {
 		found[k] = true
@@ -126,11 +126,11 @@ func (s *Store) existingKeySet(ctx context.Context, keys []string) (map[string]b
 	return found, nil
 }
 
-// columnsFor builds the column names and bound values to INSERT for a record. The
-// primary-key columns come from the record key (authoritative, already typed); the
-// remaining columns come from the value object, each coerced to its column type. A
-// keyless record must carry its primary-key columns in the object. An unknown column
-// or a missing primary-key column is an error.
+// columnsFor builds the column names and bound values to INSERT for a record.
+// The primary-key columns come from the record key (authoritative, already
+// typed). The remaining columns come from the value object, each coerced to its
+// column type. A keyless record must carry its primary-key columns in the
+// object. An unknown column or a missing primary-key column is an error.
 func (s *Store) columnsFor(r query.Record) ([]string, []any, error) {
 	obj, ok := r.Value.(map[string]any)
 	if !ok {
@@ -167,9 +167,9 @@ func (s *Store) keyColumnValues(key string) (map[string]any, error) {
 	return values, nil
 }
 
-// bindObject coerces each field of obj to its column type and adds it to values. A
-// field whose name is already in values is a key column: the key is the authoritative
-// source of a primary-key column, so the field is skipped.
+// bindObject coerces each field of obj to its column type and adds it to
+// values. A field whose name is already in values is a key column. The key is
+// the authoritative source of a primary-key column, so the field is skipped.
 func (s *Store) bindObject(obj, values map[string]any) error {
 	for name, v := range obj {
 		if _, isKey := values[name]; isKey {
@@ -222,9 +222,9 @@ func (s *Store) Clear(ctx context.Context) error {
 	return nil
 }
 
-// Drop removes the table entirely — its rows and schema (the `iq data drop`
-// semantics). The Store implements Dropper because a Cassandra table is a removable
-// container, like a MongoDB collection.
+// Drop removes the table entirely, with its rows and schema (the `iq data drop`
+// semantics). The Store implements Dropper because a Cassandra table is a
+// removable container, like a MongoDB collection.
 func (s *Store) Drop(ctx context.Context) error {
 	if s.meta == nil {
 		return errNoTable
@@ -235,12 +235,13 @@ func (s *Store) Drop(ctx context.Context) error {
 	return nil
 }
 
-// Delete removes the named keys with one DELETE ... WHERE <pk> = ? per key, each key
-// decoded to its primary-key bind values (a single-column key is the whole string, a
-// composite key a JSON array in schema order). CQL is silent on whether a row existed,
-// so a pre-read (existingKeySet, accounting only) supplies the present-vs-absent split;
-// the DELETE runs for every requested key regardless, so the result is idempotent. Bind
-// values are parameters, never string-built.
+// Delete removes the named keys with one DELETE ... WHERE <pk> = ? per key. Each
+// key is decoded to its primary-key bind values. A single-column key is the
+// whole string. A composite key is a JSON array in schema order. CQL is silent
+// on whether a row existed, so a pre-read (existingKeySet, accounting only)
+// supplies the present-vs-absent split. The DELETE runs for every requested key
+// regardless, so the result is idempotent. Bind values are parameters, never
+// string-built.
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
 	if s.meta == nil {
 		return query.DeleteStat{}, errNoTable
@@ -273,9 +274,9 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 	return stat, nil
 }
 
-// TypedScan streams the whole table as typed records, reusing the ScanBatches pager.
-// Every item is a row, so the type tag is "row"; the key is the encoded primary key
-// and the value is the normalized row.
+// TypedScan streams the whole table as typed records, reusing the ScanBatches
+// pager. Every item is a row, so the type tag is "row". The key is the encoded
+// primary key and the value is the normalized row.
 func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) error) error {
 	return s.ScanBatches(ctx, func(batch map[string]any) error {
 		recs := make([]query.Record, 0, len(batch))

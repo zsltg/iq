@@ -51,8 +51,8 @@ func argsOf(cmds []goredis.Cmder) [][]any {
 	return out
 }
 
-// TestReaderForQueuesTheReadOfEachType pins the dispatch of readerFor: for each
-// TYPE reply it queues the one value command that reads the type, and returns
+// TestReaderForQueuesTheReadOfEachType pins the dispatch of readerFor. For each
+// TYPE reply, it queues the one value command that reads the type. It returns
 // the reader that normalizes that reply.
 func TestReaderForQueuesTheReadOfEachType(t *testing.T) {
 	tests := []struct {
@@ -199,9 +199,9 @@ func TestReadPathsTreatAPerCommandNilAsAbsent(t *testing.T) {
 	}
 }
 
-// TestReadPathsWrapEachFailure pins the wraps of a read: a failed TYPE pipeline
-// stops before the value pipeline, a failed value pipeline is wrapped, a reader
-// error names its key, and an unsupported type stops before the value pipeline
+// TestReadPathsWrapEachFailure pins the wraps of a read. A failed TYPE pipeline
+// stops before the value pipeline. A failed value pipeline is wrapped. A reader
+// error names its key. An unsupported type stops before the value pipeline
 // runs. A pipeline reports its first failed command, so the reader-error case
 // puts a Nil key first and the failing reader second.
 func TestReadPathsWrapEachFailure(t *testing.T) {
@@ -288,9 +288,10 @@ func scanLines(f *fakeRedis) []string {
 	return out
 }
 
-// TestScanBatchesSplitsPagesAndPinsScanCount pins the cursor walk of ScanBatches:
-// pages hold at most pageSize keys across SCAN rounds, the last page is partial,
-// and every SCAN carries COUNT scanCount (not pageSize) and the caller's context.
+// TestScanBatchesSplitsPagesAndPinsScanCount pins the cursor walk of
+// ScanBatches. Pages hold at most pageSize keys across SCAN rounds, and the last
+// page is partial. Every SCAN carries COUNT scanCount (not pageSize) and the
+// context of the caller.
 func TestScanBatchesSplitsPagesAndPinsScanCount(t *testing.T) {
 	ctx := markedContext()
 	keys := map[string]fakeKey{}
@@ -345,8 +346,8 @@ var keyspaceWalks = []keyspaceWalk{
 }
 
 // TestKeyspaceWalkStopsAtTheFirstError pins the edges that both cursor walks
-// share: an empty keyspace calls nothing, an fn error ends the walk at once, and
-// a SCAN error is wrapped and skips the final flush.
+// share. An empty keyspace calls nothing. An fn error ends the walk at once. A
+// SCAN error is wrapped and skips the final flush.
 func TestKeyspaceWalkStopsAtTheFirstError(t *testing.T) {
 	boom := errors.New("boom")
 	keys := map[string]fakeKey{"a": {typ: "string", val: "v"}, "b": {typ: "string", val: "v"}, "c": {typ: "string", val: "v"}}

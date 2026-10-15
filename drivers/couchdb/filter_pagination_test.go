@@ -58,9 +58,9 @@ func TestFindPagedSendsTheSelectorLimitAndBookmark(t *testing.T) {
 }
 
 func TestFindPagedCountsDesignDocumentsButDoesNotHandThemOn(t *testing.T) {
-	// A design document fills a slot of the page, so a page with one design
-	// document and one user document is full and the walk goes on. A page of design
-	// documents only is never handed to the caller.
+	// A design document fills a slot of the page. A page with one design document
+	// and one user document is therefore full, and the walk goes on. A page of
+	// design documents only is never handed to the caller.
 	st, _, mdb := newMockStore(t, 2, 1)
 	rec := &findRecorder{t: t, replies: []driver.Rows{
 		withBookmark(mockdb.NewRows().
@@ -82,7 +82,7 @@ func TestFindPagedCountsDesignDocumentsButDoesNotHandThemOn(t *testing.T) {
 
 func TestFindPagedStopsAfterAShortPageThatHasABookmark(t *testing.T) {
 	// A page shorter than the limit ends the walk even when the server sent a
-	// bookmark. The mock holds one reply, so a second request would fail.
+	// bookmark. The mock holds one reply, so a second request fails.
 	st, _, mdb := newMockStore(t, 2, 1)
 	rec := &findRecorder{t: t, replies: []driver.Rows{
 		withBookmark(mockdb.NewRows().AddRow(docRow("1", `{"_id":"1"}`)), "bm-1"),

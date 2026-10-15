@@ -42,15 +42,15 @@ const (
 	FormatCassandraCSV
 	// FormatNeo4jJSON is APOC's JSON export (apoc.export.json.*): JSON Lines (default)
 	// or a single JSON array of {"type":"node",…}/{"type":"relationship",…} objects.
-	// Not content-sniffable (it shares the leading '{'/'[' with mongoexport and carries
-	// no {key,value} envelope), so it needs an explicit ?format=/--from-format plus a
-	// ?label=<Label> or ?rel=<Type> keyspace selector.
+	// It is not content-sniffable, because it shares the leading '{'/'[' with
+	// mongoexport and carries no {key,value} envelope. So it needs an explicit
+	// ?format=/--from-format plus a ?label=<Label> or ?rel=<Type> keyspace selector.
 	FormatNeo4jJSON
 )
 
-// String returns the format's canonical name — the primary synonym ParseFormat
-// accepts — so a detected format round-trips through a ?format= / --from-format
-// value and reads the same in `iq ls -v`.
+// String returns the canonical name of the format, the primary synonym that
+// ParseFormat accepts. A detected format therefore round-trips through a
+// ?format= / --from-format value and reads the same in `iq ls -v`.
 func (f Format) String() string {
 	switch f {
 	case FormatJSONL:
@@ -100,9 +100,10 @@ func ParseFormat(s string) (Format, error) {
 	}
 }
 
-// FormatInfo describes one dump format a file:// source can read, for `iq driver ls
-// -v`: the format, whether content detection recognizes it (else it must be forced
-// with ?format=/--from-format), and the tool or shape that produces it.
+// FormatInfo describes one dump format that a file:// source can read, for `iq
+// driver ls -v`. It holds the format, whether content detection recognizes it
+// (else it must be forced with ?format=/--from-format), and the tool or shape
+// that produces it.
 type FormatInfo struct {
 	Format Format
 	Auto   bool
@@ -135,10 +136,11 @@ var rdbMagic = []byte("REDIS")
 
 // detectFormat sniffs a dump file's format from its leading bytes plus its
 // extension. Detection is reliable for the binary formats (RDB has a magic
-// signature; BSON a length-framed structure) and disambiguates the JSON-text and
-// YAML families by the first record's shape — iq's typed dumps carry a
-// {key,…,value} envelope. A .yaml/.yml extension still forces YAML for a dump whose
-// first record overflows the sniff window; any case can be forced with ?format=.
+// signature, and BSON has a length-framed structure). It disambiguates the
+// JSON-text and YAML families by the shape of the first record. iq's typed
+// dumps carry a {key,…,value} envelope. A .yaml/.yml extension still forces
+// YAML for a dump whose first record overflows the sniff window. Any case can
+// be forced with ?format=.
 func detectFormat(path string) (Format, error) {
 	f, err := os.Open(path) //nolint:gosec // user-supplied dump file, by design.
 	if err != nil {
@@ -153,9 +155,9 @@ func detectFormat(path string) (Format, error) {
 	return classify(head, path)
 }
 
-// detectBytes sniffs the format of an in-memory dump buffer (piped stdin). It has no
-// filename, so it cannot fall back to a .yaml/.yml extension; a typed YAML dump is
-// recognized by its {key,…,value} envelope instead.
+// detectBytes sniffs the format of an in-memory dump buffer (piped stdin). It has
+// no filename, so it cannot fall back to a .yaml/.yml extension. A typed YAML
+// dump is recognized by its {key,…,value} envelope instead.
 func detectBytes(data []byte) (Format, error) {
 	head := data
 	if len(head) > 512 {
@@ -184,7 +186,7 @@ func classify(head []byte, name string) (Format, error) {
 		return FormatBSON, nil
 	}
 	// iq's typed YAML is block-style text (no leading '{'/'[' to route it into the
-	// JSON family) and iq is its only producer, so — as for JSONL — a first document
+	// JSON family) and iq is its only producer. So, as for JSONL, a first document
 	// carrying the {key,…,value} envelope identifies it.
 	if obj, ok := firstYAMLObject(trimmed); ok {
 		_, hasKey := obj["key"]
@@ -196,10 +198,10 @@ func classify(head []byte, name string) (Format, error) {
 	return FormatUnknown, errors.New("cannot detect dump format; pass ?format= or --from-format (jsonl, json, yaml, mongoexport, bson, rdb)")
 }
 
-// detectJSONFamily distinguishes iq's typed dump from mongoexport by the first
-// object's shape — a {key,…,value} envelope is iq's typed dump, anything else a
-// mongo document. It handles both a top-level object and the first element of a
-// JSON array (mongoexport --jsonArray, or a --typed --jsona dump).
+// detectJSONFamily distinguishes iq's typed dump from mongoexport by the shape
+// of the first object. A {key,…,value} envelope is iq's typed dump. Anything
+// else is a mongo document. It handles both a top-level object and the first
+// element of a JSON array (mongoexport --jsonArray, or a --typed --jsona dump).
 func detectJSONFamily(trimmed []byte) Format {
 	obj, ok := firstJSONObject(trimmed)
 	if !ok {
@@ -213,9 +215,9 @@ func detectJSONFamily(trimmed []byte) Format {
 	return FormatMongoexport
 }
 
-// firstJSONObject decodes the first object in head — the whole head when it starts
-// with '{', or the first element when it starts with a '[' array — and returns its
-// top-level keys.
+// firstJSONObject decodes the first object in head and returns its top-level
+// keys. That object is the whole head when it starts with '{', or the first
+// element when it starts with a '[' array.
 func firstJSONObject(head []byte) (map[string]json.RawMessage, bool) {
 	h := bytes.TrimLeft(head, " \t\r\n")
 	if len(h) > 0 && h[0] == '[' {
@@ -228,10 +230,11 @@ func firstJSONObject(head []byte) (map[string]json.RawMessage, bool) {
 	return obj, true
 }
 
-// firstYAMLObject decodes the first document of head as a YAML mapping, so classify
-// can recognize iq's typed {key,type,value} YAML dump by the same key+value envelope
-// it uses for JSONL. A head truncated mid-document, or a first document that is not a
-// mapping, yields no object and is left for a .yaml/.yml extension or explicit ?format=.
+// firstYAMLObject decodes the first document of head as a YAML mapping. Then
+// classify can recognize iq's typed {key,type,value} YAML dump by the same
+// key+value envelope that it uses for JSONL. A head truncated mid-document, or
+// a first document that is not a mapping, yields no object. Such a head is left
+// for a .yaml/.yml extension or explicit ?format=.
 func firstYAMLObject(head []byte) (map[string]any, bool) {
 	var obj map[string]any
 	if err := yaml.NewDecoder(bytes.NewReader(head)).Decode(&obj); err != nil {
@@ -241,9 +244,9 @@ func firstYAMLObject(head []byte) (map[string]any, bool) {
 }
 
 // A BSON document is framed by a 4-byte little-endian length, and the spec caps a
-// document at 16 MiB. bsonMinDoc is the empty document: the frame plus its
-// terminator. Both the sniffer and the reader take that frame from an untrusted
-// dump, so they share one bound.
+// document at 16 MiB. The constant bsonMinDoc is the empty document: the frame
+// plus its terminator. Both the sniffer and the reader take that frame from an
+// untrusted dump, so they share one bound.
 const (
 	bsonMinDoc = 5
 	bsonMaxDoc = 16 << 20
@@ -255,9 +258,9 @@ func validFrame(size int) bool {
 	return size >= bsonMinDoc && size <= bsonMaxDoc
 }
 
-// looksLikeBSON reports whether head plausibly begins a BSON document: a 4-byte
-// little-endian length that is at least the empty-document size and no larger than
-// BSON's 16 MiB cap.
+// looksLikeBSON reports whether head plausibly begins a BSON document. That means
+// a 4-byte little-endian length that is at least the empty-document size and no
+// larger than BSON's 16 MiB cap.
 func looksLikeBSON(head []byte) bool {
 	if len(head) < bsonMinDoc {
 		return false

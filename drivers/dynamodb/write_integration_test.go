@@ -86,7 +86,8 @@ func TestDeleteIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, query.DeleteStat{Deleted: 2, Missing: 1}, stat)
 
-	// The deleted keys are gone; the untouched key survives.
+	// The deleted keys are gone, and the untouched key
+	// survives.
 	got, err := st.Get(ctx, []string{"1", "2", "3"})
 	require.NoError(t, err)
 	require.Nil(t, got["1"])
@@ -116,7 +117,8 @@ func TestDeleteCompositeKeyIntegration(t *testing.T) {
 	st := seedTable(t, "events", ks, attrs, item)
 	ctx := context.Background()
 
-	// A hash+sort key is addressed by its JSON-array spelling; the existing one deletes.
+	// A hash+sort key is addressed by its JSON-array spelling, and the existing one
+	// deletes.
 	stat, err := st.Delete(ctx, []string{`["user#1","7"]`})
 	require.NoError(t, err)
 	require.Equal(t, query.DeleteStat{Deleted: 1}, stat)

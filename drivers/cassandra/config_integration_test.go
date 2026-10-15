@@ -15,9 +15,9 @@ import (
 )
 
 func TestOpenSetsTheClusterConfig(t *testing.T) {
-	// Open must hand the credentials and the deadline of the caller to the driver. The
-	// driver keeps them in a cluster config that the session does not expose, so the
-	// test reads the exported fields of that config by reflection.
+	// Open must hand the credentials and the deadline of the caller to the driver.
+	// The driver keeps them in a cluster config that the session does not expose.
+	// The test therefore reads the exported fields of that config by reflection.
 	if testing.Short() {
 		t.Skip("skipping cassandra integration test in -short mode")
 	}
@@ -30,7 +30,7 @@ func TestOpenSetsTheClusterConfig(t *testing.T) {
 
 	cfg := reflect.ValueOf(st.session).Elem().FieldByName("cfg")
 	require.True(t, cfg.IsValid(), "the driver session keeps a cluster config")
-	// The config field is unexported, so Interface would panic. Read the strings
+	// The config field is unexported, so Interface panics. Read the strings
 	// through reflection instead.
 	require.False(t, cfg.FieldByName("Authenticator").IsNil(), "a URL with a user name sets the authenticator")
 	auth := cfg.FieldByName("Authenticator").Elem()

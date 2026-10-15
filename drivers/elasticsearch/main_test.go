@@ -17,10 +17,11 @@ import (
 	"github.com/zsltg/iq/internal/testimage"
 )
 
-// sharedURL and sharedOSURL are the base server URLs (no index) the integration tests
-// connect to: ephemeral Elasticsearch and OpenSearch containers started once for the
-// whole package. They stay empty when integration tests are skipped (-short) or an
-// external server is supplied (IQ_ELASTICSEARCH_URL / IQ_OPENSEARCH_URL).
+// sharedURL and sharedOSURL are the base server URIs (no index) that the
+// integration tests connect to. They point at ephemeral Elasticsearch and
+// OpenSearch containers that start once for the whole package. They stay empty when
+// integration tests are skipped (-short) or an external server is supplied
+// (IQ_ELASTICSEARCH_URL / IQ_OPENSEARCH_URL).
 var (
 	sharedURL   string
 	sharedOSURL string
@@ -48,9 +49,9 @@ func runTests(m *testing.M) int {
 			"discovery.type":         "single-node",
 			"xpack.security.enabled": "false",
 			"ES_JAVA_OPTS":           "-Xms512m -Xmx512m",
-			// A CI runner's disk sits past the flood-stage watermark after a few
-			// image pulls, which leaves new shards unassigned and every write
-			// waiting; the container is ephemeral, so the decider is off.
+			// The disk of a CI runner sits past the flood-stage watermark after
+			// a few image pulls. That leaves new shards unassigned and every
+			// write waiting. The container is ephemeral, so the decider is off.
 			"cluster.routing.allocation.disk.threshold_enabled": "false",
 		})
 		if err != nil {
@@ -74,7 +75,8 @@ func runTests(m *testing.M) int {
 			"discovery.type":          "single-node",
 			"DISABLE_SECURITY_PLUGIN": "true",
 			"OPENSEARCH_JAVA_OPTS":    "-Xms512m -Xmx512m",
-			// Same as above; past the flood stage OpenSearch blocks index creation.
+			// Same as above. Past the flood stage, OpenSearch blocks index
+			// creation.
 			"cluster.routing.allocation.disk.threshold_enabled": "false",
 		})
 		if err != nil {
@@ -89,9 +91,9 @@ func runTests(m *testing.M) int {
 	return m.Run()
 }
 
-// startContainer starts a generic Elasticsearch- or OpenSearch-compatible container that
-// exposes 9200 and answers /_cluster/health, and returns the base URL (with the given
-// scheme) plus a terminate func.
+// startContainer starts a generic Elasticsearch- or OpenSearch-compatible
+// container that exposes 9200 and answers /_cluster/health. It returns the base
+// URI (with the given scheme) plus a terminate func.
 func startContainer(image, scheme string, env map[string]string) (string, func(), error) {
 	ctx := context.Background()
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -161,17 +163,18 @@ func seedIndex(t *testing.T, docs ...map[string]any) *Store {
 	return seedIndexOn(t, testURL(), docs...)
 }
 
-// seedIndexOn creates a fresh index named after the test on the server at baseURL,
-// indexes the supplied documents (each a map keyed by its "_id"), registers a drop on
-// cleanup, and returns an index-scoped Store opened after the seed so it reads the
-// populated mapping. It skips under -short. Passing no documents yields an empty index.
+// seedIndexOn creates a fresh index named after the test on the server at
+// baseURL. It indexes the supplied documents (each a map keyed by its "_id") and
+// registers a drop on cleanup. It returns an index-scoped Store that is opened
+// after the seed, so it reads the populated mapping. It skips under -short.
+// Passing no documents yields an empty index.
 func seedIndexOn(t *testing.T, baseURL string, docs ...map[string]any) *Store {
 	t.Helper()
 	ctx := skipShort(t)
 	name := indexName(t)
 
-	// An admin store seeds and drops the index; it is opened before the index exists,
-	// so it carries no mapping (which only the store under test needs).
+	// An admin store seeds and drops the index. It is opened before the index
+	// exists, so it carries no mapping (which only the store under test needs).
 	admin, err := Open(ctx, baseURL, name, nil, numfmt.DecimalAuto)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })

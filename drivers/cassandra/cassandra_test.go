@@ -32,13 +32,14 @@ func TestGetCompositeKey(t *testing.T) {
 		"CREATE TABLE sales (country text, id int, amount int, PRIMARY KEY (country, id))",
 		"INSERT INTO sales (country, id, amount) VALUES ('US', 1, 100)",
 		"INSERT INTO sales (country, id, amount) VALUES ('US', 2, 200)",
-		// A third row shares the partition key but is NOT requested, so a lookup that
-		// keyed on the partition alone (not the full primary key) would wrongly include it.
+		// A third row shares the partition key but is NOT requested. A lookup that
+		// keys on the partition alone (not the full primary key) wrongly includes
+		// it.
 		"INSERT INTO sales (country, id, amount) VALUES ('US', 3, 300)")
 
-	// Request two composite keys plus a missing one: each is fetched with its own
-	// full-primary-key point query, so exactly those present rows come back — never
-	// the sibling US/3, and not just the first.
+	// Request two composite keys plus a missing one. Each is fetched with its own
+	// full-primary-key point query, so exactly those present rows come back, not
+	// the sibling US/3, and not only the first.
 	got, err := st.Get(context.Background(), []string{`["US","1"]`, `["US","2"]`, `["US","9"]`})
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{
@@ -50,8 +51,8 @@ func TestGetCompositeKey(t *testing.T) {
 
 func TestScanBatchesYieldsAllRows(t *testing.T) {
 	// Assert the exact page-size sequence for a full-page-multiple dataset (no empty
-	// trailing page) and for one with a leftover row, so the flush-at-pageSize and
-	// final-partial-flush boundaries are both pinned.
+	// trailing page) and for one with a leftover row. Both the flush-at-pageSize
+	// and final-partial-flush boundaries are then pinned.
 	tests := []struct {
 		name      string
 		rows      int
@@ -93,8 +94,8 @@ func TestScanBatchesYieldsAllRows(t *testing.T) {
 func TestOpenSetsScanPageSize(t *testing.T) {
 	// Open must give the Store the default scan page size. A scan of a table with
 	// fewer rows than that size therefore yields exactly one batch. Without the
-	// default the page size is zero, the flush test len(page) >= pageSize is true
-	// after every row, and the caller sees one batch per row instead.
+	// default the page size is zero. The flush test len(page) >= pageSize is then
+	// true after every row. The caller sees one batch per row instead.
 	inserts := make([]string, 3)
 	for i := range inserts {
 		inserts[i] = fmt.Sprintf("INSERT INTO pagedefault (id, v) VALUES (%d, 'v%d')", i+1, i+1)
@@ -114,7 +115,7 @@ func TestOpenSetsScanPageSize(t *testing.T) {
 func TestOpenAppliesDecimalMode(t *testing.T) {
 	// Open must give the Store the decimal mode it was called with, because the
 	// mode decides what the filter computes on. Number mode renders a CQL decimal
-	// as a float64; every other mode keeps the exact literal as a string. A Store
+	// as a float64. Every other mode keeps the exact literal as a string. A Store
 	// that lost the mode falls back to the zero value, DecimalAuto, and returns a
 	// string here.
 	seedTable(t, "decmode",

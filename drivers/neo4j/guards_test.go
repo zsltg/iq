@@ -19,7 +19,7 @@ func TestParseURLReportsAnUnparsableURL(t *testing.T) {
 }
 
 func TestOpenRejectsABadURLBeforeConnecting(t *testing.T) {
-	// The deadline is short so that a driver that went on to connect would fail on the
+	// The deadline is short so that a driver that went on to connect fails on the
 	// deadline, not on the URL.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	t.Cleanup(cancel)
@@ -53,7 +53,7 @@ func TestDeleteWithNoKeysMakesNoRequest(t *testing.T) {
 
 func TestRecordPropsKeepsEveryPropertyAmongReservedKeys(t *testing.T) {
 	// Go visits map keys in random order. With many plain keys and several reserved
-	// ones, a loop that stopped at the first reserved key would lose a plain key on
+	// ones, a loop that stopped at the first reserved key loses a plain key on
 	// nearly every run.
 	value := map[string]any{"id": "7", "_id": "4:x:1", "_labels": []any{"Person"}, "_type": "KNOWS", "_start": "a", "_end": "b"}
 	want := map[string]any{"id": "7"}
@@ -67,16 +67,16 @@ func TestRecordPropsKeepsEveryPropertyAmongReservedKeys(t *testing.T) {
 	require.Equal(t, want, props)
 }
 
-// TestIntegrationAMissingDatabaseFailsEveryOperation pins that each operation reports a
-// server failure at the start of a statement with its own context, wrapping the driver
-// error, instead of going on with a result that does not exist.
+// TestIntegrationAMissingDatabaseFailsEveryOperation pins that each operation reports
+// a server failure at the start of a statement with its own context, wrapping the
+// driver error. It must not go on with a result that does not exist.
 func TestIntegrationAMissingDatabaseFailsEveryOperation(t *testing.T) {
 	ctx := integrationOrSkip(t)
 	st, err := Open(ctx, testURL()+"?database=it_no_such_db", "", nil, numfmt.DecimalAuto)
 	require.NoError(t, err, "a keyless source reads no metadata at Open")
 	t.Cleanup(func() { _ = st.Close() })
-	// Aim the store at a keyed label without the Open-time constraint check, which
-	// would fail on the missing database first.
+	// Aim the store at a keyed label without the Open-time constraint check. That
+	// check fails on the missing database first.
 	st.target = target{name: "ItNoDb", key: "id"}
 	st.keyBackedByConstraint = true
 

@@ -6,9 +6,9 @@ import (
 	"net/http"
 )
 
-// InspectServer returns the node's identity and version — its node and cluster names,
-// the distribution version, and the Lucene version — the analogue of a buildInfo
-// probe. It needs no index.
+// InspectServer returns the identity and version of the node: its node and
+// cluster names, the distribution version, and the Lucene version. It is the
+// analogue of a buildInfo probe. It needs no index.
 func (s *Store) InspectServer(ctx context.Context) (any, error) {
 	var info struct {
 		Name        string `json:"name"`

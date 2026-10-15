@@ -10,8 +10,9 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
-// testStore builds a Store with a fixed exact-field map, standing in for the mapping
-// read at open, so the pushdown translation is testable without a server.
+// testStore builds a Store with a fixed exact-field map, standing in for the
+// mapping read at open. So the pushdown translation is testable without a
+// server.
 func testStore() *Store {
 	return &Store{
 		exact: map[string]exactField{
@@ -69,8 +70,9 @@ func TestToQuery(t *testing.T) {
 			wantPush: false,
 		},
 		{
-			// The path is nested under a field the mapping does make exactly matchable.
-			// A term on the root field would match a different set, so it must not push.
+			// The path is nested under a field that the mapping does make exactly
+			// matchable. A term on the root field matches a different set, so it must
+			// not push.
 			name:     "equality nested under an exact field does not push",
 			pred:     predicate.Eq{Path: []string{"author", "first"}, Value: "Frank"},
 			wantPush: false,
@@ -150,8 +152,8 @@ func TestToQuery(t *testing.T) {
 			wantPush: false,
 		},
 		{
-			// An empty disjunction narrows nothing. A should clause with no branch would
-			// claim a pushdown that matches no document.
+			// An empty disjunction narrows nothing. A `should` clause with no branch
+			// claims a pushdown that matches no document.
 			name:     "an empty or does not push",
 			pred:     predicate.Or{},
 			wantPush: false,
@@ -178,10 +180,10 @@ func TestToQuery(t *testing.T) {
 }
 
 func TestExactFieldsFrom(t *testing.T) {
-	// Two index mappings, as an alias fanning out to both would report. "author"
-	// agrees (keyword in both) and is kept; "code" is exact in both but as different
-	// classes (keyword vs long) and is dropped; "body" is analyzed text in one and so
-	// is dropped.
+	// Two index mappings, as an alias that fans out to both reports them.
+	// The field "author" agrees (keyword in both) and is kept. The field "code" is
+	// exact in both but as different classes (keyword and long), so it is dropped.
+	// The field "body" is analyzed text in one, so it is dropped.
 	raw := map[string]indexMapping{
 		"idx_a": {Mappings: indexProperties{Properties: map[string]mappingProperty{
 			"author":    {Type: "keyword"},
@@ -276,7 +278,8 @@ func TestMappingPropertyExact(t *testing.T) {
 		{name: "object is not a scalar", prop: mappingProperty{Properties: map[string]json.RawMessage{"a": nil}}, ok: false},
 		{
 			// A property that carries both a scalar type and nested properties is still
-			// an object. A term on it would match nothing the sub-fields hold.
+			// an object. A term on it matches nothing that the sub-fields
+			// hold.
 			name: "a typed object is still not a scalar",
 			prop: mappingProperty{Type: "keyword", Properties: map[string]json.RawMessage{"a": nil}},
 			ok:   false,
@@ -294,8 +297,9 @@ func TestMappingPropertyExact(t *testing.T) {
 }
 
 func TestReadExactFieldsReportsARefusedMapping(t *testing.T) {
-	// The mapping decides which equality can push. A refused read must be reported, so
-	// Open falls back deliberately instead of reading "no exact fields" as the answer.
+	// The mapping decides which equality can push. A refused read must be reported.
+	// So Open falls back on purpose and does not read "no exact fields" as the
+	// answer.
 	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
 		esJSON(w, http.StatusForbidden, `{"error":{"type":"security_exception","reason":"denied"}}`)
 	})
@@ -306,8 +310,9 @@ func TestReadExactFieldsReportsARefusedMapping(t *testing.T) {
 }
 
 func TestReadExactFieldsReducesTheMapping(t *testing.T) {
-	// A mapping read that succeeds becomes the pushdown gate: a keyword field and a
-	// text field's keyword sub-field are exact, an analyzed text field is not.
+	// A mapping read that succeeds becomes the pushdown gate. A keyword field and
+	// the keyword sub-field of a text field are exact. An analyzed text field is
+	// not.
 	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
 		esJSON(w, http.StatusOK, `{"books":{"mappings":{"properties":{
 			"author":{"type":"text","fields":{"keyword":{"type":"keyword"}}},

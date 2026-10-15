@@ -11,10 +11,11 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// requireOpenSearch skips a test when no OpenSearch backend is available, returning
-// its base URL otherwise. These tests exercise the opensearch-go client, the
-// OpenSearch point-in-time endpoints, and the keyset sort — the paths that differ from
-// Elasticsearch; the shared logic is covered by the Elasticsearch suite.
+// requireOpenSearch skips a test when no OpenSearch backend is available, and
+// returns its base URI otherwise. These tests exercise the opensearch-go client,
+// the OpenSearch point-in-time endpoints, and the keyset sort. Those are the
+// paths that differ from Elasticsearch. The Elasticsearch suite covers the shared
+// logic.
 func requireOpenSearch(t *testing.T) string {
 	t.Helper()
 	u := osURL()

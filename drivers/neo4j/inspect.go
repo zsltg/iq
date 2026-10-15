@@ -7,8 +7,8 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-// InspectServer returns the Neo4j deployment's components — name, versions, and
-// edition — the analogue of a server buildInfo probe. It needs no label.
+// InspectServer returns the Neo4j deployment's components: name, versions, and
+// edition. It is the analogue of a server buildInfo probe. It needs no label.
 func (s *Store) InspectServer(ctx context.Context) (any, error) {
 	rows, err := s.readRows(ctx, "CALL dbms.components() YIELD name, versions, edition RETURN name, versions, edition")
 	if err != nil {
@@ -27,8 +27,8 @@ func (s *Store) InspectDatabases(ctx context.Context) (any, error) {
 	return names, nil
 }
 
-// InspectLabels lists the node labels in the database — the addressable collections
-// a source can target. It needs no label selected.
+// InspectLabels lists the node labels in the database. They are the addressable
+// collections a source can target. It needs no label selected.
 func (s *Store) InspectLabels(ctx context.Context) (any, error) {
 	labels, err := s.readColumn(ctx, "CALL db.labels() YIELD label RETURN label")
 	if err != nil {
@@ -48,9 +48,9 @@ func (s *Store) InspectRelationshipTypes(ctx context.Context) (any, error) {
 	return types, nil
 }
 
-// InspectConstraints lists the database's constraints, so a user can see which key
-// property a ?key= source can safely upsert on (a uniqueness constraint) and what
-// else the schema enforces. It needs no label selected.
+// InspectConstraints lists the database's constraints. A user can see which key
+// property a ?key= source can safely upsert on (a uniqueness constraint). A user
+// can also see what else the schema enforces. It needs no label selected.
 func (s *Store) InspectConstraints(ctx context.Context) (any, error) {
 	rows, err := s.readRows(ctx, "SHOW CONSTRAINTS YIELD name, type, entityType, labelsOrTypes, properties RETURN name, type, entityType, labelsOrTypes, properties")
 	if err != nil {

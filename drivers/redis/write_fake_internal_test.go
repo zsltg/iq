@@ -10,11 +10,15 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// TestQueueWrite pins what queueWrite queues for a record: the commands and
-// their arguments for each type, the type it picks for an untyped value, nothing
-// for an empty value, the exact error text of every shape error with nothing
-// queued, and the partial queue of a stream whose later entry is bad. A list
-// builds every value first, so a bad element queues nothing.
+// TestQueueWrite pins what queueWrite queues for a record. It checks these
+// things:
+//   - The commands and their arguments for each type.
+//   - The type that it picks for an untyped value.
+//   - Nothing for an empty value.
+//   - The exact error text of every shape error, with nothing queued.
+//   - The partial queue of a stream whose later entry is bad.
+//
+// A list builds every value first, so a bad element queues nothing.
 func TestQueueWrite(t *testing.T) {
 	obj := map[string]any{"a": 1}
 	entry := func(id string, fields any) map[string]any { return map[string]any{"id": id, "fields": fields} }
@@ -197,11 +201,15 @@ func TestPutFailures(t *testing.T) {
 	}
 }
 
-// TestTypedScanPagesRecordsAndPinsScanCount pins TypedScan over the fake: pages of
-// at most pageSize keys across SCAN rounds, the typed records of each page, the
-// neutral json tag, a stored JSON null kept as a record, a vanished key skipped,
-// fn called with an empty slice when a whole page vanished, and SCAN COUNT
-// scanCount on every round.
+// TestTypedScanPagesRecordsAndPinsScanCount pins TypedScan over the fake. It
+// checks these things:
+//   - Pages of at most pageSize keys across SCAN rounds.
+//   - The typed records of each page.
+//   - The neutral json tag.
+//   - A stored JSON null kept as a record.
+//   - A vanished key skipped.
+//   - fn called with an empty slice when a whole page vanished.
+//   - SCAN COUNT scanCount on every round.
 func TestTypedScanPagesRecordsAndPinsScanCount(t *testing.T) {
 	ctx := markedContext()
 	f := &fakeRedis{

@@ -83,8 +83,8 @@ func recordForObject(o parser.RedisObject) (query.Record, bool) {
 }
 
 // zsetValue renders a sorted set as [{member, score}] in score-ascending order,
-// ties broken lexically by member — the order ZRANGEWITHSCORES returns, which the
-// live adapter's canonical encoding preserves.
+// with ties broken lexically by member. This is the order that ZRANGEWITHSCORES
+// returns, which the live adapter's canonical encoding preserves.
 func zsetValue(obj *parser.ZSetObject) []any {
 	// The parsed object is single-use, so sorting its entries in place is safe and
 	// avoids naming the (non-re-exported) entry type.
@@ -101,9 +101,9 @@ func zsetValue(obj *parser.ZSetObject) []any {
 	return out
 }
 
-// streamValue renders a stream as [{id, fields}] in id order, skipping tombstoned
-// messages — matching XRANGE, the live adapter's encoding. Consumer groups are
-// stream metadata the record model does not carry.
+// streamValue renders a stream as [{id, fields}] in id order, skipping
+// tombstoned messages. This matches XRANGE, the encoding of the live adapter.
+// Consumer groups are stream metadata that the record model does not carry.
 func streamValue(obj *parser.StreamObject) []any {
 	type msg struct {
 		ms, seq uint64

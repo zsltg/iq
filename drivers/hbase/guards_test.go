@@ -13,8 +13,8 @@ import (
 )
 
 func TestOpenRejectsAURLThatDoesNotParse(t *testing.T) {
-	// The deadline is short so that a driver that went on to connect would fail on the
-	// deadline, not on the URL.
+	// The deadline is short, so a driver that goes on to connect fails on the
+	// deadline, not on the URI.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	t.Cleanup(cancel)
 	_, err := Open(ctx, "mysql://host/", "", nil, numfmt.DecimalAuto)

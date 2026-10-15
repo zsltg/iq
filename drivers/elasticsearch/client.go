@@ -13,9 +13,10 @@ import (
 	"github.com/opensearch-project/opensearch-go/v4"
 )
 
-// flavor names the wire dialect a source speaks. Elasticsearch and OpenSearch share
-// the same REST surface for everything this driver does except the point-in-time
-// lifecycle and the keyset sort, so one Store serves both behind the esClient port.
+// flavor names the wire dialect that a source speaks. Elasticsearch and
+// OpenSearch share the same REST surface for everything that this driver does,
+// except the point-in-time lifecycle and the keyset sort. So one Store serves
+// both behind the esClient port.
 type flavor int
 
 const (
@@ -23,14 +24,15 @@ const (
 	flavorOS               // OpenSearch, via the opensearch-go client.
 )
 
-// esClient is the pluggable transport a Store speaks. The generic operations (mget,
-// search, count, bulk, delete-by-query, mapping, cat, info) are identical across
-// Elasticsearch and OpenSearch, so the Store builds those requests itself and calls
-// perform. Only the point-in-time create/delete endpoints and the search_after sort
-// tiebreaker differ, so those are methods each implementation owns.
+// esClient is the pluggable transport that a Store speaks. The generic
+// operations are identical across Elasticsearch and OpenSearch: mget, search,
+// count, bulk, delete-by-query, mapping, cat, and info. So the Store builds those
+// requests itself and calls perform. Only the point-in-time create and delete
+// endpoints and the search_after sort tiebreaker differ. So those are methods
+// that each implementation owns.
 type esClient interface {
-	// perform issues one request. The request carries only a path; the client's
-	// transport fills in the scheme, host, and credentials.
+	// perform issues one request. The request carries only a path. The
+	// transport of the client fills in the scheme, host, and credentials.
 	perform(req *http.Request) (*http.Response, error)
 	// label is the backend name used in error messages and the --verbose trace.
 	label() string
@@ -99,12 +101,13 @@ func (c esFlavor) closePIT(ctx context.Context, pitID string) {
 	releasePointInTime(ctx, c, "/_pit", map[string]string{"id": pitID})
 }
 
-// osFlavor speaks to OpenSearch through the opensearch-go client (a fork of
-// go-elasticsearch without the product check that refuses non-Elasticsearch servers).
-// OpenSearch's PIT endpoints are `_search/point_in_time` and its delete body keys the
-// id as `pit_id` in an array. OpenSearch forked before Elasticsearch's `_shard_doc`
-// sort existed, so a keyset scan pages by `_id` — globally unique, so it is a correct
-// total tiebreaker across any number of shards.
+// osFlavor speaks to OpenSearch through the opensearch-go client. That client is
+// a fork of go-elasticsearch without the product check that refuses
+// non-Elasticsearch servers. The PIT endpoints of OpenSearch are
+// `_search/point_in_time`, and its delete body keys the id as `pit_id` in an
+// array. OpenSearch forked before the `_shard_doc` sort of Elasticsearch existed.
+// So a keyset scan pages by `_id`. The `_id` is globally unique, so it is a
+// correct total tiebreaker across any number of shards.
 type osFlavor struct {
 	os *opensearch.Client
 }
@@ -160,8 +163,8 @@ func openPointInTime(ctx context.Context, c esClient, path string, reply pitRepl
 // releasePointInTime sends DELETE with a JSON body to path. It ignores every error,
 // because the release is best effort.
 func releasePointInTime(ctx context.Context, c esClient, path string, body any) {
-	// A static method+path request cannot fail to build, so the error is ignored (the
-	// close is best-effort anyway) rather than left as a dead, untestable branch.
+	// A static method+path request cannot fail to build, so the error is ignored
+	// (the close is best-effort anyway). This avoids a dead, untestable branch.
 	raw, _ := json.Marshal(body)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodDelete, path, bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
@@ -169,15 +172,17 @@ func releasePointInTime(ctx context.Context, c esClient, path string, body any) 
 	_ = decodeInto(res, err, c.label()+" close point-in-time", nil)
 }
 
-// request builds one JSON request against a relative path and performs it, decoding
-// the reply into out (nil discards the body). op names the operation for errors.
+// request builds one JSON request against a relative path and performs it. It
+// decodes the reply into out (nil discards the body). op names the operation for
+// errors.
 func (s *Store) request(ctx context.Context, op, method, path string, body []byte, out any) error {
 	res, err := s.do(ctx, method, path, "application/json", body) //nolint:bodyclose // finish closes res.Body.
 	return s.finish(res, err, op, out)
 }
 
-// do builds an *http.Request carrying only a path — the client's transport fills the
-// scheme, host, and credentials — and performs it through the pluggable client.
+// do builds an *http.Request that carries only a path, and performs it through
+// the pluggable client. The transport of the client fills the scheme, host, and
+// credentials.
 func (s *Store) do(ctx context.Context, method, path, contentType string, body []byte) (*http.Response, error) {
 	var r io.Reader
 	if body != nil {
@@ -187,8 +192,8 @@ func (s *Store) do(ctx context.Context, method, path, contentType string, body [
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
-	// A body-bearing request needs its Content-Type; Elasticsearch and OpenSearch
-	// reject a JSON/NDJSON body sent without one.
+	// A body-bearing request needs its Content-Type. Elasticsearch and OpenSearch
+	// reject a JSON or NDJSON body that is sent without one.
 	if body != nil {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -200,10 +205,11 @@ func (s *Store) finish(res *http.Response, err error, op string, out any) error 
 	return decodeInto(res, err, s.client.label()+" "+op, out)
 }
 
-// decodeInto maps a transport error and an HTTP error status to a clean, labelled
-// message (never leaking the raw response body), and otherwise decodes the JSON body
-// into out when non-nil. It always closes the body. what names the backend and the
-// operation, for example "elasticsearch count", and starts every message.
+// decodeInto maps a transport error and an HTTP error status to a clean,
+// labelled message. It never leaks the raw response body. Otherwise it decodes
+// the JSON body into out when non-nil. It always closes the body. The argument
+// what names the backend and the operation, for example "elasticsearch count",
+// and starts every message.
 func decodeInto(res *http.Response, err error, what string, out any) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", what, err)
@@ -222,8 +228,9 @@ func decodeInto(res *http.Response, err error, what string, out any) error {
 	return nil
 }
 
-// apiError turns an error response into a safe, concise message: the error type and
-// reason it reports, or the status code when the body is not the expected envelope.
+// apiError turns an error response into a safe, concise message. The message
+// holds the error type and reason that the response reports. If the body is not
+// the expected envelope, the message holds the status code.
 func apiError(res *http.Response, what string) error {
 	var e struct {
 		Error struct {

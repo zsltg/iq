@@ -9,12 +9,12 @@ import (
 	"github.com/zsltg/iq/internal/numfmt"
 )
 
-// decodeValue parses a stored document body into JSON-ready Go values, decoding
-// numbers deliberately (UseNumber) so precision survives: an integer becomes an exact
-// int or *big.Int, and a fractional number follows the decimal mode. Plain
-// json.Unmarshal would collapse every number to a float64 and silently lose precision
-// beyond 2^53. A body that is not valid JSON (a binary document) is surfaced as a
-// string, the redis stringReader precedent, so a KV get never fails on non-JSON data.
+// decodeValue parses a stored document body into JSON-ready Go values. It decodes
+// numbers with UseNumber so precision survives: an integer becomes an exact int or
+// *big.Int, and a fractional number follows the decimal mode. Plain json.Unmarshal
+// collapses every number to a float64 and silently loses precision beyond 2^53. A
+// body that is not valid JSON (a binary document) is surfaced as a string, the
+// redis stringReader precedent. So a KV get never fails on non-JSON data.
 func decodeValue(raw []byte, mode numfmt.DecimalMode) any {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
@@ -42,8 +42,8 @@ func (rawTranscoder) Decode(data []byte, _ uint32, out any) error {
 	return nil
 }
 
-// Encode is never used — writes go through the cluster's default JSON transcoder — so
-// it refuses rather than pretend to serialize.
+// Encode is never used, because writes go through the cluster's default JSON
+// transcoder. So it refuses rather than pretends to serialize.
 func (rawTranscoder) Encode(any) ([]byte, uint32, error) {
 	return nil, 0, errEncodeUnsupported
 }

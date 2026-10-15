@@ -78,7 +78,7 @@ func TestDecodeDocInvalid(t *testing.T) {
 }
 
 func TestDecodeDocRejectsANonObjectBody(t *testing.T) {
-	// A document body is always a JSON object; anything else is a decode failure
+	// A document body is always a JSON object. Anything else is a decode failure
 	// rather than a silently empty document.
 	got, err := decodeDoc(json.RawMessage(`[1,2]`), numfmt.DecimalAuto)
 	require.Nil(t, got)

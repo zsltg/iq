@@ -17,14 +17,15 @@ import (
 )
 
 // Normalize converts a value gocql yields for a CQL column into a JSON-ready Go
-// value the jq engine accepts: nil, bool, int, float64, string, []any,
-// map[string]any. Richer CQL types get their natural JSON form: a uuid becomes
-// its canonical string, a timestamp RFC 3339, a blob base64, and inet its string.
-// The encoding is a frozen contract. A decimal follows dec: exact string, or a
-// bare number. A varint keeps its exact value as an int if it fits, else its
-// decimal string. Normalize is exported so a dump reader produces the same shape
-// as a live scan. Collections arrive as concrete typed Go containers, so Normalize
-// walks them by reflection.
+// value that the jq engine accepts. The accepted Go types are nil, bool, int,
+// float64, string, []any, and map[string]any. Richer CQL types get their
+// natural JSON form. A uuid becomes its canonical string. A timestamp becomes
+// RFC 3339, a blob becomes base64, and inet becomes its string. The encoding is
+// a frozen contract. A decimal follows dec: an exact string, or a bare number.
+// A varint keeps its exact value as an int if it fits. Otherwise it becomes its
+// decimal string. Normalize is exported so that a dump reader produces the same
+// shape as a live scan. Collections arrive as concrete typed Go containers, so
+// Normalize walks them by reflection.
 func Normalize(v any, dec numfmt.DecimalMode) any {
 	if n, ok := signedInt(v); ok {
 		return int(n)
@@ -93,12 +94,12 @@ func bigValue(z *big.Int) any {
 	return z.String()
 }
 
-// normalizeReflect handles the CQL collection types (list, set, map) and tuples,
-// which gocql returns as concrete typed Go slices and maps. A slice or array
-// becomes a []any of normalized elements; a map becomes a map[string]any with each
-// key stringified (a CQL map key may be non-text). A pointer is dereferenced. A
-// value with no first-class JSON form is rendered as its Go string form rather than
-// dropped, so nothing is lost silently.
+// normalizeReflect handles the CQL collection types (list, set, map) and tuples.
+// gocql returns them as concrete typed Go slices and maps. A slice or array
+// becomes a []any of normalized elements. A map becomes a map[string]any with
+// each key stringified (a CQL map key can be non-text). A pointer is
+// dereferenced. A value with no first-class JSON form is rendered as its Go
+// string form, not dropped, so nothing is lost silently.
 func normalizeReflect(v any, dec numfmt.DecimalMode) any {
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
@@ -124,9 +125,9 @@ func normalizeReflect(v any, dec numfmt.DecimalMode) any {
 	}
 }
 
-// decimalValue renders a CQL decimal per the decimal mode. In auto and string mode
-// it keeps the exact decimal literal as a string; in number mode it parses to a
-// float64 (lossy beyond float64). A nil decimal is null.
+// decimalValue renders a CQL decimal per the decimal mode. In auto and string
+// mode it keeps the exact decimal literal as a string. In number mode it parses
+// to a float64 (lossy beyond float64). A nil decimal is null.
 func decimalValue(d *inf.Dec, mode numfmt.DecimalMode) any {
 	if d == nil {
 		return nil
@@ -155,12 +156,13 @@ func KeyOf(meta *gocql.TableMetadata, row map[string]any) string {
 	return KeyOfColumns(names, row)
 }
 
-// KeyOfColumns renders a row's primary key from the ordered names of its key columns
-// (partition keys first, then clustering columns), the schema-free form of KeyOf. It is
-// exported so an offline dump reader, which learns the key columns from a ?keys= hint
-// rather than table metadata, produces the exact same key a live scan does. A
-// single-column key is that column's bare canonical string; a composite key is a
-// compact JSON array in schema order, reversible by decodeKey.
+// KeyOfColumns renders a row's primary key from the ordered names of its key
+// columns (partition keys first, then clustering columns). It is the
+// schema-free form of KeyOf. It is exported so that an offline dump reader
+// produces the exact same key as a live scan. The reader learns the key columns
+// from a ?keys= hint, not from table metadata. A single-column key is that
+// column's bare canonical string. A composite key is a compact JSON array in
+// schema order, reversible by decodeKey.
 func KeyOfColumns(keyCols []string, row map[string]any) string {
 	if len(keyCols) == 1 {
 		return keyString(row[keyCols[0]])
@@ -171,7 +173,7 @@ func KeyOfColumns(keyCols []string, row map[string]any) string {
 	}
 	b, err := json.Marshal(parts)
 	if err != nil {
-		// A slice of strings always marshals; the guard keeps the contract total.
+		// A slice of strings always marshals. The guard keeps the contract total.
 		return fmt.Sprintf("%v", parts)
 	}
 	return string(b)
@@ -224,10 +226,11 @@ func primaryKeyColumns(meta *gocql.TableMetadata) []*gocql.ColumnMetadata {
 	return append(cols, meta.ClusteringColumns...)
 }
 
-// decodeKey reverses KeyOf: it parses a string key back into the typed primary-key
-// bind values, in schema order, using the table's column types. A single-column key
-// is the whole string; a composite key is a JSON array whose element count must
-// match the primary key. It is the read/write-side inverse used by Get and Put.
+// decodeKey reverses KeyOf. It parses a string key back into the typed
+// primary-key bind values, in schema order, using the table's column types. A
+// single-column key is the whole string. A composite key is a JSON array whose
+// element count must match the primary key. It is the read/write-side inverse
+// used by Get and Put.
 func decodeKey(meta *gocql.TableMetadata, key string) ([]any, error) {
 	cols := primaryKeyColumns(meta)
 	if len(cols) == 0 {
@@ -279,16 +282,17 @@ var keyParsers = map[gocql.Type]func(s string) (any, error){
 	gocql.TypeInet:      parseKeyInet,
 }
 
-// bindKeyValue parses a primary-key string component into the Go value gocql binds
-// for the column's CQL type. It is the typed reverse of keyString; an unparseable
-// component is an error so a bad key fails fast rather than binding a wrong value. It
-// takes the CQL type id (not a full TypeInfo) so an offline dump reader, which has only
-// a type name from a ?types= hint, can drive it — see BindString.
+// bindKeyValue parses a primary-key string component into the Go value that
+// gocql binds for the column's CQL type. It is the typed reverse of keyString.
+// An unparseable component is an error, so a bad key fails fast and binds no
+// wrong value. It takes the CQL type id (not a full TypeInfo), so an offline
+// dump reader can drive it. That reader has only a type name from a ?types=
+// hint. See BindString.
 func bindKeyValue(t gocql.Type, s string) (any, error) {
 	if parse, ok := keyParsers[t]; ok {
 		return parse(s)
 	}
-	// A type without a dedicated parse binds as the raw string; gocql rejects a
+	// A type without a dedicated parse binds as the raw string. gocql rejects a
 	// genuine mismatch at execution, so nothing wrong is bound silently.
 	return s, nil
 }
@@ -408,12 +412,13 @@ var scalarBinders = map[gocql.Type]binder{
 	gocql.TypeInet:      parsedBinder(parseInet),
 }
 
-// bindValue coerces a normalized JSON value (the shape the read path and a copy
-// source produce) into the Go value gocql binds for the column's CQL type, the
-// write-side inverse of Normalize. A scalar mismatch or an unsupported column type
-// is an error, never a silent drop. Collections of scalar elements (and text-keyed
-// maps) are supported; a nested tuple, UDT, or non-text map key is rejected so a
-// copy fails loudly rather than corrupting the row.
+// bindValue coerces a normalized JSON value into the Go value that gocql binds
+// for the column's CQL type. The value has the shape that the read path and a
+// copy source produce. bindValue is the write-side inverse of Normalize. A
+// scalar mismatch or an unsupported column type is an error, never a silent
+// drop. Collections of scalar elements (and text-keyed maps) are supported. A
+// nested tuple, UDT, or non-text map key is rejected, so a copy fails loudly
+// and does not corrupt the row.
 func bindValue(t gocql.TypeInfo, v any) (any, error) {
 	if v == nil {
 		return nil, nil
@@ -502,9 +507,9 @@ func bindList(t gocql.TypeInfo, v any) (any, error) {
 	return out, nil
 }
 
-// bindMap coerces a normalized object into a typed map of the collection's key and
-// element types. Only a text-keyed map is supported, because the normalized form
-// keys by string; a non-text key type is rejected rather than guessed.
+// bindMap coerces a normalized object into a typed map of the collection's key
+// and element types. Only a text-keyed map is supported, because the normalized
+// form keys by string. A non-text key type is rejected, not guessed.
 func bindMap(t gocql.TypeInfo, v any) (any, error) {
 	obj, ok := v.(map[string]any)
 	if !ok {
@@ -612,8 +617,9 @@ func toFloat(v any) (float64, error) {
 	}
 }
 
-// toDecimal coerces a JSON number or its exact string into a *inf.Dec for a decimal
-// column, so both the string (exact) and number decimal presentations round-trip.
+// toDecimal coerces a JSON number or its exact string into a *inf.Dec for a
+// decimal column. Both the string (exact) and number decimal presentations then
+// round-trip.
 func toDecimal(v any) (*inf.Dec, error) {
 	switch n := v.(type) {
 	case string:

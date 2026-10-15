@@ -27,9 +27,9 @@ const testKeyspace = "iq_test"
 // (IQ_CASSANDRA_URL).
 var sharedURL string
 
-// TestMain provisions the test Cassandra before the suite runs. flag.Parse must run
-// before testing.Short is read, and os.Exit skips deferred cleanup, so the work lives
-// in runTests where the defer fires before the process exits.
+// TestMain provisions the test Cassandra before the suite runs. flag.Parse must
+// run before testing.Short is read. Because os.Exit skips deferred cleanup, the
+// work lives in runTests, where the defer fires before the process exits.
 func TestMain(m *testing.M) {
 	os.Exit(runTests(m))
 }
@@ -155,10 +155,10 @@ func mustExec(t *testing.T, st *Store, stmts ...string) {
 	}
 }
 
-// seedTable drops any existing table of the given name, runs its DDL and seed
-// inserts, registers a drop on cleanup, and returns a table-scoped Store for it. The
-// DDL and inserts reference the table unqualified; the session keyspace is the test
-// keyspace.
+// seedTable drops any existing table of the given name. It runs its DDL and seed
+// inserts, registers a drop on cleanup, and returns a table-scoped Store for it.
+// The DDL and inserts reference the table unqualified. The session keyspace is
+// the test keyspace.
 func seedTable(t *testing.T, name, ddl string, inserts ...string) *Store {
 	t.Helper()
 	schema := schemaStore(t)

@@ -7,8 +7,8 @@ import (
 )
 
 // TestURIParamsAreRead makes sure that every option in the catalogue changes the
-// parsed result for both URI schemes, and that every row below names a catalogue
-// option.
+// parsed result for both URI schemes. It also makes sure that every row below
+// names a catalogue option.
 func TestURIParamsAreRead(t *testing.T) {
 	tests := []struct{ param, query string }{
 		{paramIndex, "?index=books"},

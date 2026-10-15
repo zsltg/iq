@@ -20,7 +20,7 @@ func TestPutUpsertIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, query.WriteStat{Written: 2}, stat)
 
-	// A mixed re-upsert: key 1 exists (Overwritten), key 3 is new (Written), and a
+	// A mixed re-upsert: key 1 exists (Overwritten) and key 3 is new (Written). A
 	// keyless record carries its key in the value and cannot be pre-read (Written).
 	stat, err = st.Put(context.Background(), []query.Record{
 		{Key: "1", Value: map[string]any{"id": 1, "title": "A2"}},
@@ -78,7 +78,7 @@ func TestPutInsertOnlySkipsExisting(t *testing.T) {
 func TestPutKeyIsAuthoritativePrimaryKey(t *testing.T) {
 	st := seedTable(t, "books", "CREATE TABLE books (id int PRIMARY KEY, title text)")
 
-	// The value object omits the primary key; the record key must supply it, so the
+	// The value object omits the primary key. The record key must supply it, so the
 	// write succeeds and the row is keyed by 7 (not a missing-column error).
 	stat, err := st.Put(context.Background(), []query.Record{
 		{Key: "7", Value: map[string]any{"title": "KeyOnly"}},

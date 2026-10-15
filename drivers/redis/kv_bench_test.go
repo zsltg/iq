@@ -10,8 +10,9 @@ import (
 )
 
 // benchShape names a representative document size for the decode benchmark. The
-// redis driver is a separate package from the query core, so this file carries its
-// own small deterministic generator rather than sharing the query corpus helper.
+// redis driver is a separate package from the query core. So this file carries
+// its own small deterministic generator and does not share the query corpus
+// helper.
 type benchShape struct {
 	name string
 	json string
@@ -65,7 +66,8 @@ func buildDecodeCorpus() []benchShape {
 	}
 }
 
-// mustJSON marshals v to a JSON string or panics; benchmark setup, not production.
+// mustJSON marshals v to a JSON string or panics. It is benchmark setup, not
+// production code.
 func mustJSON(v any) string {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -74,12 +76,12 @@ func mustJSON(v any) string {
 	return string(b)
 }
 
-// BenchmarkDecodeJSON measures the redis driver's full-fidelity JSON decode path
-// (decodeJSON: json.Decoder.UseNumber + numfmt.ConvertNumbers) per doc shape. It is
-// the per-document normalization cost every scanned RedisJSON value pays, and a
-// representative baseline for the driver decode a raw-byte pre-filter would skip
-// for non-matching documents. decodeJSON is a pure function, so no container is
-// needed.
+// BenchmarkDecodeJSON measures the full-fidelity JSON decode path of the redis
+// driver (decodeJSON: json.Decoder.UseNumber + numfmt.ConvertNumbers) per doc
+// shape. It is the per-document normalization cost that every scanned RedisJSON
+// value pays. It is also a representative baseline for the driver decode that a
+// raw-byte pre-filter skips for non-matching documents. Because decodeJSON is a
+// pure function, no container is needed.
 func BenchmarkDecodeJSON(b *testing.B) {
 	for _, shape := range buildDecodeCorpus() {
 		b.Run(shape.name, func(b *testing.B) {

@@ -1,12 +1,14 @@
-// Package elasticsearch adapts an Elasticsearch index to the query ports. An index
-// is a Map[key, document]: the _id is the key and the _source is the value. The jq
-// filter runs client-side over documents fetched by _id or streamed from the index.
+// Package elasticsearch adapts an Elasticsearch index to the query ports. An
+// index is a Map[key, document]: the _id is the key and the _source is the value.
+// The jq filter runs client-side over documents that are fetched by _id or
+// streamed from the index.
 //
 // A server hosts many top-level indices and nothing between the server and its
-// documents, so the index is the addressable keyspace (like a Mongo collection or a
-// CouchDB database). The source names the server. The index is ?index= or the
-// handle.<index> dotted override. Credentials travel in the URL userinfo (HTTP basic
-// auth) and never in a request path. The --verbose trace logs method and path only.
+// documents. So the index is the addressable keyspace (like a Mongo collection or
+// a CouchDB database). The source names the server. The index is ?index= or the
+// handle.<index> dotted override. Credentials travel in the URI userinfo (HTTP
+// basic auth) and never in a request path. The --verbose trace logs method and
+// path only.
 package elasticsearch
 
 import (

@@ -48,8 +48,9 @@ func TestPutUpsertMixedKeyedAndKeylessIntegration(t *testing.T) {
 	seedDocs(t, store, nil)
 	ctx := context.Background()
 
-	// A keyed record is upserted by _id; a keyless record (foreign JSON) is inserted
-	// with a minted _id. Both count as written, so the total sums the two counts.
+	// A keyed record is upserted by _id. A keyless record (foreign JSON) is
+	// inserted with a minted _id. Both count as written, so the total sums the two
+	// counts.
 	stat, err := store.Put(ctx, []query.Record{
 		{Key: "keyed", Value: map[string]any{"n": 1}},
 		{Value: map[string]any{"n": 2}},
@@ -84,7 +85,7 @@ func TestPutInsertOnlySkipsExisting(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{"_id": "a", "n": 1}, got["a"])
 	// The insert is unordered, so the collision on "a" does not stop "b" from
-	// landing — the reported write actually happened.
+	// landing. The reported write happened.
 	require.Equal(t, map[string]any{"_id": "b", "n": 2}, got["b"])
 }
 
@@ -114,7 +115,8 @@ func TestDeleteIntegration(t *testing.T) {
 	}, query.Upsert)
 	require.NoError(t, err)
 
-	// Two present keys delete, one absent key is missing; the counts sum to the
+	// Two present keys delete, and one absent key is missing. The counts sum to
+	// the
 	// request size because DeletedCount is exact.
 	stat, err := store.Delete(ctx, []string{"d1", "d2", "absent"})
 	require.NoError(t, err)
@@ -200,9 +202,9 @@ func TestPutRejectsNonObjectValue(t *testing.T) {
 	}
 }
 
-// TestPutUpsertKeylessFirstMintsObjectID pins the keyless branch: a keyless record
-// is inserted with a MongoDB-minted ObjectID (never replaced under an empty _id),
-// and the records after it in the batch are still written.
+// TestPutUpsertKeylessFirstMintsObjectID pins the keyless branch. A keyless
+// record is inserted with a MongoDB-minted ObjectID (never replaced under an
+// empty _id). The records after it in the batch are still written.
 func TestPutUpsertKeylessFirstMintsObjectID(t *testing.T) {
 	store := openIntegration(t, "put_keyless_first")
 	seedDocs(t, store, nil)
@@ -245,7 +247,8 @@ func TestPutUpsertIsUnordered(t *testing.T) {
 	_, err = store.Put(ctx, []query.Record{{Key: "a", Value: map[string]any{"u": 1}}}, query.Upsert)
 	require.NoError(t, err)
 
-	// "dup" collides with "a" on the unique index; "c" is valid and must still land.
+	// "dup" collides with "a" on the unique index. "c" is valid and must still
+	// land.
 	_, err = store.Put(ctx, []query.Record{
 		{Key: "dup", Value: map[string]any{"u": 1}},
 		{Key: "c", Value: map[string]any{"u": 2}},

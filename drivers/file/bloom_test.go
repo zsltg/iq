@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestBloomNoFalseNegatives is the load-bearing guarantee: every key added must
+// TestBloomNoFalseNegatives pins the central guarantee: every key added must
 // test positive, so the index never hides a page that holds a wanted key.
 func TestBloomNoFalseNegatives(t *testing.T) {
 	keys := make([]string, pageSize)
@@ -32,8 +32,8 @@ func TestBloomBinaryKeys(t *testing.T) {
 }
 
 // TestBloomFalsePositiveRate keeps the filter honest: absent keys mostly test
-// negative, so page-skipping actually skips. A loose bound (well above the ~1%
-// target) makes the test deterministic rather than flaky.
+// negative, so page-skipping skips pages. A loose bound (well above the ~1%
+// target) makes the test deterministic, not flaky.
 func TestBloomFalsePositiveRate(t *testing.T) {
 	f := newBloom(pageSize)
 	for i := range pageSize {
@@ -56,8 +56,9 @@ func TestBloomEmptyFilterNeverMatches(t *testing.T) {
 	require.False(t, bloomHas(newBloom(10), "x"))
 }
 
-// TestBloomDeterministic confirms the same key sets the same bits across calls —
-// required so a filter written by one process reads correctly in another.
+// TestBloomDeterministic confirms that the same key sets the same bits across
+// calls. This is required so that a filter written by one process reads
+// correctly in another.
 func TestBloomDeterministic(t *testing.T) {
 	a, b := newBloom(8), newBloom(8)
 	bloomAdd(a, "stable-key")
@@ -70,7 +71,7 @@ func TestBloomDeterministic(t *testing.T) {
 }
 
 // TestBloomSizing pins the filter's byte length: bloomBitsPerKey bits per key,
-// rounded up to whole bytes, and never empty, so an all-absent page still gets a
+// rounded up to whole bytes, and never empty. So an all-absent page still gets a
 // well-formed one-byte filter that bloomAdd and bloomHas can index into.
 func TestBloomSizing(t *testing.T) {
 	tests := []struct {
@@ -90,11 +91,12 @@ func TestBloomSizing(t *testing.T) {
 	}
 }
 
-// TestBloomHashesGolden pins bloomHashes to exact values. The filter is written to
-// disk by one process and read by another, so the hash is part of the cache file's
-// format: a changed FNV constant, a skipped input byte, or a moved 64-to-32 split
-// silently relocates every bit and turns a warm index into a false-negative
-// machine. Golden values are the only assertion that pins all three at once.
+// TestBloomHashesGolden pins bloomHashes to exact values. One process writes the
+// filter to disk and another reads it, so the hash is part of the format of the
+// cache file. A changed FNV constant, a skipped input byte, or a moved 64-to-32
+// split silently relocates every bit. That turns a warm index into a
+// false-negative machine. Golden values are the only assertion that pins all
+// three at once.
 func TestBloomHashesGolden(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -116,19 +118,21 @@ func TestBloomHashesGolden(t *testing.T) {
 	}
 }
 
-// TestBloomHashesForcesNonZeroSecondHash covers the one key class the golden table
-// cannot reach by accident: a key whose top 32 hash bits are all zero. h2 is the
-// stride between the k bit positions, so leaving it at zero would collapse every
-// position onto h1%m and cost the filter its false-positive rate. "vzy0n2aa" is
-// such a key (its raw h2 is 0), and bloomHashes must report 1 instead.
+// TestBloomHashesForcesNonZeroSecondHash covers the one key class that the
+// golden table cannot reach by accident: a key whose top 32 hash bits are all
+// zero. The value h2 is the stride between the k bit positions. Leaving it at
+// zero collapses every position onto h1%m and costs the filter its
+// false-positive rate. The string "vzy0n2aa" is such a key (its raw h2 is 0).
+// The function bloomHashes must report 1 instead.
 func TestBloomHashesForcesNonZeroSecondHash(t *testing.T) {
 	const zeroH2Key = "vzy0n2aa"
 	h1, h2 := bloomHashes(zeroH2Key)
 	require.Equal(t, uint32(2092665342), h1)
 	require.Equal(t, uint32(1), h2, "a zero stride must be forced to 1")
 
-	// With the stride forced, the k positions spread; a collapsed stride would set a
-	// single bit and make this filter accept far more than it should.
+	// With the stride forced, the k positions spread. A collapsed stride sets a
+	// single bit and makes this filter accept far more keys than its
+	// false-positive rate allows.
 	f := newBloom(16)
 	bloomAdd(f, zeroH2Key)
 	set := 0

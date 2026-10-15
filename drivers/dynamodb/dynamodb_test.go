@@ -67,7 +67,7 @@ func TestScanBatches(t *testing.T) {
 	require.Len(t, all, 3)
 	require.ElementsMatch(t, []string{"1", "2", "3"}, keysOf(all))
 	// Three items are far under the page size, so a connected store streams them as a
-	// single page; a store opened without one would hand over a page per item.
+	// single page. A store opened without one hands over a page per item.
 	require.Equal(t, 1, batches)
 }
 

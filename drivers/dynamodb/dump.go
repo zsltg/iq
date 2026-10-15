@@ -9,12 +9,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
-// ParseKeySchema builds a table's key schema from a ?keys= hint, so an offline dump
-// reader keys items exactly as a live scan (which reads the schema from DescribeTable)
-// does. The hint is a comma-separated list of key attributes in schema order —
-// partition key first, then the optional sort key — each "name" or "name:type" where
-// type is S, N, or B (default S), e.g. "pk" or "pk:S,sk:N". A dump carries items but
-// not the key schema, so this hint supplies what DescribeTable would.
+// ParseKeySchema builds a table's key schema from a ?keys= hint. An offline dump
+// reader uses it to key items exactly as a live scan does (a live scan reads the
+// schema from DescribeTable). The hint is a comma-separated list of key attributes
+// in schema order: partition key first, then the optional sort key. Each is "name"
+// or "name:type", where type is S, N, or B (default S), for example "pk" or
+// "pk:S,sk:N". A dump carries items but not the key schema, so this hint supplies
+// the schema that DescribeTable supplies for a live scan.
 func ParseKeySchema(hint string) ([]KeyAttr, error) {
 	entries := strings.Split(hint, ",")
 	keys := make([]KeyAttr, 0, len(entries))
@@ -43,8 +44,9 @@ func ParseKeySchema(hint string) ([]KeyAttr, error) {
 	return keys, nil
 }
 
-// parseScalarType maps a ?keys= type letter to a DynamoDB scalar attribute type. Only
-// S, N, and B are valid key types; anything else is an error so a typo fails fast.
+// parseScalarType maps a ?keys= type letter to a DynamoDB scalar attribute type.
+// Only S, N, and B are valid key types. Anything else is an error, so a typo fails
+// fast.
 func parseScalarType(s string) (types.ScalarAttributeType, error) {
 	switch strings.ToUpper(s) {
 	case "S", "STRING":
@@ -58,11 +60,11 @@ func parseScalarType(s string) (types.ScalarAttributeType, error) {
 	}
 }
 
-// ParseItem decodes a DynamoDB-JSON item object — the typed wire shape a native S3
-// export (`{"pk":{"S":"…"}}` under each line's "Item") and `aws dynamodb scan` output
-// (each element of "Items") both use — into the attribute-value map the read path
-// consumes. It is the offline inverse of the SDK's own marshaling, so an item feeds
-// Normalize and KeyOf identically to a live scan.
+// ParseItem decodes a DynamoDB-JSON item object into the attribute-value map that
+// the read path consumes. Both a native S3 export (`{"pk":{"S":"…"}}` under each
+// line's "Item") and `aws dynamodb scan` output (each element of "Items") use this
+// typed wire shape. ParseItem is the offline inverse of the SDK's own marshaling,
+// so an item feeds Normalize and KeyOf identically to a live scan.
 func ParseItem(raw json.RawMessage) (map[string]types.AttributeValue, error) {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &obj); err != nil {
@@ -79,10 +81,11 @@ func ParseItem(raw json.RawMessage) (map[string]types.AttributeValue, error) {
 	return item, nil
 }
 
-// parseAttributeValue decodes one DynamoDB-JSON attribute value: a single-key object
-// whose key is the type tag (S, N, B, BOOL, NULL, M, L, SS, NS, BS) and whose value is
-// the tag's payload. It recurses for M and L. A missing, empty, or unknown tag is an
-// error so a malformed dump fails fast rather than dropping data.
+// parseAttributeValue decodes one DynamoDB-JSON attribute value. It is a
+// single-key object. The key is the type tag (S, N, B, BOOL, NULL, M, L, SS, NS,
+// BS), and the value is the tag's payload. It recurses for M and L. A missing,
+// empty, or unknown tag is an error, so a malformed dump fails fast rather than
+// dropping data.
 func parseAttributeValue(raw json.RawMessage) (types.AttributeValue, error) {
 	var tagged map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &tagged); err != nil {
@@ -98,8 +101,8 @@ func parseAttributeValue(raw json.RawMessage) (types.AttributeValue, error) {
 }
 
 // scalarDecoders maps each scalar type tag to the decoder of its payload. The
-// collection tags are not here: decoding them calls back into parseAttributeValue,
-// and a table that holds them would be an initialization cycle.
+// collection tags are not here. Decoding them calls back into parseAttributeValue.
+// A table that holds them creates an initialization cycle.
 var scalarDecoders = map[string]func(json.RawMessage) (types.AttributeValue, error){
 	"S":    decodeS,
 	"N":    decodeN,

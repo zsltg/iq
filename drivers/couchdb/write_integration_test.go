@@ -63,7 +63,7 @@ func TestPutKeylessMintsIDButRejectsScalar(t *testing.T) {
 
 	// A scalar value is rejected rather than wrapped as {value: ...}, so a copy
 	// round-trips exactly. Documents are built before the bulk call, so a good record
-	// batched ahead of the scalar is not written either — the whole batch fails first.
+	// batched ahead of the scalar is not written either. The whole batch fails first.
 	_, err = st.Put(ctx, []query.Record{
 		{Key: "good", Value: map[string]any{"title": "ok"}},
 		{Key: "k", Value: "bare-scalar"},
@@ -103,7 +103,7 @@ func TestDeleteIntegration(t *testing.T) {
 	}, query.Upsert)
 	require.NoError(t, err)
 
-	// Two live keys are tombstoned; the absent key is counted Missing, not errored.
+	// Two live keys are tombstoned. The absent key is counted Missing, not errored.
 	stat, err := st.Delete(ctx, []string{"d1", "d2", "absent"})
 	require.NoError(t, err)
 	require.Equal(t, 2, stat.Deleted)

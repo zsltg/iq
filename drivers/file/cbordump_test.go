@@ -24,12 +24,12 @@ func roundTrip(t *testing.T, rec query.Record) query.Record {
 	return got
 }
 
-// TestCBORRoundTripClosedSet proves the codec reproduces every member of the
-// value model Normalize emits — nil, bool, int, float64, string, map[string]any,
-// []any — with identical Go types, so a warm-cache query sees the same values a
-// cold one does. require.Equal uses reflect.DeepEqual, which distinguishes int
-// from the int64/uint64 a naive CBOR decode would yield, so a type regression
-// fails the assertion.
+// TestCBORRoundTripClosedSet proves that the codec reproduces every member of
+// the value model that Normalize emits: nil, bool, int, float64, string,
+// map[string]any, and []any. The Go types are identical. So a warm-cache query
+// sees the same values as a cold one. The require.Equal helper uses
+// reflect.DeepEqual, which distinguishes int from the int64/uint64 that a naive
+// CBOR decode yields. So a type regression fails the assertion.
 func TestCBORRoundTripClosedSet(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -84,10 +84,10 @@ func TestCBORRoundTripKeyAndType(t *testing.T) {
 }
 
 // TestCBORNaNInfPreserved special-cases the non-finite floats. A NaN round-trips
-// as a float64 NaN (CBOR canonicalizes the payload bits, so it is checked with
-// math.IsNaN, not equality — reflect.DeepEqual(NaN, NaN) is false anyway); ±Inf
-// round-trips bit-exact. A Mongo double NaN/Inf reaches Normalize unchanged, so
-// the cache must carry its non-finiteness faithfully.
+// as a float64 NaN. CBOR canonicalizes the payload bits, so the test checks it
+// with math.IsNaN, not equality (reflect.DeepEqual(NaN, NaN) is false anyway).
+// ±Inf round-trips bit-exact. A Mongo double NaN/Inf reaches Normalize
+// unchanged, so the cache must carry its non-finiteness faithfully.
 func TestCBORNaNInfPreserved(t *testing.T) {
 	nan := roundTrip(t, query.Record{Key: "k", Value: math.NaN()})
 	f, ok := nan.Value.(float64)

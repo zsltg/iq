@@ -16,10 +16,11 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// apocNodes is a small APOC JSON Lines export: two Person nodes, one Book node, and
-// a KNOWS relationship between the two people. It exercises label filtering (Book is
-// excluded from a Person scan), the node/relationship split, and reserved-key
-// overwrite (the first node carries a real "_id" property that the envelope clobbers).
+// apocNodes is a small APOC JSON Lines export: two Person nodes, one Book node,
+// and a KNOWS relationship between the two people. It exercises label filtering
+// (Book is excluded from a Person scan) and the node/relationship split. It also
+// exercises reserved-key overwrite (the first node carries a real "_id" property
+// that the envelope clobbers).
 const apocNodes = `{"type":"node","id":"0","labels":["Person"],"properties":{"name":"Ada","age":36,"score":1.5,"_id":"clobbered"}}
 {"type":"node","id":"1","labels":["Person","User"],"properties":{"name":"Grace"}}
 {"type":"node","id":"2","labels":["Book"],"properties":{"title":"Notes"}}
@@ -33,7 +34,8 @@ func TestNeo4jNodeScanEnvelope(t *testing.T) {
 	require.Equal(t, FormatNeo4jJSON, st.format)
 
 	recs := collect(t, st)
-	// Only the two Person nodes; the Book node and the relationship are other keyspaces.
+	// Only the two Person nodes come back. The Book node and the relationship
+	// are other keyspaces.
 	require.Len(t, recs, 2)
 	// Integers narrow to int, floats stay float, and the reserved _id overwrites the
 	// same-named property with the export id.
@@ -59,7 +61,7 @@ func TestNeo4jRelationshipScan(t *testing.T) {
 }
 
 func TestNeo4jKeyOverrideAndFallback(t *testing.T) {
-	// One node carries the key property, the other does not — the keyless node falls
+	// One node carries the key property, the other does not. The keyless node falls
 	// back to its export id so the scan stays total.
 	dump := `{"type":"node","id":"0","labels":["Person"],"properties":{"email":"ada@x"}}
 {"type":"node","id":"1","labels":["Person"],"properties":{"name":"nokey"}}
@@ -76,7 +78,7 @@ func TestNeo4jKeyOverrideAndFallback(t *testing.T) {
 }
 
 func TestNeo4jKeyStringForms(t *testing.T) {
-	// ?key= on a non-string property renders the key the way Cypher toString would.
+	// ?key= on a non-string property renders the key the way Cypher toString does.
 	dump := `{"type":"node","id":"0","labels":["N"],"properties":{"n":36}}
 {"type":"node","id":"1","labels":["N"],"properties":{"n":true}}
 `
@@ -97,8 +99,8 @@ func TestNeo4jKeyStringForms(t *testing.T) {
 }
 
 func TestNeo4jNestedProperties(t *testing.T) {
-	// A list property and a nested object have their numbers narrowed recursively,
-	// so an array element or a map value is an exact int, not a float.
+	// A list property and a nested object have their numbers narrowed recursively.
+	// So an array element or a map value is an exact int, not a float.
 	dump := `{"type":"node","id":"0","labels":["N"],"properties":{"scores":[1,2,3],"meta":{"rank":5,"tag":"x"}}}` + "\n"
 	u := writeDump(t, "nest.json", []byte(dump), "format=neo4j&label=N")
 	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
@@ -222,8 +224,8 @@ func TestPagingNeo4j(t *testing.T) {
 }
 
 // TestNeo4jKeyspaceSelector pins the keyspace resolution behind ?label=/?rel=,
-// including the kind reported alongside each rejection: exactly one selector is
-// required, and a rejected call reports the zero kind rather than a stray one.
+// including the kind reported alongside each rejection. Exactly one selector is
+// required. A rejected call reports the zero kind, not a stray one.
 func TestNeo4jKeyspaceSelector(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -253,10 +255,10 @@ func TestNeo4jKeyspaceSelector(t *testing.T) {
 	}
 }
 
-// TestNeo4jKeyspaceIsolation is the rule a dump read depends on: a dump interleaves
-// every label and type, so a read must emit only the selected kind. The fixture
-// deliberately names a node label and a relationship type the same, so a filter that
-// checked only the name would leak the other kind into the scan.
+// TestNeo4jKeyspaceIsolation is the rule that a dump read depends on. A dump
+// interleaves every label and type, so a read must emit only the selected kind.
+// The fixture names a node label and a relationship type the same. So a filter
+// that checks only the name leaks the other kind into the scan.
 func TestNeo4jKeyspaceIsolation(t *testing.T) {
 	dump := `{"type":"node","id":"0","labels":["KNOWS"],"properties":{"n":1}}
 {"id":"5","type":"relationship","label":"KNOWS","properties":{"r":1},"start":{"id":"0"},"end":{"id":"0"}}
@@ -287,10 +289,10 @@ func TestNeo4jKeyspaceIsolation(t *testing.T) {
 	}
 }
 
-// TestNeo4jRecordKey pins how a record's map key is chosen: the export id unless
-// ?key= names a property, and the export id again when that property is absent or
-// null — including the corner where no ?key= is set at all but the node happens to
-// carry an empty-named property.
+// TestNeo4jRecordKey pins how a record's map key is chosen. The key is the export
+// id unless ?key= names a property. It is the export id again when that property
+// is absent or null. This includes the corner where no ?key= is set at all but
+// the node carries an empty-named property.
 func TestNeo4jRecordKey(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -311,9 +313,9 @@ func TestNeo4jRecordKey(t *testing.T) {
 	}
 }
 
-// TestNeo4jNullKeyPropertyEndToEnd drives the null fallback through a real dump, so
-// the rule holds for the JSON null a decoder actually produces rather than only for
-// a hand-built map.
+// TestNeo4jNullKeyPropertyEndToEnd drives the null fallback through a real dump.
+// So the rule holds for the JSON null that a decoder produces, not only for a
+// hand-built map.
 func TestNeo4jNullKeyPropertyEndToEnd(t *testing.T) {
 	dump := `{"type":"node","id":"0","labels":["Person"],"properties":{"email":null,"name":"Ada"}}` + "\n"
 	u := writeDump(t, "g.json", []byte(dump), "format=neo4j&label=Person&key=email")
@@ -340,9 +342,9 @@ func (p *partialReader) Read(b []byte) (int, error) {
 	return n, nil
 }
 
-// TestNeo4jReadFailures separates the reader's two failure points. A stream that
-// fails before any record is a prologue read failure; one that fails mid-record is a
-// decode failure whose cause stays reachable through the wrap.
+// TestNeo4jReadFailures separates the two failure points of the reader. A stream
+// that fails before any record is a prologue read failure. One that fails
+// mid-record is a decode failure whose cause stays reachable through the wrap.
 func TestNeo4jReadFailures(t *testing.T) {
 	boom := errors.New("disk gone")
 	drain := func(r io.Reader) error {

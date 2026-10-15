@@ -79,7 +79,7 @@ func exactWhere(n predicate.Node) bool {
 		return allExact(t)
 	default:
 		// Ne, Regex, Size, ElemMatch, NoneMatch, and any unknown node: not pushed, so
-		// never exact — the prefilter must run.
+		// never exact. The prefilter must run.
 		return false
 	}
 }
@@ -107,10 +107,10 @@ var rangeOp = map[predicate.Op]string{
 }
 
 // typeAbove and typeBelow list the SQL++ type checks for the jq types that rank
-// above and below each range-literal type. jq compares across types (null < boolean
-// < number < string < array < object, a missing field folded to null). SQL++
-// comparisons are type-restricted: a cross-type compare yields NULL. So the ISTYPE
-// clauses re-include those types, and the client re-run trims them.
+// above and below each range-literal type. jq compares across types. The order is
+// null < boolean < number < string < array < object, with a missing field folded
+// to null. SQL++ comparisons are type-restricted: a cross-type compare yields NULL.
+// So the ISTYPE clauses re-include those types, and the client re-run trims them.
 var (
 	typeAboveNumber = []string{"ISSTRING(%s)", "ISARRAY(%s)", "ISOBJECT(%s)"}
 	typeAboveString = []string{"ISARRAY(%s)", "ISOBJECT(%s)"}
@@ -119,10 +119,11 @@ var (
 )
 
 // toWhere translates a neutral predicate into a SQL++ WHERE fragment and its named
-// parameters. The final bool is false if the fragment does not narrow the scan:
-// the node, or an unsafe part of it, cannot be pushed without risk of wrongly
-// excluding a jq match. Only pure-superset nodes are pushed: equality, ranges, and
-// existence. Every value is a named parameter ($p0, $p1, ...), never concatenated.
+// parameters. The final bool is false if the fragment does not narrow the scan.
+// That happens when the node, or an unsafe part of it, cannot be pushed without
+// risk of wrongly excluding a jq match. Only pure-superset nodes are pushed:
+// equality, ranges, and existence. Every value is a named parameter ($p0, $p1,
+// ...), never concatenated.
 func toWhere(n predicate.Node) (string, map[string]any, bool) {
 	b := &whereBuilder{params: map[string]any{}}
 	clause, ok := b.node(n)
@@ -132,9 +133,9 @@ func toWhere(n predicate.Node) (string, map[string]any, bool) {
 	return clause, b.params, true
 }
 
-// whereBuilder accumulates the named parameters a WHERE fragment binds, allocating a
-// fresh $pN name per value so no two values collide and none clashes with the scan's
-// reserved $after/$page.
+// whereBuilder accumulates the named parameters a WHERE fragment binds. It
+// allocates a fresh $pN name per value, so no two values collide and none clashes
+// with the scan's reserved $after/$page.
 type whereBuilder struct {
 	params map[string]any
 	n      int
@@ -177,9 +178,9 @@ func (b *whereBuilder) node(n predicate.Node) (string, bool) {
 	}
 }
 
-// eq translates an equality. A nil literal must also match an absent field, because jq
-// reads a missing field as null and `== null` is true for it, whereas SQL++'s `= NULL`
-// is never true.
+// eq translates an equality. A nil literal must also match an absent field. This
+// is because jq reads a missing field as null, so `== null` is true for it.
+// SQL++'s `= NULL` is never true.
 func (b *whereBuilder) eq(e predicate.Eq) (string, bool) {
 	ref, ok := fieldRef(e.Path)
 	if !ok {
@@ -191,11 +192,11 @@ func (b *whereBuilder) eq(e predicate.Eq) (string, bool) {
 	return fmt.Sprintf("%s = %s", ref, b.param(e.Value)), true
 }
 
-// cmp translates a range comparison into a conservative superset that reproduces jq's
-// cross-type ordering: the native operator for the same-type bound, plus explicit
-// type-check clauses for every type that ranks above (for >/>=) or below (for </<=) the
-// literal. The literal is always a number or a string (the only kinds the compiler
-// emits), so the type lists are fixed.
+// cmp translates a range comparison into a conservative superset that reproduces
+// jq's cross-type ordering. It uses the native operator for the same-type bound. It
+// adds explicit type-check clauses for every type that ranks above (for >/>=) or
+// below (for </<=) the literal. The literal is always a number or a string (the
+// only kinds the compiler emits), so the type lists are fixed.
 func (b *whereBuilder) cmp(c predicate.Cmp) (string, bool) {
 	ref, ok := fieldRef(c.Path)
 	if !ok {
@@ -226,7 +227,7 @@ func (b *whereBuilder) cmp(c predicate.Cmp) (string, bool) {
 }
 
 // and conjoins the children that narrow, dropping any that do not (an AND with a
-// match-everything term is just the rest). It narrows if at least one child does.
+// match-everything term is only the rest). It narrows if at least one child does.
 func (b *whereBuilder) and(and predicate.And) (string, bool) {
 	var parts []string
 	for _, child := range and {
@@ -244,9 +245,9 @@ func (b *whereBuilder) and(and predicate.And) (string, bool) {
 	}
 }
 
-// or disjoins the children. An OR narrows only if every branch does: a branch that
-// cannot be pushed matches everything, which would make the whole OR match everything,
-// so one unpushable branch drops the OR to a full scan. An all-equality OR over one
+// or disjoins the children. An OR narrows only if every branch does. A branch that
+// cannot be pushed matches everything. That makes the whole OR match everything, so
+// one unpushable branch drops the OR to a full scan. An all-equality OR over one
 // field collapses to a single IN clause.
 func (b *whereBuilder) or(or predicate.Or) (string, bool) {
 	if len(or) == 0 {
@@ -291,12 +292,12 @@ func (b *whereBuilder) orIn(or predicate.Or) (string, bool) {
 	return fmt.Sprintf("%s IN %s", ref, b.param(values)), true
 }
 
-// fieldRef renders a predicate path as a backtick-quoted SQL++ field reference under
-// the scan alias t (`t`.`a`.`b`). pushdown.safeField already rejects a path component
-// with a dot or a $ prefix. This also refuses a backtick and a backslash. A backtick
-// ends the quotes, and SQL++ reads a backslash as an escape inside them. A component
-// with either character returns false, so the predicate is not pushed and jq runs it
-// on the client.
+// fieldRef renders a predicate path as a backtick-quoted SQL++ field reference
+// under the scan alias t (`t`.`a`.`b`). The function pushdown.safeField already
+// rejects a path component with a dot or a $ prefix. This also refuses a backtick
+// and a backslash. A backtick ends the quotes, and SQL++ reads a backslash as an
+// escape inside them. A component with either character returns false, so the
+// predicate is not pushed and jq runs it on the client.
 func fieldRef(path []string) (string, bool) {
 	parts := []string{"`t`"}
 	for _, p := range path {

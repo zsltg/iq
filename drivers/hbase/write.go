@@ -14,7 +14,7 @@ import (
 // Put writes a batch of records into the table, keyed by row key. Upsert issues a
 // plain Put, which HBase applies as an idempotent overwrite of the named cells.
 // InsertOnly issues an atomic CheckAndPut guarded on the absence of the first cell
-// of the row (the smallest family:qualifier), and counts a row whose guard cell
+// of the row (the smallest family:qualifier). It counts a row whose guard cell
 // exists as a skip. HBase has no whole-row "insert if absent" primitive. So a row
 // that exists but lacks the guard cell is still written. For exact insert-only
 // semantics, give every row a stable first column. Every value is encoded through
@@ -130,10 +130,10 @@ func tally(stat *query.WriteStat, o putOutcome) {
 
 // rowExists reports whether a row has any cell. An upsert uses it to count an
 // overwrite. It issues an existence-only Get, so the region server ships no cell.
-// It reads the Exists flag of the reply if the server sets it, else the presence of
-// cells (the in-memory test client returns cells, not the flag). The check is for
-// the count only and is not atomic with the write, so a concurrent insert can skew
-// the count by one. The row written is always correct.
+// It reads the Exists flag of the reply if the server sets it. Else it reads the
+// presence of cells (the in-memory test client returns cells, not the flag). The
+// check is for the count only and is not atomic with the write, so a concurrent
+// insert can skew the count by one. The row written is always correct.
 func (s *Store) rowExists(ctx context.Context, rk []byte) (bool, error) {
 	s.traceOp("exists %s", s.table)
 	req, err := hrpc.NewGet(ctx, []byte(s.table), rk)
@@ -152,10 +152,11 @@ func (s *Store) rowExists(ctx context.Context, rk []byte) (bool, error) {
 }
 
 // columnsFor builds the family→qualifier→value map to Put for a record, plus the
-// guard cell (the lexicographically smallest family:qualifier) an insert-only write
-// checks for absence. The record value must be a nested {family: {qualifier: value}}
-// object; each cell is encoded through its column's declared type. An empty row is an
-// error, since HBase has no empty rows and there would be no guard cell.
+// guard cell (the lexicographically smallest family:qualifier) that an insert-only
+// write checks for absence. The record value must be a nested
+// {family: {qualifier: value}} object. Each cell is encoded through its column's
+// declared type. An empty row is an error, because HBase has no empty rows and
+// there is no guard cell.
 func (s *Store) columnsFor(r query.Record) (values map[string]map[string][]byte, guardFamily, guardQualifier string, err error) {
 	obj, ok := r.Value.(map[string]any)
 	if !ok {
@@ -244,9 +245,9 @@ func (s *Store) Clear(ctx context.Context) error {
 	})
 }
 
-// Drop removes the table entirely — its rows and schema (the `iq data drop`
-// semantics). HBase requires a table be disabled before it is deleted, so this
-// disables then deletes, bounded by ctx.
+// Drop removes the table entirely: its rows and schema (the `iq data drop`
+// semantics). HBase requires a table to be disabled before it is deleted, so
+// this disables then deletes, bounded by ctx.
 func (s *Store) Drop(ctx context.Context) error {
 	if s.table == "" {
 		return errNoTable
@@ -261,11 +262,12 @@ func (s *Store) Drop(ctx context.Context) error {
 	return nil
 }
 
-// Delete removes the named rows whole (the typed counterpart of the raw `exec delete`
-// verb), one hrpc.NewDel per key with nil values so every cell of the row goes. Each
-// key is encoded through encodeRowKey for the configured row-key type. Del is silent
-// on whether a row existed, so an existence-only pre-read (rowExists, accounting only)
-// supplies the present-vs-absent split; the Del runs regardless, so it is idempotent.
+// Delete removes the named rows whole (the typed counterpart of the raw
+// `exec delete` verb). It issues one hrpc.NewDel per key with nil values, so every
+// cell of the row goes. Each key is encoded through encodeRowKey for the configured
+// row-key type. Del is silent on whether a row existed, so an existence-only
+// pre-read (rowExists, accounting only) supplies the present-vs-absent split. The
+// Del runs regardless, so it is idempotent.
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
 	if s.table == "" {
 		return query.DeleteStat{}, errNoTable
@@ -306,9 +308,9 @@ func (s *Store) deleteRow(ctx context.Context, rk []byte) (existed bool, err err
 	return existed, nil
 }
 
-// TypedScan streams the whole table as typed records, reusing the ScanBatches pager.
-// Every item is a row, so the type tag is "row"; the key is the row key and the value
-// is the nested row object.
+// TypedScan streams the whole table as typed records and reuses the ScanBatches
+// pager. Every item is a row, so the type tag is "row". The key is the row key, and
+// the value is the nested row object.
 func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) error) error {
 	return s.ScanBatches(ctx, func(batch map[string]any) error {
 		recs := make([]query.Record, 0, len(batch))

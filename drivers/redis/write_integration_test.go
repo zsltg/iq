@@ -12,9 +12,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// freshKeys deletes the named keys before a test and again after it, so a write
-// test isolates on its own keys rather than flushing the shared reserved database
-// (which would race the cmd package's tests under `go test ./...`).
+// freshKeys deletes the named keys before a test and again after it. So a write
+// test isolates on its own keys. It does not flush the shared reserved database.
+// A flush there races the tests of the cmd package under `go test ./...`.
 func freshKeys(t *testing.T, store *iqredis.Store, keys ...string) {
 	t.Helper()
 	ctx := context.Background()
@@ -24,10 +24,11 @@ func freshKeys(t *testing.T, store *iqredis.Store, keys ...string) {
 	t.Cleanup(func() { _, _ = store.Query(ctx, del) })
 }
 
-// TestPutRoundTripIntegration asserts normalize ∘ write is the identity for every
-// native Redis type: a record written by Put reads back to the same normalized
-// value the read path produced. This is what the per-record type tag buys — the
-// type-ambiguous JSON of a hash vs a document reconstructs correctly.
+// TestPutRoundTripIntegration asserts that normalize ∘ write is the identity for
+// every native Redis type. A record that Put writes reads back to the same
+// normalized value that the read path produced. This is what the per-record type
+// tag buys. The type-ambiguous JSON of a hash and of a document reconstructs
+// correctly.
 func TestPutRoundTripIntegration(t *testing.T) {
 	store := openIntegration(t)
 	ctx := context.Background()
@@ -111,9 +112,10 @@ func TestPutRejectsUnencodableJSONIntegration(t *testing.T) {
 	require.ErrorAs(t, err, &unsupported, "the encoder's cause survives both wraps")
 }
 
-// TestPutRejectsAKeylessRecordIntegration pins the guard that stops a batch before
-// it writes anything: a record with no key cannot be written under any mode, and
-// the error carries the shared sentinel so the CLI can point at --key-field.
+// TestPutRejectsAKeylessRecordIntegration pins the guard that stops a batch
+// before it writes anything. A record with no key cannot be written under any
+// mode, and the error carries the shared sentinel so the CLI can point at
+// --key-field.
 func TestPutRejectsAKeylessRecordIntegration(t *testing.T) {
 	store := openIntegration(t)
 	tests := []struct {
@@ -134,9 +136,9 @@ func TestPutRejectsAKeylessRecordIntegration(t *testing.T) {
 }
 
 // TestPutWritesNothingForAnEmptyAggregateIntegration pins the empty-container
-// guards: Redis has no empty hash, list, set or sorted set, so an empty value
-// writes no key at all rather than issuing an argument-less command the server
-// would reject.
+// guards. Redis has no empty hash, list, set or sorted set. So an empty value
+// writes no key at all. It does not issue an argument-less command that the
+// server rejects.
 func TestPutWritesNothingForAnEmptyAggregateIntegration(t *testing.T) {
 	store := openIntegration(t)
 	ctx := context.Background()
