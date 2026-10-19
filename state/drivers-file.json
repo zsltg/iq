@@ -1,0 +1,9 @@
+{
+  "package": "./drivers/file",
+  "slug": "drivers-file",
+  "status": "failed",
+  "fingerprint": "2113afc443a85a33f50d663a27224e24e373e2dfdd94f6644707d39a051462a2",
+  "commit": "044b9189d3c1345977629f83bd80bca0559a030f",
+  "scannedAt": "2026-10-19T18:18:19Z",
+  "secondsPerMutant": 1.1
+}

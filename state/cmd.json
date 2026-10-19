@@ -1,0 +1,18 @@
+{
+  "package": "./cmd",
+  "slug": "cmd",
+  "status": "passed",
+  "fingerprint": "a28893890a464c3ce35282baeb63809c07159accd4839a96f8ebd54c57300ace",
+  "commit": "044b9189d3c1345977629f83bd80bca0559a030f",
+  "scannedAt": "2026-10-19T18:18:19Z",
+  "secondsPerMutant": 17.3,
+  "summary": {
+    "totalMutantsCount": 6099,
+    "killedCount": 5384,
+    "notCoveredCount": 376,
+    "escapedCount": 246,
+    "errorCount": 0,
+    "skippedCount": 93,
+    "score": 0.9563055062166963
+  }
+}

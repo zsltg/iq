@@ -1,0 +1,18 @@
+{
+  "package": "./internal/render",
+  "slug": "internal-render",
+  "status": "passed",
+  "fingerprint": "398bd748ed9577e9d4e0f26a8f19d81086a5f074bb6290535a53b709919c40c8",
+  "commit": "044b9189d3c1345977629f83bd80bca0559a030f",
+  "scannedAt": "2026-10-19T18:18:19Z",
+  "secondsPerMutant": 0.7,
+  "summary": {
+    "totalMutantsCount": 26,
+    "killedCount": 25,
+    "notCoveredCount": 0,
+    "escapedCount": 1,
+    "errorCount": 0,
+    "skippedCount": 0,
+    "score": 0.9615384615384616
+  }
+}

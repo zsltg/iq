@@ -1,0 +1,9 @@
+{
+  "package": "./internal/diff",
+  "slug": "internal-diff",
+  "status": "failed",
+  "fingerprint": "743497adbe8ebc327a13ffcc24a26bcdaa892587d6cf1a95ccbc81867ce2aee4",
+  "commit": "044b9189d3c1345977629f83bd80bca0559a030f",
+  "scannedAt": "2026-10-19T18:18:19Z",
+  "secondsPerMutant": 0.5
+}

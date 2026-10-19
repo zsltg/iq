@@ -1,0 +1,18 @@
+{
+  "package": "./internal/neo4jenvelope",
+  "slug": "internal-neo4jenvelope",
+  "status": "passed",
+  "fingerprint": "a2f78a86c3bcdd701cc46929608a3ae97fb996a54c421904449d6e5e3352d206",
+  "commit": "044b9189d3c1345977629f83bd80bca0559a030f",
+  "scannedAt": "2026-10-19T18:18:19Z",
+  "secondsPerMutant": 9,
+  "summary": {
+    "totalMutantsCount": 6,
+    "killedCount": 6,
+    "notCoveredCount": 0,
+    "escapedCount": 0,
+    "errorCount": 0,
+    "skippedCount": 0,
+    "score": 1.0
+  }
+}

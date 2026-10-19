@@ -1,0 +1,18 @@
+{
+  "package": "./drivers/redis",
+  "slug": "drivers-redis",
+  "status": "passed",
+  "fingerprint": "0c7bca23ba9feea8fc1887721bdccff1d9e30ec8f14b4876acc72e9d0546c9d4",
+  "commit": "044b9189d3c1345977629f83bd80bca0559a030f",
+  "scannedAt": "2026-10-19T18:18:19Z",
+  "secondsPerMutant": 2.9,
+  "summary": {
+    "totalMutantsCount": 609,
+    "killedCount": 567,
+    "notCoveredCount": 18,
+    "escapedCount": 6,
+    "errorCount": 0,
+    "skippedCount": 18,
+    "score": 0.9895287958115183
+  }
+}

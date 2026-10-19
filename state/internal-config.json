@@ -1,0 +1,9 @@
+{
+  "package": "./internal/config",
+  "slug": "internal-config",
+  "status": "failed",
+  "fingerprint": "c791363c45e9f24ca66eb73e590a12a5b43f441877f5934644831ce282ce9fd7",
+  "commit": "044b9189d3c1345977629f83bd80bca0559a030f",
+  "scannedAt": "2026-10-19T18:18:19Z",
+  "secondsPerMutant": 0.5
+}
