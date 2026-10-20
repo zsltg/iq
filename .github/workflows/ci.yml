@@ -425,6 +425,10 @@ jobs:
         run: |
           bash scripts/go-installable.sh
           bash scripts/test/go-installable.sh
+      # The fixture tests of the capability wrapper also run in `make check`. They
+      # run here too, because a Renovate bump of the capslock pin changes the wrapper.
+      - name: Capability wrapper tests
+        run: bash scripts/test/capabilities.sh
 
   # zizmor audits the workflow files themselves. It reports unpinned or impostor
   # actions, persisted credentials, cache poisoning on release paths, and template
@@ -926,7 +930,8 @@ jobs:
           go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" git --no-banner --validation=false --config .betterleaks.toml --log-opts="$BASE..$HEAD" .
 
   # What the dependency tree can *do* (google/capslock, scripts/capabilities.sh).
-  # The wrapper self-skips unless go.mod or go.sum moved against the base, so this
+  # The wrapper self-skips unless one of its inputs moved against the base (go.mod,
+  # go.sum, the wrapper with the capslock pin, the baseline), so this
   # is usually a few seconds; a real run peaks around 7 GB RSS.
   capabilities:
     needs: changes
@@ -938,7 +943,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] the step below fetches the PR base
         with:
           fetch-depth: 0 # the merge-base with the trunk must be reachable
-      # The restore is off. The wrapper skips itself unless go.mod or go.sum changed.
+      # The restore is off. The wrapper skips itself unless one of its inputs changed.
       # When it runs, it compiles many packages. That case is rare.
       - uses: ./.github/actions/setup-go
         with:

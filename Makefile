@@ -138,8 +138,9 @@ release-snapshot:
 	go run $(GORELEASER) release --snapshot --clean --skip=publish
 
 # capabilities runs the capability-drift gate (capslock) against capslock-baseline.json.
-# It runs only when go.mod or go.sum differ from the merge-base with origin/main
-# (override with IQ_CAPS_BASE; IQ_CAPS_FORCE=1 runs it regardless), because the analysis
+# It runs only when go.mod, go.sum, scripts/capabilities.sh (the capslock pin) or the
+# baseline differ from the merge-base with origin/main (override with IQ_CAPS_BASE;
+# IQ_CAPS_FORCE=1 runs it regardless), because the analysis
 # costs ~7.3 GB peak RSS. A gained or lost capability fails it; record a new set with
 # IQ_CAPS_UPDATE_BASELINE=1 and justify it in capslock-baseline.notes.md. IQ_CAPS_GOOS
 # re-runs it for darwin or windows as a review aid (the baseline is linux-only). The

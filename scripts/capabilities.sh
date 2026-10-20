@@ -17,9 +17,11 @@
 # The installed binary streams its output live.
 #
 # When it runs. The analysis costs ~7.3 GB peak RSS and ~39 s, so the gate is conditional
-# rather than unconditional: it runs only when go.mod or go.sum differ from the merge-base
+# rather than unconditional: it runs only when one of its inputs differs from the merge-base
 # with the base ref (IQ_CAPS_BASE, default origin/main), and otherwise prints the reason
-# and exits 0. A docs-only or code-only branch pays nothing, and `make ci` never runs a
+# and exits 0. The inputs are go.mod and go.sum (the dependency graph), this script (the
+# capslock pin) and the baseline file. A capslock bump changes only this script, and it
+# must run the gate. A docs-only or code-only branch pays nothing, and `make ci` never runs a
 # 7.3 GB analysis beside the container stack it tells you to start. The trigger is also
 # aligned with the tool's actual detection strength (limit (a) below): a new
 # (package, capability) pair is the shape a dependency bump produces, while a first-party
@@ -111,7 +113,7 @@ if [[ "$update" == "1" ]]; then
   fi
 fi
 
-# Trigger. The gate is warranted by a dependency-graph change, so unless it is forced (or
+# Trigger. The gate is warranted by a change to one of its inputs, so unless it is forced (or
 # this is a baseline regeneration, which is always deliberate) skip a run whose inputs
 # cannot have moved. merge-base is robust to a base ref that has advanced on the remote;
 # fall back to the ref itself, then to running unconditionally — never to a silent skip,
@@ -121,12 +123,12 @@ if [[ "$update" != "1" && "$force" != "1" ]]; then
   if [[ -z "$base" ]]; then
     echo "capabilities: IQ_CAPS_BASE is empty; running unconditionally"
   elif ref=$(git merge-base "$base" HEAD 2>/dev/null) || ref=$(git rev-parse --verify --quiet "$base"); then
-    changed=$(git diff --name-only "$ref" -- go.mod go.sum)
+    changed=$(git diff --name-only "$ref" -- go.mod go.sum scripts/capabilities.sh "$baseline_file")
     if [[ -z "$changed" ]]; then
-      echo "capabilities: dependency graph unchanged against ${base} (no go.mod or go.sum diff); skipping the ~7.3 GB analysis. IQ_CAPS_FORCE=1 runs it anyway."
+      echo "capabilities: no gate input changed against ${base} (go.mod, go.sum, scripts/capabilities.sh, ${baseline_file}); skipping the ~7.3 GB analysis. IQ_CAPS_FORCE=1 runs it anyway."
       exit 0
     fi
-    echo "capabilities: dependency graph changed against ${base}: ${changed//$'\n'/, }"
+    echo "capabilities: gate inputs changed against ${base}: ${changed//$'\n'/, }"
   else
     echo "capabilities: base ref '$base' not found; running unconditionally" >&2
   fi

@@ -58,7 +58,7 @@ make cover                      # full suite and the coverage floor (needs Docke
 make security                   # vulnerabilities, licenses, secrets, workflow audit, SBOM
 make e2e                        # focused black-box run (full make cover includes e2e)
 bash scripts/mutation-gate.sh   # mutation gate on the lines you changed
-make capabilities               # only when go.mod or go.sum changed
+make capabilities               # only when go.mod, go.sum or the capslock pin changed
 ```
 
 Run full `make cover` or `make e2e` after relevant changes.
