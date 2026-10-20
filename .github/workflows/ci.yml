@@ -949,11 +949,28 @@ jobs:
         with:
           restore: 'false'
       - name: Capability drift vs capslock-baseline.json
+        id: drift
         env:
           BASE: ${{ github.base_ref || 'main' }} # PR target branch, else the trunk
         run: |
           git fetch --no-tags origin "$BASE"
           IQ_CAPS_BASE="origin/$BASE" bash scripts/capabilities.sh
+      # After a failed comparison, record the baseline that the pinned capslock reports
+      # and upload it as the artifact capslock-baseline. A reviewer then reads the rows
+      # and commits the file, without the ~7.3 GB analysis on a local machine. The job
+      # stays failed. A run error also fails the comparison, and then this step fails too.
+      - name: Regenerate the baseline after drift
+        id: regenerate
+        if: failure() && steps.drift.outcome == 'failure'
+        run: IQ_CAPS_UPDATE_BASELINE=1 bash scripts/capabilities.sh
+      - name: Upload the regenerated baseline
+        if: failure() && steps.regenerate.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: capslock-baseline
+          path: capslock-baseline.json
+          if-no-files-found: error
+          retention-days: 7
 
   # Mutation feedback scoped to the change, in three jobs. mutate-plan lists the changed
   # non-test Go files and packs them into at most 12 shards (scripts/mutation-plan.sh --diff).
