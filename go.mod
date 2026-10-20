@@ -43,7 +43,7 @@ require (
 	github.com/zalando/go-keyring v0.2.8
 	github.com/zsltg/rdb v1.3.3-0.20261007154853-79442de87f28
 	go.mongodb.org/mongo-driver/v2 v2.9.2
-	golang.org/x/term v0.46.0
+	golang.org/x/term v0.47.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/inf.v0 v0.9.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -160,7 +160,7 @@ require (
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
