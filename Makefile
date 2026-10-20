@@ -37,9 +37,10 @@ include scripts/demo/demo.mk
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o iq .
 
-# version prints the version the next release would take.
+# version prints the version the next release would take. --v0 keeps a
+# breaking change on 0.x as a minor bump; svu v3 would otherwise go to v1.0.0.
 version:
-	@go run github.com/caarlos0/svu@$(SVU_VERSION) next
+	@go run github.com/caarlos0/svu/v3@$(SVU_VERSION) next --v0
 
 # changelog regenerates CHANGELOG.md in place (no bump, commit, or tag),
 # including any unreleased commits under the next version.
