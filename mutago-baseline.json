@@ -2430,6 +2430,12 @@
    "file": "cmd/mcp_tools.go",
    "mutator": "expression/error-guard",
    "line": 306
+  },
+  {
+   "id": "7899b7abbcf50c6819f3d45c91b99f98",
+   "file": "internal/jqfmt/jqfmt.go",
+   "mutator": "branch/case",
+   "line": 746
   }
  ]
 }
