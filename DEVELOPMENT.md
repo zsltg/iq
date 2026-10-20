@@ -190,8 +190,12 @@ Report any skipped live flows. The entire `e2e` package skips under `-short`.
 
 [Capslock](https://github.com/google/capslock) reports what the dependency tree can do.
 The gate compares that report against the committed `capslock-baseline.json`.
-It runs only when `go.mod` or `go.sum` differ from the merge-base with `IQ_CAPS_BASE`.
+It runs only when one of its inputs differs from the merge-base with `IQ_CAPS_BASE`.
 On drift, read the call paths before recording a new baseline with `IQ_CAPS_UPDATE_BASELINE=1`.
+On a pull request with drift, the CI `capabilities` job also regenerates the baseline
+and uploads it as the artifact `capslock-baseline`. The job stays failed.
+To use the file without the local analysis, read its rows, then commit it:
+`gh run download <run-id> -n capslock-baseline`.
 
 The wrapper installs `github.com/google/capslock/cmd/capslock` at the version of
 `CAPSLOCK_VERSION` in `scripts/capabilities.sh` into a temporary `GOBIN`. It runs the binary directly, with no `PATH` or `go.mod` change.
