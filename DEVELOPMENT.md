@@ -128,7 +128,9 @@ Remove an exclusion when a pull request refactors its function below 30.
 Never add an exclusion for new code.
 The modernizer proposes current Go forms, including `slices`, `maps`, `range n`,
 `strings.SplitSeq`, and `errors.AsType`. Use `golangci-lint run --fix` for its fixes.
-The dead-code command is `deadcode -test ./...`, which analyzes the whole program.
+`scripts/deadcode.sh` runs `deadcode -test ./...`, which analyzes the whole program.
+It reads findings from standard output only and fails on a run error.
+`make check` and the CI `deadcode` job run it.
 The go install check fails when `go.mod` has a `replace` or an `exclude` directive.
 `go install github.com/zsltg/iq@<version>` refuses such a module, but a build from
 the checkout accepts it. The CI `lint` job runs the same check.

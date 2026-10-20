@@ -872,10 +872,7 @@ jobs:
       - *checkout
       - uses: ./.github/actions/setup-go
       - name: Dead code (whole program)
-        run: |
-          . scripts/tool-versions.env
-          out="$(go run golang.org/x/tools/cmd/deadcode@"$DEADCODE_VERSION" -test ./...)"
-          if [ -n "$out" ]; then echo "$out"; echo "::error::dead code: delete it or wire it up"; exit 1; fi
+        run: bash scripts/deadcode.sh
 
   # Developer Certificate of Origin: every new commit of a pull request carries a
   # Signed-off-by trailer for its author (scripts/dco.sh). A second step makes sure
