@@ -108,6 +108,12 @@
       "minimumReleaseAge": null
     },
     {
+      "description": "MongoDB 8.3 and 9.0 do not start on Linux kernel 6.19 or newer (SERVER-121912), and the CI runners run such a kernel. Keep the test image on 8.2. Remove this rule when a MongoDB release starts on these kernels.",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["mongo"],
+      "allowedVersions": "<8.3"
+    },
+    {
       "description": "Renovate cannot read the Couchbase tag community-7.6.2 as a version. This rule teaches it the form.",
       "matchPackageNames": ["couchbase"],
       "versioning": "regex:^community-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"

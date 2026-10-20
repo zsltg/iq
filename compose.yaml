@@ -23,8 +23,11 @@ services:
       timeout: 3s
       retries: 5
 
+  # MongoDB 8.3 and 9.0 do not start on Linux kernel 6.19 or newer (SERVER-121912).
+  # The CI runners and current developer hosts run such a kernel, so the image stays
+  # on 8.2. renovate.json holds it below 8.3.
   mongo:
-    image: mongo:8.3.11@sha256:d731d77bfd7afd66bd487bdf627b5bf7ce4c3602ec461d635977021db529ebbc
+    image: mongo:8.2.12@sha256:e0ce8c35124d4a9f9785532d1f268f39e9728ffa1cb38f46fa482436424c4bd3
     container_name: iq-mongo
     ports:
       - "27017:27017"
