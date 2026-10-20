@@ -101,7 +101,7 @@ services:
       retries: 15
 
   couchbase:
-    image: couchbase:community-7.6.2@sha256:b189eeb7bebb141e5122064e6112e8178b459e2d639f37ffe97823d7a31ded81
+    image: couchbase:community-8.0.2@sha256:0470d32422aa8b64e3d422f02466327c76b577c8ff72a6c0bc10fc90c84779ce
     container_name: iq-couchbase
     ports:
       # 8091-8096 are the cluster/management + service REST ports; 11210 is the KV
