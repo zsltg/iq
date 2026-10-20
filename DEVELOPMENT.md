@@ -936,8 +936,10 @@ Posture and upkeep around the pipeline, all on GitHub:
   "Bumpy Road Ahead" rule, because a table test or a fuzz target checks one
   invariant per branch. Production code keeps the default rules. The CodeScene
   review is not a required check.
-- `.coderabbit.yaml` holds CodeRabbit's settings only (profile, automatic
-  review, linters). It reviews, it never approves or merges.
+- `.coderabbit.yaml` holds CodeRabbit's settings only (profile, review
+  trigger, linters). Automatic review is off. To start a review, post
+  `@coderabbitai review` on the pull request. It reviews, it never approves
+  or merges.
 - `socket.yml` configures the Socket GitHub App: on every pull request that
   moves `go.mod` or `go.sum` it reports what the new module versions do
   (install scripts, obfuscation, typosquats, maintainer changes), the
