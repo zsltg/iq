@@ -203,7 +203,9 @@ The command uses `-granularity=package -output=compare capslock-baseline.json`
 over `./...`. Capslock reads no test files, so `e2e` and testcontainers are outside
 the graph. The run takes about 39 seconds and peaks at about 7.3 GB of memory.
 `make ci` runs it before mutation so those memory peaks do not overlap.
-Without a dependency change, the wrapper prints the reason and exits 0.
+The wrapper runs only when one of its inputs differs from the base: `go.mod`, `go.sum`,
+`scripts/capabilities.sh` (the capslock pin) or `capslock-baseline.json`.
+Otherwise it prints the reason and exits 0.
 First-party execution and network additions remain subject to `gosec` in `make check`.
 
 Package-level comparison detects capability sets, not new paths to an existing

@@ -85,7 +85,7 @@ Before publication and before merge, all required checks must pass:
 
 - Scoped tests and `make check`.
 - `make cover`, above the coverage floor, with the integration services available.
-- `make security` and `make capabilities`. The capability gate skips itself when the dependency graph is unchanged.
+- `make security` and `make capabilities`. The capability gate skips itself when its inputs are unchanged.
 - The end-to-end tests on the current tree, through full `make cover` or `make e2e`.
   Follow [the end-to-end prerequisites](DEVELOPMENT.md#end-to-end-validation) and report skipped live flows.
 - `scripts/mutation-gate.sh`, with no new surviving mutants on covered code.
