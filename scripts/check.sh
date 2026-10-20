@@ -11,12 +11,11 @@ set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
-# actionlint and deadcode run at the versions in scripts/tool-versions.env, the
-# versions that CI runs. A binary on PATH is not used, because its version can
-# differ from CI.
+# actionlint and deadcode (scripts/deadcode.sh) run at the versions in
+# scripts/tool-versions.env, the versions that CI runs. A binary on PATH is not
+# used, because its version can differ from CI.
 . scripts/tool-versions.env
 actionlint=(go run "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION")
-deadcode=(go run "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION")
 
 fail=0
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
@@ -65,11 +64,8 @@ step "actionlint (workflow lint)"
 "${actionlint[@]}" || note_fail "actionlint"
 
 step "deadcode"
-dead="$("${deadcode[@]}" -test ./... 2>&1)"
-if [[ -n "$dead" ]]; then
-  printf '%s\n' "$dead" >&2
-  note_fail "deadcode"
-fi
+bash scripts/deadcode.sh || note_fail "deadcode"
+bash scripts/test/deadcode.sh || note_fail "deadcode tests"
 
 step "demo stamp"
 # The README GIF is a recording of code; the stamp is the hash of the sources it was
