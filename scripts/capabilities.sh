@@ -74,7 +74,7 @@ set -uo pipefail
 
 # Pinned capslock version. Renovate reads the line below.
 # renovate: datasource=go depName=github.com/google/capslock
-CAPSLOCK_VERSION=v0.3.3
+CAPSLOCK_VERSION=v0.3.4
 capslock_pkg=github.com/google/capslock/cmd/capslock
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
