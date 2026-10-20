@@ -13,6 +13,7 @@ require (
 	github.com/buger/jsonparser v1.6.1
 	github.com/couchbase/gocb/v2 v2.13.0
 	github.com/elastic/go-elasticsearch/v8 v8.19.7
+	github.com/elastic/go-elasticsearch/v9 v9.5.2
 	github.com/fatih/color v1.19.0
 	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/go-kivik/kivik/v4 v4.5.2
