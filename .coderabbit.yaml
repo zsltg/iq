@@ -15,9 +15,9 @@ reviews:
   poem: false
   review_status: true
   collapse_walkthrough: true
+  # Reviews start only by hand: post `@coderabbitai review` on the pull request.
   auto_review:
-    enabled: true
-    drafts: true
+    enabled: false
   tools:
     golangci-lint:
       enabled: true

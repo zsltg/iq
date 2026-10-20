@@ -91,7 +91,8 @@ workflow, see [DEVELOPMENT.md](DEVELOPMENT.md#prove-one-mutant-on-ci).
   approves the first run of a new contributor. After your first merged pull
   request, CI starts by itself. A fork pull request runs with a read-only token
   and no repository secrets, so the Codecov upload can fail for it without
-  failing CI. CodeRabbit reviews it. Only the maintainer merges.
+  failing CI. The maintainer can ask CodeRabbit to review it. Only the
+  maintainer merges.
 - Developer Certificate of Origin: sign off every commit with `git commit -s`.
   The `Signed-off-by:` line certifies that you may contribute the change under
   the project license, as the [DCO](https://developercertificate.org/) says. The
