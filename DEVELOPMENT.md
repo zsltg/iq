@@ -1037,6 +1037,7 @@ make release-snapshot               # local snapshot build of every artifact, no
 
 The release scripts run `svu` and `git-chglog` through `go run` at the versions in
 `scripts/tool-versions.env`. You install nothing, but the first run needs network access.
+`svu next` runs with `--v0`, so a breaking change on 0.x gives a minor bump, not v1.0.0.
 
 `main` accepts only squash-merged pull requests, so a release has two steps:
 

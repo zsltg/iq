@@ -32,11 +32,13 @@ cd "$(git rev-parse --show-toplevel)"
 
 # The pinned versions of svu and git-chglog.
 . scripts/tool-versions.env
-svu() { go run "github.com/caarlos0/svu@$SVU_VERSION" "$@"; }
+svu() { go run "github.com/caarlos0/svu/v3@$SVU_VERSION" "$@"; }
 git-chglog() { go run "github.com/git-chglog/git-chglog/cmd/git-chglog@$GIT_CHGLOG_VERSION" "$@"; }
 
 current="$(svu current)"
-next="$(svu next)"
+# --v0 keeps a breaking change on 0.x as a minor bump. Without it, svu v3 would
+# make the next release v1.0.0. Going to 1.0 is a separate decision.
+next="$(svu next --v0)"
 
 # regen writes the changelog to $1. It generates into a temp file and moves it
 # into place only on success, so a git-chglog failure never truncates the target.
