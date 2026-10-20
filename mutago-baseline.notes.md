@@ -832,3 +832,9 @@ The deep scan run 38464330518 ran these four packages under mutago v2.10.26. Eac
 - 74cd506e8529 internal/shape/shape.go:548 branch/if. The same edit as 8028e5c64c63: time.Parse with the layout "2006-01-02" accepts the same strings as the regexp in matchDate.
 - b3d8a90adb64 internal/shape/shape.go:610 branch/case. The same edit as d4b2f616e4ae: the default arm of formats.resolve gets its own `return ""` back with a different indentation.
 - bd305ca0b35c internal/shape/shape.go:628 branch/if. The same edit as 9785c3f69ec5: vals fills again after over in enumAcc.observe, but over stays true, so values and mergeFrom ignore vals.
+
+## internal/jqfmt, mutago v2.10.30 full package scan (accepted 2026-10-20)
+
+A full package scan of internal/jqfmt failed on main under mutago v2.10.26 and v2.10.30, with one new escape id. The edit is the same as 28d4238337bf, which stays in the baseline. The edit was applied by hand to the real file, and the full package suite passed.
+
+- 7899b7abbcf5 internal/jqfmt/jqfmt.go:746 branch/case. The same edit as 28d4238337bf: the `return ""` default arm of describeTerm gets a different indentation, so the program does not change.
