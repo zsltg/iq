@@ -1055,7 +1055,9 @@ git push github vX.Y.Z && git push origin vX.Y.Z   # only this tag, never --tags
 ```
 
 Conventional Commits drive the bump (`feat` → minor, `fix` → patch,
-`!`/`BREAKING CHANGE` → major). With no tags yet the first release is
+`!`/`BREAKING CHANGE` → major). The text of a `BREAKING CHANGE:` footer goes into
+CHANGELOG.md under "Breaking changes", first in its release, so write it as the
+migration note for users. With no tags yet the first release is
 `v0.1.0`. `make release` runs only on a clean `chore/release` branch.
 `make release-tag` runs only on a clean `main`, and tags HEAD only when HEAD is
 the squash-merged release commit of the version that `make version` prints.
