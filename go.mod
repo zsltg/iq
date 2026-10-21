@@ -27,6 +27,7 @@ require (
 	github.com/neilotoole/jsoncolor v0.10.1
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.5
 	github.com/opensearch-project/opensearch-go/v4 v4.8.1
+	github.com/opensearch-project/opensearch-go/v5 v5.0.3
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -159,7 +160,7 @@ require (
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
