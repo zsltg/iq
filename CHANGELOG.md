@@ -4,6 +4,46 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.40.0 - 2026-10-21
+### Breaking changes
+- **explain:** in the "query plan" log record and the MCP iq_explain
+result, each conjunct loses the pushed field. It has stages, compiled,
+server, skipped, and reason instead. The record also has server and
+prefilter objects. (69be98b)
+- **schema:** --format odcs fails, and writes no output, when the
+sampled values at the root are not objects, for example a keyspace of
+strings. An ODCS schema object must be an object. Use --format
+jsonschema for these sources. A date-time field is now logicalType
+timestamp, not date, and a nullable field no longer gets required: true. (11cefec)
+
+### Bug Fixes
+- **capabilities:** run the gate when the capslock pin or the baseline changes (#164) (e9438c4)
+- **check:** read deadcode findings from standard output only (#176) (82a7c07)
+- **demo:** hold one frame for readers who reduce motion (#154) (044b918)
+- **deps:** update module golang.org/x/tools to v0.52.0 (#160) (e1f9189)
+- **deps:** update minor and patch updates (#134) (0fbaf4b)
+- **deps:** update module github.com/neilotoole/jsoncolor to v0.10.1 (#158) (5ef34fb)
+- **deps:** update module golang.org/x/term to v0.47.0 (#159) (cf224ab)
+- **deps:** update module github.com/quality-gates/mutago/v2 to v2.10.26 (#135) (60a2fa9)
+- **deps:** update testcontainers to v0.44.0 (#162) (18022d9)
+- **deps:** update module github.com/quality-gates/mutago/v2 to v2.10.30 (#156) (a4a3572)
+- **deps:** update minor and patch updates (#157) (d121e6b)
+- **deps:** update module github.com/google/capslock to v0.3.4 (#155) (d6d33f0)
+- **deps:** update tint and opensearch-go ahead of the weekly group (#136) (f068cf5)
+- **e2e:** guard the stderr buffer of the mcp server (#140) (901c91b)
+- **explain:** show no pushdown for a materialized scan (#142) (0cf90a6)
+- **release:** list breaking changes in the changelog (#179) (6678709)
+- **test:** pin the MongoDB test image to 8.2 (#165) (e4eb34b)
+
+### Documentation
+- **readme:** shorten the Guarantees to one promise per bullet (#153) (de34134)
+- **readme:** lead with why and a real-database quick start (#150) (fefe05d)
+
+### Features
+- **explain:** show the filter stages in the query plan (#143) (69be98b)
+- **schema:** emit ODCS v3.2.0 contracts (#152) (11cefec)
+
+
 ## v0.39.0 - 2026-10-09
 ### Refactoring
 - raise the code health of the config, shape, selector, parquetout and diff packages (#114) (ef77904)
@@ -387,6 +427,13 @@ and its commits follow [Conventional Commits](https://www.conventionalcommits.or
 
 
 ## v0.23.0 - 2026-07-08
+### Breaking changes
+- **drivers:** copying a scalar value into a MongoDB, CouchDB or Elasticsearch
+destination now errors instead of wrapping it as {"value": …}; shape it into an
+object first, e.g. --filter 'if type == "object" then . else {value: .} end'. (d180d92)
+- **hbase:** hbase source URLs must use ?keytype= instead of ?rowkeytype=;
+the old param is ignored, not honored. (f1ec5f4)
+
 ### Features
 - **cassandra:** count upsert overwrites via a batch key pre-read (ace4c75)
 - **couchdb:** push portable $regex and $size Mango selectors (ae6780d)
@@ -472,6 +519,13 @@ and its commits follow [Conventional Commits](https://www.conventionalcommits.or
 
 
 ## v0.15.0 - 2026-07-06
+### Breaking changes
+- **cli:** the --collection query flag and `iq add -c` are removed. Set a
+MongoDB default collection with ?collection= in the source URL, and address
+another collection with a dotted handle.collection (e.g. --src shop.orders).
+Existing configs migrate the old per-source collection field into the URL
+automatically on first load. (4bb5a9b)
+
 ### Features
 - **cli:** address collections as handle.collection; drivers own url params (4bb5a9b)
 
@@ -482,6 +536,11 @@ and its commits follow [Conventional Commits](https://www.conventionalcommits.or
 
 
 ## v0.13.0 - 2026-07-06
+### Breaking changes
+- **cli:** `config unset <opt>` is now `config set -D <opt>`;
+`diff` exits non-zero on differences instead of requiring `--exit-code`;
+`--json-array` / `-f json-array` is now `--jsona` / `-f jsona`. (3b02e2c)
+
 ### Features
 - **cli:** align command/flag surface with sq (3b02e2c)
 
@@ -490,6 +549,16 @@ and its commits follow [Conventional Commits](https://www.conventionalcommits.or
 
 
 ## v0.12.0 - 2026-07-06
+### Breaking changes
+- **cli:** `iq data copy` is removed. Use `iq --src <s> --insert <dst>` to
+copy/restore, and `iq --src <s> --typed` (or `--jsonl` for Mongo) to dump. (d794e09)
+- **cli:** `iq add <name> <url>` becomes `iq add [-n <handle>] <url>`; the
+two-positional form no longer parses. (ae99fad)
+- **file:** iq data copy no longer accepts a bare file path as a positional
+endpoint. Register a dump as a file:// source to read it, and use -o to write a
+dump file. (2e52f6a)
+- **cli:** --dry-run is removed; use --explain. (3d8653e)
+
 ### Documentation
 - **readme:** mark file:// in comparison table, split architecture diagram (0f84849)
 - **readme:** add more tools to the comparison table (1497963)
@@ -520,6 +589,11 @@ and its commits follow [Conventional Commits](https://www.conventionalcommits.or
 
 
 ## v0.10.0 - 2026-07-05
+### Breaking changes
+- **cli:** the --compile flag is removed. Pushdown is now on by
+default for MongoDB; pass --no-compile to force the whole filter
+client-side. Redis is unaffected (pushdown was always a no-op there). (3ec8581)
+
 ### Features
 - **cli:** default MongoDB pushdown on, replace --compile with --no-compile (3ec8581)
 - **cli:** group --help flags into logical sections (c909def)
