@@ -12,7 +12,8 @@ require (
 	github.com/aws/smithy-go v1.28.5
 	github.com/buger/jsonparser v1.6.1
 	github.com/couchbase/gocb/v2 v2.13.0
-	github.com/elastic/go-elasticsearch/v8 v8.19.7
+	github.com/elastic/elastic-transport-go/v8 v8.9.0
+	github.com/elastic/go-elasticsearch/v9 v9.5.2
 	github.com/fatih/color v1.19.0
 	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/go-kivik/kivik/v4 v4.5.2
@@ -86,7 +87,6 @@ require (
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
-	github.com/elastic/elastic-transport-go/v8 v8.9.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

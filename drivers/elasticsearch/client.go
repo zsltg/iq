@@ -9,7 +9,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/elastic-transport-go/v8/elastictransport"
+	"github.com/elastic/go-elasticsearch/v9"
 	"github.com/opensearch-project/opensearch-go/v4"
 )
 
@@ -47,8 +48,8 @@ type esClient interface {
 }
 
 // newClient builds the wire client a source's flavor selects. Both clients take the
-// same config shape (addresses, basic-auth credentials, an optional trace transport),
-// so the only difference is which constructor runs.
+// same settings: addresses, basic-auth credentials and an optional trace transport.
+// opensearch-go takes them as a Config. go-elasticsearch takes them as options.
 func newClient(cc connConfig, trace io.Writer) (esClient, error) {
 	switch cc.flavor {
 	case flavorOS:
@@ -66,15 +67,17 @@ func newClient(cc connConfig, trace io.Writer) (esClient, error) {
 		}
 		return osFlavor{os: c}, nil
 	default:
-		cfg := elasticsearch.Config{
-			Addresses: []string{cc.addr},
-			Username:  cc.username,
-			Password:  cc.password,
+		opts := []elasticsearch.Option{
+			elasticsearch.WithAddresses(cc.addr),
+			elasticsearch.WithBasicAuth(cc.username, cc.password),
 		}
 		if trace != nil {
-			cfg.Transport = &traceTransport{w: trace, prefix: "es"}
+			opts = append(opts, elasticsearch.WithTransportOptions(
+				elastictransport.WithTransport(&traceTransport{w: trace, prefix: "es"})))
 		}
-		c, err := elasticsearch.NewClient(cfg)
+		// NewBase gives Perform without the esapi and typed API surface, which
+		// this driver does not use. That keeps the binary smaller.
+		c, err := elasticsearch.NewBase(opts...)
 		if err != nil {
 			return nil, fmt.Errorf("connect elasticsearch: %w", err)
 		}
@@ -85,7 +88,7 @@ func newClient(cc connConfig, trace io.Writer) (esClient, error) {
 // esFlavor speaks to Elasticsearch through the go-elasticsearch client. Its PIT
 // endpoints are `_pit`, and it pages by `_shard_doc` (a stable per-PIT tiebreaker).
 type esFlavor struct {
-	es *elasticsearch.Client
+	es *elasticsearch.BaseClient
 }
 
 func (c esFlavor) perform(req *http.Request) (*http.Response, error) { return c.es.Perform(req) }
