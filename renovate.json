@@ -114,6 +114,11 @@
       "allowedVersions": "<8.3"
     },
     {
+      "description": "Hold opensearch-go on v4. The driver sends raw requests to one address, and v5 turns on a router and node discovery by default, reads about 25 OPENSEARCH_GO_* environment variables, and adds github.com/rs/dnscache. v4 still gets releases (v4.8.1 on 2026-10-12). Revisit on 2027-01-15, or earlier if v4 stops getting releases.",
+      "matchPackageNames": ["github.com/opensearch-project/opensearch-go/v4"],
+      "allowedVersions": "<5"
+    },
+    {
       "description": "Renovate cannot read the Couchbase tag community-7.6.2 as a version. This rule teaches it the form.",
       "matchPackageNames": ["couchbase"],
       "versioning": "regex:^community-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"
