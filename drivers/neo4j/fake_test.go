@@ -5,7 +5,7 @@ import (
 	"context"
 	"maps"
 
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 )
 
 // ctxKey is the type of the marker key that tests put in a context.
@@ -24,13 +24,13 @@ func isMarked(ctx context.Context) bool {
 
 // fakeDriver hands out one fakeSession and records each NewSession call.
 type fakeDriver struct {
-	neo4j.DriverWithContext
+	neo4j.Driver
 	session *fakeSession
 	configs []neo4j.SessionConfig
 	ctxs    []context.Context
 }
 
-func (d *fakeDriver) NewSession(ctx context.Context, cfg neo4j.SessionConfig) neo4j.SessionWithContext {
+func (d *fakeDriver) NewSession(ctx context.Context, cfg neo4j.SessionConfig) neo4j.Session {
 	d.ctxs = append(d.ctxs, ctx)
 	d.configs = append(d.configs, cfg)
 	return d.session
@@ -38,7 +38,7 @@ func (d *fakeDriver) NewSession(ctx context.Context, cfg neo4j.SessionConfig) ne
 
 // fakeSession records every Run call and answers from a script.
 type fakeSession struct {
-	neo4j.SessionWithContext
+	neo4j.Session
 	script    []fakeReply
 	runs      []runCall
 	closed    int
@@ -59,7 +59,7 @@ type fakeReply struct {
 	res *fakeResult
 }
 
-func (s *fakeSession) Run(ctx context.Context, cypher string, params map[string]any, _ ...func(*neo4j.TransactionConfig)) (neo4j.ResultWithContext, error) {
+func (s *fakeSession) Run(ctx context.Context, cypher string, params map[string]any, _ ...func(*neo4j.TransactionConfig)) (neo4j.Result, error) {
 	s.runs = append(s.runs, runCall{ctx: ctx, cypher: cypher, params: maps.Clone(params)})
 	reply := s.script[len(s.runs)-1]
 	if reply.err != nil {
@@ -76,7 +76,7 @@ func (s *fakeSession) Close(ctx context.Context) error {
 
 // fakeResult streams records one by one and then reports err.
 type fakeResult struct {
-	neo4j.ResultWithContext
+	neo4j.Result
 	recs     []*neo4j.Record
 	pos      int
 	err      error
