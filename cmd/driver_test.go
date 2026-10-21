@@ -109,7 +109,7 @@ func TestDriverLsTable(t *testing.T) {
 		"couchdb", "Apache CouchDB document store", "couchdb, couchdbs", "2.x, 3.x", "https://docs.couchdb.org/",
 		"couchbase", "Couchbase document store", "couchbase, couchbases", "7.x, 8.x (Community or Enterprise)", "https://docs.couchbase.com/",
 		"neo4j", "Neo4j property graph store", "neo4j, neo4j+s, neo4j+ssc, bolt, bolt+s, bolt+ssc", "5.x", "https://neo4j.com/docs/",
-		"elasticsearch", "Elasticsearch search engine and document store", "elasticsearch, elasticsearch+s", "8.x", "https://www.elastic.co/docs/",
+		"elasticsearch", "Elasticsearch search engine and document store", "elasticsearch, elasticsearch+s", "8.x, 9.x", "https://www.elastic.co/docs/",
 		"opensearch", "OpenSearch search engine and document store", "opensearch, opensearch+s", "2.x, 3.x", "https://opensearch.org/docs/",
 	} {
 		require.Contains(t, out, want)
@@ -155,7 +155,7 @@ func TestDriverLsJSON(t *testing.T) {
 	require.Equal(t, "https://docs.couchbase.com/", byName["couchbase"].Doc)
 	require.Equal(t, []string{"elasticsearch", "elasticsearch+s"}, byName["elasticsearch"].Schemes)
 	require.Equal(t, "Elasticsearch search engine and document store", byName["elasticsearch"].Description)
-	require.Equal(t, "8.x", byName["elasticsearch"].Versions)
+	require.Equal(t, "8.x, 9.x", byName["elasticsearch"].Versions)
 	require.Equal(t, "https://www.elastic.co/docs/", byName["elasticsearch"].Doc)
 	require.Equal(t, []string{"opensearch", "opensearch+s"}, byName["opensearch"].Schemes)
 	require.Equal(t, "OpenSearch search engine and document store", byName["opensearch"].Description)

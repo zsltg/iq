@@ -260,7 +260,7 @@ var drivers = []driver{
 		desc:           "Elasticsearch search engine and document store",
 		schemes:        []string{"elasticsearch", "elasticsearch+s"},
 		doc:            "https://www.elastic.co/docs/",
-		versions:       "8.x",
+		versions:       "8.x, 9.x",
 		addressable:    true,
 		params:         iqelasticsearch.URIParams,
 		uriExample:     "elasticsearch://host:9200/?index=books",

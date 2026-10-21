@@ -423,7 +423,7 @@ further backends slot in behind the same port. The
 | `couchbase` | [Couchbase](https://docs.couchbase.com/) | 7.x, 8.x (Community or Enterprise) |
 | `couchdb` | [Apache CouchDB](https://docs.couchdb.org/) | 2.x, 3.x |
 | `dynamodb` | [Amazon DynamoDB](https://docs.aws.amazon.com/dynamodb/) | AWS (managed) |
-| `elasticsearch` | [Elasticsearch](https://www.elastic.co/docs/) | 8.x |
+| `elasticsearch` | [Elasticsearch](https://www.elastic.co/docs/) | 8.x, 9.x |
 | `file` | Local dump file, read-only (see [Backups and dumps](#backups-and-dumps)) | — |
 | `hbase` | [Apache HBase](https://hbase.apache.org/book.html) | 1.0+ |
 | `mongo` | [MongoDB](https://www.mongodb.com/docs/) | 4.2+ |
