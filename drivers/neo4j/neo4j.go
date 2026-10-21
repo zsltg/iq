@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 
 	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/render"
@@ -145,7 +145,7 @@ func (t target) match() string {
 // write paths are scoped to the label (the keyspace). The raw path runs arbitrary
 // parameterized Cypher. The inspect path reads server and schema metadata.
 type Store struct {
-	driver                neo4j.DriverWithContext
+	driver                neo4j.Driver
 	database              string
 	target                target
 	decimal               numfmt.DecimalMode
@@ -182,7 +182,7 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, dec numf
 	if cc.hasAuth {
 		auth = neo4j.BasicAuth(cc.user, cc.pass, "")
 	}
-	drv, err := neo4j.NewDriverWithContext(cc.dsn, auth)
+	drv, err := neo4j.NewDriver(cc.dsn, auth)
 	if err != nil {
 		return nil, fmt.Errorf("connect neo4j: %w", err)
 	}
@@ -258,7 +258,7 @@ func parseURL(rawURL, address string) (connConfig, error) {
 // session opens a session scoped to the store's database in the given access mode.
 // Every operation opens and closes its own session. The driver pools connections
 // underneath.
-func (s *Store) session(ctx context.Context, mode neo4j.AccessMode) neo4j.SessionWithContext {
+func (s *Store) session(ctx context.Context, mode neo4j.AccessMode) neo4j.Session {
 	return s.driver.NewSession(ctx, neo4j.SessionConfig{DatabaseName: s.database, AccessMode: mode})
 }
 
@@ -266,7 +266,7 @@ func (s *Store) session(ctx context.Context, mode neo4j.AccessMode) neo4j.Sessio
 // run logs the statement to it, never its parameters, because they can hold
 // stored values. The error is wrapped at our boundary so it anchors here, not
 // deep in the driver.
-func (s *Store) run(ctx context.Context, sess neo4j.SessionWithContext, cypher string, params map[string]any) (neo4j.ResultWithContext, error) {
+func (s *Store) run(ctx context.Context, sess neo4j.Session, cypher string, params map[string]any) (neo4j.Result, error) {
 	if s.trace != nil {
 		_, _ = fmt.Fprintf(s.trace, "cypher: %s\n", cypher)
 	}
@@ -317,7 +317,7 @@ func (t target) getStatement(keys []string) (string, map[string]any) {
 // collectByKey reads the rows of a Get result into out, keyed by the first column. A
 // nil entity is skipped. With a ?key= property, a key that matches more than one
 // entity is an error.
-func (s *Store) collectByKey(ctx context.Context, res neo4j.ResultWithContext, out map[string]any) error {
+func (s *Store) collectByKey(ctx context.Context, res neo4j.Result, out map[string]any) error {
 	for res.Next(ctx) {
 		rec := res.Record()
 		k, _ := rec.Values[0].(string)
@@ -414,7 +414,7 @@ type scanPage struct {
 
 // readPage reads one page from res. A key that repeats inside the page is stored
 // under the elementId of the later row, so a non-unique key never drops a node.
-func (s *Store) readPage(ctx context.Context, res neo4j.ResultWithContext) (scanPage, error) {
+func (s *Store) readPage(ctx context.Context, res neo4j.Result) (scanPage, error) {
 	page := scanPage{rows: make(map[string]any, scanBatch)}
 	for res.Next(ctx) {
 		page.fetched++
