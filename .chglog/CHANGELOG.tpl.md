@@ -8,6 +8,16 @@ and its commits follow [Conventional Commits](https://www.conventionalcommits.or
 
 {{ range .Versions }}
 ## {{ .Tag.Name }} - {{ datetime "2006-01-02" .Tag.Date }}
+{{ if .NoteGroups -}}
+### Breaking changes
+{{ range .CommitGroups -}}
+{{ range $commit := .Commits -}}
+{{ range $commit.Notes -}}
+- {{ if $commit.Scope }}**{{ $commit.Scope }}:** {{ end }}{{ .Body }} ({{ $commit.Hash.Short }})
+{{ end -}}
+{{ end -}}
+{{ end }}
+{{ end -}}
 {{ range .CommitGroups -}}
 ### {{ .Title }}
 {{ range .Commits -}}
