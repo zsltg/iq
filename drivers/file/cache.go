@@ -240,7 +240,7 @@ func streamRecords(ctx context.Context, dec *cbor.Decoder, path string, fn func(
 			return err
 		}
 		rec, err := decodeRecord(dec)
-		if errors.Is(err, io.EOF) {
+		if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end; a wrapped one is a reader failure.
 			break
 		}
 		if err != nil {
@@ -610,7 +610,7 @@ func decodePage(r io.ReaderAt, offset, end int64, l *keyLookup) error {
 	dec := cborDec.NewDecoder(sec)
 	for {
 		rec, err := decodeRecord(dec)
-		if errors.Is(err, io.EOF) {
+		if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end; a wrapped one is a reader failure.
 			return nil
 		}
 		if err != nil {

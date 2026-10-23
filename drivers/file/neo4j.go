@@ -66,7 +66,7 @@ func neo4jSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hints) (qu
 			}
 			var e apocEntry
 			if err := jd.Decode(&e); err != nil {
-				if !array && errors.Is(err, io.EOF) {
+				if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end between values, never inside an array. A wrapped one is a reader failure.
 					break
 				}
 				return fmt.Errorf("decode neo4j json: %w", err)

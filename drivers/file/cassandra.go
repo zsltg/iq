@@ -40,7 +40,7 @@ func cassandraCSVSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hin
 		cr.FieldsPerRecord = -1 // don't enforce a width here; recordForCSVRow validates against the header.
 		if header == nil {
 			h, err := cr.Read()
-			if errors.Is(err, io.EOF) {
+			if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end; a wrapped one is a reader failure.
 				return nil // empty dump.
 			}
 			if err != nil {
@@ -54,7 +54,7 @@ func cassandraCSVSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hin
 				return err
 			}
 			fields, err := cr.Read()
-			if errors.Is(err, io.EOF) {
+			if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end; a wrapped one is a reader failure.
 				break
 			}
 			if err != nil {
