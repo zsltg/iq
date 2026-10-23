@@ -106,7 +106,7 @@ func extJSONSource(r io.Reader, size int, dec numfmt.DecimalMode) query.RecordSo
 			}
 			var raw json.RawMessage
 			if err := jd.Decode(&raw); err != nil {
-				if !array && err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end; a wrapped one is a reader failure.
+				if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end between values, never inside an array. A wrapped one is a reader failure.
 					break
 				}
 				return fmt.Errorf("decode mongoexport json: %w", err)

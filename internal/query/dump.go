@@ -234,7 +234,7 @@ func (s *JSONStream) Next() (raw json.RawMessage, ok bool, err error) {
 		return nil, false, nil
 	}
 	if err := s.dec.Decode(&raw); err != nil {
-		if !s.array && err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end; a wrapped one is a reader failure.
+		if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end between values, never inside an array. A wrapped one is a reader failure.
 			return nil, false, nil
 		}
 		return nil, false, fmt.Errorf("decode json record: %w", err)
