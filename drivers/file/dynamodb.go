@@ -59,7 +59,7 @@ func dynamoSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hints) (q
 			}
 			var obj map[string]json.RawMessage
 			if err := jd.Decode(&obj); err != nil {
-				if errors.Is(err, io.EOF) {
+				if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end; a wrapped one is a reader failure.
 					break
 				}
 				return fmt.Errorf("decode dynamodb dump: %w", err)
