@@ -283,19 +283,18 @@ func TestCacheDifferential(t *testing.T) {
 	}
 }
 
-// plantRecords replaces the cache of the dump at url with a cache that holds one
-// string record. The original dump stays untouched, so the cache keeps matching
+// plantRecords replaces the cache of the dump at url with a cache that holds
+// only rec. The original dump stays untouched, so the cache keeps matching
 // it. A later query that returns the planted value proves that it read the cache
 // and not the dump.
-func plantRecords(t *testing.T, url string, dir, key, value string) {
+func plantRecords(t *testing.T, url, dir string, rec query.Record) {
 	t.Helper()
 	st, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
 	require.NoError(t, err)
 	m, ok := st.cacheable()
 	require.True(t, ok)
 	h := cacheHeader{Path: m.path, Size: m.size, MTimeNano: m.mtime, Format: int(st.format), Decimal: int(st.dec), CTimeNano: m.ctime, Inode: m.ino}
-	recs := []query.Record{{Key: key, Type: "string", Value: value}}
-	plantCache(t, st, m, cacheBytes(t, h, recs, true, nil))
+	plantCache(t, st, m, cacheBytes(t, h, []query.Record{rec}, true, nil))
 }
 
 // TestCacheServedFromCacheFile proves that the warm path reads the cache and not
@@ -312,7 +311,7 @@ func TestCacheServedFromCacheFile(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "hello", collect(t, w)["s"].Value)
 
-	plantRecords(t, url, dir, "s", "from-cache")
+	plantRecords(t, url, dir, query.Record{Key: "s", Type: "string", Value: "from-cache"})
 
 	w2, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
 	require.NoError(t, err)
@@ -360,7 +359,7 @@ func TestCacheWarmGet(t *testing.T) {
 
 	// Replace the cache with one that holds another value. A Get that decodes the
 	// dump returns "hello". The planted value proves that the Get read the cache.
-	plantRecords(t, url, dir, "s", "from-cache")
+	plantRecords(t, url, dir, query.Record{Key: "s", Type: "string", Value: "from-cache"})
 
 	st, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
 	require.NoError(t, err)
