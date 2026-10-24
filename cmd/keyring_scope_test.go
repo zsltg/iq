@@ -248,6 +248,19 @@ func TestEnsureKeyringIDRollsBack(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, cf.KeyringID)
 	})
+	t.Run("a failed save with no legacy entry leaves no scoped entry", func(t *testing.T) {
+		fk := useFakeKeyring(t)
+		c := keyringSeed(t, "", "a")
+		lockConfigDir(t, c)
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "set", "a", "pw-new")
+
+		require.ErrorContains(t, err, "create temp config")
+		require.Empty(t, fk.m, "the new scoped entry is gone")
+		cf, err := iqconfig.Load()
+		require.NoError(t, err)
+		require.Empty(t, cf.KeyringID)
+	})
 }
 
 // TestReadFallsBackToTheLegacyEntry reads in a file that has an ID. A missing

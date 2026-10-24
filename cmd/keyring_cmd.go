@@ -288,7 +288,9 @@ type adoption struct {
 // config. A source that is already keyring-backed needs no change, unless the
 // command assigned a keyring ID (idAssigned). Then the config must be saved to
 // keep the ID. On a failure it deletes the entry that the command wrote when
-// that entry is new, and it calls rollback, which undoes the ID assignment.
+// that entry is new, and it calls rollback, which undoes the ID assignment. The
+// entry is new when the source was not keyring-backed, or when the command
+// assigned the ID, because that account did not exist before.
 func adoptKeyring(cf *iqconfig.Config, a adoption, rollback func()) error {
 	src, full := a.src, a.full
 	if src.Keyring && !a.idAssigned {
@@ -296,7 +298,7 @@ func adoptKeyring(cf *iqconfig.Config, a adoption, rollback func()) error {
 	}
 	clean := iqconfig.CleanHandle(full)
 	fail := func(err error) error {
-		if !src.Keyring {
+		if !src.Keyring || a.idAssigned {
 			_ = keyringFor(cf).Delete(clean)
 		}
 		rollback()
@@ -569,11 +571,14 @@ func newConfigKeyringPruneCmd() *cobra.Command {
 		Use:   "prune",
 		Short: "Delete stale keyring entries for non-keyring sources",
 		Long: "Delete the keyring entries of this config file that no keyring-backed source uses.\n" +
-			"Only the entries of this file are touched.\n" +
+			"If the file has a keyring ID, only the entries of this file are touched.\n" +
+			"A file without a keyring ID uses handle-only entries, which other files\n" +
+			"without an ID can share.\n" +
 			"With --legacy, delete instead the old entry of each source of this file that\n" +
 			"has an entry under the keyring ID of the file. The old entry is named by the\n" +
-			"handle alone. A config file without a keyring ID can still use it, so\n" +
-			"--legacy asks for confirmation. Use --force to skip the question.",
+			"handle alone. Files without a keyring ID can share it, so the command asks\n" +
+			"for confirmation before it deletes it. Use --force to skip the question.\n" +
+			"In a file without a keyring ID, --legacy is an error.",
 		Example: "  $ iq config keyring prune\n" +
 			"  $ iq config keyring prune --legacy --dry-run",
 		Args: cobra.NoArgs,
@@ -637,7 +642,7 @@ func pruneStale(out io.Writer, cf *iqconfig.Config, dryRun bool) (bool, error) {
 // the legacy account. It reports whether the source had an entry.
 func pruneEntry(out io.Writer, kr *fileKeyring, name string, dryRun bool) (bool, error) {
 	clean := iqconfig.CleanHandle(name)
-	has, err := keyringProbe(kr.GetExact, clean)
+	has, err := keyringProbe(kr.exactView().Get, clean)
 	if err != nil || !has {
 		return false, err
 	}
@@ -686,14 +691,14 @@ func legacyNames(cf *iqconfig.Config) ([]string, error) {
 	var names []string
 	for _, h := range cf.List() {
 		clean := iqconfig.CleanHandle(h.Name)
-		has, err := keyringProbe(kr.GetExact, clean)
+		has, err := keyringProbe(kr.exactView().Get, clean)
 		if err != nil {
 			return nil, err
 		}
 		if !has {
 			continue
 		}
-		legacy, err := keyringProbe(kr.GetLegacy, clean)
+		legacy, err := keyringProbe(kr.legacyView().Get, clean)
 		if err != nil {
 			return nil, err
 		}
@@ -718,7 +723,7 @@ func reportLegacy(out io.Writer, verb string, names []string) error {
 // deleteLegacy deletes the legacy entry of each name and reports each deletion.
 func deleteLegacy(out io.Writer, kr *fileKeyring, names []string) error {
 	for _, n := range names {
-		if err := kr.DeleteLegacy(n); err != nil {
+		if err := kr.legacyView().Delete(n); err != nil {
 			return err
 		}
 		if err := reportLegacy(out, "deleted", []string{n}); err != nil {

@@ -30,7 +30,7 @@ func keyringFree(kr *fileKeyring, handle string) error {
 	if kr.cf.KeyringID == "" {
 		return nil
 	}
-	_, err := kr.GetExact(handle)
+	_, err := kr.exactView().Get(handle)
 	switch {
 	case err == nil:
 		return fmt.Errorf("%s: %w", handle, errKeyringTaken)

@@ -152,14 +152,16 @@ iq config keyring migrate [<handle>] [--all] [--dry-run]
 
 ### Prune `prune`
 
-Delete stale entries left for non-keyring sources. The command touches the
-entries of this config file only. The keyring cannot be enumerated, so entries
-whose source was deleted are undetectable and are not pruned.
+Delete stale entries left for non-keyring sources. If the file has a
+`keyring_id`, the command touches the entries of this config file only. A file
+without a `keyring_id` uses handle-only entries, and other files without an ID
+can share them. The keyring cannot be enumerated, so entries whose source was
+deleted are undetectable and are not pruned.
 
 With `--legacy`, the command deletes the old handle-only entry of each source of
-this file that has an entry under the `keyring_id` of the file. A config file
-without a `keyring_id` can still use an old entry, so the command asks for
-confirmation. Use `--force` to skip the question. In a file with no
+this file that has an entry under the `keyring_id` of the file. Files without a
+`keyring_id` can share these old entries, so the command asks for confirmation
+before it deletes them. Use `--force` to skip the question. In a file with no
 `keyring_id`, `--legacy` is an error.
 
 ```sh
