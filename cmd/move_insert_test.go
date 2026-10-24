@@ -251,6 +251,8 @@ func TestSameEndpoint(t *testing.T) {
 		{"no handles and different URLs", endpoint{url: "redis://h/0"}, endpoint{url: "redis://h/1"}, false},
 		{"no URLs and different handles", endpoint{handle: "x"}, endpoint{handle: "y"}, false},
 		{"no handles and the same URL", endpoint{url: "redis://h/0"}, endpoint{url: "redis://h/0"}, true},
+		{"URL default address and the same explicit address", endpoint{handle: "m", url: "mongodb://h/db?collection=books"}, endpoint{handle: "m", url: "mongodb://h/db?collection=books", address: "books"}, true},
+		{"URL default address and another explicit address", endpoint{handle: "m", url: "mongodb://h/db?collection=books"}, endpoint{handle: "m", url: "mongodb://h/db?collection=books", address: "orders"}, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

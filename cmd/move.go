@@ -187,10 +187,21 @@ func sourceEndpoint(cfg *config) endpoint {
 // or URL never matches, so a zero endpoint (no source) is never the same as
 // another.
 func sameEndpoint(a, b endpoint) bool {
-	if a.address != b.address {
+	if effectiveAddress(a) != effectiveAddress(b) {
 		return false
 	}
 	return a.handle != "" && a.handle == b.handle || a.url != "" && a.url == b.url
+}
+
+// effectiveAddress returns the address that e reads or writes: the explicit
+// address when e has one, otherwise the default address in its URL. So
+// `books` with ?collection=books in its URL and `books.books` are the same
+// address.
+func effectiveAddress(e endpoint) string {
+	if e.address != "" {
+		return e.address
+	}
+	return urlAddressName(e.url)
 }
 
 // writeModeFor returns the write mode that cfg selects: insert-only for
@@ -208,13 +219,9 @@ func writeModeFor(cfg *config) query.WriteMode {
 // the outcome line and the write statistics. Every error crossing out of it has
 // the connection URI redacted.
 func applyInsert(ctx context.Context, req insertRequest, recSrc query.RecordSource, transform func(query.Record) ([]query.Record, error)) (string, query.WriteStat, error) {
-	dst, err := resolveInsertTarget(req.dst)
+	dst, err := insertTarget(req)
 	if err != nil {
 		return "", query.WriteStat{}, err
-	}
-	if req.replace && sameEndpoint(req.src, dst) {
-		return "", query.WriteStat{}, fmt.Errorf("--replace would empty %s before the copy reads it, because it is also the source; "+
-			"write a copy first with --typed -o <file>, then insert from that file", dst.label())
 	}
 	st, err := openStore(ctx, &config{url: dst.url, address: dst.address})
 	if err != nil {
@@ -237,6 +244,21 @@ func applyInsert(ctx context.Context, req insertRequest, recSrc query.RecordSour
 		return "", query.WriteStat{}, redactErr(err, dst.url)
 	}
 	return dst.label(), stat, nil
+}
+
+// insertTarget resolves the destination of req. It refuses a replace onto the
+// source of the records, because the clear would empty the source before the
+// copy reads it.
+func insertTarget(req insertRequest) (endpoint, error) {
+	dst, err := resolveInsertTarget(req.dst)
+	if err != nil {
+		return endpoint{}, err
+	}
+	if req.replace && sameEndpoint(req.src, dst) {
+		return endpoint{}, fmt.Errorf("--replace would empty %s before the copy reads it, because it is also the source; "+
+			"write a copy first with --typed -o <file>, then insert from that file", dst.label())
+	}
+	return dst, nil
 }
 
 // resolveInsertTarget loads the registry and resolves the --insert destination to
