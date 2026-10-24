@@ -244,7 +244,7 @@ func runKeyringSet(cmd *cobra.Command, args []string) error {
 		rollback()
 		return err
 	}
-	if err := adoptKeyring(cf, src, full, !hadID, rollback); err != nil {
+	if err := adoptKeyring(cf, adoption{src: src, full: full, idAssigned: !hadID}, rollback); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "set keyring secret for %s\n", full)
@@ -276,13 +276,22 @@ func secretValue(cmd *cobra.Command, args []string) (string, error) {
 	return readPassword(cmd)
 }
 
+// adoption describes the source that adoptKeyring changes: the source, its full
+// handle, and whether the command assigned a keyring ID.
+type adoption struct {
+	src        iqconfig.Source
+	full       string
+	idAssigned bool
+}
+
 // adoptKeyring flips a password-less source to keyring-backed and persists the
 // config. A source that is already keyring-backed needs no change, unless the
 // command assigned a keyring ID (idAssigned). Then the config must be saved to
 // keep the ID. On a failure it deletes the entry that the command wrote when
 // that entry is new, and it calls rollback, which undoes the ID assignment.
-func adoptKeyring(cf *iqconfig.Config, src iqconfig.Source, full string, idAssigned bool, rollback func()) error {
-	if src.Keyring && !idAssigned {
+func adoptKeyring(cf *iqconfig.Config, a adoption, rollback func()) error {
+	src, full := a.src, a.full
+	if src.Keyring && !a.idAssigned {
 		return nil
 	}
 	clean := iqconfig.CleanHandle(full)
@@ -652,42 +661,67 @@ func pruneLegacy(cmd *cobra.Command, cf *iqconfig.Config, dryRun, force bool) er
 		return errNoKeyringID
 	}
 	out := cmd.OutOrStdout()
-	kr := keyringFor(cf)
-	var names []string
-	for _, h := range cf.List() {
-		clean := iqconfig.CleanHandle(h.Name)
-		if has, err := keyringProbe(kr.GetExact, clean); err != nil {
-			return err
-		} else if !has {
-			continue
-		}
-		if has, err := keyringProbe(kr.GetLegacy, clean); err != nil {
-			return err
-		} else if has {
-			names = append(names, clean)
-		}
+	names, err := legacyNames(cf)
+	if err != nil {
+		return err
 	}
 	if len(names) == 0 {
 		_, err := fmt.Fprintln(out, "no legacy keyring entries")
 		return err
 	}
 	if dryRun {
-		for _, n := range names {
-			if _, err := fmt.Fprintf(out, "would delete legacy keyring entry for %s\n", n); err != nil {
-				return err
-			}
-		}
-		return nil
+		return reportLegacy(out, "would delete", names)
 	}
 	action := fmt.Sprintf("delete %d legacy keyring entries that a config file without a keyring ID can still use", len(names))
 	if err := confirmDestruction(cmd, action, force); err != nil {
 		return err
 	}
+	return deleteLegacy(out, keyringFor(cf), names)
+}
+
+// legacyNames returns the clean handle of each source of cf that has an entry
+// under the keyring ID of the file and also a legacy entry.
+func legacyNames(cf *iqconfig.Config) ([]string, error) {
+	kr := keyringFor(cf)
+	var names []string
+	for _, h := range cf.List() {
+		clean := iqconfig.CleanHandle(h.Name)
+		has, err := keyringProbe(kr.GetExact, clean)
+		if err != nil {
+			return nil, err
+		}
+		if !has {
+			continue
+		}
+		legacy, err := keyringProbe(kr.GetLegacy, clean)
+		if err != nil {
+			return nil, err
+		}
+		if legacy {
+			names = append(names, clean)
+		}
+	}
+	return names, nil
+}
+
+// reportLegacy prints one line per name, "<verb> legacy keyring entry for
+// <name>".
+func reportLegacy(out io.Writer, verb string, names []string) error {
+	for _, n := range names {
+		if _, err := fmt.Fprintf(out, "%s legacy keyring entry for %s\n", verb, n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteLegacy deletes the legacy entry of each name and reports each deletion.
+func deleteLegacy(out io.Writer, kr *fileKeyring, names []string) error {
 	for _, n := range names {
 		if err := kr.DeleteLegacy(n); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(out, "deleted legacy keyring entry for %s\n", n); err != nil {
+		if err := reportLegacy(out, "deleted", []string{n}); err != nil {
 			return err
 		}
 	}

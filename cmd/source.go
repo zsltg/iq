@@ -520,14 +520,19 @@ func stageKeyringMoves(cf *iqconfig.Config, moved []iqconfig.Rename) ([]iqconfig
 			continue // no stored credential to migrate
 		}
 		if sErr := kr.Set(r.New, pw); sErr != nil {
-			for _, s := range staged {
-				_ = kr.Delete(s.New)
-			}
+			deleteNew(kr, staged)
 			return nil, sErr
 		}
 		staged = append(staged, r)
 	}
 	return staged, nil
+}
+
+// deleteNew deletes the new entry of each staged rename.
+func deleteNew(kr *fileKeyring, staged []iqconfig.Rename) {
+	for _, r := range staged {
+		_ = kr.Delete(r.New)
+	}
 }
 
 // commitMove saves the config. If the save fails, it deletes the staged new
@@ -537,9 +542,7 @@ func stageKeyringMoves(cf *iqconfig.Config, moved []iqconfig.Rename) ([]iqconfig
 func commitMove(cf *iqconfig.Config, staged []iqconfig.Rename, rollback func()) error {
 	kr := keyringFor(cf)
 	if err := cf.Save(); err != nil {
-		for _, r := range staged {
-			_ = kr.Delete(r.New)
-		}
+		deleteNew(kr, staged)
 		rollback()
 		return err
 	}

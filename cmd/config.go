@@ -386,7 +386,7 @@ func redactedConfig(cf *iqconfig.Config, reveal, expand bool) *iqconfig.Config {
 	if len(cf.Sources) > 0 {
 		out.Sources = make(map[string]iqconfig.Source, len(cf.Sources))
 		for h, s := range cf.Sources {
-			s.URL = displayLocation(kr, s, h, reveal, expand)
+			s.URL = displayLocation(kr, s, h, locationFlags{reveal: reveal, expand: expand})
 			out.Sources[h] = s
 		}
 	}

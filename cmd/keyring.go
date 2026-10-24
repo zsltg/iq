@@ -97,13 +97,25 @@ func ensureKeyringID(cf *iqconfig.Config) (rollback func(), err error) {
 		return noop, err
 	}
 	scoped := &fileKeyring{cf: &iqconfig.Config{KeyringID: id}, store: keyringStore}
-	var copied []string
+	copied, err := copyLegacyEntries(cf, scoped)
 	undo := func() {
 		for _, h := range copied {
 			_ = scoped.Delete(h)
 		}
 		cf.KeyringID = ""
 	}
+	if err != nil {
+		undo()
+		return noop, err
+	}
+	cf.KeyringID = id
+	return undo, nil
+}
+
+// copyLegacyEntries copies the legacy entry of every keyring-backed source of
+// cf to its account in scoped. It returns the handles that it wrote, also when
+// it fails, so that the caller can delete them.
+func copyLegacyEntries(cf *iqconfig.Config, scoped *fileKeyring) (copied []string, err error) {
 	for _, h := range cf.List() {
 		if !h.Source.Keyring {
 			continue
@@ -114,18 +126,14 @@ func ensureKeyringID(cf *iqconfig.Config) (rollback func(), err error) {
 			continue
 		}
 		if err != nil {
-			undo()
-			return noop, err
+			return copied, err
 		}
+		copied = append(copied, clean) // a failed Set can leave an entry
 		if err := scoped.Set(clean, pw); err != nil {
-			copied = append(copied, clean) // a failed Set can leave an entry
-			undo()
-			return noop, err
+			return copied, err
 		}
-		copied = append(copied, clean)
 	}
-	cf.KeyringID = id
-	return undo, nil
+	return copied, nil
 }
 
 // effectiveURL returns the connection URI to open for src: src.URL as stored.

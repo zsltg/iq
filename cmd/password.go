@@ -99,6 +99,33 @@ func saveSource(stderr io.Writer, cf *iqconfig.Config, name string, plan passwor
 	return nil
 }
 
+// storeInKeyring writes the password of the source name to the keyring of cf and
+// marks the source keyring-backed. On a failure it calls rollback. A keyring
+// error comes back as soft, and the caller can fall back to the config file. A
+// taken handle or a config error comes back as hard.
+func storeInKeyring(cf *iqconfig.Config, name, password string, rollback func()) (soft, hard error) {
+	h := iqconfig.CleanHandle(name)
+	kr := keyringFor(cf)
+	err := keyringFree(kr, h)
+	if errors.Is(err, errKeyringTaken) {
+		rollback()
+		return nil, fmt.Errorf("%w; choose another handle with -n", err)
+	}
+	if err == nil {
+		err = kr.Set(h, password)
+	}
+	if err != nil {
+		rollback()
+		return err, nil
+	}
+	if err := cf.UseKeyring(name); err != nil {
+		_ = kr.Delete(h)
+		rollback()
+		return nil, err
+	}
+	return nil, nil
+}
+
 // keepPassword writes the password of the source name to the OS keyring and
 // marks the source keyring-backed, and reports whether the keyring holds it.
 // The returned function undoes a keyring ID that the call assigned, and does
@@ -111,27 +138,16 @@ func keepPassword(cf *iqconfig.Config, name string, plan passwordPlan) (bool, fu
 	if !plan.keyring {
 		return false, noop, nil
 	}
-	h := iqconfig.CleanHandle(name)
 	rollback, err := ensureKeyringID(cf)
 	if err == nil {
-		kr := keyringFor(cf)
-		err = keyringFree(kr, h)
-		if errors.Is(err, errKeyringTaken) {
-			rollback()
-			return false, noop, fmt.Errorf("%w; choose another handle with -n", err)
+		soft, hard := storeInKeyring(cf, name, plan.password, rollback)
+		if hard != nil {
+			return false, noop, hard
 		}
-		if err == nil {
-			err = kr.Set(h, plan.password)
-		}
-		if err == nil {
-			if err := cf.UseKeyring(name); err != nil {
-				_ = kr.Delete(h)
-				rollback()
-				return false, noop, err
-			}
+		if soft == nil {
 			return true, rollback, nil
 		}
-		rollback()
+		err = soft
 	}
 	if plan.explicit {
 		return false, noop, err

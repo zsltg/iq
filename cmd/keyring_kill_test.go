@@ -78,7 +78,7 @@ func TestAdoptKeyringLeavesAKeyringSourceAlone(t *testing.T) {
 	configEnv(t)
 	useFakeKeyring(t)
 
-	err := adoptKeyring(newSeed(), iqconfig.Source{Keyring: true}, "ghost", false, func() {})
+	err := adoptKeyring(newSeed(), adoption{src: iqconfig.Source{Keyring: true}, full: "ghost"}, func() {})
 
 	require.NoError(t, err)
 }
@@ -90,7 +90,7 @@ func TestAdoptKeyringRollsBackWhenTheSourceIsUnknown(t *testing.T) {
 	fk := useFakeKeyring(t)
 	require.NoError(t, fk.Set("ghost", "pw"))
 
-	err := adoptKeyring(newSeed(), iqconfig.Source{URL: "redis://h"}, "ghost", false, func() {})
+	err := adoptKeyring(newSeed(), adoption{src: iqconfig.Source{URL: "redis://h"}, full: "ghost"}, func() {})
 
 	require.ErrorIs(t, err, iqconfig.ErrUnknownSource)
 	require.Equal(t, []string{"ghost"}, fk.deleted)

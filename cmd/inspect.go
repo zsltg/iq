@@ -708,7 +708,7 @@ func inspectHeader(out io.Writer, cfg *config) error {
 	if kr == nil {
 		kr = keyringStore
 	}
-	loc := displayLocation(kr, cfg.source, cfg.handle, cfg.reveal, cfg.expand)
+	loc := displayLocation(kr, cfg.source, cfg.handle, locationFlags{reveal: cfg.reveal, expand: cfg.expand})
 	header := fmt.Sprintf("%s  %s", driverName(cfg.source.URL), loc)
 	_, err := fmt.Fprintf(out, "%s\n\n", pal.header.Sprint(header))
 	return err

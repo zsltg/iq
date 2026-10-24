@@ -121,7 +121,7 @@ func sourceCells(kr secret.Keyring, h iqconfig.Handle, active bool, opts lsOptio
 
 	// The default collection already rides in the shown URL as ?collection=,
 	// so it is not repeated as a separate tag here.
-	loc := displayLocation(kr, h.Source, h.Name, opts.reveal, opts.expand)
+	loc := displayLocation(kr, h.Source, h.Name, locationFlags{reveal: opts.reveal, expand: opts.expand})
 	driver := driverName(h.Source.URL)
 	if !opts.verbose {
 		return []tableCell{name, coloredCell(driver, pal.faint), coloredCell(loc, pal.location)}
@@ -148,7 +148,7 @@ func sourceRows(cf *iqconfig.Config, list []iqconfig.Handle, opts lsOptions) []s
 		row := sourceRow{
 			Handle:     h.Name,
 			Driver:     driver,
-			Location:   displayLocation(kr, h.Source, h.Name, opts.reveal, opts.expand),
+			Location:   displayLocation(kr, h.Source, h.Name, locationFlags{reveal: opts.reveal, expand: opts.expand}),
 			Collection: iqmongo.CollectionFromURI(h.Source.URL),
 			Keyring:    h.Source.Keyring,
 			Active:     h.Name == cf.Active,
@@ -266,6 +266,11 @@ func groupJSON(cf *iqconfig.Config, groups []string) []groupRow {
 	return rows
 }
 
+// locationFlags are the display toggles of displayLocation.
+type locationFlags struct {
+	reveal, expand bool
+}
+
 // displayLocation returns the URI of a source for display, redacted by default
 // so a stored password never prints. The expand flag resolves a keyring-backed
 // password and inlines it. If the lookup fails, it keeps the stored
@@ -273,14 +278,14 @@ func groupJSON(cf *iqconfig.Config, groups []string) []groupRow {
 // verbatim. Otherwise any password is redacted to xxxxx. So reveal un-redacts
 // inline passwords, and expand resolves keyring ones. This mirrors the
 // --reveal/--expand split of sq.
-func displayLocation(kr secret.Keyring, src iqconfig.Source, handle string, reveal, expand bool) string {
+func displayLocation(kr secret.Keyring, src iqconfig.Source, handle string, flags locationFlags) string {
 	raw := src.URL
-	if expand && src.Keyring {
+	if flags.expand && src.Keyring {
 		if u, err := effectiveURL(kr, src, handle); err == nil {
 			raw = u
 		}
 	}
-	if !reveal {
+	if !flags.reveal {
 		return redactURL(raw)
 	}
 	return raw

@@ -132,15 +132,8 @@ var ErrBadKeyringID = errors.New("invalid keyring_id")
 
 // ValidKeyringID reports whether id is exactly 16 lowercase hex characters.
 func ValidKeyringID(id string) bool {
-	if len(id) != keyringIDLen {
-		return false
-	}
-	for _, r := range id {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return false
-		}
-	}
-	return true
+	b, err := hex.DecodeString(id)
+	return err == nil && len(id) == keyringIDLen && hex.EncodeToString(b) == id
 }
 
 // NewKeyringID returns a random keyring ID: 16 lowercase hex characters.
