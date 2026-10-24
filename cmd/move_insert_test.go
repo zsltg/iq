@@ -233,3 +233,76 @@ func TestApplyInsertReachesTheStore(t *testing.T) {
 		})
 	}
 }
+
+func TestSameEndpoint(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b endpoint
+		want bool
+	}{
+		{"same handle", endpoint{handle: "x", url: "redis://h/0"}, endpoint{handle: "x", url: "redis://h/0"}, true},
+		{"same handle with another URL", endpoint{handle: "x", url: "redis://h/0"}, endpoint{handle: "x", url: "redis://other/0"}, true},
+		{"two handles with the same URL", endpoint{handle: "x", url: "redis://h/0"}, endpoint{handle: "y", url: "redis://h/0"}, true},
+		{"same handle and address", endpoint{handle: "m", url: "mongodb://h/db", address: "orders"}, endpoint{handle: "m", url: "mongodb://h/db", address: "orders"}, true},
+		{"same URL with another address", endpoint{handle: "m", url: "mongodb://h/db", address: "orders"}, endpoint{handle: "n", url: "mongodb://h/db", address: "items"}, false},
+		{"same handle with another address", endpoint{handle: "m", url: "mongodb://h/db", address: "orders"}, endpoint{handle: "m", url: "mongodb://h/db", address: "items"}, false},
+		{"different URLs", endpoint{handle: "x", url: "redis://h/0"}, endpoint{handle: "y", url: "redis://h/1"}, false},
+		{"empty source", endpoint{}, endpoint{handle: "x", url: "redis://h/0"}, false},
+		{"two empty endpoints", endpoint{}, endpoint{}, false},
+		{"no handles and different URLs", endpoint{url: "redis://h/0"}, endpoint{url: "redis://h/1"}, false},
+		{"no URLs and different handles", endpoint{handle: "x"}, endpoint{handle: "y"}, false},
+		{"no handles and the same URL", endpoint{url: "redis://h/0"}, endpoint{url: "redis://h/0"}, true},
+		{"URL default address and the same explicit address", endpoint{handle: "m", url: "mongodb://h/db?collection=books"}, endpoint{handle: "m", url: "mongodb://h/db?collection=books", address: "books"}, true},
+		{"URL default address and another explicit address", endpoint{handle: "m", url: "mongodb://h/db?collection=books"}, endpoint{handle: "m", url: "mongodb://h/db?collection=books", address: "orders"}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, sameEndpoint(tc.a, tc.b))
+		})
+	}
+}
+
+func TestSourceEndpoint(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config
+		want endpoint
+	}{
+		{"a resolved source", config{handle: "m", url: "mongodb://h/db", address: "orders"}, endpoint{handle: "m", url: "mongodb://h/db", address: "orders"}},
+		{"no resolved source", config{url: "mongodb://h/db", address: "orders"}, endpoint{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, sourceEndpoint(&tc.cfg))
+		})
+	}
+}
+
+func TestInsertReplaceOntoItsOwnSource(t *testing.T) {
+	const refusal = "--replace would empty full before the copy reads it, because it is also the source"
+	tests := []struct {
+		name       string
+		args       []string
+		wantErr    string
+		wantEvents []string
+	}{
+		{"replace onto the source", []string{"--src", "full", "--insert", "full", "--replace", "--force"}, refusal, nil},
+		{"dry-run replace onto the source", []string{"--src", "full", "--insert", "full", "--replace", "--dry-run"}, refusal, nil},
+		{"plain insert onto the source", []string{"--src", "full", "--insert", "full"}, "", []string{"put"}},
+		{"replace onto another source", []string{"--src", "full", "--insert", "put", "--replace", "--dry-run"}, "--replace: destination put (mvput) cannot be cleared", nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			log := useMoveDrivers(t)
+			root, _ := newRootCmd()
+			out, err := runCmd(t, root, append([]string{"--timeout", "5s"}, tc.args...)...)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.wantErr)
+				require.NotContains(t, err.Error()+out, "hunter2")
+			}
+			require.Equal(t, tc.wantEvents, log.events, "the destination is not cleared or written")
+		})
+	}
+}
