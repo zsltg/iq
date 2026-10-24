@@ -46,7 +46,7 @@ services:
       retries: 5
 
   cassandra:
-    image: cassandra:5.0.9@sha256:618a493bcf1f817ea2f07288a46fa76fb2d9c4dfd5a04c28227336405782889c
+    image: cassandra:5.0.9@sha256:3ea9333712c5692f3fe91d6c4dcc262df9e36338c4fdd1bc00a5e53f1137a1a0
     container_name: iq-cassandra
     ports:
       - "9042:9042"
