@@ -3,9 +3,11 @@
 package file
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	"github.com/stretchr/testify/require"
 
@@ -14,13 +16,24 @@ import (
 
 // TestChangeIdentityReportsCtimeAndInode checks that the helper reads a real
 // change time and inode number from a file on Unix.
+func TestChangeIdentityWithoutPlatformData(t *testing.T) {
+	// A FileInfo from an in-memory file system carries no syscall.Stat_t.
+	fi, err := fs.Stat(fstest.MapFS{"f": {Data: []byte("x")}}, "f")
+	require.NoError(t, err)
+	ctime, ino := changeIdentity(fi)
+	require.Zero(t, ctime)
+	require.Zero(t, ino)
+}
+
 func TestChangeIdentityReportsCtimeAndInode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "f")
 	require.NoError(t, os.WriteFile(path, []byte("x"), 0o600))
 	fi, err := os.Stat(path)
 	require.NoError(t, err)
 	ctime, ino := changeIdentity(fi)
-	require.NotZero(t, ctime)
+	// A new file gets its change time and its mtime from the same write. The
+	// window of one second still catches a wrong unit or sign in the conversion.
+	require.InDelta(t, float64(fi.ModTime().UnixNano()), float64(ctime), 1e9)
 	require.NotZero(t, ino)
 }
 
