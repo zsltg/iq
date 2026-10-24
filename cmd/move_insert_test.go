@@ -241,6 +241,7 @@ func TestSameEndpoint(t *testing.T) {
 		want bool
 	}{
 		{"same handle", endpoint{handle: "x", url: "redis://h/0"}, endpoint{handle: "x", url: "redis://h/0"}, true},
+		{"same handle with another URL", endpoint{handle: "x", url: "redis://h/0"}, endpoint{handle: "x", url: "redis://other/0"}, true},
 		{"two handles with the same URL", endpoint{handle: "x", url: "redis://h/0"}, endpoint{handle: "y", url: "redis://h/0"}, true},
 		{"same handle and address", endpoint{handle: "m", url: "mongodb://h/db", address: "orders"}, endpoint{handle: "m", url: "mongodb://h/db", address: "orders"}, true},
 		{"same URL with another address", endpoint{handle: "m", url: "mongodb://h/db", address: "orders"}, endpoint{handle: "n", url: "mongodb://h/db", address: "items"}, false},
@@ -257,6 +258,22 @@ func TestSameEndpoint(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, sameEndpoint(tc.a, tc.b))
+		})
+	}
+}
+
+func TestSourceEndpoint(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config
+		want endpoint
+	}{
+		{"a resolved source", config{handle: "m", url: "mongodb://h/db", address: "orders"}, endpoint{handle: "m", url: "mongodb://h/db", address: "orders"}},
+		{"no resolved source", config{url: "mongodb://h/db", address: "orders"}, endpoint{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, sourceEndpoint(&tc.cfg))
 		})
 	}
 }
