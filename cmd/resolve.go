@@ -46,7 +46,6 @@ func resolveSource(cfg *config) error {
 	}
 	cfg.url = u
 	cfg.source = src
-	cfg.keyring = kr
 	cfg.handle = full
 	cfg.address = addr
 	// Log the resolved source with its location redacted, never the raw URL, so

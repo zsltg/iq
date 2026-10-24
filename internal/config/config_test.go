@@ -919,6 +919,8 @@ func TestLoadKeyringID(t *testing.T) {
 		{"valid", "0123456789abcdef", false},
 		{"too short", "0123456789abcde", true},
 		{"too long", "0123456789abcdef0", true},
+		{"even length, too short", "0123456789abcd", true},
+		{"even length, too long", "0123456789abcdef01", true},
 		{"uppercase hex", "0123456789ABCDEF", true},
 		{"not hex", "0123456789abcdeg", true},
 		{"a slash", "0123456789abcd/f", true},

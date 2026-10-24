@@ -32,8 +32,8 @@ type config struct {
 	url        string
 	source     iqconfig.Source
 	handle     string
-	// keyring is the keyring of the config file that resolved the source. It
-	// is nil until a source is resolved.
+	// keyring is the keyring of the config file that resolved the source for
+	// inspect. It is nil until then.
 	keyring secret.Keyring
 	// address is the opaque dotted suffix on a source reference (shop.orders ->
 	// address "orders"), "" when absent. The core never interprets it. The driver

@@ -280,7 +280,7 @@ type locationFlags struct {
 // --reveal/--expand split of sq.
 func displayLocation(kr secret.Keyring, src iqconfig.Source, handle string, flags locationFlags) string {
 	raw := src.URL
-	if flags.expand && src.Keyring {
+	if flags.expand {
 		if u, err := effectiveURL(kr, src, handle); err == nil {
 			raw = u
 		}

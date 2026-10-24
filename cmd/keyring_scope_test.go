@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/secret"
 )
 
 const (
@@ -378,4 +380,195 @@ func stdinTerminal(t *testing.T, term bool) {
 	orig := stdinIsTerminal
 	stdinIsTerminal = func() bool { return term }
 	t.Cleanup(func() { stdinIsTerminal = orig })
+}
+
+// legacyGetFails wraps a fake keyring so that the Get of a legacy account (one
+// with no "/") fails with a hard error.
+type legacyGetFails struct{ *fakeKeyring }
+
+func (k legacyGetFails) Get(account string) (string, error) {
+	if !strings.Contains(account, "/") {
+		return "", errors.New("keyring locked")
+	}
+	return k.fakeKeyring.Get(account)
+}
+
+// TestPruneLegacyFailures drives `config keyring prune --legacy` through each
+// read, delete and write failure. Each one stops the command with its error.
+func TestPruneLegacyFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		store   func(fk *fakeKeyring) secret.Keyring
+		seed    func(fk *fakeKeyring)
+		args    []string
+		outFail bool
+		want    string
+		deleted int
+	}{
+		{
+			name:  "a read failure of the scoped entry",
+			store: func(fk *fakeKeyring) secret.Keyring { fk.getErr = errors.New("keyring locked"); return fk },
+			args:  []string{"prune", "--legacy", "--force"},
+			want:  "keyring locked",
+		},
+		{
+			name:  "a read failure of the legacy entry",
+			store: func(fk *fakeKeyring) secret.Keyring { return legacyGetFails{fk} },
+			seed:  func(fk *fakeKeyring) { fk.m[idA+"/both"] = "s1" },
+			args:  []string{"prune", "--legacy", "--force"},
+			want:  "keyring locked",
+		},
+		{
+			name:  "no legacy entries",
+			store: func(fk *fakeKeyring) secret.Keyring { return fk },
+			seed:  func(fk *fakeKeyring) { fk.m[idA+"/both"] = "s1" },
+			args:  []string{"prune", "--legacy", "--force"},
+			want:  "",
+		},
+		{
+			name:  "a delete failure",
+			store: func(fk *fakeKeyring) secret.Keyring { return deleteFails{fk} },
+			seed:  func(fk *fakeKeyring) { fk.m["both"], fk.m[idA+"/both"] = "l1", "s1" },
+			args:  []string{"prune", "--legacy", "--force"},
+			want:  "keyring locked",
+		},
+		{
+			name:    "a write failure of the dry run report",
+			store:   func(fk *fakeKeyring) secret.Keyring { return fk },
+			seed:    func(fk *fakeKeyring) { fk.m["both"], fk.m[idA+"/both"] = "l1", "s1" },
+			args:    []string{"prune", "--legacy", "--dry-run"},
+			outFail: true,
+			want:    "write failed",
+		},
+		{
+			name:    "a write failure of the report after a delete",
+			store:   func(fk *fakeKeyring) secret.Keyring { return fk },
+			seed:    func(fk *fakeKeyring) { fk.m["both"], fk.m[idA+"/both"] = "l1", "s1" },
+			args:    []string{"prune", "--legacy", "--force"},
+			outFail: true,
+			want:    "write failed",
+			deleted: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fk := useFakeKeyring(t)
+			writeConfigFile(t, keyringSeed(t, idA, "both"))
+			if tt.seed != nil {
+				tt.seed(fk)
+			}
+			keyringStore = tt.store(fk)
+			kc := newConfigKeyringCmd(&config{})
+			var out strings.Builder
+			if tt.outFail {
+				kc.SetOut(&errAfter{0})
+			} else {
+				kc.SetOut(&out)
+			}
+			kc.SetErr(&out)
+			kc.SetArgs(tt.args)
+
+			err := kc.Execute()
+
+			if tt.want == "" {
+				require.NoError(t, err)
+				require.Contains(t, out.String(), "no legacy keyring entries")
+			} else {
+				require.ErrorContains(t, err, tt.want)
+			}
+			require.Len(t, fk.deleted, tt.deleted)
+		})
+	}
+}
+
+// TestMvKeyringID moves sources in a file that has no ID. A keyring-backed
+// source gives the file an ID, and a failed copy stops the move. A plain source
+// does not touch the keyring.
+func TestMvKeyringID(t *testing.T) {
+	t.Run("a failed copy stops the move", func(t *testing.T) {
+		fk := useFakeKeyring(t)
+		writeConfigFile(t, keyringSeed(t, "", "a"))
+		fk.m["a"] = "pw-a"
+		fk.getErr = errors.New("keyring locked")
+
+		_, err := runCmd(t, newMvCmd(), "a", "b")
+
+		require.ErrorContains(t, err, "keyring locked")
+		cf, loadErr := iqconfig.Load()
+		require.NoError(t, loadErr)
+		require.Contains(t, cf.Sources, "a")
+		require.NotContains(t, cf.Sources, "b")
+		require.Empty(t, cf.KeyringID)
+	})
+	t.Run("a plain source leaves the keyring and the file ID alone", func(t *testing.T) {
+		fk := useFakeKeyring(t)
+		c := newSeed()
+		require.NoError(t, c.Add("a", "redis://h:6379/0"))
+		writeConfigFile(t, c)
+
+		_, err := runCmd(t, newMvCmd(), "a", "b")
+
+		require.NoError(t, err)
+		cf, loadErr := iqconfig.Load()
+		require.NoError(t, loadErr)
+		require.Contains(t, cf.Sources, "b")
+		require.Empty(t, cf.KeyringID)
+		require.Empty(t, fk.calls)
+	})
+}
+
+// TestMvKeyringFailures moves keyring sources and makes the keyring or the save
+// fail. Each failure removes the new entries again.
+func TestMvKeyringFailures(t *testing.T) {
+	t.Run("a failed second copy deletes the first new entry", func(t *testing.T) {
+		fk := useFakeKeyring(t)
+		writeConfigFile(t, keyringSeed(t, idA, "g/a", "g/b"))
+		fk.m[idA+"/g/a"], fk.m[idA+"/g/b"] = "pw-a", "pw-b"
+		keyringStore = &secondSetFails{fakeKeyring: fk}
+
+		_, err := runCmd(t, newMvCmd(), "g", "h")
+
+		require.ErrorContains(t, err, "keyring locked")
+		require.Equal(t, map[string]string{idA + "/g/a": "pw-a", idA + "/g/b": "pw-b"}, fk.m)
+	})
+	t.Run("a failed save deletes the new entry and the copies of a new ID", func(t *testing.T) {
+		fk := useFakeKeyring(t)
+		c := keyringSeed(t, "", "a", "c")
+		lockConfigDir(t, c)
+		fk.m["a"], fk.m["c"] = "pw-a", "pw-c"
+
+		_, err := runCmd(t, newMvCmd(), "a", "b")
+
+		require.ErrorContains(t, err, "create temp config")
+		require.Equal(t, map[string]string{"a": "pw-a", "c": "pw-c"}, fk.m, "only the legacy entries are left")
+		cf, loadErr := iqconfig.Load()
+		require.NoError(t, loadErr)
+		require.Empty(t, cf.KeyringID)
+		require.Contains(t, cf.Sources, "a")
+	})
+	t.Run("a failed save of a plain source returns the error", func(t *testing.T) {
+		useFakeKeyring(t)
+		c := newSeed()
+		require.NoError(t, c.Add("a", "redis://h:6379/0"))
+		lockConfigDir(t, c)
+
+		_, err := runCmd(t, newMvCmd(), "a", "b")
+
+		require.ErrorContains(t, err, "create temp config")
+	})
+}
+
+// TestInspectHeaderUsesScopedKeyring expands the location of a source in a
+// config file with a keyring ID. Only the scoped entry holds the password.
+func TestInspectHeaderUsesScopedKeyring(t *testing.T) {
+	fk := useFakeKeyring(t)
+	writeConfigFile(t, keyringSeed(t, idA, "sec"))
+	fk.m[idA+"/sec"] = "pw-a"
+	cfg := &config{expand: true, reveal: true}
+
+	require.NoError(t, resolveInspectSource(cfg, "sec"))
+	var buf bytes.Buffer
+	require.NoError(t, inspectHeader(&buf, cfg))
+
+	require.Contains(t, buf.String(), "redis://u:pw-a@h:6379/0")
 }

@@ -644,6 +644,38 @@ func TestConfigKeyringSetFailures(t *testing.T) {
 		require.False(t, saved.Sources["plain"].Keyring)
 	})
 
+	t.Run("a keyring read failure while it assigns an ID changes nothing", func(t *testing.T) {
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "kr", "redis://u@h:6379/0", true, "secret")
+		seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
+		seedConfig(t, c)
+		fk.getErr = errors.New("keyring locked")
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "set", "plain", "v")
+
+		require.ErrorContains(t, err, "keyring locked")
+		saved, loadErr := iqconfig.Load()
+		require.NoError(t, loadErr)
+		require.Empty(t, saved.KeyringID)
+		require.False(t, saved.Sources["plain"].Keyring)
+	})
+	t.Run("a keyring write failure on a file without an ID assigns no ID", func(t *testing.T) {
+		c := newSeed()
+		fk := useFakeKeyring(t)
+		seedKeyringSource(t, c, fk, "plain", "redis://h:6379/0", false, "")
+		seedConfig(t, c)
+		fk.setErr = errors.New("keyring locked")
+
+		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "set", "plain", "v")
+
+		require.ErrorContains(t, err, "keyring locked")
+		saved, loadErr := iqconfig.Load()
+		require.NoError(t, loadErr)
+		require.Empty(t, saved.KeyringID)
+		require.False(t, saved.Sources["plain"].Keyring)
+	})
+
 	t.Run("a save failure removes the new entry again", func(t *testing.T) {
 		c := newSeed()
 		fk := useFakeKeyring(t)
@@ -809,4 +841,21 @@ func TestConfigKeyringMigrateAllStopsOnAnUnparsableURI(t *testing.T) {
 	_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all")
 	require.ErrorIs(t, err, errInvalidURI)
 	require.Empty(t, fk.m)
+}
+
+// TestStageMigrationUnknownSource stages an item whose source the config does
+// not hold. The marking step fails, and the secret that was just written is
+// deleted again.
+func TestStageMigrationUnknownSource(t *testing.T) {
+	fk := useFakeKeyring(t)
+	cf := newSeed()
+	item := migrateItem{stripped: "redis://u@h:6379/0", password: "pw"}
+	item.full, item.clean = "ghost", "ghost"
+
+	staged, err := stageMigration(cf, []migrateItem{item})
+
+	require.ErrorContains(t, err, "ghost")
+	require.Nil(t, staged)
+	require.Empty(t, fk.m, "the written secret is deleted")
+	require.Equal(t, []string{"ghost"}, fk.deleted)
 }

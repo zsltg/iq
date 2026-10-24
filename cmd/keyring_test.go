@@ -470,3 +470,38 @@ func TestRmDeletesKeyringEntry(t *testing.T) {
 	_, ok := fk.m["sec"]
 	require.False(t, ok)
 }
+
+// TestStoreInKeyringUnknownSource stores the password of a source that the config
+// does not hold. The marking step fails with a hard error, the new entry is
+// deleted, and the caller rollback runs.
+func TestStoreInKeyringUnknownSource(t *testing.T) {
+	fk := useFakeKeyring(t)
+	cf := newSeed()
+	rolledBack := false
+
+	soft, hard := storeInKeyring(cf, "ghost", "pw", func() { rolledBack = true })
+
+	require.NoError(t, soft)
+	require.ErrorContains(t, hard, "ghost")
+	require.True(t, rolledBack)
+	require.Empty(t, fk.m)
+	require.Equal(t, []string{"ghost"}, fk.deleted)
+}
+
+// TestKeepPasswordFallbackFailure falls back to the config file after a keyring
+// failure, and the fallback fails because the URI is empty. The error comes back
+// and the file keeps no ID.
+func TestKeepPasswordFallbackFailure(t *testing.T) {
+	fk := useFakeKeyring(t)
+	fk.setErr = errors.New("keyring locked")
+	cf := newSeed()
+	require.NoError(t, cf.Add("a", "redis://h:6379/0"))
+	plan := passwordPlan{raw: "", password: "pw", keyring: true}
+
+	kept, _, err := keepPassword(cf, "a", plan)
+
+	require.ErrorIs(t, err, iqconfig.ErrEmptyURL)
+	require.False(t, kept)
+	require.Empty(t, cf.KeyringID)
+	require.Equal(t, "redis://h:6379/0", cf.Sources["a"].URL)
+}
