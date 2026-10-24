@@ -33,6 +33,12 @@ services:
       - "27017:27017"
     # Ephemeral test instance: no auth, data lives only in the container.
     command: ["--quiet"]
+    # WiredTiger opens one file for each collection and index. A long scan hit the
+    # default limit of 1024 open files, and the container exited with code 139.
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 2s
