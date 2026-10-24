@@ -45,10 +45,20 @@ func (k *fileKeyring) Set(handle, password string) error {
 // is returned.
 func (k *fileKeyring) Get(handle string) (string, error) {
 	pw, err := k.store.Get(k.account(handle))
-	if k.exact || k.cf.KeyringID == "" || !errors.Is(err, secret.ErrNotFound) {
+	if !k.fallsBack(err) {
 		return pw, err
 	}
 	return k.store.Get(handle)
+}
+
+// fallsBack reports whether a read that ended with err reads the legacy account
+// next. Only a missing entry falls back, only in a file with an ID, and never in
+// an exact view.
+func (k *fileKeyring) fallsBack(err error) bool {
+	if k.exact || k.cf.KeyringID == "" {
+		return false
+	}
+	return errors.Is(err, secret.ErrNotFound)
 }
 
 // exactView returns a view of the same store that never falls back to the legacy
