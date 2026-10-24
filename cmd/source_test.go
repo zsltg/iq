@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -169,14 +168,10 @@ func TestAddReportsAKeyringFailure(t *testing.T) {
 // TestAddReportsASaveFailure makes the config write fail after every check has
 // passed: the add must report it, never claim a source it did not store.
 func TestAddReportsASaveFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
-	}
 	dir := t.TempDir()
 	t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
 	require.NoError(t, newSeed().Save())
-	require.NoError(t, os.Chmod(dir, 0o500)) // readable and listable, but not writable.
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	requireUnwritableDir(t, dir)
 
 	out, err := runCmd(t, newAddCmd(&config{}), "-n", "cache", "redis://h:6379/0", "--skip-verify")
 	require.ErrorContains(t, err, "create temp config")
@@ -450,21 +445,30 @@ func TestRmAtomicOnUnknown(t *testing.T) {
 }
 
 // lockConfigDir saves cf at a fresh config path and then makes its directory
-// read-only, so the next Save fails. It skips where chmod cannot stop a write:
-// on Windows, and for a user such as root that bypasses directory permissions.
+// read-only, so the next Save fails. It skips where requireUnwritableDir does.
 func lockConfigDir(t *testing.T, cf *iqconfig.Config) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
 	require.NoError(t, cf.Save())
+	requireUnwritableDir(t, dir)
+}
+
+// requireUnwritableDir makes dir listable but not writable, and restores the
+// mode when the test ends. If a write still works, the test skips. That happens
+// on Windows, where chmod does not deny writes to a directory, and for a user
+// such as root that bypasses directory permissions.
+func requireUnwritableDir(t *testing.T, dir string) {
+	t.Helper()
 	require.NoError(t, os.Chmod(dir, 0o500))
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	probe, err := os.CreateTemp(dir, "probe")
-	if err == nil {
-		require.NoError(t, probe.Close())
-		require.NoError(t, os.Remove(probe.Name()))
-		t.Skip("the read-only directory still accepts writes, so a save failure cannot be forced")
+	probe, err := os.CreateTemp(dir, "probe-*")
+	if err != nil {
+		return
 	}
+	require.NoError(t, probe.Close())
+	require.NoError(t, os.Remove(probe.Name()))
+	t.Skip("the directory still accepts writes, so a write failure cannot be forced")
 }
 
 // TestSourceCommandsArgCounts pins the argument bounds of the source commands.

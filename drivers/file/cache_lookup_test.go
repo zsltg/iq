@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -215,13 +214,9 @@ func TestReadCacheReusesThePageSlice(t *testing.T) {
 // TestRemoveCacheTakesTheRemoveErrorFromTheOS compares the whole error text with the
 // text of a real failed os.Remove, because the cause text differs per platform.
 func TestRemoveCacheTakesTheRemoveErrorFromTheOS(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
-	}
 	dir := t.TempDir()
 	plantNamedCache(t, dir, "a.cbor", "/dumps/one.rdb")
-	require.NoError(t, os.Chmod(dir, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	requireUnwritableDir(t, dir)
 	path := filepath.Join(dir, "a.cbor")
 	osErr := os.Remove(path)
 	require.Error(t, osErr)

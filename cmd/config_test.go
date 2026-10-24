@@ -219,15 +219,11 @@ func TestConfigSetArgCount(t *testing.T) {
 // validates. An unwritable config dir must fail the command, so `set` never
 // reports a default that it did not store.
 func TestConfigSetReportsASaveFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
-	}
 	dir := t.TempDir()
 	p := filepath.Join(dir, "iq.toml")
 	t.Setenv(iqconfig.EnvConfig, p)
 	require.NoError(t, os.WriteFile(p, []byte("\n"), 0o600))
-	require.NoError(t, os.Chmod(dir, 0o500)) // readable and listable, but not writable.
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	requireUnwritableDir(t, dir)
 
 	root, _ := newRootCmd()
 	out, err := runCmd(t, root, "config", "set", "format", "yaml")
@@ -622,17 +618,13 @@ func TestConfigWriteErrors(t *testing.T) {
 // TestConfigDeleteReportsASaveFailure makes the save after a delete fail: the
 // command must say so instead of reporting an option it did not remove.
 func TestConfigDeleteReportsASaveFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
-	}
 	dir := t.TempDir()
 	p := filepath.Join(dir, "iq.toml")
 	t.Setenv(iqconfig.EnvConfig, p)
 	cf := &iqconfig.Config{Sources: map[string]iqconfig.Source{}}
 	require.NoError(t, cf.SetOption("", "format", "yaml"))
 	require.NoError(t, cf.Save())
-	require.NoError(t, os.Chmod(dir, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	requireUnwritableDir(t, dir)
 
 	root, _ := newRootCmd()
 	out, err := runCmd(t, root, "config", "set", "-D", "format")
@@ -677,13 +669,9 @@ func TestConfigEditReportsAFailingEditor(t *testing.T) {
 // TestConfigEditReportsASaveFailure checks that a config file that cannot be
 // created stops `edit` before the editor starts.
 func TestConfigEditReportsASaveFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
-	}
 	dir := t.TempDir()
 	t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
-	require.NoError(t, os.Chmod(dir, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	requireUnwritableDir(t, dir)
 	marker := filepath.Join(t.TempDir(), "ran")
 	script := filepath.Join(t.TempDir(), "ed.sh")
 	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\ntouch '"+marker+"'\n"), 0o755))

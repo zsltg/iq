@@ -231,15 +231,9 @@ func TestSaveFailures(t *testing.T) {
 	})
 
 	t.Run("parent dir is not writable", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("Windows has no Unix mode bits to deny the write")
-		}
-		if os.Geteuid() == 0 {
-			t.Skip("root writes to a read-only directory")
-		}
 		dir := filepath.Join(t.TempDir(), "ro")
-		require.NoError(t, os.Mkdir(dir, 0o500))
-		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+		require.NoError(t, os.Mkdir(dir, 0o700))
+		requireUnwritableDir(t, dir)
 		t.Setenv(config.EnvConfig, filepath.Join(dir, "iq.toml"))
 
 		err := (&config.Config{Sources: map[string]config.Source{}}).Save()
@@ -897,4 +891,21 @@ func TestModeWarningQuotesThePath(t *testing.T) {
 
 	require.Contains(t, got, "run: chmod 600 '"+filepath.Dir(dir))
 	require.True(t, strings.HasSuffix(got, `/Application Support/it'\''s/iq.toml'`), got)
+}
+
+// requireUnwritableDir makes dir listable but not writable, and restores the
+// mode when the test ends. If a write still works, the test skips. That happens
+// on Windows, where chmod does not deny writes to a directory, and for a user
+// such as root that bypasses directory permissions.
+func requireUnwritableDir(t *testing.T, dir string) {
+	t.Helper()
+	require.NoError(t, os.Chmod(dir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	probe, err := os.CreateTemp(dir, "probe-*")
+	if err != nil {
+		return
+	}
+	require.NoError(t, probe.Close())
+	require.NoError(t, os.Remove(probe.Name()))
+	t.Skip("the directory still accepts writes, so a write failure cannot be forced")
 }

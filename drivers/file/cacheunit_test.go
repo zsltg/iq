@@ -788,19 +788,16 @@ func TestListCacheTieBreaksByFileNameAtScale(t *testing.T) {
 // TestListCacheUnreadableDir reports a dir that exists but cannot be read as an
 // error. A missing dir differs: it means that nothing is cached.
 func TestListCacheUnreadableDir(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
-	}
-	dir := t.TempDir()
-	require.NoError(t, os.Chmod(dir, 0o000))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	// A regular file where the cache dir belongs makes the read fail on every OS.
+	dir := filepath.Join(t.TempDir(), "cache")
+	require.NoError(t, os.WriteFile(dir, []byte("x"), 0o600))
 	_, err := ListCache(dir)
 	require.ErrorContains(t, err, "read cache dir")
-	require.ErrorIs(t, err, fs.ErrPermission)
+	require.NotErrorIs(t, err, fs.ErrNotExist)
 
 	n, err := RemoveCache(dir, "")
 	require.ErrorContains(t, err, "read cache dir")
-	require.ErrorIs(t, err, fs.ErrPermission)
+	require.NotErrorIs(t, err, fs.ErrNotExist)
 	require.Zero(t, n, "nothing was removed")
 }
 
@@ -827,13 +824,9 @@ func TestRemoveCacheResolvesARelativeDumpPath(t *testing.T) {
 // error with the count removed so far, rather than reporting a clear that never
 // happened.
 func TestRemoveCacheReportsARemoveFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
-	}
 	dir := t.TempDir()
 	plantNamedCache(t, dir, "a.cbor", "/dumps/one.rdb")
-	require.NoError(t, os.Chmod(dir, 0o500)) // readable and listable, but not writable.
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	requireUnwritableDir(t, dir)
 
 	n, err := RemoveCache(dir, "")
 	require.ErrorContains(t, err, "remove cache")
@@ -904,12 +897,8 @@ func TestNewCacheWriterCreatesAPrivateDir(t *testing.T) {
 // but is not writable. The temp file cannot be made, so newCacheWriter reports it
 // and returns no writer.
 func TestNewCacheWriterCannotCreateTheTempFile(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
-	}
 	dir := t.TempDir()
-	require.NoError(t, os.Chmod(dir, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	requireUnwritableDir(t, dir)
 	st := &Store{cache: CacheConfig{Dir: dir, Enabled: true, MinSize: 1}}
 	w, err := st.newCacheWriter(cacheMeta{path: "p", size: 1})
 	require.ErrorContains(t, err, "create temp cache")
@@ -981,4 +970,21 @@ func TestRemoveCacheSkipsDirsAndForeignFiles(t *testing.T) {
 	require.DirExists(t, filepath.Join(dir, "c.cbor"))
 	require.NoFileExists(t, filepath.Join(dir, "a.cbor"))
 	require.NoFileExists(t, filepath.Join(dir, "d.cbor"))
+}
+
+// requireUnwritableDir makes dir listable but not writable, and restores the
+// mode when the test ends. If a write still works, the test skips. That happens
+// on Windows, where chmod does not deny writes to a directory, and for a user
+// such as root that bypasses directory permissions.
+func requireUnwritableDir(t *testing.T, dir string) {
+	t.Helper()
+	require.NoError(t, os.Chmod(dir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	probe, err := os.CreateTemp(dir, "probe-*")
+	if err != nil {
+		return
+	}
+	require.NoError(t, probe.Close())
+	require.NoError(t, os.Remove(probe.Name()))
+	t.Skip("the directory still accepts writes, so a write failure cannot be forced")
 }
