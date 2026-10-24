@@ -52,10 +52,10 @@ func (k *fileKeyring) Get(handle string) (string, error) {
 }
 
 // fallsBack reports whether a read that ended with err reads the legacy account
-// next. Only a missing entry falls back, only in a file with an ID, and never in
-// an exact view.
+// next. Only a missing entry falls back, and never in an exact view. In a file
+// without an ID the account is the legacy account, so the read repeats itself.
 func (k *fileKeyring) fallsBack(err error) bool {
-	if k.exact || k.cf.KeyringID == "" {
+	if k.exact {
 		return false
 	}
 	return errors.Is(err, secret.ErrNotFound)
@@ -92,10 +92,7 @@ func ensureKeyringID(cf *iqconfig.Config) (rollback func(), err error) {
 	if cf.KeyringID != "" {
 		return noop, nil
 	}
-	id, err := iqconfig.NewKeyringID()
-	if err != nil {
-		return noop, err
-	}
+	id := iqconfig.NewKeyringID()
 	scoped := &fileKeyring{cf: &iqconfig.Config{KeyringID: id}, store: keyringStore}
 	copied, err := copyLegacyEntries(cf, scoped)
 	undo := func() {

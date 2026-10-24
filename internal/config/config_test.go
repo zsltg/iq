@@ -935,7 +935,7 @@ func TestLoadKeyringID(t *testing.T) {
 
 			if tt.wantErr {
 				require.ErrorIs(t, err, config.ErrBadKeyringID)
-				require.ErrorContains(t, err, "keyring_id")
+				require.ErrorContains(t, err, "the field keyring_id must be 16 lowercase hex characters")
 				return
 			}
 			require.NoError(t, err)
@@ -946,8 +946,7 @@ func TestLoadKeyringID(t *testing.T) {
 
 func TestNewKeyringIDIsValidAndRoundTrips(t *testing.T) {
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "iq.toml"))
-	id, err := config.NewKeyringID()
-	require.NoError(t, err)
+	id := config.NewKeyringID()
 	require.True(t, config.ValidKeyringID(id))
 	c := &config.Config{KeyringID: id}
 	require.NoError(t, c.Save())

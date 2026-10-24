@@ -572,3 +572,93 @@ func TestInspectHeaderUsesScopedKeyring(t *testing.T) {
 
 	require.Contains(t, buf.String(), "redis://u:pw-a@h:6379/0")
 }
+
+// TestEnsureKeyringIDLegacyReads gives an ID to a file whose legacy entries are
+// read one by one.
+func TestEnsureKeyringIDLegacyReads(t *testing.T) {
+	t.Run("a hard read failure stops the copy and assigns no ID", func(t *testing.T) {
+		fk := useFakeKeyring(t)
+		fk.m["a"] = "pw-a"
+		keyringStore = legacyGetFails{fk}
+		cf := keyringSeed(t, "", "a")
+
+		rollback, err := ensureKeyringID(cf)
+
+		require.ErrorContains(t, err, "keyring locked")
+		require.NotNil(t, rollback)
+		require.Empty(t, cf.KeyringID)
+		require.Equal(t, map[string]string{"a": "pw-a"}, fk.m, "no scoped entry exists")
+	})
+	t.Run("a source without a legacy entry does not stop the copy", func(t *testing.T) {
+		fk := useFakeKeyring(t)
+		fk.m["b"] = "pw-b"
+		cf := keyringSeed(t, "", "a", "b")
+
+		_, err := ensureKeyringID(cf)
+
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{"b": "pw-b", cf.KeyringID + "/b": "pw-b"}, fk.m)
+	})
+}
+
+// TestExactViewDoesNotFallBack reads an account that only the legacy name holds.
+func TestExactViewDoesNotFallBack(t *testing.T) {
+	fk := useFakeKeyring(t)
+	fk.m["sec"] = "legacy"
+	cf := keyringSeed(t, idA, "sec")
+	kr := keyringFor(cf)
+
+	pw, err := kr.Get("sec")
+	require.NoError(t, err)
+	require.Equal(t, "legacy", pw)
+
+	_, err = kr.exactView().Get("sec")
+	require.ErrorIs(t, err, secret.ErrNotFound)
+}
+
+// TestAddTakenHandleInFileWithID adds a source under a handle whose scoped
+// entry exists. The add fails and changes nothing.
+func TestAddTakenHandleInFileWithID(t *testing.T) {
+	fk := useFakeKeyring(t)
+	writeConfigFile(t, keyringSeed(t, idA))
+	fk.m[idA+"/sec"] = "other"
+
+	_, err := runCmd(t, newAddCmd(&config{}), "-n", "sec", "redis://u:secret@h:6379/0", "--skip-verify")
+
+	require.ErrorContains(t, err, "choose another handle with -n")
+	require.Equal(t, map[string]string{idA + "/sec": "other"}, fk.m)
+	cf, lerr := iqconfig.Load()
+	require.NoError(t, lerr)
+	require.Empty(t, cf.Sources)
+	require.Equal(t, idA, cf.KeyringID)
+}
+
+// setSuffixFails fails the Set of an account that ends with the suffix.
+type setSuffixFails struct {
+	*fakeKeyring
+	suffix string
+}
+
+func (k setSuffixFails) Set(account, pw string) error {
+	if strings.HasSuffix(account, k.suffix) {
+		return errors.New("keyring locked")
+	}
+	return k.fakeKeyring.Set(account, pw)
+}
+
+// TestMvStageFailureUndoesTheNewID moves a source in a file without an ID. The
+// new entry cannot be written, so the copy of the other source goes away too.
+func TestMvStageFailureUndoesTheNewID(t *testing.T) {
+	fk := useFakeKeyring(t)
+	writeConfigFile(t, keyringSeed(t, "", "a", "c"))
+	fk.m["a"], fk.m["c"] = "pw-a", "pw-c"
+	keyringStore = setSuffixFails{fakeKeyring: fk, suffix: "/b"}
+
+	_, err := runCmd(t, newMvCmd(), "a", "b")
+
+	require.ErrorContains(t, err, "keyring locked")
+	require.Equal(t, map[string]string{"a": "pw-a", "c": "pw-c"}, fk.m)
+	cf, lerr := iqconfig.Load()
+	require.NoError(t, lerr)
+	require.Empty(t, cf.KeyringID)
+}

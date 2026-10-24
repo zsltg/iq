@@ -132,20 +132,20 @@ var ErrBadKeyringID = errors.New("invalid keyring_id")
 
 // ValidKeyringID reports whether id is exactly 16 lowercase hex characters.
 func ValidKeyringID(id string) bool {
-	b, err := hex.DecodeString(id)
-	if err != nil {
+	if id != strings.ToLower(id) {
 		return false
 	}
-	return len(b) == keyringIDLen/2 && hex.EncodeToString(b) == id
+	b, err := hex.DecodeString(id)
+	return err == nil && len(b) == keyringIDLen/2
 }
 
 // NewKeyringID returns a random keyring ID: 16 lowercase hex characters.
-func NewKeyringID() (string, error) {
+func NewKeyringID() string {
 	b := make([]byte, keyringIDLen/2)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generate keyring id: %w", err)
-	}
-	return hex.EncodeToString(b), nil
+	// The Go docs for rand.Read say: "It never returns an error, and always
+	// fills b entirely." So the error needs no handling.
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // migrateCollections folds a legacy per-source `collection` field into the URL as
