@@ -100,15 +100,18 @@ func saveSource(stderr io.Writer, cf *iqconfig.Config, name string, plan passwor
 }
 
 // storeInKeyring writes the password of the source name to the keyring of cf and
-// marks the source keyring-backed. On a failure it calls rollback. A keyring
-// error comes back as soft, and the caller can fall back to the config file. A
-// taken handle or a config error comes back as hard.
+// marks the source keyring-backed. On a failure it calls rollback, except for a
+// taken handle, which has nothing to undo. A keyring error comes back as soft,
+// and the caller can fall back to the config file. A taken handle or a config
+// error comes back as hard.
 func storeInKeyring(cf *iqconfig.Config, name, password string, rollback func()) (soft, hard error) {
 	h := iqconfig.CleanHandle(name)
 	kr := keyringFor(cf)
 	err := keyringFree(kr, h)
 	if errors.Is(err, errKeyringTaken) {
-		rollback()
+		// No rollback: a taken entry needs a file that had an ID, because
+		// ensureKeyringID copies only the entries of keyring-backed sources, and
+		// the source name is not one yet. So the call assigned no ID.
 		return nil, fmt.Errorf("%w; choose another handle with -n", err)
 	}
 	if err == nil {
@@ -129,7 +132,8 @@ func storeInKeyring(cf *iqconfig.Config, name, password string, rollback func())
 // keepPassword writes the password of the source name to the OS keyring and
 // marks the source keyring-backed, and reports whether the keyring holds it.
 // The returned function undoes a keyring ID that the call assigned, and does
-// nothing otherwise. When the plan does not use the keyring, it does nothing.
+// nothing otherwise. It is nil when err is not nil, and the caller must not call
+// it then. When the plan does not use the keyring, it does nothing.
 // It does not replace an entry that it finds (see keyringFree). When the
 // keyring cannot be read or written and --store was not given, the source keeps
 // the URI with its password in the config file, and the ID assignment is undone.
@@ -142,7 +146,7 @@ func keepPassword(cf *iqconfig.Config, name string, plan passwordPlan) (bool, fu
 	if err == nil {
 		soft, hard := storeInKeyring(cf, name, plan.password, rollback)
 		if hard != nil {
-			return false, noop, hard
+			return false, nil, hard
 		}
 		if soft == nil {
 			return true, rollback, nil
@@ -150,10 +154,10 @@ func keepPassword(cf *iqconfig.Config, name string, plan passwordPlan) (bool, fu
 		err = soft
 	}
 	if plan.explicit {
-		return false, noop, err
+		return false, nil, err
 	}
 	if err := cf.SetSourceURL(name, plan.raw); err != nil {
-		return false, noop, err
+		return false, nil, err
 	}
 	return false, noop, nil
 }

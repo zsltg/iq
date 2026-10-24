@@ -662,3 +662,198 @@ func TestMvStageFailureUndoesTheNewID(t *testing.T) {
 	require.NoError(t, lerr)
 	require.Empty(t, cf.KeyringID)
 }
+
+// failingLegacy fails the Get of the legacy account of one handle.
+type failingLegacy struct {
+	*fakeKeyring
+	handle string
+}
+
+func (k failingLegacy) Get(account string) (string, error) {
+	if account == k.handle {
+		return "", errors.New("keyring locked")
+	}
+	return k.fakeKeyring.Get(account)
+}
+
+// TestEnsureKeyringIDCopyEdges covers the copy of the legacy entries to a new ID.
+func TestEnsureKeyringIDCopyEdges(t *testing.T) {
+	t.Run("a failed read undoes the copies that came before", func(t *testing.T) {
+		fk := useFakeKeyring(t)
+		fk.m["a"], fk.m["b"] = "pw-a", "pw-b"
+		keyringStore = failingLegacy{fakeKeyring: fk, handle: "b"}
+		cf := keyringSeed(t, "", "a", "b")
+
+		_, err := ensureKeyringID(cf)
+
+		require.ErrorContains(t, err, "keyring locked")
+		require.Equal(t, map[string]string{"a": "pw-a", "b": "pw-b"}, fk.m, "the scoped copy of a is gone")
+	})
+	t.Run("a source that is not keyring-backed is not copied", func(t *testing.T) {
+		fk := useFakeKeyring(t)
+		fk.m["plain"] = "pw-x"
+		cf := newSeed()
+		require.NoError(t, cf.Add("plain", "redis://h:6379/0"))
+
+		_, err := ensureKeyringID(cf)
+
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{"plain": "pw-x"}, fk.m)
+	})
+}
+
+// TestConfigViewKeyring views a config file with a keyring ID.
+func TestConfigViewKeyring(t *testing.T) {
+	fk := useFakeKeyring(t)
+	writeConfigFile(t, keyringSeed(t, idA, "sec"))
+	fk.m[idA+"/sec"] = "pw-a"
+
+	t.Run("it prints the keyring ID", func(t *testing.T) {
+		out, err := runCmd(t, newConfigViewCmd(&config{}))
+		require.NoError(t, err)
+		require.Contains(t, out, idA)
+	})
+	t.Run("expand resolves the password and redacts it", func(t *testing.T) {
+		out, err := runCmd(t, newConfigViewCmd(&config{}), "--expand")
+		require.NoError(t, err)
+		require.Contains(t, out, "redis://u:xxxxx@h:6379/0")
+	})
+}
+
+// TestMigrateIgnoresLegacyEntryInFileWithoutID migrates a source whose legacy
+// account is taken, which another config file can own. This file has no ID, so
+// the migration writes to a new account and does not touch the legacy one.
+func TestMigrateIgnoresLegacyEntryInFileWithoutID(t *testing.T) {
+	fk := useFakeKeyring(t)
+	c := newSeed()
+	require.NoError(t, c.Add("sec", "redis://u:pw-new@h:6379/0"))
+	writeConfigFile(t, c)
+	fk.m["sec"] = "other-file"
+
+	_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "sec")
+
+	require.NoError(t, err)
+	cf, lerr := iqconfig.Load()
+	require.NoError(t, lerr)
+	require.Equal(t, "other-file", fk.m["sec"])
+	require.Equal(t, "pw-new", fk.m[cf.KeyringID+"/sec"])
+}
+
+// TestKeyringCommandsUndoTheNewID drives keyring commands in a file without an
+// ID, with a second keyring source c. Each failure leaves only the legacy
+// entries, so the scoped copy of c is gone.
+func TestKeyringCommandsUndoTheNewID(t *testing.T) {
+	tests := []struct {
+		name  string
+		seed  func(t *testing.T, fk *fakeKeyring) *iqconfig.Config
+		store func(fk *fakeKeyring) secret.Keyring
+		lock  bool
+		args  []string
+		want  string
+	}{
+		{
+			name: "set: a failed write",
+			seed: func(t *testing.T, fk *fakeKeyring) *iqconfig.Config {
+				c := keyringSeed(t, "", "c")
+				require.NoError(t, c.Add("a", "redis://h:6379/0"))
+				return c
+			},
+			store: func(fk *fakeKeyring) secret.Keyring { return setSuffixFails{fakeKeyring: fk, suffix: "/a"} },
+			args:  []string{"set", "a", "v"},
+			want:  "keyring locked",
+		},
+		{
+			name: "set: a failed save of a source that is not keyring-backed",
+			seed: func(t *testing.T, fk *fakeKeyring) *iqconfig.Config {
+				c := keyringSeed(t, "", "c")
+				require.NoError(t, c.Add("a", "redis://h:6379/0"))
+				return c
+			},
+			store: func(fk *fakeKeyring) secret.Keyring { return fk },
+			lock:  true,
+			args:  []string{"set", "a", "v"},
+			want:  "create temp config",
+		},
+		{
+			name: "migrate: a failed write",
+			seed: func(t *testing.T, fk *fakeKeyring) *iqconfig.Config {
+				c := keyringSeed(t, "", "c")
+				require.NoError(t, c.Add("a", "redis://u:pw@h:6379/0"))
+				return c
+			},
+			store: func(fk *fakeKeyring) secret.Keyring { return setSuffixFails{fakeKeyring: fk, suffix: "/a"} },
+			args:  []string{"migrate", "a"},
+			want:  "keyring locked",
+		},
+		{
+			name: "migrate: a failed save",
+			seed: func(t *testing.T, fk *fakeKeyring) *iqconfig.Config {
+				c := keyringSeed(t, "", "c")
+				require.NoError(t, c.Add("a", "redis://u:pw@h:6379/0"))
+				return c
+			},
+			store: func(fk *fakeKeyring) secret.Keyring { return fk },
+			lock:  true,
+			args:  []string{"migrate", "a"},
+			want:  "create temp config",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fk := useFakeKeyring(t)
+			fk.m["a"], fk.m["c"] = "pw-a", "pw-c"
+			c := tt.seed(t, fk)
+			if tt.lock {
+				lockConfigDir(t, c)
+			} else {
+				writeConfigFile(t, c)
+			}
+			keyringStore = tt.store(fk)
+
+			_, err := runCmd(t, newConfigKeyringCmd(&config{}), tt.args...)
+
+			require.ErrorContains(t, err, tt.want)
+			want := map[string]string{"a": "pw-a", "c": "pw-c"}
+			require.Equal(t, want, fk.m)
+		})
+	}
+}
+
+// TestKeyringSetOnKeyringSourceDoesNotSave sets the secret of a source that is
+// already keyring-backed, in a file that has an ID. The config needs no save.
+func TestKeyringSetOnKeyringSourceDoesNotSave(t *testing.T) {
+	fk := useFakeKeyring(t)
+	lockConfigDir(t, keyringSeed(t, idA, "sec"))
+
+	_, err := runCmd(t, newConfigKeyringCmd(&config{}), "set", "sec", "v")
+
+	require.NoError(t, err)
+	require.Equal(t, "v", fk.m[idA+"/sec"])
+}
+
+// TestLegacyNamesScansPastASourceWithoutScopedEntry lists the legacy names of a
+// file where the first source has no scoped entry.
+func TestLegacyNamesScansPastASourceWithoutScopedEntry(t *testing.T) {
+	fk := useFakeKeyring(t)
+	cf := keyringSeed(t, idA, "a", "b")
+	fk.m[idA+"/b"], fk.m["b"] = "s", "l"
+
+	names, err := legacyNames(cf)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"b"}, names)
+}
+
+// TestAddSaveFailureUndoesTheNewID adds a source with a password to a file
+// without an ID, and the save fails. The entry of the new source and the copy of
+// the other keyring source are both gone.
+func TestAddSaveFailureUndoesTheNewID(t *testing.T) {
+	fk := useFakeKeyring(t)
+	fk.m["c"] = "pw-c"
+	lockConfigDir(t, keyringSeed(t, "", "c"))
+
+	_, err := runCmd(t, newAddCmd(&config{}), "-n", "a", "redis://u:secret@h:6379/0", "--skip-verify")
+
+	require.ErrorContains(t, err, "create temp config")
+	require.Equal(t, map[string]string{"c": "pw-c"}, fk.m)
+}

@@ -370,6 +370,27 @@ func TestSetSourceURL(t *testing.T) {
 	})
 }
 
+func TestMoveToKeyring(t *testing.T) {
+	t.Run("sets the flag and the url", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("sec", "redis://u:p@h"))
+		require.NoError(t, c.MoveToKeyring("@sec", "redis://u@h"))
+		require.Equal(t, config.Source{URL: "redis://u@h", Keyring: true}, c.Sources["sec"])
+	})
+
+	t.Run("blank url changes nothing", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("sec", "redis://u@h"))
+		require.ErrorIs(t, c.MoveToKeyring("sec", "  "), config.ErrEmptyURL)
+		require.Equal(t, config.Source{URL: "redis://u@h"}, c.Sources["sec"])
+	})
+
+	t.Run("unknown source", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.ErrorIs(t, c.MoveToKeyring("nope", "redis://h"), config.ErrUnknownSource)
+	})
+}
+
 func TestKeyringFieldRoundTrips(t *testing.T) {
 	tempConfig(t)
 	c := &config.Config{Sources: map[string]config.Source{}}

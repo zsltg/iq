@@ -362,6 +362,24 @@ func (c *Config) UseKeyring(handle string) error {
 	return nil
 }
 
+// MoveToKeyring marks the named source keyring-backed and sets its URL, the URL
+// without the password, in one step. It errors if the source is unknown or the
+// URL is empty, and then it changes nothing. The caller owns writing the
+// password to the keyring.
+func (c *Config) MoveToKeyring(handle, url string) error {
+	h, s, err := c.lookup(handle)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(url) == "" {
+		return ErrEmptyURL
+	}
+	s.Keyring = true
+	s.URL = url
+	c.Sources[h] = s
+	return nil
+}
+
 // ClearKeyring marks the named source as no longer keyring-backed, so a
 // subsequent connect reads the stored URL as-is. It errors if the source is
 // unknown. The caller owns deleting the password from the keyring. This function

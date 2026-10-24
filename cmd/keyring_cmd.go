@@ -465,11 +465,7 @@ func stageMigration(cf *iqconfig.Config, items []migrateItem) ([]keyringStaged, 
 			migrateRollback(cf, done)
 			return nil, err
 		}
-		if err := cf.UseKeyring(it.full); err != nil {
-			migrateRollback(cf, append(done, it.keyringStaged))
-			return nil, err
-		}
-		if err := cf.SetSourceURL(it.full, it.stripped); err != nil {
+		if err := cf.MoveToKeyring(it.full, it.stripped); err != nil {
 			migrateRollback(cf, append(done, it.keyringStaged))
 			return nil, err
 		}
