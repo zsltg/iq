@@ -95,12 +95,13 @@ func keyringStatusCell(status string) tableCell {
 
 // keyringRows lists the keyring-backed sources and the state of each secret.
 func keyringRows(cf *iqconfig.Config) ([]keyringRow, error) {
+	kr := keyringFor(cf)
 	rows := make([]keyringRow, 0)
 	for _, h := range cf.List() {
 		if !h.Source.Keyring {
 			continue
 		}
-		has, err := keyringHas(iqconfig.CleanHandle(h.Name))
+		has, err := keyringHas(kr, iqconfig.CleanHandle(h.Name))
 		if err != nil {
 			return nil, err
 		}
@@ -127,10 +128,17 @@ func writeKeyringRows(out io.Writer, rows []keyringRow) error {
 	return renderTable(out, trows)
 }
 
-// keyringHas reports whether the keyring holds a secret for the clean handle.
-// A missing secret is not an error.
-func keyringHas(clean string) (bool, error) {
-	if _, err := keyringStore.Get(clean); err != nil {
+// keyringHas reports whether the keyring holds a secret for the clean handle,
+// by the read of kr (with the legacy fallback). A missing secret is not an
+// error.
+func keyringHas(kr secret.Keyring, clean string) (bool, error) {
+	return keyringProbe(kr.Get, clean)
+}
+
+// keyringProbe reports whether get finds a secret for the clean handle. A
+// missing secret is not an error.
+func keyringProbe(get func(string) (string, error), clean string) (bool, error) {
+	if _, err := get(clean); err != nil {
 		if errors.Is(err, secret.ErrNotFound) {
 			return false, nil
 		}
@@ -178,7 +186,7 @@ func newConfigKeyringGetCmd(cfg *config) *cobra.Command {
 			if err := requireKeyring(src, full); err != nil {
 				return err
 			}
-			pw, err := keyringStore.Get(iqconfig.CleanHandle(full))
+			pw, err := keyringFor(cf).Get(iqconfig.CleanHandle(full))
 			if err != nil {
 				return err
 			}
@@ -227,10 +235,16 @@ func runKeyringSet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	clean := iqconfig.CleanHandle(full)
-	if err := keyringStore.Set(clean, value); err != nil {
+	hadID := cf.KeyringID != ""
+	rollback, err := ensureKeyringID(cf)
+	if err != nil {
 		return err
 	}
-	if err := adoptKeyring(cf, src, full); err != nil {
+	if err := keyringFor(cf).Set(clean, value); err != nil {
+		rollback()
+		return err
+	}
+	if err := adoptKeyring(cf, src, full, !hadID, rollback); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "set keyring secret for %s\n", full)
@@ -263,20 +277,29 @@ func secretValue(cmd *cobra.Command, args []string) (string, error) {
 }
 
 // adoptKeyring flips a password-less source to keyring-backed and persists the
-// config. On a failure the newly written entry is new, so deleting it fully
-// rolls back. A source that is already keyring-backed needs no change.
-func adoptKeyring(cf *iqconfig.Config, src iqconfig.Source, full string) error {
-	if src.Keyring {
+// config. A source that is already keyring-backed needs no change, unless the
+// command assigned a keyring ID (idAssigned). Then the config must be saved to
+// keep the ID. On a failure it deletes the entry that the command wrote when
+// that entry is new, and it calls rollback, which undoes the ID assignment.
+func adoptKeyring(cf *iqconfig.Config, src iqconfig.Source, full string, idAssigned bool, rollback func()) error {
+	if src.Keyring && !idAssigned {
 		return nil
 	}
 	clean := iqconfig.CleanHandle(full)
-	if err := cf.UseKeyring(full); err != nil {
-		_ = keyringStore.Delete(clean)
+	fail := func(err error) error {
+		if !src.Keyring {
+			_ = keyringFor(cf).Delete(clean)
+		}
+		rollback()
 		return err
 	}
+	if !src.Keyring {
+		if err := cf.UseKeyring(full); err != nil {
+			return fail(err)
+		}
+	}
 	if err := cf.Save(); err != nil {
-		_ = keyringStore.Delete(clean)
-		return err
+		return fail(err)
 	}
 	return nil
 }
@@ -317,7 +340,7 @@ func runKeyringRm(cmd *cobra.Command, args []string) error {
 	if err := cf.Save(); err != nil {
 		return err
 	}
-	_ = keyringStore.Delete(iqconfig.CleanHandle(full))
+	_ = keyringFor(cf).Delete(iqconfig.CleanHandle(full))
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted keyring secret for %s; its stored URI now has no password\n", full)
 	return err
 }
@@ -377,9 +400,10 @@ func migrationItems(cf *iqconfig.Config, args []string, all bool) ([]migrateItem
 	if err != nil {
 		return nil, err
 	}
+	kr := keyringFor(cf)
 	items := make([]migrateItem, 0, len(targets))
 	for _, full := range targets {
-		it, err := migrateSecret(cf.Sources[full], full)
+		it, err := migrateSecret(kr, cf.Sources[full], full)
 		if err != nil {
 			return nil, err
 		}
@@ -388,20 +412,27 @@ func migrationItems(cf *iqconfig.Config, args []string, all bool) ([]migrateItem
 	return items, nil
 }
 
-// applyMigration writes the secrets, saves the config, and prints one line for
-// each migrated source. It prints "nothing to migrate" and saves nothing when
-// there are no items.
+// applyMigration assigns a keyring ID when the file has none, writes the
+// secrets, saves the config, and prints one line for each migrated source. It
+// prints "nothing to migrate" and writes nothing when there are no items. A
+// failure undoes the secrets and the ID.
 func applyMigration(out io.Writer, cf *iqconfig.Config, items []migrateItem) error {
-	done, err := stageMigration(cf, items)
-	if err != nil {
-		return err
-	}
-	if len(done) == 0 {
+	if len(items) == 0 {
 		_, err := fmt.Fprintln(out, "nothing to migrate")
 		return err
 	}
+	rollback, err := ensureKeyringID(cf)
+	if err != nil {
+		return err
+	}
+	done, err := stageMigration(cf, items)
+	if err != nil {
+		rollback()
+		return err
+	}
 	if err := cf.Save(); err != nil {
-		migrateRollback(done)
+		migrateRollback(cf, done)
+		rollback()
 		return err
 	}
 	for _, d := range done {
@@ -416,18 +447,19 @@ func applyMigration(out io.Writer, cf *iqconfig.Config, items []migrateItem) err
 // memory. On a failure it deletes every secret that it wrote, including the one
 // of the failing item when that one was written.
 func stageMigration(cf *iqconfig.Config, items []migrateItem) ([]keyringStaged, error) {
+	kr := keyringFor(cf)
 	done := make([]keyringStaged, 0, len(items))
 	for _, it := range items {
-		if err := keyringStore.Set(it.clean, it.password); err != nil {
-			migrateRollback(done)
+		if err := kr.Set(it.clean, it.password); err != nil {
+			migrateRollback(cf, done)
 			return nil, err
 		}
 		if err := cf.UseKeyring(it.full); err != nil {
-			migrateRollback(append(done, it.keyringStaged))
+			migrateRollback(cf, append(done, it.keyringStaged))
 			return nil, err
 		}
 		if err := cf.SetSourceURL(it.full, it.stripped); err != nil {
-			migrateRollback(append(done, it.keyringStaged))
+			migrateRollback(cf, append(done, it.keyringStaged))
 			return nil, err
 		}
 		done = append(done, it.keyringStaged)
@@ -448,10 +480,9 @@ type migrateItem struct {
 // migrateSecret returns the migrateItem of the source full when the source can
 // move to the keyring. It fails when the URL has no password (only for an
 // explicit handle, because --all filters these out). It also fails when the
-// keyring already holds a password for the handle. That entry can belong to a
-// source in another config file. So a migration does not replace it, and it
-// tells the user to rename the source.
-func migrateSecret(src iqconfig.Source, full string) (migrateItem, error) {
+// keyring already holds a password for the handle in this config file. A
+// migration does not replace it, and it tells the user to rename the source.
+func migrateSecret(kr *fileKeyring, src iqconfig.Source, full string) (migrateItem, error) {
 	stripped, password, ok, err := splitPassword(src.URL)
 	if err != nil {
 		return migrateItem{}, err
@@ -460,7 +491,7 @@ func migrateSecret(src iqconfig.Source, full string) (migrateItem, error) {
 		return migrateItem{}, fmt.Errorf("source %q has no inline password to migrate", full)
 	}
 	clean := iqconfig.CleanHandle(full)
-	err = keyringFree(clean)
+	err = keyringFree(kr, clean)
 	if errors.Is(err, errKeyringTaken) {
 		return migrateItem{}, fmt.Errorf("%w; rename the source with iq mv, then migrate it", err)
 	}
@@ -507,41 +538,57 @@ func inlinePasswordSources(cf *iqconfig.Config) ([]string, error) {
 
 // migrateRollback deletes the keyring entries a partial migrate wrote, so a
 // failure before Save leaves no orphaned secrets.
-func migrateRollback(done []keyringStaged) {
+func migrateRollback(cf *iqconfig.Config, done []keyringStaged) {
+	kr := keyringFor(cf)
 	for _, d := range done {
-		_ = keyringStore.Delete(d.clean)
+		_ = kr.Delete(d.clean)
 	}
 }
+
+// errNoKeyringID reports a --legacy prune on a file that has no keyring ID.
+var errNoKeyringID = errors.New("--legacy: this config file has no keyring ID yet, so it has no scoped entries; the first keyring write gives it one")
 
 // newConfigKeyringPruneCmd builds `iq config keyring prune`: delete keyring
 // entries that no live source uses. The keyring cannot be enumerated. So
 // "stale" is detectable only for one kind of source. It is still in the
 // config and is not keyring-backed. It also still has an entry (left by a
 // crash, a failed rm, or a migrate). Entries for deleted sources cannot be
-// found.
+// found. With --legacy it deletes the old handle-only entries instead.
 func newConfigKeyringPruneCmd() *cobra.Command {
-	var dryRun bool
+	var dryRun, legacy, force bool
 	c := &cobra.Command{
-		Use:     "prune",
-		Short:   "Delete stale keyring entries for non-keyring sources",
-		Example: "  $ iq config keyring prune",
-		Args:    cobra.NoArgs,
+		Use:   "prune",
+		Short: "Delete stale keyring entries for non-keyring sources",
+		Long: "Delete the keyring entries of this config file that no keyring-backed source uses.\n" +
+			"Only the entries of this file are touched.\n" +
+			"With --legacy, delete instead the old entry of each source of this file that\n" +
+			"has an entry under the keyring ID of the file. The old entry is named by the\n" +
+			"handle alone. A config file without a keyring ID can still use it, so\n" +
+			"--legacy asks for confirmation. Use --force to skip the question.",
+		Example: "  $ iq config keyring prune\n" +
+			"  $ iq config keyring prune --legacy --dry-run",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runKeyringPrune(cmd, dryRun)
+			return runKeyringPrune(cmd, dryRun, legacy, force)
 		},
 	}
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be pruned without deleting anything")
+	c.Flags().BoolVar(&legacy, "legacy", false, "delete the old handle-only entries that have an entry under the keyring ID")
+	c.Flags().BoolVar(&force, "force", false, "skip the confirmation of --legacy")
 	return c
 }
 
 // runKeyringPrune deletes the stale keyring entries, or only reports them in a
-// dry run.
-func runKeyringPrune(cmd *cobra.Command, dryRun bool) error {
+// dry run. With legacy it works on the old handle-only entries.
+func runKeyringPrune(cmd *cobra.Command, dryRun, legacy, force bool) error {
 	cf, err := iqconfig.Load()
 	if err != nil {
 		return err
 	}
 	out := cmd.OutOrStdout()
+	if legacy {
+		return pruneLegacy(cmd, cf, dryRun, force)
+	}
 	pruned, err := pruneStale(out, cf, dryRun)
 	if err != nil {
 		return err
@@ -561,12 +608,13 @@ func runKeyringPrune(cmd *cobra.Command, dryRun bool) error {
 // pruneStale visits every non-keyring source and prunes its entry. It reports
 // whether it found any entry.
 func pruneStale(out io.Writer, cf *iqconfig.Config, dryRun bool) (bool, error) {
+	kr := keyringFor(cf)
 	pruned := false
 	for _, h := range cf.List() {
 		if h.Source.Keyring {
 			continue
 		}
-		found, err := pruneEntry(out, h.Name, dryRun)
+		found, err := pruneEntry(out, kr, h.Name, dryRun)
 		if err != nil {
 			return false, err
 		}
@@ -575,22 +623,73 @@ func pruneStale(out io.Writer, cf *iqconfig.Config, dryRun bool) (bool, error) {
 	return pruned, nil
 }
 
-// pruneEntry deletes the keyring entry of one source, or only reports it in a
-// dry run. It reports whether the source had an entry.
-func pruneEntry(out io.Writer, name string, dryRun bool) (bool, error) {
+// pruneEntry deletes the keyring entry of one source in this file, or only
+// reports it in a dry run. It looks at the account of this file only, never at
+// the legacy account. It reports whether the source had an entry.
+func pruneEntry(out io.Writer, kr *fileKeyring, name string, dryRun bool) (bool, error) {
 	clean := iqconfig.CleanHandle(name)
-	has, err := keyringHas(clean)
+	has, err := keyringProbe(kr.GetExact, clean)
 	if err != nil || !has {
 		return false, err
 	}
 	verb := "deleted"
 	if dryRun {
 		verb = "would delete"
-	} else if err := keyringStore.Delete(clean); err != nil {
+	} else if err := kr.Delete(clean); err != nil {
 		return false, err
 	}
 	if _, err := fmt.Fprintf(out, "%s stale keyring entry for %s\n", verb, name); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// pruneLegacy deletes the legacy handle-only entry of each source of this file
+// that has an entry under the keyring ID of the file. It fails when the file has
+// no ID. It lists the entries first, and asks once before it deletes them.
+func pruneLegacy(cmd *cobra.Command, cf *iqconfig.Config, dryRun, force bool) error {
+	if cf.KeyringID == "" {
+		return errNoKeyringID
+	}
+	out := cmd.OutOrStdout()
+	kr := keyringFor(cf)
+	var names []string
+	for _, h := range cf.List() {
+		clean := iqconfig.CleanHandle(h.Name)
+		if has, err := keyringProbe(kr.GetExact, clean); err != nil {
+			return err
+		} else if !has {
+			continue
+		}
+		if has, err := keyringProbe(kr.GetLegacy, clean); err != nil {
+			return err
+		} else if has {
+			names = append(names, clean)
+		}
+	}
+	if len(names) == 0 {
+		_, err := fmt.Fprintln(out, "no legacy keyring entries")
+		return err
+	}
+	if dryRun {
+		for _, n := range names {
+			if _, err := fmt.Fprintf(out, "would delete legacy keyring entry for %s\n", n); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	action := fmt.Sprintf("delete %d legacy keyring entries that a config file without a keyring ID can still use", len(names))
+	if err := confirmDestruction(cmd, action, force); err != nil {
+		return err
+	}
+	for _, n := range names {
+		if err := kr.DeleteLegacy(n); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(out, "deleted legacy keyring entry for %s\n", n); err != nil {
+			return err
+		}
+	}
+	return nil
 }

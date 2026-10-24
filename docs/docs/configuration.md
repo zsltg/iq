@@ -140,10 +140,11 @@ iq config keyring rm <handle>
 ### Migrate `migrate`
 
 Move an inline password into the keyring, rewriting the stored URI to its
-password-less form. If the keyring already holds a password for the handle,
-for example for a source in another config file, the migration stops, undoes
-what it did, and does not replace that password. Rename the source with
-`iq mv`, then migrate it.
+password-less form. If the keyring already holds a password for the handle in
+this config file, the migration stops, undoes what it did, and does not replace
+that password. Rename the source with `iq mv`, then migrate it. A migration in
+a file with no `keyring_id` gives the file one first. See
+[Sources](sources.md) for how the keyring ID names the entries.
 
 ```sh
 iq config keyring migrate [<handle>] [--all] [--dry-run]
@@ -151,12 +152,18 @@ iq config keyring migrate [<handle>] [--all] [--dry-run]
 
 ### Prune `prune`
 
-Delete stale entries left for non-keyring sources. The keyring cannot be
-enumerated, so entries whose source was deleted are undetectable and are not
-pruned.
+Delete stale entries left for non-keyring sources. The command touches the
+entries of this config file only. The keyring cannot be enumerated, so entries
+whose source was deleted are undetectable and are not pruned.
+
+With `--legacy`, the command deletes the old handle-only entry of each source of
+this file that has an entry under the `keyring_id` of the file. A config file
+without a `keyring_id` can still use an old entry, so the command asks for
+confirmation. Use `--force` to skip the question. In a file with no
+`keyring_id`, `--legacy` is an error.
 
 ```sh
-iq config keyring prune [--dry-run]
+iq config keyring prune [--dry-run] [--legacy [--force]]
 ```
 
 ## Location `location`

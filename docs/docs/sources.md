@@ -61,12 +61,29 @@ and prints a warning. Use `--store inline` to save the password in the config
 file without the warning. Use `--store keyring` to make a missing keyring an
 error.
 
-The keyring entry of a source is named by its handle only. If the keyring
-already holds a password for the handle, for example for a source with the same
-handle in another config file, `iq add` stops with an error and does not
-replace the password. Choose another handle with `-n`. The check and the write
-are two keyring calls, so two `iq add` commands that run at the same time with
-the same handle can both pass the check.
+A config file can have a keyring ID, a field named `keyring_id` that holds 16
+random hex characters. The keyring entry of a source is named by the ID and the
+handle, so two config files that use the same handle keep separate entries.
+The first command that writes the keyring in a file gives the file its ID. That
+command copies the existing entry of each keyring-backed source of the file to
+its new name, then saves the ID. A command that only reads never changes the
+file. A file with no ID uses the handle alone as the entry name, as older
+versions of iq did.
+
+A read in a file with an ID looks for the new name first. If that entry does
+not exist, it reads the old handle-only entry. Writes and deletes touch the new
+name only. The old entries stay, because another config file without an ID can
+still use them. To delete them, run `iq config keyring prune --legacy`.
+
+If the file already holds a password for the handle, `iq add` stops with an
+error and does not replace the password. Choose another handle with `-n`. The
+check and the write are two keyring calls, and `iq` saves the config file
+without a lock. So two commands that edit the same config file at the same time
+can overwrite each other.
+
+If you copy a config file, the copy keeps the `keyring_id` of the original. The
+two files then share their keyring entries. To give the copy its own entries,
+delete the `keyring_id` line from the copy and run a keyring write in it.
 
 !!! tip "Escaping the source URI"
 

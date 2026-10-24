@@ -7,6 +7,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -64,10 +66,15 @@ type Source struct {
 // It also holds the base options, which are stored flag defaults that apply when
 // no source overrides them.
 type Config struct {
-	Active  string            `toml:"active,omitempty"`
-	Group   string            `toml:"group,omitempty"`
-	Options map[string]string `toml:"options,omitempty"`
-	Sources map[string]Source `toml:"sources,omitempty"`
+	// KeyringID names this file in the OS keyring. The keyring account of a
+	// source is "<KeyringID>/<handle>", so two files that share a handle do not
+	// share an entry. A file with no ID uses the handle alone. The first
+	// keyring write assigns the ID.
+	KeyringID string            `toml:"keyring_id,omitempty"`
+	Active    string            `toml:"active,omitempty"`
+	Group     string            `toml:"group,omitempty"`
+	Options   map[string]string `toml:"options,omitempty"`
+	Sources   map[string]Source `toml:"sources,omitempty"`
 }
 
 // Handle pairs a source with its full name, for listing.
@@ -110,8 +117,39 @@ func Load() (*Config, error) {
 	if c.Sources == nil {
 		c.Sources = map[string]Source{}
 	}
+	if c.KeyringID != "" && !ValidKeyringID(c.KeyringID) {
+		return nil, fmt.Errorf("%w in %s: the field keyring_id must be %d lowercase hex characters", ErrBadKeyringID, p, keyringIDLen)
+	}
 	c.migrateCollections()
 	return &c, nil
+}
+
+// keyringIDLen is the length of a keyring ID in characters.
+const keyringIDLen = 16
+
+// ErrBadKeyringID reports a keyring_id field that is not a valid ID.
+var ErrBadKeyringID = errors.New("invalid keyring_id")
+
+// ValidKeyringID reports whether id is exactly 16 lowercase hex characters.
+func ValidKeyringID(id string) bool {
+	if len(id) != keyringIDLen {
+		return false
+	}
+	for _, r := range id {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// NewKeyringID returns a random keyring ID: 16 lowercase hex characters.
+func NewKeyringID() (string, error) {
+	b := make([]byte, keyringIDLen/2)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate keyring id: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // migrateCollections folds a legacy per-source `collection` field into the URL as

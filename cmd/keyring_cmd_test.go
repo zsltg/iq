@@ -120,7 +120,7 @@ func TestConfigKeyringSet(t *testing.T) {
 
 		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "set", "sec", "new")
 		require.NoError(t, err)
-		require.Equal(t, "new", fk.m["sec"])
+		require.Equal(t, "new", fk.m[acct(t, "sec")])
 	})
 
 	t.Run("marks a password-less source keyring-backed", func(t *testing.T) {
@@ -132,7 +132,7 @@ func TestConfigKeyringSet(t *testing.T) {
 
 		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "set", "sec", "pw")
 		require.NoError(t, err)
-		require.Equal(t, "pw", fk.m["sec"])
+		require.Equal(t, "pw", fk.m[acct(t, "sec")])
 		cf, err := iqconfig.Load()
 		require.NoError(t, err)
 		require.True(t, cf.Sources["sec"].Keyring)
@@ -149,7 +149,7 @@ func TestConfigKeyringSet(t *testing.T) {
 		kc.SetIn(strings.NewReader("frompipe\n"))
 		_, err := runCmd(t, kc, "set", "sec")
 		require.NoError(t, err)
-		require.Equal(t, "frompipe", fk.m["sec"])
+		require.Equal(t, "frompipe", fk.m[acct(t, "sec")])
 	})
 
 	t.Run("rejects a source with an inline password", func(t *testing.T) {
@@ -196,7 +196,7 @@ func TestConfigKeyringMigrate(t *testing.T) {
 
 		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "sec")
 		require.NoError(t, err)
-		require.Equal(t, "inline", fk.m["sec"])
+		require.Equal(t, "inline", fk.m[acct(t, "sec")])
 		cf, err := iqconfig.Load()
 		require.NoError(t, err)
 		require.True(t, cf.Sources["sec"].Keyring)
@@ -214,9 +214,9 @@ func TestConfigKeyringMigrate(t *testing.T) {
 
 		out, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all")
 		require.NoError(t, err)
-		require.Equal(t, "pa", fk.m["a"])
-		require.Equal(t, "pb", fk.m["b"])
-		_, ok := fk.m["nopw"]
+		require.Equal(t, "pa", fk.m[acct(t, "a")])
+		require.Equal(t, "pb", fk.m[acct(t, "b")])
+		_, ok := fk.m[acct(t, "nopw")]
 		require.False(t, ok)
 		// Every migrated source is reported (a short-circuited loop drops one).
 		require.Contains(t, out, "migrated a")
@@ -341,14 +341,15 @@ func TestConfigKeyringMigrateKeepsOtherEntries(t *testing.T) {
 		fk := useFakeKeyring(t)
 		seedKeyringSource(t, c, fk, "a", "redis://u:pa@h:6379/0", false, "")
 		seedKeyringSource(t, c, fk, "b", "redis://u:pb@h:6379/1", false, "")
+		c.KeyringID = testKeyringID
 		seedConfig(t, c)
-		fk.m["b"] = "other"
+		fk.m[testKeyringID+"/b"] = "other"
 
 		_, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all")
 
-		require.EqualError(t, err, "b: the OS keyring already holds a password for this handle, and a source in another config file can use it; rename the source with iq mv, then migrate it")
+		require.EqualError(t, err, "b: the OS keyring already holds a password for this handle in this config file; rename the source with iq mv, then migrate it")
 		require.ErrorIs(t, err, errKeyringTaken)
-		require.Equal(t, map[string]string{"b": "other"}, fk.m, "a is not written and b keeps its entry")
+		require.Equal(t, map[string]string{testKeyringID + "/b": "other"}, fk.m, "a is not written and b keeps its entry")
 		require.Empty(t, fk.deleted, "nothing to roll back")
 		cf, err := iqconfig.Load()
 		require.NoError(t, err)
@@ -391,6 +392,7 @@ func TestConfigKeyringMigrateKeepsOtherEntries(t *testing.T) {
 		c := newSeed()
 		fk := useFakeKeyring(t)
 		seedKeyringSource(t, c, fk, "sec", "redis://u:inline@h:6379/0", false, "")
+		c.KeyringID = testKeyringID
 		seedConfig(t, c)
 		fk.getErr = errors.New("keyring locked")
 
@@ -689,7 +691,7 @@ func TestConfigKeyringMigrateEdges(t *testing.T) {
 		out, err := runCmd(t, newConfigKeyringCmd(&config{}), "migrate", "--all")
 		require.NoError(t, err)
 		require.Contains(t, out, "migrated b-inline to the keyring")
-		require.Equal(t, "pw", fk.m["b-inline"])
+		require.Equal(t, "pw", fk.m[acct(t, "b-inline")])
 	})
 
 	t.Run("a save failure rolls the secrets back", func(t *testing.T) {

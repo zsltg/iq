@@ -30,7 +30,7 @@ func TestApplyMigrationReportsAWriteFailureOfTheEmptyLine(t *testing.T) {
 func TestPruneEntryReportsAWriteFailure(t *testing.T) {
 	useFakeKeyring(t).m["stale"] = "old"
 
-	found, err := pruneEntry(&errAfter{0}, "stale", false)
+	found, err := pruneEntry(&errAfter{0}, keyringFor(newSeed()), "stale", false)
 
 	require.ErrorContains(t, err, "write failed")
 	require.False(t, found)
@@ -78,7 +78,7 @@ func TestAdoptKeyringLeavesAKeyringSourceAlone(t *testing.T) {
 	configEnv(t)
 	useFakeKeyring(t)
 
-	err := adoptKeyring(newSeed(), iqconfig.Source{Keyring: true}, "ghost")
+	err := adoptKeyring(newSeed(), iqconfig.Source{Keyring: true}, "ghost", false, func() {})
 
 	require.NoError(t, err)
 }
@@ -90,7 +90,7 @@ func TestAdoptKeyringRollsBackWhenTheSourceIsUnknown(t *testing.T) {
 	fk := useFakeKeyring(t)
 	require.NoError(t, fk.Set("ghost", "pw"))
 
-	err := adoptKeyring(newSeed(), iqconfig.Source{URL: "redis://h"}, "ghost")
+	err := adoptKeyring(newSeed(), iqconfig.Source{URL: "redis://h"}, "ghost", false, func() {})
 
 	require.ErrorIs(t, err, iqconfig.ErrUnknownSource)
 	require.Equal(t, []string{"ghost"}, fk.deleted)

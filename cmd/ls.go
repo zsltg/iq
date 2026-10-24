@@ -8,6 +8,7 @@ import (
 	iqfile "github.com/zsltg/iq/drivers/file"
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/secret"
 )
 
 // sourceRow is the JSON shape of one source in `iq ls --json`. Location is
@@ -102,14 +103,14 @@ func sourceTable(cf *iqconfig.Config, list []iqconfig.Handle, opts lsOptions) []
 		})
 	}
 	for _, h := range list {
-		rows = append(rows, sourceCells(h, h.Name == cf.Active, opts))
+		rows = append(rows, sourceCells(keyringFor(cf), h, h.Name == cf.Active, opts))
 	}
 	return rows
 }
 
 // sourceCells builds the cells of one source row: the marker and handle, the
 // driver, the location, and with verbose the format and the options.
-func sourceCells(h iqconfig.Handle, active bool, opts lsOptions) []tableCell {
+func sourceCells(kr secret.Keyring, h iqconfig.Handle, active bool, opts lsOptions) []tableCell {
 	marker := " "
 	nameColor := pal.handle
 	if active {
@@ -120,7 +121,7 @@ func sourceCells(h iqconfig.Handle, active bool, opts lsOptions) []tableCell {
 
 	// The default collection already rides in the shown URL as ?collection=,
 	// so it is not repeated as a separate tag here.
-	loc := displayLocation(h.Source, h.Name, opts.reveal, opts.expand)
+	loc := displayLocation(kr, h.Source, h.Name, opts.reveal, opts.expand)
 	driver := driverName(h.Source.URL)
 	if !opts.verbose {
 		return []tableCell{name, coloredCell(driver, pal.faint), coloredCell(loc, pal.location)}
@@ -140,13 +141,14 @@ func sourceCells(h iqconfig.Handle, active bool, opts lsOptions) []tableCell {
 // reveal (inline passwords) or expand (keyring passwords) is set, so a stored
 // password never leaves the process by default.
 func sourceRows(cf *iqconfig.Config, list []iqconfig.Handle, opts lsOptions) []sourceRow {
+	kr := keyringFor(cf)
 	rows := make([]sourceRow, 0, len(list))
 	for _, h := range list {
 		driver := driverName(h.Source.URL)
 		row := sourceRow{
 			Handle:     h.Name,
 			Driver:     driver,
-			Location:   displayLocation(h.Source, h.Name, opts.reveal, opts.expand),
+			Location:   displayLocation(kr, h.Source, h.Name, opts.reveal, opts.expand),
 			Collection: iqmongo.CollectionFromURI(h.Source.URL),
 			Keyring:    h.Source.Keyring,
 			Active:     h.Name == cf.Active,
@@ -271,10 +273,10 @@ func groupJSON(cf *iqconfig.Config, groups []string) []groupRow {
 // verbatim. Otherwise any password is redacted to xxxxx. So reveal un-redacts
 // inline passwords, and expand resolves keyring ones. This mirrors the
 // --reveal/--expand split of sq.
-func displayLocation(src iqconfig.Source, handle string, reveal, expand bool) string {
+func displayLocation(kr secret.Keyring, src iqconfig.Source, handle string, reveal, expand bool) string {
 	raw := src.URL
 	if expand && src.Keyring {
-		if u, err := effectiveURL(src, handle); err == nil {
+		if u, err := effectiveURL(kr, src, handle); err == nil {
 			raw = u
 		}
 	}

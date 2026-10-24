@@ -95,7 +95,7 @@ func resolveEndpoint(cf *iqconfig.Config, arg string, isDst bool) (endpoint, err
 		return endpoint{}, fmt.Errorf("unknown source %q; register it with `iq add` "+
 			"(a dump file too, via a file:// URI), write a file with -o, or use - for stdin/stdout", arg)
 	}
-	u, err := effectiveURL(src, full)
+	u, err := effectiveURL(keyringFor(cf), src, full)
 	if err != nil {
 		return endpoint{}, fmt.Errorf("source %q: %w", full, err)
 	}

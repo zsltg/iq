@@ -427,9 +427,10 @@ func newRmCmd() *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
+			kr := keyringFor(cf)
 			for _, r := range removed {
 				if r.Source.Keyring {
-					_ = keyringStore.Delete(r.Handle)
+					_ = kr.Delete(r.Handle)
 				}
 				if _, err := fmt.Fprintf(out, "removed source %s\n", r.Handle); err != nil {
 					return err
@@ -475,11 +476,16 @@ func runMv(cmd *cobra.Command, args []string) error {
 		_, err = fmt.Fprintln(cmd.OutOrStdout(), "nothing to move")
 		return err
 	}
-	staged, err := stageKeyringMoves(cf, moved)
+	rollback, err := ensureMoveKeyringID(cf, moved)
 	if err != nil {
 		return err
 	}
-	if err := commitMove(cf, staged); err != nil {
+	staged, err := stageKeyringMoves(cf, moved)
+	if err != nil {
+		rollback()
+		return err
+	}
+	if err := commitMove(cf, staged, rollback); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "moved %s to %s\n",
@@ -487,20 +493,36 @@ func runMv(cmd *cobra.Command, args []string) error {
 	return err
 }
 
+// ensureMoveKeyringID assigns a keyring ID to the config file when a moved
+// source is keyring-backed, because the move is a keyring write. It returns the
+// function that undoes the assignment.
+func ensureMoveKeyringID(cf *iqconfig.Config, moved []iqconfig.Rename) (func(), error) {
+	for _, r := range moved {
+		if cf.Sources[r.New].Keyring {
+			return ensureKeyringID(cf)
+		}
+	}
+	return func() {}, nil
+}
+
 // stageKeyringMoves copies each keyring secret of a moved source to its new
 // handle. It leaves the old entry in place, so that a failed Save rolls back
 // without data loss. It returns the renames that it staged.
 func stageKeyringMoves(cf *iqconfig.Config, moved []iqconfig.Rename) ([]iqconfig.Rename, error) {
+	kr := keyringFor(cf)
 	staged := make([]iqconfig.Rename, 0, len(moved))
 	for _, r := range moved {
 		if !cf.Sources[r.New].Keyring {
 			continue
 		}
-		pw, gErr := keyringStore.Get(r.Old)
+		pw, gErr := kr.Get(r.Old)
 		if gErr != nil {
 			continue // no stored credential to migrate
 		}
-		if sErr := keyringStore.Set(r.New, pw); sErr != nil {
+		if sErr := kr.Set(r.New, pw); sErr != nil {
+			for _, s := range staged {
+				_ = kr.Delete(s.New)
+			}
 			return nil, sErr
 		}
 		staged = append(staged, r)
@@ -509,16 +531,20 @@ func stageKeyringMoves(cf *iqconfig.Config, moved []iqconfig.Rename) ([]iqconfig
 }
 
 // commitMove saves the config. If the save fails, it deletes the staged new
-// entries. Otherwise it deletes the old entries.
-func commitMove(cf *iqconfig.Config, staged []iqconfig.Rename) error {
+// entries and calls rollback to undo a keyring ID assignment. Otherwise it
+// deletes the old entries of this file. A legacy entry stays, because another
+// config file can use it.
+func commitMove(cf *iqconfig.Config, staged []iqconfig.Rename, rollback func()) error {
+	kr := keyringFor(cf)
 	if err := cf.Save(); err != nil {
 		for _, r := range staged {
-			_ = keyringStore.Delete(r.New)
+			_ = kr.Delete(r.New)
 		}
+		rollback()
 		return err
 	}
 	for _, r := range staged {
-		_ = keyringStore.Delete(r.Old)
+		_ = kr.Delete(r.Old)
 	}
 	return nil
 }

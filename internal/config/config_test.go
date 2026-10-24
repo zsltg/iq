@@ -909,3 +909,49 @@ func requireUnwritableDir(t *testing.T, dir string) {
 	require.NoError(t, os.Remove(probe.Name()))
 	t.Skip("the directory still accepts writes, so a write failure cannot be forced")
 }
+
+func TestLoadKeyringID(t *testing.T) {
+	tests := []struct {
+		name    string
+		id      string
+		wantErr bool
+	}{
+		{"valid", "0123456789abcdef", false},
+		{"too short", "0123456789abcde", true},
+		{"too long", "0123456789abcdef0", true},
+		{"uppercase hex", "0123456789ABCDEF", true},
+		{"not hex", "0123456789abcdeg", true},
+		{"a slash", "0123456789abcd/f", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "iq.toml")
+			t.Setenv(config.EnvConfig, p)
+			require.NoError(t, os.WriteFile(p, []byte("keyring_id = \""+tt.id+"\"\n"), 0o600))
+
+			c, err := config.Load()
+
+			if tt.wantErr {
+				require.ErrorIs(t, err, config.ErrBadKeyringID)
+				require.ErrorContains(t, err, "keyring_id")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.id, c.KeyringID)
+		})
+	}
+}
+
+func TestNewKeyringIDIsValidAndRoundTrips(t *testing.T) {
+	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "iq.toml"))
+	id, err := config.NewKeyringID()
+	require.NoError(t, err)
+	require.True(t, config.ValidKeyringID(id))
+	c := &config.Config{KeyringID: id}
+	require.NoError(t, c.Save())
+
+	got, err := config.Load()
+
+	require.NoError(t, err)
+	require.Equal(t, id, got.KeyringID)
+}

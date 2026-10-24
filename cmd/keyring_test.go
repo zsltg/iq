@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -66,6 +67,18 @@ func useFakeKeyring(t *testing.T) *fakeKeyring {
 	keyringStore = fk
 	t.Cleanup(func() { keyringStore = prev })
 	return fk
+}
+
+// testKeyringID is a valid keyring ID for the tests that seed one.
+const testKeyringID = "0123456789abcdef"
+
+// acct returns the keyring account that the config file of the test uses for
+// handle: "<keyring_id>/<handle>" when the file has an ID, else the handle.
+func acct(t *testing.T, handle string) string {
+	t.Helper()
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	return keyringFor(cf).account(handle)
 }
 
 func TestSplitPassword(t *testing.T) {
@@ -150,7 +163,7 @@ func TestSplitThenInjectRoundTrips(t *testing.T) {
 func TestEffectiveURL(t *testing.T) {
 	t.Run("non-keyring returns stored url", func(t *testing.T) {
 		useFakeKeyring(t)
-		u, err := effectiveURL(iqconfig.Source{URL: "redis://h:6379/0"}, "cache")
+		u, err := effectiveURL(keyringStore, iqconfig.Source{URL: "redis://h:6379/0"}, "cache")
 		require.NoError(t, err)
 		require.Equal(t, "redis://h:6379/0", u)
 	})
@@ -158,14 +171,14 @@ func TestEffectiveURL(t *testing.T) {
 	t.Run("keyring splices password back in", func(t *testing.T) {
 		fk := useFakeKeyring(t)
 		require.NoError(t, fk.Set("sec", "secret"))
-		u, err := effectiveURL(iqconfig.Source{URL: "redis://u@h:6379/0", Keyring: true}, "sec")
+		u, err := effectiveURL(keyringStore, iqconfig.Source{URL: "redis://u@h:6379/0", Keyring: true}, "sec")
 		require.NoError(t, err)
 		require.Equal(t, "redis://u:secret@h:6379/0", u)
 	})
 
 	t.Run("keyring miss errors", func(t *testing.T) {
 		useFakeKeyring(t)
-		_, err := effectiveURL(iqconfig.Source{URL: "redis://u@h:6379/0", Keyring: true}, "gone")
+		_, err := effectiveURL(keyringStore, iqconfig.Source{URL: "redis://u@h:6379/0", Keyring: true}, "gone")
 		require.ErrorIs(t, err, secret.ErrNotFound)
 	})
 }
@@ -185,7 +198,7 @@ func TestAddStoreKeyring(t *testing.T) {
 	require.True(t, s.Keyring)
 	require.Equal(t, "redis://u@h:6379/0", s.URL)
 	require.NotContains(t, s.URL, "secret")
-	require.Equal(t, "secret", fk.m["sec"])
+	require.Equal(t, "secret", fk.m[acct(t, "sec")])
 }
 
 // fallbackWarning is the warning `iq add` prints when the password of source
@@ -232,15 +245,20 @@ func TestAddDefaultStore(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.wantURL, cf.Sources["sec"].URL)
 			require.Equal(t, tt.wantKeyring, cf.Sources["sec"].Keyring)
-			require.Equal(t, tt.wantStored, fk.m["sec"])
+			require.Equal(t, tt.wantStored, fk.m[acct(t, "sec")])
+			if tt.wantKeyring {
+				require.NotEmpty(t, cf.KeyringID, "the first keyring write gives the file an ID")
+			} else {
+				require.Empty(t, cf.KeyringID, "a fallback to inline leaves the file without an ID")
+			}
 			require.Empty(t, fk.deleted)
 		})
 	}
 }
 
-// TestAddKeepsAnExistingKeyringEntry adds a source whose handle already has a
-// keyring entry, which can belong to a source in another config file. The add
-// fails, with or without --store, and the entry keeps its password.
+// TestAddKeepsAnExistingKeyringEntry adds a source whose handle already has an
+// entry under the keyring ID of this file. The add fails, with or without
+// --store, and the entry keeps its password.
 func TestAddKeepsAnExistingKeyringEntry(t *testing.T) {
 	tests := []struct {
 		name string
@@ -251,16 +269,18 @@ func TestAddKeepsAnExistingKeyringEntry(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			seedConfig(t, newSeed())
+			c := newSeed()
+			c.KeyringID = testKeyringID
+			seedConfig(t, c)
 			fk := useFakeKeyring(t)
-			fk.m["sec"] = "first"
+			fk.m[testKeyringID+"/sec"] = "first"
 			args := append([]string{"-n", "sec", "redis://u:second@h:6379/0", "--skip-verify"}, tt.args...)
 
 			_, err := runCmd(t, newAddCmd(&config{}), args...)
 
-			require.EqualError(t, err, "sec: the OS keyring already holds a password for this handle, and a source in another config file can use it; choose another handle with -n")
+			require.EqualError(t, err, "sec: the OS keyring already holds a password for this handle in this config file; choose another handle with -n")
 			require.ErrorIs(t, err, errKeyringTaken)
-			require.Equal(t, "first", fk.m["sec"])
+			require.Equal(t, "first", fk.m[testKeyringID+"/sec"])
 			cf, err := iqconfig.Load()
 			require.NoError(t, err)
 			require.Empty(t, cf.Sources)
@@ -309,10 +329,10 @@ func TestAddSaveFailureKeyringCleanup(t *testing.T) {
 	tests := []struct {
 		name        string
 		setErr      error
-		wantDeleted []string
+		wantDeleted bool
 	}{
-		{"written password is deleted", nil, []string{"sec"}},
-		{"fallback leaves the keyring alone", errors.New("no secret service"), nil},
+		{"written password is deleted", nil, true},
+		{"fallback leaves the keyring alone", errors.New("no secret service"), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -327,8 +347,16 @@ func TestAddSaveFailureKeyringCleanup(t *testing.T) {
 
 			require.ErrorContains(t, err, "create temp config")
 			require.NotContains(t, out, "warning")
-			require.Equal(t, tt.wantDeleted, fk.deleted)
+			if tt.wantDeleted {
+				require.Len(t, fk.deleted, 1)
+				require.True(t, strings.HasSuffix(fk.deleted[0], "/sec"), "the entry was scoped to the ID of the file")
+			} else {
+				require.Empty(t, fk.deleted)
+			}
 			require.Empty(t, fk.m)
+			cf, err := iqconfig.Load()
+			require.NoError(t, err)
+			require.Empty(t, cf.KeyringID, "a failed save leaves no ID")
 		})
 	}
 }
@@ -390,9 +418,12 @@ func TestMvMigratesKeyringEntry(t *testing.T) {
 	_, err := runCmd(t, newMvCmd(), "sec", "prod/sec")
 	require.NoError(t, err)
 
-	_, oldExists := fk.m["sec"]
-	require.False(t, oldExists, "old keyring entry should be gone")
-	require.Equal(t, "secret", fk.m["prod/sec"])
+	cf, err := iqconfig.Load()
+	require.NoError(t, err)
+	id := cf.KeyringID
+	require.True(t, iqconfig.ValidKeyringID(id), "the first keyring write gives the file an ID")
+	require.Equal(t, map[string]string{"sec": "secret", id + "/prod/sec": "secret"}, fk.m,
+		"the new entry is scoped, the old scoped copy is gone, and the legacy entry stays")
 }
 
 func TestLsRevealKeyringSource(t *testing.T) {

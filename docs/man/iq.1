@@ -916,15 +916,24 @@ Delete stale keyring entries for non\-keyring sources
 .PP
 \fBUsage:\fR iq config keyring prune
 .PP
+Delete the keyring entries of this config file that no keyring\-backed source uses. Only the entries of this file are touched. With \-\-legacy, delete instead the old entry of each source of this file that has an entry under the keyring ID of the file. The old entry is named by the handle alone. A config file without a keyring ID can still use it, so \-\-legacy asks for confirmation. Use \-\-force to skip the question.
+.PP
 \fBFlags:\fR
 .TP
 \fB\-\-dry\-run\fR
 report what would be pruned without deleting anything
+.TP
+\fB\-\-force\fR
+skip the confirmation of \-\-legacy
+.TP
+\fB\-\-legacy\fR
+delete the old handle\-only entries that have an entry under the keyring ID
 .PP
 \fBExamples:\fR
 .RS
 .nf
   $ iq config keyring prune
+  $ iq config keyring prune \-\-legacy \-\-dry\-run
 .fi
 .RE
 .SS iq config keyring rm

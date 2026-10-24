@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	iqconfig "github.com/zsltg/iq/internal/config"
+	"github.com/zsltg/iq/internal/secret"
 )
 
 // pingTarget is one source to check: its full handle and stored source.
@@ -62,7 +63,7 @@ func runPing(cmd *cobra.Command, cfg *config, args []string, all bool) error {
 	rows := make([][]tableCell, 0, len(targets))
 	anyFail := false
 	for _, t := range targets {
-		d, perr := pingOne(cmd.Context(), t, cfg.timeout)
+		d, perr := pingOne(cmd.Context(), keyringFor(cf), t, cfg.timeout)
 		anyFail = anyFail || perr != nil
 		rows = append(rows, pingRow(t, d, perr))
 	}
@@ -184,8 +185,8 @@ func (p *pingSet) addGroup(cf *iqconfig.Config, arg string) bool {
 // pingOne opens the target and round-trips one cheap command, returning the
 // elapsed time. Any error has the connection URL redacted so a stored password
 // never surfaces in a diagnostic message.
-func pingOne(ctx context.Context, t pingTarget, timeout time.Duration) (time.Duration, error) {
-	u, err := effectiveURL(t.source, t.handle)
+func pingOne(ctx context.Context, kr secret.Keyring, t pingTarget, timeout time.Duration) (time.Duration, error) {
+	u, err := effectiveURL(kr, t.source, t.handle)
 	if err != nil {
 		return 0, err
 	}
