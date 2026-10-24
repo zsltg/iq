@@ -165,6 +165,12 @@ destination ends up holding exactly the source.
 Because it destroys data, it prompts (`clear <destination> before writing`).
 `--force` answers yes. `--dry-run` reports the copy without clearing anything.
 
+A source cannot be its own `--replace` destination. The copy reads the source
+after the clear, so it would find nothing. iq refuses the run, also with
+`--dry-run`, before it opens any store. To rewrite a source in place, dump it
+first with `--typed -o <file>`, register the file as a source, and insert from
+that file.
+
 A destination that cannot be cleared (the read-only file dump) is refused up
 front. `--no-overwrite` is the opposite choice, insert-only, so the two are
 mutually exclusive. Neither applies to a `--typed` dump.

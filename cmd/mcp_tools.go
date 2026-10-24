@@ -120,7 +120,7 @@ func (s *mcpServer) addInsertTool(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "iq_insert",
 		Title:       "Copy items into another source",
-		Description: "Copy a source's items into a destination source, native types intact, optionally transformed by a jq filter. no_overwrite defaults to true, so existing keys are skipped. replace empties the destination first and needs --allow destructive and a confirmation. Preview with dry_run.",
+		Description: "Copy a source's items into a destination source, native types intact, optionally transformed by a jq filter. no_overwrite defaults to true, so existing keys are skipped. replace empties the destination first, needs --allow destructive and a confirmation, and is refused when the source is the destination. Preview with dry_run.",
 		Annotations: &mcp.ToolAnnotations{
 			Title: "Copy items into another source", ReadOnlyHint: false, IdempotentHint: true,
 			DestructiveHint: new(true), OpenWorldHint: new(false),
@@ -872,7 +872,9 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	defer func() { _ = closeSrc() }()
 
-	label, stat, err := applyInsert(cctx, insertRequestFrom(in), tr.TypedScan, transform)
+	wreq := insertRequestFrom(in)
+	wreq.src = sourceEndpoint(cfg)
+	label, stat, err := applyInsert(cctx, wreq, tr.TypedScan, transform)
 	if err != nil {
 		return nil, mcpWriteOutput{}, toolError(err)
 	}

@@ -2013,7 +2013,7 @@ func TestMCPInsertFromLiveRedis(t *testing.T) {
 	// the gate opens.
 	cs = connectMCP(t, newTestMCPServer([]string{allowWrites, allowDestructive}, 200, 256*1024), nil)
 	res = callMCP(t, cs, "iq_insert", map[string]any{
-		"source": "live", "destination": "live", "replace": true, "dry_run": true,
+		"source": "live", "destination": "live1", "replace": true, "dry_run": true,
 	})
 	require.False(t, res.IsError, contentText(res))
 	require.Empty(t, res.InputRequests)
@@ -2292,4 +2292,35 @@ func addDeadSource(t *testing.T, _ string) {
 	require.NoError(t, err)
 	require.NoError(t, cf.Add("dead", "redis://127.0.0.1:1/0"))
 	require.NoError(t, cf.Save())
+}
+
+// TestMCPInsertReplaceOntoItsOwnSource proves that iq_insert refuses a replace
+// whose source is the destination, with the same text as the CLI, and that the
+// refusal leaves the store untouched. A plain insert onto the source still runs.
+func TestMCPInsertReplaceOntoItsOwnSource(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       map[string]any
+		wantErr    string
+		wantEvents []string
+	}{
+		{"replace onto the source", map[string]any{"source": "full", "destination": "full", "replace": true, "confirm": true}, "--replace would empty full before the copy reads it, because it is also the source", nil},
+		{"dry-run replace onto the source", map[string]any{"source": "full", "destination": "full", "replace": true, "dry_run": true}, "--replace would empty full before the copy reads it, because it is also the source", nil},
+		{"plain insert onto the source", map[string]any{"source": "full", "destination": "full"}, "", []string{"put"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			log := useMoveDrivers(t)
+			cs := connectMCP(t, newTestMCPServer([]string{allowWrites, allowDestructive}, 200, 256*1024), nil)
+			res := callMCP(t, cs, "iq_insert", tc.args)
+			if tc.wantErr == "" {
+				require.False(t, res.IsError, contentText(res))
+			} else {
+				body := errorBodyOf(t, res)
+				require.Contains(t, body.Error.Message, tc.wantErr)
+				require.NotContains(t, contentText(res), "hunter2")
+			}
+			require.Equal(t, tc.wantEvents, log.events, "the destination is not cleared or written")
+		})
+	}
 }

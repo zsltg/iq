@@ -142,6 +142,10 @@ type insertRequest struct {
 	mode    query.WriteMode
 	replace bool
 	dryRun  bool
+	// src is the resolved source that the records come from. It is the zero
+	// value when they come from stdin or from a combine. Replace uses it to
+	// refuse a source that is also the destination.
+	src endpoint
 	// confirm gates emptying the destination for replace. It returns nil to
 	// proceed and an error to abort. It is never called on a dry run.
 	confirm func(action string) error
@@ -164,8 +168,29 @@ func runInsert(cmd *cobra.Command, ctx context.Context, cfg *config, recSrc quer
 func insertRequestFor(cmd *cobra.Command, cfg *config) insertRequest {
 	return insertRequest{
 		dst: cfg.insert, mode: writeModeFor(cfg), replace: cfg.replace, dryRun: cfg.dryRun,
+		src:     sourceEndpoint(cfg),
 		confirm: func(action string) error { return confirmDestruction(cmd, action, cfg.force) },
 	}
+}
+
+// sourceEndpoint returns the source that resolveSource selected in cfg. It
+// returns the zero endpoint when no source was resolved, as for piped stdin.
+func sourceEndpoint(cfg *config) endpoint {
+	if cfg.handle == "" {
+		return endpoint{}
+	}
+	return endpoint{url: cfg.url, address: cfg.address, handle: cfg.handle}
+}
+
+// sameEndpoint reports whether a and b name the same data: the same saved
+// source and address, or the same connection URL and address. An empty handle
+// or URL never matches, so a zero endpoint (no source) is never the same as
+// another.
+func sameEndpoint(a, b endpoint) bool {
+	if a.address != b.address {
+		return false
+	}
+	return a.handle != "" && a.handle == b.handle || a.url != "" && a.url == b.url
 }
 
 // writeModeFor returns the write mode that cfg selects: insert-only for
@@ -177,14 +202,19 @@ func writeModeFor(cfg *config) query.WriteMode {
 	return query.Upsert
 }
 
-// applyInsert resolves the destination, opens it, empties it when replace is set
-// (after confirmation), and copies the records through the Putter. It returns the
-// destination label for the outcome line and the write statistics. Every error
-// crossing out of it has the connection URI redacted.
+// applyInsert resolves the destination, refuses a replace onto the source, opens
+// the destination, empties it when replace is set (after confirmation), and
+// copies the records through the Putter. It returns the destination label for
+// the outcome line and the write statistics. Every error crossing out of it has
+// the connection URI redacted.
 func applyInsert(ctx context.Context, req insertRequest, recSrc query.RecordSource, transform func(query.Record) ([]query.Record, error)) (string, query.WriteStat, error) {
 	dst, err := resolveInsertTarget(req.dst)
 	if err != nil {
 		return "", query.WriteStat{}, err
+	}
+	if req.replace && sameEndpoint(req.src, dst) {
+		return "", query.WriteStat{}, fmt.Errorf("--replace would empty %s before the copy reads it, because it is also the source; "+
+			"write a copy first with --typed -o <file>, then insert from that file", dst.label())
 	}
 	st, err := openStore(ctx, &config{url: dst.url, address: dst.address})
 	if err != nil {
