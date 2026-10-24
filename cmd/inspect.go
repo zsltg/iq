@@ -704,7 +704,11 @@ func writeInspectList(out io.Writer, names []string, jsonOut, yamlOut bool) erro
 // location is redacted unless --reveal (inline password) or --expand (keyring
 // password) un-redacts it, rendered from the stored source like `iq ls`.
 func inspectHeader(out io.Writer, cfg *config) error {
-	loc := displayLocation(cfg.source, cfg.handle, cfg.reveal, cfg.expand)
+	kr := cfg.keyring
+	if kr == nil {
+		kr = keyringStore
+	}
+	loc := displayLocation(kr, cfg.source, cfg.handle, locationFlags{reveal: cfg.reveal, expand: cfg.expand})
 	header := fmt.Sprintf("%s  %s", driverName(cfg.source.URL), loc)
 	_, err := fmt.Fprintf(out, "%s\n\n", pal.header.Sprint(header))
 	return err

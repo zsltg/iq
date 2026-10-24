@@ -36,7 +36,8 @@ func resolveSource(cfg *config) error {
 	if !ok {
 		return fmt.Errorf("unknown source %q; run `iq ls`", base)
 	}
-	u, err := effectiveURL(src, full)
+	kr := keyringFor(cf)
+	u, err := effectiveURL(kr, src, full)
 	if err != nil {
 		return err
 	}
@@ -103,7 +104,8 @@ func resolveInspectSource(cfg *config, arg string) error {
 	if !ok {
 		return fmt.Errorf("unknown source %q; run `iq ls`", base)
 	}
-	u, err := effectiveURL(src, full)
+	kr := keyringFor(cf)
+	u, err := effectiveURL(kr, src, full)
 	if err != nil {
 		return err
 	}
@@ -112,6 +114,7 @@ func resolveInspectSource(cfg *config, arg string) error {
 	}
 	cfg.url = u
 	cfg.source = src
+	cfg.keyring = kr
 	cfg.handle = full
 	cfg.address = addr
 	return nil

@@ -9,20 +9,22 @@ import (
 	"github.com/zsltg/iq/internal/secret"
 )
 
-// keyringStore is the credential store that the source commands use. It is a
+// keyringStore is the credential store behind every keyring call. It is a
 // package variable so that a test can swap in an in-memory fake and never touch
-// the real OS keyring. Production wiring is the OS-backed store.
+// the real OS keyring. Production wiring is the OS-backed store. A command does
+// not call it directly. It calls keyringFor, which scopes the accounts to one
+// config file.
 var keyringStore secret.Keyring = secret.OSKeyring{}
 
 // effectiveURL returns the connection URI to open for src: src.URL as stored.
-// If the source is keyring-backed, it fetches the password from the keyring
-// under handle and splices it back into the URI. The handle argument is the
-// full resolved handle, the keyring account name.
-func effectiveURL(src iqconfig.Source, handle string) (string, error) {
+// If the source is keyring-backed, it fetches the password from kr under handle
+// and splices it back into the URI. The handle argument is the full resolved
+// handle.
+func effectiveURL(kr secret.Keyring, src iqconfig.Source, handle string) (string, error) {
 	if !src.Keyring {
 		return src.URL, nil
 	}
-	pw, err := keyringStore.Get(handle)
+	pw, err := kr.Get(handle)
 	if err != nil {
 		return "", err
 	}

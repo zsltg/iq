@@ -246,7 +246,7 @@ func (s *mcpServer) toolPing(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	var out mcpPingOutput
 	for _, t := range targets {
 		row := mcpPingResult{Handle: t.handle, Driver: driverName(t.source.URL)}
-		if d, perr := pingOne(ctx, t, s.cfg.timeout); perr != nil {
+		if d, perr := pingOne(ctx, keyringFor(cf), t, s.cfg.timeout); perr != nil {
 			row.Error = oneLine(redactErr(perr, ""))
 		} else {
 			row.OK = true

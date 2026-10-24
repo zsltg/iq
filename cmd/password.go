@@ -15,18 +15,22 @@ import (
 // replace a keyring entry of another source.
 
 // errKeyringTaken reports that the OS keyring already holds a password for a
-// handle. The keyring account is the handle alone, so the entry can belong to a
-// source with the same handle in another config file.
-var errKeyringTaken = errors.New("the OS keyring already holds a password for this handle, and a source in another config file can use it")
+// handle in this config file.
+var errKeyringTaken = errors.New("the OS keyring already holds a password for this handle in this config file")
 
-// keyringFree returns nil when the OS keyring holds no password for handle. It
-// returns errKeyringTaken when the keyring holds one, and the read error when
-// the keyring cannot be read. A command calls it before it writes a new entry,
-// so that it does not replace the password of another source. The read and the
-// write are two calls. Two iq processes that add the same handle at the same
-// time can both pass it.
-func keyringFree(handle string) error {
-	_, err := keyringStore.Get(handle)
+// keyringFree returns nil when the keyring holds no password for handle in the
+// config file of kr. It returns errKeyringTaken when it holds one, and the read
+// error when the keyring cannot be read. A command calls it before it writes a
+// new entry, so that it does not replace the password of another source. A file
+// that has no keyring ID has no entry yet, because the first write gives it a
+// new ID. The read and the write are two calls. Two iq processes that edit the
+// same config file at the same time can both pass it, like any two edits of one
+// config file.
+func keyringFree(kr *fileKeyring, handle string) error {
+	if kr.cf.KeyringID == "" {
+		return nil
+	}
+	_, err := kr.exactView().Get(handle)
 	switch {
 	case err == nil:
 		return fmt.Errorf("%s: %w", handle, errKeyringTaken)
@@ -69,18 +73,20 @@ func planPassword(raw string, keyring, explicit bool) (passwordPlan, error) {
 
 // saveSource keeps the password of the source name as plan says, then saves
 // the config file. A password that it wrote to the keyring is deleted again when
-// the save fails. The fallback warning goes to stderr only after the save,
-// because it says that the password is in the config file.
+// the save fails, and so is a keyring ID that it assigned. The fallback warning
+// goes to stderr only after the save, because it says that the password is in
+// the config file.
 func saveSource(stderr io.Writer, cf *iqconfig.Config, name string, plan passwordPlan) error {
-	inKeyring, err := keepPassword(cf, name, plan)
+	inKeyring, rollback, err := keepPassword(cf, name, plan)
 	if err != nil {
 		return err
 	}
 	h := iqconfig.CleanHandle(name)
 	if err := cf.Save(); err != nil {
 		if inKeyring {
-			_ = keyringStore.Delete(h)
+			_ = keyringFor(cf).Delete(h)
 		}
+		rollback()
 		return err
 	}
 	if plan.keyring && !inKeyring {
@@ -93,36 +99,65 @@ func saveSource(stderr io.Writer, cf *iqconfig.Config, name string, plan passwor
 	return nil
 }
 
+// storeInKeyring writes the password of the source name to the keyring of cf and
+// marks the source keyring-backed. On a failure it calls rollback, except for a
+// taken handle, which has nothing to undo. A keyring error comes back as soft,
+// and the caller can fall back to the config file. A taken handle or a config
+// error comes back as hard.
+func storeInKeyring(cf *iqconfig.Config, name, password string, rollback func()) (soft, hard error) {
+	h := iqconfig.CleanHandle(name)
+	kr := keyringFor(cf)
+	err := keyringFree(kr, h)
+	if errors.Is(err, errKeyringTaken) {
+		// No rollback: a taken entry needs a file that had an ID, because
+		// ensureKeyringID copies only the entries of keyring-backed sources, and
+		// the source name is not one yet. So the call assigned no ID.
+		return nil, fmt.Errorf("%w; choose another handle with -n", err)
+	}
+	if err == nil {
+		err = kr.Set(h, password)
+	}
+	if err != nil {
+		rollback()
+		return err, nil
+	}
+	if err := cf.UseKeyring(name); err != nil {
+		_ = kr.Delete(h)
+		rollback()
+		return nil, err
+	}
+	return nil, nil
+}
+
 // keepPassword writes the password of the source name to the OS keyring and
 // marks the source keyring-backed, and reports whether the keyring holds it.
-// When the plan does not use the keyring, it does nothing. It
-// does not replace an entry that it finds (see keyringFree). When the keyring
-// cannot be read or written and --store was not given, the source keeps the URI
-// with its password in the config file.
-func keepPassword(cf *iqconfig.Config, name string, plan passwordPlan) (bool, error) {
+// The returned function undoes a keyring ID that the call assigned, and does
+// nothing otherwise. It is nil when err is not nil, and the caller must not call
+// it then. When the plan does not use the keyring, it does nothing.
+// It does not replace an entry that it finds (see keyringFree). When the
+// keyring cannot be read or written and --store was not given, the source keeps
+// the URI with its password in the config file, and the ID assignment is undone.
+func keepPassword(cf *iqconfig.Config, name string, plan passwordPlan) (bool, func(), error) {
+	noop := func() {}
 	if !plan.keyring {
-		return false, nil
+		return false, noop, nil
 	}
-	h := iqconfig.CleanHandle(name)
-	err := keyringFree(h)
-	if errors.Is(err, errKeyringTaken) {
-		return false, fmt.Errorf("%w; choose another handle with -n", err)
-	}
+	rollback, err := ensureKeyringID(cf)
 	if err == nil {
-		err = keyringStore.Set(h, plan.password)
-	}
-	if err == nil {
-		if err := cf.UseKeyring(name); err != nil {
-			_ = keyringStore.Delete(h)
-			return false, err
+		soft, hard := storeInKeyring(cf, name, plan.password, rollback)
+		if hard != nil {
+			return false, nil, hard
 		}
-		return true, nil
+		if soft == nil {
+			return true, rollback, nil
+		}
+		err = soft
 	}
 	if plan.explicit {
-		return false, err
+		return false, nil, err
 	}
 	if err := cf.SetSourceURL(name, plan.raw); err != nil {
-		return false, err
+		return false, nil, err
 	}
-	return false, nil
+	return false, noop, nil
 }

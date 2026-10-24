@@ -7,6 +7,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -64,10 +66,15 @@ type Source struct {
 // It also holds the base options, which are stored flag defaults that apply when
 // no source overrides them.
 type Config struct {
-	Active  string            `toml:"active,omitempty"`
-	Group   string            `toml:"group,omitempty"`
-	Options map[string]string `toml:"options,omitempty"`
-	Sources map[string]Source `toml:"sources,omitempty"`
+	// KeyringID names this file in the OS keyring. The keyring account of a
+	// source is "<KeyringID>/<handle>", so two files that share a handle do not
+	// share an entry. A file with no ID uses the handle alone. The first
+	// keyring write assigns the ID.
+	KeyringID string            `toml:"keyring_id,omitempty"`
+	Active    string            `toml:"active,omitempty"`
+	Group     string            `toml:"group,omitempty"`
+	Options   map[string]string `toml:"options,omitempty"`
+	Sources   map[string]Source `toml:"sources,omitempty"`
 }
 
 // Handle pairs a source with its full name, for listing.
@@ -110,8 +117,35 @@ func Load() (*Config, error) {
 	if c.Sources == nil {
 		c.Sources = map[string]Source{}
 	}
+	if c.KeyringID != "" && !ValidKeyringID(c.KeyringID) {
+		return nil, fmt.Errorf("%w in %s: the field keyring_id must be %d lowercase hex characters", ErrBadKeyringID, p, keyringIDLen)
+	}
 	c.migrateCollections()
 	return &c, nil
+}
+
+// keyringIDLen is the length of a keyring ID in characters.
+const keyringIDLen = 16
+
+// ErrBadKeyringID reports a keyring_id field that is not a valid ID.
+var ErrBadKeyringID = errors.New("invalid keyring_id")
+
+// ValidKeyringID reports whether id is exactly 16 lowercase hex characters.
+func ValidKeyringID(id string) bool {
+	if id != strings.ToLower(id) {
+		return false
+	}
+	b, err := hex.DecodeString(id)
+	return err == nil && len(b) == keyringIDLen/2
+}
+
+// NewKeyringID returns a random keyring ID: 16 lowercase hex characters.
+func NewKeyringID() string {
+	b := make([]byte, keyringIDLen/2)
+	// The Go docs for rand.Read say: "It never returns an error, and always
+	// fills b entirely." So the error needs no handling.
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // migrateCollections folds a legacy per-source `collection` field into the URL as
@@ -324,6 +358,24 @@ func (c *Config) UseKeyring(handle string) error {
 		return err
 	}
 	s.Keyring = true
+	c.Sources[h] = s
+	return nil
+}
+
+// MoveToKeyring marks the named source keyring-backed and sets its URL, the URL
+// without the password, in one step. It errors if the source is unknown or the
+// URL is empty, and then it changes nothing. The caller owns writing the
+// password to the keyring.
+func (c *Config) MoveToKeyring(handle, url string) error {
+	h, s, err := c.lookup(handle)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(url) == "" {
+		return ErrEmptyURL
+	}
+	s.Keyring = true
+	s.URL = url
 	c.Sources[h] = s
 	return nil
 }

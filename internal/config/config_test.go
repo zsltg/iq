@@ -370,6 +370,27 @@ func TestSetSourceURL(t *testing.T) {
 	})
 }
 
+func TestMoveToKeyring(t *testing.T) {
+	t.Run("sets the flag and the url", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("sec", "redis://u:p@h"))
+		require.NoError(t, c.MoveToKeyring("@sec", "redis://u@h"))
+		require.Equal(t, config.Source{URL: "redis://u@h", Keyring: true}, c.Sources["sec"])
+	})
+
+	t.Run("blank url changes nothing", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.NoError(t, c.Add("sec", "redis://u@h"))
+		require.ErrorIs(t, c.MoveToKeyring("sec", "  "), config.ErrEmptyURL)
+		require.Equal(t, config.Source{URL: "redis://u@h"}, c.Sources["sec"])
+	})
+
+	t.Run("unknown source", func(t *testing.T) {
+		c := &config.Config{Sources: map[string]config.Source{}}
+		require.ErrorIs(t, c.MoveToKeyring("nope", "redis://h"), config.ErrUnknownSource)
+	})
+}
+
 func TestKeyringFieldRoundTrips(t *testing.T) {
 	tempConfig(t)
 	c := &config.Config{Sources: map[string]config.Source{}}
@@ -908,4 +929,51 @@ func requireUnwritableDir(t *testing.T, dir string) {
 	require.NoError(t, probe.Close())
 	require.NoError(t, os.Remove(probe.Name()))
 	t.Skip("the directory still accepts writes, so a write failure cannot be forced")
+}
+
+func TestLoadKeyringID(t *testing.T) {
+	tests := []struct {
+		name    string
+		id      string
+		wantErr bool
+	}{
+		{"valid", "0123456789abcdef", false},
+		{"too short", "0123456789abcde", true},
+		{"too long", "0123456789abcdef0", true},
+		{"even length, too short", "0123456789abcd", true},
+		{"even length, too long", "0123456789abcdef01", true},
+		{"uppercase hex", "0123456789ABCDEF", true},
+		{"not hex", "0123456789abcdeg", true},
+		{"a slash", "0123456789abcd/f", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "iq.toml")
+			t.Setenv(config.EnvConfig, p)
+			require.NoError(t, os.WriteFile(p, []byte("keyring_id = \""+tt.id+"\"\n"), 0o600))
+
+			c, err := config.Load()
+
+			if tt.wantErr {
+				require.ErrorIs(t, err, config.ErrBadKeyringID)
+				require.ErrorContains(t, err, "the field keyring_id must be 16 lowercase hex characters")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.id, c.KeyringID)
+		})
+	}
+}
+
+func TestNewKeyringIDIsValidAndRoundTrips(t *testing.T) {
+	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "iq.toml"))
+	id := config.NewKeyringID()
+	require.True(t, config.ValidKeyringID(id))
+	c := &config.Config{KeyringID: id}
+	require.NoError(t, c.Save())
+
+	got, err := config.Load()
+
+	require.NoError(t, err)
+	require.Equal(t, id, got.KeyringID)
 }

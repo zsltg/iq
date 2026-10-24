@@ -19,6 +19,7 @@ import (
 
 	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/secret"
 )
 
 // config holds the per-invocation settings. url, source, and handle are not
@@ -31,6 +32,9 @@ type config struct {
 	url        string
 	source     iqconfig.Source
 	handle     string
+	// keyring is the keyring of the config file that resolved the source for
+	// inspect. It is nil until then.
+	keyring secret.Keyring
 	// address is the opaque dotted suffix on a source reference (shop.orders ->
 	// address "orders"), "" when absent. The core never interprets it. The driver
 	// does (MongoDB treats it as a collection). It overrides the own default of

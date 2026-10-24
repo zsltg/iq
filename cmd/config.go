@@ -381,11 +381,12 @@ func newConfigViewCmd(cfg *config) *cobra.Command {
 // or --expand asks for it. Option maps are shared by reference (they hold no
 // secrets). This is safe because the copy is only marshaled, never mutated.
 func redactedConfig(cf *iqconfig.Config, reveal, expand bool) *iqconfig.Config {
-	out := &iqconfig.Config{Active: cf.Active, Group: cf.Group, Options: cf.Options}
+	kr := keyringFor(cf)
+	out := &iqconfig.Config{KeyringID: cf.KeyringID, Active: cf.Active, Group: cf.Group, Options: cf.Options}
 	if len(cf.Sources) > 0 {
 		out.Sources = make(map[string]iqconfig.Source, len(cf.Sources))
 		for h, s := range cf.Sources {
-			s.URL = displayLocation(s, h, reveal, expand)
+			s.URL = displayLocation(kr, s, h, locationFlags{reveal: reveal, expand: expand})
 			out.Sources[h] = s
 		}
 	}
