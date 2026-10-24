@@ -283,35 +283,40 @@ func TestCacheDifferential(t *testing.T) {
 	}
 }
 
+// plantRecords replaces the cache of the dump at url with a cache that holds one
+// string record. The original dump stays untouched, so the cache keeps matching
+// it. A later query that returns the planted value proves that it read the cache
+// and not the dump.
+func plantRecords(t *testing.T, url string, dir, key, value string) {
+	t.Helper()
+	st, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
+	require.NoError(t, err)
+	m, ok := st.cacheable()
+	require.True(t, ok)
+	h := cacheHeader{Path: m.path, Size: m.size, MTimeNano: m.mtime, Format: int(st.format), Decimal: int(st.dec), CTimeNano: m.ctime, Inode: m.ino}
+	recs := []query.Record{{Key: key, Type: "string", Value: value}}
+	plantCache(t, st, m, cacheBytes(t, h, recs, true, nil))
+}
+
 // TestCacheServedFromCacheFile proves that the warm path reads the cache and not
-// the original. After populating, the original dump is overwritten with garbage
-// of the same length and its mtime restored, so the cache key still matches.
-// Decoding the garbage fails. Returning the original records proves that the
-// cache file was used.
+// the original. After populating, the cache file is replaced with one that holds
+// a different value for the same dump identity. Returning that value proves that
+// the cache file was used.
 func TestCacheServedFromCacheFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "d.rdb")
 	writeRDBWithString(t, path, "s", []byte("hello"))
-	content, err := os.ReadFile(path)
-	require.NoError(t, err)
-	fi, err := os.Stat(path)
-	require.NoError(t, err)
 	url := URL(path)
 	dir := t.TempDir()
 
 	w, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
 	require.NoError(t, err)
-	want := collect(t, w)
+	require.Equal(t, "hello", collect(t, w)["s"].Value)
 
-	// Corrupt the body but keep the RDB signature (so Open still detects the
-	// format) and the length and mtime (so the cache key still matches). Decoding
-	// this fails. Returning the original records proves the cache was read.
-	require.NoError(t, os.WriteFile(path, corruptBody(content), 0o600))
-	require.NoError(t, os.Chtimes(path, fi.ModTime(), fi.ModTime()))
+	plantRecords(t, url, dir, "s", "from-cache")
 
 	w2, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
 	require.NoError(t, err)
-	require.Equal(t, want, collect(t, w2))
-	require.Equal(t, "hello", collect(t, w2)["s"].Value)
+	require.Equal(t, "from-cache", collect(t, w2)["s"].Value)
 }
 
 // TestCacheGetDoesNotPopulate confirms that a bounded Get never writes a cache,
@@ -353,20 +358,15 @@ func TestCacheWarmGet(t *testing.T) {
 	require.NoError(t, warm.TypedScan(context.Background(), func([]query.Record) error { return nil }))
 	require.Len(t, cacheFiles(t, dir), 1)
 
-	// Corrupt the original, same length and mtime, so a Get that decodes it
-	// fails. A correct value proves that the Get read the cache.
-	fi, err := os.Stat(path)
-	require.NoError(t, err)
-	content, err := os.ReadFile(path)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(path, corruptBody(content), 0o600))
-	require.NoError(t, os.Chtimes(path, fi.ModTime(), fi.ModTime()))
+	// Replace the cache with one that holds another value. A Get that decodes the
+	// dump returns "hello". The planted value proves that the Get read the cache.
+	plantRecords(t, url, dir, "s", "from-cache")
 
 	st, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
 	require.NoError(t, err)
 	got, err := st.Get(context.Background(), []string{"s"})
 	require.NoError(t, err)
-	require.Equal(t, "hello", got["s"])
+	require.Equal(t, "from-cache", got["s"])
 }
 
 // TestCacheInvalidatesOnChange confirms that an edited dump is never served from

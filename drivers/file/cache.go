@@ -23,7 +23,7 @@ import (
 // makes every prior cache a miss (a different filename), not a source of
 // records in a stale shape. The differential test (cold vs warm output) is the
 // backstop for a forgotten bump.
-const cacheVersion = 2
+const cacheVersion = 3
 
 // cacheMagic prefixes every cache file so a truncated or foreign file is
 // rejected cheaply before any CBOR decode.
@@ -77,9 +77,10 @@ func (c CacheConfig) minSize() int64 {
 // every cache file has the same shape, and a Get falls back to streaming.
 
 // cacheHeader is the metadata prefix of a cache file. It holds enough to
-// re-verify that the cache still matches its dump (size, mtime, format, decimal
-// mode) and to report the entry in `iq cache stat`. It is encoded as a
-// fixed-order CBOR array.
+// re-verify that the cache still matches its dump (size, mtime, change time,
+// inode, format, decimal mode) and to report the entry in `iq cache stat`. It is
+// encoded as a fixed-order CBOR array. The order is part of the file format. A
+// new field goes at the end, together with a cacheVersion bump.
 type cacheHeader struct {
 	_         struct{} `cbor:",toarray"`
 	Path      string
@@ -87,6 +88,8 @@ type cacheHeader struct {
 	MTimeNano int64
 	Format    int
 	Decimal   int
+	CTimeNano int64
+	Inode     uint64
 }
 
 // cacheKey is the part of a cache header that must match the dump. The recorded path
@@ -94,16 +97,18 @@ type cacheHeader struct {
 type cacheKey struct {
 	size, mtime     int64
 	format, decimal int
+	ctime           int64
+	ino             uint64
 }
 
 // key returns the freshness key the header recorded.
 func (h cacheHeader) key() cacheKey {
-	return cacheKey{size: h.Size, mtime: h.MTimeNano, format: h.Format, decimal: h.Decimal}
+	return cacheKey{size: h.Size, mtime: h.MTimeNano, format: h.Format, decimal: h.Decimal, ctime: h.CTimeNano, ino: h.Inode}
 }
 
 // keyFor returns the freshness key a cache of the dump m must carry.
 func (s *Store) keyFor(m cacheMeta) cacheKey {
-	return cacheKey{size: m.size, mtime: m.mtime, format: int(s.format), decimal: int(s.dec)}
+	return cacheKey{size: m.size, mtime: m.mtime, format: int(s.format), decimal: int(s.dec), ctime: m.ctime, ino: m.ino}
 }
 
 // trailerLen is the fixed width of the index-offset trailer at a cache file's end.
@@ -126,12 +131,18 @@ type indexBlock struct {
 }
 
 // cacheMeta is the identity of a dump for cache-keying: its absolute path, size,
-// and mtime. Two runs over an unmodified dump produce the same meta, hence the
-// same cache file. Any edit changes size or mtime and invalidates it.
+// mtime, inode change time (ctime), and inode number. Two runs over an unmodified
+// dump produce the same meta, hence the same cache file. Any edit changes size or
+// mtime and invalidates it. On Unix the ctime and inode also catch a rewrite that
+// keeps size and mtime (cp -p, tar -x, rsync -t, touch -d), because a user cannot
+// set ctime and a replaced file gets a new inode. On Windows both are zero, so the
+// key is only path, size, and mtime.
 type cacheMeta struct {
 	path  string
 	size  int64
 	mtime int64
+	ctime int64
+	ino   uint64
 }
 
 // cacheable reports the dump's cache identity and whether it can be cached at
@@ -152,15 +163,16 @@ func (s *Store) cacheable() (cacheMeta, bool) {
 	if fi.IsDir() || fi.Size() < s.cache.minSize() {
 		return cacheMeta{}, false
 	}
-	return cacheMeta{path: abs, size: fi.Size(), mtime: fi.ModTime().UnixNano()}, true
+	ctime, ino := changeIdentity(fi)
+	return cacheMeta{path: abs, size: fi.Size(), mtime: fi.ModTime().UnixNano(), ctime: ctime, ino: ino}, true
 }
 
 // cacheFile is the path of the cache file for a dump identity. The key is a hash of
-// the identity, format, decimal mode, and cacheVersion. If any of them changes, the
-// key selects a different file (a miss), not a stale one.
+// the identity (with ctime and inode), format, decimal mode, and cacheVersion. If
+// any of them changes, the key selects a different file (a miss), not a stale one.
 func (s *Store) cacheFile(m cacheMeta) string {
-	h := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%d\x00%d\x00%d\x00%d",
-		m.path, m.size, m.mtime, int(s.format), int(s.dec), cacheVersion))
+	h := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d",
+		m.path, m.size, m.mtime, int(s.format), int(s.dec), cacheVersion, m.ctime, m.ino))
 	return filepath.Join(s.cache.Dir, hex.EncodeToString(h[:])+".cbor")
 }
 
@@ -314,7 +326,7 @@ func (s *Store) newCacheWriter(m cacheMeta) (*cacheWriter, error) {
 		return nil, fmt.Errorf("create temp cache: %w", err)
 	}
 	w := &cacheWriter{f: f, tmp: f.Name(), final: s.cacheFile(m), index: s.cache.Index}
-	h := cacheHeader{Path: m.path, Size: m.size, MTimeNano: m.mtime, Format: int(s.format), Decimal: int(s.dec)}
+	h := cacheHeader{Path: m.path, Size: m.size, MTimeNano: m.mtime, Format: int(s.format), Decimal: int(s.dec), CTimeNano: m.ctime, Inode: m.ino}
 	if err := writeHeader(w, h); err != nil {
 		w.discard()
 		return nil, err

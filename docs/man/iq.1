@@ -777,7 +777,7 @@ Inspect and clear the file:// dump decode cache
 .PP
 \fBUsage:\fR iq cache
 .PP
-Inspect and clear the decode cache for file:// dump sources. iq caches the decoded, normalized records of a local dump above 4 MiB, so a later query skips re\-parsing the RDB/BSON/JSON. The cache keys on the dump's path, size, and mtime, so editing the dump invalidates it automatically. `location` prints the cache directory, `stat` lists cached dumps, and `clear` removes them. Bypass caching for one run with \-\-no\-cache, or turn it off by default with `iq config set no\-cache true`.
+Inspect and clear the decode cache for file:// dump sources. iq caches the decoded, normalized records of a local dump above 4 MiB, so a later query skips re\-parsing the RDB/BSON/JSON. The cache keys on the dump's path, size, and mtime. On Unix it also keys on the inode change time and the inode number, so a rewrite that keeps size and mtime still invalidates it. Windows has no such check. Editing the dump invalidates the cache automatically. `location` prints the cache directory, `stat` lists cached dumps, and `clear` removes them. Bypass caching for one run with \-\-no\-cache, or turn it off by default with `iq config set no\-cache true`.
 .SS iq cache clear
 Remove cached dumps (all, or one source/path)
 .PP
