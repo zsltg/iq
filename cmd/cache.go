@@ -47,8 +47,11 @@ func newCacheCmd() *cobra.Command {
 		Short: "Inspect and clear the file:// dump decode cache",
 		Long: "Inspect and clear the decode cache for file:// dump sources. iq caches the\n" +
 			"decoded, normalized records of a local dump above 4 MiB, so a later query skips\n" +
-			"re-parsing the RDB/BSON/JSON. The cache keys on the dump's path, size, and mtime,\n" +
-			"so editing the dump invalidates it automatically. `location` prints the cache\n" +
+			"re-parsing the RDB/BSON/JSON. The cache keys on the dump's path, size, and mtime.\n" +
+			"On Linux, macOS, FreeBSD and NetBSD it also keys on the inode change time and the\n" +
+			"inode number, so any rewrite of the dump invalidates it. On Windows and other\n" +
+			"platforms, a rewrite that keeps size and mtime can return the old records: clear\n" +
+			"the cache or use --no-cache after such a rewrite. `location` prints the cache\n" +
 			"directory, `stat` lists cached dumps, and `clear` removes them. Bypass caching for\n" +
 			"one run with --no-cache, or turn it off by default with `iq config set no-cache true`.",
 		Args: cobra.NoArgs,

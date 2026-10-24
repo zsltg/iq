@@ -65,7 +65,7 @@ func cacheFixture(t *testing.T) (*Store, cacheMeta, cacheHeader) {
 	require.NoError(t, err)
 	m, ok := st.cacheable()
 	require.True(t, ok)
-	return st, m, cacheHeader{Path: m.path, Size: m.size, MTimeNano: m.mtime, Format: int(st.format), Decimal: int(st.dec)}
+	return st, m, cacheHeader{Path: m.path, Size: m.size, MTimeNano: m.mtime, Format: int(st.format), Decimal: int(st.dec), CTimeNano: m.ctime, Inode: m.ino}
 }
 
 // plantCache writes assembled cache bytes at the exact path the store keys m by.
@@ -191,6 +191,8 @@ func TestCacheFresh(t *testing.T) {
 		{name: "a changed mtime is stale", mutate: func(h *cacheHeader) { h.MTimeNano++ }},
 		{name: "a changed format is stale", mutate: func(h *cacheHeader) { h.Format++ }},
 		{name: "a changed decimal mode is stale", mutate: func(h *cacheHeader) { h.Decimal++ }},
+		{name: "a changed ctime is stale", mutate: func(h *cacheHeader) { h.CTimeNano++ }},
+		{name: "a changed inode is stale", mutate: func(h *cacheHeader) { h.Inode++ }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -223,6 +225,8 @@ func TestReadCacheRejectsAMismatchedHeader(t *testing.T) {
 		{name: "a changed mtime is refused", mutate: func(h *cacheHeader) { h.MTimeNano++ }},
 		{name: "a changed format is refused", mutate: func(h *cacheHeader) { h.Format++ }},
 		{name: "a changed decimal mode is refused", mutate: func(h *cacheHeader) { h.Decimal++ }},
+		{name: "a changed ctime is refused", mutate: func(h *cacheHeader) { h.CTimeNano++ }},
+		{name: "a changed inode is refused", mutate: func(h *cacheHeader) { h.Inode++ }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -366,7 +370,7 @@ func TestWriteHeaderReportsEachWriteFailure(t *testing.T) {
 // A truncated, foreign, or old-layout file is then a miss with its own message,
 // not a decoder fed arbitrary bytes.
 func TestReadHeader(t *testing.T) {
-	good := cacheBytes(t, cacheHeader{Path: "p", Size: 7, MTimeNano: 9, Format: 3, Decimal: 1}, nRecords(1), false, nil)
+	good := cacheBytes(t, cacheHeader{Path: "p", Size: 7, MTimeNano: 9, Format: 3, Decimal: 1, CTimeNano: 11, Inode: 13}, nRecords(1), false, nil)
 	badVersion := bytes.Clone(good)
 	binary.LittleEndian.PutUint32(badVersion[8:12], cacheVersion+1)
 
@@ -396,7 +400,7 @@ func TestReadHeader(t *testing.T) {
 	t.Run("a valid prefix yields the header and a decoder at the first record", func(t *testing.T) {
 		h, dec, err := readHeader(bytes.NewReader(good))
 		require.NoError(t, err)
-		require.Equal(t, cacheHeader{Path: "p", Size: 7, MTimeNano: 9, Format: 3, Decimal: 1}, h)
+		require.Equal(t, cacheHeader{Path: "p", Size: 7, MTimeNano: 9, Format: 3, Decimal: 1, CTimeNano: 11, Inode: 13}, h)
 		require.NotNil(t, dec)
 		rec, err := decodeRecord(dec)
 		require.NoError(t, err)
@@ -570,6 +574,8 @@ func TestCacheGetRejectsAMismatchedHeader(t *testing.T) {
 		{name: "a changed mtime is refused", mutate: func(h *cacheHeader) { h.MTimeNano++ }},
 		{name: "a changed format is refused", mutate: func(h *cacheHeader) { h.Format++ }},
 		{name: "a changed decimal mode is refused", mutate: func(h *cacheHeader) { h.Decimal++ }},
+		{name: "a changed ctime is refused", mutate: func(h *cacheHeader) { h.CTimeNano++ }},
+		{name: "a changed inode is refused", mutate: func(h *cacheHeader) { h.Inode++ }},
 		{name: "an unreadable header is refused", mutate: func(*cacheHeader) {}, corrupt: true},
 	}
 	for _, tt := range tests {
@@ -861,7 +867,7 @@ func TestWriteHeaderPinsTheLayoutVersion(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, writeHeader(&buf, cacheHeader{Path: "p", Size: 1}))
 	require.Equal(t, cacheMagic[:], buf.Bytes()[:8])
-	require.Equal(t, uint32(2), binary.LittleEndian.Uint32(buf.Bytes()[8:12]))
+	require.Equal(t, uint32(3), binary.LittleEndian.Uint32(buf.Bytes()[8:12]))
 }
 
 // TestFileSizeReportsAStatFailure gives fileSize a closed file, so the stat fails

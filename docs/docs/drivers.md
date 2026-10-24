@@ -1180,9 +1180,13 @@ identical across a live source and its dump. That property reads the same value 
 caches the decoded, normalized records of a scanned dump above 4 MiB. It reads them back on later
 queries and skips the RDB/BSON/JSON decode (a warm scan of an 8 MiB dump runs several times faster).
 
-The cache lives under `<user cache dir>/iq/dumps`. It keys on the dump's path, size and mtime. As a
-result, editing the dump invalidates the cache automatically and needs no action from you. A stale
-or absent cache only means a full decode, never a wrong or failed query.
+The cache lives under `<user cache dir>/iq/dumps`. It keys on the dump's path, size and mtime. On
+Linux, macOS, FreeBSD and NetBSD it also keys on the inode change time (ctime) and the inode number.
+A user cannot set ctime, and a replaced file gets a new inode. So on these platforms, any rewrite of
+the dump invalidates the cache, also one that keeps size and mtime (`cp -p`, `tar -x`, `rsync -t`,
+or `touch -d`). Windows and other platforms key only on path, size and mtime. There, a rewrite that
+keeps size and mtime can return the old records. Run `iq cache clear` after such a rewrite, or query
+with `--no-cache`. A cache miss only means a full decode, never a failed query.
 
 Only full scans populate it (a bounded
 key read does not) and stdin is never cached.
