@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -308,9 +306,6 @@ func TestAddStoreInline(t *testing.T) {
 // does not call the keyring again, and it prints no warning that the password
 // is in the config file.
 func TestAddSaveFailureKeyringCleanup(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
-	}
 	tests := []struct {
 		name        string
 		setErr      error
@@ -324,8 +319,7 @@ func TestAddSaveFailureKeyringCleanup(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv(iqconfig.EnvConfig, filepath.Join(dir, "iq.toml"))
 			require.NoError(t, newSeed().Save())
-			require.NoError(t, os.Chmod(dir, 0o500)) // readable and listable, but not writable.
-			t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+			requireUnwritableDir(t, dir)
 			fk := useFakeKeyring(t)
 			fk.setErr = tt.setErr
 

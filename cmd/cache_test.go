@@ -139,12 +139,11 @@ func TestCacheStatTotalsEveryEntry(t *testing.T) {
 // rather than an empty listing that reads as a clean, empty cache.
 func TestCacheStatReportsAListFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("chmod does not stop writes on Windows, so this failure cannot be forced there")
+		t.Skip("on Windows, reading a regular file as a directory reports a missing path, and the cache treats that as an empty cache")
 	}
-	dir := t.TempDir()
-	seedCache(t, dir)
-	require.NoError(t, os.Chmod(dir, 0o000))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	// A regular file where the cache dir belongs makes the listing fail, also as root.
+	dir := filepath.Join(t.TempDir(), "cache")
+	require.NoError(t, os.WriteFile(dir, []byte("x"), 0o600))
 
 	var buf bytes.Buffer
 	require.ErrorContains(t, cacheStat(&buf, dir, false, false), "read cache dir")
