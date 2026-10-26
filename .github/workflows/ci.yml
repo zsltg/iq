@@ -109,7 +109,7 @@ jobs:
     steps:
       - &harden-base
         name: Harden the runner (block egress)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-telemetry: true
@@ -315,7 +315,7 @@ jobs:
       - &harden-go-linux
         name: Harden the runner (block egress)
         if: runner.os == 'Linux'
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-telemetry: true
@@ -376,7 +376,7 @@ jobs:
     steps:
       - &harden-go
         name: Harden the runner (block egress)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-telemetry: true
@@ -446,7 +446,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-telemetry: true
@@ -467,7 +467,7 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
       - *checkout
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       # GH_TOKEN adds the online audits: known-vulnerable-actions, impostor-commit,
       # ref-confusion and stale-action-refs. zizmor exits 11 to 14 on a finding.
       - name: zizmor (GitHub Actions workflow audit)
@@ -555,7 +555,7 @@ jobs:
     steps:
       - &harden-docker-elastic
         name: Harden the runner (block egress)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-telemetry: true
@@ -616,7 +616,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-telemetry: true
@@ -679,7 +679,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-telemetry: true
@@ -780,7 +780,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-telemetry: true
@@ -811,7 +811,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-telemetry: true
@@ -1246,7 +1246,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-telemetry: true
@@ -1287,7 +1287,7 @@ jobs:
         run: |
           . scripts/tool-versions.env
           go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" git --no-banner --validation=false --config .betterleaks.toml .
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       # The online audits read the advisory data of GitHub, so a re-run on
       # unchanged workflows finds a newly vulnerable or yanked action.
       - name: zizmor (GitHub Actions workflow audit, fresh data)
@@ -1520,7 +1520,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-telemetry: true
@@ -1535,7 +1535,7 @@ jobs:
             release-assets.githubusercontent.com:443
             releases.astral.sh:443
       - *checkout
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - name: Build site
         run: uv run --locked zensical build --clean
         working-directory: docs
