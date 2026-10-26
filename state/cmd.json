@@ -1,0 +1,9 @@
+{
+  "package": "./cmd",
+  "slug": "cmd",
+  "status": "failed",
+  "fingerprint": "e192094cc8af97179c9c45c6a1cb7e5a6c65df4f3d55f6f7395880832a7423ca",
+  "commit": "e1b773348f78c9a281cba524a8b29b375d6db0f4",
+  "scannedAt": "2026-10-26T18:06:52Z",
+  "secondsPerMutant": 17.3
+}

@@ -1,0 +1,9 @@
+{
+  "package": "./internal/jqfmt",
+  "slug": "internal-jqfmt",
+  "status": "failed",
+  "fingerprint": "1c34a030c93183b75fcd5682a18ed668fee1adeba225585f087875d5f7995bad",
+  "commit": "e1b773348f78c9a281cba524a8b29b375d6db0f4",
+  "scannedAt": "2026-10-26T18:06:52Z",
+  "secondsPerMutant": 0.4
+}

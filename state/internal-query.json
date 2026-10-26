@@ -1,0 +1,18 @@
+{
+  "package": "./internal/query",
+  "slug": "internal-query",
+  "status": "passed",
+  "fingerprint": "ca4192fe001b1fa669b08ee3ccaef965ee11567881dbbbb34337f032382c19f6",
+  "commit": "e1b773348f78c9a281cba524a8b29b375d6db0f4",
+  "scannedAt": "2026-10-26T18:06:52Z",
+  "secondsPerMutant": 1.2,
+  "summary": {
+    "totalMutantsCount": 742,
+    "killedCount": 702,
+    "notCoveredCount": 29,
+    "escapedCount": 10,
+    "errorCount": 0,
+    "skippedCount": 1,
+    "score": 0.9859550561797753
+  }
+}

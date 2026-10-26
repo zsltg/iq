@@ -1,0 +1,18 @@
+{
+  "package": "./drivers/couchdb",
+  "slug": "drivers-couchdb",
+  "status": "passed",
+  "fingerprint": "24b715bcd9ad36b3deaae6f99fdc5f7ce20d2ccb24579f624389b0d34330e388",
+  "commit": "e1b773348f78c9a281cba524a8b29b375d6db0f4",
+  "scannedAt": "2026-10-26T18:06:52Z",
+  "secondsPerMutant": 1.4,
+  "summary": {
+    "totalMutantsCount": 735,
+    "killedCount": 698,
+    "notCoveredCount": 25,
+    "escapedCount": 6,
+    "errorCount": 0,
+    "skippedCount": 6,
+    "score": 0.9914772727272727
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "package": "./internal/testimage",
+  "slug": "internal-testimage",
+  "status": "passed",
+  "fingerprint": "510484ab4d4433dc5eb21342573af86f7e77eaa0c29d4fbc12cd7a4b20ebe27a",
+  "commit": "e1b773348f78c9a281cba524a8b29b375d6db0f4",
+  "scannedAt": "2026-10-26T18:06:52Z",
+  "secondsPerMutant": 0.8,
+  "summary": {
+    "totalMutantsCount": 31,
+    "killedCount": 31,
+    "notCoveredCount": 0,
+    "escapedCount": 0,
+    "errorCount": 0,
+    "skippedCount": 0,
+    "score": 1.0
+  }
+}

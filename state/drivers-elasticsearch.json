@@ -1,0 +1,9 @@
+{
+  "package": "./drivers/elasticsearch",
+  "slug": "drivers-elasticsearch",
+  "status": "failed",
+  "fingerprint": "3eddcc7619d37f0d0bf701cb1fb1c4e64bed558d749338e12b4b76a73ca2b3c2",
+  "commit": "e1b773348f78c9a281cba524a8b29b375d6db0f4",
+  "scannedAt": "2026-10-26T18:06:52Z",
+  "secondsPerMutant": 3.3
+}

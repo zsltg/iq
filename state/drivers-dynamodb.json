@@ -1,0 +1,9 @@
+{
+  "package": "./drivers/dynamodb",
+  "slug": "drivers-dynamodb",
+  "status": "failed",
+  "fingerprint": "e7db3c0075c2791542cb6577b8a9ce800c57c4470871f02295790346c4933c79",
+  "commit": "e1b773348f78c9a281cba524a8b29b375d6db0f4",
+  "scannedAt": "2026-10-26T18:06:52Z",
+  "secondsPerMutant": 2.4
+}
