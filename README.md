@@ -38,7 +38,7 @@
   <a href="#contributing">Contributing</a>
 </p>
 
-# iq
+# `iq`
 
 `iq` runs [jq](https://jqlang.github.io/jq/) filters to query, dump, copy, diff and write data
 across NoSQL databases, and their dump files, from a single static binary. See
@@ -86,6 +86,7 @@ pushdown.
 ## Quick start
 
 You need Docker, and `iq` on your `PATH`. To install `iq` on Linux or macOS:
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zsltg/iq/main/install.sh | sh
 ```
@@ -96,18 +97,21 @@ the directory that the note names.
 Run each command on its own. If a command fails, stop and read its error.
 
 Start a disposable MongoDB that only this machine can reach:
+
 ```sh
 docker run -d --name iq-quickstart -p 127.0.0.1:27018:27017 mongo:8.2
 ```
 
 Register the database as the active source. `iq add` connects to make sure that the source
 works, and `--timeout 30s` gives MongoDB time to start:
+
 ```sh
 iq add -a --timeout 30s 'mongodb://localhost:27018/iq?collection=books'
 ```
 
 Write two sample books. `iq` reads piped stdin as a source and takes each key from the `id`
 field:
+
 ```sh
 printf '%s\n' '{"id":1,"title":"Dune","year":1965,"price":9.99}' \
               '{"id":2,"title":"Project Hail Mary","year":2021,"price":14.5}' |
@@ -115,11 +119,13 @@ printf '%s\n' '{"id":1,"title":"Dune","year":1965,"price":9.99}' \
 ```
 
 Read one book by its key. `iq` fetches only that document:
+
 ```sh
 iq '.["2"]'
 ```
 
 The output is similar to the following:
+
 ```json
 {
   "_id": "2",
@@ -131,6 +137,7 @@ The output is similar to the following:
 ```
 
 Filter a scan, and show the query plan:
+
 ```sh
 iq '.[] | select(.year > 2015) | {title, price}' --explain
 ```
@@ -138,6 +145,7 @@ iq '.[] | select(.year > 2015) | {title, price}' --explain
 The output is similar to the following, where `server filter` shows the part of the filter
 that MongoDB runs. The full filter then runs again on the client, so the result is the same
 with or without pushdown:
+
 ```text
 query plan
 source: books (mongo)
@@ -159,6 +167,7 @@ server filter (mongo find):
 Without `--explain`, the same command prints `{"price": 14.5, "title": "Project Hail Mary"}`.
 
 When you are done, remove the container and the source:
+
 ```sh
 docker rm -f iq-quickstart
 iq rm books
@@ -245,16 +254,19 @@ A tool that is not allowed is never registered. Every result is capped, every
 error is redacted, and every destructive call is confirmed.
 
 Claude Code:
+
 ```sh
 claude mcp add iq -- iq mcp --timeout 30s
 ```
 
 Codex CLI:
+
 ```sh
 codex mcp add iq -- iq mcp --timeout 30s
 ```
 
 Antigravity CLI:
+
 ```sh
 agy mcp add iq -- iq mcp --timeout 30s
 ```
@@ -268,21 +280,25 @@ configuration file of each client.
 ### Sources
 
 Driver list:
+
 ```sh
 iq driver ls
 ```
 
 Add a collection named "books" from a MongoDB source and make it active:
+
 ```sh
 iq add -a 'mongodb://localhost:27017/iq?collection=books'
 ```
 
 Inspect a source:
+
 ```sh
 iq inspect books
 ```
 
 List sources:
+
 ```sh
 iq ls
 ```
@@ -292,16 +308,19 @@ Check [Sources](https://zsltg.github.io/iq/sources/) for more details.
 ### Query data
 
 Fetch an item with the ID "2":
+
 ```sh
 iq '.["2"]'
 ```
 
 Filter a scan and reshape each item:
+
 ```sh
 iq '.[] | select(.year > 2015) | {title, price}'
 ```
 
 Print a formatted query plan:
+
 ```sh
 iq '.[] | select(.year > 2015) | {title, price}' --explain -v
 ```
@@ -311,16 +330,19 @@ Check [Query data](https://zsltg.github.io/iq/query-data/) for more details.
 ### Diff
 
 Diff schema of two sources:
+
 ```sh
 iq diff --schema dev qa
 ```
 
 Diff the items with the same ID from two sources:
+
 ```sh
 iq diff 'dev=.["1"]' 'qa=.["1"]'
 ```
 
 Diff items key by key:
+
 ```sh
 iq diff dev qa
 ```
@@ -336,22 +358,26 @@ Check [Diff](https://zsltg.github.io/iq/sources/#diff-diff) for more details.
 > effect of a write without changing anything. `iq exec` has no dry run.
 
 Copy one source into another, keys preserved (a cross-driver copy carries values only):
+
 ```sh
 iq --src books --insert books2
 ```
 
 Create a lossless (typed) dump:
+
 ```sh
 iq --src cache --typed -o dump.jsonl
 ```
 
 Add a dump as a source and restore it to a live source:
+
 ```sh
 iq add file:///dump.jsonl -n snap
 iq --src snap --insert cache
 ```
 
 Copy only the items a filter selects:
+
 ```sh
 iq '.[] | select(.year > 2015)' --src books --insert recent
 ```
@@ -361,6 +387,7 @@ Check [Write data](https://zsltg.github.io/iq/write-data/) for more details.
 ### Cross-source query
 
 Compose across sources:
+
 ```sh
 iq 'INDEX(source("users"; ".[]"); .id) as $u
     | source("orders"; ".[] | select(.total > 99)")
@@ -368,6 +395,7 @@ iq 'INDEX(source("users"; ".[]"); .id) as $u
 ```
 
 Combine across sources:
+
 ```sh
 iq combine 'users=.[] | {id, name}' \
            'orders=.[] | select(.total > 99)' \
@@ -379,16 +407,19 @@ Check [Cross-source queries](https://zsltg.github.io/iq/query-data/#cross-source
 ### Keyspace commands
 
 Delete two items:
+
 ```sh
 iq data delete cache book:1 book:2
 ```
 
 Empty a source called "cache":
+
 ```sh
 iq data clear cache
 ```
 
 Drop a collection called "orders":
+
 ```sh
 iq data drop shop.orders
 ```
@@ -400,6 +431,7 @@ Check [Delete](https://zsltg.github.io/iq/write-data/#delete-data-delete),
 ### UNIX pipes
 
 Implicit stdin source:
+
 ```sh
 cat dump.jsonl | iq '.[]'
 ```
@@ -417,19 +449,19 @@ further backends slot in behind the same port. The
 - Predicate pushdown
 - Raw commands.
 
-| Name | Database | Versions |
-| ---- | ----------- | -------- |
-| `cassandra` | [Apache Cassandra](https://cassandra.apache.org/doc/) | 3.11+ |
-| `couchbase` | [Couchbase](https://docs.couchbase.com/) | 7.x, 8.x (Community or Enterprise) |
-| `couchdb` | [Apache CouchDB](https://docs.couchdb.org/) | 2.x, 3.x |
-| `dynamodb` | [Amazon DynamoDB](https://docs.aws.amazon.com/dynamodb/) | AWS (managed) |
-| `elasticsearch` | [Elasticsearch](https://www.elastic.co/docs/) | 8.x, 9.x |
-| `file` | Local dump file, read-only (see [Backups and dumps](#backups-and-dumps)) | — |
-| `hbase` | [Apache HBase](https://hbase.apache.org/book.html) | 1.0+ |
-| `mongo` | [MongoDB](https://www.mongodb.com/docs/) | 4.2+ |
-| `neo4j` | [Neo4j](https://neo4j.com/docs/) | 5.x |
-| `opensearch` | [OpenSearch](https://opensearch.org/docs/) | 2.x, 3.x |
-| `redis` | [Redis](https://redis.io/docs/) | 7.0+ |
+| Name            | Database                                                                 | Versions                           |
+| --------------- | ------------------------------------------------------------------------ | ---------------------------------- |
+| `cassandra`     | [Apache Cassandra](https://cassandra.apache.org/doc/)                    | 3.11+                              |
+| `couchbase`     | [Couchbase](https://docs.couchbase.com/)                                 | 7.x, 8.x (Community or Enterprise) |
+| `couchdb`       | [Apache CouchDB](https://docs.couchdb.org/)                              | 2.x, 3.x                           |
+| `dynamodb`      | [Amazon DynamoDB](https://docs.aws.amazon.com/dynamodb/)                 | AWS (managed)                      |
+| `elasticsearch` | [Elasticsearch](https://www.elastic.co/docs/)                            | 8.x, 9.x                           |
+| `file`          | Local dump file, read-only (see [Backups and dumps](#backups-and-dumps)) | —                                  |
+| `hbase`         | [Apache HBase](https://hbase.apache.org/book.html)                       | 1.0+                               |
+| `mongo`         | [MongoDB](https://www.mongodb.com/docs/)                                 | 4.2+                               |
+| `neo4j`         | [Neo4j](https://neo4j.com/docs/)                                         | 5.x                                |
+| `opensearch`    | [OpenSearch](https://opensearch.org/docs/)                               | 2.x, 3.x                           |
+| `redis`         | [Redis](https://redis.io/docs/)                                          | 7.0+                               |
 
 The Versions column lists the range of backend server versions the bundled client library
 supports.
@@ -470,27 +502,29 @@ A `file://` source is read-only. A `file://` endpoint is never a copy destinatio
 `iq inspect`, which need a live server, do not apply.
 
 Register a dump like any other source:
+
 ```sh
 iq add -n snap file:///backups/prod.rdb
 ```
 
 Query, diff and restore it with no server running:
+
 ```sh
 iq --src snap '.["session:42"]'
 iq diff snap cache --data
 iq --src snap --insert cache
 ```
 
-| Type | Description |
-| ---- | ----------- |
-| `jsonl` | iq typed JSON Lines / array |
-| `yaml` | iq typed YAML |
-| `mongoexport` | mongoexport Extended JSON |
-| `bson` | mongodump BSON |
-| `rdb` | Redis RDB snapshot |
+| Type                    | Description                    |
+| ----------------------- | ------------------------------ |
+| `jsonl`                 | iq typed JSON Lines / array    |
+| `yaml`                  | iq typed YAML                  |
+| `mongoexport`           | mongoexport Extended JSON      |
+| `bson`                  | mongodump BSON                 |
+| `rdb`                   | Redis RDB snapshot             |
 | `?format=dynamodb-json` | DynamoDB S3 export / scan JSON |
-| `?format=cassandra-csv` | cqlsh COPY TO CSV |
-| `?format=neo4j-json` | Neo4j APOC JSON export |
+| `?format=cassandra-csv` | cqlsh COPY TO CSV              |
+| `?format=neo4j-json`    | Neo4j APOC JSON export         |
 
 A type with a bare name auto-detects (`file:///<file_path>`). For a type in the `?format=` rows,
 you must pass the `?format=` form (`file:///<file_path>?format=<source_format>`). The
