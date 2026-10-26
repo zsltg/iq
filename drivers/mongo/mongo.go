@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/topology"
 
 	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
@@ -24,6 +25,34 @@ const scanBatch = 100
 // errNoCollection is returned when a collection-scoped operation runs without a
 // collection selected. It is a sentinel so the CLI can surface a clear hint.
 var errNoCollection = errors.New("mongodb: no collection selected; address it as handle.collection or set ?collection= in the source url")
+
+// selectionCause replaces a server selection error with its cause. The message of
+// that error contains the full topology description of the driver, which is
+// driver internals. The cause is the last error of the first server that has
+// one, for example a refused dial, followed by the error that stopped the
+// selection, for example a deadline. If no server has an error, the cause is
+// only the error that stopped the selection, and the message names the topology
+// kind. Both causes stay in the chain for errors.Is. Other errors are returned
+// unchanged.
+func selectionCause(err error) error {
+	sse, ok := errors.AsType[topology.ServerSelectionError](err)
+	if !ok {
+		return err
+	}
+	for _, s := range sse.Desc.Servers {
+		if s.LastError == nil {
+			continue
+		}
+		if sse.Wrapped == nil {
+			return fmt.Errorf("no reachable server: %w", s.LastError)
+		}
+		return fmt.Errorf("no reachable server: %w (%w)", s.LastError, sse.Wrapped)
+	}
+	if sse.Wrapped == nil {
+		return fmt.Errorf("no suitable server (topology %s)", sse.Desc.Kind)
+	}
+	return fmt.Errorf("no suitable server (topology %s): %w", sse.Desc.Kind, sse.Wrapped)
+}
 
 // Store adapts one MongoDB database to the query ports. The jq path is scoped to
 // a single collection (the keyspace). The raw path runs database commands and
@@ -99,7 +128,7 @@ func Open(ctx context.Context, uri, address string, trace io.Writer, dec numfmt.
 	}
 	if err := client.Ping(ctx, nil); err != nil {
 		_ = client.Disconnect(ctx)
-		return nil, fmt.Errorf("connect mongodb: %w", err)
+		return nil, fmt.Errorf("connect mongodb: %w", selectionCause(err))
 	}
 	return &Store{
 		client:     client,
