@@ -11,7 +11,7 @@ name: iq
 
 services:
   redis:
-    image: redis:8.10.2@sha256:c94085d298b738be22c9ccdc0ac3761fa6649df7dd82ad1d42367f3cb9714935
+    image: redis:8.10.2@sha256:97ec88159e6d7cfb5ddef9015386087d58a912de80112f06ebdfa78fa5989901
     container_name: iq-redis
     ports:
       - "6379:6379"
