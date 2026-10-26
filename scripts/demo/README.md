@@ -74,13 +74,11 @@ collection in the local MongoDB:
 3. `iq '.[] | select(.year > 2015) | {title, price}'`, a streaming scan with a
    range predicate and a projection.
 4. the same command again, recalled from history with the up arrow rather than
-   retyped, with `--explain -v -C | less -R` appended to it: the annotated jq
-   stages with the projection among them, the mongo calls they become, and the
-   pushdown section with the compiled server filter. This is the screen the whole
-   recording exists for, and the one screen too tall for the terminal, so it goes
-   where a person sends output taller than the screen, into a pager. Page one, a
-   Space, page two, `q`. `-C` is what keeps iq's colors across the pipe, `-R` is
-   what makes `less` pass them through.
+   retyped, with `--explain` appended to it: the annotated jq stages with the
+   projection among them, the mongo calls they become, and the filter stage
+   sections with the compiled server filter. This is the screen the whole
+   recording exists for. The plan is 24 lines, so with the command line above it
+   and the prompt below it, it fills the 26-row terminal exactly, with no pager.
 5. `iq '.[] | select(.author | test("Martin"))' -g`, a regex predicate pushed
    down the same way, printed as gron: one assignment per leaf, greppable,
    reversible with `ungron`.
@@ -100,8 +98,8 @@ So the demo checks its own story, in two places:
   `scripts/seed-mongo.sh` fails here, with the actual collection printed beside
   the expectation.
 - `basic.exp` asserts every screen before moving on: `added` then `books` from
-  `add`, `Kleppmann`, `Philosophy`, `calls:` on the pager's first page and then
-  `object` and `END` on its second, `Robert` then `2008`. Every one of them is a
+  `add`, `Kleppmann`, `Philosophy`, `calls:`, `find):`, `object` and `again)` down
+  the plan, then the prompt under it, `Robert` then `2008`. Every one of them is a
   token the screen it names actually paints, read off a real recording rather than
   guessed at, and a token that never comes aborts the run instead of being waited
   out.
@@ -178,25 +176,15 @@ wrong:
   `send`, so feeding it one character at a time types at no pace at all. The
   sleep in `keystrokes` is the pace; the `-timeout 0` drain after it is what puts
   the echoed character into the recording.
-- **Page a screen that is taller than the terminal, do not scroll it.** The plan is
-  36 lines into a 26-row terminal, and pacing it into the recording line by line was
-  the first answer and the wrong one: ~35 full-canvas frames the render cannot diff away, and
-  a reader chasing a moving screen. `| less -R` is what a person does with output that
-  does not fit, and it is two redraws, `await` on each. `-C` goes with it, since iq
-  turns its color writer off when stdout is not a terminal and this stdout is a pipe;
-  `less -R` then passes the escapes through. `less` is a prerequisite the way `bash`
-  is, every Linux box has it, so `demo-record` does not check for it.
-- **Assert what the second page *paints*, not what it shows.** `less` scrolls rather
-  than repainting: page two here is one screen from the end, so it stops with the last
-  line at the bottom, and the only bytes it writes are the eleven rows that close the
-  compiled filter and its own `(END)`. `pushed` is on that screen and is not in that
-  write, it was painted on page one, so an `await` for it would be answered by the
-  buffer and assert nothing. `forget` before the Space, then two tokens the page
-  really writes (`object`, then `END`), is the whole of the rule.
-- **`-v` is on stderr, and the pipe does not carry it.** Its resolved source line goes
-  to the terminal, where `less` already has the alternate screen up, so it lands at the
-  top of that screen and the plan painting under it scrolls it off. Nothing else moves,
-  and after `q` the alternate screen takes it away with everything else the pager drew.
+- **Fit the plan to the screen, do not page or scroll it.** The plan was once 36
+  lines into a 26-row terminal. Pacing it into the recording line by line was the
+  first answer and the wrong one: ~35 full-canvas frames that the render cannot diff
+  away, and a reader chasing a moving screen. A `less -R` pager was the second
+  answer, and it cost a pipe, `-C` to keep the colors across it, and an alternate
+  screen. The plan is now 24 lines, so it prints straight to the terminal with its
+  colors. There is no spare row: if the plan grows by one line, the command line
+  scrolls off the top, and no assertion sees that. Check the top row of the plan
+  frame after a change to the plan.
 - **Pause with `hold`, not `sleep`.** A bare `sleep` leaves output sitting unread
   in the pty, and the recording captures a half-drawn screen. `beat` (the pause
   before Enter) is the one place a bare `sleep` is safe: `await` has just emptied
@@ -220,8 +208,7 @@ wrong:
   asserts nothing, and once a prompt is in the buffer it stops matching at all. The
   prompt is asserted as `2004h` instead, the tail of the bracketed-paste escape
   readline writes immediately before drawing it: one token, no space, and printed
-  exactly when the shell is ready for the next line. It is what proves `q` got out of
-  the pager, too.
+  exactly when the shell is ready for the next line.
 - **`recall` is `type`'s other half, not a copy of it.** Both put characters on
   the command line through `keystrokes`, one per `send` and each drained; `recall`
   only reaches the line differently, by sending the up arrow and waiting for
@@ -245,7 +232,7 @@ about it:
 python3 -c 'import json,sys
 d="".join(json.loads(l)[2] for l in open(sys.argv[1]) if l.startswith("[") and json.loads(l)[1]=="o")
 [print(f"{d.count(t):4d}  {t!r}") for t in sys.argv[2:]]' \
-  /tmp/iq-demo/demo.cast added books Kleppmann Philosophy calls: object END Robert 2008
+  /tmp/iq-demo/demo.cast added books Kleppmann Philosophy calls: 'find):' object 'again)' Robert 2008
 ```
 
 ## Geometry, and where the numbers come from
@@ -255,22 +242,17 @@ expect's spawn, and, via the cast header, termsvg's canvas. One source of truth 
 purpose: rendering a cast at a size it was not recorded at paints a torn screen
 over stale content.
 
-**Both numbers are the four data screens, and neither is the plan.** The plan is 36
-lines of one screen; a canvas built to hold it whole shrinks the type on every other
-screen and renders a tall thin band nobody can read at README width. So the plan is
-paged and the canvas is sized to the rest:
+**Both numbers come from the screens.** A canvas built to hold more than the tallest
+screen shrinks the type on every screen and renders a tall thin band nobody can read
+at README width.
 
 - **80 columns** clears the widest typed command line, the recalled `$ iq '.[] |
-  select(.year > 2015) | {title, price}' --explain -v -C | less -R` at 76 characters,
-  and the widest output line, a gron assignment at 53. Nothing on screen wraps.
-- **26 rows** is the gron screen, the tallest of the four: 18 lines of output with
-  its typed line above and the next prompt below, plus six rows of the screen before
-  it.
-
-26 is also where the pager's page break falls well, which is luck rather than design:
-36 lines through a 25-line window stops page one in the middle of the compiled filter,
-and `less` then backs the last page up far enough to fill the screen, which opens page
-two on line 12, the `mongo calls:` header. Move either number and that break moves.
+  select(.year > 2015) | {title, price}' --explain` at 60 characters, and the widest
+  output line, the plan's `find(<filter>)` line at 78. Nothing on screen wraps.
+- **26 rows** is the gron screen, 18 lines of output with its typed line above and
+  the next prompt below, plus six rows of the screen before it. It is also the plan
+  screen exactly: 24 lines of plan with the recalled command line above and the
+  prompt below. Fewer rows push that command line off the top.
 
 The render is vector, so no pixel width caps these numbers: the README and the
 docs embed the SVG with `width="100%"` and the browser scales the text to the

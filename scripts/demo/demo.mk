@@ -24,21 +24,14 @@ TERMSVG_VERSION := v0.11.0
 DEMO_ROOT       ?= /tmp/iq-demo
 
 # The recorded terminal's geometry, one source of truth: it sizes asciinema's pty,
-# expect's spawn, and (via the cast header) termsvg's canvas. Both numbers are the
-# four data screens, and neither is the plan: the plan is 36 lines of one screen, and
-# sizing the canvas to it shrinks the type on every other screen and makes the demo a
-# tall thin band. It is paged instead, see basic.exp's step 4. So 80 columns is the
-# widest typed command line (`$ iq '.[] | select(.year > 2015) | {title, price}'
-# --explain -v -C | less -R`, 76 characters) with room to spare, and the widest output
-# line is a gron assignment at 53, so nothing on screen wraps; 26 rows is the gron
+# expect's spawn, and (via the cast header) termsvg's canvas. Both numbers come from
+# the screens. 80 columns is the widest typed command line (`$ iq '.[] | select(.year
+# > 2015) | {title, price}' --explain`, 60 characters) and the widest output line, the
+# plan's `find(<filter>)` line at 78, so nothing on screen wraps. 26 rows is the gron
 # screen, 18 lines of output with its typed line above and the next prompt below, plus
-# six rows of the screen before it.
-#
-# 26 is also what lands the pager's page break on a section header, which is luck
-# worth keeping: 36 lines through a 25-line window means page one stops in the middle
-# of the compiled filter, and less then backs the last page up far enough to fill the
-# screen, which opens page two on line 12, `mongo calls:`. Move these numbers and that
-# break moves with them.
+# six rows of the screen before it. It is also the plan screen exactly, 24 lines of
+# plan with the recalled command line above and the prompt below, so fewer rows push
+# that command line off the top. See basic.exp's step 4.
 #
 # The render is vector, so no pixel width caps these numbers: the README and the docs
 # embed the SVG at 100% of their column and the browser scales the text, crisp at any

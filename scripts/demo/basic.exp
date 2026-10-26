@@ -28,8 +28,8 @@ log_user 1
 set root $env(IQ_DEMO_ROOT)
 
 # Size the pty the shell and iq draw into, from the same geometry the recorder uses.
-# Left to itself expect hands it an 80x24 screen, two rows short of the gron screen,
-# and the pager below would break its pages somewhere else.
+# Left to itself expect hands it an 80x24 screen, two rows short of the gron screen
+# and of the plan screen.
 set stty_init "rows $env(DEMO_ROWS) cols $env(DEMO_COLS)"
 
 # expect only reads the session while an `expect` command is running. Anything it has
@@ -150,9 +150,9 @@ proc recall {suffix} {
 # Every command line entered here is also parsed by cmd/demo_test.go, which resolves it
 # against the real cobra tree, so a renamed flag fails `go test` before anybody records
 # an SVG that shows it. A recall resolves as the previous typed line with its suffix
-# appended, which is what the shell actually runs, and the test resolves the head of
-# that line, up to the first pipe outside quotes, because everything past it is the
-# shell's business rather than iq's. Keep both shapes literal: one `type {iq ...}` or
+# appended, which is what the shell actually runs. The test resolves the whole line as
+# iq's, so a line that pipes iq into another program needs the test taught where iq's
+# part ends. Keep both shapes literal: one `type {iq ...}` or
 # `recall {...}` per line, braces on the same line, nothing computed.
 
 # A bare interactive shell, no rc files and no profile, so nothing of the recorder's
@@ -201,36 +201,26 @@ hold 4
 #    evaluated on the server, so the server filter section shows it, and the jq
 #    section has no conjunct left to run alone.
 #
-#    The plan goes into a pager, where a person sends a plan that can outgrow the
-#    screen. -C is what keeps its colors, iq turns the color writer off when stdout is
-#    not a terminal and this stdout is a pipe; less -R passes the escapes it forces on
-#    straight through. The plan is 23 lines, so it fits the 26-row terminal on one page,
-#    and less prints (END) under it at once.
-#
-#    -v is on stderr, which is not in the pipe, so its resolved source line is written
-#    to the terminal rather than to the pager: less has the alternate screen up by
-#    then, and the line lands at the top of it, above the plan. Measured, not assumed,
-#    and nothing else on screen moves.
+#    The plan is 24 lines. With the recalled command line above it and the next prompt
+#    under it, that is 26 rows, the whole terminal, so it prints straight to the
+#    screen and needs no pager. stdout is the terminal, so iq colors it without -C.
+#    There is no spare row: if the plan grows by one line, the command line scrolls off
+#    the top, and no assertion below can see that.
 forget
-recall { --explain -v -C | less -R}
-# The one page, asserted in order. `calls:` is the mongo section's header, the one
-# token of the plan that cannot also be read off the recalled command line. `find):`
-# then matches the end of the `server filter (mongo find):` header, which the ops
-# line `find(<filter>)` cannot answer, and `object` the last arm of the $type list in
-# the fragment, which is only in the server filter section. `END` is what less prints
-# when the whole plan is on screen.
+recall { --explain}
+# The plan, asserted in order. `calls:` is the mongo section's header, the one token
+# of the plan that cannot also be read off the recalled command line. `find):` then
+# matches the end of the `server filter (mongo find):` header, which the ops line
+# `find(<filter>)` cannot answer, and `object` the last arm of the $type list in the
+# fragment, which is only in the server filter section. `again)` closes the header of
+# the jq section, the last line of the plan, and `2004h` is the prompt under it, for
+# the reason `await` gives above.
 await "calls:"
 await "find):"
 await "object"
-await "END"
-hold 8
-# q quits, the alternate screen goes with it, and the recalled command line is on
-# screen again with the prompt under it, which is where the next command is typed. The
-# assertion is that prompt, spelled `2004h` for the reason `await` gives above: if less
-# were still up, the next command would be typed into the pager and never run.
-send -- "q"
+await "again)"
 await "2004h"
-beat
+hold 8
 
 # 5. A regex predicate, pushed down the same way, printed as gron: one assignment
 #    statement per leaf, greppable, and reversible with ungron. Ending here leaves the
