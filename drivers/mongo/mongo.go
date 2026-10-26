@@ -29,18 +29,24 @@ var errNoCollection = errors.New("mongodb: no collection selected; address it as
 // selectionCause replaces a server selection error with its cause. The message of
 // that error contains the full topology description of the driver, which is
 // driver internals. The cause is the last error of the first server that has
-// one, for example a refused dial. If no server has an error, the cause is the
-// error that stopped the selection, and the message names the topology kind.
-// Other errors are returned unchanged.
+// one, for example a refused dial, followed by the error that stopped the
+// selection, for example a deadline. If no server has an error, the cause is
+// only the error that stopped the selection, and the message names the topology
+// kind. Both causes stay in the chain for errors.Is. Other errors are returned
+// unchanged.
 func selectionCause(err error) error {
 	sse, ok := errors.AsType[topology.ServerSelectionError](err)
 	if !ok {
 		return err
 	}
 	for _, s := range sse.Desc.Servers {
-		if s.LastError != nil {
+		if s.LastError == nil {
+			continue
+		}
+		if sse.Wrapped == nil {
 			return fmt.Errorf("no reachable server: %w", s.LastError)
 		}
+		return fmt.Errorf("no reachable server: %w (%w)", s.LastError, sse.Wrapped)
 	}
 	if sse.Wrapped == nil {
 		return fmt.Errorf("no suitable server (topology %s)", sse.Desc.Kind)

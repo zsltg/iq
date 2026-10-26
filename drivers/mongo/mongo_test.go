@@ -126,13 +126,13 @@ func TestSelectionCause(t *testing.T) {
 		name   string
 		err    error
 		want   string
-		wantIs error
+		wantIs []error
 	}{
 		{
 			name:   "not a selection error",
 			err:    other,
 			want:   "auth failed",
-			wantIs: other,
+			wantIs: []error{other},
 		},
 		{
 			name: "server with a last error",
@@ -140,8 +140,8 @@ func TestSelectionCause(t *testing.T) {
 				Desc:    description.Topology{Servers: []description.Server{{LastError: refused}}},
 				Wrapped: context.DeadlineExceeded,
 			},
-			want:   "no reachable server: dial tcp 127.0.0.1:27999: connect: connection refused",
-			wantIs: refused,
+			want:   "no reachable server: dial tcp 127.0.0.1:27999: connect: connection refused (context deadline exceeded)",
+			wantIs: []error{refused, context.DeadlineExceeded},
 		},
 		{
 			name: "first server with a last error wins",
@@ -153,7 +153,7 @@ func TestSelectionCause(t *testing.T) {
 				}},
 			},
 			want:   "no reachable server: dial tcp 127.0.0.1:27999: connect: connection refused",
-			wantIs: refused,
+			wantIs: []error{refused},
 		},
 		{
 			name: "no server error",
@@ -162,7 +162,7 @@ func TestSelectionCause(t *testing.T) {
 				Wrapped: context.DeadlineExceeded,
 			},
 			want:   "no suitable server (topology ReplicaSetNoPrimary): context deadline exceeded",
-			wantIs: context.DeadlineExceeded,
+			wantIs: []error{context.DeadlineExceeded},
 		},
 		{
 			name: "no server error and no wrapped error",
@@ -175,29 +175,30 @@ func TestSelectionCause(t *testing.T) {
 				Desc: description.Topology{Servers: []description.Server{{LastError: refused}}},
 			}),
 			want:   "no reachable server: dial tcp 127.0.0.1:27999: connect: connection refused",
-			wantIs: refused,
+			wantIs: []error{refused},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := selectionCause(tt.err)
 			require.EqualError(t, got, tt.want)
-			if tt.wantIs != nil {
-				require.ErrorIs(t, got, tt.wantIs)
+			for _, target := range tt.wantIs {
+				require.ErrorIs(t, got, target)
 			}
 		})
 	}
 }
 
 // TestOpenUnreachableHidesTopology dials a port that nothing listens on. The
-// error must name the refused dial and must not contain the topology
-// description of the driver.
+// error must name the failed dial and must not contain the topology description
+// of the driver. The test does not match the refusal text, because it differs
+// between operating systems.
 func TestOpenUnreachableHidesTopology(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	_, err := Open(ctx, "mongodb://127.0.0.1:1/iq?collection=books&serverSelectionTimeoutMS=2000", "", nil, numfmt.DecimalAuto)
-	require.ErrorContains(t, err, "connect mongodb: no ")
+	require.ErrorContains(t, err, "connect mongodb: no reachable server: dial tcp 127.0.0.1:1: ")
 	require.NotContains(t, err.Error(), "topology:")
 }
 
