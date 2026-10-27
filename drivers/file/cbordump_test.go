@@ -3,6 +3,7 @@ package file
 import (
 	"bytes"
 	"math"
+	"math/big"
 	"strconv"
 	"testing"
 
@@ -178,6 +179,52 @@ func TestCBORDecodeAcceptsEveryEncodedRecord(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := query.Record{Key: "k", Type: "t", Value: tt.value}
 			require.Equal(t, rec, roundTrip(t, rec))
+		})
+	}
+}
+
+// TestCBOREncodeRejectsBigInt proves that the cache codec refuses every
+// *big.Int, inside maps and arrays too. The cold decode produces a *big.Int for
+// an integer outside int64. The cache cannot return the same type. So the encode
+// fails and the cache writer skips the dump.
+func TestCBOREncodeRejectsBigInt(t *testing.T) {
+	huge, ok := new(big.Int).SetString("123456789012345678901234567890", 10)
+	require.True(t, ok)
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{"beyond-int64-positive", new(big.Int).Add(big.NewInt(math.MaxInt64), big.NewInt(1))},
+		{"beyond-int64-negative", new(big.Int).Sub(big.NewInt(math.MinInt64), big.NewInt(1))},
+		{"beyond-uint64", huge},
+		{"beyond-uint64-negative", new(big.Int).Neg(huge)},
+		{"in-uint64-range", new(big.Int).SetUint64(math.MaxUint64)},
+		{"nested-map", map[string]any{"a": []any{int(1), huge}}},
+		{"nested-array", []any{map[string]any{"b": huge}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := encodeRecord(query.Record{Key: "k", Type: "string", Value: tt.value})
+			require.Error(t, err)
+		})
+	}
+}
+
+// TestCBORDecodeRejectsForeignTag proves that the decoder still rejects every
+// tag, bignum tags included. A tag in a cache means corruption.
+func TestCBORDecodeRejectsForeignTag(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  []byte
+	}{
+		{"epoch-time", []byte{0x83, 0x61, 'k', 0x61, 's', 0xc1, 0x01}},
+		{"self-describe", []byte{0x83, 0x61, 'k', 0x61, 's', 0xd9, 0xd9, 0xf7, 0x01}},
+		{"bignum", []byte{0x83, 0x61, 'k', 0x61, 's', 0xc2, 0x49, 1, 0, 0, 0, 0, 0, 0, 0, 0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := decodeRecord(cborDec.NewDecoder(bytes.NewReader(tt.raw)))
+			require.Error(t, err)
 		})
 	}
 }
