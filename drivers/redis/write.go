@@ -3,10 +3,13 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
 	"strconv"
+	"strings"
 
 	goredis "github.com/redis/go-redis/v9"
 
@@ -361,11 +364,24 @@ func redisString(v any) (string, error) {
 	}
 }
 
-// asFloat coerces a normalized number to the float64 a zset score needs.
+// asFloat coerces a normalized number to the float64 a zset score needs. It also
+// accepts the texts "inf", "-inf", and "+inf" (any case), which the reader
+// writes for an infinite score. Redis rejects a NaN score, so NaN is an error.
 func asFloat(v any) (float64, error) {
 	switch t := v.(type) {
 	case float64:
+		if math.IsNaN(t) {
+			return 0, errors.New("score is NaN")
+		}
 		return t, nil
+	case string:
+		switch strings.ToLower(t) {
+		case "inf", "+inf":
+			return math.Inf(1), nil
+		case "-inf":
+			return math.Inf(-1), nil
+		}
+		return 0, errors.New("score string is not a number or an infinity")
 	case int:
 		return float64(t), nil
 	case int64:

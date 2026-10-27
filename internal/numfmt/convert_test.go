@@ -70,3 +70,47 @@ func TestConvertNumberNegativeZero(t *testing.T) {
 		require.True(t, math.Signbit(f), "mode %d: the sign of -0 is lost", mode)
 	}
 }
+
+// TestConvertNumberRange pins a literal that float64 cannot hold. A float64 of
+// +Inf or -Inf has no JSON form. So the literal stays its exact text in every
+// mode. Go reports no error for an underflow, so 1e-999 is the float64 zero in
+// auto and number mode.
+func TestConvertNumberRange(t *testing.T) {
+	bigWant, _ := new(big.Int).SetString("123456789012345678901234567890", 10)
+	tests := []struct {
+		in         string
+		wantFloat  any // auto and number mode
+		wantString any // string mode
+	}{
+		{"1e999", "1e999", "1e999"},
+		{"-1e999", "-1e999", "-1e999"},
+		{"2e308", "2e308", "2e308"},
+		{"1e-999", 0.0, "1e-999"},
+		{"19.99", 19.99, "19.99"},
+		{"7", 7, 7},
+		{"123456789012345678901234567890", bigWant, bigWant},
+	}
+	for _, tt := range tests {
+		for _, m := range []struct {
+			name string
+			mode numfmt.DecimalMode
+			want any
+		}{
+			{"auto", numfmt.DecimalAuto, tt.wantFloat},
+			{"number", numfmt.DecimalNumber, tt.wantFloat},
+			{"string", numfmt.DecimalString, tt.wantString},
+		} {
+			t.Run(m.name+"/"+tt.in, func(t *testing.T) {
+				require.Equal(t, m.want, numfmt.ConvertNumber(json.Number(tt.in), m.mode))
+			})
+		}
+	}
+	modes := map[string]numfmt.DecimalMode{"auto": numfmt.DecimalAuto, "number": numfmt.DecimalNumber, "string": numfmt.DecimalString}
+	for name, mode := range modes {
+		t.Run("negative zero/"+name, func(t *testing.T) {
+			got, ok := numfmt.ConvertNumber("-0", mode).(float64)
+			require.True(t, ok)
+			require.True(t, math.Signbit(got))
+		})
+	}
+}

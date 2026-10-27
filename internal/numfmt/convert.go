@@ -36,7 +36,10 @@ func ConvertNumbers(v any, mode DecimalMode) any {
 // arithmetic on both. So integers are never lossy regardless of the mode. The
 // literal -0 is the float64 negative zero, the one integer an int cannot hold. A
 // fractional number is a float64 in auto and number mode, or its exact literal
-// string in string mode.
+// string in string mode. A fractional literal that float64 cannot hold, such as
+// 1e999, stays its exact literal text. A float64 of +Inf or -Inf has no JSON
+// form, so every encoder fails on it. Go reports no error for an underflow
+// literal such as 1e-999, so that literal becomes the float64 zero.
 func ConvertNumber(n json.Number, mode DecimalMode) any {
 	s := n.String()
 	// -0 is the one integer literal that an int cannot hold. An int turns -0
@@ -57,6 +60,11 @@ func ConvertNumber(n json.Number, mode DecimalMode) any {
 	if mode == DecimalString {
 		return s
 	}
-	f, _ := n.Float64()
+	// Float64 returns an error and +Inf or -Inf for a literal out of range.
+	// Keep the literal text then, as the dump reader does.
+	f, err := n.Float64()
+	if err != nil {
+		return s
+	}
 	return f
 }

@@ -8,11 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
-	"math/big"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/zsltg/iq/internal/numfmt"
 )
 
 // dumpRecord is the on-disk envelope for one item in a typed JSONL dump. The type
@@ -114,52 +114,11 @@ func decodeValue(raw string) (any, error) {
 	return convertNumbers(v), nil
 }
 
-// convertNumbers walks a decoded value, turning each json.Number into an exact Go
-// number: an integer becomes an int or *big.Int, a fractional number a float64.
-// This mirrors the read path's number handling so a value keeps its precision
-// across a dump/reload, rather than every integer collapsing to a float.
+// convertNumbers turns each json.Number in a decoded value into its exact Go
+// form. This is the number handling of the read path, so a value keeps its
+// precision across a dump and reload. Every integer stays an int or a *big.Int.
 func convertNumbers(v any) any {
-	switch t := v.(type) {
-	case json.Number:
-		return convertNumber(t)
-	case map[string]any:
-		for k, e := range t {
-			t[k] = convertNumbers(e)
-		}
-		return t
-	case []any:
-		for i, e := range t {
-			t[i] = convertNumbers(e)
-		}
-		return t
-	default:
-		return t
-	}
-}
-
-// convertNumber turns one json.Number into an exact Go number. An integer becomes
-// an int or *big.Int, and a fractional number becomes a float64. A number that
-// float64 cannot hold stays its literal text.
-func convertNumber(t json.Number) any {
-	s := t.String()
-	// -0 is the one integer literal an int cannot hold. Keep it as the float64
-	// negative zero, so a dump of -0.0 reads back with its sign (numfmt does
-	// the same for the backend adapters).
-	if s == "-0" {
-		return math.Copysign(0, -1)
-	}
-	if !strings.ContainsAny(s, ".eE") {
-		if i, err := t.Int64(); err == nil && int64(int(i)) == i {
-			return int(i)
-		}
-		if bi, ok := new(big.Int).SetString(s, 10); ok {
-			return bi
-		}
-	}
-	if f, err := t.Float64(); err == nil {
-		return f
-	}
-	return s
+	return numfmt.ConvertNumbers(v, numfmt.DecimalAuto)
 }
 
 // JSONSource streams typed {key,type,value} records (or, in plain mode, whole

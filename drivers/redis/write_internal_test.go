@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"net/url"
 	"os"
@@ -434,4 +435,35 @@ func TestTypedScanSurfacesAReadFailure(t *testing.T) {
 
 	require.ErrorContains(t, err, "redis read")
 	require.Zero(t, calls, "the failed page is not delivered")
+}
+
+func TestAsFloatInfinity(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      any
+		want    float64
+		wantErr string
+	}{
+		{"inf", "inf", math.Inf(1), ""},
+		{"plus inf", "+inf", math.Inf(1), ""},
+		{"minus inf", "-inf", math.Inf(-1), ""},
+		{"upper case", "INF", math.Inf(1), ""},
+		{"nan text", "nan", 0, "score string is not a number or an infinity"},
+		{"infinity word", "infinity", 0, "score string is not a number or an infinity"},
+		{"number text", "5", 0, "score string is not a number or an infinity"},
+		{"nan float", math.NaN(), 0, "score is NaN"},
+		{"inf float", math.Inf(1), math.Inf(1), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := asFloat(tt.in)
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.InDelta(t, tt.want, f, 0)
+			require.Equal(t, math.IsInf(tt.want, 0), math.IsInf(f, 0))
+		})
+	}
 }

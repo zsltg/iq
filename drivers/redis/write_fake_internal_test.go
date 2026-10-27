@@ -42,6 +42,15 @@ func TestQueueWrite(t *testing.T) {
 			"",
 		},
 		{
+			"zset writes an infinite score",
+			query.Record{Key: "k", Type: "zset", Value: []any{
+				map[string]any{"member": "m1", "score": "inf"},
+				map[string]any{"member": "m2", "score": "-inf"},
+			}},
+			[]string{"zadd k +Inf m1 -Inf m2"},
+			"",
+		},
+		{
 			"stream keeps the entry order",
 			query.Record{Key: "k", Type: "stream", Value: []any{entry("1-0", map[string]any{"f": "v"}), entry("2-0", map[string]any{"g": 2})}},
 			[]string{"xadd k 1-0 f v", "xadd k 2-0 g 2"},
