@@ -182,15 +182,19 @@ func sourceEndpoint(cfg *config) endpoint {
 	return endpoint{url: cfg.url, address: cfg.address, handle: cfg.handle}
 }
 
-// sameEndpoint reports whether a and b name the same data: the same saved
-// source and address, or the same connection URL and address. An empty handle
-// or URL never matches, so a zero endpoint (no source) is never the same as
-// another.
+// sameEndpoint reports whether a and b name the same data. That holds when they
+// have the same saved source or the same connection URL, with the same address.
+// It also holds when their URLs name the same container in another spelling, as
+// `redis://h` and `redis://h:6379/0` do. See sameContainer. The match is
+// conservative: it can refuse two endpoints that differ, and never allows two
+// that match. An empty handle or URL never matches, so a zero endpoint (no
+// source) is never the same as another.
 func sameEndpoint(a, b endpoint) bool {
-	if effectiveAddress(a) != effectiveAddress(b) {
-		return false
+	if effectiveAddress(a) == effectiveAddress(b) &&
+		(a.handle != "" && a.handle == b.handle || a.url != "" && a.url == b.url) {
+		return true
 	}
-	return a.handle != "" && a.handle == b.handle || a.url != "" && a.url == b.url
+	return sameContainer(a, b)
 }
 
 // effectiveAddress returns the address that e reads or writes: the explicit

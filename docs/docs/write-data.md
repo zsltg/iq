@@ -171,6 +171,13 @@ after the clear, so it would find nothing. iq refuses the run, also with
 To rewrite a source in place, dump it first with `--typed -o <file>`, register
 the file as a source, and insert from that file.
 
+iq compares what the two URIs name, not how they are spelled. Two handles for
+`redis://h` and `redis://h:6379/0` name one container, so iq refuses them. The
+comparison ignores user info and the case of the host. It also treats
+`localhost`, `127.0.0.1`, and `::1` as one host, and fills in the default port.
+Two host lists match when they share one host. The check can refuse two
+containers that differ, but it never allows one container to replace itself.
+
 A destination that cannot be cleared (the read-only file dump) is refused up
 front. `--no-overwrite` is the opposite choice, insert-only, so the two are
 mutually exclusive. Neither applies to a `--typed` dump.
