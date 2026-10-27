@@ -918,7 +918,10 @@ Posture and upkeep around the pipeline, all on GitHub:
   security updates can stay off.
 - iq imports `github.com/zsltg/rdb`, a fork of `github.com/hdt3213/rdb`. The
   fork fixes a fatal out-of-memory error on a length that an RDB file declares
-  (upstream issue 75, pull request 76). The fork branch `zsltg-module-path`
+  (upstream issue 75, pull request 76). The fork also removes a print to stdout
+  for module types that have no handler. That print corrupts the data output of
+  iq and the JSON-RPC stream of `iq mcp`. Upstream needs this fix too before iq
+  can switch back. The fork branch `zsltg-module-path`
   changes the module path, because `go install` refuses a module whose `go.mod`
   has a `replace` directive. Do not use a `replace` in `go.mod`. When upstream
   releases the fix, change the imports back to `github.com/hdt3213/rdb`, require
