@@ -3,6 +3,7 @@ package rawpred_test
 import (
 	"testing"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/rawpred"
 )
@@ -41,7 +42,7 @@ func BenchmarkMatcher(b *testing.B) {
 	}
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
-			m := rawpred.NewMatcher(c.pred)
+			m := rawpred.NewMatcher(c.pred, numfmt.DecimalAuto)
 			b.ReportAllocs()
 			for b.Loop() {
 				benchVerdict = m.Match(benchDoc)

@@ -9,6 +9,7 @@ import (
 	"github.com/couchbase/gocb/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 )
 
@@ -131,7 +132,7 @@ func TestToWhere(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			where, params, narrow := toWhere(tt.node)
+			where, params, narrow := toWhere(tt.node, numfmt.DecimalAuto)
 			require.Equal(t, tt.wantNarrow, narrow)
 			require.Equal(t, tt.wantWhere, where)
 			require.Equal(t, tt.wantParams, params)
@@ -157,7 +158,7 @@ func TestToWhereNotNarrowing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			where, params, narrow := toWhere(tt.node)
+			where, params, narrow := toWhere(tt.node, numfmt.DecimalAuto)
 			require.False(t, narrow)
 			require.Empty(t, where)
 			require.Nil(t, params)

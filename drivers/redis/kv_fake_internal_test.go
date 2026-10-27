@@ -111,7 +111,7 @@ var readPaths = []readPath{
 		return s.Get(ctx, keys)
 	}},
 	{"getFiltered", func(s *Store, ctx context.Context, keys []string) (map[string]any, error) {
-		return s.getFiltered(ctx, keys, rawpred.NewMatcher(nil))
+		return s.getFiltered(ctx, keys, rawpred.NewMatcher(nil, numfmt.DecimalAuto))
 	}},
 }
 

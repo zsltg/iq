@@ -20,6 +20,7 @@ import (
 	iqmongo "github.com/zsltg/iq/drivers/mongo"
 	iqneo4j "github.com/zsltg/iq/drivers/neo4j"
 	iqredis "github.com/zsltg/iq/drivers/redis"
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/selector"
@@ -100,16 +101,20 @@ type driver struct {
 type planSource struct {
 	url     string
 	address string
+	// decimal is the --format.decimal mode. A plan reads it, because the mode
+	// decides which predicate leaves a driver can push to the server.
+	decimal numfmt.DecimalMode
 }
 
 // planSource returns the plan source of the config.
 func (cfg *config) planSource() planSource {
-	return planSource{url: cfg.url, address: cfg.address}
+	return planSource{url: cfg.url, address: cfg.address, decimal: cfg.decimalMode}
 }
 
-// planSource returns the plan source of the endpoint.
-func (e endpoint) planSource() planSource {
-	return planSource{url: e.url, address: e.address}
+// planSource returns the plan source of the endpoint, with the decimal mode that
+// the run uses.
+func (e endpoint) planSource(dec numfmt.DecimalMode) planSource {
+	return planSource{url: e.url, address: e.address, decimal: dec}
 }
 
 // withoutURI adapts a plan function that ignores the URI and cannot fail to the
@@ -117,6 +122,14 @@ func (e endpoint) planSource() planSource {
 func withoutURI(f func(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan) func(planSource, selector.KeySet, predicate.Node, bool) (query.AccessPlan, error) {
 	return func(_ planSource, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
 		return f(keys, pred, unbounded), nil
+	}
+}
+
+// withDecimal adapts a plan function that reads the decimal mode and ignores the URI
+// to the registry signature.
+func withDecimal(f func(keys selector.KeySet, pred predicate.Node, unbounded bool, dec numfmt.DecimalMode) query.AccessPlan) func(planSource, selector.KeySet, predicate.Node, bool) (query.AccessPlan, error) {
+	return func(src planSource, keys selector.KeySet, pred predicate.Node, unbounded bool) (query.AccessPlan, error) {
+		return f(keys, pred, unbounded, src.decimal), nil
 	}
 }
 
@@ -221,7 +234,7 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcouchdb.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   withoutURI(iqcouchdb.ExplainPlan),
+		explainPlan:   withDecimal(iqcouchdb.ExplainPlan),
 		explainWrite:  iqcouchdb.ExplainWrite,
 		explainClear:  iqcouchdb.ExplainClear,
 		explainDrop:   iqcouchdb.ExplainDrop,
@@ -241,7 +254,7 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqcouchbase.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:  withoutURI(iqcouchbase.ExplainPlan),
+		explainPlan:  withDecimal(iqcouchbase.ExplainPlan),
 		explainWrite: iqcouchbase.ExplainWrite,
 		explainClear: iqcouchbase.ExplainClear,
 		explainDrop:  iqcouchbase.ExplainDrop,
@@ -262,7 +275,7 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqneo4j.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   withoutURI(iqneo4j.ExplainPlan),
+		explainPlan:   withDecimal(iqneo4j.ExplainPlan),
 		explainWrite:  iqneo4j.ExplainWrite,
 		explainClear:  iqneo4j.ExplainClear,
 		explainDrop:   iqneo4j.ExplainDrop,

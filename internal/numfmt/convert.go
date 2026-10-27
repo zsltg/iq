@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
 )
 
@@ -57,14 +58,42 @@ func ConvertNumber(n json.Number, mode DecimalMode) any {
 		}
 		return s
 	}
+	if f, ok := fractionalFloat(s, mode); ok {
+		return f
+	}
+	return s
+}
+
+// DecodesToString reports whether ConvertNumber turns the JSON number literal into
+// a string. It is true for a fractional literal in string mode and for a fractional
+// literal that float64 cannot hold. An integer literal never becomes a string. A
+// client-side prefilter that reads the raw JSON type calls this, so it models the
+// decode with the same test.
+func DecodesToString(literal string, mode DecimalMode) bool {
+	if !strings.ContainsAny(literal, ".eE") {
+		return false
+	}
+	_, ok := fractionalFloat(literal, mode)
+	return !ok
+}
+
+// IsDecodedText reports whether s is the exact text that ConvertNumber can return
+// for a JSON number token in the mode. A server-side filter calls this for a string
+// literal. Only such a string can equal a number that the client decodes to a string.
+func IsDecodedText(s string, mode DecimalMode) bool {
+	if s == "" || (s[0] != '-' && (s[0] < '0' || s[0] > '9')) {
+		return false
+	}
+	return json.Valid([]byte(s)) && DecodesToString(s, mode)
+}
+
+// fractionalFloat decodes a fractional literal to a float64. It reports false when
+// the literal stays a string: always in string mode, and when float64 cannot hold the
+// literal. ParseFloat returns an error and +Inf or -Inf for a literal out of range.
+func fractionalFloat(literal string, mode DecimalMode) (float64, bool) {
 	if mode == DecimalString {
-		return s
+		return 0, false
 	}
-	// Float64 returns an error and +Inf or -Inf for a literal out of range.
-	// Keep the literal text then, as the dump reader does.
-	f, err := n.Float64()
-	if err != nil {
-		return s
-	}
-	return f
+	f, err := strconv.ParseFloat(literal, 64)
+	return f, err == nil
 }

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/pushdown"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/rawpred"
 )
@@ -15,7 +17,9 @@ import (
 //
 // If pred has no safe WHERE, the scan walks the whole collection with an empty
 // WHERE. This happens for an operator whose SQL++ semantics can wrongly exclude
-// a jq match (!=, regex, length, element match).
+// a jq match (!=, regex, length, element match). A decimal mode that decodes a
+// stored number to a string also keeps a leaf out of the WHERE. See
+// pushdown.HidesDecodedNumber.
 //
 // Whatever the WHERE leaves behind, a client-side rawpred prefilter drops rows
 // that the full predicate provably rejects, before the UseNumber decode. It does
@@ -27,23 +31,27 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 		return errNoBucket
 	}
 	// An empty where is a full keyset walk, so the fallback needs no branch.
-	where, params, _ := toWhere(pred)
-	// A nil matcher means no prefilter.
-	var matcher *rawpred.Matcher
-	if prefilterStage(pred).State == query.StageOn {
-		matcher = rawpred.NewMatcher(pred)
+	where, params, _ := toWhere(pred, s.decimal)
+	return s.scan(ctx, scanSpec{where: where, params: params, matcher: s.prefilterMatcher(pred)}, fn)
+}
+
+// prefilterMatcher builds the rawpred matcher of a scan, with the decimal mode of
+// the store. A nil matcher means no prefilter.
+func (s *Store) prefilterMatcher(pred predicate.Node) *rawpred.Matcher {
+	if prefilterStage(pred, s.decimal).State != query.StageOn {
+		return nil
 	}
-	return s.scan(ctx, scanSpec{where: where, params: params, matcher: matcher}, fn)
+	return rawpred.NewMatcher(pred, s.decimal)
 }
 
 // prefilterStage decides the rawpred prefilter from the whole predicate. ScanFiltered
 // and ExplainPlan both call it, so the plan cannot drift from the scan. The prefilter
 // is off for a nil predicate and for a WHERE that captures the predicate exactly.
-func prefilterStage(pred predicate.Node) query.StagePlan {
+func prefilterStage(pred predicate.Node, mode numfmt.DecimalMode) query.StagePlan {
 	switch {
 	case pred == nil:
 		return query.StagePlan{State: query.StageOff, Note: "no compiled predicate"}
-	case exactWhere(pred):
+	case exactWhere(pred, mode):
 		return query.StagePlan{State: query.StageOff, Note: "the WHERE captures the predicate exactly"}
 	default:
 		return query.StagePlan{State: query.StageOn, Scope: "rawpred on the raw value of each row, before decode"}
@@ -59,7 +67,10 @@ func prefilterStage(pred predicate.Node) query.StagePlan {
 // branch is. A node that toWhere cannot push (!=, regex, length, element match, any
 // unknown node) is never exact. A field path that toWhere refuses (a backtick
 // component) is not exact either.
-func exactWhere(n predicate.Node) bool {
+func exactWhere(n predicate.Node, mode numfmt.DecimalMode) bool {
+	if pushdown.HidesDecodedNumber(n, mode) {
+		return false
+	}
 	switch t := n.(type) {
 	case predicate.Eq:
 		_, ok := fieldRef(t.Path)
@@ -74,9 +85,9 @@ func exactWhere(n predicate.Node) bool {
 		_, ok := fieldRef(t.Path)
 		return ok
 	case predicate.And:
-		return allExact(t)
+		return allExact(t, mode)
 	case predicate.Or:
-		return allExact(t)
+		return allExact(t, mode)
 	default:
 		// Ne, Regex, Size, ElemMatch, NoneMatch, and any unknown node: not pushed, so
 		// never exact. The prefilter must run.
@@ -86,12 +97,12 @@ func exactWhere(n predicate.Node) bool {
 
 // allExact reports whether every child of a non-empty composite is exact. An empty
 // composite is never exact, because toWhere declines it as non-narrowing.
-func allExact(children []predicate.Node) bool {
+func allExact(children []predicate.Node, mode numfmt.DecimalMode) bool {
 	if len(children) == 0 {
 		return false
 	}
 	for _, c := range children {
-		if !exactWhere(c) {
+		if !exactWhere(c, mode) {
 			return false
 		}
 	}
@@ -124,8 +135,8 @@ var (
 // risk of wrongly excluding a jq match. Only pure-superset nodes are pushed:
 // equality, ranges, and existence. Every value is a named parameter ($p0, $p1,
 // ...), never concatenated.
-func toWhere(n predicate.Node) (string, map[string]any, bool) {
-	b := &whereBuilder{params: map[string]any{}}
+func toWhere(n predicate.Node, mode numfmt.DecimalMode) (string, map[string]any, bool) {
+	b := &whereBuilder{params: map[string]any{}, mode: mode}
 	clause, ok := b.node(n)
 	if !ok {
 		return "", nil, false
@@ -139,6 +150,7 @@ func toWhere(n predicate.Node) (string, map[string]any, bool) {
 type whereBuilder struct {
 	params map[string]any
 	n      int
+	mode   numfmt.DecimalMode
 }
 
 // param binds a value to a fresh named parameter and returns its $pN reference.
@@ -153,6 +165,9 @@ func (b *whereBuilder) param(v any) string {
 // narrows. It mirrors the couchdb toSelector switch, pushing only over-inclusion-safe
 // nodes and declining the rest (which drop the whole scan to a full walk).
 func (b *whereBuilder) node(n predicate.Node) (string, bool) {
+	if pushdown.HidesDecodedNumber(n, b.mode) {
+		return "", false
+	}
 	switch t := n.(type) {
 	case predicate.Eq:
 		return b.eq(t)
@@ -275,7 +290,7 @@ func (b *whereBuilder) orIn(or predicate.Or) (string, bool) {
 	values := make([]any, 0, len(or))
 	for i, child := range or {
 		eq, isEq := child.(predicate.Eq)
-		if !isEq || eq.Value == nil {
+		if !isEq || eq.Value == nil || pushdown.HidesDecodedNumber(eq, b.mode) {
 			return "", false
 		}
 		r, ok := fieldRef(eq.Path)

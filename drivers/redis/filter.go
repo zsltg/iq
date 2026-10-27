@@ -24,7 +24,7 @@ var _ query.FilteredScanner = (*Store)(nil)
 // that pays a JSON decode. Every other type is normalized and returned as
 // ScanBatches returns it.
 func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(batch map[string]any) error) error {
-	matcher := rawpred.NewMatcher(pred)
+	matcher := rawpred.NewMatcher(pred, s.decimal)
 	build := func(ctx context.Context, keys []string) (map[string]any, error) {
 		return s.getFiltered(ctx, keys, matcher)
 	}

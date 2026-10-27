@@ -158,7 +158,7 @@ func TestReaderReportsReadError(t *testing.T) {
 		{"sorted set", zsetReader{zc}},
 		{"stream", streamReader{xc}},
 		{"json", jsonReader{cmd: jc, decimal: numfmt.DecimalAuto}},
-		{"filtered json", filterJSONReader{cmd: fc, decimal: numfmt.DecimalAuto, matcher: rawpred.NewMatcher(nil)}},
+		{"filtered json", filterJSONReader{cmd: fc, decimal: numfmt.DecimalAuto, matcher: rawpred.NewMatcher(nil, numfmt.DecimalAuto)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -184,7 +184,7 @@ func TestReaderReportsMalformedJSON(t *testing.T) {
 		reader reader
 	}{
 		{"json", jsonReader{cmd: jc, decimal: numfmt.DecimalAuto}},
-		{"filtered json", filterJSONReader{cmd: fc, decimal: numfmt.DecimalAuto, matcher: rawpred.NewMatcher(nil)}},
+		{"filtered json", filterJSONReader{cmd: fc, decimal: numfmt.DecimalAuto, matcher: rawpred.NewMatcher(nil, numfmt.DecimalAuto)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

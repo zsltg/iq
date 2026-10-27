@@ -8,6 +8,7 @@ import (
 	"github.com/couchbase/gocb/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/selector"
@@ -15,7 +16,7 @@ import (
 
 func TestExplainPlan(t *testing.T) {
 	t.Run("bounded fetches by id", func(t *testing.T) {
-		plan := ExplainPlan(selector.KeySet{Scan: false, Keys: []string{"1", "2"}}, nil, false)
+		plan := ExplainPlan(selector.KeySet{Scan: false, Keys: []string{"1", "2"}}, nil, false, numfmt.DecimalAuto)
 		require.Len(t, plan.Ops, 1)
 		require.Contains(t, plan.Ops[0], "KV bulk get")
 		require.Equal(t, []string{"1", "2"}, plan.Filter["keys"])
@@ -23,13 +24,13 @@ func TestExplainPlan(t *testing.T) {
 
 	t.Run("scan page size is 100", func(t *testing.T) {
 		// The plan prints the page size the scan uses. A literal pins the number.
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false)
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false, numfmt.DecimalAuto)
 		require.Contains(t, plan.Ops[0], "pages of 100 ")
 		require.Contains(t, plan.Ops[1], "batches of 100")
 	})
 
 	t.Run("unfiltered scan streams in pages", func(t *testing.T) {
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false)
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false, numfmt.DecimalAuto)
 		require.Contains(t, plan.Ops[0], "keyset scan")
 		require.Nil(t, plan.Filter)
 		require.Contains(t, plan.Ops[1], "streamed in batches")
@@ -37,7 +38,7 @@ func TestExplainPlan(t *testing.T) {
 
 	t.Run("narrowing predicate shows the pushed where", func(t *testing.T) {
 		pred := predicate.Eq{Path: []string{"year"}, Value: 2017}
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false, numfmt.DecimalAuto)
 		require.Contains(t, plan.Ops[0], "pre-filter")
 		require.Equal(t, "`t`.`year` = $p0", plan.Filter["where"])
 		require.Contains(t, plan.Filter["params"], "p0")
@@ -48,34 +49,34 @@ func TestExplainPlan(t *testing.T) {
 			predicate.Eq{Path: []string{"year"}, Value: 2017},
 			predicate.Ne{Path: []string{"lang"}, Value: "go"},
 		}
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false, numfmt.DecimalAuto)
 		require.NotContains(t, plan.Ops[0], "rawpred")
 		require.Contains(t, plan.Ops[0], "WHERE <pushed>")
 		require.Equal(t, "`t`.`year` = $p0", plan.Filter["where"])
 	})
 
 	t.Run("non-narrowing predicate is a full scan", func(t *testing.T) {
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, predicate.Ne{Path: []string{"year"}, Value: 2017}, false)
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, predicate.Ne{Path: []string{"year"}, Value: 2017}, false, numfmt.DecimalAuto)
 		require.NotContains(t, plan.Ops[0], "rawpred")
 		require.NotContains(t, plan.Ops[0], "WHERE <pushed>")
 		require.Nil(t, plan.Filter)
 	})
 
 	t.Run("narrowing predicate with no params omits the params key", func(t *testing.T) {
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, predicate.Exists{Path: []string{"tags"}}, false)
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, predicate.Exists{Path: []string{"tags"}}, false, numfmt.DecimalAuto)
 		require.Equal(t, "`t`.`tags` IS NOT MISSING", plan.Filter["where"])
 		require.NotContains(t, plan.Filter, "params")
 	})
 
 	t.Run("unbounded materializes", func(t *testing.T) {
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, true)
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, true, numfmt.DecimalAuto)
 		require.Contains(t, plan.Ops[1], "materialized")
 	})
 
 	t.Run("a non-streamable query materializes", func(t *testing.T) {
 		// Either condition materializes on its own: a bounded query whose shape the
 		// engine cannot stream holds the whole result in memory as well.
-		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: false}, nil, false)
+		plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: false}, nil, false, numfmt.DecimalAuto)
 		require.Contains(t, plan.Ops[1], "materialized")
 	})
 }
@@ -186,7 +187,7 @@ func TestExplainPlanStages(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			plan := ExplainPlan(tt.keys, tt.pred, false)
+			plan := ExplainPlan(tt.keys, tt.pred, false, numfmt.DecimalAuto)
 			require.Equal(t, tt.wantServer, plan.Server)
 			require.Equal(t, tt.wantPrefilter, plan.Prefilter)
 		})

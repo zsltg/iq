@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/pushdown"
 )
 
 // ScanFiltered lets the server narrow the scan with a Mango _find for pred. See
@@ -16,7 +18,7 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	if s.db == "" {
 		return errNoDatabase
 	}
-	sel, narrowing := toSelector(pred)
+	sel, narrowing := toSelector(pred, s.decimal)
 	if !narrowing {
 		return s.ScanBatches(ctx, fn)
 	}
@@ -93,21 +95,26 @@ var mangoOp = map[predicate.Op]string{
 // byte-safe regex, and a polymorphic length as a $size-plus-$type superset. The
 // exact negations (!=, NoneMatch) do not narrow. An array any (ElemMatch) and a
 // regex outside the byte-safe subset do not narrow either. Each one does not
-// narrow because its Mango semantics can exclude a document that jq keeps.
-func toSelector(n predicate.Node) (map[string]any, bool) {
+// narrow because its Mango semantics can exclude a document that jq keeps. A decimal
+// mode that decodes a stored number to a string keeps a leaf out of the selector too.
+// See pushdown.HidesDecodedNumber.
+func toSelector(n predicate.Node, mode numfmt.DecimalMode) (map[string]any, bool) {
 	switch t := n.(type) {
 	case predicate.And:
-		return andSelector(t)
+		return andSelector(t, mode)
 	case predicate.Or:
-		return orSelector(t)
+		return orSelector(t, mode)
 	default:
-		return leafSelector(n)
+		return leafSelector(n, mode)
 	}
 }
 
 // leafSelector translates a node that has no children, which is every node except And
 // and Or.
-func leafSelector(n predicate.Node) (map[string]any, bool) {
+func leafSelector(n predicate.Node, mode numfmt.DecimalMode) (map[string]any, bool) {
+	if pushdown.HidesDecodedNumber(n, mode) {
+		return nil, false
+	}
 	switch t := n.(type) {
 	case predicate.Eq:
 		return eqSelector(field(t.Path), t.Value), true
@@ -257,10 +264,10 @@ func cmpSelector(c predicate.Cmp) map[string]any {
 // andSelector conjoins the children that narrow, dropping any that do not (an AND
 // with a match-everything term is the same as the rest). It narrows if at least
 // one child does. With none, it reduces to nothing pushable.
-func andSelector(and predicate.And) (map[string]any, bool) {
+func andSelector(and predicate.And, mode numfmt.DecimalMode) (map[string]any, bool) {
 	var parts []any
 	for _, child := range and {
-		if sel, ok := toSelector(child); ok {
+		if sel, ok := toSelector(child, mode); ok {
 			parts = append(parts, sel)
 		}
 	}
@@ -277,10 +284,10 @@ func andSelector(and predicate.And) (map[string]any, bool) {
 // orSelector disjoins the children. An OR narrows only if *every* branch does.
 // A branch that cannot be pushed matches everything. That makes the whole OR match
 // everything, so a single unpushable branch drops the OR to a full scan.
-func orSelector(or predicate.Or) (map[string]any, bool) {
+func orSelector(or predicate.Or, mode numfmt.DecimalMode) (map[string]any, bool) {
 	parts := make([]any, 0, len(or))
 	for _, child := range or {
-		sel, ok := toSelector(child)
+		sel, ok := toSelector(child, mode)
 		if !ok {
 			return nil, false
 		}

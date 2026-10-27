@@ -3,6 +3,7 @@ package neo4j
 import (
 	"fmt"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/selector"
@@ -13,8 +14,9 @@ import (
 // the label with ORDER BY elementId (keyset). It is narrowed by a WHERE clause when
 // the pushed predicate narrows, else it is a full label walk. ExplainPlan reuses
 // the same translation the scan path uses, so the shown filter is exactly what the
-// server receives if the query runs.
-func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
+// server receives if the query runs. The decimal mode decides which leaves stay out of
+// the WHERE clause.
+func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool, dec numfmt.DecimalMode) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
 			Ops:    []string{fmt.Sprintf("MATCH ... WHERE key IN $ids: fetch %d requested key(s)", len(keys.Keys))},
@@ -25,7 +27,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	var filter map[string]any
 	desc := "MATCH (n:<label>): full-label scan (every node read, filtered client-side)"
 	if pred != nil {
-		b := &cypherBuilder{params: map[string]any{}, variable: "n"}
+		b := &cypherBuilder{params: map[string]any{}, variable: "n", mode: dec}
 		if where, narrowing := b.translate(pred); narrowing {
 			filter = map[string]any{"where": where}
 			desc = "MATCH (n:<label>) WHERE <predicate>: server-side pre-filter, then the full jq re-runs client-side"

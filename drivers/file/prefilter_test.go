@@ -417,7 +417,7 @@ func keysOf(m map[string]any) []string {
 // everything is a recordFilter whose matcher keeps every record, and that counts into
 // checked and skipped.
 func everything(checked, skipped *int) recordFilter {
-	return recordFilter{matcher: rawpred.NewMatcher(matchEverything), checked: checked, skipped: skipped}
+	return recordFilter{matcher: rawpred.NewMatcher(matchEverything, numfmt.DecimalAuto), checked: checked, skipped: skipped}
 }
 
 // errReader is an io.Reader whose every Read fails with a fixed non-EOF error. A

@@ -7,6 +7,7 @@ import (
 
 	"github.com/buger/jsonparser"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/rawpred"
@@ -33,7 +34,7 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 		// The class tests assert that checked stays zero on this path.
 		return s.ScanBatches(ctx, fn)
 	}
-	matcher := rawpred.NewMatcher(pred)
+	matcher := rawpred.NewMatcher(pred, numfmt.DecimalAuto)
 	return s.prefilterJSONL(ctx, matcher, fn)
 }
 

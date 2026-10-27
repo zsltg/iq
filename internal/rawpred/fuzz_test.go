@@ -9,6 +9,7 @@ import (
 	"github.com/itchyny/gojq"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/pushdown"
 	"github.com/zsltg/iq/internal/rawpred"
@@ -81,7 +82,7 @@ func FuzzMatch(f *testing.F) {
 		}
 
 		got := rawpred.Match(raw, pred)
-		require.Equalf(t, got, rawpred.NewMatcher(pred).Match(raw),
+		require.Equalf(t, got, rawpred.NewMatcher(pred, numfmt.DecimalAuto).Match(raw),
 			"prepared Matcher disagrees with Match\n expr: %s\n doc:  %s", expr, raw)
 
 		if got != rawpred.CannotMatch {

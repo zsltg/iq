@@ -399,14 +399,14 @@ func TestExplainDelete(t *testing.T) {
 }
 
 func TestExplainPlanPushesPredicate(t *testing.T) {
-	plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, predicate.Eq{Path: []string{"name"}, Value: "Ada"}, false)
+	plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, predicate.Eq{Path: []string{"name"}, Value: "Ada"}, false, numfmt.DecimalAuto)
 	require.NotNil(t, plan.Filter)
 	require.Equal(t, "n[$f0] = $f1", plan.Filter["where"])
 	require.Contains(t, plan.Ops[0], "server-side pre-filter")
 }
 
 func TestExplainPlanMaterializesWhenUnbounded(t *testing.T) {
-	plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, true)
+	plan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, true, numfmt.DecimalAuto)
 	require.Contains(t, plan.Ops[1], "materialized")
 }
 
@@ -436,7 +436,7 @@ func TestExplainPlanScanMode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			plan := ExplainPlan(tt.keys, nil, tt.unbounded)
+			plan := ExplainPlan(tt.keys, nil, tt.unbounded, numfmt.DecimalAuto)
 			require.Len(t, plan.Ops, 2)
 			require.Equal(t, tt.wantMode, plan.Ops[1])
 		})
@@ -467,12 +467,12 @@ func TestExplainDropUnsupported(t *testing.T) {
 }
 
 func TestExplainPlanBoundedVsScan(t *testing.T) {
-	bounded := ExplainPlan(selector.KeySet{Scan: false, Keys: []string{"1", "2"}}, nil, false)
+	bounded := ExplainPlan(selector.KeySet{Scan: false, Keys: []string{"1", "2"}}, nil, false, numfmt.DecimalAuto)
 	require.Len(t, bounded.Ops, 1)
 	require.Contains(t, bounded.Ops[0], "fetch 2 requested key")
 	require.Equal(t, map[string]any{"keys": []string{"1", "2"}}, bounded.Filter, "the bounded plan shows the keys it fetches")
 
-	scan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false)
+	scan := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false, numfmt.DecimalAuto)
 	require.Contains(t, scan.Ops[0], "full-label scan")
 	require.Nil(t, scan.Filter)
 }
@@ -492,7 +492,7 @@ func TestExplainPlanStages(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			plan := ExplainPlan(tt.keys, tt.pred, false)
+			plan := ExplainPlan(tt.keys, tt.pred, false, numfmt.DecimalAuto)
 			require.Equal(t, tt.wantServer, plan.Server)
 			require.Equal(t, query.StagePlan{}, plan.Prefilter)
 		})

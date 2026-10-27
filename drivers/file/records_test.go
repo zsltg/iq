@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/rawpred"
@@ -77,7 +78,7 @@ func TestKeyLookupTake(t *testing.T) {
 func TestRecordFilterDrop(t *testing.T) {
 	var checked, skipped int
 	f := recordFilter{
-		matcher: rawpred.NewMatcher(predicate.Eq{Path: []string{"n"}, Value: 5.0}),
+		matcher: rawpred.NewMatcher(predicate.Eq{Path: []string{"n"}, Value: 5.0}, numfmt.DecimalAuto),
 		checked: &checked, skipped: &skipped,
 	}
 	require.False(t, f.drop([]byte(`{"key":"a","type":"t","value":{"n":5}}`)))

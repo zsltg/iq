@@ -3,6 +3,7 @@ package couchbase
 import (
 	"fmt"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/selector"
@@ -12,9 +13,10 @@ import (
 // classified query, without connecting. A bounded query fetches the named documents
 // by ID in a KV bulk get. A scan walks a SQL++ keyset scan ordered by document ID,
 // with the pushed predicate when one narrows. It reuses toWhere, so the shown WHERE
-// is what the query service receives if the query runs. It asks prefilterStage, as
+// is what the query service receives if the query runs. The decimal mode decides
+// which leaves stay out of the WHERE. It asks prefilterStage, as
 // ScanFiltered does, whether a rawpred prefilter trims the rows before decode.
-func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
+func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool, dec numfmt.DecimalMode) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
 			Ops:    []string{fmt.Sprintf("KV bulk get: fetch %d requested key(s) by document ID", len(keys.Keys))},
@@ -25,7 +27,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	var filter map[string]any
 	desc := fmt.Sprintf("SELECT META(t).id, t FROM <keyspace> t ORDER BY META(t).id: keyset scan in pages of %d (every document read, filtered client-side)", scanBatch)
 	if pred != nil {
-		where, params, narrowing := toWhere(pred)
+		where, params, narrowing := toWhere(pred, dec)
 		if narrowing {
 			filter = map[string]any{"where": where}
 			if len(params) > 0 {
@@ -42,7 +44,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 		Ops:       []string{desc, mode},
 		Filter:    filter,
 		Server:    query.ServerStage("sql++ where", filter != nil),
-		Prefilter: prefilterStage(pred),
+		Prefilter: prefilterStage(pred, dec),
 	}
 }
 

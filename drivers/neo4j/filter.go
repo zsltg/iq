@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/zsltg/iq/internal/neo4jenvelope"
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/pushdown"
 )
 
 // ScanFiltered lets the server narrow the scan with a Cypher WHERE clause for
@@ -18,7 +20,7 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	if s.target.name == "" {
 		return errNoLabel
 	}
-	b := &cypherBuilder{params: map[string]any{}, variable: s.target.variable()}
+	b := &cypherBuilder{params: map[string]any{}, variable: s.target.variable(), mode: s.decimal}
 	where, narrowing := b.translate(pred)
 	if !narrowing {
 		return s.ScanBatches(ctx, fn)
@@ -34,6 +36,7 @@ type cypherBuilder struct {
 	n        int
 	params   map[string]any
 	variable string
+	mode     numfmt.DecimalMode
 }
 
 // param binds v to a fresh f-name and returns the $-reference for the statement.
@@ -54,6 +57,9 @@ func (b *cypherBuilder) param(v any) string {
 // negations (Ne, NoneMatch) and the polymorphic length, regex, and any tests do
 // not narrow.
 func (b *cypherBuilder) translate(n predicate.Node) (string, bool) {
+	if pushdown.HidesDecodedNumber(n, b.mode) {
+		return "", false
+	}
 	switch t := n.(type) {
 	case predicate.Eq:
 		if !pushablePath(t.Path) {
