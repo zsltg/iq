@@ -35,6 +35,28 @@ func TestDecodeValue(t *testing.T) {
 	})
 }
 
+func TestDecodeValueTrailingData(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want any
+	}{
+		{name: "trailing garbage", raw: `{"a":1}garbage`, want: `{"a":1}garbage`},
+		{name: "two concatenated objects", raw: `{"a":1}{"b":2}`, want: `{"a":1}{"b":2}`},
+		{name: "a stray closing brace", raw: `{"a":1}}`, want: `{"a":1}}`},
+		{name: "a trailing comma", raw: `{"a":1},`, want: `{"a":1},`},
+		{name: "two scalars", raw: `1 2`, want: `1 2`},
+		{name: "trailing whitespace only", raw: "{\"a\":1} \n\t", want: map[string]any{"a": 1}},
+		{name: "valid object", raw: `{"a":1}`, want: map[string]any{"a": 1}},
+		{name: "invalid body", raw: "\x00\x01binary", want: "\x00\x01binary"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, decodeValue([]byte(tt.raw), numfmt.DecimalAuto))
+		})
+	}
+}
+
 func TestRawTranscoder(t *testing.T) {
 	t.Run("decode copies bytes into a byte slice", func(t *testing.T) {
 		var out []byte

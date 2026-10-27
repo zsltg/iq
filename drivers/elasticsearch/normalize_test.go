@@ -25,6 +25,12 @@ func TestDecodeSource(t *testing.T) {
 		require.Equal(t, map[string]any{"_id": "42"}, doc)
 	})
 
+	t.Run("null source still yields the id", func(t *testing.T) {
+		doc, err := decodeSource(json.RawMessage(`null`), "42", numfmt.DecimalAuto)
+		require.NoError(t, err)
+		require.Equal(t, map[string]any{"_id": "42"}, doc)
+	})
+
 	t.Run("big integer keeps exact precision", func(t *testing.T) {
 		doc, err := decodeSource(json.RawMessage(`{"n":123456789012345678901234567890}`), "1", numfmt.DecimalAuto)
 		require.NoError(t, err)
