@@ -45,17 +45,35 @@ if [ "${ready:-0}" != "1" ]; then
   exit 1
 fi
 
-# Idempotent cluster-init: fails harmlessly if the cluster is already initialized.
-docker exec -i "$container" couchbase-cli cluster-init \
+# Run a couchbase-cli command in the container. Treat one known message as success,
+# so a second run works. Any other error stops the script and prints the output.
+cli_idempotent() {
+  local label="$1" tolerated="$2" out
+  shift 2
+  if out=$(docker exec -i "$container" couchbase-cli "$@" 2>&1); then
+    return 0
+  fi
+  if printf '%s' "$out" | grep -q "$tolerated"; then
+    return 0
+  fi
+  echo "Couchbase ${label} failed: ${out}" >&2
+  exit 1
+}
+
+# Idempotent cluster-init: accept only the "already initialized" error.
+cli_idempotent cluster-init "Cluster is already initialized" cluster-init \
   -c 127.0.0.1:8091 \
   --cluster-username "$user" --cluster-password "$pass" \
   --services data,index,query \
-  --cluster-ramsize 512 --cluster-index-ramsize 256 >/dev/null 2>&1 || true
+  --cluster-ramsize 512 --cluster-index-ramsize 256
 
-# Idempotent bucket create: ignore "already exists".
-docker exec -i "$container" couchbase-cli bucket-create \
+# Idempotent bucket create: accept only the "already exists" error. Couchbase 8 picks
+# Magma storage (Enterprise only) and one replica by default. The single-node
+# Community cluster needs couchstore and no replica, or the create fails.
+cli_idempotent bucket-create "Bucket with given name already exists" bucket-create \
   -c 127.0.0.1:8091 -u "$user" -p "$pass" \
-  --bucket "$bucket" --bucket-type couchbase --bucket-ramsize 256 --enable-flush 1 >/dev/null 2>&1 || true
+  --bucket "$bucket" --bucket-type couchbase --bucket-ramsize 256 --enable-flush 1 \
+  --storage-backend couchstore --bucket-replica 0 --wait
 
 # Wait until the query service can create the primary index (it warms up after init).
 for _ in $(seq 1 30); do
@@ -68,6 +86,32 @@ for _ in $(seq 1 30); do
 done
 if [ "${indexed:-0}" != "1" ]; then
   echo "Couchbase query service did not become ready to create the primary index." >&2
+  exit 1
+fi
+
+# cbq exits 0 after a fatal error, so check the result. The bucket must exist, and the
+# primary index must be listed. The index can take a moment to appear.
+status=$(docker exec -i "$container" curl -s -o /dev/null -w '%{http_code}' -u "$user:$pass" \
+  "http://127.0.0.1:8091/pools/default/buckets/${bucket}" 2>/dev/null || true)
+if [ "$status" != "200" ]; then
+  echo "Couchbase bucket ${bucket} does not exist (HTTP status ${status})." >&2
+  exit 1
+fi
+for _ in $(seq 1 15); do
+  found=$(docker exec -i "$container" curl -s -u "$user:$pass" \
+    http://127.0.0.1:8093/query/service \
+    --data-urlencode "statement=SELECT RAW COUNT(*) FROM system:indexes WHERE keyspace_id = '${bucket}' AND is_primary = true" \
+    2>/dev/null | tr -d ' \n' || true)
+  case "$found" in
+  *'"results":[1]'*)
+    verified=1
+    break
+    ;;
+  esac
+  sleep 2
+done
+if [ "${verified:-0}" != "1" ]; then
+  echo "Couchbase primary index on ${bucket} does not exist." >&2
   exit 1
 fi
 
