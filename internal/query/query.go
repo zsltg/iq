@@ -11,6 +11,28 @@ import (
 // ErrEmptyQuery is returned when Run is called with no command.
 var ErrEmptyQuery = errors.New("empty query: expected a command")
 
+// rowLimitKey is the context key of the row limit.
+type rowLimitKey struct{}
+
+// WithRowLimit returns a context that asks Store.Query to stop after n result
+// rows. A driver that returns a list of rows reads at most n of them. It can
+// read one more than the caller wants to show, so the caller can tell that the
+// result is cut. A value of zero or less sets no limit, and ctx comes back as is.
+// A driver that returns a single document ignores the limit.
+func WithRowLimit(ctx context.Context, n int) context.Context {
+	if n <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, rowLimitKey{}, n)
+}
+
+// RowLimit returns the row limit that WithRowLimit set on ctx. The bool is false
+// when ctx has no limit.
+func RowLimit(ctx context.Context) (int, bool) {
+	n, ok := ctx.Value(rowLimitKey{}).(int)
+	return n, ok
+}
+
 // Store is the port the core depends on. A driver adapter (Redis, and later
 // others) implements it. The core never imports a concrete driver.
 type Store interface {

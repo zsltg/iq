@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net/url"
 	"strings"
@@ -31,6 +32,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/render"
 )
 
@@ -379,26 +381,33 @@ func (s *Store) addItems(page map[string]any, items []map[string]types.Attribute
 // (the analogue of the Cassandra CQL and Mongo command raw paths). The forwarded args
 // are joined back into one statement, executed bound to ctx and paginated over
 // NextToken, and any result items are normalized. A statement with no result set (a
-// write) returns an empty list rather than an error.
+// write) returns an empty list rather than an error. If ctx carries a row limit
+// (query.WithRowLimit), Query stops reading pages once it holds that many items and
+// returns at most that many. Without a limit it reads every page.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("dynamodb: empty statement")
 	}
 	stmt := strings.Join(args, " ")
+	limit, limited := query.RowLimit(ctx)
 	rows := []any{}
 	var next *string
 	for {
-		out, err := s.client.ExecuteStatement(ctx, &dynamodb.ExecuteStatementInput{
-			Statement: &stmt,
-			NextToken: next,
-		})
+		in := &dynamodb.ExecuteStatementInput{Statement: &stmt, NextToken: next}
+		if limited && limit-len(rows) <= math.MaxInt32 {
+			in.Limit = aws.Int32(int32(limit - len(rows)))
+		}
+		out, err := s.client.ExecuteStatement(ctx, in)
 		if err != nil {
 			return nil, fmt.Errorf("dynamodb: %w", err)
 		}
 		for _, item := range out.Items {
+			if limited && len(rows) >= limit {
+				break
+			}
 			rows = append(rows, normalizeMap(item, s.decimal))
 		}
-		if out.NextToken == nil {
+		if out.NextToken == nil || (limited && len(rows) >= limit) {
 			break
 		}
 		next = out.NextToken
