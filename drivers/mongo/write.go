@@ -61,7 +61,7 @@ func upsert(ctx context.Context, coll *mongo.Collection, batch []query.Record) (
 	}
 	res, err := coll.BulkWrite(ctx, models, options.BulkWrite().SetOrdered(false))
 	if err != nil {
-		return query.WriteStat{}, fmt.Errorf("mongodb bulk write: %w", err)
+		return query.WriteStat{}, fmt.Errorf("mongodb bulk write: %w", selectionCause(err))
 	}
 	return query.WriteStat{
 		Written:     int(res.UpsertedCount + res.InsertedCount),
@@ -87,12 +87,12 @@ func insertOnly(ctx context.Context, coll *mongo.Collection, batch []query.Recor
 	}
 	var bwe mongo.BulkWriteException
 	if !errors.As(err, &bwe) {
-		return query.WriteStat{}, fmt.Errorf("mongodb insert: %w", err)
+		return query.WriteStat{}, fmt.Errorf("mongodb insert: %w", selectionCause(err))
 	}
 	skipped := 0
 	for _, we := range bwe.WriteErrors {
 		if we.Code != duplicateKeyCode {
-			return query.WriteStat{}, fmt.Errorf("mongodb insert: %w", err)
+			return query.WriteStat{}, fmt.Errorf("mongodb insert: %w", selectionCause(err))
 		}
 		skipped++
 	}
@@ -168,7 +168,7 @@ func (s *Store) Clear(ctx context.Context) error {
 		return errNoCollection
 	}
 	if _, err := s.db.Collection(s.collection).DeleteMany(ctx, bson.M{}); err != nil {
-		return fmt.Errorf("mongodb delete: %w", err)
+		return fmt.Errorf("mongodb delete: %w", selectionCause(err))
 	}
 	return nil
 }
@@ -181,7 +181,7 @@ func (s *Store) Drop(ctx context.Context) error {
 		return errNoCollection
 	}
 	if err := s.db.Collection(s.collection).Drop(ctx); err != nil {
-		return fmt.Errorf("mongodb drop: %w", err)
+		return fmt.Errorf("mongodb drop: %w", selectionCause(err))
 	}
 	return nil
 }
@@ -205,7 +205,7 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 		}
 		res, err := coll.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": ids}})
 		if err != nil {
-			return query.DeleteStat{}, fmt.Errorf("mongodb delete: %w", err)
+			return query.DeleteStat{}, fmt.Errorf("mongodb delete: %w", selectionCause(err))
 		}
 		stat.Deleted += int(res.DeletedCount)
 		stat.Missing += len(chunk) - int(res.DeletedCount)

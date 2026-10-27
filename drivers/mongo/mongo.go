@@ -124,7 +124,7 @@ func Open(ctx context.Context, uri, address string, trace io.Writer, dec numfmt.
 	}
 	client, err := mongo.Connect(clientOpts)
 	if err != nil {
-		return nil, fmt.Errorf("connect mongodb: %w", err)
+		return nil, fmt.Errorf("connect mongodb: %w", selectionCause(err))
 	}
 	if err := client.Ping(ctx, nil); err != nil {
 		_ = client.Disconnect(ctx)
@@ -168,18 +168,18 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	filter := bson.M{"_id": bson.M{"$in": idValues(keys)}}
 	cur, err := s.db.Collection(s.collection).Find(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("mongodb find: %w", err)
+		return nil, fmt.Errorf("mongodb find: %w", selectionCause(err))
 	}
 	defer func() { _ = cur.Close(ctx) }()
 	for cur.Next(ctx) {
 		var doc bson.M
 		if err := cur.Decode(&doc); err != nil {
-			return nil, fmt.Errorf("mongodb decode: %w", err)
+			return nil, fmt.Errorf("mongodb decode: %w", selectionCause(err))
 		}
 		out[KeyOf(doc["_id"])] = s.normalize(doc)
 	}
 	if err := cur.Err(); err != nil {
-		return nil, fmt.Errorf("mongodb cursor: %w", err)
+		return nil, fmt.Errorf("mongodb cursor: %w", selectionCause(err))
 	}
 	return out, nil
 }
@@ -207,7 +207,7 @@ func (s *Store) scanWith(ctx context.Context, filter bson.M, fn func(batch map[s
 	opts := options.Find().SetBatchSize(int32(s.pageSize)) //nolint:gosec // G115: pageSize is the small compile-time scanBatch constant.
 	cur, err := s.db.Collection(s.collection).Find(ctx, filter, opts)
 	if err != nil {
-		return fmt.Errorf("mongodb find: %w", err)
+		return fmt.Errorf("mongodb find: %w", selectionCause(err))
 	}
 	defer func() { _ = cur.Close(ctx) }()
 
@@ -215,7 +215,7 @@ func (s *Store) scanWith(ctx context.Context, filter bson.M, fn func(batch map[s
 	for cur.Next(ctx) {
 		var doc bson.M
 		if err := cur.Decode(&doc); err != nil {
-			return fmt.Errorf("mongodb decode: %w", err)
+			return fmt.Errorf("mongodb decode: %w", selectionCause(err))
 		}
 		page[KeyOf(doc["_id"])] = s.normalize(doc)
 		if len(page) >= s.pageSize {
@@ -226,7 +226,7 @@ func (s *Store) scanWith(ctx context.Context, filter bson.M, fn func(batch map[s
 		}
 	}
 	if err := cur.Err(); err != nil {
-		return fmt.Errorf("mongodb cursor: %w", err)
+		return fmt.Errorf("mongodb cursor: %w", selectionCause(err))
 	}
 	if len(page) > 0 {
 		return fn(page)
@@ -247,7 +247,7 @@ func (s *Store) EstimateCount(ctx context.Context) (int64, error) {
 	}
 	n, err := s.db.Collection(s.collection).EstimatedDocumentCount(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("mongodb estimated count: %w", err)
+		return 0, fmt.Errorf("mongodb estimated count: %w", selectionCause(err))
 	}
 	return n, nil
 }
@@ -266,7 +266,7 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	}
 	var res bson.M
 	if err := s.db.RunCommand(ctx, cmd).Decode(&res); err != nil {
-		return nil, fmt.Errorf("mongodb command: %w", err)
+		return nil, fmt.Errorf("mongodb command: %w", selectionCause(err))
 	}
 	return s.normalize(res), nil
 }
