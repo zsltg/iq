@@ -30,8 +30,8 @@ const injectedIDField = "_id"
 // hit's _id, so the document carries its own key (like a Mongo _id). It decodes with
 // UseNumber to keep precision: an integer becomes an exact int or *big.Int, and a
 // fractional number follows the decimal mode. A hit with no _source (a
-// stored-fields-only response) yields {"_id": id}. The injection never collides,
-// because _id is never a real _source field.
+// stored-fields-only response) or a null _source yields {"_id": id}. The injection
+// never collides, because _id is never a real _source field.
 func decodeSource(raw json.RawMessage, id string, mode numfmt.DecimalMode) (map[string]any, error) {
 	doc := map[string]any{}
 	if len(raw) > 0 {
@@ -39,6 +39,10 @@ func decodeSource(raw json.RawMessage, id string, mode numfmt.DecimalMode) (map[
 		dec.UseNumber()
 		if err := dec.Decode(&doc); err != nil {
 			return nil, fmt.Errorf("decode elasticsearch _source: %w", err)
+		}
+		if doc == nil {
+			// A JSON null leaves the map nil, and a write into it panics.
+			doc = map[string]any{}
 		}
 		doc = normalizeMap(doc, mode)
 	}

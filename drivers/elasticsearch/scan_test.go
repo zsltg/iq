@@ -103,6 +103,30 @@ func TestScanReportsAnUndecodableSource(t *testing.T) {
 	require.Zero(t, pages, "a page with an undecodable hit never reaches the caller")
 }
 
+func TestScanSurvivesANullSource(t *testing.T) {
+	// A hit with a null _source must give a document that holds only its id, like a
+	// hit with no _source. It must never panic.
+	stub := &pitStub{pages: []string{
+		`{"pit_id":"PIT-1","hits":{"hits":[{"_id":"1","_source":null,"sort":[1]}]}}`,
+		`{"pit_id":"PIT-1","hits":{"hits":[]}}`,
+	}}
+	st := newStubStore(t, "books", stub.handler)
+	st.pageSize = 1
+
+	got := collect(t, func(fn func(map[string]any) error) error { return st.ScanBatches(t.Context(), fn) })
+	require.Equal(t, map[string]any{"1": map[string]any{"_id": "1"}}, got)
+}
+
+func TestGetSurvivesANullSource(t *testing.T) {
+	// An mget doc with a null _source must give a document that holds only its id.
+	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
+		esJSON(w, http.StatusOK, `{"docs":[{"_id":"1","found":true,"_source":null}]}`)
+	})
+	got, err := st.Get(t.Context(), []string{"1"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"1": map[string]any{"_id": "1"}}, got)
+}
+
 func TestScanStopsAtTheCallersRefusal(t *testing.T) {
 	// The caller can stop a scan by returning an error. The scan must give that error
 	// back and read no further page.

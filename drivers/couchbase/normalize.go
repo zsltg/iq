@@ -3,6 +3,8 @@ package couchbase
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 
 	"github.com/couchbase/gocb/v2"
 
@@ -14,12 +16,18 @@ import (
 // *big.Int, and a fractional number follows the decimal mode. Plain json.Unmarshal
 // collapses every number to a float64 and silently loses precision beyond 2^53. A
 // body that is not valid JSON (a binary document) is surfaced as a string, the
-// redis stringReader precedent. So a KV get never fails on non-JSON data.
+// redis stringReader precedent. Bytes after the first JSON value make the body
+// invalid too, so a copy never keeps a prefix and loses the rest. So a KV get
+// never fails on non-JSON data.
 func decodeValue(raw []byte, mode numfmt.DecimalMode) any {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var v any
 	if err := dec.Decode(&v); err != nil {
+		return string(raw)
+	}
+	// A second decode reports io.EOF only when nothing but whitespace remains.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return string(raw)
 	}
 	return numfmt.ConvertNumbers(v, mode)
