@@ -118,12 +118,14 @@ func TestRDBSourceUnknownModuleWritesNothingToStdout(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			data := moduleRDB(tt.withAux, tt.withValue)
 			var keys []string
+			values := map[string]any{}
 			var err error
 			out := captureStdout(t, func() {
 				err = rdbSource(bytes.NewReader(data), 10)(
 					context.Background(), func(batch []query.Record) error {
 						for _, rec := range batch {
 							keys = append(keys, rec.Key)
+							values[rec.Key] = rec.Value
 						}
 						return nil
 					})
@@ -131,6 +133,7 @@ func TestRDBSourceUnknownModuleWritesNothingToStdout(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, out)
 			require.Equal(t, []string{"a", "c"}, keys)
+			require.Equal(t, map[string]any{"a": "1", "c": "3"}, values)
 		})
 	}
 }
