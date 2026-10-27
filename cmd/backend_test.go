@@ -746,7 +746,9 @@ func TestTraceTeeLogsDriverCommands(t *testing.T) {
 			open := drivers[i].open
 			drivers[i].open = func(ctx context.Context, cfg *config) (store, error) {
 				if cfg.trace != nil {
-					_, _ = io.WriteString(cfg.trace, "comb> PING\ncomb> GET k\n")
+					// A driver writes one trace line per Write call.
+					_, _ = io.WriteString(cfg.trace, "comb> PING\n")
+					_, _ = io.WriteString(cfg.trace, "comb> GET k\n")
 				}
 				return open(ctx, cfg)
 			}
