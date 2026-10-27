@@ -485,7 +485,7 @@ func openOutputFile(path string) (*os.File, error) {
 // when a flag-parse error stopped the run before PersistentPreRunE.
 func logFailure(cfg *config, err error) {
 	if err != nil && !errors.Is(err, errQuietExit) && cfg.logger != nil {
-		cfg.logger.Error("iq failed", "err", err)
+		cfg.logger.Error("iq failed", "err", redactErr(err, cfg.url))
 	}
 }
 

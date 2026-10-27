@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -244,9 +245,44 @@ func healthArgs(rawURL string) []string {
 	}
 }
 
+// passwordMask is the text that url.URL.Redacted puts in place of a password.
+// redactURL and maskPassword both use it.
+const passwordMask = "xxxxx"
+
+// minMaskedPassword is the shortest password that maskPassword removes from a
+// message. A shorter password can match unrelated text.
+const minMaskedPassword = 4
+
+// maskPassword replaces each literal copy of the password of rawURL in msg with
+// passwordMask. It matches the raw password and its escaped forms. It does
+// nothing when rawURL has no password, has a short password, or does not parse.
+// This catches a driver error that quotes a piece of the URI without a scheme,
+// which the pattern step of newRedactor cannot find.
+func maskPassword(msg, rawURL string) string {
+	if rawURL == "" {
+		return msg
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.User == nil {
+		return msg
+	}
+	pw, ok := u.User.Password()
+	if !ok || len(pw) < minMaskedPassword {
+		return msg
+	}
+	// The raw form goes last, so a longer escaped form wins at the same position.
+	forms := []string{url.PathEscape(pw), url.QueryEscape(pw), pw}
+	pairs := make([]string, 0, 2*len(forms))
+	for _, f := range forms {
+		pairs = append(pairs, f, passwordMask)
+	}
+	return strings.NewReplacer(pairs...).Replace(msg)
+}
+
 // redactErr returns err with the connection password removed from its message,
 // so a driver error cannot leak it. It first replaces each occurrence of the raw
-// connection URI with its redacted form, then applies newRedactor. rawURL can be
+// connection URI with its redacted form, then applies newRedactor, then masks
+// each literal copy of the password with maskPassword. rawURL can be
 // empty. It returns err itself when the message does not change, so errors.Is
 // and errors.As still see the chain.
 func redactErr(err error, rawURL string) error {
@@ -255,7 +291,7 @@ func redactErr(err error, rawURL string) error {
 	if rawURL != "" {
 		out = strings.ReplaceAll(out, rawURL, redactURL(rawURL))
 	}
-	out = newRedactor(err)(out)
+	out = maskPassword(newRedactor(err)(out), rawURL)
 	if out == msg {
 		return err
 	}

@@ -1,6 +1,7 @@
 package hbase
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -28,6 +29,13 @@ type connConfig struct {
 	rowkeyType colType
 }
 
+// errEmptyHost and errUserinfoInHosts are fixed errors. They never quote the
+// input, because the authority of a hand-written URI can hold a password.
+var (
+	errEmptyHost       = errors.New("hbase url has an empty host in its ZooKeeper host list")
+	errUserinfoInHosts = errors.New("hbase url does not accept user info in its ZooKeeper host list")
+)
+
 // parseURL parses an hbase:// source URL into its connection config. It is
 // hand-rolled for the authority (a multi-host ZooKeeper quorum, hbase://h1,h2/, is
 // not a valid net/url host), then uses net/url only for the query string. The
@@ -45,10 +53,15 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	if authority == "" {
 		return connConfig{}, fmt.Errorf("hbase url must name at least one ZooKeeper host, e.g. hbase://host:2181/?table=books")
 	}
+	// The ZooKeeper host list has no user info. A "@" here can hide a password,
+	// so the errors below never quote the authority.
+	if strings.Contains(authority, "@") {
+		return connConfig{}, errUserinfoInHosts
+	}
 	hosts := strings.Split(authority, ",")
 	for i, h := range hosts {
 		if h == "" {
-			return connConfig{}, fmt.Errorf("hbase url has an empty host in %q", authority)
+			return connConfig{}, errEmptyHost
 		}
 		hosts[i] = withPort(h)
 	}

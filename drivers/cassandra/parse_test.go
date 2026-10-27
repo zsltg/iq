@@ -224,10 +224,9 @@ func TestParseURLErrorsAreExact(t *testing.T) {
 }
 
 func TestParseURLHostsAndKeyspaceShapes(t *testing.T) {
-	t.Run("an empty host in the list stays empty", func(t *testing.T) {
-		cc, err := parseURL("cassandra://a,,b/ks", "")
-		require.NoError(t, err)
-		require.Equal(t, []string{"a:9042", "", "b:9042"}, cc.hosts)
+	t.Run("an empty host in the list is rejected", func(t *testing.T) {
+		_, err := parseURL("cassandra://a,,b/ks", "")
+		require.ErrorIs(t, err, errBadHost)
 	})
 	t.Run("slashes around the keyspace are trimmed", func(t *testing.T) {
 		cc, err := parseURL("cassandra://h//ks/", "")
@@ -240,4 +239,38 @@ func TestParseURLHostsAndKeyspaceShapes(t *testing.T) {
 		require.Equal(t, "t", cc.table)
 		require.Equal(t, gocql.One, cc.consistency)
 	})
+}
+
+func TestParseURLHostList(t *testing.T) {
+	const frag = "pa"
+	tests := []struct {
+		name      string
+		rawURL    string
+		wantHosts []string
+		wantErr   error
+	}{
+		{name: "single host", rawURL: "cassandra://h/ks", wantHosts: []string{"h:9042"}},
+		{name: "host list", rawURL: "cassandra://a,b:9043/ks", wantHosts: []string{"a:9042", "b:9043"}},
+		{name: "IPv6 host", rawURL: "cassandra://[::1]:9042/ks", wantHosts: []string{"[::1]:9042"}},
+		{name: "slash in the password", rawURL: "cassandra://u:" + frag + "/ss@host", wantErr: errAtInPath},
+		{name: "slash in the password after a number", rawURL: "cassandra://u:12/ss@host/ks", wantErr: errAtInPath},
+		{name: "port is not a number", rawURL: "cassandra://h:" + frag + "/ks", wantErr: errBadHost},
+		{name: "port is zero", rawURL: "cassandra://h:0/ks", wantErr: errBadHost},
+		{name: "port is out of range", rawURL: "cassandra://h:70000/ks", wantErr: errBadHost},
+		{name: "empty host in the list", rawURL: "cassandra://a,,b/ks", wantErr: errBadHost},
+		{name: "empty host name", rawURL: "cassandra://:9042/ks", wantErr: errBadHost},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cc, err := parseURL(tt.rawURL, "")
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				require.NotContains(t, err.Error(), frag+"/")
+				require.NotContains(t, err.Error(), `"`+frag+`"`)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantHosts, cc.hosts)
+		})
+	}
 }

@@ -778,8 +778,7 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	if err := resolveSource(cfg); err != nil {
 		return nil, mcpExecOutput{}, toolError(err)
 	}
-	// Log only the verb: operands can carry data values.
-	cfg.log().Info("exec forward", "verb", in.Args[0])
+	cfg.log().Info("exec forward", execLogAttrs(in.Args)...)
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
 	st, err := openStore(cctx, cfg)

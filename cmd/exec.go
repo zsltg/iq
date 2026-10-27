@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/spf13/cobra"
 
@@ -55,9 +56,7 @@ func newExecCmd(cfg *config) *cobra.Command {
 			"  $ iq --src cluster exec put books 42 cf:title Dune",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Log only the command verb. Redis operands (SET greeting hello) can
-			// carry values, so they are never logged.
-			cfg.log().Info("exec forward", "verb", args[0])
+			cfg.log().Info("exec forward", execLogAttrs(args)...)
 			if err := resolveSource(cfg); err != nil {
 				return err
 			}
@@ -85,4 +84,33 @@ func newExecCmd(cfg *config) *cobra.Command {
 	// stop flag parsing at the first positional and forward the rest verbatim.
 	c.Flags().SetInterspersed(false)
 	return c
+}
+
+// execVerbPattern matches a bare command verb, for example SET, get, or
+// JSON.GET. A statement has a space or a symbol, so it never matches.
+var execVerbPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,31}$`)
+
+// execStatementLabel replaces the first argument in a log record when that
+// argument is not a bare verb.
+const execStatementLabel = "statement"
+
+// execLogParts returns the verb and the operand count to log for an exec call.
+// The first argument of a statement backend is the whole statement, and it can
+// hold data values, tokens, or credentials. So iq logs the first argument only
+// when it is a bare verb. Otherwise iq logs a fixed label. It never logs the
+// other arguments. It logs only how many there are.
+func execLogParts(args []string) (verb string, operands int) {
+	if len(args) == 0 {
+		return "", 0
+	}
+	if execVerbPattern.MatchString(args[0]) {
+		return args[0], len(args) - 1
+	}
+	return execStatementLabel, len(args) - 1
+}
+
+// execLogAttrs returns the log attributes of an exec call. See execLogParts.
+func execLogAttrs(args []string) []any {
+	verb, operands := execLogParts(args)
+	return []any{"verb", verb, "args", operands}
 }

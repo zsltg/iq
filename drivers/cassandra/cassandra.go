@@ -14,7 +14,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -145,6 +147,12 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	rest, rawQuery, _ := strings.Cut(rest, "?")
 	authority, path, _ := strings.Cut(rest, "/")
 
+	// A "@" in the path means the userinfo ended early. A "/" in the password
+	// cut the authority short. The error never quotes the input.
+	if strings.Contains(path, "@") {
+		return connConfig{}, errAtInPath
+	}
+
 	username, password, authority, err := splitAuthority(authority)
 	if err != nil {
 		return connConfig{}, err
@@ -152,7 +160,10 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	if authority == "" {
 		return connConfig{}, fmt.Errorf("cassandra url must name at least one host, e.g. cassandra://host:9042/keyspace")
 	}
-	hosts := hostList(authority)
+	hosts, err := hostList(authority)
+	if err != nil {
+		return connConfig{}, err
+	}
 
 	keyspace, err := keyspaceOf(path)
 	if err != nil {
@@ -181,14 +192,29 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	}, nil
 }
 
+// Fixed errors for a bad host list. They never quote the input, because a
+// piece of a password can end up in the host list.
+var (
+	errAtInPath = errors.New("cassandra url has an @ in its path, so the user info is not complete: percent-encode special characters in the password")
+	errBadHost  = errors.New("cassandra url has an invalid host or port in its host list")
+)
+
 // hostList splits the host part of an authority at commas and adds the default port to
-// each bare host.
-func hostList(authority string) []string {
+// each bare host. It rejects a host that is empty or that has a port that is not a
+// number from 1 to 65535.
+func hostList(authority string) ([]string, error) {
 	hosts := strings.Split(authority, ",")
 	for i, h := range hosts {
 		hosts[i] = withPort(h)
+		host, port, err := net.SplitHostPort(hosts[i])
+		if err != nil || host == "" {
+			return nil, errBadHost
+		}
+		if n, err := strconv.ParseUint(port, 10, 16); err != nil || n == 0 {
+			return nil, errBadHost
+		}
 	}
-	return hosts
+	return hosts, nil
 }
 
 // keyspaceOf returns the keyspace that the URL path names. An empty path or a path

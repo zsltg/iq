@@ -61,9 +61,31 @@ func TestRunnerPropagatesStoreError(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "boom")
-	require.ErrorContains(t, err, "GET", "the error should name the command for context")
+	require.ErrorContains(t, err, "run query", "the error should say what failed")
 	require.Nil(t, got)
 	// The code names the command by wrapping, so the store's error has to stay
 	// reachable underneath. Formatting it in reads the same and severs errors.Is.
 	require.ErrorIs(t, err, store.err, "the store error must stay unwrappable")
+}
+
+func TestRunnerErrorDoesNotQuoteTheStatement(t *testing.T) {
+	const secret = "s3cretToken"
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "Mongo JSON command", args: []string{`{"insert":"u","documents":[{"pw":"` + secret + `"}]}`}},
+		{name: "CQL statement", args: []string{"INSERT INTO u (pw) VALUES ('" + secret + "')"}},
+		{name: "verb and operand", args: []string{"SET", "k", secret}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeStore{err: errors.New("boom")}
+
+			_, err := query.NewRunner(store).Run(context.Background(), tt.args)
+
+			require.ErrorIs(t, err, store.err)
+			require.NotContains(t, err.Error(), secret)
+		})
+	}
 }

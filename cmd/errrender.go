@@ -87,7 +87,8 @@ func renderError(w io.Writer, cfg *config, err error) {
 // wrapped cause chain. Every printed string is redacted so a wrapped driver
 // error cannot leak a credential.
 func renderErrorText(w io.Writer, cfg *config, err error) {
-	redact := newRedactor(err)
+	redactTypes := newRedactor(err)
+	redact := func(s string) string { return maskPassword(redactTypes(s), cfg.url) }
 	_, _ = fmt.Fprintln(w, "iq: "+redact(err.Error()))
 	var se *filterSyntaxError
 	if cfg.errorTextVerbose && errors.As(err, &se) {
