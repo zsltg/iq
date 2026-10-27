@@ -90,7 +90,7 @@ if [ "${indexed:-0}" != "1" ]; then
 fi
 
 # cbq exits 0 after a fatal error, so check the result. The bucket must exist, and the
-# primary index must be listed. The index can take a moment to appear.
+# primary index #primary must be listed as online. The index can take a moment to build.
 status=$(docker exec -i "$container" curl -s -o /dev/null -w '%{http_code}' -u "$user:$pass" \
   "http://127.0.0.1:8091/pools/default/buckets/${bucket}" 2>/dev/null || true)
 if [ "$status" != "200" ]; then
@@ -100,7 +100,7 @@ fi
 for _ in $(seq 1 15); do
   found=$(docker exec -i "$container" curl -s -u "$user:$pass" \
     http://127.0.0.1:8093/query/service \
-    --data-urlencode "statement=SELECT RAW COUNT(*) FROM system:indexes WHERE keyspace_id = '${bucket}' AND is_primary = true" \
+    --data-urlencode "statement=SELECT RAW COUNT(*) FROM system:indexes WHERE keyspace_id = '${bucket}' AND name = '#primary' AND is_primary = true AND state = 'online'" \
     2>/dev/null | tr -d ' \n' || true)
   case "$found" in
   *'"results":[1]'*)
