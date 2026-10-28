@@ -734,11 +734,14 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # goreleaser reads the tags to set the snapshot version
       - uses: $/.github/actions/setup-go
+      # --parallelism=2 builds two targets at a time. The default is GOMAXPROCS, so
+      # four builds ran at once, and the runner killed the job (exit 137) three times.
+      # release.yml uses the same value.
       - name: Release snapshot
         run: |
           . scripts/tool-versions.env
           go run github.com/goreleaser/goreleaser/v2@"$GORELEASER_VERSION" \
-            release --snapshot --clean --skip=publish,sign
+            release --snapshot --clean --skip=publish,sign --parallelism=2
       - name: Each archive and package carries the license texts
         run: |
           want="$(find third-party-licenses -type f | LC_ALL=C sort)"
