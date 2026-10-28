@@ -2,7 +2,9 @@ package redis
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"math"
 	"testing"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -191,6 +193,34 @@ func TestReaderReportsMalformedJSON(t *testing.T) {
 			require.ErrorContains(t, err, "decode redis json")
 			require.False(t, present)
 			require.Nil(t, v)
+		})
+	}
+}
+
+// TestZsetReaderNonFinite makes sure that an infinite or NaN score never reaches
+// the value as a float64. JSON has no form for it, so the value carries the text
+// that Redis uses.
+func TestZsetReaderNonFinite(t *testing.T) {
+	tests := []struct {
+		name  string
+		score float64
+		want  any
+	}{
+		{"normal", 2.5, 2.5},
+		{"positive infinity", math.Inf(1), "inf"},
+		{"negative infinity", math.Inf(-1), "-inf"},
+		{"nan", math.NaN(), "nan"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := goredis.NewZSliceCmd(context.Background())
+			c.SetVal([]goredis.Z{{Member: "m", Score: tt.score}})
+			got, ok, err := zsetReader{c}.normalize()
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.Equal(t, []any{map[string]any{"member": "m", "score": tt.want}}, got)
+			_, err = json.Marshal(got)
+			require.NoError(t, err)
 		})
 	}
 }

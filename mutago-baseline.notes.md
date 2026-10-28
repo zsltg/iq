@@ -838,3 +838,12 @@ The deep scan run 38464330518 ran these four packages under mutago v2.10.26. Eac
 A full package scan of internal/jqfmt failed on main under mutago v2.10.26 and v2.10.30, with one new escape id. The edit is the same as 28d4238337bf, which stays in the baseline. The edit was applied by hand to the real file, and the full package suite passed.
 
 - 7899b7abbcf5 internal/jqfmt/jqfmt.go:746 branch/case. The same edit as 28d4238337bf: the `return ""` default arm of describeTerm gets a different indentation, so the program does not change.
+
+## drivers/redis/write.go, infinite zset scores (accepted 2026-10-28, PR #202)
+
+The zset writer reads an infinite score from its text with strconv.ParseFloat, and returns an error for a NaN score or for text that is not an infinity.
+
+- 093a8e73126f drivers/redis/write.go:394 numbers/decrementer. `strconv.ParseFloat(s, 64)` becomes bitSize 63. ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path, so the parsed float is identical (same as the drivers/mongo normalize.go:86 pair).
+- b005391e7c56 drivers/redis/write.go:394 numbers/incrementer. The same site with bitSize 65, identical for the same reason.
+- 659e59e093ea drivers/redis/write.go:373 statement/return. `return t, errors.New("score is NaN")` returns 0 in place of t. Every caller checks the error first and never reads the float when the error is not nil.
+- 4fdce00afbc4 drivers/redis/write.go:396 statement/return. `return f, errors.New(...)` in infinityScore returns 0 in place of f. The caller reads the float only when the error is nil, so the value is never used.

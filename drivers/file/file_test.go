@@ -3,10 +3,12 @@ package file
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -869,6 +871,24 @@ func TestZSetValueOrdering(t *testing.T) {
 				map[string]any{"member": "a", "score": float64(9)},
 			},
 		},
+		{
+			name:    "a higher score stays after a lower one with a later member",
+			entries: []*model.ZSetEntry{{Member: "z", Score: 1}, {Member: "a", Score: 9}},
+			want: []any{
+				map[string]any{"member": "z", "score": float64(1)},
+				map[string]any{"member": "a", "score": float64(9)},
+			},
+		},
+		{
+			name:    "a nan score sorts last, then by member",
+			entries: []*model.ZSetEntry{{Member: "b", Score: math.NaN()}, {Member: "z", Score: math.Inf(1)}, {Member: "a", Score: math.NaN()}, {Member: "m", Score: math.Inf(-1)}},
+			want: []any{
+				map[string]any{"member": "m", "score": "-inf"},
+				map[string]any{"member": "z", "score": "inf"},
+				map[string]any{"member": "a", "score": "nan"},
+				map[string]any{"member": "b", "score": "nan"},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1153,4 +1173,35 @@ func TestExtJSONSourceReportsAnEOFReadErrorInsideAnArray(t *testing.T) {
 			require.ErrorIs(t, err, gone)
 		})
 	}
+}
+
+// TestRDBZSetInfiniteScores decodes an RDB dump whose sorted set holds infinite
+// scores. The value must encode as JSON, so an infinity reads as text.
+func TestRDBZSetInfiniteScores(t *testing.T) {
+	var buf bytes.Buffer
+	enc := encoder.NewEncoder(&buf)
+	require.NoError(t, enc.WriteHeader())
+	require.NoError(t, enc.WriteDBHeader(0, 1, 0))
+	require.NoError(t, enc.WriteZSetObject("z", []*model.ZSetEntry{
+		{Member: "hi", Score: math.Inf(1)},
+		{Member: "lo", Score: math.Inf(-1)},
+		{Member: "mid", Score: 1.5},
+	}))
+	require.NoError(t, enc.WriteEnd())
+	st, err := Open(writeDump(t, "inf.rdb", buf.Bytes(), ""), numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	var got []query.Record
+	require.NoError(t, st.TypedScan(context.Background(), func(b []query.Record) error {
+		got = append(got, b...)
+		return nil
+	}))
+	require.Len(t, got, 1)
+	want := []any{
+		map[string]any{"member": "lo", "score": "-inf"},
+		map[string]any{"member": "mid", "score": 1.5},
+		map[string]any{"member": "hi", "score": "inf"},
+	}
+	require.Equal(t, want, got[0].Value)
+	_, err = json.Marshal(got[0].Value)
+	require.NoError(t, err)
 }

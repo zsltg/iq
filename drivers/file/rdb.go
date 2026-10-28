@@ -1,13 +1,16 @@
 package file
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 
 	"github.com/zsltg/rdb/parser"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/query"
 )
 
@@ -89,14 +92,25 @@ func zsetValue(obj *parser.ZSetObject) []any {
 	// The parsed object is single-use, so sorting its entries in place is safe and
 	// avoids naming the (non-re-exported) entry type.
 	sort.SliceStable(obj.Entries, func(i, j int) bool {
-		if obj.Entries[i].Score != obj.Entries[j].Score {
-			return obj.Entries[i].Score < obj.Entries[j].Score
+		si, sj := obj.Entries[i].Score, obj.Entries[j].Score
+		// A NaN score sorts after every other score. Two NaN scores count as
+		// equal here. Equal scores fall through to the member order, so the
+		// order is deterministic.
+		ni, nj := math.IsNaN(si), math.IsNaN(sj)
+		if ni != nj {
+			return nj
+		}
+		if cmp.Less(si, sj) {
+			return true
+		}
+		if cmp.Less(sj, si) {
+			return false
 		}
 		return obj.Entries[i].Member < obj.Entries[j].Member
 	})
 	out := make([]any, len(obj.Entries))
 	for i, e := range obj.Entries {
-		out[i] = map[string]any{"member": e.Member, "score": e.Score}
+		out[i] = map[string]any{"member": e.Member, "score": numfmt.FiniteScore(e.Score)}
 	}
 	return out
 }

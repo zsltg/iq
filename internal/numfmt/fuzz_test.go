@@ -81,17 +81,18 @@ func FuzzConvertNumber(f *testing.F) {
 			require.Equalf(t, s, got, "string mode must keep the exact literal %q", s)
 			return
 		}
-		// Auto and number mode give the float64 strconv gives. Both modes are
-		// documented as lossy beyond float64's range, so an out-of-range literal
-		// saturates to an infinity here and only string mode keeps it exact.
-		v, ok := got.(float64)
-		require.Truef(t, ok, "decimal %q converted to %T under mode %d", s, got, m)
+		// Auto and number mode give the float64 strconv gives. A literal out of
+		// float64 range has no finite float64, so it stays its exact text.
 		want, err := strconv.ParseFloat(s, 64)
 		if err != nil {
 			require.ErrorIsf(t, err, strconv.ErrRange, "%q is a JSON number strconv rejects outright", s)
+			require.Equalf(t, s, got, "an out-of-range literal %q must keep its text", s)
+			return
 		}
-		// Compared bit for bit, so an infinity from an out-of-range literal and a
-		// signed zero must both match exactly.
+		v, ok := got.(float64)
+		require.Truef(t, ok, "decimal %q converted to %T under mode %d", s, got, m)
+		require.Falsef(t, math.IsInf(v, 0), "decimal %q converted to an infinity", s)
+		// Compared bit for bit, so a signed zero must match exactly.
 		require.Equalf(t, math.Float64bits(want), math.Float64bits(v),
 			"float conversion of %q disagrees with strconv", s)
 	})

@@ -3,7 +3,9 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
 	"strconv"
@@ -361,11 +363,18 @@ func redisString(v any) (string, error) {
 	}
 }
 
-// asFloat coerces a normalized number to the float64 a zset score needs.
+// asFloat coerces a normalized number to the float64 a zset score needs. It also
+// accepts the texts "inf", "-inf", and "+inf" (any case), which the reader
+// writes for an infinite score. Redis rejects a NaN score, so NaN is an error.
 func asFloat(v any) (float64, error) {
 	switch t := v.(type) {
 	case float64:
+		if math.IsNaN(t) {
+			return t, errors.New("score is NaN")
+		}
 		return t, nil
+	case string:
+		return infinityScore(t)
 	case int:
 		return float64(t), nil
 	case int64:
@@ -376,6 +385,17 @@ func asFloat(v any) (float64, error) {
 	default:
 		return 0, fmt.Errorf("score %T is not a number", v)
 	}
+}
+
+// infinityScore reads the text that the reader writes for an infinite score.
+// It accepts the infinity texts that strconv.ParseFloat accepts, such as "inf",
+// "+inf", "-inf", and "infinity", in any case. Any other text is an error.
+func infinityScore(s string) (float64, error) {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || !math.IsInf(f, 0) {
+		return f, errors.New("score string is not a number or an infinity")
+	}
+	return f, nil
 }
 
 // Clear empties the connected Redis logical database with FLUSHDB. This is the

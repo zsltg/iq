@@ -258,7 +258,7 @@ func (r zsetReader) normalize() (any, bool, error) {
 	out := make([]any, len(zs))
 	for i, z := range zs {
 		member, _ := z.Member.(string)
-		out[i] = map[string]any{"member": member, "score": z.Score}
+		out[i] = map[string]any{"member": member, "score": numfmt.FiniteScore(z.Score)}
 	}
 	return out, true, nil
 }
