@@ -31,11 +31,7 @@ concurrency:
   group: mutant-proof-${{ github.run_id }}
   cancel-in-progress: false
 
-# testcontainers starts a reaper container (Ryuk) to remove the test containers
-# after a test binary exits. A hosted runner is thrown away after each job, so the
-# reaper adds nothing here, and on the Ubuntu 26 runners its start often timed out
-# ("wait for reaper ...: context deadline exceeded"). The testcontainers docs
-# recommend this setting only for a CI service that cleans up on its own.
+# No testcontainers reaper (Ryuk) on CI. DEVELOPMENT.md explains why.
 env:
   TESTCONTAINERS_RYUK_DISABLED: "true"
 

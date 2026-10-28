@@ -749,7 +749,12 @@ the e2e job brings up a single compose service per pass, and a `deep-mutate`
 shard and a `mutate-diff` shard start only the compose services of their own package. HBase has no testcontainers path, so the
 `coverage (cassandra-neo4j-hbase)` job, the hbase `deep-mutate` job and a `mutate-diff` shard of `drivers/hbase` start its compose service (host
 networking) and set `IQ_HBASE_URL`; everywhere else it skips, as it does locally
-without `IQ_HBASE_URL`. The Linux leg of the `test` job runs with `-race`; the
+without `IQ_HBASE_URL`. `ci.yml` and `mutant-proof.yml` set
+`TESTCONTAINERS_RYUK_DISABLED=true`, so testcontainers starts no reaper container
+on CI. A hosted runner is thrown away after each job, and the reaper start often
+timed out on the Ubuntu 26 runners. The mutation jobs set the `IQ_*_URL`
+variables through `scripts/ci-backend.sh`, so they start no testcontainer at all.
+Local runs keep the reaper. The Linux leg of the `test` job runs with `-race`; the
 macOS and Windows legs do not, because the race detector needs cgo there. The
 `cmd` tests that run the root command are not parallel: its PreRun writes the
 process-wide `color.NoColor`, which parallel formatter tests read.
