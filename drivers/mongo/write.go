@@ -92,7 +92,7 @@ func insertOnly(ctx context.Context, coll *mongo.Collection, batch []query.Recor
 	skipped := 0
 	for _, we := range bwe.WriteErrors {
 		if we.Code != duplicateKeyCode {
-			return query.WriteStat{}, fmt.Errorf("mongodb insert: %w", selectionCause(err))
+			return query.WriteStat{}, fmt.Errorf("mongodb insert: %w", err)
 		}
 		skipped++
 	}
