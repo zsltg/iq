@@ -375,13 +375,7 @@ func asFloat(v any) (float64, error) {
 		}
 		return t, nil
 	case string:
-		switch strings.ToLower(t) {
-		case "inf", "+inf":
-			return math.Inf(1), nil
-		case "-inf":
-			return math.Inf(-1), nil
-		}
-		return 0, errors.New("score string is not a number or an infinity")
+		return infinityScore(t)
 	case int:
 		return float64(t), nil
 	case int64:
@@ -392,6 +386,18 @@ func asFloat(v any) (float64, error) {
 	default:
 		return 0, fmt.Errorf("score %T is not a number", v)
 	}
+}
+
+// infinityScore reads the text that the reader writes for an infinite score:
+// "inf", "+inf", or "-inf", in any case. Any other text is an error.
+func infinityScore(s string) (float64, error) {
+	switch strings.ToLower(s) {
+	case "inf", "+inf":
+		return math.Inf(1), nil
+	case "-inf":
+		return math.Inf(-1), nil
+	}
+	return 0, errors.New("score string is not a number or an infinity")
 }
 
 // Clear empties the connected Redis logical database with FLUSHDB. This is the
