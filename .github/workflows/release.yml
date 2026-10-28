@@ -72,7 +72,8 @@ jobs:
         with:
           distribution: goreleaser
           version: ${{ steps.pins.outputs.goreleaser }}
-          args: release --clean
+          # Two builds at a time. Four parallel builds got the CI snapshot job killed.
+          args: release --clean --parallelism=2
         env:
           # GITHUB_TOKEN publishes the Release on this repo; GORELEASER_TOKEN is a
           # PAT with write access to the shared homebrew-tap and scoop-bucket repos.
