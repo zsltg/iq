@@ -263,15 +263,8 @@ const minMaskedPassword = 4
 // not parse. This catches a driver error that quotes a piece of the URI without
 // a scheme, which the pattern step of newRedactor cannot find.
 func maskPassword(msg, rawURL string) string {
-	if rawURL == "" {
-		return msg
-	}
-	u, err := url.Parse(rawURL)
-	if err != nil || u.User == nil {
-		return msg
-	}
-	pw, ok := u.User.Password()
-	if !ok || pw == "" {
+	pw, ok := sourcePassword(rawURL)
+	if !ok {
 		return msg
 	}
 	// The raw form goes last, so a longer escaped form wins at the same position.
@@ -293,6 +286,17 @@ func maskPassword(msg, rawURL string) string {
 		}
 	}
 	return strings.NewReplacer(pairs...).Replace(msg)
+}
+
+// sourcePassword returns the password in the user info of rawURL. It reports
+// false when rawURL does not parse, has no user info, or has an empty password.
+func sourcePassword(rawURL string) (string, bool) {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.User == nil {
+		return "", false
+	}
+	pw, ok := u.User.Password()
+	return pw, ok && pw != ""
 }
 
 // redactErr returns err with the connection password removed from its message,
