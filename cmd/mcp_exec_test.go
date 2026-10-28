@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"testing"
 
@@ -141,9 +142,7 @@ func TestMCPExecCapsTheReply(t *testing.T) {
 			seen := useExecDriver(t, tc.reply)
 			cs := connectMCP(t, newTestMCPServer([]string{allowExec}, tc.serverMax[0], tc.serverMax[1]), nil)
 			args := map[string]any{"source": "fake", "args": []string{"SELECT * FROM t"}}
-			for k, v := range tc.args {
-				args[k] = v
-			}
+			maps.Copy(args, tc.args)
 
 			var out mcpExecOutput
 			structOf(t, callMCP(t, cs, "iq_exec", args), &out)

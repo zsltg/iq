@@ -394,8 +394,8 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	var next *string
 	for {
 		in := &dynamodb.ExecuteStatementInput{Statement: &stmt, NextToken: next}
-		if limited && limit-len(rows) <= math.MaxInt32 {
-			in.Limit = aws.Int32(int32(limit - len(rows)))
+		if remaining := limit - len(rows); limited && remaining <= math.MaxInt32 {
+			in.Limit = aws.Int32(int32(remaining)) //nolint:gosec // G115: remaining is at most math.MaxInt32, and the loop stops before it reaches 0.
 		}
 		out, err := s.client.ExecuteStatement(ctx, in)
 		if err != nil {
