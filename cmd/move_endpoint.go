@@ -12,8 +12,9 @@ import (
 type pathUse int
 
 const (
-	// pathIgnored means the backend does not read the path.
-	pathIgnored pathUse = iota
+	// The zero value means the backend does not read the path. A driver entry
+	// gets it by leaving the path field out.
+	_ pathUse = iota
 	// pathScope means the path names the scope that holds the address: the
 	// database of MongoDB or the keyspace of Cassandra.
 	pathScope
@@ -147,7 +148,7 @@ func canonicalHosts(authority string, shape endpointShape, fillPort bool) []stri
 		authority = authority[i+1:]
 	}
 	var hosts []string
-	for _, h := range strings.Split(authority, ",") {
+	for h := range strings.SplitSeq(authority, ",") {
 		host, port, err := net.SplitHostPort(h)
 		if err != nil {
 			host, port = strings.Trim(h, "[]"), ""
