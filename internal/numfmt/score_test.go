@@ -20,6 +20,8 @@ func TestFiniteScore(t *testing.T) {
 		{"positive infinity", math.Inf(1), "inf"},
 		{"negative infinity", math.Inf(-1), "-inf"},
 		{"nan", math.NaN(), "nan"},
+		{"largest float", math.MaxFloat64, math.MaxFloat64},
+		{"most negative float", -math.MaxFloat64, -math.MaxFloat64},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

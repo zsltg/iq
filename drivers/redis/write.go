@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"slices"
 	"strconv"
-	"strings"
 
 	goredis "github.com/redis/go-redis/v9"
 
@@ -371,7 +370,7 @@ func asFloat(v any) (float64, error) {
 	switch t := v.(type) {
 	case float64:
 		if math.IsNaN(t) {
-			return 0, errors.New("score is NaN")
+			return t, errors.New("score is NaN")
 		}
 		return t, nil
 	case string:
@@ -388,16 +387,15 @@ func asFloat(v any) (float64, error) {
 	}
 }
 
-// infinityScore reads the text that the reader writes for an infinite score:
-// "inf", "+inf", or "-inf", in any case. Any other text is an error.
+// infinityScore reads the text that the reader writes for an infinite score.
+// It accepts the infinity texts that strconv.ParseFloat accepts, such as "inf",
+// "+inf", "-inf", and "infinity", in any case. Any other text is an error.
 func infinityScore(s string) (float64, error) {
-	switch strings.ToLower(s) {
-	case "inf", "+inf":
-		return math.Inf(1), nil
-	case "-inf":
-		return math.Inf(-1), nil
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || !math.IsInf(f, 0) {
+		return f, errors.New("score string is not a number or an infinity")
 	}
-	return 0, errors.New("score string is not a number or an infinity")
+	return f, nil
 }
 
 // Clear empties the connected Redis logical database with FLUSHDB. This is the

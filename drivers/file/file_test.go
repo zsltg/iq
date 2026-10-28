@@ -872,6 +872,14 @@ func TestZSetValueOrdering(t *testing.T) {
 			},
 		},
 		{
+			name:    "a higher score stays after a lower one with a later member",
+			entries: []*model.ZSetEntry{{Member: "z", Score: 1}, {Member: "a", Score: 9}},
+			want: []any{
+				map[string]any{"member": "z", "score": float64(1)},
+				map[string]any{"member": "a", "score": float64(9)},
+			},
+		},
+		{
 			name:    "a nan score sorts last, then by member",
 			entries: []*model.ZSetEntry{{Member: "b", Score: math.NaN()}, {Member: "z", Score: math.Inf(1)}, {Member: "a", Score: math.NaN()}, {Member: "m", Score: math.Inf(-1)}},
 			want: []any{

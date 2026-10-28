@@ -1,6 +1,7 @@
 package file
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -92,13 +93,18 @@ func zsetValue(obj *parser.ZSetObject) []any {
 	// avoids naming the (non-re-exported) entry type.
 	sort.SliceStable(obj.Entries, func(i, j int) bool {
 		si, sj := obj.Entries[i].Score, obj.Entries[j].Score
-		// A NaN score sorts after every other score. Then equal scores
-		// fall through to the member order, so the order is deterministic.
-		if math.IsNaN(si) != math.IsNaN(sj) {
-			return math.IsNaN(sj)
+		// A NaN score sorts after every other score. Two NaN scores count as
+		// equal here. Equal scores fall through to the member order, so the
+		// order is deterministic.
+		ni, nj := math.IsNaN(si), math.IsNaN(sj)
+		if ni != nj {
+			return nj
 		}
-		if si != sj && !math.IsNaN(si) {
-			return si < sj
+		if cmp.Less(si, sj) {
+			return true
+		}
+		if cmp.Less(sj, si) {
+			return false
 		}
 		return obj.Entries[i].Member < obj.Entries[j].Member
 	})

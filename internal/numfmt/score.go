@@ -9,10 +9,11 @@ func FiniteScore(f float64) any {
 	switch {
 	case math.IsNaN(f):
 		return "nan"
-	case math.IsInf(f, 1):
+	case math.IsInf(f, 0):
+		if math.Signbit(f) {
+			return "-inf"
+		}
 		return "inf"
-	case math.IsInf(f, -1):
-		return "-inf"
 	default:
 		return f
 	}
