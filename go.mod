@@ -42,7 +42,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.16.3
 	github.com/wI2L/jsondiff v0.7.1
 	github.com/zalando/go-keyring v0.2.8
-	github.com/zsltg/rdb v1.3.3-0.20261007154853-79442de87f28
+	github.com/zsltg/rdb v1.3.3-0.20261027142827-8defd17752d8
 	go.mongodb.org/mongo-driver/v2 v2.9.2
 	golang.org/x/term v0.47.0
 	google.golang.org/protobuf v1.36.12
@@ -170,9 +170,12 @@ require (
 )
 
 // The require of github.com/zsltg/rdb is a fork of github.com/hdt3213/rdb. The fork fixes
-// a fatal out-of-memory error on a length that an RDB file declares. When upstream releases
-// the fix, change the imports back to github.com/hdt3213/rdb, require its fixed version, and
-// remove the require of github.com/zsltg/rdb. See HDT3213/rdb issue 75 and pull request 76.
+// a fatal out-of-memory error on a length that an RDB file declares. The fork also removes
+// a print to stdout for module types that have no handler. That print corrupts the data
+// output of iq and the JSON-RPC stream of iq mcp. Upstream needs both fixes. When upstream
+// releases them, change the imports back to github.com/hdt3213/rdb, require its fixed
+// version, and remove the require of github.com/zsltg/rdb. See HDT3213/rdb issue 75 and
+// pull request 76.
 
 // v0.38.2 has a replace directive in go.mod, so go install refuses that version.
 retract v0.38.2
