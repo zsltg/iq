@@ -20,7 +20,11 @@ func lazyStore(t *testing.T) *Store {
 	opts := options.Client().ApplyURI("mongodb://127.0.0.1:1/iq?serverSelectionTimeoutMS=500")
 	client, err := mongo.Connect(opts)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = client.Disconnect(ctx)
+	})
 	return &Store{
 		client:     client,
 		db:         client.Database("iq"),
@@ -81,6 +85,7 @@ func TestOperationsHideTopology(t *testing.T) {
 			err := tt.run(ctx, lazyStore(t))
 
 			require.ErrorContains(t, err, tt.prefix+"no reachable server: ")
+			require.ErrorContains(t, err, "dial tcp 127.0.0.1:1")
 			require.NotContains(t, err.Error(), "topology:")
 		})
 	}
