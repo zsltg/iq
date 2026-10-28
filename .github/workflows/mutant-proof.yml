@@ -31,6 +31,10 @@ concurrency:
   group: mutant-proof-${{ github.run_id }}
   cancel-in-progress: false
 
+# No testcontainers reaper (Ryuk) on CI. DEVELOPMENT.md explains why.
+env:
+  TESTCONTAINERS_RYUK_DISABLED: "true"
+
 jobs:
   proof:
     name: prove ${{ inputs.package }}
