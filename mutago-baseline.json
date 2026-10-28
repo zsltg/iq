@@ -2436,6 +2436,30 @@
    "file": "internal/jqfmt/jqfmt.go",
    "mutator": "branch/case",
    "line": 746
+  },
+  {
+   "id": "093a8e73126f7449a4aaf44e4068561e",
+   "file": "drivers/redis/write.go",
+   "mutator": "numbers/decrementer",
+   "line": 394
+  },
+  {
+   "id": "b005391e7c56af188535492855945b4b",
+   "file": "drivers/redis/write.go",
+   "mutator": "numbers/incrementer",
+   "line": 394
+  },
+  {
+   "id": "659e59e093eae9c1bc5b4e11f221de25",
+   "file": "drivers/redis/write.go",
+   "mutator": "statement/return",
+   "line": 373
+  },
+  {
+   "id": "4fdce00afbc409dce4eeb5d0f48f4c5c",
+   "file": "drivers/redis/write.go",
+   "mutator": "statement/return",
+   "line": 396
   }
  ]
 }
