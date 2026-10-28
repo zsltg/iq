@@ -33,14 +33,15 @@ func NewRunner(store Store) *Runner {
 }
 
 // Run forwards args to the store. It rejects an empty query before touching the
-// store, and wraps any store error with the command for context.
+// store. It wraps any store error without the statement, because the first
+// argument can hold data values or credentials and the error reaches the log.
 func (r *Runner) Run(ctx context.Context, args []string) (any, error) {
 	if len(args) == 0 {
 		return nil, ErrEmptyQuery
 	}
 	result, err := r.store.Query(ctx, args)
 	if err != nil {
-		return nil, fmt.Errorf("run query %q: %w", args[0], err)
+		return nil, fmt.Errorf("run query: %w", err)
 	}
 	return result, nil
 }

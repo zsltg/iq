@@ -118,16 +118,12 @@ func (s *loggingStore) ScanBatches(ctx context.Context, fn func(map[string]any) 
 }
 
 // Query delegates the raw exec call. It logs the command verb and operand count
-// only, never the operands themselves, which can carry data values.
+// only, never the operands themselves, which can carry data values. The verb
+// is the first argument only when it is a bare word. See execLogParts.
 func (s *loggingStore) Query(ctx context.Context, args []string) (any, error) {
 	start := time.Now()
 	out, err := s.st.Query(ctx, args)
-	command := ""
-	operands := 0
-	if len(args) > 0 {
-		command = args[0]
-		operands = len(args) - 1
-	}
+	command, operands := execLogParts(args)
 	s.record("Query", start, err, "command", command, "args", operands)
 	return out, err
 }

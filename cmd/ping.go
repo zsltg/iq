@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -244,9 +245,65 @@ func healthArgs(rawURL string) []string {
 	}
 }
 
+// passwordMask is the text that url.URL.Redacted puts in place of a password.
+// redactURL and maskPassword both use it.
+const passwordMask = "xxxxx"
+
+// minMaskedPassword is the shortest password that maskPassword removes when it
+// stands alone in a message. A shorter password can match unrelated text. A
+// password of any length is still removed when it sits between ":" and "@".
+const minMaskedPassword = 4
+
+// maskPassword replaces the password of rawURL in msg with passwordMask. It
+// matches the raw password and its escaped forms. It applies two rules. The
+// first rule masks every copy of the password between ":" and "@", for a
+// password of any length, because that shape is a piece of a URI. The second
+// rule masks every bare copy, but only when the password has at least
+// minMaskedPassword bytes. It does nothing when rawURL has no password or does
+// not parse. This catches a driver error that quotes a piece of the URI without
+// a scheme, which the pattern step of newRedactor cannot find.
+func maskPassword(msg, rawURL string) string {
+	pw, ok := sourcePassword(rawURL)
+	if !ok {
+		return msg
+	}
+	// The raw form goes last, so a longer escaped form wins at the same position.
+	// url.UserPassword escapes a little differently from the two functions.
+	forms := []string{
+		url.PathEscape(pw),
+		url.QueryEscape(pw),
+		strings.TrimPrefix(url.UserPassword("", pw).String(), ":"),
+		pw,
+	}
+	pairs := make([]string, 0, 4*len(forms))
+	// A credential pair starts at ":", so it wins over a bare pair for the same text.
+	for _, f := range forms {
+		pairs = append(pairs, ":"+f+"@", ":"+passwordMask+"@")
+	}
+	if len(pw) >= minMaskedPassword {
+		for _, f := range forms {
+			pairs = append(pairs, f, passwordMask)
+		}
+	}
+	return strings.NewReplacer(pairs...).Replace(msg)
+}
+
+// sourcePassword returns the password in the user info of rawURL. It reports
+// false when rawURL does not parse, has no user info, or has an empty password.
+func sourcePassword(rawURL string) (string, bool) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", false
+	}
+	// Password reports false for a nil *url.Userinfo, so no user info needs no check.
+	pw, ok := u.User.Password()
+	return pw, ok && pw != ""
+}
+
 // redactErr returns err with the connection password removed from its message,
 // so a driver error cannot leak it. It first replaces each occurrence of the raw
-// connection URI with its redacted form, then applies newRedactor. rawURL can be
+// connection URI with its redacted form, then applies newRedactor, then masks
+// each literal copy of the password with maskPassword. rawURL can be
 // empty. It returns err itself when the message does not change, so errors.Is
 // and errors.As still see the chain.
 func redactErr(err error, rawURL string) error {
@@ -255,7 +312,7 @@ func redactErr(err error, rawURL string) error {
 	if rawURL != "" {
 		out = strings.ReplaceAll(out, rawURL, redactURL(rawURL))
 	}
-	out = newRedactor(err)(out)
+	out = maskPassword(newRedactor(err)(out), rawURL)
 	if out == msg {
 		return err
 	}

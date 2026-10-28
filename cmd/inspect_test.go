@@ -778,7 +778,7 @@ func TestDispatchInspectStatementReadError(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{`{"dbStats":1}`, `{"buildInfo":1}`}, st.calls)
 	require.Equal(t, "mongo  mongodb://h/db\n\n"+
-		"# dbStats\n<map[error:run query \"{\\\"dbStats\\\":1}\": permission denied]>\n\n"+
+		"# dbStats\n<map[error:run query: permission denied]>\n\n"+
 		"# buildInfo\n<{\"buildInfo\":1}>\n\n", out)
 }
 

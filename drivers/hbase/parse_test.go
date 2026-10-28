@@ -64,7 +64,7 @@ func TestParseURL(t *testing.T) {
 	}{
 		{"wrong scheme", "redis://zk/", "", "must start with hbase://"},
 		{"no host", "hbase:///?table=t", "", "must name at least one ZooKeeper host"},
-		{"empty host in a quorum", "hbase://a,,b/?table=t", "", `has an empty host in "a,,b"`},
+		{"empty host in a quorum", "hbase://a,,b/?table=t", "", "has an empty host in its ZooKeeper host list"},
 		{"table with slash", "hbase://zk/?table=a/b", "", "must be [namespace:]table, not a path"},
 		{"bad type", "hbase://zk/?table=t&types=cf:a=blorp", "", `unknown column type "blorp"`},
 		{"bad keytype", "hbase://zk/?table=t&keytype=blorp", "", `unknown column type "blorp"`},
@@ -140,4 +140,27 @@ func TestParseURLKeepsTheQueryParseCause(t *testing.T) {
 	var escape url.EscapeError
 	require.ErrorAs(t, err, &escape)
 	require.Equal(t, url.EscapeError("%zz"), escape)
+}
+
+func TestParseURLErrorsQuoteNoInput(t *testing.T) {
+	const pw = "s3cretpw"
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr string
+	}{
+		{name: "empty host with user info", rawURL: "hbase://zkuser:" + pw + "@zk1,,zk2/?table=t", wantErr: "user info"},
+		{name: "empty host in the middle", rawURL: "hbase://zk1,,zk2/?table=t", wantErr: "empty host"},
+		{name: "empty host at the end", rawURL: "hbase://zk1,/?table=t", wantErr: "empty host"},
+		{name: "user info with one host", rawURL: "hbase://zkuser:" + pw + "@zk1/?table=t", wantErr: "user info"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseURL(tt.rawURL, "")
+			require.ErrorContains(t, err, tt.wantErr)
+			require.NotContains(t, err.Error(), pw)
+			require.NotContains(t, err.Error(), "zkuser")
+			require.NotContains(t, err.Error(), "zk1")
+		})
+	}
 }
