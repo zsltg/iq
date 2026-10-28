@@ -292,9 +292,10 @@ func maskPassword(msg, rawURL string) string {
 // false when rawURL does not parse, has no user info, or has an empty password.
 func sourcePassword(rawURL string) (string, bool) {
 	u, err := url.Parse(rawURL)
-	if err != nil || u.User == nil {
+	if err != nil {
 		return "", false
 	}
+	// Password reports false for a nil *url.Userinfo, so no user info needs no check.
 	pw, ok := u.User.Password()
 	return pw, ok && pw != ""
 }

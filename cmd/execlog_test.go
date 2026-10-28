@@ -87,6 +87,9 @@ func TestMaskPassword(t *testing.T) {
 		{name: "short password with a space, plus form", msg: "bad u:a+b@h and u:a%20b@h", rawURL: "redis://u:a%20b@h", want: "bad u:xxxxx@h and u:xxxxx@h"},
 		{name: "four bytes is masked", msg: "bad host abcd", rawURL: "redis://u:abcd@h", want: "bad host xxxxx"},
 		{name: "no password", msg: "bad host abcd", rawURL: "redis://u@h", want: "bad host abcd"},
+		{name: "no password leaves a credential shape", msg: "bad u:@h", rawURL: "redis://u@h", want: "bad u:@h"},
+		{name: "empty password leaves a credential shape", msg: "bad u:@h", rawURL: "redis://u:@h", want: "bad u:@h"},
+		{name: "no user info leaves a credential shape", msg: "bad u:@h", rawURL: "redis://h", want: "bad u:@h"},
 		{name: "empty URL", msg: "bad host abcd", rawURL: "", want: "bad host abcd"},
 		{name: "unparseable URL", msg: "bad host abcd", rawURL: "redis://u:abcd@h:x", want: "bad host abcd"},
 	}

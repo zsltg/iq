@@ -252,6 +252,7 @@ func TestParseURLHostList(t *testing.T) {
 		{name: "single host", rawURL: "cassandra://h/ks", wantHosts: []string{"h:9042"}},
 		{name: "host list", rawURL: "cassandra://a,b:9043/ks", wantHosts: []string{"a:9042", "b:9043"}},
 		{name: "IPv6 host", rawURL: "cassandra://[::1]:9042/ks", wantHosts: []string{"[::1]:9042"}},
+		{name: "highest port", rawURL: "cassandra://h:65535/ks", wantHosts: []string{"h:65535"}},
 		{name: "slash in the password", rawURL: "cassandra://u:" + frag + "/ss@host", wantErr: errAtInPath},
 		{name: "slash in the password after a number", rawURL: "cassandra://u:12/ss@host/ks", wantErr: errAtInPath},
 		{name: "port is not a number", rawURL: "cassandra://h:" + frag + "/ks", wantErr: errBadHost},
