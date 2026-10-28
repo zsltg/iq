@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -76,6 +79,12 @@ func TestMaskPassword(t *testing.T) {
 		{name: "query-escaped form", msg: "bad host p%40ss%2Fword and p%40ss%2Fword", rawURL: "mongodb://u:p%40ss%2Fword@h/db", want: "bad host xxxxx and xxxxx"},
 		{name: "password with a space has two escapes", msg: "a pa ss b pa%20ss c pa+ss", rawURL: "x://u:pa%20ss@h", want: "a xxxxx b xxxxx c xxxxx"},
 		{name: "short password stays", msg: "bad host abc", rawURL: "redis://u:abc@h", want: "bad host abc"},
+		{name: "short password in a credential shape", msg: "authentication failed for u:abc@host", rawURL: "redis://u:abc@h", want: "authentication failed for u:xxxxx@host"},
+		{name: "short password bare elsewhere stays", msg: "abc failed for u:abc@host and abc", rawURL: "redis://u:abc@h", want: "abc failed for u:xxxxx@host and abc"},
+		{name: "one byte password in a credential shape", msg: "bad u:x@h", rawURL: "redis://u:x@h", want: "bad u:xxxxx@h"},
+		{name: "short path-escaped password in a credential shape", msg: "bad u:a%2Fb@h", rawURL: "redis://u:a%2Fb@h", want: "bad u:xxxxx@h"},
+		{name: "short query-escaped password in a credential shape", msg: "bad u:a%2Fb@h and u:a%2Fb@h", rawURL: "redis://u:a%2Fb@h", want: "bad u:xxxxx@h and u:xxxxx@h"},
+		{name: "short password with a space, plus form", msg: "bad u:a+b@h and u:a%20b@h", rawURL: "redis://u:a%20b@h", want: "bad u:xxxxx@h and u:xxxxx@h"},
 		{name: "four bytes is masked", msg: "bad host abcd", rawURL: "redis://u:abcd@h", want: "bad host xxxxx"},
 		{name: "no password", msg: "bad host abcd", rawURL: "redis://u@h", want: "bad host abcd"},
 		{name: "empty URL", msg: "bad host abcd", rawURL: "", want: "bad host abcd"},
@@ -101,6 +110,26 @@ func TestRedactErrMasksBarePassword(t *testing.T) {
 
 	short := redactErr(fmt.Errorf("saw pw: %w", sentinel), "hbase://u:pw@h/")
 	require.ErrorIs(t, short, sentinel, "a short password leaves the error unchanged")
+}
+
+func TestRedactErrMasksShortPasswordInPartialURI(t *testing.T) {
+	sentinel := errors.New("boom")
+	err := fmt.Errorf("authentication failed for u:abc@host: %w", sentinel)
+	got := redactErr(err, "redis://u:abc@host/0")
+	require.EqualError(t, got, "authentication failed for u:xxxxx@host: boom")
+}
+
+func TestLogFailureMasksShortPassword(t *testing.T) {
+	var stderr bytes.Buffer
+	opts := logOptions{enable: true, file: "stderr", level: slog.LevelDebug, format: "text"}
+	logger, _, err := opts.build(&stderr, io.Discard)
+	require.NoError(t, err)
+	cfg := &config{logger: logger, url: "redis://u:abc@host/0"}
+
+	logFailure(cfg, errors.New("authentication failed for u:abc@host"))
+
+	require.Contains(t, stderr.String(), "iq failed")
+	require.NotContains(t, stderr.String(), "abc")
 }
 
 func TestRenderErrorTextMasksBarePassword(t *testing.T) {

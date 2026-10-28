@@ -145,22 +145,7 @@ func parseURL(rawURL, address string) (connConfig, error) {
 	rest := rawURL[len(scheme):]
 
 	rest, rawQuery, _ := strings.Cut(rest, "?")
-	authority, path, _ := strings.Cut(rest, "/")
-
-	// A "@" in the path means the userinfo ended early. A "/" in the password
-	// cut the authority short. The error never quotes the input.
-	if strings.Contains(path, "@") {
-		return connConfig{}, errAtInPath
-	}
-
-	username, password, authority, err := splitAuthority(authority)
-	if err != nil {
-		return connConfig{}, err
-	}
-	if authority == "" {
-		return connConfig{}, fmt.Errorf("cassandra url must name at least one host, e.g. cassandra://host:9042/keyspace")
-	}
-	hosts, err := hostList(authority)
+	username, password, hosts, path, err := parseAuthority(rest)
 	if err != nil {
 		return connConfig{}, err
 	}
@@ -190,6 +175,31 @@ func parseURL(rawURL, address string) (connConfig, error) {
 		password:    password,
 		consistency: consistency,
 	}, nil
+}
+
+// parseAuthority reads the part of a cassandra URI between the scheme and the
+// query. It returns the user name, the password, the host list, and the path.
+func parseAuthority(rest string) (username, password string, hosts []string, path string, err error) {
+	authority, path, _ := strings.Cut(rest, "/")
+
+	// A "@" in the path means the userinfo ended early. A "/" in the password
+	// cut the authority short. The error never quotes the input.
+	if strings.Contains(path, "@") {
+		return "", "", nil, "", errAtInPath
+	}
+
+	username, password, authority, err = splitAuthority(authority)
+	if err != nil {
+		return "", "", nil, "", err
+	}
+	if authority == "" {
+		return "", "", nil, "", fmt.Errorf("cassandra url must name at least one host, e.g. cassandra://host:9042/keyspace")
+	}
+	hosts, err = hostList(authority)
+	if err != nil {
+		return "", "", nil, "", err
+	}
+	return username, password, hosts, path, nil
 }
 
 // Fixed errors for a bad host list. They never quote the input, because a

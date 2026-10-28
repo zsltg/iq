@@ -249,15 +249,19 @@ func healthArgs(rawURL string) []string {
 // redactURL and maskPassword both use it.
 const passwordMask = "xxxxx"
 
-// minMaskedPassword is the shortest password that maskPassword removes from a
-// message. A shorter password can match unrelated text.
+// minMaskedPassword is the shortest password that maskPassword removes when it
+// stands alone in a message. A shorter password can match unrelated text. A
+// password of any length is still removed when it sits between ":" and "@".
 const minMaskedPassword = 4
 
-// maskPassword replaces each literal copy of the password of rawURL in msg with
-// passwordMask. It matches the raw password and its escaped forms. It does
-// nothing when rawURL has no password, has a short password, or does not parse.
-// This catches a driver error that quotes a piece of the URI without a scheme,
-// which the pattern step of newRedactor cannot find.
+// maskPassword replaces the password of rawURL in msg with passwordMask. It
+// matches the raw password and its escaped forms. It applies two rules. The
+// first rule masks every copy of the password between ":" and "@", for a
+// password of any length, because that shape is a piece of a URI. The second
+// rule masks every bare copy, but only when the password has at least
+// minMaskedPassword bytes. It does nothing when rawURL has no password or does
+// not parse. This catches a driver error that quotes a piece of the URI without
+// a scheme, which the pattern step of newRedactor cannot find.
 func maskPassword(msg, rawURL string) string {
 	if rawURL == "" {
 		return msg
@@ -267,14 +271,26 @@ func maskPassword(msg, rawURL string) string {
 		return msg
 	}
 	pw, ok := u.User.Password()
-	if !ok || len(pw) < minMaskedPassword {
+	if !ok || pw == "" {
 		return msg
 	}
 	// The raw form goes last, so a longer escaped form wins at the same position.
-	forms := []string{url.PathEscape(pw), url.QueryEscape(pw), pw}
-	pairs := make([]string, 0, 2*len(forms))
+	// url.UserPassword escapes a little differently from the two functions.
+	forms := []string{
+		url.PathEscape(pw),
+		url.QueryEscape(pw),
+		strings.TrimPrefix(url.UserPassword("", pw).String(), ":"),
+		pw,
+	}
+	pairs := make([]string, 0, 4*len(forms))
+	// A credential pair starts at ":", so it wins over a bare pair for the same text.
 	for _, f := range forms {
-		pairs = append(pairs, f, passwordMask)
+		pairs = append(pairs, ":"+f+"@", ":"+passwordMask+"@")
+	}
+	if len(pw) >= minMaskedPassword {
+		for _, f := range forms {
+			pairs = append(pairs, f, passwordMask)
+		}
 	}
 	return strings.NewReplacer(pairs...).Replace(msg)
 }
