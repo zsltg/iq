@@ -100,19 +100,18 @@ func endpointContainerKey(e endpoint) (containerKey, bool) {
 	if !ok {
 		return containerKey{}, false
 	}
-	authority, path, q, ok := splitEndpointURL(e.url)
+	u, ok := splitEndpointURL(e.url)
 	if !ok {
 		return containerKey{}, false
 	}
-	hosts := canonicalHosts(authority, d.shape, d.shape.portFor(schemeOf(e.url)))
+	hosts := canonicalHosts(u.authority, d.shape, d.shape.portFor(schemeOf(e.url)))
 	if len(hosts) == 0 {
 		return containerKey{}, false
 	}
-	scope, address, broad := containerParts(d, e.address, path, q)
 	return containerKey{
 		driver: keyDriverName(d.name),
 		hosts:  hosts,
-		rest:   strings.Join([]string{scope, address, broad}, "\x00"),
+		rest:   containerRest(d, e.address, u),
 	}, true
 }
 
@@ -129,38 +128,47 @@ func writableDriverOf(rawURL string) (driver, bool) {
 	return d, true
 }
 
+// endpointURL holds the parts of a connection URI that name a container.
+type endpointURL struct {
+	authority string
+	// path has no outer slashes.
+	path  string
+	query url.Values
+}
+
 // splitEndpointURL cuts a connection URI into its authority, its path without
 // outer slashes, and its parsed query. The fragment is dropped. It reports
 // false when the query does not parse. A URL with a host list cannot go through
 // net/url, so the cut is by hand.
-func splitEndpointURL(rawURL string) (authority, path string, q url.Values, ok bool) {
+func splitEndpointURL(rawURL string) (endpointURL, bool) {
 	rest, rawQuery, _ := strings.Cut(strings.SplitN(rawURL, "://", 2)[1], "?")
 	rawQuery, _, _ = strings.Cut(rawQuery, "#")
 	rest, _, _ = strings.Cut(rest, "#")
 	q, err := url.ParseQuery(rawQuery)
 	if err != nil {
-		return "", "", nil, false
+		return endpointURL{}, false
 	}
-	authority, path, _ = strings.Cut(rest, "/")
-	return authority, strings.Trim(path, "/"), q, true
+	authority, path, _ := strings.Cut(rest, "/")
+	return endpointURL{authority: authority, path: strings.Trim(path, "/"), query: q}, true
 }
 
-// containerParts returns the scope, the address, and the broad keyspace option
+// containerRest joins the scope, the address, and the broad keyspace option
 // that name the container below the host. The address is read from the parsed
 // query, because urlAddressName cannot parse a URL with a host list.
-func containerParts(d driver, explicit, path string, q url.Values) (scope, address, broad string) {
+func containerRest(d driver, explicit string, u endpointURL) string {
 	params := d.addressParams()
-	address = addressFromQuery(explicit, params, q)
+	address := addressFromQuery(explicit, params, u.query)
 	if d.shape.path == pathAddress && address == "" {
-		address = path
+		address = u.path
 	}
 	if d.name == "couchbase" {
 		address = couchbaseCollection(address)
 	}
+	broad := ""
 	if len(params) > 1 {
-		broad = q.Get(params[len(params)-1])
+		broad = u.query.Get(params[len(params)-1])
 	}
-	return containerScope(d.shape.path, path, q), address, broad
+	return strings.Join([]string{containerScope(d.shape.path, u), address, broad}, "\x00")
 }
 
 // addressFromQuery returns the explicit address, else the first of params that
@@ -179,12 +187,12 @@ func addressFromQuery(explicit string, params []string, q url.Values) string {
 
 // containerScope returns the part of the container that the path or an option
 // names above the address. Most backends have none.
-func containerScope(use pathUse, path string, q url.Values) string {
+func containerScope(use pathUse, u endpointURL) string {
 	switch use {
 	case pathScope:
-		return path
+		return u.path
 	case pathDBIndex:
-		return redisDBIndex(path, q.Get("db"))
+		return redisDBIndex(u.path, u.query.Get("db"))
 	}
 	return ""
 }

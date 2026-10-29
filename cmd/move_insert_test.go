@@ -353,13 +353,13 @@ func TestSameContainer(t *testing.T) {
 }
 
 func TestSplitEndpointURL(t *testing.T) {
-	authority, path, q, ok := splitEndpointURL("mongodb://u:p@a,b/db/?collection=c#frag")
+	u, ok := splitEndpointURL("mongodb://u:p@a,b/db/?collection=c#frag")
 	require.True(t, ok)
-	require.Equal(t, "u:p@a,b", authority)
-	require.Equal(t, "db", path)
-	require.Equal(t, "c", q.Get("collection"))
+	require.Equal(t, "u:p@a,b", u.authority)
+	require.Equal(t, "db", u.path)
+	require.Equal(t, "c", u.query.Get("collection"))
 
-	_, _, _, ok = splitEndpointURL("redis://h/0?a=%zz")
+	_, ok = splitEndpointURL("redis://h/0?a=%zz")
 	require.False(t, ok, "a query that does not parse")
 }
 

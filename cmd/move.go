@@ -191,10 +191,16 @@ func sourceEndpoint(cfg *config) endpoint {
 // `mongodb://h`. It is a safety net. An empty handle or URL never matches, so a
 // zero endpoint (no source) is never the same as another.
 func sameEndpoint(a, b endpoint) bool {
-	if effectiveAddress(a) == effectiveAddress(b) && (sameHandle(a, b) || sameURL(a, b)) {
-		return true
+	return sameStoredEndpoint(a, b) || sameContainer(a, b)
+}
+
+// sameStoredEndpoint reports whether a and b have the same address and the
+// same saved source or the same connection URL.
+func sameStoredEndpoint(a, b endpoint) bool {
+	if effectiveAddress(a) != effectiveAddress(b) {
+		return false
 	}
-	return sameContainer(a, b)
+	return sameHandle(a, b) || sameURL(a, b)
 }
 
 // sameHandle reports whether a and b have the same non-empty saved source.
