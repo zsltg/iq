@@ -314,6 +314,33 @@ func TestSameContainer(t *testing.T) {
 		{"different drivers", "redis://h", "mongodb://h:6379", false},
 		{"unparsable query", "redis://h/0?a=%zz", "redis://h:6379/0", false},
 		{"no URL", "", "redis://h", false},
+		{"IPv6 long and short form", "redis://[2001:db8::1]", "redis://[2001:0db8:0:0:0:0:0:1]:6379", true},
+		{"IPv6 other address", "redis://[2001:db8::1]", "redis://[2001:db8::2]", false},
+		{"IPv6 case", "redis://[2001:DB8::1]", "redis://[2001:db8::1]", true},
+		{"trailing dot on a name", "redis://h.", "redis://h:6379", true},
+		{"trailing dot with a port", "redis://h.:6380", "redis://h:6380", true},
+		{"IPv4-mapped IPv6", "redis://[::ffff:10.0.0.1]", "redis://10.0.0.1", true},
+		{"IPv4-mapped IPv6 loopback", "redis://[::ffff:127.0.0.1]", "redis://127.0.0.1", true},
+		{"IPv4 other address", "redis://10.0.0.1", "redis://10.0.0.2", false},
+		{"only a dot as host", "redis://.", "redis://.", false},
+		{"couchdb default port", "couchdb://h/db", "couchdb://h:80/db", true},
+		{"couchdb other port", "couchdb://h/db", "couchdb://h:5984/db", false},
+		{"couchdbs default port", "couchdbs://h/db", "couchdbs://h:443/db", true},
+		{"couchdbs and plain defaults differ", "couchdbs://h/db", "couchdb://h/db", false},
+		{"elasticsearch default port", "elasticsearch://h/?index=i", "elasticsearch://h:80/?index=i", true},
+		{"elasticsearch other port", "elasticsearch://h/?index=i", "elasticsearch://h:9200/?index=i", false},
+		{"elasticsearch TLS default port", "elasticsearch+s://h/?index=i", "elasticsearch+s://h:443/?index=i", true},
+		{"opensearch default port", "opensearch://h/?index=i", "opensearch://h:80/?index=i", true},
+		{"opensearch other port", "opensearch://h/?index=i", "opensearch://h:9200/?index=i", false},
+		{"opensearch TLS default port", "opensearch+s://h/?index=i", "elasticsearch+s://h:443/?index=i", true},
+		{"empty user info", "redis://@h", "redis://h:6379", true},
+		{"at sign in the password", "redis://u:p@ss@h", "redis://h:6379", true},
+		{"no host", "redis://", "redis://", false},
+		{"empty host item skipped in a list", "mongodb://a,,b/db?collection=c", "mongodb://b/db?collection=c", true},
+		{"redis non-numeric database name", "redis://h/name", "redis://h:6379/name", true},
+		{"redis other non-numeric database name", "redis://h/name", "redis://h/other", false},
+		{"couchbase without bucket or collection", "couchbase://h", "couchbases://h:11207", true},
+		{"couchbase no collection and the default collection", "couchbase://h", "couchbase://h/?collection=_default", true},
 		{"file source", "file:///a.bson", "file:///a.bson", false},
 		{"unknown scheme", "nope://h", "nope://h", false},
 	}
@@ -323,6 +350,17 @@ func TestSameContainer(t *testing.T) {
 			require.Equal(t, tc.want, sameContainer(endpoint{url: tc.b}, endpoint{url: tc.a}), "symmetric")
 		})
 	}
+}
+
+func TestSplitEndpointURL(t *testing.T) {
+	authority, path, q, ok := splitEndpointURL("mongodb://u:p@a,b/db/?collection=c#frag")
+	require.True(t, ok)
+	require.Equal(t, "u:p@a,b", authority)
+	require.Equal(t, "db", path)
+	require.Equal(t, "c", q.Get("collection"))
+
+	_, _, _, ok = splitEndpointURL("redis://h/0?a=%zz")
+	require.False(t, ok, "a query that does not parse")
 }
 
 func TestSameEndpointFallsBackToStrings(t *testing.T) {

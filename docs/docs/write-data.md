@@ -175,8 +175,10 @@ iq compares what the two URIs name, not how they are spelled. Two handles for
 `redis://h` and `redis://h:6379/0` name one container, so iq refuses them. The
 comparison ignores user info and the case of the host. It also treats
 `localhost`, `127.0.0.1`, and `::1` as one host, and fills in the default port.
-Two host lists match when they share one host. The check can refuse two
-containers that differ, but it never allows one container to replace itself.
+Two host lists match when they share one host. The check compares the URI text
+and does not resolve names. It can miss two names for one server, such as two
+DNS names, a CNAME, or `mongodb+srv://h` and `mongodb://h`. Treat it as a
+safety net.
 
 A destination that cannot be cleared (the read-only file dump) is refused up
 front. `--no-overwrite` is the opposite choice, insert-only, so the two are

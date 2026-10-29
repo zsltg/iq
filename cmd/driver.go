@@ -206,8 +206,10 @@ var drivers = []driver{
 		explainDelete: iqhbase.ExplainDelete,
 	},
 	{
-		name:           "couchdb",
-		shape:          endpointShape{path: pathAddress},
+		name: "couchdb",
+		// The driver hands the host to an HTTP client. A missing port means 80,
+		// or 443 for the TLS scheme.
+		shape:          endpointShape{defaultPort: "80", tlsPort: "443", tlsSchemes: []string{"couchdbs"}, path: pathAddress},
 		desc:           "Apache CouchDB document store",
 		schemes:        []string{"couchdb", "couchdbs"},
 		doc:            "https://docs.couchdb.org/",
@@ -267,8 +269,10 @@ var drivers = []driver{
 		explainDelete: iqneo4j.ExplainDelete,
 	},
 	{
-		name:           "elasticsearch",
-		shape:          endpointShape{path: pathAddress},
+		name: "elasticsearch",
+		// The driver hands the host to an HTTP client. A missing port means 80,
+		// or 443 for the TLS scheme.
+		shape:          endpointShape{defaultPort: "80", tlsPort: "443", tlsSchemes: []string{"elasticsearch+s"}, path: pathAddress},
 		desc:           "Elasticsearch search engine and document store",
 		schemes:        []string{"elasticsearch", "elasticsearch+s"},
 		doc:            "https://www.elastic.co/docs/",
@@ -287,8 +291,10 @@ var drivers = []driver{
 		explainDelete: iqelasticsearch.ExplainDelete,
 	},
 	{
-		name:           "opensearch",
-		shape:          endpointShape{path: pathAddress},
+		name: "opensearch",
+		// The driver hands the host to an HTTP client. A missing port means 80,
+		// or 443 for the TLS scheme.
+		shape:          endpointShape{defaultPort: "80", tlsPort: "443", tlsSchemes: []string{"opensearch+s"}, path: pathAddress},
 		desc:           "OpenSearch search engine and document store",
 		schemes:        []string{"opensearch", "opensearch+s"},
 		doc:            "https://opensearch.org/docs/",
