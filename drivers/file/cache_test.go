@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -535,4 +536,71 @@ func TestCachePagesMatch(t *testing.T) {
 	reread, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
 	require.NoError(t, err)
 	require.Equal(t, []int{pageSize, bigCount - pageSize}, pageSizes(t, reread)) // from cache.
+}
+
+// writeBigIntJSONL writes a typed JSONL dump with one integer beyond int64 and
+// one that fits.
+func writeBigIntJSONL(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "big.jsonl")
+	body := `{"key":"big","type":"string","value":123456789012345678901234567890}` + "\n" +
+		`{"key":"neg","type":"string","value":-123456789012345678901234567890}` + "\n" +
+		`{"key":"u64","type":"string","value":18446744073709551615}` + "\n" +
+		`{"key":"nested","type":"hash","value":{"a":[123456789012345678901234567890,7]}}` + "\n" +
+		`{"key":"small","type":"string","value":5}` + "\n"
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	return path
+}
+
+// TestCacheBigIntWarmScanAndGet proves that a dump with integers beyond int64
+// scans and gets the same records on the cold run and on every later run. The
+// cache skips such a dump, so no later run reads a cache that it cannot decode.
+func TestCacheBigIntWarmScanAndGet(t *testing.T) {
+	url := URL(writeBigIntJSONL(t))
+	dir := t.TempDir()
+
+	cold, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
+	require.NoError(t, err)
+	want := collect(t, cold)
+	require.Len(t, want, 5)
+	_, isBig := want["big"].Value.(*big.Int)
+	require.True(t, isBig, "the cold decode yields a *big.Int")
+	require.Equal(t, 5, want["small"].Value)
+
+	for range 2 {
+		warm, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
+		require.NoError(t, err)
+		require.Equal(t, want, collect(t, warm))
+
+		got, err := warm.Get(context.Background(), []string{"big", "nested", "small"})
+		require.NoError(t, err)
+		require.Equal(t, want["big"].Value, got["big"])
+		require.Equal(t, want["nested"].Value, got["nested"])
+		require.Equal(t, 5, got["small"])
+	}
+	require.Empty(t, cacheFiles(t, dir), "a dump with a big integer is not cached")
+}
+
+// TestCacheOldVersionFileIsIgnored proves the upgrade path for big integers.
+// Version 3 wrote caches that the decoder cannot read back for such a dump. The
+// version bump moves the cache key, so that old file is a miss and the scan
+// decodes the dump again.
+func TestCacheOldVersionFileIsIgnored(t *testing.T) {
+	url := URL(writeBigIntJSONL(t))
+	dir := t.TempDir()
+
+	st, err := Open(url, numfmt.DecimalAuto, cacheCfg(dir))
+	require.NoError(t, err)
+	m, ok := st.cacheable()
+	require.True(t, ok)
+	h := cacheHeader{Path: m.path, Size: m.size, MTimeNano: m.mtime, Format: int(st.format), Decimal: int(st.dec), CTimeNano: m.ctime, Inode: m.ino}
+	stale := cacheBytes(t, h, []query.Record{{Key: "stale", Type: "string", Value: "stale"}}, false, nil)
+	oldPath := st.cacheFileFor(m, 3)
+	require.NoError(t, os.WriteFile(oldPath, stale, 0o600))
+
+	got := collect(t, st)
+	require.Len(t, got, 5)
+	require.NotContains(t, got, "stale")
+	require.Equal(t, 5, got["small"].Value)
+	require.Equal(t, []string{filepath.Base(oldPath)}, cacheFiles(t, dir), "the old file stays and no new cache appears")
 }

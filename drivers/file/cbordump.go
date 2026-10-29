@@ -20,10 +20,15 @@ import (
 // float64, string, map[string]any, []any. The test file cbordump_test.go proves
 // that the round-trip is type-identical for every member of that set.
 
-// cborEnc marshals with default options. It does not validate UTF-8, so a binary
-// Redis string encodes verbatim. It does not shrink floats, so a float64 stays
-// bit-exact.
-var cborEnc = mustEncMode(cbor.EncOptions{})
+// cborEnc marshals with default options, plus one rule for big integers. It does
+// not validate UTF-8, so a binary Redis string encodes verbatim. It does not
+// shrink floats, so a float64 stays bit-exact. BigIntConvertReject makes every
+// *big.Int fail to encode. The cache cannot hold one. The decoder forbids all
+// tags, so a bignum tag would not read back. A *big.Int that fits in uint64
+// would encode as a plain integer and read back as a float64 or an int64. The
+// cache writer treats the encode error as a signal to skip the cache for that
+// dump. The cold decode keeps working.
+var cborEnc = mustEncMode(cbor.EncOptions{BigIntConvert: cbor.BigIntConvertReject})
 
 // cborDec is the counterpart decoder. DefaultMapType returns objects as
 // map[string]any. UTF8DecodeInvalid accepts the non-UTF-8 strings that cborEnc
@@ -97,8 +102,9 @@ func decodeRecord(dec *cbor.Decoder) (query.Record, error) {
 // narrowInts converts every integer that a CBOR decode produced (uint64 or
 // int64) to Go int, recursing through maps and slices. So a cached value's type
 // model matches Normalize's, which narrows all integers to int. A uint64 beyond
-// int's range (unreachable from normalized data, which is int-bounded before
-// caching) degrades to float64 rather than overflowing.
+// int's range degrades to float64 rather than overflowing. This case does not
+// occur, because cborEnc rejects every *big.Int, the type that the cold decode
+// uses for such an integer.
 func narrowInts(v any) any {
 	switch t := v.(type) {
 	case uint64:
