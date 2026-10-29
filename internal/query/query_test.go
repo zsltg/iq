@@ -89,3 +89,28 @@ func TestRunnerErrorDoesNotQuoteTheStatement(t *testing.T) {
 		})
 	}
 }
+
+func TestRowLimit(t *testing.T) {
+	tests := []struct {
+		name   string
+		n      int
+		want   int
+		wantOK bool
+	}{
+		{name: "a positive value is carried", n: 5, want: 5, wantOK: true},
+		{name: "one is a limit", n: 1, want: 1, wantOK: true},
+		{name: "zero sets no limit", n: 0},
+		{name: "a negative value sets no limit", n: -1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := query.RowLimit(query.WithRowLimit(context.Background(), tc.n))
+			require.Equal(t, tc.wantOK, ok)
+			require.Equal(t, tc.want, got)
+		})
+	}
+	t.Run("a bare context has no limit", func(t *testing.T) {
+		_, ok := query.RowLimit(context.Background())
+		require.False(t, ok)
+	})
+}

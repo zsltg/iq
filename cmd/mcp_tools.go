@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -110,7 +111,7 @@ func (s *mcpServer) addExecTool(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "iq_exec",
 		Title:       "Run a native backend command",
-		Description: "Forward a command to the backend verbatim, in the backend's own language: a Redis command and operands, a MongoDB runCommand document, CQL, PartiQL, a Mango request, SQL++, Cypher, an Elasticsearch search body, or an HBase verb. It can write, so it is behind --allow exec.",
+		Description: "Forward a command to the backend verbatim, in the backend's own language: a Redis command and operands, a MongoDB runCommand document, CQL, PartiQL, a Mango request, SQL++, Cypher, an Elasticsearch search body, or an HBase verb. It can write, so it is behind --allow exec. The reply is capped by max_items and max_bytes. A list reply keeps the rows that fit, and any capped reply has truncated set to true. Narrow the command to see more rows.",
 		Annotations: destructiveAnnotations("Run a native backend command", false),
 	}, s.toolExec)
 }
@@ -759,19 +760,30 @@ func collectDiff(ctx context.Context, run diffRun, layers diffModes) (mcpDiffOut
 // mcpExecInput carries the backend command verbatim: the verb and its operands,
 // exactly as `iq exec` forwards them.
 type mcpExecInput struct {
-	Source string   `json:"source,omitempty" jsonschema:"the source handle to run against, optionally handle.keyspace; omit for the active source"`
-	Args   []string `json:"args" jsonschema:"the command in the backend's own language: a Redis verb and operands, or a single statement or JSON document"`
+	Source   string   `json:"source,omitempty" jsonschema:"the source handle to run against, optionally handle.keyspace; omit for the active source"`
+	Args     []string `json:"args" jsonschema:"the command in the backend's own language: a Redis verb and operands, or a single statement or JSON document"`
+	MaxItems int      `json:"max_items,omitempty" jsonschema:"cap the rows of a list result; may only lower the server's own cap"`
+	MaxBytes int      `json:"max_bytes,omitempty" jsonschema:"cap the encoded size of the result in bytes; may only lower the server's own cap"`
 }
 
-// mcpExecOutput is the backend's reply, normalized to JSON.
+// mcpExecOutput is the backend's reply, normalized to JSON. Truncated is true
+// when a cap cut the reply. A list reply then holds the rows that fit. Any other
+// reply that is over the byte cap comes back as null.
 type mcpExecOutput struct {
-	Result any `json:"result"`
+	Result    any  `json:"result"`
+	Truncated bool `json:"truncated"`
 }
 
 // toolExec forwards the command verbatim through the same runner `iq exec` uses.
+// The reply is held to the same caps as an iq_query result. The row cap also
+// goes to the driver, so a driver that reads a list in pages stops early.
 func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcpExecInput) (*mcp.CallToolResult, mcpExecOutput, error) {
 	if len(in.Args) == 0 {
 		return nil, mcpExecOutput{}, toolError(errors.New("exec: a command is required"))
+	}
+	bounds, err := s.boundsFor(mcpQueryInput{MaxItems: in.MaxItems, MaxBytes: in.MaxBytes})
+	if err != nil {
+		return nil, mcpExecOutput{}, toolError(err)
 	}
 	cfg := s.callConfig()
 	cfg.src = in.Source
@@ -779,18 +791,62 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 		return nil, mcpExecOutput{}, toolError(err)
 	}
 	cfg.log().Info("exec forward", execLogAttrs(in.Args)...)
-	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
+	cctx, cancel := context.WithTimeout(ctx, bounds.timeout)
 	defer cancel()
 	st, err := openStore(cctx, cfg)
 	if err != nil {
 		return nil, mcpExecOutput{}, toolError(redactErr(err, cfg.url))
 	}
 	defer func() { _ = st.Close() }()
-	res, err := query.NewRunner(st).Run(cctx, in.Args)
+	// One extra row lets the cap tell a full result from a cut one.
+	res, err := query.NewRunner(st).Run(query.WithRowLimit(cctx, bounds.maxItems+1), in.Args)
 	if err != nil {
 		return nil, mcpExecOutput{}, toolError(redactErr(err, cfg.url))
 	}
-	return nil, mcpExecOutput{Result: res}, nil
+	out, err := capExecResult(res, bounds)
+	if err != nil {
+		return nil, mcpExecOutput{}, toolError(err)
+	}
+	return nil, out, nil
+}
+
+// capExecResult holds a backend reply to the item cap and the byte cap. A list
+// reply keeps the rows that fit, the way iq_query keeps items. Any other reply is
+// all or nothing: if its encoding is over the byte cap, the result is null.
+func capExecResult(res any, bounds queryBounds) (mcpExecOutput, error) {
+	rv := reflect.ValueOf(res)
+	if rv.Kind() == reflect.Slice && rv.Type().Elem().Kind() != reflect.Uint8 {
+		return capExecList(rv, bounds)
+	}
+	return capExecDocument(res, bounds)
+}
+
+// capExecDocument returns a reply that is not a list, or null if its encoding is
+// over the byte cap.
+func capExecDocument(res any, bounds queryBounds) (mcpExecOutput, error) {
+	enc, err := json.Marshal(res)
+	if err != nil {
+		return mcpExecOutput{}, fmt.Errorf("encode exec result: %w", err)
+	}
+	if len(enc) > bounds.maxBytes {
+		return mcpExecOutput{Truncated: true}, nil
+	}
+	return mcpExecOutput{Result: res}, nil
+}
+
+// capExecList keeps the rows of a list reply that fit in the caps.
+func capExecList(rv reflect.Value, bounds queryBounds) (mcpExecOutput, error) {
+	col := &queryCollector{bounds: bounds, out: mcpQueryOutput{Items: []any{}}}
+	for i := range rv.Len() {
+		err := col.emit(rv.Index(i).Interface())
+		if errors.Is(err, errTruncated) {
+			break
+		}
+		if err != nil {
+			return mcpExecOutput{}, err
+		}
+	}
+	return mcpExecOutput{Result: col.out.Items, Truncated: col.out.Truncated}, nil
 }
 
 // mcpInsertInput is a copy request: the read side, the destination, the key

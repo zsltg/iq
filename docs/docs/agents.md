@@ -198,6 +198,10 @@ Register that config's sources with the same `iq add --config
   roughly 64k tokens) are hard caps. A per-call `max_items` or `max_bytes` can
   only lower them, never raise them. A capped result comes back with
   `truncated: true` rather than an error, so the agent knows there was more.
+  The caps cover `iq_exec` too. A list reply keeps the rows that fit. Any other
+  reply over `max_bytes` comes back as `null` with `truncated: true`. The row cap
+  also reaches the driver. The DynamoDB driver stops reading pages once it holds
+  enough rows. The CLI `iq exec` has no cap and prints the whole reply.
 - **Every call is bounded.** The inherited `--timeout` bounds each call, and a
   per-call `timeout` can only shorten it.
 - **Confirmations.** A real call to `iq_data_clear`, `iq_data_drop`,

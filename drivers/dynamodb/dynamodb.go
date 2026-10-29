@@ -31,6 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/render"
 )
 
@@ -379,31 +380,46 @@ func (s *Store) addItems(page map[string]any, items []map[string]types.Attribute
 // (the analogue of the Cassandra CQL and Mongo command raw paths). The forwarded args
 // are joined back into one statement, executed bound to ctx and paginated over
 // NextToken, and any result items are normalized. A statement with no result set (a
-// write) returns an empty list rather than an error.
+// write) returns an empty list rather than an error. If ctx carries a row limit
+// (query.WithRowLimit), Query stops reading pages once it holds that many items and
+// returns at most that many. Query never sends a Limit to DynamoDB. That value counts
+// the items that DynamoDB evaluates, not the items that match, so a filtered
+// statement could stop early and lose rows. Without a limit it reads every page.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("dynamodb: empty statement")
 	}
 	stmt := strings.Join(args, " ")
+	limit, limited := query.RowLimit(ctx)
 	rows := []any{}
 	var next *string
 	for {
-		out, err := s.client.ExecuteStatement(ctx, &dynamodb.ExecuteStatementInput{
-			Statement: &stmt,
-			NextToken: next,
-		})
+		in := &dynamodb.ExecuteStatementInput{Statement: &stmt, NextToken: next}
+		out, err := s.client.ExecuteStatement(ctx, in)
 		if err != nil {
 			return nil, fmt.Errorf("dynamodb: %w", err)
 		}
-		for _, item := range out.Items {
-			rows = append(rows, normalizeMap(item, s.decimal))
-		}
-		if out.NextToken == nil {
+		var full bool
+		rows, full = s.appendPage(rows, out.Items, limit, limited)
+		if full || out.NextToken == nil {
 			break
 		}
 		next = out.NextToken
 	}
 	return rows, nil
+}
+
+// appendPage adds the normalized items of one page to rows. If limited is set,
+// it adds only the items that fit under limit. Query calls it only while rows
+// holds fewer than limit items. It reports whether rows now holds limit rows.
+func (s *Store) appendPage(rows []any, items []map[string]types.AttributeValue, limit int, limited bool) ([]any, bool) {
+	if limited {
+		items = items[:min(len(items), limit-len(rows))]
+	}
+	for _, item := range items {
+		rows = append(rows, normalizeMap(item, s.decimal))
+	}
+	return rows, limited && len(rows) >= limit
 }
 
 // EstimateCount returns the table's approximate item count from its metadata, a
