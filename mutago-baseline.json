@@ -2460,6 +2460,12 @@
    "file": "drivers/redis/write.go",
    "mutator": "statement/return",
    "line": 396
+  },
+  {
+   "id": "2c644717a04dac32e24cdf4d8955d4e9",
+   "file": "cmd/logging.go",
+   "mutator": "expression/context-nil",
+   "line": 309
   }
  ]
 }

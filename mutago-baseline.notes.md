@@ -847,3 +847,7 @@ The zset writer reads an infinite score from its text with strconv.ParseFloat, a
 - b005391e7c56 drivers/redis/write.go:394 numbers/incrementer. The same site with bitSize 65, identical for the same reason.
 - 659e59e093ea drivers/redis/write.go:373 statement/return. `return t, errors.New("score is NaN")` returns 0 in place of t. Every caller checks the error first and never reads the float when the error is not nil.
 - 4fdce00afbc4 drivers/redis/write.go:396 statement/return. `return f, errors.New(...)` in infinityScore returns 0 in place of f. The caller reads the float only when the error is nil, so the value is never used.
+
+## cmd/logging.go, traceSink after the trace escape change (accepted 2026-10-29, PR #205)
+
+- 2c644717a04d cmd/logging.go:309 expression/context-nil. The same site as fdbace0a2e55 (cmd/logging.go:250), re-accepted after the rewrite of traceSink minted a new content-hash id. `(*slog.Logger).Enabled` replaces a nil ctx with `context.Background()` before the handler runs (log/slog/logger.go), so no handler can observe the substitution.
