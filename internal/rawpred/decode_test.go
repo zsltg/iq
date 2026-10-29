@@ -10,6 +10,7 @@ import (
 
 	"github.com/zsltg/iq/internal/jqtruth"
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/rawpred"
 )
 
@@ -41,57 +42,98 @@ func decodeLikeStore(t *testing.T, raw string, mode numfmt.DecimalMode) any {
 	return numfmt.ConvertNumbers(v, mode)
 }
 
-// TestMatcherKeepsNumberTokensThatDecodeToStrings pins the rule. A number token that
-// the store decodes to a jq string is never a definite non-match. This holds for every
-// comparison operator, every mode, and string and number operands.
-func TestMatcherKeepsNumberTokensThatDecodeToStrings(t *testing.T) {
+// decodeCase is one document and one filter, with the decimal mode of the store.
+type decodeCase struct {
+	name   string
+	mode   numfmt.DecimalMode
+	raw    string
+	filter string
+}
+
+// decodeCases lists a case for every mode, token, operator, and operand. A case is
+// kept when want returns true for its mode and token.
+func decodeCases(want func(mode numfmt.DecimalMode, token string) bool) []decodeCase {
+	var cases []decodeCase
 	for _, m := range decodeModes {
 		for _, tok := range decodeTokens {
-			if !numfmt.DecodesToString(tok, m.mode) {
+			if !want(m.mode, tok) {
 				continue
 			}
-			raw := fmt.Sprintf(`{"a":%s}`, tok)
 			for _, op := range decodeOps {
 				for _, operand := range decodeOperands {
-					filter := fmt.Sprintf(`.[] | select(.a %s %s)`, op, operand)
-					t.Run(m.name+"/"+tok+"/"+op+operand, func(t *testing.T) {
-						pred, err := jqtruth.Predicate(filter)
-						if err != nil {
-							t.Skip("the filter does not compile to a predicate")
-						}
-						got := rawpred.NewMatcher(pred, m.mode).Match([]byte(raw))
-						require.Equal(t, rawpred.MayMatch, got)
+					cases = append(cases, decodeCase{
+						name:   m.name + "/" + tok + "/" + op + operand,
+						mode:   m.mode,
+						raw:    fmt.Sprintf(`{"a":%s}`, tok),
+						filter: fmt.Sprintf(`.[] | select(.a %s %s)`, op, operand),
 					})
 				}
 			}
 		}
+	}
+	return cases
+}
+
+// matchDecodeCase runs the matcher on the case. It skips the test when the filter does
+// not compile to a predicate.
+func matchDecodeCase(t *testing.T, c decodeCase) rawpred.Verdict {
+	t.Helper()
+	pred, err := jqtruth.Predicate(c.filter)
+	if err != nil {
+		t.Skip("the filter does not compile to a predicate")
+	}
+	return rawpred.NewMatcher(pred, c.mode).Match([]byte(c.raw))
+}
+
+// TestMatcherKeepsNumberTokensThatDecodeToStrings pins the rule. A number token that
+// the store decodes to a jq string is never a definite non-match. This holds for every
+// comparison operator, every mode, and string and number operands.
+func TestMatcherKeepsNumberTokensThatDecodeToStrings(t *testing.T) {
+	cases := decodeCases(func(mode numfmt.DecimalMode, tok string) bool {
+		return numfmt.DecodesToString(tok, mode)
+	})
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, rawpred.MayMatch, matchDecodeCase(t, c))
+		})
 	}
 }
 
 // TestMatcherNeverDropsWhatTheDecodedDocumentKeeps compares the matcher with the full
 // jq filter on the decoded document, for every token, mode, operator, and operand.
 func TestMatcherNeverDropsWhatTheDecodedDocumentKeeps(t *testing.T) {
-	for _, m := range decodeModes {
-		for _, tok := range decodeTokens {
-			raw := fmt.Sprintf(`{"a":%s}`, tok)
-			doc := decodeLikeStore(t, raw, m.mode)
-			for _, op := range decodeOps {
-				for _, operand := range decodeOperands {
-					filter := fmt.Sprintf(`.[] | select(.a %s %s)`, op, operand)
-					t.Run(m.name+"/"+tok+"/"+op+operand, func(t *testing.T) {
-						pred, err := jqtruth.Predicate(filter)
-						if err != nil {
-							t.Skip("the filter does not compile to a predicate")
-						}
-						keeps, err := jqtruth.Keeps(filter, doc)
-						require.NoError(t, err)
-						got := rawpred.NewMatcher(pred, m.mode).Match([]byte(raw))
-						require.Falsef(t, keeps && got == rawpred.CannotMatch,
-							"dropped a document that jq keeps: %s on %s", filter, raw)
-					})
-				}
-			}
-		}
+	cases := decodeCases(func(numfmt.DecimalMode, string) bool { return true })
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := matchDecodeCase(t, c)
+			keeps, err := jqtruth.Keeps(c.filter, decodeLikeStore(t, c.raw, c.mode))
+			require.NoError(t, err)
+			require.Falsef(t, keeps && got == rawpred.CannotMatch,
+				"dropped a document that jq keeps: %s on %s", c.filter, c.raw)
+		})
+	}
+}
+
+// TestMatcherKeepsOrWithDecodedToken pins that a decoded token inside an Or stays
+// unknown. A provable no from the other branch must not turn it into a drop.
+func TestMatcherKeepsOrWithDecodedToken(t *testing.T) {
+	absent := predicate.Eq{Path: []string{"b"}, Value: "x"}
+	tests := []struct {
+		name string
+		mode numfmt.DecimalMode
+		leaf predicate.Node
+		want rawpred.Verdict
+	}{
+		{"eq, string mode", numfmt.DecimalString, predicate.Eq{Path: []string{"a"}, Value: "1.5"}, rawpred.MayMatch},
+		{"cmp, string mode", numfmt.DecimalString, predicate.Cmp{Path: []string{"a"}, Op: predicate.Gt, Value: "z"}, rawpred.MayMatch},
+		{"eq, auto mode", numfmt.DecimalAuto, predicate.Eq{Path: []string{"a"}, Value: "1.5"}, rawpred.CannotMatch},
+		{"cmp, auto mode", numfmt.DecimalAuto, predicate.Cmp{Path: []string{"a"}, Op: predicate.Gt, Value: "z"}, rawpred.CannotMatch},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := rawpred.NewMatcher(predicate.Or{tt.leaf, absent}, tt.mode)
+			require.Equal(t, tt.want, m.Match([]byte(`{"a":1.5,"b":"y"}`)))
+		})
 	}
 }
 

@@ -26,7 +26,6 @@ func HidesDecodedNumber(n predicate.Node, mode numfmt.DecimalMode) bool {
 		return mode == numfmt.DecimalString && (t.Op == predicate.Gt || t.Op == predicate.Ge)
 	case predicate.Regex:
 		return mode == numfmt.DecimalString
-	default:
-		return false
 	}
+	return false
 }

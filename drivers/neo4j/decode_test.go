@@ -1,6 +1,7 @@
 package neo4j
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -44,4 +45,29 @@ func TestExplainPlanReadsTheDecimalMode(t *testing.T) {
 	keys := selector.KeySet{Scan: true, Streamable: true}
 	require.NotNil(t, ExplainPlan(keys, pred, false, numfmt.DecimalAuto).Filter)
 	require.Nil(t, ExplainPlan(keys, pred, false, numfmt.DecimalString).Filter)
+}
+
+// TestScanFilteredReadsTheDecimalMode pins that the store hands its decimal mode to the
+// Cypher builder. In string mode, an equality with a number text is left out, so the
+// scan has no filter parameter. In auto mode, the scan binds the text as parameter f1.
+func TestScanFilteredReadsTheDecimalMode(t *testing.T) {
+	pred := predicate.Eq{Path: []string{"price"}, Value: "1.5"}
+	tests := []struct {
+		name       string
+		mode       numfmt.DecimalMode
+		wantFilter bool
+	}{
+		{"string mode", numfmt.DecimalString, false},
+		{"auto mode", numfmt.DecimalAuto, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, drv, _ := newFakeStore(target{name: "P"}, rows())
+			s.decimal = tt.mode
+			require.NoError(t, s.ScanFiltered(context.Background(), pred, func(map[string]any) error { return nil }))
+			require.Len(t, drv.session.runs, 1)
+			params := drv.session.runs[0].params
+			require.Equal(t, tt.wantFilter, params["f1"] == "1.5")
+		})
+	}
 }

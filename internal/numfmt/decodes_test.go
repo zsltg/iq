@@ -50,6 +50,15 @@ func TestIsDecodedText(t *testing.T) {
 		{"leading plus, string mode", "+1.5", numfmt.DecimalString, false},
 		{"not a number, string mode", "1.5.5", numfmt.DecimalString, false},
 		{"leading dot, string mode", ".5", numfmt.DecimalString, false},
+		{"zero fraction, string mode", "0.5", numfmt.DecimalString, true},
+		{"nine fraction, string mode", "9.5", numfmt.DecimalString, true},
+		{"negative fraction, string mode", "-1.5", numfmt.DecimalString, true},
+		{"letter first, string mode", "e5", numfmt.DecimalString, false},
+		{"true, string mode", "true", numfmt.DecimalString, false},
+		{"array, string mode", "[1.5]", numfmt.DecimalString, false},
+		{"leading space, string mode", " 1.5", numfmt.DecimalString, false},
+		{"colon after nine, string mode", ":1.5", numfmt.DecimalString, false},
+		{"slash before zero, string mode", "/1.5", numfmt.DecimalString, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

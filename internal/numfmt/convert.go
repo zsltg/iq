@@ -81,19 +81,21 @@ func DecodesToString(literal string, mode DecimalMode) bool {
 // for a JSON number token in the mode. A server-side filter calls this for a string
 // literal. Only such a string can equal a number that the client decodes to a string.
 func IsDecodedText(s string, mode DecimalMode) bool {
-	if s == "" || (s[0] != '-' && (s[0] < '0' || s[0] > '9')) {
-		return false
-	}
-	return json.Valid([]byte(s)) && DecodesToString(s, mode)
+	return startsLikeNumber(s) && json.Valid([]byte(s)) && DecodesToString(s, mode)
+}
+
+// startsLikeNumber reports whether the first byte of s can start a JSON number. It
+// rejects JSON text that is not a number, such as true, whose letters pass
+// DecodesToString.
+func startsLikeNumber(s string) bool {
+	return s != "" && strings.IndexByte("-0123456789", s[0]) >= 0
 }
 
 // fractionalFloat decodes a fractional literal to a float64. It reports false when
 // the literal stays a string: always in string mode, and when float64 cannot hold the
 // literal. ParseFloat returns an error and +Inf or -Inf for a literal out of range.
+// The float is meaningful only when the bool is true.
 func fractionalFloat(literal string, mode DecimalMode) (float64, bool) {
-	if mode == DecimalString {
-		return 0, false
-	}
 	f, err := strconv.ParseFloat(literal, 64)
-	return f, err == nil
+	return f, err == nil && mode != DecimalString
 }

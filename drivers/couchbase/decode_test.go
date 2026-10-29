@@ -43,23 +43,29 @@ func TestPrefilterMatcherKeepsWhatJQKeeps(t *testing.T) {
 		"auto": numfmt.DecimalAuto, "number": numfmt.DecimalNumber, "string": numfmt.DecimalString,
 	}
 	for name, mode := range modes {
-		st := &Store{decimal: mode}
 		for _, filter := range decodeFilters {
 			t.Run(name+"/"+filter, func(t *testing.T) {
-				pred, err := jqtruth.Predicate(filter)
-				require.NoError(t, err)
-				matcher := st.prefilterMatcher(pred)
-				for key, raw := range decodeDocs {
-					keeps, err := jqtruth.Keeps(filter, decodeValue([]byte(raw), mode))
-					require.NoError(t, err)
-					if matcher == nil {
-						continue
-					}
-					require.Falsef(t, keeps && matcher.Match([]byte(raw)) == rawpred.CannotMatch,
-						"the prefilter dropped %s, which jq keeps", key)
-				}
+				requirePrefilterKeepsWhatJQKeeps(t, mode, filter)
 			})
 		}
+	}
+}
+
+// requirePrefilterKeepsWhatJQKeeps fails when the matcher of a store in the mode drops
+// a decodeDocs document that the filter keeps. A store with no matcher drops nothing.
+func requirePrefilterKeepsWhatJQKeeps(t *testing.T, mode numfmt.DecimalMode, filter string) {
+	t.Helper()
+	pred, err := jqtruth.Predicate(filter)
+	require.NoError(t, err)
+	matcher := (&Store{decimal: mode}).prefilterMatcher(pred)
+	if matcher == nil {
+		return
+	}
+	for key, raw := range decodeDocs {
+		keeps, err := jqtruth.Keeps(filter, decodeValue([]byte(raw), mode))
+		require.NoError(t, err)
+		require.Falsef(t, keeps && matcher.Match([]byte(raw)) == rawpred.CannotMatch,
+			"the prefilter dropped %s, which jq keeps", key)
 	}
 }
 

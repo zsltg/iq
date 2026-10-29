@@ -294,12 +294,16 @@ func negate(t triple) triple {
 
 // evalEq decides `field == value`. A cleanly-absent field is jq's null, so it equals a
 // nil (null) value and differs from any scalar. A found value is compared by type and,
-// for numbers, by the numeric rule.
+// for numbers, by the numeric rule. A number token that the store decodes to a string
+// is unknown. See decodesToString.
 func evalEq(raw []byte, n predicate.Eq, mode numfmt.DecimalMode) triple {
 	val, typ, st := getField(raw, n.Path)
 	switch st {
 	case fieldFound:
-		return eqFound(val, typ, n.Value, mode)
+		if decodesToString(val, typ, mode) {
+			return unknown
+		}
+		return eqFound(val, typ, n.Value)
 	case fieldAbsent:
 		// Missing field is null in jq: it equals null, nothing else.
 		if n.Value == nil {
@@ -315,11 +319,7 @@ func evalEq(raw []byte, n predicate.Eq, mode numfmt.DecimalMode) triple {
 // eqFound compares a present value (its raw bytes and jsonparser type) to a scalar pred
 // value. A type mismatch is a definite non-match. A same-type comparison is decided
 // exactly, except a number that the numeric rule cannot pin down, which is unknown.
-// A number token that the store decodes to a string is unknown too. See decodesToString.
-func eqFound(val []byte, typ jsonparser.ValueType, value any, mode numfmt.DecimalMode) triple {
-	if decodesToString(val, typ, mode) {
-		return unknown
-	}
+func eqFound(val []byte, typ jsonparser.ValueType, value any) triple {
 	want, ok := scalarType(value)
 	if !ok {
 		return unknown
@@ -401,7 +401,8 @@ func evalExists(raw []byte, path []string, want bool) triple {
 
 // evalCmp decides `field OP value` under jq's total type ordering. A cleanly-absent
 // field is null, the least value. So it ranks below every number and string value. A
-// found value is ranked by type, then compared within a type.
+// found value is ranked by type, then compared within a type. A number token that the
+// store decodes to a string is unknown. See decodesToString.
 func evalCmp(raw []byte, n predicate.Cmp, mode numfmt.DecimalMode) triple {
 	vr, ok := valueRank(n.Value)
 	if !ok {
@@ -410,7 +411,10 @@ func evalCmp(raw []byte, n predicate.Cmp, mode numfmt.DecimalMode) triple {
 	val, typ, st := getField(raw, n.Path)
 	switch st {
 	case fieldFound:
-		return cmpFound(val, typ, n, vr, mode)
+		if decodesToString(val, typ, mode) {
+			return unknown
+		}
+		return cmpFound(val, typ, n, vr)
 	case fieldAbsent:
 		// Missing field is null (rank 0), below any number or string value.
 		return applyOp(n.Op, cmp.Compare(nullRank, vr))
@@ -423,12 +427,8 @@ func evalCmp(raw []byte, n predicate.Cmp, mode numfmt.DecimalMode) triple {
 // cmpFound compares a present value to a number or string pred value under jq's
 // ordering. Type rank alone settles a cross-type comparison. A same-type comparison is
 // settled within the type. Numbers use the numeric rule (unknown when it cannot
-// decide). Strings use their unescaped bytes. A number token that the store decodes to
-// a string is unknown. See decodesToString.
-func cmpFound(val []byte, typ jsonparser.ValueType, n predicate.Cmp, vr int, mode numfmt.DecimalMode) triple {
-	if decodesToString(val, typ, mode) {
-		return unknown
-	}
+// decide). Strings use their unescaped bytes.
+func cmpFound(val []byte, typ jsonparser.ValueType, n predicate.Cmp, vr int) triple {
 	dr, ok := docRank(typ)
 	if !ok {
 		return unknown

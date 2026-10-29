@@ -289,8 +289,8 @@ func (b *whereBuilder) orIn(or predicate.Or) (string, bool) {
 	var ref string
 	values := make([]any, 0, len(or))
 	for i, child := range or {
-		eq, isEq := child.(predicate.Eq)
-		if !isEq || eq.Value == nil || pushdown.HidesDecodedNumber(eq, b.mode) {
+		eq, ok := b.inEquality(child)
+		if !ok {
 			return "", false
 		}
 		r, ok := fieldRef(eq.Path)
@@ -305,6 +305,13 @@ func (b *whereBuilder) orIn(or predicate.Or) (string, bool) {
 		values = append(values, eq.Value)
 	}
 	return fmt.Sprintf("%s IN %s", ref, b.param(values)), true
+}
+
+// inEquality returns child as an equality that an IN clause can hold. The equality
+// must have a non-nil value, and the server must not hide a decoded number behind it.
+func (b *whereBuilder) inEquality(child predicate.Node) (predicate.Eq, bool) {
+	eq, isEq := child.(predicate.Eq)
+	return eq, isEq && eq.Value != nil && !pushdown.HidesDecodedNumber(eq, b.mode)
 }
 
 // fieldRef renders a predicate path as a backtick-quoted SQL++ field reference
