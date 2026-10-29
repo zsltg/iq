@@ -713,6 +713,13 @@ func TestTraceSinkEscapesControl(t *testing.T) {
 			require.Equal(t, 1, strings.Count(recs.String(), "\n"), "one JSON line")
 			require.NotContains(t, recs.String(), "\x1b")
 			require.NotContains(t, stderr.String(), "\x1b")
+
+			// The JSON encoder escapes control characters too, so check the decoded
+			// cmd: it must hold the escaped text, not the raw bytes.
+			var rec map[string]any
+			require.NoError(t, json.Unmarshal(recs.Bytes(), &rec))
+			_, wantCmd, _ := strings.Cut(tt.want, "> ")
+			require.Equal(t, wantCmd, rec["cmd"])
 		})
 	}
 }
