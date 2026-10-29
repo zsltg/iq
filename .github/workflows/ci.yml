@@ -113,7 +113,7 @@ jobs:
     steps:
       - &harden-base
         name: Harden the runner (block egress)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-telemetry: true
@@ -319,7 +319,7 @@ jobs:
       - &harden-go-linux
         name: Harden the runner (block egress)
         if: runner.os == 'Linux'
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-telemetry: true
@@ -380,7 +380,7 @@ jobs:
     steps:
       - &harden-go
         name: Harden the runner (block egress)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-telemetry: true
@@ -450,7 +450,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-telemetry: true
@@ -559,7 +559,7 @@ jobs:
     steps:
       - &harden-docker-elastic
         name: Harden the runner (block egress)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-telemetry: true
@@ -620,7 +620,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-telemetry: true
@@ -683,7 +683,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-telemetry: true
@@ -787,7 +787,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-telemetry: true
@@ -818,7 +818,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-telemetry: true
@@ -1253,7 +1253,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-telemetry: true
@@ -1527,7 +1527,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-telemetry: true
