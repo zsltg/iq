@@ -33,8 +33,8 @@ const (
 type endpointShape struct {
 	// defaultPort is the port that a host without a port falls back to.
 	defaultPort string
-	// tlsPort is the fallback port for the schemes in tlsSchemes. An empty
-	// value means they use defaultPort.
+	// tlsPort is the fallback port for the schemes in tlsSchemes. A shape with
+	// tlsSchemes must set it.
 	tlsPort    string
 	tlsSchemes []string
 	// anyPort makes the replace guard ignore ports. Couchbase bootstrap ports
@@ -63,7 +63,7 @@ func (s endpointShape) defaultPortFor(u endpointURL) string {
 	if strings.HasSuffix(u.scheme, "+srv") {
 		return ""
 	}
-	if s.tlsPort != "" && slices.Contains(s.tlsSchemes, u.scheme) {
+	if slices.Contains(s.tlsSchemes, u.scheme) {
 		return s.tlsPort
 	}
 	return s.defaultPort
@@ -95,16 +95,10 @@ type containerKey struct {
 // sameContainer reports whether the canonical keys of a and b match. Two
 // endpoints match when they use one driver family, share at least one host,
 // and have the same container below the host. It returns false when either
-// endpoint has no key.
+// endpoint has no key, because a key without hosts shares no host.
 func sameContainer(a, b endpoint) bool {
-	ka, ok := endpointContainerKey(a)
-	if !ok {
-		return false
-	}
-	kb, ok := endpointContainerKey(b)
-	if !ok {
-		return false
-	}
+	ka := endpointContainerKey(a)
+	kb := endpointContainerKey(b)
 	if ka.driver != kb.driver || ka.rest != kb.rest {
 		return false
 	}
@@ -116,36 +110,27 @@ func sameContainer(a, b endpoint) bool {
 	return false
 }
 
-// endpointContainerKey builds the canonical key of e from its URL. It reports
-// false when the endpoint has no URL, uses a read-only or unknown driver, or
-// has a URL that does not parse. The caller then keeps the string comparison.
-// The user info and the options that do not select a container take no part.
-func endpointContainerKey(e endpoint) (containerKey, bool) {
+// endpointContainerKey builds the canonical key of e from its URL. The key has
+// no hosts when the endpoint has no URL, uses a read-only or unknown driver,
+// or has a URL that does not parse. The caller then keeps the string
+// comparison. The user info and the options that do not select a container
+// take no part.
+func endpointContainerKey(e endpoint) containerKey {
 	d, ok := writableDriverOf(e)
 	if !ok {
-		return containerKey{}, false
+		return containerKey{}
 	}
-	u, ok := parseEndpointURL(e)
-	if !ok {
-		return containerKey{}, false
-	}
-	hosts := u.hosts(d.shape)
-	if len(hosts) == 0 {
-		return containerKey{}, false
-	}
+	u := parseEndpointURL(e)
 	return containerKey{
 		driver: d.family(),
-		hosts:  hosts,
+		hosts:  u.hosts(d.shape),
 		rest:   u.rest(d),
-	}, true
+	}
 }
 
 // writableDriverOf returns the driver of the URL of e. It reports false when
-// the URL is empty, has an unknown scheme, or names a read-only driver.
+// the URL has no scheme, has an unknown scheme, or names a read-only driver.
 func writableDriverOf(e endpoint) (driver, bool) {
-	if e.url == "" {
-		return driver{}, false
-	}
 	d, ok := driverForScheme(schemeOf(e.url))
 	if !ok || d.readOnly {
 		return driver{}, false
@@ -175,16 +160,17 @@ type endpointURL struct {
 
 // parseEndpointURL cuts the URL of e into its scheme, its authority, its path
 // without outer slashes, and its parsed query. The fragment is dropped. It
-// reports false when the query does not parse. A URL with a host list cannot
-// go through net/url, so the cut is by hand. The caller makes sure that the
-// URL has a scheme.
-func parseEndpointURL(e endpoint) (endpointURL, bool) {
-	rest, rawQuery, _ := strings.Cut(strings.SplitN(e.url, "://", 2)[1], "?")
+// returns the zero value when the query does not parse. A URL with a host list
+// cannot go through net/url, so the cut is by hand. The caller makes sure that
+// the URL has a scheme.
+func parseEndpointURL(e endpoint) endpointURL {
+	_, afterScheme, _ := strings.Cut(e.url, "://")
+	rest, rawQuery, _ := strings.Cut(afterScheme, "?")
 	rawQuery, _, _ = strings.Cut(rawQuery, "#")
 	rest, _, _ = strings.Cut(rest, "#")
 	q, err := url.ParseQuery(rawQuery)
 	if err != nil {
-		return endpointURL{}, false
+		return endpointURL{}
 	}
 	authority, path, _ := strings.Cut(rest, "/")
 	return endpointURL{
@@ -193,7 +179,7 @@ func parseEndpointURL(e endpoint) (endpointURL, bool) {
 		path:      strings.Trim(path, "/"),
 		query:     q,
 		address:   e.address,
-	}, true
+	}
 }
 
 // rest joins the scope, the address, and the broad keyspace option that name
@@ -250,9 +236,7 @@ func (u endpointURL) redisDB() string {
 // with an empty host name.
 func (u endpointURL) hosts(shape endpointShape) []string {
 	authority := u.authority
-	if i := strings.LastIndex(authority, "@"); i >= 0 {
-		authority = authority[i+1:]
-	}
+	authority = authority[strings.LastIndex(authority, "@")+1:]
 	var hosts []string
 	for item := range strings.SplitSeq(authority, ",") {
 		h := newHostSpec(item).canonical()

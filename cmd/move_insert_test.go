@@ -341,6 +341,12 @@ func TestSameContainer(t *testing.T) {
 		{"redis other non-numeric database name", "redis://h/name", "redis://h/other", false},
 		{"couchbase without bucket or collection", "couchbase://h", "couchbases://h:11207", true},
 		{"couchbase no collection and the default collection", "couchbase://h", "couchbase://h/?collection=_default", true},
+		{"read-only file source with a host", "file://h/a.bson", "file://h/a.bson", false},
+		{"opensearch index in the path", "opensearch://h/idx", "opensearch://h/?index=idx", true},
+		{"opensearch other index in the path", "opensearch://h/idx", "opensearch://h/?index=other", false},
+		{"redis database with a leading zero", "redis://h/01", "redis://h/1", true},
+		{"redis fragment after the path", "redis://h/1#frag", "redis://h/1", true},
+		{"same host and port under two drivers", "mongodb://h:1234", "cassandra://h:1234", false},
 		{"file source", "file:///a.bson", "file:///a.bson", false},
 		{"unknown scheme", "nope://h", "nope://h", false},
 	}
@@ -353,16 +359,14 @@ func TestSameContainer(t *testing.T) {
 }
 
 func TestParseEndpointURL(t *testing.T) {
-	u, ok := parseEndpointURL(endpoint{url: "mongodb://u:p@a,b/db/?collection=c#frag", address: "x"})
-	require.True(t, ok)
+	u := parseEndpointURL(endpoint{url: "mongodb://u:p@a,b/db/?collection=c#frag", address: "x"})
 	require.Equal(t, "mongodb", u.scheme)
 	require.Equal(t, "u:p@a,b", u.authority)
 	require.Equal(t, "db", u.path)
 	require.Equal(t, "c", u.query.Get("collection"))
 	require.Equal(t, "x", u.address)
 
-	_, ok = parseEndpointURL(endpoint{url: "redis://h/0?a=%zz"})
-	require.False(t, ok, "a query that does not parse")
+	require.Equal(t, endpointURL{}, parseEndpointURL(endpoint{url: "redis://h/0?a=%zz"}), "a query that does not parse")
 }
 
 func TestSameEndpointFallsBackToStrings(t *testing.T) {
