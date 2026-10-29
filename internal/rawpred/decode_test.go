@@ -54,24 +54,57 @@ type decodeCase struct {
 // kept when want returns true for its mode and token.
 func decodeCases(want func(mode numfmt.DecimalMode, token string) bool) []decodeCase {
 	var cases []decodeCase
-	for _, m := range decodeModes {
-		for _, tok := range decodeTokens {
-			if !want(m.mode, tok) {
-				continue
-			}
-			for _, op := range decodeOps {
-				for _, operand := range decodeOperands {
-					cases = append(cases, decodeCase{
-						name:   m.name + "/" + tok + "/" + op + operand,
-						mode:   m.mode,
-						raw:    fmt.Sprintf(`{"a":%s}`, tok),
-						filter: fmt.Sprintf(`.[] | select(.a %s %s)`, op, operand),
-					})
-				}
-			}
+	for _, mt := range decodeModeTokens(want) {
+		for _, f := range decodeFilters() {
+			cases = append(cases, decodeCase{
+				name:   mt.modeName + "/" + mt.token + "/" + f.label,
+				mode:   mt.mode,
+				raw:    fmt.Sprintf(`{"a":%s}`, mt.token),
+				filter: f.filter,
+			})
 		}
 	}
 	return cases
+}
+
+// decodeModeToken is one mode and one number token.
+type decodeModeToken struct {
+	modeName string
+	mode     numfmt.DecimalMode
+	token    string
+}
+
+// decodeModeTokens lists the mode and token pairs that want accepts.
+func decodeModeTokens(want func(mode numfmt.DecimalMode, token string) bool) []decodeModeToken {
+	var pairs []decodeModeToken
+	for _, m := range decodeModes {
+		for _, tok := range decodeTokens {
+			if want(m.mode, tok) {
+				pairs = append(pairs, decodeModeToken{m.name, m.mode, tok})
+			}
+		}
+	}
+	return pairs
+}
+
+// decodeFilter is one jq filter and the operator and operand that name it.
+type decodeFilter struct {
+	label  string
+	filter string
+}
+
+// decodeFilters lists a filter for every operator and operand.
+func decodeFilters() []decodeFilter {
+	var filters []decodeFilter
+	for _, op := range decodeOps {
+		for _, operand := range decodeOperands {
+			filters = append(filters, decodeFilter{
+				label:  op + operand,
+				filter: fmt.Sprintf(`.[] | select(.a %s %s)`, op, operand),
+			})
+		}
+	}
+	return filters
 }
 
 // matchDecodeCase runs the matcher on the case. It skips the test when the filter does

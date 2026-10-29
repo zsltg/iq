@@ -34,18 +34,34 @@ func TestScanFilteredKeepsWhatJQKeeps(t *testing.T) {
 	modes := map[string]numfmt.DecimalMode{
 		"auto": numfmt.DecimalAuto, "number": numfmt.DecimalNumber, "string": numfmt.DecimalString,
 	}
+	type scanCase struct {
+		name   string
+		mode   numfmt.DecimalMode
+		filter string
+	}
+	var cases []scanCase
 	for name, mode := range modes {
 		for _, filter := range decodeScanFilters {
-			t.Run(name+"/"+filter, func(t *testing.T) {
-				got := scanFilteredKeys(t, mode, filter)
-				for k, raw := range decodeScanDocs {
-					keeps, err := jqtruth.Keeps(filter, decodeJSONForTest(t, raw, mode))
-					require.NoError(t, err)
-					if keeps {
-						require.Containsf(t, got, k, "ScanFiltered dropped %s, which jq keeps", k)
-					}
-				}
-			})
+			cases = append(cases, scanCase{name + "/" + filter, mode, filter})
+		}
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := scanFilteredKeys(t, c.mode, c.filter)
+			requireKeepsWhatJQKeeps(t, got, c.mode, c.filter)
+		})
+	}
+}
+
+// requireKeepsWhatJQKeeps checks that got holds every document that the full jq
+// filter keeps.
+func requireKeepsWhatJQKeeps(t *testing.T, got map[string]any, mode numfmt.DecimalMode, filter string) {
+	t.Helper()
+	for k, raw := range decodeScanDocs {
+		keeps, err := jqtruth.Keeps(filter, decodeJSONForTest(t, raw, mode))
+		require.NoError(t, err)
+		if keeps {
+			require.Containsf(t, got, k, "ScanFiltered dropped %s, which jq keeps", k)
 		}
 	}
 }
