@@ -98,6 +98,7 @@ func TestRowLimit(t *testing.T) {
 		wantOK bool
 	}{
 		{name: "a positive value is carried", n: 5, want: 5, wantOK: true},
+		{name: "one is a limit", n: 1, want: 1, wantOK: true},
 		{name: "zero sets no limit", n: 0},
 		{name: "a negative value sets no limit", n: -1},
 	}

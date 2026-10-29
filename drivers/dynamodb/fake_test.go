@@ -594,20 +594,24 @@ func TestQueryRowLimit(t *testing.T) {
 		limit     int // zero means no limit on the context
 		wantRows  int
 		wantCalls int
-		wantLimit []int32 // the Limit of each request, nil when unset
 	}{
 		{name: "no limit reads every page", wantRows: 10, wantCalls: 5},
-		{name: "a limit inside a page stops after that page", limit: 3, wantRows: 3, wantCalls: 2, wantLimit: []int32{3, 1}},
-		{name: "a limit on a page edge stops there", limit: 4, wantRows: 4, wantCalls: 2, wantLimit: []int32{4, 2}},
-		{name: "a limit above the data reads every page", limit: 100, wantRows: 10, wantCalls: 5, wantLimit: []int32{100, 98, 96, 94, 92}},
+		{name: "a limit inside a page stops after that page and trims it", limit: 3, wantRows: 3, wantCalls: 2},
+		{name: "a limit on a page edge stops there", limit: 4, wantRows: 4, wantCalls: 2},
+		{name: "a limit above the data reads every page", limit: 100, wantRows: 10, wantCalls: 5},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var gotLimit []int32
+			sentLimit := false
 			fake := &fakeDDB{}
 			fake.executeFn = func(in *awsdynamodb.ExecuteStatementInput) (*awsdynamodb.ExecuteStatementOutput, error) {
 				if in.Limit != nil {
-					gotLimit = append(gotLimit, *in.Limit)
+					sentLimit = true
+				}
+				// A request after the last page fails at once, so a paging bug fails
+				// the test and does not loop until the test timeout.
+				if fake.execCalls > 5 {
+					return nil, errors.New("read past the last page")
 				}
 				id := fake.execCalls * 2
 				out := &awsdynamodb.ExecuteStatementOutput{
@@ -624,7 +628,7 @@ func TestQueryRowLimit(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, res.([]any), tc.wantRows)
 			require.Equal(t, tc.wantCalls, fake.execCalls)
-			require.Equal(t, tc.wantLimit, gotLimit)
+			require.False(t, sentLimit)
 		})
 	}
 }

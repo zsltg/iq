@@ -815,22 +815,34 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 // all or nothing: if its encoding is over the byte cap, the result is null.
 func capExecResult(res any, bounds queryBounds) (mcpExecOutput, error) {
 	rv := reflect.ValueOf(res)
-	if rv.Kind() != reflect.Slice || rv.Type().Elem().Kind() == reflect.Uint8 {
-		enc, err := json.Marshal(res)
-		if err != nil {
-			return mcpExecOutput{}, fmt.Errorf("encode exec result: %w", err)
-		}
-		if len(enc) > bounds.maxBytes {
-			return mcpExecOutput{Truncated: true}, nil
-		}
-		return mcpExecOutput{Result: res}, nil
+	if rv.Kind() == reflect.Slice && rv.Type().Elem().Kind() != reflect.Uint8 {
+		return capExecList(rv, bounds)
 	}
+	return capExecDocument(res, bounds)
+}
+
+// capExecDocument returns a reply that is not a list, or null if its encoding is
+// over the byte cap.
+func capExecDocument(res any, bounds queryBounds) (mcpExecOutput, error) {
+	enc, err := json.Marshal(res)
+	if err != nil {
+		return mcpExecOutput{}, fmt.Errorf("encode exec result: %w", err)
+	}
+	if len(enc) > bounds.maxBytes {
+		return mcpExecOutput{Truncated: true}, nil
+	}
+	return mcpExecOutput{Result: res}, nil
+}
+
+// capExecList keeps the rows of a list reply that fit in the caps.
+func capExecList(rv reflect.Value, bounds queryBounds) (mcpExecOutput, error) {
 	col := &queryCollector{bounds: bounds, out: mcpQueryOutput{Items: []any{}}}
 	for i := range rv.Len() {
-		if err := col.emit(rv.Index(i).Interface()); err != nil {
-			if errors.Is(err, errTruncated) {
-				break
-			}
+		err := col.emit(rv.Index(i).Interface())
+		if errors.Is(err, errTruncated) {
+			break
+		}
+		if err != nil {
 			return mcpExecOutput{}, err
 		}
 	}

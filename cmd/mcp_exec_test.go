@@ -167,3 +167,56 @@ func TestMCPExecRejectsNegativeCap(t *testing.T) {
 	require.True(t, res.IsError)
 	require.Contains(t, contentText(res), "max_items")
 }
+
+func TestMCPExecRejectsAReplyThatCannotBeEncoded(t *testing.T) {
+	tests := []struct {
+		name    string
+		reply   any
+		wantErr string
+	}{
+		{name: "a document with a channel", reply: map[string]any{"c": make(chan int)}, wantErr: "encode exec result"},
+		{name: "a list with a function item", reply: []any{func() {}}, wantErr: "encode result item"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			useExecDriver(t, tc.reply)
+			cs := connectMCP(t, newTestMCPServer([]string{allowExec}, 200, 256*1024), nil)
+			res := callMCP(t, cs, "iq_exec", map[string]any{"source": "fake", "args": []string{"x"}})
+			require.True(t, res.IsError)
+			require.Contains(t, contentText(res), tc.wantErr)
+		})
+	}
+}
+
+func TestMCPExecCapEdges(t *testing.T) {
+	tests := []struct {
+		name      string
+		reply     any
+		maxItems  int
+		maxBytes  int
+		want      any
+		wantTrunc bool
+	}{
+		// The encoding is {"ok":"yes"}, 12 bytes.
+		{name: "a document of exactly max_bytes is whole", reply: map[string]any{"ok": "yes"}, maxItems: 200, maxBytes: 12, want: map[string]any{"ok": "yes"}},
+		// A byte slice encodes as one base64 string, "YWJjZGVmZ2g=", 14 bytes.
+		{name: "a byte slice under the cap is whole", reply: []byte("abcdefgh"), maxItems: 200, maxBytes: 14, want: "YWJjZGVmZ2g="},
+		{name: "a byte slice over the cap is null and marked", reply: []byte("abcdefgh"), maxItems: 200, maxBytes: 13, wantTrunc: true},
+		{name: "an empty list is an empty array", reply: []any{}, maxItems: 200, maxBytes: 256 * 1024, want: []any{}},
+		// The long string goes over the byte cap. The function item would fail
+		// to encode, so the run must stop before it.
+		{name: "the run stops at the cap", reply: []any{1, 2, strings.Repeat("x", 50), func() {}}, maxItems: 200, maxBytes: 20, want: []any{float64(1), float64(2)}, wantTrunc: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			useExecDriver(t, tc.reply)
+			cs := connectMCP(t, newTestMCPServer([]string{allowExec}, tc.maxItems, tc.maxBytes), nil)
+			res := callMCP(t, cs, "iq_exec", map[string]any{"source": "fake", "args": []string{"x"}})
+			require.False(t, res.IsError)
+			var out mcpExecOutput
+			structOf(t, res, &out)
+			require.Equal(t, tc.wantTrunc, out.Truncated)
+			require.Equal(t, tc.want, out.Result)
+		})
+	}
+}

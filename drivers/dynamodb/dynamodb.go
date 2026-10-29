@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"math/rand"
 	"net/url"
 	"strings"
@@ -383,7 +382,9 @@ func (s *Store) addItems(page map[string]any, items []map[string]types.Attribute
 // NextToken, and any result items are normalized. A statement with no result set (a
 // write) returns an empty list rather than an error. If ctx carries a row limit
 // (query.WithRowLimit), Query stops reading pages once it holds that many items and
-// returns at most that many. Without a limit it reads every page.
+// returns at most that many. Query never sends a Limit to DynamoDB. That value counts
+// the items that DynamoDB evaluates, not the items that match, so a filtered
+// statement could stop early and lose rows. Without a limit it reads every page.
 func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("dynamodb: empty statement")
@@ -394,25 +395,30 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	var next *string
 	for {
 		in := &dynamodb.ExecuteStatementInput{Statement: &stmt, NextToken: next}
-		if remaining := limit - len(rows); limited && remaining <= math.MaxInt32 {
-			in.Limit = aws.Int32(int32(remaining)) //nolint:gosec // G115: remaining is at most math.MaxInt32, and the loop stops before it reaches 0.
-		}
 		out, err := s.client.ExecuteStatement(ctx, in)
 		if err != nil {
 			return nil, fmt.Errorf("dynamodb: %w", err)
 		}
-		for _, item := range out.Items {
-			if limited && len(rows) >= limit {
-				break
-			}
-			rows = append(rows, normalizeMap(item, s.decimal))
-		}
-		if out.NextToken == nil || (limited && len(rows) >= limit) {
+		var full bool
+		rows, full = s.appendPage(rows, out.Items, limit, limited)
+		if full || out.NextToken == nil {
 			break
 		}
 		next = out.NextToken
 	}
 	return rows, nil
+}
+
+// appendPage adds the normalized items of one page to rows. If limited is set,
+// it stops at limit rows. It reports whether rows now holds limit rows.
+func (s *Store) appendPage(rows []any, items []map[string]types.AttributeValue, limit int, limited bool) ([]any, bool) {
+	for _, item := range items {
+		if limited && len(rows) >= limit {
+			break
+		}
+		rows = append(rows, normalizeMap(item, s.decimal))
+	}
+	return rows, limited && len(rows) >= limit
 }
 
 // EstimateCount returns the table's approximate item count from its metadata, a
