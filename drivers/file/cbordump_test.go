@@ -205,25 +205,6 @@ func TestCBOREncodeRejectsBigInt(t *testing.T) {
 	}
 }
 
-// TestCBORDecodeRejectsOutOfRangeInt proves that the decoder rejects an integer
-// outside the int64 range. cborEnc never writes one, so it means corruption.
-func TestCBORDecodeRejectsOutOfRangeInt(t *testing.T) {
-	tests := []struct {
-		name string
-		raw  []byte
-	}{
-		{"below-int64", []byte{0x83, 0x61, 'k', 0x61, 's', 0x3b, 0x80, 0, 0, 0, 0, 0, 0, 0}},
-		{"above-int64", []byte{0x83, 0x61, 'k', 0x61, 's', 0x1b, 0x80, 0, 0, 0, 0, 0, 0, 0}},
-		{"nested-below-int64", []byte{0x83, 0x61, 'k', 0x61, 's', 0x81, 0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := decodeRecord(cborDec.NewDecoder(bytes.NewReader(tt.raw)))
-			require.Error(t, err)
-		})
-	}
-}
-
 // TestCBORDecodeKeepsInt64Bounds proves that the int64 bounds still decode, as int.
 func TestCBORDecodeKeepsInt64Bounds(t *testing.T) {
 	tests := []struct {
@@ -243,9 +224,10 @@ func TestCBORDecodeKeepsInt64Bounds(t *testing.T) {
 	}
 }
 
-// TestCBORDecodeRejectsForeignTag proves that the decoder still rejects every
-// tag, bignum tags included. A tag in a cache means corruption.
-func TestCBORDecodeRejectsForeignTag(t *testing.T) {
+// TestCBORDecodeRejectsCorruptValue proves that the decoder rejects what cborEnc
+// never writes: every tag, bignum tags included, and an integer outside the int64
+// range. Such a value in a cache means corruption.
+func TestCBORDecodeRejectsCorruptValue(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  []byte
@@ -253,6 +235,9 @@ func TestCBORDecodeRejectsForeignTag(t *testing.T) {
 		{"epoch-time", []byte{0x83, 0x61, 'k', 0x61, 's', 0xc1, 0x01}},
 		{"self-describe", []byte{0x83, 0x61, 'k', 0x61, 's', 0xd9, 0xd9, 0xf7, 0x01}},
 		{"bignum", []byte{0x83, 0x61, 'k', 0x61, 's', 0xc2, 0x49, 1, 0, 0, 0, 0, 0, 0, 0, 0}},
+		{"below-int64", []byte{0x83, 0x61, 'k', 0x61, 's', 0x3b, 0x80, 0, 0, 0, 0, 0, 0, 0}},
+		{"above-int64", []byte{0x83, 0x61, 'k', 0x61, 's', 0x1b, 0x80, 0, 0, 0, 0, 0, 0, 0}},
+		{"nested-below-int64", []byte{0x83, 0x61, 'k', 0x61, 's', 0x81, 0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
