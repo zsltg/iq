@@ -22,8 +22,9 @@ import (
 // the drivers/file record builders. It is folded into the cache key. So a bump
 // makes every prior cache a miss (a different filename), not a source of
 // records in a stale shape. The differential test (cold vs warm output) is the
-// backstop for a forgotten bump.
-const cacheVersion = 3
+// backstop for a forgotten bump. Version 4 retires caches that an older encoder
+// wrote for dumps with big integers. The decoder cannot read those caches back.
+const cacheVersion = 4
 
 // cacheMagic prefixes every cache file so a truncated or foreign file is
 // rejected cheaply before any CBOR decode.
@@ -171,8 +172,14 @@ func (s *Store) cacheable() (cacheMeta, bool) {
 // the identity (with ctime and inode), format, decimal mode, and cacheVersion. If
 // any of them changes, the key selects a different file (a miss), not a stale one.
 func (s *Store) cacheFile(m cacheMeta) string {
+	return s.cacheFileFor(m, cacheVersion)
+}
+
+// cacheFileFor is cacheFile for an explicit layout version. Tests use it to find
+// the file that an older iq release wrote.
+func (s *Store) cacheFileFor(m cacheMeta, version int) string {
 	h := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d",
-		m.path, m.size, m.mtime, int(s.format), int(s.dec), cacheVersion, m.ctime, m.ino))
+		m.path, m.size, m.mtime, int(s.format), int(s.dec), version, m.ctime, m.ino))
 	return filepath.Join(s.cache.Dir, hex.EncodeToString(h[:])+".cbor")
 }
 

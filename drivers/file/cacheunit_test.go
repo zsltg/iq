@@ -863,7 +863,7 @@ func TestWriteHeaderPinsTheLayoutVersion(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, writeHeader(&buf, cacheHeader{Path: "p", Size: 1}))
 	require.Equal(t, cacheMagic[:], buf.Bytes()[:8])
-	require.Equal(t, uint32(3), binary.LittleEndian.Uint32(buf.Bytes()[8:12]))
+	require.Equal(t, uint32(4), binary.LittleEndian.Uint32(buf.Bytes()[8:12]))
 }
 
 // TestFileSizeReportsAStatFailure gives fileSize a closed file, so the stat fails
