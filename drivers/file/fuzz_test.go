@@ -146,6 +146,8 @@ func FuzzCBORRecord(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0x83})
 	f.Add([]byte{0x83, 0x61, 0xff, 0x60, 0xf6})
+	// An integer below the int64 range once decoded to a big.Int that cborEnc refuses.
+	f.Add([]byte{0x83, 0x61, '0', 0x64, '0', '0', '0', '0', 0x3b, 0x80, '0', '0', '0', '0', '0', '0', '0'})
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > maxFuzzInput {
