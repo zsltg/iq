@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 )
 
@@ -294,7 +295,7 @@ func TestToSelector(t *testing.T) {
 	)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sel, narrowing := toSelector(tt.pred)
+			sel, narrowing := toSelector(tt.pred, numfmt.DecimalAuto)
 			require.Equal(t, tt.wantNarrowing, narrowing)
 			if tt.wantNarrowing {
 				require.Equal(t, tt.wantSelector, sel)

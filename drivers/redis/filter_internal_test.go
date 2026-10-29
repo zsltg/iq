@@ -65,7 +65,7 @@ func TestGetFilteredFailsFastOnTypeError(t *testing.T) {
 	dead, cancelDead := context.WithCancel(ctx)
 	cancelDead()
 
-	_, err := store.getFiltered(dead, []string{"iq:test:filtertype"}, rawpred.NewMatcher(nil))
+	_, err := store.getFiltered(dead, []string{"iq:test:filtertype"}, rawpred.NewMatcher(nil, numfmt.DecimalAuto))
 
 	require.ErrorContains(t, err, "redis type")
 	require.ErrorIs(t, err, context.Canceled, "the pipeline's cause survives the wrap")
@@ -91,7 +91,7 @@ func TestGetFilteredToleratesAVanishedKey(t *testing.T) {
 		}
 	}})
 
-	got, err := store.getFiltered(ctx, []string{key, survivor}, rawpred.NewMatcher(nil))
+	got, err := store.getFiltered(ctx, []string{key, survivor}, rawpred.NewMatcher(nil, numfmt.DecimalAuto))
 
 	require.NoError(t, err, "a key that vanished mid-read is absence, not a read failure")
 	require.NotContains(t, got, key)
@@ -120,7 +120,7 @@ func TestGetFilteredNamesTheKeyThatFailedToRead(t *testing.T) {
 		require.NoError(t, store.client.RPush(ctx, retyped, "x").Err())
 	}})
 
-	_, err := store.getFiltered(ctx, []string{gone, retyped}, rawpred.NewMatcher(nil))
+	_, err := store.getFiltered(ctx, []string{gone, retyped}, rawpred.NewMatcher(nil, numfmt.DecimalAuto))
 
 	require.ErrorContains(t, err, `read key "`+retyped+`"`)
 	var redisErr goredis.Error

@@ -202,7 +202,7 @@ func runCombine(cmd *cobra.Command, cfg *config, args []string, with string) err
 	values := make([]any, 0, len(stages))
 	for _, st := range stages {
 		cfg.log().Debug("from source", "handle", st.spec.handle)
-		cfg.logStagePlan(st.spec.planSource(), st.spec.handle, st.spec.filter)
+		cfg.logStagePlan(st.spec.planSource(cfg.decimalMode), st.spec.handle, st.spec.filter)
 		// The stage config carries the logger so its store decorator and scan
 		// records fire too, and the cache flags so a file:// stage obeys them.
 		// The trace writer is already the log-teed sink.

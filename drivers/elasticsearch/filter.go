@@ -143,7 +143,7 @@ func (s *Store) prefilterMatcher(pred predicate.Node) *rawpred.Matcher {
 	if s.exactPush(pred) || referencesInjectedID(pred) {
 		return nil
 	}
-	return rawpred.NewMatcher(pred)
+	return rawpred.NewMatcher(pred, s.decimal)
 }
 
 // neverExact reports whether the predicate has a leaf that no mapping makes

@@ -10,6 +10,7 @@ import (
 	"github.com/itchyny/gojq"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 )
 
@@ -81,7 +82,7 @@ func TestExactWhere(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, exactWhere(tt.pred))
+			require.Equal(t, tt.want, exactWhere(tt.pred, numfmt.DecimalAuto))
 		})
 	}
 }

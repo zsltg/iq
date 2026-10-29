@@ -8,6 +8,7 @@ import (
 	"github.com/buger/jsonparser"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 )
 
@@ -28,7 +29,7 @@ func tripleName(t triple) string {
 // production does.
 func requireTriple(t *testing.T, raw string, node predicate.Node, want triple) {
 	t.Helper()
-	got := NewMatcher(node).eval([]byte(raw), node)
+	got := NewMatcher(node, numfmt.DecimalAuto).eval([]byte(raw), node)
 	require.Equalf(t, want, got, "eval: got %s want %s", tripleName(got), tripleName(want))
 }
 
@@ -499,13 +500,13 @@ func TestNewMatcherCompileFailureLeavesNodeUncompiled(t *testing.T) {
 	// The key is absent, so evalRegex reads it as unknown and the document is kept. A
 	// valid pattern is stored.
 	bad := predicate.Regex{Path: []string{"s"}, Pattern: "("}
-	mBad := NewMatcher(bad)
+	mBad := NewMatcher(bad, numfmt.DecimalAuto)
 	_, ok := mBad.regexes[regexKey{pattern: "(", flags: ""}]
 	require.False(t, ok, "an uncompilable pattern must not be stored")
 	require.Equal(t, MayMatch, mBad.Match([]byte(`{"s":"hello"}`)), "an uncompilable pattern keeps every document")
 
 	good := predicate.Regex{Path: []string{"s"}, Pattern: "^z"}
-	mGood := NewMatcher(good)
+	mGood := NewMatcher(good, numfmt.DecimalAuto)
 	re, ok := mGood.regexes[regexKey{pattern: "^z", flags: ""}]
 	require.True(t, ok, "a valid pattern is compiled and stored")
 	require.NotNil(t, re)
@@ -523,7 +524,7 @@ func TestNewMatcherDeduplicatesAndDescendsCond(t *testing.T) {
 		predicate.ElemMatch{Path: []string{"xs"}, Cond: predicate.Regex{Path: []string{"u"}, Pattern: "deep"}},
 		predicate.NoneMatch{Path: []string{"ys"}, Cond: predicate.Regex{Path: []string{"v"}, Pattern: "^h", Flags: "i"}},
 	}
-	m := NewMatcher(pred)
+	m := NewMatcher(pred, numfmt.DecimalAuto)
 	require.Len(t, m.regexes, 2, "identical (pattern, flags) share one entry; the ElemMatch Cond adds a second")
 	_, ok := m.regexes[regexKey{pattern: "^h", flags: "i"}]
 	require.True(t, ok)

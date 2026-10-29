@@ -29,6 +29,7 @@ import (
 
 	"github.com/buger/jsonparser"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 )
 
@@ -53,14 +54,19 @@ const (
 // evaluates many documents against one predicate can build a Matcher once with
 // NewMatcher and reuse it instead. Then the Matcher is not prepared again per call.
 func Match(raw []byte, pred predicate.Node) Verdict {
-	return NewMatcher(pred).Match(raw)
+	return NewMatcher(pred, numfmt.DecimalAuto).Match(raw)
 }
 
 // Matcher is a predicate prepared for repeated matching. NewMatcher walks the tree once
 // and compiles every Regex pattern. So the per-document Match never compiles a pattern
 // again. A driver builds one per scan and reuses it across every document.
+//
+// The matcher also knows the decimal mode of the store. The store decodes a number
+// token to a jq number or, for some literals, to a jq string. The matcher never decides
+// a comparison on a token that decodes to a string, because it reads the raw JSON type.
 type Matcher struct {
 	pred    predicate.Node
+	mode    numfmt.DecimalMode
 	regexes map[regexKey]*regexp.Regexp
 }
 
@@ -75,9 +81,10 @@ type regexKey struct {
 // that fails to compile stays uncompiled, and its node degrades to a decode (evalRegex
 // reads a missing key as unknown). NewMatcher never returns an error to the caller: a
 // prefilter that cannot evaluate a node keeps the document, as it does for an unhandled
-// node.
-func NewMatcher(pred predicate.Node) *Matcher {
-	m := &Matcher{pred: pred, regexes: map[regexKey]*regexp.Regexp{}}
+// node. The mode must be the decimal mode that the store uses to decode the documents
+// that the matcher reads.
+func NewMatcher(pred predicate.Node, mode numfmt.DecimalMode) *Matcher {
+	m := &Matcher{pred: pred, mode: mode, regexes: map[regexKey]*regexp.Regexp{}}
 	m.prepare(pred)
 	return m
 }
@@ -215,17 +222,17 @@ const (
 func (m *Matcher) eval(raw []byte, node predicate.Node) triple {
 	switch n := node.(type) {
 	case predicate.Eq:
-		return evalEq(raw, n)
+		return evalEq(raw, n, m.mode)
 	case predicate.Ne:
 		// Ne is the exact negation of Eq: it provably fails only when the field
 		// provably equals Value, and provably holds only when it provably differs.
-		return negate(evalEq(raw, predicate.Eq(n)))
+		return negate(evalEq(raw, predicate.Eq(n), m.mode))
 	case predicate.Exists:
 		return evalExists(raw, n.Path, true)
 	case predicate.NotExists:
 		return evalExists(raw, n.Path, false)
 	case predicate.Cmp:
-		return evalCmp(raw, n)
+		return evalCmp(raw, n, m.mode)
 	case predicate.Regex:
 		return m.evalRegex(raw, n)
 	case predicate.Size:
@@ -287,11 +294,15 @@ func negate(t triple) triple {
 
 // evalEq decides `field == value`. A cleanly-absent field is jq's null, so it equals a
 // nil (null) value and differs from any scalar. A found value is compared by type and,
-// for numbers, by the numeric rule.
-func evalEq(raw []byte, n predicate.Eq) triple {
+// for numbers, by the numeric rule. A number token that the store decodes to a string
+// is unknown. See decodesToString.
+func evalEq(raw []byte, n predicate.Eq, mode numfmt.DecimalMode) triple {
 	val, typ, st := getField(raw, n.Path)
 	switch st {
 	case fieldFound:
+		if decodesToString(val, typ, mode) {
+			return unknown
+		}
 		return eqFound(val, typ, n.Value)
 	case fieldAbsent:
 		// Missing field is null in jq: it equals null, nothing else.
@@ -317,6 +328,14 @@ func eqFound(val []byte, typ jsonparser.ValueType, value any) triple {
 		return definiteNo
 	}
 	return eqSameType(val, value)
+}
+
+// decodesToString reports whether val is a number token that the store decodes to a jq
+// string. The raw JSON type of such a token is Number, but jq sees a String. A verdict
+// from the raw type is then wrong, so the caller must answer unknown. The test is
+// numfmt.DecodesToString, the same one that the store decode uses.
+func decodesToString(val []byte, typ jsonparser.ValueType, mode numfmt.DecimalMode) bool {
+	return typ == jsonparser.Number && numfmt.DecodesToString(string(val), mode)
 }
 
 // scalarType returns the jsonparser type of a scalar pred value, or ok=false for a
@@ -382,8 +401,9 @@ func evalExists(raw []byte, path []string, want bool) triple {
 
 // evalCmp decides `field OP value` under jq's total type ordering. A cleanly-absent
 // field is null, the least value. So it ranks below every number and string value. A
-// found value is ranked by type, then compared within a type.
-func evalCmp(raw []byte, n predicate.Cmp) triple {
+// found value is ranked by type, then compared within a type. A number token that the
+// store decodes to a string is unknown. See decodesToString.
+func evalCmp(raw []byte, n predicate.Cmp, mode numfmt.DecimalMode) triple {
 	vr, ok := valueRank(n.Value)
 	if !ok {
 		return unknown
@@ -391,6 +411,9 @@ func evalCmp(raw []byte, n predicate.Cmp) triple {
 	val, typ, st := getField(raw, n.Path)
 	switch st {
 	case fieldFound:
+		if decodesToString(val, typ, mode) {
+			return unknown
+		}
 		return cmpFound(val, typ, n, vr)
 	case fieldAbsent:
 		// Missing field is null (rank 0), below any number or string value.

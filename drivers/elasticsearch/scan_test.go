@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/rawpred"
 )
@@ -16,7 +17,7 @@ import (
 // rejectNotOne is a matcher that proves every document with n other than 1 cannot
 // match.
 func rejectNotOne() *rawpred.Matcher {
-	return rawpred.NewMatcher(predicate.Eq{Path: []string{"n"}, Value: 1.0})
+	return rawpred.NewMatcher(predicate.Eq{Path: []string{"n"}, Value: 1.0}, numfmt.DecimalAuto)
 }
 
 // searchBodyOf decodes the body of search i that the stub recorded.

@@ -3,6 +3,7 @@ package couchdb
 import (
 	"fmt"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/selector"
@@ -12,8 +13,9 @@ import (
 // query, without connecting. A bounded query fetches the named documents by _id via
 // _all_docs. A scan runs a Mango _find pre-filtered by the pushed predicate when
 // one narrows, else a full _all_docs walk. ExplainPlan reuses toSelector, so the
-// shown filter is exactly what the server receives if the query runs.
-func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
+// shown filter is exactly what the server receives if the query runs. The decimal
+// mode decides which leaves stay out of the selector.
+func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool, dec numfmt.DecimalMode) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
 			Ops:    []string{fmt.Sprintf("_all_docs?keys: fetch %d requested key(s)", len(keys.Keys))},
@@ -24,7 +26,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	var filter map[string]any
 	desc := "_all_docs?include_docs=true: full-database scan (every document read, filtered client-side)"
 	if pred != nil {
-		if sel, narrowing := toSelector(pred); narrowing {
+		if sel, narrowing := toSelector(pred, dec); narrowing {
 			filter = sel
 			desc = "_find(<selector>): server-side Mango pre-filter, then the full jq re-runs client-side"
 		}

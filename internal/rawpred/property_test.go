@@ -77,7 +77,7 @@ func TestMatcherEqualsMatch(t *testing.T) {
 
 	checked := 0
 	for _, p := range predSet {
-		m := rawpred.NewMatcher(p)
+		m := rawpred.NewMatcher(p, numfmt.DecimalAuto)
 		for _, raw := range rawDocs {
 			want := rawpred.Match([]byte(raw), p)
 			got := m.Match([]byte(raw))

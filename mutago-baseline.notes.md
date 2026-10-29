@@ -851,3 +851,8 @@ The zset writer reads an infinite score from its text with strconv.ParseFloat, a
 ## cmd/logging.go, traceSink after the trace escape change (accepted 2026-10-29, PR #205)
 
 - 2c644717a04d cmd/logging.go:309 expression/context-nil. The same site as fdbace0a2e55 (cmd/logging.go:250), re-accepted after the rewrite of traceSink minted a new content-hash id. `(*slog.Logger).Enabled` replaces a nil ctx with `context.Background()` before the handler runs (log/slog/logger.go), so no handler can observe the substitution.
+
+## internal/numfmt/convert.go, fractionalFloat (accepted 2026-10-29, PR #211)
+
+- 74671da25efc internal/numfmt/convert.go:99 numbers/decrementer. `strconv.ParseFloat(literal, 64)` becomes bitSize 63. ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path, so the parsed float and the error are identical (same as drivers/mongo normalize.go:86).
+- d3c77194a927 internal/numfmt/convert.go:99 numbers/incrementer. The same site with bitSize 65, identical for the same reason.

@@ -229,7 +229,7 @@ func buildCombinePlan(cfg *config, stages []combineStage, with string, describe 
 		}
 		writePlanSection(&b, fmt.Sprintf("$%s  <-  %s (%s)", st.varName, st.spec.handle, driverName(st.spec.url)))
 		writeJQFilterQuery(&b, q, describe, cfg.unbounded, true)
-		if err := writeAccessPlan(&b, st.spec.planSource(), q, !cfg.noCompile, cfg.unbounded); err != nil {
+		if err := writeAccessPlan(&b, st.spec.planSource(cfg.decimalMode), q, !cfg.noCompile, cfg.unbounded); err != nil {
 			return "", err
 		}
 	}

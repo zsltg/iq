@@ -2466,6 +2466,18 @@
    "file": "cmd/logging.go",
    "mutator": "expression/context-nil",
    "line": 309
+  },
+  {
+   "id": "74671da25efca8aacef1c87e6d86e453",
+   "file": "internal/numfmt/convert.go",
+   "mutator": "numbers/decrementer",
+   "line": 99
+  },
+  {
+   "id": "d3c77194a92775266b5f3aff542d7e82",
+   "file": "internal/numfmt/convert.go",
+   "mutator": "numbers/incrementer",
+   "line": 99
   }
  ]
 }
