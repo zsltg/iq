@@ -31,9 +31,9 @@ import (
 // fetch size handed to the driver's server-side paging.
 const scanBatch = 100
 
-// defaultPort is the CQL native transport port a host without an explicit port
+// DefaultPort is the CQL native transport port a host without an explicit port
 // falls back to.
-const defaultPort = "9042"
+const DefaultPort = "9042"
 
 // errNoTable is returned when a table-scoped operation runs without a table
 // selected. It is a sentinel so the CLI can surface a clear hint.
@@ -281,12 +281,12 @@ func withPort(host string) string {
 		if strings.Contains(host, "]:") {
 			return host
 		}
-		return host + ":" + defaultPort
+		return host + ":" + DefaultPort
 	}
 	if strings.Contains(host, ":") {
 		return host
 	}
-	return host + ":" + defaultPort
+	return host + ":" + DefaultPort
 }
 
 // consistencyLevels maps a lower-case consistency name to its gocql level. The map is

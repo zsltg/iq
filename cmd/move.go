@@ -182,15 +182,35 @@ func sourceEndpoint(cfg *config) endpoint {
 	return endpoint{url: cfg.url, address: cfg.address, handle: cfg.handle}
 }
 
-// sameEndpoint reports whether a and b name the same data: the same saved
-// source and address, or the same connection URL and address. An empty handle
-// or URL never matches, so a zero endpoint (no source) is never the same as
-// another.
+// sameEndpoint reports whether a and b name the same data. That holds when they
+// have the same saved source or the same connection URL, with the same address.
+// It also holds when their URLs name the same container in another spelling, as
+// `redis://h` and `redis://h:6379/0` do. See sameContainer. The check compares
+// the URL text and does not resolve names. It can miss two names for one
+// server, such as two DNS names, a CNAME, or `mongodb+srv://h` and
+// `mongodb://h`. It is a safety net. An empty handle or URL never matches, so a
+// zero endpoint (no source) is never the same as another.
 func sameEndpoint(a, b endpoint) bool {
+	return sameStoredEndpoint(a, b) || sameContainer(a, b)
+}
+
+// sameStoredEndpoint reports whether a and b have the same address and the
+// same saved source or the same connection URL.
+func sameStoredEndpoint(a, b endpoint) bool {
 	if effectiveAddress(a) != effectiveAddress(b) {
 		return false
 	}
-	return a.handle != "" && a.handle == b.handle || a.url != "" && a.url == b.url
+	return sameHandle(a, b) || sameURL(a, b)
+}
+
+// sameHandle reports whether a and b have the same non-empty saved source.
+func sameHandle(a, b endpoint) bool {
+	return a.handle != "" && a.handle == b.handle
+}
+
+// sameURL reports whether a and b have the same non-empty connection URL.
+func sameURL(a, b endpoint) bool {
+	return a.url != "" && a.url == b.url
 }
 
 // effectiveAddress returns the address that e reads or writes: the explicit

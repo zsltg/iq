@@ -66,6 +66,9 @@ type driver struct {
 	// part names, when the host is not a plain server.
 	uriExample string
 	uriNote    string
+	// shape says how a URI of this backend names its server and container. The
+	// replace guard of `--insert` reads it to compare two endpoints.
+	shape endpointShape
 	// verifiesOnOpen marks a backend whose open already round-trips to the
 	// server (the connectionless DynamoDB client issues a reachability probe at
 	// open). The post-open health check of `iq ping` and `iq add` then needs no
@@ -121,7 +124,9 @@ func withoutURI(f func(keys selector.KeySet, pred predicate.Node, unbounded bool
 // listing order of `iq driver ls` and the enumeration order of expectedSchemes.
 var drivers = []driver{
 	{
-		name:        "mongo",
+		name: "mongo",
+		// 27017 mirrors the default port of the MongoDB Go driver.
+		shape:       endpointShape{defaultPort: "27017", path: pathScope},
 		desc:        "MongoDB document store",
 		schemes:     []string{"mongodb", "mongodb+srv"},
 		doc:         "https://www.mongodb.com/docs/",
@@ -140,6 +145,7 @@ var drivers = []driver{
 	},
 	{
 		name:        "cassandra",
+		shape:       endpointShape{defaultPort: iqcassandra.DefaultPort, path: pathScope},
 		desc:        "Apache Cassandra wide-column store",
 		schemes:     []string{"cassandra"},
 		doc:         "https://cassandra.apache.org/doc/",
@@ -178,6 +184,7 @@ var drivers = []driver{
 	},
 	{
 		name:           "hbase",
+		shape:          endpointShape{defaultPort: iqhbase.DefaultZKPort},
 		desc:           "Apache HBase wide-column store",
 		schemes:        []string{"hbase"},
 		doc:            "https://hbase.apache.org/book.html",
@@ -199,7 +206,10 @@ var drivers = []driver{
 		explainDelete: iqhbase.ExplainDelete,
 	},
 	{
-		name:           "couchdb",
+		name: "couchdb",
+		// The driver hands the host to an HTTP client. A missing port means 80,
+		// or 443 for the TLS scheme.
+		shape:          endpointShape{defaultPort: "80", tlsPort: "443", tlsSchemes: []string{"couchdbs"}, path: pathAddress},
 		desc:           "Apache CouchDB document store",
 		schemes:        []string{"couchdb", "couchdbs"},
 		doc:            "https://docs.couchdb.org/",
@@ -219,6 +229,7 @@ var drivers = []driver{
 	},
 	{
 		name:           "couchbase",
+		shape:          endpointShape{anyPort: true},
 		desc:           "Couchbase document store",
 		schemes:        []string{"couchbase", "couchbases"},
 		doc:            "https://docs.couchbase.com/",
@@ -236,7 +247,9 @@ var drivers = []driver{
 		explainDrop:  iqcouchbase.ExplainDrop,
 	},
 	{
-		name:           "neo4j",
+		name: "neo4j",
+		// 7687 mirrors the default Bolt port of the Neo4j Go driver.
+		shape:          endpointShape{defaultPort: "7687"},
 		desc:           "Neo4j property graph store",
 		schemes:        []string{"neo4j", "neo4j+s", "neo4j+ssc", "bolt", "bolt+s", "bolt+ssc"},
 		doc:            "https://neo4j.com/docs/",
@@ -256,7 +269,10 @@ var drivers = []driver{
 		explainDelete: iqneo4j.ExplainDelete,
 	},
 	{
-		name:           "elasticsearch",
+		name: "elasticsearch",
+		// The driver hands the host to an HTTP client. A missing port means 80,
+		// or 443 for the TLS scheme.
+		shape:          endpointShape{defaultPort: "80", tlsPort: "443", tlsSchemes: []string{"elasticsearch+s"}, path: pathAddress},
 		desc:           "Elasticsearch search engine and document store",
 		schemes:        []string{"elasticsearch", "elasticsearch+s"},
 		doc:            "https://www.elastic.co/docs/",
@@ -275,7 +291,10 @@ var drivers = []driver{
 		explainDelete: iqelasticsearch.ExplainDelete,
 	},
 	{
-		name:           "opensearch",
+		name: "opensearch",
+		// The driver hands the host to an HTTP client. A missing port means 80,
+		// or 443 for the TLS scheme.
+		shape:          endpointShape{defaultPort: "80", tlsPort: "443", tlsSchemes: []string{"opensearch+s"}, path: pathAddress},
 		desc:           "OpenSearch search engine and document store",
 		schemes:        []string{"opensearch", "opensearch+s"},
 		doc:            "https://opensearch.org/docs/",
@@ -296,7 +315,9 @@ var drivers = []driver{
 		explainDelete: iqelasticsearch.ExplainDelete,
 	},
 	{
-		name:     "redis",
+		name: "redis",
+		// 6379 mirrors the default port of go-redis.
+		shape:    endpointShape{defaultPort: "6379", path: pathDBIndex},
 		desc:     "Redis key-value store",
 		schemes:  []string{"redis", "rediss"},
 		doc:      "https://redis.io/docs/",

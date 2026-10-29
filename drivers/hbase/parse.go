@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-// defaultZKPort is the ZooKeeper client port a quorum host without an explicit port
+// DefaultZKPort is the ZooKeeper client port a quorum host without an explicit port
 // falls back to.
-const defaultZKPort = "2181"
+const DefaultZKPort = "2181"
 
 // defaultZnode is the ZooKeeper znode parent HBase registers under by default.
 const defaultZnode = "/hbase"
@@ -112,12 +112,12 @@ func withPort(host string) string {
 		if strings.Contains(host, "]:") {
 			return host
 		}
-		return host + ":" + defaultZKPort
+		return host + ":" + DefaultZKPort
 	}
 	if strings.Contains(host, ":") {
 		return host
 	}
-	return host + ":" + defaultZKPort
+	return host + ":" + DefaultZKPort
 }
 
 // parseTypeMap parses the ?types= parameter into a typeMap. The parameter is

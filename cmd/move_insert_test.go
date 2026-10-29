@@ -102,8 +102,10 @@ func useMoveDrivers(t *testing.T) *mvLog {
 			},
 		}
 	}
+	mvfull := mk("mvfull", func(u string) store { return mvFull{mvPut{mvBare{log: log}, u}} })
+	mvfull.shape = endpointShape{defaultPort: "9999"}
 	drivers = append(append([]driver{}, orig...),
-		mk("mvfull", func(u string) store { return mvFull{mvPut{mvBare{log: log}, u}} }),
+		mvfull,
 		mk("mvput", func(u string) store { return mvPut{mvBare{log: log}, u} }),
 		mk("mvbare", func(string) store { return mvBare{log: log} }),
 		driver{
@@ -115,6 +117,8 @@ func useMoveDrivers(t *testing.T) *mvLog {
 	)
 	c := newSeed()
 	require.NoError(t, c.Add("full", "mvfull://u:hunter2@h"))
+	require.NoError(t, c.Add("alias", "mvfull://H:9999"))
+	require.NoError(t, c.Add("other", "mvfull://elsewhere"))
 	require.NoError(t, c.Add("put", "mvput://h"))
 	require.NoError(t, c.Add("bare", "mvbare://h"))
 	require.NoError(t, c.Add("down", "mvfail://u:hunter2@h"))
@@ -262,6 +266,121 @@ func TestSameEndpoint(t *testing.T) {
 	}
 }
 
+func TestSameContainer(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b string
+		want bool
+	}{
+		{"redis bare host and explicit port", "redis://prod.internal", "redis://prod.internal:6379", true},
+		{"redis bare host and DB 0", "redis://prod.internal", "redis://prod.internal/0", true},
+		{"redis bare host and port with DB 0", "redis://prod.internal", "redis://prod.internal:6379/0", true},
+		{"redis port and port with DB 0", "redis://prod.internal:6379", "redis://prod.internal:6379/0", true},
+		{"redis DB 0 and port with DB 0", "redis://prod.internal/0", "redis://prod.internal:6379/0", true},
+		{"redis port and DB 0", "redis://prod.internal:6379", "redis://prod.internal/0", true},
+		{"redis DB 0 and DB 1", "redis://prod.internal/0", "redis://prod.internal/1", false},
+		{"redis DB 1 as option and as path", "redis://h?db=1", "redis://h:6379/1", true},
+		{"redis TLS scheme", "rediss://h", "redis://h:6379/0", true},
+		{"redis host case", "redis://PROD.internal", "redis://prod.internal", true},
+		{"redis user info", "redis://u:pw@h/0", "redis://other:secret@h:6379", true},
+		{"redis timeout option", "redis://h?dial_timeout=1s", "redis://h", true},
+		{"redis other port", "redis://h:6380", "redis://h:6379", false},
+		{"different hosts", "redis://h1", "redis://h2", false},
+		{"loopback names", "redis://localhost", "redis://127.0.0.1:6379", true},
+		{"loopback IPv6", "redis://[::1]", "redis://localhost:6379", true},
+		{"mongo default and explicit port", "mongodb://localhost/db?collection=orders", "mongodb://localhost:27017/db?collection=orders", true},
+		{"mongo loopback and port", "mongodb://127.0.0.1/db?collection=orders", "mongodb://localhost:27017/db?collection=orders", true},
+		{"mongo other collection", "mongodb://h/db?collection=orders", "mongodb://h/db?collection=items", false},
+		{"mongo other database", "mongodb://h/db1?collection=orders", "mongodb://h/db2?collection=orders", false},
+		{"mongo seed lists with one common host", "mongodb://a,b/db?collection=c", "mongodb://b:27017,c/db?collection=c", true},
+		{"mongo seed lists with no common host", "mongodb://a,b/db?collection=c", "mongodb://c,d/db?collection=c", false},
+		{"mongo SRV and plain with the same host", "mongodb+srv://h/db?collection=c", "mongodb://h/db?collection=c", false},
+		{"mongo SRV twice", "mongodb+srv://u:p@h/db?collection=c", "mongodb+srv://H/db?collection=c", true},
+		{"cassandra host lists with one common host", "cassandra://a,b/ks?table=t", "cassandra://b:9042,c/ks?table=t", true},
+		{"cassandra other keyspace", "cassandra://a/ks1?table=t", "cassandra://a/ks2?table=t", false},
+		{"elasticsearch and opensearch", "elasticsearch://h:9200/?index=i", "opensearch://h:9200/?index=i", true},
+		{"elasticsearch TLS scheme", "elasticsearch+s://h:9200/?index=i", "elasticsearch://h:9200/?index=i", true},
+		{"elasticsearch index in the path", "elasticsearch://h:9200/i", "elasticsearch://h:9200/?index=i", true},
+		{"elasticsearch other index", "elasticsearch://h:9200/?index=i", "elasticsearch://h:9200/?index=j", false},
+		{"couchdb database in the path", "couchdb://h:5984/db", "couchdb://h:5984/?database=db", true},
+		{"couchbase bare and full collection", "couchbase://h/?bucket=b&collection=c", "couchbases://h:11207/?bucket=b&collection=_default.c", true},
+		{"couchbase other bucket", "couchbase://h/?bucket=b1&collection=c", "couchbase://h/?bucket=b2&collection=c", false},
+		{"neo4j default port", "neo4j://h/?label=L", "bolt://h:7687/?label=L", true},
+		{"neo4j other database", "neo4j://h/?label=L&database=a", "neo4j://h/?label=L&database=b", false},
+		{"hbase quorums with one common host", "hbase://a,b/?table=t", "hbase://b:2181/?table=t", true},
+		{"hbase other table", "hbase://a/?table=t", "hbase://a/?table=u", false},
+		{"dynamodb same region and table", "dynamodb://us-east-1/?table=t", "dynamodb://US-EAST-1/?table=t", true},
+		{"dynamodb other region", "dynamodb://us-east-1/?table=t", "dynamodb://eu-west-1/?table=t", false},
+		{"different drivers", "redis://h", "mongodb://h:6379", false},
+		{"unparsable query", "redis://h/0?a=%zz", "redis://h:6379/0", false},
+		{"no URL", "", "redis://h", false},
+		{"IPv6 long and short form", "redis://[2001:db8::1]", "redis://[2001:0db8:0:0:0:0:0:1]:6379", true},
+		{"IPv6 other address", "redis://[2001:db8::1]", "redis://[2001:db8::2]", false},
+		{"IPv6 case", "redis://[2001:DB8::1]", "redis://[2001:db8::1]", true},
+		{"trailing dot on a name", "redis://h.", "redis://h:6379", true},
+		{"trailing dot with a port", "redis://h.:6380", "redis://h:6380", true},
+		{"IPv4-mapped IPv6", "redis://[::ffff:10.0.0.1]", "redis://10.0.0.1", true},
+		{"IPv4-mapped IPv6 loopback", "redis://[::ffff:127.0.0.1]", "redis://127.0.0.1", true},
+		{"IPv4 other address", "redis://10.0.0.1", "redis://10.0.0.2", false},
+		{"only a dot as host", "redis://.", "redis://.", false},
+		{"couchdb default port", "couchdb://h/db", "couchdb://h:80/db", true},
+		{"couchdb other port", "couchdb://h/db", "couchdb://h:5984/db", false},
+		{"couchdbs default port", "couchdbs://h/db", "couchdbs://h:443/db", true},
+		{"couchdbs and plain defaults differ", "couchdbs://h/db", "couchdb://h/db", false},
+		{"elasticsearch default port", "elasticsearch://h/?index=i", "elasticsearch://h:80/?index=i", true},
+		{"elasticsearch other port", "elasticsearch://h/?index=i", "elasticsearch://h:9200/?index=i", false},
+		{"elasticsearch TLS default port", "elasticsearch+s://h/?index=i", "elasticsearch+s://h:443/?index=i", true},
+		{"opensearch default port", "opensearch://h/?index=i", "opensearch://h:80/?index=i", true},
+		{"opensearch other port", "opensearch://h/?index=i", "opensearch://h:9200/?index=i", false},
+		{"opensearch TLS default port", "opensearch+s://h/?index=i", "elasticsearch+s://h:443/?index=i", true},
+		{"empty user info", "redis://@h", "redis://h:6379", true},
+		{"at sign in the password", "redis://u:p@ss@h", "redis://h:6379", true},
+		{"no host", "redis://", "redis://", false},
+		{"empty host item skipped in a list", "mongodb://a,,b/db?collection=c", "mongodb://b/db?collection=c", true},
+		{"redis non-numeric database name", "redis://h/name", "redis://h:6379/name", true},
+		{"redis other non-numeric database name", "redis://h/name", "redis://h/other", false},
+		{"couchbase without bucket or collection", "couchbase://h", "couchbases://h:11207", true},
+		{"couchbase no collection and the default collection", "couchbase://h", "couchbase://h/?collection=_default", true},
+		{"read-only file source with a host", "file://h/a.bson", "file://h/a.bson", false},
+		{"opensearch index in the path", "opensearch://h/idx", "opensearch://h/?index=idx", true},
+		{"opensearch other index in the path", "opensearch://h/idx", "opensearch://h/?index=other", false},
+		{"redis database with a leading zero", "redis://h/01", "redis://h/1", true},
+		{"redis fragment after the path", "redis://h/1#frag", "redis://h/1", true},
+		{"same host and port under two drivers", "mongodb://h:1234", "cassandra://h:1234", false},
+		{"file source", "file:///a.bson", "file:///a.bson", false},
+		{"unknown scheme", "nope://h", "nope://h", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, sameContainer(endpoint{url: tc.a}, endpoint{url: tc.b}))
+			require.Equal(t, tc.want, sameContainer(endpoint{url: tc.b}, endpoint{url: tc.a}), "symmetric")
+		})
+	}
+}
+
+func TestParseEndpointURL(t *testing.T) {
+	u := parseEndpointURL(endpoint{url: "mongodb://u:p@a,b/db/?collection=c#frag", address: "x"})
+	require.Equal(t, "mongodb", u.scheme)
+	require.Equal(t, "u:p@a,b", u.authority)
+	require.Equal(t, "db", u.path)
+	require.Equal(t, "c", u.query.Get("collection"))
+	require.Equal(t, "x", u.address)
+
+	require.Equal(t, endpointURL{}, parseEndpointURL(endpoint{url: "redis://h/0?a=%zz"}), "a query that does not parse")
+}
+
+func TestSameEndpointFallsBackToStrings(t *testing.T) {
+	bad := "redis://h/0?a=%zz"
+	require.True(t, sameEndpoint(endpoint{url: bad}, endpoint{url: bad}), "equal strings still match")
+	require.False(t, sameEndpoint(endpoint{url: bad}, endpoint{url: "redis://h:6379/0"}))
+	require.True(t, sameEndpoint(
+		endpoint{handle: "a", url: "redis://h", address: ""},
+		endpoint{handle: "b", url: "redis://h:6379/0"}), "two handles for one container")
+	require.False(t, sameEndpoint(
+		endpoint{handle: "a", url: "mongodb://h/db", address: "orders"},
+		endpoint{handle: "b", url: "mongodb://h:27017/db", address: "items"}), "another address")
+}
+
 func TestSourceEndpoint(t *testing.T) {
 	tests := []struct {
 		name string
@@ -288,6 +407,8 @@ func TestInsertReplaceOntoItsOwnSource(t *testing.T) {
 	}{
 		{"replace onto the source", []string{"--src", "full", "--insert", "full", "--replace", "--force"}, refusal, nil},
 		{"dry-run replace onto the source", []string{"--src", "full", "--insert", "full", "--replace", "--dry-run"}, refusal, nil},
+		{"replace onto an alias of the source", []string{"--src", "full", "--insert", "alias", "--replace", "--force"}, "--replace would empty alias before the copy reads it, because it is also the source", nil},
+		{"replace onto another host", []string{"--src", "full", "--insert", "other", "--replace", "--force"}, "", []string{"clear", "put"}},
 		{"plain insert onto the source", []string{"--src", "full", "--insert", "full"}, "", []string{"put"}},
 		{"replace onto another source", []string{"--src", "full", "--insert", "put", "--replace", "--dry-run"}, "--replace: destination put (mvput) cannot be cleared", nil},
 	}
