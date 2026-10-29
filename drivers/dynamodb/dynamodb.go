@@ -410,12 +410,13 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 }
 
 // appendPage adds the normalized items of one page to rows. If limited is set,
-// it stops at limit rows. It reports whether rows now holds limit rows.
+// it adds only the items that fit under limit. Query calls it only while rows
+// holds fewer than limit items. It reports whether rows now holds limit rows.
 func (s *Store) appendPage(rows []any, items []map[string]types.AttributeValue, limit int, limited bool) ([]any, bool) {
+	if limited {
+		items = items[:min(len(items), limit-len(rows))]
+	}
 	for _, item := range items {
-		if limited && len(rows) >= limit {
-			break
-		}
 		rows = append(rows, normalizeMap(item, s.decimal))
 	}
 	return rows, limited && len(rows) >= limit
