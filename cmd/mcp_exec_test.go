@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"strings"
 	"testing"
@@ -219,4 +220,24 @@ func TestMCPExecCapEdges(t *testing.T) {
 			require.Equal(t, tc.want, out.Result)
 		})
 	}
+}
+
+// TestCapExecDocumentWrapsTheEncodeError checks that the encode error keeps its
+// cause, so a caller can still find the json error with errors.As.
+func TestCapExecDocumentWrapsTheEncodeError(t *testing.T) {
+	_, err := capExecDocument(map[string]any{"c": make(chan int)}, queryBounds{maxItems: 10, maxBytes: 1 << 10})
+
+	var jsonErr *json.UnsupportedTypeError
+	require.ErrorAs(t, err, &jsonErr)
+	require.ErrorContains(t, err, "encode exec result")
+}
+
+// TestCapExecDocumentKeepsTheEncodeError checks that the encode error stays in
+// the chain, so a caller can still inspect the json error.
+func TestCapExecDocumentKeepsTheEncodeError(t *testing.T) {
+	_, err := capExecDocument(map[string]any{"c": make(chan int)}, queryBounds{maxItems: 10, maxBytes: 1 << 10})
+
+	var unsupported *json.UnsupportedTypeError
+	require.ErrorAs(t, err, &unsupported)
+	require.ErrorContains(t, err, "encode exec result")
 }
