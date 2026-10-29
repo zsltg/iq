@@ -32,14 +32,19 @@ var cborEnc = mustEncMode(cbor.EncOptions{BigIntConvert: cbor.BigIntConvertRejec
 
 // cborDec is the counterpart decoder. DefaultMapType returns objects as
 // map[string]any. UTF8DecodeInvalid accepts the non-UTF-8 strings that cborEnc
-// wrote and returns their bytes unchanged. Integers arrive as uint64/int64, and
-// narrowInts converts them to int after decode. TagsForbidden rejects any CBOR tag.
+// wrote and returns their bytes unchanged. IntDecConvertSignedOrFail decodes every
+// integer as an int64 and rejects an integer outside the int64 range. cborEnc never
+// writes such an integer, so one means a corrupted cache. Without this rule, an
+// integer below the int64 range decodes to a big.Int, which cborEnc then refuses
+// (FuzzCBORRecord). narrowInts converts the int64 values to int after decode.
+// TagsForbidden rejects any CBOR tag.
 // The closed value set never encodes a tag, so a tag means a corrupted cache.
 // Without it, tag 1 decodes to a time.Time, which is outside the set and re-encodes
 // as something else (FuzzCBORRecord).
 var cborDec = mustDecMode(cbor.DecOptions{
 	DefaultMapType: reflect.TypeFor[map[string]any](),
 	UTF8:           cbor.UTF8DecodeInvalid,
+	IntDec:         cbor.IntDecConvertSignedOrFail,
 	TagsMd:         cbor.TagsForbidden,
 
 	MaxNestedLevels:  maxCBORNestedLevels,
@@ -99,19 +104,11 @@ func decodeRecord(dec *cbor.Decoder) (query.Record, error) {
 	return query.Record{Key: w.Key, Type: w.Type, Value: narrowInts(w.Value)}, nil
 }
 
-// narrowInts converts every integer that a CBOR decode produced (uint64 or
-// int64) to Go int, recursing through maps and slices. So a cached value's type
-// model matches Normalize's, which narrows all integers to int. A uint64 beyond
-// int's range degrades to float64 rather than overflowing. This case does not
-// occur, because cborEnc rejects every *big.Int, the type that the cold decode
-// uses for such an integer.
+// narrowInts converts every integer that a CBOR decode produced (int64) to Go
+// int, recursing through maps and slices. So a cached value's type model matches
+// Normalize's, which narrows all integers to int.
 func narrowInts(v any) any {
 	switch t := v.(type) {
-	case uint64:
-		if t <= math.MaxInt {
-			return int(t)
-		}
-		return float64(t)
 	case int64:
 		return int(t)
 	case map[string]any:
