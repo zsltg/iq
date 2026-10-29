@@ -300,17 +300,40 @@ func (c *config) log() *slog.Logger {
 // DEBUG sink is listening, it tees the existing trace (the --verbose stderr
 // sink, or nil) with a DEBUG "backend cmd" log bridge. So a plain --log run
 // captures the wire trace without --verbose. Drivers redact credentials before
-// they reach the trace, so the bridge logs exactly what --verbose shows. With
-// no DEBUG sink it returns the input unchanged.
+// they reach the trace, so the bridge logs exactly what --verbose shows. Every
+// driver writes one trace line per Write call. The returned writer escapes the
+// control characters of each line, so backend content cannot forge a second
+// record or send terminal escapes. With no sink at all it returns nil.
 func traceSink(existing io.Writer, lg *slog.Logger) io.Writer {
-	if !lg.Enabled(context.Background(), slog.LevelDebug) {
-		return existing
+	sink := existing
+	if lg.Enabled(context.Background(), slog.LevelDebug) {
+		bridge := &traceLogWriter{lg: lg}
+		if sink == nil {
+			sink = bridge
+		} else {
+			sink = io.MultiWriter(sink, bridge)
+		}
 	}
-	bridge := &traceLogWriter{lg: lg}
-	if existing == nil {
-		return bridge
+	if sink == nil {
+		return nil
 	}
-	return io.MultiWriter(existing, bridge)
+	return &escapeLineWriter{w: sink}
+}
+
+// escapeLineWriter treats each Write call as one trace line. It removes one
+// trailing newline, escapes the control characters inside the line, and writes
+// the line with a single newline. So the only record separator in the output is
+// the one that the writer adds.
+type escapeLineWriter struct {
+	w io.Writer
+}
+
+// Write forwards the escaped line and reports the length of p. It ignores the
+// error of the sink, so tracing can never break the query it describes.
+func (e *escapeLineWriter) Write(p []byte) (int, error) {
+	line := strings.TrimSuffix(string(p), "\n")
+	_, _ = io.WriteString(e.w, escapeControl(line)+"\n")
+	return len(p), nil
 }
 
 // traceLogWriter adapts the line-oriented command trace of the drivers to

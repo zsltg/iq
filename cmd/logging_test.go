@@ -638,9 +638,12 @@ func TestTraceSinkGating(t *testing.T) {
 	debug := slog.New(&gateHandler{inner: slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug})})
 	off := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	t.Run("off: existing writer returned unchanged", func(t *testing.T) {
+	t.Run("off: existing writer still gets escaped lines", func(t *testing.T) {
 		existing := &bytes.Buffer{}
-		require.Equal(t, io.Writer(existing), traceSink(existing, off))
+		w := traceSink(existing, off)
+		_, err := io.WriteString(w, "redis> GET a\nb\n")
+		require.NoError(t, err)
+		require.Equal(t, "redis> GET a\\nb\n", existing.String())
 	})
 
 	t.Run("off with no existing trace stays nil", func(t *testing.T) {
@@ -675,6 +678,50 @@ func TestTraceSinkGating(t *testing.T) {
 		// Enabled. traceSink must pass a real context, so it returns a bridge.
 		require.NotNil(t, traceSink(nil, debug), "a real context must enable the bridge")
 	})
+}
+
+// TestTraceSinkEscapesControl checks that one driver line gives exactly one log
+// record and one stderr line, whatever control characters the content holds.
+// A forged second record or a raw terminal escape fails the test.
+func TestTraceSinkEscapesControl(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"plain text unchanged", "redis> GET book:1 \"x\" \\ é", "redis> GET book:1 \"x\" \\ é"},
+		{"embedded newline", "redis> GET book:1\nGET secret-key", `redis> GET book:1\nGET secret-key`},
+		{"embedded carriage return", "redis> GET a\rb", `redis> GET a\rb`},
+		{"tab", "cql> SELECT\t1", `cql> SELECT\t1`},
+		{"ansi escape", "mongo> find \x1b[31mred", `mongo> find \x1b[31mred`},
+		{"del and nul", "redis> GET a\x7f\x00", `redis> GET a\x7f\x00`},
+		{"c1 control", "redis> GET a\u009bb", `redis> GET a\x9bb`},
+		{"invalid utf-8 becomes a replacement rune", "redis> GET a\xffb", "redis> GET a\ufffdb"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr, recs bytes.Buffer
+			lg := slog.New(slog.NewJSONHandler(&recs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			w := traceSink(&stderr, lg)
+
+			n, err := io.WriteString(w, tt.line+"\n")
+			require.NoError(t, err)
+			require.Equal(t, len(tt.line)+1, n)
+
+			require.Equal(t, tt.want+"\n", stderr.String())
+			require.Equal(t, 1, strings.Count(recs.String(), "backend cmd"), "one record per driver line")
+			require.Equal(t, 1, strings.Count(recs.String(), "\n"), "one JSON line")
+			require.NotContains(t, recs.String(), "\x1b")
+			require.NotContains(t, stderr.String(), "\x1b")
+
+			// The JSON encoder escapes control characters too, so check the decoded
+			// cmd: it must hold the escaped text, not the raw bytes.
+			var rec map[string]any
+			require.NoError(t, json.Unmarshal(recs.Bytes(), &rec))
+			_, wantCmd, _ := strings.Cut(tt.want, "> ")
+			require.Equal(t, wantCmd, rec["cmd"])
+		})
+	}
 }
 
 // TestBuildNoSinkDiscards checks that with nothing enabled the logger discards
