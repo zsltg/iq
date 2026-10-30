@@ -2,6 +2,7 @@ package neo4j
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
@@ -35,7 +36,24 @@ func TestQueryRowLimit(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, got, tt.wantRows)
 			require.Equal(t, tt.wantReads, drv.session.script[0].res.pos)
+			require.Equal(t, 1, drv.session.script[0].res.consumed)
 			require.Equal(t, 1, drv.session.closed)
 		})
 	}
+}
+
+// TestQueryRowLimitReportsConsumeError proves that an error from the rest of the
+// stream reaches the caller after the row limit stops the read.
+func TestQueryRowLimitReportsConsumeError(t *testing.T) {
+	recs := []*neo4j.Record{
+		{Keys: []string{"v"}, Values: []any{int64(1)}},
+		{Keys: []string{"v"}, Values: []any{int64(2)}},
+	}
+	reply := rows(recs...)
+	reply.res.consumeErr = errors.New("statement failed")
+	s, _, _ := newFakeStore(target{}, reply)
+
+	_, err := s.Query(query.WithRowLimit(context.Background(), 1), []string{"RETURN 1"})
+
+	require.ErrorContains(t, err, "statement failed")
 }

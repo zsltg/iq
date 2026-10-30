@@ -200,9 +200,8 @@ Register that config's sources with the same `iq add --config
   `truncated: true` rather than an error, so the agent knows there was more.
   The caps cover `iq_exec` too. A list reply keeps the rows that fit. Any other
   reply over `max_bytes` comes back as `null` with `truncated: true`. The row cap
-  also reaches the driver. The Cassandra, CouchDB, Couchbase, DynamoDB, HBase, and
-  Neo4j drivers stop reading once they hold enough rows. A driver whose reply is
-  one document ignores the row cap. The CLI `iq exec` has no cap and prints the
+  also reaches the driver. The Cassandra, Couchbase, DynamoDB, and Neo4j drivers
+  stop reading once they hold enough rows. The CLI `iq exec` has no cap and prints the
   whole reply.
 - **Every call is bounded.** The inherited `--timeout` bounds each call, and a
   per-call `timeout` can only shorten it.
