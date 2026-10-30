@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -130,4 +132,22 @@ func TestOpenPipeReportsAReadErrorOfTheHead(t *testing.T) {
 
 	require.ErrorIs(t, err, boom)
 	require.ErrorContains(t, err, "read stdin head: boom")
+}
+
+// TestPipeTakeIsOnceUnderConcurrentReads proves that only one of many concurrent
+// readers gets the stream.
+func TestPipeTakeIsOnceUnderConcurrentReads(t *testing.T) {
+	p := &pipeInput{}
+	var got atomic.Int32
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Go(func() {
+			if _, err := p.take(); err == nil {
+				got.Add(1)
+			}
+		})
+	}
+	wg.Wait()
+
+	require.Equal(t, int32(1), got.Load())
 }

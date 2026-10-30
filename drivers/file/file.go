@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
@@ -139,15 +140,16 @@ var ErrPipeReadOnce = errors.New("piped stdin can be read only once; save it to 
 // pipeInput is the one-shot stream behind a Store that reads piped stdin.
 type pipeInput struct {
 	r    *bufio.Reader
-	used bool
+	used atomic.Bool
 }
 
 // take hands out the stream on the first call. Every later call fails.
 func (p *pipeInput) take() (io.Reader, error) {
-	if p.used {
+	// CompareAndSwap makes the check and the mark one step, so two callers can
+	// never both get the stream.
+	if !p.used.CompareAndSwap(false, true) {
 		return nil, ErrPipeReadOnce
 	}
-	p.used = true
 	return p.r, nil
 }
 

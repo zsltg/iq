@@ -97,14 +97,12 @@ func FuzzOpenPipe(f *testing.F) {
 		}
 		require.NotNil(t, store, "OpenPipe returned neither a store nor an error")
 
-		src, err := RecordSourceFor(bytes.NewReader(data), store.format, store.dec, Hints{})
-		if err != nil {
-			return // the format needs hints this target does not supply.
-		}
+		// Read through the store, so the target covers the buffered stream and the
+		// one read that a pipe allows.
 		ctx, cancel := context.WithTimeout(context.Background(), fuzzDrainBudget)
 		defer cancel()
 		count := 0
-		err = src(ctx, func(batch []query.Record) error {
+		err = store.TypedScan(ctx, func(batch []query.Record) error {
 			count += len(batch)
 			if count >= maxFuzzRecords {
 				return errFuzzEnough
