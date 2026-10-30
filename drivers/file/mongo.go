@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 
@@ -71,58 +70,41 @@ func bsonSource(r io.Reader, size int, dec numfmt.DecimalMode) query.RecordSourc
 // (the default) or a single JSON array (--jsonArray). Each document is normalized
 // like a live scan and keyed by _id.
 func extJSONSource(r io.Reader, size int, dec numfmt.DecimalMode) query.RecordSource {
+	return extJSONSourceCap(capped{r, query.MaxRecordBytes}, size, dec)
+}
+
+// extJSONSourceCap is extJSONSource with a limit on the size of one document.
+func extJSONSourceCap(src capped, size int, dec numfmt.DecimalMode) query.RecordSource {
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
-		br := bufio.NewReader(r)
-		array, err := startsArray(br)
+		st, ok, err := openJSONStream(src, "mongoexport json", "read mongoexport array")
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return fmt.Errorf("read mongoexport json: %w", err)
+			return err
 		}
-		jd := json.NewDecoder(br)
-		page := make([]query.Record, 0, size)
-		flush := func() error {
-			if len(page) == 0 {
-				return nil
-			}
-			if err := fn(page); err != nil {
-				return err
-			}
-			page = page[:0]
+		if !ok {
 			return nil
 		}
-		if array {
-			if _, err := jd.Token(); err != nil { // consume '['
-				return fmt.Errorf("read mongoexport array: %w", err)
-			}
-		}
+		pg := newRecordPager(size, fn)
 		for {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if array && !jd.More() {
-				break
-			}
 			var raw json.RawMessage
-			if err := jd.Decode(&raw); err != nil {
-				if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end between values, never inside an array. A wrapped one is a reader failure.
-					break
-				}
-				return fmt.Errorf("decode mongoexport json: %w", err)
+			more, err := st.next(&raw)
+			if err != nil {
+				return err
+			}
+			if !more {
+				break
 			}
 			rec, err := recordForExtJSON(ctx, raw, dec)
 			if err != nil {
 				return err
 			}
-			page = append(page, rec)
-			if len(page) >= size {
-				if err := flush(); err != nil {
-					return err
-				}
+			if err := pg.add(rec); err != nil {
+				return err
 			}
 		}
-		return flush()
+		return pg.flush()
 	}
 }
 

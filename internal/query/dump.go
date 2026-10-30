@@ -36,6 +36,11 @@ func WriteJSONL(w io.Writer, recs []Record) error {
 	return nil
 }
 
+// MaxRecordBytes is the largest size of one value in a dump: a JSONL line, a
+// mongoexport document, an APOC entry, or a cqlsh CSV record. It matches the
+// document limit of MongoDB.
+const MaxRecordBytes = 16 << 20
+
 // JSONLSource returns a RecordSource that streams a JSONL reader in pages of
 // pageSize. In typed mode each line is a {key,type,value} envelope. In plain mode
 // (foreign input) each line's whole JSON value becomes the record value with no
@@ -45,10 +50,9 @@ func JSONLSource(r io.Reader, pageSize int, plain bool) RecordSource {
 	return func(ctx context.Context, fn func(batch []Record) error) error {
 		sc := bufio.NewScanner(r)
 		// A JSONL line can be a large document. Raise the scanner's line cap well
-		// above the bufio 64 KiB default. Bit-shift sizes so the constants are one
-		// value each, not a product.
-		const initBuf, maxLine = 64 << 10, 16 << 20
-		sc.Buffer(make([]byte, 0, initBuf), maxLine)
+		// above the bufio 64 KiB default.
+		const initBuf = 64 << 10
+		sc.Buffer(make([]byte, 0, initBuf), MaxRecordBytes)
 		pg := newPager(pageSize, fn)
 		line := 0
 		for sc.Scan() {

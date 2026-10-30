@@ -2,7 +2,6 @@ package file
 
 import (
 	"context"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +29,12 @@ type csvLayout struct {
 // primary key and tagged "row". Column names come from the header row, or from a
 // ?columns= hint if the dump has no HEADER=TRUE.
 func cassandraCSVSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hints) (query.RecordSource, error) {
+	return cassandraCSVSourceCap(capped{r, query.MaxRecordBytes}, size, dec, hints)
+}
+
+// cassandraCSVSourceCap is cassandraCSVSource with a limit on the size of one
+// CSV record.
+func cassandraCSVSourceCap(src capped, size int, dec numfmt.DecimalMode, hints Hints) (query.RecordSource, error) {
 	if hints.Keys == "" {
 		return nil, errors.New("cassandra dump needs a key schema: add ?keys=col1[,col2] naming the primary-key columns")
 	}
@@ -43,27 +48,29 @@ func cassandraCSVSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hin
 		header = splitCols(hints.Columns)
 	}
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
-		cr := csv.NewReader(r)
+		cr := src.csvReader()
 		cr.ReuseRecord = true
 		cr.FieldsPerRecord = -1 // don't enforce a width here; recordForCSVRow validates against the header.
+		n := 1                  // the CSV record number that the next read returns.
 		if header == nil {
-			h, err := cr.Read()
-			if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end; a wrapped one is a reader failure.
-				return nil // empty dump.
-			}
+			h, err := readCSVHeader(cr, src.limit)
 			if err != nil {
-				return fmt.Errorf("read cassandra csv header: %w", err)
+				return err
 			}
-			header = append([]string(nil), h...) // copy: ReuseRecord reuses the row slice.
+			header = h // nil for an empty dump. The loop below then ends at once.
+			n++
 		}
-		page := make([]query.Record, 0, size)
-		for {
+		pg := newRecordPager(size, fn)
+		for ; ; n++ {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 			fields, err := cr.Read()
 			if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end; a wrapped one is a reader failure.
 				break
+			}
+			if errors.Is(err, errValueTooLarge) {
+				return tooLarge("cassandra csv", n, src.limit)
 			}
 			if err != nil {
 				return fmt.Errorf("read cassandra csv row: %w", err)
@@ -72,18 +79,11 @@ func cassandraCSVSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hin
 			if err != nil {
 				return err
 			}
-			page = append(page, rec)
-			if len(page) >= size {
-				if err := fn(page); err != nil {
-					return err
-				}
-				page = page[:0]
+			if err := pg.add(rec); err != nil {
+				return err
 			}
 		}
-		if len(page) > 0 {
-			return fn(page)
-		}
-		return nil
+		return pg.flush()
 	}, nil
 }
 
@@ -137,4 +137,20 @@ func splitCols(s string) []string {
 		}
 	}
 	return out
+}
+
+// readCSVHeader reads the header row of a dump. It returns a nil header and a
+// nil error for an empty dump.
+func readCSVHeader(cr *csvRows, limit int64) ([]string, error) {
+	h, err := cr.Read()
+	if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end; a wrapped one is a reader failure.
+		return nil, nil // empty dump.
+	}
+	if errors.Is(err, errValueTooLarge) {
+		return nil, tooLarge("cassandra csv", 1, limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read cassandra csv header: %w", err)
+	}
+	return append([]string(nil), h...), nil // copy: ReuseRecord reuses the row slice.
 }
