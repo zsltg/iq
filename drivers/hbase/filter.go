@@ -28,7 +28,7 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	if err != nil {
 		return fmt.Errorf("hbase scan: %w", err)
 	}
-	return s.pageScan(req, fn)
+	return s.pageScan(ctx, req, fn)
 }
 
 // toFilter translates the pushable part of a neutral predicate into an HBase filter.

@@ -61,8 +61,7 @@ func TestNormalize(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &Store{decimal: tt.mode}
-			require.Equal(t, tt.want, s.normalize(tt.in))
+			require.Equal(t, tt.want, Normalize(tt.in, tt.mode, nil))
 		})
 	}
 }

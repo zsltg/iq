@@ -409,7 +409,7 @@ here, so re-check them when the SDK moves.
 - d337011e0e53169a08882e5f038ad66a drivers/neo4j/neo4j.go:443 expression/context-nil — s.session(nil, ...). Same reason as neo4j.go:261.
 - 811eef4ad362892a16888080cfd62d01 drivers/neo4j/neo4j.go:537 expression/context-nil — driver.Close(nil). d.pool = nil happens before the context is used, so the driver closes either way and the context reaches only socket teardown.
 - 3804221283486b6225fcc6969342d4a1 drivers/neo4j/neo4j.go:311 expression/remove — the `s.target.key != ""` conjunct of the duplicate-key guard. Without ?key= the key is elementId, and WHERE elementId(n) IN $ids cannot return one id twice, so dup is never true on that branch.
-- 413b18704336923c1f7c242b795d1f94 drivers/neo4j/normalize.go:84 numbers/incrementer — the -1 precision of strconv.FormatFloat. strconv treats every negative precision as shortest (`shortest := prec < 0`), so -1 and -2 produce the same text.
+- 1cdcd003b187f33f7040e9ededc5a3e1 drivers/neo4j/normalize.go:155 numbers/incrementer — the -1 precision of strconv.FormatFloat, now in floatValue (moved from :84 by the non-finite change, so the content-hash id changed). strconv treats every negative precision as shortest (`shortest := prec < 0`), so -1 and -2 produce the same text.
 - 54c1a923120c4509f713c3cc8089b171 drivers/neo4j/write.go:181 expression/remove — the `s.target.key != ""` conjunct of Delete's duplicate-key guard, for the same reason as neo4j.go:311.
 
 Elasticsearch, accepted 2026-09-09 after the first full scan of the package. Every entry below
@@ -789,7 +789,7 @@ Each of these mutants replaces the ctx of a command that is queued on a go-redis
 - c54bd4fa807c drivers/redis/kv.go:148 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
 - 119e4613a065 drivers/redis/kv.go:150 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
 - bc1c6edf483e drivers/redis/kv.go:152 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
-- 3b23fdba61fb drivers/redis/kv.go:154 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
+- 32e8f8427417 drivers/redis/kv.go:154 expression/context-nil — the ctx of the queued ZRangeWithScores command becomes nil, for the same reason. The line gained the ctx and key fields of zsetReader, so the content-hash id changed (was 3b23fdba61fb). A test pins that zsetReader gets the real ctx and key.
 - ee6a87705834 drivers/redis/write.go:39 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
 - 90827cde3b57 drivers/redis/write.go:59 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.
 - 496f91634281 drivers/redis/write.go:60 expression/context-nil — the ctx of a queued pipeline command, or of a helper that only queues commands, becomes nil.

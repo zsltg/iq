@@ -75,7 +75,7 @@ func (s *Store) readRows(ctx context.Context, cypher string) ([]any, error) {
 		rec := res.Record()
 		row := make(map[string]any, len(rec.Keys))
 		for i, k := range rec.Keys {
-			row[k] = s.normalizeValue(rec.Values[i])
+			row[k] = s.normalizeValue(rec.Values[i], nil)
 		}
 		rows = append(rows, row)
 	}
@@ -97,7 +97,7 @@ func (s *Store) readColumn(ctx context.Context, cypher string) ([]any, error) {
 	}
 	out := []any{}
 	for res.Next(ctx) {
-		out = append(out, s.normalizeValue(res.Record().Values[0]))
+		out = append(out, s.normalizeValue(res.Record().Values[0], nil))
 	}
 	if err := res.Err(); err != nil {
 		return nil, err

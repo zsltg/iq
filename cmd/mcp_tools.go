@@ -405,9 +405,10 @@ type mcpQueryInput struct {
 // mcpQueryOutput is the produced values, their count, and whether a cap cut the
 // run short.
 type mcpQueryOutput struct {
-	Items     []any `json:"items"`
-	Count     int   `json:"count"`
-	Truncated bool  `json:"truncated"`
+	Items     []any  `json:"items"`
+	Count     int    `json:"count"`
+	Truncated bool   `json:"truncated"`
+	Note      string `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
 }
 
 // toolQuery runs the filter through the same engine that the CLI query uses,
@@ -435,6 +436,8 @@ func (s *mcpServer) toolQuery(ctx context.Context, req *mcp.CallToolRequest, in 
 	col := &queryCollector{bounds: bounds, out: mcpQueryOutput{Items: []any{}}}
 	cctx, cancel := context.WithTimeout(ctx, bounds.timeout)
 	defer cancel()
+	var nonFinite query.NonFiniteSummary
+	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
 	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: !cfg.noCompile, Logger: cfg.log()}
 	opts.OnPage, opts.OnEstimate = s.progressHooks(cctx, req)
 
@@ -442,6 +445,7 @@ func (s *mcpServer) toolQuery(ctx context.Context, req *mcp.CallToolRequest, in 
 		return nil, mcpQueryOutput{}, err
 	}
 	col.out.Count = len(col.out.Items)
+	col.out.Note = nonFinite.Text()
 	return nil, col.out, nil
 }
 
@@ -770,8 +774,9 @@ type mcpExecInput struct {
 // when a cap cut the reply. A list reply then holds the rows that fit. Any other
 // reply that is over the byte cap comes back as null.
 type mcpExecOutput struct {
-	Result    any  `json:"result"`
-	Truncated bool `json:"truncated"`
+	Result    any    `json:"result"`
+	Truncated bool   `json:"truncated"`
+	Note      string `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
 }
 
 // toolExec forwards the command verbatim through the same runner `iq exec` uses.
@@ -798,6 +803,8 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 		return nil, mcpExecOutput{}, toolError(redactErr(err, cfg.url))
 	}
 	defer func() { _ = st.Close() }()
+	var nonFinite query.NonFiniteSummary
+	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
 	// One extra row lets the cap tell a full result from a cut one.
 	res, err := query.NewRunner(st).Run(query.WithRowLimit(cctx, bounds.maxItems+1), in.Args)
 	if err != nil {
@@ -807,6 +814,7 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	if err != nil {
 		return nil, mcpExecOutput{}, toolError(err)
 	}
+	out.Note = nonFinite.Text()
 	return nil, out, nil
 }
 

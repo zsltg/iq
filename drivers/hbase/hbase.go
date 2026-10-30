@@ -30,6 +30,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/render"
 )
 
@@ -277,7 +278,7 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		if len(res.Cells) == 0 {
 			continue
 		}
-		out[k] = rowFromCells(res.Cells, s.types)
+		out[k] = s.keyedRow(ctx, k, res.Cells)
 	}
 	return out, nil
 }
@@ -295,19 +296,19 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 	if err != nil {
 		return fmt.Errorf("hbase scan: %w", err)
 	}
-	return s.pageScan(req, fn)
+	return s.pageScan(ctx, req, fn)
 }
 
 // pageScan drives a scanner and hands the caller a page of {key: row} every
 // pageSize rows. It is the shared body of ScanBatches and ScanFiltered. The scanner
 // fetches successive server batches as it advances. The pageSize batching here is
 // the streaming contract to fn.
-func (s *Store) pageScan(req *hrpc.Scan, fn func(batch map[string]any) error) error {
+func (s *Store) pageScan(ctx context.Context, req *hrpc.Scan, fn func(batch map[string]any) error) error {
 	scanner := s.client.Scan(req)
 	page := make(map[string]any, s.pageSize)
 	err := eachRow(scanner, "hbase scan", func(res *hrpc.Result) (bool, error) {
 		key := rowKeyString(s.rowkeyType, res.Cells[0].Row)
-		page[key] = rowFromCells(res.Cells, s.types)
+		page[key] = s.keyedRow(ctx, key, res.Cells)
 		if len(page) < s.pageSize {
 			return false, nil
 		}
@@ -405,7 +406,7 @@ func (s *Store) execGet(ctx context.Context, args []string) (any, error) {
 	if len(res.Cells) == 0 {
 		return nil, nil
 	}
-	return rowFromCells(res.Cells, s.types), nil
+	return s.keyedRow(ctx, key, res.Cells), nil
 }
 
 // execScan runs `scan <table> [limit]`, returning up to limit rows as {rowkey: row}.
@@ -424,7 +425,8 @@ func (s *Store) execScan(ctx context.Context, args []string) (any, error) {
 	}
 	rows := map[string]any{}
 	err = eachRow(s.client.Scan(req), "hbase scan", func(res *hrpc.Result) (bool, error) {
-		rows[rowKeyString(s.rowkeyType, res.Cells[0].Row)] = rowFromCells(res.Cells, s.types)
+		key := rowKeyString(s.rowkeyType, res.Cells[0].Row)
+		rows[key] = s.keyedRow(ctx, key, res.Cells)
 		return limit > 0 && len(rows) >= limit, nil
 	})
 	if err != nil {
@@ -574,4 +576,13 @@ func (s *Store) traceOp(format string, args ...any) {
 		return
 	}
 	_, _ = fmt.Fprintf(s.trace, "hbase> "+format+"\n", args...)
+}
+
+// keyedRow decodes the cells of the row key. It reports each NaN or infinity that
+// it converted to the notice sink of ctx.
+func (s *Store) keyedRow(ctx context.Context, key string, cells []*hrpc.Cell) map[string]any {
+	h := &numfmt.Hits{}
+	row := rowFromCells(cells, s.types, h)
+	query.NoteNonFinite(ctx, key, h.Fields...)
+	return row
 }

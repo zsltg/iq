@@ -24,9 +24,11 @@ import (
 // a frozen contract. A decimal follows dec: an exact string, or a bare number.
 // A varint keeps its exact value as an int if it fits. Otherwise it becomes its
 // decimal string. Normalize is exported so that a dump reader produces the same
-// shape as a live scan. Collections arrive as concrete typed Go containers, so
-// Normalize walks them by reflection.
-func Normalize(v any, dec numfmt.DecimalMode) any {
+// shape as a live scan. A NaN or an infinity has no JSON form, so it becomes a
+// string (see numfmt.FiniteFloat), and h records its path. h can be nil.
+// Collections arrive as concrete typed Go containers, so Normalize walks them
+// by reflection.
+func Normalize(v any, dec numfmt.DecimalMode, h *numfmt.Hits) any {
 	if n, ok := signedInt(v); ok {
 		return int(n)
 	}
@@ -34,16 +36,18 @@ func Normalize(v any, dec numfmt.DecimalMode) any {
 		return text
 	}
 	switch t := v.(type) {
-	case nil, bool, float64:
+	case nil, bool:
 		return v
+	case float64:
+		return h.Float(t)
 	case float32:
-		return float64(t)
+		return h.Float(float64(t))
 	case *big.Int:
 		return bigValue(t)
 	case *inf.Dec:
 		return decimalValue(t, dec)
 	default:
-		return normalizeReflect(v, dec)
+		return normalizeReflect(v, dec, h)
 	}
 }
 
@@ -100,26 +104,31 @@ func bigValue(z *big.Int) any {
 // each key stringified (a CQL map key can be non-text). A pointer is
 // dereferenced. A value with no first-class JSON form is rendered as its Go
 // string form, not dropped, so nothing is lost silently.
-func normalizeReflect(v any, dec numfmt.DecimalMode) any {
+func normalizeReflect(v any, dec numfmt.DecimalMode, h *numfmt.Hits) any {
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
 	case reflect.Slice, reflect.Array:
 		out := make([]any, rv.Len())
 		for i := range out {
-			out[i] = Normalize(rv.Index(i).Interface(), dec)
+			h.EnterIndex(i)
+			out[i] = Normalize(rv.Index(i).Interface(), dec, h)
+			h.Leave()
 		}
 		return out
 	case reflect.Map:
 		out := make(map[string]any, rv.Len())
 		for _, k := range rv.MapKeys() {
-			out[keyString(k.Interface())] = Normalize(rv.MapIndex(k).Interface(), dec)
+			name := keyString(k.Interface())
+			h.Enter(name)
+			out[name] = Normalize(rv.MapIndex(k).Interface(), dec, h)
+			h.Leave()
 		}
 		return out
 	case reflect.Pointer:
 		if rv.IsNil() {
 			return nil
 		}
-		return Normalize(rv.Elem().Interface(), dec)
+		return Normalize(rv.Elem().Interface(), dec, h)
 	default:
 		return fmt.Sprintf("%v", v)
 	}

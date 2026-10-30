@@ -38,7 +38,7 @@ func TestReaderPresence(t *testing.T) {
 	zset := func(v []goredis.Z) reader {
 		c := goredis.NewZSliceCmd(ctx)
 		c.SetVal(v)
-		return zsetReader{c}
+		return zsetReader{cmd: c, ctx: context.Background()}
 	}
 	stream := func(v []goredis.XMessage) reader {
 		c := goredis.NewXMessageSliceCmd(ctx)
@@ -155,7 +155,7 @@ func TestReaderReportsReadError(t *testing.T) {
 		{"hash", hashReader{hc}},
 		{"list", listReader{lc}},
 		{"set", setReader{sc}},
-		{"sorted set", zsetReader{zc}},
+		{"sorted set", zsetReader{cmd: zc, ctx: ctx}},
 		{"stream", streamReader{xc}},
 		{"json", jsonReader{cmd: jc, decimal: numfmt.DecimalAuto}},
 		{"filtered json", filterJSONReader{cmd: fc, decimal: numfmt.DecimalAuto, matcher: rawpred.NewMatcher(nil, numfmt.DecimalAuto)}},
@@ -215,7 +215,7 @@ func TestZsetReaderNonFinite(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := goredis.NewZSliceCmd(context.Background())
 			c.SetVal([]goredis.Z{{Member: "m", Score: tt.score}})
-			got, ok, err := zsetReader{c}.normalize()
+			got, ok, err := zsetReader{cmd: c, ctx: context.Background()}.normalize()
 			require.NoError(t, err)
 			require.True(t, ok)
 			require.Equal(t, []any{map[string]any{"member": "m", "score": tt.want}}, got)

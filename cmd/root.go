@@ -19,6 +19,7 @@ import (
 
 	iqconfig "github.com/zsltg/iq/internal/config"
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/secret"
 )
 
@@ -106,6 +107,10 @@ type config struct {
 	logger    *slog.Logger
 	logClose  func() error
 	pprofStop func()
+	// nonFinite counts the NaN and infinite values that adapters turned into
+	// strings during the run. preRun sets it. The run ends with one warning when
+	// it holds a conversion.
+	nonFinite *query.NonFiniteSummary
 	// logStructured is true when the structured file/stream sink is active
 	// (logOptions.fileActive). It gates the INFO "query plan" record. So a bare
 	// --verbose run, whose tinted sink already renders the pretty plan, does
@@ -198,6 +203,12 @@ func newRootCmd() (*cobra.Command, *config) {
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return preRun(cmd, cfg)
 		},
+		// PersistentPostRunE prints the non-finite warning of a run that succeeded.
+		// Execute prints it for a run that failed.
+		PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
+			warnNonFinite(cmd.ErrOrStderr(), cfg)
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRoot(cmd, cfg, args)
 		},
@@ -265,7 +276,28 @@ func preRun(cmd *cobra.Command, cfg *config) error {
 	if err := validateValues(cfg); err != nil {
 		return err
 	}
+	watchNonFinite(cmd, cfg)
 	return startDiagnostics(cmd, cfg)
+}
+
+// watchNonFinite makes the command context carry a notice sink. An adapter that
+// converts a NaN or an infinity to a string reports it to the sink. So the run
+// can warn once at its end.
+func watchNonFinite(cmd *cobra.Command, cfg *config) {
+	cfg.nonFinite = &query.NonFiniteSummary{}
+	cmd.SetContext(query.WithNonFiniteNotice(cmd.Context(), cfg.nonFinite.Sink()))
+}
+
+// warnNonFinite writes one warning line to w when the run converted a value that
+// JSON cannot hold. It writes to stderr only, so stdout stays valid JSON. The
+// line names a key and a field, and never a value.
+func warnNonFinite(w io.Writer, cfg *config) {
+	if cfg.nonFinite == nil {
+		return
+	}
+	if text := cfg.nonFinite.Text(); text != "" {
+		_, _ = fmt.Fprintf(w, "warning: %s\n", text)
+	}
 }
 
 // applyConfigPath makes --config the config path for the whole run by setting
@@ -514,6 +546,7 @@ func Execute() {
 		_ = cfg.outClose()
 	}
 	if err != nil {
+		warnNonFinite(os.Stderr, cfg)
 		// errQuietExit (diff --exit-code) signals a non-zero status with no
 		// message: the differences are the report, not an error.
 		if !errors.Is(err, errQuietExit) {

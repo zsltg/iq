@@ -358,6 +358,39 @@ from the backend is presented to the filter.
     string under `--yaml` (a `yaml.v3` limitation). Exactness is kept in
     preference to YAML's numeric form.
 
+## Not-finite floats
+
+JSON has no form for NaN or infinity. Cassandra, MongoDB, Neo4j and HBase can
+return these values for a float column. `iq` turns each one into a string, so a
+read does not fail halfway:
+
+| value | string |
+| --- | --- |
+| NaN | `"NaN"` |
+| positive infinity | `"Infinity"` |
+| negative infinity | `"-Infinity"` |
+
+Redis sorted-set scores keep the Redis texts `"nan"`, `"inf"` and `"-inf"`.
+
+A run that converts at least one value writes one warning to stderr. The warning
+names the first key and field that `iq` converted, and the total count. It never
+shows a value. Stdout stays valid JSON. The MCP tools `iq_query` and `iq_exec`
+add the same text as a `note` field to the result. The field is absent when `iq`
+converted nothing.
+
+```text title="Example warning"
+warning: iq converted 3 values that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "price"
+```
+
+These costs are known:
+
+- A converted `"NaN"` looks like a stored string `"NaN"`.
+- jq sorts strings above numbers, so a numeric comparison on these rows gives a
+  wrong answer.
+- A copy into another store writes a string, not a float. An HBase `double`
+  column is the exception, because it reads `"NaN"`, `"Infinity"` and
+  `"-Infinity"` back as floats.
+
 ## Color `--color`
 
 `--color` :material-earth:{ title="Global flag" }, shorthand `-C`, is global.

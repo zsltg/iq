@@ -9,11 +9,13 @@ import (
 	"maps"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/render"
 )
 
@@ -328,7 +330,7 @@ func (s *Store) collectByKey(ctx context.Context, res neo4j.Result, out map[stri
 		if _, dup := out[k]; dup && s.target.key != "" {
 			return fmt.Errorf("neo4j: key %q matches more than one %s; %s.%s is not unique", k, s.target.noun(), s.target.name, s.target.key)
 		}
-		out[k] = s.normalizeValue(ent)
+		out[k] = s.normalizeEntity(ctx, k, ent)
 	}
 	if err := res.Err(); err != nil {
 		return fmt.Errorf("neo4j get: %w", err)
@@ -429,7 +431,7 @@ func (s *Store) readPage(ctx context.Context, res neo4j.Result) (scanPage, error
 		if _, dup := page.rows[k]; dup {
 			k = eid // avoid silent in-page loss on a non-unique key.
 		}
-		page.rows[k] = s.normalizeValue(ent)
+		page.rows[k] = s.normalizeEntity(ctx, k, ent)
 	}
 	if err := res.Err(); err != nil {
 		return scanPage{}, fmt.Errorf("neo4j scan: %w", err)
@@ -479,7 +481,7 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	}
 	rows := []any{}
 	for res.Next(ctx) {
-		rows = append(rows, s.rowOf(res.Record()))
+		rows = append(rows, s.rowOf(ctx, "row "+strconv.Itoa(len(rows)+1), res.Record()))
 	}
 	if err := res.Err(); err != nil {
 		return nil, fmt.Errorf("neo4j query: %w", err)
@@ -507,11 +509,15 @@ func parseQueryArgs(args []string) (string, map[string]any, error) {
 }
 
 // rowOf renders one result row as a {column: value} map with every value normalized.
-func (s *Store) rowOf(rec *neo4j.Record) map[string]any {
+func (s *Store) rowOf(ctx context.Context, key string, rec *neo4j.Record) map[string]any {
+	h := &numfmt.Hits{}
 	row := make(map[string]any, len(rec.Keys))
 	for i, k := range rec.Keys {
-		row[k] = s.normalizeValue(rec.Values[i])
+		h.Enter(k)
+		row[k] = s.normalizeValue(rec.Values[i], h)
+		h.Leave()
 	}
+	query.NoteNonFinite(ctx, key, h.Fields...)
 	return row
 }
 

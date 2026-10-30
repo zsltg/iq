@@ -5,6 +5,7 @@
 package mongo
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"strconv"
@@ -13,18 +14,23 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 )
 
 // Normalize converts a decoded BSON value into a JSON-ready Go value the jq
 // engine accepts: nil, bool, int, float64, string, []any, map[string]any. Richer
 // BSON types get their natural JSON form: an ObjectID becomes its hex string, and
 // a date RFC 3339. The encoding is a frozen contract. A Decimal128 follows dec:
-// exact string, or a bare number. Normalize is exported so a dump reader (the file
-// backend) produces the same shape as a live collection scan.
-func Normalize(v any, dec numfmt.DecimalMode) any {
+// exact string, or a bare number. A NaN or an infinity has no JSON form, so it
+// becomes a string (see numfmt.FiniteFloat), and h records its path. h can be
+// nil. Normalize is exported so a dump reader (the file backend) produces the
+// same shape as a live collection scan.
+func Normalize(v any, dec numfmt.DecimalMode, h *numfmt.Hits) any {
 	switch t := v.(type) {
-	case nil, bool, string, float64:
+	case nil, bool, string:
 		return t
+	case float64:
+		return h.Float(t)
 	case int:
 		return t
 	case int32:
@@ -42,19 +48,15 @@ func Normalize(v any, dec numfmt.DecimalMode) any {
 	case bson.Binary:
 		return base64.StdEncoding.EncodeToString(t.Data)
 	case bson.M:
-		return normalizeMap(t, dec)
+		return normalizeMap(t, dec, h)
 	case map[string]any:
-		return normalizeMap(t, dec)
+		return normalizeMap(t, dec, h)
 	case bson.D:
-		out := make(map[string]any, len(t))
-		for _, e := range t {
-			out[e.Key] = Normalize(e.Value, dec)
-		}
-		return out
+		return normalizeDoc(t, dec, h)
 	case bson.A:
-		return normalizeSlice(t, dec)
+		return normalizeSlice(t, dec, h)
 	case []any:
-		return normalizeSlice(t, dec)
+		return normalizeSlice(t, dec, h)
 	default:
 		// A BSON type without a first-class JSON form (timestamp, regex, and so
 		// on) is rendered as its Go string form and not dropped. So nothing is
@@ -64,9 +66,36 @@ func Normalize(v any, dec numfmt.DecimalMode) any {
 	}
 }
 
-// normalize adapts Normalize to the store's configured decimal mode.
-func (s *Store) normalize(v any) any {
-	return Normalize(v, s.decimal)
+// normalizeDoc converts an ordered BSON document to a map. Each value goes
+// through Normalize, and its key goes into the path of h.
+func normalizeDoc(d bson.D, dec numfmt.DecimalMode, h *numfmt.Hits) map[string]any {
+	out := make(map[string]any, len(d))
+	for _, e := range d {
+		h.Enter(e.Key)
+		out[e.Key] = Normalize(e.Value, dec, h)
+		h.Leave()
+	}
+	return out
+}
+
+// Document normalizes one decoded document and returns its key and value. It
+// reports each NaN or infinity that it converted to the notice sink of ctx. It
+// is exported so a dump reader keys and converts a document as a live scan does.
+func Document(ctx context.Context, doc map[string]any, dec numfmt.DecimalMode) (string, any) {
+	key := KeyOf(doc["_id"])
+	h := &numfmt.Hits{}
+	val := Normalize(doc, dec, h)
+	query.NoteNonFinite(ctx, key, h.Fields...)
+	return key, val
+}
+
+// normalizeReply normalizes the reply of a raw command. A reply has no key, so
+// a conversion is reported under the name "reply".
+func (s *Store) normalizeReply(ctx context.Context, res map[string]any) any {
+	h := &numfmt.Hits{}
+	val := Normalize(res, s.decimal, h)
+	query.NoteNonFinite(ctx, "reply", h.Fields...)
+	return val
 }
 
 // decimalValue renders a BSON Decimal128 per the decimal mode. In auto and string
@@ -89,19 +118,23 @@ func decimalValue(d bson.Decimal128, mode numfmt.DecimalMode) any {
 }
 
 // normalizeMap normalizes every value of a document, preserving keys.
-func normalizeMap(m map[string]any, dec numfmt.DecimalMode) map[string]any {
+func normalizeMap(m map[string]any, dec numfmt.DecimalMode, h *numfmt.Hits) map[string]any {
 	out := make(map[string]any, len(m))
 	for k, v := range m {
-		out[k] = Normalize(v, dec)
+		h.Enter(k)
+		out[k] = Normalize(v, dec, h)
+		h.Leave()
 	}
 	return out
 }
 
 // normalizeSlice normalizes every element of an array, preserving order.
-func normalizeSlice(a []any, dec numfmt.DecimalMode) []any {
+func normalizeSlice(a []any, dec numfmt.DecimalMode, h *numfmt.Hits) []any {
 	out := make([]any, len(a))
 	for i, v := range a {
-		out[i] = Normalize(v, dec)
+		h.EnterIndex(i)
+		out[i] = Normalize(v, dec, h)
+		h.Leave()
 	}
 	return out
 }

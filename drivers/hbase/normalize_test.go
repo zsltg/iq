@@ -40,10 +40,10 @@ func TestParseColType(t *testing.T) {
 }
 
 func TestDecodeCellAuto(t *testing.T) {
-	require.Equal(t, "Dune", decodeCell(ctAuto, []byte("Dune")))
+	require.Equal(t, "Dune", decodeCell(ctAuto, []byte("Dune"), nil))
 	// Non-UTF-8 bytes fall back to base64.
 	raw := []byte{0xff, 0xfe, 0x00}
-	require.Equal(t, base64.StdEncoding.EncodeToString(raw), decodeCell(ctAuto, raw))
+	require.Equal(t, base64.StdEncoding.EncodeToString(raw), decodeCell(ctAuto, raw, nil))
 }
 
 func TestDecodeCellTypedRoundTrip(t *testing.T) {
@@ -67,7 +67,7 @@ func TestDecodeCellTypedRoundTrip(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			b, err := encodeCell(tt.ct, tt.val)
 			require.NoError(t, err)
-			require.Equal(t, tt.val, decodeCell(tt.ct, b))
+			require.Equal(t, tt.val, decodeCell(tt.ct, b, nil))
 		})
 	}
 }
@@ -75,9 +75,9 @@ func TestDecodeCellTypedRoundTrip(t *testing.T) {
 func TestDecodeCellWrongWidthFallsBack(t *testing.T) {
 	// A declared long whose bytes are not 8 wide falls back to the honest rendering
 	// rather than misreading three bytes as a number.
-	require.Equal(t, "abc", decodeCell(ctLong, []byte("abc")))
-	require.Equal(t, "xy", decodeCell(ctInt, []byte("xy")))
-	require.Equal(t, "zz", decodeCell(ctBool, []byte("zz"))) // 2 bytes: not a bool width
+	require.Equal(t, "abc", decodeCell(ctLong, []byte("abc"), nil))
+	require.Equal(t, "xy", decodeCell(ctInt, []byte("xy"), nil))
+	require.Equal(t, "zz", decodeCell(ctBool, []byte("zz"), nil)) // 2 bytes: not a bool width
 }
 
 func TestEncodeCellRejectsBadShapes(t *testing.T) {
@@ -109,7 +109,7 @@ func TestEncodeCellAcceptsFloatIntegers(t *testing.T) {
 	// literal.
 	b, err := encodeCell(ctLong, float64(1234))
 	require.NoError(t, err)
-	require.Equal(t, 1234, decodeCell(ctLong, b))
+	require.Equal(t, 1234, decodeCell(ctLong, b, nil))
 }
 
 func TestRowFromCells(t *testing.T) {
@@ -121,7 +121,7 @@ func TestRowFromCells(t *testing.T) {
 		{Row: []byte("1"), Family: []byte("cf"), Qualifier: []byte("age"), Value: ageBytes},
 		{Row: []byte("1"), Family: []byte("meta"), Qualifier: []byte("v"), Value: []byte("1")},
 	}
-	got := rowFromCells(cells, types)
+	got := rowFromCells(cells, types, nil)
 	require.Equal(t, map[string]any{
 		"cf":   map[string]any{"name": "Ann", "age": 30},
 		"meta": map[string]any{"v": "1"},
