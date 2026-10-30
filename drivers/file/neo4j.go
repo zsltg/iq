@@ -1,7 +1,6 @@
 package file
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,51 +24,33 @@ import (
 // _id/_labels/_type/_start/_end envelope (see drivers/neo4j). A keyspace selector is
 // required, and the reader does not guess one.
 func neo4jSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hints) (query.RecordSource, error) {
+	return neo4jSourceCap(capped{r, query.MaxRecordBytes}, size, dec, hints)
+}
+
+// neo4jSourceCap is neo4jSource with a limit on the size of one entry.
+func neo4jSourceCap(src capped, size int, dec numfmt.DecimalMode, hints Hints) (query.RecordSource, error) {
 	mode, name, err := neo4jKeyspace(hints)
 	if err != nil {
 		return nil, err
 	}
 	keyProp := hints.Key
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
-		br := bufio.NewReader(r)
-		array, err := startsArray(br)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil // empty dump.
-			}
-			return fmt.Errorf("read neo4j json: %w", err)
+		st, ok, err := openJSONStream(src, "neo4j json", "read neo4j json array")
+		if err != nil || !ok {
+			return err
 		}
-		jd := json.NewDecoder(br)
-		jd.UseNumber() // keep integers exact and distinct from floats.
-		page := make([]query.Record, 0, size)
-		flush := func() error {
-			if len(page) == 0 {
-				return nil
-			}
-			if err := fn(page); err != nil {
-				return err
-			}
-			page = page[:0]
-			return nil
-		}
-		if array {
-			if _, err := jd.Token(); err != nil { // consume '['.
-				return fmt.Errorf("read neo4j json array: %w", err)
-			}
-		}
+		st.jd.UseNumber() // keep integers exact and distinct from floats.
+		pg := newRecordPager(size, fn)
 		for {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if array && !jd.More() {
-				break
-			}
 			var e apocEntry
-			if err := jd.Decode(&e); err != nil {
-				if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end between values, never inside an array. A wrapped one is a reader failure.
-					break
+			if more, err := st.next(&e); err != nil || !more {
+				if err != nil {
+					return err
 				}
-				return fmt.Errorf("decode neo4j json: %w", err)
+				break
 			}
 			rec, keep, err := recordForEntry(e, mode, name, keyProp, dec)
 			if err != nil {
@@ -78,14 +59,11 @@ func neo4jSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hints) (qu
 			if !keep {
 				continue
 			}
-			page = append(page, rec)
-			if len(page) >= size {
-				if err := flush(); err != nil {
-					return err
-				}
+			if err := pg.add(rec); err != nil {
+				return err
 			}
 		}
-		return flush()
+		return pg.flush()
 	}, nil
 }
 

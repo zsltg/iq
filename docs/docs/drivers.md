@@ -1161,6 +1161,8 @@ drive letter).
 | Cassandra CSV | `cqlsh COPY … TO 'f.csv'` | needs `?format=cassandra-csv`, `?keys=col1[,col2]` naming the primary-key columns, and `?types=col=cqltype,…` for the non-text columns (COPY writes every value as text). Column names come from a `WITH HEADER=TRUE` row, else `?columns=`. Scalar columns only |
 | Neo4j APOC JSON | `CALL apoc.export.json.all('g.json',{})` | needs `?format=neo4j-json` and a keyspace selector: either `?label=<Label>` for its nodes or `?rel=<Type>` for its relationships (a dump holds the whole graph). JSON Lines or `ARRAY_JSON`. Same `_id`/`_labels`/`_type`/`_start`/`_end` envelope as the live driver. `?key=<prop>` keys by a property. `_id` is APOC's numeric export id, not the live elementId. The binary `neo4j-admin database dump` and APOC's `useTypes`/`JSON_ID_AS_KEYS` variants are not supported |
 
+One value in a `mongoexport`, APOC, or cqlsh CSV dump can be at most 16 MiB, the same as a typed JSONL line. A larger value stops the read with an error that names the format and the record number.
+
 The whole dump streams. A `file://` source never holds all values in memory (whole-dataset
 materialization is the core's, gated by `--unbounded`, exactly as for a live backend).
 

@@ -248,7 +248,9 @@ func firstYAMLObject(head []byte) (map[string]any, bool) {
 
 // A BSON document is framed by a 4-byte little-endian length, and the spec caps a
 // document at 16 MiB. The constant bsonMinDoc is the empty document: the frame
-// plus its terminator. Both the sniffer and the reader take that frame from an
+// plus its terminator. The 16 MiB cap is the BSON spec value. It stays apart from
+// query.MaxRecordBytes, which caps a text dump value, so a change to one does not
+// change the other. Both the sniffer and the reader take that frame from an
 // untrusted dump, so they share one bound.
 const (
 	bsonMinDoc = 5
