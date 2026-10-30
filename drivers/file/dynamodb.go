@@ -117,7 +117,7 @@ func readMembers(ctx context.Context, jd *json.Decoder, emit func(map[string]typ
 	for jd.More() {
 		key, err := jd.Token()
 		if err != nil {
-			return false, fmt.Errorf("decode dynamodb dump: %w", err)
+			return false, fmt.Errorf("decode dynamodb key: %w", err)
 		}
 		hit, err := readMember(ctx, jd, key, emit)
 		if err != nil {
@@ -153,7 +153,7 @@ func readMember(ctx context.Context, jd *json.Decoder, key json.Token, emit func
 	}
 	var skip json.RawMessage
 	if err := jd.Decode(&skip); err != nil {
-		return false, fmt.Errorf("decode dynamodb dump: %w", err)
+		return false, fmt.Errorf("decode dynamodb value: %w", err)
 	}
 	return false, nil
 }

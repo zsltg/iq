@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -205,44 +206,107 @@ func TestDynamoScanOutputStreams(t *testing.T) {
 }
 
 func TestDynamoSourceShapes(t *testing.T) {
-	keys := func(recs []query.Record) []string {
-		out := make([]string, 0, len(recs))
-		for _, r := range recs {
-			out = append(out, r.Key)
-		}
-		return out
-	}
 	tests := []struct {
-		name    string
-		body    string
-		want    []string
-		wantErr string
+		name string
+		body string
+		want []string
 	}{
-		{"scan output", `{"Items":[{"pk":{"S":"a"}},{"pk":{"S":"b"}}],"Count":2}`, []string{"a", "b"}, ""},
-		{"two scan objects", `{"Items":[{"pk":{"S":"a"}}],"Count":1} {"Items":[{"pk":{"S":"b"}}],"Count":1}`, []string{"a", "b"}, ""},
-		{"ndjson export", "{\"Item\":{\"pk\":{\"S\":\"a\"}}}\n{\"Item\":{\"pk\":{\"S\":\"b\"}}}\n{\"Item\":{\"pk\":{\"S\":\"c\"}}}\n", []string{"a", "b", "c"}, ""},
-		{"extra keys around Items", `{"Count":1,"ConsumedCapacity":{"TableName":"t"},"Items":[{"pk":{"S":"a"}}],"LastEvaluatedKey":{"pk":{"S":"a"}},"ScannedCount":1}`, []string{"a"}, ""},
-		{"empty Items", `{"Items":[],"Count":0}`, []string{}, ""},
-		{"no Items or Item", `{"Count":1}`, nil, "neither"},
-		{"malformed json", `{"Items":[{"pk":{"S":"a"}},`, nil, "decode dynamodb"},
-		{"Items not an array", `{"Items":{"pk":{"S":"a"}}}`, nil, "decode dynamodb Items"},
-		{"top level not an object", `[1]`, nil, "decode dynamodb dump"},
+		{"scan output", `{"Items":[{"pk":{"S":"a"}},{"pk":{"S":"b"}}],"Count":2}`, []string{"a", "b"}},
+		{"two scan objects", `{"Items":[{"pk":{"S":"a"}}],"Count":1} {"Items":[{"pk":{"S":"b"}}],"Count":1}`, []string{"a", "b"}},
+		{"ndjson export", "{\"Item\":{\"pk\":{\"S\":\"a\"}}}\n{\"Item\":{\"pk\":{\"S\":\"b\"}}}\n{\"Item\":{\"pk\":{\"S\":\"c\"}}}\n", []string{"a", "b", "c"}},
+		{"extra keys around Items", `{"Count":1,"ConsumedCapacity":{"TableName":"t"},"Items":[{"pk":{"S":"a"}}],"LastEvaluatedKey":{"pk":{"S":"a"}},"ScannedCount":1}`, []string{"a"}},
+		{"empty Items", `{"Items":[],"Count":0}`, []string{}},
+		{"null Items", `{"Items":null}`, []string{}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			src, err := dynamoSource(strings.NewReader(tc.body), pageSize, numfmt.DecimalAuto, Hints{Keys: "pk"})
+			got, err := readDynamoDump(tc.body)
+
 			require.NoError(t, err)
-			var got []query.Record
-			err = src(context.Background(), func(b []query.Record) error {
-				got = append(got, b...)
-				return nil
-			})
-			if tc.wantErr != "" {
-				require.ErrorContains(t, err, tc.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.want, keys(got))
+			require.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// TestDynamoSourceErrors pins the exact error of each broken input, and its cause.
+func TestDynamoSourceErrors(t *testing.T) {
+	syntax := func(err error) bool {
+		var se *json.SyntaxError
+		return errors.As(err, &se)
+	}
+	tests := []struct {
+		name  string
+		body  string
+		want  string
+		cause func(error) bool
+	}{
+		{"no Items or Item", `{"Count":1}`, `dynamodb dump object has neither "Item" nor "Items"; expected an S3 export or scan output`, nil},
+		{"top level null", `null`, `dynamodb dump object has neither "Item" nor "Items"; expected an S3 export or scan output`, nil},
+		{"malformed json", `{"Items":[{"pk":{"S":"a"}},`, "decode dynamodb dump: unexpected end of JSON input", nil},
+		{"Items not an array", `{"Items":{"pk":{"S":"a"}}}`, "decode dynamodb Items: value is not an array", nil},
+		{"top level not an object", `[1]`, "decode dynamodb dump: top-level value is not an object", nil},
+		{"top level not json", `x`, "decode dynamodb dump: invalid character 'x' looking for beginning of value", syntax},
+		{"key that is not a string", `{1:2}`, "decode dynamodb key: object member name must be a string", syntax},
+		{"value cut after a key", `{"Count"`, "decode dynamodb value: unexpected EOF", func(err error) bool { return errors.Is(err, io.ErrUnexpectedEOF) }},
+		{"object cut before its end", `{"Count":1 `, "decode dynamodb key: unexpected end of JSON input", nil},
+		{"Items cut after its key", `{"Items":`, "decode dynamodb Items: EOF", func(err error) bool { return errors.Is(err, io.EOF) }},
+		{"Items cut before its end", `{"Items":[{"pk":{"S":"a"}}`, "decode dynamodb dump: unexpected end of JSON input", nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := readDynamoDump(tc.body)
+
+			require.EqualError(t, err, tc.want)
+			if tc.cause != nil {
+				require.True(t, tc.cause(err), "the error must keep its cause")
+			}
+		})
+	}
+}
+
+// readDynamoDump reads a DynamoDB dump body and returns the keys of its records.
+func readDynamoDump(body string) ([]string, error) {
+	src, err := dynamoSource(strings.NewReader(body), pageSize, numfmt.DecimalAuto, Hints{Keys: "pk"})
+	if err != nil {
+		return nil, err
+	}
+	keys := []string{}
+	err = src(context.Background(), func(b []query.Record) error {
+		for _, r := range b {
+			keys = append(keys, r.Key)
+		}
+		return nil
+	})
+	return keys, err
+}
+
+// TestDynamoScanOutputStopsWhenCanceled proves that the "Items" loop checks the
+// context between items.
+func TestDynamoScanOutputStopsWhenCanceled(t *testing.T) {
+	body := `{"Items":[{"pk":{"S":"a"}},{"pk":{"S":"b"}},{"pk":{"S":"c"}}]}`
+	src, err := dynamoSource(strings.NewReader(body), 1, numfmt.DecimalAuto, Hints{Keys: "pk"})
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var got []query.Record
+
+	err = src(ctx, func(b []query.Record) error {
+		got = append(got, b...)
+		cancel()
+		return nil
+	})
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Len(t, got, 1)
+}
+
+// TestDynamoTopLevelNotAnObjectKeepsTheCause proves that a top-level value that is
+// not an object fails with errNotObject, wrapped.
+func TestDynamoTopLevelNotAnObjectKeepsTheCause(t *testing.T) {
+	src, err := dynamoSource(strings.NewReader(`[1]`), pageSize, numfmt.DecimalAuto, Hints{Keys: "pk"})
+	require.NoError(t, err)
+
+	err = src(context.Background(), func([]query.Record) error { return nil })
+
+	require.ErrorIs(t, err, errNotObject)
 }
