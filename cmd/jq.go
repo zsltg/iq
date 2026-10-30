@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"time"
 
@@ -15,23 +14,21 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// openJQStore opens the store the jq engine reads: the buffered piped-stdin dump
-// when no source was selected (sq-style), otherwise the resolved backend.
+// openJQStore opens the store the jq engine reads: the piped-stdin dump when no
+// source was selected (sq-style), otherwise the resolved backend. The piped dump
+// is a stream that the run reads once.
 func openJQStore(cmd *cobra.Command, ctx context.Context, cfg *config) (store, error) {
 	if !cfg.stdin {
 		return openStore(ctx, cfg)
 	}
-	data, err := io.ReadAll(cmd.InOrStdin())
-	if err != nil {
-		return nil, fmt.Errorf("read stdin: %w", err)
-	}
 	format := iqfile.FormatUnknown
 	if cfg.fromFormat != "" {
+		var err error
 		if format, err = iqfile.ParseFormat(cfg.fromFormat); err != nil {
 			return nil, err
 		}
 	}
-	st, err := iqfile.OpenReader(data, format, cfg.decimalMode)
+	st, err := iqfile.OpenPipe(cmd.InOrStdin(), format, cfg.decimalMode)
 	if err != nil {
 		return nil, err
 	}

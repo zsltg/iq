@@ -644,29 +644,27 @@ func TestSupportedFormatsCatalogue(t *testing.T) {
 	}
 }
 
-func TestOpenReaderBufferedStdin(t *testing.T) {
-	// A buffered (stdin-like) typed JSONL dump serves the store port and re-scans.
-	data := []byte("{\"key\":\"a\",\"type\":\"string\",\"value\":\"hi\"}\n{\"key\":\"b\",\"type\":\"string\",\"value\":\"yo\"}\n")
-	st, err := OpenReader(data, FormatUnknown, numfmt.DecimalAuto)
-	require.NoError(t, err)
-	require.Equal(t, FormatJSONL, st.format)
-	got, err := st.Get(context.Background(), []string{"b"})
-	require.NoError(t, err)
-	require.Equal(t, "yo", got["b"])
-	require.Len(t, collect(t, st), 2) // a second scan re-reads the buffer
+const pipeDump = "{\"key\":\"a\",\"type\":\"string\",\"value\":\"hi\"}\n{\"key\":\"b\",\"type\":\"string\",\"value\":\"yo\"}\n"
+
+// slowDump yields a typed JSONL dump on demand and counts the bytes it gave out.
+type slowDump struct {
+	next, total int
+	pending     []byte
+	taken       int
 }
 
-// TestOpenReaderCarriesTheDecimalMode confirms that the buffered (stdin) store
-// keeps the decimal mode it was opened with. Dropping it silently decodes a
-// piped dump under a different number policy than the same dump read from a path.
-func TestOpenReaderCarriesTheDecimalMode(t *testing.T) {
-	for _, dec := range []numfmt.DecimalMode{numfmt.DecimalAuto, numfmt.DecimalString} {
-		t.Run(fmt.Sprintf("mode %d survives", dec), func(t *testing.T) {
-			st, err := OpenReader([]byte(`{"key":"a","type":"string","value":"x"}`), FormatJSONL, dec)
-			require.NoError(t, err)
-			require.Equal(t, dec, st.dec)
-		})
+func (d *slowDump) Read(p []byte) (int, error) {
+	for len(d.pending) == 0 {
+		if d.next == d.total {
+			return 0, io.EOF
+		}
+		d.pending = fmt.Appendf(nil, `{"key":"k%d","type":"string","value":"v"}`+"\n", d.next)
+		d.next++
 	}
+	n := copy(p, d.pending)
+	d.pending = d.pending[n:]
+	d.taken += n
+	return n, nil
 }
 
 // TestParseFileURLOpaqueForm covers the file:relative spelling, whose path url.Parse
@@ -1133,8 +1131,8 @@ func TestURLFailures(t *testing.T) {
 		require.ErrorContains(t, err, "parse file url")
 		requireWrapped(t, err)
 	})
-	t.Run("OpenReader refuses an empty buffer", func(t *testing.T) {
-		st, err := OpenReader(nil, FormatUnknown, numfmt.DecimalAuto)
+	t.Run("OpenPipe refuses an empty stream", func(t *testing.T) {
+		st, err := OpenPipe(strings.NewReader(""), FormatUnknown, numfmt.DecimalAuto)
 		require.ErrorContains(t, err, "dump is empty")
 		require.Nil(t, st)
 	})
@@ -1143,11 +1141,14 @@ func TestURLFailures(t *testing.T) {
 // TestBrokenGzipDumpIsAnError gives a dump that has the gzip magic but no gzip
 // header. The plain scan and the prefiltered scan both report it.
 func TestBrokenGzipDumpIsAnError(t *testing.T) {
-	st, err := OpenReader([]byte{0x1f, 0x8b}, FormatJSONL, numfmt.DecimalAuto)
-	require.NoError(t, err)
-	err = st.TypedScan(context.Background(), func([]query.Record) error { return nil })
+	broken := func() *Store {
+		st, err := OpenPipe(bytes.NewReader([]byte{0x1f, 0x8b}), FormatJSONL, numfmt.DecimalAuto)
+		require.NoError(t, err)
+		return st
+	}
+	err := broken().TypedScan(context.Background(), func([]query.Record) error { return nil })
 	require.ErrorContains(t, err, "open gzip dump")
-	err = st.ScanFiltered(context.Background(), matchEverything, func(map[string]any) error { return nil })
+	err = broken().ScanFiltered(context.Background(), matchEverything, func(map[string]any) error { return nil })
 	require.ErrorContains(t, err, "open gzip dump")
 }
 

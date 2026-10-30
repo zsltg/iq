@@ -105,11 +105,6 @@ func TestPrefilterParity(t *testing.T) {
 		{"large record", func(t *testing.T) *Store { return jsonlStore(t, bigRecord, CacheConfig{}) }},
 		{"multi page", func(t *testing.T) *Store { return jsonlStore(t, multi.String(), CacheConfig{}) }},
 		{"empty dump", func(t *testing.T) *Store { return jsonlStore(t, "", CacheConfig{}) }},
-		{"stdin buffer", func(t *testing.T) *Store {
-			st, err := OpenReader([]byte(typedLines), FormatJSONL, numfmt.DecimalAuto)
-			require.NoError(t, err)
-			return st
-		}},
 		{"gzip file", func(t *testing.T) *Store {
 			u := writeDump(t, "dump.jsonl.gz", gzipBytes(t, []byte(typedLines)), "format=jsonl")
 			st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
@@ -131,6 +126,20 @@ func TestPrefilterParity(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestScanFilteredOverAPipeMatchesTheFileScan runs the prefiltered scan once over a
+// piped stdin store and compares its pages with a plain scan of the same bytes
+// from a file. The pipe store can be read only once, so each store gets one read.
+func TestScanFilteredOverAPipeMatchesTheFileScan(t *testing.T) {
+	var body strings.Builder
+	for i := range pageSize + 50 {
+		fmt.Fprintf(&body, `{"key":"m%d","type":"document","value":{"n":%d}}`+"\n", i, i)
+	}
+	want := scanBatchesPages(t, jsonlStore(t, body.String(), CacheConfig{}))
+	st, err := OpenPipe(strings.NewReader(body.String()), FormatUnknown, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	require.Equal(t, want, scanFilteredPages(t, st, matchEverything))
 }
 
 // TestScanFilteredKeepsNegativeZero pins the sign of a negative zero on the prefiltered
@@ -358,7 +367,7 @@ func TestPrefilterable(t *testing.T) {
 		require.True(t, jsonlStore(t, oneRecord(), CacheConfig{}).prefilterable())
 	})
 	t.Run("jsonl stdin engages", func(t *testing.T) {
-		st, err := OpenReader([]byte(oneRecord()), FormatJSONL, numfmt.DecimalAuto)
+		st, err := OpenPipe(strings.NewReader(oneRecord()), FormatJSONL, numfmt.DecimalAuto)
 		require.NoError(t, err)
 		require.True(t, st.prefilterable(), "stdin is uncacheable, so the prefilter engages")
 	})

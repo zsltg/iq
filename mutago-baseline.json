@@ -2544,6 +2544,12 @@
    "file": "drivers/redis/paged.go",
    "mutator": "numbers/incrementer",
    "line": 228
+  },
+  {
+   "id": "231160636d78b54c913d691b2e584274",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 167
   }
  ]
 }

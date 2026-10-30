@@ -870,3 +870,7 @@ The zset writer reads an infinite score from its text with strconv.ParseFloat, a
 - 6b3cdfcef42f drivers/redis/paged.go:361 expression/context-nil. A command that the read queues on the pipeline gets nil in place of ctx. BatchProcess discards the context of a queued command, and the Pipelined(ctx) call governs the I/O (same as kv.go:44 and filter.go:91).
 - 0c39e079baa3 drivers/redis/paged.go:228 numbers/decrementer. `strconv.ParseFloat(score, 64)` becomes bitSize 63. ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path, so the parsed float and the error are identical.
 - 216b3d8b0523 drivers/redis/paged.go:228 numbers/incrementer. `strconv.ParseFloat(score, 64)` becomes bitSize 65. ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path, so the parsed float and the error are identical.
+
+## drivers/file/detect.go, peek of piped stdin (accepted 2026-10-30, PR #220)
+
+- 231160636d78 drivers/file/detect.go:167 statement/return. The `FormatUnknown` that detectPeek returns with a read error becomes the zero value of Format. FormatUnknown is that zero value (the first iota constant), so the return is identical. TestOpenPipeReportsAReadErrorOfTheHead pins the error that goes with it.

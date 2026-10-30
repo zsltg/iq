@@ -155,13 +155,16 @@ func detectFormat(path string) (Format, error) {
 	return classify(head, path)
 }
 
-// detectBytes sniffs the format of an in-memory dump buffer (piped stdin). It has
-// no filename, so it cannot fall back to a .yaml/.yml extension. A typed YAML
-// dump is recognized by its {key,…,value} envelope instead.
-func detectBytes(data []byte) (Format, error) {
-	head := data
-	if len(head) > 512 {
-		head = head[:512]
+// detectPeek sniffs the format of piped stdin from a 512-byte peek. The peek
+// does not consume the stream. The input has no filename, so detection cannot
+// fall back to a .yaml/.yml extension. A typed YAML dump is recognized by its
+// {key,…,value} envelope instead. br has the default 4096-byte buffer, so the peek
+// cannot fail with bufio.ErrBufferFull. A short input gives io.EOF with the bytes
+// it has.
+func detectPeek(br *bufio.Reader) (Format, error) {
+	head, err := br.Peek(512)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return FormatUnknown, fmt.Errorf("read stdin head: %w", err)
 	}
 	return classify(head, "")
 }

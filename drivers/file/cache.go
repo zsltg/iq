@@ -153,7 +153,7 @@ type cacheMeta struct {
 // all. It reports false for stdin (no stable path), a disabled policy, an
 // unstattable path, and a dump below the size floor.
 func (s *Store) cacheable() (cacheMeta, bool) {
-	if s.data != nil || !s.cache.active() {
+	if s.pipe != nil || !s.cache.active() {
 		return cacheMeta{}, false
 	}
 	abs, err := filepath.Abs(s.path)

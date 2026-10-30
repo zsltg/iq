@@ -134,7 +134,7 @@ func TestCacheableRules(t *testing.T) {
 		store *Store
 		want  bool
 	}{
-		{name: "a stdin buffer has no stable path", store: &Store{data: []byte("x"), path: path, cache: cacheCfg(dir)}, want: false},
+		{name: "a piped stdin stream has no stable path", store: &Store{pipe: &pipeInput{}, path: path, cache: cacheCfg(dir)}, want: false},
 		{name: "a disabled policy never caches", store: &Store{path: path, cache: CacheConfig{Dir: dir, MinSize: 1}}, want: false},
 		{name: "an empty dir never caches", store: &Store{path: path, cache: CacheConfig{Enabled: true, MinSize: 1}}, want: false},
 		{name: "an unstattable path never caches", store: &Store{path: filepath.Join(dir, "gone.rdb"), cache: cacheCfg(dir)}, want: false},
