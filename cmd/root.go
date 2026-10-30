@@ -451,7 +451,7 @@ func addRootFlags(root *cobra.Command, cfg *config) {
 	root.PersistentFlags().BoolVar(&cfg.errorTextVerbose, "error.format.text.verbose", true, "for a jq syntax error in text format, show a caret span report")
 	root.PersistentFlags().StringVar(&cfg.pprofMode, "debug.pprof", "", "write a runtime profile of the whole run: cpu, mem, block, mutex, goroutine, thread, or trace")
 	// --unbounded and --no-compile are local to the default jq action.
-	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it, and permits a Redis key with more than 1000000 elements or an HBase row with more than 1000000 cells in one column family)")
+	root.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a filter that loads the whole dataset into memory (also materializes a .[]-rooted filter instead of streaming it, and permits a Redis key or an RDB dump key with more than 1000000 elements or an HBase row with more than 1000000 cells in one column family)")
 	root.Flags().BoolVar(&cfg.noCompile, "no-compile", false, "disable predicate pushdown; run the full .[]|select(...) filter client-side (pushdown is on by default where the backend supports it, see iq --explain; results are unchanged either way)")
 	root.Flags().BoolVar(&cfg.explain, "explain", false, "print the formatted query plan (pretty jq, nested filters, and the backend calls) and exit without connecting or executing")
 	addRenderFlags(root, cfg)
