@@ -217,6 +217,7 @@ func TestDynamoSourceShapes(t *testing.T) {
 		{"extra keys around Items", `{"Count":1,"ConsumedCapacity":{"TableName":"t"},"Items":[{"pk":{"S":"a"}}],"LastEvaluatedKey":{"pk":{"S":"a"}},"ScannedCount":1}`, []string{"a"}},
 		{"empty Items", `{"Items":[],"Count":0}`, []string{}},
 		{"null Items", `{"Items":null}`, []string{}},
+		{"Item and Items in one object", `{"Item":{"pk":{"S":"a"}},"Items":[{"pk":{"S":"b"}}]}`, []string{"a", "b"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -251,6 +252,8 @@ func TestDynamoSourceErrors(t *testing.T) {
 		{"object cut before its end", `{"Count":1 `, "decode dynamodb key: unexpected end of JSON input", nil},
 		{"Items cut after its key", `{"Items":`, "decode dynamodb Items: EOF", func(err error) bool { return errors.Is(err, io.EOF) }},
 		{"Items cut before its end", `{"Items":[{"pk":{"S":"a"}}`, "decode dynamodb dump: unexpected end of JSON input", nil},
+		{"object closed by a bracket", `{"Items":[]]`, "decode dynamodb object end: invalid character ']' after object key:value pair", syntax},
+		{"Items closed by a brace", `{"Items":[}`, "decode dynamodb Items: invalid character '}' looking for beginning of value", syntax},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -309,4 +312,22 @@ func TestDynamoTopLevelNotAnObjectKeepsTheCause(t *testing.T) {
 	err = src(context.Background(), func([]query.Record) error { return nil })
 
 	require.ErrorIs(t, err, errNotObject)
+}
+
+// TestDynamoCancelStopsBeforeTheRestOfItems proves that a cancel stops the read
+// inside "Items", before the decoder reads the rest. The rest here is broken, so
+// reading it would give a decode error and not the cancel.
+func TestDynamoCancelStopsBeforeTheRestOfItems(t *testing.T) {
+	body := `{"Items":[{"pk":{"S":"a"}},{"pk":x}]}`
+	src, err := dynamoSource(strings.NewReader(body), 1, numfmt.DecimalAuto, Hints{Keys: "pk"})
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err = src(ctx, func([]query.Record) error {
+		cancel()
+		return nil
+	})
+
+	require.ErrorIs(t, err, context.Canceled)
 }

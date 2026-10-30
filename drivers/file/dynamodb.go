@@ -126,7 +126,7 @@ func readMembers(ctx context.Context, jd *json.Decoder, emit func(map[string]typ
 		found = found || hit
 	}
 	if _, err := jd.Token(); err != nil { // consume '}'
-		return false, fmt.Errorf("decode dynamodb dump: %w", err)
+		return false, fmt.Errorf("decode dynamodb object end: %w", err)
 	}
 	return found, nil
 }

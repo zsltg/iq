@@ -2544,24 +2544,6 @@
    "file": "drivers/redis/paged.go",
    "mutator": "numbers/incrementer",
    "line": 228
-  },
-  {
-   "id": "98d5bf7f04e1099648fc610512b0b619",
-   "file": "drivers/file/dynamodb.go",
-   "mutator": "expression/error-guard",
-   "line": 128
-  },
-  {
-   "id": "5d522b0b695aef4c7199c7e7e933eb9c",
-   "file": "drivers/file/dynamodb.go",
-   "mutator": "expression/error-guard",
-   "line": 176
-  },
-  {
-   "id": "b7d2bc8cbced6e543a1ab892896eb78d",
-   "file": "drivers/file/dynamodb.go",
-   "mutator": "statement/return",
-   "line": 186
   }
  ]
 }
