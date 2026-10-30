@@ -446,7 +446,7 @@ They need no containers or network.
 - `internal/rawpred`: `FuzzMatch`, a filter compiled through `gojq.Parse` and
   `pushdown.Compile` never drops a document the reference evaluator matches,
   and the prepared `Matcher` agrees with the package-level `Match`.
-- `drivers/file`: `FuzzOpenReader` over every dump format, and `FuzzCBORRecord`
+- `drivers/file`: `FuzzOpenPipe` over every dump format, and `FuzzCBORRecord`
   over the decode cache codec.
 - `internal/query`: `FuzzJSONLRoundTrip`, a typed dump is a fixpoint and both
   readers read it the same.

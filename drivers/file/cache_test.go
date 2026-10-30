@@ -421,7 +421,7 @@ func TestCacheableGuards(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("stdin never caches", func(t *testing.T) {
-		s := &Store{data: []byte("x"), cache: CacheConfig{Dir: dir, Enabled: true, MinSize: 1}}
+		s := &Store{path: path, pipe: &pipeInput{}, cache: CacheConfig{Dir: dir, Enabled: true, MinSize: 1}}
 		_, ok := s.cacheable()
 		require.False(t, ok)
 	})

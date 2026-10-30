@@ -1,6 +1,8 @@
 package file
 
 import (
+	"bufio"
+	"bytes"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -257,6 +259,11 @@ func TestDetectSniffWindow(t *testing.T) {
 		_, err := detectBytes(nil)
 		require.ErrorContains(t, err, "dump is empty")
 	})
+}
+
+// detectBytes sniffs the format of data through the peek that OpenPipe uses.
+func detectBytes(data []byte) (Format, error) {
+	return detectPeek(bufio.NewReader(bytes.NewReader(data)))
 }
 
 // TestValidFrame pins the BSON frame bounds at both edges: the empty document is

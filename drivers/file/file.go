@@ -11,7 +11,6 @@ package file
 
 import (
 	"bufio"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -81,7 +80,7 @@ var errStopScan = errors.New("file: stop scan")
 // Store is a read-only view over a dump file.
 type Store struct {
 	path   string
-	data   []byte // when non-nil, the dump is this in-memory buffer (stdin), not path.
+	pipe   *pipeInput // when non-nil, the dump is this one-shot stream (stdin), not path.
 	format Format
 	dec    numfmt.DecimalMode
 	hints  Hints       // schema hints (?types=/?keys=) a native dump omits; empty for self-describing formats.
@@ -133,19 +132,38 @@ func Open(rawURL string, dec numfmt.DecimalMode, cache CacheConfig) (*Store, err
 	return &Store{path: path, format: format, dec: dec, hints: hints, cache: cache}, nil
 }
 
-// OpenReader builds a read-only Store over an in-memory dump buffer. It serves
-// piped stdin. Stdin is not seekable, so the dump is read once into data and
-// re-scanned from a bytes.Reader per operation. The format is content-sniffed
-// from the buffer unless forced.
-func OpenReader(data []byte, format Format, dec numfmt.DecimalMode) (*Store, error) {
+// ErrPipeReadOnce reports a second read of piped stdin. A pipe cannot rewind,
+// and iq does not buffer it, so only the first read sees the data.
+var ErrPipeReadOnce = errors.New("piped stdin can be read only once; save it to a file and read the file instead")
+
+// pipeInput is the one-shot stream behind a Store that reads piped stdin.
+type pipeInput struct {
+	r    *bufio.Reader
+	used bool
+}
+
+// take hands out the stream on the first call. Every later call fails.
+func (p *pipeInput) take() (io.Reader, error) {
+	if p.used {
+		return nil, ErrPipeReadOnce
+	}
+	p.used = true
+	return p.r, nil
+}
+
+// OpenPipe builds a read-only Store over piped stdin. The stream is read once, as
+// it comes, and never buffered whole. The Store hands the stream to its first
+// read. A second read fails with ErrPipeReadOnce. When format is unknown, OpenPipe
+// detects it from the first 512 bytes, as for a file without a name.
+func OpenPipe(r io.Reader, format Format, dec numfmt.DecimalMode) (*Store, error) {
+	br := bufio.NewReader(r)
 	if format == FormatUnknown {
 		var err error
-		format, err = detectBytes(data)
-		if err != nil {
+		if format, err = detectPeek(br); err != nil {
 			return nil, err
 		}
 	}
-	return &Store{data: data, format: format, dec: dec}, nil
+	return &Store{pipe: &pipeInput{r: br}, format: format, dec: dec}, nil
 }
 
 // URL returns the file:// URI for a filesystem path, the inverse of DumpPath.
@@ -283,7 +301,7 @@ func (s *Store) records(ctx context.Context, populate bool, fn func(batch []quer
 }
 
 // recordsDirect decodes the dump straight from its bytes, with no cache. The dump is
-// a file (reopened per operation) or the in-memory stdin buffer.
+// a file (reopened per operation) or the piped stdin stream (read once).
 func (s *Store) recordsDirect(ctx context.Context, fn func(batch []query.Record) error) error {
 	r, closeR, err := s.reader()
 	if err != nil {
@@ -323,12 +341,13 @@ func maybeGunzip(r io.Reader) (io.Reader, error) {
 	return gz, nil
 }
 
-// reader yields a fresh reader over the dump. It is a bytes.Reader over the
-// buffered stdin, or a freshly reopened file. So scans and Get each re-read from
-// the start.
+// reader yields a reader over the dump. It is a freshly reopened file, so scans
+// and Get each re-read from the start. For piped stdin it is the stream itself,
+// and only the first call gets it.
 func (s *Store) reader() (io.Reader, func() error, error) {
-	if s.data != nil {
-		return bytes.NewReader(s.data), func() error { return nil }, nil
+	if s.pipe != nil {
+		r, err := s.pipe.take()
+		return r, func() error { return nil }, err
 	}
 	f, err := os.Open(s.path) //nolint:gosec // the path is a user-supplied dump file, by design.
 	if err != nil {
@@ -338,7 +357,7 @@ func (s *Store) reader() (io.Reader, func() error, error) {
 }
 
 // RecordSourceFor returns the RecordSource that decodes r for a given format.
-// It is the one decoder-dispatch shared by the file:// store, the buffered stdin
+// It is the one decoder-dispatch shared by the file:// store, the piped stdin
 // store, and the cmd move importer. So every reader honors the same format set.
 func RecordSourceFor(r io.Reader, format Format, dec numfmt.DecimalMode, hints Hints) (query.RecordSource, error) {
 	switch format {

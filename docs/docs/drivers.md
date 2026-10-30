@@ -1201,7 +1201,8 @@ keeps size and mtime can return the old records. Run `iq cache clear` after such
 with `--no-cache`. A cache miss only means a full decode, never a failed query.
 
 Only full scans populate it (a bounded
-key read does not) and stdin is never cached.
+key read does not). Piped stdin is never cached. `iq` reads it once, as a stream, so
+a command that needs a second read must use a file.
 
 Alongside the records, a scan writes a **per-page key index** (a Bloom filter per page). As a
 result, a later bounded read (`iq --src snap '.["id"]'`) decodes only the pages that can hold a

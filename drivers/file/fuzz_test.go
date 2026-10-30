@@ -46,13 +46,13 @@ var fuzzFormats = []Format{
 	FormatNeo4jJSON,
 }
 
-// FuzzOpenReader drives the dump readers with arbitrary bytes under every format,
+// FuzzOpenPipe drives the dump readers with arbitrary bytes under every format,
 // which is the untrusted path a piped stdin takes. The oracle is that no input
-// panics: OpenReader either detects a format or reports an error, and the record
+// panics: OpenPipe either detects a format or reports an error, and the record
 // source either streams records or reports an error. The format name of every
 // Format also round-trips through ParseFormat, so a detected format is always a
 // value a user can force.
-func FuzzOpenReader(f *testing.F) {
+func FuzzOpenPipe(f *testing.F) {
 	// Seeds cover one well-formed dump per sniffable format plus hostile bytes:
 	// empty, invalid UTF-8, a truncated BSON length header and deep nesting.
 	seeds := []struct {
@@ -91,11 +91,11 @@ func FuzzOpenReader(f *testing.F) {
 		}
 
 		format := fuzzFormats[int(sel)%len(fuzzFormats)]
-		store, err := OpenReader(data, format, numfmt.DecimalAuto)
+		store, err := OpenPipe(bytes.NewReader(data), format, numfmt.DecimalAuto)
 		if err != nil {
 			return // detection refused the bytes, which is a clean rejection.
 		}
-		require.NotNil(t, store, "OpenReader returned neither a store nor an error")
+		require.NotNil(t, store, "OpenPipe returned neither a store nor an error")
 
 		src, err := RecordSourceFor(bytes.NewReader(data), store.format, store.dec, Hints{})
 		if err != nil {

@@ -16,6 +16,11 @@ cat dump.jsonl | iq '.[]'
 Stdin becomes the source only when nothing else resolves. An active source wins
 over the pipe.
 
+`iq` reads the pipe once, as a stream. It does not hold the whole input in
+memory. A command that must read the data twice fails with `piped stdin can be
+read only once; save it to a file and read the file instead`. In that case, save
+the data to a file and read the file.
+
 `--from-format` forces the decode when the content cannot be sniffed (a gzipped
 or oddly-shaped dump).
 
