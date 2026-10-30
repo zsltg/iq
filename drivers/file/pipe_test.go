@@ -9,9 +9,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/v2/bson"
+
 	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/query"
-	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func TestOpenPipeStreamsTheFirstRead(t *testing.T) {
