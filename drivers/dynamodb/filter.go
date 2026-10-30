@@ -26,7 +26,7 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 		return errNoTable
 	}
 	in := &dynamodb.ScanInput{TableName: &s.table}
-	if f, ok := compile(pred, s.decimal); ok && f.expr != "" {
+	if f, ok := compile(pred, s.decimal); ok {
 		in.FilterExpression = aws.String(f.expr)
 		in.ExpressionAttributeNames = f.names
 		in.ExpressionAttributeValues = f.values

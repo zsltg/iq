@@ -79,9 +79,10 @@ leave some tests out of the server filter. The tests are an equality with a
 number text, a lower bound (`>` or `>=`), and a regex. The `--explain` output
 shows this as `not pushed: declined by backend translator`.
 
-One case stays pushed. In the other modes, a lower bound or a regex on a number
-that `float64` cannot hold, such as `1e999`, can still drop a record that jq
-keeps. The driver cannot see the stored literal, so it cannot leave this test out.
+One case stays pushed in the CouchDB, Couchbase, and Neo4j drivers. In the other
+modes, a lower bound or a regex on a number that `float64` cannot hold, such as
+`1e999`, can still drop a record that jq keeps. The driver cannot see the stored
+literal, so it cannot leave this test out.
 
 A MongoDB Decimal128 and a DynamoDB fractional `N` decode to a string in auto and
 string mode, but the server still compares them as numbers. The MongoDB and

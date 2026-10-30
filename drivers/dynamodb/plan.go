@@ -24,7 +24,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool, dec 
 
 	desc := "Scan: full-table scan (every item read, filtered client-side)"
 	var filter map[string]any
-	if f, ok := compile(pred, dec); ok && f.display != "" {
+	if f, ok := compile(pred, dec); ok {
 		desc = "Scan with FilterExpression " + f.display + ": server-side pre-filter, then the full jq re-runs client-side"
 		filter = map[string]any{"filter": f.display}
 	}
