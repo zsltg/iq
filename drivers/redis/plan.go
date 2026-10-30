@@ -14,7 +14,7 @@ import (
 // compiled predicate also runs the rawpred prefilter on RedisJSON values. A bounded
 // key read has no filter stages.
 func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.AccessPlan {
-	const typedReads = "then per key by type: GET / HGETALL / LRANGE 0 -1 / SMEMBERS / ZRANGE 0 -1 WITHSCORES / JSON.GET"
+	const typedReads = "then per key by type: GET / HLEN + HSCAN / LLEN + LRANGE / SCARD + SSCAN / ZCARD + ZSCAN / XLEN + XRANGE COUNT / JSON.GET"
 	if !keys.Scan {
 		return query.AccessPlan{Ops: []string{
 			fmt.Sprintf("pipeline TYPE for %d requested key(s)", len(keys.Keys)),

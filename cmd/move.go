@@ -40,7 +40,7 @@ func runMove(cmd *cobra.Command, cfg *config, filter string) error {
 		return renderMoveExplain(cmd, cfg)
 	}
 
-	ctx, cancel := context.WithTimeout(cmd.Context(), cfg.timeout)
+	ctx, cancel := context.WithTimeout(cfg.readContext(cmd.Context()), cfg.timeout)
 	defer cancel()
 
 	recSrc, closeSrc, _, err := openMoveSource(cmd, ctx, cfg)

@@ -248,6 +248,39 @@ func TestJQEngineForwardsContextToStore(t *testing.T) {
 	}
 }
 
+// TestJQEngineMarksTheContextOfAnUnboundedRun pins that an unbounded run tells
+// the store, through the context, and that a bounded run does not. Run and
+// RunKeyed share this.
+func TestJQEngineMarksTheContextOfAnUnboundedRun(t *testing.T) {
+	tests := []struct {
+		name      string
+		unbounded bool
+		keyed     bool
+	}{
+		{"run, bounded", false, false},
+		{"run, unbounded", true, false},
+		{"keyed run, bounded", false, true},
+		{"keyed run, unbounded", true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeKV{values: map[string]any{"a": 1}}
+			engine := query.NewJQEngine(store)
+			opts := query.RunOptions{Unbounded: tt.unbounded}
+
+			var err error
+			if tt.keyed {
+				err = engine.RunKeyed(context.Background(), `.["a"]`, opts, func(string, any) error { return nil })
+			} else {
+				err = engine.Run(context.Background(), `.["a"]`, opts, func(any) error { return nil })
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.unbounded, query.Unbounded(store.gotGetCtx))
+		})
+	}
+}
+
 // TestJQEngineReadsAbsentKeyAsNull pins the query-visible half of the KVStore
 // presence contract. Get omits a missing key, and indexing an absent map key is
 // null in jq. So a bounded read of a key that is not there still emits null.

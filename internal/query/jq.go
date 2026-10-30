@@ -95,7 +95,8 @@ type SourceOpener interface {
 }
 
 // RunOptions carries the per-run policy flags. Unbounded permits materializing
-// the whole dataset in memory. Compile asks the engine to push a filter's
+// the whole dataset in memory. It also reaches the driver as query.Unbounded, so
+// a driver may then read one very large value. Compile asks the engine to push a filter's
 // predicate to the store when it can. OnPage, when non-nil, is called once per
 // scanned page with the page's item count, so a CLI adapter can report scan
 // progress. The core stays UI-agnostic because it only ever calls a plain func.
@@ -115,6 +116,16 @@ type RunOptions struct {
 	// not enable logging. It is the stdlib *slog.Logger, so the core stays free of
 	// any driver or CLI framework.
 	Logger *slog.Logger
+}
+
+// apply returns ctx with the policy of the run that a driver must see. An
+// unbounded run tells the driver, through query.WithUnbounded, that it may load a
+// very large value into memory.
+func (o RunOptions) apply(ctx context.Context) context.Context {
+	if o.Unbounded {
+		return WithUnbounded(ctx)
+	}
+	return ctx
 }
 
 // logger returns the run's logger, or the shared discard logger when none was
@@ -156,6 +167,7 @@ func (e *JQEngine) Run(ctx context.Context, src string, opts RunOptions, emit fu
 	if src == "" {
 		return ErrEmptyExpression
 	}
+	ctx = opts.apply(ctx)
 	q, err := gojq.Parse(src)
 	if err != nil {
 		return fmt.Errorf("parse expression: %w", err)
@@ -264,6 +276,7 @@ func (e *JQEngine) RunKeyed(ctx context.Context, src string, opts RunOptions, em
 	if src == "" {
 		return ErrEmptyExpression
 	}
+	ctx = opts.apply(ctx)
 	q, err := gojq.Parse(src)
 	if err != nil {
 		return fmt.Errorf("parse expression: %w", err)

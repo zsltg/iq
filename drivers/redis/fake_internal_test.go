@@ -3,6 +3,9 @@ package redis
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -16,11 +19,17 @@ import (
 // value command of the type. It is JSON text for a RedisJSON document, or
 // one of these Go values: a string, a map[string]string, a []string, a
 // []goredis.Z, or a []goredis.XMessage. The field err, when set, is the error
-// of the value command, as a key that vanished mid-read gives.
+// of the value command, as a key that vanished mid-read gives. The field per,
+// when above zero, makes HSCAN, SSCAN and ZSCAN return that many elements per
+// round. The field repeat makes each later round return the last element of the
+// round before it again, as a rehashing table can. The scan commands return
+// elements in reverse order, so a test sees that the reader sorts.
 type fakeKey struct {
-	typ string
-	val any
-	err error
+	typ    string
+	val    any
+	err    error
+	per    int
+	repeat bool
 }
 
 // fakeCall is one call that reached the fake: the context it carried and every
@@ -58,7 +67,7 @@ func newFakeStore(t *testing.T, f *fakeRedis, pageSize int) *Store {
 	client := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
 	t.Cleanup(func() { _ = client.Close() })
 	client.AddHook(f)
-	return &Store{client: client, pageSize: pageSize, decimal: numfmt.DecimalAuto}
+	return &Store{client: client, pageSize: pageSize, decimal: numfmt.DecimalAuto, limits: defaultLimits()}
 }
 
 // newPipeline returns a pipeline that only queues commands. Its client never
@@ -139,18 +148,10 @@ func (f *fakeRedis) reply(c goredis.Cmder) {
 			return
 		}
 		cmd.SetVal(fmt.Sprint(k.val))
-	case *goredis.MapStringStringCmd:
-		cmd.SetVal(replyAs[map[string]string](k.val))
-		cmd.SetErr(k.err)
 	case *goredis.StringSliceCmd:
-		cmd.SetVal(replyAs[[]string](k.val))
-		cmd.SetErr(k.err)
-	case *goredis.ZSliceCmd:
-		cmd.SetVal(replyAs[[]goredis.Z](k.val))
-		cmd.SetErr(k.err)
+		replyRange(cmd, args, k)
 	case *goredis.XMessageSliceCmd:
-		cmd.SetVal(replyAs[[]goredis.XMessage](k.val))
-		cmd.SetErr(k.err)
+		replyStream(cmd, args, k)
 	case *goredis.JSONCmd:
 		if k.err != nil {
 			cmd.SetErr(k.err)
@@ -158,10 +159,142 @@ func (f *fakeRedis) reply(c goredis.Cmder) {
 		}
 		cmd.SetVal(fmt.Sprint(k.val))
 	case *goredis.ScanCmd:
-		f.replyScan(cmd, args)
+		if name == "scan" {
+			f.replyScan(cmd, args)
+			return
+		}
+		replyElements(cmd, args, k)
 	case *goredis.IntCmd:
-		cmd.SetVal(f.ints[name+" "+key])
+		n, set := f.ints[name+" "+key]
+		if !set {
+			n = int64(sizeOf(k.val))
+		}
+		cmd.SetVal(n)
 	}
+}
+
+// sizeOf returns the element count that HLEN, LLEN, SCARD, ZCARD and XLEN give.
+func sizeOf(val any) int {
+	switch v := val.(type) {
+	case map[string]string:
+		return len(v)
+	case []string:
+		return len(v)
+	case []goredis.Z:
+		return len(v)
+	case []goredis.XMessage:
+		return len(v)
+	}
+	return 0
+}
+
+// replyRange answers LRANGE from a []string value. Other string-slice commands
+// get the whole value.
+func replyRange(cmd *goredis.StringSliceCmd, args []any, k fakeKey) {
+	vs := replyAs[[]string](k.val)
+	if fmt.Sprint(args[0]) == "lrange" {
+		var start, stop int
+		_, _ = fmt.Sscan(fmt.Sprint(args[2]), &start)
+		_, _ = fmt.Sscan(fmt.Sprint(args[3]), &stop)
+		if stop < 0 || stop >= len(vs) {
+			stop = len(vs) - 1
+		}
+		if start > stop {
+			vs = nil
+		} else {
+			vs = vs[start : stop+1]
+		}
+	}
+	cmd.SetVal(vs)
+	cmd.SetErr(k.err)
+}
+
+// fromStart reports whether the entry id is at or after start, as XRANGE reads it.
+// The start "-" is the first entry.
+func fromStart(start, id string) bool {
+	if start == "-" {
+		return true
+	}
+	return !streamIDLess(id, start)
+}
+
+// replyStream answers XRANGE with the optional COUNT, from a []goredis.XMessage.
+func replyStream(cmd *goredis.XMessageSliceCmd, args []any, k fakeKey) {
+	start := fmt.Sprint(args[2])
+	var out []goredis.XMessage
+	for _, m := range replyAs[[]goredis.XMessage](k.val) {
+		if fromStart(start, m.ID) {
+			out = append(out, m)
+		}
+	}
+	if len(args) > 5 {
+		var n int
+		_, _ = fmt.Sscan(fmt.Sprint(args[5]), &n)
+		out = out[:min(n, len(out))]
+	}
+	cmd.SetVal(out)
+	cmd.SetErr(k.err)
+}
+
+// streamIDLess compares two IDs of the form "<ms>-<seq>" that have one digit group each.
+func streamIDLess(a, b string) bool {
+	var ams, aseq, bms, bseq uint64
+	_, _ = fmt.Sscanf(a, "%d-%d", &ams, &aseq)
+	_, _ = fmt.Sscanf(b, "%d-%d", &bms, &bseq)
+	return ams < bms || (ams == bms && aseq < bseq)
+}
+
+// replyElements answers HSCAN, SSCAN and ZSCAN from the value of the key. The
+// cursor of a round is the index of its first element, counted in elements.
+func replyElements(cmd *goredis.ScanCmd, args []any, k fakeKey) {
+	flat := flatten(k.val)
+	var from uint64
+	_, _ = fmt.Sscan(fmt.Sprint(args[2]), &from)
+	to := uint64(len(flat))
+	step := uint64(max(k.per, 1)) * uint64(width(k.val))
+	if k.per > 0 {
+		to = min(to, from+step)
+	}
+	round := append([]string(nil), flat[from:to]...)
+	if k.repeat && from > 0 {
+		round = append(round, flat[from-uint64(width(k.val)):from]...)
+	}
+	next := to
+	if to >= uint64(len(flat)) {
+		next = 0
+	}
+	cmd.SetVal(round, next)
+	cmd.SetErr(k.err)
+}
+
+// width is how many reply items one element of the value takes: two for a hash or
+// a sorted set, one for a set.
+func width(val any) int {
+	if _, ok := val.([]string); ok {
+		return 1
+	}
+	return 2
+}
+
+// flatten returns the elements of a hash, set or sorted set as the flat reply of
+// a scan command, in reverse of the stored order.
+func flatten(val any) []string {
+	var flat []string
+	switch v := val.(type) {
+	case map[string]string:
+		for _, name := range slices.Backward(slices.Sorted(maps.Keys(v))) {
+			flat = append(flat, name, v[name])
+		}
+	case []string:
+		for _, m := range slices.Backward(v) {
+			flat = append(flat, m)
+		}
+	case []goredis.Z:
+		for _, z := range slices.Backward(v) {
+			flat = append(flat, z.Member.(string), strconv.FormatFloat(z.Score, 'g', -1, 64))
+		}
+	}
+	return flat
 }
 
 // replyScan answers one SCAN round from f.scan.

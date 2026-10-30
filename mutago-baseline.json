@@ -2454,6 +2454,96 @@
    "file": "internal/numfmt/convert.go",
    "mutator": "numbers/incrementer",
    "line": 99
+  },
+  {
+   "id": "5d16c9be0c05a56fc1df96256955476a",
+   "file": "drivers/redis/filter.go",
+   "mutator": "expression/context-nil",
+   "line": 60
+  },
+  {
+   "id": "b240c5c969a39665c4469aca118b3aa8",
+   "file": "drivers/redis/kv.go",
+   "mutator": "expression/context-nil",
+   "line": 132
+  },
+  {
+   "id": "5c300050fbfc9ac2ab809071d5a270aa",
+   "file": "drivers/redis/paged.go",
+   "mutator": "expression/context-nil",
+   "line": 351
+  },
+  {
+   "id": "2a97789ad64c7e0ad4e833a5b581e467",
+   "file": "drivers/redis/paged.go",
+   "mutator": "expression/context-nil",
+   "line": 353
+  },
+  {
+   "id": "1d3aea359d9c131e30e8ad7f73ca1bec",
+   "file": "drivers/redis/paged.go",
+   "mutator": "expression/context-nil",
+   "line": 353
+  },
+  {
+   "id": "d93a6a76e634cba96e07049cefbbaf71",
+   "file": "drivers/redis/paged.go",
+   "mutator": "expression/context-nil",
+   "line": 355
+  },
+  {
+   "id": "cb441ed2c61455296146b246baba83a0",
+   "file": "drivers/redis/paged.go",
+   "mutator": "expression/context-nil",
+   "line": 355
+  },
+  {
+   "id": "58efa1f4282de5ee4f9f82c279348709",
+   "file": "drivers/redis/paged.go",
+   "mutator": "expression/context-nil",
+   "line": 357
+  },
+  {
+   "id": "5cc37f53cb949262a0478f041faa8b3a",
+   "file": "drivers/redis/paged.go",
+   "mutator": "expression/context-nil",
+   "line": 357
+  },
+  {
+   "id": "84ca64ccab30a3dd2d34cb90ff58c48f",
+   "file": "drivers/redis/paged.go",
+   "mutator": "expression/context-nil",
+   "line": 359
+  },
+  {
+   "id": "ca5e579d3ac7befa68997ca2ba1bc4b8",
+   "file": "drivers/redis/paged.go",
+   "mutator": "expression/context-nil",
+   "line": 359
+  },
+  {
+   "id": "02dce9b5bef74875c2c79bc3fd09aeca",
+   "file": "drivers/redis/paged.go",
+   "mutator": "expression/context-nil",
+   "line": 361
+  },
+  {
+   "id": "6b3cdfcef42f0a305c1e0c59f2d17ff8",
+   "file": "drivers/redis/paged.go",
+   "mutator": "expression/context-nil",
+   "line": 361
+  },
+  {
+   "id": "0c39e079baa3e4bbb002ceb46471521b",
+   "file": "drivers/redis/paged.go",
+   "mutator": "numbers/decrementer",
+   "line": 228
+  },
+  {
+   "id": "216b3d8b05239324050fba240728d16d",
+   "file": "drivers/redis/paged.go",
+   "mutator": "numbers/incrementer",
+   "line": 228
   }
  ]
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strconv"
 	"testing"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -25,25 +26,21 @@ import (
 // is not read off it.
 func TestReaderPresence(t *testing.T) {
 	ctx := context.Background()
-	hash := func(v map[string]string) reader {
-		c := goredis.NewMapStringStringCmd(ctx)
-		c.SetVal(v)
-		return hashReader{c}
+	hash := func(flat ...string) reader {
+		return hashReader{onePage(ctx), scanReply(ctx, flat...)}
 	}
 	strSlice := func(v []string) *goredis.StringSliceCmd {
 		c := goredis.NewStringSliceCmd(ctx)
 		c.SetVal(v)
 		return c
 	}
-	zset := func(v []goredis.Z) reader {
-		c := goredis.NewZSliceCmd(ctx)
-		c.SetVal(v)
-		return zsetReader{cmd: c, ctx: context.Background()}
+	zset := func(flat ...string) reader {
+		return zsetReader{onePage(ctx), scanReply(ctx, flat...)}
 	}
 	stream := func(v []goredis.XMessage) reader {
 		c := goredis.NewXMessageSliceCmd(ctx)
 		c.SetVal(v)
-		return streamReader{c}
+		return streamReader{onePage(ctx), c}
 	}
 	str := func(v string) reader {
 		c := goredis.NewStringCmd(ctx)
@@ -66,17 +63,17 @@ func TestReaderPresence(t *testing.T) {
 	}{
 		{"missing key", missingReader{}, false, nil},
 
-		{"empty hash means the key vanished", hash(map[string]string{}), false, nil},
-		{"one-field hash is present", hash(map[string]string{"a": "1"}), true, map[string]any{"a": "1"}},
+		{"empty hash means the key vanished", hash(), false, nil},
+		{"one-field hash is present", hash("a", "1"), true, map[string]any{"a": "1"}},
 
-		{"empty list means the key vanished", listReader{strSlice(nil)}, false, nil},
-		{"one-element list is present", listReader{strSlice([]string{"a"})}, true, []any{"a"}},
+		{"empty list means the key vanished", listReader{onePage(ctx), strSlice(nil)}, false, nil},
+		{"one-element list is present", listReader{onePage(ctx), strSlice([]string{"a"})}, true, []any{"a"}},
 
-		{"empty set means the key vanished", setReader{strSlice(nil)}, false, nil},
-		{"one-member set is present", setReader{strSlice([]string{"a"})}, true, []any{"a"}},
+		{"empty set means the key vanished", setReader{onePage(ctx), scanReply(ctx)}, false, nil},
+		{"one-member set is present", setReader{onePage(ctx), scanReply(ctx, "a")}, true, []any{"a"}},
 
-		{"empty sorted set means the key vanished", zset(nil), false, nil},
-		{"one-member sorted set is present", zset([]goredis.Z{{Member: "a", Score: 1}}), true, []any{map[string]any{"member": "a", "score": float64(1)}}},
+		{"empty sorted set means the key vanished", zset(), false, nil},
+		{"one-member sorted set is present", zset("a", "1"), true, []any{map[string]any{"member": "a", "score": float64(1)}}},
 
 		// A stream can legitimately hold no entries and still exist.
 		{"empty stream is still present", stream(nil), true, []any{}},
@@ -133,13 +130,13 @@ func TestReaderReportsReadError(t *testing.T) {
 	ctx := context.Background()
 	errRead := errors.New("read failed")
 
-	hc := goredis.NewMapStringStringCmd(ctx)
+	hc := goredis.NewScanCmd(ctx, nil)
 	hc.SetErr(errRead)
 	lc := goredis.NewStringSliceCmd(ctx)
 	lc.SetErr(errRead)
-	sc := goredis.NewStringSliceCmd(ctx)
+	sc := goredis.NewScanCmd(ctx, nil)
 	sc.SetErr(errRead)
-	zc := goredis.NewZSliceCmd(ctx)
+	zc := goredis.NewScanCmd(ctx, nil)
 	zc.SetErr(errRead)
 	xc := goredis.NewXMessageSliceCmd(ctx)
 	xc.SetErr(errRead)
@@ -152,11 +149,11 @@ func TestReaderReportsReadError(t *testing.T) {
 		name   string
 		reader reader
 	}{
-		{"hash", hashReader{hc}},
-		{"list", listReader{lc}},
-		{"set", setReader{sc}},
-		{"sorted set", zsetReader{cmd: zc, ctx: ctx}},
-		{"stream", streamReader{xc}},
+		{"hash", hashReader{onePage(ctx), hc}},
+		{"list", listReader{onePage(ctx), lc}},
+		{"set", setReader{onePage(ctx), sc}},
+		{"sorted set", zsetReader{onePage(ctx), zc}},
+		{"stream", streamReader{onePage(ctx), xc}},
 		{"json", jsonReader{cmd: jc, decimal: numfmt.DecimalAuto}},
 		{"filtered json", filterJSONReader{cmd: fc, decimal: numfmt.DecimalAuto, matcher: rawpred.NewMatcher(nil, numfmt.DecimalAuto)}},
 	}
@@ -213,9 +210,9 @@ func TestZsetReaderNonFinite(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := goredis.NewZSliceCmd(context.Background())
-			c.SetVal([]goredis.Z{{Member: "m", Score: tt.score}})
-			got, ok, err := zsetReader{cmd: c, ctx: context.Background()}.normalize()
+			ctx := context.Background()
+			score := strconv.FormatFloat(tt.score, 'g', -1, 64)
+			got, ok, err := zsetReader{onePage(ctx), scanReply(ctx, "m", score)}.normalize()
 			require.NoError(t, err)
 			require.True(t, ok)
 			require.Equal(t, []any{map[string]any{"member": "m", "score": tt.want}}, got)

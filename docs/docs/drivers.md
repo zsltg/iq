@@ -1056,6 +1056,13 @@ Each fetched Redis value is normalized to JSON by type:
 | RedisJSON | the stored document, parsed as JSON |
 | missing key | `null` |
 
+A read refuses a hash, list, set, sorted set, or stream with more than 1,000,000 elements. The error
+names the key, its type, and its size. Pass `--unbounded` to read such a key. A read gets a key in many
+small requests: `LRANGE` and `XRANGE` read 1,000 elements at a time, and `HSCAN`, `SSCAN`, and `ZSCAN` ask
+for 1,000 at a time (Redis treats that count as a hint). So the server answers many small replies in place
+of one large reply. The output is the same as for a small key. The limit does not apply to strings and RedisJSON values.
+An MCP query lifts the limit only when the tool call sets `unbounded`.
+
 Other module types (time series, bloom, …) have no frozen encoding yet. `iq` refuses a named
 read of one with a clear message.
 
