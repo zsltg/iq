@@ -40,6 +40,12 @@ func UnderRowLimit(ctx context.Context, n int) bool {
 	return !limited || n < limit
 }
 
+// MaxValueElements is the most elements, or cells per column family, that one
+// stored value can hold and still be read without the unbounded opt-in. A driver
+// that reads a hash, list, set, sorted set, stream, or wide row checks its value
+// against this limit. One number serves all of them.
+const MaxValueElements = 1_000_000
+
 // unboundedKey is the context key of the unbounded opt-in.
 type unboundedKey struct{}
 

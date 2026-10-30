@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/zsltg/iq/internal/query"
+
 	"github.com/stretchr/testify/require"
 	"github.com/tsuna/gohbase/hrpc"
 	"github.com/tsuna/gohbase/pb"
@@ -363,11 +365,12 @@ func tableName(namespace, qualifier string) *pb.TableName {
 // size so paging is exercised by a handful of rows.
 func newFakeStore(client hbaseClient, admin hbaseAdmin, table string, types typeMap, rowkey colType) *Store {
 	return &Store{
-		client:     client,
-		admin:      admin,
-		table:      table,
-		types:      types,
-		rowkeyType: rowkey,
-		pageSize:   2,
+		client:      client,
+		admin:       admin,
+		table:       table,
+		types:       types,
+		rowkeyType:  rowkey,
+		pageSize:    2,
+		maxRowCells: query.MaxValueElements,
 	}
 }

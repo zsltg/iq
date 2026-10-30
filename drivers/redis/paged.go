@@ -21,7 +21,7 @@ import (
 // stream can hold and still be read. A bigger key needs the unbounded opt-in
 // (query.Unbounded). Strings and RedisJSON values have no element count, so the
 // limit does not apply to them.
-const maxKeyElements = 1_000_000
+const maxKeyElements = query.MaxValueElements
 
 // readChunk is how many elements one read command asks for. A key with more
 // elements than this takes more than one round trip. This keeps one huge reply

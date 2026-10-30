@@ -62,4 +62,4 @@ and write families on their own pages.
 `iq combine`, `iq diff`, `iq schema` and `iq data` carry their own copies of
 `--unbounded` or `--explain` where they apply. On `iq diff`, `iq schema`, and the
 copy and move modes (`--insert`, `--typed`), `--unbounded` only permits a Redis key
-above the element limit.
+or an HBase row above the size limit.

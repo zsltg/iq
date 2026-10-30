@@ -67,7 +67,7 @@ func newCombineCmd(cfg *config) *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&with, "with", "", "final jq over the bound source results (each spec's results bound to $name), run over a null input")
-	c.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a spec that loads a whole keyspace into memory (also materializes a .[]-rooted filter instead of streaming it, and permits a Redis key with more than 1000000 elements)")
+	c.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a spec that loads a whole keyspace into memory (also materializes a .[]-rooted filter instead of streaming it, and permits a Redis key with more than 1000000 elements or an HBase row with more than 1000000 cells in one column family)")
 	c.Flags().BoolVar(&cfg.noCompile, "no-compile", false, "disable server-side predicate pushdown; run each spec's full .[]|select(...) filter client-side (results are unchanged either way)")
 	c.Flags().BoolVar(&cfg.explain, "explain", false, "print the formatted query plan (pretty jq, per-source filters, and the backend calls) and exit without connecting or executing")
 	c.Flags().StringVar(&cfg.insert, "insert", "", "write the combined results into this destination `source` instead of rendering (needs --key or --key-field)")

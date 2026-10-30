@@ -17,10 +17,10 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	if s.table == "" {
 		return errNoTable
 	}
-	opts := []func(hrpc.Call) error{hrpc.MaxVersions(1)}
+	opts := s.readOptions(ctx)
 	if f, ok := toFilter(s.types, pred); ok {
 		s.traceOp("scan %s (filtered)", s.table)
-		opts = append(opts, hrpc.Filters(f))
+		opts = filteredOptions(f)
 	} else {
 		s.traceOp("scan %s", s.table)
 	}
@@ -29,6 +29,15 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 		return fmt.Errorf("hbase scan: %w", err)
 	}
 	return s.pageScan(ctx, req, fn)
+}
+
+// filteredOptions returns the options of a scan with the server filter f. It sends
+// no cell cap. The filter drops a row that misses its column, and a cap could stop
+// the read of a column family before the server reaches that column, so a row over
+// the cap would be dropped without an error. Without the cap the server returns the
+// whole row, and readRow still refuses a row over the limit.
+func filteredOptions(f filter.Filter) []func(hrpc.Call) error {
+	return []func(hrpc.Call) error{hrpc.MaxVersions(1), hrpc.Filters(f)}
 }
 
 // toFilter translates the pushable part of a neutral predicate into an HBase filter.
