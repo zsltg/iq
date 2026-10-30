@@ -86,3 +86,25 @@ func TestScanBatchesReportsNonFiniteDouble(t *testing.T) {
 	require.Equal(t, map[string]any{"r1": map[string]any{"cf": map[string]any{"price": "NaN"}}}, seen)
 	require.Equal(t, []noticeCall{{"r1", "cf.price"}}, calls)
 }
+
+func TestRowFromCellsReportsEachCellPath(t *testing.T) {
+	raw, err := encodeCell(ctDouble, math.Inf(1))
+	require.NoError(t, err)
+	fc := newFakeClient()
+	fc.seed("r1", map[string]map[string][]byte{
+		"cf": {"a": raw, "b": raw},
+		"cg": {"c": raw},
+	})
+	types := typeMap{
+		cellKey("cf", "a"): ctDouble,
+		cellKey("cf", "b"): ctDouble,
+		cellKey("cg", "c"): ctDouble,
+	}
+	st := newFakeStore(fc, &fakeAdmin{}, "books", types, ctAuto)
+	var calls []noticeCall
+
+	_, err = st.Get(noticeCtx(&calls), []string{"r1"})
+
+	require.NoError(t, err)
+	require.ElementsMatch(t, []noticeCall{{"r1", "cf.a"}, {"r1", "cf.b"}, {"r1", "cg.c"}}, calls)
+}

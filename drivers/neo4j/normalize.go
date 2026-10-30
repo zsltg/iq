@@ -19,7 +19,7 @@ package neo4j
 import (
 	"context"
 	"encoding/base64"
-	"math/big"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -37,15 +37,22 @@ import (
 // it. The keys _type, _start, and _end carry the type and endpoints of a
 // relationship. A reserved key overwrites a property with the same name.
 
-// normalizeNode renders a graph node as a JSON-ready map: its properties, each
-// value converted by normalizeValue, plus _id (the elementId) and _labels.
-func (s *Store) normalizeNode(node neo4j.Node, h *numfmt.Hits) map[string]any {
-	out := make(map[string]any, len(node.Props))
-	for k, v := range node.Props {
+// normalizeProps converts each property value with normalizeValue and records
+// the name of the property in the path of h.
+func (s *Store) normalizeProps(props map[string]any, h *numfmt.Hits) map[string]any {
+	out := make(map[string]any, len(props))
+	for k, v := range props {
 		h.Enter(k)
 		out[k] = s.normalizeValue(v, h)
 		h.Leave()
 	}
+	return out
+}
+
+// normalizeNode renders a graph node as a JSON-ready map: its properties, each
+// value converted by normalizeValue, plus _id (the elementId) and _labels.
+func (s *Store) normalizeNode(node neo4j.Node, h *numfmt.Hits) map[string]any {
+	out := s.normalizeProps(node.Props, h)
 	out[neo4jenvelope.FieldID] = node.ElementId
 	out[neo4jenvelope.FieldLabels] = labelsToAny(node.Labels)
 	return out
@@ -55,12 +62,7 @@ func (s *Store) normalizeNode(node neo4j.Node, h *numfmt.Hits) map[string]any {
 // _type/_start/_end envelope (the endpoint elementIds). Only the raw Cypher path
 // emits relationships in v1. The collection path is node-only.
 func (s *Store) normalizeRelationship(rel neo4j.Relationship, h *numfmt.Hits) map[string]any {
-	out := make(map[string]any, len(rel.Props))
-	for k, v := range rel.Props {
-		h.Enter(k)
-		out[k] = s.normalizeValue(v, h)
-		h.Leave()
-	}
+	out := s.normalizeProps(rel.Props, h)
 	out[neo4jenvelope.FieldID] = rel.ElementId
 	out[neo4jenvelope.FieldType] = rel.Type
 	out[neo4jenvelope.FieldStart] = rel.StartElementId
@@ -69,44 +71,25 @@ func (s *Store) normalizeRelationship(rel neo4j.Relationship, h *numfmt.Hits) ma
 }
 
 // normalizeValue converts one Cypher value into a precision-aware, JSON-ready Go
-// value. Integers stay exact (Cypher integers are int64, which fit an int on the
-// 64-bit builds iq targets). Fractional numbers follow the decimal mode. Bytes
-// become base64. Temporal and spatial values become their canonical strings and
-// objects. A NaN or an infinity has no JSON form, so it becomes a string (see
-// numfmt.FiniteFloat) in every decimal mode, and h records its path. h can be
-// nil. This is the frozen encoding contract, identical for every fetch path.
+// value. Fractional numbers follow the decimal mode. A NaN or an infinity has no
+// JSON form, so it becomes a string (see numfmt.FiniteFloat) in every decimal
+// mode, and h records its path. h can be nil. This is the frozen encoding
+// contract, identical for every fetch path.
 func (s *Store) normalizeValue(v any, h *numfmt.Hits) any {
 	switch t := v.(type) {
-	case nil:
-		return nil
-	case bool:
-		return t
-	case int64:
-		return int(t)
 	case float64:
 		return s.floatValue(t, h)
-	case string:
-		return t
-	case []byte:
-		return base64.StdEncoding.EncodeToString(t)
-	case *big.Int:
-		return t
-	case time.Time:
-		return t.Format(time.RFC3339Nano)
-	case dbtype.Date:
-		return t.String()
-	case dbtype.LocalTime:
-		return t.String()
-	case dbtype.LocalDateTime:
-		return t.String()
-	case dbtype.Time:
-		return t.String()
-	case dbtype.Duration:
-		return t.String()
-	case dbtype.Point2D:
-		return map[string]any{"x": t.X, "y": t.Y, "srid": int(t.SpatialRefId)}
-	case dbtype.Point3D:
-		return map[string]any{"x": t.X, "y": t.Y, "z": t.Z, "srid": int(t.SpatialRefId)}
+	case neo4j.Node, neo4j.Relationship, dbtype.Path, []any, map[string]any:
+		return s.normalizeContainer(v, h)
+	default:
+		return plainValue(t)
+	}
+}
+
+// normalizeContainer converts a graph entity, a list, or a map. Each member goes
+// through normalizeValue.
+func (s *Store) normalizeContainer(v any, h *numfmt.Hits) any {
+	switch t := v.(type) {
 	case neo4j.Node:
 		return s.normalizeNode(t, h)
 	case neo4j.Relationship:
@@ -114,22 +97,51 @@ func (s *Store) normalizeValue(v any, h *numfmt.Hits) any {
 	case dbtype.Path:
 		return s.normalizePath(t, h)
 	case []any:
-		for i, e := range t {
-			h.EnterIndex(i)
-			t[i] = s.normalizeValue(e, h)
-			h.Leave()
-		}
-		return t
-	case map[string]any:
-		for k, e := range t {
-			h.Enter(k)
-			t[k] = s.normalizeValue(e, h)
-			h.Leave()
-		}
-		return t
+		return s.normalizeList(t, h)
+	default:
+		return s.normalizeProps(v.(map[string]any), h)
+	}
+}
+
+// normalizeList converts each element of a list and records its index in the
+// path of h.
+func (s *Store) normalizeList(list []any, h *numfmt.Hits) []any {
+	for i, e := range list {
+		h.EnterIndex(i)
+		list[i] = s.normalizeValue(e, h)
+		h.Leave()
+	}
+	return list
+}
+
+// plainValue converts a value that holds no other value. Integers stay exact
+// (Cypher integers are int64, which fit an int on the 64-bit builds iq targets).
+// Bytes become base64. Temporal and spatial values become their canonical
+// strings and objects.
+func plainValue(v any) any {
+	switch t := v.(type) {
+	case int64:
+		return int(t)
+	case []byte:
+		return base64.StdEncoding.EncodeToString(t)
+	case time.Time:
+		return t.Format(time.RFC3339Nano)
+	case dbtype.Date, dbtype.LocalTime, dbtype.LocalDateTime, dbtype.Time, dbtype.Duration:
+		return t.(fmt.Stringer).String()
+	case dbtype.Point2D, dbtype.Point3D:
+		return pointValue(t)
 	default:
 		return t
 	}
+}
+
+// pointValue renders a spatial point as an object with its coordinates and srid.
+func pointValue(v any) map[string]any {
+	if p, ok := v.(dbtype.Point3D); ok {
+		return map[string]any{"x": p.X, "y": p.Y, "z": p.Z, "srid": int(p.SpatialRefId)}
+	}
+	p := v.(dbtype.Point2D)
+	return map[string]any{"x": p.X, "y": p.Y, "srid": int(p.SpatialRefId)}
 }
 
 // floatValue renders a Cypher float. A non-finite float becomes its text and is

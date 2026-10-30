@@ -26,9 +26,9 @@ func TestNormalizeConvertsNonFinite(t *testing.T) {
 		{"list", []float64{1, math.NaN()}, []any{1.0, "NaN"}, []string{"c[1]"}},
 		{
 			"map",
-			map[string]float64{"up": math.Inf(1)},
-			map[string]any{"up": "Infinity"},
-			[]string{"c.up"},
+			map[string]float64{"up": math.Inf(1), "down": math.Inf(-1)},
+			map[string]any{"up": "Infinity", "down": "-Infinity"},
+			[]string{"c.up", "c.down"},
 		},
 	}
 	for _, tt := range tests {
@@ -39,7 +39,7 @@ func TestNormalizeConvertsNonFinite(t *testing.T) {
 			got := Normalize(tt.in, numfmt.DecimalAuto, h)
 
 			require.Equal(t, tt.want, got)
-			require.Equal(t, tt.wantFields, h.Fields)
+			require.ElementsMatch(t, tt.wantFields, h.Fields)
 		})
 	}
 }
@@ -61,4 +61,22 @@ func TestKeyedRowReportsNonFinite(t *testing.T) {
 	require.Equal(t, KeyOf(meta, map[string]any{"id": "r1"}), key)
 	require.Equal(t, map[string]any{"id": "r1", "price": "Infinity"}, val)
 	require.Equal(t, []call{{key, "price"}}, got)
+}
+
+func TestAppendRowReportsRowNumbers(t *testing.T) {
+	s := &Store{decimal: numfmt.DecimalAuto}
+	type call struct{ key, field string }
+	var got []call
+	ctx := query.WithNonFiniteNotice(context.Background(), func(key, field string) {
+		got = append(got, call{key, field})
+	})
+
+	rows := s.appendRow(ctx, nil, map[string]any{"a": math.Inf(1), "b": math.NaN()})
+	rows = s.appendRow(ctx, rows, map[string]any{"a": 1.5, "b": math.Inf(-1)})
+
+	require.Equal(t, []any{
+		map[string]any{"a": "Infinity", "b": "NaN"},
+		map[string]any{"a": 1.5, "b": "-Infinity"},
+	}, rows)
+	require.ElementsMatch(t, []call{{"row 1", "a"}, {"row 1", "b"}, {"row 2", "b"}}, got)
 }

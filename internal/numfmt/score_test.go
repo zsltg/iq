@@ -93,3 +93,23 @@ func TestHitsScoreKeepsRedisTexts(t *testing.T) {
 
 	require.Equal(t, []string{"[0].score", "[0].score"}, h.Fields)
 }
+
+func TestHitsLeaveOnEmptyPathKeepsRecording(t *testing.T) {
+	h := &numfmt.Hits{}
+
+	require.NotPanics(t, h.Leave)
+	h.Enter("a")
+	require.Equal(t, "Infinity", h.Float(math.Inf(1)))
+
+	require.Equal(t, []string{"a"}, h.Fields)
+}
+
+func TestNilHitsScoreConverts(t *testing.T) {
+	var h *numfmt.Hits
+
+	require.NotPanics(t, func() {
+		require.Equal(t, "inf", h.Score(math.Inf(1)))
+		require.Equal(t, "nan", h.Score(math.NaN()))
+		require.InDelta(t, 2.5, h.Score(2.5), 1e-9)
+	})
+}

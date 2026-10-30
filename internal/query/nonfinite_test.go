@@ -2,6 +2,7 @@ package query_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -61,4 +62,16 @@ func TestNonFiniteSummaryText(t *testing.T) {
 			require.Equal(t, tt.want, s.Text())
 		})
 	}
+}
+
+func TestNonFiniteSummaryCountsConcurrentCalls(t *testing.T) {
+	var s query.NonFiniteSummary
+	sink := s.Sink()
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Go(func() { sink("k", "f") })
+	}
+	wg.Wait()
+
+	require.Contains(t, s.Text(), "iq converted 50 values")
 }

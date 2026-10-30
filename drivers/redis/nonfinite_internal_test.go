@@ -8,6 +8,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/query"
 )
 
@@ -34,4 +35,17 @@ func TestZSetReaderReportsNonFiniteScores(t *testing.T) {
 		map[string]any{"member": "c", "score": "nan"},
 	}, v)
 	require.Equal(t, []call{{"board", "[1].score"}, {"board", "[2].score"}}, got)
+}
+
+func TestReaderForGivesZSetReaderItsKeyAndContext(t *testing.T) {
+	ctx := markedContext()
+	p := newPipeline(t)
+
+	r, err := readerFor(ctx, p, typedKey{key: "board", typ: "zset"}, numfmt.DecimalAuto)
+
+	require.NoError(t, err)
+	z, ok := r.(zsetReader)
+	require.True(t, ok)
+	require.Equal(t, "board", z.key)
+	require.Equal(t, ctx, z.ctx)
 }

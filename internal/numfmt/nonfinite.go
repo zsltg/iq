@@ -15,13 +15,19 @@ func FiniteFloat(f float64) (any, bool) {
 	switch {
 	case math.IsNaN(f):
 		return "NaN", true
-	case math.IsInf(f, 1):
-		return "Infinity", true
-	case math.IsInf(f, -1):
-		return "-Infinity", true
+	case math.IsInf(f, 0):
+		return infinityText(f), true
 	default:
 		return f, false
 	}
+}
+
+// infinityText returns the text of an infinite float. The sign of f picks it.
+func infinityText(f float64) string {
+	if math.Signbit(f) {
+		return "-Infinity"
+	}
+	return "Infinity"
 }
 
 // segment is one step in the path of a nested value: a field name or a list

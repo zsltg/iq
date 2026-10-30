@@ -138,3 +138,26 @@ func TestMCPExecNotesConvertedValues(t *testing.T) {
 		`iq converted 1 value that JSON cannot hold (NaN or infinity) to strings; first: key "row 1", field "price"`,
 		out.Note)
 }
+
+func TestWarnNonFinite(t *testing.T) {
+	summary := &query.NonFiniteSummary{}
+	summary.Sink()("k1", "price")
+	tests := []struct {
+		name string
+		cfg  *config
+		want string
+	}{
+		{"no summary", &config{}, ""},
+		{"empty summary", &config{nonFinite: &query.NonFiniteSummary{}}, ""},
+		{"one conversion", &config{nonFinite: summary}, "warning: " + summary.Text() + "\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+
+			warnNonFinite(&buf, tt.cfg)
+
+			require.Equal(t, tt.want, buf.String())
+		})
+	}
+}

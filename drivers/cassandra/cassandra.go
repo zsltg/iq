@@ -489,15 +489,23 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	rows := []any{}
 	row := map[string]any{}
 	for iter.MapScan(row) {
-		h := &numfmt.Hits{}
-		rows = append(rows, normalizeRow(row, s.decimal, h))
-		query.NoteNonFinite(ctx, "row "+strconv.Itoa(len(rows)), h.Fields...)
+		rows = s.appendRow(ctx, rows, row)
 		row = map[string]any{}
 	}
 	if err := iter.Close(); err != nil {
 		return nil, fmt.Errorf("cassandra: %w", err)
 	}
 	return rows, nil
+}
+
+// appendRow normalizes a row of a raw result and adds it to rows. It reports each
+// NaN or infinity that it converted to the notice sink of ctx. A raw row has no
+// key, so the report names it "row N", where N counts from 1.
+func (s *Store) appendRow(ctx context.Context, rows []any, row map[string]any) []any {
+	h := &numfmt.Hits{}
+	rows = append(rows, normalizeRow(row, s.decimal, h))
+	query.NoteNonFinite(ctx, "row "+strconv.Itoa(len(rows)), h.Fields...)
+	return rows
 }
 
 // FormatRaw renders a raw statement reply as indented JSON, the natural form for

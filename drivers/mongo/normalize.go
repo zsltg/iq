@@ -52,13 +52,7 @@ func Normalize(v any, dec numfmt.DecimalMode, h *numfmt.Hits) any {
 	case map[string]any:
 		return normalizeMap(t, dec, h)
 	case bson.D:
-		out := make(map[string]any, len(t))
-		for _, e := range t {
-			h.Enter(e.Key)
-			out[e.Key] = Normalize(e.Value, dec, h)
-			h.Leave()
-		}
-		return out
+		return normalizeDoc(t, dec, h)
 	case bson.A:
 		return normalizeSlice(t, dec, h)
 	case []any:
@@ -70,6 +64,18 @@ func Normalize(v any, dec numfmt.DecimalMode, h *numfmt.Hits) any {
 		// shape.
 		return fmt.Sprintf("%v", t)
 	}
+}
+
+// normalizeDoc converts an ordered BSON document to a map. Each value goes
+// through Normalize, and its key goes into the path of h.
+func normalizeDoc(d bson.D, dec numfmt.DecimalMode, h *numfmt.Hits) map[string]any {
+	out := make(map[string]any, len(d))
+	for _, e := range d {
+		h.Enter(e.Key)
+		out[e.Key] = Normalize(e.Value, dec, h)
+		h.Leave()
+	}
+	return out
 }
 
 // Document normalizes one decoded document and returns its key and value. It

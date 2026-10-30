@@ -54,3 +54,32 @@ func TestDocumentWithoutNonFiniteIsQuiet(t *testing.T) {
 	require.Equal(t, map[string]any{"_id": "k", "a": 1.5}, val)
 	require.False(t, called)
 }
+
+func TestNormalizeReplyReportsUnderReply(t *testing.T) {
+	s := &Store{decimal: numfmt.DecimalAuto}
+	type call struct{ key, field string }
+	var got []call
+	ctx := query.WithNonFiniteNotice(context.Background(), func(key, field string) {
+		got = append(got, call{key, field})
+	})
+
+	val := s.normalizeReply(ctx, bson.M{
+		"ok":  1.0,
+		"cur": bson.D{{Key: "a", Value: math.Inf(1)}, {Key: "b", Value: math.NaN()}},
+	})
+
+	require.Equal(t, map[string]any{
+		"ok":  1.0,
+		"cur": map[string]any{"a": "Infinity", "b": "NaN"},
+	}, val)
+	require.Equal(t, []call{{"reply", "cur.a"}, {"reply", "cur.b"}}, got)
+}
+
+func TestNormalizeConvertsNonFiniteInPlainList(t *testing.T) {
+	h := &numfmt.Hits{}
+
+	got := Normalize([]any{math.Inf(1), 2.5}, numfmt.DecimalAuto, h)
+
+	require.Equal(t, []any{"Infinity", 2.5}, got)
+	require.Equal(t, []string{"[0]"}, h.Fields)
+}
