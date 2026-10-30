@@ -2550,6 +2550,36 @@
    "file": "drivers/file/detect.go",
    "mutator": "statement/return",
    "line": 167
+  },
+  {
+   "id": "b4e97ef51e973c59284f40ef35eb0f67",
+   "file": "internal/query/dump.go",
+   "mutator": "arithmetic/bitwise",
+   "line": 54
+  },
+  {
+   "id": "7a010a090b30a445fad8ed2e43a63611",
+   "file": "internal/query/dump.go",
+   "mutator": "numbers/decrementer",
+   "line": 54
+  },
+  {
+   "id": "04ee3f3254ecdac711252b81326d0643",
+   "file": "internal/query/dump.go",
+   "mutator": "numbers/decrementer",
+   "line": 54
+  },
+  {
+   "id": "59d2eee182f9c6b931be3563ee6e5360",
+   "file": "internal/query/dump.go",
+   "mutator": "numbers/incrementer",
+   "line": 54
+  },
+  {
+   "id": "1665c4a8029c28433a35103b279308cf",
+   "file": "internal/query/dump.go",
+   "mutator": "numbers/incrementer",
+   "line": 54
   }
  ]
 }

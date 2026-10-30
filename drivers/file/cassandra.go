@@ -54,10 +54,10 @@ func cassandraCSVSourceCap(src capped, size int, dec numfmt.DecimalMode, hints H
 		n := 1                  // the CSV record number that the next read returns.
 		if header == nil {
 			h, err := readCSVHeader(cr, src.limit)
-			if err != nil || h == nil {
+			if err != nil {
 				return err
 			}
-			header = h
+			header = h // nil for an empty dump. The loop below then ends at once.
 			n++
 		}
 		pg := newRecordPager(size, fn)

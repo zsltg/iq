@@ -77,8 +77,11 @@ func extJSONSource(r io.Reader, size int, dec numfmt.DecimalMode) query.RecordSo
 func extJSONSourceCap(src capped, size int, dec numfmt.DecimalMode) query.RecordSource {
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
 		st, ok, err := openJSONStream(src, "mongoexport json", "read mongoexport array")
-		if err != nil || !ok {
+		if err != nil {
 			return err
+		}
+		if !ok {
+			return nil
 		}
 		pg := newRecordPager(size, fn)
 		for {
@@ -86,10 +89,11 @@ func extJSONSourceCap(src capped, size int, dec numfmt.DecimalMode) query.Record
 				return err
 			}
 			var raw json.RawMessage
-			if more, err := st.next(&raw); err != nil || !more {
-				if err != nil {
-					return err
-				}
+			more, err := st.next(&raw)
+			if err != nil {
+				return err
+			}
+			if !more {
 				break
 			}
 			rec, err := recordForExtJSON(ctx, raw, dec)

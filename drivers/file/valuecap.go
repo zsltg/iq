@@ -30,7 +30,6 @@ type capReader struct {
 	limit    int64
 	read     int64
 	consumed func() int64
-	tripped  bool
 }
 
 // Read reads at most the bytes that remain below the limit. It fails with
@@ -38,13 +37,9 @@ type capReader struct {
 func (c *capReader) Read(p []byte) (int, error) {
 	room := c.consumed() + c.limit - c.read
 	if room <= 0 {
-		c.tripped = true
 		return 0, errValueTooLarge
 	}
-	if int64(len(p)) > room {
-		p = p[:room]
-	}
-	n, err := c.src.Read(p)
+	n, err := c.src.Read(p[:min(int64(len(p)), room)])
 	c.read += int64(n)
 	return n, err
 }
@@ -53,7 +48,6 @@ func (c *capReader) Read(p []byte) (int, error) {
 // limit on each value.
 type jsonStream struct {
 	jd     *json.Decoder
-	cap    *capReader
 	array  bool
 	format string
 	limit  int64
@@ -80,17 +74,15 @@ func openJSONStream(src capped, format, arrayErr string) (st *jsonStream, ok boo
 			return nil, false, fmt.Errorf("%s: %w", arrayErr, err)
 		}
 	}
-	return &jsonStream{jd: jd, cap: cr, array: array, format: format, limit: src.limit}, true, nil
+	return &jsonStream{jd: jd, array: array, format: format, limit: src.limit}, true, nil
 }
 
 // next decodes the next value into v. It reports false at the clean end of the
 // dump. A value over the limit is an error.
 func (s *jsonStream) next(v any) (bool, error) {
 	s.n++
+	// More reports true after a read error, so the error comes from Decode.
 	if s.array && !s.jd.More() {
-		if s.cap.tripped {
-			return false, tooLarge(s.format, s.n, s.limit)
-		}
 		return false, nil
 	}
 	err := s.jd.Decode(v)

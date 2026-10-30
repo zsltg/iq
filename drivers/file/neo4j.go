@@ -36,8 +36,11 @@ func neo4jSourceCap(src capped, size int, dec numfmt.DecimalMode, hints Hints) (
 	keyProp := hints.Key
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
 		st, ok, err := openJSONStream(src, "neo4j json", "read neo4j json array")
-		if err != nil || !ok {
+		if err != nil {
 			return err
+		}
+		if !ok {
+			return nil
 		}
 		st.jd.UseNumber() // keep integers exact and distinct from floats.
 		pg := newRecordPager(size, fn)
@@ -46,10 +49,11 @@ func neo4jSourceCap(src capped, size int, dec numfmt.DecimalMode, hints Hints) (
 				return err
 			}
 			var e apocEntry
-			if more, err := st.next(&e); err != nil || !more {
-				if err != nil {
-					return err
-				}
+			more, err := st.next(&e)
+			if err != nil {
+				return err
+			}
+			if !more {
 				break
 			}
 			rec, keep, err := recordForEntry(e, mode, name, keyProp, dec)
