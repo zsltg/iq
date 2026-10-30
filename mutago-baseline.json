@@ -308,18 +308,6 @@
    "line": 125
   },
   {
-   "id": "21e32368a191b718fbc19b867fc8d0a2",
-   "file": "drivers/dynamodb/filter.go",
-   "mutator": "expression/logical",
-   "line": 29
-  },
-  {
-   "id": "5b56a6bee3f7be39963668752a5d0fcd",
-   "file": "drivers/dynamodb/filter.go",
-   "mutator": "expression/remove",
-   "line": 29
-  },
-  {
    "id": "ea04b88488efbbb39940f97da595cd5f",
    "file": "drivers/dynamodb/filter.go",
    "mutator": "numbers/incrementer",
@@ -348,18 +336,6 @@
    "file": "drivers/dynamodb/normalize.go",
    "mutator": "numbers/incrementer",
    "line": 295
-  },
-  {
-   "id": "cef917dc83163a2012ff9f1731e40987",
-   "file": "drivers/dynamodb/plan.go",
-   "mutator": "expression/logical",
-   "line": 25
-  },
-  {
-   "id": "dc7b703757d8953f2392aa9ec1a1dd83",
-   "file": "drivers/dynamodb/plan.go",
-   "mutator": "expression/remove",
-   "line": 25
   },
   {
    "id": "df468c19faeee5b4855eb3e06e7f8690",

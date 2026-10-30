@@ -1050,3 +1050,38 @@ func TestOpenFailsFastOnARejectedProbe(t *testing.T) {
 	require.ErrorAs(t, err, &apiErr) // the service's own error stays in the chain
 	require.Equal(t, "ValidationException", apiErr.ErrorCode())
 }
+
+// TestScanFilteredWidensEqualityByDecimalMode reads the request that the scan sends.
+// The expression binds the type name through a value placeholder, never as text.
+func TestScanFilteredWidensEqualityByDecimalMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		mode     numfmt.DecimalMode
+		wantExpr string
+		wantVals int
+	}{
+		{"auto widens", numfmt.DecimalAuto, "(#n1 = :v1 OR attribute_type(#n1, :v2))", 2},
+		{"string widens", numfmt.DecimalString, "(#n1 = :v1 OR attribute_type(#n1, :v2))", 2},
+		{"number does not widen", numfmt.DecimalNumber, "#n1 = :v1", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got *awsdynamodb.ScanInput
+			fake := &fakeDDB{scanFn: func(in *awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
+				got = in
+				return &awsdynamodb.ScanOutput{}, nil
+			}}
+			s := fakeStore(t, fake)
+			s.decimal = tt.mode
+			pred := predicate.Eq{Path: []string{"price"}, Value: "9.99"}
+			require.NoError(t, s.ScanFiltered(context.Background(), pred, func(map[string]any) error { return nil }))
+			require.NotNil(t, got)
+			require.Equal(t, tt.wantExpr, *got.FilterExpression)
+			require.Equal(t, map[string]string{"#n1": "price"}, got.ExpressionAttributeNames)
+			require.Len(t, got.ExpressionAttributeValues, tt.wantVals)
+			if tt.wantVals == 2 {
+				require.Equal(t, &types.AttributeValueMemberS{Value: "N"}, got.ExpressionAttributeValues[":v2"])
+			}
+		})
+	}
+}

@@ -150,7 +150,7 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqmongo.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   withoutURI(iqmongo.ExplainPlan),
+		explainPlan:   withDecimal(iqmongo.ExplainPlan),
 		explainWrite:  iqmongo.ExplainWrite,
 		explainClear:  iqmongo.ExplainClear,
 		explainDrop:   iqmongo.ExplainDrop,
@@ -189,7 +189,7 @@ var drivers = []driver{
 		open: func(ctx context.Context, cfg *config) (store, error) {
 			return iqdynamodb.Open(ctx, cfg.url, cfg.address, cfg.trace, cfg.decimalMode)
 		},
-		explainPlan:   withoutURI(iqdynamodb.ExplainPlan),
+		explainPlan:   withDecimal(iqdynamodb.ExplainPlan),
 		explainWrite:  iqdynamodb.ExplainWrite,
 		explainClear:  iqdynamodb.ExplainClear,
 		explainDrop:   iqdynamodb.ExplainDrop,

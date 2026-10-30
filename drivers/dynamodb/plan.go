@@ -3,6 +3,7 @@ package dynamodb
 import (
 	"fmt"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/selector"
@@ -14,7 +15,7 @@ import (
 // FilterExpression pre-filters the scan. Otherwise it is a full-table scan.
 // ExplainPlan reuses the same compiler as ScanFiltered (via its readable display
 // form), so the shown filter is exactly what the scan issues if it runs.
-func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
+func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool, dec numfmt.DecimalMode) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
 			Ops: []string{fmt.Sprintf("BatchGetItem: fetch %d requested key(s)", len(keys.Keys))},
@@ -23,7 +24,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 
 	desc := "Scan: full-table scan (every item read, filtered client-side)"
 	var filter map[string]any
-	if f, ok := compile(pred); ok && f.display != "" {
+	if f, ok := compile(pred, dec); ok {
 		desc = "Scan with FilterExpression " + f.display + ": server-side pre-filter, then the full jq re-runs client-side"
 		filter = map[string]any{"filter": f.display}
 	}

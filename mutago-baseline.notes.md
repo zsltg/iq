@@ -202,10 +202,6 @@ guard the invalid zero Value already satisfies; and a driver-context normalizati
 verified by hand — the mutation applied to the real file, the whole package suite still green
 — before acceptance.
 - 86aeab55ccdf60a8c57b260d950a79b1 drivers/dynamodb/dynamodb.go:125 expression/context-nil — `config.LoadDefaultConfig(ctx, loadOpts...)` → nil ctx. The loader consults ctx only for remote resolution (IMDS region and credentials), which an explicit region plus either static dummy or lazily-resolved credentials never reaches, so the config and error it returns are identical.
-- 21e32368a191b718fbc19b867fc8d0a2 drivers/dynamodb/filter.go:29 expression/logical — `if f, ok := compile(pred); ok && f.expr != ""` → `||`. compile reports false only from a `return frag{}, false`, whose expr is "", so both forms are false on every failure and true on every success.
-- 5b56a6bee3f7be39963668752a5d0fcd drivers/dynamodb/filter.go:29 expression/remove — the same guard's `f.expr != ""` conjunct dropped; ok is true only for a fragment with a non-empty expr, so the conjunct is inert.
-- cef917dc83163a2012ff9f1731e40987 drivers/dynamodb/plan.go:25 expression/logical — the same pair on ExplainPlan's `ok && f.display != ""`, equivalent for the same reason (display, like expr, is non-empty exactly when ok).
-- dc7b703757d8953f2392aa9ec1a1dd83 drivers/dynamodb/plan.go:25 expression/remove — the dropped `f.display != ""` conjunct; same reason.
 - ea04b88488efbbb39940f97da595cd5f drivers/dynamodb/filter.go:192 numbers/incrementer — `strconv.FormatFloat(t, 'g', -1, 64)` → precision -2; strconv selects the shortest representation for any negative precision, so the bound N literal is byte-identical (same as drivers/file/neo4j.go:264).
 - 27719415840fab5cc1c1c95178cafa60 drivers/dynamodb/normalize.go:295 numbers/incrementer — the same FormatFloat identity on the write path.
 - 8f40be339f598f2ff82cf2eedc3f51a3 drivers/dynamodb/normalize.go:93 numbers/decrementer — `strconv.ParseFloat(s, 64)` → bitSize 63; ParseFloat special-cases only bitSize 32 and sends every other value down the 64-bit path (same as drivers/mongo normalize.go:86).

@@ -41,3 +41,44 @@ func TestHidesDecodedNumber(t *testing.T) {
 		})
 	}
 }
+
+func TestHidesDecimalNumber(t *testing.T) {
+	path := []string{"price"}
+	tests := []struct {
+		name string
+		node predicate.Node
+		mode numfmt.DecimalMode
+		want bool
+	}{
+		{"eq number text, auto mode", predicate.Eq{Path: path, Value: "9.99"}, numfmt.DecimalAuto, true},
+		{"eq number text, string mode", predicate.Eq{Path: path, Value: "9.99"}, numfmt.DecimalString, true},
+		{"eq number text, number mode", predicate.Eq{Path: path, Value: "9.99"}, numfmt.DecimalNumber, false},
+		{"eq integer text, auto mode", predicate.Eq{Path: path, Value: "100"}, numfmt.DecimalAuto, true},
+		{"eq exponent text, auto mode", predicate.Eq{Path: path, Value: "1E+3"}, numfmt.DecimalAuto, true},
+		{"eq negative text, auto mode", predicate.Eq{Path: path, Value: "-0.5"}, numfmt.DecimalAuto, true},
+		{"eq NaN text, auto mode", predicate.Eq{Path: path, Value: "NaN"}, numfmt.DecimalAuto, true},
+		{"eq Infinity text, string mode", predicate.Eq{Path: path, Value: "Infinity"}, numfmt.DecimalString, true},
+		{"eq -Infinity text, auto mode", predicate.Eq{Path: path, Value: "-Infinity"}, numfmt.DecimalAuto, true},
+		{"eq NaN text, number mode", predicate.Eq{Path: path, Value: "NaN"}, numfmt.DecimalNumber, false},
+		{"eq plus sign text, auto mode", predicate.Eq{Path: path, Value: "+1"}, numfmt.DecimalAuto, false},
+		{"eq number with trailing text, auto mode", predicate.Eq{Path: path, Value: "1x"}, numfmt.DecimalAuto, false},
+		{"eq plain text, auto mode", predicate.Eq{Path: path, Value: "apple"}, numfmt.DecimalAuto, false},
+		{"eq empty text, auto mode", predicate.Eq{Path: path, Value: ""}, numfmt.DecimalAuto, false},
+		{"eq number, auto mode", predicate.Eq{Path: path, Value: 9.99}, numfmt.DecimalAuto, false},
+		{"eq null, auto mode", predicate.Eq{Path: path}, numfmt.DecimalAuto, false},
+		{"gt number, auto mode", predicate.Cmp{Path: path, Op: predicate.Gt, Value: 1000.0}, numfmt.DecimalAuto, true},
+		{"ge string, string mode", predicate.Cmp{Path: path, Op: predicate.Ge, Value: "a"}, numfmt.DecimalString, true},
+		{"gt number, number mode", predicate.Cmp{Path: path, Op: predicate.Gt, Value: 1000.0}, numfmt.DecimalNumber, false},
+		{"lt number, auto mode", predicate.Cmp{Path: path, Op: predicate.Lt, Value: 1000.0}, numfmt.DecimalAuto, false},
+		{"le number, string mode", predicate.Cmp{Path: path, Op: predicate.Le, Value: 1000.0}, numfmt.DecimalString, false},
+		{"regex, auto mode", predicate.Regex{Path: path, Pattern: "^9"}, numfmt.DecimalAuto, true},
+		{"regex, number mode", predicate.Regex{Path: path, Pattern: "^9"}, numfmt.DecimalNumber, false},
+		{"exists, auto mode", predicate.Exists{Path: path}, numfmt.DecimalAuto, false},
+		{"nil, auto mode", nil, numfmt.DecimalAuto, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, pushdown.HidesDecimalNumber(tt.node, tt.mode))
+		})
+	}
+}
