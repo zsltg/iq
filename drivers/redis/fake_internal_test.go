@@ -209,12 +209,21 @@ func replyRange(cmd *goredis.StringSliceCmd, args []any, k fakeKey) {
 	cmd.SetErr(k.err)
 }
 
+// fromStart reports whether the entry id is at or after start, as XRANGE reads it.
+// The start "-" is the first entry.
+func fromStart(start, id string) bool {
+	if start == "-" {
+		return true
+	}
+	return !streamIDLess(id, start)
+}
+
 // replyStream answers XRANGE with the optional COUNT, from a []goredis.XMessage.
 func replyStream(cmd *goredis.XMessageSliceCmd, args []any, k fakeKey) {
 	start := fmt.Sprint(args[2])
 	var out []goredis.XMessage
 	for _, m := range replyAs[[]goredis.XMessage](k.val) {
-		if start == "-" || streamIDLess(start, m.ID) || start == m.ID {
+		if fromStart(start, m.ID) {
 			out = append(out, m)
 		}
 	}

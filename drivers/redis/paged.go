@@ -314,11 +314,9 @@ func (r streamReader) nextEntries(last string) ([]goredis.XMessage, error) {
 // this with arithmetic and not with the exclusive "(" range of XRANGE, which
 // older servers do not support.
 func nextStreamID(id string) (string, error) {
-	ms, seq, ok := strings.Cut(id, "-")
-	msNum, msErr := strconv.ParseUint(ms, 10, 64)
-	seqNum, seqErr := strconv.ParseUint(seq, 10, 64)
-	if !ok || msErr != nil || seqErr != nil {
-		return "", fmt.Errorf("stream entry ID %q is not <ms>-<seq>", id)
+	msNum, seqNum, err := parseStreamID(id)
+	if err != nil {
+		return "", err
 	}
 	if seqNum == math.MaxUint64 {
 		msNum, seqNum = msNum+1, 0
@@ -326,6 +324,21 @@ func nextStreamID(id string) (string, error) {
 		seqNum++
 	}
 	return strconv.FormatUint(msNum, 10) + "-" + strconv.FormatUint(seqNum, 10), nil
+}
+
+// parseStreamID splits a stream entry ID of the form <ms>-<seq> into its two numbers.
+func parseStreamID(id string) (ms, seq uint64, err error) {
+	msText, seqText, ok := strings.Cut(id, "-")
+	if !ok {
+		return 0, 0, fmt.Errorf("stream entry ID %q is not <ms>-<seq>", id)
+	}
+	if ms, err = strconv.ParseUint(msText, 10, 64); err != nil {
+		return 0, 0, fmt.Errorf("stream entry ID %q is not <ms>-<seq>", id)
+	}
+	if seq, err = strconv.ParseUint(seqText, 10, 64); err != nil {
+		return 0, 0, fmt.Errorf("stream entry ID %q is not <ms>-<seq>", id)
+	}
+	return ms, seq, nil
 }
 
 // nativeReader queues the read for a built-in Redis type (string, hash, list,

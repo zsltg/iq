@@ -111,35 +111,30 @@ func TestKeyAboveTheLimitIsRefused(t *testing.T) {
 	}
 }
 
-// TestKeyAtTheLimitIsRead pins that the limit is inclusive: a key with exactly
-// the limit is read.
-func TestKeyAtTheLimitIsRead(t *testing.T) {
-	for _, tt := range sevenElements() {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.key.per = 3
-			store, _ := limitedStore(t, tt.key, limits{maxElements: 7, chunk: 3})
-
-			got, err := store.Get(context.Background(), []string{"k"})
-
-			require.NoError(t, err)
-			require.Equal(t, map[string]any{"k": tt.want}, got)
-		})
+// TestKeyWithinTheLimitOrUnboundedIsRead pins that the limit is inclusive, and
+// the opt-in: a key with exactly the limit is read, and a key above the limit is
+// read in full when the context is unbounded.
+func TestKeyWithinTheLimitOrUnboundedIsRead(t *testing.T) {
+	cases := []struct {
+		name  string
+		limit int64
+		ctx   context.Context
+	}{
+		{"at the limit", 7, context.Background()},
+		{"above the limit, unbounded", 6, query.WithUnbounded(context.Background())},
 	}
-}
+	for _, c := range cases {
+		for _, tt := range sevenElements() {
+			t.Run(c.name+"/"+tt.name, func(t *testing.T) {
+				tt.key.per = 3
+				store, _ := limitedStore(t, tt.key, limits{maxElements: c.limit, chunk: 3})
 
-// TestUnboundedReadsAKeyAboveTheLimit pins the opt-in. The same key that the
-// limit refuses is read, in full, when the context is unbounded.
-func TestUnboundedReadsAKeyAboveTheLimit(t *testing.T) {
-	for _, tt := range sevenElements() {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.key.per = 3
-			store, _ := limitedStore(t, tt.key, limits{maxElements: 6, chunk: 3})
+				got, err := store.Get(c.ctx, []string{"k"})
 
-			got, err := store.Get(query.WithUnbounded(context.Background()), []string{"k"})
-
-			require.NoError(t, err)
-			require.Equal(t, map[string]any{"k": tt.want}, got)
-		})
+				require.NoError(t, err)
+				require.Equal(t, map[string]any{"k": tt.want}, got)
+			})
+		}
 	}
 }
 
