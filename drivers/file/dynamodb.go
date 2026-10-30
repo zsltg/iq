@@ -78,6 +78,22 @@ var errItemsNotArray = errors.New("value is not an array")
 // with neither key is a clear error rather than a silent skip, so a wrong ?format=
 // or an unexpected shape fails fast.
 func readObject(ctx context.Context, jd *json.Decoder, emit func(map[string]types.AttributeValue) error) error {
+	if err := openObject(jd); err != nil {
+		return err
+	}
+	found, err := readMembers(ctx, jd, emit)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errNoItems
+	}
+	return nil
+}
+
+// openObject reads the '{' that starts a top-level object. It returns a bare
+// io.EOF at a clean end of the input.
+func openObject(jd *json.Decoder) error {
 	tok, err := jd.Token()
 	if err == io.EOF { //nolint:errorlint // the decoder returns a bare io.EOF only at a clean end. A wrapped one is a reader failure.
 		return io.EOF
@@ -88,28 +104,37 @@ func readObject(ctx context.Context, jd *json.Decoder, emit func(map[string]type
 	if tok == nil { // a bare null decodes to an empty object
 		return errNoItems
 	}
-	if d, ok := tok.(json.Delim); !ok || d != '{' {
+	if !isDelim(tok, '{') {
 		return fmt.Errorf("decode dynamodb dump: %w", errNotObject)
 	}
+	return nil
+}
+
+// readMembers reads the keys of an open object up to its '}'. It reports whether
+// any key held items.
+func readMembers(ctx context.Context, jd *json.Decoder, emit func(map[string]types.AttributeValue) error) (bool, error) {
 	found := false
 	for jd.More() {
 		key, err := jd.Token()
 		if err != nil {
-			return fmt.Errorf("decode dynamodb dump: %w", err)
+			return false, fmt.Errorf("decode dynamodb dump: %w", err)
 		}
 		hit, err := readMember(ctx, jd, key, emit)
 		if err != nil {
-			return err
+			return false, err
 		}
 		found = found || hit
 	}
 	if _, err := jd.Token(); err != nil { // consume '}'
-		return fmt.Errorf("decode dynamodb dump: %w", err)
+		return false, fmt.Errorf("decode dynamodb dump: %w", err)
 	}
-	if !found {
-		return errNoItems
-	}
-	return nil
+	return found, nil
+}
+
+// isDelim reports whether tok is the JSON delimiter want.
+func isDelim(tok json.Token, want json.Delim) bool {
+	d, ok := tok.(json.Delim)
+	return ok && d == want
 }
 
 var (
@@ -142,9 +167,20 @@ func readItems(ctx context.Context, jd *json.Decoder, emit func(map[string]types
 	if tok == nil { // null is an empty list
 		return nil
 	}
-	if d, ok := tok.(json.Delim); !ok || d != '[' {
+	if !isDelim(tok, '[') {
 		return fmt.Errorf("decode dynamodb Items: %w", errItemsNotArray)
 	}
+	if err := readElements(ctx, jd, emit); err != nil {
+		return err
+	}
+	if _, err := jd.Token(); err != nil { // consume ']'
+		return fmt.Errorf("decode dynamodb Items: %w", err)
+	}
+	return nil
+}
+
+// readElements decodes the elements of an open array, one at a time, up to its ']'.
+func readElements(ctx context.Context, jd *json.Decoder, emit func(map[string]types.AttributeValue) error) error {
 	for jd.More() {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -152,9 +188,6 @@ func readItems(ctx context.Context, jd *json.Decoder, emit func(map[string]types
 		if err := readItem(jd, emit); err != nil {
 			return err
 		}
-	}
-	if _, err := jd.Token(); err != nil { // consume ']'
-		return fmt.Errorf("decode dynamodb Items: %w", err)
 	}
 	return nil
 }
