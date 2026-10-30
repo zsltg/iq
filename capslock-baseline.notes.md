@@ -109,6 +109,19 @@ always the local `bytes.Buffer`, so the package only formats an in-memory value.
 reached `main` unseen, because the gate skips itself when `go.mod` and `go.sum` do not
 change. It surfaced on the next pull request that changed `go.mod`.
 
+## github.com/zsltg/iq/internal/numfmt, github.com/zsltg/iq/internal/pushdown, github.com/zsltg/iq/internal/jqtruth — ARBITRARY_EXECUTION, EXEC, FILES, MODIFY_SYSTEM_STATE/ENV, MODIFY_SYSTEM_STATE/SIGNALS, NETWORK, OPERATING_SYSTEM, READ_SYSTEM_STATE, REFLECT, RUNTIME, SYSTEM_CALLS, UNANALYZED, UNSAFE_POINTER (FALSE POSITIVE, encoding/json through io.Writer)
+The same interface-dispatch artifact as `internal/predicate`. #211 (2026-10-29) added
+`numfmt.IsDecodedText`, which calls `json.Valid` (`convert.go:84`). On a syntax error,
+`encoding/json.transformSyntacticError` formats the message with a `strings.Replacer`, and
+capslock resolves the `io.Writer` behind it against every implementation in the whole tree.
+The printed paths go through `cmd.traceLogWriter`, `slog`, and the MCP SDK's
+`LoggingHandler` into the server, then to the keyring's D-Bus code (the `SYSTEM_CALLS` row).
+`json.Valid` writes only to an in-memory buffer, so `numfmt` only checks a string.
+`internal/pushdown` calls `numfmt.IsDecodedText`, and `internal/jqtruth` (added in #211,
+the jq oracle that the tests use) reaches the same call. The drift reached `main` unseen,
+because the gate skips itself when `go.mod` and `go.sum` do not change. It surfaced on #212,
+which changed `go.mod`.
+
 ## Tree-wide EXEC / MODIFY_SYSTEM_STATE/ENV / READ_SYSTEM_STATE / SYSTEM_CALLS (FALSE POSITIVE, the MCP SDK's callback surface)
 The same interface-dispatch artifact as `internal/render` and `internal/diff` above, surfaced
 by `github.com/modelcontextprotocol/go-sdk` v1.7.0 (2026-08-28, `iq mcp`). Thirty-six rows

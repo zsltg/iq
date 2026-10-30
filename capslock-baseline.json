@@ -106,6 +106,20 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "FILES",
       "capability": "CAPABILITY_FILES",
@@ -118,6 +132,13 @@
       "capability": "CAPABILITY_FILES",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
       "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "FILES",
+      "capability": "CAPABILITY_FILES",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "query",
@@ -246,6 +267,20 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "NETWORK",
       "capability": "CAPABILITY_NETWORK",
@@ -258,6 +293,13 @@
       "capability": "CAPABILITY_NETWORK",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
       "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "NETWORK",
+      "capability": "CAPABILITY_NETWORK",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "query",
@@ -379,6 +421,20 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "RUNTIME",
       "capability": "CAPABILITY_RUNTIME",
@@ -390,6 +446,13 @@
       "capabilityName": "RUNTIME",
       "capability": "CAPABILITY_RUNTIME",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "RUNTIME",
+      "capability": "CAPABILITY_RUNTIME",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
@@ -519,6 +582,20 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "READ_SYSTEM_STATE",
       "capability": "CAPABILITY_READ_SYSTEM_STATE",
@@ -530,6 +607,13 @@
       "capabilityName": "READ_SYSTEM_STATE",
       "capability": "CAPABILITY_READ_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "READ_SYSTEM_STATE",
+      "capability": "CAPABILITY_READ_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
@@ -590,14 +674,14 @@
     },
     {
       "packageName": "cassandra",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/cassandra",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "cassandra",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/cassandra",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
@@ -660,84 +744,84 @@
     },
     {
       "packageName": "file",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/file",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "file",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/file",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "hbase",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/hbase",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "hbase",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/hbase",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "mongo",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/mongo",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "mongo",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/mongo",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "neo4j",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/neo4j",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "neo4j",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/neo4j",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "redis",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/redis",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "redis",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/drivers/redis",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "diff",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/diff",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "diff",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/diff",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
@@ -757,6 +841,34 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "jqtruth",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
@@ -772,42 +884,56 @@
     },
     {
       "packageName": "predicate",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "predicate",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "query",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/query",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "query",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/query",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "render",
-      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
+      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/render",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "render",
-      "capabilityName": "MODIFY_SYSTEM_STATE/ENV",
+      "capabilityName": "MODIFY_SYSTEM_STATE/SIGNALS",
       "capability": "CAPABILITY_MODIFY_SYSTEM_STATE",
       "packageDir": "github.com/zsltg/iq/internal/render",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
@@ -925,6 +1051,20 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "OPERATING_SYSTEM",
       "capability": "CAPABILITY_OPERATING_SYSTEM",
@@ -936,6 +1076,13 @@
       "capabilityName": "OPERATING_SYSTEM",
       "capability": "CAPABILITY_OPERATING_SYSTEM",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "OPERATING_SYSTEM",
+      "capability": "CAPABILITY_OPERATING_SYSTEM",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
@@ -1058,6 +1205,20 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "SYSTEM_CALLS",
       "capability": "CAPABILITY_SYSTEM_CALLS",
@@ -1069,6 +1230,13 @@
       "capabilityName": "SYSTEM_CALLS",
       "capability": "CAPABILITY_SYSTEM_CALLS",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "SYSTEM_CALLS",
+      "capability": "CAPABILITY_SYSTEM_CALLS",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
@@ -1191,6 +1359,20 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "ARBITRARY_EXECUTION",
       "capability": "CAPABILITY_ARBITRARY_EXECUTION",
@@ -1202,6 +1384,13 @@
       "capabilityName": "ARBITRARY_EXECUTION",
       "capability": "CAPABILITY_ARBITRARY_EXECUTION",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "ARBITRARY_EXECUTION",
+      "capability": "CAPABILITY_ARBITRARY_EXECUTION",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
@@ -1331,6 +1520,20 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "UNANALYZED",
       "capability": "CAPABILITY_UNANALYZED",
@@ -1343,6 +1546,13 @@
       "capability": "CAPABILITY_UNANALYZED",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
       "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "UNANALYZED",
+      "capability": "CAPABILITY_UNANALYZED",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "query",
@@ -1478,6 +1688,20 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "UNSAFE_POINTER",
       "capability": "CAPABILITY_UNSAFE_POINTER",
@@ -1489,6 +1713,13 @@
       "capabilityName": "UNSAFE_POINTER",
       "capability": "CAPABILITY_UNSAFE_POINTER",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "UNSAFE_POINTER",
+      "capability": "CAPABILITY_UNSAFE_POINTER",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
@@ -1625,6 +1856,20 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "REFLECT",
       "capability": "CAPABILITY_REFLECT",
@@ -1637,6 +1882,13 @@
       "capability": "CAPABILITY_REFLECT",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
       "capabilityType": "CAPABILITY_TYPE_DIRECT"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "REFLECT",
+      "capability": "CAPABILITY_REFLECT",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
       "packageName": "query",
@@ -1765,6 +2017,20 @@
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
+      "packageName": "jqtruth",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/internal/jqtruth",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "numfmt",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/internal/numfmt",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
       "packageName": "parquetout",
       "capabilityName": "EXEC",
       "capability": "CAPABILITY_EXEC",
@@ -1776,6 +2042,13 @@
       "capabilityName": "EXEC",
       "capability": "CAPABILITY_EXEC",
       "packageDir": "github.com/zsltg/iq/internal/predicate",
+      "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
+    },
+    {
+      "packageName": "pushdown",
+      "capabilityName": "EXEC",
+      "capability": "CAPABILITY_EXEC",
+      "packageDir": "github.com/zsltg/iq/internal/pushdown",
       "capabilityType": "CAPABILITY_TYPE_TRANSITIVE"
     },
     {
