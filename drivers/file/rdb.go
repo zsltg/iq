@@ -3,11 +3,13 @@ package file
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"sort"
 
+	"github.com/zsltg/rdb/core"
 	"github.com/zsltg/rdb/parser"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -21,11 +23,24 @@ import (
 // and a jq query over a dump matches a query over the live server. The reader skips
 // RDB metadata (aux, resizedb, functions), which carries no keyspace value. It also
 // skips opaque module types, so a module value does not round-trip.
+// A key with more than query.MaxValueElements elements is refused, unless the context is
+// unbounded (see rdbSourceLimit).
 func rdbSource(r io.Reader, size int) query.RecordSource {
+	return rdbSourceLimit(r, size, query.MaxValueElements)
+}
+
+// ErrKeyTooLarge reports a key with more elements than the limit, read without
+// the unbounded opt-in.
+var ErrKeyTooLarge = errors.New("too many elements")
+
+// rdbSourceLimit is rdbSource with a limit on the elements of one key. The decoder
+// stops at the limit before it builds the key, so a huge key never fills the memory.
+// An unbounded context lifts the limit.
+func rdbSourceLimit(r io.Reader, size, maxElements int) query.RecordSource {
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
 		page := make([]query.Record, 0, size)
 		var cbErr error
-		parseErr := parser.NewDecoder(r).Parse(func(o parser.RedisObject) bool {
+		parseErr := newRDBDecoder(ctx, r, maxElements).Parse(func(o parser.RedisObject) bool {
 			if err := ctx.Err(); err != nil {
 				cbErr = err
 				return false
@@ -48,13 +63,39 @@ func rdbSource(r io.Reader, size int) query.RecordSource {
 			return cbErr
 		}
 		if parseErr != nil {
-			return fmt.Errorf("parse rdb: %w", parseErr)
+			return rdbParseError(parseErr)
 		}
 		if len(page) > 0 {
 			return fn(page)
 		}
 		return nil
 	}
+}
+
+// newRDBDecoder builds the decoder for r. It sets the element limit unless ctx is
+// unbounded.
+func newRDBDecoder(ctx context.Context, r io.Reader, maxElements int) *core.Decoder {
+	dec := parser.NewDecoder(r)
+	if !query.Unbounded(ctx) {
+		dec.WithMaxElements(maxElements)
+	}
+	return dec
+}
+
+// rdbParseError converts the error of the parser. A key over the limit gets a
+// message that names the key, the type and the way out. The message never holds a
+// value. Any other error keeps the parse prefix.
+func rdbParseError(err error) error {
+	var tooMany *parser.TooManyElementsError
+	if !errors.As(err, &tooMany) {
+		return fmt.Errorf("parse rdb: %w", err)
+	}
+	count := fmt.Sprintf("%d elements", tooMany.Count)
+	if !tooMany.Exact {
+		count = fmt.Sprintf("more than %d elements", tooMany.Limit)
+	}
+	return fmt.Errorf("read key %q: %w: the %s has %s and the limit is %d, so read it with --unbounded",
+		tooMany.Key, ErrKeyTooLarge, tooMany.Type, count, tooMany.Limit)
 }
 
 // recordForObject converts one RDB object to a typed record, reporting false for an

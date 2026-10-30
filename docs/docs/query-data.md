@@ -141,7 +141,8 @@ it (see [Read strategies](how-it-works.md#read-strategies)).
 
 The flag also lets a read load a Redis key with more than 1,000,000 elements. Without it, the read fails
 and names the key, its type, and its size (see [Redis](drivers.md#redis)). It does the same for an
-HBase row with more than 1,000,000 cells in one column family (see [HBase](drivers.md#hbase)). The same
+HBase row with more than 1,000,000 cells in one column family (see [HBase](drivers.md#hbase)). A key in an
+RDB dump follows the same limit, and the flag lifts it there too (see [File dumps](drivers.md#file-dumps)). The same
 flag does this for `iq diff`, `iq schema`, and the copy and move modes.
 
 `iq combine` and `iq data` carry their own copies of the flag where they apply.

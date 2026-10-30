@@ -313,7 +313,7 @@ Exits non-zero when the sources differ and zero when they match
 | | `--patch` | ✗ | emit an RFC 6902 JSON Patch[^1] that transforms the left source into the right (single layer only). For `--data`, the pointers read `/<key>/<field>` over the whole keyspace map. `--patch` excludes `--json`/`--yaml`/`--set-arrays` |
 | | `--schema` | ✗ | diff an inferred field/type shape (cross-driver allowed) based on a sample (use `--sample` to change the sample size) |
 | | `--sample <int>` | `1000` | max items sampled per side for --schema (0 = all) |
-| | `--unbounded` | ✗ | permit a Redis key with more than 1,000,000 elements, or an HBase row with more than 1,000,000 cells in one column family, to be loaded into memory |
+| | `--unbounded` | ✗ | permit a Redis key or an RDB dump key with more than 1,000,000 elements, or an HBase row with more than 1,000,000 cells in one column family, to be loaded into memory |
 | | `--stats` | ✗ | diff native introspection trees (same driver only). Use with `--section` to narrow it down |
 | | `--section <strings>` | full set | introspection section(s) for `--stats` (comma-separated or repeatable) |
 | | `--set-arrays` | ✗ | compare arrays order-insensitively as multisets (duplicates counted). Membership deltas are reported at the array's own path with no index segment. A pure reorder becomes no difference |
@@ -401,7 +401,7 @@ refuse it.
 | | `--filter <string>` | none | jq filter scoping which items the shape is inferred from. The spec form `source=<jq>` sets it per source |
 | | `--format <string>` | `jsonschema` | picks the contract dialect the shape projects into: JSON Schema draft 2020-12[^4] (`jsonschema`) or Open Data Contract Standard v3.2.0[^5] (`odcs`) |
 | | `--sample <int>` | `1000` | max items sampled (0 = all) |
-| | `--unbounded` | ✗ | permit a Redis key with more than 1,000,000 elements, or an HBase row with more than 1,000,000 cells in one column family, to be loaded into memory |
+| | `--unbounded` | ✗ | permit a Redis key or an RDB dump key with more than 1,000,000 elements, or an HBase row with more than 1,000,000 cells in one column family, to be loaded into memory |
 | `-y` | `--yaml` | ✗ | emit YAML instead of JSON (`jsonschema` only, `odcs` is always YAML) |
 
 ```sh { title='Schema of the active source' }

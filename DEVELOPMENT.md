@@ -926,10 +926,12 @@ Posture and upkeep around the pipeline, all on GitHub:
   (upstream issue 75, pull request 76). The fork also removes a print to stdout
   for module types that have no handler. That print corrupts the data output of
   iq and the JSON-RPC stream of `iq mcp`. Upstream needs this fix too before iq
-  can switch back. The fork branch `zsltg-module-path`
+  can switch back. The fork also adds `Decoder.WithMaxElements`, which refuses a
+  key with too many elements before it allocates them. Upstream does not have it.
+  The fork branch `zsltg-module-path`
   changes the module path, because `go install` refuses a module whose `go.mod`
   has a `replace` directive. Do not use a `replace` in `go.mod`. When upstream
-  releases the fix, change the imports back to `github.com/hdt3213/rdb`, require
+  releases the fixes and the limit, change the imports back to `github.com/hdt3213/rdb`, require
   its fixed version, and remove the require of `github.com/zsltg/rdb`.
 - The tool pins live in `scripts/tool-versions.env`, `scripts/mutation-gate.sh`,
   and `scripts/capabilities.sh`. One custom manager reads them. Each pin needs a

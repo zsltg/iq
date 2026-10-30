@@ -94,7 +94,7 @@ func newSchemaCmd(cfg *config) *cobra.Command {
 			return writeStructured(cmd.OutOrStdout(), doc, asYAML)
 		},
 	}
-	c.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a Redis key with more than 1000000 elements, or an HBase row with more than 1000000 cells in one column family, to be loaded into memory")
+	c.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a Redis key or an RDB dump key with more than 1000000 elements, or an HBase row with more than 1000000 cells in one column family, to be loaded into memory")
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled (0 = all)")
 	c.Flags().StringVar(&filter, "filter", "", "jq filter scoping which items the shape is inferred from; the spec form source=<jq> sets it per source")
 	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit YAML instead of JSON (jsonschema only; odcs is always YAML)")
