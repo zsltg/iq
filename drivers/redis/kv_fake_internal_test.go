@@ -62,18 +62,21 @@ func TestReaderForQueuesTheReadOfEachType(t *testing.T) {
 	}{
 		{"none", missingReader{}, []string{}},
 		{"string", stringReader{}, []string{"get k"}},
-		{"hash", hashReader{}, []string{"hgetall k"}},
-		{"list", listReader{}, []string{"lrange k 0 -1"}},
-		{"set", setReader{}, []string{"smembers k"}},
-		{"zset", zsetReader{}, []string{"zrange k 0 -1 withscores"}},
-		{"stream", streamReader{}, []string{"xrange k - +"}},
+		{"hash", hashReader{}, []string{"hlen k", "hscan k 0 count 1000"}},
+		{"list", listReader{}, []string{"llen k", "lrange k 0 999"}},
+		{"set", setReader{}, []string{"scard k", "sscan k 0 count 1000"}},
+		{"zset", zsetReader{}, []string{"zcard k", "zscan k 0 count 1000"}},
+		{"stream", streamReader{}, []string{"xlen k", "xrange k - + count 1000"}},
 		{"ReJSON-RL", jsonReader{}, []string{"JSON.GET k"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.typ, func(t *testing.T) {
 			p := newPipeline(t)
 
-			r, err := readerFor(context.Background(), p, typedKey{key: "k", typ: tt.typ}, numfmt.DecimalString)
+			store := newFakeStore(t, &fakeRedis{}, 10)
+			store.decimal = numfmt.DecimalString
+
+			r, err := store.readerFor(context.Background(), p, typedKey{key: "k", typ: tt.typ})
 
 			require.NoError(t, err)
 			require.IsType(t, tt.wantReader, r)
@@ -91,7 +94,9 @@ func TestReaderForQueuesTheReadOfEachType(t *testing.T) {
 func TestReaderForRefusesAnUnsupportedType(t *testing.T) {
 	p := newPipeline(t)
 
-	r, err := readerFor(context.Background(), p, typedKey{key: "k", typ: "TSDB-TYPE"}, numfmt.DecimalAuto)
+	store := newFakeStore(t, &fakeRedis{}, 10)
+
+	r, err := store.readerFor(context.Background(), p, typedKey{key: "k", typ: "TSDB-TYPE"})
 
 	require.EqualError(t, err, `unsupported redis type "TSDB-TYPE" for key "k"`)
 	require.Nil(t, r)
@@ -136,7 +141,7 @@ func TestReadPathsReadTypesThenValuesInKeyOrder(t *testing.T) {
 			[]string{"b", "a", "b", "gone"},
 			map[string]any{"b": "vb", "a": map[string]any{"f": "v"}},
 			[]string{"type b", "type a", "type gone"},
-			[]string{"get b", "hgetall a"},
+			[]string{"get b", "hlen a", "hscan a 0 count 1000"},
 		},
 		{
 			readPaths[1],
@@ -236,42 +241,6 @@ func TestReadPathsWrapEachFailure(t *testing.T) {
 				require.Len(t, f.snapshot(), tt.wantCalls)
 			})
 		}
-	}
-}
-
-// TestListAndSetReadersOrderAndErrors pins the two string-slice readers: a list
-// keeps its order, a set is sorted, and both return the error of the reply.
-func TestListAndSetReadersOrderAndErrors(t *testing.T) {
-	ctx := context.Background()
-	slice := func(vs []string, err error) *goredis.StringSliceCmd {
-		c := goredis.NewStringSliceCmd(ctx)
-		c.SetVal(vs)
-		c.SetErr(err)
-		return c
-	}
-	boom := errors.New("boom")
-
-	v, present, err := listReader{slice([]string{"c", "a", "b"}, nil)}.normalize()
-	require.NoError(t, err)
-	require.True(t, present)
-	require.Equal(t, []any{"c", "a", "b"}, v, "a list keeps its order")
-
-	v, present, err = setReader{slice([]string{"c", "a", "b"}, nil)}.normalize()
-	require.NoError(t, err)
-	require.True(t, present)
-	require.Equal(t, []any{"a", "b", "c"}, v, "a set is sorted")
-
-	for name, r := range map[string]reader{
-		"list": listReader{slice([]string{"a"}, boom)},
-		"set":  setReader{slice([]string{"a"}, boom)},
-	} {
-		t.Run(name+" error", func(t *testing.T) {
-			v, present, err := r.normalize()
-
-			require.ErrorIs(t, err, boom)
-			require.False(t, present)
-			require.Nil(t, v)
-		})
 	}
 }
 

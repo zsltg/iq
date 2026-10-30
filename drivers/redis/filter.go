@@ -44,7 +44,7 @@ func (s *Store) getFiltered(ctx context.Context, keys []string, matcher *rawpred
 	}
 
 	readers, err := s.readPipelined(ctx, unique, func(p goredis.Pipeliner, i int) (reader, error) {
-		return filteredReaderFor(ctx, p, unique[i], types[i], s.decimal, matcher)
+		return s.filteredReaderFor(ctx, p, unique[i], types[i], matcher)
 	})
 	if err != nil {
 		return nil, err
@@ -55,11 +55,11 @@ func (s *Store) getFiltered(ctx context.Context, keys []string, matcher *rawpred
 // filteredReaderFor is readerFor with the RedisJSON case swapped for a
 // predicate-aware reader. Every other type uses the same reader as an unfiltered
 // read, so mixed-keyspace normalization is unchanged.
-func filteredReaderFor(ctx context.Context, p goredis.Pipeliner, key, typ string, dec numfmt.DecimalMode, matcher *rawpred.Matcher) (reader, error) {
+func (s *Store) filteredReaderFor(ctx context.Context, p goredis.Pipeliner, key, typ string, matcher *rawpred.Matcher) (reader, error) {
 	if typ == "ReJSON-RL" {
-		return filterJSONReader{cmd: p.JSONGet(ctx, key), decimal: dec, matcher: matcher}, nil
+		return filterJSONReader{cmd: p.JSONGet(ctx, key), decimal: s.decimal, matcher: matcher}, nil
 	}
-	return readerFor(ctx, p, typedKey{key: key, typ: typ}, dec)
+	return s.readerFor(ctx, p, typedKey{key: key, typ: typ})
 }
 
 // filterJSONReader is jsonReader plus the prefilter. It runs the raw JSON.GET

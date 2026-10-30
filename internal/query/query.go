@@ -40,6 +40,22 @@ func UnderRowLimit(ctx context.Context, n int) bool {
 	return !limited || n < limit
 }
 
+// unboundedKey is the context key of the unbounded opt-in.
+type unboundedKey struct{}
+
+// WithUnbounded returns a context that tells a driver the caller allows reads that
+// load a very large value into memory. The engine sets it when the run is
+// unbounded (the --unbounded flag).
+func WithUnbounded(ctx context.Context) context.Context {
+	return context.WithValue(ctx, unboundedKey{}, true)
+}
+
+// Unbounded reports whether WithUnbounded was applied to ctx.
+func Unbounded(ctx context.Context) bool {
+	on, _ := ctx.Value(unboundedKey{}).(bool)
+	return on
+}
+
 // Store is the port the core depends on. A driver adapter (Redis, and later
 // others) implements it. The core never imports a concrete driver.
 type Store interface {

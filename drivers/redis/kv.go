@@ -5,14 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
-	"sort"
 	"strings"
 
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/zsltg/iq/internal/numfmt"
-	"github.com/zsltg/iq/internal/query"
 )
 
 // scanCount is the COUNT hint for each SCAN round. It bounds work per
@@ -62,7 +59,7 @@ func (s *Store) pipeTypes(ctx context.Context, keys []string) ([]string, error) 
 // than guessing an encoding.
 func (s *Store) pipeValues(ctx context.Context, keys, types []string) (map[string]any, error) {
 	readers, err := s.readPipelined(ctx, keys, func(p goredis.Pipeliner, i int) (reader, error) {
-		return readerFor(ctx, p, typedKey{key: keys[i], typ: types[i]}, s.decimal)
+		return s.readerFor(ctx, p, typedKey{key: keys[i], typ: types[i]})
 	})
 	if err != nil {
 		return nil, err
@@ -127,37 +124,14 @@ type typedKey struct {
 
 // readerFor queues the read appropriate to a key's type and returns the reader
 // that will normalize the reply once the pipeline executes.
-func readerFor(ctx context.Context, p goredis.Pipeliner, k typedKey, dec numfmt.DecimalMode) (reader, error) {
+func (s *Store) readerFor(ctx context.Context, p goredis.Pipeliner, k typedKey) (reader, error) {
 	switch k.typ {
 	case "none":
 		return missingReader{}, nil
 	case "ReJSON-RL":
-		return jsonReader{cmd: p.JSONGet(ctx, k.key), decimal: dec}, nil
+		return jsonReader{cmd: p.JSONGet(ctx, k.key), decimal: s.decimal}, nil
 	default:
-		return nativeReader(ctx, p, k)
-	}
-}
-
-// nativeReader queues the read for a built-in Redis type (string, hash, list,
-// set, zset, stream) and returns its reader.
-func nativeReader(ctx context.Context, p goredis.Pipeliner, k typedKey) (reader, error) {
-	switch k.typ {
-	case "string":
-		return stringReader{p.Get(ctx, k.key)}, nil
-	case "hash":
-		return hashReader{p.HGetAll(ctx, k.key)}, nil
-	case "list":
-		return listReader{p.LRange(ctx, k.key, 0, -1)}, nil
-	case "set":
-		return setReader{p.SMembers(ctx, k.key)}, nil
-	case "zset":
-		return zsetReader{cmd: p.ZRangeWithScores(ctx, k.key, 0, -1), ctx: ctx, key: k.key}, nil
-	case "stream":
-		return streamReader{p.XRange(ctx, k.key, "-", "+")}, nil
-	default:
-		// Other module types (time series, bloom, and so on) have no frozen JSON
-		// encoding yet, so refuse rather than emit a lossy or ambiguous value.
-		return nil, fmt.Errorf("unsupported redis type %q for key %q", k.typ, k.key)
+		return s.nativeReader(ctx, p, k)
 	}
 }
 
@@ -181,121 +155,6 @@ func (r stringReader) normalize() (any, bool, error) {
 		return nil, false, err
 	}
 	return v, true, nil
-}
-
-// hashReader normalizes a hash to an object of string fields.
-type hashReader struct{ cmd *goredis.MapStringStringCmd }
-
-func (r hashReader) normalize() (any, bool, error) {
-	m, err := r.cmd.Result()
-	if err != nil {
-		return nil, false, err
-	}
-	// Redis deletes a hash when its last field goes, so an empty reply means the
-	// key vanished after TYPE saw it. The key is absent, not an
-	// empty object.
-	if len(m) == 0 {
-		return nil, false, nil
-	}
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out, true, nil
-}
-
-// listReader normalizes a list to an array in list order.
-type listReader struct{ cmd *goredis.StringSliceCmd }
-
-func (r listReader) normalize() (any, bool, error) {
-	vs, present, err := nonEmptyStrings(r.cmd)
-	if !present {
-		return nil, false, err
-	}
-	return toAnySlice(vs), true, nil
-}
-
-// setReader normalizes a set to a lexically sorted array. A Redis set has no
-// order, so sorting makes the output deterministic and testable.
-type setReader struct{ cmd *goredis.StringSliceCmd }
-
-func (r setReader) normalize() (any, bool, error) {
-	vs, present, err := nonEmptyStrings(r.cmd)
-	if !present {
-		return nil, false, err
-	}
-	sort.Strings(vs)
-	return toAnySlice(vs), true, nil
-}
-
-// nonEmptyStrings reads a string-slice reply. It reports the key as absent when
-// the reply is empty: Redis deletes a list or a set when its last member goes,
-// so an empty reply means the key vanished after TYPE saw it.
-func nonEmptyStrings(cmd *goredis.StringSliceCmd) ([]string, bool, error) {
-	vs, err := cmd.Result()
-	if err != nil {
-		return nil, false, err
-	}
-	if len(vs) == 0 {
-		return nil, false, nil
-	}
-	return vs, true, nil
-}
-
-// zsetReader normalizes a sorted set to an array of {member, score} objects in
-// score-ascending order, preserving rank. This is the frozen canonical
-// encoding. A NaN or infinite score has no JSON form, so it becomes a string
-// (see numfmt.FiniteScore). The reader reports it to the notice sink of ctx,
-// under key.
-type zsetReader struct {
-	cmd *goredis.ZSliceCmd
-	ctx context.Context //nolint:containedctx // the reader lives for one pipeline read and needs the context only to report a conversion.
-	key string
-}
-
-func (r zsetReader) normalize() (any, bool, error) {
-	zs, err := r.cmd.Result()
-	if err != nil {
-		return nil, false, err
-	}
-	// An empty sorted set cannot exist in Redis. The key went away after TYPE.
-	if len(zs) == 0 {
-		return nil, false, nil
-	}
-	h := &numfmt.Hits{}
-	out := make([]any, len(zs))
-	for i, z := range zs {
-		member, _ := z.Member.(string)
-		h.EnterIndex(i)
-		h.Enter("score")
-		out[i] = map[string]any{"member": member, "score": h.Score(z.Score)}
-		h.Leave()
-		h.Leave()
-	}
-	query.NoteNonFinite(r.ctx, r.key, h.Fields...)
-	return out, true, nil
-}
-
-// streamReader normalizes a stream to an array of {id, fields} objects in entry
-// order. Fields are an object, matching the hash encoding. go-redis already
-// returns the fields of an entry as a map. So the field order and any
-// duplicate field names are not available to preserve.
-type streamReader struct{ cmd *goredis.XMessageSliceCmd }
-
-func (r streamReader) normalize() (any, bool, error) {
-	msgs, err := r.cmd.Result()
-	if err != nil {
-		return nil, false, err
-	}
-	out := make([]any, len(msgs))
-	for i, m := range msgs {
-		fields := make(map[string]any, len(m.Values))
-		maps.Copy(fields, m.Values)
-		out[i] = map[string]any{"id": m.ID, "fields": fields}
-	}
-	// Unlike the other collections a stream survives losing every entry, so an
-	// empty reply is a present, empty stream.
-	return out, true, nil
 }
 
 // jsonReader normalizes a RedisJSON document by parsing its JSON.GET reply. The

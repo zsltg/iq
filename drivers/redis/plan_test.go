@@ -16,7 +16,7 @@ func TestExplainPlan(t *testing.T) {
 		require.Nil(t, got.Filter)
 		require.Equal(t, []string{
 			"pipeline TYPE for 3 requested key(s)",
-			"then per key by type: GET / HGETALL / LRANGE 0 -1 / SMEMBERS / ZRANGE 0 -1 WITHSCORES / JSON.GET",
+			"then per key by type: GET / HLEN + HSCAN / LLEN + LRANGE / SCARD + SSCAN / ZCARD + ZSCAN / XLEN + XRANGE COUNT / JSON.GET",
 		}, got.Ops)
 	})
 

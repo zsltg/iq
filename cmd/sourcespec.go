@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -57,6 +58,16 @@ func (s sourceSpec) runConfig(cfg *config) *config {
 // and the structured logger reach the engine the same way as on a plain query.
 func (cfg *config) runOptions() query.RunOptions {
 	return query.RunOptions{Compile: !cfg.noCompile, Logger: cfg.logger}
+}
+
+// readContext returns ctx marked as unbounded when the run is, so a driver may
+// read one very large value, such as a Redis key above its element limit. A read
+// command that has no filter engine under it calls this on its run context.
+func (cfg *config) readContext(ctx context.Context) context.Context {
+	if cfg.unbounded {
+		return query.WithUnbounded(ctx)
+	}
+	return ctx
 }
 
 // parseSourceSpec resolves one `<source>[=<jq filter>]` spec. The cut is at

@@ -139,6 +139,10 @@ Permit a filter that loads the whole dataset into memory. It also materializes a
 collapses the keyspace into one value (`keys`, `.`, `map(...)`) runs only with
 it (see [Read strategies](how-it-works.md#read-strategies)).
 
+The flag also lets a read load a Redis key with more than 1,000,000 elements. Without it, the read fails
+and names the key, its type, and its size (see [Redis](drivers.md#redis)). The same
+flag does this for `iq diff`, `iq schema`, and the copy and move modes.
+
 `iq combine` and `iq data` carry their own copies of the flag where they apply.
 
 ## Client-side `--no-compile`

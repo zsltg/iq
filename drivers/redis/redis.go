@@ -35,6 +35,9 @@ type Store struct {
 	// decimal chooses how a RedisJSON fractional number is presented to the
 	// filter: a float64 (auto/number) or its exact literal string.
 	decimal numfmt.DecimalMode
+	// limits holds the size limits of one key read. It defaults to the package
+	// constants. Tests lower it to cover paging with small keys.
+	limits limits
 }
 
 // ErrInvalidURI reports a connection URI that go-redis cannot parse.
@@ -89,7 +92,7 @@ func Open(ctx context.Context, url string, trace io.Writer, dec numfmt.DecimalMo
 	if trace != nil {
 		client.AddHook(newTraceHook(trace))
 	}
-	return &Store{client: client, pageSize: scanCount, decimal: dec}, nil
+	return &Store{client: client, pageSize: scanCount, decimal: dec, limits: defaultLimits()}, nil
 }
 
 // Query forwards args to Redis as a single command and returns the raw result.

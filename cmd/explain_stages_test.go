@@ -289,7 +289,7 @@ jq filter:
 redis calls:
   SCAN 0 MATCH * COUNT 100: cursor over the whole keyspace
   per page: pipeline TYPE for the page's keys
-  then per key by type: GET / HGETALL / LRANGE 0 -1 / SMEMBERS / ZRANGE 0 -1 WITHSCORES / JSON.GET
+  then per key by type: GET / HLEN + HSCAN / LLEN + LRANGE / SCARD + SSCAN / ZCARD + ZSCAN / XLEN + XRANGE COUNT / JSON.GET
 
 server filter: none, Redis filters nothing on the server
 

@@ -143,6 +143,7 @@ func newDiffCmd(cfg *config) *cobra.Command {
 	c.Flags().IntVar(&sample, "sample", 1000, "max items sampled per side for --schema (0 = all)")
 	c.Flags().StringVar(&filter, "filter", "", "jq filter rooted at .[] scoping both sides; a spec's own source=<jq> overrides it for that side")
 	c.Flags().BoolVar(&setArrays, "set-arrays", false, "compare arrays order-insensitively as multisets (duplicates counted)")
+	c.Flags().BoolVar(&cfg.unbounded, "unbounded", false, "permit a Redis key with more than 1000000 elements to be loaded into memory")
 	c.Flags().BoolVarP(&jsonOut, "json", "j", false, "emit machine-readable JSON")
 	c.Flags().BoolVarP(&yamlOut, "yaml", "y", false, "emit machine-readable YAML")
 	c.Flags().BoolVar(&patchOut, "patch", false, "emit an RFC 6902 JSON Patch (single layer only; excludes --json/--yaml/--set-arrays)")
@@ -194,7 +195,7 @@ func runDiff(cmd *cobra.Command, run diffRun, modes diffModes) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(cmd.Context(), run.cfg.timeout)
+	ctx, cancel := context.WithTimeout(run.cfg.readContext(cmd.Context()), run.cfg.timeout)
 	defer cancel()
 
 	if modes.patch {

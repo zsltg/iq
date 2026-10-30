@@ -2,10 +2,8 @@ package redis
 
 import (
 	"context"
-	"math"
 	"testing"
 
-	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
@@ -18,30 +16,28 @@ func TestZSetReaderReportsNonFiniteScores(t *testing.T) {
 	ctx := query.WithNonFiniteNotice(context.Background(), func(key, field string) {
 		got = append(got, call{key, field})
 	})
-	c := goredis.NewZSliceCmd(ctx)
-	c.SetVal([]goredis.Z{
-		{Member: "a", Score: 1},
-		{Member: "b", Score: math.Inf(1)},
-		{Member: "c", Score: math.NaN()},
-	})
+	pr := onePage(ctx)
+	pr.key = "board"
 
-	v, ok, err := zsetReader{cmd: c, ctx: ctx, key: "board"}.normalize()
+	v, ok, err := zsetReader{pr, scanReply(ctx, "a", "1", "b", "inf", "c", "-inf")}.normalize()
 
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, []any{
+		map[string]any{"member": "c", "score": "-inf"},
 		map[string]any{"member": "a", "score": 1.0},
 		map[string]any{"member": "b", "score": "inf"},
-		map[string]any{"member": "c", "score": "nan"},
 	}, v)
-	require.Equal(t, []call{{"board", "[1].score"}, {"board", "[2].score"}}, got)
+	require.Equal(t, []call{{"board", "[0].score"}, {"board", "[2].score"}}, got)
 }
 
 func TestReaderForGivesZSetReaderItsKeyAndContext(t *testing.T) {
 	ctx := markedContext()
 	p := newPipeline(t)
 
-	r, err := readerFor(ctx, p, typedKey{key: "board", typ: "zset"}, numfmt.DecimalAuto)
+	s := &Store{decimal: numfmt.DecimalAuto, limits: defaultLimits()}
+
+	r, err := s.readerFor(ctx, p, typedKey{key: "board", typ: "zset"})
 
 	require.NoError(t, err)
 	z, ok := r.(zsetReader)
