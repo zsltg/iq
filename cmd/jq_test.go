@@ -209,4 +209,8 @@ func TestPipedStdinFormats(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, out, `"n"`)
 	})
+	t.Run("an unknown --from-format is an error", func(t *testing.T) {
+		_, _, err := runWithStdin(t, dump, "--from-format", "nope", ".[]")
+		require.ErrorContains(t, err, "nope")
+	})
 }

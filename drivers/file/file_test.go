@@ -1307,3 +1307,19 @@ func TestRDBZSetInfiniteScores(t *testing.T) {
 	_, err = json.Marshal(got[0].Value)
 	require.NoError(t, err)
 }
+
+// failingReader returns err on every read.
+type failingReader struct{ err error }
+
+func (r failingReader) Read([]byte) (int, error) { return 0, r.err }
+
+// TestOpenPipeReportsAReadErrorOfTheHead pins that a read error during the peek,
+// other than the end of the input, is an error that keeps its cause.
+func TestOpenPipeReportsAReadErrorOfTheHead(t *testing.T) {
+	boom := errors.New("boom")
+
+	_, err := OpenPipe(failingReader{err: boom}, FormatUnknown, numfmt.DecimalAuto)
+
+	require.ErrorIs(t, err, boom)
+	require.ErrorContains(t, err, "read stdin head: boom")
+}
