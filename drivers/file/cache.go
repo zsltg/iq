@@ -24,7 +24,10 @@ import (
 // records in a stale shape. The differential test (cold vs warm output) is the
 // backstop for a forgotten bump. Version 4 retires caches that an older encoder
 // wrote for dumps with big integers. The decoder cannot read those caches back.
-const cacheVersion = 4
+// Version 5 retires caches that a build wrote before the RDB element limit and
+// before NaN and infinite floats became strings. Such a cache can hold a key above
+// the limit or a float that JSON cannot hold.
+const cacheVersion = 5
 
 // cacheMagic prefixes every cache file so a truncated or foreign file is
 // rejected cheaply before any CBOR decode.

@@ -149,3 +149,29 @@ func TestFileStoreRefusesLargeKey(t *testing.T) {
 		`read key "k": too many elements: the set has %d elements and the limit is %d, so read it with --unbounded`,
 		members, query.MaxValueElements))
 }
+
+// TestUnboundedReadDoesNotWarmTheCache proves that a bounded read never gets a
+// large key from a cache that an unbounded read could have written. The unbounded
+// scan reads the key and writes no cache. The bounded scan after it still refuses.
+func TestUnboundedReadDoesNotWarmTheCache(t *testing.T) {
+	items := make([][]byte, query.MaxValueElements+1)
+	for i := range items {
+		items[i] = strconv.AppendInt(nil, int64(i), 10) // integers, so the set is an intset.
+	}
+	data := oneKeyRDB(t, func(enc *encoder.Encoder) error { return enc.WriteSetObject("k", items) })
+	path := writeDump(t, "large.rdb", data, "")
+	dir := t.TempDir()
+	st, err := Open(path, numfmt.DecimalAuto, cacheCfg(dir))
+	require.NoError(t, err)
+
+	var got int
+	require.NoError(t, st.TypedScan(query.WithUnbounded(context.Background()), func(b []query.Record) error {
+		got += len(b)
+		return nil
+	}))
+	require.Equal(t, 1, got)
+	require.Empty(t, cacheFiles(t, dir), "an unbounded read must not write the cache")
+
+	err = st.TypedScan(context.Background(), func([]query.Record) error { return nil })
+	require.ErrorIs(t, err, ErrKeyTooLarge)
+}

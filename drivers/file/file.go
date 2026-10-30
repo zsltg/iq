@@ -271,7 +271,10 @@ func (s *Store) records(ctx context.Context, populate bool, fn func(batch []quer
 	if src, ok := s.cacheSource(); ok {
 		return src(ctx, fn)
 	}
-	if populate {
+	// An unbounded read never writes the cache. Its records can hold an RDB key
+	// above the element limit, and a later bounded read would get them from the
+	// cache without the limit.
+	if populate && !query.Unbounded(ctx) {
 		if m, ok := s.cacheable(); ok {
 			return s.populate(ctx, m, fn)
 		}
