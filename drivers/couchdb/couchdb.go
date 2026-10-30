@@ -13,6 +13,7 @@ import (
 	_ "github.com/go-kivik/kivik/v4/couchdb" // registers the "couch" driver.
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/render"
 )
 
@@ -283,15 +284,15 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if s.db == "" {
 		return nil, errNoDatabase
 	}
-	query, err := mangoQuery(args)
+	req, err := mangoQuery(args)
 	if err != nil {
 		return nil, err
 	}
 
-	rows := s.client.DB(s.db).Find(ctx, query)
+	rows := s.client.DB(s.db).Find(ctx, req)
 	defer func() { _ = rows.Close() }()
-	docs := []any{}
-	if _, err := s.readFind(rows, func(doc map[string]any) { docs = append(docs, doc) }); err != nil {
+	docs, err := s.collectFind(ctx, rows)
+	if err != nil {
 		return nil, err
 	}
 	out := map[string]any{"docs": docs}
@@ -301,20 +302,38 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	return out, nil
 }
 
+// collectFind reads the documents of a raw _find reply. If ctx has a row limit
+// (query.WithRowLimit), it stops reading after that many documents. The caller
+// closes rows.
+func (s *Store) collectFind(ctx context.Context, rows *kivik.ResultSet) ([]any, error) {
+	docs := []any{}
+	for query.UnderRowLimit(ctx, len(docs)) && rows.Next() {
+		doc, err := s.nextDoc(rows)
+		if err != nil {
+			return nil, err
+		}
+		docs = append(docs, doc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("couchdb find: %w", err)
+	}
+	return docs, nil
+}
+
 // mangoQuery turns the raw argument list into a _find request. One JSON document is
 // required. A bare selector is wrapped as {"selector": ...}.
 func mangoQuery(args []string) (map[string]any, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("couchdb raw expects one JSON Mango query document")
 	}
-	var query map[string]any
-	if err := json.Unmarshal([]byte(args[0]), &query); err != nil {
+	var req map[string]any
+	if err := json.Unmarshal([]byte(args[0]), &req); err != nil {
 		return nil, fmt.Errorf("parse couchdb mango query: %w", err)
 	}
-	if _, ok := query["selector"]; !ok {
-		query = map[string]any{"selector": query}
+	if _, ok := req["selector"]; !ok {
+		req = map[string]any{"selector": req}
 	}
-	return query, nil
+	return req, nil
 }
 
 // FormatRaw renders a raw Mango reply as indented JSON, the natural form for a

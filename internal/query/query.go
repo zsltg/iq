@@ -33,6 +33,13 @@ func RowLimit(ctx context.Context) (int, bool) {
 	return n, ok
 }
 
+// UnderRowLimit reports whether a driver that holds n rows may read one more. It is
+// true when ctx has no row limit, or when n is below the limit.
+func UnderRowLimit(ctx context.Context, n int) bool {
+	limit, limited := RowLimit(ctx)
+	return !limited || n < limit
+}
+
 // Store is the port the core depends on. A driver adapter (Redis, and later
 // others) implements it. The core never imports a concrete driver.
 type Store interface {

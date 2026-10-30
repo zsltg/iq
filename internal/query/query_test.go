@@ -114,3 +114,25 @@ func TestRowLimit(t *testing.T) {
 		require.False(t, ok)
 	})
 }
+
+// TestUnderRowLimit pins when a driver may read one more row: always without a
+// limit, and only below the limit with one.
+func TestUnderRowLimit(t *testing.T) {
+	limited := query.WithRowLimit(context.Background(), 2)
+	tests := []struct {
+		name string
+		ctx  context.Context
+		n    int
+		want bool
+	}{
+		{"no limit, many rows", context.Background(), 1000, true},
+		{"below the limit", limited, 1, true},
+		{"at the limit", limited, 2, false},
+		{"above the limit", limited, 3, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, query.UnderRowLimit(tc.ctx, tc.n))
+		})
+	}
+}

@@ -485,10 +485,23 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 		return nil, fmt.Errorf("cassandra: empty statement")
 	}
 	cql := strings.Join(args, " ")
-	iter := s.session.Query(cql).IterContext(ctx)
+	return s.collectRows(ctx, s.session.Query(cql).IterContext(ctx))
+}
+
+// rowIter is the part of a gocql result iterator that a raw statement reads.
+// *gocql.Iter implements it.
+type rowIter interface {
+	MapScan(m map[string]any) bool
+	Close() error
+}
+
+// collectRows reads the rows of a raw statement result and normalizes each one. If
+// ctx has a row limit (query.WithRowLimit), it stops reading after that many rows.
+// It always closes iter and returns the close error.
+func (s *Store) collectRows(ctx context.Context, iter rowIter) (any, error) {
 	rows := []any{}
 	row := map[string]any{}
-	for iter.MapScan(row) {
+	for query.UnderRowLimit(ctx, len(rows)) && iter.MapScan(row) {
 		rows = s.appendRow(ctx, rows, row)
 		row = map[string]any{}
 	}

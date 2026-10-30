@@ -479,8 +479,11 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// With a row limit, the loop stops without reading the rest of the stream. The
+	// deferred sess.Close then discards the open result on the server (it calls
+	// Result.Consume, which does not buffer the records).
 	rows := []any{}
-	for res.Next(ctx) {
+	for query.UnderRowLimit(ctx, len(rows)) && res.Next(ctx) {
 		rows = append(rows, s.rowOf(ctx, "row "+strconv.Itoa(len(rows)+1), res.Record()))
 	}
 	if err := res.Err(); err != nil {

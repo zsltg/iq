@@ -410,7 +410,8 @@ func (s *Store) execGet(ctx context.Context, args []string) (any, error) {
 }
 
 // execScan runs `scan <table> [limit]`, returning up to limit rows as {rowkey: row}.
-// An absent or non-positive limit scans the whole table.
+// An absent or non-positive limit scans the whole table, unless ctx has a row limit.
+// The row limit stops the scan and closes the scanner.
 func (s *Store) execScan(ctx context.Context, args []string) (any, error) {
 	if len(args) < 1 || len(args) > 2 {
 		return nil, fmt.Errorf("hbase: scan needs <table> [limit]")
@@ -427,12 +428,21 @@ func (s *Store) execScan(ctx context.Context, args []string) (any, error) {
 	err = eachRow(s.client.Scan(req), "hbase scan", func(res *hrpc.Result) (bool, error) {
 		key := rowKeyString(s.rowkeyType, res.Cells[0].Row)
 		rows[key] = s.keyedRow(ctx, key, res.Cells)
-		return limit > 0 && len(rows) >= limit, nil
+		return scanDone(ctx, len(rows), limit), nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return rows, nil
+}
+
+// scanDone reports whether a scan that holds n rows must stop. It stops at the
+// scan limit, if one is set, and at the row limit of ctx (query.WithRowLimit).
+func scanDone(ctx context.Context, n, limit int) bool {
+	if limit > 0 && n >= limit {
+		return true
+	}
+	return !query.UnderRowLimit(ctx, n)
 }
 
 // scanLimit reads the optional limit of `scan <table> [limit]`. An absent limit is 0,
