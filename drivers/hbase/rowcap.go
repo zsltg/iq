@@ -21,10 +21,10 @@ var ErrRowTooLarge = errors.New("too many cells")
 // server never builds a larger reply.
 func (s *Store) readOptions(ctx context.Context) []func(hrpc.Call) error {
 	opts := []func(hrpc.Call) error{hrpc.MaxVersions(1)}
-	if query.Unbounded(ctx) {
-		return opts
+	if !query.Unbounded(ctx) {
+		opts = append(opts, hrpc.MaxResultsPerColumnFamily(s.maxRowCells+1))
 	}
-	return append(opts, hrpc.MaxResultsPerColumnFamily(s.maxRowCells+1))
+	return opts
 }
 
 // admitRow refuses a row that has more cells in one column family than the limit,
