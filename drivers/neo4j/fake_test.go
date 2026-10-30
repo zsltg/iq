@@ -83,6 +83,7 @@ type fakeResult struct {
 	nextCtxs   []context.Context
 	consumed   int
 	consumeErr error
+	consumeCtx context.Context //nolint:containedctx // the test checks which context Consume got.
 }
 
 func (r *fakeResult) Next(ctx context.Context) bool {
@@ -99,8 +100,9 @@ func (r *fakeResult) Record() *neo4j.Record { return r.recs[r.pos-1] }
 func (r *fakeResult) Err() error { return r.err }
 
 // Consume discards the rest of the stream and reports consumeErr.
-func (r *fakeResult) Consume(context.Context) (neo4j.ResultSummary, error) {
+func (r *fakeResult) Consume(ctx context.Context) (neo4j.ResultSummary, error) {
 	r.consumed++
+	r.consumeCtx = ctx
 	return nil, r.consumeErr
 }
 

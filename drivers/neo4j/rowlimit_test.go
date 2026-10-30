@@ -49,11 +49,14 @@ func TestQueryRowLimitReportsConsumeError(t *testing.T) {
 		{Keys: []string{"v"}, Values: []any{int64(1)}},
 		{Keys: []string{"v"}, Values: []any{int64(2)}},
 	}
+	failed := errors.New("statement failed")
 	reply := rows(recs...)
-	reply.res.consumeErr = errors.New("statement failed")
+	reply.res.consumeErr = failed
 	s, _, _ := newFakeStore(target{}, reply)
+	ctx := query.WithRowLimit(context.Background(), 1)
 
-	_, err := s.Query(query.WithRowLimit(context.Background(), 1), []string{"RETURN 1"})
+	_, err := s.Query(ctx, []string{"RETURN 1"})
 
-	require.ErrorContains(t, err, "statement failed")
+	require.ErrorIs(t, err, failed)
+	require.Equal(t, ctx, reply.res.consumeCtx)
 }
