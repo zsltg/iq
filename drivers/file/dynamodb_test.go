@@ -163,3 +163,86 @@ func TestDynamoSourceRejectsABadKeySchema(t *testing.T) {
 	require.ErrorContains(t, err, "want 1 (partition) or 2 (partition,sort)")
 	require.Nil(t, src)
 }
+
+// countingReader records how many bytes the consumer has read.
+type countingReader struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += n
+	return n, err
+}
+
+// TestDynamoScanOutputStreams proves that the reader emits the first item
+// before it reads the whole scan output, so a large table is not held in memory.
+func TestDynamoScanOutputStreams(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString(`{"Items":[`)
+	for i := range 20000 {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		fmt.Fprintf(&sb, `{"pk":{"S":"k%d"},"pad":{"S":"%s"}}`, i, strings.Repeat("x", 50))
+	}
+	sb.WriteString(`],"Count":20000,"ScannedCount":20000}`)
+	body := sb.String()
+
+	cr := &countingReader{r: strings.NewReader(body)}
+	src, err := dynamoSource(cr, 1, numfmt.DecimalAuto, Hints{Keys: "pk"})
+	require.NoError(t, err)
+	readAtFirst := -1
+	require.NoError(t, src(context.Background(), func([]query.Record) error {
+		if readAtFirst < 0 {
+			readAtFirst = cr.n
+		}
+		return nil
+	}))
+	require.Positive(t, readAtFirst)
+	require.Less(t, readAtFirst, len(body)/10, "the first item must be emitted long before the input ends")
+}
+
+func TestDynamoSourceShapes(t *testing.T) {
+	keys := func(recs []query.Record) []string {
+		out := make([]string, 0, len(recs))
+		for _, r := range recs {
+			out = append(out, r.Key)
+		}
+		return out
+	}
+	tests := []struct {
+		name    string
+		body    string
+		want    []string
+		wantErr string
+	}{
+		{"scan output", `{"Items":[{"pk":{"S":"a"}},{"pk":{"S":"b"}}],"Count":2}`, []string{"a", "b"}, ""},
+		{"two scan objects", `{"Items":[{"pk":{"S":"a"}}],"Count":1} {"Items":[{"pk":{"S":"b"}}],"Count":1}`, []string{"a", "b"}, ""},
+		{"ndjson export", "{\"Item\":{\"pk\":{\"S\":\"a\"}}}\n{\"Item\":{\"pk\":{\"S\":\"b\"}}}\n{\"Item\":{\"pk\":{\"S\":\"c\"}}}\n", []string{"a", "b", "c"}, ""},
+		{"extra keys around Items", `{"Count":1,"ConsumedCapacity":{"TableName":"t"},"Items":[{"pk":{"S":"a"}}],"LastEvaluatedKey":{"pk":{"S":"a"}},"ScannedCount":1}`, []string{"a"}, ""},
+		{"empty Items", `{"Items":[],"Count":0}`, []string{}, ""},
+		{"no Items or Item", `{"Count":1}`, nil, "neither"},
+		{"malformed json", `{"Items":[{"pk":{"S":"a"}},`, nil, "decode dynamodb"},
+		{"Items not an array", `{"Items":{"pk":{"S":"a"}}}`, nil, "decode dynamodb Items"},
+		{"top level not an object", `[1]`, nil, "decode dynamodb dump"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			src, err := dynamoSource(strings.NewReader(tc.body), pageSize, numfmt.DecimalAuto, Hints{Keys: "pk"})
+			require.NoError(t, err)
+			var got []query.Record
+			err = src(context.Background(), func(b []query.Record) error {
+				got = append(got, b...)
+				return nil
+			})
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, keys(got))
+		})
+	}
+}
