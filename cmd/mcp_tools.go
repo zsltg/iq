@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -805,6 +806,8 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	defer func() { _ = st.Close() }()
 	var nonFinite query.NonFiniteSummary
 	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+	var cut atomic.Bool
+	cctx = query.WithRowCutNotice(cctx, func() { cut.Store(true) })
 	// One extra row lets the cap tell a full result from a cut one.
 	res, err := query.NewRunner(st).Run(query.WithRowLimit(cctx, bounds.maxItems+1), in.Args)
 	if err != nil {
@@ -814,6 +817,7 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	if err != nil {
 		return nil, mcpExecOutput{}, toolError(err)
 	}
+	out.Truncated = out.Truncated || cut.Load()
 	out.Note = nonFinite.Text()
 	return nil, out, nil
 }

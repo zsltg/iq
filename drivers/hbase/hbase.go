@@ -433,7 +433,8 @@ func (s *Store) execGet(ctx context.Context, args []string) (any, error) {
 }
 
 // execScan runs `scan <table> [limit]`, returning up to limit rows as {rowkey: row}.
-// An absent or non-positive limit scans the whole table.
+// An absent or non-positive limit scans the whole table. A row limit on ctx cuts
+// the scan the way query.WithRowLimit says for a reply that is not a list.
 func (s *Store) execScan(ctx context.Context, args []string) (any, error) {
 	if len(args) < 1 || len(args) > 2 {
 		return nil, fmt.Errorf("hbase: scan needs <table> [limit]")
@@ -448,6 +449,9 @@ func (s *Store) execScan(ctx context.Context, args []string) (any, error) {
 	}
 	rows := map[string]any{}
 	err = eachRow(s.client.Scan(req), "hbase scan", func(res *hrpc.Result) (bool, error) {
+		if query.CutAtLimit(ctx, len(rows)+1) {
+			return true, nil
+		}
 		key := rowKeyString(s.rowkeyType, res.Cells[0].Row)
 		row, err := s.readRow(ctx, key, res.Cells)
 		if err != nil {

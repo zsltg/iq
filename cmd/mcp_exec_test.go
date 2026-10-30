@@ -18,11 +18,15 @@ type execStore struct {
 	fakeInspectStore
 	reply any
 	seen  *int
+	cut   bool // the store reports a row cut, the way a map-reply driver does
 }
 
 func (s execStore) Query(ctx context.Context, _ []string) (any, error) {
 	if n, ok := query.RowLimit(ctx); ok {
 		*s.seen = n
+	}
+	if s.cut {
+		query.NoteRowCut(ctx)
 	}
 	return s.reply, nil
 }
@@ -32,13 +36,20 @@ func (s execStore) Query(ctx context.Context, _ []string) (any, error) {
 // that the driver saw, or zero when it saw none.
 func useExecDriver(t *testing.T, reply any) *int {
 	t.Helper()
+	return useExecDriverCut(t, reply, false)
+}
+
+// useExecDriverCut is useExecDriver for a store that reports a row cut when cut
+// is set.
+func useExecDriverCut(t *testing.T, reply any, cut bool) *int {
+	t.Helper()
 	seen := new(int)
 	orig := drivers
 	t.Cleanup(func() { drivers = orig })
 	drivers = append(append([]driver{}, orig...), driver{
 		name: "execfake", schemes: []string{"execfake"},
 		open: func(context.Context, *config) (store, error) {
-			return execStore{reply: reply, seen: seen}, nil
+			return execStore{reply: reply, seen: seen, cut: cut}, nil
 		},
 	})
 	c := newSeed()
@@ -230,4 +241,28 @@ func TestCapExecDocumentWrapsTheEncodeError(t *testing.T) {
 	var jsonErr *json.UnsupportedTypeError
 	require.ErrorAs(t, err, &jsonErr)
 	require.ErrorContains(t, err, "encode exec result")
+}
+
+func TestMCPExecMarksACutMapReply(t *testing.T) {
+	tests := []struct {
+		name      string
+		cut       bool
+		wantTrunc bool
+	}{
+		{"a map the driver cut is marked", true, true},
+		{"a map the driver did not cut is not marked", false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reply := map[string]any{"docs": []any{"a", "b"}}
+			useExecDriverCut(t, reply, tt.cut)
+			cs := connectMCP(t, newTestMCPServer([]string{allowExec}, 200, 256*1024), nil)
+
+			var out mcpExecOutput
+			structOf(t, callMCP(t, cs, "iq_exec", map[string]any{"source": "fake", "args": []string{"x"}}), &out)
+
+			require.Equal(t, tt.wantTrunc, out.Truncated)
+			require.Equal(t, reply, out.Result)
+		})
+	}
 }
