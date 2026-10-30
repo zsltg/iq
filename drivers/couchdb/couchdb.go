@@ -291,14 +291,13 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 
 	rows := s.client.DB(s.db).Find(ctx, query)
 	defer func() { _ = rows.Close() }()
-	docs, cut, err := s.readDocs(ctx, rows)
+	docs, err := s.readDocs(ctx, rows)
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]any{"docs": docs}
-	if cut {
-		return out, nil
-	}
+	// After a cut, Metadata returns an error, because kivik gives it only once the
+	// rows are read to the end. So a cut reply has no bookmark.
 	if md, err := rows.Metadata(); err == nil && md.Bookmark != "" {
 		out["bookmark"] = md.Bookmark
 	}
@@ -307,26 +306,25 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 
 // readDocs reads the documents of a _find reply. It stops at the row limit of ctx
 // the way a driver with a map reply does: it drops the row at the limit and
-// reports the cut. A cut reply has no bookmark, because the read did not reach
-// the end.
-func (s *Store) readDocs(ctx context.Context, rows *kivik.ResultSet) (docs []any, cut bool, err error) {
-	docs = []any{}
+// reports the cut through the context.
+func (s *Store) readDocs(ctx context.Context, rows *kivik.ResultSet) ([]any, error) {
+	docs := []any{}
 	n := 0
 	for rows.Next() {
 		n++
 		if query.CutAtLimit(ctx, n) {
-			return docs, true, nil
+			return docs, nil
 		}
 		doc, err := s.nextDoc(rows)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		docs = append(docs, doc)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, fmt.Errorf("couchdb find: %w", err)
+		return nil, fmt.Errorf("couchdb find: %w", err)
 	}
-	return docs, false, nil
+	return docs, nil
 }
 
 // mangoQuery turns the raw argument list into a _find request. One JSON document is
