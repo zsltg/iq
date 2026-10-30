@@ -70,7 +70,9 @@ func newExecCmd(cfg *config) *cobra.Command {
 			}
 			defer func() { _ = store.Close() }()
 
-			result, err := query.NewRunner(store).Run(ctx, args)
+			// The CLI exec has no cap: it prints the whole reply of the statement
+			// that the user typed. So a capped read, such as an HBase row, is unbounded.
+			result, err := query.NewRunner(store).Run(query.WithUnbounded(ctx), args)
 			if err != nil {
 				return err
 			}

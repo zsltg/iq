@@ -680,7 +680,7 @@ A row is a **nested object**: `{family: {qualifier: value}}`, so a cell is addre
 
 A read refuses a row with more than 1,000,000 cells in one column family. The error names the row
 key. The server stops the row at that limit, so the read never loads the whole row. Pass `--unbounded`
-to read such a row. The limit applies to `iq exec get` and `iq exec scan` too.
+to read such a row. The limit applies to `get` and `scan` through the MCP `iq_exec` tool too. The CLI `iq exec` has no limit. A filtered scan that pushes a column test to the server reads a row whole, because the cap could hide the column that the test needs. It still refuses a row over the limit.
 
 ### Value encoding
 

@@ -2,12 +2,14 @@ package hbase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 )
 
@@ -77,6 +79,21 @@ func TestRowCapRequestFiltered(t *testing.T) {
 	require.Equal(t, uint32(7), scanPB(t, fc.scans[0]).GetStoreLimit())
 }
 
+// TestRowCapPushedFilterReadsTheWholeRow pins that a scan with a pushed column test
+// sends no cell cap, so the server cannot hide the tested column, and that a row
+// over the limit is still refused.
+func TestRowCapPushedFilterReadsTheWholeRow(t *testing.T) {
+	st, fc := cappedStore(9)
+	pred := predicate.Eq{Path: []string{"cf", "q000"}, Value: "v"}
+
+	err := st.ScanFiltered(context.Background(), pred, func(map[string]any) error { return nil })
+
+	require.ErrorIs(t, err, ErrRowTooLarge)
+	require.Zero(t, scanPB(t, fc.scans[0]).GetStoreLimit())
+	require.Equal(t, uint32(1), scanPB(t, fc.scans[0]).GetMaxVersions())
+	require.NotNil(t, scanPB(t, fc.scans[0]).GetFilter())
+}
+
 // storeLimitOf returns the per-family cell limit of the one recorded request, or 0
 // when the request carries none.
 func storeLimitOf(t *testing.T, fc *fakeClient) uint32 {
@@ -144,5 +161,6 @@ func TestRowCapAboveTheServerLimitIsAnError(t *testing.T) {
 
 	_, err := st.Get(context.Background(), []string{"k1"})
 
-	require.ErrorContains(t, err, "hbase get: 'MaxResultsPerColumnFamily' exceeds supported number of value results")
+	require.EqualError(t, err, "hbase get: 'MaxResultsPerColumnFamily' exceeds supported number of value results")
+	require.EqualError(t, errors.Unwrap(err), "'MaxResultsPerColumnFamily' exceeds supported number of value results", "the gohbase error stays wrapped")
 }
