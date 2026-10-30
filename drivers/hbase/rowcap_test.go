@@ -3,6 +3,7 @@ package hbase
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -132,4 +133,16 @@ func TestRowCapCountsEachFamily(t *testing.T) {
 	fc.seed("k1", row)
 
 	require.NoError(t, rowReaders[0].read(context.Background(), st))
+}
+
+// TestRowCapAboveTheServerLimitIsAnError proves that Get reports a request that
+// gohbase refuses. gohbase accepts at most math.MaxInt32 cells per column family,
+// and the cap asks for one more than the limit.
+func TestRowCapAboveTheServerLimitIsAnError(t *testing.T) {
+	st, _ := cappedStore(2)
+	st.maxRowCells = math.MaxInt32
+
+	_, err := st.Get(context.Background(), []string{"k1"})
+
+	require.ErrorContains(t, err, "hbase get: 'MaxResultsPerColumnFamily' exceeds supported number of value results")
 }

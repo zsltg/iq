@@ -266,29 +266,40 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 	}
 	s.traceOp("get %s rows=%d", s.table, len(keys))
 	for _, k := range keys {
-		rk, err := encodeRowKey(s.rowkeyType, k)
+		row, found, err := s.getRow(ctx, k)
 		if err != nil {
 			return nil, err
 		}
-		req, err := hrpc.NewGet(ctx, []byte(s.table), rk, s.readOptions(ctx)...)
-		if err != nil {
-			return nil, fmt.Errorf("hbase get: %w", err)
+		if found {
+			out[k] = row
 		}
-		res, err := s.client.Get(req)
-		if err != nil {
-			return nil, fmt.Errorf("hbase get: %w", err)
-		}
-		// A key with no cells is left out, matching the KV contract.
-		if len(res.Cells) == 0 {
-			continue
-		}
-		row, err := s.readRow(ctx, k, res.Cells)
-		if err != nil {
-			return nil, err
-		}
-		out[k] = row
 	}
 	return out, nil
+}
+
+// getRow reads one row by key. A key with no cells is not found, matching the KV
+// contract.
+func (s *Store) getRow(ctx context.Context, k string) (any, bool, error) {
+	rk, err := encodeRowKey(s.rowkeyType, k)
+	if err != nil {
+		return nil, false, err
+	}
+	req, err := hrpc.NewGet(ctx, []byte(s.table), rk, s.readOptions(ctx)...)
+	if err != nil {
+		return nil, false, fmt.Errorf("hbase get: %w", err)
+	}
+	res, err := s.client.Get(req)
+	if err != nil {
+		return nil, false, fmt.Errorf("hbase get: %w", err)
+	}
+	if len(res.Cells) == 0 {
+		return nil, false, nil
+	}
+	row, err := s.readRow(ctx, k, res.Cells)
+	if err != nil {
+		return nil, false, err
+	}
+	return row, true, nil
 }
 
 // ScanBatches streams the whole table. It hands the caller each page of
