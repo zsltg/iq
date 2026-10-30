@@ -136,3 +136,9 @@ func TestUnderRowLimit(t *testing.T) {
 		})
 	}
 }
+
+// TestMaxValueElements pins the element limit that the Redis, HBase and RDB reads
+// share.
+func TestMaxValueElements(t *testing.T) {
+	require.Equal(t, 1_000_000, query.MaxValueElements)
+}

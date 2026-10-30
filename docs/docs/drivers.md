@@ -678,6 +678,10 @@ iq add -n zk 'hbase://z1,z2,z3:2181/?table=ns:events&znode=/hbase-unsecure'
 A row is a **nested object**: `{family: {qualifier: value}}`, so a cell is addressed as
 `.cf.title` in jq. The row key is the map key, not a field of the row.
 
+A read refuses a row with more than 1,000,000 cells in one column family. The error names the row
+key. The server stops the row at that limit, so the read never loads the whole row. Pass `--unbounded`
+to read such a row. The limit applies to `iq exec get` and `iq exec scan` too.
+
 ### Value encoding
 
 HBase stores **no types**. Every cell is raw bytes. As a result, the driver presents a value

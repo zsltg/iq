@@ -17,7 +17,7 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 	if s.table == "" {
 		return errNoTable
 	}
-	opts := []func(hrpc.Call) error{hrpc.MaxVersions(1)}
+	opts := s.readOptions(ctx)
 	if f, ok := toFilter(s.types, pred); ok {
 		s.traceOp("scan %s (filtered)", s.table)
 		opts = append(opts, hrpc.Filters(f))

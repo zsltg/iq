@@ -76,7 +76,10 @@ type Store struct {
 	types      typeMap
 	rowkeyType colType
 	pageSize   int
-	trace      io.Writer
+	// maxRowCells is the most cells that one column family of a row can hold and
+	// still be read without the unbounded opt-in. A test lowers it.
+	maxRowCells uint32
+	trace       io.Writer
 }
 
 // Open connects to the HBase cluster named by an hbase:// URL. A bounded
@@ -105,13 +108,14 @@ func Open(ctx context.Context, rawURL, address string, trace io.Writer, _ numfmt
 		opts = append(opts, gohbase.ZookeeperTimeout(d), gohbase.RegionLookupTimeout(d), gohbase.RegionReadTimeout(d))
 	}
 	st := &Store{
-		client:     gohbase.NewClient(cc.zkquorum, opts...),
-		admin:      gohbase.NewAdminClient(cc.zkquorum, opts...),
-		table:      cc.table,
-		types:      cc.types,
-		rowkeyType: cc.rowkeyType,
-		pageSize:   scanBatch,
-		trace:      trace,
+		client:      gohbase.NewClient(cc.zkquorum, opts...),
+		admin:       gohbase.NewAdminClient(cc.zkquorum, opts...),
+		table:       cc.table,
+		types:       cc.types,
+		rowkeyType:  cc.rowkeyType,
+		pageSize:    scanBatch,
+		maxRowCells: query.MaxValueElements,
+		trace:       trace,
 	}
 	if err := st.probe(ctx); err != nil {
 		_ = st.Close()
@@ -266,7 +270,7 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		if err != nil {
 			return nil, err
 		}
-		req, err := hrpc.NewGet(ctx, []byte(s.table), rk, hrpc.MaxVersions(1))
+		req, err := hrpc.NewGet(ctx, []byte(s.table), rk, s.readOptions(ctx)...)
 		if err != nil {
 			return nil, fmt.Errorf("hbase get: %w", err)
 		}
@@ -278,7 +282,11 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		if len(res.Cells) == 0 {
 			continue
 		}
-		out[k] = s.keyedRow(ctx, k, res.Cells)
+		row, err := s.readRow(ctx, k, res.Cells)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = row
 	}
 	return out, nil
 }
@@ -292,7 +300,7 @@ func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) e
 		return errNoTable
 	}
 	s.traceOp("scan %s", s.table)
-	req, err := hrpc.NewScanStr(ctx, s.table, hrpc.MaxVersions(1))
+	req, err := hrpc.NewScanStr(ctx, s.table, s.readOptions(ctx)...)
 	if err != nil {
 		return fmt.Errorf("hbase scan: %w", err)
 	}
@@ -308,7 +316,11 @@ func (s *Store) pageScan(ctx context.Context, req *hrpc.Scan, fn func(batch map[
 	page := make(map[string]any, s.pageSize)
 	err := eachRow(scanner, "hbase scan", func(res *hrpc.Result) (bool, error) {
 		key := rowKeyString(s.rowkeyType, res.Cells[0].Row)
-		page[key] = s.keyedRow(ctx, key, res.Cells)
+		row, err := s.readRow(ctx, key, res.Cells)
+		if err != nil {
+			return false, err
+		}
+		page[key] = row
 		if len(page) < s.pageSize {
 			return false, nil
 		}
@@ -395,7 +407,7 @@ func (s *Store) execGet(ctx context.Context, args []string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	req, err := hrpc.NewGet(ctx, []byte(table), rk, hrpc.MaxVersions(1))
+	req, err := hrpc.NewGet(ctx, []byte(table), rk, s.readOptions(ctx)...)
 	if err != nil {
 		return nil, fmt.Errorf("hbase get: %w", err)
 	}
@@ -406,7 +418,7 @@ func (s *Store) execGet(ctx context.Context, args []string) (any, error) {
 	if len(res.Cells) == 0 {
 		return nil, nil
 	}
-	return s.keyedRow(ctx, key, res.Cells), nil
+	return s.readRow(ctx, key, res.Cells)
 }
 
 // execScan runs `scan <table> [limit]`, returning up to limit rows as {rowkey: row}.
@@ -419,14 +431,18 @@ func (s *Store) execScan(ctx context.Context, args []string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	req, err := hrpc.NewScanStr(ctx, args[0], hrpc.MaxVersions(1))
+	req, err := hrpc.NewScanStr(ctx, args[0], s.readOptions(ctx)...)
 	if err != nil {
 		return nil, fmt.Errorf("hbase scan: %w", err)
 	}
 	rows := map[string]any{}
 	err = eachRow(s.client.Scan(req), "hbase scan", func(res *hrpc.Result) (bool, error) {
 		key := rowKeyString(s.rowkeyType, res.Cells[0].Row)
-		rows[key] = s.keyedRow(ctx, key, res.Cells)
+		row, err := s.readRow(ctx, key, res.Cells)
+		if err != nil {
+			return false, err
+		}
+		rows[key] = row
 		return limit > 0 && len(rows) >= limit, nil
 	})
 	if err != nil {
