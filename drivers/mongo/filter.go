@@ -5,7 +5,9 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/pushdown"
 )
 
 // toFilter translates a neutral predicate into a MongoDB find filter on the
@@ -13,20 +15,20 @@ import (
 // ElemMatch, Ne, NotExists, NoneMatch, And, and Or. A nil predicate (nothing to
 // push) becomes an empty filter that matches every document, so the caller
 // falls back to a full scan.
-func toFilter(n predicate.Node) bson.M {
+func toFilter(n predicate.Node, mode numfmt.DecimalMode) bson.M {
 	switch t := n.(type) {
 	case nil:
 		return bson.M{}
 	case predicate.Eq:
-		return bson.M{strings.Join(t.Path, "."): t.Value}
+		return widenDecimal(t, t.Path, bson.M{strings.Join(t.Path, "."): t.Value}, mode)
 	case predicate.Cmp:
-		return cmpFilter(t)
+		return widenDecimal(t, t.Path, cmpFilter(t), mode)
 	case predicate.Regex:
 		re := bson.M{"$regex": t.Pattern}
 		if opts := mongoOptions(t.Flags); opts != "" {
 			re["$options"] = opts
 		}
-		return bson.M{strings.Join(t.Path, "."): re}
+		return widenDecimal(t, t.Path, bson.M{strings.Join(t.Path, "."): re}, mode)
 	case predicate.Exists:
 		return bson.M{strings.Join(t.Path, "."): bson.M{"$exists": true}}
 	case predicate.Size:
@@ -37,7 +39,7 @@ func toFilter(n predicate.Node) bson.M {
 		// any also iterates the values of an object. So an object at the path is a
 		// possible match too. The client-side re-run confirms it.
 		return bson.M{"$or": bson.A{
-			bson.M{path: bson.M{"$elemMatch": toFilter(t.Cond)}},
+			bson.M{path: bson.M{"$elemMatch": toFilter(t.Cond, mode)}},
 			bson.M{path: bson.M{"$type": "object"}},
 		}}
 	case predicate.Ne:
@@ -55,19 +57,35 @@ func toFilter(n predicate.Node) bson.M {
 		// No array element satisfies the (exact) condition.
 		return bson.M{strings.Join(t.Path, "."): bson.M{"$not": bson.M{"$elemMatch": exactFilter(t.Cond)}}}
 	case predicate.And:
-		return bson.M{"$and": toFilters(t)}
+		return bson.M{"$and": toFilters(t, mode)}
 	case predicate.Or:
 		// An or of equalities on one field is exactly a membership test, which
 		// Mongo expresses (and indexes) more directly as $in.
-		if path, values, ok := sameFieldEqs(t); ok {
+		if path, values, ok := sameFieldEqs(t, mode); ok {
 			return bson.M{path: bson.M{"$in": values}}
 		}
-		return bson.M{"$or": toFilters(t)}
+		return bson.M{"$or": toFilters(t, mode)}
 	default:
 		// An unknown node type is a programming error in the compiler. Fall
 		// back to matching everything, so the client-side jq still runs.
 		return bson.M{}
 	}
+}
+
+// widenDecimal returns leaf, or leaf widened to also match a Decimal128 on the
+// path, if the decimal mode decodes a Decimal128 to a string that changes the verdict
+// of the node. The server compares a Decimal128 as a number. jq compares the decoded
+// string. So the server could drop a document that jq keeps. A double decodes to a
+// float64 in every mode, so only the decimal type needs the widening. The widened
+// leaf is a superset, not an exact test. See pushdown.HidesDecimalNumber.
+func widenDecimal(n predicate.Node, path []string, leaf bson.M, mode numfmt.DecimalMode) bson.M {
+	if !pushdown.HidesDecimalNumber(n, mode) {
+		return leaf
+	}
+	return bson.M{"$or": bson.A{
+		leaf,
+		bson.M{strings.Join(path, "."): bson.M{"$type": "decimal"}},
+	}}
 }
 
 // mongoOptions translates the jq flags of a neutral Regex into the $options
@@ -90,8 +108,9 @@ func mongoOptions(flags string) string {
 
 // sameFieldEqs reports whether every branch of an or is an equality on the same
 // field. If so, it returns the dotted path of that field and the values, so the
-// or can collapse to a single $in.
-func sameFieldEqs(or predicate.Or) (string, bson.A, bool) {
+// or can collapse to a single $in. An equality that widenDecimal widens stops the
+// collapse.
+func sameFieldEqs(or predicate.Or, mode numfmt.DecimalMode) (string, bson.A, bool) {
 	if len(or) < 2 {
 		return "", nil, false
 	}
@@ -99,7 +118,8 @@ func sameFieldEqs(or predicate.Or) (string, bson.A, bool) {
 	values := make(bson.A, 0, len(or))
 	for i, n := range or {
 		eq, ok := n.(predicate.Eq)
-		if !ok {
+		// A widened equality cannot join the $in, which has no room for the $type clause.
+		if !ok || pushdown.HidesDecimalNumber(eq, mode) {
 			return "", nil, false
 		}
 		p := strings.Join(eq.Path, ".")
@@ -145,10 +165,10 @@ func exactFilters(nodes []predicate.Node) bson.A {
 }
 
 // toFilters translates each child node, preserving order.
-func toFilters(nodes []predicate.Node) bson.A {
+func toFilters(nodes []predicate.Node, mode numfmt.DecimalMode) bson.A {
 	out := make(bson.A, len(nodes))
 	for i, n := range nodes {
-		out[i] = toFilter(n)
+		out[i] = toFilter(n, mode)
 	}
 	return out
 }

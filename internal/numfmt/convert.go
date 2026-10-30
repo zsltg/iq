@@ -81,7 +81,12 @@ func DecodesToString(literal string, mode DecimalMode) bool {
 // for a JSON number token in the mode. A server-side filter calls this for a string
 // literal. Only such a string can equal a number that the client decodes to a string.
 func IsDecodedText(s string, mode DecimalMode) bool {
-	return startsLikeNumber(s) && json.Valid([]byte(s)) && DecodesToString(s, mode)
+	return IsNumberText(s) && DecodesToString(s, mode)
+}
+
+// IsNumberText reports whether s is the text of one JSON number.
+func IsNumberText(s string) bool {
+	return startsLikeNumber(s) && json.Valid([]byte(s))
 }
 
 // startsLikeNumber reports whether the first byte of s can start a JSON number. It

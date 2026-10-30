@@ -11,7 +11,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
+	"github.com/zsltg/iq/internal/pushdown"
 )
 
 // ScanFiltered translates the pushable part of pred to a DynamoDB Scan
@@ -24,7 +26,7 @@ func (s *Store) ScanFiltered(ctx context.Context, pred predicate.Node, fn func(b
 		return errNoTable
 	}
 	in := &dynamodb.ScanInput{TableName: &s.table}
-	if f, ok := compile(pred); ok && f.expr != "" {
+	if f, ok := compile(pred, s.decimal); ok && f.expr != "" {
 		in.FilterExpression = aws.String(f.expr)
 		in.ExpressionAttributeNames = f.names
 		in.ExpressionAttributeValues = f.values
@@ -44,11 +46,15 @@ type frag struct {
 	values  map[string]types.AttributeValue
 }
 
-// counter hands out unique placeholder indices across a whole predicate tree, so two
-// leaves never collide on #n0/:v0.
-type counter struct{ n int }
+// builder carries the state of one compile across a whole predicate tree. It hands
+// out unique placeholder indices, so two leaves never collide on #n0/:v0. It also
+// holds the decimal mode, which decides how a leaf is built.
+type builder struct {
+	n    int
+	mode numfmt.DecimalMode
+}
 
-func (c *counter) next() int {
+func (c *builder) next() int {
 	c.n++
 	return c.n
 }
@@ -59,12 +65,13 @@ func (c *counter) next() int {
 // combinations. An And keeps the conjuncts that compile and drops the rest. An Or
 // must compile every branch, or it is dropped whole, because dropping one branch
 // loses items. Ranges, regex, size, element matches, and the other negations (Ne,
-// NoneMatch) are never pushed.
-func compile(pred predicate.Node) (frag, bool) {
-	return build(&counter{}, pred)
+// NoneMatch) are never pushed. A decimal mode that decodes a fractional N to a
+// string widens an equality with a number text. See widenNumber.
+func compile(pred predicate.Node, mode numfmt.DecimalMode) (frag, bool) {
+	return build(&builder{mode: mode}, pred)
 }
 
-func build(c *counter, node predicate.Node) (frag, bool) {
+func build(c *builder, node predicate.Node) (frag, bool) {
 	switch t := node.(type) {
 	case predicate.Eq:
 		return leafEq(c, t)
@@ -85,7 +92,7 @@ func build(c *counter, node predicate.Node) (frag, bool) {
 // value is never pushed. DynamoDB `#a = :null` matches only items whose attribute
 // is the NULL type. It misses the absent-attribute items that jq's `== null` also
 // matches, so pushing it drops rows.
-func leafEq(c *counter, eq predicate.Eq) (frag, bool) {
+func leafEq(c *builder, eq predicate.Eq) (frag, bool) {
 	if len(eq.Path) != 1 {
 		return frag{}, false
 	}
@@ -96,18 +103,40 @@ func leafEq(c *counter, eq predicate.Eq) (frag, bool) {
 	id := c.next()
 	np := fmt.Sprintf("#n%d", id)
 	vp := fmt.Sprintf(":v%d", id)
-	return frag{
+	f := frag{
 		expr:    np + " = " + vp,
 		display: eq.Path[0] + " = ?",
 		names:   map[string]string{np: eq.Path[0]},
 		values:  map[string]types.AttributeValue{vp: av},
-	}, true
+	}
+	if pushdown.HidesDecimalNumber(eq, c.mode) {
+		f = widenNumber(c, f, np, eq.Path[0])
+	}
+	return f, true
+}
+
+// widenNumber widens the equality f so that it also matches every N attribute. A
+// fractional N decodes to a jq string in auto and string mode. The server compares
+// the stored N as a number, so it can drop an item that jq keeps. The widened
+// filter is a superset, not an exact test. It also returns an integer N, and the
+// client-side filter drops that item. The type name goes in through a value
+// placeholder, like every other value. np is the name placeholder of the attribute.
+func widenNumber(c *builder, f frag, np, attr string) frag {
+	vp := fmt.Sprintf(":v%d", c.next())
+	values := map[string]types.AttributeValue{vp: &types.AttributeValueMemberS{Value: "N"}}
+	maps.Copy(values, f.values)
+	return frag{
+		expr:    "(" + f.expr + " OR attribute_type(" + np + ", " + vp + "))",
+		display: "(" + f.display + " OR attribute_type(" + attr + ", N))",
+		names:   f.names,
+		values:  values,
+	}
 }
 
 // leafFunc compiles an existence test (attribute_exists / attribute_not_exists) on a
 // single-attribute path. These are exact: key presence means the same to jq's has()
 // and to DynamoDB, so they never over- or under-return.
-func leafFunc(c *counter, fn string, path []string) (frag, bool) {
+func leafFunc(c *builder, fn string, path []string) (frag, bool) {
 	if len(path) != 1 {
 		return frag{}, false
 	}
@@ -125,14 +154,14 @@ func leafFunc(c *counter, fn string, path []string) (frag, bool) {
 // (widening the pre-filter, safe). It reports ok when at least one conjunct pushed. It
 // merges only the placeholder maps of the conjuncts that survived, so no orphan
 // placeholder (which DynamoDB rejects as unused) is ever emitted.
-func buildAnd(c *counter, and predicate.And) (frag, bool) {
+func buildAnd(c *builder, and predicate.And) (frag, bool) {
 	return join(c, and, " AND ", false)
 }
 
 // buildOr disjoins the branches of an Or, but only if every branch compiles. A
 // single uncompilable branch drops the whole Or, because keeping the rest narrows
 // the match and loses items.
-func buildOr(c *counter, or predicate.Or) (frag, bool) {
+func buildOr(c *builder, or predicate.Or) (frag, bool) {
 	if len(or) == 0 {
 		return frag{}, false
 	}
@@ -143,7 +172,7 @@ func buildOr(c *counter, or predicate.Or) (frag, bool) {
 // (Or), a single failing child fails the whole junction. Otherwise (And), failing
 // children are dropped. A single surviving child is returned unparenthesized. Two
 // or more are wrapped so precedence is explicit.
-func join(c *counter, nodes []predicate.Node, sep string, allRequired bool) (frag, bool) {
+func join(c *builder, nodes []predicate.Node, sep string, allRequired bool) (frag, bool) {
 	exprs := make([]string, 0, len(nodes))
 	displays := make([]string, 0, len(nodes))
 	names := map[string]string{}

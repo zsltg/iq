@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/selector"
@@ -12,13 +13,13 @@ import (
 
 func TestExplainPlan(t *testing.T) {
 	t.Run("bounded reads by key", func(t *testing.T) {
-		p := ExplainPlan(selector.KeySet{Keys: []string{"1", "2"}}, nil, false)
+		p := ExplainPlan(selector.KeySet{Keys: []string{"1", "2"}}, nil, false, numfmt.DecimalNumber)
 		require.Equal(t, []string{"BatchGetItem: fetch 2 requested key(s)"}, p.Ops)
 		require.Nil(t, p.Filter)
 	})
 
 	t.Run("streaming full scan", func(t *testing.T) {
-		p := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false)
+		p := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, false, numfmt.DecimalNumber)
 		require.Contains(t, p.Ops[0], "full-table scan")
 		require.Equal(t, "cursor streamed in pages of 100", p.Ops[1])
 		require.Nil(t, p.Filter)
@@ -26,18 +27,18 @@ func TestExplainPlan(t *testing.T) {
 
 	t.Run("scan with pushed filter", func(t *testing.T) {
 		pred := predicate.Eq{Path: []string{"author"}, Value: "x"}
-		p := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false)
+		p := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, pred, false, numfmt.DecimalNumber)
 		require.Contains(t, p.Ops[0], "FilterExpression author = ?")
 		require.Equal(t, map[string]any{"filter": "author = ?"}, p.Filter)
 	})
 
 	t.Run("unbounded materializes", func(t *testing.T) {
-		p := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, true)
+		p := ExplainPlan(selector.KeySet{Scan: true, Streamable: true}, nil, true, numfmt.DecimalNumber)
 		require.Equal(t, "whole result materialized in memory", p.Ops[1])
 	})
 
 	t.Run("non-streamable materializes", func(t *testing.T) {
-		p := ExplainPlan(selector.KeySet{Scan: true, Streamable: false}, nil, false)
+		p := ExplainPlan(selector.KeySet{Scan: true, Streamable: false}, nil, false, numfmt.DecimalNumber)
 		require.Equal(t, "whole result materialized in memory", p.Ops[1])
 	})
 }
@@ -79,9 +80,18 @@ func TestExplainPlanStages(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			plan := ExplainPlan(tt.keys, tt.pred, false)
+			plan := ExplainPlan(tt.keys, tt.pred, false, numfmt.DecimalNumber)
 			require.Equal(t, tt.wantServer, plan.Server)
 			require.Equal(t, query.StagePlan{}, plan.Prefilter)
 		})
 	}
+}
+
+func TestExplainPlanReadsTheDecimalMode(t *testing.T) {
+	pred := predicate.Eq{Path: []string{"price"}, Value: "9.99"}
+	keys := selector.KeySet{Scan: true, Streamable: true}
+	require.Equal(t, map[string]any{"filter": "price = ?"}, ExplainPlan(keys, pred, false, numfmt.DecimalNumber).Filter)
+	want := map[string]any{"filter": "(price = ? OR attribute_type(price, N))"}
+	require.Equal(t, want, ExplainPlan(keys, pred, false, numfmt.DecimalAuto).Filter)
+	require.Equal(t, want, ExplainPlan(keys, pred, false, numfmt.DecimalString).Filter)
 }

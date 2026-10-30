@@ -116,8 +116,13 @@ func TestBuildJQPlanStageLayout(t *testing.T) {
 				"server filter (mongo find):",
 				notePad(2, "{", ".year > 2015"),
 				`    "$or": [`,
-				`      {"year": {"$gt": 2015}},`,
-				`      {"year": {"$type": ["string", "array", "object"]}}`,
+				"      {",
+				`        "$or": [`,
+				`          {"year": {"$gt": 2015}},`,
+				`          {"year": {"$type": ["string", "array", "object"]}}`,
+				"        ]",
+				"      },",
+				`      {"year": {"$type": "decimal"}}`,
 				"    ]",
 				"  }",
 				"jq (after decode, the full filter, every conjunct again)",
@@ -406,7 +411,7 @@ func TestSourcePlanStructured(t *testing.T) {
 			wantPrefilt: `{"state":"none"}`,
 			wantFilter:  true,
 			wantConjunct: `[
-				{"expr":".total > 99","compiled":"total > 99","server":{"$or":[{"total":{"$gt":99}},{"total":{"$type":["string","array","object"]}}]},"stages":["server","jq"]}
+				{"expr":".total > 99","compiled":"total > 99","server":{"$or":[{"$or":[{"total":{"$gt":99}},{"total":{"$type":["string","array","object"]}}]},{"total":{"$type":"decimal"}}]},"stages":["server","jq"]}
 			]`,
 		},
 		{

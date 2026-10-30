@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 )
 
@@ -196,7 +197,87 @@ func TestToFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, toFilter(tt.pred))
+			require.Equal(t, tt.want, toFilter(tt.pred, numfmt.DecimalNumber))
+		})
+	}
+}
+
+// TestToFilterWidensLeavesThatHideDecimals pins the filter per decimal mode. A
+// Decimal128 decodes to a jq string in auto and string mode. The server compares it
+// as a number. So the filter must also return the Decimal128 values for each leaf
+// that the string changes.
+func TestToFilterWidensLeavesThatHideDecimals(t *testing.T) {
+	price := []string{"price"}
+	isDecimal := bson.M{"price": bson.M{"$type": "decimal"}}
+	eq := predicate.Eq{Path: price, Value: "9.99"}
+	gt := predicate.Cmp{Path: price, Op: predicate.Gt, Value: 1000.0}
+	regex := predicate.Regex{Path: price, Pattern: "^9"}
+	gtFilter := bson.M{"$or": bson.A{
+		bson.M{"price": bson.M{"$gt": 1000.0}},
+		bson.M{"price": bson.M{"$type": bson.A{"string", "array", "object"}}},
+	}}
+	tests := []struct {
+		name string
+		pred predicate.Node
+		mode numfmt.DecimalMode
+		want bson.M
+	}{
+		{"eq number text, auto", eq, numfmt.DecimalAuto, bson.M{"$or": bson.A{bson.M{"price": "9.99"}, isDecimal}}},
+		{"eq number text, string", eq, numfmt.DecimalString, bson.M{"$or": bson.A{bson.M{"price": "9.99"}, isDecimal}}},
+		{"eq number text, number", eq, numfmt.DecimalNumber, bson.M{"price": "9.99"}},
+		{"eq plain text, auto", predicate.Eq{Path: price, Value: "apple"}, numfmt.DecimalAuto, bson.M{"price": "apple"}},
+		{"eq number, auto", predicate.Eq{Path: price, Value: 9.99}, numfmt.DecimalAuto, bson.M{"price": 9.99}},
+		{"gt, auto", gt, numfmt.DecimalAuto, bson.M{"$or": bson.A{gtFilter, isDecimal}}},
+		{"gt, string", gt, numfmt.DecimalString, bson.M{"$or": bson.A{gtFilter, isDecimal}}},
+		{"gt, number", gt, numfmt.DecimalNumber, gtFilter},
+		{"regex, auto", regex, numfmt.DecimalAuto, bson.M{"$or": bson.A{bson.M{"price": bson.M{"$regex": "^9"}}, isDecimal}}},
+		{"regex, number", regex, numfmt.DecimalNumber, bson.M{"price": bson.M{"$regex": "^9"}}},
+		{
+			"lt stays a superset, auto",
+			predicate.Cmp{Path: price, Op: predicate.Lt, Value: 5.0},
+			numfmt.DecimalAuto,
+			bson.M{"$or": bson.A{
+				bson.M{"price": bson.M{"$lt": 5.0}},
+				bson.M{"price": bson.M{"$type": bson.A{"null", "bool"}}},
+				bson.M{"price": bson.M{"$exists": false}},
+			}},
+		},
+		{
+			// Two equalities on one field would collapse to $in, which cannot hold
+			// the $type widening. So each branch stays its own leaf.
+			"or of number texts does not collapse to $in, auto",
+			predicate.Or{eq, predicate.Eq{Path: price, Value: "1.5"}},
+			numfmt.DecimalAuto,
+			bson.M{"$or": bson.A{
+				bson.M{"$or": bson.A{bson.M{"price": "9.99"}, isDecimal}},
+				bson.M{"$or": bson.A{bson.M{"price": "1.5"}, isDecimal}},
+			}},
+		},
+		{
+			"or of number texts collapses to $in, number",
+			predicate.Or{eq, predicate.Eq{Path: price, Value: "1.5"}},
+			numfmt.DecimalNumber,
+			bson.M{"price": bson.M{"$in": bson.A{"9.99", "1.5"}}},
+		},
+		{
+			"and widens only the affected leaf, auto",
+			predicate.And{eq, predicate.Eq{Path: []string{"name"}, Value: "ada"}},
+			numfmt.DecimalAuto,
+			bson.M{"$and": bson.A{
+				bson.M{"$or": bson.A{bson.M{"price": "9.99"}, isDecimal}},
+				bson.M{"name": "ada"},
+			}},
+		},
+		{
+			"nested path in the type clause, auto",
+			predicate.Eq{Path: []string{"a", "b"}, Value: "9.99"},
+			numfmt.DecimalAuto,
+			bson.M{"$or": bson.A{bson.M{"a.b": "9.99"}, bson.M{"a.b": bson.M{"$type": "decimal"}}}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, toFilter(tt.pred, tt.mode))
 		})
 	}
 }

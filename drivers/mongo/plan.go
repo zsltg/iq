@@ -3,6 +3,7 @@ package mongo
 import (
 	"fmt"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/selector"
@@ -13,7 +14,7 @@ import (
 // by _id. A scan runs a find. The find is pre-filtered by the pushed predicate when
 // one compiles (else a full-collection scan). It reuses toFilter, so the shown
 // filter is exactly what the server receives if the query runs.
-func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) query.AccessPlan {
+func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool, dec numfmt.DecimalMode) query.AccessPlan {
 	if !keys.Scan {
 		return query.AccessPlan{
 			Ops:    []string{fmt.Sprintf("find by _id: fetch %d requested key(s)", len(keys.Keys))},
@@ -24,7 +25,7 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, unbounded bool) quer
 	var filter map[string]any
 	desc := "find({}): full-collection scan (every document read, filtered client-side)"
 	if pred != nil {
-		filter = toFilter(pred)
+		filter = toFilter(pred, dec)
 		desc = "find(<filter>): server-side pre-filter, then the full jq re-runs client-side"
 	}
 	mode := fmt.Sprintf("cursor streamed in batches of %d", scanBatch)

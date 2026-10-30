@@ -4,7 +4,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/predicate"
 	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/selector"
@@ -63,7 +65,7 @@ func TestExplainPlan(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ExplainPlan(tt.keys, tt.pred, tt.unbounded)
+			got := ExplainPlan(tt.keys, tt.pred, tt.unbounded, numfmt.DecimalNumber)
 			require.Equal(t, tt.wantOps, got.Ops)
 			require.Equal(t, tt.wantFilter, got.Filter)
 		})
@@ -84,9 +86,22 @@ func TestExplainPlanStages(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			plan := ExplainPlan(tt.keys, tt.pred, false)
+			plan := ExplainPlan(tt.keys, tt.pred, false, numfmt.DecimalNumber)
 			require.Equal(t, tt.wantServer, plan.Server)
 			require.Equal(t, query.StagePlan{}, plan.Prefilter)
 		})
 	}
+}
+
+func TestExplainPlanReadsTheDecimalMode(t *testing.T) {
+	pred := predicate.Regex{Path: []string{"price"}, Pattern: "^9"}
+	keys := selector.KeySet{Scan: true, Streamable: true}
+	plain := map[string]any{"price": bson.M{"$regex": "^9"}}
+	widened := map[string]any{"$or": bson.A{
+		bson.M{"price": bson.M{"$regex": "^9"}},
+		bson.M{"price": bson.M{"$type": "decimal"}},
+	}}
+	require.Equal(t, plain, ExplainPlan(keys, pred, false, numfmt.DecimalNumber).Filter)
+	require.Equal(t, widened, ExplainPlan(keys, pred, false, numfmt.DecimalAuto).Filter)
+	require.Equal(t, widened, ExplainPlan(keys, pred, false, numfmt.DecimalString).Filter)
 }
