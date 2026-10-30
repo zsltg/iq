@@ -128,6 +128,19 @@ func TestNormalizeValueReportsEntityPaths(t *testing.T) {
 				"p.relationships[0].x", "p.relationships[0].y",
 			},
 		},
+		{
+			"path with two relationships",
+			dbtype.Path{Nodes: []dbtype.Node{node}, Relationships: []dbtype.Relationship{rel, rel}},
+			[]string{
+				"p.nodes[0].x", "p.nodes[0].y",
+				"p.relationships[0].x", "p.relationships[0].y", "p.relationships[1].x", "p.relationships[1].y",
+			},
+		},
+		{
+			"list with a value after a path",
+			[]any{dbtype.Path{Relationships: []dbtype.Relationship{rel}}, nan},
+			[]string{"p[0].relationships[0].x", "p[0].relationships[0].y", "p[1]"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
