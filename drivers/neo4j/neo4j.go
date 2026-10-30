@@ -480,10 +480,16 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 		return nil, err
 	}
 	rows := []any{}
-	for res.Next(ctx) {
+	for query.UnderRowLimit(ctx, len(rows)) && res.Next(ctx) {
 		rows = append(rows, s.rowOf(ctx, "row "+strconv.Itoa(len(rows)+1), res.Record()))
 	}
 	if err := res.Err(); err != nil {
+		return nil, fmt.Errorf("neo4j query: %w", err)
+	}
+	// With a row limit, the loop can stop before the end of the stream. Consume
+	// discards the rest on the server without buffering it, and reports an error
+	// that the statement gives later. The session close would discard that error.
+	if _, err := res.Consume(ctx); err != nil {
 		return nil, fmt.Errorf("neo4j query: %w", err)
 	}
 	return rows, nil

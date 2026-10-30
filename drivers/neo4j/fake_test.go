@@ -77,10 +77,13 @@ func (s *fakeSession) Close(ctx context.Context) error {
 // fakeResult streams records one by one and then reports err.
 type fakeResult struct {
 	neo4j.Result
-	recs     []*neo4j.Record
-	pos      int
-	err      error
-	nextCtxs []context.Context
+	recs       []*neo4j.Record
+	pos        int
+	err        error
+	nextCtxs   []context.Context
+	consumed   int
+	consumeErr error
+	consumeCtx context.Context //nolint:containedctx // the test checks which context Consume got.
 }
 
 func (r *fakeResult) Next(ctx context.Context) bool {
@@ -95,6 +98,13 @@ func (r *fakeResult) Next(ctx context.Context) bool {
 func (r *fakeResult) Record() *neo4j.Record { return r.recs[r.pos-1] }
 
 func (r *fakeResult) Err() error { return r.err }
+
+// Consume discards the rest of the stream and reports consumeErr.
+func (r *fakeResult) Consume(ctx context.Context) (neo4j.ResultSummary, error) {
+	r.consumed++
+	r.consumeCtx = ctx
+	return nil, r.consumeErr
+}
 
 // rows builds a reply that streams the given records.
 func rows(recs ...*neo4j.Record) fakeReply { return fakeReply{res: &fakeResult{recs: recs}} }

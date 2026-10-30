@@ -26,6 +26,7 @@ import (
 	"github.com/couchbase/gocb/v2"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/rawpred"
 	"github.com/zsltg/iq/internal/render"
 )
@@ -505,7 +506,7 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	return s.collectRows(rows)
+	return s.collectRows(ctx, rows)
 }
 
 // parseQueryArgs splits the raw arguments into the statement and the optional named
@@ -525,11 +526,12 @@ func parseQueryArgs(args []string) (string, map[string]any, error) {
 	return args[0], params, nil
 }
 
-// collectRows reads every row of a raw query result and decodes each one. It does not
+// collectRows reads the rows of a raw query result and decodes each one. If ctx has a
+// row limit (query.WithRowLimit), it stops reading after that many rows. It does not
 // close rows. The caller owns that.
-func (s *Store) collectRows(rows pageRows) ([]any, error) {
+func (s *Store) collectRows(ctx context.Context, rows pageRows) ([]any, error) {
 	out := []any{}
-	for rows.Next() {
+	for query.UnderRowLimit(ctx, len(out)) && rows.Next() {
 		var raw json.RawMessage
 		if err := rows.Row(&raw); err != nil {
 			return nil, fmt.Errorf("couchbase query: %w", err)
