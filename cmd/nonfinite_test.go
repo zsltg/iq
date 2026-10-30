@@ -73,7 +73,7 @@ func TestQueryWarnsOnceAboutConvertedValues(t *testing.T) {
 	require.NotContains(t, stdout, "warning")
 	require.Contains(t, stdout, `"NaN"`)
 	require.Equal(t,
-		`warning: iq converted 2 values that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "price"`+"\n",
+		`warning: iq converted 2 values that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "cost"`+"\n",
 		stderr)
 }
 

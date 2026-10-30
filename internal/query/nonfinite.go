@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 )
@@ -21,14 +22,16 @@ func WithNonFiniteNotice(ctx context.Context, sink NonFiniteSink) context.Contex
 	return context.WithValue(ctx, nonFiniteKey{}, sink)
 }
 
-// NoteNonFinite reports each field of the record key that an adapter converted.
-// It does nothing when ctx has no sink.
+// NoteNonFinite reports each field of the record key that an adapter converted,
+// in sorted order. A driver can collect the fields while it walks a Go map, whose
+// order changes from run to run. The sort keeps the first field of the warning the
+// same for the same data. It does nothing when ctx has no sink.
 func NoteNonFinite(ctx context.Context, key string, fields ...string) {
 	sink, ok := ctx.Value(nonFiniteKey{}).(NonFiniteSink)
 	if !ok {
 		return
 	}
-	for _, f := range fields {
+	for _, f := range slices.Sorted(slices.Values(fields)) {
 		sink(key, f)
 	}
 }

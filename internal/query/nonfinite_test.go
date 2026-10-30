@@ -23,7 +23,7 @@ func TestNoteNonFiniteReachesSink(t *testing.T) {
 		got = append(got, call{key, field})
 	})
 
-	query.NoteNonFinite(ctx, "k1", "price", "tags[2]")
+	query.NoteNonFinite(ctx, "k1", "tags[2]", "price")
 	query.NoteNonFinite(ctx, "k2")
 
 	require.Equal(t, []call{{"k1", "price"}, {"k1", "tags[2]"}}, got)
