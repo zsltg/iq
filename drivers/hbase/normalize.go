@@ -9,6 +9,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/tsuna/gohbase/hrpc"
+
+	"github.com/zsltg/iq/internal/numfmt"
 )
 
 // colType is how one HBase cell value (raw bytes) is presented to the filter and
@@ -75,8 +77,10 @@ func parseColType(name string) (colType, error) {
 // decodeCell renders a raw cell value as a JSON-ready value under its declared
 // type. A declared numeric type whose bytes are the wrong width falls back to the
 // honest ctAuto rendering rather than aborting a scan. This is because a single
-// malformed cell must not fail the whole query.
-func decodeCell(t colType, b []byte) any {
+// malformed cell must not fail the whole query. A double that is NaN or an
+// infinity has no JSON form, so it becomes a string (see numfmt.FiniteFloat),
+// and h records its path. h can be nil.
+func decodeCell(t colType, b []byte, h *numfmt.Hits) any {
 	switch t {
 	case ctText:
 		return string(b)
@@ -87,7 +91,7 @@ func decodeCell(t colType, b []byte) any {
 	case ctLong:
 		return fixedWidth(b, 8, decodeInt64)
 	case ctDouble:
-		return fixedWidth(b, 8, decodeDouble)
+		return fixedWidth(b, 8, doubleDecoder(h))
 	case ctBool:
 		return fixedWidth(b, 1, decodeBool)
 	default:
@@ -112,8 +116,12 @@ func decodeInt64(b []byte) any {
 	return int(int64(binary.BigEndian.Uint64(b))) //nolint:gosec // G115: decodes a stored 8-byte long column, deliberate reinterpretation.
 }
 
-func decodeDouble(b []byte) any {
-	return math.Float64frombits(binary.BigEndian.Uint64(b))
+// doubleDecoder returns the decoder of an 8-byte IEEE-754 double. It converts a
+// NaN or an infinity to a string and records it in h.
+func doubleDecoder(h *numfmt.Hits) func([]byte) any {
+	return func(b []byte) any {
+		return h.Float(math.Float64frombits(binary.BigEndian.Uint64(b)))
+	}
 }
 
 func decodeBool(b []byte) any {
@@ -267,7 +275,7 @@ func toFloat64(v any) (float64, error) {
 // row the KV model exposes, decoding each cell under its declared type. The latest
 // version of each column is used (the requests set MaxVersions(1)), so a family's
 // qualifier maps to a single value.
-func rowFromCells(cells []*hrpc.Cell, types typeMap) map[string]any {
+func rowFromCells(cells []*hrpc.Cell, types typeMap, h *numfmt.Hits) map[string]any {
 	row := make(map[string]any)
 	for _, c := range cells {
 		family := string(c.Family)
@@ -277,7 +285,11 @@ func rowFromCells(cells []*hrpc.Cell, types typeMap) map[string]any {
 			fam = make(map[string]any)
 			row[family] = fam
 		}
-		fam[qualifier] = decodeCell(colTypeFor(types, family, qualifier), c.Value)
+		h.Enter(family)
+		h.Enter(qualifier)
+		fam[qualifier] = decodeCell(colTypeFor(types, family, qualifier), c.Value, h)
+		h.Leave()
+		h.Leave()
 	}
 	return row
 }
@@ -294,7 +306,7 @@ func colTypeFor(types typeMap, family, qualifier string) colType {
 // under the row-key type. Valid UTF-8 renders as itself, else base64 (or as
 // declared).
 func rowKeyString(t colType, key []byte) string {
-	v := decodeCell(t, key)
+	v := decodeCell(t, key, nil)
 	if s, ok := v.(string); ok {
 		return s
 	}

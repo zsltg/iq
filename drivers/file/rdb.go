@@ -30,7 +30,7 @@ func rdbSource(r io.Reader, size int) query.RecordSource {
 				cbErr = err
 				return false
 			}
-			rec, ok := recordForObject(o)
+			rec, ok := recordForObject(ctx, o)
 			if !ok {
 				return true
 			}
@@ -59,7 +59,7 @@ func rdbSource(r io.Reader, size int) query.RecordSource {
 
 // recordForObject converts one RDB object to a typed record, reporting false for an
 // object that carries no keyspace value (metadata or an unsupported module type).
-func recordForObject(o parser.RedisObject) (query.Record, bool) {
+func recordForObject(ctx context.Context, o parser.RedisObject) (query.Record, bool) {
 	key := o.GetKey()
 	switch obj := o.(type) {
 	case *parser.StringObject:
@@ -77,7 +77,10 @@ func recordForObject(o parser.RedisObject) (query.Record, bool) {
 		}
 		return query.Record{Key: key, Type: "hash", Value: m}, true
 	case *parser.ZSetObject:
-		return query.Record{Key: key, Type: "zset", Value: zsetValue(obj)}, true
+		h := &numfmt.Hits{}
+		val := zsetValue(obj, h)
+		query.NoteNonFinite(ctx, key, h.Fields...)
+		return query.Record{Key: key, Type: "zset", Value: val}, true
 	case *parser.StreamObject:
 		return query.Record{Key: key, Type: "stream", Value: streamValue(obj)}, true
 	default:
@@ -88,7 +91,7 @@ func recordForObject(o parser.RedisObject) (query.Record, bool) {
 // zsetValue renders a sorted set as [{member, score}] in score-ascending order,
 // with ties broken lexically by member. This is the order that ZRANGEWITHSCORES
 // returns, which the live adapter's canonical encoding preserves.
-func zsetValue(obj *parser.ZSetObject) []any {
+func zsetValue(obj *parser.ZSetObject, h *numfmt.Hits) []any {
 	// The parsed object is single-use, so sorting its entries in place is safe and
 	// avoids naming the (non-re-exported) entry type.
 	sort.SliceStable(obj.Entries, func(i, j int) bool {
@@ -110,7 +113,11 @@ func zsetValue(obj *parser.ZSetObject) []any {
 	})
 	out := make([]any, len(obj.Entries))
 	for i, e := range obj.Entries {
-		out[i] = map[string]any{"member": e.Member, "score": numfmt.FiniteScore(e.Score)}
+		h.EnterIndex(i)
+		h.Enter("score")
+		out[i] = map[string]any{"member": e.Member, "score": h.Score(e.Score)}
+		h.Leave()
+		h.Leave()
 	}
 	return out
 }

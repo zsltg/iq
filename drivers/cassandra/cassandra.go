@@ -23,6 +23,7 @@ import (
 	gocql "github.com/apache/cassandra-gocql-driver/v2"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 	"github.com/zsltg/iq/internal/render"
 )
 
@@ -374,7 +375,7 @@ func (s *Store) getSingle(ctx context.Context, col *gocql.ColumnMetadata, keys [
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(binds)), ",")
 	cql := fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)", s.tableRef(), quoteIdent(col.Name), placeholders)
 	iter := s.session.Query(cql, binds...).IterContext(ctx)
-	return s.drain(iter, out)
+	return s.drain(ctx, iter, out)
 }
 
 // getComposite fetches each requested composite key with its own point query, since
@@ -391,7 +392,7 @@ func (s *Store) getComposite(ctx context.Context, pk []*gocql.ColumnMetadata, ke
 			return err
 		}
 		iter := s.session.Query(cql, binds...).IterContext(ctx)
-		if err := s.drain(iter, out); err != nil {
+		if err := s.drain(ctx, iter, out); err != nil {
 			return err
 		}
 	}
@@ -400,10 +401,11 @@ func (s *Store) getComposite(ctx context.Context, pk []*gocql.ColumnMetadata, ke
 
 // drain reads every row an iterator yields into out, keyed and normalized, then
 // closes the iterator. It is the shared consumer of the point-read queries.
-func (s *Store) drain(iter *gocql.Iter, out map[string]any) error {
+func (s *Store) drain(ctx context.Context, iter *gocql.Iter, out map[string]any) error {
 	row := map[string]any{}
 	for iter.MapScan(row) {
-		out[KeyOf(s.meta, row)] = normalizeRow(row, s.decimal)
+		key, val := s.keyedRow(ctx, row)
+		out[key] = val
 		row = map[string]any{}
 	}
 	if err := iter.Close(); err != nil {
@@ -433,7 +435,8 @@ func (s *Store) pageScan(ctx context.Context, cql string, binds []any, fn func(b
 	page := make(map[string]any, s.pageSize)
 	row := map[string]any{}
 	for iter.MapScan(row) {
-		page[KeyOf(s.meta, row)] = normalizeRow(row, s.decimal)
+		key, val := s.keyedRow(ctx, row)
+		page[key] = val
 		if len(page) >= s.pageSize {
 			if err := fn(page); err != nil {
 				_ = iter.Close()
@@ -453,12 +456,24 @@ func (s *Store) pageScan(ctx context.Context, cql string, binds []any, fn func(b
 }
 
 // normalizeRow normalizes every column value of a row, preserving column names.
-func normalizeRow(row map[string]any, dec numfmt.DecimalMode) map[string]any {
+func normalizeRow(row map[string]any, dec numfmt.DecimalMode, h *numfmt.Hits) map[string]any {
 	out := make(map[string]any, len(row))
 	for k, v := range row {
-		out[k] = Normalize(v, dec)
+		h.Enter(k)
+		out[k] = Normalize(v, dec, h)
+		h.Leave()
 	}
 	return out
+}
+
+// keyedRow normalizes a row and returns its key and value. It reports each NaN
+// or infinity that it converted to the notice sink of ctx.
+func (s *Store) keyedRow(ctx context.Context, row map[string]any) (string, map[string]any) {
+	key := KeyOf(s.meta, row)
+	h := &numfmt.Hits{}
+	val := normalizeRow(row, s.decimal, h)
+	query.NoteNonFinite(ctx, key, h.Fields...)
+	return key, val
 }
 
 // Query runs a raw CQL statement. The forwarded args are joined back into one
@@ -474,7 +489,9 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	rows := []any{}
 	row := map[string]any{}
 	for iter.MapScan(row) {
-		rows = append(rows, normalizeRow(row, s.decimal))
+		h := &numfmt.Hits{}
+		rows = append(rows, normalizeRow(row, s.decimal, h))
+		query.NoteNonFinite(ctx, "row "+strconv.Itoa(len(rows)), h.Fields...)
 		row = map[string]any{}
 	}
 	if err := iter.Close(); err != nil {

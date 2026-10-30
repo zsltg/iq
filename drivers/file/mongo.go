@@ -48,7 +48,7 @@ func bsonSource(r io.Reader, size int, dec numfmt.DecimalMode) query.RecordSourc
 			if _, err := io.ReadFull(br, doc[4:]); err != nil {
 				return fmt.Errorf("read bson document: %w", err)
 			}
-			rec, err := recordForBSON(doc, dec)
+			rec, err := recordForBSON(ctx, doc, dec)
 			if err != nil {
 				return err
 			}
@@ -111,7 +111,7 @@ func extJSONSource(r io.Reader, size int, dec numfmt.DecimalMode) query.RecordSo
 				}
 				return fmt.Errorf("decode mongoexport json: %w", err)
 			}
-			rec, err := recordForExtJSON(raw, dec)
+			rec, err := recordForExtJSON(ctx, raw, dec)
 			if err != nil {
 				return err
 			}
@@ -148,30 +148,32 @@ func startsArray(br *bufio.Reader) (bool, error) {
 }
 
 // recordForBSON decodes one raw BSON document into a typed record.
-func recordForBSON(raw []byte, dec numfmt.DecimalMode) (query.Record, error) {
+func recordForBSON(ctx context.Context, raw []byte, dec numfmt.DecimalMode) (query.Record, error) {
 	var doc bson.M
 	if err := bson.Unmarshal(raw, &doc); err != nil {
 		return query.Record{}, fmt.Errorf("decode bson document: %w", err)
 	}
-	return recordForDoc(doc, dec), nil
+	return recordForDoc(ctx, doc, dec), nil
 }
 
 // recordForExtJSON decodes one Extended JSON document into a typed record.
-func recordForExtJSON(raw json.RawMessage, dec numfmt.DecimalMode) (query.Record, error) {
+func recordForExtJSON(ctx context.Context, raw json.RawMessage, dec numfmt.DecimalMode) (query.Record, error) {
 	var doc bson.M
 	if err := bson.UnmarshalExtJSON(raw, true, &doc); err != nil {
 		return query.Record{}, fmt.Errorf("decode extended json document: %w", err)
 	}
-	return recordForDoc(doc, dec), nil
+	return recordForDoc(ctx, doc, dec), nil
 }
 
 // recordForDoc turns a decoded document into the record a live Mongo scan yields:
 // keyed by _id, type "document", value the normalized document.
-func recordForDoc(doc bson.M, dec numfmt.DecimalMode) query.Record {
+func recordForDoc(ctx context.Context, doc bson.M, dec numfmt.DecimalMode) query.Record {
 	key := ""
 	if id, ok := doc["_id"]; ok {
 		key = iqmongo.KeyOf(id)
 	}
-	val := iqmongo.Normalize(doc, dec)
+	h := &numfmt.Hits{}
+	val := iqmongo.Normalize(doc, dec, h)
+	query.NoteNonFinite(ctx, key, h.Fields...)
 	return query.Record{Key: key, Type: "document", Value: val}
 }

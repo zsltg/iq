@@ -59,7 +59,8 @@ same contract:
   DB index cannot be removed, has no `drop`. The read-only file dump has no per-key `delete`.
 - **Values round-trip.** Every value normalizes to JSON under a frozen per-backend encoding
   contract. A `--typed` dump restores through `--insert` losslessly (see
-  [Write data](write-data.md)).
+  [Write data](write-data.md)). The one exception is a NaN or infinite float. JSON cannot hold it,
+  so `iq` turns it into a string and warns (see [Not-finite floats](output.md#not-finite-floats)).
 - **Bounded and redacted.** `--timeout` bounds every backend call. `iq` redacts a URI's password
   from every listing, log line and error.
 - **Native commands.** `iq exec` speaks the backend's own language, verbatim where one exists

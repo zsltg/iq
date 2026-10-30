@@ -229,7 +229,7 @@ the gate.
 | `iq_sources` | always | readOnly, idempotent | The handles this server can access, with each URI's password redacted |
 | `iq_ping` | always | readOnly, idempotent | Round-trip one cheap backend command and report the time |
 | `iq_explain` | always | readOnly, idempotent | The access plan for a filter, without connecting |
-| `iq_query` | always | readOnly, idempotent | Run a jq filter. Returns `{items, count, truncated}` |
+| `iq_query` | always | readOnly, idempotent | Run a jq filter. Returns `{items, count, truncated}`, plus `note` when `iq` turned NaN or infinity into strings |
 | `iq_inspect` | always | readOnly, idempotent | A backend's native introspection, optionally narrowed by `only` |
 | `iq_schema` | always | readOnly, idempotent | A draft 2020-12 JSON Schema inferred from a sample |
 | `iq_diff` | always | readOnly, idempotent | Compare two sources by data, stats, or inferred schema |

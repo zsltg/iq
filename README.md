@@ -482,7 +482,8 @@ driver.
 - **Capabilities are explicit.** If a backend cannot support a command, the command fails
   with a clear message instead of emulating it. For example, Redis has no `drop`.
 - **Values round-trip.** Every value normalizes to JSON under a fixed encoding for each
-  backend. A `--typed` dump restores losslessly through `--insert`.
+  backend. A `--typed` dump restores losslessly through `--insert`. The one exception is a NaN
+  or infinite float. JSON cannot hold it, so `iq` turns it into a string and warns.
 - **Bounded and redacted.** `--timeout` bounds every backend call. `iq` removes a URI's
   password from every listing, log line and error.
 - **Native commands.** `iq exec` sends a command in the backend's own language, such as CQL,

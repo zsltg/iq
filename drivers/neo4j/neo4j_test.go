@@ -242,7 +242,7 @@ func TestNormalizeValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Store{decimal: tt.mode}
-			require.Equal(t, tt.want, s.normalizeValue(tt.in))
+			require.Equal(t, tt.want, s.normalizeValue(tt.in, nil))
 		})
 	}
 }
@@ -254,7 +254,7 @@ func TestNormalizeNode(t *testing.T) {
 		Labels:    []string{"Person"},
 		Props:     map[string]any{"name": "Ada", "age": int64(36)},
 	}
-	got := s.normalizeNode(node)
+	got := s.normalizeNode(node, nil)
 	require.Equal(t, "Ada", got["name"])
 	require.Equal(t, 36, got["age"])
 	require.Equal(t, "4:abc:1", got["_id"])
@@ -270,7 +270,7 @@ func TestNormalizeRelationship(t *testing.T) {
 		Type:           "KNOWS",
 		Props:          map[string]any{"since": int64(2019)},
 	}
-	got := s.normalizeRelationship(rel)
+	got := s.normalizeRelationship(rel, nil)
 	require.Equal(t, 2019, got["since"])
 	require.Equal(t, "KNOWS", got["_type"])
 	require.Equal(t, "4:a:1", got["_start"])

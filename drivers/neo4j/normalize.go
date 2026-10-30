@@ -17,6 +17,7 @@
 package neo4j
 
 import (
+	"context"
 	"encoding/base64"
 	"math/big"
 	"strconv"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/zsltg/iq/internal/neo4jenvelope"
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 )
 
 // The reserved envelope keys live in internal/neo4jenvelope, shared with the
@@ -37,10 +39,12 @@ import (
 
 // normalizeNode renders a graph node as a JSON-ready map: its properties, each
 // value converted by normalizeValue, plus _id (the elementId) and _labels.
-func (s *Store) normalizeNode(node neo4j.Node) map[string]any {
+func (s *Store) normalizeNode(node neo4j.Node, h *numfmt.Hits) map[string]any {
 	out := make(map[string]any, len(node.Props))
 	for k, v := range node.Props {
-		out[k] = s.normalizeValue(v)
+		h.Enter(k)
+		out[k] = s.normalizeValue(v, h)
+		h.Leave()
 	}
 	out[neo4jenvelope.FieldID] = node.ElementId
 	out[neo4jenvelope.FieldLabels] = labelsToAny(node.Labels)
@@ -50,10 +54,12 @@ func (s *Store) normalizeNode(node neo4j.Node) map[string]any {
 // normalizeRelationship renders a relationship as its properties plus the reserved
 // _type/_start/_end envelope (the endpoint elementIds). Only the raw Cypher path
 // emits relationships in v1. The collection path is node-only.
-func (s *Store) normalizeRelationship(rel neo4j.Relationship) map[string]any {
+func (s *Store) normalizeRelationship(rel neo4j.Relationship, h *numfmt.Hits) map[string]any {
 	out := make(map[string]any, len(rel.Props))
 	for k, v := range rel.Props {
-		out[k] = s.normalizeValue(v)
+		h.Enter(k)
+		out[k] = s.normalizeValue(v, h)
+		h.Leave()
 	}
 	out[neo4jenvelope.FieldID] = rel.ElementId
 	out[neo4jenvelope.FieldType] = rel.Type
@@ -66,8 +72,10 @@ func (s *Store) normalizeRelationship(rel neo4j.Relationship) map[string]any {
 // value. Integers stay exact (Cypher integers are int64, which fit an int on the
 // 64-bit builds iq targets). Fractional numbers follow the decimal mode. Bytes
 // become base64. Temporal and spatial values become their canonical strings and
-// objects. This is the frozen encoding contract, identical for every fetch path.
-func (s *Store) normalizeValue(v any) any {
+// objects. A NaN or an infinity has no JSON form, so it becomes a string (see
+// numfmt.FiniteFloat) in every decimal mode, and h records its path. h can be
+// nil. This is the frozen encoding contract, identical for every fetch path.
+func (s *Store) normalizeValue(v any, h *numfmt.Hits) any {
 	switch t := v.(type) {
 	case nil:
 		return nil
@@ -76,10 +84,7 @@ func (s *Store) normalizeValue(v any) any {
 	case int64:
 		return int(t)
 	case float64:
-		if s.decimal == numfmt.DecimalString {
-			return strconv.FormatFloat(t, 'g', -1, 64)
-		}
-		return t
+		return s.floatValue(t, h)
 	case string:
 		return t
 	case []byte:
@@ -103,19 +108,23 @@ func (s *Store) normalizeValue(v any) any {
 	case dbtype.Point3D:
 		return map[string]any{"x": t.X, "y": t.Y, "z": t.Z, "srid": int(t.SpatialRefId)}
 	case neo4j.Node:
-		return s.normalizeNode(t)
+		return s.normalizeNode(t, h)
 	case neo4j.Relationship:
-		return s.normalizeRelationship(t)
+		return s.normalizeRelationship(t, h)
 	case dbtype.Path:
-		return s.normalizePath(t)
+		return s.normalizePath(t, h)
 	case []any:
 		for i, e := range t {
-			t[i] = s.normalizeValue(e)
+			h.EnterIndex(i)
+			t[i] = s.normalizeValue(e, h)
+			h.Leave()
 		}
 		return t
 	case map[string]any:
 		for k, e := range t {
-			t[k] = s.normalizeValue(e)
+			h.Enter(k)
+			t[k] = s.normalizeValue(e, h)
+			h.Leave()
 		}
 		return t
 	default:
@@ -123,17 +132,38 @@ func (s *Store) normalizeValue(v any) any {
 	}
 }
 
+// floatValue renders a Cypher float. A non-finite float becomes its text and is
+// recorded in h. A finite float follows the decimal mode.
+func (s *Store) floatValue(f float64, h *numfmt.Hits) any {
+	v := h.Float(f)
+	if text, converted := v.(string); converted {
+		return text
+	}
+	if s.decimal == numfmt.DecimalString {
+		return strconv.FormatFloat(f, 'g', -1, 64)
+	}
+	return f
+}
+
 // normalizePath renders a graph path as its nodes and relationships in traversal
 // order, each normalized. Only the raw Cypher path can return one.
-func (s *Store) normalizePath(p dbtype.Path) map[string]any {
+func (s *Store) normalizePath(p dbtype.Path, h *numfmt.Hits) map[string]any {
 	nodes := make([]any, len(p.Nodes))
+	h.Enter("nodes")
 	for i, n := range p.Nodes {
-		nodes[i] = s.normalizeNode(n)
+		h.EnterIndex(i)
+		nodes[i] = s.normalizeNode(n, h)
+		h.Leave()
 	}
+	h.Leave()
 	rels := make([]any, len(p.Relationships))
+	h.Enter("relationships")
 	for i, r := range p.Relationships {
-		rels[i] = s.normalizeRelationship(r)
+		h.EnterIndex(i)
+		rels[i] = s.normalizeRelationship(r, h)
+		h.Leave()
 	}
+	h.Leave()
 	return map[string]any{"nodes": nodes, "relationships": rels}
 }
 
@@ -144,5 +174,14 @@ func labelsToAny(labels []string) []any {
 	for i, l := range labels {
 		out[i] = l
 	}
+	return out
+}
+
+// normalizeEntity normalizes the value of one key. It reports each NaN or
+// infinity that it converted to the notice sink of ctx.
+func (s *Store) normalizeEntity(ctx context.Context, key string, v any) any {
+	h := &numfmt.Hits{}
+	out := s.normalizeValue(v, h)
+	query.NoteNonFinite(ctx, key, h.Fields...)
 	return out
 }

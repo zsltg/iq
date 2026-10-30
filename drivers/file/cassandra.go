@@ -15,6 +15,14 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
+// csvLayout describes the columns of a cqlsh CSV dump: the column names in row
+// order, the primary-key columns, and the CQL type of each typed column.
+type csvLayout struct {
+	header  []string
+	keyCols []string
+	types   map[string]gocql.Type
+}
+
 // cassandraCSVSource streams a cqlsh `COPY … TO` CSV dump. A COPY dump carries every
 // value as text and records neither column types nor the primary key. The ?types=
 // hint re-types the columns and the ?keys= hint names the key columns. Each row then
@@ -60,7 +68,7 @@ func cassandraCSVSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hin
 			if err != nil {
 				return fmt.Errorf("read cassandra csv row: %w", err)
 			}
-			rec, err := recordForCSVRow(header, fields, keyCols, types, dec)
+			rec, err := recordForCSVRow(ctx, csvLayout{header, keyCols, types}, fields, dec)
 			if err != nil {
 				return err
 			}
@@ -84,7 +92,8 @@ func cassandraCSVSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hin
 // when the column has no ?types= entry). So the key and the normalized value
 // match a live scan exactly. An empty field is the CQL null that cqlsh writes by
 // default.
-func recordForCSVRow(header, fields, keyCols []string, types map[string]gocql.Type, dec numfmt.DecimalMode) (query.Record, error) {
+func recordForCSVRow(ctx context.Context, layout csvLayout, fields []string, dec numfmt.DecimalMode) (query.Record, error) {
+	header := layout.header
 	if len(fields) != len(header) {
 		return query.Record{}, fmt.Errorf("cassandra csv row has %d field(s), header has %d", len(fields), len(header))
 	}
@@ -95,7 +104,7 @@ func recordForCSVRow(header, fields, keyCols []string, types map[string]gocql.Ty
 			typed[name] = nil // cqlsh's default null marker is an empty field.
 			continue
 		}
-		ct, ok := types[name]
+		ct, ok := layout.types[name]
 		if !ok {
 			ct = gocql.TypeText // an untyped column is read as text.
 		}
@@ -105,11 +114,16 @@ func recordForCSVRow(header, fields, keyCols []string, types map[string]gocql.Ty
 		}
 		typed[name] = v
 	}
+	h := &numfmt.Hits{}
 	val := make(map[string]any, len(typed))
 	for name, v := range typed {
-		val[name] = iqcass.Normalize(v, dec)
+		h.Enter(name)
+		val[name] = iqcass.Normalize(v, dec, h)
+		h.Leave()
 	}
-	return query.Record{Key: iqcass.KeyOfColumns(keyCols, typed), Type: "row", Value: val}, nil
+	key := iqcass.KeyOfColumns(layout.keyCols, typed)
+	query.NoteNonFinite(ctx, key, h.Fields...)
+	return query.Record{Key: key, Type: "row", Value: val}, nil
 }
 
 // splitCols splits a comma-separated column-list hint (?keys= or ?columns=), trimming

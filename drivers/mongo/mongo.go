@@ -176,7 +176,8 @@ func (s *Store) Get(ctx context.Context, keys []string) (map[string]any, error) 
 		if err := cur.Decode(&doc); err != nil {
 			return nil, fmt.Errorf("mongodb decode: %w", err)
 		}
-		out[KeyOf(doc["_id"])] = s.normalize(doc)
+		key, val := Document(ctx, doc, s.decimal)
+		out[key] = val
 	}
 	if err := cur.Err(); err != nil {
 		return nil, fmt.Errorf("mongodb cursor: %w", selectionCause(err))
@@ -217,7 +218,8 @@ func (s *Store) scanWith(ctx context.Context, filter bson.M, fn func(batch map[s
 		if err := cur.Decode(&doc); err != nil {
 			return fmt.Errorf("mongodb decode: %w", err)
 		}
-		page[KeyOf(doc["_id"])] = s.normalize(doc)
+		key, val := Document(ctx, doc, s.decimal)
+		page[key] = val
 		if len(page) >= s.pageSize {
 			if err := fn(page); err != nil {
 				return err
@@ -268,7 +270,7 @@ func (s *Store) Query(ctx context.Context, args []string) (any, error) {
 	if err := s.db.RunCommand(ctx, cmd).Decode(&res); err != nil {
 		return nil, fmt.Errorf("mongodb command: %w", selectionCause(err))
 	}
-	return s.normalize(res), nil
+	return s.normalizeReply(ctx, res), nil
 }
 
 // FormatRaw renders a raw command reply as indented JSON, the natural form for a

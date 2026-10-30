@@ -892,7 +892,7 @@ func TestZSetValueOrdering(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, zsetValue(&model.ZSetObject{Entries: tt.entries}))
+			require.Equal(t, tt.want, zsetValue(&model.ZSetObject{Entries: tt.entries}, nil))
 		})
 	}
 }

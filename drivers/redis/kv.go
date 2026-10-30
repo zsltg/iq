@@ -12,6 +12,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 )
 
 // scanCount is the COUNT hint for each SCAN round. It bounds work per
@@ -150,7 +151,7 @@ func nativeReader(ctx context.Context, p goredis.Pipeliner, k typedKey) (reader,
 	case "set":
 		return setReader{p.SMembers(ctx, k.key)}, nil
 	case "zset":
-		return zsetReader{p.ZRangeWithScores(ctx, k.key, 0, -1)}, nil
+		return zsetReader{cmd: p.ZRangeWithScores(ctx, k.key, 0, -1), ctx: ctx, key: k.key}, nil
 	case "stream":
 		return streamReader{p.XRange(ctx, k.key, "-", "+")}, nil
 	default:
@@ -243,8 +244,14 @@ func nonEmptyStrings(cmd *goredis.StringSliceCmd) ([]string, bool, error) {
 
 // zsetReader normalizes a sorted set to an array of {member, score} objects in
 // score-ascending order, preserving rank. This is the frozen canonical
-// encoding.
-type zsetReader struct{ cmd *goredis.ZSliceCmd }
+// encoding. A NaN or infinite score has no JSON form, so it becomes a string
+// (see numfmt.FiniteScore). The reader reports it to the notice sink of ctx,
+// under key.
+type zsetReader struct {
+	cmd *goredis.ZSliceCmd
+	ctx context.Context //nolint:containedctx // the reader lives for one pipeline read and needs the context only to report a conversion.
+	key string
+}
 
 func (r zsetReader) normalize() (any, bool, error) {
 	zs, err := r.cmd.Result()
@@ -255,11 +262,17 @@ func (r zsetReader) normalize() (any, bool, error) {
 	if len(zs) == 0 {
 		return nil, false, nil
 	}
+	h := &numfmt.Hits{}
 	out := make([]any, len(zs))
 	for i, z := range zs {
 		member, _ := z.Member.(string)
-		out[i] = map[string]any{"member": member, "score": numfmt.FiniteScore(z.Score)}
+		h.EnterIndex(i)
+		h.Enter("score")
+		out[i] = map[string]any{"member": member, "score": h.Score(z.Score)}
+		h.Leave()
+		h.Leave()
 	}
+	query.NoteNonFinite(r.ctx, r.key, h.Fields...)
 	return out, true, nil
 }
 
