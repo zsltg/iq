@@ -84,15 +84,15 @@ func TestRDBSourceReportsNonFiniteScore(t *testing.T) {
 
 func TestCassandraCSVRowConvertsNonFinite(t *testing.T) {
 	layout := csvLayout{
-		header:  []string{"id", "price"},
+		header:  []string{"id", "price", "rate"},
 		keyCols: []string{"id"},
-		types:   map[string]gocql.Type{"id": gocql.TypeText, "price": gocql.TypeDouble},
+		types:   map[string]gocql.Type{"id": gocql.TypeText, "price": gocql.TypeDouble, "rate": gocql.TypeDouble},
 	}
 	var calls []noticeCall
 
-	rec, err := recordForCSVRow(noticeCtx(&calls), layout, []string{"r1", "-Infinity"}, numfmt.DecimalAuto)
+	rec, err := recordForCSVRow(noticeCtx(&calls), layout, []string{"r1", "-Infinity", "NaN"}, numfmt.DecimalAuto)
 
 	require.NoError(t, err)
-	require.Equal(t, map[string]any{"id": "r1", "price": "-Infinity"}, rec.Value)
-	require.Equal(t, []noticeCall{{rec.Key, "price"}}, calls)
+	require.Equal(t, map[string]any{"id": "r1", "price": "-Infinity", "rate": "NaN"}, rec.Value)
+	require.ElementsMatch(t, []noticeCall{{rec.Key, "price"}, {rec.Key, "rate"}}, calls)
 }
