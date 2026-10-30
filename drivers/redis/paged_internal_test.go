@@ -2,8 +2,10 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"testing"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -269,8 +271,10 @@ func TestNextStreamID(t *testing.T) {
 		{"1-0", "1-1", ""},
 		{"1700000000000-41", "1700000000000-42", ""},
 		{"5-18446744073709551615", "6-0", ""},
+		{"9223372036854775808-1", "9223372036854775808-2", ""},
 		{"5", "", `stream entry ID "5" is not <ms>-<seq>`},
 		{"a-1", "", `stream entry ID "a-1" is not <ms>-<seq>`},
+		{"5-x", "", `stream entry ID "5-x" is not <ms>-<seq>`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.id, func(t *testing.T) {
@@ -316,4 +320,79 @@ func TestZsetReaderRefusesABadScore(t *testing.T) {
 
 	require.ErrorContains(t, err, "parse score")
 	require.False(t, present)
+}
+
+// TestDefaultLimits pins the limits of an opened Store.
+func TestDefaultLimits(t *testing.T) {
+	require.Equal(t, limits{maxElements: 1_000_000, chunk: 1000}, defaultLimits())
+}
+
+// TestZsetReaderKeepsTheCauseOfABadScore pins that the parse error stays in the
+// error chain.
+func TestZsetReaderKeepsTheCauseOfABadScore(t *testing.T) {
+	ctx := context.Background()
+
+	_, _, err := zsetReader{onePage(ctx), scanReply(ctx, "a", "x")}.normalize()
+
+	require.ErrorIs(t, err, strconv.ErrSyntax)
+}
+
+// TestAdmitReturnsTheErrorOfTheSizeCommand pins that a failed size command stops
+// the read.
+func TestAdmitReturnsTheErrorOfTheSizeCommand(t *testing.T) {
+	boom := errors.New("boom")
+	r := onePage(context.Background())
+	r.size.SetErr(boom)
+
+	require.ErrorIs(t, r.admit(), boom)
+}
+
+// TestScanAllStopsAtTheErrorOfAdd pins that an error of add ends the walk before
+// the next round, even when the cursor is not 0.
+func TestScanAllStopsAtTheErrorOfAdd(t *testing.T) {
+	ctx := context.Background()
+	boom := errors.New("boom")
+	first := goredis.NewScanCmd(ctx, nil)
+	first.SetVal([]string{"a"}, 7)
+	next := func(uint64) *goredis.ScanCmd {
+		t.Fatal("the walk asked for another round")
+		return nil
+	}
+
+	err := scanAll(first, next, func([]string) error { return boom })
+
+	require.ErrorIs(t, err, boom)
+}
+
+// TestLaterChunkFailureIsAnError pins that a failed follow-up read fails the whole
+// read. The call at index 2 is the first command after TYPE and the pipeline.
+func TestLaterChunkFailureIsAnError(t *testing.T) {
+	boom := errors.New("boom")
+	for _, i := range []int{1, 4} {
+		tt := sevenElements()[i]
+		t.Run(tt.name, func(t *testing.T) {
+			tt.key.per = 3
+			store, f := limitedStore(t, tt.key, limits{maxElements: 100, chunk: 3})
+			f.fail = map[int]error{2: boom}
+
+			got, err := store.Get(context.Background(), []string{"k"})
+
+			require.ErrorIs(t, err, boom)
+			require.Nil(t, got)
+		})
+	}
+}
+
+// TestStreamWithABadEntryIDIsAnError pins that a stream whose last entry ID of a
+// chunk is malformed fails the read.
+func TestStreamWithABadEntryIDIsAnError(t *testing.T) {
+	key := fakeKey{typ: "stream", val: []goredis.XMessage{{ID: "bad", Values: map[string]any{"f": "1"}}}}
+	store, f := limitedStore(t, key, limits{maxElements: 100, chunk: 1})
+	// Without the check, the reader would ask for a follow-up chunk. This failure
+	// stops that read, which would otherwise never end.
+	f.fail = map[int]error{2: errors.New("unexpected follow-up read")}
+
+	_, err := store.Get(context.Background(), []string{"k"})
+
+	require.ErrorContains(t, err, `stream entry ID "bad" is not <ms>-<seq>`)
 }
