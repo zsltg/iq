@@ -885,4 +885,4 @@ The zset writer reads an infinite score from its text with strconv.ParseFloat, a
 
 ## internal/query/copy.go, floatKey (accepted 2026-10-31, PR #224)
 
-- 2585589d2d0d internal/query/copy.go:329 numbers/incrementer. The precision of `strconv.FormatFloat(f, 'f', -1, 64)` becomes -2. strconv takes `shortest := prec < 0`, so every negative precision asks for the same thing: the fewest digits that read back as the same float. The decrementer (precision 0) is not equivalent, and the 1e23 row of TestTransformKeyScalarTypes kills it.
+- e35f2be1ae5d internal/query/copy.go:331 numbers/incrementer. The precision of `s := strconv.FormatFloat(f, 'f', -1, 64)` becomes -2. strconv takes `shortest := prec < 0`, so every negative precision asks for the same thing: the fewest digits that read back as the same float. The decrementer (precision 0) is not equivalent, and the refusal row of TestTransformKeyErrors (1e23) kills it.

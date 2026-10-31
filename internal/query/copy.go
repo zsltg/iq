@@ -315,7 +315,9 @@ func scalarKey(v any) (string, error) {
 
 // floatKey renders a whole, finite float64 as plain decimal digits, so 1e6 becomes
 // "1000000" and not "1e+06". It refuses NaN, an infinity, and a fraction, because a
-// fractional key is easy to read as a different key.
+// fractional key is easy to read as a different key. It also refuses a float whose
+// shortest digits differ from its exact value (1e23 is really 99999999999999991611392),
+// because that key could collide with a different integer key.
 func floatKey(f float64) (string, error) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return "", fmt.Errorf("key %v is not a finite number", f)
@@ -326,5 +328,9 @@ func floatKey(f float64) (string, error) {
 	if f == 0 {
 		return "0", nil
 	}
-	return strconv.FormatFloat(f, 'f', -1, 64), nil
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	if s != strconv.FormatFloat(f, 'f', 0, 64) {
+		return "", fmt.Errorf("key %v is not exact as a float; use an integer or a string key", f)
+	}
+	return s, nil
 }

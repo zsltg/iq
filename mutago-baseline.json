@@ -2582,10 +2582,10 @@
    "line": 54
   },
   {
-   "id": "2585589d2d0d8237a63a00a09e9b8cb6",
+   "id": "e35f2be1ae5da8398cd4e3af25911f26",
    "file": "internal/query/copy.go",
    "mutator": "numbers/incrementer",
-   "line": 329
+   "line": 331
   }
  ]
 }

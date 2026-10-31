@@ -92,6 +92,8 @@ takes it from an object field. `--key` computes it with a jq expression.
 `--key-prefix` prepends a namespace either way. A key is a string, a number, or
 a boolean. A float key must be a whole number and prints as plain digits
 (`1000000`, not `1e+06`). A fractional, NaN, or infinite float key is refused.
+So is a float key whose value a float cannot hold exactly, such as `1e23`. Use an
+integer or a string key.
 
 `iq combine --insert` is the one write that always requires `--key` or
 `--key-field`. A combine's results come out of one program over a null input,

@@ -151,7 +151,7 @@ Each column value is normalized to JSON by CQL type:
 | `text`, `varchar`, `ascii` | the string verbatim |
 | `int`, `bigint`, `smallint`, `tinyint`, `counter` | number |
 | `varint` | number when it fits, else its exact decimal string |
-| `float`, `double` | number (a write rounds to `float` precision and refuses a value that overflows or underflows it) |
+| `float`, `double` | number (a write to a `float` column rounds to `float` precision and refuses a value that overflows or underflows it) |
 | `decimal` | exact string (or a number under `--format.decimal number`) |
 | `boolean` | `true` / `false` |
 | `uuid`, `timeuuid` | canonical string |
@@ -692,7 +692,7 @@ HBase stores **no types**. Every cell is raw bytes. As a result, the driver pres
 | undeclared (default) | valid UTF-8 → the string verbatim, otherwise a base64 string | a string → its UTF-8 bytes |
 | `?types=cf:q=text` | the string verbatim | a string → its UTF-8 bytes |
 | `?types=cf:q=bytes` | a base64 string | a base64 string → raw bytes (lossless for binary) |
-| `?types=cf:q=int` / `long` | a number (4- / 8-byte big-endian, the HBase `Bytes` layout) | a whole number → those bytes (a float that is not finite or not in the 8-byte range is refused) |
+| `?types=cf:q=int` / `long` | a number (4- / 8-byte big-endian, the HBase `Bytes` layout) | a whole number → those bytes (a value outside the 4-byte range for `int`, or the 8-byte range for `long`, is refused; so is a float that is not finite or not whole) |
 | `?types=cf:q=double` | a number (8-byte IEEE-754) | a number → those bytes |
 | `?types=cf:q=bool` | `true` / `false` (1 byte) | a bool → one byte |
 
