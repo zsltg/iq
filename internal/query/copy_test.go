@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -262,8 +264,19 @@ func TestTransformKeyScalarTypes(t *testing.T) {
 		want    string
 	}{
 		{name: "int", keyExpr: ".n", value: map[string]any{"n": 7}, want: "7"},
-		{name: "float", keyExpr: ".f", value: map[string]any{"f": 3.5}, want: "3.5"},
 		{name: "bool", keyExpr: ".b", value: map[string]any{"b": true}, want: "true"},
+		{name: "integral float", keyExpr: ".f", value: map[string]any{"f": 7.0}, want: "7"},
+		{name: "negative integral float", keyExpr: ".f", value: map[string]any{"f": -7.0}, want: "-7"},
+		{name: "zero float", keyExpr: ".f", value: map[string]any{"f": 0.0}, want: "0"},
+		{name: "negative zero float", keyExpr: ".f", value: map[string]any{"f": math.Copysign(0, -1)}, want: "0"},
+		{name: "one million as a float", keyExpr: ".f", value: map[string]any{"f": 1000000.0}, want: "1000000"},
+		{name: "negative one million as a float", keyExpr: ".f", value: map[string]any{"f": -1000000.0}, want: "-1000000"},
+		{name: "1e21 as a float", keyExpr: ".f", value: map[string]any{"f": 1e21}, want: "1000000000000000000000"},
+		{name: "1e22 as a float", keyExpr: ".f", value: map[string]any{"f": 1e22}, want: "10000000000000000000000"},
+		{name: "1e15 as a float", keyExpr: ".f", value: map[string]any{"f": 1e15}, want: "1000000000000000"},
+		{name: "2^53 as a float", keyExpr: ".f", value: map[string]any{"f": 9007199254740992.0}, want: "9007199254740992"},
+		{name: "big int", keyExpr: ".f", value: map[string]any{"f": new(big.Int).Lsh(big.NewInt(1), 70)}, want: "1180591620717411303424"},
+		{name: "int64", keyExpr: ".f", value: map[string]any{"f": int64(-9223372036854775808)}, want: "-9223372036854775808"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -294,6 +307,48 @@ func TestTransformKeyErrors(t *testing.T) {
 			opts:    query.TransformOptions{Filter: ".", Key: ".obj"},
 			value:   map[string]any{"obj": map[string]any{"a": 1}},
 			wantErr: "scalar",
+		},
+		{
+			name:    "key is a float that is not exact",
+			opts:    query.TransformOptions{Filter: ".", Key: ".f"},
+			value:   map[string]any{"f": 1e23},
+			wantErr: "key 1e+23 is not exact as a float; use an integer or a string key",
+		},
+		{
+			name:    "key is 2^70 as a float",
+			opts:    query.TransformOptions{Filter: ".", Key: ".f"},
+			value:   map[string]any{"f": math.Ldexp(1, 70)},
+			wantErr: "is not exact as a float",
+		},
+		{
+			name:    "key is a fractional float",
+			opts:    query.TransformOptions{Filter: ".", Key: ".f"},
+			value:   map[string]any{"f": 3.5},
+			wantErr: "key 3.5 is a fraction; use a whole number or a string key",
+		},
+		{
+			name:    "key is NaN",
+			opts:    query.TransformOptions{Filter: ".", Key: ".f"},
+			value:   map[string]any{"f": math.NaN()},
+			wantErr: "key NaN is not a finite number",
+		},
+		{
+			name:    "key is positive infinity",
+			opts:    query.TransformOptions{Filter: ".", Key: ".f"},
+			value:   map[string]any{"f": math.Inf(1)},
+			wantErr: "key +Inf is not a finite number",
+		},
+		{
+			name:    "key is infinite",
+			opts:    query.TransformOptions{Filter: ".", Key: ".f"},
+			value:   map[string]any{"f": math.Inf(-1)},
+			wantErr: "key -Inf is not a finite number",
+		},
+		{
+			name:    "key-field is a fractional float",
+			opts:    query.TransformOptions{KeyField: "f"},
+			value:   map[string]any{"f": 0.5},
+			wantErr: "key 0.5 is a fraction; use a whole number or a string key",
 		},
 		{
 			name:    "key-field absent",

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"net"
 	"reflect"
@@ -451,9 +452,25 @@ func bindInt(_ gocql.TypeInfo, v any) (any, error) { return toInt(v) }
 
 func bindVarint(_ gocql.TypeInfo, v any) (any, error) { return toBigInt(v) }
 
+// bindFloat32 binds a number to a CQL float, a 32-bit value. A CQL float has about
+// seven significant digits, so a value with more digits rounds to the nearest float32.
+// That rounding is the meaning of the type and is accepted. A value that changes by
+// more than rounding is refused: a finite value that overflows to infinity, and a
+// non-zero value that underflows to zero. NaN and the two infinities are accepted,
+// because a float32 holds them exactly.
 func bindFloat32(_ gocql.TypeInfo, v any) (any, error) {
 	f, err := toFloat(v)
-	return float32(f), err
+	if err != nil {
+		return nil, err
+	}
+	g := float32(f)
+	if math.IsInf(float64(g), 0) && !math.IsInf(f, 0) {
+		return nil, fmt.Errorf("cassandra: %v is too large for a float column (it would become infinity)", f)
+	}
+	if g == 0 && f != 0 {
+		return nil, fmt.Errorf("cassandra: %v is too small for a float column (it would become 0)", f)
+	}
+	return g, nil
 }
 
 func bindDouble(_ gocql.TypeInfo, v any) (any, error) { return toFloat(v) }
@@ -482,7 +499,22 @@ func parsedBinder(parse func(s string) (any, error)) binder {
 
 func parseUUID(s string) (any, error) { return gocql.ParseUUID(s) }
 
-func parseTimestamp(s string) (any, error) { return time.Parse(time.RFC3339Nano, s) }
+// parseTimestamp parses an RFC 3339 timestamp for a CQL timestamp column. The column
+// keeps milliseconds, and the driver writes the zero time as null. So a value with a
+// part smaller than a millisecond, and the zero time, are refused.
+func parseTimestamp(s string) (any, error) {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return nil, err
+	}
+	if t.IsZero() {
+		return nil, fmt.Errorf("cassandra: timestamp %q is the zero time, which a timestamp column stores as null", s)
+	}
+	if t.Nanosecond()%int(time.Millisecond) != 0 {
+		return nil, fmt.Errorf("cassandra: timestamp %q has a part smaller than a millisecond, which a timestamp column cannot store", s)
+	}
+	return t, nil
+}
 
 func parseBlob(s string) (any, error) { return base64.StdEncoding.DecodeString(s) }
 
@@ -563,6 +595,20 @@ func asString(t gocql.TypeInfo, v any) (string, error) {
 	return s, nil
 }
 
+// wholeFloatToInt converts a float64 to an int when it is a finite whole number in
+// the int64 range. A conversion of any other float to int64 is
+// implementation-defined in Go: it gives MinInt64 on amd64 and saturates on arm64.
+func wholeFloatToInt(n float64) (int, error) {
+	if n != math.Trunc(n) || math.IsInf(n, 0) {
+		return 0, fmt.Errorf("cassandra: %v is not a whole number", n)
+	}
+	// 2^63 is exact as a float64. The largest valid float is the one just below it.
+	if n >= 1<<63 || n < -(1<<63) {
+		return 0, fmt.Errorf("cassandra: %v overflows int", n)
+	}
+	return int(int64(n)), nil
+}
+
 // toInt coerces a JSON number (int, or a whole float64) into a Go int for an
 // integer column. A non-whole float or non-number is an error.
 func toInt(v any) (int, error) {
@@ -572,10 +618,7 @@ func toInt(v any) (int, error) {
 	case int64:
 		return int(n), nil
 	case float64:
-		if n != float64(int64(n)) {
-			return 0, fmt.Errorf("cassandra: %v is not a whole number", v)
-		}
-		return int(int64(n)), nil
+		return wholeFloatToInt(n)
 	case *big.Int:
 		if !n.IsInt64() {
 			return 0, fmt.Errorf("cassandra: %v overflows int", v)

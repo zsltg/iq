@@ -190,7 +190,7 @@ func (s *Store) familyCells(family string, cols any) (map[string][]byte, error) 
 	for qualifier, v := range colObj {
 		b, err := encodeCell(colTypeFor(s.types, family, qualifier), v)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cell %q: %w", family+":"+qualifier, err)
 		}
 		qualifiers[qualifier] = b
 	}

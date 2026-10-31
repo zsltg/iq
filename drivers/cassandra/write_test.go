@@ -98,7 +98,7 @@ func TestColumnsFor(t *testing.T) {
 			name:    "a value that does not fit its column",
 			meta:    single,
 			rec:     query.Record{Key: "7", Value: map[string]any{"n": "x"}},
-			wantErr: "cassandra: x (string) is not an integer",
+			wantErr: `column "n": cassandra: x (string) is not an integer`,
 		},
 		{
 			name:    "a key that does not decode",

@@ -1,6 +1,7 @@
 package cassandra
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -256,7 +257,10 @@ func TestBindValueNumberEdges(t *testing.T) {
 		wantErr string
 	}{
 		{"nan", math.NaN(), "cassandra: NaN is not a whole number"},
-		{"float beyond int64", 1e30, "cassandra: 1e+30 is not a whole number"},
+		{"float beyond int64", 1e30, "cassandra: 1e+30 overflows int"},
+		{"float at 2^63", 9.223372036854775808e18, "cassandra: 9.223372036854776e+18 overflows int"},
+		{"float below -2^63", -1e19, "cassandra: -1e+19 overflows int"},
+		{"infinity", math.Inf(1), "cassandra: +Inf is not a whole number"},
 		{"big int beyond int64", mustBig("99999999999999999999"), "cassandra: 99999999999999999999 overflows int"},
 		{"non-whole float", 5.5, "cassandra: 5.5 is not a whole number"},
 	}
@@ -265,6 +269,15 @@ func TestBindValueNumberEdges(t *testing.T) {
 			_, err := bindValue(nativeType(gocql.TypeInt), tt.in)
 			require.EqualError(t, err, tt.wantErr)
 		})
+	}
+}
+
+// TestBindValueBigIntFloatBounds pins that a whole float at the int64 bounds binds.
+func TestBindValueBigIntFloatBounds(t *testing.T) {
+	for _, f := range []float64{-9.223372036854775808e18, 9.223372036854774784e18} {
+		got, err := bindValue(nativeType(gocql.TypeBigInt), f)
+		require.NoError(t, err)
+		require.Equal(t, int(int64(f)), got)
 	}
 }
 
@@ -413,4 +426,153 @@ func TestBindListRejectsAColumnThatIsNotACollection(t *testing.T) {
 	got, err := bindList(nativeType(gocql.TypeInt), []any{1})
 	require.Nil(t, got)
 	require.ErrorContains(t, err, "is not a collection type")
+}
+
+func TestBindFloat32(t *testing.T) {
+	tests := []struct {
+		name string
+		in   any
+		want float32
+	}{
+		{"ordinary rounding keeps the float32 value", 0.1234567891, float32(0.1234567891)},
+		{"largest float32", float64(math.MaxFloat32), math.MaxFloat32},
+		{"smallest normal float32", float64(math.Float32frombits(0x00800000)), math.Float32frombits(0x00800000)},
+		{"smallest subnormal float32", float64(math.SmallestNonzeroFloat32), math.SmallestNonzeroFloat32},
+		{"zero", 0.0, 0},
+		{"positive infinity", math.Inf(1), float32(math.Inf(1))},
+		{"negative infinity", math.Inf(-1), float32(math.Inf(-1))},
+		{"int", 7, 7},
+		{"int64", int64(-7), -7},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := bindFloat32(nil, tt.in)
+			require.NoError(t, err)
+			require.Equal(t, math.Float32bits(tt.want), math.Float32bits(got.(float32)))
+		})
+	}
+	t.Run("NaN", func(t *testing.T) {
+		got, err := bindFloat32(nil, math.NaN())
+		require.NoError(t, err)
+		require.True(t, math.IsNaN(float64(got.(float32))))
+	})
+}
+
+func TestBindFloat32Refuses(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      any
+		wantErr string
+	}{
+		{"overflow", 1e300, "cassandra: 1e+300 is too large for a float column (it would become infinity)"},
+		{"negative overflow", -1e300, "cassandra: -1e+300 is too large for a float column (it would become infinity)"},
+		{"just above the largest float32", 3.5e38, "cassandra: 3.5e+38 is too large for a float column (it would become infinity)"},
+		{"underflow", 1e-50, "cassandra: 1e-50 is too small for a float column (it would become 0)"},
+		{"negative underflow", -1e-50, "cassandra: -1e-50 is too small for a float column (it would become 0)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := bindFloat32(nil, tt.in)
+			require.EqualError(t, err, tt.wantErr)
+			require.Nil(t, got)
+		})
+	}
+}
+
+func TestBindTimestamp(t *testing.T) {
+	ms := time.Date(2021, 1, 2, 3, 4, 5, 678000000, time.UTC)
+	tests := []struct {
+		name string
+		in   string
+		want time.Time
+	}{
+		{"whole second", "2021-01-02T03:04:05Z", time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)},
+		{"milliseconds", "2021-01-02T03:04:05.678Z", ms},
+		{"milliseconds padded with zeros", "2021-01-02T03:04:05.678000000Z", ms},
+		{"one millisecond", "2021-01-02T03:04:05.001Z", time.Date(2021, 1, 2, 3, 4, 5, 1000000, time.UTC)},
+		{"before the epoch", "1969-12-31T23:59:59.999Z", time.Date(1969, 12, 31, 23, 59, 59, 999000000, time.UTC)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := bindValue(nativeType(gocql.TypeTimestamp), tt.in)
+			require.NoError(t, err)
+			require.True(t, tt.want.Equal(got.(time.Time)))
+		})
+	}
+}
+
+func TestBindTimestampRefuses(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		wantErr string
+	}{
+		{"microseconds", "2021-01-02T03:04:05.678901Z", `cassandra: timestamp "2021-01-02T03:04:05.678901Z" has a part smaller than a millisecond, which a timestamp column cannot store`},
+		{"one nanosecond", "2021-01-02T03:04:05.000000001Z", `cassandra: timestamp "2021-01-02T03:04:05.000000001Z" has a part smaller than a millisecond, which a timestamp column cannot store`},
+		{"zero time", "0001-01-01T00:00:00Z", `cassandra: timestamp "0001-01-01T00:00:00Z" is the zero time, which a timestamp column stores as null`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := bindValue(nativeType(gocql.TypeTimestamp), tt.in)
+			require.EqualError(t, err, tt.wantErr)
+			require.Nil(t, got)
+		})
+	}
+}
+
+func TestBindObjectNamesTheColumn(t *testing.T) {
+	s := &Store{table: "t", meta: tableMetaFor(nil, nil, []*gocql.ColumnMetadata{
+		column("f", gocql.TypeFloat),
+		column("ts", gocql.TypeTimestamp),
+	})}
+	tests := []struct {
+		name      string
+		obj       map[string]any
+		column    string
+		wantCause string
+	}{
+		{"float", map[string]any{"f": 1e300}, "f", `cassandra: 1e+300 is too large for a float column (it would become infinity)`},
+		{"timestamp", map[string]any{"ts": "0001-01-01T00:00:00Z"}, "ts", `cassandra: timestamp "0001-01-01T00:00:00Z" is the zero time, which a timestamp column stores as null`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := s.bindObject(tt.obj, map[string]any{})
+			require.EqualError(t, err, fmt.Sprintf("column %q: %s", tt.column, tt.wantCause))
+			// The column name wraps the cause, so the cause stays reachable.
+			require.EqualError(t, errors.Unwrap(err), tt.wantCause)
+		})
+	}
+}
+
+func TestWholeFloatToIntEdges(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      float64
+		want    int
+		wantErr string
+	}{
+		{"zero", 0, 0, ""},
+		{"whole", 42, 42, ""},
+		{"negative whole", -42, -42, ""},
+		{"largest below 2^63", math.Nextafter(1<<63, 0), 9223372036854774784, ""},
+		{"2^63", 1 << 63, 0, "overflows int"},
+		{"minus 2^63", -(1 << 63), math.MinInt64, ""},
+		{"just below minus 2^63", math.Nextafter(-(1 << 63), math.Inf(-1)), 0, "overflows int"},
+		{"+Inf", math.Inf(1), 0, "is not a whole number"},
+		{"-Inf", math.Inf(-1), 0, "is not a whole number"},
+		{"NaN", math.NaN(), 0, "is not a whole number"},
+		{"fraction", 1.5, 0, "is not a whole number"},
+		{"negative fraction", -1.5, 0, "is not a whole number"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := wholeFloatToInt(tt.in)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
 }

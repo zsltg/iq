@@ -181,7 +181,7 @@ func (s *Store) bindObject(obj, values map[string]any) error {
 		}
 		bv, err := bindValue(col.Type, v)
 		if err != nil {
-			return err
+			return fmt.Errorf("column %q: %w", name, err)
 		}
 		values[name] = bv
 	}
