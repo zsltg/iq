@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -140,6 +141,9 @@ func TestToAttributeValueNumberErrorNamesThePath(t *testing.T) {
 		{"nested map", map[string]any{"a": map[string]any{"b": 1e126}}, `dynamodb: attribute "a.b": number`},
 		{"list", map[string]any{"a": []any{1, 2, 1e126}}, `dynamodb: attribute "a[2]": number`},
 		{"list in map in list", []any{map[string]any{"a": []any{1e126}}}, `dynamodb: attribute "[0].a[0]": number`},
+		{"big int with 39 digits", map[string]any{"a": []any{bigInt(t, digits38+"9")}}, `dynamodb: attribute "a[0]": number ` + digits38 + `9 has 39 significant digits`},
+		{"big int negative with 39 digits", bigInt(t, "-"+digits38+"9"), "dynamodb: number -" + digits38 + "9 has 39 significant digits"},
+		{"big int past the range", bigInt(t, "1"+strings.Repeat("0", 126)), "is outside the DynamoDB range"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -151,13 +155,36 @@ func TestToAttributeValueNumberErrorNamesThePath(t *testing.T) {
 	}
 }
 
-func TestToAttributeValueBigIntNamesTheAttribute(t *testing.T) {
-	big5 := big.NewInt(5)
-	_, err := toAttributeValue(map[string]any{"a": []any{big5}})
-	require.EqualError(t, err, `dynamodb: attribute "a[0]": cannot write value 5 (*big.Int)`)
+func TestToAttributeValueBigInt(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+	}{
+		{"small", "5"},
+		{"negative", "-5"},
+		{"past int64", "9223372036854775808"},
+		{"38 digits", digits38},
+		{"38 digits negative", "-" + digits38},
+		{"trailing zeros past 38 digits", "1" + strings.Repeat("0", 50)},
+		{"trailing zeros negative", "-1" + strings.Repeat("0", 50)},
+		{"max magnitude", "9" + strings.Repeat("0", 125)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			av, err := toAttributeValue(map[string]any{"a": []any{bigInt(t, tt.in)}})
+			require.NoError(t, err)
+			l := av.(*types.AttributeValueMemberM).Value["a"].(*types.AttributeValueMemberL).Value
+			require.Equal(t, &types.AttributeValueMemberN{Value: tt.in}, l[0])
+		})
+	}
+}
 
-	_, err = toAttributeValue(big5)
-	require.EqualError(t, err, "dynamodb: cannot write value 5 (*big.Int)")
+// bigInt parses the decimal text s into a big.Int.
+func bigInt(t *testing.T, s string) *big.Int {
+	t.Helper()
+	n, ok := new(big.Int).SetString(s, 10)
+	require.True(t, ok)
+	return n
 }
 
 func TestKeyAVRejectsAnOutOfRangeNumber(t *testing.T) {

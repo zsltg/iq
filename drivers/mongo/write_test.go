@@ -1,12 +1,15 @@
 package mongo
 
 import (
+	"math"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"github.com/zsltg/iq/internal/numfmt"
 	"github.com/zsltg/iq/internal/query"
 )
 
@@ -68,16 +71,69 @@ func TestDocumentFor(t *testing.T) {
 	}
 }
 
-func TestBSONValueBigInt(t *testing.T) {
-	small := big.NewInt(42)
-	require.Equal(t, int64(42), bsonValue(small))
+func TestDocumentForBigInt(t *testing.T) {
+	d34 := "1234567890123456789012345678901234"
+	tests := []struct {
+		name string
+		in   string
+		want any    // an int64, or the Decimal128 text that a read gives back
+		err  string // empty means valid
+	}{
+		{"small", "42", int64(42), ""},
+		{"max int64", "9223372036854775807", int64(math.MaxInt64), ""},
+		{"min int64", "-9223372036854775808", int64(math.MinInt64), ""},
+		{"one past max int64", "9223372036854775808", "9223372036854775808", ""},
+		{"one past min int64", "-9223372036854775809", "-9223372036854775809", ""},
+		{"30 digits", "123456789012345678901234567890", "123456789012345678901234567890", ""},
+		{"34 digits", d34, d34, ""},
+		{"34 digits negative", "-" + d34, "-" + d34, ""},
+		{"34 digits with a trailing zero", "1234567890123456789012345678901230", "1234567890123456789012345678901230", ""},
+		{"35 digits", d34 + "5", nil, "has more digits than a Decimal128 holds (34)"},
+		{"35 digits negative", "-" + d34 + "5", nil, "has more digits than a Decimal128 holds (34)"},
+		{"35 digits then zeros", d34 + "5000", nil, "integer 1234567890... (38 digits) has more digits"},
+		{"34 digits then zeros", d34 + "00000", "1.234567890123456789012345678901234E+38", ""},
+		{"one with 40 zeros", "1" + strings.Repeat("0", 40), "1E+40", ""},
+		{"negative one with 40 zeros", "-1" + strings.Repeat("0", 40), "-1E+40", ""},
+		{"past the stored exponent", "1" + strings.Repeat("0", 6112), "1.0E+6112", ""},
+		{"largest power of ten", "1" + strings.Repeat("0", 6144), "1.000000000000000000000000000000000E+6144", ""},
+		{"34 digits at the largest exponent", d34 + strings.Repeat("0", 6111), "1.234567890123456789012345678901234E+6144", ""},
+		{"past the largest power of ten", "1" + strings.Repeat("0", 6145), nil, "integer 1000000000... (6146 digits) is too large for a Decimal128"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n, ok := new(big.Int).SetString(tt.in, 10)
+			require.True(t, ok)
+			doc, err := documentFor(query.Record{Key: "k", Value: map[string]any{"a": map[string]any{"b": []any{n}}}})
+			if tt.err != "" {
+				require.ErrorContains(t, err, `mongodb: key "k": field "a.b[0]": integer `)
+				require.ErrorContains(t, err, tt.err)
+				return
+			}
+			require.NoError(t, err)
+			got := doc["a"].(bson.M)["b"].(bson.A)[0]
+			if want, ok := tt.want.(int64); ok {
+				require.Equal(t, want, got)
+				return
+			}
+			d, ok := got.(bson.Decimal128)
+			require.True(t, ok)
+			// The read path gives the exact Decimal128 text, in auto and string mode.
+			require.Equal(t, tt.want, decimalValue(d, numfmt.DecimalAuto))
+			// The stored value equals the input.
+			back, ok := new(big.Float).SetPrec(40000).SetString(d.String())
+			require.True(t, ok)
+			orig, _ := new(big.Float).SetPrec(40000).SetString(tt.in)
+			require.Zero(t, back.Cmp(orig))
+		})
+	}
+}
 
-	huge, _ := new(big.Int).SetString("123456789012345678901234567890", 10)
-	require.Equal(t, "123456789012345678901234567890", bsonValue(huge))
-
-	// Recurses into nested structures.
-	got := bsonValue(map[string]any{"n": big.NewInt(7), "a": []any{big.NewInt(8)}})
-	require.Equal(t, bson.M{"n": int64(7), "a": bson.A{int64(8)}}, got)
+func TestDocumentForBigIntNamesTheFirstBadFieldInSortedOrder(t *testing.T) {
+	over := new(big.Int).Exp(big.NewInt(10), big.NewInt(40), nil)
+	over.Add(over, big.NewInt(1))
+	// Two bad fields: the error names the first by sorted field name.
+	_, err := documentFor(query.Record{Key: "k", Value: map[string]any{"z": over, "b": over, "_id": over}})
+	require.EqualError(t, err, `mongodb: key "k": field "b": integer 1000000000... (41 digits) has more digits than a Decimal128 holds (34)`)
 }
 
 func TestIDValue(t *testing.T) {
