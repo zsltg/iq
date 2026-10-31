@@ -2,15 +2,11 @@ package neo4j
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 
-	"github.com/zsltg/iq/internal/neo4jenvelope"
 	"github.com/zsltg/iq/internal/query"
 )
 
@@ -87,108 +83,6 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 		stat.Overwritten = len(batch) - created
 	}
 	return stat, nil
-}
-
-// recordProps derives the property map and merge-key value for one write record. The
-// value must be a JSON object (a node's properties). iq's reserved envelope keys are
-// stripped. Neo4j cannot store a null property, so a null property, or a null inside a
-// list, is refused. When the record has a key, it wins as the merge key. If the
-// value's own key property has the same string form (the form the read path gives a
-// key), the typed value stays, so 5 stays a number. Otherwise the record key string
-// is the merge key. A keyless record merges on the value's key property, which must
-// be present. The merge key is always written onto the node.
-func recordProps(rec query.Record, key string) (map[string]any, any, error) {
-	obj, ok := rec.Value.(map[string]any)
-	if !ok {
-		return nil, nil, fmt.Errorf("neo4j: node value for key %q must be a JSON object, got %T", rec.Key, rec.Value)
-	}
-	props := make(map[string]any, len(obj))
-	for k, v := range obj {
-		if neo4jenvelope.IsReserved(k) {
-			continue
-		}
-		if err := checkProp(rec.Key, k, v); err != nil {
-			return nil, nil, err
-		}
-		props[k] = v
-	}
-	keyVal, err := mergeKey(rec.Key, key, props)
-	if err != nil {
-		return nil, nil, err
-	}
-	props[key] = keyVal
-	return props, keyVal, nil
-}
-
-// checkProp refuses a null property and a null inside a list, because Neo4j drops
-// a null property on write, so it would read back as missing.
-func checkProp(recKey, name string, v any) error {
-	if v == nil {
-		return fmt.Errorf("neo4j: key %q: property %q is null, and Neo4j cannot store a null property", recKey, name)
-	}
-	list, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	for _, e := range list {
-		if e == nil {
-			return fmt.Errorf("neo4j: key %q: property %q holds a null, and Neo4j cannot store a null in a list", recKey, name)
-		}
-	}
-	return nil
-}
-
-// mergeKey picks the merge-key value. The record key wins. The value's key property
-// is kept only when its string form equals the record key.
-func mergeKey(recKey, key string, props map[string]any) (any, error) {
-	own, has := props[key]
-	if recKey == "" {
-		if !has {
-			return nil, fmt.Errorf("neo4j: a keyless record needs a %q property in its value", key)
-		}
-		return own, nil
-	}
-	if has && keyString(own) == recKey {
-		return own, nil
-	}
-	return recKey, nil
-}
-
-// keyString renders a scalar key property the way the read path renders a key
-// (Cypher toString). It returns "" for a value with no such form, which never
-// equals a non-empty record key.
-func keyString(v any) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case bool:
-		return strconv.FormatBool(x)
-	case json.Number:
-		return x.String()
-	case float64:
-		s := strconv.FormatFloat(x, 'f', -1, 64)
-		if !strings.Contains(s, ".") {
-			s += ".0"
-		}
-		return s
-	default:
-		if i, ok := toInt64(v); ok {
-			return strconv.FormatInt(i, 10)
-		}
-		return ""
-	}
-}
-
-func toInt64(v any) (int64, bool) {
-	switch x := v.(type) {
-	case int:
-		return int64(x), true
-	case int32:
-		return int64(x), true
-	case int64:
-		return x, true
-	}
-	return 0, false
 }
 
 // Clear empties the label, detach-deleting every node that carries it (and, because

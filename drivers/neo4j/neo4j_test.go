@@ -335,6 +335,18 @@ func TestRecordProps(t *testing.T) {
 			wantKey: float64(5),
 		},
 		{
+			name:    "keeps a fractional float key property that matches",
+			rec:     query.Record{Key: "5.25", Value: map[string]any{"id": 5.25}},
+			want:    map[string]any{"id": 5.25},
+			wantKey: 5.25,
+		},
+		{
+			name:    "keeps a string key property that matches",
+			rec:     query.Record{Key: "ada", Value: map[string]any{"id": "ada"}},
+			want:    map[string]any{"id": "ada"},
+			wantKey: "ada",
+		},
+		{
 			name:    "the record key wins over a different key property",
 			rec:     query.Record{Key: "9", Value: map[string]any{"id": "7", "name": "Ada"}},
 			want:    map[string]any{"id": "9", "name": "Ada"},
@@ -365,6 +377,17 @@ func TestRecordProps(t *testing.T) {
 			name:    "a null inside a list is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{"a", nil}}},
 			wantErr: `neo4j: key "k": property "p" holds a null, and Neo4j cannot store a null in a list`,
+		},
+		{
+			name:    "a list that is only a null is refused",
+			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{nil}}},
+			wantErr: `property "p" holds a null`,
+		},
+		{
+			name:    "a list without a null is kept",
+			rec:     query.Record{Key: "k", Value: map[string]any{"id": "k", "p": []any{"a", int64(1)}}},
+			want:    map[string]any{"id": "k", "p": []any{"a", int64(1)}},
+			wantKey: "k",
 		},
 		{
 			name:    "a non-object value is refused",
