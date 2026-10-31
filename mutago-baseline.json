@@ -2580,6 +2580,12 @@
    "file": "internal/query/dump.go",
    "mutator": "numbers/incrementer",
    "line": 54
+  },
+  {
+   "id": "2585589d2d0d8237a63a00a09e9b8cb6",
+   "file": "internal/query/copy.go",
+   "mutator": "numbers/incrementer",
+   "line": 329
   }
  ]
 }

@@ -272,6 +272,9 @@ func TestTransformKeyScalarTypes(t *testing.T) {
 		{name: "one million as a float", keyExpr: ".f", value: map[string]any{"f": 1000000.0}, want: "1000000"},
 		{name: "negative one million as a float", keyExpr: ".f", value: map[string]any{"f": -1000000.0}, want: "-1000000"},
 		{name: "1e21 as a float", keyExpr: ".f", value: map[string]any{"f": 1e21}, want: "1000000000000000000000"},
+		// The float64 nearest to 1e23 is 99999999999999991611392. The key keeps the
+		// shortest digits that read back as that float, as jq prints it.
+		{name: "1e23 as a float", keyExpr: ".f", value: map[string]any{"f": 1e23}, want: "100000000000000000000000"},
 		{name: "1e15 as a float", keyExpr: ".f", value: map[string]any{"f": 1e15}, want: "1000000000000000"},
 		{name: "2^53 as a float", keyExpr: ".f", value: map[string]any{"f": 9007199254740992.0}, want: "9007199254740992"},
 		{name: "big int", keyExpr: ".f", value: map[string]any{"f": new(big.Int).Lsh(big.NewInt(1), 70)}, want: "1180591620717411303424"},
