@@ -2586,6 +2586,12 @@
    "file": "internal/query/copy.go",
    "mutator": "numbers/incrementer",
    "line": 331
+  },
+  {
+   "id": "8edee5888c46a2c690dd34ad8e371d08",
+   "file": "drivers/dynamodb/normalize.go",
+   "mutator": "numbers/incrementer",
+   "line": 407
   }
  ]
 }

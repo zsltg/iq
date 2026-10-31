@@ -886,3 +886,7 @@ The zset writer reads an infinite score from its text with strconv.ParseFloat, a
 ## internal/query/copy.go, floatKey (accepted 2026-10-31, PR #224)
 
 - e35f2be1ae5d internal/query/copy.go:331 numbers/incrementer. The precision of `s := strconv.FormatFloat(f, 'f', -1, 64)` becomes -2. strconv takes `shortest := prec < 0`, so every negative precision asks for the same thing: the fewest digits that read back as the same float. The decrementer (precision 0) is not equivalent, and the refusal row of TestTransformKeyErrors (1e23) kills it.
+
+## drivers/dynamodb/normalize.go, numberAttributeValue (accepted 2026-10-31, PR #225)
+
+- 8edee5888c46 drivers/dynamodb/normalize.go:407 numbers/incrementer. The precision of `strconv.FormatFloat(t, 'g', -1, 64)` becomes -2. strconv takes `shortest := prec < 0`, so every negative precision asks for the same shortest digits. This is the identity of 27719415840f at line 295, moved into numberAttributeValue by the refactor.

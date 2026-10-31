@@ -169,6 +169,8 @@ func TestKeyAVRejectsAnOutOfRangeNumber(t *testing.T) {
 	_, err = keyAV(k, "1E+126")
 	require.ErrorContains(t, err, `key attribute "id"`)
 	require.ErrorContains(t, err, "is outside the DynamoDB range")
+	var ne *numberError
+	require.ErrorAs(t, err, &ne) // the cause stays in the chain
 
 	_, err = keyAV(k, digits38+"9")
 	require.ErrorContains(t, err, "has 39 significant digits")
