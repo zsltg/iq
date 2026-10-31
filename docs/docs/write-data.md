@@ -93,6 +93,11 @@ a key too. The source can hold these bytes in a Redis string, in an RDB dump, or
 in the output of a jq filter such as `@base64d`. Encode the value first, for
 example with `@base64`.
 
+Redis has no empty hash, list, set, sorted set, or stream, and it has no null.
+So a Redis write refuses an empty one of these types and refuses a null value.
+The error names the key, and no part of that batch is written. Redis stores a
+number or a bool as its text, and a set keeps one copy of each member.
+
 ## Key mapping `--key*`
 
 On a plain copy, each item carries its source key, so no key flag is needed.

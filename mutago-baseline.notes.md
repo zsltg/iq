@@ -890,3 +890,8 @@ The zset writer reads an infinite score from its text with strconv.ParseFloat, a
 ## drivers/dynamodb/normalize.go, numberAttributeValue (accepted 2026-10-31, PR #225)
 
 - 8edee5888c46 drivers/dynamodb/normalize.go:407 numbers/incrementer. The precision of `strconv.FormatFloat(t, 'g', -1, 64)` becomes -2. strconv takes `shortest := prec < 0`, so every negative precision asks for the same shortest digits. This is the identity of 27719415840f at line 295, moved into numberAttributeValue by the refactor.
+
+## drivers/redis/write.go, queueElements kind argument (accepted 2026-10-31, Redis empty and null PR)
+
+- c74ea47e38a3 drivers/redis/write.go:157 expression/context-nil. `p.RPush(ctx, ...)` becomes nil inside the add callback of queueElements. The queued command context is discarded by BatchProcess, and Pipelined(ctx) governs the I/O. The new kind argument changed the line, so the id changed; fd6546d693a3 had the same proof.
+- 6aae50820d9f drivers/redis/write.go:159 expression/context-nil. The same for `p.SAdd(ctx, ...)`; 4a203a6e6041 had the same proof.

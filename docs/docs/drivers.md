@@ -1079,6 +1079,14 @@ A write of a RedisJSON value refuses a field name or a string value that is not 
 change each invalid byte to U+FFFD. The error names the field path. The other types keep the bytes exactly,
 including the key.
 
+A write refuses an empty hash, list, set, sorted set, or stream, because Redis has no empty
+aggregate. An upsert of one would delete the old value and store nothing. The error names the key
+and the type, and no part of that batch is written. A write also refuses a null, whether it is a
+string value, a hash field value, a list or set element, a sorted set member, or a stream id or
+field value. Redis has no null, so it would store an empty string, and two different values would
+become one. Numbers and bools are written as their text (`1` becomes `"1"`, `true` becomes
+`"true"`). A set keeps one copy of each member.
+
 Other module types (time series, bloom, …) have no frozen encoding yet. `iq` refuses a named
 read of one with a clear message.
 

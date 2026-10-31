@@ -154,9 +154,9 @@ func queueWrite(ctx context.Context, p goredis.Pipeliner, r query.Record) error 
 	case "hash":
 		return queueHash(ctx, p, r)
 	case "list":
-		return queueElements(r, func(key string, vals []any) { p.RPush(ctx, key, vals...) })
+		return queueElements(r, "list", func(key string, vals []any) { p.RPush(ctx, key, vals...) })
 	case "set":
-		return queueElements(r, func(key string, vals []any) { p.SAdd(ctx, key, vals...) })
+		return queueElements(r, "set", func(key string, vals []any) { p.SAdd(ctx, key, vals...) })
 	case "zset":
 		return queueZSet(ctx, p, r)
 	case "stream":
@@ -219,7 +219,7 @@ func queueHash(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
 		return fmt.Errorf("key %q: hash value is not an object", r.Key)
 	}
 	if len(obj) == 0 {
-		return nil // Redis has no empty hash; nothing to write.
+		return errEmptyAggregate(r.Key, "hash")
 	}
 	fields := make([]any, 0, len(obj))
 	for k, v := range obj {
@@ -236,14 +236,14 @@ func queueHash(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
 // queueElements queues a list or set reconstruction from a normalized array via
 // add, which appends the stringified elements under key. The pipeline and its
 // context reach the server through add alone, so this stringifying half needs
-// neither.
-func queueElements(r query.Record, add func(key string, vals []any)) error {
+// neither. The kind is "list" or "set" and names the type in an error.
+func queueElements(r query.Record, kind string, add func(key string, vals []any)) error {
 	arr, ok := r.Value.([]any)
 	if !ok {
 		return fmt.Errorf("key %q: value is not an array", r.Key)
 	}
 	if len(arr) == 0 {
-		return nil // Redis has no empty list/set; nothing to write.
+		return errEmptyAggregate(r.Key, kind)
 	}
 	vals := make([]any, len(arr))
 	for i, e := range arr {
@@ -265,7 +265,7 @@ func queueZSet(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
 		return fmt.Errorf("key %q: zset value is not an array", r.Key)
 	}
 	if len(arr) == 0 {
-		return nil
+		return errEmptyAggregate(r.Key, "zset")
 	}
 	members := make([]goredis.Z, len(arr))
 	for i, e := range arr {
@@ -303,12 +303,22 @@ func queueStream(ctx context.Context, p goredis.Pipeliner, r query.Record) error
 	if !ok {
 		return fmt.Errorf("key %q: stream value is not an array", r.Key)
 	}
+	if len(arr) == 0 {
+		return errEmptyAggregate(r.Key, "stream")
+	}
 	for _, e := range arr {
 		if err := queueStreamEntry(ctx, p, r.Key, e); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// errEmptyAggregate refuses an empty hash, list, set, zset or stream. Redis
+// cannot hold one. A write would store nothing, and an upsert would delete the old
+// value of the key.
+func errEmptyAggregate(key, kind string) error {
+	return fmt.Errorf("key %q: an empty %s cannot be stored, because Redis has no empty %s", key, kind, kind)
 }
 
 // queueStreamEntry queues one XADD for a normalized {id, fields} element.
@@ -346,9 +356,14 @@ func streamFields(key string, raw map[string]any) (map[string]any, error) {
 	return values, nil
 }
 
-// redisString renders a scalar as the string Redis stores. A composite value
-// (object or array) has no scalar form and is a clear error, so a shape mismatch
-// never silently stringifies to "map[...]".
+// errNull refuses a null. Redis has no null, so a write would store the empty
+// string and one value would stand for two.
+var errNull = errors.New("a null value cannot be stored, because Redis would store an empty string")
+
+// redisString renders a scalar as the string Redis stores. A number or a bool
+// becomes its text. A null is an error, and so is a composite value (object or
+// array), which has no scalar form. So a shape mismatch never silently
+// stringifies to "map[...]".
 func redisString(v any) (string, error) {
 	switch t := v.(type) {
 	case string:
@@ -364,7 +379,7 @@ func redisString(v any) (string, error) {
 	case bool:
 		return strconv.FormatBool(t), nil
 	case nil:
-		return "", nil
+		return "", errNull
 	default:
 		return "", fmt.Errorf("value %T is not a scalar", v)
 	}

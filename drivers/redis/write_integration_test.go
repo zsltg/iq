@@ -3,6 +3,7 @@ package redis_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"testing"
 
@@ -135,28 +136,41 @@ func TestPutRejectsAKeylessRecordIntegration(t *testing.T) {
 	}
 }
 
-// TestPutWritesNothingForAnEmptyAggregateIntegration pins the empty-container
-// guards. Redis has no empty hash, list, set or sorted set. So an empty value
-// writes no key at all. It does not issue an argument-less command that the
-// server rejects.
-func TestPutWritesNothingForAnEmptyAggregateIntegration(t *testing.T) {
+// TestPutRefusesAnEmptyAggregateIntegration pins the refusal of an empty value.
+// Redis has no empty hash, list, set, sorted set or stream. An upsert of one
+// would delete the old value and store nothing. So Put refuses the record, names
+// the key and the type, and leaves the old value of the key alone.
+func TestPutRefusesAnEmptyAggregateIntegration(t *testing.T) {
 	store := openIntegration(t)
 	ctx := context.Background()
-	keys := []string{"eh", "el", "es", "ez"}
-	freshKeys(t, store, keys...)
+	tests := []struct {
+		name  string
+		key   string
+		kind  string
+		value any
+	}{
+		{"hash", "eh", "hash", map[string]any{}},
+		{"list", "el", "list", []any{}},
+		{"set", "es", "set", []any{}},
+		{"zset", "ez", "zset", []any{}},
+		{"stream", "ex", "stream", []any{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			freshKeys(t, store, tt.key)
+			_, err := store.Put(ctx, []query.Record{{Key: tt.key, Type: "string", Value: "old"}}, query.Upsert)
+			require.NoError(t, err)
 
-	stat, err := store.Put(ctx, []query.Record{
-		{Key: "eh", Type: "hash", Value: map[string]any{}},
-		{Key: "el", Type: "list", Value: []any{}},
-		{Key: "es", Type: "set", Value: []any{}},
-		{Key: "ez", Type: "zset", Value: []any{}},
-	}, query.Upsert)
+			stat, err := store.Put(ctx, []query.Record{{Key: tt.key, Type: tt.kind, Value: tt.value}}, query.Upsert)
 
-	require.NoError(t, err, "an empty aggregate is written as nothing, not as a bad command")
-	require.Equal(t, len(keys), stat.Written)
-	got, err := store.Get(ctx, keys)
-	require.NoError(t, err)
-	require.Empty(t, got, "no key exists for an empty aggregate")
+			require.ErrorContains(t, err, fmt.Sprintf("an empty %s cannot be stored", tt.kind))
+			require.ErrorContains(t, err, fmt.Sprintf("key %q", tt.key))
+			require.Zero(t, stat)
+			got, err := store.Get(ctx, []string{tt.key})
+			require.NoError(t, err)
+			require.Equal(t, "old", got[tt.key], "the old value survives a refused write")
+		})
+	}
 }
 
 func TestDeleteIntegration(t *testing.T) {

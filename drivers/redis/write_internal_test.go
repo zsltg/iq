@@ -105,7 +105,7 @@ func TestRedisString(t *testing.T) {
 		{name: "float", in: 3.5, want: "3.5"},
 		{name: "bool", in: true, want: "true"},
 		{name: "bigint", in: big.NewInt(9), want: "9"},
-		{name: "nil", in: nil, want: ""},
+		{name: "nil rejected", in: nil, wantErr: true},
 		{name: "object rejected", in: map[string]any{"a": 1}, wantErr: true},
 		{name: "array rejected", in: []any{1}, wantErr: true},
 	}
