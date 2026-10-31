@@ -34,7 +34,7 @@ func HidesDecodedNumber(n predicate.Node, mode numfmt.DecimalMode) bool {
 // number can drop a row that the jq filter keeps, for the predicate leaf n. A store
 // with an exact decimal type (a MongoDB Decimal128, a DynamoDB fractional N) decodes
 // every such value to a jq string in auto and string mode. In number mode it decodes
-// to a float64, and no leaf is affected.
+// to a float64, and this function reports false. See HidesDecimal for that case.
 //
 // The leaves are an equality with a string that has the text of a number, a lower
 // bound (jq orders every string above every number), and a regex (a regex matches a
@@ -65,4 +65,35 @@ func isDecimalText(s string) bool {
 		return true
 	}
 	return numfmt.IsNumberText(s)
+}
+
+// HidesDecimal reports whether a server with an exact decimal type (a MongoDB
+// Decimal128) can drop a row that the jq filter keeps, for the predicate leaf n.
+// It covers the leaves of HidesDecimalNumber. It also covers number mode, where a
+// decimal decodes to a float64 and jq compares numbers. The server does not equate
+// a decimal with the closest double: the Decimal128 9.99 is not the double 9.99. So
+// an equality with a number and every comparison with a number can miss a decimal
+// that jq keeps. The driver keeps such a leaf but widens it, as for
+// HidesDecimalNumber.
+func HidesDecimal(n predicate.Node, mode numfmt.DecimalMode) bool {
+	if mode != numfmt.DecimalNumber {
+		return HidesDecimalNumber(n, mode)
+	}
+	switch t := n.(type) {
+	case predicate.Eq:
+		return isNumberLiteral(t.Value)
+	case predicate.Cmp:
+		return isNumberLiteral(t.Value)
+	}
+	return false
+}
+
+// isNumberLiteral reports whether v is a number that the jq compiler emits as a
+// predicate literal.
+func isNumberLiteral(v any) bool {
+	switch v.(type) {
+	case float64, int, int64:
+		return true
+	}
+	return false
 }

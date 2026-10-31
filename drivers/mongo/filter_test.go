@@ -10,6 +10,8 @@ import (
 	"github.com/zsltg/iq/internal/predicate"
 )
 
+// TestToFilter runs in number mode, so a number equality and a number comparison
+// carry the Decimal128 widening. The dec helper adds it to the expected filter.
 func TestToFilter(t *testing.T) {
 	tests := []struct {
 		name string
@@ -18,23 +20,23 @@ func TestToFilter(t *testing.T) {
 	}{
 		{"nil matches everything", nil, bson.M{}},
 		{"equality", predicate.Eq{Path: []string{"author"}, Value: "x"}, bson.M{"author": "x"}},
-		{"nested path is dotted", predicate.Eq{Path: []string{"a", "b"}, Value: 1.0}, bson.M{"a.b": 1.0}},
+		{"nested path is dotted", predicate.Eq{Path: []string{"a", "b"}, Value: 1.0}, dec("a.b", bson.M{"a.b": 1.0})},
 		{
 			"greater than a number: adds higher jq types",
 			predicate.Cmp{Path: []string{"year"}, Op: predicate.Gt, Value: 2015.0},
-			bson.M{"$or": bson.A{
+			dec("year", bson.M{"$or": bson.A{
 				bson.M{"year": bson.M{"$gt": 2015.0}},
 				bson.M{"year": bson.M{"$type": bson.A{"string", "array", "object"}}},
-			}},
+			}}),
 		},
 		{
 			"less than a number: adds lower jq types and missing",
 			predicate.Cmp{Path: []string{"year"}, Op: predicate.Lt, Value: 2015.0},
-			bson.M{"$or": bson.A{
+			dec("year", bson.M{"$or": bson.A{
 				bson.M{"year": bson.M{"$lt": 2015.0}},
 				bson.M{"year": bson.M{"$type": bson.A{"null", "bool"}}},
 				bson.M{"year": bson.M{"$exists": false}},
-			}},
+			}}),
 		},
 		{
 			"greater or equal a string: adds array and object",
@@ -59,7 +61,7 @@ func TestToFilter(t *testing.T) {
 				predicate.Eq{Path: []string{"a"}, Value: 1.0},
 				predicate.Eq{Path: []string{"b"}, Value: "x"},
 			},
-			bson.M{"$and": bson.A{bson.M{"a": 1.0}, bson.M{"b": "x"}}},
+			bson.M{"$and": bson.A{dec("a", bson.M{"a": 1.0}), bson.M{"b": "x"}}},
 		},
 		{
 			"regex without flags",
@@ -132,7 +134,7 @@ func TestToFilter(t *testing.T) {
 			"elemMatch also matches an object field",
 			predicate.ElemMatch{Path: []string{"items"}, Cond: predicate.Eq{Path: []string{"p"}, Value: 6.0}},
 			bson.M{"$or": bson.A{
-				bson.M{"items": bson.M{"$elemMatch": bson.M{"p": 6.0}}},
+				bson.M{"items": bson.M{"$elemMatch": dec("p", bson.M{"p": 6.0})}},
 				bson.M{"items": bson.M{"$type": "object"}},
 			}},
 		},
@@ -142,22 +144,22 @@ func TestToFilter(t *testing.T) {
 				predicate.Eq{Path: []string{"a"}, Value: 1.0},
 				predicate.Eq{Path: []string{"b"}, Value: 2.0},
 			},
-			bson.M{"$or": bson.A{bson.M{"a": 1.0}, bson.M{"b": 2.0}}},
+			bson.M{"$or": bson.A{dec("a", bson.M{"a": 1.0}), dec("b", bson.M{"b": 2.0})}},
 		},
 		{
 			"or of two equalities on one field collapses to $in",
 			predicate.Or{
-				predicate.Eq{Path: []string{"a"}, Value: 1.0},
-				predicate.Eq{Path: []string{"a"}, Value: 2.0},
+				predicate.Eq{Path: []string{"a"}, Value: "x"},
+				predicate.Eq{Path: []string{"a"}, Value: "y"},
 			},
-			bson.M{"a": bson.M{"$in": bson.A{1.0, 2.0}}},
+			bson.M{"a": bson.M{"$in": bson.A{"x", "y"}}},
 		},
 		{
 			// A single-branch or is not a membership test: the $in collapse needs at
 			// least two equalities, so one branch stays an $or.
 			"or of one equality stays $or",
 			predicate.Or{predicate.Eq{Path: []string{"a"}, Value: 1.0}},
-			bson.M{"$or": bson.A{bson.M{"a": 1.0}}},
+			bson.M{"$or": bson.A{dec("a", bson.M{"a": 1.0})}},
 		},
 		{
 			// Neither branch is an equality, so the $in collapse must reject the whole
@@ -169,15 +171,15 @@ func TestToFilter(t *testing.T) {
 				predicate.Cmp{Path: []string{"a"}, Op: predicate.Lt, Value: 1.0},
 			},
 			bson.M{"$or": bson.A{
-				bson.M{"$or": bson.A{
+				dec("a", bson.M{"$or": bson.A{
 					bson.M{"a": bson.M{"$gt": 5.0}},
 					bson.M{"a": bson.M{"$type": bson.A{"string", "array", "object"}}},
-				}},
-				bson.M{"$or": bson.A{
+				}}),
+				dec("a", bson.M{"$or": bson.A{
 					bson.M{"a": bson.M{"$lt": 1.0}},
 					bson.M{"a": bson.M{"$type": bson.A{"null", "bool"}}},
 					bson.M{"a": bson.M{"$exists": false}},
-				}},
+				}}),
 			}},
 		},
 		{
@@ -187,11 +189,11 @@ func TestToFilter(t *testing.T) {
 				predicate.Cmp{Path: []string{"a"}, Op: predicate.Gt, Value: 5.0},
 			},
 			bson.M{"$or": bson.A{
-				bson.M{"a": 1.0},
-				bson.M{"$or": bson.A{
+				dec("a", bson.M{"a": 1.0}),
+				dec("a", bson.M{"$or": bson.A{
 					bson.M{"a": bson.M{"$gt": 5.0}},
 					bson.M{"a": bson.M{"$type": bson.A{"string", "array", "object"}}},
-				}},
+				}}),
 			}},
 		},
 	}
@@ -200,6 +202,11 @@ func TestToFilter(t *testing.T) {
 			require.Equal(t, tt.want, toFilter(tt.pred, numfmt.DecimalNumber))
 		})
 	}
+}
+
+// dec returns leaf widened to also match a Decimal128 at the top-level field path.
+func dec(path string, leaf bson.M) bson.M {
+	return bson.M{"$or": bson.A{leaf, bson.M{path: bson.M{"$type": "decimal"}}}}
 }
 
 // TestToFilterWidensLeavesThatHideDecimals pins the filter per decimal mode. A
@@ -229,7 +236,7 @@ func TestToFilterWidensLeavesThatHideDecimals(t *testing.T) {
 		{"eq number, auto", predicate.Eq{Path: price, Value: 9.99}, numfmt.DecimalAuto, bson.M{"price": 9.99}},
 		{"gt, auto", gt, numfmt.DecimalAuto, bson.M{"$or": bson.A{gtFilter, isDecimal}}},
 		{"gt, string", gt, numfmt.DecimalString, bson.M{"$or": bson.A{gtFilter, isDecimal}}},
-		{"gt, number", gt, numfmt.DecimalNumber, gtFilter},
+		{"gt, number", gt, numfmt.DecimalNumber, bson.M{"$or": bson.A{gtFilter, isDecimal}}},
 		{"regex, auto", regex, numfmt.DecimalAuto, bson.M{"$or": bson.A{bson.M{"price": bson.M{"$regex": "^9"}}, isDecimal}}},
 		{"regex, number", regex, numfmt.DecimalNumber, bson.M{"price": bson.M{"$regex": "^9"}}},
 		{
@@ -268,6 +275,43 @@ func TestToFilterWidensLeavesThatHideDecimals(t *testing.T) {
 				bson.M{"name": "ada"},
 			}},
 		},
+		{"eq number, number", predicate.Eq{Path: price, Value: 9.99}, numfmt.DecimalNumber, bson.M{"$or": bson.A{bson.M{"price": 9.99}, isDecimal}}},
+		{
+			"ge number, number",
+			predicate.Cmp{Path: price, Op: predicate.Ge, Value: 9.99},
+			numfmt.DecimalNumber,
+			bson.M{"$or": bson.A{
+				bson.M{"$or": bson.A{
+					bson.M{"price": bson.M{"$gte": 9.99}},
+					bson.M{"price": bson.M{"$type": bson.A{"string", "array", "object"}}},
+				}},
+				isDecimal,
+			}},
+		},
+		{
+			"lt number, number",
+			predicate.Cmp{Path: price, Op: predicate.Lt, Value: 10.0},
+			numfmt.DecimalNumber,
+			bson.M{"$or": bson.A{
+				bson.M{"$or": bson.A{
+					bson.M{"price": bson.M{"$lt": 10.0}},
+					bson.M{"price": bson.M{"$type": bson.A{"null", "bool"}}},
+					bson.M{"price": bson.M{"$exists": false}},
+				}},
+				isDecimal,
+			}},
+		},
+		{
+			"or of numbers does not collapse to $in, number",
+			predicate.Or{predicate.Eq{Path: price, Value: 9.99}, predicate.Eq{Path: price, Value: 1.5}},
+			numfmt.DecimalNumber,
+			bson.M{"$or": bson.A{
+				bson.M{"$or": bson.A{bson.M{"price": 9.99}, isDecimal}},
+				bson.M{"$or": bson.A{bson.M{"price": 1.5}, isDecimal}},
+			}},
+		},
+		{"eq plain text, number", predicate.Eq{Path: price, Value: "apple"}, numfmt.DecimalNumber, bson.M{"price": "apple"}},
+		{"eq number, string mode stays plain", predicate.Eq{Path: price, Value: 9.99}, numfmt.DecimalString, bson.M{"price": 9.99}},
 		{
 			"nested path in the type clause, auto",
 			predicate.Eq{Path: []string{"a", "b"}, Value: "9.99"},

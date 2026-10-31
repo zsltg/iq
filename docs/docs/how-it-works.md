@@ -92,7 +92,12 @@ so that the decimal values come back. MongoDB adds an `$or` branch with
 DynamoDB adds `OR attribute_type(<attribute>, "N")` to an equality with a number
 text. The DynamoDB driver pushes no lower bound and no regex. The widened filter
 can return extra rows, and the client-side filter drops them. Under
-`--format.decimal=number`, the filter does not change.
+`--format.decimal=number`, the DynamoDB filter does not change.
+
+Under `--format.decimal=number`, a MongoDB Decimal128 decodes to a `float64`.
+MongoDB does not equate the Decimal128 `9.99` with the double `9.99`. So the
+MongoDB driver also adds the `$type: "decimal"` branch to an equality with a
+number and to each comparison with a number (`>`, `>=`, `<`, `<=`).
 
 !!! tip "Check the strategy of a query"
 

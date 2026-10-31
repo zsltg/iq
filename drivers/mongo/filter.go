@@ -73,13 +73,15 @@ func toFilter(n predicate.Node, mode numfmt.DecimalMode) bson.M {
 }
 
 // widenDecimal returns leaf, or leaf widened to also match a Decimal128 on the
-// path, if the decimal mode decodes a Decimal128 to a string that changes the verdict
-// of the node. The server compares a Decimal128 as a number. jq compares the decoded
-// string. So the server could drop a document that jq keeps. A double decodes to a
-// float64 in every mode, so only the decimal type needs the widening. The widened
-// leaf is a superset, not an exact test. See pushdown.HidesDecimalNumber.
+// path, if the decimal mode makes the server and jq disagree on a Decimal128. In
+// auto and string mode, jq compares the decoded string, and the server compares a
+// number. In number mode, jq compares a float64, and the server does not equate a
+// Decimal128 with the closest double. So the server could drop a document that jq
+// keeps. A double decodes to a float64 in every mode, so only the decimal type needs
+// the widening. The widened leaf is a superset, not an exact test. See
+// pushdown.HidesDecimal.
 func widenDecimal(n predicate.Node, path []string, leaf bson.M, mode numfmt.DecimalMode) bson.M {
-	if !pushdown.HidesDecimalNumber(n, mode) {
+	if !pushdown.HidesDecimal(n, mode) {
 		return leaf
 	}
 	return bson.M{"$or": bson.A{
@@ -119,7 +121,7 @@ func sameFieldEqs(or predicate.Or, mode numfmt.DecimalMode) (string, bson.A, boo
 	for i, n := range or {
 		eq, ok := n.(predicate.Eq)
 		// A widened equality cannot join the $in, which has no room for the $type clause.
-		if !ok || pushdown.HidesDecimalNumber(eq, mode) {
+		if !ok || pushdown.HidesDecimal(eq, mode) {
 			return "", nil, false
 		}
 		p := strings.Join(eq.Path, ".")
