@@ -99,20 +99,40 @@ func TestExecWarnsAboutConvertedValues(t *testing.T) {
 		stderr)
 }
 
-func TestMCPQueryNotesConvertedValues(t *testing.T) {
-	useNanDriver(t, nanStore{
-		rows: map[string]any{"k1": map[string]any{"price": "NaN"}},
-		hits: map[string][]string{"k1": {"price"}},
-	})
-	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
+// TestMCPToolsNoteConvertedValues pins the note of each tool that reads items. A
+// diff reads both sides, so it counts two values. A schema is the document itself,
+// so its note is the JSON Schema "$comment".
+func TestMCPToolsNoteConvertedValues(t *testing.T) {
+	const one = `iq converted 1 value that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "price"`
+	tests := []struct {
+		name string
+		tool string
+		args map[string]any
+		want map[string]any
+	}{
+		{"query", "iq_query", map[string]any{"source": "n", "filter": ".[]"}, map[string]any{"count": 1.0, "note": one}},
+		{"diff", "iq_diff", map[string]any{"a": "n", "b": "n"}, map[string]any{
+			"differ": false,
+			"note":   `iq converted 2 values that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "price"`,
+		}},
+		{"schema", "iq_schema", map[string]any{"source": "n"}, map[string]any{"$comment": one}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useNanDriver(t, nanStore{
+				rows: map[string]any{"k1": map[string]any{"price": "NaN"}},
+				hits: map[string][]string{"k1": {"price"}},
+			})
+			cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
 
-	var out mcpQueryOutput
-	structOf(t, callMCP(t, cs, "iq_query", map[string]any{"source": "n", "filter": ".[]"}), &out)
+			var out map[string]any
+			structOf(t, callMCP(t, cs, tt.tool, tt.args), &out)
 
-	require.Equal(t, 1, out.Count)
-	require.Equal(t,
-		`iq converted 1 value that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "price"`,
-		out.Note)
+			for k, v := range tt.want {
+				require.Equal(t, v, out[k], k)
+			}
+		})
+	}
 }
 
 func TestMCPQueryWithoutConversionHasNoNote(t *testing.T) {
@@ -175,37 +195,6 @@ func (s nanCopyStore) TypedScan(ctx context.Context, fn func([]query.Record) err
 
 func (nanCopyStore) Put(_ context.Context, batch []query.Record, _ query.WriteMode) (query.WriteStat, error) {
 	return query.WriteStat{Written: len(batch)}, nil
-}
-
-func TestMCPDiffNotesConvertedValues(t *testing.T) {
-	useNanDriver(t, nanStore{
-		rows: map[string]any{"k1": map[string]any{"price": "NaN"}},
-		hits: map[string][]string{"k1": {"price"}},
-	})
-	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
-
-	var out mcpDiffOutput
-	structOf(t, callMCP(t, cs, "iq_diff", map[string]any{"a": "n", "b": "n"}), &out)
-
-	require.False(t, out.Differ)
-	require.Equal(t,
-		`iq converted 2 values that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "price"`,
-		out.Note)
-}
-
-func TestMCPSchemaNotesConvertedValues(t *testing.T) {
-	useNanDriver(t, nanStore{
-		rows: map[string]any{"k1": map[string]any{"price": "NaN"}},
-		hits: map[string][]string{"k1": {"price"}},
-	})
-	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
-
-	var out map[string]any
-	structOf(t, callMCP(t, cs, "iq_schema", map[string]any{"source": "n"}), &out)
-
-	require.Equal(t,
-		`iq converted 1 value that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "price"`,
-		out["$comment"])
 }
 
 func TestMCPInsertNotesConvertedValues(t *testing.T) {
