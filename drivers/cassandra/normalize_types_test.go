@@ -526,34 +526,22 @@ func TestBindObjectNamesTheColumn(t *testing.T) {
 		column("ts", gocql.TypeTimestamp),
 	})}
 	tests := []struct {
-		name    string
-		obj     map[string]any
-		wantErr string
+		name      string
+		obj       map[string]any
+		column    string
+		wantCause string
 	}{
-		{"float", map[string]any{"f": 1e300}, `column "f": cassandra: 1e+300 is too large for a float column (it would become infinity)`},
-		{"timestamp", map[string]any{"ts": "0001-01-01T00:00:00Z"}, `column "ts": cassandra: timestamp "0001-01-01T00:00:00Z" is the zero time, which a timestamp column stores as null`},
+		{"float", map[string]any{"f": 1e300}, "f", `cassandra: 1e+300 is too large for a float column (it would become infinity)`},
+		{"timestamp", map[string]any{"ts": "0001-01-01T00:00:00Z"}, "ts", `cassandra: timestamp "0001-01-01T00:00:00Z" is the zero time, which a timestamp column stores as null`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := s.bindObject(tt.obj, map[string]any{})
-			require.EqualError(t, err, tt.wantErr)
+			require.EqualError(t, err, fmt.Sprintf("column %q: %s", tt.column, tt.wantCause))
+			// The column name wraps the cause, so the cause stays reachable.
+			require.EqualError(t, errors.Unwrap(err), tt.wantCause)
 		})
 	}
-}
-
-// TestBindObjectKeepsTheCauseWrapped pins that the column error wraps the
-// bind error, so the caller can unwrap it to the inner message.
-func TestBindObjectKeepsTheCauseWrapped(t *testing.T) {
-	s := &Store{table: "t", meta: tableMetaFor(nil, nil, []*gocql.ColumnMetadata{
-		column("f", gocql.TypeFloat),
-	})}
-	_, inner := bindValue(nativeType(gocql.TypeFloat), 1e300)
-	require.Error(t, inner)
-	err := s.bindObject(map[string]any{"f": 1e300}, map[string]any{})
-	require.Error(t, err)
-	cause := errors.Unwrap(err)
-	require.Error(t, cause)
-	require.Equal(t, inner.Error(), cause.Error())
 }
 
 func TestWholeFloatToIntEdges(t *testing.T) {
