@@ -433,7 +433,8 @@ func (s *Store) execGet(ctx context.Context, args []string) (any, error) {
 }
 
 // execScan runs `scan <table> [limit]`, returning up to limit rows as {rowkey: row}.
-// An absent or non-positive limit scans the whole table.
+// An absent or non-positive limit scans the whole table. A row limit on ctx cuts
+// the scan the way query.WithRowLimit says for a reply that is not a list.
 func (s *Store) execScan(ctx context.Context, args []string) (any, error) {
 	if len(args) < 1 || len(args) > 2 {
 		return nil, fmt.Errorf("hbase: scan needs <table> [limit]")
@@ -448,18 +449,28 @@ func (s *Store) execScan(ctx context.Context, args []string) (any, error) {
 	}
 	rows := map[string]any{}
 	err = eachRow(s.client.Scan(req), "hbase scan", func(res *hrpc.Result) (bool, error) {
-		key := rowKeyString(s.rowkeyType, res.Cells[0].Row)
-		row, err := s.readRow(ctx, key, res.Cells)
-		if err != nil {
-			return false, err
-		}
-		rows[key] = row
-		return limit > 0 && len(rows) >= limit, nil
+		return s.addScanRow(ctx, rows, res, limit)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return rows, nil
+}
+
+// addScanRow adds one result of `scan <table>` to rows. It reports whether the scan
+// is done: at the row limit of ctx, where it drops the row and reports the cut, or
+// at the limit of the scan statement.
+func (s *Store) addScanRow(ctx context.Context, rows map[string]any, res *hrpc.Result, limit int) (bool, error) {
+	if query.CutAtLimit(ctx, len(rows)+1) {
+		return true, nil
+	}
+	key := rowKeyString(s.rowkeyType, res.Cells[0].Row)
+	row, err := s.readRow(ctx, key, res.Cells)
+	if err != nil {
+		return false, err
+	}
+	rows[key] = row
+	return limit > 0 && len(rows) >= limit, nil
 }
 
 // scanLimit reads the optional limit of `scan <table> [limit]`. An absent limit is 0,

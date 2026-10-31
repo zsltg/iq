@@ -435,3 +435,40 @@ func TestQueryColumnMustBeFamilyQualifier(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryScanRowLimit(t *testing.T) {
+	tests := []struct {
+		name     string
+		limit    int // zero sets no row limit
+		wantRows int
+		wantCut  bool
+		wantShut int // scanner Close calls
+	}{
+		{"a limit below the row count cuts and drops the extra row", 3, 2, true, 1},
+		{"a limit above the row count keeps every row", 9, 5, false, 0},
+		{"no limit keeps every row", 0, 5, false, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fc := newFakeClient()
+			for _, k := range []string{"1", "2", "3", "4", "5"} {
+				fc.seed(k, cell("cf", "n", k))
+			}
+			st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, ctAuto)
+			cut := false
+			ctx := query.WithRowCutNotice(context.Background(), func() { cut = true })
+			ctx = query.WithRowLimit(ctx, tt.limit)
+
+			got, err := st.Query(ctx, []string{"scan", "books"})
+
+			require.NoError(t, err)
+			require.Len(t, got.(map[string]any), tt.wantRows)
+			require.Equal(t, tt.wantCut, cut)
+			require.Len(t, fc.scanners, 1)
+			require.Equal(t, tt.wantShut, fc.scanners[0].closes)
+			if tt.wantCut {
+				require.Equal(t, tt.limit, fc.scanners[0].i)
+			}
+		})
+	}
+}

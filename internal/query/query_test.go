@@ -142,3 +142,42 @@ func TestUnderRowLimit(t *testing.T) {
 func TestMaxValueElements(t *testing.T) {
 	require.Equal(t, 1_000_000, query.MaxValueElements)
 }
+
+func TestRowCutNotice(t *testing.T) {
+	tests := []struct {
+		name  string
+		limit int
+		n     int
+		sink  bool
+		want  bool
+		calls int
+	}{
+		{"no limit never cuts", 0, 99, true, false, 0},
+		{"below the limit does not cut", 3, 2, true, false, 0},
+		{"at the limit cuts", 3, 3, true, true, 1},
+		{"over the limit cuts", 3, 4, true, true, 1},
+		{"a cut without a sink is a no-op", 3, 3, false, true, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			ctx := query.WithRowLimit(context.Background(), tt.limit)
+			if tt.sink {
+				ctx = query.WithRowCutNotice(ctx, func() { calls++ })
+			}
+
+			require.Equal(t, tt.want, query.CutAtLimit(ctx, tt.n))
+			require.Equal(t, tt.calls, calls)
+		})
+	}
+}
+
+func TestNoteRowCutWithoutSinkDoesNothing(t *testing.T) {
+	require.NotPanics(t, func() { query.NoteRowCut(context.Background()) })
+}
+
+func TestNoteRowCutCallsTheSink(t *testing.T) {
+	calls := 0
+	query.NoteRowCut(query.WithRowCutNotice(context.Background(), func() { calls++ }))
+	require.Equal(t, 1, calls)
+}

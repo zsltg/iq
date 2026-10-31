@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -672,6 +674,68 @@ func TestScanDeletesSurfacesAReadFailure(t *testing.T) {
 			require.ErrorContains(t, err, tt.wantErr)
 			require.ErrorIs(t, err, boom)
 			require.Zero(t, batches)
+		})
+	}
+}
+
+// countingRows replays docs and counts the rows that the driver reads. It has a
+// bookmark, so a test can tell that the driver left it out.
+type countingRows struct {
+	docs []string
+	read int
+}
+
+func (c *countingRows) Next(row *driver.Row) error {
+	if c.read >= len(c.docs) {
+		return io.EOF
+	}
+	*row = *docRow(strconv.Itoa(c.read), c.docs[c.read])
+	c.read++
+	return nil
+}
+
+func (c *countingRows) Close() error      { return nil }
+func (c *countingRows) UpdateSeq() string { return "" }
+func (c *countingRows) Offset() int64     { return 0 }
+func (c *countingRows) TotalRows() int64  { return 0 }
+func (c *countingRows) Bookmark() string  { return "bm" }
+
+func TestQueryRowLimit(t *testing.T) {
+	tests := []struct {
+		name         string
+		limit        int // zero sets no row limit
+		wantDocs     int
+		wantCut      bool
+		wantBookmark bool
+		wantRead     int
+	}{
+		{"a limit below the row count cuts and drops the extra row", 3, 2, true, false, 3},
+		{"a limit above the row count keeps every doc", 9, 5, false, true, 5},
+		{"no limit keeps every doc", 0, 5, false, true, 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, _, mdb := newMockStore(t, 10, 1)
+			rows := &countingRows{docs: []string{`{"a":1}`, `{"a":2}`, `{"a":3}`, `{"a":4}`, `{"a":5}`}}
+			mdb.ExpectFind().WillExecute(func(context.Context, any, driver.Options) (driver.Rows, error) {
+				return rows, nil
+			})
+			cut := false
+			ctx := query.WithRowCutNotice(context.Background(), func() { cut = true })
+			ctx = query.WithRowLimit(ctx, tt.limit)
+
+			res, err := st.Query(ctx, []string{`{"a":1}`})
+
+			require.NoError(t, err)
+			out := res.(map[string]any)
+			require.Len(t, out["docs"], tt.wantDocs)
+			require.Equal(t, tt.wantCut, cut)
+			if tt.wantBookmark {
+				require.Equal(t, "bm", out["bookmark"])
+			} else {
+				require.NotContains(t, out, "bookmark")
+			}
+			require.Equal(t, tt.wantRead, rows.read)
 		})
 	}
 }

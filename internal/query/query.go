@@ -15,10 +15,15 @@ var ErrEmptyQuery = errors.New("empty query: expected a command")
 type rowLimitKey struct{}
 
 // WithRowLimit returns a context that asks Store.Query to stop after n result
-// rows. A driver that returns a list of rows reads at most n of them. It can
-// read one more than the caller wants to show, so the caller can tell that the
-// result is cut. A value of zero or less sets no limit, and ctx comes back as is.
-// A driver that returns a single document ignores the limit.
+// rows. A value of zero or less sets no limit, and ctx comes back as is.
+//
+// A driver whose reply is a list returns up to n rows. The caller asks for one
+// row more than it wants to show, so it can tell a full result from a cut one.
+//
+// A driver whose reply is not a list, for example a map of rows, cannot let the
+// caller trim the reply. It reads at most n rows. If the n-th row exists, the
+// driver drops that row, keeps n-1 rows, and calls NoteRowCut. A driver that
+// returns a single document ignores the limit.
 func WithRowLimit(ctx context.Context, n int) context.Context {
 	if n <= 0 {
 		return ctx
@@ -60,6 +65,38 @@ func WithUnbounded(ctx context.Context) context.Context {
 func Unbounded(ctx context.Context) bool {
 	on, _ := ctx.Value(unboundedKey{}).(bool)
 	return on
+}
+
+// rowCutKey is the context key of the row cut notice sink.
+type rowCutKey struct{}
+
+// WithRowCutNotice returns a context that carries sink. A driver whose reply is
+// not a list calls NoteRowCut when the row limit stopped it before the end of
+// the result.
+func WithRowCutNotice(ctx context.Context, sink func()) context.Context {
+	return context.WithValue(ctx, rowCutKey{}, sink)
+}
+
+// NoteRowCut tells the sink of ctx that a row limit cut the reply short. It does
+// nothing when ctx has no sink.
+func NoteRowCut(ctx context.Context) {
+	if sink, ok := ctx.Value(rowCutKey{}).(func()); ok {
+		sink()
+	}
+}
+
+// CutAtLimit is for a driver whose reply is not a list. Call it after the driver
+// reads a row, with n as the count of rows read so far, this one included. It
+// returns true when n reaches the row limit. The driver must then drop this row
+// and stop reading. CutAtLimit has already called NoteRowCut. It returns false
+// when ctx has no row limit.
+func CutAtLimit(ctx context.Context, n int) bool {
+	limit, limited := RowLimit(ctx)
+	if !limited || n < limit {
+		return false
+	}
+	NoteRowCut(ctx)
+	return true
 }
 
 // Store is the port the core depends on. A driver adapter (Redis, and later
