@@ -190,6 +190,13 @@ func documentBody(r query.Record) (map[string]any, error) {
 		}
 		doc[k] = v
 	}
+	// The body and the _id travel as JSON, which turns an invalid byte into U+FFFD.
+	if err := query.CheckKeyUTF8("couchdb", r.Key); err != nil {
+		return nil, err
+	}
+	if err := query.CheckValueUTF8("couchdb", r.Key, doc); err != nil {
+		return nil, err
+	}
 	return doc, nil
 }
 
@@ -287,6 +294,10 @@ func (s *Store) Drop(ctx context.Context) error {
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
 	if s.db == "" {
 		return query.DeleteStat{}, errNoDatabase
+	}
+	// Each _id travels as JSON, which turns an invalid byte into U+FFFD.
+	if err := query.CheckKeysUTF8("couchdb", keys); err != nil {
+		return query.DeleteStat{}, err
 	}
 	revs, err := s.currentRevsForKeys(ctx, keys)
 	if err != nil {

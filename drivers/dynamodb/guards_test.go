@@ -229,6 +229,22 @@ func TestDeleteReadsNothingForAMalformedKey(t *testing.T) {
 	require.Zero(t, fake.batchGetCalls+fake.batchWriteCalls)
 }
 
+func TestDeleteRefusesAKeyThatIsNotValidUTF8(t *testing.T) {
+	fake := &fakeDDB{}
+	s := fakeStore(t, fake)
+	_, err := s.Delete(context.Background(), []string{"1", "2\xff"})
+	require.ErrorContains(t, err, `dynamodb: record key "2\xff" is not valid UTF-8`)
+	require.Zero(t, fake.batchGetCalls+fake.batchWriteCalls)
+}
+
+func TestDeleteRefusesAnOutOfRangeNumberKeyBeforeAnyDelete(t *testing.T) {
+	fake := &fakeDDB{}
+	s := fakeStore(t, fake)
+	_, err := s.Delete(context.Background(), []string{"1", "1E+126"})
+	require.ErrorContains(t, err, "is outside the DynamoDB range")
+	require.Zero(t, fake.batchWriteCalls)
+}
+
 func TestDeleteSurfacesThePreReadError(t *testing.T) {
 	fake := &fakeDDB{batchGetFn: func(*awsdynamodb.BatchGetItemInput) (*awsdynamodb.BatchGetItemOutput, error) {
 		return nil, errBoom

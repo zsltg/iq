@@ -123,6 +123,13 @@ func documentBody(r query.Record) (map[string]any, error) {
 		}
 		doc[k] = v
 	}
+	// The body and the _id travel as JSON, which turns an invalid byte into U+FFFD.
+	if err := query.CheckKeyUTF8("elasticsearch", r.Key); err != nil {
+		return nil, err
+	}
+	if err := query.CheckValueUTF8("elasticsearch", r.Key, doc); err != nil {
+		return nil, err
+	}
 	return doc, nil
 }
 
@@ -161,6 +168,10 @@ func (s *Store) Drop(ctx context.Context) error {
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
 	if s.index == "" {
 		return query.DeleteStat{}, errNoIndex
+	}
+	// Each _id travels as JSON, which turns an invalid byte into U+FFFD.
+	if err := query.CheckKeysUTF8("elasticsearch", keys); err != nil {
+		return query.DeleteStat{}, err
 	}
 	var stat query.DeleteStat
 	for batch := range slices.Chunk(keys, s.pageSize) {

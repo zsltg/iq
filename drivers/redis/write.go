@@ -177,6 +177,10 @@ func queueString(ctx context.Context, p goredis.Pipeliner, r query.Record) error
 
 // queueJSON queues a JSON.SET at the document root.
 func queueJSON(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
+	// JSON turns an invalid byte into U+FFFD. The Redis key is bytes and stays exact.
+	if err := query.CheckValueUTF8("redis", r.Key, r.Value); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(r.Value)
 	if err != nil {
 		return fmt.Errorf("key %q: encode json: %w", r.Key, err)

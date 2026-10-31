@@ -77,6 +77,10 @@ func TestQueueWrite(t *testing.T) {
 		{"stream entry not an object", query.Record{Key: "k", Type: "stream", Value: []any{"x"}}, []string{}, `key "k": stream entry is not an {id, fields} object`},
 		{"stream fields not an object", query.Record{Key: "k", Type: "stream", Value: []any{entry("1-0", "x")}}, []string{}, `key "k": stream fields is not an object`},
 		{"unsupported type", query.Record{Key: "k", Type: "TSDB-TYPE", Value: "x"}, []string{}, `key "k": unsupported redis type "TSDB-TYPE"`},
+		{"json value string is not valid UTF-8", query.Record{Key: "k", Type: "json", Value: map[string]any{"a": []any{"x\xff"}}}, []string{}, `redis: key "k": field "a[0]" holds a string that is not valid UTF-8`},
+		{"json field name is not valid UTF-8", query.Record{Key: "k", Type: "json", Value: map[string]any{"a\xff": 1}}, []string{}, `redis: key "k": the field name "a\xff" is not valid UTF-8`},
+		{"json key may hold any bytes", query.Record{Key: "k\xff", Type: "json", Value: obj}, []string{"JSON.SET k\xff $ {\"a\":1}"}, ""},
+		{"string value may hold any bytes", query.Record{Key: "k", Type: "string", Value: "x\xff"}, []string{"set k x\xff"}, ""},
 		{"json cannot be encoded", query.Record{Key: "k", Type: "json", Value: make(chan int)}, []string{}, `key "k": encode json: `},
 
 		{

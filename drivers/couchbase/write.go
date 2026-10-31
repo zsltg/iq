@@ -64,6 +64,11 @@ func documentBody(r query.Record) (map[string]any, error) {
 	if !ok {
 		return nil, query.NonObjectValueError("couchbase", r.Key)
 	}
+	// The SDK writes the value as JSON, which turns an invalid byte into U+FFFD. The
+	// key is a KV key, sent as bytes, so it is not checked here.
+	if err := query.CheckValueUTF8("couchbase", r.Key, obj); err != nil {
+		return nil, err
+	}
 	return obj, nil
 }
 

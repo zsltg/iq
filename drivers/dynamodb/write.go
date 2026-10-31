@@ -57,6 +57,13 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 func (s *Store) itemsOf(batch []query.Record) ([]map[string]types.AttributeValue, error) {
 	items := make([]map[string]types.AttributeValue, len(batch))
 	for i, r := range batch {
+		// The SDK writes S and the names as JSON, which turns an invalid byte into U+FFFD.
+		if err := query.CheckKeyUTF8("dynamodb", r.Key); err != nil {
+			return nil, err
+		}
+		if err := query.CheckValueUTF8("dynamodb", r.Key, r.Value); err != nil {
+			return nil, err
+		}
 		item, err := s.toItem(recordValue{key: r.Key, value: r.Value})
 		if err != nil {
 			return nil, err
@@ -261,6 +268,10 @@ func (s *Store) keyAttrs(item map[string]types.AttributeValue) map[string]types.
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
 	if len(s.keys) == 0 {
 		return query.DeleteStat{}, errNoTable
+	}
+	// The SDK writes each key as JSON, which turns an invalid byte into U+FFFD.
+	if err := query.CheckKeysUTF8("dynamodb", keys); err != nil {
+		return query.DeleteStat{}, err
 	}
 	existing, err := s.existingKeySet(ctx, keys)
 	if err != nil {

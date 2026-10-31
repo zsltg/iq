@@ -84,6 +84,15 @@ iq --src books --insert books2 --explain
     (columnar) and `--gron`/`--grona` (flattened assignments no source
     decodes) drop `--typed` to grep or export the value stream instead.
 
+A backend that stores text as JSON cannot keep a byte sequence that is not valid
+UTF-8. It would change each invalid byte to U+FFFD, and two different keys or
+names could become one. So Elasticsearch, OpenSearch, CouchDB, Couchbase,
+DynamoDB, and RedisJSON refuse a record with such a string. The error names the
+field path, and no part of that batch is written. `iq data delete` refuses such
+a key too. The source can hold these bytes in a Redis string, in an RDB dump, or
+in the output of a jq filter such as `@base64d`. Encode the value first, for
+example with `@base64`.
+
 ## Key mapping `--key*`
 
 On a plain copy, each item carries its source key, so no key flag is needed.
