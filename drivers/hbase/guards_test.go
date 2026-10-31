@@ -2,7 +2,9 @@ package hbase
 
 import (
 	"context"
+	"errors"
 	"maps"
+	"math"
 	"testing"
 	"time"
 
@@ -98,4 +100,24 @@ func TestParseTypeMapReturnsAnAllocatedMapForNoEntries(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, m)
 	require.Equal(t, typeMap{}, m)
+}
+
+func TestPutNamesTheCellThatDoesNotEncode(t *testing.T) {
+	fc := newFakeClient()
+	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{cellKey("cf", "n"): ctLong}, ctAuto)
+	rec := query.Record{Key: "1", Type: "row", Value: map[string]any{"cf": map[string]any{"n": math.Inf(1)}}}
+	_, err := st.Put(context.Background(), []query.Record{rec}, query.Upsert)
+	require.EqualError(t, err, `cell "cf:n": hbase: +Inf is not a finite whole number for an int/long column`)
+	require.Zero(t, fc.putCalls+fc.casCalls)
+}
+
+func TestPutKeepsTheCellCauseWrapped(t *testing.T) {
+	fc := newFakeClient()
+	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{cellKey("cf", "n"): ctLong}, ctAuto)
+	rec := query.Record{Key: "1", Type: "row", Value: map[string]any{"cf": map[string]any{"n": math.Inf(1)}}}
+	_, err := st.Put(context.Background(), []query.Record{rec}, query.Upsert)
+	require.Error(t, err)
+	cause := errors.Unwrap(err)
+	require.Error(t, cause)
+	require.Equal(t, "hbase: +Inf is not a finite whole number for an int/long column", cause.Error())
 }

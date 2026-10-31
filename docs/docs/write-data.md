@@ -89,7 +89,9 @@ iq --src books --insert books2 --explain
 On a plain copy, each item carries its source key, so no key flag is needed.
 Foreign JSON (piped stdin, a reshaped stream) has no natural key. `--key-field`
 takes it from an object field. `--key` computes it with a jq expression.
-`--key-prefix` prepends a namespace either way.
+`--key-prefix` prepends a namespace either way. A key is a string, a number, or
+a boolean. A float key must be a whole number and prints as plain digits
+(`1000000`, not `1e+06`). A fractional, NaN, or infinite float key is refused.
 
 `iq combine --insert` is the one write that always requires `--key` or
 `--key-field`. A combine's results come out of one program over a null input,

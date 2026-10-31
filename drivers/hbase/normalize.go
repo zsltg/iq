@@ -227,8 +227,8 @@ func encodeBool(v any) ([]byte, error) {
 
 // toInt64 coerces a JSON scalar to an int64 for an int/long column. It accepts the
 // shapes that a decoded JSON number can take (float64, the gojq int, json.Number,
-// or a numeric string). It rejects a fractional float, so a long column never
-// silently truncates.
+// or a numeric string). It rejects a float that is fractional, not finite, or outside
+// the int64 range, so a long column never silently truncates or wraps.
 func toInt64(v any) (int64, error) {
 	switch n := v.(type) {
 	case int:
@@ -236,10 +236,7 @@ func toInt64(v any) (int64, error) {
 	case int64:
 		return n, nil
 	case float64:
-		if n != math.Trunc(n) {
-			return 0, fmt.Errorf("hbase: %v is not a whole number for an int/long column", n)
-		}
-		return int64(n), nil
+		return wholeFloatToInt64(n)
 	case string:
 		i, err := strconv.ParseInt(n, 10, 64)
 		if err != nil {
@@ -250,6 +247,26 @@ func toInt64(v any) (int64, error) {
 		return 0, fmt.Errorf("hbase: expected a number for an int/long column, got %T", v)
 	}
 }
+
+// wholeFloatToInt64 converts a float64 to an int64 only when the result is exact.
+// It refuses NaN, an infinity, a fraction, and a whole number outside the int64 range.
+// The conversion of such a float is not defined in Go, so no stored value depends on it.
+func wholeFloatToInt64(n float64) (int64, error) {
+	if math.IsNaN(n) || math.IsInf(n, 0) {
+		return 0, fmt.Errorf("hbase: %v is not a finite whole number for an int/long column", n)
+	}
+	if n != math.Trunc(n) {
+		return 0, fmt.Errorf("hbase: %v is not a whole number for an int/long column", n)
+	}
+	// 2^63 is exact as a float64. The largest valid float is the one just below it.
+	if n >= twoPow63 || n < -twoPow63 {
+		return 0, fmt.Errorf("hbase: %v is out of range for an int/long column", n)
+	}
+	return int64(n), nil
+}
+
+// twoPow63 is 2^63, the first float64 above the int64 range.
+const twoPow63 = float64(1 << 63)
 
 // toFloat64 coerces a JSON scalar to a float64 for a double column.
 func toFloat64(v any) (float64, error) {

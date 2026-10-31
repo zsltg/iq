@@ -197,6 +197,8 @@ func TestToInt64(t *testing.T) {
 		{name: "the largest int64", in: strconv.FormatInt(math.MaxInt64, 10), want: math.MaxInt64},
 		{name: "the smallest int64", in: strconv.FormatInt(math.MinInt64, 10), want: math.MinInt64},
 		{name: "a fractional float is refused", in: 1.5, wantErr: true},
+		{name: "the smallest int64 as a float", in: -9223372036854775808.0, want: math.MinInt64},
+		{name: "the largest float below 2^63", in: math.Nextafter(9223372036854775808.0, 0), want: 9223372036854774784},
 		{name: "an unparsable string is refused", in: "abc", wantErr: true},
 		{name: "a non-number is refused", in: true, wantErr: true},
 	}
@@ -244,4 +246,39 @@ func TestToFloat64(t *testing.T) {
 			require.InDelta(t, tt.want, got, 0)
 		})
 	}
+}
+
+func TestToInt64RefusesAnInexactFloat(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      float64
+		wantErr string
+	}{
+		{"positive infinity", math.Inf(1), "hbase: +Inf is not a finite whole number for an int/long column"},
+		{"negative infinity", math.Inf(-1), "hbase: -Inf is not a finite whole number for an int/long column"},
+		{"NaN", math.NaN(), "hbase: NaN is not a finite whole number for an int/long column"},
+		{"2^63", 9223372036854775808.0, "hbase: 9.223372036854776e+18 is out of range for an int/long column"},
+		{"below -2^63", -9223372036854777856.0, "hbase: -9.223372036854778e+18 is out of range for an int/long column"},
+		{"1e30", 1e30, "hbase: 1e+30 is out of range for an int/long column"},
+		{"fraction", 1.5, "hbase: 1.5 is not a whole number for an int/long column"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := toInt64(tt.in)
+			require.EqualError(t, err, tt.wantErr)
+			require.Zero(t, got)
+			_, err = encodeInt32(tt.in)
+			require.EqualError(t, err, tt.wantErr)
+			_, err = encodeInt64(tt.in)
+			require.EqualError(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestEncodeInt32FloatBounds(t *testing.T) {
+	b, err := encodeInt32(float64(math.MaxInt32))
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x7f, 0xff, 0xff, 0xff}, b)
+	_, err = encodeInt32(float64(math.MaxInt32) + 1)
+	require.EqualError(t, err, "hbase: value 2147483648 out of range for a 4-byte int column")
 }
