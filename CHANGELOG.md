@@ -4,6 +4,56 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.41.0 - 2026-10-31
+### Bug Fixes
+- stream piped stdin in one pass (#220) (77069f9)
+- refuse DynamoDB numbers and non-UTF-8 text a write would change (#225) (9322567)
+- refuse numbers and times a write cannot store exactly (#224) (b0aa5e5)
+- stop exec statements and passwords reaching output (#203) (9de73fa)
+- turn NaN and infinite floats into strings and warn (#214) (a839b5a)
+- **ci:** create the Couchbase bucket with couchstore and no replica (#198) (1ef7b63)
+- **cmd:** refuse --replace onto its own source (#185) (955d030)
+- **cmd:** escape control characters in the command trace (#205) (171bda2)
+- **cmd:** compare container identity in the replace guard (#208) (49eafe4)
+- **compose:** raise the open-file limit of the mongo test container (#184) (4cc1333)
+- **deps:** update redis:8.10.2 docker digest to 97ec881 (#189) (e1b7733)
+- **deps:** update dependency zensical to v0.0.72 (#196) (8f5f775)
+- **deps:** update cassandra:5.0.9 docker digest to 3ea9333 (#161) (0664eb6)
+- **deps:** update module github.com/quality-gates/mutago/v2 to v2.10.38 (#193) (f7f59b8)
+- **deps:** bump golang.org/x/net to v0.62.0 (#212) (cde1efd)
+- **deps:** update module github.com/quality-gates/mutago/v2 to v2.10.37 (#191) (5a6156b)
+- **deps:** update minor and patch updates (#190) (388fd4f)
+- **deps:** bump the rdb fork to stop a print to stdout (#199) (6790962)
+- **driver:** list Elasticsearch 9.x as a supported version (#181) (e590cac)
+- **drivers:** handle null and trailing peer data when decoding (#197) (9fd4913)
+- **exec:** cap the result of iq_exec and bound DynamoDB paging (#207) (a5a4fc7)
+- **exec:** stop reading native results at the row limit (#215) (60bddb2)
+- **exec:** cut a map reply at the row limit and mark it (#222) (b88d92a)
+- **file:** refuse an RDB dump key with too many elements (#219) (a4feed2)
+- **file:** skip the decode cache for dumps with big integers (#206) (2a7467f)
+- **file:** reject out-of-range integers in the decode cache (#209) (5c66961)
+- **file:** report a reader failure that wraps io.EOF (#183) (5287ecd)
+- **file:** stream the Items array of a DynamoDB scan dump (#217) (319e3d6)
+- **file:** key the decode cache on the inode change time (#186) (2b8df35)
+- **file:** cap one value of a text dump at 16 MiB (#221) (7422c3d)
+- **hbase:** cap the cells of a row and refuse a larger row (#218) (490bd10)
+- **mcp:** note NaN and infinity in iq_diff, iq_schema and iq_insert (#226) (6896f0c)
+- **mongo:** keep Decimal128 rows in number-mode pushdown (#223) (3da4c26)
+- **mongo:** hide the driver topology in connect errors (#194) (ea27276)
+- **mongo:** hide the driver topology in operation errors (#204) (469ff90)
+- **numfmt:** keep out-of-range numbers and zset scores finite (#202) (999bb7e)
+- **pushdown:** widen MongoDB and DynamoDB filters for decimals (#213) (5fb0da9)
+- **rawpred:** keep number tokens that decode to strings (#211) (db07717)
+- **redis:** bound and page the read of a large key (#216) (0557f29)
+
+### Documentation
+- **demo:** show the query plan without a pager (#192) (73a2a4e)
+- **readme:** format the Markdown (#195) (84b0c2c)
+
+### Features
+- **keyring:** give each config file its own keyring accounts (#188) (30f3b97)
+
+
 ## v0.40.0 - 2026-10-21
 ### Breaking changes
 - **explain:** in the "query plan" log record and the MCP iq_explain
