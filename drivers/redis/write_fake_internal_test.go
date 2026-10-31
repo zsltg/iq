@@ -14,14 +14,14 @@ import (
 // things:
 //   - The commands and their arguments for each type.
 //   - The type that it picks for an untyped value.
-//   - Nothing for an empty value.
+//   - The refusal of an empty aggregate and of a null, with nothing queued.
 //   - The exact error text of every shape error, with nothing queued.
 //   - The partial queue of a stream whose later entry is bad.
 //
 // A list builds every value first, so a bad element queues nothing.
 func TestQueueWrite(t *testing.T) {
 	obj := map[string]any{"a": 1}
-	entry := func(id string, fields any) map[string]any { return map[string]any{"id": id, "fields": fields} }
+	entry := func(id any, fields any) map[string]any { return map[string]any{"id": id, "fields": fields} }
 	tests := []struct {
 		name    string
 		record  query.Record
@@ -62,11 +62,21 @@ func TestQueueWrite(t *testing.T) {
 		{"untyped array is json", query.Record{Key: "k", Value: []any{1}}, []string{`JSON.SET k $ [1]`}, ""},
 		{"document is json", query.Record{Key: "k", Type: "document", Value: obj}, []string{`JSON.SET k $ {"a":1}`}, ""},
 
-		{"empty hash", query.Record{Key: "k", Type: "hash", Value: map[string]any{}}, []string{}, ""},
-		{"empty list", query.Record{Key: "k", Type: "list", Value: []any{}}, []string{}, ""},
-		{"empty set", query.Record{Key: "k", Type: "set", Value: []any{}}, []string{}, ""},
-		{"empty zset", query.Record{Key: "k", Type: "zset", Value: []any{}}, []string{}, ""},
-		{"empty stream", query.Record{Key: "k", Type: "stream", Value: []any{}}, []string{}, ""},
+		{"empty hash", query.Record{Key: "k", Type: "hash", Value: map[string]any{}}, []string{}, `key "k": an empty hash cannot be stored, because Redis has no empty hash`},
+		{"empty list", query.Record{Key: "k", Type: "list", Value: []any{}}, []string{}, `key "k": an empty list cannot be stored, because Redis has no empty list`},
+		{"empty set", query.Record{Key: "k", Type: "set", Value: []any{}}, []string{}, `key "k": an empty set cannot be stored, because Redis has no empty set`},
+		{"empty zset", query.Record{Key: "k", Type: "zset", Value: []any{}}, []string{}, `key "k": an empty zset cannot be stored, because Redis has no empty zset`},
+		{"empty stream", query.Record{Key: "k", Type: "stream", Value: []any{}}, []string{}, `key "k": an empty stream cannot be stored, because Redis has no empty stream`},
+
+		{"null string", query.Record{Key: "k", Type: "string"}, []string{}, `key "k": a null value cannot be stored`},
+		{"null untyped", query.Record{Key: "k"}, []string{}, `key "k": a null value cannot be stored`},
+		{"null hash field", query.Record{Key: "k", Type: "hash", Value: map[string]any{"f": nil}}, []string{}, `key "k" field "f": a null value cannot be stored`},
+		{"null list element", query.Record{Key: "k", Type: "list", Value: []any{"a", nil}}, []string{}, `key "k": a null value cannot be stored`},
+		{"null set element", query.Record{Key: "k", Type: "set", Value: []any{nil}}, []string{}, `key "k": a null value cannot be stored`},
+		{"null zset member", query.Record{Key: "k", Type: "zset", Value: []any{map[string]any{"member": nil, "score": 1}}}, []string{}, `key "k": zset member: a null value cannot be stored`},
+		{"null zset score", query.Record{Key: "k", Type: "zset", Value: []any{map[string]any{"member": "m", "score": nil}}}, []string{}, `key "k": zset score: `},
+		{"null stream id", query.Record{Key: "k", Type: "stream", Value: []any{entry(nil, map[string]any{"f": "v"})}}, []string{}, `key "k": stream id: a null value cannot be stored`},
+		{"null stream field", query.Record{Key: "k", Type: "stream", Value: []any{entry("1-0", map[string]any{"f": nil})}}, []string{}, `key "k" field "f": a null value cannot be stored`},
 
 		{"hash not an object", query.Record{Key: "k", Type: "hash", Value: "x"}, []string{}, `key "k": hash value is not an object`},
 		{"list not an array", query.Record{Key: "k", Type: "list", Value: "x"}, []string{}, `key "k": value is not an array`},
@@ -178,10 +188,14 @@ func TestPutFailures(t *testing.T) {
 		{"upsert empty key", query.Upsert, []query.Record{good, noKey}, nil, "redis write: ", query.ErrNoKey, 0},
 		{"upsert empty key hint", query.Upsert, []query.Record{noKey}, nil, hint, query.ErrNoKey, 0},
 		{"upsert bad record", query.Upsert, []query.Record{{Key: "a", Type: "hash", Value: "x"}}, nil, `key "a": hash value is not an object`, nil, 0},
+		{"upsert empty hash after a good record", query.Upsert, []query.Record{good, {Key: "b", Type: "hash", Value: map[string]any{}}}, nil, `key "b": an empty hash cannot be stored`, nil, 0},
+		{"upsert null after a good record", query.Upsert, []query.Record{good, {Key: "b", Type: "string"}}, nil, `key "b": a null value cannot be stored`, nil, 0},
 		{"upsert transport error", query.Upsert, []query.Record{good}, map[int]error{0: boom}, "redis write: ", boom, 1},
 		{"insert-only empty key", query.InsertOnly, []query.Record{good, noKey}, nil, "redis exists: ", query.ErrNoKey, 0},
 		{"insert-only empty key hint", query.InsertOnly, []query.Record{noKey}, nil, hint, query.ErrNoKey, 0},
 		{"insert-only bad record", query.InsertOnly, []query.Record{good, badHash}, nil, `key "b": hash value is not an object`, nil, 1},
+		{"insert-only empty list", query.InsertOnly, []query.Record{good, {Key: "b", Type: "list", Value: []any{}}}, nil, `key "b": an empty list cannot be stored`, nil, 1},
+		{"insert-only null", query.InsertOnly, []query.Record{good, {Key: "b", Type: "string"}}, nil, `key "b": a null value cannot be stored`, nil, 1},
 		{"insert-only exists pipeline", query.InsertOnly, []query.Record{good}, map[int]error{0: boom}, "redis exists: ", boom, 1},
 		{"insert-only write pipeline", query.InsertOnly, []query.Record{good}, map[int]error{1: boom}, "redis write: ", boom, 2},
 	}

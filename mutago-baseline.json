@@ -2592,6 +2592,18 @@
    "file": "drivers/dynamodb/normalize.go",
    "mutator": "numbers/incrementer",
    "line": 407
+  },
+  {
+   "id": "c74ea47e38a303e53ae532bb4b6f9a75",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 157
+  },
+  {
+   "id": "6aae50820d9f51bc1b40f10e9a3a3426",
+   "file": "drivers/redis/write.go",
+   "mutator": "expression/context-nil",
+   "line": 159
   }
  ]
 }
