@@ -135,17 +135,53 @@ func TestInsertOnlyCountsConflictsAsSkips(t *testing.T) {
 	}
 }
 
-func TestInsertOnlyRejectsALaterNonObjectBeforeAnyRequest(t *testing.T) {
-	st, mock, _ := newMockStore(t, 10, 0)
+func TestPutRejectsALaterBadRecordBeforeAnyRequest(t *testing.T) {
+	// A bad record stops the batch before any request, even the revision read.
+	tests := []struct {
+		name    string
+		mode    query.WriteMode
+		bad     query.Record
+		wantErr string
+	}{
+		{
+			name:    "insert-only refuses a non-object value",
+			mode:    query.InsertOnly,
+			bad:     query.Record{Key: "2", Value: "scalar"},
+			wantErr: `value for key "2" is not a JSON object`,
+		},
+		{
+			name:    "insert-only refuses a _deleted member",
+			mode:    query.InsertOnly,
+			bad:     query.Record{Key: "2", Value: map[string]any{"_deleted": true}},
+			wantErr: `couchdb: key "2": the value holds _deleted, so CouchDB would delete the document or drop the member`,
+		},
+		{
+			name:    "upsert refuses a non-object value",
+			mode:    query.Upsert,
+			bad:     query.Record{Key: "2", Value: "scalar"},
+			wantErr: `value for key "2" is not a JSON object`,
+		},
+		{
+			name:    "upsert refuses a _deleted member",
+			mode:    query.Upsert,
+			bad:     query.Record{Key: "2", Value: map[string]any{"_deleted": true}},
+			wantErr: `couchdb: key "2": the value holds _deleted, so CouchDB would delete the document or drop the member`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, mock, _ := newMockStore(t, 10, 0)
 
-	stat, err := st.Put(context.Background(), []query.Record{
-		{Key: "1", Value: map[string]any{}},
-		{Key: "2", Value: "scalar"},
-	}, query.InsertOnly)
+			stat, err := st.Put(context.Background(), []query.Record{
+				{Key: "1", Value: map[string]any{}},
+				tt.bad,
+			}, tt.mode)
 
-	require.ErrorContains(t, err, `value for key "2" is not a JSON object`)
-	require.Equal(t, query.WriteStat{}, stat)
-	require.NoError(t, mock.ExpectationsWereMet())
+			require.ErrorContains(t, err, tt.wantErr)
+			require.Equal(t, query.WriteStat{}, stat)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 // liveRevs builds _all_docs rows with a revision for each key.

@@ -117,6 +117,16 @@ rather than failing partway through a copy. For the same reason, `combine` has
 no `--typed`. A typed dump is a stream of `{key,type,value}` records and needs
 the same key.
 
+The record key replaces the identity that the value carries. MongoDB,
+Elasticsearch, OpenSearch, and CouchDB drop the `_id` of the value and use the
+record key instead. CouchDB also drops the `_rev` of the value. DynamoDB writes
+the record key over the key attributes of the item. This is how `--key`,
+`--key-field`, and `--key-prefix` take effect. For a record with no key,
+MongoDB, Elasticsearch, OpenSearch, and CouchDB also drop the `_id` of the value,
+and the backend mints an identity. DynamoDB writes such a record as it is,
+including an `_id` attribute, and the item must hold the key attributes of the
+table.
+
 A write flag used without `--insert` is an error, never silently ignored.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |

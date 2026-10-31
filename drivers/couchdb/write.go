@@ -40,15 +40,16 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 // key had a prior revision counts as overwritten, the rest as written.
 func (s *Store) upsert(ctx context.Context, batch []query.Record) (query.WriteStat, error) {
 	db := s.client.DB(s.db)
+	// Build the bodies first, so a bad record stops the batch before any request.
+	docs, err := bulkBodies(batch, nil)
+	if err != nil {
+		return query.WriteStat{}, err
+	}
 	revs, err := s.currentRevs(ctx, batch)
 	if err != nil {
 		return query.WriteStat{}, err
 	}
-
-	docs, err := bulkBodies(batch, revs)
-	if err != nil {
-		return query.WriteStat{}, err
-	}
+	attachRevs(batch, docs, revs)
 
 	results, err := db.BulkDocs(ctx, docs)
 	if err != nil {
@@ -75,6 +76,17 @@ func bulkBodies(batch []query.Record, revs map[string]string) ([]any, error) {
 		docs[i] = doc
 	}
 	return docs, nil
+}
+
+// attachRevs adds _rev to each document of docs whose record key revs holds. docs
+// holds the bodies of batch, in the same order. revs holds only keyed records,
+// because currentRevs reads no keyless one.
+func attachRevs(batch []query.Record, docs []any, revs map[string]string) {
+	for i, r := range batch {
+		if rev, ok := revs[r.Key]; ok {
+			docs[i].(map[string]any)["_rev"] = rev
+		}
+	}
 }
 
 // upsertStat counts the outcome of an upsert. A record whose non-empty key had a prior
@@ -180,11 +192,18 @@ func rowRev(rows *kivik.ResultSet) string {
 // documentBody builds the JSON document to write for a record. It strips any
 // read-in _id/_rev, so the record key carries identity and the value does not.
 // The value must be a JSON object. A scalar is rejected rather than wrapped as
-// {value: ...}, so a successful Put round-trips exactly.
+// {value: ...}, so a successful Put round-trips exactly. A value that holds a
+// _deleted member is rejected too, whatever its value.
 func documentBody(r query.Record) (map[string]any, error) {
 	obj, ok := r.Value.(map[string]any)
 	if !ok {
 		return nil, query.NonObjectValueError("couchdb", r.Key)
+	}
+	if _, ok := obj["_deleted"]; ok {
+		// CouchDB deletes the document for true and drops the member for false.
+		return nil, fmt.Errorf(
+			"couchdb: key %q: the value holds _deleted, so CouchDB would delete the document or drop the member; use iq data delete to delete it",
+			r.Key)
 	}
 	doc := map[string]any{}
 	for k, v := range obj {

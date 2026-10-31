@@ -67,6 +67,21 @@ func TestDocumentBody(t *testing.T) {
 			want:   map[string]any{"title": "Go"},
 		},
 		{
+			name:    "a _deleted true member is refused so the write cannot delete",
+			record:  query.Record{Key: "k", Value: map[string]any{"_deleted": true, "t": "x"}},
+			wantErr: `couchdb: key "k": the value holds _deleted, so CouchDB would delete the document or drop the member; use iq data delete to delete it`,
+		},
+		{
+			name:    "a _deleted false member is refused because CouchDB would drop it",
+			record:  query.Record{Key: "k", Value: map[string]any{"_deleted": false}},
+			wantErr: `couchdb: key "k": the value holds _deleted`,
+		},
+		{
+			name:    "a _deleted member of any other type is refused too",
+			record:  query.Record{Key: "k", Value: map[string]any{"_deleted": "yes"}},
+			wantErr: `couchdb: key "k": the value holds _deleted`,
+		},
+		{
 			name:    "an array value is rejected too",
 			record:  query.Record{Key: "k", Value: []any{1, 2}},
 			wantErr: "is not a JSON object",

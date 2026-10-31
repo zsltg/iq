@@ -365,6 +365,9 @@ kept in the document. Design documents (`_design/…`) are database metadata, an
 scans skip them. The `--unbounded` / streaming rules are identical to
 every backend. A write refuses a `_id`, a field name, or a string value that is not valid UTF-8, because JSON would
 change each invalid byte to U+FFFD. The error names the field path. A delete refuses such a `_id` too.
+A write also refuses a value that holds a `_deleted` member, whatever its value.
+CouchDB would delete the document for `true` and drop the member for `false`.
+Use `iq data delete` to delete a document.
 
 ### Pushdown
 
