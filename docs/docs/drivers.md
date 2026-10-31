@@ -1009,8 +1009,8 @@ CONSTRAINT ... REQUIRE n.<key> IS UNIQUE`). Without the constraint, a MERGE can 
 several nodes at once. For this reason, the write is refused up front rather than fanning out.
 
 The record key is the merge key, and it is written as the key property. If the value has the same key
-property as a string, the value keeps its type, so `5` stays a number. A record without a key (for
-example from `--key-field`) merges on the key property of its value, which must be present.
+property as a string, the value keeps its type, so `5` stays a number. A record without a key merges
+on the key property of its value, which must be present.
 
 Neo4j cannot store a null. A write refuses a node that has a null property, or a null inside a list,
 before it writes anything. The error names the key and the property. A property must be a scalar or a

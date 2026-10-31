@@ -323,10 +323,11 @@ func TestRecordProps(t *testing.T) {
 			wantKey: true,
 		},
 		{
-			name:    "keeps a json number key property that matches",
+			// The driver would send a json.Number as a string, so it is never kept.
+			name:    "a json number key property gives way to the record key",
 			rec:     query.Record{Key: "5", Value: map[string]any{"id": json.Number("5")}},
-			want:    map[string]any{"id": json.Number("5")},
-			wantKey: json.Number("5"),
+			want:    map[string]any{"id": "5"},
+			wantKey: "5",
 		},
 		{
 			name:    "keeps a float key property that matches the read form",

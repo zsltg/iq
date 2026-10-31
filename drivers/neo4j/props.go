@@ -1,7 +1,6 @@
 package neo4j
 
 import (
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -81,7 +80,7 @@ func keyString(v any) string {
 	switch x := v.(type) {
 	case float64:
 		return floatKeyString(x)
-	case bool, int, int32, int64, json.Number:
+	case bool, int, int32, int64:
 		return fmt.Sprint(x)
 	}
 	return ""

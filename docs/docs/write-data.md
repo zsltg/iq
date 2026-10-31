@@ -194,7 +194,10 @@ write the columns or cells that the record holds, and the other columns or cells
 of the row stay. `--replace` turns the copy into a restore. It empties
 the destination first (the same operation as `iq data clear`, a Redis
 `FLUSHDB`, a Mongo `deleteMany({})`) and then writes. As a result, the
-destination ends up holding exactly the source, in every driver.
+destination ends up holding exactly the values of the source. In Neo4j, the
+clear also deletes the relationships of the nodes, and the copy writes only the
+nodes of the label with their properties. So relationships and other labels are
+not restored.
 
 Because it destroys data, it prompts (`clear <destination> before writing`).
 `--force` answers yes. `--dry-run` reports the copy without clearing anything.
