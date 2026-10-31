@@ -17,6 +17,8 @@ var decodeFilters = []string{
 	`.[] | select(.price == "9.99")`,
 	`.[] | select(.price == "100")`,
 	`.[] | select(.price == 9.5)`,
+	`.[] | select(.price == 9.99)`,
+	`.[] | select(.price >= 9.99)`,
 	`.[] | select(.price == "apple")`,
 	`.[] | select(.price > 1000)`,
 	`.[] | select(.price >= "9.99")`,
@@ -28,9 +30,10 @@ var decodeFilters = []string{
 
 // TestScanFilteredKeepsWhatJQKeeps stores a Decimal128 next to other types. For each
 // decimal mode and each filter, the pushed scan returns every document that the full
-// jq filter keeps. The 9.5 equality uses a value that a double holds exactly, because
-// MongoDB does not equate a Decimal128 9.99 with the double 9.99. The server compares a Decimal128 as a number. jq compares the
-// decoded string, so the filter must return the Decimal128 rows too.
+// jq filter keeps. In auto and string mode, jq compares the decoded string, and the
+// server compares a number. In number mode, jq compares a float64, but MongoDB does
+// not equate the Decimal128 9.99 with the double 9.99. So the filter must return the
+// Decimal128 rows too.
 func TestScanFilteredKeepsWhatJQKeeps(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping mongodb integration test in -short mode")

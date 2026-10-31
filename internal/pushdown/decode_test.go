@@ -82,3 +82,38 @@ func TestHidesDecimalNumber(t *testing.T) {
 		})
 	}
 }
+
+func TestHidesDecimal(t *testing.T) {
+	path := []string{"price"}
+	tests := []struct {
+		name string
+		node predicate.Node
+		mode numfmt.DecimalMode
+		want bool
+	}{
+		{"eq number, number mode", predicate.Eq{Path: path, Value: 9.99}, numfmt.DecimalNumber, true},
+		{"eq int, number mode", predicate.Eq{Path: path, Value: 10}, numfmt.DecimalNumber, true},
+		{"gt number, number mode", predicate.Cmp{Path: path, Op: predicate.Gt, Value: 9.99}, numfmt.DecimalNumber, true},
+		{"ge number, number mode", predicate.Cmp{Path: path, Op: predicate.Ge, Value: 9.99}, numfmt.DecimalNumber, true},
+		{"lt number, number mode", predicate.Cmp{Path: path, Op: predicate.Lt, Value: 10.0}, numfmt.DecimalNumber, true},
+		{"le number, number mode", predicate.Cmp{Path: path, Op: predicate.Le, Value: 10.0}, numfmt.DecimalNumber, true},
+		{"eq string, number mode", predicate.Eq{Path: path, Value: "apple"}, numfmt.DecimalNumber, false},
+		{"eq number text, number mode", predicate.Eq{Path: path, Value: "9.99"}, numfmt.DecimalNumber, false},
+		{"eq null, number mode", predicate.Eq{Path: path}, numfmt.DecimalNumber, false},
+		{"eq bool, number mode", predicate.Eq{Path: path, Value: true}, numfmt.DecimalNumber, false},
+		{"gt string, number mode", predicate.Cmp{Path: path, Op: predicate.Gt, Value: "a"}, numfmt.DecimalNumber, false},
+		{"regex, number mode", predicate.Regex{Path: path, Pattern: "^9"}, numfmt.DecimalNumber, false},
+		{"exists, number mode", predicate.Exists{Path: path}, numfmt.DecimalNumber, false},
+		{"eq number, auto mode", predicate.Eq{Path: path, Value: 9.99}, numfmt.DecimalAuto, false},
+		{"eq number, string mode", predicate.Eq{Path: path, Value: 9.99}, numfmt.DecimalString, false},
+		{"lt number, auto mode", predicate.Cmp{Path: path, Op: predicate.Lt, Value: 10.0}, numfmt.DecimalAuto, false},
+		{"gt number, auto mode", predicate.Cmp{Path: path, Op: predicate.Gt, Value: 10.0}, numfmt.DecimalAuto, true},
+		{"eq number text, auto mode", predicate.Eq{Path: path, Value: "9.99"}, numfmt.DecimalAuto, true},
+		{"regex, string mode", predicate.Regex{Path: path, Pattern: "^9"}, numfmt.DecimalString, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, pushdown.HidesDecimal(tt.node, tt.mode))
+		})
+	}
+}

@@ -817,9 +817,9 @@ it and stream the whole collection, filtering entirely client-side. What it can 
 
 | `select(...)` clause | Pushed | MongoDB translation | Notes |
 | --- | :---: | --- | --- |
-| `.a == x` | ✓ | `{a: x}` | number, string, bool, or null literal |
-| `.a == 1 or .a == 2` | ✓ | `{a: {$in: [1, 2]}}` | an `or` of equalities on one field |
-| `.a > n`, `>=`, `<`, `<=` | ✓ | native op + `$type` guards (an `$or`) | number/string literal. The translation reproduces jq's cross-type order, so the match is never a subset |
+| `.a == x` | ✓ | `{a: x}` | number, string, bool, or null literal. Under `--format.decimal=number`, a number literal adds an `$or` branch with `{a: {$type: "decimal"}}`, because MongoDB does not equate a Decimal128 with the closest double |
+| `.a == 1 or .a == 2` | ✓ | `{a: {$in: [1, 2]}}` | an `or` of equalities on one field. An equality that gets the Decimal128 branch does not join the `$in`, so under `--format.decimal=number` numbers stay an `$or` |
+| `.a > n`, `>=`, `<`, `<=` | ✓ | native op + `$type` guards (an `$or`) | number/string literal. The translation reproduces jq's cross-type order, so the match is never a subset. Under `--format.decimal=number`, a number literal adds the Decimal128 branch |
 | `.a \| test("re")` | ✓ | `{a: {$regex: "re", $options: "is"}}` | portable patterns only (below), and jq's `i` and `m` flags. jq's `m` (dot-matches-newline) maps to PCRE's `s` |
 | `has("a")`, `.a \| has("k")` | ✓ | `{a: {$exists: true}}` | exact, key presence, like jq's `has()` |
 | `.a \| length == n` | ✓ | `{$size: n}` + `$type` guards (an `$or`) | jq `length` is polymorphic (array/string/object/number), so guards keep it a superset |

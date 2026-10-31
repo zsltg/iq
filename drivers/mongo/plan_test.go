@@ -38,8 +38,8 @@ func TestExplainPlan(t *testing.T) {
 		{
 			name:       "streamable scan with pushed predicate",
 			keys:       selector.KeySet{Scan: true, Streamable: true},
-			pred:       predicate.Eq{Path: []string{"total"}, Value: float64(99)},
-			wantFilter: map[string]any{"total": float64(99)},
+			pred:       predicate.Eq{Path: []string{"total"}, Value: "x"},
+			wantFilter: map[string]any{"total": "x"},
 			wantOps: []string{
 				"find(<filter>): server-side pre-filter, then the full jq re-runs client-side",
 				"cursor streamed in batches of 100",
