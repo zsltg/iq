@@ -211,11 +211,11 @@ func TestMCPInsertNotesConvertedValues(t *testing.T) {
 	seedConfig(t, c)
 	cs := connectMCP(t, newTestMCPServer([]string{allowWrites}, 200, 256*1024), nil)
 
-	var out mcpWriteOutput
+	var out map[string]any
 	structOf(t, callMCP(t, cs, "iq_insert", map[string]any{"source": "c", "destination": "c", "dry_run": true}), &out)
 
-	require.Equal(t, 1, out.Written)
+	require.InDelta(t, 1, out["written"], 0)
 	require.Equal(t,
 		`iq converted 1 value that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "price"`,
-		out.Note)
+		out["note"])
 }
