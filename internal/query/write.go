@@ -3,10 +3,6 @@ package query
 import (
 	"context"
 	"fmt"
-	"maps"
-	"slices"
-	"strconv"
-	"unicode/utf8"
 )
 
 // NonObjectValueError is the uniform error a keyed document store returns when a
@@ -19,108 +15,6 @@ func NonObjectValueError(driver, key string) error {
 		`%s: value for key %q is not a JSON object; transform explicitly, e.g. iq 'if type == "object" then . else {value: .} end' --insert <dest>`,
 		driver, key,
 	)
-}
-
-// CheckKeyUTF8 makes sure that a record key is valid UTF-8. A store that writes
-// text as JSON, or as an SDK string, replaces each invalid byte with U+FFFD. So two
-// different keys would become one key. Such a store calls this before it writes.
-// A store that keeps the bytes exactly does not call it. driver names the backend.
-func CheckKeyUTF8(driver, key string) error {
-	if utf8.ValidString(key) {
-		return nil
-	}
-	return fmt.Errorf("%s: record key %q is not valid UTF-8; the backend would change it to U+FFFD", driver, key)
-}
-
-// CheckKeysUTF8 makes sure that every key in keys is valid UTF-8. A store that
-// deletes by a key sent as JSON or as an SDK string calls it before the first
-// delete, so a key like "\xff" cannot delete the item stored under "\uFFFD".
-// driver names the backend.
-func CheckKeysUTF8(driver string, keys []string) error {
-	for _, k := range keys {
-		if err := CheckKeyUTF8(driver, k); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// CheckValueUTF8 makes sure that every string in a record value is valid UTF-8,
-// both the string values and the names of the objects. It looks inside objects and
-// arrays. The error names the field path, like "a.b[2]". A store that writes text
-// as JSON, or as an SDK string, calls it before any write of the record, because
-// the backend would change each invalid byte to U+FFFD. key is the record key and
-// driver names the backend.
-func CheckValueUTF8(driver, key string, value any) error {
-	if validUTF8Tree(value) {
-		return nil
-	}
-	return checkValueUTF8(driver, key, "", value)
-}
-
-// validUTF8Tree is the fast yes or no check of CheckValueUTF8. It builds no path
-// and sorts no names, so the usual valid record costs little.
-func validUTF8Tree(value any) bool {
-	switch t := value.(type) {
-	case string:
-		return utf8.ValidString(t)
-	case map[string]any:
-		for name, v := range t {
-			if !utf8.ValidString(name) || !validUTF8Tree(v) {
-				return false
-			}
-		}
-	case []any:
-		return !slices.ContainsFunc(t, func(e any) bool { return !validUTF8Tree(e) })
-	}
-	return true
-}
-
-// checkValueUTF8 checks the value at path. The top level has an empty path.
-func checkValueUTF8(driver, key, path string, value any) error {
-	switch t := value.(type) {
-	case string:
-		if !utf8.ValidString(t) {
-			return fmt.Errorf("%s: key %q: %s holds a string that is not valid UTF-8; the backend would change it to U+FFFD",
-				driver, key, fieldLabel(path))
-		}
-	case map[string]any:
-		return checkObjectUTF8(driver, key, path, t)
-	case []any:
-		for i, e := range t {
-			if err := checkValueUTF8(driver, key, path+"["+strconv.Itoa(i)+"]", e); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// checkObjectUTF8 checks the names and the values of the object at path. It goes
-// through the names in sorted order, so the same input always gives the same error.
-func checkObjectUTF8(driver, key, path string, obj map[string]any) error {
-	for _, name := range slices.Sorted(maps.Keys(obj)) {
-		at := name
-		if path != "" {
-			at = path + "." + name
-		}
-		if !utf8.ValidString(name) {
-			return fmt.Errorf("%s: key %q: the field name %q is not valid UTF-8; the backend would change it to U+FFFD",
-				driver, key, at)
-		}
-		if err := checkValueUTF8(driver, key, at, obj[name]); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// fieldLabel names the value at path in an error. The top level has no path.
-func fieldLabel(path string) string {
-	if path == "" {
-		return "the value"
-	}
-	return "field " + strconv.Quote(path)
 }
 
 // Record is one typed item crossing the write boundary. Type is a driver-neutral

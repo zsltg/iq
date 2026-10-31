@@ -15,6 +15,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
+// utf8Guard refuses text that the backend would change to U+FFFD.
+var utf8Guard = query.UTF8Guard{Driver: "redis"}
+
 // Put writes a batch of records back into Redis. It reconstructs the native
 // structure of each key from its type tag, as the inverse of the typed readers in
 // kv.go. Upsert replaces the whole value: an aggregate is DEL'd before it is
@@ -178,7 +181,7 @@ func queueString(ctx context.Context, p goredis.Pipeliner, r query.Record) error
 // queueJSON queues a JSON.SET at the document root.
 func queueJSON(ctx context.Context, p goredis.Pipeliner, r query.Record) error {
 	// JSON turns an invalid byte into U+FFFD. The Redis key is bytes and stays exact.
-	if err := query.CheckValueUTF8("redis", r.Key, r.Value); err != nil {
+	if err := utf8Guard.Value(r.Key, r.Value); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(r.Value)

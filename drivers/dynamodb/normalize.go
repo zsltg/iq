@@ -255,7 +255,7 @@ func (s *Store) toItem(r recordValue) (map[string]types.AttributeValue, error) {
 	if !ok {
 		return nil, fmt.Errorf("dynamodb: record value must be an item object, got %T", r.value)
 	}
-	item, err := toAttributeMap(obj)
+	item, err := attrPath("").attributeMap(obj)
 	if err != nil {
 		return nil, err
 	}
@@ -288,22 +288,50 @@ type recordValue struct {
 // (SS/NS/BS) normalize to []any, so a round trip writes them back as L, not a set.
 // Numbers presented as strings (auto and string decimal mode) write back as S.
 func toAttributeValue(v any) (types.AttributeValue, error) {
-	return toAttributeAt("", v)
+	return attrPath("").attribute(v)
 }
 
-// toAttributeAt is toAttributeValue for the value at path inside the item. The
-// path names the attribute in a number error, like "a.b[2]". The top level has an
-// empty path.
-func toAttributeAt(path string, v any) (types.AttributeValue, error) {
+// attrPath names an attribute inside an item, like "a.b[2]". A number error
+// carries it. The top level has an empty path.
+type attrPath string
+
+// field is the path of the entry name in the object at p.
+func (p attrPath) field(name string) attrPath {
+	if p == "" {
+		return attrPath(name)
+	}
+	return p + "." + attrPath(name)
+}
+
+// element is the path of the entry i in the array at p.
+func (p attrPath) element(i int) attrPath {
+	return p + "[" + attrPath(strconv.Itoa(i)) + "]"
+}
+
+// wrap adds the path to a number error. An error of another kind passes through
+// unchanged.
+func (p attrPath) wrap(err error) error {
+	var ne *numberError
+	switch {
+	case !errors.As(err, &ne):
+		return err
+	case p == "":
+		return fmt.Errorf("dynamodb: %w", err)
+	}
+	return fmt.Errorf("dynamodb: attribute %q: %w", string(p), err)
+}
+
+// attribute converts the value at p to an attribute value.
+func (p attrPath) attribute(v any) (types.AttributeValue, error) {
 	switch t := v.(type) {
 	case map[string]any:
-		m, err := toAttributeMapAt(path, t)
+		m, err := p.attributeMap(t)
 		if err != nil {
 			return nil, err
 		}
 		return &types.AttributeValueMemberM{Value: m}, nil
 	case []any:
-		l, err := toAttributeListAt(path, t)
+		l, err := p.attributeList(t)
 		if err != nil {
 			return nil, err
 		}
@@ -311,51 +339,26 @@ func toAttributeAt(path string, v any) (types.AttributeValue, error) {
 	default:
 		av, err := scalarAttributeValue(v)
 		if err != nil {
-			return nil, atPath(path, err)
+			return nil, p.wrap(err)
 		}
 		return av, nil
 	}
 }
 
-// atPath adds the attribute path to a number error. An error of another kind
-// passes through unchanged.
-func atPath(path string, err error) error {
-	var ne *numberError
-	switch {
-	case !errors.As(err, &ne):
-		return err
-	case path == "":
-		return fmt.Errorf("dynamodb: %w", err)
-	}
-	return fmt.Errorf("dynamodb: attribute %q: %w", path, err)
-}
-
-// toAttributeMap converts every entry of a JSON object to an attribute value.
-func toAttributeMap(obj map[string]any) (map[string]types.AttributeValue, error) {
-	return toAttributeMapAt("", obj)
-}
-
-// toAttributeMapAt converts the entries of the object at path.
-func toAttributeMapAt(path string, obj map[string]any) (map[string]types.AttributeValue, error) {
+// attributeMap converts the entries of the object at p.
+func (p attrPath) attributeMap(obj map[string]any) (map[string]types.AttributeValue, error) {
 	m := make(map[string]types.AttributeValue, len(obj))
-	err := convertAll(maps.All(obj), func(k string) string {
-		if path == "" {
-			return k
-		}
-		return path + "." + k
-	}, func(k string, av types.AttributeValue) { m[k] = av })
+	err := convertAll(maps.All(obj), p.field, func(k string, av types.AttributeValue) { m[k] = av })
 	if err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-// toAttributeListAt converts the elements of the array at path.
-func toAttributeListAt(path string, list []any) ([]types.AttributeValue, error) {
+// attributeList converts the elements of the array at p.
+func (p attrPath) attributeList(list []any) ([]types.AttributeValue, error) {
 	l := make([]types.AttributeValue, len(list))
-	err := convertAll(slices.All(list), func(i int) string {
-		return path + "[" + strconv.Itoa(i) + "]"
-	}, func(i int, av types.AttributeValue) { l[i] = av })
+	err := convertAll(slices.All(list), p.element, func(i int, av types.AttributeValue) { l[i] = av })
 	if err != nil {
 		return nil, err
 	}
@@ -365,9 +368,9 @@ func toAttributeListAt(path string, list []any) ([]types.AttributeValue, error) 
 // convertAll converts each value of seq to an attribute value and passes it to store
 // with its key or index. at gives the path of an entry. It stops at the first
 // conversion error and returns it.
-func convertAll[K any](seq iter.Seq2[K, any], at func(K) string, store func(K, types.AttributeValue)) error {
+func convertAll[K any](seq iter.Seq2[K, any], at func(K) attrPath, store func(K, types.AttributeValue)) error {
 	for k, e := range seq {
-		av, err := toAttributeAt(at(k), e)
+		av, err := at(k).attribute(e)
 		if err != nil {
 			return err
 		}
@@ -377,8 +380,7 @@ func convertAll[K any](seq iter.Seq2[K, any], at func(K) string, store func(K, t
 }
 
 // scalarAttributeValue converts a JSON scalar (nil, bool, string, or a Go or json
-// number) to an attribute value. A number must fit a DynamoDB N, so checkNumber
-// runs on its text. The text is never changed. Any other type is an error.
+// number) to an attribute value. Any other type is an error.
 func scalarAttributeValue(v any) (types.AttributeValue, error) {
 	switch t := v.(type) {
 	case nil:
@@ -387,6 +389,16 @@ func scalarAttributeValue(v any) (types.AttributeValue, error) {
 		return &types.AttributeValueMemberBOOL{Value: t}, nil
 	case string:
 		return &types.AttributeValueMemberS{Value: t}, nil
+	default:
+		return numberAttributeValue(v)
+	}
+}
+
+// numberAttributeValue converts a Go or json number to an N attribute. A number
+// must fit a DynamoDB N, so checkNumber runs on its text. The text is never
+// changed. Any other type is an error.
+func numberAttributeValue(v any) (types.AttributeValue, error) {
+	switch t := v.(type) {
 	case int:
 		return &types.AttributeValueMemberN{Value: strconv.Itoa(t)}, nil
 	case int64:
@@ -408,11 +420,9 @@ const (
 	maxNumberDigits = 38
 	minNumberExp    = -130
 	maxNumberExp    = 125
-	// maxExpClamp stands for an exponent that does not fit an int.
-	maxExpClamp = 1 << 30
 )
 
-// numberError is a number that a write refuses. atPath adds the attribute path to
+// numberError is a number that a write refuses. wrap adds the attribute path to
 // it.
 type numberError struct{ msg string }
 
@@ -432,11 +442,11 @@ func numberAttribute(text string) (types.AttributeValue, error) {
 // of at most 38 significant digits and a magnitude within the N limits. Leading
 // and trailing zeros do not count as significant. It never changes text.
 func checkNumber(text string) error {
-	intPart, fracPart, exp, ok := splitDecimal(text)
+	d, ok := parseDecimal(text)
 	if !ok {
 		return &numberError{msg: fmt.Sprintf("%q is not a finite decimal number", text)}
 	}
-	all := intPart + fracPart
+	all := d.intPart + d.fracPart
 	first := strings.IndexFunc(all, func(r rune) bool { return r != '0' })
 	if first < 0 {
 		return nil // zero
@@ -446,41 +456,55 @@ func checkNumber(text string) error {
 		return &numberError{msg: fmt.Sprintf("number %s has %d significant digits, DynamoDB stores at most %d",
 			text, len(digits), maxNumberDigits)}
 	}
-	// The value is d.ddd x 10^lead, with the first digit before the point.
-	lead := len(intPart) - 1 - first + exp
-	if lead < minNumberExp || lead > maxNumberExp {
+	// The value is d.ddd x 10^(shift+exp), with the first digit before the point.
+	// The test moves shift to the other side, so a huge exp cannot overflow.
+	shift := len(d.intPart) - 1 - first
+	if d.exp < minNumberExp-shift || d.exp > maxNumberExp-shift {
 		return &numberError{msg: fmt.Sprintf("number %s is outside the DynamoDB range 1E-130 to 9.9999999999999999999999999999999999999E+125", text)}
 	}
 	return nil
 }
 
-// splitDecimal splits text into the digits before the point, the digits after it,
-// and the exponent. It reports false if text is not a decimal number with at least
-// one digit. An exponent that does not fit an int becomes a huge value.
-func splitDecimal(text string) (intPart, fracPart string, exp int, ok bool) {
-	rest := text
-	if strings.HasPrefix(rest, "+") || strings.HasPrefix(rest, "-") {
-		rest = rest[1:]
-	}
-	if i := strings.IndexAny(rest, "eE"); i >= 0 {
-		e, err := strconv.Atoi(rest[i+1:])
-		switch {
-		case errors.Is(err, strconv.ErrRange):
-			// Far outside the N range. The clamp keeps the arithmetic of the caller safe.
-			e = maxExpClamp
-			if strings.HasPrefix(rest[i+1:], "-") {
-				e = -maxExpClamp
-			}
-		case err != nil:
-			return "", "", 0, false
+// decimal is a number split into the digits before the point, the digits after it,
+// and the exponent. The sign is dropped.
+type decimal struct {
+	intPart, fracPart string
+	exp               int
+}
+
+// parseDecimal splits text into a decimal. It reports false if text is not a
+// decimal number with at least one digit. An exponent that does not fit an int
+// becomes the largest int of its sign.
+func parseDecimal(text string) (dec decimal, ok bool) {
+	// Lower case turns E into e. No other character becomes e.
+	mantissa, expText, hasExp := strings.Cut(strings.ToLower(unsigned(text)), "e")
+	if hasExp {
+		e, err := strconv.Atoi(expText)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
+			return decimal{}, false
 		}
-		exp, rest = e, rest[:i]
+		dec.exp = e
 	}
-	intPart, fracPart, _ = strings.Cut(rest, ".")
-	if intPart+fracPart == "" || !allDigits(intPart) || !allDigits(fracPart) {
-		return "", "", 0, false
+	dec.intPart, dec.fracPart, _ = strings.Cut(mantissa, ".")
+	if !dec.hasOnlyDigits() {
+		return decimal{}, false
 	}
-	return intPart, fracPart, exp, true
+	return dec, true
+}
+
+// unsigned returns text without one leading plus or minus sign.
+func unsigned(text string) string {
+	if text != "" && strings.IndexByte("+-", text[0]) >= 0 {
+		return text[1:]
+	}
+	return text
+}
+
+// hasOnlyDigits reports whether d has at least one digit and no other character
+// in its integer and fraction parts.
+func (d decimal) hasOnlyDigits() bool {
+	digits := d.intPart + d.fracPart
+	return digits != "" && allDigits(digits)
 }
 
 // allDigits reports whether s holds only the digits 0 to 9.

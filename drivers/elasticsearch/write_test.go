@@ -178,6 +178,18 @@ func TestDeleteRefusesAKeyThatIsNotValidUTF8(t *testing.T) {
 	require.Zero(t, calls, "no request goes out, not even for the valid key")
 }
 
+func TestDeleteNeedsAnIndex(t *testing.T) {
+	calls := 0
+	st := newStubStore(t, "", func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		esJSON(w, http.StatusOK, `{"items":[]}`)
+	})
+	stat, err := st.Delete(t.Context(), []string{"1"})
+	require.Equal(t, query.DeleteStat{}, stat)
+	require.ErrorIs(t, err, errNoIndex)
+	require.Zero(t, calls)
+}
+
 func TestDeleteReportsARefusedBulk(t *testing.T) {
 	// The same holds for a delete: a refusal must not read as "nothing was there".
 	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {

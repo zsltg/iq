@@ -11,6 +11,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
+// utf8Guard refuses text that the backend would change to U+FFFD.
+var utf8Guard = query.UTF8Guard{Driver: "elasticsearch"}
+
 // Put writes a batch of records into the index, keyed by _id. It uses a _bulk
 // request that refreshes, so the writes are immediately searchable. Upsert
 // indexes each record (replacing an existing document by _id). InsertOnly
@@ -124,10 +127,7 @@ func documentBody(r query.Record) (map[string]any, error) {
 		doc[k] = v
 	}
 	// The body and the _id travel as JSON, which turns an invalid byte into U+FFFD.
-	if err := query.CheckKeyUTF8("elasticsearch", r.Key); err != nil {
-		return nil, err
-	}
-	if err := query.CheckValueUTF8("elasticsearch", r.Key, doc); err != nil {
+	if err := utf8Guard.KeyValue(r.Key, doc); err != nil {
 		return nil, err
 	}
 	return doc, nil
@@ -166,11 +166,7 @@ func (s *Store) Drop(ctx context.Context) error {
 // response. Each _id rides as a marshalled JSON field and is never built as a
 // string.
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
-	if s.index == "" {
-		return query.DeleteStat{}, errNoIndex
-	}
-	// Each _id travels as JSON, which turns an invalid byte into U+FFFD.
-	if err := query.CheckKeysUTF8("elasticsearch", keys); err != nil {
+	if err := s.checkDeleteKeys(keys); err != nil {
 		return query.DeleteStat{}, err
 	}
 	var stat query.DeleteStat
@@ -196,6 +192,16 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 		stat.Missing += chunk.Missing
 	}
 	return stat, nil
+}
+
+// checkDeleteKeys makes sure that the store has an index and that every key can
+// travel as an _id. Each _id travels as JSON, which turns an invalid byte into
+// U+FFFD.
+func (s *Store) checkDeleteKeys(keys []string) error {
+	if s.index == "" {
+		return errNoIndex
+	}
+	return utf8Guard.Keys(keys)
 }
 
 // tallyBulkDelete reduces a _bulk delete response's per-item outcomes to a delete

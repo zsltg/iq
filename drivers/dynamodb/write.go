@@ -13,6 +13,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
+// utf8Guard refuses text that the backend would change to U+FFFD.
+var utf8Guard = query.UTF8Guard{Driver: "dynamodb"}
+
 // Put writes a batch of records into the table, keyed by primary key. Upsert
 // issues a plain PutItem, which DynamoDB applies as an overwrite-or-insert.
 // InsertOnly issues a PutItem with a condition that the partition key not exist,
@@ -58,10 +61,7 @@ func (s *Store) itemsOf(batch []query.Record) ([]map[string]types.AttributeValue
 	items := make([]map[string]types.AttributeValue, len(batch))
 	for i, r := range batch {
 		// The SDK writes S and the names as JSON, which turns an invalid byte into U+FFFD.
-		if err := query.CheckKeyUTF8("dynamodb", r.Key); err != nil {
-			return nil, err
-		}
-		if err := query.CheckValueUTF8("dynamodb", r.Key, r.Value); err != nil {
+		if err := utf8Guard.KeyValue(r.Key, r.Value); err != nil {
 			return nil, err
 		}
 		item, err := s.toItem(recordValue{key: r.Key, value: r.Value})
@@ -266,11 +266,7 @@ func (s *Store) keyAttrs(item map[string]types.AttributeValue) map[string]types.
 // (existingKeySet) gives the present and absent counts. The delete requests run
 // regardless, so Delete is idempotent.
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
-	if len(s.keys) == 0 {
-		return query.DeleteStat{}, errNoTable
-	}
-	// The SDK writes each key as JSON, which turns an invalid byte into U+FFFD.
-	if err := query.CheckKeysUTF8("dynamodb", keys); err != nil {
+	if err := s.checkDeleteKeys(keys); err != nil {
 		return query.DeleteStat{}, err
 	}
 	existing, err := s.existingKeySet(ctx, keys)
@@ -293,6 +289,16 @@ func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, er
 		}
 	}
 	return stat, nil
+}
+
+// checkDeleteKeys makes sure that the store has a table and that the SDK can send
+// every key exactly. The SDK writes each key as JSON, which turns an invalid byte
+// into U+FFFD.
+func (s *Store) checkDeleteKeys(keys []string) error {
+	if len(s.keys) == 0 {
+		return errNoTable
+	}
+	return utf8Guard.Keys(keys)
 }
 
 // Drop removes the table entirely: its items and schema (the `iq data drop`

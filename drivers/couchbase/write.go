@@ -11,6 +11,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
+// utf8Guard refuses text that the backend would change to U+FFFD.
+var utf8Guard = query.UTF8Guard{Driver: "couchbase"}
+
 // putItem is one record resolved for writing: its document body and its key. The
 // keyed field is true if the key came from the record, so it can overwrite an
 // existing document. It is false if the driver minted the key for a keyless record
@@ -66,10 +69,8 @@ func documentBody(r query.Record) (map[string]any, error) {
 	}
 	// The SDK writes the value as JSON, which turns an invalid byte into U+FFFD. The
 	// key is a KV key, sent as bytes, so it is not checked here.
-	if err := query.CheckValueUTF8("couchbase", r.Key, obj); err != nil {
-		return nil, err
-	}
-	return obj, nil
+	// The caller ignores obj when the guard returns an error.
+	return obj, utf8Guard.Value(r.Key, obj)
 }
 
 // upsert overwrites each record's document by ID, creating it when absent. It
