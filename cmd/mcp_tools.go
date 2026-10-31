@@ -593,7 +593,10 @@ type mcpSchemaInput struct {
 }
 
 // toolSchema samples the source and returns the inferred JSON Schema itself as
-// the structured result, the same document `iq schema` prints.
+// the structured result, the same document `iq schema` prints. When an adapter
+// turned NaN or infinity into strings, the document also holds a top-level
+// "$comment" that says so, because the schema calls those values strings.
+// $comment is the JSON Schema keyword for a note, and validators ignore it.
 func (s *mcpServer) toolSchema(ctx context.Context, _ *mcp.CallToolRequest, in mcpSchemaInput) (*mcp.CallToolResult, map[string]any, error) {
 	sample, err := sampleSize(in.Sample)
 	if err != nil {
@@ -605,6 +608,8 @@ func (s *mcpServer) toolSchema(ctx context.Context, _ *mcp.CallToolRequest, in m
 	}
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
+	var nonFinite query.NonFiniteSummary
+	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
 	st, err := openStore(cctx, cfg)
 	if err != nil {
 		return nil, nil, toolError(redactErr(err, cfg.url))
@@ -614,7 +619,11 @@ func (s *mcpServer) toolSchema(ctx context.Context, _ *mcp.CallToolRequest, in m
 	if err != nil {
 		return nil, nil, toolError(fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(in.Filter, err), cfg.url)))
 	}
-	return nil, shape.Infer(items).JSONSchema(schemaTitle(cfg)), nil
+	doc := shape.Infer(items).JSONSchema(schemaTitle(cfg))
+	if note := nonFinite.Text(); note != "" {
+		doc["$comment"] = note
+	}
+	return nil, doc, nil
 }
 
 // mcpDiffInput is a comparison request: the two sides, the layers to compare, and
@@ -637,6 +646,7 @@ type mcpDiffOutput struct {
 	Stats  []mcpChange    `json:"stats,omitempty"`
 	Schema []mcpChange    `json:"schema,omitempty"`
 	Differ bool           `json:"differ"`
+	Note   string         `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
 }
 
 // mcpItemDelta is the delta of one keyed item. It projects diff.ItemDelta with
@@ -696,11 +706,15 @@ func (s *mcpServer) toolDiff(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
 
+	var nonFinite query.NonFiniteSummary
+	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+
 	run := diffRun{cfg: s.callConfig(), left: left, right: right, sections: in.Section, sample: sample}
 	out, err := collectDiff(cctx, run, layers)
 	if err != nil {
 		return nil, mcpDiffOutput{}, toolError(err)
 	}
+	out.Note = nonFinite.Text()
 	return nil, out, nil
 }
 
@@ -908,6 +922,7 @@ type mcpWriteOutput struct {
 	Overwritten int    `json:"overwritten"`
 	Skipped     int    `json:"skipped"`
 	DryRun      bool   `json:"dry_run"`
+	Note        string `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
 }
 
 // toolInsert copies the items of a source into a destination through the same
@@ -933,6 +948,8 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
+	var nonFinite query.NonFiniteSummary
+	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
 	tr, closeSrc, err := openTypedSource(cctx, cfg)
 	if err != nil {
 		return nil, mcpWriteOutput{}, toolError(err)
@@ -947,7 +964,7 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	return nil, mcpWriteOutput{
 		Destination: label, Written: stat.Written, Overwritten: stat.Overwritten,
-		Skipped: stat.Skipped, DryRun: in.DryRun,
+		Skipped: stat.Skipped, DryRun: in.DryRun, Note: nonFinite.Text(),
 	}, nil
 }
 

@@ -234,10 +234,10 @@ the gate.
 | `iq_explain` | always | readOnly, idempotent | The access plan for a filter, without connecting |
 | `iq_query` | always | readOnly, idempotent | Run a jq filter. Returns `{items, count, truncated}`, plus `note` when `iq` turned NaN or infinity into strings |
 | `iq_inspect` | always | readOnly, idempotent | A backend's native introspection, optionally narrowed by `only` |
-| `iq_schema` | always | readOnly, idempotent | A draft 2020-12 JSON Schema inferred from a sample |
-| `iq_diff` | always | readOnly, idempotent | Compare two sources by data, stats, or inferred schema |
-| `iq_insert` | `--allow writes` | destructive, idempotent | Copy items into another source. `no_overwrite` defaults to true |
-| `iq_exec` | `--allow exec` | destructive | Forward a command to the backend verbatim |
+| `iq_schema` | always | readOnly, idempotent | A draft 2020-12 JSON Schema inferred from a sample. Holds a top-level `$comment` when `iq` turned NaN or infinity into strings |
+| `iq_diff` | always | readOnly, idempotent | Compare two sources by data, stats, or inferred schema. Returns `note` when `iq` turned NaN or infinity into strings |
+| `iq_insert` | `--allow writes` | destructive, idempotent | Copy items into another source. `no_overwrite` defaults to true. Returns `note` when `iq` turned NaN or infinity into strings |
+| `iq_exec` | `--allow exec` | destructive | Forward a command to the backend verbatim. Returns `note` when `iq` turned NaN or infinity into strings |
 | `iq_data_clear` | `--allow destructive` | destructive, idempotent | Empty a container, keeping it |
 | `iq_data_drop` | `--allow destructive` | destructive, idempotent | Remove a container entirely |
 | `iq_data_delete` | `--allow destructive` | destructive, idempotent | Remove named keys, keeping the container |
