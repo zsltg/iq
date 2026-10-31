@@ -79,10 +79,11 @@ func bulkBodies(batch []query.Record, revs map[string]string) ([]any, error) {
 }
 
 // attachRevs adds _rev to each document of docs whose record key revs holds. docs
-// holds the bodies of batch, in the same order.
+// holds the bodies of batch, in the same order. revs holds only keyed records,
+// because currentRevs reads no keyless one.
 func attachRevs(batch []query.Record, docs []any, revs map[string]string) {
 	for i, r := range batch {
-		if rev, ok := revs[r.Key]; ok && r.Key != "" {
+		if rev, ok := revs[r.Key]; ok {
 			docs[i].(map[string]any)["_rev"] = rev
 		}
 	}
