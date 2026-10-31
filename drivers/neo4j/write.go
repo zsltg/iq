@@ -2,8 +2,11 @@ package neo4j
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 
@@ -23,7 +26,7 @@ var errWriteNeedsKey = errors.New("neo4j: writing needs a key property; set ?key
 var errRelWriteUnsupported = errors.New("neo4j: writing relationships is not yet supported; a relationship source (?rel= / handle.:TYPE) is read-only — write nodes with ?label=")
 
 // Put upserts a batch of nodes, MERGE-ing each on the key property so a re-run
-// converges. Upsert sets every matched node's properties. InsertOnly sets only
+// converges. Upsert replaces every matched node's properties with the supplied ones. InsertOnly sets only
 // newly created nodes and counts the rest skipped. It requires a ?key= source and a
 // uniqueness constraint behind it. Without the constraint, a MERGE can match several
 // nodes and then set them all at once. The write is therefore refused up front
@@ -60,9 +63,12 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 	defer func() { _ = sess.Close(ctx) }()
 
 	merge := "UNWIND $rows AS row MERGE (n:`" + s.target.name + "` {`" + s.target.key + "`: row.k}) "
-	cypher := merge + "SET n += row.props"
+	// SET n = map replaces every property of a matched node, so the stored node is
+	// exactly the supplied value. Labels stay, and the map holds the key property.
+	// On a new node, = and += give the same result, so insert-only uses = too.
+	cypher := merge + "SET n = row.props"
 	if mode == query.InsertOnly {
-		cypher = merge + "ON CREATE SET n += row.props"
+		cypher = merge + "ON CREATE SET n = row.props"
 	}
 	res, err := s.run(ctx, sess, cypher, map[string]any{"rows": rows})
 	if err != nil {
@@ -85,9 +91,12 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 
 // recordProps derives the property map and merge-key value for one write record. The
 // value must be a JSON object (a node's properties). iq's reserved envelope keys are
-// stripped. The merge key is the record value's own key property when present (so
-// its type is preserved), else the record key string. It is always written onto the
-// node, so the stored node carries its key.
+// stripped. Neo4j cannot store a null property, so a null property, or a null inside a
+// list, is refused. When the record has a key, it wins as the merge key. If the
+// value's own key property has the same string form (the form the read path gives a
+// key), the typed value stays, so 5 stays a number. Otherwise the record key string
+// is the merge key. A keyless record merges on the value's key property, which must
+// be present. The merge key is always written onto the node.
 func recordProps(rec query.Record, key string) (map[string]any, any, error) {
 	obj, ok := rec.Value.(map[string]any)
 	if !ok {
@@ -98,14 +107,88 @@ func recordProps(rec query.Record, key string) (map[string]any, any, error) {
 		if neo4jenvelope.IsReserved(k) {
 			continue
 		}
+		if err := checkProp(rec.Key, k, v); err != nil {
+			return nil, nil, err
+		}
 		props[k] = v
 	}
-	keyVal, ok := props[key]
-	if !ok || keyVal == nil {
-		keyVal = rec.Key
+	keyVal, err := mergeKey(rec.Key, key, props)
+	if err != nil {
+		return nil, nil, err
 	}
 	props[key] = keyVal
 	return props, keyVal, nil
+}
+
+// checkProp refuses a null property and a null inside a list, because Neo4j drops
+// a null property on write, so it would read back as missing.
+func checkProp(recKey, name string, v any) error {
+	if v == nil {
+		return fmt.Errorf("neo4j: key %q: property %q is null, and Neo4j cannot store a null property", recKey, name)
+	}
+	list, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	for _, e := range list {
+		if e == nil {
+			return fmt.Errorf("neo4j: key %q: property %q holds a null, and Neo4j cannot store a null in a list", recKey, name)
+		}
+	}
+	return nil
+}
+
+// mergeKey picks the merge-key value. The record key wins. The value's key property
+// is kept only when its string form equals the record key.
+func mergeKey(recKey, key string, props map[string]any) (any, error) {
+	own, has := props[key]
+	if recKey == "" {
+		if !has {
+			return nil, fmt.Errorf("neo4j: a keyless record needs a %q property in its value", key)
+		}
+		return own, nil
+	}
+	if has && keyString(own) == recKey {
+		return own, nil
+	}
+	return recKey, nil
+}
+
+// keyString renders a scalar key property the way the read path renders a key
+// (Cypher toString). It returns "" for a value with no such form, which never
+// equals a non-empty record key.
+func keyString(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case bool:
+		return strconv.FormatBool(x)
+	case json.Number:
+		return x.String()
+	case float64:
+		s := strconv.FormatFloat(x, 'f', -1, 64)
+		if !strings.Contains(s, ".") {
+			s += ".0"
+		}
+		return s
+	default:
+		if i, ok := toInt64(v); ok {
+			return strconv.FormatInt(i, 10)
+		}
+		return ""
+	}
+}
+
+func toInt64(v any) (int64, bool) {
+	switch x := v.(type) {
+	case int:
+		return int64(x), true
+	case int32:
+		return int64(x), true
+	case int64:
+		return x, true
+	}
+	return 0, false
 }
 
 // Clear empties the label, detach-deleting every node that carries it (and, because

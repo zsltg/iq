@@ -279,33 +279,111 @@ func TestNormalizeRelationship(t *testing.T) {
 }
 
 func TestRecordProps(t *testing.T) {
-	t.Run("strips reserved and derives key from value", func(t *testing.T) {
-		rec := query.Record{Key: "ignored", Value: map[string]any{
-			"id": "7", "name": "Ada", "_id": "4:x:1", "_labels": []any{"Person"},
-		}}
-		props, keyVal, err := recordProps(rec, "id")
-		require.NoError(t, err)
-		require.Equal(t, "7", keyVal)
-		require.Equal(t, map[string]any{"id": "7", "name": "Ada"}, props)
-	})
-	t.Run("falls back to record key when property absent", func(t *testing.T) {
-		rec := query.Record{Key: "42", Value: map[string]any{"name": "Ada"}}
-		props, keyVal, err := recordProps(rec, "id")
-		require.NoError(t, err)
-		require.Equal(t, "42", keyVal)
-		require.Equal(t, "42", props["id"])
-	})
-	t.Run("falls back to record key when the property is null", func(t *testing.T) {
-		rec := query.Record{Key: "42", Value: map[string]any{"id": nil, "name": "Ada"}}
-		props, keyVal, err := recordProps(rec, "id")
-		require.NoError(t, err)
-		require.Equal(t, "42", keyVal, "a null property is no key, so the record key stands in")
-		require.Equal(t, "42", props["id"])
-	})
-	t.Run("non-object value errors", func(t *testing.T) {
-		_, _, err := recordProps(query.Record{Key: "1", Value: "scalar"}, "id")
-		require.ErrorContains(t, err, "must be a JSON object")
-	})
+	tests := []struct {
+		name    string
+		rec     query.Record
+		want    map[string]any
+		wantKey any
+		wantErr string
+	}{
+		{
+			name:    "strips reserved keys and keeps the value's key property",
+			rec:     query.Record{Key: "7", Value: map[string]any{"id": "7", "name": "Ada", "_id": "4:x:1", "_labels": []any{"Person"}}},
+			want:    map[string]any{"id": "7", "name": "Ada"},
+			wantKey: "7",
+		},
+		{
+			name:    "writes the record key when the property is absent",
+			rec:     query.Record{Key: "42", Value: map[string]any{"name": "Ada"}},
+			want:    map[string]any{"id": "42", "name": "Ada"},
+			wantKey: "42",
+		},
+		{
+			name:    "keeps a typed key property that matches the record key as a string",
+			rec:     query.Record{Key: "5", Value: map[string]any{"id": int64(5)}},
+			want:    map[string]any{"id": int64(5)},
+			wantKey: int64(5),
+		},
+		{
+			name:    "keeps an int key property that matches",
+			rec:     query.Record{Key: "5", Value: map[string]any{"id": 5}},
+			want:    map[string]any{"id": 5},
+			wantKey: 5,
+		},
+		{
+			name:    "keeps an int32 key property that matches",
+			rec:     query.Record{Key: "5", Value: map[string]any{"id": int32(5)}},
+			want:    map[string]any{"id": int32(5)},
+			wantKey: int32(5),
+		},
+		{
+			name:    "a bool key property matches its read form",
+			rec:     query.Record{Key: "true", Value: map[string]any{"id": true}},
+			want:    map[string]any{"id": true},
+			wantKey: true,
+		},
+		{
+			name:    "keeps a json number key property that matches",
+			rec:     query.Record{Key: "5", Value: map[string]any{"id": json.Number("5")}},
+			want:    map[string]any{"id": json.Number("5")},
+			wantKey: json.Number("5"),
+		},
+		{
+			name:    "keeps a float key property that matches the read form",
+			rec:     query.Record{Key: "5.0", Value: map[string]any{"id": float64(5)}},
+			want:    map[string]any{"id": float64(5)},
+			wantKey: float64(5),
+		},
+		{
+			name:    "the record key wins over a different key property",
+			rec:     query.Record{Key: "9", Value: map[string]any{"id": "7", "name": "Ada"}},
+			want:    map[string]any{"id": "9", "name": "Ada"},
+			wantKey: "9",
+		},
+		{
+			name:    "a keyless record merges on the value's key property",
+			rec:     query.Record{Value: map[string]any{"id": int64(5)}},
+			want:    map[string]any{"id": int64(5)},
+			wantKey: int64(5),
+		},
+		{
+			name:    "a keyless record without a key property is refused",
+			rec:     query.Record{Value: map[string]any{"name": "Ada"}},
+			wantErr: `a keyless record needs a "id" property`,
+		},
+		{
+			name:    "a null property is refused",
+			rec:     query.Record{Key: "k", Value: map[string]any{"p": nil}},
+			wantErr: `neo4j: key "k": property "p" is null, and Neo4j cannot store a null property`,
+		},
+		{
+			name:    "a null key property is refused",
+			rec:     query.Record{Key: "42", Value: map[string]any{"id": nil}},
+			wantErr: `property "id" is null`,
+		},
+		{
+			name:    "a null inside a list is refused",
+			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{"a", nil}}},
+			wantErr: `neo4j: key "k": property "p" holds a null, and Neo4j cannot store a null in a list`,
+		},
+		{
+			name:    "a non-object value is refused",
+			rec:     query.Record{Key: "1", Value: "scalar"},
+			wantErr: "must be a JSON object",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			props, keyVal, err := recordProps(tt.rec, "id")
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantKey, keyVal)
+			require.Equal(t, tt.want, props)
+		})
+	}
 }
 
 func TestQueryArgValidation(t *testing.T) {
