@@ -120,7 +120,8 @@ the same key.
 The record key replaces the identity that the value carries. MongoDB,
 Elasticsearch, OpenSearch, and CouchDB drop the `_id` of the value and use the
 record key instead. CouchDB also drops the `_rev` of the value. DynamoDB writes
-the record key over the key attributes of the item. This is how `--key`,
+the record key over the key attributes of the item. Neo4j merges on the record
+key and writes it as the key property. This is how `--key`,
 `--key-field`, and `--key-prefix` take effect. For a record with no key,
 MongoDB, Elasticsearch, OpenSearch, and CouchDB also drop the `_id` of the value,
 and the backend mints an identity. DynamoDB writes such a record as it is,
@@ -185,11 +186,18 @@ iq '{title}' --src books --typed --type json -o titles.jsonl
 
 ## Replace `--replace`
 
-By default, a write upserts. Existing keys are overwritten, and everything else
-in the destination stays. `--replace` turns the copy into a restore. It empties
+By default, a write upserts. Existing keys are overwritten, and every other key
+in the destination stays. For a key that exists, the result depends on the
+driver. MongoDB, Elasticsearch, OpenSearch, CouchDB, Couchbase, DynamoDB, Redis
+and Neo4j replace the whole value of the key. Cassandra and HBase merge. They
+write the columns or cells that the record holds, and the other columns or cells
+of the row stay. `--replace` turns the copy into a restore. It empties
 the destination first (the same operation as `iq data clear`, a Redis
 `FLUSHDB`, a Mongo `deleteMany({})`) and then writes. As a result, the
-destination ends up holding exactly the source.
+destination ends up holding exactly the values of the source. In Neo4j, the
+clear also deletes the relationships of the nodes, and the copy writes only the
+nodes of the label with their properties. So relationships and other labels are
+not restored.
 
 Because it destroys data, it prompts (`clear <destination> before writing`).
 `--force` answers yes. `--dry-run` reports the copy without clearing anything.

@@ -666,3 +666,25 @@ func TestIntegrationReadRowsReportsAStreamingFailure(t *testing.T) {
 	_, err := st.readRows(ctx, "UNWIND [1, 0] AS x RETURN 1/x AS v")
 	require.ErrorContains(t, err, "by zero")
 }
+
+func TestPutReplacesNodePropertiesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test needs a Neo4j server")
+	}
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	exec(t, ctx, admin, "CREATE CONSTRAINT itReplace_id IF NOT EXISTS FOR (r:ItReplace) REQUIRE r.id IS UNIQUE")
+	exec(t, ctx, admin, "MATCH (r:ItReplace) DETACH DELETE r")
+	st := openStore(t, ctx, "ItReplace", "id")
+
+	_, err := st.Put(ctx, []query.Record{{Key: "1", Value: map[string]any{"id": "1", "a": "x", "b": "y"}}}, query.Upsert)
+	require.NoError(t, err)
+	_, err = st.Put(ctx, []query.Record{{Key: "1", Value: map[string]any{"id": "1", "a": "z"}}}, query.Upsert)
+	require.NoError(t, err)
+
+	got, err := st.Get(ctx, []string{"1"})
+	require.NoError(t, err)
+	node := got["1"].(map[string]any)
+	require.Equal(t, "z", node["a"])
+	require.NotContains(t, node, "b", "an upsert must drop properties the new value lacks")
+}

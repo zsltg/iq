@@ -122,6 +122,8 @@ iq --src books --unbounded 'keys'
 iq add -n cl 'cassandra://user:pass@n1,n2:9042/app?table=orders'
 ```
 
+A write to an existing row is a merge. An upsert writes the columns that the record holds, and the other columns of the row stay. `--replace` gives an exact copy.
+
 Cassandra columns are natively typed, so `.year > 2015` needs no `tonumber`. The
 `--unbounded` / streaming rules are identical to every backend. The driver reads the table's schema once
 at connect time, so it knows the primary-key columns and their types.
@@ -707,6 +709,8 @@ HBase stores **no types**. Every cell is raw bytes. As a result, the driver pres
 | `?types=cf:q=double` | a number (8-byte IEEE-754) | a number → those bytes |
 | `?types=cf:q=bool` | `true` / `false` (1 byte) | a bool → one byte |
 
+A write to an existing row is a merge. An upsert writes the cells that the record holds, and the other cells of the row stay. `--replace` gives an exact copy.
+
 The driver **never guesses** a numeric type from bytes (an 8-byte string is indistinguishable from a
 `long`). It either *knows* (you declared it) or *does not guess* (text, else base64). Declared columns
 round-trip losslessly in both directions. An undeclared column read back as base64 (non-UTF-8 bytes)
@@ -997,11 +1001,23 @@ streams the whole label and filters entirely client-side.
 
 ### Writing
 
-A copy into a Neo4j label upserts each node with `MERGE (n:Label {key}) SET n += props`, so a re-run
-converges. **Writing needs a `?key=` property** (a MERGE key must be stable and the elementId is
-server-assigned) **and a uniqueness constraint on it** (`CREATE CONSTRAINT ... REQUIRE n.<key> IS
-UNIQUE`). Without the constraint, a MERGE can match and overwrite several nodes at once. For this
-reason, the write is refused up front rather than fanning out.
+A copy into a Neo4j label upserts each node with `MERGE (n:Label {key}) SET n = props`. A re-run
+converges. An upsert replaces all properties of a node that exists, so a property that the new value
+lacks is removed. The labels of the node stay. **Writing needs a `?key=` property** (a MERGE key must
+be stable and the elementId is server-assigned) **and a uniqueness constraint on it** (`CREATE
+CONSTRAINT ... REQUIRE n.<key> IS UNIQUE`). Without the constraint, a MERGE can match and overwrite
+several nodes at once. For this reason, the write is refused up front rather than fanning out.
+
+The record key is the merge key, and it is written as the key property. If the value has the same key
+property as a string, the value keeps its type, so `5` stays a number. A record without a key merges
+on the key property of its value, which must be present.
+
+Neo4j cannot store a null. A write refuses a node that has a null property, or a null inside a list,
+before it writes anything. The error names the key and the property. A property must be a scalar or a
+list of scalars of one type. The server refuses a map, or a mixed list, as a property.
+
+A write drops five reserved names from the value: `_id`, `_labels`, `_type`, `_start` and `_end`.
+The read path adds these names to each value, so a node that you read and write back does not store them.
 
 `iq data clear` detach-deletes every node in the
 label (and the relationships they hold). A label is not a droppable container, so `iq data drop` is

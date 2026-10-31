@@ -7,7 +7,6 @@ import (
 
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 
-	"github.com/zsltg/iq/internal/neo4jenvelope"
 	"github.com/zsltg/iq/internal/query"
 )
 
@@ -23,7 +22,7 @@ var errWriteNeedsKey = errors.New("neo4j: writing needs a key property; set ?key
 var errRelWriteUnsupported = errors.New("neo4j: writing relationships is not yet supported; a relationship source (?rel= / handle.:TYPE) is read-only — write nodes with ?label=")
 
 // Put upserts a batch of nodes, MERGE-ing each on the key property so a re-run
-// converges. Upsert sets every matched node's properties. InsertOnly sets only
+// converges. Upsert replaces every matched node's properties with the supplied ones. InsertOnly sets only
 // newly created nodes and counts the rest skipped. It requires a ?key= source and a
 // uniqueness constraint behind it. Without the constraint, a MERGE can match several
 // nodes and then set them all at once. The write is therefore refused up front
@@ -60,9 +59,12 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 	defer func() { _ = sess.Close(ctx) }()
 
 	merge := "UNWIND $rows AS row MERGE (n:`" + s.target.name + "` {`" + s.target.key + "`: row.k}) "
-	cypher := merge + "SET n += row.props"
+	// SET n = map replaces every property of a matched node, so the stored node is
+	// exactly the supplied value. Labels stay, and the map holds the key property.
+	// On a new node, = and += give the same result, so insert-only uses = too.
+	cypher := merge + "SET n = row.props"
 	if mode == query.InsertOnly {
-		cypher = merge + "ON CREATE SET n += row.props"
+		cypher = merge + "ON CREATE SET n = row.props"
 	}
 	res, err := s.run(ctx, sess, cypher, map[string]any{"rows": rows})
 	if err != nil {
@@ -81,31 +83,6 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 		stat.Overwritten = len(batch) - created
 	}
 	return stat, nil
-}
-
-// recordProps derives the property map and merge-key value for one write record. The
-// value must be a JSON object (a node's properties). iq's reserved envelope keys are
-// stripped. The merge key is the record value's own key property when present (so
-// its type is preserved), else the record key string. It is always written onto the
-// node, so the stored node carries its key.
-func recordProps(rec query.Record, key string) (map[string]any, any, error) {
-	obj, ok := rec.Value.(map[string]any)
-	if !ok {
-		return nil, nil, fmt.Errorf("neo4j: node value for key %q must be a JSON object, got %T", rec.Key, rec.Value)
-	}
-	props := make(map[string]any, len(obj))
-	for k, v := range obj {
-		if neo4jenvelope.IsReserved(k) {
-			continue
-		}
-		props[k] = v
-	}
-	keyVal, ok := props[key]
-	if !ok || keyVal == nil {
-		keyVal = rec.Key
-	}
-	props[key] = keyVal
-	return props, keyVal, nil
 }
 
 // Clear empties the label, detach-deleting every node that carries it (and, because
