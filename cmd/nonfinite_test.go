@@ -161,3 +161,72 @@ func TestWarnNonFinite(t *testing.T) {
 		})
 	}
 }
+
+// nanCopyStore adds a typed read and a write to nanStore, so that iq_insert can
+// use it as both ends of a copy.
+type nanCopyStore struct{ nanStore }
+
+func (s nanCopyStore) TypedScan(ctx context.Context, fn func([]query.Record) error) error {
+	for key, fields := range s.hits {
+		query.NoteNonFinite(ctx, key, fields...)
+	}
+	return fn([]query.Record{{Key: "k1", Type: "string", Value: "NaN"}})
+}
+
+func (nanCopyStore) Put(_ context.Context, batch []query.Record, _ query.WriteMode) (query.WriteStat, error) {
+	return query.WriteStat{Written: len(batch)}, nil
+}
+
+func TestMCPDiffNotesConvertedValues(t *testing.T) {
+	useNanDriver(t, nanStore{
+		rows: map[string]any{"k1": map[string]any{"price": "NaN"}},
+		hits: map[string][]string{"k1": {"price"}},
+	})
+	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
+
+	var out mcpDiffOutput
+	structOf(t, callMCP(t, cs, "iq_diff", map[string]any{"a": "n", "b": "n"}), &out)
+
+	require.False(t, out.Differ)
+	require.Equal(t,
+		`iq converted 2 values that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "price"`,
+		out.Note)
+}
+
+func TestMCPSchemaNotesConvertedValues(t *testing.T) {
+	useNanDriver(t, nanStore{
+		rows: map[string]any{"k1": map[string]any{"price": "NaN"}},
+		hits: map[string][]string{"k1": {"price"}},
+	})
+	cs := connectMCP(t, newTestMCPServer(nil, 200, 256*1024), nil)
+
+	var out map[string]any
+	structOf(t, callMCP(t, cs, "iq_schema", map[string]any{"source": "n"}), &out)
+
+	require.Equal(t,
+		`iq converted 1 value that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "price"`,
+		out["$comment"])
+}
+
+func TestMCPInsertNotesConvertedValues(t *testing.T) {
+	orig := drivers
+	t.Cleanup(func() { drivers = orig })
+	drivers = append(append([]driver{}, orig...), driver{
+		name: "nancopy", schemes: []string{"nancopy"},
+		open: func(context.Context, *config) (store, error) {
+			return nanCopyStore{nanStore{hits: map[string][]string{"k1": {"price"}}}}, nil
+		},
+	})
+	c := newSeed()
+	require.NoError(t, c.Add("c", "nancopy://h"))
+	seedConfig(t, c)
+	cs := connectMCP(t, newTestMCPServer([]string{allowWrites}, 200, 256*1024), nil)
+
+	var out mcpWriteOutput
+	structOf(t, callMCP(t, cs, "iq_insert", map[string]any{"source": "c", "destination": "c", "dry_run": true}), &out)
+
+	require.Equal(t, 1, out.Written)
+	require.Equal(t,
+		`iq converted 1 value that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "price"`,
+		out.Note)
+}
