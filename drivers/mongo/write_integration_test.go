@@ -3,6 +3,7 @@ package mongo
 import (
 	"context"
 	"maps"
+	"math/big"
 	"sort"
 	"testing"
 	"time"
@@ -41,6 +42,38 @@ func TestPutUpsertIntegration(t *testing.T) {
 	got, err := store.Get(ctx, []string{"a"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{"_id": "a", "n": 10}, got["a"])
+}
+
+// TestPutBigIntegerIsADecimal128Integration pins the server side of a big integer
+// write. The server stores a Decimal128, so it compares the value as a number,
+// and a read gives back the same value.
+func TestPutBigIntegerIsADecimal128Integration(t *testing.T) {
+	store := openIntegration(t, "put_bigint")
+	seedDocs(t, store, nil)
+	ctx := context.Background()
+	big30, _ := new(big.Int).SetString("123456789012345678901234567890", 10)
+	big40 := new(big.Int).Exp(big.NewInt(10), big.NewInt(40), nil)
+
+	_, err := store.Put(ctx, []query.Record{
+		{Key: "a", Value: map[string]any{"n": big30}},
+		{Key: "b", Value: map[string]any{"n": big40}},
+	}, query.Upsert)
+	require.NoError(t, err)
+
+	coll := store.db.Collection(store.collection)
+	var raw bson.M
+	require.NoError(t, coll.FindOne(ctx, bson.M{"_id": "a"}).Decode(&raw))
+	require.IsType(t, bson.Decimal128{}, raw["n"])
+
+	// A numeric filter matches both, which a string would not.
+	n, err := coll.CountDocuments(ctx, bson.M{"n": bson.M{"$gt": int64(9)}})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), n)
+
+	got, err := store.Get(ctx, []string{"a", "b"})
+	require.NoError(t, err)
+	require.Equal(t, "123456789012345678901234567890", got["a"].(map[string]any)["n"])
+	require.Equal(t, "1E+40", got["b"].(map[string]any)["n"])
 }
 
 func TestPutUpsertMixedKeyedAndKeylessIntegration(t *testing.T) {

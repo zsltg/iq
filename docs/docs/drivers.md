@@ -488,7 +488,7 @@ Each attribute value is normalized to JSON by DynamoDB type:
 | DynamoDB type | JSON shape |
 | --- | --- |
 | `S` (string) | the string verbatim |
-| `N` (number) | integer as a number (exact string when it overflows int64), decimal as an exact string (or a number under `--format.decimal number`). A write refuses a number with more than 38 significant digits or a magnitude outside `1E-130` to `9.9999999999999999999999999999999999999E+125`, and the error names the attribute. It also refuses NaN and infinity |
+| `N` (number) | integer as a number (exact string when it overflows int64), decimal as an exact string (or a number under `--format.decimal number`). A write stores an integer beyond `int64` as an `N` with its exact digits. A write refuses a number (or integer) with more than 38 significant digits or a magnitude outside `1E-130` to `9.9999999999999999999999999999999999999E+125`, and the error names the attribute. It also refuses NaN and infinity |
 | `BOOL` | `true` / `false` |
 | `B` (binary) | base64 string |
 | `NULL` | `null` |
@@ -800,6 +800,7 @@ Because Mongo values are natively typed, numeric comparisons like `.year > 2015`
 `tonumber`. This is unlike Redis, where everything is a string. Documents normalize to JSON with
 the same rules everywhere:
 
+- A write stores an integer that fits `int64` as a `long`. A larger integer becomes a `Decimal128` with the same value. A `Decimal128` holds at most 34 significant digits (trailing zeros do not count), and a value below `1E+6145`. A write refuses an integer with more digits or a larger value, and the error names the field. A read gives a `Decimal128` as its exact string, for example `1E+40` for `10000000000000000000000000000000000000000`. The value is the same, but the text can use an exponent.
 - An `ObjectID` becomes its hex string.
 - A date becomes an RFC 3339 string.
 - Numbers stay numbers.

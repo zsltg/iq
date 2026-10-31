@@ -396,7 +396,8 @@ func scalarAttributeValue(v any) (types.AttributeValue, error) {
 
 // numberAttributeValue converts a Go or json number to an N attribute. A number
 // must fit a DynamoDB N, so checkNumber runs on its text. The text is never
-// changed. Any other type is an error.
+// changed. A big integer is written as its decimal digits, so it is exact or it
+// fails. Any other type is an error.
 func numberAttributeValue(v any) (types.AttributeValue, error) {
 	switch t := v.(type) {
 	case int:
@@ -408,7 +409,7 @@ func numberAttributeValue(v any) (types.AttributeValue, error) {
 	case json.Number:
 		return numberAttribute(t.String())
 	case *big.Int:
-		return nil, &numberError{msg: fmt.Sprintf("cannot write value %v (%T)", v, v)}
+		return numberAttribute(t.String())
 	default:
 		return nil, fmt.Errorf("dynamodb: cannot write value %v (%T)", v, v)
 	}

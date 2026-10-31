@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"slices"
+	"strconv"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -110,12 +113,12 @@ func documentFor(r query.Record) (bson.M, error) {
 	if !ok {
 		return nil, query.NonObjectValueError("mongodb", r.Key)
 	}
-	doc := bson.M{}
-	for k, v := range obj {
-		if k == "_id" {
-			continue // identity comes from the record key, replacing any read _id.
-		}
-		doc[k] = bsonValue(v)
+	// Identity comes from the record key, replacing any read _id.
+	rest := maps.Clone(obj)
+	delete(rest, "_id")
+	doc, err := bsonWalk{key: r.Key}.object("", rest)
+	if err != nil {
+		return nil, err
 	}
 	if r.Key != "" {
 		doc["_id"] = idValue(r.Key)
@@ -123,31 +126,117 @@ func documentFor(r query.Record) (bson.M, error) {
 	return doc, nil
 }
 
-// bsonValue converts a JSON-ready value into a BSON-encodable one. It recurses
-// into objects and arrays. BSON cannot encode a big integer, so it becomes an int64
-// if it fits, else its decimal string.
-func bsonValue(v any) any {
+// maxDecimal128Digits is the number of significant digits that a Decimal128
+// holds exactly. A longer coefficient would round.
+const maxDecimal128Digits = 34
+
+// bsonWalk converts the values of one record. It carries the record key, which
+// every error names.
+type bsonWalk struct{ key string }
+
+// bsonPath names a value inside a record value, like "a.b[2]". The top level has
+// an empty path.
+type bsonPath string
+
+// field is the path of the entry name in the object at p.
+func (p bsonPath) field(name string) bsonPath {
+	if p == "" {
+		return bsonPath(name)
+	}
+	return p + "." + bsonPath(name)
+}
+
+// element is the path of the entry i in the array at p.
+func (p bsonPath) element(i int) bsonPath {
+	return p + "[" + bsonPath(strconv.Itoa(i)) + "]"
+}
+
+// label names the path in an error.
+func (p bsonPath) label() string {
+	if p == "" {
+		return "the value"
+	}
+	return "field " + strconv.Quote(string(p))
+}
+
+// value converts the JSON-ready value at path into a BSON-encodable one. It
+// recurses into objects and arrays. BSON cannot encode a big integer. So a big
+// integer becomes an int64 if it fits, else a Decimal128 with the exact value.
+// An integer that a Decimal128 cannot hold is an error.
+func (w bsonWalk) value(path bsonPath, v any) (any, error) {
 	switch t := v.(type) {
 	case *big.Int:
-		if t.IsInt64() {
-			return t.Int64()
-		}
-		return t.String()
+		return w.integer(path, t)
 	case map[string]any:
-		out := make(bson.M, len(t))
-		for k, e := range t {
-			out[k] = bsonValue(e)
-		}
-		return out
+		return w.object(path, t)
 	case []any:
-		out := make(bson.A, len(t))
-		for i, e := range t {
-			out[i] = bsonValue(e)
-		}
-		return out
+		return w.array(path, t)
 	default:
-		return t
+		return t, nil
 	}
+}
+
+// object converts the entries of the object at path. It goes through the names in
+// sorted order, so the same input always gives the same error.
+func (w bsonWalk) object(path bsonPath, obj map[string]any) (bson.M, error) {
+	out := make(bson.M, len(obj))
+	for _, name := range slices.Sorted(maps.Keys(obj)) {
+		e, err := w.value(path.field(name), obj[name])
+		if err != nil {
+			return nil, err
+		}
+		out[name] = e
+	}
+	return out, nil
+}
+
+// array converts the elements of the array at path in order.
+func (w bsonWalk) array(path bsonPath, list []any) (bson.A, error) {
+	out := make(bson.A, len(list))
+	for i, e := range list {
+		c, err := w.value(path.element(i), e)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = c
+	}
+	return out, nil
+}
+
+// integer converts the big integer n at path. An int64 stays an int64. Any other
+// integer becomes a Decimal128 with the same value, or an error when it has more
+// than 34 significant digits or is larger than a Decimal128 holds.
+func (w bsonWalk) integer(path bsonPath, n *big.Int) (any, error) {
+	if n.IsInt64() {
+		return n.Int64(), nil
+	}
+	text := n.String()
+	digits := strings.TrimLeft(text, "-")
+	coefficient := strings.TrimRight(digits, "0")
+	zeros := len(digits) - len(coefficient)
+	if len(coefficient) > maxDecimal128Digits {
+		return nil, fmt.Errorf("mongodb: key %q: %s: integer %s (%d digits) has more digits than a Decimal128 holds (%d)",
+			w.key, path.label(), shortDigits(digits), len(digits), maxDecimal128Digits)
+	}
+	if len(digits) > maxDecimal128Digits {
+		// Keep the trailing zeros as an exponent: the coefficient is too short for them.
+		text = text[:len(text)-zeros] + "E+" + strconv.Itoa(zeros)
+	}
+	// The parse accepts every value that a Decimal128 holds, up to
+	// 9.999999999999999999999999999999999E+6144, and fails above that. Its error
+	// quotes the whole input, which can hold thousands of digits, so it is not kept.
+	d, err := bson.ParseDecimal128(text)
+	if err != nil {
+		return nil, fmt.Errorf("mongodb: key %q: %s: integer %s (%d digits) is too large for a Decimal128",
+			w.key, path.label(), shortDigits(digits), len(digits))
+	}
+	return d, nil
+}
+
+// shortDigits shortens a digit string for an error: the first 10 digits, then
+// "...". An integer in an error always has more than 10 digits.
+func shortDigits(digits string) string {
+	return digits[:10] + "..."
 }
 
 // idValue turns a string key into the _id to match or insert. It returns the
