@@ -153,7 +153,7 @@ func TestPutRejectsALaterBadRecordBeforeAnyRequest(t *testing.T) {
 			name:    "insert-only refuses a _deleted member",
 			mode:    query.InsertOnly,
 			bad:     query.Record{Key: "2", Value: map[string]any{"_deleted": true}},
-			wantErr: `couchdb: key "2": the value holds _deleted, which would delete the document`,
+			wantErr: `couchdb: key "2": the value holds _deleted, so CouchDB would delete the document or drop the member`,
 		},
 		{
 			name:    "upsert refuses a non-object value",
@@ -165,7 +165,7 @@ func TestPutRejectsALaterBadRecordBeforeAnyRequest(t *testing.T) {
 			name:    "upsert refuses a _deleted member",
 			mode:    query.Upsert,
 			bad:     query.Record{Key: "2", Value: map[string]any{"_deleted": true}},
-			wantErr: `couchdb: key "2": the value holds _deleted, which would delete the document`,
+			wantErr: `couchdb: key "2": the value holds _deleted, so CouchDB would delete the document or drop the member`,
 		},
 	}
 	for _, tt := range tests {

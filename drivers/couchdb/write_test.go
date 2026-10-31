@@ -69,7 +69,7 @@ func TestDocumentBody(t *testing.T) {
 		{
 			name:    "a _deleted true member is refused so the write cannot delete",
 			record:  query.Record{Key: "k", Value: map[string]any{"_deleted": true, "t": "x"}},
-			wantErr: `couchdb: key "k": the value holds _deleted, which would delete the document; use iq data delete to delete it`,
+			wantErr: `couchdb: key "k": the value holds _deleted, so CouchDB would delete the document or drop the member; use iq data delete to delete it`,
 		},
 		{
 			name:    "a _deleted false member is refused because CouchDB would drop it",

@@ -121,9 +121,11 @@ The record key replaces the identity that the value carries. MongoDB,
 Elasticsearch, OpenSearch, and CouchDB drop the `_id` of the value and use the
 record key instead. CouchDB also drops the `_rev` of the value. DynamoDB writes
 the record key over the key attributes of the item. This is how `--key`,
-`--key-field`, and `--key-prefix` take effect. A record with no key keeps no
-`_id` from its value either, and the backend mints one, except in DynamoDB, which
-requires the key attributes in the item.
+`--key-field`, and `--key-prefix` take effect. For a record with no key,
+MongoDB, Elasticsearch, OpenSearch, and CouchDB also drop the `_id` of the value,
+and the backend mints an identity. DynamoDB writes such a record as it is,
+including an `_id` attribute, and the item must hold the key attributes of the
+table.
 
 A write flag used without `--insert` is an error, never silently ignored.
 

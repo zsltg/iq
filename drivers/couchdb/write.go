@@ -202,7 +202,7 @@ func documentBody(r query.Record) (map[string]any, error) {
 	if _, ok := obj["_deleted"]; ok {
 		// CouchDB deletes the document for true and drops the member for false.
 		return nil, fmt.Errorf(
-			"couchdb: key %q: the value holds _deleted, which would delete the document; use iq data delete to delete it",
+			"couchdb: key %q: the value holds _deleted, so CouchDB would delete the document or drop the member; use iq data delete to delete it",
 			r.Key)
 	}
 	doc := map[string]any{}
