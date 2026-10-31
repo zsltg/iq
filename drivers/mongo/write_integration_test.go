@@ -50,7 +50,8 @@ func TestPutUpsertIntegration(t *testing.T) {
 func TestPutBigIntegerIsADecimal128Integration(t *testing.T) {
 	store := openIntegration(t, "put_bigint")
 	seedDocs(t, store, nil)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
 	big30, _ := new(big.Int).SetString("123456789012345678901234567890", 10)
 	big40 := new(big.Int).Exp(big.NewInt(10), big.NewInt(40), nil)
 

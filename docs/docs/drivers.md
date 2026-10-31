@@ -800,7 +800,7 @@ Because Mongo values are natively typed, numeric comparisons like `.year > 2015`
 `tonumber`. This is unlike Redis, where everything is a string. Documents normalize to JSON with
 the same rules everywhere:
 
-- A write stores an integer that fits `int64` as a `long`. A larger integer becomes a `Decimal128` with the same value. A `Decimal128` holds at most 34 significant digits (trailing zeros do not count), and a value below `1E+6145`. A write refuses an integer with more digits or a larger value, and the error names the field. A read gives a `Decimal128` as its exact string, for example `1E+40` for `10000000000000000000000000000000000000000`. The value is the same, but the text can use an exponent.
+- A write stores an integer that fits `int64` as a `long`. A larger integer becomes a `Decimal128` with the same value. A `Decimal128` holds at most 34 significant digits (trailing zeros do not count), and a value below `1E+6145`. A write refuses an integer with more digits or a larger value, and the error names the field. In auto and string mode, a read gives a `Decimal128` as its exact string, for example `1E+40` for `10000000000000000000000000000000000000000`. The value is the same, but the text can use an exponent. Under `--format.decimal number`, a read gives a `float64`, which can lose digits.
 - An `ObjectID` becomes its hex string.
 - A date becomes an RFC 3339 string.
 - Numbers stay numbers.
