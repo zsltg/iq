@@ -85,6 +85,30 @@ func TestDocumentBody(t *testing.T) {
 		require.Equal(t, map[string]any{"title": "Dune"}, doc)
 	})
 
+	t.Run("invalid UTF-8 is rejected, not changed", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			record query.Record
+			want   string
+		}{
+			{"key", query.Record{Key: "a\xff", Value: map[string]any{"t": "x"}}, `elasticsearch: record key "a\xff" is not valid UTF-8`},
+			{"string value", query.Record{Key: "1", Value: map[string]any{"t": []any{"x\xfe"}}}, `elasticsearch: key "1": field "t[0]" holds a string that is not valid UTF-8`},
+			{"field name", query.Record{Key: "1", Value: map[string]any{"t\xfe": "x"}}, `elasticsearch: key "1": the field name "t\xfe" is not valid UTF-8`},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, err := documentBody(tt.record)
+				require.ErrorContains(t, err, tt.want)
+			})
+		}
+	})
+
+	t.Run("an invalid _id value is dropped with the _id, not checked", func(t *testing.T) {
+		doc, err := documentBody(query.Record{Key: "1", Value: map[string]any{"_id": "\xff", "title": "Dune"}})
+		require.NoError(t, err)
+		require.Equal(t, map[string]any{"title": "Dune"}, doc)
+	})
+
 	t.Run("scalar value is rejected, not wrapped", func(t *testing.T) {
 		_, err := documentBody(query.Record{Key: "k", Value: "bare-scalar"})
 		require.ErrorContains(t, err, "is not a JSON object")
@@ -139,6 +163,31 @@ func TestPutReportsARefusedBulk(t *testing.T) {
 	require.Equal(t, query.WriteStat{}, stat)
 	require.ErrorContains(t, err, "elasticsearch bulk write: cluster_block_exception")
 	require.ErrorContains(t, err, "index read-only")
+}
+
+func TestDeleteRefusesAKeyThatIsNotValidUTF8(t *testing.T) {
+	// JSON would change the byte to U+FFFD and delete another document.
+	calls := 0
+	st := newStubStore(t, "books", func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		esJSON(w, http.StatusOK, `{"items":[]}`)
+	})
+	stat, err := st.Delete(t.Context(), []string{"1", "2\xff"})
+	require.Equal(t, query.DeleteStat{}, stat)
+	require.ErrorContains(t, err, `elasticsearch: record key "2\xff" is not valid UTF-8`)
+	require.Zero(t, calls, "no request goes out, not even for the valid key")
+}
+
+func TestDeleteNeedsAnIndex(t *testing.T) {
+	calls := 0
+	st := newStubStore(t, "", func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		esJSON(w, http.StatusOK, `{"items":[]}`)
+	})
+	stat, err := st.Delete(t.Context(), []string{"1"})
+	require.Equal(t, query.DeleteStat{}, stat)
+	require.ErrorIs(t, err, errNoIndex)
+	require.Zero(t, calls)
 }
 
 func TestDeleteReportsARefusedBulk(t *testing.T) {

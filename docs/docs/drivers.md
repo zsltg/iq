@@ -235,7 +235,9 @@ iq --src books.archive '.[]'
 ```
 
 Couchbase documents are JSON, so values need no type coercion. Integers keep
-exact precision (large ones never collapse to a float).
+exact precision (large ones never collapse to a float). A write refuses a field name or a string value
+that is not valid UTF-8, because JSON would change each invalid byte to U+FFFD. The error names the field path.
+A document key is sent as bytes and is not checked.
 
 Couchbase has no per-key `iq data delete` yet (`clear` and `drop` work). Per-key
 delete is a v1 follow-up.
@@ -361,7 +363,8 @@ CouchDB documents are JSON, so values need no type coercion. Integers keep
 exact precision (large ones never collapse to a float). `_id` and `_rev` are
 kept in the document. Design documents (`_design/…`) are database metadata, and
 scans skip them. The `--unbounded` / streaming rules are identical to
-every backend.
+every backend. A write refuses a `_id`, a field name, or a string value that is not valid UTF-8, because JSON would
+change each invalid byte to U+FFFD. The error names the field path. A delete refuses such a `_id` too.
 
 ### Pushdown
 
@@ -482,7 +485,7 @@ Each attribute value is normalized to JSON by DynamoDB type:
 | DynamoDB type | JSON shape |
 | --- | --- |
 | `S` (string) | the string verbatim |
-| `N` (number) | integer as a number (exact string when it overflows int64), decimal as an exact string (or a number under `--format.decimal number`) |
+| `N` (number) | integer as a number (exact string when it overflows int64), decimal as an exact string (or a number under `--format.decimal number`). A write refuses a number with more than 38 significant digits or a magnitude outside `1E-130` to `9.9999999999999999999999999999999999999E+125`, and the error names the attribute. It also refuses NaN and infinity |
 | `BOOL` | `true` / `false` |
 | `B` (binary) | base64 string |
 | `NULL` | `null` |
@@ -490,6 +493,10 @@ Each attribute value is normalized to JSON by DynamoDB type:
 | `L` (list) | array |
 | `SS`, `NS`, `BS` (sets) | array (of strings / numbers / base64 strings) |
 | missing attribute | omitted (reads as `null` in jq) |
+
+A write refuses a key, an attribute name, or a string value that is not valid UTF-8.
+The SDK would change each invalid byte to U+FFFD, so two different names or values could become one.
+The error names the attribute path. A delete refuses such a key too.
 
 Note that the set types (`SS`/`NS`/`BS`) normalize to a plain array. As a result, a copy **back**
 into DynamoDB writes them as a list (`L`), not a set. A number presented as a string (auto/string
@@ -584,7 +591,8 @@ Elasticsearch documents are JSON, so values need no type coercion. Integers keep
 (large ones never collapse to a float). The driver injects each document's `_id` (Elasticsearch
 metadata, stored outside `_source`) into the value as `_id`. As a result, a plain `.[]` stream is
 self-describing and restorable, like a Mongo document. `--typed` is not needed for a lossless
-backup.
+backup. A write refuses a `_id`, a field name, or a string value that is not valid UTF-8, because JSON would
+change each invalid byte to U+FFFD. The error names the field path. A delete refuses such a `_id` too.
 
 The
 `--unbounded` / streaming rules are identical to every backend. A scan pages the index with a
@@ -1066,6 +1074,10 @@ small requests: `LRANGE` and `XRANGE` read 1,000 elements at a time, and `HSCAN`
 for 1,000 at a time (Redis treats that count as a hint). So the server answers many small replies in place
 of one large reply. The output is the same as for a small key. The limit does not apply to strings and RedisJSON values.
 An MCP query lifts the limit only when the tool call sets `unbounded`.
+
+A write of a RedisJSON value refuses a field name or a string value that is not valid UTF-8, because JSON would
+change each invalid byte to U+FFFD. The error names the field path. The other types keep the bytes exactly,
+including the key.
 
 Other module types (time series, bloom, …) have no frozen encoding yet. `iq` refuses a named
 read of one with a clear message.

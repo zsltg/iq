@@ -47,6 +47,26 @@ func TestDocumentBody(t *testing.T) {
 			wantErr: "is not a JSON object",
 		},
 		{
+			name:    "a key that is not valid UTF-8 is rejected",
+			record:  query.Record{Key: "a\xff", Value: map[string]any{"t": "x"}},
+			wantErr: `couchdb: record key "a\xff" is not valid UTF-8`,
+		},
+		{
+			name:    "a string value that is not valid UTF-8 is rejected",
+			record:  query.Record{Key: "1", Value: map[string]any{"t": map[string]any{"u": "x\xfe"}}},
+			wantErr: `couchdb: key "1": field "t.u" holds a string that is not valid UTF-8`,
+		},
+		{
+			name:    "a field name that is not valid UTF-8 is rejected",
+			record:  query.Record{Key: "1", Value: map[string]any{"t\xfe": "x"}},
+			wantErr: `couchdb: key "1": the field name "t\xfe" is not valid UTF-8`,
+		},
+		{
+			name:   "an invalid _id value is dropped with the _id",
+			record: query.Record{Key: "1", Value: map[string]any{"_id": "\xff", "title": "Go"}},
+			want:   map[string]any{"title": "Go"},
+		},
+		{
 			name:    "an array value is rejected too",
 			record:  query.Record{Key: "k", Value: []any{1, 2}},
 			wantErr: "is not a JSON object",

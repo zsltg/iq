@@ -12,6 +12,9 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
+// utf8Guard refuses text that the backend would change to U+FFFD.
+var utf8Guard = query.UTF8Guard{Driver: "couchdb"}
+
 // Put writes a batch of records into the database, keyed by _id. Upsert replaces an
 // existing document (fetching its current _rev first, as CouchDB requires) and
 // inserts a new one. InsertOnly inserts new documents and skips (counts) those
@@ -190,6 +193,10 @@ func documentBody(r query.Record) (map[string]any, error) {
 		}
 		doc[k] = v
 	}
+	// The body and the _id travel as JSON, which turns an invalid byte into U+FFFD.
+	if err := utf8Guard.KeyValue(r.Key, doc); err != nil {
+		return nil, err
+	}
 	return doc, nil
 }
 
@@ -287,6 +294,10 @@ func (s *Store) Drop(ctx context.Context) error {
 func (s *Store) Delete(ctx context.Context, keys []string) (query.DeleteStat, error) {
 	if s.db == "" {
 		return query.DeleteStat{}, errNoDatabase
+	}
+	// Each _id travels as JSON, which turns an invalid byte into U+FFFD.
+	if err := utf8Guard.Keys(keys); err != nil {
+		return query.DeleteStat{}, err
 	}
 	revs, err := s.currentRevsForKeys(ctx, keys)
 	if err != nil {

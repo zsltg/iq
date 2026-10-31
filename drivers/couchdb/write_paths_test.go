@@ -157,6 +157,14 @@ func liveRevs(keys ...string) *mockdb.Rows {
 	return rows
 }
 
+func TestDeleteRefusesAKeyThatIsNotValidUTF8(t *testing.T) {
+	// The mock has no expected call, so a revision read or a tombstone would fail.
+	st, _, _ := newMockStore(t, 2, 2)
+	stat, err := st.Delete(keyedCtx(), []string{"k1", "k2\xff"})
+	require.Equal(t, query.DeleteStat{}, stat)
+	require.ErrorContains(t, err, `couchdb: record key "k2\xff" is not valid UTF-8`)
+}
+
 func TestDeleteChunksTheTombstones(t *testing.T) {
 	// Tombstones go out in chunks of pageSize, in key order, each with its revision.
 	st, _, mdb := newMockStore(t, 2, 2)

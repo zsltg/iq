@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 )
 
 func TestNormalizeUnknownAttributeType(t *testing.T) {
@@ -291,4 +292,24 @@ func TestParseItemDeepListNesting(t *testing.T) {
 		cur = l.Value[0]
 	}
 	require.Equal(t, &types.AttributeValueMemberS{Value: "leaf"}, cur)
+}
+
+func TestItemsOfRejectsInvalidUTF8(t *testing.T) {
+	s := &Store{keys: []KeyAttr{{name: "id", typ: types.ScalarAttributeTypeS}}}
+	tests := []struct {
+		name   string
+		record query.Record
+		want   string
+	}{
+		{"key", query.Record{Key: "a\xff", Value: map[string]any{"t": "x"}}, `dynamodb: record key "a\xff" is not valid UTF-8`},
+		{"string value", query.Record{Key: "1", Value: map[string]any{"t": []any{"x\xfe"}}}, `dynamodb: key "1": field "t[0]" holds a string that is not valid UTF-8`},
+		{"attribute name", query.Record{Key: "1", Value: map[string]any{"t\xfe": "x"}}, `dynamodb: key "1": the field name "t\xfe" is not valid UTF-8`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items, err := s.itemsOf([]query.Record{{Key: "0", Value: map[string]any{}}, tt.record})
+			require.ErrorContains(t, err, tt.want)
+			require.Nil(t, items)
+		})
+	}
 }
