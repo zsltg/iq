@@ -140,3 +140,44 @@ func TestCopierBeforeWriteErrorStopsTheCopy(t *testing.T) {
 	require.ErrorIs(t, err, boom)
 	require.Empty(t, events, "no Put runs after the hook fails")
 }
+
+type hookCtxKey struct{}
+
+func TestCopierBeforeWriteGetsTheCallerContext(t *testing.T) {
+	onePage := nativeSource(query.FormJSON)
+	empty := func(context.Context, func([]query.Record) error) error { return nil }
+	tests := []struct {
+		name string
+		src  query.RecordSource
+	}{
+		{"first page", onePage},
+		{"empty source", empty},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.WithValue(context.Background(), hookCtxKey{}, "marker")
+			var got any
+			c := query.Copier{
+				Dst: &countPutter{},
+				BeforeWrite: func(hctx context.Context) error {
+					got = hctx.Value(hookCtxKey{})
+					return nil
+				},
+			}
+			_, err := c.Copy(ctx, tt.src, false)
+			require.NoError(t, err)
+			require.Equal(t, "marker", got)
+		})
+	}
+}
+
+func TestCopierBeforeWriteErrorOnAnEmptySource(t *testing.T) {
+	boom := errors.New("boom")
+	c := query.Copier{
+		Dst:         &countPutter{},
+		BeforeWrite: func(context.Context) error { return boom },
+	}
+	empty := func(context.Context, func([]query.Record) error) error { return nil }
+	_, err := c.Copy(context.Background(), empty, false)
+	require.ErrorIs(t, err, boom)
+}

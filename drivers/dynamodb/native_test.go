@@ -419,3 +419,18 @@ func TestPutNativeKeepsTheCauseOfAnInvalidValue(t *testing.T) {
 		require.ErrorAs(t, err, &numErr)
 	})
 }
+
+func TestNativeScanStopsAtTheFirstCallbackError(t *testing.T) {
+	fake := &fakeDDB{scanFn: func(*awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
+		return &awsdynamodb.ScanOutput{Items: []map[string]types.AttributeValue{idItem(1), idItem(2), idItem(3)}}, nil
+	}}
+	s := fakeStore(t, fake)
+	s.pageSize = 1
+	calls := 0
+	err := s.NativeScan(context.Background(), func([]query.Record) error {
+		calls++
+		return errBoom
+	})
+	require.ErrorIs(t, err, errBoom)
+	require.Equal(t, 1, calls, "no page is handed over after the error")
+}
