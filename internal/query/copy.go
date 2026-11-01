@@ -76,10 +76,8 @@ func (c *Copier) Copy(ctx context.Context, src RecordSource, dry bool) (WriteSta
 	if err := pages.flush(ctx); err != nil {
 		return pages.total, err
 	}
-	if err := pages.runBefore(ctx); err != nil {
-		return pages.total, err
-	}
-	return pages.total, nil
+	// If no page was put, run the BeforeWrite hook now. pages.total is zero on that path.
+	return pages.total, pages.runBefore(ctx)
 }
 
 // transform maps one source record to its destination records. A nil Transform is
