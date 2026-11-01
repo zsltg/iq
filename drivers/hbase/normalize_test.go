@@ -1,6 +1,7 @@
 package hbase
 
 import (
+	"context"
 	"encoding/base64"
 	"math"
 	"strconv"
@@ -144,7 +145,7 @@ func TestRowKeyRoundTrip(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			b, err := encodeRowKey(tt.ct, tt.key)
 			require.NoError(t, err)
-			require.Equal(t, tt.key, rowKeyString(tt.ct, b))
+			require.Equal(t, tt.key, rowKeyString(context.Background(), tt.ct, b))
 		})
 	}
 }

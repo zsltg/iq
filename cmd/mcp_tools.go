@@ -409,7 +409,7 @@ type mcpQueryOutput struct {
 	Items     []any  `json:"items"`
 	Count     int    `json:"count"`
 	Truncated bool   `json:"truncated"`
-	Note      string `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
+	Note      string `json:"note,omitempty" jsonschema:"a notice about the result. iq sets it when it turned NaN or infinity into strings, or when HBase row keys show as base64 and cannot be addressed"`
 }
 
 // toolQuery runs the filter through the same engine that the CLI query uses,
@@ -437,8 +437,8 @@ func (s *mcpServer) toolQuery(ctx context.Context, req *mcp.CallToolRequest, in 
 	col := &queryCollector{bounds: bounds, out: mcpQueryOutput{Items: []any{}}}
 	cctx, cancel := context.WithTimeout(ctx, bounds.timeout)
 	defer cancel()
-	var nonFinite query.NonFiniteSummary
-	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+	var notes runNotices
+	cctx = notes.with(cctx)
 	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: !cfg.noCompile, Logger: cfg.log()}
 	opts.OnPage, opts.OnEstimate = s.progressHooks(cctx, req)
 
@@ -446,7 +446,7 @@ func (s *mcpServer) toolQuery(ctx context.Context, req *mcp.CallToolRequest, in 
 		return nil, mcpQueryOutput{}, err
 	}
 	col.out.Count = len(col.out.Items)
-	col.out.Note = nonFinite.Text()
+	col.out.Note = notes.note()
 	return nil, col.out, nil
 }
 
@@ -608,8 +608,8 @@ func (s *mcpServer) toolSchema(ctx context.Context, _ *mcp.CallToolRequest, in m
 	}
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
-	var nonFinite query.NonFiniteSummary
-	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+	var notes runNotices
+	cctx = notes.with(cctx)
 	st, err := openStore(cctx, cfg)
 	if err != nil {
 		return nil, nil, toolError(redactErr(err, cfg.url))
@@ -620,7 +620,7 @@ func (s *mcpServer) toolSchema(ctx context.Context, _ *mcp.CallToolRequest, in m
 		return nil, nil, toolError(fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(in.Filter, err), cfg.url)))
 	}
 	doc := shape.Infer(items).JSONSchema(schemaTitle(cfg))
-	if note := nonFinite.Text(); note != "" {
+	if note := notes.note(); note != "" {
 		doc["$comment"] = note
 	}
 	return nil, doc, nil
@@ -646,7 +646,7 @@ type mcpDiffOutput struct {
 	Stats  []mcpChange    `json:"stats,omitempty"`
 	Schema []mcpChange    `json:"schema,omitempty"`
 	Differ bool           `json:"differ"`
-	Note   string         `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
+	Note   string         `json:"note,omitempty" jsonschema:"a notice about the result. iq sets it when it turned NaN or infinity into strings, or when HBase row keys show as base64 and cannot be addressed"`
 }
 
 // mcpItemDelta is the delta of one keyed item. It projects diff.ItemDelta with
@@ -706,15 +706,15 @@ func (s *mcpServer) toolDiff(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
 
-	var nonFinite query.NonFiniteSummary
-	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+	var notes runNotices
+	cctx = notes.with(cctx)
 
 	run := diffRun{cfg: s.callConfig(), left: left, right: right, sections: in.Section, sample: sample}
 	out, err := collectDiff(cctx, run, layers)
 	if err != nil {
 		return nil, mcpDiffOutput{}, toolError(err)
 	}
-	out.Note = nonFinite.Text()
+	out.Note = notes.note()
 	return nil, out, nil
 }
 
@@ -791,7 +791,7 @@ type mcpExecInput struct {
 type mcpExecOutput struct {
 	Result    any    `json:"result"`
 	Truncated bool   `json:"truncated"`
-	Note      string `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
+	Note      string `json:"note,omitempty" jsonschema:"a notice about the result. iq sets it when it turned NaN or infinity into strings, or when HBase row keys show as base64 and cannot be addressed"`
 }
 
 // toolExec forwards the command verbatim through the same runner `iq exec` uses.
@@ -818,8 +818,8 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 		return nil, mcpExecOutput{}, toolError(redactErr(err, cfg.url))
 	}
 	defer func() { _ = st.Close() }()
-	var nonFinite query.NonFiniteSummary
-	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+	var notes runNotices
+	cctx = notes.with(cctx)
 	var cut atomic.Bool
 	cctx = query.WithRowCutNotice(cctx, func() { cut.Store(true) })
 	// One extra row lets the cap tell a full result from a cut one.
@@ -832,7 +832,7 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 		return nil, mcpExecOutput{}, toolError(err)
 	}
 	out.Truncated = out.Truncated || cut.Load()
-	out.Note = nonFinite.Text()
+	out.Note = notes.note()
 	return nil, out, nil
 }
 
@@ -922,7 +922,7 @@ type mcpWriteOutput struct {
 	Overwritten int    `json:"overwritten"`
 	Skipped     int    `json:"skipped"`
 	DryRun      bool   `json:"dry_run"`
-	Note        string `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
+	Note        string `json:"note,omitempty" jsonschema:"a notice about the result. iq sets it when it turned NaN or infinity into strings, or when HBase row keys show as base64 and cannot be addressed"`
 }
 
 // toolInsert copies the items of a source into a destination through the same
@@ -948,8 +948,8 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
-	var nonFinite query.NonFiniteSummary
-	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+	var notes runNotices
+	cctx = notes.with(cctx)
 	tr, closeSrc, err := openTypedSource(cctx, cfg)
 	if err != nil {
 		return nil, mcpWriteOutput{}, toolError(err)
@@ -964,7 +964,7 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	return nil, mcpWriteOutput{
 		Destination: label, Written: stat.Written, Overwritten: stat.Overwritten,
-		Skipped: stat.Skipped, DryRun: in.DryRun, Note: nonFinite.Text(),
+		Skipped: stat.Skipped, DryRun: in.DryRun, Note: notes.note(),
 	}, nil
 }
 

@@ -326,7 +326,7 @@ func (s *Store) pageScan(ctx context.Context, req *hrpc.Scan, fn func(batch map[
 	scanner := s.client.Scan(req)
 	page := make(map[string]any, s.pageSize)
 	err := eachRow(scanner, "hbase scan", func(res *hrpc.Result) (bool, error) {
-		key := rowKeyString(s.rowkeyType, res.Cells[0].Row)
+		key := rowKeyString(ctx, s.rowkeyType, res.Cells[0].Row)
 		row, err := s.readRow(ctx, key, res.Cells)
 		if err != nil {
 			return false, err
@@ -464,7 +464,7 @@ func (s *Store) addScanRow(ctx context.Context, rows map[string]any, res *hrpc.R
 	if query.CutAtLimit(ctx, len(rows)+1) {
 		return true, nil
 	}
-	key := rowKeyString(s.rowkeyType, res.Cells[0].Row)
+	key := rowKeyString(ctx, s.rowkeyType, res.Cells[0].Row)
 	row, err := s.readRow(ctx, key, res.Cells)
 	if err != nil {
 		return false, err
