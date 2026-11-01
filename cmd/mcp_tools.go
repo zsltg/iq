@@ -409,7 +409,7 @@ type mcpQueryOutput struct {
 	Items     []any  `json:"items"`
 	Count     int    `json:"count"`
 	Truncated bool   `json:"truncated"`
-	Note      string `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
+	Note      string `json:"note,omitempty" jsonschema:"a notice about the result. iq sets it when it turned NaN or infinity into strings, or when HBase row keys show as base64 and cannot be addressed"`
 }
 
 // toolQuery runs the filter through the same engine that the CLI query uses,
@@ -646,7 +646,7 @@ type mcpDiffOutput struct {
 	Stats  []mcpChange    `json:"stats,omitempty"`
 	Schema []mcpChange    `json:"schema,omitempty"`
 	Differ bool           `json:"differ"`
-	Note   string         `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
+	Note   string         `json:"note,omitempty" jsonschema:"a notice about the result. iq sets it when it turned NaN or infinity into strings, or when HBase row keys show as base64 and cannot be addressed"`
 }
 
 // mcpItemDelta is the delta of one keyed item. It projects diff.ItemDelta with
@@ -791,7 +791,7 @@ type mcpExecInput struct {
 type mcpExecOutput struct {
 	Result    any    `json:"result"`
 	Truncated bool   `json:"truncated"`
-	Note      string `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
+	Note      string `json:"note,omitempty" jsonschema:"a notice about the result. iq sets it when it turned NaN or infinity into strings, or when HBase row keys show as base64 and cannot be addressed"`
 }
 
 // toolExec forwards the command verbatim through the same runner `iq exec` uses.
@@ -922,7 +922,7 @@ type mcpWriteOutput struct {
 	Overwritten int    `json:"overwritten"`
 	Skipped     int    `json:"skipped"`
 	DryRun      bool   `json:"dry_run"`
-	Note        string `json:"note,omitempty" jsonschema:"set when the backend returned NaN or infinity, which JSON cannot hold, and iq turned them into strings"`
+	Note        string `json:"note,omitempty" jsonschema:"a notice about the result. iq sets it when it turned NaN or infinity into strings, or when HBase row keys show as base64 and cannot be addressed"`
 }
 
 // toolInsert copies the items of a source into a destination through the same

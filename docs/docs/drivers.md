@@ -734,8 +734,9 @@ Under the default type, a row key that is not valid UTF-8 shows as base64, but a
 a delete or a write sends the UTF-8 bytes of that text. That is a different row. A real
 text key `/w==` and the raw key `0xFF` both show as `/w==`. So a copy from HBase to HBase
 also reaches the wrong row for such a key. iq prints one warning on stderr at the end of
-a run that showed such a key (the MCP tools put it in the note). Declare `?keytype=bytes`
-on the source to read and address these keys exactly.
+a run that showed such a key. The MCP tools put it in the `note` field. `iq_schema` puts
+it in the `$comment` field of the schema. Declare `?keytype=bytes` on the source to read
+and address these keys exactly.
 
 ### Pushdown
 

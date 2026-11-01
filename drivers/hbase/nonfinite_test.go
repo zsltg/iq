@@ -53,12 +53,28 @@ func TestNonFiniteDoubleRoundTrips(t *testing.T) {
 	}
 }
 
-func TestRowFromCellsRecordsNonFiniteFields(t *testing.T) {
-	raw, err := encodeCell(ctDouble, math.Inf(1))
+// newDoubleStore returns a store with one row "r1". Each path in cells,
+// given as {family, column}, holds the double v.
+func newDoubleStore(t *testing.T, v float64, cells ...[2]string) *Store {
+	t.Helper()
+	raw, err := encodeCell(ctDouble, v)
 	require.NoError(t, err)
+	row := map[string]map[string][]byte{}
+	types := typeMap{}
+	for _, c := range cells {
+		if row[c[0]] == nil {
+			row[c[0]] = map[string][]byte{}
+		}
+		row[c[0]][c[1]] = raw
+		types[cellKey(c[0], c[1])] = ctDouble
+	}
 	fc := newFakeClient()
-	fc.seed("r1", cell("cf", "price", string(raw)))
-	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{cellKey("cf", "price"): ctDouble}, ctAuto)
+	fc.seed("r1", row)
+	return newFakeStore(fc, &fakeAdmin{}, "books", types, ctAuto)
+}
+
+func TestRowFromCellsRecordsNonFiniteFields(t *testing.T) {
+	st := newDoubleStore(t, math.Inf(1), [2]string{"cf", "price"})
 	var calls []noticeCall
 
 	got, err := st.Get(noticeCtx(&calls), []string{"r1"})
@@ -69,15 +85,11 @@ func TestRowFromCellsRecordsNonFiniteFields(t *testing.T) {
 }
 
 func TestScanBatchesReportsNonFiniteDouble(t *testing.T) {
-	raw, err := encodeCell(ctDouble, math.NaN())
-	require.NoError(t, err)
-	fc := newFakeClient()
-	fc.seed("r1", cell("cf", "price", string(raw)))
-	st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{cellKey("cf", "price"): ctDouble}, ctAuto)
+	st := newDoubleStore(t, math.NaN(), [2]string{"cf", "price"})
 	var calls []noticeCall
 	var seen map[string]any
 
-	err = st.ScanBatches(noticeCtx(&calls), func(batch map[string]any) error {
+	err := st.ScanBatches(noticeCtx(&calls), func(batch map[string]any) error {
 		seen = batch
 		return nil
 	})
@@ -88,22 +100,10 @@ func TestScanBatchesReportsNonFiniteDouble(t *testing.T) {
 }
 
 func TestRowFromCellsReportsEachCellPath(t *testing.T) {
-	raw, err := encodeCell(ctDouble, math.Inf(1))
-	require.NoError(t, err)
-	fc := newFakeClient()
-	fc.seed("r1", map[string]map[string][]byte{
-		"cf": {"a": raw, "b": raw},
-		"cg": {"c": raw},
-	})
-	types := typeMap{
-		cellKey("cf", "a"): ctDouble,
-		cellKey("cf", "b"): ctDouble,
-		cellKey("cg", "c"): ctDouble,
-	}
-	st := newFakeStore(fc, &fakeAdmin{}, "books", types, ctAuto)
+	st := newDoubleStore(t, math.Inf(1), [2]string{"cf", "a"}, [2]string{"cf", "b"}, [2]string{"cg", "c"})
 	var calls []noticeCall
 
-	_, err = st.Get(noticeCtx(&calls), []string{"r1"})
+	_, err := st.Get(noticeCtx(&calls), []string{"r1"})
 
 	require.NoError(t, err)
 	require.ElementsMatch(t, []noticeCall{{"r1", "cf.a"}, {"r1", "cf.b"}, {"r1", "cg.c"}}, calls)
