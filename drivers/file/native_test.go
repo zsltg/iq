@@ -169,25 +169,32 @@ func TestDecodeCacheRefusesANativeRecord(t *testing.T) {
 	require.ErrorContains(t, err, `the cache cannot hold form "dynamodb-json"`)
 }
 
-func TestNativeScanReportsAMissingDumpFile(t *testing.T) {
-	u := writeDump(t, "export.json", []byte(nativeExport), "format=dynamodb-json&keys=pk:S,sk:N")
-	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
-	require.NoError(t, err)
-	require.NoError(t, os.Remove(st.path))
-	called := false
-	err = st.NativeScan(context.Background(), func([]query.Record) error { called = true; return nil })
-	require.ErrorContains(t, err, "open dump")
-	require.False(t, called)
-}
-
-func TestNativeScanReportsABadGzipHead(t *testing.T) {
-	u := writeDump(t, "export.json.gz", []byte{0x1f, 0x8b, 0x00}, "format=dynamodb-json&keys=pk")
-	st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
-	require.NoError(t, err)
-	called := false
-	err = st.NativeScan(context.Background(), func([]query.Record) error { called = true; return nil })
-	require.ErrorContains(t, err, "open gzip dump")
-	require.False(t, called)
+func TestNativeScanReportsAnUnreadableDump(t *testing.T) {
+	tests := []struct {
+		name    string
+		file    string
+		content []byte
+		query   string
+		remove  bool
+		want    string
+	}{
+		{"missing dump file", "export.json", []byte(nativeExport), "format=dynamodb-json&keys=pk:S,sk:N", true, "open dump"},
+		{"bad gzip head", "export.json.gz", []byte{0x1f, 0x8b, 0x00}, "format=dynamodb-json&keys=pk", false, "open gzip dump"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			u := writeDump(t, tc.file, tc.content, tc.query)
+			st, err := Open(u, numfmt.DecimalAuto, CacheConfig{})
+			require.NoError(t, err)
+			if tc.remove {
+				require.NoError(t, os.Remove(st.path))
+			}
+			called := false
+			err = st.NativeScan(context.Background(), func([]query.Record) error { called = true; return nil })
+			require.ErrorContains(t, err, tc.want)
+			require.False(t, called)
+		})
+	}
 }
 
 func TestNativeRecordForItemRefusesAnUnknownAttribute(t *testing.T) {

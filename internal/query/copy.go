@@ -35,6 +35,13 @@ type Copier struct {
 	// AnyForm skips the form check. A dump writer sets it, because it encodes a
 	// record of any form.
 	AnyForm bool
+	// BeforeWrite is an optional hook. Copy calls it once, right before the first
+	// Put and after that page passed the form check. If the source yields no
+	// page, Copy calls it at the end. Copy never calls it in a dry run. An error
+	// from the hook stops the copy before any write. A caller uses it to run a
+	// destructive step, such as emptying the destination, only when the first
+	// page can be written.
+	BeforeWrite func(ctx context.Context) error
 }
 
 // Copy streams src through the Transform into Dst and returns the totalled stat.
@@ -47,7 +54,7 @@ func (c *Copier) Copy(ctx context.Context, src RecordSource, dry bool) (WriteSta
 	if size <= 0 {
 		size = 100
 	}
-	pages := &copyPages{dst: c.Dst, mode: c.Mode, dry: dry, size: size, buf: make([]Record, 0, size), anyForm: c.AnyForm}
+	pages := &copyPages{dst: c.Dst, mode: c.Mode, dry: dry, size: size, buf: make([]Record, 0, size), anyForm: c.AnyForm, before: c.BeforeWrite}
 	err := src(ctx, func(batch []Record) error {
 		for _, r := range batch {
 			outs, err := c.transform(r)
@@ -67,6 +74,9 @@ func (c *Copier) Copy(ctx context.Context, src RecordSource, dry bool) (WriteSta
 		return pages.total, err
 	}
 	if err := pages.flush(ctx); err != nil {
+		return pages.total, err
+	}
+	if err := pages.runBefore(ctx); err != nil {
 		return pages.total, err
 	}
 	return pages.total, nil
@@ -92,6 +102,18 @@ type copyPages struct {
 	total WriteStat
 	// anyForm skips the form check of flush.
 	anyForm bool
+	// before is the BeforeWrite hook of the Copier. It is nil after it has run.
+	before func(ctx context.Context) error
+}
+
+// runBefore runs the BeforeWrite hook once. A dry run never runs it.
+func (p *copyPages) runBefore(ctx context.Context) error {
+	if p.dry || p.before == nil {
+		return nil
+	}
+	hook := p.before
+	p.before = nil
+	return hook(ctx)
 }
 
 // add buffers recs and writes each page that fills up.
@@ -126,6 +148,9 @@ func (p *copyPages) flush(ctx context.Context) error {
 		p.total.Written += len(p.buf)
 		p.buf = p.buf[:0]
 		return nil
+	}
+	if err := p.runBefore(ctx); err != nil {
+		return err
 	}
 	st, err := p.dst.Put(ctx, p.buf, p.mode)
 	p.total.add(st)

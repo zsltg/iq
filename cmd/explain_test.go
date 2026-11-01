@@ -510,3 +510,20 @@ func TestQueryPlanLogSharesConjunctDecisionsWithText(t *testing.T) {
 	require.Contains(t, out, "only here: .active | not")
 	require.Contains(t, out, "not compiled: negation is not exactly expressible")
 }
+
+// TestLogQueryPlanNativePushesNothing pins that a --native query logs a plan
+// without pushdown stages, because the native read runs the whole filter on the
+// client.
+func TestLogQueryPlanNativePushesNothing(t *testing.T) {
+	run := func(native bool) map[string]any {
+		var buf bytes.Buffer
+		lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		cfg := &config{url: "redis://h", handle: "cache", logger: lg, logStructured: true, native: native}
+		cfg.logQueryPlan(`.[] | select(.n == 1)`, false)
+		rec := map[string]any{}
+		require.NoError(t, json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &rec))
+		return rec
+	}
+	require.Equal(t, "on", run(false)["prefilter"].(map[string]any)["state"])
+	require.NotEqual(t, "on", run(true)["prefilter"].(map[string]any)["state"])
+}

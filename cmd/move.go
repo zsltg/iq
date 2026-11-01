@@ -249,8 +249,9 @@ func writeModeFor(cfg *config) query.WriteMode {
 }
 
 // applyInsert resolves the destination, refuses a replace onto the source, opens
-// the destination, empties it when replace is set (after confirmation), and
-// copies the records through the Putter. It returns the destination label for
+// the destination, and confirms a replace. It copies the records through the
+// Putter. With replace, the copy empties the destination right before the first
+// write, after that page passed the checks. It returns the destination label for
 // the outcome line and the write statistics. Every error crossing out of it has
 // the connection URI redacted.
 func applyInsert(ctx context.Context, req insertRequest, recSrc query.RecordSource, transform func(query.Record) ([]query.Record, error)) (string, query.WriteStat, error) {
@@ -270,13 +271,16 @@ func applyInsert(ctx context.Context, req insertRequest, recSrc query.RecordSour
 	if err := checkSourceForm(req.srcForm, putter, dst); err != nil {
 		return "", query.WriteStat{}, err
 	}
+	copier := query.Copier{Dst: putter, Mode: req.mode, PageSize: movePageSize, Transform: transform}
 	if req.replace {
-		if err := clearForReplace(ctx, st, dst, req); err != nil {
+		// The confirmation runs now. The clear waits for the first page that
+		// passed the checks, so a refused page leaves the destination intact.
+		clearer, err := confirmReplace(st, dst, req)
+		if err != nil {
 			return "", query.WriteStat{}, err
 		}
+		copier.BeforeWrite = func(ctx context.Context) error { return clearDestination(ctx, clearer, dst) }
 	}
-
-	copier := query.Copier{Dst: putter, Mode: req.mode, PageSize: movePageSize, Transform: transform}
 	stat, err := copier.Copy(ctx, recSrc, req.dryRun)
 	if err != nil {
 		return "", query.WriteStat{}, redactErr(err, dst.url)
@@ -325,19 +329,28 @@ func insertPutter(st store, dst endpoint) (query.Putter, error) {
 	return putter, nil
 }
 
-// clearForReplace empties the destination for --replace. A destination that cannot
-// be cleared is an error even on a dry run. A real run asks for the confirmation
-// first.
-func clearForReplace(ctx context.Context, st store, dst endpoint, req insertRequest) error {
+// confirmReplace prepares --replace. A destination that cannot be cleared is an
+// error even on a dry run. A real run asks for the confirmation. The returned
+// Clearer is nil on a dry run, which never clears.
+func confirmReplace(st store, dst endpoint, req insertRequest) (query.Clearer, error) {
 	clearer, ok := st.(query.Clearer)
 	if !ok {
-		return fmt.Errorf("--replace: destination %s (%s) cannot be cleared", dst.handle, dst.driver)
+		return nil, fmt.Errorf("--replace: destination %s (%s) cannot be cleared", dst.handle, dst.driver)
 	}
 	if req.dryRun {
-		return nil
+		return nil, nil
 	}
 	if err := req.confirm(fmt.Sprintf("clear %s before writing", dst.label())); err != nil {
-		return err
+		return nil, err
+	}
+	return clearer, nil
+}
+
+// clearDestination empties the destination with clearer. The copy calls it
+// before the first write. A nil clearer is a dry run and does nothing.
+func clearDestination(ctx context.Context, clearer query.Clearer, dst endpoint) error {
+	if clearer == nil {
+		return nil
 	}
 	if err := clearer.Clear(ctx); err != nil {
 		return redactErr(err, dst.url)
@@ -451,15 +464,21 @@ func moveFromLabel(cfg *config) string {
 	return "stdin"
 }
 
+// writeTypedPlanTarget writes the "to" line and the write section of a typed
+// dump plan.
+func writeTypedPlanTarget(b *strings.Builder, cfg *config) {
+	writePlanLine(b, "to", "typed dump (stdout/-o)")
+	writePlanSection(b, "write")
+	b.WriteString("  encode typed records\n")
+	if cfg.native {
+		b.WriteString("  records carry the native form of the source\n")
+	}
+}
+
 // writeMovePlanTarget writes the "to" line and the write section of a move plan.
 func writeMovePlanTarget(b *strings.Builder, cfg *config) error {
 	if cfg.typed {
-		writePlanLine(b, "to", "typed dump (stdout/-o)")
-		writePlanSection(b, "write")
-		b.WriteString("  encode typed records\n")
-		if cfg.native {
-			b.WriteString("  records carry the native form of the source\n")
-		}
+		writeTypedPlanTarget(b, cfg)
 		return nil
 	}
 	cf, err := iqconfig.Load()

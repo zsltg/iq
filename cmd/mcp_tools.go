@@ -980,8 +980,9 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 	}, nil
 }
 
-// checkInsert rejects an iq_insert call that lacks a source or a destination, or
-// that asks for replace without the destructive capability, in that order.
+// checkInsert rejects an iq_insert call that lacks a source or a destination, that
+// asks for replace without the destructive capability, or that asks for native
+// with key_field, in that order.
 func (s *mcpServer) checkInsert(in mcpInsertInput) error {
 	if strings.TrimSpace(in.Source) == "" {
 		return errors.New("insert: a source is required")
@@ -992,7 +993,7 @@ func (s *mcpServer) checkInsert(in mcpInsertInput) error {
 	if in.Replace && !s.allows(allowDestructive) {
 		return errors.New("replace empties the destination, so it needs the destructive capability; the server was started without --allow destructive")
 	}
-	return nil
+	return validateNativeMove(&config{native: in.Native, keyField: in.KeyField})
 }
 
 // confirmInsert takes the confirmation that a replace needs. It returns ok when

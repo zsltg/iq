@@ -32,31 +32,64 @@ func (s *Store) NativeScan(ctx context.Context, fn func(batch []query.Record) er
 	if len(s.keys) == 0 {
 		return errNoTable
 	}
-	page := make([]query.Record, 0, s.pageSize)
+	batch := &nativeBatch{size: s.pageSize, fn: fn}
 	p := dynamodb.NewScanPaginator(s.client, &dynamodb.ScanInput{TableName: &s.table})
 	for p.HasMorePages() {
 		out, err := p.NextPage(ctx)
 		if err != nil {
 			return fmt.Errorf("dynamodb scan: %w", err)
 		}
-		for _, item := range out.Items {
-			rec, err := s.nativeRecord(item)
-			if err != nil {
-				return err
-			}
-			page = append(page, rec)
-			if len(page) < s.pageSize {
-				continue
-			}
-			if err := fn(page); err != nil {
-				return err
-			}
-			page = make([]query.Record, 0, s.pageSize)
+		if err := s.addNativeItems(batch, out.Items); err != nil {
+			return err
 		}
 	}
-	if len(page) > 0 {
-		return fn(page)
+	return batch.flush()
+}
+
+// addNativeItems adds the native record of each item to batch.
+func (s *Store) addNativeItems(batch *nativeBatch, items []map[string]types.AttributeValue) error {
+	for _, item := range items {
+		rec, err := s.nativeRecord(item)
+		if err != nil {
+			return err
+		}
+		if err := batch.add(rec); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+// nativeBatch collects records and hands them to fn in pages of size records.
+type nativeBatch struct {
+	size int
+	fn   func(batch []query.Record) error
+	page []query.Record
+}
+
+// add appends rec and hands the page to fn when the page is full.
+func (b *nativeBatch) add(rec query.Record) error {
+	b.page = append(b.page, rec)
+	if len(b.page) < b.size {
+		return nil
+	}
+	return b.emit()
+}
+
+// flush hands the last, partial page to fn.
+func (b *nativeBatch) flush() error {
+	if len(b.page) == 0 {
+		return nil
+	}
+	return b.fn(b.page)
+}
+
+// emit hands the page to fn and starts a new page.
+func (b *nativeBatch) emit() error {
+	if err := b.fn(b.page); err != nil {
+		return err
+	}
+	b.page = make([]query.Record, 0, b.size)
 	return nil
 }
 
@@ -94,6 +127,23 @@ func EncodeItem(item map[string]types.AttributeValue) (map[string]any, error) {
 // encodeAttribute renders one attribute value as a one-tag object.
 func encodeAttribute(av types.AttributeValue) (map[string]any, error) {
 	switch t := av.(type) {
+	case *types.AttributeValueMemberM:
+		m, err := EncodeItem(t.Value)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"M": m}, nil
+	case *types.AttributeValueMemberL:
+		return encodeList(t.Value)
+	default:
+		return encodeScalar(av)
+	}
+}
+
+// encodeScalar renders an S, N, B, BOOL, or NULL value. Any other type goes to
+// encodeSet.
+func encodeScalar(av types.AttributeValue) (map[string]any, error) {
+	switch t := av.(type) {
 	case *types.AttributeValueMemberS:
 		return map[string]any{"S": t.Value}, nil
 	case *types.AttributeValueMemberN:
@@ -104,14 +154,6 @@ func encodeAttribute(av types.AttributeValue) (map[string]any, error) {
 		return map[string]any{"BOOL": t.Value}, nil
 	case *types.AttributeValueMemberNULL:
 		return map[string]any{"NULL": t.Value}, nil
-	case *types.AttributeValueMemberM:
-		m, err := EncodeItem(t.Value)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"M": m}, nil
-	case *types.AttributeValueMemberL:
-		return encodeList(t.Value)
 	default:
 		return encodeSet(av)
 	}
@@ -196,6 +238,18 @@ func checkNativeItem(item map[string]types.AttributeValue) error {
 // checkNativeValue checks one attribute value at path p and the values below it.
 func checkNativeValue(p attrPath, av types.AttributeValue) error {
 	switch t := av.(type) {
+	case *types.AttributeValueMemberM:
+		return checkNativeMap(p, t.Value)
+	case *types.AttributeValueMemberL:
+		return checkNativeList(p, t.Value)
+	default:
+		return checkNativeLeaf(p, av)
+	}
+}
+
+// checkNativeLeaf checks a value that has no nested values.
+func checkNativeLeaf(p attrPath, av types.AttributeValue) error {
+	switch t := av.(type) {
 	case *types.AttributeValueMemberN:
 		return numberIn(p, t.Value)
 	case *types.AttributeValueMemberNS:
@@ -205,20 +259,34 @@ func checkNativeValue(p attrPath, av types.AttributeValue) error {
 	case *types.AttributeValueMemberBS:
 		return nonEmptySet(p, "BS", len(t.Value))
 	case *types.AttributeValueMemberNULL:
-		if !t.Value {
-			return fmt.Errorf("attribute %q: NULL must be true", string(p))
+		return checkNativeNull(p, t.Value)
+	}
+	return nil
+}
+
+// checkNativeNull refuses a NULL that is false.
+func checkNativeNull(p attrPath, v bool) error {
+	if !v {
+		return fmt.Errorf("attribute %q: NULL must be true", string(p))
+	}
+	return nil
+}
+
+// checkNativeMap checks the values of an M value in sorted name order.
+func checkNativeMap(p attrPath, m map[string]types.AttributeValue) error {
+	for _, name := range slices.Sorted(maps.Keys(m)) {
+		if err := checkNativeValue(p.field(name), m[name]); err != nil {
+			return err
 		}
-	case *types.AttributeValueMemberM:
-		for _, name := range slices.Sorted(maps.Keys(t.Value)) {
-			if err := checkNativeValue(p.field(name), t.Value[name]); err != nil {
-				return err
-			}
-		}
-	case *types.AttributeValueMemberL:
-		for i, e := range t.Value {
-			if err := checkNativeValue(p.element(i), e); err != nil {
-				return err
-			}
+	}
+	return nil
+}
+
+// checkNativeList checks the elements of an L value in order.
+func checkNativeList(p attrPath, list []types.AttributeValue) error {
+	for i, e := range list {
+		if err := checkNativeValue(p.element(i), e); err != nil {
+			return err
 		}
 	}
 	return nil

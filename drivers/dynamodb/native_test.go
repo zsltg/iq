@@ -340,3 +340,82 @@ func TestNativeScanKeyMatchesTheTypedKey(t *testing.T) {
 	require.Equal(t, typed, native)
 	require.Equal(t, []string{strconv.Itoa(41)}, native)
 }
+
+type nativeCtxKey struct{}
+
+func TestNativeScanRequestsTheTableWithTheCallerContext(t *testing.T) {
+	var table *string
+	fake := &fakeDDB{scanFn: func(in *awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
+		table = in.TableName
+		return &awsdynamodb.ScanOutput{}, nil
+	}}
+	s := fakeStore(t, fake)
+	ctx := context.WithValue(context.Background(), nativeCtxKey{}, "marker")
+	require.NoError(t, s.NativeScan(ctx, func([]query.Record) error { return nil }))
+	require.NotNil(t, table)
+	require.Equal(t, "t", *table)
+	require.NotNil(t, fake.scanCtx)
+	require.Equal(t, "marker", fake.scanCtx.Value(nativeCtxKey{}))
+}
+
+func TestNativeScanWrapsTheScanError(t *testing.T) {
+	fake := &fakeDDB{scanFn: func(*awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) { return nil, errBoom }}
+	s := fakeStore(t, fake)
+	err := s.NativeScan(context.Background(), func([]query.Record) error { return nil })
+	require.ErrorIs(t, err, errBoom)
+	require.ErrorContains(t, err, "dynamodb scan")
+}
+
+func TestNativeScanStopsOnAnItemThatCannotBeEncoded(t *testing.T) {
+	item := idItem(1)
+	item["x"] = &types.UnknownUnionMember{Tag: "Z"}
+	fake := &fakeDDB{scanFn: func(*awsdynamodb.ScanInput) (*awsdynamodb.ScanOutput, error) {
+		return &awsdynamodb.ScanOutput{Items: []map[string]types.AttributeValue{item}}, nil
+	}}
+	s := fakeStore(t, fake)
+	called := false
+	err := s.NativeScan(context.Background(), func([]query.Record) error { called = true; return nil })
+	require.ErrorIs(t, err, ErrUnknownAttribute)
+	require.ErrorContains(t, err, `item "1"`)
+	require.False(t, called)
+}
+
+func TestEncodeItemReportsAnUnknownAttributeInsideAMap(t *testing.T) {
+	item := map[string]types.AttributeValue{
+		"m": &types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
+			"x": &types.UnknownUnionMember{Tag: "Z"},
+		}},
+	}
+	_, err := EncodeItem(item)
+	require.ErrorIs(t, err, ErrUnknownAttribute)
+	require.ErrorContains(t, err, `attribute "m": attribute "x"`)
+}
+
+func TestPutNativeRefusesAValueThatJSONCannotEncode(t *testing.T) {
+	dst, cf := ctxStore(t, &fakeDDB{})
+	rec := query.Record{Key: "1", Form: query.FormDynamoJSON, Value: map[string]any{"a": make(chan int)}}
+	_, err := dst.Put(context.Background(), []query.Record{rec}, query.Upsert)
+	require.ErrorContains(t, err, `record "1": encode native value`)
+	var unsupported *json.UnsupportedTypeError
+	require.ErrorAs(t, err, &unsupported)
+	require.Empty(t, cf.puts)
+}
+
+func TestPutNativeKeepsTheCauseOfAnInvalidValue(t *testing.T) {
+	t.Run("parse error", func(t *testing.T) {
+		dst, _ := ctxStore(t, &fakeDDB{})
+		rec := query.Record{Key: "1", Form: query.FormDynamoJSON, Value: map[string]any{"a": "plain"}}
+		_, err := dst.Put(context.Background(), []query.Record{rec}, query.Upsert)
+		require.ErrorContains(t, err, `record "1" is not valid DynamoDB JSON`)
+		var typeErr *json.UnmarshalTypeError
+		require.ErrorAs(t, err, &typeErr)
+	})
+	t.Run("number error", func(t *testing.T) {
+		dst, _ := ctxStore(t, &fakeDDB{})
+		rec := query.Record{Key: "1", Form: query.FormDynamoJSON, Value: map[string]any{"a": map[string]any{"N": "abc"}}}
+		_, err := dst.Put(context.Background(), []query.Record{rec}, query.Upsert)
+		require.ErrorContains(t, err, `record "1" is not valid DynamoDB JSON`)
+		var numErr *numberError
+		require.ErrorAs(t, err, &numErr)
+	})
+}

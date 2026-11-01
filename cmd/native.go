@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/spf13/cobra"
 
 	"github.com/zsltg/iq/internal/query"
 )
@@ -28,6 +31,32 @@ func validateNativeQuery(cfg *config, fm outputFormat, cross bool) error {
 		return fmt.Errorf("--native cannot use --format %s, because it flattens the type tags. %s", fm, nativeFormatChoices)
 	}
 	return nil
+}
+
+// guardQueryFormat refuses a format that the query cannot use, before any store
+// I/O. It refuses a binary format on an interactive terminal, and a --native
+// query that cannot honor the flag.
+func guardQueryFormat(cmd *cobra.Command, cfg *config, fm outputFormat, cross bool) error {
+	if err := guardBinaryFormat(fm, cmd.OutOrStdout()); err != nil {
+		return err
+	}
+	return validateNativeQuery(cfg, fm, cross)
+}
+
+// openJQKVStore opens the source of cfg and returns the KVStore that the jq
+// engine reads, with the function that closes the source. If the KVStore cannot
+// be made, it closes the source and returns the error.
+func openJQKVStore(cmd *cobra.Command, ctx context.Context, cfg *config) (query.KVStore, func() error, error) {
+	st, err := openJQStore(cmd, ctx, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	kv, err := kvStoreFor(st, cfg)
+	if err != nil {
+		_ = st.Close()
+		return nil, nil, err
+	}
+	return kv, st.Close, nil
 }
 
 // validateNativeMove refuses a --native move that cannot honor the flag. Foreign

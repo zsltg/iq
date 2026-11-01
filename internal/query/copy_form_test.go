@@ -2,6 +2,7 @@ package query_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -77,4 +78,65 @@ func TestCopierAnyFormSkipsTheCheck(t *testing.T) {
 	_, err := c.Copy(context.Background(), nativeSource(query.FormMongoEJSON), false)
 	require.NoError(t, err)
 	require.Equal(t, 1, p.puts)
+}
+
+// eventPutter logs the Put calls and the BeforeWrite calls in order.
+type eventPutter struct{ events *[]string }
+
+func (p eventPutter) Put(_ context.Context, b []query.Record, _ query.WriteMode) (query.WriteStat, error) {
+	*p.events = append(*p.events, "put")
+	return query.WriteStat{Written: len(b)}, nil
+}
+
+func TestCopierBeforeWrite(t *testing.T) {
+	twoPages := func(_ context.Context, fn func([]query.Record) error) error {
+		for _, k := range []string{"a", "b"} {
+			if err := fn([]query.Record{{Key: k, Value: map[string]any{}}}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	empty := func(context.Context, func([]query.Record) error) error { return nil }
+	tests := []struct {
+		name    string
+		src     query.RecordSource
+		dry     bool
+		wantErr bool
+		want    []string
+	}{
+		{"once before the first put", twoPages, false, false, []string{"before", "put", "put"}},
+		{"at the end of an empty source", empty, false, false, []string{"before"}},
+		{"never in a dry run", twoPages, true, false, nil},
+		{"never in a dry run of an empty source", empty, true, false, nil},
+		{"not when the first page is refused", nativeSource(query.FormDynamoJSON), false, true, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var events []string
+			c := query.Copier{
+				Dst: eventPutter{events: &events}, PageSize: 1,
+				BeforeWrite: func(context.Context) error { events = append(events, "before"); return nil },
+			}
+			_, err := c.Copy(context.Background(), tt.src, tt.dry)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.want, events)
+		})
+	}
+}
+
+func TestCopierBeforeWriteErrorStopsTheCopy(t *testing.T) {
+	var events []string
+	boom := errors.New("boom")
+	c := query.Copier{
+		Dst:         eventPutter{events: &events},
+		BeforeWrite: func(context.Context) error { return boom },
+	}
+	_, err := c.Copy(context.Background(), nativeSource(query.FormJSON), false)
+	require.ErrorIs(t, err, boom)
+	require.Empty(t, events, "no Put runs after the hook fails")
 }

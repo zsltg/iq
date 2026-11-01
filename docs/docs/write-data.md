@@ -85,6 +85,21 @@ iq --src books --insert books2 --explain
     (columnar) and `--gron`/`--grona` (flattened assignments no source
     decodes) drop `--typed` to grep or export the value stream instead.
 
+A backend that stores text as JSON cannot keep a byte sequence that is not valid
+UTF-8. It would change each invalid byte to U+FFFD, and two different keys or
+names could become one. So Elasticsearch, OpenSearch, CouchDB, Couchbase,
+DynamoDB, and RedisJSON refuse a record with such a string. The error names the
+field path, and no part of that batch is written. `iq data delete` refuses such
+a key too. The source can hold these bytes in a Redis string, in an RDB dump, or
+in the output of a jq filter such as `@base64d`. Encode the value first, for
+example with `@base64`.
+
+Redis has no empty hash, list, set, sorted set, or stream, and a native Redis
+value has no null. So a Redis write refuses an empty one of these types and a
+null in a native value. A RedisJSON value keeps its JSON null.
+The error names the key, and no part of that batch is written. Redis stores a
+number or a bool as its text, and a set keeps one copy of each member.
+
 ## Native form `--native`
 
 A normalized value can be plainer than the native type that it came from. A DynamoDB
@@ -127,25 +142,7 @@ The rules of `--native`:
   typed dump without `--native`, because each of its records already names its form.
 - `--native` does not use the file decode cache. Each run reads the dump again.
 - A piped typed dump already names the form of each record. `--native` has no effect on it.
-- `iq` checks the form of a `--native` source against the destination before `--replace` empties
-  it. A piped typed dump has no known form before the read, so `iq` cannot do this check. If its
-  records are in a form that the destination refuses, `--replace` has already emptied the
-  destination and nothing is written. Use `--dry-run` first, which reports the same refusal.
-
-A backend that stores text as JSON cannot keep a byte sequence that is not valid
-UTF-8. It would change each invalid byte to U+FFFD, and two different keys or
-names could become one. So Elasticsearch, OpenSearch, CouchDB, Couchbase,
-DynamoDB, and RedisJSON refuse a record with such a string. The error names the
-field path, and no part of that batch is written. `iq data delete` refuses such
-a key too. The source can hold these bytes in a Redis string, in an RDB dump, or
-in the output of a jq filter such as `@base64d`. Encode the value first, for
-example with `@base64`.
-
-Redis has no empty hash, list, set, sorted set, or stream, and a native Redis
-value has no null. So a Redis write refuses an empty one of these types and a
-null in a native value. A RedisJSON value keeps its JSON null.
-The error names the key, and no part of that batch is written. Redis stores a
-number or a bool as its text, and a set keeps one copy of each member.
+- With `--replace`, `iq` clears the destination only after the first page passes the checks.
 
 ## Key mapping `--key*`
 
