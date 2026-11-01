@@ -57,10 +57,14 @@ same contract:
   delete are opt-in ports. A backend implements what its model supports. A command against a
   missing capability fails with a clear message instead of emulating it. For example, Redis, whose
   DB index cannot be removed, has no `drop`. The read-only file dump has no per-key `delete`.
-- **Values round-trip.** Every value normalizes to JSON under a frozen per-backend encoding
-  contract. A `--typed` dump restores through `--insert` losslessly (see
-  [Write data](write-data.md)). The one exception is a NaN or infinite float. JSON cannot hold it,
-  so `iq` turns it into a string and warns (see [Not-finite floats](output.md#not-finite-floats)).
+- **Values round-trip, with two limits.** Every value normalizes to JSON under a frozen per-backend
+  encoding contract. A `--typed` dump restores through `--insert` with these normalized values (see
+  [Write data](write-data.md)). First, a normalized value can be plainer than the native type that
+  it came from. For example, a DynamoDB binary value becomes a base64 string, and a DynamoDB set
+  becomes a list. DynamoDB sources have `--native`, which keeps the native type (see
+  [Native form](write-data.md#native-form-native)). Second, JSON cannot hold a NaN or an infinite
+  float, so `iq` turns it into a string and warns (see
+  [Not-finite floats](output.md#not-finite-floats)).
 - **Bounded and redacted.** `--timeout` bounds every backend call. `iq` redacts a URI's password
   from every listing, log line and error.
 - **Native commands.** `iq exec` speaks the backend's own language, verbatim where one exists
@@ -490,7 +494,7 @@ Each attribute value is normalized to JSON by DynamoDB type:
 | DynamoDB type | JSON shape |
 | --- | --- |
 | `S` (string) | the string verbatim |
-| `N` (number) | integer as a number (exact string when it overflows int64), decimal as an exact string (or a number under `--format.decimal number`). A write stores an integer beyond `int64` as an `N` with its exact digits. A write refuses a number (or integer) with more than 38 significant digits or a magnitude outside `1E-130` to `9.9999999999999999999999999999999999999E+125`, and the error names the attribute. It also refuses NaN and infinity |
+| `N` (number) | integer as a number (exact string when it overflows int64), decimal as an exact string (or a number under `--format.decimal number`). A write stores an integer beyond `int64` as an `N` with its exact digits when the value is a JSON number, for example from piped stdin. A copy from DynamoDB reads such a number as an exact string and writes it back as an `S`. Use `--native` for a copy that keeps the `N`. A write refuses a number (or integer) with more than 38 significant digits or a magnitude outside `1E-130` to `9.9999999999999999999999999999999999999E+125`, and the error names the attribute. It also refuses NaN and infinity |
 | `BOOL` | `true` / `false` |
 | `B` (binary) | base64 string |
 | `NULL` | `null` |
@@ -505,8 +509,44 @@ The error names the attribute path. A delete refuses such a key too.
 
 Note that the set types (`SS`/`NS`/`BS`) normalize to a plain array. As a result, a copy **back**
 into DynamoDB writes them as a list (`L`), not a set. A number presented as a string (auto/string
-decimal mode) writes back as a string (`S`). For a numeric round-trip, use
-`--format.decimal number`.
+decimal mode) writes back as a string (`S`). A binary value (`B`) writes back as a string (`S`) with
+the base64 text. For a numeric round-trip, use `--format.decimal number`. For a round-trip that
+keeps every type, use `--native`.
+
+### Native form
+
+`--native` reads each item as DynamoDB JSON, the typed form of the DynamoDB API, and not as
+normalized JSON. Every attribute value is an object with one type tag:
+
+```sh { title='Read the items with their DynamoDB types' }
+iq --native --src books '.[] | .price' --jsonl
+# {"N":"1.50"}
+```
+
+The number text, the binary type (`B`, `BS`), and the sets (`SS`, `NS`) stay as they are. The
+filter sees the tags, so write `.price.N` and not `.price`. A DynamoDB source and a DynamoDB JSON
+export file (`?format=dynamodb-json`) both have the native form.
+
+```sh { title='Copy a table with every type kept' }
+iq --native --src books --insert books2
+```
+```sh { title='Back up a table, then restore it with every type kept' }
+iq --native --typed --src books -o books.jsonl
+iq add file:///books.jsonl -n snap
+iq --src snap --insert books2
+```
+
+A native record carries the form `dynamodb-json`, and a `--typed` dump holds it in a `form` field.
+A DynamoDB destination reads the value strictly. It refuses a malformed type tag, a number that
+DynamoDB cannot store exactly, and an empty set, and the error names the key. The key of the
+record still sets the primary-key attributes. Every other destination refuses a native record,
+and the error names the key and both forms. A jq filter on a native copy must keep the tags.
+
+`--native` does not push a predicate down, because the pushdown matches the normalized shape of a
+value. `iq` scans the whole table and runs the filter on the client. A native read cannot fetch a
+named key, so write the filter as `.[] | select(...)`. `--explain` shows this. `--native` works
+only with JSON and YAML output (`--json`, `--jsona`, `--jsonl`, `--yaml`), because the other
+renderings flatten the tags.
 
 ### Pushdown
 
@@ -1200,7 +1240,7 @@ drive letter).
 
 | Format | Produced by | Notes |
 | --- | --- | --- |
-| Typed JSONL | `iq --src <s> --typed -o <file>` | iq's own dump, lossless round-trip |
+| Typed JSONL | `iq --src <s> --typed -o <file>` | iq's own dump. It holds the normalized values. With `--native` (DynamoDB only), each record also has a `form` field and keeps the native types |
 | Typed YAML | `iq --src <s> --typed -y -o <file>` | the same records as YAML documents, auto-detected by a `.yaml`/`.yml` name, else `?format=yaml` |
 | Redis RDB | `redis-cli --rdb`, `SAVE` | values match a live scan, RDB ≤ v12 (Redis ≤ 7.2) |
 | Mongo BSON | `mongodump` | single `.bson` file |

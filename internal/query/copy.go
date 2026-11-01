@@ -32,6 +32,16 @@ type Copier struct {
 	Mode      WriteMode
 	PageSize  int
 	Transform func(Record) ([]Record, error) // nil means identity
+	// AnyForm skips the form check. A dump writer sets it, because it encodes a
+	// record of any form.
+	AnyForm bool
+	// BeforeWrite is an optional hook. Copy calls it once, right before the first
+	// Put and after that page passed the form check. If the source yields no
+	// page, Copy calls it at the end. Copy never calls it in a dry run. An error
+	// from the hook stops the copy before any write. A caller uses it to run a
+	// destructive step, such as emptying the destination, only when the first
+	// page can be written.
+	BeforeWrite func(ctx context.Context) error
 }
 
 // Copy streams src through the Transform into Dst and returns the totalled stat.
@@ -44,7 +54,7 @@ func (c *Copier) Copy(ctx context.Context, src RecordSource, dry bool) (WriteSta
 	if size <= 0 {
 		size = 100
 	}
-	pages := &copyPages{dst: c.Dst, mode: c.Mode, dry: dry, size: size, buf: make([]Record, 0, size)}
+	pages := &copyPages{dst: c.Dst, mode: c.Mode, dry: dry, size: size, buf: make([]Record, 0, size), anyForm: c.AnyForm, before: c.BeforeWrite}
 	err := src(ctx, func(batch []Record) error {
 		for _, r := range batch {
 			outs, err := c.transform(r)
@@ -66,7 +76,8 @@ func (c *Copier) Copy(ctx context.Context, src RecordSource, dry bool) (WriteSta
 	if err := pages.flush(ctx); err != nil {
 		return pages.total, err
 	}
-	return pages.total, nil
+	// If no page was put, run the BeforeWrite hook now. pages.total is zero on that path.
+	return pages.total, pages.runBefore(ctx)
 }
 
 // transform maps one source record to its destination records. A nil Transform is
@@ -87,6 +98,20 @@ type copyPages struct {
 	size  int
 	buf   []Record
 	total WriteStat
+	// anyForm skips the form check of flush.
+	anyForm bool
+	// before is the BeforeWrite hook of the Copier. It is nil after it has run.
+	before func(ctx context.Context) error
+}
+
+// runBefore runs the BeforeWrite hook once. A dry run never runs it.
+func (p *copyPages) runBefore(ctx context.Context) error {
+	if p.dry || p.before == nil {
+		return nil
+	}
+	hook := p.before
+	p.before = nil
+	return hook(ctx)
 }
 
 // add buffers recs and writes each page that fills up.
@@ -108,12 +133,22 @@ func (p *copyPages) flush(ctx context.Context) error {
 	if len(p.buf) == 0 {
 		return nil
 	}
+	// The check runs in a dry run too, so a dry run reports the refusal of a real
+	// run. Copy stops at the error, so nobody reads the buffer again.
+	if !p.anyForm {
+		if err := CheckForms("destination", WriterForm(p.dst), p.buf); err != nil {
+			return err
+		}
+	}
 	if p.dry {
 		// A dry run reports the planned writes without touching the store. It
 		// cannot know overwrite-vs-insert without writing, so it counts intent.
 		p.total.Written += len(p.buf)
 		p.buf = p.buf[:0]
 		return nil
+	}
+	if err := p.runBefore(ctx); err != nil {
+		return err
 	}
 	st, err := p.dst.Put(ctx, p.buf, p.mode)
 	p.total.add(st)
@@ -202,7 +237,7 @@ func (t transform) apply(r Record) ([]Record, error) {
 		if err != nil {
 			return nil, err
 		}
-		rec := Record{Key: key, Value: v, Type: r.Type}
+		rec := Record{Key: key, Value: v, Type: r.Type, Form: r.Form}
 		if reshaped {
 			rec.Type = t.opts.Type // a reshaped value's original type no longer applies.
 		}

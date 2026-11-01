@@ -427,3 +427,32 @@ func TestInsertReplaceOntoItsOwnSource(t *testing.T) {
 		})
 	}
 }
+
+// TestApplyInsertReplaceClearsOnlyAfterTheFirstPageIsChecked pins that a refused
+// page leaves the destination intact. The source claims normalized JSON but its
+// records carry the DynamoDB form, as a typed dump file or a piped dump does.
+// The destination writes only normalized JSON.
+func TestApplyInsertReplaceClearsOnlyAfterTheFirstPageIsChecked(t *testing.T) {
+	formed := func(_ context.Context, fn func([]query.Record) error) error {
+		return fn([]query.Record{{Key: "a", Type: "item", Form: query.FormDynamoJSON, Value: map[string]any{}}})
+	}
+	log := useMoveDrivers(t)
+	req := insertRequest{
+		dst: "full", replace: true, srcForm: query.FormJSON,
+		confirm: func(string) error { return nil },
+	}
+	_, _, err := applyInsert(context.Background(), req, formed, nil)
+	require.ErrorContains(t, err, `has form "dynamodb-json"`)
+	require.Empty(t, log.events, "no clear and no put")
+}
+
+// TestApplyInsertReplaceClearsAnEmptySource pins that an empty source with
+// replace still empties the destination.
+func TestApplyInsertReplaceClearsAnEmptySource(t *testing.T) {
+	log := useMoveDrivers(t)
+	empty := func(context.Context, func([]query.Record) error) error { return nil }
+	req := insertRequest{dst: "full", replace: true, confirm: func(string) error { return nil }}
+	_, _, err := applyInsert(context.Background(), req, empty, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"clear"}, log.events)
+}

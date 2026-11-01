@@ -31,8 +31,8 @@ type putItem struct {
 // So a record that cannot be represented (a non-object value) fails the whole
 // batch before any write lands. The SDK JSON-encodes every value.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
-	if s.collection == nil {
-		return query.WriteStat{}, errNoBucket
+	if err := s.checkPut(batch); err != nil {
+		return query.WriteStat{}, err
 	}
 	if len(batch) == 0 {
 		return query.WriteStat{}, nil
@@ -57,6 +57,18 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 		return s.insertOnly(ctx, items)
 	}
 	return s.upsert(ctx, items)
+}
+
+// checkPut refuses a batch that Put cannot write, before any write. It checks the
+// form of each record, then that a bucket is set.
+func (s *Store) checkPut(batch []query.Record) error {
+	if err := query.CheckForms("couchbase", query.FormJSON, batch); err != nil {
+		return err
+	}
+	if s.collection == nil {
+		return errNoBucket
+	}
+	return nil
 }
 
 // documentBody returns the JSON document to write for a record. The value must be

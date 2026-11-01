@@ -64,7 +64,7 @@ func validateMoveFlags(cfg *config) error {
 	if cfg.typed && anyOn(cfg.noOverwrite, cfg.replace, cfg.force, cfg.dryRun) {
 		return errors.New("--no-overwrite/--replace/--force/--dry-run apply to --insert, not --typed")
 	}
-	return nil
+	return validateNativeMove(cfg)
 }
 
 // anyOn reports whether at least one of flags is true.
@@ -91,27 +91,37 @@ func openMoveSource(cmd *cobra.Command, ctx context.Context, cfg *config) (query
 	if err := resolveSource(cfg); err != nil {
 		return nil, nil, "", err
 	}
-	tr, closeSrc, err := openTypedSource(ctx, cfg)
+	scan, closeSrc, err := openTypedSource(ctx, cfg)
 	if err != nil {
 		return nil, nil, "", err
 	}
-	return tr.TypedScan, closeSrc, cfg.handle, nil
+	return scan, closeSrc, cfg.handle, nil
 }
 
-// openTypedSource opens the store of cfg as a typed reader, for a move or an
-// iq_insert call. The error has the connection URI redacted. The caller closes
+// openTypedSource opens the store of cfg as a record source, for a move or an
+// iq_insert call. It is the typed scan of the store, or its native scan when
+// cfg.native is set. The error has the connection URI redacted. The caller closes
 // the store with the returned function.
-func openTypedSource(ctx context.Context, cfg *config) (query.TypedReader, func() error, error) {
+func openTypedSource(ctx context.Context, cfg *config) (query.RecordSource, func() error, error) {
 	st, err := openStore(ctx, cfg)
 	if err != nil {
 		return nil, nil, redactErr(err, cfg.url)
+	}
+	if cfg.native {
+		nr, err := nativeReaderOf(st, cfg)
+		if err != nil {
+			_ = st.Close()
+			return nil, nil, err
+		}
+		cfg.srcForm = nr.NativeForm()
+		return nr.NativeScan, st.Close, nil
 	}
 	tr, ok := st.(query.TypedReader)
 	if !ok {
 		_ = st.Close()
 		return nil, nil, fmt.Errorf("source %s (%s) cannot be read for a move", cfg.handle, driverName(cfg.url))
 	}
-	return tr, st.Close, nil
+	return tr.TypedScan, st.Close, nil
 }
 
 // stdinRecordSource decodes piped stdin into records. --key-field signals foreign
@@ -146,6 +156,10 @@ type insertRequest struct {
 	// value when they come from stdin or from a combine. Replace uses it to
 	// refuse a source that is also the destination.
 	src endpoint
+	// srcForm is the form of the records that the source emits. It is FormJSON
+	// unless the run reads a native scan. applyInsert refuses a destination that
+	// cannot write it before anything changes.
+	srcForm query.Form
 	// confirm gates emptying the destination for replace. It returns nil to
 	// proceed and an error to abort. It is never called on a dry run.
 	confirm func(action string) error
@@ -169,6 +183,7 @@ func insertRequestFor(cmd *cobra.Command, cfg *config) insertRequest {
 	return insertRequest{
 		dst: cfg.insert, mode: writeModeFor(cfg), replace: cfg.replace, dryRun: cfg.dryRun,
 		src:     sourceEndpoint(cfg),
+		srcForm: cfg.srcForm,
 		confirm: func(action string) error { return confirmDestruction(cmd, action, cfg.force) },
 	}
 }
@@ -234,8 +249,9 @@ func writeModeFor(cfg *config) query.WriteMode {
 }
 
 // applyInsert resolves the destination, refuses a replace onto the source, opens
-// the destination, empties it when replace is set (after confirmation), and
-// copies the records through the Putter. It returns the destination label for
+// the destination, and confirms a replace. It copies the records through the
+// Putter. With replace, the copy empties the destination right before the first
+// write, after that page passed the checks. It returns the destination label for
 // the outcome line and the write statistics. Every error crossing out of it has
 // the connection URI redacted.
 func applyInsert(ctx context.Context, req insertRequest, recSrc query.RecordSource, transform func(query.Record) ([]query.Record, error)) (string, query.WriteStat, error) {
@@ -252,13 +268,19 @@ func applyInsert(ctx context.Context, req insertRequest, recSrc query.RecordSour
 	if err != nil {
 		return "", query.WriteStat{}, err
 	}
+	if err := checkSourceForm(req.srcForm, putter, dst); err != nil {
+		return "", query.WriteStat{}, err
+	}
+	copier := query.Copier{Dst: putter, Mode: req.mode, PageSize: movePageSize, Transform: transform}
 	if req.replace {
-		if err := clearForReplace(ctx, st, dst, req); err != nil {
+		// The confirmation runs now. The clear waits for the first page that
+		// passed the checks, so a refused page leaves the destination intact.
+		clearer, err := confirmReplace(st, dst, req)
+		if err != nil {
 			return "", query.WriteStat{}, err
 		}
+		copier.BeforeWrite = func(ctx context.Context) error { return clearDestination(ctx, clearer, dst) }
 	}
-
-	copier := query.Copier{Dst: putter, Mode: req.mode, PageSize: movePageSize, Transform: transform}
 	stat, err := copier.Copy(ctx, recSrc, req.dryRun)
 	if err != nil {
 		return "", query.WriteStat{}, redactErr(err, dst.url)
@@ -307,19 +329,28 @@ func insertPutter(st store, dst endpoint) (query.Putter, error) {
 	return putter, nil
 }
 
-// clearForReplace empties the destination for --replace. A destination that cannot
-// be cleared is an error even on a dry run. A real run asks for the confirmation
-// first.
-func clearForReplace(ctx context.Context, st store, dst endpoint, req insertRequest) error {
+// confirmReplace prepares --replace. A destination that cannot be cleared is an
+// error even on a dry run. A real run asks for the confirmation. The returned
+// Clearer is nil on a dry run, which never clears.
+func confirmReplace(st store, dst endpoint, req insertRequest) (query.Clearer, error) {
 	clearer, ok := st.(query.Clearer)
 	if !ok {
-		return fmt.Errorf("--replace: destination %s (%s) cannot be cleared", dst.handle, dst.driver)
+		return nil, fmt.Errorf("--replace: destination %s (%s) cannot be cleared", dst.handle, dst.driver)
 	}
 	if req.dryRun {
-		return nil
+		return nil, nil
 	}
 	if err := req.confirm(fmt.Sprintf("clear %s before writing", dst.label())); err != nil {
-		return err
+		return nil, err
+	}
+	return clearer, nil
+}
+
+// clearDestination empties the destination with clearer. The copy calls it
+// before the first write. A nil clearer is a dry run and does nothing.
+func clearDestination(ctx context.Context, clearer query.Clearer, dst endpoint) error {
+	if clearer == nil {
+		return nil
 	}
 	if err := clearer.Clear(ctx); err != nil {
 		return redactErr(err, dst.url)
@@ -335,7 +366,7 @@ func runTypedDump(cmd *cobra.Command, ctx context.Context, cfg *config, recSrc q
 		return err
 	}
 	f := newFormatter(fm, cmd.OutOrStdout(), cfg.compact)
-	copier := query.Copier{Dst: typedPutter{f: f}, Mode: query.Upsert, PageSize: movePageSize, Transform: transform}
+	copier := query.Copier{Dst: typedPutter{f: f}, PageSize: movePageSize, Transform: transform, AnyForm: true}
 	if _, err := copier.Copy(ctx, recSrc, false); err != nil {
 		return err
 	}
@@ -347,6 +378,7 @@ func runTypedDump(cmd *cobra.Command, ctx context.Context, cfg *config, recSrc q
 type typedRecord struct {
 	Key   string `json:"key" yaml:"key"`
 	Type  string `json:"type" yaml:"type"`
+	Form  string `json:"form,omitempty" yaml:"form,omitempty"`
 	Value any    `json:"value" yaml:"value"`
 }
 
@@ -356,7 +388,7 @@ type typedPutter struct{ f formatter }
 
 func (p typedPutter) Put(_ context.Context, batch []query.Record, _ query.WriteMode) (query.WriteStat, error) {
 	for _, r := range batch {
-		if err := p.f.emit(typedRecord{Key: r.Key, Type: r.Type, Value: r.Value}); err != nil {
+		if err := p.f.emit(typedRecord{Key: r.Key, Type: r.Type, Form: r.Form.DumpName(), Value: r.Value}); err != nil {
 			return query.WriteStat{}, err
 		}
 	}
@@ -432,12 +464,21 @@ func moveFromLabel(cfg *config) string {
 	return "stdin"
 }
 
+// writeTypedPlanTarget writes the "to" line and the write section of a typed
+// dump plan.
+func writeTypedPlanTarget(b *strings.Builder, cfg *config) {
+	writePlanLine(b, "to", "typed dump (stdout/-o)")
+	writePlanSection(b, "write")
+	b.WriteString("  encode typed records\n")
+	if cfg.native {
+		b.WriteString("  records carry the native form of the source\n")
+	}
+}
+
 // writeMovePlanTarget writes the "to" line and the write section of a move plan.
 func writeMovePlanTarget(b *strings.Builder, cfg *config) error {
 	if cfg.typed {
-		writePlanLine(b, "to", "typed dump (stdout/-o)")
-		writePlanSection(b, "write")
-		b.WriteString("  encode typed records\n")
+		writeTypedPlanTarget(b, cfg)
 		return nil
 	}
 	cf, err := iqconfig.Load()

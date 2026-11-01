@@ -35,6 +35,9 @@ type fakeDDB struct {
 	executeFn     func(*awsdynamodb.ExecuteStatementInput) (*awsdynamodb.ExecuteStatementOutput, error)
 	deleteTableFn func(*awsdynamodb.DeleteTableInput) (*awsdynamodb.DeleteTableOutput, error)
 
+	// scanCtx is the context of the last Scan call.
+	scanCtx context.Context
+
 	scanCalls, batchGetCalls, batchWriteCalls, putCalls, execCalls, deleteTableCalls int
 }
 
@@ -52,8 +55,9 @@ func (f *fakeDDB) DescribeTable(_ context.Context, in *awsdynamodb.DescribeTable
 	return &awsdynamodb.DescribeTableOutput{}, nil
 }
 
-func (f *fakeDDB) Scan(_ context.Context, in *awsdynamodb.ScanInput, _ ...func(*awsdynamodb.Options)) (*awsdynamodb.ScanOutput, error) {
+func (f *fakeDDB) Scan(ctx context.Context, in *awsdynamodb.ScanInput, _ ...func(*awsdynamodb.Options)) (*awsdynamodb.ScanOutput, error) {
 	f.scanCalls++
+	f.scanCtx = ctx
 	if f.scanFn != nil {
 		return f.scanFn(in)
 	}

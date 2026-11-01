@@ -17,6 +17,9 @@ import (
 // cannot tell an insert from an overwrite, so an upsert pre-reads which keys exist
 // and counts them as Overwritten.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
+	if err := query.CheckForms("cassandra", query.FormJSON, batch); err != nil {
+		return query.WriteStat{}, err
+	}
 	if s.meta == nil {
 		return query.WriteStat{}, errNoTable
 	}

@@ -93,6 +93,9 @@ a terminal:
     - A server fragment that fits in 34 characters prints on one line. A wider
       one breaks into indented lines, with the note on the first line.
     - Filter stages are absent under `--no-compile`.
+    - Under `--native`, the plan has a `native read` section and no filter
+      stages. The query reads the whole source in the native form of the driver
+      and pushes no predicate down.
 
 - **Compiled predicate**
 

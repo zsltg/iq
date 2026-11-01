@@ -2604,6 +2604,30 @@
    "file": "drivers/redis/write.go",
    "mutator": "expression/context-nil",
    "line": 159
+  },
+  {
+   "id": "967a120bb96de4e54f1aef60d8bebf0f",
+   "file": "cmd/move.go",
+   "mutator": "composite/field-clear",
+   "line": 356
+  },
+  {
+   "id": "bcc0ccf2bb716158defab90864f511b3",
+   "file": "internal/query/form.go",
+   "mutator": "statement/return",
+   "line": 56
+  },
+  {
+   "id": "b29236827285718cfe5480de0a8d77fa",
+   "file": "internal/query/form.go",
+   "mutator": "statement/return",
+   "line": 49
+  },
+  {
+   "id": "f75e196f897b7dbdc8c4d6f1d31cff99",
+   "file": "internal/query/form.go",
+   "mutator": "statement/return",
+   "line": 92
   }
  ]
 }

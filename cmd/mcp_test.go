@@ -976,6 +976,16 @@ func TestMCPDestructiveNeedsConfirmation(t *testing.T) {
 		}))
 		require.Contains(t, body.Error.Message, "--allow destructive")
 	})
+
+	t.Run("insert refuses native with key_field", func(t *testing.T) {
+		seedMCP(t)
+		cs := connectMCP(t, newTestMCPServer([]string{allowWrites}, 200, 256*1024), nil)
+
+		body := errorBodyOf(t, callMCP(t, cs, "iq_insert", map[string]any{
+			"source": "snap", "destination": "snap", "native": true, "key_field": "id",
+		}))
+		require.Contains(t, body.Error.Message, "--native cannot read foreign JSON")
+	})
 }
 
 // TestMCPDestructiveElicitsConfirmation proves the multi round-trip path: a

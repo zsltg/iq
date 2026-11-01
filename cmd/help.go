@@ -65,6 +65,7 @@ var rootFlagGroups = map[string]string{
 
 	"insert":       groupWrite,
 	"typed":        groupWrite,
+	"native":       groupWrite,
 	"key":          groupWrite,
 	"key-field":    groupWrite,
 	"key-prefix":   groupWrite,

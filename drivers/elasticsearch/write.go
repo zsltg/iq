@@ -22,6 +22,9 @@ var utf8Guard = query.UTF8Guard{Driver: "elasticsearch"}
 // record lets Elasticsearch mint the _id. The driver marshals every value as
 // JSON. It never builds a value as a string.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
+	if err := query.CheckForms("elasticsearch", query.FormJSON, batch); err != nil {
+		return query.WriteStat{}, err
+	}
 	if s.index == "" {
 		return query.WriteStat{}, errNoIndex
 	}

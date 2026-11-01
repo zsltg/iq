@@ -23,6 +23,9 @@ import (
 // insert from an overwrite, so an upsert pre-reads each row to report Overwritten.
 // See rowExists for the caveat.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
+	if err := query.CheckForms("hbase", query.FormJSON, batch); err != nil {
+		return query.WriteStat{}, err
+	}
 	if s.table == "" {
 		return query.WriteStat{}, errNoTable
 	}

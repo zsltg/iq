@@ -28,20 +28,10 @@ var errRelWriteUnsupported = errors.New("neo4j: writing relationships is not yet
 // nodes and then set them all at once. The write is therefore refused up front
 // rather than silently fanning out.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
+	if err := s.checkPut(batch); err != nil {
+		return query.WriteStat{}, err
+	}
 	var stat query.WriteStat
-	if s.target.kind == relTarget {
-		return stat, errRelWriteUnsupported
-	}
-	if s.target.name == "" {
-		return stat, errNoLabel
-	}
-	if s.target.key == "" {
-		return stat, errWriteNeedsKey
-	}
-	if !s.keyBackedByConstraint {
-		return stat, fmt.Errorf("neo4j: %s.%s has no uniqueness constraint; create one (CREATE CONSTRAINT ... FOR (n:%s) REQUIRE n.%s IS UNIQUE) before writing so an upsert cannot fan out across duplicate nodes",
-			s.target.name, s.target.key, s.target.name, s.target.key)
-	}
 	if len(batch) == 0 {
 		return stat, nil
 	}
@@ -199,3 +189,26 @@ var (
 	_ query.Deleter     = (*Store)(nil)
 	_ query.TypedReader = (*Store)(nil)
 )
+
+// checkPut refuses a batch that Put cannot write, before any write. It checks the
+// form of each record, then the target: a node label, a ?key= property, and a
+// uniqueness constraint behind that property.
+func (s *Store) checkPut(batch []query.Record) error {
+	if err := query.CheckForms("neo4j", query.FormJSON, batch); err != nil {
+		return err
+	}
+	if s.target.kind == relTarget {
+		return errRelWriteUnsupported
+	}
+	if s.target.name == "" {
+		return errNoLabel
+	}
+	if s.target.key == "" {
+		return errWriteNeedsKey
+	}
+	if !s.keyBackedByConstraint {
+		return fmt.Errorf("neo4j: %s.%s has no uniqueness constraint; create one (CREATE CONSTRAINT ... FOR (n:%s) REQUIRE n.%s IS UNIQUE) before writing so an upsert cannot fan out across duplicate nodes",
+			s.target.name, s.target.key, s.target.name, s.target.key)
+	}
+	return nil
+}

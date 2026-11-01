@@ -59,7 +59,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	}
 	// Refuse a binary format on an interactive terminal before any store I/O,
 	// checking the raw stdout ahead of the progress-meter wrapping below.
-	if err := guardBinaryFormat(fm, cmd.OutOrStdout()); err != nil {
+	if err := guardQueryFormat(cmd, cfg, fm, cross); err != nil {
 		return err
 	}
 
@@ -85,7 +85,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		}
 		_, _ = fmt.Fprint(cmd.ErrOrStderr(), plan)
 	} else if cfg.explain || cfg.verbose {
-		plan, err := buildJQPlan(cfg, filter, cross, cfg.verbose)
+		plan, err := buildQueryPlan(cfg, filter, cross, cfg.verbose)
 		if err != nil {
 			return err
 		}
@@ -136,17 +136,17 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		return finish(f, scanHint(asSyntaxError(filter, runErr)))
 	}
 
-	store, err := openJQStore(cmd, ctx, cfg)
+	kv, closeKV, err := openJQKVStore(cmd, ctx, cfg)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = store.Close() }()
+	defer func() { _ = closeKV() }()
 	// Only the single-source scan gets a total. It walks one keyspace, so a
 	// cheap estimate from the backend is a valid denominator for the spinner.
 	// The cross-source path aggregates several scans, where a per-source
 	// estimate misleads. So the estimate is left off there.
 	opts.OnEstimate = meter.SetEstimate
-	runErr := query.NewJQEngine(store).Run(ctx, filter, opts, f.emit)
+	runErr := query.NewJQEngine(kv).Run(ctx, filter, opts, f.emit)
 	cfg.logQueryComplete(scanned, start)
 	return finish(f, scanHint(asSyntaxError(filter, runErr)))
 }
@@ -181,7 +181,7 @@ func (cfg *config) logQueryPlan(filter string, cross bool) {
 		lg.Info("query plan", "driver", "stdin",
 			"ops", []string{"decode stdin dump", "scan client-side"})
 	default:
-		sp, err := buildSourcePlan(cfg.planSource(), filter, !cfg.noCompile, cfg.unbounded)
+		sp, err := buildSourcePlan(cfg.planSource(), filter, !cfg.noCompile && !cfg.native, cfg.unbounded)
 		if err != nil || !sp.hasPlan {
 			return
 		}

@@ -510,3 +510,38 @@ func TestQueryPlanLogSharesConjunctDecisionsWithText(t *testing.T) {
 	require.Contains(t, out, "only here: .active | not")
 	require.Contains(t, out, "not compiled: negation is not exactly expressible")
 }
+
+// TestLogQueryPlanPrefilterState pins that the logged plan shows pushdown only
+// for a default query. A --native query and a --no-compile query run the whole
+// filter on the client, so their plans must not show the prefilter as on.
+func TestLogQueryPlanPrefilterState(t *testing.T) {
+	tests := []struct {
+		name      string
+		native    bool
+		noCompile bool
+		wantOn    bool
+	}{
+		{name: "default", wantOn: true},
+		{name: "native", native: true},
+		{name: "no compile", noCompile: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			lg := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+			cfg := &config{
+				url: "redis://h", handle: "cache", logger: lg, logStructured: true,
+				native: tt.native, noCompile: tt.noCompile,
+			}
+			cfg.logQueryPlan(`.[] | select(.n == 1)`, false)
+			rec := map[string]any{}
+			require.NoError(t, json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &rec))
+			state := rec["prefilter"].(map[string]any)["state"]
+			if tt.wantOn {
+				require.Equal(t, "on", state)
+			} else {
+				require.NotEqual(t, "on", state)
+			}
+		})
+	}
+}

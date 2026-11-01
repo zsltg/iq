@@ -22,6 +22,9 @@ var utf8Guard = query.UTF8Guard{Driver: "couchdb"}
 // keyless record (foreign JSON with no key) lets CouchDB mint the _id. The driver
 // marshals every value as JSON, never string-built.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
+	if err := query.CheckForms("couchdb", query.FormJSON, batch); err != nil {
+		return query.WriteStat{}, err
+	}
 	if s.db == "" {
 		return query.WriteStat{}, errNoDatabase
 	}

@@ -22,9 +22,14 @@ func NonObjectValueError(driver, key string) error {
 // For Redis it is the native Redis type ("string", "hash", "list", "set", "zset",
 // "stream", "json"). Value is the JSON-ready normalized value, the same shape the
 // read path produces, so a copy is a read followed by its inverse write.
+//
+// Form says which dialect Value is in. The zero value, FormJSON, is the normalized
+// JSON of the read path. A native form (see NativeReader) holds typed JSON, for
+// example DynamoDB JSON, and only the Putter that owns that form can write it.
 type Record struct {
 	Key   string
 	Type  string
+	Form  Form
 	Value any
 }
 

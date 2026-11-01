@@ -174,8 +174,14 @@ graph TD
   MAT --> JQ
   PD --> JQ
   RS --> JQ
+  F -->|"--native"| NAT["NativeReader.NativeScan<br/>(typed JSON, no pushdown)"]
+  NAT --> JQ
   JQ --> OUT["format renderer<br/>→ output"]
 ```
+
+With `--native`, the filter does not take these routes. `iq` reads the source through its
+optional `NativeReader` port, which returns records in the typed JSON form of the driver
+(`Record.Form`). It never pushes a predicate down, and the filter must start with `.[]`.
 
 A scan emits per-page progress to a stderr spinner (CLI only, off unless
 attached to a terminal). An unfiltered scan can also fetch a cheap up-front total
@@ -193,12 +199,12 @@ Iteration is implicit, and you do not write `.[]`.
 
 ```mermaid
 graph TD
-  MV["iq --insert / --typed (CLI)"] --> MSRC["source: --src (live or file:// dump) / stdin → TypedScan"]
+  MV["iq --insert / --typed (CLI)"] --> MSRC["source: --src (live or file:// dump) / stdin → TypedScan<br/>(--native: NativeScan)"]
   MSRC --> TX["per-item jq transform + re-key"]
   TX --> DST{"--insert or --typed?"}
   DST -->|--insert| PUT["Putter.Put (upsert / insert-only)"]
   DST -->|--typed| ENC["emit {key,type,value} → jsonl / json / jsona / yaml"]
-  PUT --> BW["backend adapter:<br/>type-aware native writes"]
+  PUT --> BW["backend adapter:<br/>type-aware native writes<br/>(refuses a Record.Form it does not own)"]
   LF["iq data clear / drop / delete (CLI)"] --> CAP["Clearer.Clear / Dropper.Drop / Deleter.Delete (capability-gated)"]
 ```
 
@@ -214,6 +220,14 @@ The transformed stream then takes one of two exits.
   `{"key", "type":…, "value":…}` envelopes in the chosen format (`--jsonl`
   by default). The dump re-imports through a `file://` source or a piped
   `--insert`, which closes the loop back into the diagram's source node.
+
+Each record has a `Form`, the dialect of its value. The default, `FormJSON`, is the
+normalized JSON that every read produces. A native form holds typed JSON, such as DynamoDB
+JSON. A `Putter` writes `FormJSON` and the one native form that it owns, and it refuses any other
+form with an error that names the key and both forms. A form names a dialect and not a driver, so
+drivers that share a dialect share a form. The `--typed` envelope holds a non-default form in an
+optional `form` field. `--native` selects the native scan of the source (see
+[Native form](write-data.md#native-form-native)).
 
 Destructive operations are a separate entry point, not a filter outcome. The
 `iq data clear / drop / delete` subcommands call their own capability-gated

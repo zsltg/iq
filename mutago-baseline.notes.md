@@ -895,3 +895,15 @@ The zset writer reads an infinite score from its text with strconv.ParseFloat, a
 
 - c74ea47e38a3 drivers/redis/write.go:157 expression/context-nil. `p.RPush(ctx, ...)` becomes nil inside the add callback of queueElements. The queued command context is discarded by BatchProcess, and Pipelined(ctx) governs the I/O. The new kind argument changed the line, so the id changed; fd6546d693a3 had the same proof.
 - 6aae50820d9f drivers/redis/write.go:159 expression/context-nil. The same for `p.SAdd(ctx, ...)`; 4a203a6e6041 had the same proof.
+
+## internal/query/form.go, FormJSON returns (accepted 2026-11-01, native record PR)
+
+The ids of the first two entries come from the diff-scoped run before the fix. The ids of the others change with the edited lines, so the closing scan with `IQ_MUTATION_UPDATE_BASELINE=1` records the final ones.
+
+- b29236827285 internal/query/form.go:49 statement/return. `return FormJSON, nil` of ParseForm for an empty name becomes `return 0, nil`. FormJSON is the zero value of Form (the first iota constant), so the return is identical. TestParseForm pins the result.
+- f75e196f897b internal/query/form.go:92 statement/return. `return FormJSON` of WriterForm for a Putter with no FormWriter becomes `return 0`. FormJSON is the zero value of Form, so the return is identical. TestWriterForm pins the result.
+- bcc0ccf2bb71 internal/query/form.go:56 statement/return. `return FormJSON, fmt.Errorf(...)` of ParseForm for an unknown name becomes `return 0, fmt.Errorf(...)`. FormJSON is the zero value of Form, so the return is identical. The tests pin the error with errors.Is on ErrUnknownForm.
+
+## cmd/move.go, PageSize of the typed dump copier (accepted 2026-11-01, native record PR)
+
+- 967a120bb96d cmd/move.go:356 composite/field-clear. The `PageSize: movePageSize` field of the Copier that feeds typedPutter is cleared, so the copy uses the default page size of 100. typedPutter.Put writes each record of a page to the formatter at once, and a page boundary changes no output byte. The page size only bounds memory, and nothing in the output shows it.

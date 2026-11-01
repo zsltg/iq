@@ -51,7 +51,7 @@ It always writes to stdout, unaffected by `--output`. For the human form
 
 ## Not global
 
-The query command carries flags of its own, `--unbounded` and `--no-compile` on
+The query command carries flags of its own, `--unbounded`, `--no-compile`, and `--native` on
 [Query data](query-data.md#query-data).
 
 `--explain` on [Query plan](query-plan.md#query-plan).

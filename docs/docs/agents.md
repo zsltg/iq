@@ -232,11 +232,11 @@ the gate.
 | `iq_sources` | always | readOnly, idempotent | The handles this server can access, with each URI's password redacted |
 | `iq_ping` | always | readOnly, idempotent | Round-trip one cheap backend command and report the time |
 | `iq_explain` | always | readOnly, idempotent | The access plan for a filter, without connecting |
-| `iq_query` | always | readOnly, idempotent | Run a jq filter. Returns `{items, count, truncated}`, plus `note` when `iq` turned NaN or infinity into strings or when HBase row keys show as base64 |
+| `iq_query` | always | readOnly, idempotent | Run a jq filter. With `native: true`, read the items in the native form of a DynamoDB source (the filter must start with `.[]`). Returns `{items, count, truncated}`, plus `note` when `iq` turned NaN or infinity into strings or when HBase row keys show as base64 |
 | `iq_inspect` | always | readOnly, idempotent | A backend's native introspection, optionally narrowed by `only` |
 | `iq_schema` | always | readOnly, idempotent | A draft 2020-12 JSON Schema inferred from a sample. Holds a top-level `$comment` when `iq` turned NaN or infinity into strings or when HBase row keys show as base64 |
 | `iq_diff` | always | readOnly, idempotent | Compare two sources by data, stats, or inferred schema. Returns `note` when `iq` turned NaN or infinity into strings or when HBase row keys show as base64 |
-| `iq_insert` | `--allow writes` | destructive, idempotent | Copy items into another source. `no_overwrite` defaults to true. Returns `note` when `iq` turned NaN or infinity into strings or when HBase row keys show as base64 |
+| `iq_insert` | `--allow writes` | destructive, idempotent | Copy items into another source. `no_overwrite` defaults to true. With `native: true`, read the items in the native form of a DynamoDB source, for a DynamoDB to DynamoDB copy that keeps every type. Returns `note` when `iq` turned NaN or infinity into strings or when HBase row keys show as base64 |
 | `iq_exec` | `--allow exec` | destructive | Forward a command to the backend verbatim. Returns `note` when `iq` turned NaN or infinity into strings or when HBase row keys show as base64 |
 | `iq_data_clear` | `--allow destructive` | destructive, idempotent | Empty a container, keeping it |
 | `iq_data_drop` | `--allow destructive` | destructive, idempotent | Remove a container entirely |
