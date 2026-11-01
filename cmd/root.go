@@ -107,10 +107,10 @@ type config struct {
 	logger    *slog.Logger
 	logClose  func() error
 	pprofStop func()
-	// nonFinite counts the NaN and infinite values that adapters turned into
-	// strings during the run. preRun sets it. The run ends with one warning when
-	// it holds a conversion.
-	nonFinite *query.NonFiniteSummary
+	// notices collects what adapters report during the run: values that were
+	// converted and row keys that were shown as base64. preRun sets it. The run
+	// ends with one warning for each notice that holds a report.
+	notices *runNotices
 	// logStructured is true when the structured file/stream sink is active
 	// (logOptions.fileActive). It gates the INFO "query plan" record. So a bare
 	// --verbose run, whose tinted sink already renders the pretty plan, does
@@ -203,10 +203,10 @@ func newRootCmd() (*cobra.Command, *config) {
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return preRun(cmd, cfg)
 		},
-		// PersistentPostRunE prints the non-finite warning of a run that succeeded.
+		// PersistentPostRunE prints the notice warnings of a run that succeeded.
 		// Execute prints it for a run that failed.
 		PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
-			warnNonFinite(cmd.ErrOrStderr(), cfg)
+			warnNotices(cmd.ErrOrStderr(), cfg)
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -276,26 +276,55 @@ func preRun(cmd *cobra.Command, cfg *config) error {
 	if err := validateValues(cfg); err != nil {
 		return err
 	}
-	watchNonFinite(cmd, cfg)
+	watchNotices(cmd, cfg)
 	return startDiagnostics(cmd, cfg)
 }
 
-// watchNonFinite makes the command context carry a notice sink. An adapter that
-// converts a NaN or an infinity to a string reports it to the sink. So the run
-// can warn once at its end.
-func watchNonFinite(cmd *cobra.Command, cfg *config) {
-	cfg.nonFinite = &query.NonFiniteSummary{}
-	cmd.SetContext(query.WithNonFiniteNotice(cmd.Context(), cfg.nonFinite.Sink()))
+// runNotices holds the notices that adapters report during one run.
+type runNotices struct {
+	nonFinite query.NonFiniteSummary
+	rowKeys   query.RowKeySummary
 }
 
-// warnNonFinite writes one warning line to w when the run converted a value that
-// JSON cannot hold. It writes to stderr only, so stdout stays valid JSON. The
-// line names a key and a field, and never a value.
-func warnNonFinite(w io.Writer, cfg *config) {
-	if cfg.nonFinite == nil {
+// with returns ctx extended with the sinks of n. An adapter that converts a NaN
+// or an infinity, or shows a row key as base64, reports it to its sink.
+func (n *runNotices) with(ctx context.Context) context.Context {
+	ctx = query.WithNonFiniteNotice(ctx, n.nonFinite.Sink())
+	return query.WithRowKeyNotice(ctx, n.rowKeys.Sink())
+}
+
+// texts returns the text of each notice that holds a report, in a fixed order.
+func (n *runNotices) texts() []string {
+	var out []string
+	for _, text := range []string{n.nonFinite.Text(), n.rowKeys.Text()} {
+		if text != "" {
+			out = append(out, text)
+		}
+	}
+	return out
+}
+
+// note joins the notice texts into one line for an MCP reply. It returns an
+// empty string when no notice holds a report.
+func (n *runNotices) note() string {
+	return strings.Join(n.texts(), ". ")
+}
+
+// watchNotices makes the command context carry the notice sinks, so the run can
+// warn once at its end.
+func watchNotices(cmd *cobra.Command, cfg *config) {
+	cfg.notices = &runNotices{}
+	cmd.SetContext(cfg.notices.with(cmd.Context()))
+}
+
+// warnNotices writes one warning line to w for each notice that holds a report.
+// It writes to stderr only, so stdout stays valid JSON. A line names a key and a
+// field, and never a value.
+func warnNotices(w io.Writer, cfg *config) {
+	if cfg.notices == nil {
 		return
 	}
-	if text := cfg.nonFinite.Text(); text != "" {
+	for _, text := range cfg.notices.texts() {
 		_, _ = fmt.Fprintf(w, "warning: %s\n", text)
 	}
 }
@@ -546,7 +575,7 @@ func Execute() {
 		_ = cfg.outClose()
 	}
 	if err != nil {
-		warnNonFinite(os.Stderr, cfg)
+		warnNotices(os.Stderr, cfg)
 		// errQuietExit (diff --exit-code) signals a non-zero status with no
 		// message: the differences are the report, not an error.
 		if !errors.Is(err, errQuietExit) {

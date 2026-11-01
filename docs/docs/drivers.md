@@ -730,6 +730,13 @@ base64 otherwise. If `?keytype=` declares its encoding, the declared encoding
 applies (`&keytype=long` reads and writes the 8-byte `Bytes` layout). As a
 result, a declared key round-trips losslessly.
 
+Under the default type, a row key that is not valid UTF-8 shows as base64, but a Get,
+a delete or a write sends the UTF-8 bytes of that text. That is a different row. A real
+text key `/w==` and the raw key `0xFF` both show as `/w==`. So a copy from HBase to HBase
+also reaches the wrong row for such a key. iq prints one warning on stderr at the end of
+a run that showed such a key (the MCP tools put it in the note). Declare `?keytype=bytes`
+on the source to read and address these keys exactly.
+
 ### Pushdown
 
 By default, the driver translates the **column-equality** clauses of a `.[] | select(...)` filter

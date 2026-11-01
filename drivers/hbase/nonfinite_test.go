@@ -108,3 +108,40 @@ func TestRowFromCellsReportsEachCellPath(t *testing.T) {
 	require.NoError(t, err)
 	require.ElementsMatch(t, []noticeCall{{"r1", "cf.a"}, {"r1", "cf.b"}, {"r1", "cg.c"}}, calls)
 }
+
+func TestScanReportsRowKeysShownAsBase64(t *testing.T) {
+	tests := []struct {
+		name string
+		keys []string
+		rk   colType
+		exec bool
+		want []string
+	}{
+		{"scan, valid UTF-8 key", []string{"r1"}, ctAuto, false, nil},
+		{"scan, key that is not UTF-8", []string{"r1", "\xff"}, ctAuto, false, []string{"/w=="}},
+		{"scan, declared bytes key", []string{"\xff"}, ctBytes, false, nil},
+		{"exec scan, key that is not UTF-8", []string{"\xff"}, ctAuto, true, []string{"/w=="}},
+		{"exec scan, valid UTF-8 key", []string{"r1"}, ctAuto, true, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fc := newFakeClient()
+			for _, k := range tt.keys {
+				fc.seed(k, cell("cf", "title", "Dune"))
+			}
+			st := newFakeStore(fc, &fakeAdmin{}, "books", typeMap{}, tt.rk)
+			var shown []string
+			ctx := query.WithRowKeyNotice(testCtx(), func(s string) { shown = append(shown, s) })
+
+			var err error
+			if tt.exec {
+				_, err = st.Query(ctx, []string{"scan", "books"})
+			} else {
+				err = st.ScanBatches(ctx, func(map[string]any) error { return nil })
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, shown)
+		})
+	}
+}

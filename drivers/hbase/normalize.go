@@ -1,6 +1,7 @@
 package hbase
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"github.com/tsuna/gohbase/hrpc"
 
 	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 )
 
 // colType is how one HBase cell value (raw bytes) is presented to the filter and
@@ -321,10 +323,14 @@ func colTypeFor(types typeMap, family, qualifier string) colType {
 
 // rowKeyString renders a raw row key as the string that the table is keyed by
 // under the row-key type. Valid UTF-8 renders as itself, else base64 (or as
-// declared).
-func rowKeyString(t colType, key []byte) string {
+// declared). Under the default type, a key that is not valid UTF-8 is also
+// reported to the notice sink of ctx, because encodeRowKey cannot reverse it.
+func rowKeyString(ctx context.Context, t colType, key []byte) string {
 	v := decodeCell(t, key, nil)
 	if s, ok := v.(string); ok {
+		if t == ctAuto && !utf8.Valid(key) {
+			query.NoteRowKey(ctx, s)
+		}
 		return s
 	}
 	// A declared numeric row-key type decodes to a number. Render it canonically so
@@ -332,9 +338,11 @@ func rowKeyString(t colType, key []byte) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// encodeRowKey reverses rowKeyString: it turns the string map key back into the
-// raw row-key bytes under the row-key type. So a bounded Get or a write addresses
-// the same physical row that a scan surfaced.
+// encodeRowKey reverses rowKeyString for a key that is valid UTF-8 and for a
+// declared row-key type: it turns the string map key back into the raw row-key
+// bytes. It does not reverse a key that rowKeyString showed as base64 under the
+// default type. It sends the UTF-8 bytes of that text, which is a different row.
+// A scan reports such a key to the notice sink. ?keytype=bytes makes it exact.
 func encodeRowKey(t colType, key string) ([]byte, error) {
 	switch t {
 	case ctAuto, ctText:

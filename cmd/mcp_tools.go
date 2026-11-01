@@ -437,8 +437,8 @@ func (s *mcpServer) toolQuery(ctx context.Context, req *mcp.CallToolRequest, in 
 	col := &queryCollector{bounds: bounds, out: mcpQueryOutput{Items: []any{}}}
 	cctx, cancel := context.WithTimeout(ctx, bounds.timeout)
 	defer cancel()
-	var nonFinite query.NonFiniteSummary
-	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+	var notes runNotices
+	cctx = notes.with(cctx)
 	opts := query.RunOptions{Unbounded: cfg.unbounded, Compile: !cfg.noCompile, Logger: cfg.log()}
 	opts.OnPage, opts.OnEstimate = s.progressHooks(cctx, req)
 
@@ -446,7 +446,7 @@ func (s *mcpServer) toolQuery(ctx context.Context, req *mcp.CallToolRequest, in 
 		return nil, mcpQueryOutput{}, err
 	}
 	col.out.Count = len(col.out.Items)
-	col.out.Note = nonFinite.Text()
+	col.out.Note = notes.note()
 	return nil, col.out, nil
 }
 
@@ -608,8 +608,8 @@ func (s *mcpServer) toolSchema(ctx context.Context, _ *mcp.CallToolRequest, in m
 	}
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
-	var nonFinite query.NonFiniteSummary
-	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+	var notes runNotices
+	cctx = notes.with(cctx)
 	st, err := openStore(cctx, cfg)
 	if err != nil {
 		return nil, nil, toolError(redactErr(err, cfg.url))
@@ -620,7 +620,7 @@ func (s *mcpServer) toolSchema(ctx context.Context, _ *mcp.CallToolRequest, in m
 		return nil, nil, toolError(fmt.Errorf("sample %q: %w", cfg.handle, redactErr(asSyntaxError(in.Filter, err), cfg.url)))
 	}
 	doc := shape.Infer(items).JSONSchema(schemaTitle(cfg))
-	if note := nonFinite.Text(); note != "" {
+	if note := notes.note(); note != "" {
 		doc["$comment"] = note
 	}
 	return nil, doc, nil
@@ -706,15 +706,15 @@ func (s *mcpServer) toolDiff(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
 
-	var nonFinite query.NonFiniteSummary
-	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+	var notes runNotices
+	cctx = notes.with(cctx)
 
 	run := diffRun{cfg: s.callConfig(), left: left, right: right, sections: in.Section, sample: sample}
 	out, err := collectDiff(cctx, run, layers)
 	if err != nil {
 		return nil, mcpDiffOutput{}, toolError(err)
 	}
-	out.Note = nonFinite.Text()
+	out.Note = notes.note()
 	return nil, out, nil
 }
 
@@ -818,8 +818,8 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 		return nil, mcpExecOutput{}, toolError(redactErr(err, cfg.url))
 	}
 	defer func() { _ = st.Close() }()
-	var nonFinite query.NonFiniteSummary
-	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+	var notes runNotices
+	cctx = notes.with(cctx)
 	var cut atomic.Bool
 	cctx = query.WithRowCutNotice(cctx, func() { cut.Store(true) })
 	// One extra row lets the cap tell a full result from a cut one.
@@ -832,7 +832,7 @@ func (s *mcpServer) toolExec(ctx context.Context, _ *mcp.CallToolRequest, in mcp
 		return nil, mcpExecOutput{}, toolError(err)
 	}
 	out.Truncated = out.Truncated || cut.Load()
-	out.Note = nonFinite.Text()
+	out.Note = notes.note()
 	return nil, out, nil
 }
 
@@ -948,8 +948,8 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	cctx, cancel := context.WithTimeout(ctx, s.cfg.timeout)
 	defer cancel()
-	var nonFinite query.NonFiniteSummary
-	cctx = query.WithNonFiniteNotice(cctx, nonFinite.Sink())
+	var notes runNotices
+	cctx = notes.with(cctx)
 	tr, closeSrc, err := openTypedSource(cctx, cfg)
 	if err != nil {
 		return nil, mcpWriteOutput{}, toolError(err)
@@ -964,7 +964,7 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	return nil, mcpWriteOutput{
 		Destination: label, Written: stat.Written, Overwritten: stat.Overwritten,
-		Skipped: stat.Skipped, DryRun: in.DryRun, Note: nonFinite.Text(),
+		Skipped: stat.Skipped, DryRun: in.DryRun, Note: notes.note(),
 	}, nil
 }
 

@@ -18,11 +18,16 @@ type nanStore struct {
 	fakeInspectStore
 	rows map[string]any
 	hits map[string][]string
+	// rowKeys are shown-as-base64 row keys that a scan reports.
+	rowKeys []string
 }
 
 func (s nanStore) ScanBatches(ctx context.Context, fn func(map[string]any) error) error {
 	for key, fields := range s.hits {
 		query.NoteNonFinite(ctx, key, fields...)
+	}
+	for _, shown := range s.rowKeys {
+		query.NoteRowKey(ctx, shown)
 	}
 	return fn(s.rows)
 }
@@ -74,6 +79,22 @@ func TestQueryWarnsOnceAboutConvertedValues(t *testing.T) {
 	require.Contains(t, stdout, `"NaN"`)
 	require.Equal(t,
 		`warning: iq converted 2 values that JSON cannot hold (NaN or infinity) to strings; first: key "k1", field "cost"`+"\n",
+		stderr)
+}
+
+func TestQueryWarnsOnceAboutRowKeysShownAsBase64(t *testing.T) {
+	useNanDriver(t, nanStore{
+		rows:    map[string]any{"/w==": map[string]any{"a": 1}, "AAE=": map[string]any{"a": 2}},
+		rowKeys: []string{"/w==", "AAE="},
+	})
+
+	stdout, stderr, err := runSplit(t, "--src", "n", ".[]")
+
+	require.NoError(t, err)
+	require.NotContains(t, stdout, "warning")
+	require.Equal(t,
+		`warning: iq showed 2 HBase row keys that are not valid UTF-8 as base64; a Get, delete or copy with such a key reaches a different row. `+
+			`Declare ?keytype=bytes on the source to address them exactly. First: "/w=="`+"\n",
 		stderr)
 }
 
@@ -159,25 +180,52 @@ func TestMCPExecNotesConvertedValues(t *testing.T) {
 		out.Note)
 }
 
-func TestWarnNonFinite(t *testing.T) {
-	summary := &query.NonFiniteSummary{}
-	summary.Sink()("k1", "price")
+func TestWarnNotices(t *testing.T) {
+	both := &runNotices{}
+	both.nonFinite.Sink()("k1", "price")
+	both.rowKeys.Sink()("/w==")
+	both.rowKeys.Sink()("AAE=")
+	onlyKeys := &runNotices{}
+	onlyKeys.rowKeys.Sink()("/w==")
 	tests := []struct {
 		name string
 		cfg  *config
 		want string
 	}{
-		{"no summary", &config{}, ""},
-		{"empty summary", &config{nonFinite: &query.NonFiniteSummary{}}, ""},
-		{"one conversion", &config{nonFinite: summary}, "warning: " + summary.Text() + "\n"},
+		{"no notices", &config{}, ""},
+		{"empty notices", &config{notices: &runNotices{}}, ""},
+		{"one row key notice", &config{notices: onlyKeys}, "warning: " + onlyKeys.rowKeys.Text() + "\n"},
+		{
+			"both notices, one line each", &config{notices: both},
+			"warning: " + both.nonFinite.Text() + "\nwarning: " + both.rowKeys.Text() + "\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 
-			warnNonFinite(&buf, tt.cfg)
+			warnNotices(&buf, tt.cfg)
 
 			require.Equal(t, tt.want, buf.String())
+		})
+	}
+}
+
+func TestRunNoticesNote(t *testing.T) {
+	both := &runNotices{}
+	both.nonFinite.Sink()("k1", "price")
+	both.rowKeys.Sink()("/w==")
+	tests := []struct {
+		name string
+		n    *runNotices
+		want string
+	}{
+		{"empty", &runNotices{}, ""},
+		{"both joined", both, both.nonFinite.Text() + ". " + both.rowKeys.Text()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.n.note())
 		})
 	}
 }
