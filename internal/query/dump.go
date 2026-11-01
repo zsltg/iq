@@ -17,10 +17,14 @@ import (
 
 // dumpRecord is the on-disk envelope for one item in a typed JSONL dump. The type
 // tag makes a Redis round-trip lossless. The normalized JSON of a hash and of a
-// document are both objects, so only the tag says which to reconstruct.
+// document are both objects, so only the tag says which to reconstruct. The form
+// names the dialect of the value. It is absent for the normalized JSON form, so a
+// dump of normalized records reads the same as before. A reader refuses a form that
+// it does not know.
 type dumpRecord struct {
 	Key   string `json:"key"`
 	Type  string `json:"type"`
+	Form  string `json:"form,omitempty"`
 	Value any    `json:"value"`
 }
 
@@ -29,7 +33,8 @@ type dumpRecord struct {
 func WriteJSONL(w io.Writer, recs []Record) error {
 	enc := json.NewEncoder(w)
 	for _, r := range recs {
-		if err := enc.Encode(dumpRecord(r)); err != nil {
+		env := dumpRecord{Key: r.Key, Type: r.Type, Form: r.Form.DumpName(), Value: r.Value}
+		if err := enc.Encode(env); err != nil {
 			return fmt.Errorf("encode dump record %q: %w", r.Key, err)
 		}
 	}
@@ -93,7 +98,8 @@ func decodeLine(raw string, plain bool) (Record, error) {
 }
 
 // DecodeTypedRecord decodes one {key,type,value} record of a typed dump, with exact
-// integers and the sign of a negative zero kept.
+// integers and the sign of a negative zero kept. It reads the optional "form" field
+// and refuses a form that it does not know.
 func DecodeTypedRecord(raw []byte) (Record, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
@@ -104,7 +110,11 @@ func DecodeTypedRecord(raw []byte) (Record, error) {
 	if env.Key == "" {
 		return Record{}, fmt.Errorf("record has no key (use --key-field for foreign JSON)")
 	}
-	return Record{Key: env.Key, Type: env.Type, Value: convertNumbers(env.Value)}, nil
+	form, err := ParseForm(env.Form)
+	if err != nil {
+		return Record{}, fmt.Errorf("record %q: %w", env.Key, err)
+	}
+	return Record{Key: env.Key, Type: env.Type, Form: form, Value: convertNumbers(env.Value)}, nil
 }
 
 // decodeValue parses a single JSON value with exact integers preserved.
@@ -349,5 +359,10 @@ func recordFromDecoded(v any, plain bool) (Record, error) {
 		return Record{}, fmt.Errorf("record has no key")
 	}
 	typ, _ := obj["type"].(string)
-	return Record{Key: key, Type: typ, Value: convertNumbers(obj["value"])}, nil
+	name, _ := obj["form"].(string)
+	form, err := ParseForm(name)
+	if err != nil {
+		return Record{}, fmt.Errorf("record %q: %w", key, err)
+	}
+	return Record{Key: key, Type: typ, Form: form, Value: convertNumbers(obj["value"])}, nil
 }

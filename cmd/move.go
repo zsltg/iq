@@ -64,7 +64,7 @@ func validateMoveFlags(cfg *config) error {
 	if cfg.typed && anyOn(cfg.noOverwrite, cfg.replace, cfg.force, cfg.dryRun) {
 		return errors.New("--no-overwrite/--replace/--force/--dry-run apply to --insert, not --typed")
 	}
-	return nil
+	return validateNativeMove(cfg)
 }
 
 // anyOn reports whether at least one of flags is true.
@@ -91,27 +91,37 @@ func openMoveSource(cmd *cobra.Command, ctx context.Context, cfg *config) (query
 	if err := resolveSource(cfg); err != nil {
 		return nil, nil, "", err
 	}
-	tr, closeSrc, err := openTypedSource(ctx, cfg)
+	scan, closeSrc, err := openTypedSource(ctx, cfg)
 	if err != nil {
 		return nil, nil, "", err
 	}
-	return tr.TypedScan, closeSrc, cfg.handle, nil
+	return scan, closeSrc, cfg.handle, nil
 }
 
-// openTypedSource opens the store of cfg as a typed reader, for a move or an
-// iq_insert call. The error has the connection URI redacted. The caller closes
+// openTypedSource opens the store of cfg as a record source, for a move or an
+// iq_insert call. It is the typed scan of the store, or its native scan when
+// cfg.native is set. The error has the connection URI redacted. The caller closes
 // the store with the returned function.
-func openTypedSource(ctx context.Context, cfg *config) (query.TypedReader, func() error, error) {
+func openTypedSource(ctx context.Context, cfg *config) (query.RecordSource, func() error, error) {
 	st, err := openStore(ctx, cfg)
 	if err != nil {
 		return nil, nil, redactErr(err, cfg.url)
+	}
+	if cfg.native {
+		nr, err := nativeReaderOf(st, cfg)
+		if err != nil {
+			_ = st.Close()
+			return nil, nil, err
+		}
+		cfg.srcForm = nr.NativeForm()
+		return nr.NativeScan, st.Close, nil
 	}
 	tr, ok := st.(query.TypedReader)
 	if !ok {
 		_ = st.Close()
 		return nil, nil, fmt.Errorf("source %s (%s) cannot be read for a move", cfg.handle, driverName(cfg.url))
 	}
-	return tr, st.Close, nil
+	return tr.TypedScan, st.Close, nil
 }
 
 // stdinRecordSource decodes piped stdin into records. --key-field signals foreign
@@ -146,6 +156,10 @@ type insertRequest struct {
 	// value when they come from stdin or from a combine. Replace uses it to
 	// refuse a source that is also the destination.
 	src endpoint
+	// srcForm is the form of the records that the source emits. It is FormJSON
+	// unless the run reads a native scan. applyInsert refuses a destination that
+	// cannot write it before anything changes.
+	srcForm query.Form
 	// confirm gates emptying the destination for replace. It returns nil to
 	// proceed and an error to abort. It is never called on a dry run.
 	confirm func(action string) error
@@ -169,6 +183,7 @@ func insertRequestFor(cmd *cobra.Command, cfg *config) insertRequest {
 	return insertRequest{
 		dst: cfg.insert, mode: writeModeFor(cfg), replace: cfg.replace, dryRun: cfg.dryRun,
 		src:     sourceEndpoint(cfg),
+		srcForm: cfg.srcForm,
 		confirm: func(action string) error { return confirmDestruction(cmd, action, cfg.force) },
 	}
 }
@@ -250,6 +265,9 @@ func applyInsert(ctx context.Context, req insertRequest, recSrc query.RecordSour
 	defer func() { _ = st.Close() }()
 	putter, err := insertPutter(st, dst)
 	if err != nil {
+		return "", query.WriteStat{}, err
+	}
+	if err := checkSourceForm(req.srcForm, putter, dst); err != nil {
 		return "", query.WriteStat{}, err
 	}
 	if req.replace {
@@ -335,7 +353,7 @@ func runTypedDump(cmd *cobra.Command, ctx context.Context, cfg *config, recSrc q
 		return err
 	}
 	f := newFormatter(fm, cmd.OutOrStdout(), cfg.compact)
-	copier := query.Copier{Dst: typedPutter{f: f}, Mode: query.Upsert, PageSize: movePageSize, Transform: transform}
+	copier := query.Copier{Dst: typedPutter{f: f}, PageSize: movePageSize, Transform: transform, AnyForm: true}
 	if _, err := copier.Copy(ctx, recSrc, false); err != nil {
 		return err
 	}
@@ -347,6 +365,7 @@ func runTypedDump(cmd *cobra.Command, ctx context.Context, cfg *config, recSrc q
 type typedRecord struct {
 	Key   string `json:"key" yaml:"key"`
 	Type  string `json:"type" yaml:"type"`
+	Form  string `json:"form,omitempty" yaml:"form,omitempty"`
 	Value any    `json:"value" yaml:"value"`
 }
 
@@ -356,7 +375,7 @@ type typedPutter struct{ f formatter }
 
 func (p typedPutter) Put(_ context.Context, batch []query.Record, _ query.WriteMode) (query.WriteStat, error) {
 	for _, r := range batch {
-		if err := p.f.emit(typedRecord{Key: r.Key, Type: r.Type, Value: r.Value}); err != nil {
+		if err := p.f.emit(typedRecord{Key: r.Key, Type: r.Type, Form: r.Form.DumpName(), Value: r.Value}); err != nil {
 			return query.WriteStat{}, err
 		}
 	}
@@ -438,6 +457,9 @@ func writeMovePlanTarget(b *strings.Builder, cfg *config) error {
 		writePlanLine(b, "to", "typed dump (stdout/-o)")
 		writePlanSection(b, "write")
 		b.WriteString("  encode typed records\n")
+		if cfg.native {
+			b.WriteString("  records carry the native form of the source\n")
+		}
 		return nil
 	}
 	cf, err := iqconfig.Load()

@@ -28,6 +28,9 @@ const duplicateKeyCode = 11000
 // JSON object is a returned error. So a scalar is never silently wrapped and a
 // copy round-trips exactly.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
+	if err := query.CheckForms("mongo", query.FormJSON, batch); err != nil {
+		return query.WriteStat{}, err
+	}
 	if s.collection == "" {
 		return query.WriteStat{}, errNoCollection
 	}

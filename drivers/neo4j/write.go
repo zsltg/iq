@@ -28,6 +28,9 @@ var errRelWriteUnsupported = errors.New("neo4j: writing relationships is not yet
 // nodes and then set them all at once. The write is therefore refused up front
 // rather than silently fanning out.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
+	if err := query.CheckForms("neo4j", query.FormJSON, batch); err != nil {
+		return query.WriteStat{}, err
+	}
 	var stat query.WriteStat
 	if s.target.kind == relTarget {
 		return stat, errRelWriteUnsupported

@@ -398,6 +398,7 @@ type mcpQueryInput struct {
 	Filter    string `json:"filter" jsonschema:"the jq filter to run; single top-level paths name the keys to fetch"`
 	Unbounded bool   `json:"unbounded,omitempty" jsonschema:"permit a filter that loads the whole keyspace into memory; ask the user first"`
 	Compile   *bool  `json:"compile,omitempty" jsonschema:"push select() conjuncts to the backend where it supports them; true by default, results are unchanged either way"`
+	Native    bool   `json:"native,omitempty" jsonschema:"read the items in the native form of the source driver (DynamoDB JSON, with type tags such as {\"N\": \"1.50\"}) and not in normalized JSON. The filter must start with .[], and no predicate is pushed down"`
 	MaxItems  int    `json:"max_items,omitempty" jsonschema:"cap the returned items; may only lower the server's own cap"`
 	MaxBytes  int    `json:"max_bytes,omitempty" jsonschema:"cap the encoded size of the returned items in bytes; may only lower the server's own cap"`
 	Timeout   string `json:"timeout,omitempty" jsonschema:"bound the call, a Go duration such as 10s; may only lower the server's own --timeout"`
@@ -431,6 +432,10 @@ func (s *mcpServer) toolQuery(ctx context.Context, req *mcp.CallToolRequest, in 
 	}
 	cfg, err := s.targetConfig(filterTarget{source: in.Source, compile: in.Compile, unbounded: in.Unbounded}, cross)
 	if err != nil {
+		return nil, mcpQueryOutput{}, toolError(err)
+	}
+	cfg.native = in.Native
+	if err := validateNativeQuery(cfg, formatJSON, cross); err != nil {
 		return nil, mcpQueryOutput{}, toolError(err)
 	}
 
@@ -538,7 +543,11 @@ func (r queryRun) runStore(ctx context.Context, emit func(any) error) error {
 		return toolError(redactErr(err, r.cfg.url))
 	}
 	defer func() { _ = st.Close() }()
-	return r.finish(query.NewJQEngine(st).Run(ctx, r.filter, r.opts, emit))
+	kv, err := kvStoreFor(st, r.cfg)
+	if err != nil {
+		return toolError(err)
+	}
+	return r.finish(query.NewJQEngine(kv).Run(ctx, r.filter, r.opts, emit))
 }
 
 // finish maps the error of an engine run: a cap is success, anything else is a
@@ -885,6 +894,7 @@ type mcpInsertInput struct {
 	KeyField    string `json:"key_field,omitempty" jsonschema:"an object field to take the key from"`
 	KeyPrefix   string `json:"key_prefix,omitempty" jsonschema:"a string prepended to every written key"`
 	Type        string `json:"type,omitempty" jsonschema:"the native type stamped on a reshaped value, e.g. hash, list, json"`
+	Native      bool   `json:"native,omitempty" jsonschema:"read the items in the native form of the source driver (DynamoDB JSON) and not in normalized JSON. Only a DynamoDB source has one, and only a DynamoDB destination accepts it"`
 	NoOverwrite *bool  `json:"no_overwrite,omitempty" jsonschema:"skip keys that already exist; true by default"`
 	Replace     bool   `json:"replace,omitempty" jsonschema:"empty the destination before writing; needs --allow destructive and a confirmation"`
 	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"report the effect without writing anything"`
@@ -943,6 +953,7 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 
 	cfg := s.callConfig()
 	cfg.src = in.Source
+	cfg.native = in.Native
 	if err := resolveSource(cfg); err != nil {
 		return nil, mcpWriteOutput{}, toolError(err)
 	}
@@ -950,7 +961,7 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 	defer cancel()
 	var notes runNotices
 	cctx = notes.with(cctx)
-	tr, closeSrc, err := openTypedSource(cctx, cfg)
+	scan, closeSrc, err := openTypedSource(cctx, cfg)
 	if err != nil {
 		return nil, mcpWriteOutput{}, toolError(err)
 	}
@@ -958,7 +969,8 @@ func (s *mcpServer) toolInsert(ctx context.Context, req *mcp.CallToolRequest, in
 
 	wreq := insertRequestFrom(in)
 	wreq.src = sourceEndpoint(cfg)
-	label, stat, err := applyInsert(cctx, wreq, tr.TypedScan, transform)
+	wreq.srcForm = cfg.srcForm
+	label, stat, err := applyInsert(cctx, wreq, scan, transform)
 	if err != nil {
 		return nil, mcpWriteOutput{}, toolError(err)
 	}

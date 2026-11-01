@@ -18,6 +18,7 @@ preserved). Iteration over the source is implicit, so you do not write `.[]`.
 | --- | --- | --- | --- |
 | | `--insert <source>` | ✗ | write each item into this destination source (copy/restore/import) instead of rendering |
 | | `--typed` | ✗ | emit typed `{"key":…, "type":…, "value":…}` records, a re-importable dump (needed for Redis, a document store's plain output already restores) |
+| | `--native` | ✗ | read each item in the native form of the source (DynamoDB JSON). Needs a DynamoDB source. See [Native form](#native-form-native) |
 
 ```sh { title='Source → Source, key/id preserving' }
 iq --src books --insert books2
@@ -83,6 +84,53 @@ iq --src books --insert books2 --explain
     written. `--raw` (a scalar cannot hold the envelope), `--format parquet`
     (columnar) and `--gron`/`--grona` (flattened assignments no source
     decodes) drop `--typed` to grep or export the value stream instead.
+
+## Native form `--native`
+
+A normalized value can be plainer than the native type that it came from. A DynamoDB
+fractional number reads as an exact string, a binary value as base64 text, and a set as a list.
+A copy into DynamoDB then writes an `S` or an `L`. The copy does not restore the type.
+
+`--native` reads each item in the typed JSON form of its driver instead. Today, only DynamoDB has
+one: DynamoDB JSON, for example `{"price": {"N": "1.50"}}`. Each record carries its form. A
+`--typed` dump holds it in an optional `form` field, for example
+`{"key":"a","type":"item","form":"dynamodb-json","value":{…}}`. A dump of normalized records has
+no `form` field, so old dumps read as before. A reader refuses a form that it does not know.
+
+```sh { title='DynamoDB to DynamoDB, every type kept' }
+iq --native --src books --insert books2
+```
+```sh { title='Native dump of a table, and the same table from an export file' }
+iq --native --typed --src books -o books.jsonl
+iq --native --typed --src 'file:///export.json.gz?format=dynamodb-json&keys=pk' -o books.jsonl
+```
+```sh { title='Query with the type tags' }
+iq --native --src books '.[] | select(.price.N == "1.50") | .title.S'
+```
+
+The rules of `--native`:
+
+- Only the destination that owns the form can write it. A DynamoDB destination reads a native
+  record strictly and refuses a malformed type tag, a number that it cannot store exactly, or an
+  empty set. Any other destination refuses the record, and the error names the key and both
+  forms. A record in normalized JSON still goes to every destination.
+- A jq filter sees the typed form, so a filter that edits a value must keep the tags. A filter
+  that breaks a tag makes the destination refuse the record.
+- No predicate is pushed down. `iq` scans the whole source and runs the filter on the client.
+  A native read cannot fetch a named key, so the filter must start with `.[]`.
+  [`--explain`](query-plan.md) shows this.
+- `--native` works with `--json`, `--jsona`, `--jsonl`, and `--yaml`. The other renderings flatten
+  the tags, so `iq` refuses them.
+- `--native` does not work with `--key-field`, because foreign JSON has no native form. It does not
+  work with `source()`. `iq diff` and `iq schema` have no `--native`.
+- A source without a native form refuses `--native`. That includes a typed dump file. Read a
+  typed dump without `--native`, because each of its records already names its form.
+- `--native` does not use the file decode cache. Each run reads the dump again.
+- A piped typed dump already names the form of each record. `--native` has no effect on it.
+- `iq` checks the form of a `--native` source against the destination before `--replace` empties
+  it. A piped typed dump has no known form before the read, so `iq` cannot do this check. If its
+  records are in a form that the destination refuses, `--replace` has already emptied the
+  destination and nothing is written. Use `--dry-run` first, which reports the same refusal.
 
 A backend that stores text as JSON cannot keep a byte sequence that is not valid
 UTF-8. It would change each invalid byte to U+FFFD, and two different keys or

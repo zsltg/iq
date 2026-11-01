@@ -22,6 +22,22 @@ import (
 // names. A dump records items but not the key schema, so ?keys= is required.
 // Without it, items cannot be keyed, so they collide.
 func dynamoSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hints) (query.RecordSource, error) {
+	return dynamoItems(r, size, hints, func(keys []iqddb.KeyAttr, item map[string]types.AttributeValue) (query.Record, error) {
+		return recordForItem(keys, item, dec), nil
+	})
+}
+
+// dynamoNativeSource streams the same dump as dynamoSource, but each record keeps
+// the DynamoDB JSON form of its item (query.FormDynamoJSON). It skips Normalize,
+// so a number keeps its text, a binary value stays binary, and a set stays a set.
+// The key is the same as the key in dynamoSource.
+func dynamoNativeSource(r io.Reader, size int, hints Hints) (query.RecordSource, error) {
+	return dynamoItems(r, size, hints, nativeRecordForItem)
+}
+
+// dynamoItems streams the items of a DynamoDB dump in pages. build turns each
+// decoded item into the record of the caller.
+func dynamoItems(r io.Reader, size int, hints Hints, build func([]iqddb.KeyAttr, map[string]types.AttributeValue) (query.Record, error)) (query.RecordSource, error) {
 	if hints.Keys == "" {
 		return nil, errors.New("dynamodb dump needs a key schema: add ?keys=pk[:S][,sk[:N]] to the file url")
 	}
@@ -43,7 +59,11 @@ func dynamoSource(r io.Reader, size int, dec numfmt.DecimalMode, hints Hints) (q
 			return nil
 		}
 		emit := func(item map[string]types.AttributeValue) error {
-			page = append(page, recordForItem(keys, item, dec))
+			rec, err := build(keys, item)
+			if err != nil {
+				return err
+			}
+			page = append(page, rec)
 			if len(page) >= size {
 				return flush()
 			}
@@ -213,4 +233,14 @@ func recordForItem(keys []iqddb.KeyAttr, item map[string]types.AttributeValue, d
 		val[name] = iqddb.Normalize(av, dec)
 	}
 	return query.Record{Key: iqddb.KeyOf(keys, item), Type: "item", Value: val}
+}
+
+// nativeRecordForItem turns one decoded item into a record in the DynamoDB JSON
+// form. The key and the type are the same as for recordForItem.
+func nativeRecordForItem(keys []iqddb.KeyAttr, item map[string]types.AttributeValue) (query.Record, error) {
+	val, err := iqddb.EncodeItem(item)
+	if err != nil {
+		return query.Record{}, fmt.Errorf("dynamodb dump item %q: %w", iqddb.KeyOf(keys, item), err)
+	}
+	return query.Record{Key: iqddb.KeyOf(keys, item), Type: "item", Form: query.FormDynamoJSON, Value: val}, nil
 }

@@ -58,8 +58,12 @@ type config struct {
 	// --typed emits {key,type,value} records instead of the jq value stream. The rest
 	// mirror the retired `iq data copy`: key derivation, write mode, dry-run, and the
 	// import-side --from-format hint (needed for YAML, which is not content-sniffable).
-	insert      string
-	typed       bool
+	insert string
+	typed  bool
+	native bool
+	// srcForm is the form of the records of the source, set when the run opens a
+	// native scan. It is FormJSON otherwise.
+	srcForm     query.Form
 	moveKey     string
 	keyField    string
 	keyPrefix   string
@@ -489,6 +493,7 @@ func addRootFlags(root *cobra.Command, cfg *config) {
 	// records, a re-importable dump. The rest mirror the retired `iq data copy`.
 	root.Flags().StringVar(&cfg.insert, "insert", "", "write each item into this destination `source` (copy/restore/import) instead of rendering")
 	root.Flags().BoolVar(&cfg.typed, "typed", false, "emit typed {key,type,value} records, a re-importable dump (needed for Redis; Mongo's plain output already restores)")
+	root.Flags().BoolVar(&cfg.native, "native", false, "read items in the native form of the source driver (DynamoDB JSON, for example {\"N\": \"1.50\"}) and not in normalized JSON. A filter sees the type tags, and no predicate is pushed down. A --typed dump or an --insert into the same driver keeps every type (DynamoDB only)")
 	root.Flags().StringVar(&cfg.moveKey, "key", "", "jq expression yielding each written item's key (--insert/--typed)")
 	root.Flags().StringVar(&cfg.keyField, "key-field", "", "object field to take the key from, for foreign JSON input (--insert)")
 	root.Flags().StringVar(&cfg.keyPrefix, "key-prefix", "", "string prepended to every written key (--insert/--typed)")

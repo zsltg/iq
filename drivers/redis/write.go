@@ -26,6 +26,9 @@ var utf8Guard = query.UTF8Guard{Driver: "redis"}
 // discretely through the pipeline and is never concatenated into a command
 // string.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
+	if err := query.CheckForms("redis", query.FormJSON, batch); err != nil {
+		return query.WriteStat{}, err
+	}
 	if len(batch) == 0 {
 		return query.WriteStat{}, nil
 	}

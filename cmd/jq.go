@@ -62,6 +62,9 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	if err := guardBinaryFormat(fm, cmd.OutOrStdout()); err != nil {
 		return err
 	}
+	if err := validateNativeQuery(cfg, fm, cross); err != nil {
+		return err
+	}
 
 	// A single-source filter resolves its source up front (no connection), so both
 	// the query plan and the execution below name and dispatch the same driver. When
@@ -85,7 +88,7 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 		}
 		_, _ = fmt.Fprint(cmd.ErrOrStderr(), plan)
 	} else if cfg.explain || cfg.verbose {
-		plan, err := buildJQPlan(cfg, filter, cross, cfg.verbose)
+		plan, err := buildQueryPlan(cfg, filter, cross, cfg.verbose)
 		if err != nil {
 			return err
 		}
@@ -146,7 +149,11 @@ func runJQ(cmd *cobra.Command, cfg *config, filter string) error {
 	// The cross-source path aggregates several scans, where a per-source
 	// estimate misleads. So the estimate is left off there.
 	opts.OnEstimate = meter.SetEstimate
-	runErr := query.NewJQEngine(store).Run(ctx, filter, opts, f.emit)
+	kv, err := kvStoreFor(store, cfg)
+	if err != nil {
+		return err
+	}
+	runErr := query.NewJQEngine(kv).Run(ctx, filter, opts, f.emit)
 	cfg.logQueryComplete(scanned, start)
 	return finish(f, scanHint(asSyntaxError(filter, runErr)))
 }

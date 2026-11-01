@@ -390,6 +390,37 @@ func (s *Store) TypedScan(ctx context.Context, fn func(batch []query.Record) err
 	return s.records(ctx, true, fn)
 }
 
+// ErrNoNativeForm reports a native read of a dump whose format has no native
+// form. Only a DynamoDB dump has one.
+var ErrNoNativeForm = errors.New("this dump format has no native form, and only a DynamoDB dump has one")
+
+// NativeScan streams a DynamoDB dump with each item in DynamoDB JSON, which keeps
+// the number text, the binary type, and the sets that the normalized form loses.
+// It reads the dump itself and skips the decode cache, because the cache holds
+// normalized records only. A dump in any other format fails with ErrNoNativeForm.
+func (s *Store) NativeScan(ctx context.Context, fn func(batch []query.Record) error) error {
+	if s.format != FormatDynamoDBJSON {
+		return fmt.Errorf("%w (format %s)", ErrNoNativeForm, s.format)
+	}
+	r, closeR, err := s.reader()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = closeR() }()
+	dr, err := maybeGunzip(r)
+	if err != nil {
+		return err
+	}
+	src, err := dynamoNativeSource(dr, pageSize, s.hints)
+	if err != nil {
+		return err
+	}
+	return src(ctx, fn)
+}
+
+// NativeForm names the form that NativeScan emits.
+func (s *Store) NativeForm() query.Form { return query.FormDynamoJSON }
+
 // ScanBatches streams the dump as {key: value} pages, dropping the type tag for
 // the jq read path.
 func (s *Store) ScanBatches(ctx context.Context, fn func(batch map[string]any) error) error {
@@ -470,3 +501,5 @@ func ExplainPlan(keys selector.KeySet, pred predicate.Node, _ bool) query.Access
 		Prefilter: prefilter,
 	}
 }
+
+var _ query.NativeReader = (*Store)(nil)

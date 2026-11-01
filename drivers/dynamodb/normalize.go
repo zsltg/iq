@@ -259,8 +259,15 @@ func (s *Store) toItem(r recordValue) (map[string]types.AttributeValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.key != "" {
-		keyAVs, err := s.decodeKey(r.key)
+	return s.withKey(r.key, item)
+}
+
+// withKey overlays the primary-key attributes decoded from key onto item. The key
+// is authoritative, because it is already typed. A keyless record must carry its
+// key attributes in the item. A missing key attribute is an error.
+func (s *Store) withKey(key string, item map[string]types.AttributeValue) (map[string]types.AttributeValue, error) {
+	if key != "" {
+		keyAVs, err := s.decodeKey(key)
 		if err != nil {
 			return nil, err
 		}

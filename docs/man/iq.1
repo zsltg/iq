@@ -102,6 +102,9 @@ object field to take the key from, for foreign JSON input (\-\-insert)
 \fB\-\-key\-prefix\fR
 string prepended to every written key (\-\-insert/\-\-typed)
 .TP
+\fB\-\-native\fR
+read items in the native form of the source driver (DynamoDB JSON, for example {"N": "1.50"}) and not in normalized JSON. A filter sees the type tags, and no predicate is pushed down. A \-\-typed dump or an \-\-insert into the same driver keeps every type (DynamoDB only)
+.TP
 \fB\-\-no\-overwrite\fR
 insert only; skip keys that already exist (\-\-insert)
 .TP

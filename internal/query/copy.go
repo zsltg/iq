@@ -32,6 +32,9 @@ type Copier struct {
 	Mode      WriteMode
 	PageSize  int
 	Transform func(Record) ([]Record, error) // nil means identity
+	// AnyForm skips the form check. A dump writer sets it, because it encodes a
+	// record of any form.
+	AnyForm bool
 }
 
 // Copy streams src through the Transform into Dst and returns the totalled stat.
@@ -44,7 +47,7 @@ func (c *Copier) Copy(ctx context.Context, src RecordSource, dry bool) (WriteSta
 	if size <= 0 {
 		size = 100
 	}
-	pages := &copyPages{dst: c.Dst, mode: c.Mode, dry: dry, size: size, buf: make([]Record, 0, size)}
+	pages := &copyPages{dst: c.Dst, mode: c.Mode, dry: dry, size: size, buf: make([]Record, 0, size), anyForm: c.AnyForm}
 	err := src(ctx, func(batch []Record) error {
 		for _, r := range batch {
 			outs, err := c.transform(r)
@@ -87,6 +90,8 @@ type copyPages struct {
 	size  int
 	buf   []Record
 	total WriteStat
+	// anyForm skips the form check of flush.
+	anyForm bool
 }
 
 // add buffers recs and writes each page that fills up.
@@ -107,6 +112,13 @@ func (p *copyPages) add(ctx context.Context, recs []Record) error {
 func (p *copyPages) flush(ctx context.Context) error {
 	if len(p.buf) == 0 {
 		return nil
+	}
+	// The check runs in a dry run too, so a dry run reports the refusal of a real
+	// run. Copy stops at the error, so nobody reads the buffer again.
+	if !p.anyForm {
+		if err := CheckForms("destination", WriterForm(p.dst), p.buf); err != nil {
+			return err
+		}
 	}
 	if p.dry {
 		// A dry run reports the planned writes without touching the store. It
@@ -202,7 +214,7 @@ func (t transform) apply(r Record) ([]Record, error) {
 		if err != nil {
 			return nil, err
 		}
-		rec := Record{Key: key, Value: v, Type: r.Type}
+		rec := Record{Key: key, Value: v, Type: r.Type, Form: r.Form}
 		if reshaped {
 			rec.Type = t.opts.Type // a reshaped value's original type no longer applies.
 		}

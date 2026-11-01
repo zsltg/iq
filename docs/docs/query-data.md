@@ -154,3 +154,21 @@ Disable pushdown.
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
 | | `--no-compile` | ✗ | disable predicate pushdown. Run the full `.[] | select()` filter client-side |
+
+## Native form `--native`
+
+Read each item in the native form of the source driver instead of normalized JSON.
+Only DynamoDB has a native form today: DynamoDB JSON, where every attribute value has a type
+tag, for example `{"price": {"N": "1.50"}}`.
+
+| short :material-flag-outline: | long :material-flag-outline: | default | description |
+| --- | --- | --- | --- |
+| | `--native` | ✗ | read items in the native form of the source (DynamoDB JSON). No predicate is pushed down, and the filter must start with `.[]` |
+
+```sh { title='Read DynamoDB items with their types' }
+iq --native --src books '.[] | select(.year.N == "2020") | .price'
+```
+
+The filter sees the tags, so it reads `.year.N` and not `.year`. `iq` scans the whole table and runs
+the filter on the client. `--native` works with `--json`, `--jsona`, `--jsonl`, and `--yaml`. See
+[Native form](write-data.md#native-form-native) for the copy and the dump.

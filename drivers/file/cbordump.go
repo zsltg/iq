@@ -85,8 +85,13 @@ type wireRecord struct {
 	Value any
 }
 
-// encodeRecord marshals one record to its CBOR array form.
+// encodeRecord marshals one record to its CBOR array form. The cache holds
+// normalized records only. A record in a native form is an error, so the cache
+// writer skips the cache for that dump and a later read decodes the dump again.
 func encodeRecord(r query.Record) ([]byte, error) {
+	if r.Form != query.FormJSON {
+		return nil, fmt.Errorf("encode cache record %q: the cache cannot hold form %q", r.Key, r.Form)
+	}
 	b, err := cborEnc.Marshal(wireRecord{Key: r.Key, Type: r.Type, Value: r.Value})
 	if err != nil {
 		return nil, fmt.Errorf("encode cache record %q: %w", r.Key, err)

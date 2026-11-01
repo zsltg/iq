@@ -31,6 +31,9 @@ type putItem struct {
 // So a record that cannot be represented (a non-object value) fails the whole
 // batch before any write lands. The SDK JSON-encodes every value.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
+	if err := query.CheckForms("couchbase", query.FormJSON, batch); err != nil {
+		return query.WriteStat{}, err
+	}
 	if s.collection == nil {
 		return query.WriteStat{}, errNoBucket
 	}

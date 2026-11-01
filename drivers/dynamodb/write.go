@@ -16,9 +16,11 @@ import (
 // utf8Guard refuses text that the backend would change to U+FFFD.
 var utf8Guard = query.UTF8Guard{Driver: "dynamodb"}
 
-// Put writes a batch of records into the table, keyed by primary key. Upsert
-// issues a plain PutItem, which DynamoDB applies as an overwrite-or-insert.
-// InsertOnly issues a PutItem with a condition that the partition key not exist,
+// Put writes a batch of records into the table, keyed by primary key. A record is
+// in normalized JSON or in DynamoDB JSON (query.FormDynamoJSON), which keeps the
+// number text, binary values, and sets exactly. A record in any other form is
+// refused. Upsert issues a plain PutItem, which DynamoDB applies as an
+// overwrite-or-insert. InsertOnly issues a PutItem with a condition that the partition key not exist,
 // and counts a record whose key exists as a skip. Every value is marshaled to a
 // typed attribute. A record without a key attribute, or with an unrepresentable
 // value, is an error, never a silent drop. Every item is built before any is
@@ -58,19 +60,32 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 // itemsOf builds the DynamoDB item of every record before any write, so one bad
 // record fails the whole batch.
 func (s *Store) itemsOf(batch []query.Record) ([]map[string]types.AttributeValue, error) {
+	if err := query.CheckForms("dynamodb", s.WritesForm(), batch); err != nil {
+		return nil, err
+	}
 	items := make([]map[string]types.AttributeValue, len(batch))
 	for i, r := range batch {
 		// The SDK writes S and the names as JSON, which turns an invalid byte into U+FFFD.
 		if err := utf8Guard.KeyValue(r.Key, r.Value); err != nil {
 			return nil, err
 		}
-		item, err := s.toItem(recordValue{key: r.Key, value: r.Value})
+		item, err := s.itemOf(r)
 		if err != nil {
 			return nil, err
 		}
 		items[i] = item
 	}
 	return items, nil
+}
+
+// itemOf builds the DynamoDB item of one record. The form of the record picks the
+// reading of its value: normalized JSON, or DynamoDB JSON. CheckForms has already
+// refused any other form.
+func (s *Store) itemOf(r query.Record) (map[string]types.AttributeValue, error) {
+	if r.Form == query.FormDynamoJSON {
+		return s.nativeItem(r.Key, r.Value)
+	}
+	return s.toItem(recordValue{key: r.Key, value: r.Value})
 }
 
 // existingFor returns which keys of batch already hold an item when mode is Upsert,
