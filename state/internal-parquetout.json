@@ -1,0 +1,9 @@
+{
+  "package": "./internal/parquetout",
+  "slug": "internal-parquetout",
+  "status": "failed",
+  "fingerprint": "bbccb21be7fa422574de83dfe6e86e2717611bcc43d526fefa2d2e30780b331a",
+  "commit": "5c5a08c44211fa30f1185484935935b4b063badc",
+  "scannedAt": "2026-11-02T23:13:12Z",
+  "secondsPerMutant": 1.1
+}

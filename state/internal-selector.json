@@ -1,0 +1,9 @@
+{
+  "package": "./internal/selector",
+  "slug": "internal-selector",
+  "status": "failed",
+  "fingerprint": "17f768369728d11448a3534e7de8f33c0c4fe83622620b4e5723bc21aeca83ba",
+  "commit": "5c5a08c44211fa30f1185484935935b4b063badc",
+  "scannedAt": "2026-11-02T23:13:12Z",
+  "secondsPerMutant": 0.5
+}
