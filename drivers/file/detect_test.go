@@ -320,6 +320,28 @@ func TestDetectStreamReadsOnlyFirstRecord(t *testing.T) {
 	require.Less(t, cr.n, 20000, "detection must not read past the first record by much")
 }
 
+// TestDetectStreamReadsOnlyHeadForBinary pins the head size. A binary dump is
+// decided by its head, so the sniff reads exactly 512 bytes and no more.
+func TestDetectStreamReadsOnlyHeadForBinary(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want Format
+	}{
+		{name: "rdb", data: "REDIS0011" + strings.Repeat("x", 3000), want: FormatRDB},
+		{name: "bson", data: "\x0c\x00\x00\x00\x02a\x00" + strings.Repeat("x", 3000), want: FormatBSON},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cr := &countReader{r: strings.NewReader(tt.data)}
+			got, _, err := detectStream(cr, "", query.MaxRecordBytes)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			require.Equal(t, 512, cr.n)
+		})
+	}
+}
+
 // countReader counts the bytes that it passes on.
 type countReader struct {
 	r io.Reader

@@ -193,7 +193,8 @@ type sniffer struct {
 // limit, so a record of exactly the limit is complete and a longer one is not. Call it once, before any other read from rest.
 func (s *sniffer) record() io.Reader {
 	head := s.buf.Bytes()
-	budget := max(s.limit-int64(len(head)), 0)
+	// A negative budget reads nothing, as for a head that is longer than the limit.
+	budget := s.limit - int64(len(head))
 	return io.MultiReader(bytes.NewReader(head), io.TeeReader(io.LimitReader(s.rest, budget), s.buf))
 }
 
