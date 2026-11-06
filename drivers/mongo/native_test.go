@@ -244,6 +244,8 @@ type fakeCursor struct {
 	n, at int
 	err   error
 	docs  []bson.Raw
+	// ctxs holds the context of each next call.
+	ctxs []context.Context
 }
 
 func newFakeCursor(t *testing.T, n int, err error) *fakeCursor {
@@ -255,7 +257,8 @@ func newFakeCursor(t *testing.T, n int, err error) *fakeCursor {
 	return c
 }
 
-func (c *fakeCursor) next(context.Context) bool {
+func (c *fakeCursor) next(ctx context.Context) bool {
+	c.ctxs = append(c.ctxs, ctx)
 	if c.at >= c.n {
 		return false
 	}
@@ -341,4 +344,18 @@ func TestPageNativeStopsOnErrors(t *testing.T) {
 		require.ErrorContains(t, err, "encode extended json")
 		require.Zero(t, calls)
 	})
+}
+
+// TestPageNativePassesItsContext proves that every cursor step gets the context
+// of the caller.
+func TestPageNativePassesItsContext(t *testing.T) {
+	type ctxKey struct{}
+	ctx := context.WithValue(context.Background(), ctxKey{}, "mine")
+	c := newFakeCursor(t, 3, nil)
+	err := pageNative(ctx, 2, c.next, c.current, c.fail, func([]query.Record) error { return nil })
+	require.NoError(t, err)
+	require.Len(t, c.ctxs, 4)
+	for _, got := range c.ctxs {
+		require.Equal(t, ctx, got)
+	}
 }

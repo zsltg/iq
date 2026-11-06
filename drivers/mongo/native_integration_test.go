@@ -101,3 +101,41 @@ func TestNativePutKeepsTheTypedIDIntegration(t *testing.T) {
 	}
 	require.ElementsMatch(t, []any{`{"$numberInt":"7"}`, `"8"`}, ids)
 }
+
+// TestNativeScanStopsOnACancelledContextIntegration proves that the find call
+// gets the context of the caller, so a cancelled context fails the find.
+func TestNativeScanStopsOnACancelledContextIntegration(t *testing.T) {
+	store := openIntegration(t, "native_cancel_find")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := store.NativeScan(ctx, func([]query.Record) error { return nil })
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "mongodb find: ")
+}
+
+// TestNativeScanStopsWhenTheContextIsCancelledIntegration cancels the context
+// after the first page. The scan must stop with the cancel error.
+func TestNativeScanStopsWhenTheContextIsCancelledIntegration(t *testing.T) {
+	store := openIntegration(t, "native_cancel_pages")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	require.NoError(t, store.Clear(ctx))
+	docs := make([]any, 25)
+	for i := range docs {
+		docs[i] = bson.D{{Key: "_id", Value: fmt.Sprintf("k%02d", i)}}
+	}
+	_, err := store.db.Collection(store.collection).InsertMany(ctx, docs)
+	require.NoError(t, err)
+	store.pageSize = 10
+
+	scanCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	calls := 0
+	err = store.NativeScan(scanCtx, func([]query.Record) error {
+		calls++
+		stop()
+		return nil
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 1, calls)
+}
