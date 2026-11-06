@@ -61,7 +61,7 @@ same contract:
   encoding contract. A `--typed` dump restores through `--insert` with these normalized values (see
   [Write data](write-data.md)). First, a normalized value can be plainer than the native type that
   it came from. For example, a DynamoDB binary value becomes a base64 string, and a DynamoDB set
-  becomes a list. DynamoDB and MongoDB sources have `--native`, which keeps the native type (see
+  becomes a list. DynamoDB, MongoDB and HBase sources have `--native`, which keeps the native type (see
   [Native form](write-data.md#native-form-native)). Second, JSON cannot hold a NaN or an infinite
   float, so `iq` turns it into a string and warns (see
   [Not-finite floats](output.md#not-finite-floats)).
@@ -776,7 +776,51 @@ text key `/w==` and the raw key `0xFF` both show as `/w==`. So a copy from HBase
 also reaches the wrong row for such a key. iq prints one warning on stderr at the end of
 a run that showed such a key. The MCP tools put it in the `note` field. `iq_schema` puts
 it in the `$comment` field of the schema. Declare `?keytype=bytes` on the source to read
-and address these keys exactly.
+and address these keys exactly. `--native` addresses them exactly too (see
+[Native form](#native-form)).
+
+### Native form
+
+`--native` reads each row as raw bytes in base64, and not as normalized JSON. The form is
+`hbase-raw`:
+
+```sh { title='Read the rows as raw bytes' }
+iq --native --src books '.[] | .cf'
+# {"dGl0bGU=":"RHVuZQ=="}
+```
+
+The record key is the base64 of the row key. The value is
+`{family: {base64(qualifier): base64(cell value)}}`. The family name stays text, because HBase
+family names are printable. The form is the only marker, so a cell has no tag. A filter sees base64
+text, so decode it with `@base64d` when you need to read a value.
+
+```sh { title='Copy a table with every byte kept' }
+iq --native --src books --insert books2
+```
+```sh { title='Back up a table, then restore it with every byte kept' }
+iq --native --typed --src books -o books.jsonl
+iq add file:///books.jsonl -n snap
+iq --src snap --insert books2
+```
+
+An HBase destination decodes the key, every qualifier and every value as strict base64 and writes
+the exact bytes. It refuses invalid base64, a family that is not an object, and a cell that is not a
+string. The error names the key and the cell. Every other destination refuses a raw record, and the
+error names the key and both forms.
+
+The rules of the raw form:
+
+- `--native` ignores `?types=` and `?keytype=`, because raw means raw. A non-UTF-8 row key, qualifier
+  or value keeps every byte.
+- A write keeps the merge rule of HBase. An upsert writes the cells that the record holds, and the
+  other cells of the row stay. `--replace` gives an exact copy.
+- Only the live HBase driver has the raw form. A raw dump restores into HBase, but no HBase dump
+  format exists for the file driver.
+- `iq` reads the latest version of each cell and keeps no timestamp, as a normal scan does. A
+  copy writes each cell with a new timestamp.
+- A read refuses a row over the cell limit, as a normal read does, and `--unbounded` lifts it.
+- `--native` does not push a predicate down. It works only with JSON and YAML output. The filter
+  must start with `.[]`.
 
 ### Pushdown
 
@@ -1278,7 +1322,7 @@ drive letter).
 
 | Format | Produced by | Notes |
 | --- | --- | --- |
-| Typed JSONL | `iq --src <s> --typed -o <file>` | iq's own dump. It holds the normalized values. With `--native` (DynamoDB and MongoDB only), each record also has a `form` field and keeps the native types |
+| Typed JSONL | `iq --src <s> --typed -o <file>` | iq's own dump. It holds the normalized values. With `--native` (DynamoDB, MongoDB and HBase only), each record also has a `form` field and keeps the native types |
 | Typed YAML | `iq --src <s> --typed -y -o <file>` | the same records as YAML documents, auto-detected by a `.yaml`/`.yml` name, else `?format=yaml` |
 | Redis RDB | `redis-cli --rdb`, `SAVE` | values match a live scan, RDB ≤ v12 (Redis ≤ 7.2) |
 | Mongo BSON | `mongodump` | single `.bson` file |

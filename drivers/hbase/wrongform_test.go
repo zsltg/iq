@@ -28,7 +28,7 @@ func TestPutRefusesANativeForm(t *testing.T) {
 			}
 			stat, err := (&Store{}).Put(context.Background(), batch, query.Upsert)
 			require.ErrorContains(t, err, "hbase: record \"typed\" has form \""+tt.form.String()+"\"")
-			require.ErrorContains(t, err, "accepts only form \"json\"")
+			require.ErrorContains(t, err, "accepts only forms \"json\" and \"hbase-raw\"")
 			require.Equal(t, query.WriteStat{}, stat)
 		})
 	}

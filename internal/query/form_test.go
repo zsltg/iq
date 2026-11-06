@@ -21,6 +21,7 @@ func TestFormNames(t *testing.T) {
 		{query.FormJSON, "json", ""},
 		{query.FormDynamoJSON, "dynamodb-json", "dynamodb-json"},
 		{query.FormMongoEJSON, "mongo-ejson", "mongo-ejson"},
+		{query.FormHBaseRaw, "hbase-raw", "hbase-raw"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -65,7 +66,7 @@ func TestFormStringOutOfRange(t *testing.T) {
 	require.Equal(t, "form(99)", query.Form(99).String())
 	require.Equal(t, "form(-1)", query.Form(-1).String())
 	// The first index past the names table must not panic.
-	require.Equal(t, "form(3)", query.Form(3).String())
+	require.Equal(t, "form(4)", query.Form(4).String())
 }
 
 func TestCheckForms(t *testing.T) {
