@@ -398,7 +398,7 @@ type mcpQueryInput struct {
 	Filter    string `json:"filter" jsonschema:"the jq filter to run; single top-level paths name the keys to fetch"`
 	Unbounded bool   `json:"unbounded,omitempty" jsonschema:"permit a filter that loads the whole keyspace into memory; ask the user first"`
 	Compile   *bool  `json:"compile,omitempty" jsonschema:"push select() conjuncts to the backend where it supports them; true by default, results are unchanged either way"`
-	Native    bool   `json:"native,omitempty" jsonschema:"read the items in the native form of the source driver (DynamoDB JSON, with type tags such as {\"N\": \"1.50\"}, or MongoDB canonical Extended JSON, such as {\"$numberInt\": \"7\"}) and not in normalized JSON. The filter must start with .[], and no predicate is pushed down"`
+	Native    bool   `json:"native,omitempty" jsonschema:"read the items in the native form of the source driver (DynamoDB JSON, with type tags such as {\"N\": \"1.50\"}, MongoDB canonical Extended JSON, such as {\"$numberInt\": \"7\"}, or HBase raw bytes in base64) and not in normalized JSON. The filter must start with .[], and no predicate is pushed down"`
 	MaxItems  int    `json:"max_items,omitempty" jsonschema:"cap the returned items; may only lower the server's own cap"`
 	MaxBytes  int    `json:"max_bytes,omitempty" jsonschema:"cap the encoded size of the returned items in bytes; may only lower the server's own cap"`
 	Timeout   string `json:"timeout,omitempty" jsonschema:"bound the call, a Go duration such as 10s; may only lower the server's own --timeout"`
@@ -894,7 +894,7 @@ type mcpInsertInput struct {
 	KeyField    string `json:"key_field,omitempty" jsonschema:"an object field to take the key from"`
 	KeyPrefix   string `json:"key_prefix,omitempty" jsonschema:"a string prepended to every written key"`
 	Type        string `json:"type,omitempty" jsonschema:"the native type stamped on a reshaped value, e.g. hash, list, json"`
-	Native      bool   `json:"native,omitempty" jsonschema:"read the items in the native form of the source driver (DynamoDB JSON or MongoDB Extended JSON) and not in normalized JSON. Only a DynamoDB or MongoDB source has one, and only a destination of the same dialect accepts it"`
+	Native      bool   `json:"native,omitempty" jsonschema:"read the items in the native form of the source driver (DynamoDB JSON, MongoDB Extended JSON or HBase raw bytes) and not in normalized JSON. Only a DynamoDB, MongoDB or HBase source has one, and only a destination of the same dialect accepts it"`
 	NoOverwrite *bool  `json:"no_overwrite,omitempty" jsonschema:"skip keys that already exist; true by default"`
 	Replace     bool   `json:"replace,omitempty" jsonschema:"empty the destination before writing; needs --allow destructive and a confirmation"`
 	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"report the effect without writing anything"`

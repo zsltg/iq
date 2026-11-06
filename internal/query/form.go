@@ -20,8 +20,11 @@ const (
 	// FormDynamoJSON is one DynamoDB JSON item, for example {"price": {"N": "1.50"}}.
 	FormDynamoJSON
 	// FormMongoEJSON is one canonical Extended JSON document, for example
-	// {"n": {"$numberInt": "7"}}. No driver reads or writes it yet.
+	// {"n": {"$numberInt": "7"}}.
 	FormMongoEJSON
+	// FormHBaseRaw is one HBase row as raw bytes in base64. The record key is the
+	// base64 of the row key. The value is {family: {base64(qualifier): base64(cell)}}.
+	FormHBaseRaw
 )
 
 // formNames maps each form to its name in a typed dump, in the order of the
@@ -30,6 +33,7 @@ var formNames = [...]string{
 	FormJSON:       "json",
 	FormDynamoJSON: "dynamodb-json",
 	FormMongoEJSON: "mongo-ejson",
+	FormHBaseRaw:   "hbase-raw",
 }
 
 // String returns the name of f as a typed dump spells it. An out-of-range form

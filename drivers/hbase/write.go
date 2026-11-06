@@ -11,7 +11,10 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// Put writes a batch of records into the table, keyed by row key. Upsert issues a
+// Put writes a batch of records into the table, keyed by row key. A record is in
+// normalized JSON or in the raw form (query.FormHBaseRaw), which writes the exact
+// bytes of the row key, the qualifiers, and the values. A record in any other form
+// is refused. Upsert issues a
 // plain Put, which HBase applies as an idempotent overwrite of the named cells.
 // InsertOnly issues an atomic CheckAndPut guarded on the absence of the first cell
 // of the row (the smallest family:qualifier). It counts a row whose guard cell
@@ -23,7 +26,7 @@ import (
 // insert from an overwrite, so an upsert pre-reads each row to report Overwritten.
 // See rowExists for the caveat.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
-	if err := query.CheckForms("hbase", query.FormJSON, batch); err != nil {
+	if err := query.CheckForms("hbase", s.WritesForm(), batch); err != nil {
 		return query.WriteStat{}, err
 	}
 	if s.table == "" {
@@ -69,6 +72,9 @@ const (
 // rowWrite encodes a record. It checks the value before the row key, so a bad value
 // wins over a bad key.
 func (s *Store) rowWrite(r query.Record) (rowWrite, error) {
+	if r.Form == query.FormHBaseRaw {
+		return rawWrite(r)
+	}
 	values, guardFamily, guardQualifier, err := s.columnsFor(r)
 	if err != nil {
 		return rowWrite{}, err

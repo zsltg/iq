@@ -363,7 +363,7 @@ Copy one source into another, keys preserved (a cross-driver copy carries values
 iq --src books --insert books2
 ```
 
-Create a typed dump (a DynamoDB or MongoDB source can add `--native` to keep every native type):
+Create a typed dump (a DynamoDB, MongoDB or HBase source can add `--native` to keep every native type):
 
 ```sh
 iq --src cache --typed -o dump.jsonl
@@ -483,9 +483,9 @@ driver.
   with a clear message instead of emulating it. For example, Redis has no `drop`.
 - **Values round-trip, with two limits.** Every value normalizes to JSON under a fixed encoding
   for each backend. A `--typed` dump restores through `--insert` with these normalized values.
-  First, a normalized value can be plainer than the native type that it came from. DynamoDB
-  and MongoDB sources have `--native`, which keeps the native type. Second, JSON cannot hold a NaN or an
-  infinite float, so `iq` turns it into a string and warns.
+  First, a normalized value can be plainer than the native type that it came from. DynamoDB,
+  MongoDB and HBase sources have `--native`, which keeps the native type. Second, JSON cannot hold
+  a NaN or an infinite float, so `iq` turns it into a string and warns.
 - **Bounded and redacted.** `--timeout` bounds every backend call. `iq` removes a URI's
   password from every listing, log line and error.
 - **Native commands.** `iq exec` sends a command in the backend's own language, such as CQL,
