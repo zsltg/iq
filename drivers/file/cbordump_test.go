@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/big"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -126,14 +127,30 @@ func TestEncodeRecordRefusesAnUnencodableValue(t *testing.T) {
 
 // TestCBORModeBuildersPanicOnBadOptions gives each mode builder an option value
 // outside its range. The builder stops with a panic that names the mode, so a
-// bad option list can never give a nil mode.
+// bad option list can never give a nil mode. The test checks our prefix and the
+// bad value. It does not pin the wording of the cbor library error.
 func TestCBORModeBuildersPanicOnBadOptions(t *testing.T) {
-	require.PanicsWithValue(t,
-		"file: build cbor enc mode: cbor: invalid SortMode 99",
-		func() { mustEncMode(cbor.EncOptions{Sort: 99}) })
-	require.PanicsWithValue(t,
-		"file: build cbor dec mode: cbor: invalid DupMapKey 99",
-		func() { mustDecMode(cbor.DecOptions{DupMapKey: 99}) })
+	tests := []struct {
+		name   string
+		prefix string
+		build  func()
+	}{
+		{"enc", "file: build cbor enc mode: ", func() { mustEncMode(cbor.EncOptions{Sort: 99}) }},
+		{"dec", "file: build cbor dec mode: ", func() { mustDecMode(cbor.DecOptions{DupMapKey: 99}) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got any
+			func() {
+				defer func() { got = recover() }()
+				tt.build()
+			}()
+			msg, ok := got.(string)
+			require.True(t, ok, "panic value must be a string, got %T", got)
+			require.True(t, strings.HasPrefix(msg, tt.prefix), "panic text: %q", msg)
+			require.Contains(t, msg, "99")
+		})
+	}
 }
 
 // TestCBORNestedLevelsLimitIsTheLibraryMaximum pins the claim in the comment on
