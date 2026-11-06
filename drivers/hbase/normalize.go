@@ -351,9 +351,8 @@ func rowKeyIrreversible(t colType, key []byte) bool {
 		return len(key) != 8
 	case ctBool:
 		return len(key) != 1
-	default:
-		return false
 	}
+	return false
 }
 
 // encodeRowKey reverses rowKeyString for a key that is valid UTF-8 and for a
