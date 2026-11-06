@@ -196,7 +196,8 @@ func rowRev(rows *kivik.ResultSet) string {
 // read-in _id/_rev, so the record key carries identity and the value does not.
 // The value must be a JSON object. A scalar is rejected rather than wrapped as
 // {value: ...}, so a successful Put round-trips exactly. A value that holds a
-// _deleted member is rejected too, whatever its value.
+// _deleted member is rejected too, whatever its value. So is a value that holds an
+// _attachments member.
 func documentBody(r query.Record) (map[string]any, error) {
 	obj, ok := r.Value.(map[string]any)
 	if !ok {
@@ -207,6 +208,9 @@ func documentBody(r query.Record) (map[string]any, error) {
 		return nil, fmt.Errorf(
 			"couchdb: key %q: the value holds _deleted, so CouchDB would delete the document or drop the member; use iq data delete to delete it",
 			r.Key)
+	}
+	if _, ok := obj["_attachments"]; ok {
+		return nil, fmt.Errorf("couchdb: key %q: %w", r.Key, errAttachments)
 	}
 	doc := map[string]any{}
 	for k, v := range obj {

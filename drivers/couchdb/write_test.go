@@ -82,6 +82,21 @@ func TestDocumentBody(t *testing.T) {
 			wantErr: `couchdb: key "k": the value holds _deleted`,
 		},
 		{
+			name:    "an _attachments member with inline data is refused",
+			record:  query.Record{Key: "k", Value: map[string]any{"_attachments": map[string]any{"a.txt": map[string]any{"content_type": "text/plain", "data": "aGk="}}}},
+			wantErr: `couchdb: key "k": the value holds _attachments, but iq does not copy attachments`,
+		},
+		{
+			name:    "an _attachments stub copied from a read is refused too",
+			record:  query.Record{Key: "k", Value: map[string]any{"_attachments": map[string]any{"a.txt": map[string]any{"stub": true, "length": 2.0}}}},
+			wantErr: `couchdb: key "k": the value holds _attachments`,
+		},
+		{
+			name:    "an empty _attachments member is refused because CouchDB drops it",
+			record:  query.Record{Key: "k", Value: map[string]any{"_attachments": map[string]any{}}},
+			wantErr: `couchdb: key "k": the value holds _attachments`,
+		},
+		{
 			name:    "an array value is rejected too",
 			record:  query.Record{Key: "k", Value: []any{1, 2}},
 			wantErr: "is not a JSON object",
@@ -125,4 +140,11 @@ func TestCurrentRevsForKeysEmptyShortCircuits(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, revs)
 	require.Empty(t, revs)
+}
+
+func TestDocumentBodyAttachmentsErrorWrapsSentinel(t *testing.T) {
+	_, err := documentBody(query.Record{Key: "k9", Value: map[string]any{"_attachments": map[string]any{}}})
+
+	require.ErrorIs(t, err, errAttachments)
+	require.ErrorContains(t, err, `key "k9"`)
 }

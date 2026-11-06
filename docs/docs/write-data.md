@@ -191,6 +191,9 @@ and the backend mints an identity. DynamoDB writes such a record as it is,
 including an `_id` attribute, and the item must hold the key attributes of the
 table.
 
+CouchDB refuses a value that holds a `_deleted` or `_attachments` member. A
+read returns an attachment as a stub, so iq does not copy attachments.
+
 A write flag used without `--insert` is an error, never silently ignored.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |

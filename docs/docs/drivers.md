@@ -374,6 +374,9 @@ change each invalid byte to U+FFFD. The error names the field path. A delete ref
 A write also refuses a value that holds a `_deleted` member, whatever its value.
 CouchDB would delete the document for `true` and drop the member for `false`.
 Use `iq data delete` to delete a document.
+A write also refuses a value that holds an `_attachments` member. CouchDB would create a real
+attachment from inline `data`, and a read returns a stub, so the stored value would differ from the
+one supplied. A stub that a read returned cannot be written back either. iq does not copy attachments.
 
 ### Pushdown
 
