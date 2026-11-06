@@ -364,7 +364,7 @@ func (p *printer) tryTerm(e *gojq.Try) {
 
 // reduceTerm prints `reduce src as pat (init; update)`.
 func (p *printer) reduceTerm(e *gojq.Reduce) {
-	p.accumulator("reduce", e.Query, e.Pattern, e.Start, e.Update)
+	p.accumulator("reduce", e.Query, e.Patterns, e.Start, e.Update)
 }
 
 // foreachTerm prints `foreach src as pat (init; update[; extract])`.
@@ -373,20 +373,17 @@ func (p *printer) foreachTerm(e *gojq.Foreach) {
 	if e.Extract != nil {
 		clauses = append(clauses, e.Extract)
 	}
-	p.accumulator("foreach", e.Query, e.Pattern, clauses...)
+	p.accumulator("foreach", e.Query, e.Patterns, clauses...)
 }
 
 // accumulator prints the shared `<kw> src as pat (clause; clause[; clause])` shape
-// of reduce and foreach, with the parenthesized clauses broken onto indented lines
+// of reduce and foreach, where pat is one pattern or several joined by `?//`, with the parenthesized clauses broken onto indented lines
 // when any of them is itself multi-line.
-func (p *printer) accumulator(kw string, src *gojq.Query, pat *gojq.Pattern, clauses ...*gojq.Query) {
+func (p *printer) accumulator(kw string, src *gojq.Query, pats []*gojq.Pattern, clauses ...*gojq.Query) {
 	p.tok(roleKeyword, kw)
 	p.space()
 	p.query(src)
-	p.space()
-	p.tok(roleKeyword, "as")
-	p.space()
-	p.tok(rolePath, pat.String())
+	p.bindings(pats)
 	p.space()
 	p.parenClauses(clauses...)
 }

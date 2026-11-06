@@ -41,9 +41,7 @@ func queryChildren(q *gojq.Query) []*gojq.Query {
 	for _, d := range q.FuncDefs {
 		qs = append(qs, d.Body)
 	}
-	for _, p := range q.Patterns {
-		qs = append(qs, patternQueries(p)...)
-	}
+	qs = append(qs, patternListQueries(q.Patterns)...)
 	return append(qs, termQueries(q.Term)...)
 }
 
@@ -113,11 +111,11 @@ func flowQueries(t *gojq.Term) []*gojq.Query {
 	}
 	if t.Reduce != nil {
 		qs = append(qs, t.Reduce.Query, t.Reduce.Start, t.Reduce.Update)
-		qs = append(qs, patternQueries(t.Reduce.Pattern)...)
+		qs = append(qs, patternListQueries(t.Reduce.Patterns)...)
 	}
 	if t.Foreach != nil {
 		qs = append(qs, t.Foreach.Query, t.Foreach.Start, t.Foreach.Update, t.Foreach.Extract)
-		qs = append(qs, patternQueries(t.Foreach.Pattern)...)
+		qs = append(qs, patternListQueries(t.Foreach.Patterns)...)
 	}
 	if t.Label != nil {
 		qs = append(qs, t.Label.Body)
@@ -153,6 +151,16 @@ func indexQueries(idx *gojq.Index) []*gojq.Query {
 		return nil
 	}
 	return append([]*gojq.Query{idx.Start, idx.End}, stringQueries(idx.Str)...)
+}
+
+// patternListQueries returns the queries inside every pattern of ps, the
+// alternatives of a `?//` list.
+func patternListQueries(ps []*gojq.Pattern) []*gojq.Query {
+	var qs []*gojq.Query
+	for _, p := range ps {
+		qs = append(qs, patternQueries(p)...)
+	}
+	return qs
 }
 
 // patternQueries returns the queries inside a destructuring pattern, which are

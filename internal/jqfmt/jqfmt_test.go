@@ -47,6 +47,8 @@ func TestFormatRoundTrip(t *testing.T) {
 		`try (.a | .b) catch "err"`,
 		`reduce .[] as $x (0; . + $x)`,
 		`foreach .[] as $x (0; . + $x; .)`,
+		`reduce .[] as [$a] ?// $a (0; . + $a)`,
+		`foreach .[] as [$a] ?// $a (0; . + $a; .)`,
 		`.a as $x | $x + 1`,
 		`[.[] | . * 2]`,
 		`.foo | @base64`,
@@ -61,6 +63,43 @@ func TestFormatRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, canonical(t, src), canonical(t, out),
 				"pretty output must re-parse to the same query\n--- pretty ---\n%s", out)
+		})
+	}
+}
+
+// TestFormatAccumulatorPatterns pins the exact output of reduce and foreach with one
+// pattern and with several patterns joined by ?//. The output must parse to the same
+// number of patterns.
+func TestFormatAccumulatorPatterns(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+		pats int
+	}{
+		{"reduce one pattern", `reduce .[] as [$a] (0; . + $a)`, "reduce .[] as [$a] (0; . + $a)", 1},
+		{"reduce two patterns", `reduce .[] as [$a] ?// $a (0; . + $a)`, "reduce .[] as [$a] ?// $a (0; . + $a)", 2},
+		{"reduce three patterns", `reduce .[] as [$a] ?// {a: $a} ?// $a (0; . + $a)`, "reduce .[] as [$a] ?// {a: $a} ?// $a (0; . + $a)", 3},
+		{"reduce patterns with a broken update", `reduce .[] as [$a] ?// $a (0; .a|.b)`, "reduce .[] as [$a] ?// $a (\n  0;\n  .a\n  | .b\n)", 2},
+		{"foreach one pattern", `foreach .[] as [$a] (0; . + $a; .)`, "foreach .[] as [$a] (0; . + $a; .)", 1},
+		{"foreach two patterns", `foreach .[] as [$a] ?// $a (0; . + $a; .)`, "foreach .[] as [$a] ?// $a (0; . + $a; .)", 2},
+		{"foreach patterns without extract", `foreach .[] as [$a] ?// $a (0; . + $a)`, "foreach .[] as [$a] ?// $a (0; . + $a)", 2},
+		{"foreach patterns with a broken update", `foreach .[] as [$a] ?// $a (0; .a|.b; .c)`, "foreach .[] as [$a] ?// $a (\n  0;\n  .a\n  | .b;\n  .c\n)", 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := Format(tt.src, false)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, out)
+
+			q, err := gojq.Parse(out)
+			require.NoError(t, err)
+			term := q.Term
+			if term.Reduce != nil {
+				require.Len(t, term.Reduce.Patterns, tt.pats)
+			} else {
+				require.Len(t, term.Foreach.Patterns, tt.pats)
+			}
 		})
 	}
 }
