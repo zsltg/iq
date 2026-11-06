@@ -47,41 +47,62 @@ func (s *Store) NativeScan(ctx context.Context, fn func(batch []query.Record) er
 // in pages of size records. cursorErr reports the error that ended the read. It
 // takes the parts of a cursor as functions, so a test can run it without a server.
 func pageNative(ctx context.Context, size int, next func(context.Context) bool, current func() bson.Raw, cursorErr func() error, fn func(batch []query.Record) error) error {
-	page := make([]query.Record, 0, size)
+	pager := &nativePager{size: size, fn: fn}
 	for next(ctx) {
 		// The cursor reuses the buffer of Current, so the encoder copies what it keeps.
 		rec, err := NativeRecord(current())
 		if err != nil {
 			return err
 		}
-		page = append(page, rec)
-		if len(page) >= size {
-			if err := fn(page); err != nil {
-				return err
-			}
-			page = make([]query.Record, 0, size)
+		if err := pager.add(rec); err != nil {
+			return err
 		}
 	}
 	if err := cursorErr(); err != nil {
 		return fmt.Errorf("mongodb cursor: %w", selectionCause(err))
 	}
-	if len(page) > 0 {
-		return fn(page)
+	return pager.flush()
+}
+
+// nativePager collects records and hands them to fn in pages of size records. It
+// starts a new slice for each page, so fn can keep the page that it gets.
+type nativePager struct {
+	size int
+	fn   func(batch []query.Record) error
+	page []query.Record
+}
+
+// add appends rec and hands the page to fn when the page is full.
+func (p *nativePager) add(rec query.Record) error {
+	p.page = append(p.page, rec)
+	if len(p.page) < p.size {
+		return nil
 	}
-	return nil
+	page := p.page
+	p.page = nil
+	return p.fn(page)
+}
+
+// flush hands the last, partial page to fn.
+func (p *nativePager) flush() error {
+	if len(p.page) == 0 {
+		return nil
+	}
+	return p.fn(p.page)
 }
 
 // NativeRecord turns one raw BSON document into a record in the native form. The
-// key is the _id as KeyOf renders it. NativeRecord is exported so a dump reader
+// key is the _id as KeyOf renders it, or empty when the document has no _id. NativeRecord is exported so a dump reader
 // builds the same record as a live scan.
 func NativeRecord(doc bson.Raw) (query.Record, error) {
-	var id any
+	key := ""
 	if rv := doc.Lookup("_id"); rv.Type != 0 {
+		var id any
 		if err := rv.Unmarshal(&id); err != nil {
 			return query.Record{}, fmt.Errorf("mongodb decode: _id: %w", err)
 		}
+		key = KeyOf(id)
 	}
-	key := KeyOf(id)
 	text, err := bson.MarshalExtJSON(doc, true, false)
 	if err != nil {
 		return query.Record{}, fmt.Errorf("mongodb: document %q: encode extended json: %w", key, err)

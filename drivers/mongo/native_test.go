@@ -209,7 +209,7 @@ func TestNativeRecordOfAnInvalidDocument(t *testing.T) {
 		doc  bson.Raw
 		key  string
 	}{
-		{"too short", bson.Raw{1, 2, 3}, "<nil>"},
+		{"too short", bson.Raw{1, 2, 3}, ""},
 		{"cut off", good[:len(good)-2], "a"},
 	}
 	for _, tt := range tests {
@@ -228,7 +228,8 @@ func TestNativeRecordKeyOfOddIDs(t *testing.T) {
 		want string
 	}{
 		{"double id", bson.D{{Key: "_id", Value: 1.5}}, "1.5"},
-		{"no id", bson.D{{Key: "a", Value: "b"}}, "<nil>"},
+		{"no id", bson.D{{Key: "a", Value: "b"}}, ""},
+		{"null id", bson.D{{Key: "_id", Value: nil}}, "<nil>"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -358,4 +359,37 @@ func TestPageNativePassesItsContext(t *testing.T) {
 	for _, got := range c.ctxs {
 		require.Equal(t, ctx, got)
 	}
+}
+
+// TestNativeRecordRefusesACorruptID proves that an _id that cannot decode is an
+// error. The _id is an embedded document whose string has a length that runs past
+// its end.
+func TestNativeRecordRefusesACorruptID(t *testing.T) {
+	sub := []byte{12, 0, 0, 0, 2, 'a', 0, 99, 0, 0, 0, 0}
+	doc := append([]byte{0, 0, 0, 0, 3, '_', 'i', 'd', 0}, sub...)
+	doc = append(doc, 0)
+	doc[0] = byte(len(doc))
+	_, err := NativeRecord(bson.Raw(doc))
+	require.ErrorContains(t, err, "mongodb decode: _id: ")
+	require.Error(t, errors.Unwrap(err), "the error must wrap its cause")
+}
+
+// TestNativeRecordsWithoutIDGetNoKey proves that documents without an _id have an
+// empty key, so a write inserts each one and no document replaces another.
+func TestNativeRecordsWithoutIDGetNoKey(t *testing.T) {
+	var docs []bson.D
+	for _, v := range []string{"a", "b"} {
+		docs = append(docs, bson.D{{Key: "v", Value: v}})
+	}
+	var written []bson.D
+	for _, d := range docs {
+		rec, err := NativeRecord(nativeRaw(t, d))
+		require.NoError(t, err)
+		require.Empty(t, rec.Key)
+		doc, id, err := nativeDocument(rec)
+		require.NoError(t, err)
+		require.Nil(t, id)
+		written = append(written, doc)
+	}
+	require.Equal(t, docs, written)
 }

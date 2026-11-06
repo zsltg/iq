@@ -342,3 +342,32 @@ func TestNativeFormOfEachFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeScanOfDocumentsWithoutIDHasEmptyKeys(t *testing.T) {
+	var bsonDump []byte
+	for _, v := range []string{"a", "b"} {
+		b, err := bson.Marshal(bson.D{{Key: "v", Value: v}})
+		require.NoError(t, err)
+		bsonDump = append(bsonDump, b...)
+	}
+	tests := []struct {
+		name  string
+		file  string
+		dump  []byte
+		query string
+	}{
+		{"bson", "m.bson", bsonDump, ""},
+		{"mongoexport", "m.json", []byte(`{"v":"a"}` + "\n" + `{"v":"b"}` + "\n"), "format=mongoexport"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, err := Open(writeDump(t, tt.file, tt.dump, tt.query), numfmt.DecimalAuto, CacheConfig{})
+			require.NoError(t, err)
+			recs := nativeScan(t, st)
+			require.Len(t, recs, 2)
+			for _, r := range recs {
+				require.Empty(t, r.Key)
+			}
+		})
+	}
+}

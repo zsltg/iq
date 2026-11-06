@@ -139,3 +139,26 @@ func TestNativeScanStopsWhenTheContextIsCancelledIntegration(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, 1, calls)
 }
+
+// TestNativeCopyOfDocumentsWithoutIDIntegration proves that documents without an
+// _id write as separate documents.
+func TestNativeCopyOfDocumentsWithoutIDIntegration(t *testing.T) {
+	store := openIntegration(t, "native_noid")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	require.NoError(t, store.Clear(ctx))
+	var recs []query.Record
+	for _, v := range []string{"a", "b"} {
+		raw, err := bson.Marshal(bson.D{{Key: "v", Value: v}})
+		require.NoError(t, err)
+		rec, err := NativeRecord(raw)
+		require.NoError(t, err)
+		recs = append(recs, rec)
+	}
+	stat, err := store.Put(ctx, recs, query.Upsert)
+	require.NoError(t, err)
+	require.Equal(t, 2, stat.Written)
+	n, err := store.db.Collection(store.collection).CountDocuments(ctx, bson.M{})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, n)
+}

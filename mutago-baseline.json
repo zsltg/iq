@@ -2642,12 +2642,6 @@
    "line": 41
   },
   {
-   "id": "d1af5623cd76319ae5693461656a0dbb",
-   "file": "drivers/mongo/native.go",
-   "mutator": "expression/error-guard",
-   "line": 80
-  },
-  {
    "id": "dd8667b3bbd847df4470be71e60ec8ba",
    "file": "drivers/mongo/native.go",
    "mutator": "expression/error-guard",
