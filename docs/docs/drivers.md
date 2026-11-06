@@ -61,7 +61,7 @@ same contract:
   encoding contract. A `--typed` dump restores through `--insert` with these normalized values (see
   [Write data](write-data.md)). First, a normalized value can be plainer than the native type that
   it came from. For example, a DynamoDB binary value becomes a base64 string, and a DynamoDB set
-  becomes a list. DynamoDB sources have `--native`, which keeps the native type (see
+  becomes a list. DynamoDB and MongoDB sources have `--native`, which keeps the native type (see
   [Native form](write-data.md#native-form-native)). Second, JSON cannot hold a NaN or an infinite
   float, so `iq` turns it into a string and warns (see
   [Not-finite floats](output.md#not-finite-floats)).
@@ -859,6 +859,44 @@ the same rules everywhere:
 - Nested documents and arrays are preserved.
 
 A missing `_id` reads as `null`.
+
+### Native form
+
+`--native` reads each document as canonical Extended JSON, the typed form of MongoDB, and not as
+normalized JSON. Every BSON type that JSON cannot hold has a tagged form:
+
+```sh { title='Read the documents with their BSON types' }
+iq --native --src books '.[] | .year' --jsonl
+# {"$numberInt":"2020"}
+```
+
+An `int32` stays apart from an `int64`. A date, a `Decimal128`, an `ObjectID` outside `_id`,
+binary data, a timestamp, a regular expression, and `MinKey` and `MaxKey` keep their types. The
+filter sees the tags, so write `.year["$numberInt"]` and not `.year`. A MongoDB source, a
+FerretDB source, a `mongoexport` file, and a `mongodump` BSON file all have the native form.
+
+```sh { title='Copy a collection with every type kept' }
+iq --native --src books --insert books2
+```
+```sh { title='Back up a collection, then restore it with every type kept' }
+iq --native --typed --src books -o books.jsonl
+iq add file:///books.jsonl -n snap
+iq --src snap --insert books2
+```
+
+A native record carries the form `mongo-ejson`, and a `--typed` dump holds it in a `form` field.
+A MongoDB destination reads the value strictly as canonical Extended JSON. It refuses a malformed
+tag, and the error names the key. The `_id` keeps its type, for example `{"$numberInt": "7"}`, when
+its display form equals the key of the record. Otherwise the key wins, as for a normalized record.
+Every other destination refuses a native record, and the error names the key and both forms. A jq
+filter on a native copy must keep the tags.
+
+`--native` does not push a predicate down, because the pushdown matches the normalized shape of a
+value. `iq` scans the whole collection and runs the filter on the client. A native read cannot
+fetch a named key, so write the filter as `.[] | select(...)`. `--explain` shows this. `--native`
+works only with JSON and YAML output (`--json`, `--jsona`, `--jsonl`, `--yaml`), because the other
+renderings flatten the tags. The order of the fields of a document is not kept.
+
 The `--unbounded` / streaming rules are identical to every backend (`.[]`-rooted filters stream a cursor
 in constant memory, `keys`/`.`/`map` materialize and require the flag).
 
@@ -1240,7 +1278,7 @@ drive letter).
 
 | Format | Produced by | Notes |
 | --- | --- | --- |
-| Typed JSONL | `iq --src <s> --typed -o <file>` | iq's own dump. It holds the normalized values. With `--native` (DynamoDB only), each record also has a `form` field and keeps the native types |
+| Typed JSONL | `iq --src <s> --typed -o <file>` | iq's own dump. It holds the normalized values. With `--native` (DynamoDB and MongoDB only), each record also has a `form` field and keeps the native types |
 | Typed YAML | `iq --src <s> --typed -y -o <file>` | the same records as YAML documents, auto-detected by a `.yaml`/`.yml` name, else `?format=yaml` |
 | Redis RDB | `redis-cli --rdb`, `SAVE` | values match a live scan, RDB ≤ v12 (Redis ≤ 7.2) |
 | Mongo BSON | `mongodump` | single `.bson` file |

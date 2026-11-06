@@ -18,7 +18,7 @@ preserved). Iteration over the source is implicit, so you do not write `.[]`.
 | --- | --- | --- | --- |
 | | `--insert <source>` | ✗ | write each item into this destination source (copy/restore/import) instead of rendering |
 | | `--typed` | ✗ | emit typed `{"key":…, "type":…, "value":…}` records, a re-importable dump (needed for Redis, a document store's plain output already restores) |
-| | `--native` | ✗ | read each item in the native form of the source (DynamoDB JSON). Needs a DynamoDB source. See [Native form](#native-form-native) |
+| | `--native` | ✗ | read each item in the native form of the source (DynamoDB JSON or MongoDB Extended JSON). Needs a DynamoDB or MongoDB source. See [Native form](#native-form-native) |
 
 ```sh { title='Source → Source, key/id preserving' }
 iq --src books --insert books2
@@ -104,10 +104,13 @@ number or a bool as its text, and a set keeps one copy of each member.
 
 A normalized value can be plainer than the native type that it came from. A DynamoDB
 fractional number reads as an exact string, a binary value as base64 text, and a set as a list.
-A copy into DynamoDB then writes an `S` or an `L`. The copy does not restore the type.
+A copy into DynamoDB then writes an `S` or an `L`. A MongoDB `int32` reads as a number
+and writes back as an `int64`, and a date or a `Decimal128` writes back as a string. The copy does
+not restore the type.
 
-`--native` reads each item in the typed JSON form of its driver instead. Today, only DynamoDB has
-one: DynamoDB JSON, for example `{"price": {"N": "1.50"}}`. Each record carries its form. A
+`--native` reads each item in the typed JSON form of its driver instead. Today, DynamoDB and
+MongoDB have one. DynamoDB JSON looks like `{"price": {"N": "1.50"}}`. MongoDB canonical Extended
+JSON looks like `{"year": {"$numberInt": "2020"}}`. Each record carries its form. A
 `--typed` dump holds it in an optional `form` field, for example
 `{"key":"a","type":"item","form":"dynamodb-json","value":{…}}`. A dump of normalized records has
 no `form` field, so old dumps read as before. A reader refuses a form that it does not know.
@@ -119,6 +122,10 @@ iq --native --src books --insert books2
 iq --native --typed --src books -o books.jsonl
 iq --native --typed --src 'file:///export.json.gz?format=dynamodb-json&keys=pk' -o books.jsonl
 ```
+```sh { title='MongoDB to MongoDB, every type kept' }
+iq --native --src mbooks --insert mbooks2
+iq --native --typed --src mbooks -o mbooks.jsonl
+```
 ```sh { title='Query with the type tags' }
 iq --native --src books '.[] | select(.price.N == "1.50") | .title.S'
 ```
@@ -127,7 +134,9 @@ The rules of `--native`:
 
 - Only the destination that owns the form can write it. A DynamoDB destination reads a native
   record strictly and refuses a malformed type tag, a number that it cannot store exactly, or an
-  empty set. Any other destination refuses the record, and the error names the key and both
+  empty set. A MongoDB destination reads a native record as canonical Extended JSON and refuses a
+  malformed tag. It keeps the type of `_id` when the display form of `_id` equals the key. Any
+  other destination refuses the record, and the error names the key and both
   forms. A record in normalized JSON still goes to every destination.
 - A jq filter sees the typed form, so a filter that edits a value must keep the tags. A filter
   that breaks a tag makes the destination refuse the record.

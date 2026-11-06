@@ -158,15 +158,17 @@ Disable pushdown.
 ## Native form `--native`
 
 Read each item in the native form of the source driver instead of normalized JSON.
-Only DynamoDB has a native form today: DynamoDB JSON, where every attribute value has a type
-tag, for example `{"price": {"N": "1.50"}}`.
+DynamoDB and MongoDB have a native form today. DynamoDB JSON gives every attribute value a type
+tag, for example `{"price": {"N": "1.50"}}`. MongoDB canonical Extended JSON tags each BSON type,
+for example `{"year": {"$numberInt": "2020"}}`.
 
 | short :material-flag-outline: | long :material-flag-outline: | default | description |
 | --- | --- | --- | --- |
-| | `--native` | ✗ | read items in the native form of the source (DynamoDB JSON). No predicate is pushed down, and the filter must start with `.[]` |
+| | `--native` | ✗ | read items in the native form of the source (DynamoDB JSON or MongoDB Extended JSON). No predicate is pushed down, and the filter must start with `.[]` |
 
-```sh { title='Read DynamoDB items with their types' }
+```sh { title='Read DynamoDB and MongoDB items with their types' }
 iq --native --src books '.[] | select(.year.N == "2020") | .price'
+iq --native --src mbooks '.[] | select(.year["$numberInt"] == "2020") | .title'
 ```
 
 The filter sees the tags, so it reads `.year.N` and not `.year`. `iq` scans the whole table and runs

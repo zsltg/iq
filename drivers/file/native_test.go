@@ -11,6 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/v2/bson"
 
 	iqddb "github.com/zsltg/iq/drivers/dynamodb"
 	"github.com/zsltg/iq/internal/numfmt"
@@ -108,7 +109,7 @@ func TestNativeScanRefusesOtherFormats(t *testing.T) {
 		query   string
 	}{
 		{"typed jsonl", "d.jsonl", `{"key":"a","type":"string","value":"x"}` + "\n", ""},
-		{"mongoexport", "m.json", `{"_id":"a"}` + "\n", "format=mongoexport"},
+		{"typed yaml", "d.yaml", "key: a\ntype: string\nvalue: x\n", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -221,4 +222,152 @@ func TestDynamoItemsStopsOnABuildError(t *testing.T) {
 	err = src(context.Background(), func([]query.Record) error { called = true; return nil })
 	require.ErrorIs(t, err, boom)
 	require.False(t, called)
+}
+
+// mongoNativeExport is mongoexport output in relaxed Extended JSON.
+const mongoNativeExport = `{"_id":{"$oid":"650000000000000000000001"},"n":7,"d":{"$date":"2023-11-14T22:13:20Z"},"big":{"$numberLong":"9007199254740993"},"price":{"$numberDecimal":"1.50"},"none":null}
+{"_id":2,"s":"x"}
+`
+
+func TestNativeScanOfAMongoexportDump(t *testing.T) {
+	st, err := Open(writeDump(t, "m.json", []byte(mongoNativeExport), "format=mongoexport"), numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	require.Equal(t, query.FormMongoEJSON, st.NativeForm())
+
+	recs := nativeScan(t, st)
+	require.Equal(t, []query.Record{
+		{Key: "650000000000000000000001", Type: "document", Form: query.FormMongoEJSON, Value: map[string]any{
+			"_id":   map[string]any{"$oid": "650000000000000000000001"},
+			"n":     map[string]any{"$numberInt": "7"},
+			"d":     map[string]any{"$date": map[string]any{"$numberLong": "1700000000000"}},
+			"big":   map[string]any{"$numberLong": "9007199254740993"},
+			"price": map[string]any{"$numberDecimal": "1.50"},
+			"none":  nil,
+		}},
+		{Key: "2", Type: "document", Form: query.FormMongoEJSON, Value: map[string]any{
+			"_id": map[string]any{"$numberInt": "2"}, "s": "x",
+		}},
+	}, recs)
+}
+
+func TestNativeScanOfAMongoexportArray(t *testing.T) {
+	content := `[{"_id":"a","n":{"$numberLong":"5"}},{"_id":"b"}]`
+	st, err := Open(writeDump(t, "m.json", []byte(content), "format=mongoexport"), numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	recs := nativeScan(t, st)
+	require.Len(t, recs, 2)
+	require.Equal(t, map[string]any{"$numberLong": "5"}, recs[0].Value.(map[string]any)["n"])
+}
+
+func TestNativeScanOfABSONDump(t *testing.T) {
+	dec, err := bson.ParseDecimal128("1.50")
+	require.NoError(t, err)
+	var dump []byte
+	for _, doc := range []bson.D{
+		{{Key: "_id", Value: int32(7)}, {Key: "a", Value: int32(1)}, {Key: "b", Value: int64(2)}, {Key: "c", Value: dec}},
+		{{Key: "_id", Value: "s"}, {Key: "bin", Value: bson.Binary{Data: []byte{0, 1, 255}}}},
+	} {
+		b, err := bson.Marshal(doc)
+		require.NoError(t, err)
+		dump = append(dump, b...)
+	}
+	st, err := Open(writeDump(t, "m.bson", dump, ""), numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	require.Equal(t, query.FormMongoEJSON, st.NativeForm())
+
+	recs := nativeScan(t, st)
+	require.Equal(t, []query.Record{
+		{Key: "7", Type: "document", Form: query.FormMongoEJSON, Value: map[string]any{
+			"_id": map[string]any{"$numberInt": "7"},
+			"a":   map[string]any{"$numberInt": "1"},
+			"b":   map[string]any{"$numberLong": "2"},
+			"c":   map[string]any{"$numberDecimal": "1.50"},
+		}},
+		{Key: "s", Type: "document", Form: query.FormMongoEJSON, Value: map[string]any{
+			"_id": "s",
+			"bin": map[string]any{"$binary": map[string]any{"base64": "AAH/", "subType": "00"}},
+		}},
+	}, recs)
+}
+
+func TestNativeScanOfAMongoDumpKeyMatchesTheTypedScanKey(t *testing.T) {
+	content := `{"_id":{"$oid":"650000000000000000000001"},"n":7}` + "\n" + `{"_id":2}` + "\n"
+	st, err := Open(writeDump(t, "m.json", []byte(content), "format=mongoexport"), numfmt.DecimalAuto, CacheConfig{})
+	require.NoError(t, err)
+	typed := collect(t, st)
+	for _, r := range nativeScan(t, st) {
+		require.Contains(t, typed, r.Key)
+	}
+}
+
+func TestNativeScanOfAMongoDumpReportsABadDocument(t *testing.T) {
+	tests := []struct {
+		name    string
+		file    string
+		content []byte
+		query   string
+		wantErr string
+		wraps   bool
+	}{
+		{"mongoexport tag", "m.json", []byte(`{"_id":{"$oid":"zz"}}` + "\n"), "format=mongoexport", "decode extended json document: ", true},
+		{"bson frame", "m.bson", []byte{1, 0, 0, 0}, "", "invalid bson document length", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, err := Open(writeDump(t, tt.file, tt.content, tt.query), numfmt.DecimalAuto, CacheConfig{})
+			require.NoError(t, err)
+			err = st.NativeScan(context.Background(), func([]query.Record) error { return nil })
+			require.ErrorContains(t, err, tt.wantErr)
+			if tt.wraps {
+				require.Error(t, errors.Unwrap(err), "the error must wrap its cause")
+			}
+		})
+	}
+}
+
+func TestNativeFormOfEachFormat(t *testing.T) {
+	tests := []struct {
+		format Format
+		want   query.Form
+	}{
+		{FormatDynamoDBJSON, query.FormDynamoJSON},
+		{FormatMongoexport, query.FormMongoEJSON},
+		{FormatBSON, query.FormMongoEJSON},
+		{FormatJSONL, query.FormJSON},
+		{FormatRDB, query.FormJSON},
+	}
+	for _, tt := range tests {
+		t.Run(tt.format.String(), func(t *testing.T) {
+			require.Equal(t, tt.want, (&Store{format: tt.format}).NativeForm())
+		})
+	}
+}
+
+func TestNativeScanOfDocumentsWithoutIDHasEmptyKeys(t *testing.T) {
+	var bsonDump []byte
+	for _, v := range []string{"a", "b"} {
+		b, err := bson.Marshal(bson.D{{Key: "v", Value: v}})
+		require.NoError(t, err)
+		bsonDump = append(bsonDump, b...)
+	}
+	tests := []struct {
+		name  string
+		file  string
+		dump  []byte
+		query string
+	}{
+		{"bson", "m.bson", bsonDump, ""},
+		{"mongoexport", "m.json", []byte(`{"v":"a"}` + "\n" + `{"v":"b"}` + "\n"), "format=mongoexport"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, err := Open(writeDump(t, tt.file, tt.dump, tt.query), numfmt.DecimalAuto, CacheConfig{})
+			require.NoError(t, err)
+			recs := nativeScan(t, st)
+			require.Len(t, recs, 2)
+			for _, r := range recs {
+				require.Empty(t, r.Key)
+			}
+		})
+	}
 }

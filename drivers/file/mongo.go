@@ -20,6 +20,23 @@ import (
 // and normalized to the exact shape a live collection scan produces (see
 // drivers/mongo), keyed by its _id.
 func bsonSource(r io.Reader, size int, dec numfmt.DecimalMode) query.RecordSource {
+	return bsonDocs(r, size, func(ctx context.Context, doc []byte) (query.Record, error) {
+		return recordForBSON(ctx, doc, dec)
+	})
+}
+
+// bsonNativeSource streams the same dump as bsonSource, but each record keeps the
+// canonical Extended JSON form of its document (query.FormMongoEJSON). It skips
+// Normalize, so every BSON type stays apart. The key is the same as in bsonSource.
+func bsonNativeSource(r io.Reader, size int) query.RecordSource {
+	return bsonDocs(r, size, func(_ context.Context, doc []byte) (query.Record, error) {
+		return iqmongo.NativeRecord(bson.Raw(doc))
+	})
+}
+
+// bsonDocs streams the framed documents of a mongodump file in pages. build turns
+// each raw document into the record of the caller.
+func bsonDocs(r io.Reader, size int, build func(context.Context, []byte) (query.Record, error)) query.RecordSource {
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
 		br := bufio.NewReader(r)
 		page := make([]query.Record, 0, size)
@@ -47,7 +64,7 @@ func bsonSource(r io.Reader, size int, dec numfmt.DecimalMode) query.RecordSourc
 			if _, err := io.ReadFull(br, doc[4:]); err != nil {
 				return fmt.Errorf("read bson document: %w", err)
 			}
-			rec, err := recordForBSON(ctx, doc, dec)
+			rec, err := build(ctx, doc)
 			if err != nil {
 				return err
 			}
@@ -75,6 +92,22 @@ func extJSONSource(r io.Reader, size int, dec numfmt.DecimalMode) query.RecordSo
 
 // extJSONSourceCap is extJSONSource with a limit on the size of one document.
 func extJSONSourceCap(src capped, size int, dec numfmt.DecimalMode) query.RecordSource {
+	return extJSONDocs(src, size, func(ctx context.Context, raw json.RawMessage) (query.Record, error) {
+		return recordForExtJSON(ctx, raw, dec)
+	})
+}
+
+// extJSONNativeSource streams the same dump as extJSONSource, but each record keeps
+// the canonical Extended JSON form of its document (query.FormMongoEJSON). A
+// dump in relaxed Extended JSON is read and written back in canonical form, so the
+// types are exact. The key is the same as in extJSONSource.
+func extJSONNativeSource(r io.Reader, size int) query.RecordSource {
+	return extJSONDocs(capped{r, query.MaxRecordBytes}, size, nativeRecordForExtJSON)
+}
+
+// extJSONDocs streams the documents of a mongoexport dump in pages. build turns
+// each raw document into the record of the caller.
+func extJSONDocs(src capped, size int, build func(context.Context, json.RawMessage) (query.Record, error)) query.RecordSource {
 	return func(ctx context.Context, fn func(batch []query.Record) error) error {
 		st, ok, err := openJSONStream(src, "mongoexport json", "read mongoexport array")
 		if err != nil {
@@ -96,7 +129,7 @@ func extJSONSourceCap(src capped, size int, dec numfmt.DecimalMode) query.Record
 			if !more {
 				break
 			}
-			rec, err := recordForExtJSON(ctx, raw, dec)
+			rec, err := build(ctx, raw)
 			if err != nil {
 				return err
 			}
@@ -158,4 +191,16 @@ func recordForDoc(ctx context.Context, doc bson.M, dec numfmt.DecimalMode) query
 	val := iqmongo.Normalize(doc, dec, h)
 	query.NoteNonFinite(ctx, key, h.Fields...)
 	return query.Record{Key: key, Type: "document", Value: val}
+}
+
+// nativeRecordForExtJSON decodes one Extended JSON document, in relaxed or
+// canonical form, into a record in the canonical form.
+func nativeRecordForExtJSON(_ context.Context, raw json.RawMessage) (query.Record, error) {
+	// The relaxed reader (canonical=false) accepts both forms, and mongoexport
+	// writes the relaxed one by default.
+	var doc bson.Raw
+	if err := bson.UnmarshalExtJSON(raw, false, &doc); err != nil {
+		return query.Record{}, fmt.Errorf("decode extended json document: %w", err)
+	}
+	return iqmongo.NativeRecord(doc)
 }

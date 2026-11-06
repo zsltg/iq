@@ -21,14 +21,16 @@ import (
 // collision, used to count InsertOnly skips without treating them as failures.
 const duplicateKeyCode = 11000
 
-// Put writes a batch of records into the collection, keyed by _id. Upsert
+// Put writes a batch of records into the collection, keyed by _id. A record is in
+// normalized JSON or in canonical Extended JSON (query.FormMongoEJSON), which
+// keeps every BSON type exactly. A record in any other form is refused. Upsert
 // replaces an existing document and inserts a new one. InsertOnly inserts new
 // documents and skips (counts) those whose _id already exists. Every value is
 // marshalled through bson and is never built as a string. A value that is not a
 // JSON object is a returned error. So a scalar is never silently wrapped and a
 // copy round-trips exactly.
 func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteMode) (query.WriteStat, error) {
-	if err := query.CheckForms("mongo", query.FormJSON, batch); err != nil {
+	if err := query.CheckForms("mongo", s.WritesForm(), batch); err != nil {
 		return query.WriteStat{}, err
 	}
 	if s.collection == "" {
@@ -50,7 +52,7 @@ func (s *Store) Put(ctx context.Context, batch []query.Record, mode query.WriteM
 func upsert(ctx context.Context, coll *mongo.Collection, batch []query.Record) (query.WriteStat, error) {
 	models := make([]mongo.WriteModel, len(batch))
 	for i, r := range batch {
-		doc, err := documentFor(r)
+		doc, id, err := recordDocument(r)
 		if err != nil {
 			return query.WriteStat{}, err
 		}
@@ -61,7 +63,7 @@ func upsert(ctx context.Context, coll *mongo.Collection, batch []query.Record) (
 			continue
 		}
 		models[i] = mongo.NewReplaceOneModel().
-			SetFilter(bson.M{"_id": idValue(r.Key)}).
+			SetFilter(bson.M{"_id": id}).
 			SetReplacement(doc).
 			SetUpsert(true)
 	}
@@ -81,7 +83,7 @@ func upsert(ctx context.Context, coll *mongo.Collection, batch []query.Record) (
 func insertOnly(ctx context.Context, coll *mongo.Collection, batch []query.Record) (query.WriteStat, error) {
 	docs := make([]any, len(batch))
 	for i, r := range batch {
-		doc, err := documentFor(r)
+		doc, _, err := recordDocument(r)
 		if err != nil {
 			return query.WriteStat{}, err
 		}
@@ -103,6 +105,22 @@ func insertOnly(ctx context.Context, coll *mongo.Collection, batch []query.Recor
 		skipped++
 	}
 	return query.WriteStat{Written: len(batch) - skipped, Skipped: skipped}, nil
+}
+
+// recordDocument builds the BSON document of one record, and returns the _id that
+// the document holds. The form of the record picks the reading of its value:
+// normalized JSON, or Extended JSON. CheckForms has already refused any other
+// form. An upsert matches on the returned _id, so a typed _id in a native record
+// replaces the document that has the same typed _id and not a string one.
+func recordDocument(r query.Record) (doc any, id any, err error) {
+	if r.Form == query.FormMongoEJSON {
+		return nativeDocument(r)
+	}
+	m, err := documentFor(r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return m, m["_id"], nil
 }
 
 // documentFor builds the BSON document to write for a record, with _id set from

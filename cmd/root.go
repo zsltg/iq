@@ -493,7 +493,7 @@ func addRootFlags(root *cobra.Command, cfg *config) {
 	// records, a re-importable dump. The rest mirror the retired `iq data copy`.
 	root.Flags().StringVar(&cfg.insert, "insert", "", "write each item into this destination `source` (copy/restore/import) instead of rendering")
 	root.Flags().BoolVar(&cfg.typed, "typed", false, "emit typed {key,type,value} records, a re-importable dump (needed for Redis; Mongo's plain output already restores)")
-	root.Flags().BoolVar(&cfg.native, "native", false, "read items in the native form of the source driver (DynamoDB JSON, for example {\"N\": \"1.50\"}) and not in normalized JSON. A filter sees the type tags, and no predicate is pushed down. A --typed dump or an --insert into the same driver keeps every type (DynamoDB only)")
+	root.Flags().BoolVar(&cfg.native, "native", false, "read items in the native form of the source driver (DynamoDB JSON, for example {\"N\": \"1.50\"}, or MongoDB canonical Extended JSON, for example {\"$numberInt\": \"7\"}) and not in normalized JSON. A filter sees the type tags, and no predicate is pushed down. A --typed dump or an --insert into the same driver keeps every type (DynamoDB and MongoDB only)")
 	root.Flags().StringVar(&cfg.moveKey, "key", "", "jq expression yielding each written item's key (--insert/--typed)")
 	root.Flags().StringVar(&cfg.keyField, "key-field", "", "object field to take the key from, for foreign JSON input (--insert)")
 	root.Flags().StringVar(&cfg.keyPrefix, "key-prefix", "", "string prepended to every written key (--insert/--typed)")

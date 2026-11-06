@@ -300,7 +300,7 @@ func TestMCPInsertNativeReplaceIntoAJSONDestinationChangesNothing(t *testing.T) 
 }
 
 func TestNativeRefusesASourceWithoutANativeReader(t *testing.T) {
-	const want = "source dst (recput) has no native form. --native works with a DynamoDB source"
+	const want = "source dst (recput) has no native form. --native works with a DynamoDB or MongoDB source"
 	tests := []struct {
 		name string
 		args []string
@@ -329,7 +329,7 @@ func TestMCPQueryNativeRefusesASourceWithoutANativeReader(t *testing.T) {
 	body := errorBodyOf(t, callMCP(t, cs, "iq_query", map[string]any{
 		"source": "dst", "filter": ".[]", "native": true,
 	}))
-	require.Equal(t, "source dst (recput) has no native form. --native works with a DynamoDB source", body.Error.Message)
+	require.Equal(t, "source dst (recput) has no native form. --native works with a DynamoDB or MongoDB source", body.Error.Message)
 }
 
 func TestNativeRefusesADestinationThatCannotWriteTheForm(t *testing.T) {
@@ -399,4 +399,72 @@ func TestTypedPutterStopsOnAWriteError(t *testing.T) {
 	require.ErrorIs(t, err, boom)
 	require.Zero(t, stat.Written)
 	require.Equal(t, 1, w.writes)
+}
+
+// nativeMongoExport is a mongoexport dump with an int32, an int64, a date, and an
+// int _id: the types that the normalized form loses.
+const nativeMongoExport = `{"_id":{"$numberInt":"7"},"small":{"$numberInt":"1"},"big":{"$numberLong":"2"},"when":{"$date":{"$numberLong":"1700000000000"}}}
+{"_id":"s","price":{"$numberDecimal":"1.50"}}
+`
+
+// seedMongoNativeSources registers the mongoexport dump as "mdump" and the
+// destination "dst" for useRecordingDestination.
+func seedMongoNativeSources(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	export := filepath.Join(dir, "export.json")
+	require.NoError(t, os.WriteFile(export, []byte(nativeMongoExport), 0o600))
+	c := newSeed()
+	require.NoError(t, c.Add("mdump", iqfile.URL(export)+"?format=mongoexport"))
+	require.NoError(t, c.Add("dst", "recput://h"))
+	seedConfig(t, c)
+}
+
+func TestNativeMongoQuery(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"keeps int32 apart from int64", []string{"--native", "--src", "mdump", `.[] | select(.small["$numberInt"] == "1") | [.small, .big]`, "--jsonl"}, `[{"$numberInt":"1"},{"$numberLong":"2"}]` + "\n"},
+		{"keeps the decimal text", []string{"--native", "--src", "mdump", `.[] | select(.price != null) | .price`, "--jsonl"}, `{"$numberDecimal":"1.50"}` + "\n"},
+		{"without the flag the value is normalized", []string{"--src", "mdump", `.[] | select(.small != null) | .small`, "--jsonl"}, "1\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seedMongoNativeSources(t)
+			root, _ := newRootCmd()
+			out, err := runCmd(t, root, tt.args...)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, out)
+		})
+	}
+}
+
+func TestNativeMongoTypedDumpAndInsert(t *testing.T) {
+	seedMongoNativeSources(t)
+	root, _ := newRootCmd()
+	out, err := runCmd(t, root, "--native", "--typed", "--src", "mdump")
+	require.NoError(t, err)
+	require.Contains(t, out, `"key":"7","type":"document","form":"mongo-ejson"`)
+
+	batches, _ := useRecordingDestination(t, query.FormMongoEJSON)
+	root, _ = newRootCmd()
+	_, err = runCmd(t, root, "--native", "--src", "mdump", "--insert", "dst")
+	require.NoError(t, err)
+	require.Len(t, *batches, 1)
+	for _, r := range (*batches)[0] {
+		require.Equal(t, query.FormMongoEJSON, r.Form)
+	}
+}
+
+func TestNativeMongoInsertIntoAnotherDriverIsRefused(t *testing.T) {
+	seedMongoNativeSources(t)
+	batches, cleared := useRecordingDestination(t, query.FormDynamoJSON)
+	root, _ := newRootCmd()
+	_, err := runCmd(t, root, "--native", "--src", "mdump", "--insert", "dst")
+	require.EqualError(t, err,
+		`--native reads form "mongo-ejson", but destination dst (recput) writes only forms "json" and "dynamodb-json"`)
+	require.Zero(t, *cleared)
+	require.Empty(t, *batches)
 }
