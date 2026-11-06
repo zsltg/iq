@@ -114,11 +114,7 @@ func insertOnly(ctx context.Context, coll *mongo.Collection, batch []query.Recor
 // replaces the document that has the same typed _id and not a string one.
 func recordDocument(r query.Record) (doc any, id any, err error) {
 	if r.Form == query.FormMongoEJSON {
-		d, err := nativeDocument(r)
-		if err != nil || len(d) == 0 || d[0].Key != "_id" {
-			return d, nil, err
-		}
-		return d, d[0].Value, nil
+		return nativeDocument(r)
 	}
 	m, err := documentFor(r)
 	if err != nil {

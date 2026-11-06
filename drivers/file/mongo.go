@@ -198,13 +198,9 @@ func recordForDoc(ctx context.Context, doc bson.M, dec numfmt.DecimalMode) query
 func nativeRecordForExtJSON(_ context.Context, raw json.RawMessage) (query.Record, error) {
 	// The relaxed reader (canonical=false) accepts both forms, and mongoexport
 	// writes the relaxed one by default.
-	var doc bson.D
+	var doc bson.Raw
 	if err := bson.UnmarshalExtJSON(raw, false, &doc); err != nil {
 		return query.Record{}, fmt.Errorf("decode extended json document: %w", err)
 	}
-	b, err := bson.Marshal(doc)
-	if err != nil {
-		return query.Record{}, fmt.Errorf("encode extended json document: %w", err)
-	}
-	return iqmongo.NativeRecord(b)
+	return iqmongo.NativeRecord(doc)
 }

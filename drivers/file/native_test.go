@@ -307,9 +307,10 @@ func TestNativeScanOfAMongoDumpReportsABadDocument(t *testing.T) {
 		content []byte
 		query   string
 		wantErr string
+		wraps   bool
 	}{
-		{"mongoexport tag", "m.json", []byte(`{"_id":{"$oid":"zz"}}` + "\n"), "format=mongoexport", "decode extended json document"},
-		{"bson frame", "m.bson", []byte{1, 0, 0, 0}, "", "invalid bson document length"},
+		{"mongoexport tag", "m.json", []byte(`{"_id":{"$oid":"zz"}}` + "\n"), "format=mongoexport", "decode extended json document: ", true},
+		{"bson frame", "m.bson", []byte{1, 0, 0, 0}, "", "invalid bson document length", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -317,6 +318,9 @@ func TestNativeScanOfAMongoDumpReportsABadDocument(t *testing.T) {
 			require.NoError(t, err)
 			err = st.NativeScan(context.Background(), func([]query.Record) error { return nil })
 			require.ErrorContains(t, err, tt.wantErr)
+			if tt.wraps {
+				require.Error(t, errors.Unwrap(err), "the error must wrap its cause")
+			}
 		})
 	}
 }

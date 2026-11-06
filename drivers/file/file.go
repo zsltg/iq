@@ -432,18 +432,16 @@ func (s *Store) nativeSource(r io.Reader) (query.RecordSource, error) {
 	}
 }
 
+// nativeForms maps each dump format that has a native form to that form.
+var nativeForms = map[Format]query.Form{
+	FormatDynamoDBJSON: query.FormDynamoJSON,
+	FormatBSON:         query.FormMongoEJSON,
+	FormatMongoexport:  query.FormMongoEJSON,
+}
+
 // NativeForm names the form that NativeScan emits. It is FormJSON for a dump
 // format that has no native form, and NativeScan then fails.
-func (s *Store) NativeForm() query.Form {
-	switch s.format {
-	case FormatDynamoDBJSON:
-		return query.FormDynamoJSON
-	case FormatBSON, FormatMongoexport:
-		return query.FormMongoEJSON
-	default:
-		return query.FormJSON
-	}
-}
+func (s *Store) NativeForm() query.Form { return nativeForms[s.format] }
 
 // ScanBatches streams the dump as {key: value} pages, dropping the type tag for
 // the jq read path.

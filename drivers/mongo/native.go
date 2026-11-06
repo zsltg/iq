@@ -40,22 +40,29 @@ func (s *Store) NativeScan(ctx context.Context, fn func(batch []query.Record) er
 	}
 	defer func() { _ = cur.Close(ctx) }()
 
-	page := make([]query.Record, 0, s.pageSize)
-	for cur.Next(ctx) {
+	return pageNative(ctx, s.pageSize, cur.Next, func() bson.Raw { return cur.Current }, cur.Err, fn)
+}
+
+// pageNative reads documents with next and current, and hands fn the native records
+// in pages of size records. cursorErr reports the error that ended the read. It
+// takes the parts of a cursor as functions, so a test can run it without a server.
+func pageNative(ctx context.Context, size int, next func(context.Context) bool, current func() bson.Raw, cursorErr func() error, fn func(batch []query.Record) error) error {
+	page := make([]query.Record, 0, size)
+	for next(ctx) {
 		// The cursor reuses the buffer of Current, so the encoder copies what it keeps.
-		rec, err := NativeRecord(cur.Current)
+		rec, err := NativeRecord(current())
 		if err != nil {
 			return err
 		}
 		page = append(page, rec)
-		if len(page) >= s.pageSize {
+		if len(page) >= size {
 			if err := fn(page); err != nil {
 				return err
 			}
-			page = make([]query.Record, 0, s.pageSize)
+			page = make([]query.Record, 0, size)
 		}
 	}
-	if err := cur.Err(); err != nil {
+	if err := cursorErr(); err != nil {
 		return fmt.Errorf("mongodb cursor: %w", selectionCause(err))
 	}
 	if len(page) > 0 {
@@ -88,35 +95,37 @@ func NativeRecord(doc bson.Raw) (query.Record, error) {
 	return query.Record{Key: key, Type: "document", Form: query.FormMongoEJSON, Value: val}, nil
 }
 
-// nativeDocument builds the BSON document of a record in the native form. It
-// decodes the value strictly as Extended JSON, so a malformed tag is an error
-// that names the key. The _id keeps its type when its display form equals the
-// record key. Otherwise the record key wins, as for a normalized record. A
-// keyless record keeps the _id of its value, or gets a minted one.
-func nativeDocument(r query.Record) (bson.D, error) {
+// nativeDocument builds the BSON document of a record in the native form, and
+// returns the _id that the document holds (nil when it has none). It decodes the
+// value strictly as Extended JSON, so a malformed tag is an error that names the
+// key. The _id keeps its type when its display form equals the record key.
+// Otherwise the record key wins, as for a normalized record. A keyless record
+// keeps the _id of its value, if any.
+func nativeDocument(r query.Record) (bson.D, any, error) {
 	obj, ok := r.Value.(map[string]any)
 	if !ok {
-		return nil, query.NonObjectValueError("mongodb", r.Key)
+		return nil, nil, query.NonObjectValueError("mongodb", r.Key)
 	}
 	text, err := json.Marshal(obj)
 	if err != nil {
-		return nil, fmt.Errorf("mongodb: key %q: read native value: %w", r.Key, err)
+		return nil, nil, fmt.Errorf("mongodb: key %q: read native value: %w", r.Key, err)
 	}
 	var doc bson.D
 	if err := bson.UnmarshalExtJSON(text, true, &doc); err != nil {
-		return nil, fmt.Errorf("mongodb: key %q: value is not valid canonical Extended JSON: %w", r.Key, err)
+		return nil, nil, fmt.Errorf("mongodb: key %q: value is not valid canonical Extended JSON: %w", r.Key, err)
 	}
-	return withID(r.Key, doc), nil
+	out, id := withID(r.Key, doc)
+	return out, id, nil
 }
 
-// withID returns doc with its _id first. A record key that differs from the
-// display form of the typed _id replaces that _id with idValue(key). A keyless
-// record keeps the _id of doc, if any.
-func withID(key string, doc bson.D) bson.D {
-	out := make(bson.D, 0, len(doc)+1)
+// withID returns doc with its _id first, and that _id. A record key that differs
+// from the display form of the typed _id replaces that _id with idValue(key). A
+// keyless record keeps the _id of doc, if any. The id is nil when the result has
+// no _id.
+func withID(key string, doc bson.D) (bson.D, any) {
 	var typed any
 	var hasID bool
-	rest := make(bson.D, 0, len(doc))
+	rest := make(bson.D, 0, len(doc)+1)
 	for _, e := range doc {
 		if e.Key == "_id" {
 			typed, hasID = e.Value, true
@@ -124,13 +133,14 @@ func withID(key string, doc bson.D) bson.D {
 		}
 		rest = append(rest, e)
 	}
+	var id any
 	switch {
-	case key == "" && hasID:
-		out = append(out, bson.E{Key: "_id", Value: typed})
-	case key != "" && hasID && KeyOf(typed) == key:
-		out = append(out, bson.E{Key: "_id", Value: typed})
+	case hasID && (key == "" || KeyOf(typed) == key):
+		id = typed
 	case key != "":
-		out = append(out, bson.E{Key: "_id", Value: idValue(key)})
+		id = idValue(key)
+	default:
+		return rest, nil
 	}
-	return append(out, rest...)
+	return append(bson.D{{Key: "_id", Value: id}}, rest...), id
 }

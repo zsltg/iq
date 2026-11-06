@@ -3,6 +3,8 @@ package mongo
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -53,7 +55,7 @@ func TestNativeRecordRoundTripsEveryType(t *testing.T) {
 			require.Equal(t, query.FormMongoEJSON, rec.Form)
 			require.Equal(t, map[string]any{"_id": "k", "v": tt.tag}, rec.Value)
 
-			back, err := nativeDocument(rec)
+			back, _, err := nativeDocument(rec)
 			require.NoError(t, err)
 			require.Equal(t, doc, back)
 		})
@@ -68,7 +70,7 @@ func TestNativeRecordKeepsAMissingKeyApartFromNull(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, missing.Value, "x")
 
-	doc, err := nativeDocument(withNull)
+	doc, _, err := nativeDocument(withNull)
 	require.NoError(t, err)
 	require.Equal(t, bson.D{{Key: "_id", Value: "a"}, {Key: "x", Value: nil}}, doc)
 }
@@ -109,21 +111,24 @@ func TestNativeDocumentTypedID(t *testing.T) {
 		{"key wins when it differs", "8", map[string]any{"_id": map[string]any{"$numberInt": "7"}}, "8"},
 		{"key wins as an object id", oid.Hex(), map[string]any{"_id": map[string]any{"$numberInt": "7"}}, oid},
 		{"key fills a missing id", "k", map[string]any{}, "k"},
+		{"a key like the display of nil", "<nil>", map[string]any{"x": "y"}, "<nil>"},
 		{"keyless keeps the id", "", map[string]any{"_id": map[string]any{"$numberInt": "7"}}, int32(7)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			doc, err := nativeDocument(query.Record{Key: tt.key, Form: query.FormMongoEJSON, Value: tt.value})
+			doc, id, err := nativeDocument(query.Record{Key: tt.key, Form: query.FormMongoEJSON, Value: tt.value})
 			require.NoError(t, err)
 			require.Equal(t, bson.E{Key: "_id", Value: tt.want}, doc[0])
+			require.Equal(t, tt.want, id)
 		})
 	}
 }
 
 func TestNativeDocumentKeylessWithoutIDGetsNone(t *testing.T) {
-	doc, err := nativeDocument(query.Record{Form: query.FormMongoEJSON, Value: map[string]any{"a": "b"}})
+	doc, id, err := nativeDocument(query.Record{Form: query.FormMongoEJSON, Value: map[string]any{"a": "b"}})
 	require.NoError(t, err)
 	require.Equal(t, bson.D{{Key: "a", Value: "b"}}, doc)
+	require.Nil(t, id)
 }
 
 func TestNativeDocumentRefusals(t *testing.T) {
@@ -138,12 +143,16 @@ func TestNativeDocumentRefusals(t *testing.T) {
 		{"bad decimal", query.Record{Key: "k4", Value: map[string]any{"d": map[string]any{"$numberDecimal": "x"}}}, `key "k4": value is not valid canonical Extended JSON`},
 		{"not an object", query.Record{Key: "k5", Value: "text"}, `value for key "k5" is not a JSON object`},
 		{"unencodable", query.Record{Key: "k6", Value: map[string]any{"c": make(chan int)}}, `key "k6": read native value`},
+		{"relaxed date", query.Record{Key: "k7", Value: map[string]any{"d": map[string]any{"$date": "2023-11-14T22:13:20Z"}}}, `key "k7": value is not valid canonical Extended JSON`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.rec.Form = query.FormMongoEJSON
-			_, err := nativeDocument(tt.rec)
+			_, _, err := nativeDocument(tt.rec)
 			require.ErrorContains(t, err, tt.wantErr)
+			if tt.wantErr != `value for key "k5" is not a JSON object` {
+				require.Error(t, errors.Unwrap(err), "the error must wrap its cause")
+			}
 		})
 	}
 }
@@ -177,14 +186,159 @@ func TestNativeScanErrors(t *testing.T) {
 		name    string
 		store   func(t *testing.T) *Store
 		wantErr string
+		wraps   bool
 	}{
-		{"no collection", func(*testing.T) *Store { return &Store{} }, "no collection selected"},
-		{"unreachable server", lazyStore, "mongodb find"},
+		{"no collection", func(*testing.T) *Store { return &Store{} }, "no collection selected", false},
+		{"unreachable server", lazyStore, "mongodb find", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.store(t).NativeScan(context.Background(), func([]query.Record) error { return nil })
 			require.ErrorContains(t, err, tt.wantErr)
+			if tt.wraps {
+				require.Error(t, errors.Unwrap(err), "the error must wrap its cause")
+			}
 		})
 	}
+}
+
+func TestNativeRecordOfAnInvalidDocument(t *testing.T) {
+	good := nativeRaw(t, bson.D{{Key: "_id", Value: "a"}, {Key: "s", Value: "x"}})
+	tests := []struct {
+		name string
+		doc  bson.Raw
+		key  string
+	}{
+		{"too short", bson.Raw{1, 2, 3}, "<nil>"},
+		{"cut off", good[:len(good)-2], "a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NativeRecord(tt.doc)
+			require.ErrorContains(t, err, `mongodb: document "`+tt.key+`": encode extended json: `)
+			require.Error(t, errors.Unwrap(err), "the error must wrap its cause")
+		})
+	}
+}
+
+func TestNativeRecordKeyOfOddIDs(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  bson.D
+		want string
+	}{
+		{"double id", bson.D{{Key: "_id", Value: 1.5}}, "1.5"},
+		{"no id", bson.D{{Key: "a", Value: "b"}}, "<nil>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec, err := NativeRecord(nativeRaw(t, tt.doc))
+			require.NoError(t, err)
+			require.Equal(t, tt.want, rec.Key)
+		})
+	}
+}
+
+// fakeCursor feeds pageNative with n documents.
+type fakeCursor struct {
+	n, at int
+	err   error
+	docs  []bson.Raw
+}
+
+func newFakeCursor(t *testing.T, n int, err error) *fakeCursor {
+	t.Helper()
+	c := &fakeCursor{n: n, err: err}
+	for i := range n {
+		c.docs = append(c.docs, nativeRaw(t, bson.D{{Key: "_id", Value: int32(i)}}))
+	}
+	return c
+}
+
+func (c *fakeCursor) next(context.Context) bool {
+	if c.at >= c.n {
+		return false
+	}
+	c.at++
+	return true
+}
+func (c *fakeCursor) current() bson.Raw { return c.docs[c.at-1] }
+func (c *fakeCursor) fail() error       { return c.err }
+
+func TestPageNativePages(t *testing.T) {
+	tests := []struct {
+		name string
+		docs int
+		size int
+		want []int
+	}{
+		{"no documents", 0, 3, nil},
+		{"fewer than a page", 2, 3, []int{2}},
+		{"exactly a page", 3, 3, []int{3}},
+		{"a page and one", 4, 3, []int{3, 1}},
+		{"two pages", 6, 3, []int{3, 3}},
+		{"a page of one", 2, 1, []int{1, 1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newFakeCursor(t, tt.docs, nil)
+			var got []int
+			var keys []string
+			err := pageNative(context.Background(), tt.size, c.next, c.current, c.fail, func(b []query.Record) error {
+				got = append(got, len(b))
+				for _, r := range b {
+					keys = append(keys, r.Key)
+				}
+				return nil
+			})
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			require.Len(t, keys, tt.docs)
+			for i, k := range keys {
+				require.Equal(t, strconv.Itoa(i), k)
+			}
+		})
+	}
+}
+
+func TestPageNativeStopsOnErrors(t *testing.T) {
+	errFn := errors.New("fn failed")
+	errCursor := errors.New("cursor failed")
+	t.Run("fn error on a full page", func(t *testing.T) {
+		c := newFakeCursor(t, 5, nil)
+		calls := 0
+		err := pageNative(context.Background(), 2, c.next, c.current, c.fail, func([]query.Record) error {
+			calls++
+			return errFn
+		})
+		require.ErrorIs(t, err, errFn)
+		require.Equal(t, 1, calls)
+	})
+	t.Run("fn error on the last page", func(t *testing.T) {
+		c := newFakeCursor(t, 1, nil)
+		err := pageNative(context.Background(), 2, c.next, c.current, c.fail, func([]query.Record) error { return errFn })
+		require.ErrorIs(t, err, errFn)
+	})
+	t.Run("cursor error", func(t *testing.T) {
+		c := newFakeCursor(t, 1, errCursor)
+		calls := 0
+		err := pageNative(context.Background(), 5, c.next, c.current, c.fail, func([]query.Record) error {
+			calls++
+			return nil
+		})
+		require.ErrorIs(t, err, errCursor)
+		require.ErrorContains(t, err, "mongodb cursor: ")
+		require.Zero(t, calls)
+	})
+	t.Run("bad document", func(t *testing.T) {
+		c := newFakeCursor(t, 2, nil)
+		c.docs[1] = bson.Raw{1, 2, 3}
+		calls := 0
+		err := pageNative(context.Background(), 5, c.next, c.current, c.fail, func([]query.Record) error {
+			calls++
+			return nil
+		})
+		require.ErrorContains(t, err, "encode extended json")
+		require.Zero(t, calls)
+	})
 }
