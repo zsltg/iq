@@ -173,8 +173,10 @@ func recordForBSON(ctx context.Context, raw []byte, dec numfmt.DecimalMode) (que
 
 // recordForExtJSON decodes one Extended JSON document into a typed record.
 func recordForExtJSON(ctx context.Context, raw json.RawMessage, dec numfmt.DecimalMode) (query.Record, error) {
+	// The relaxed reader (canonical=false) accepts both forms, and mongoexport
+	// writes the relaxed one by default.
 	var doc bson.M
-	if err := bson.UnmarshalExtJSON(raw, true, &doc); err != nil {
+	if err := bson.UnmarshalExtJSON(raw, false, &doc); err != nil {
 		return query.Record{}, fmt.Errorf("decode extended json document: %w", err)
 	}
 	return recordForDoc(ctx, doc, dec), nil

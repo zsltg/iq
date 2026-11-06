@@ -1088,27 +1088,6 @@ func TestExtJSONSourceFailures(t *testing.T) {
 	})
 }
 
-// TestExtJSONIsCanonical pins the extended-JSON dialect that the reader accepts.
-// It decodes in canonical mode. So a canonical $date (a $numberLong wrapper) is
-// read, and the relaxed spelling (an ISO-8601 string) is refused. The reader
-// does not silently read it under a different dialect than a live scan uses.
-func TestExtJSONIsCanonical(t *testing.T) {
-	recs := map[string]query.Record{}
-	collectInto := func(batch []query.Record) error {
-		for _, r := range batch {
-			recs[r.Key] = r
-		}
-		return nil
-	}
-	body := `{"_id":"a","when":{"$date":{"$numberLong":"1577836800000"}}}` + "\n"
-	require.NoError(t, extJSONSource(strings.NewReader(body), pageSize, numfmt.DecimalAuto)(context.Background(), collectInto))
-	require.Contains(t, recs, "a")
-
-	relaxed := `{"_id":"a","when":{"$date":"2020-01-01T00:00:00Z"}}` + "\n"
-	err := extJSONSource(strings.NewReader(relaxed), pageSize, numfmt.DecimalAuto)(context.Background(), collectInto)
-	require.ErrorContains(t, err, "decode extended json document")
-}
-
 // TestURLFailures pins the error that each entry point gives for a URL it cannot
 // use. The error names the real cause, not a later failure on an empty path.
 func TestURLFailures(t *testing.T) {
