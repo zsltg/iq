@@ -1149,9 +1149,11 @@ The record key is the merge key, and it is written as the key property. If the v
 property as a string, the value keeps its type, so `5` stays a number. A record without a key merges
 on the key property of its value, which must be present.
 
-Neo4j cannot store a null. A write refuses a node that has a null property, or a null inside a list,
-before it writes anything. The error names the key and the property. A property must be a scalar or a
-list of scalars of one type. The server refuses a map, or a mixed list, as a property.
+Neo4j cannot store a null, a map, or a list of mixed types as a property. A write refuses a node that
+has a null property, a null inside a list, a map property, a map or a list inside a list, or a list of
+more than one type, before it writes anything. The error names the key and the property. A property
+must be a scalar or a list of scalars of one type. An integer and a float are two types, because
+Neo4j turns the integers of such a list into floats. An empty list is kept.
 
 A write drops five reserved names from the value: `_id`, `_labels`, `_type`, `_start` and `_end`.
 The read path adds these names to each value, so a node that you read and write back does not store them.

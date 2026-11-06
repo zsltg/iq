@@ -1,7 +1,9 @@
 package neo4j
 
 import (
+	"encoding/json"
 	"fmt"
+	"math/big"
 	"slices"
 	"strings"
 
@@ -11,8 +13,8 @@ import (
 
 // recordProps derives the property map and merge-key value for one write record. The
 // value must be a JSON object (a node's properties). iq's reserved envelope keys are
-// stripped. Neo4j cannot store a null property, so a null property, or a null inside a
-// list, is refused. When the record has a key, it wins as the merge key. If the
+// stripped. Neo4j cannot store a null property or a map property, so a null, a map,
+// a list with a null, a map or a list inside, or a list of mixed types is refused. When the record has a key, it wins as the merge key. If the
 // value's own key property has the same string form (the form the read path gives a
 // key), the typed value stays, so 5 stays a number. Otherwise the record key string
 // is the merge key. A keyless record merges on the value's key property, which must
@@ -40,18 +42,98 @@ func recordProps(rec query.Record, key string) (map[string]any, any, error) {
 	return props, keyVal, nil
 }
 
-// checkProp refuses a null property and a null inside a list, because Neo4j drops
-// a null property on write, so it would read back as missing.
+// checkProp refuses a property that Neo4j cannot store exactly. Neo4j drops a null
+// property on write, so it would read back as missing. A property holds a scalar or
+// a list of scalars of one type, so a map is refused, and checkList refuses a bad list.
 func checkProp(recKey, name string, v any) error {
 	if v == nil {
 		return fmt.Errorf("neo4j: key %q: property %q is null, and Neo4j cannot store a null property", recKey, name)
 	}
-	// A value that is not a list gives a nil list, which holds no null.
+	if _, isMap := v.(map[string]any); isMap {
+		return fmt.Errorf("neo4j: key %q: property %q is a map, and Neo4j cannot store a map as a property", recKey, name)
+	}
+	// A value that is not a list gives a nil list, which holds no bad element.
 	list, _ := v.([]any)
+	return checkList(recKey, name, list)
+}
+
+// checkList refuses a list that Neo4j cannot store as a property: a list with a null,
+// a map or a list inside, or a list of more than one scalar type. An empty list is
+// stored and read back as an empty list, so it is kept.
+func checkList(recKey, name string, list []any) error {
 	if slices.ContainsFunc(list, func(e any) bool { return e == nil }) {
 		return fmt.Errorf("neo4j: key %q: property %q holds a null, and Neo4j cannot store a null in a list", recKey, name)
 	}
+	if slices.ContainsFunc(list, isContainer) {
+		return fmt.Errorf("neo4j: key %q: property %q holds a map or a list, and Neo4j cannot store a nested value in a list", recKey, name)
+	}
+	if !oneScalarKind(list) {
+		return fmt.Errorf("neo4j: key %q: property %q holds more than one type, and Neo4j stores a list of one type only", recKey, name)
+	}
 	return nil
+}
+
+// isContainer reports whether v is a map or a list.
+func isContainer(v any) bool {
+	switch v.(type) {
+	case map[string]any, []any:
+		return true
+	}
+	return false
+}
+
+// scalarKind is the Neo4j storage type of a scalar list element. Neo4j stores a
+// list of integers and a list of floats as different array types, and it turns an
+// integer into a float when one list holds both, which is not exact for a large
+// integer. So an integer and a float are two kinds.
+type scalarKind int
+
+const (
+	kindOther scalarKind = iota // a type that the JSON decode does not give; the server decides.
+	kindString
+	kindBool
+	kindInteger
+	kindFloat
+)
+
+// kindOf returns the scalarKind of a decoded value. A json.Number is an integer
+// when its text has no '.', 'e' or 'E', which is how iq decodes a number.
+func kindOf(v any) scalarKind {
+	switch x := v.(type) {
+	case string:
+		return kindString
+	case bool:
+		return kindBool
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, *big.Int:
+		return kindInteger
+	case float32, float64:
+		return kindFloat
+	case json.Number:
+		if strings.ContainsAny(x.String(), ".eE") {
+			return kindFloat
+		}
+		return kindInteger
+	}
+	return kindOther
+}
+
+// oneScalarKind reports whether every element of the list has the same scalarKind.
+// An element of kindOther is not compared.
+func oneScalarKind(list []any) bool {
+	first := kindOther
+	for _, e := range list {
+		k := kindOf(e)
+		if k == kindOther {
+			continue
+		}
+		if first == kindOther {
+			first = k
+		}
+		if k != first {
+			return false
+		}
+	}
+	return true
 }
 
 // mergeKey picks the merge-key value. The record key wins. The value's key property
