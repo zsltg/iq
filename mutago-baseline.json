@@ -2628,6 +2628,30 @@
    "file": "internal/query/form.go",
    "mutator": "statement/return",
    "line": 92
+  },
+  {
+   "id": "a818a47fa4b43f5a8ad9f856bf70146d",
+   "file": "drivers/mongo/native.go",
+   "mutator": "conditional/bool-literal",
+   "line": 85
+  },
+  {
+   "id": "ecd35ad9fa8ed63e94d2cb6c7cf4eeb5",
+   "file": "drivers/mongo/native.go",
+   "mutator": "expression/context-nil",
+   "line": 41
+  },
+  {
+   "id": "d1af5623cd76319ae5693461656a0dbb",
+   "file": "drivers/mongo/native.go",
+   "mutator": "expression/error-guard",
+   "line": 80
+  },
+  {
+   "id": "dd8667b3bbd847df4470be71e60ec8ba",
+   "file": "drivers/mongo/native.go",
+   "mutator": "expression/error-guard",
+   "line": 92
   }
  ]
 }

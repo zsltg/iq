@@ -907,3 +907,10 @@ The ids of the first two entries come from the diff-scoped run before the fix. T
 ## cmd/move.go, PageSize of the typed dump copier (accepted 2026-11-01, native record PR)
 
 - 967a120bb96d cmd/move.go:356 composite/field-clear. The `PageSize: movePageSize` field of the Copier that feeds typedPutter is cleared, so the copy uses the default page size of 100. typedPutter.Put writes each record of a page to the formatter at once, and a page boundary changes no output byte. The page size only bounds memory, and nothing in the output shows it.
+
+## drivers/mongo/native.go, MongoDB native form (accepted 2026-11-06, native record PR 2)
+
+- a818a47fa4b4 drivers/mongo/native.go:85 conditional/bool-literal. The escapeHTML argument of `bson.MarshalExtJSON` changes from false to true. Then the encoder writes `<`, `>` and `&` as `\u003c`, `\u003e` and `\u0026`. The JSON decoder that follows turns them back into the same characters, so the record value is identical.
+- ecd35ad9fa8e drivers/mongo/native.go:41 expression/context-nil. `cur.Close(ctx)` in the deferred cleanup becomes `cur.Close(nil)`. The driver replaces a nil context with context.Background. The close result is discarded, and the scan returns the same records and the same error.
+- d1af5623cd76 drivers/mongo/native.go:80 expression/error-guard. The guard of `rv.Unmarshal(&id)` is removed. `bson.Raw.Lookup` returns only a value of a document that passed validation, and such a value always unmarshals into `any`. So the error branch cannot run.
+- dd8667b3bbd8 drivers/mongo/native.go:92 expression/error-guard. The guard of `dec.Decode(&val)` is removed. The decoder reads the text that `bson.MarshalExtJSON` wrote for one document, which is always one valid JSON object. So the error branch cannot run.
