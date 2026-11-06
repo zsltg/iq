@@ -336,21 +336,16 @@ func rowKeyString(ctx context.Context, t colType, key []byte) string {
 		// the map key stays a string, reversible by encodeRowKey under the same type.
 		shown = fmt.Sprintf("%v", v)
 	}
-	if !rowKeyRoundTrips(t, key, shown) {
+	// A text key keeps its bytes in Go, but JSON output changes invalid UTF-8 to U+FFFD.
+	if t == ctText && !utf8.Valid(key) {
+		query.NoteRowKey(ctx, shown)
+		return shown
+	}
+	back, err := encodeRowKey(t, shown)
+	if err != nil || !bytes.Equal(back, key) {
 		query.NoteRowKey(ctx, shown)
 	}
 	return shown
-}
-
-// rowKeyRoundTrips reports whether encodeRowKey turns shown back into key, and
-// whether JSON output keeps shown as it is.
-func rowKeyRoundTrips(t colType, key []byte, shown string) bool {
-	// A text key keeps its bytes in Go, but JSON output changes invalid UTF-8 to U+FFFD.
-	if t == ctText && !utf8.Valid(key) {
-		return false
-	}
-	back, err := encodeRowKey(t, shown)
-	return err == nil && bytes.Equal(back, key)
 }
 
 // encodeRowKey reverses rowKeyString for a key that is valid UTF-8 and for a
