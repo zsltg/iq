@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/tsuna/gohbase/hrpc"
+
+	"github.com/zsltg/iq/internal/query"
 )
 
 func TestParseColType(t *testing.T) {
@@ -282,4 +284,48 @@ func TestEncodeInt32FloatBounds(t *testing.T) {
 	require.Equal(t, []byte{0x7f, 0xff, 0xff, 0xff}, b)
 	_, err = encodeInt32(float64(math.MaxInt32) + 1)
 	require.EqualError(t, err, "hbase: value 2147483648 out of range for a 4-byte int column")
+}
+
+func TestRowKeyStringReportsKeysThatCannotBeReversed(t *testing.T) {
+	tests := []struct {
+		name string
+		ct   colType
+		key  []byte
+		show string
+		note bool
+	}{
+		{"auto, valid UTF-8", ctAuto, []byte("r1"), "r1", false},
+		{"auto, invalid UTF-8", ctAuto, []byte{0xff}, "/w==", true},
+		{"text, valid UTF-8", ctText, []byte("r1"), "r1", false},
+		{"text, invalid UTF-8", ctText, []byte{0xff}, "\xff", true},
+		{"bytes, invalid UTF-8", ctBytes, []byte{0xff}, "/w==", false},
+		{"long, 8 bytes", ctLong, []byte{0, 0, 0, 0, 0, 0, 0, 7}, "7", false},
+		{"long, 3 bytes", ctLong, []byte("abc"), "abc", true},
+		{"long, 9 bytes", ctLong, []byte("abcdefghi"), "abcdefghi", true},
+		{"int, 4 bytes", ctInt, []byte{0, 0, 0, 7}, "7", false},
+		{"int, 3 bytes", ctInt, []byte("abc"), "abc", true},
+		{"int, 5 bytes", ctInt, []byte("abcde"), "abcde", true},
+		{"double, 8 bytes", ctDouble, []byte{0x3f, 0xf0, 0, 0, 0, 0, 0, 0}, "1", false},
+		{"double, 7 bytes", ctDouble, []byte("abcdefg"), "abcdefg", true},
+		{"double, 9 bytes", ctDouble, []byte("abcdefghi"), "abcdefghi", true},
+		{"bool, 1 byte", ctBool, []byte{1}, "true", false},
+		{"bool, 0 bytes", ctBool, []byte{}, "", true},
+		{"bool, 2 bytes", ctBool, []byte("ab"), "ab", true},
+		{"long, invalid UTF-8", ctLong, []byte{0xff, 0xfe}, "//4=", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var shown []string
+			ctx := query.WithRowKeyNotice(context.Background(), func(s string) { shown = append(shown, s) })
+
+			got := rowKeyString(ctx, tt.ct, tt.key)
+
+			require.Equal(t, tt.show, got)
+			if tt.note {
+				require.Equal(t, []string{tt.show}, shown)
+			} else {
+				require.Empty(t, shown)
+			}
+		})
+	}
 }

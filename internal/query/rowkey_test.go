@@ -17,8 +17,9 @@ func TestNoteRowKeyWithoutSink(t *testing.T) {
 }
 
 func TestRowKeySummaryText(t *testing.T) {
-	const fix = "; a Get, delete or copy with such a key reaches a different row. " +
-		"Declare ?keytype=bytes on the source to address them exactly. First: "
+	const fix = " a Get, delete or copy cannot address exactly " +
+		"(the key is not valid UTF-8, or it has the wrong width for the declared ?keytype). Such a key reaches a different row. " +
+		"Declare ?keytype=bytes on the source, or use --native, to address them exactly. First: "
 	tests := []struct {
 		name string
 		keys []string
@@ -28,12 +29,12 @@ func TestRowKeySummaryText(t *testing.T) {
 		{
 			name: "one key",
 			keys: []string{"/w=="},
-			want: "iq showed 1 HBase row key that is not valid UTF-8 as base64" + fix + `"/w=="`,
+			want: "iq showed 1 HBase row key that" + fix + `"/w=="`,
 		},
 		{
 			name: "the first key is named",
 			keys: []string{"/w==", "AAE=", "gA=="},
-			want: "iq showed 3 HBase row keys that are not valid UTF-8 as base64" + fix + `"/w=="`,
+			want: "iq showed 3 HBase row keys that" + fix + `"/w=="`,
 		},
 	}
 	for _, tt := range tests {

@@ -323,12 +323,13 @@ func colTypeFor(types typeMap, family, qualifier string) colType {
 
 // rowKeyString renders a raw row key as the string that the table is keyed by
 // under the row-key type. Valid UTF-8 renders as itself, else base64 (or as
-// declared). Under the default type, a key that is not valid UTF-8 is also
-// reported to the notice sink of ctx, because encodeRowKey cannot reverse it.
+// declared). It also reports a key that encodeRowKey cannot reverse to the notice
+// sink of ctx. Such a key is not valid UTF-8 under the default or text type, or it
+// has the wrong width for a declared numeric type and decodeCell fell back.
 func rowKeyString(ctx context.Context, t colType, key []byte) string {
 	v := decodeCell(t, key, nil)
 	if s, ok := v.(string); ok {
-		if t == ctAuto && !utf8.Valid(key) {
+		if rowKeyIrreversible(t, key) {
 			query.NoteRowKey(ctx, s)
 		}
 		return s
@@ -338,11 +339,29 @@ func rowKeyString(ctx context.Context, t colType, key []byte) string {
 	return fmt.Sprintf("%v", v)
 }
 
+// rowKeyIrreversible reports whether the string that rowKeyString shows for key
+// cannot be turned back into key by encodeRowKey. The type ctBytes is exact.
+func rowKeyIrreversible(t colType, key []byte) bool {
+	switch t {
+	case ctAuto, ctText:
+		return !utf8.Valid(key)
+	case ctInt:
+		return len(key) != 4
+	case ctLong, ctDouble:
+		return len(key) != 8
+	case ctBool:
+		return len(key) != 1
+	default:
+		return false
+	}
+}
+
 // encodeRowKey reverses rowKeyString for a key that is valid UTF-8 and for a
 // declared row-key type: it turns the string map key back into the raw row-key
 // bytes. It does not reverse a key that rowKeyString showed as base64 under the
 // default type. It sends the UTF-8 bytes of that text, which is a different row.
 // A scan reports such a key to the notice sink. ?keytype=bytes makes it exact.
+// A declared numeric type with the wrong key width falls back the same way.
 func encodeRowKey(t colType, key string) ([]byte, error) {
 	switch t {
 	case ctAuto, ctText:
