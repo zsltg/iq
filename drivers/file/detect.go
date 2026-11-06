@@ -1,7 +1,6 @@
 package file
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/zsltg/iq/internal/query"
 )
 
 // Format identifies how a dump file is decoded.
@@ -134,13 +135,12 @@ func SupportedFormats() []FormatInfo {
 // rdbMagic is the five-byte signature every RDB file opens with.
 var rdbMagic = []byte("REDIS")
 
-// detectFormat sniffs a dump file's format from its leading bytes plus its
+// detectFormat sniffs a dump file's format from its content and, for YAML, its
 // extension. Detection is reliable for the binary formats (RDB has a magic
 // signature, and BSON has a length-framed structure). It disambiguates the
-// JSON-text and YAML families by the shape of the first record. iq's typed
-// dumps carry a {key,…,value} envelope. A .yaml/.yml extension still forces
-// YAML for a dump whose first record overflows the sniff window. Any case can
-// be forced with ?format=.
+// JSON-text and YAML families by the shape of the first complete record. iq's
+// typed dumps carry a {key,…,value} envelope. A .yaml/.yml extension forces
+// YAML. Any case can be forced with ?format=.
 func detectFormat(path string) (Format, error) {
 	f, err := os.Open(path) //nolint:gosec // user-supplied dump file, by design.
 	if err != nil {
@@ -148,29 +148,73 @@ func detectFormat(path string) (Format, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	head, err := bufio.NewReader(f).Peek(512)
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
-		return FormatUnknown, fmt.Errorf("read dump head %q: %w", path, err)
-	}
-	return classify(head, path)
+	format, _, err := detectStream(f, path, query.MaxRecordBytes)
+	return format, err
 }
 
-// detectPeek sniffs the format of piped stdin from a 512-byte peek. The peek
-// does not consume the stream. The input has no filename, so detection cannot
-// fall back to a .yaml/.yml extension. A typed YAML dump is recognized by its
-// {key,…,value} envelope instead. br has the default 4096-byte buffer, so the peek
-// cannot fail with bufio.ErrBufferFull. A short input gives io.EOF with the bytes
-// it has.
-func detectPeek(br *bufio.Reader) (Format, error) {
-	head, err := br.Peek(512)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return FormatUnknown, fmt.Errorf("read stdin head: %w", err)
+// headSize is the number of leading bytes that detection reads first. The magic
+// signature, the BSON frame, and the first byte of a text dump all fit in it.
+const headSize = 512
+
+// detectStream sniffs the format of r. The name is the dump file name, or empty
+// for piped stdin, which has no extension to fall back on. The sniff reads the
+// head, and for a JSON or YAML dump it reads on to the end of the first
+// record. It never reads more than limit bytes past the start. A first record
+// that is not complete within limit is an error, because a guess could read the
+// dump as the wrong format without any message.
+//
+// The sniff consumes bytes from r. So the returned reader replays every byte
+// that the sniff read, then continues with the rest of r. The caller reads the
+// dump from that reader and does not touch r again. A small input never costs
+// more memory than its own size.
+func detectStream(r io.Reader, name string, limit int64) (Format, io.Reader, error) {
+	var buf bytes.Buffer
+	if _, err := io.CopyN(&buf, r, headSize); err != nil && !errors.Is(err, io.EOF) {
+		return FormatUnknown, nil, fmt.Errorf("read dump head: %w", err)
 	}
-	return classify(head, "")
+	s := &sniffer{buf: &buf, rest: r, limit: limit}
+	format, err := s.classify(name)
+	if err != nil {
+		return FormatUnknown, nil, err
+	}
+	return format, io.MultiReader(&buf, r), nil
 }
 
-// classify maps a dump's leading bytes (and optional filename) to a Format.
-func classify(head []byte, name string) (Format, error) {
+// sniffer reads the start of a dump for detection. The buffer holds every byte
+// that it has read from rest, in order, so the caller can replay them.
+type sniffer struct {
+	buf   *bytes.Buffer
+	rest  io.Reader
+	limit int64
+}
+
+// record returns a reader over the buffered head followed by the rest of the
+// dump. The bytes that it reads from rest go to the buffer. It stops at the
+// limit, so a record of exactly the limit is complete and a longer one is not. Call it once, before any other read from rest.
+func (s *sniffer) record() io.Reader {
+	head := s.buf.Bytes()
+	budget := max(s.limit-int64(len(head)), 0)
+	return io.MultiReader(bytes.NewReader(head), io.TeeReader(io.LimitReader(s.rest, budget), s.buf))
+}
+
+// overLimit reports whether the sniff has read up to the limit. A decode that
+// fails after that point failed because the record does not end in the limit.
+// A truncated dump of exactly the limit in size gets the same error. That case
+// is too rare to tell apart.
+func (s *sniffer) overLimit() bool {
+	return int64(s.buf.Len()) >= s.limit
+}
+
+// errFirstRecordTooLarge is the error for a first record that does not end in
+// the limit. It tells the user how to name the format.
+func (s *sniffer) errFirstRecordTooLarge() error {
+	return fmt.Errorf("cannot detect dump format: the first record is over %d bytes (%w). Pass ?format= or --from-format (jsonl, json, yaml, mongoexport, bson, rdb)", s.limit, errValueTooLarge)
+}
+
+// classify maps a dump's leading bytes (and optional filename) to a Format. It
+// reads on from the dump only for a JSON or YAML first record.
+func (s *sniffer) classify(name string) (Format, error) {
+	head := s.buf.Bytes()
 	if len(head) == 0 {
 		return FormatUnknown, errors.New("dump is empty")
 	}
@@ -183,7 +227,7 @@ func classify(head []byte, name string) (Format, error) {
 	}
 	trimmed := bytes.TrimLeft(head, " \t\r\n")
 	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
-		return detectJSONFamily(trimmed), nil
+		return s.detectJSONFamily(trimmed[0] == '[')
 	}
 	if strings.HasSuffix(lname, ".bson") || looksLikeBSON(head) {
 		return FormatBSON, nil
@@ -191,7 +235,11 @@ func classify(head []byte, name string) (Format, error) {
 	// iq's typed YAML is block-style text (no leading '{'/'[' to route it into the
 	// JSON family) and iq is its only producer. So, as for JSONL, a first document
 	// carrying the {key,…,value} envelope identifies it.
-	if obj, ok := firstYAMLObject(trimmed); ok {
+	obj, ok := s.firstYAMLObject()
+	if s.overLimit() {
+		return FormatUnknown, s.errFirstRecordTooLarge()
+	}
+	if ok {
 		_, hasKey := obj["key"]
 		_, hasValue := obj["value"]
 		if hasKey && hasValue {
@@ -205,42 +253,52 @@ func classify(head []byte, name string) (Format, error) {
 // of the first object. A {key,…,value} envelope is iq's typed dump. Anything
 // else is a mongo document. It handles both a top-level object and the first
 // element of a JSON array (mongoexport --jsonArray, or a --typed --jsona dump).
-func detectJSONFamily(trimmed []byte) Format {
-	obj, ok := firstJSONObject(trimmed)
+// A first record that fails to decode inside the limit is a truncated or
+// invalid dump. It is read as mongoexport, so that the reader reports the real
+// error. A first record that does not end in the limit is an error here.
+func (s *sniffer) detectJSONFamily(array bool) (Format, error) {
+	obj, ok := s.firstJSONObject(array)
 	if !ok {
-		return FormatMongoexport // undecidable head; let the decoder report a real error.
+		if s.overLimit() {
+			return FormatUnknown, s.errFirstRecordTooLarge()
+		}
+		return FormatMongoexport, nil
 	}
 	_, hasKey := obj["key"]
 	_, hasValue := obj["value"]
 	if hasKey && hasValue {
-		return FormatJSONL
+		return FormatJSONL, nil
 	}
-	return FormatMongoexport
+	return FormatMongoexport, nil
 }
 
-// firstJSONObject decodes the first object in head and returns its top-level
-// keys. That object is the whole head when it starts with '{', or the first
-// element when it starts with a '[' array.
-func firstJSONObject(head []byte) (map[string]json.RawMessage, bool) {
-	h := bytes.TrimLeft(head, " \t\r\n")
-	if len(h) > 0 && h[0] == '[' {
-		h = bytes.TrimLeft(h[1:], " \t\r\n") // step past '[' to the first element.
+// firstJSONObject decodes the first object of the dump and returns its
+// top-level keys. That object is the whole dump head when it starts with '{', or
+// the first element when it starts with a '[' array.
+func (s *sniffer) firstJSONObject(array bool) (map[string]json.RawMessage, bool) {
+	dec := json.NewDecoder(s.record())
+	if array {
+		if _, err := dec.Token(); err != nil { // step past '[' to the first element.
+			return nil, false
+		}
 	}
 	var obj map[string]json.RawMessage
-	if err := json.NewDecoder(bytes.NewReader(h)).Decode(&obj); err != nil {
+	if err := dec.Decode(&obj); err != nil {
 		return nil, false
 	}
 	return obj, true
 }
 
-// firstYAMLObject decodes the first document of head as a YAML mapping. Then
+// firstYAMLObject decodes the first document of the dump as a YAML mapping. Then
 // classify can recognize iq's typed {key,type,value} YAML dump by the same
-// key+value envelope that it uses for JSONL. A head truncated mid-document, or
-// a first document that is not a mapping, yields no object. Such a head is left
-// for a .yaml/.yml extension or explicit ?format=.
-func firstYAMLObject(head []byte) (map[string]any, bool) {
+// key+value envelope that it uses for JSONL. A first document that is not a
+// mapping, or that does not decode, yields no object. A YAML document that
+// reaches the limit decodes as a cut-off scalar without an error. So classify
+// checks the limit after this call, not only after a failure. Such a dump is left for a
+// .yaml/.yml extension or explicit ?format=.
+func (s *sniffer) firstYAMLObject() (map[string]any, bool) {
 	var obj map[string]any
-	if err := yaml.NewDecoder(bytes.NewReader(head)).Decode(&obj); err != nil {
+	if err := yaml.NewDecoder(s.record()).Decode(&obj); err != nil {
 		return nil, false
 	}
 	return obj, obj != nil
