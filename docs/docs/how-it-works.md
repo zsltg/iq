@@ -223,8 +223,8 @@ The transformed stream then takes one of two exits.
 
 Each record has a `Form`, the dialect of its value. The default, `FormJSON`, is the
 normalized JSON that every read produces. A native form holds typed JSON, such as DynamoDB
-JSON or MongoDB canonical Extended JSON. A `Putter` writes `FormJSON` and the one native form that it owns, and it refuses any other
-form with an error that names the key and both forms. A form names a dialect and not a driver, so
+JSON, MongoDB canonical Extended JSON, or HBase raw bytes in base64. A `Putter` writes `FormJSON`
+and the one native form that it owns, and it refuses any other form with an error that names the key and both forms. A form names a dialect and not a driver, so
 drivers that share a dialect share a form. The `--typed` envelope holds a non-default form in an
 optional `form` field. `--native` selects the native scan of the source (see
 [Native form](write-data.md#native-form-native)).

@@ -300,7 +300,7 @@ func TestMCPInsertNativeReplaceIntoAJSONDestinationChangesNothing(t *testing.T) 
 }
 
 func TestNativeRefusesASourceWithoutANativeReader(t *testing.T) {
-	const want = "source dst (recput) has no native form. --native works with a DynamoDB or MongoDB source"
+	const want = "source dst (recput) has no native form. --native works with a DynamoDB, MongoDB or HBase source"
 	tests := []struct {
 		name string
 		args []string
@@ -329,7 +329,7 @@ func TestMCPQueryNativeRefusesASourceWithoutANativeReader(t *testing.T) {
 	body := errorBodyOf(t, callMCP(t, cs, "iq_query", map[string]any{
 		"source": "dst", "filter": ".[]", "native": true,
 	}))
-	require.Equal(t, "source dst (recput) has no native form. --native works with a DynamoDB or MongoDB source", body.Error.Message)
+	require.Equal(t, "source dst (recput) has no native form. --native works with a DynamoDB, MongoDB or HBase source", body.Error.Message)
 }
 
 func TestNativeRefusesADestinationThatCannotWriteTheForm(t *testing.T) {

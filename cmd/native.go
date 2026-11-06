@@ -73,7 +73,7 @@ func validateNativeMove(cfg *config) error {
 func nativeReaderOf(st any, cfg *config) (query.NativeReader, error) {
 	nr, ok := st.(query.NativeReader)
 	if !ok {
-		return nil, fmt.Errorf("source %s (%s) has no native form. --native works with a DynamoDB or MongoDB source",
+		return nil, fmt.Errorf("source %s (%s) has no native form. --native works with a DynamoDB, MongoDB or HBase source",
 			nativeSourceLabel(cfg), driverName(cfg.url))
 	}
 	return nr, nil
