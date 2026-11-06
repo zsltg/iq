@@ -94,7 +94,7 @@ func TestQueryWarnsOnceAboutRowKeysShownAsBase64(t *testing.T) {
 	require.NotContains(t, stdout, "warning")
 	require.Equal(t,
 		`warning: iq showed 2 HBase row keys that a Get, delete or copy cannot address exactly `+
-			`(the key is not valid UTF-8, or it has the wrong width for the declared ?keytype). Such a key reaches a different row. `+
+			`(the key is not valid UTF-8, or it does not match the declared ?keytype). Such a key reaches a different row. `+
 			`Declare ?keytype=bytes on the source, or use --native, to address them exactly. First: "/w=="`+"\n",
 		stderr)
 }

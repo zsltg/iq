@@ -12,7 +12,7 @@ type rowKeyKey struct{}
 
 // RowKeySink receives one call for each row key that an adapter showed in a form
 // that a later Get, delete or copy cannot reverse. The raw key is not valid UTF-8,
-// or it has the wrong width for the declared key type. shown is the text shown.
+// or it does not match the declared key type. shown is the text shown.
 type RowKeySink func(shown string)
 
 // WithRowKeyNotice returns a context that carries sink. An adapter that shows a
@@ -60,7 +60,7 @@ func (s *RowKeySummary) Text() string {
 		noun = "row key that"
 	}
 	return fmt.Sprintf("iq showed %d HBase %s a Get, delete or copy cannot address exactly "+
-		"(the key is not valid UTF-8, or it has the wrong width for the declared ?keytype). Such a key reaches a different row. "+
+		"(the key is not valid UTF-8, or it does not match the declared ?keytype). Such a key reaches a different row. "+
 		"Declare ?keytype=bytes on the source, or use --native, to address them exactly. First: %q",
 		count, noun, s.shown)
 }

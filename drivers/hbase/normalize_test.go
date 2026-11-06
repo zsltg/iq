@@ -311,6 +311,11 @@ func TestRowKeyStringReportsKeysThatCannotBeReversed(t *testing.T) {
 		{"bool, 1 byte", ctBool, []byte{1}, "true", false},
 		{"bool, 0 bytes", ctBool, []byte{}, "", true},
 		{"bool, 2 bytes", ctBool, []byte("ab"), "ab", true},
+		{"double, canonical NaN", ctDouble, []byte{0x7f, 0xf8, 0, 0, 0, 0, 0, 1}, "NaN", false},
+		{"double, NaN with another payload", ctDouble, []byte{0x7f, 0xf8, 0, 0, 0, 0, 0, 2}, "NaN", true},
+		{"double, negative zero", ctDouble, []byte{0x80, 0, 0, 0, 0, 0, 0, 0}, "-0", false},
+		{"bool, 0x00", ctBool, []byte{0}, "false", false},
+		{"bool, 0x02", ctBool, []byte{2}, "true", true},
 		{"long, invalid UTF-8", ctLong, []byte{0xff, 0xfe}, "//4=", true},
 	}
 	for _, tt := range tests {

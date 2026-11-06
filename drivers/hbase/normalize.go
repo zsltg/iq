@@ -1,6 +1,7 @@
 package hbase
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -324,35 +325,23 @@ func colTypeFor(types typeMap, family, qualifier string) colType {
 // rowKeyString renders a raw row key as the string that the table is keyed by
 // under the row-key type. Valid UTF-8 renders as itself, else base64 (or as
 // declared). It also reports a key that encodeRowKey cannot reverse to the notice
-// sink of ctx. Such a key is not valid UTF-8 under the default or text type, or it
-// has the wrong width for a declared numeric type and decodeCell fell back.
+// sink of ctx. That is a key whose shown text does not encode back to the same
+// bytes, for example a key that is not valid UTF-8 under the default type, a key
+// with the wrong width for a declared numeric type, or a NaN with another payload.
 func rowKeyString(ctx context.Context, t colType, key []byte) string {
 	v := decodeCell(t, key, nil)
-	if s, ok := v.(string); ok {
-		if rowKeyIrreversible(t, key) {
-			query.NoteRowKey(ctx, s)
-		}
-		return s
+	shown, ok := v.(string)
+	if !ok {
+		// A declared numeric row-key type decodes to a number. Render it canonically so
+		// the map key stays a string, reversible by encodeRowKey under the same type.
+		shown = fmt.Sprintf("%v", v)
 	}
-	// A declared numeric row-key type decodes to a number. Render it canonically so
-	// the map key stays a string, reversible by encodeRowKey under the same type.
-	return fmt.Sprintf("%v", v)
-}
-
-// rowKeyIrreversible reports whether the string that rowKeyString shows for key
-// cannot be turned back into key by encodeRowKey. The type ctBytes is exact.
-func rowKeyIrreversible(t colType, key []byte) bool {
-	switch t {
-	case ctAuto, ctText:
-		return !utf8.Valid(key)
-	case ctInt:
-		return len(key) != 4
-	case ctLong, ctDouble:
-		return len(key) != 8
-	case ctBool:
-		return len(key) != 1
+	back, err := encodeRowKey(t, shown)
+	// A text key keeps its bytes in Go, but JSON output changes invalid UTF-8 to U+FFFD.
+	if err != nil || !bytes.Equal(back, key) || (t == ctText && !utf8.Valid(key)) {
+		query.NoteRowKey(ctx, shown)
 	}
-	return false
+	return shown
 }
 
 // encodeRowKey reverses rowKeyString for a key that is valid UTF-8 and for a
@@ -360,7 +349,7 @@ func rowKeyIrreversible(t colType, key []byte) bool {
 // bytes. It does not reverse a key that rowKeyString showed as base64 under the
 // default type. It sends the UTF-8 bytes of that text, which is a different row.
 // A scan reports such a key to the notice sink. ?keytype=bytes makes it exact.
-// A declared numeric type with the wrong key width falls back the same way.
+// A declared type whose key does not match it, for example by width, falls back the same way.
 func encodeRowKey(t colType, key string) ([]byte, error) {
 	switch t {
 	case ctAuto, ctText:
