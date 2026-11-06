@@ -1,6 +1,7 @@
 package hbase
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -323,19 +324,28 @@ func colTypeFor(types typeMap, family, qualifier string) colType {
 
 // rowKeyString renders a raw row key as the string that the table is keyed by
 // under the row-key type. Valid UTF-8 renders as itself, else base64 (or as
-// declared). Under the default type, a key that is not valid UTF-8 is also
-// reported to the notice sink of ctx, because encodeRowKey cannot reverse it.
+// declared). It also reports a key that encodeRowKey cannot reverse to the notice
+// sink of ctx. That is a key whose shown text does not encode back to the same
+// bytes, for example a key that is not valid UTF-8 under the default type, a key
+// with the wrong width for a declared numeric type, or a NaN with another payload.
 func rowKeyString(ctx context.Context, t colType, key []byte) string {
 	v := decodeCell(t, key, nil)
-	if s, ok := v.(string); ok {
-		if t == ctAuto && !utf8.Valid(key) {
-			query.NoteRowKey(ctx, s)
-		}
-		return s
+	shown, ok := v.(string)
+	if !ok {
+		// A declared numeric row-key type decodes to a number. Render it canonically so
+		// the map key stays a string, reversible by encodeRowKey under the same type.
+		shown = fmt.Sprintf("%v", v)
 	}
-	// A declared numeric row-key type decodes to a number. Render it canonically so
-	// the map key stays a string, reversible by encodeRowKey under the same type.
-	return fmt.Sprintf("%v", v)
+	// A text key keeps its bytes in Go, but JSON output changes invalid UTF-8 to U+FFFD.
+	if t == ctText && !utf8.Valid(key) {
+		query.NoteRowKey(ctx, shown)
+		return shown
+	}
+	back, err := encodeRowKey(t, shown)
+	if err != nil || !bytes.Equal(back, key) {
+		query.NoteRowKey(ctx, shown)
+	}
+	return shown
 }
 
 // encodeRowKey reverses rowKeyString for a key that is valid UTF-8 and for a
@@ -343,6 +353,7 @@ func rowKeyString(ctx context.Context, t colType, key []byte) string {
 // bytes. It does not reverse a key that rowKeyString showed as base64 under the
 // default type. It sends the UTF-8 bytes of that text, which is a different row.
 // A scan reports such a key to the notice sink. ?keytype=bytes makes it exact.
+// A declared type whose key does not match it, for example by width, falls back the same way.
 func encodeRowKey(t colType, key string) ([]byte, error) {
 	switch t {
 	case ctAuto, ctText:
