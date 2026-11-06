@@ -471,7 +471,7 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
       - *checkout
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       # GH_TOKEN adds the online audits: known-vulnerable-actions, impostor-commit,
       # ref-confusion and stale-action-refs. zizmor exits 11 to 14 on a finding.
       - name: zizmor (GitHub Actions workflow audit)
@@ -1294,7 +1294,7 @@ jobs:
         run: |
           . scripts/tool-versions.env
           go run github.com/betterleaks/betterleaks@"$BETTERLEAKS_VERSION" git --no-banner --validation=false --config .betterleaks.toml .
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       # The online audits read the advisory data of GitHub, so a re-run on
       # unchanged workflows finds a newly vulnerable or yanked action.
       - name: zizmor (GitHub Actions workflow audit, fresh data)
@@ -1542,7 +1542,7 @@ jobs:
             release-assets.githubusercontent.com:443
             releases.astral.sh:443
       - *checkout
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Build site
         run: uv run --locked zensical build --clean
         working-directory: docs
