@@ -156,6 +156,18 @@ func TestPutRejectsALaterBadRecordBeforeAnyRequest(t *testing.T) {
 			wantErr: `couchdb: key "2": the value holds _deleted, so CouchDB would delete the document or drop the member`,
 		},
 		{
+			name:    "insert-only refuses an _attachments member",
+			mode:    query.InsertOnly,
+			bad:     query.Record{Key: "2", Value: map[string]any{"_attachments": map[string]any{}}},
+			wantErr: `couchdb: key "2": the value holds _attachments`,
+		},
+		{
+			name:    "upsert refuses an _attachments member",
+			mode:    query.Upsert,
+			bad:     query.Record{Key: "2", Value: map[string]any{"_attachments": map[string]any{}}},
+			wantErr: `couchdb: key "2": the value holds _attachments`,
+		},
+		{
 			name:    "upsert refuses a non-object value",
 			mode:    query.Upsert,
 			bad:     query.Record{Key: "2", Value: "scalar"},

@@ -29,6 +29,9 @@ const designPrefix = "_design/"
 
 // errNoDatabase is returned when a database-scoped operation runs without a
 // database selected. It is a sentinel so the CLI can surface a clear hint.
+// errAttachments is the refusal of a value that holds an _attachments member.
+var errAttachments = errors.New("the value holds _attachments, but iq does not copy attachments: CouchDB would create an attachment from inline data, and a read returns a stub")
+
 var errNoDatabase = errors.New("couchdb: no database selected; address it as handle.database or set ?database= in the source url")
 
 // Store adapts one CouchDB database to the query ports. The jq and write paths are

@@ -374,6 +374,9 @@ change each invalid byte to U+FFFD. The error names the field path. A delete ref
 A write also refuses a value that holds a `_deleted` member, whatever its value.
 CouchDB would delete the document for `true` and drop the member for `false`.
 Use `iq data delete` to delete a document.
+A write also refuses a value that holds an `_attachments` member. CouchDB would create a real
+attachment from inline `data`, and a read returns a stub, so the stored value would differ from the
+one supplied. A stub that a read returned cannot be written back either. iq does not copy attachments.
 
 ### Pushdown
 
@@ -1328,7 +1331,7 @@ drive letter).
 | Typed YAML | `iq --src <s> --typed -y -o <file>` | the same records as YAML documents, auto-detected by a `.yaml`/`.yml` name, else `?format=yaml` |
 | Redis RDB | `redis-cli --rdb`, `SAVE` | values match a live scan, RDB ≤ v12 (Redis ≤ 7.2) |
 | Mongo BSON | `mongodump` | single `.bson` file |
-| Mongo Extended JSON | `mongoexport` | one document per line, or a `--jsonArray` array |
+| Mongo Extended JSON | `mongoexport` | one document per line, or a `--jsonArray` array. Relaxed (the default) and canonical Extended JSON both read |
 | DynamoDB JSON | S3 `export-table-to-point-in-time`, `aws dynamodb scan` | needs `?format=dynamodb-json` and a `?keys=pk[:S][,sk[:N]]` key schema (a dump carries items but not the table's key schema). Export files are gzipped NDJSON |
 | Cassandra CSV | `cqlsh COPY … TO 'f.csv'` | needs `?format=cassandra-csv`, `?keys=col1[,col2]` naming the primary-key columns, and `?types=col=cqltype,…` for the non-text columns (COPY writes every value as text). Column names come from a `WITH HEADER=TRUE` row, else `?columns=`. Scalar columns only |
 | Neo4j APOC JSON | `CALL apoc.export.json.all('g.json',{})` | needs `?format=neo4j-json` and a keyspace selector: either `?label=<Label>` for its nodes or `?rel=<Type>` for its relationships (a dump holds the whole graph). JSON Lines or `ARRAY_JSON`. Same `_id`/`_labels`/`_type`/`_start`/`_end` envelope as the live driver. `?key=<prop>` keys by a property. `_id` is APOC's numeric export id, not the live elementId. The binary `neo4j-admin database dump` and APOC's `useTypes`/`JSON_ID_AS_KEYS` variants are not supported |
