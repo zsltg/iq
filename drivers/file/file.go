@@ -156,15 +156,17 @@ func (p *pipeInput) take() (io.Reader, error) {
 // OpenPipe builds a read-only Store over piped stdin. The stream is read once, as
 // it comes, and never buffered whole. The Store hands the stream to its first
 // read. A second read fails with ErrPipeReadOnce. When format is unknown, OpenPipe
-// detects it from the first 512 bytes, as for a file without a name.
+// detects it from the first complete record, as for a file without a name. The
+// detection reads the stream and replays the bytes that it read, so the first
+// read sees the whole dump.
 func OpenPipe(r io.Reader, format Format, dec numfmt.DecimalMode) (*Store, error) {
-	br := bufio.NewReader(r)
 	if format == FormatUnknown {
 		var err error
-		if format, err = detectPeek(br); err != nil {
+		if format, r, err = detectStream(r, "", query.MaxRecordBytes); err != nil {
 			return nil, err
 		}
 	}
+	br := bufio.NewReader(r)
 	return &Store{pipe: &pipeInput{r: br}, format: format, dec: dec}, nil
 }
 

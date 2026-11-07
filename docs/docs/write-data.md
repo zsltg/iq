@@ -74,11 +74,11 @@ iq --src books --insert books2 --explain
     `file://` source or a piped `--insert`. `iq` auto-detects them from content
     by their typed `{"key":…, "type":…, "value":…}` envelope.
 
-    A huge first record can defeat the content sniff. For this reason, a
-    `.yaml`/`.yml` name or an explicit `?format=` / `--from-format` remains
-    available as an override (`jsonl`, `yaml`, `mongoexport`, `bson`, `rdb`,
-    `dynamodb-json`, `cassandra-csv`, or `neo4j-json`). Aliases like `json` are
-    accepted.
+    The sniff reads the first complete record, at most 16 MiB. A first record
+    over that size stops the read with an error. A `.yaml`/`.yml` name or an
+    explicit `?format=` / `--from-format` overrides the sniff (`jsonl`, `yaml`,
+    `mongoexport`, `bson`, `rdb`, `dynamodb-json`, `cassandra-csv`, or
+    `neo4j-json`). Aliases like `json` are accepted.
 
     The renderings that cannot carry a record back are rejected rather than
     written. `--raw` (a scalar cannot hold the envelope), `--format parquet`

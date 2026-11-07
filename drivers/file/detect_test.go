@@ -1,15 +1,20 @@
 package file
 
 import (
-	"bufio"
 	"bytes"
+	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/zsltg/iq/internal/numfmt"
+	"github.com/zsltg/iq/internal/query"
 )
 
 // typedObjectOfSize renders a typed {key,…,value} JSON object of exactly n
@@ -117,7 +122,7 @@ func TestClassify(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := classify([]byte(tt.head), tt.file)
+			got, err := classifyBytes([]byte(tt.head), tt.file)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.wantErr)
@@ -148,7 +153,9 @@ func TestFirstJSONObject(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			obj, ok := firstJSONObject([]byte(tt.head))
+			s := newTestSniffer([]byte(tt.head))
+			trimmed := bytes.TrimLeft([]byte(tt.head), " \t\r\n")
+			obj, ok := s.firstJSONObject(len(trimmed) > 0 && trimmed[0] == '[')
 			if tt.want == nil {
 				require.False(t, ok)
 				require.Nil(t, obj)
@@ -210,60 +217,210 @@ func TestDetectFormatFileErrors(t *testing.T) {
 	})
 }
 
-// TestDetectSniffWindow pins the 512-byte sniff window from both sides. A first
-// record that ends exactly on the boundary is decodable and identifies the dump.
-// A record one byte longer is truncated in the window, so the head is
-// undecidable and the sniffer falls back to mongoexport rather than guessing.
-func TestDetectSniffWindow(t *testing.T) {
-	const trailer = "\n" + `{"key":"b","value":2}` + "\n"
+// classifyBytes sniffs data as a dump with the given file name and the real limit.
+func classifyBytes(data []byte, name string) (Format, error) {
+	format, _, err := detectStream(bytes.NewReader(data), name, query.MaxRecordBytes)
+	return format, err
+}
+
+// newTestSniffer returns a sniffer that has read the head of data, as
+// detectStream does before it classifies.
+func newTestSniffer(data []byte) *sniffer {
+	r := bytes.NewReader(data)
+	var buf bytes.Buffer
+	_, _ = io.CopyN(&buf, r, headSize)
+	return &sniffer{buf: &buf, rest: r, limit: query.MaxRecordBytes}
+}
+
+// typedYAMLOfSize renders a typed YAML document of about n bytes.
+func typedYAMLOfSize(n int) string {
+	return "---\nkey: a\ntype: string\nvalue: " + strings.Repeat("v", n) + "\n---\nkey: b\ntype: string\nvalue: w\n"
+}
+
+// bigJSONLines renders three typed JSONL records. The first has a key of n bytes.
+func bigJSONLines(n int) string {
+	return `{"key":"` + strings.Repeat("p", n) + `","value":1}` + "\n" +
+		`{"key":"b","value":2}` + "\n" + `{"key":"c","value":3}` + "\n"
+}
+
+// TestDetectFirstRecord checks that detection reads to the end of the first
+// record, whatever its size, for a file and for piped stdin. The first record
+// is over the 512-byte head and over the 4096-byte bufio buffer. A typed dump
+// stays JSONL or YAML. A mongoexport dump with a large first document stays
+// mongoexport.
+func TestDetectFirstRecord(t *testing.T) {
 	tests := []struct {
 		name string
-		size int
+		data string
 		want Format
 	}{
-		{name: "record ending on the boundary is decodable", size: 512, want: FormatJSONL},
-		{name: "record one byte past the boundary is truncated", size: 513, want: FormatMongoexport},
+		{name: "typed jsonl, record of 600 bytes", data: bigJSONLines(600), want: FormatJSONL},
+		{name: "typed jsonl, record of 512 bytes", data: typedObjectOfSize(t, 512) + "\n", want: FormatJSONL},
+		{name: "typed jsonl, record of 513 bytes", data: typedObjectOfSize(t, 513) + "\n", want: FormatJSONL},
+		{name: "typed jsonl, record of 5000 bytes", data: bigJSONLines(5000), want: FormatJSONL},
+		{name: "typed jsonl, record of 100000 bytes", data: bigJSONLines(100000), want: FormatJSONL},
+		{name: "typed json array, record of 5000 bytes", data: "[" + typedObjectOfSize(t, 5000) + ",{\"key\":\"b\",\"value\":2}]", want: FormatJSONL},
+		{name: "typed json array, record of 600 bytes", data: "[\n  " + typedObjectOfSize(t, 600) + "\n]", want: FormatJSONL},
+		{name: "typed yaml, document of 5000 bytes", data: typedYAMLOfSize(5000), want: FormatYAML},
+		{name: "typed yaml, document of 600 bytes", data: typedYAMLOfSize(600), want: FormatYAML},
+		{name: "mongoexport, document of 5000 bytes", data: `{"_id":1,"s":"` + strings.Repeat("m", 5000) + `"}` + "\n", want: FormatMongoexport},
+		{name: "mongoexport array, document of 5000 bytes", data: `[{"_id":1,"s":"` + strings.Repeat("m", 5000) + `"}]`, want: FormatMongoexport},
+		{name: "truncated first record is left to the reader", data: `{"key":"` + strings.Repeat("p", 5000), want: FormatMongoexport},
+		{name: "invalid first record is left to the reader", data: `{"key":"a" "value":` + strings.Repeat("1", 5000), want: FormatMongoexport},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name+" from a file", func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "dump.json")
-			require.NoError(t, os.WriteFile(path, []byte(typedObjectOfSize(t, tt.size)+trailer), 0o600))
+			path := filepath.Join(t.TempDir(), "dump")
+			require.NoError(t, os.WriteFile(path, []byte(tt.data), 0o600))
 			got, err := detectFormat(path)
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
-		t.Run(tt.name+" from a buffer", func(t *testing.T) {
-			got, err := detectBytes([]byte(typedObjectOfSize(t, tt.size) + trailer))
+		t.Run(tt.name+" from stdin", func(t *testing.T) {
+			got, replay, err := detectStream(iotest.OneByteReader(strings.NewReader(tt.data)), "", query.MaxRecordBytes)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			all, err := io.ReadAll(replay)
+			require.NoError(t, err)
+			require.Equal(t, tt.data, string(all), "the replay must hold every byte of the stream")
+		})
+	}
+}
+
+// TestDetectStreamReplay checks that the stream that detectStream returns holds
+// every byte, for each way the sniff can end.
+func TestDetectStreamReplay(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{name: "short input", data: `{"key":"a","value":1}` + "\n"},
+		{name: "rdb magic", data: "REDIS0011" + strings.Repeat("x", 2000)},
+		{name: "bson frame", data: "\x0c\x00\x00\x00\x02a\x00" + strings.Repeat("x", 2000)},
+		{name: "first record then many records", data: bigJSONLines(3000) + strings.Repeat(`{"key":"z","value":9}`+"\n", 500)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, replay, err := detectStream(strings.NewReader(tt.data), "", query.MaxRecordBytes)
+			require.NoError(t, err)
+			all, err := io.ReadAll(replay)
+			require.NoError(t, err)
+			require.Equal(t, tt.data, string(all))
+		})
+	}
+}
+
+// TestDetectStreamReadsOnlyFirstRecord checks that detection stops at the end of
+// the first record. It does not read the whole stream.
+func TestDetectStreamReadsOnlyFirstRecord(t *testing.T) {
+	data := bigJSONLines(3000) + strings.Repeat(`{"key":"z","value":9}`+"\n", 100000)
+	cr := &countReader{r: strings.NewReader(data)}
+	_, _, err := detectStream(cr, "", query.MaxRecordBytes)
+	require.NoError(t, err)
+	require.Less(t, cr.n, 20000, "detection must not read past the first record by much")
+}
+
+// TestDetectStreamReadsOnlyHeadForBinary pins the head size. A binary dump is
+// decided by its head, so the sniff reads exactly 512 bytes and no more.
+func TestDetectStreamReadsOnlyHeadForBinary(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want Format
+	}{
+		{name: "rdb", data: "REDIS0011" + strings.Repeat("x", 3000), want: FormatRDB},
+		{name: "bson", data: "\x0c\x00\x00\x00\x02a\x00" + strings.Repeat("x", 3000), want: FormatBSON},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cr := &countReader{r: strings.NewReader(tt.data)}
+			got, _, err := detectStream(cr, "", query.MaxRecordBytes)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			require.Equal(t, 512, cr.n)
+		})
+	}
+}
+
+// countReader counts the bytes that it passes on.
+type countReader struct {
+	r io.Reader
+	n int
+}
+
+func (c *countReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += n
+	return n, err
+}
+
+// TestDetectStreamLimit pins the bound on the first record from both sides. A
+// record of exactly the limit is complete. A record one byte longer is an
+// error that names the way out. The same holds for JSON, a JSON array, and
+// YAML.
+func TestDetectStreamLimit(t *testing.T) {
+	const limit = 2000
+	tests := []struct {
+		name    string
+		data    string
+		want    Format
+		tooBig  bool
+		wantErr string
+	}{
+		{name: "jsonl record of exactly the limit", data: typedObjectOfSize(t, limit), want: FormatJSONL},
+		{name: "jsonl record one byte over the limit", data: typedObjectOfSize(t, limit+1), tooBig: true},
+		{name: "jsonl record far over the limit", data: typedObjectOfSize(t, limit*5) + "\n", tooBig: true},
+		{name: "jsonl record of exactly the limit with a newline", data: typedObjectOfSize(t, limit) + "\n" + `{"key":"b","value":2}`, want: FormatJSONL},
+		{name: "array element of exactly the limit", data: "[" + typedObjectOfSize(t, limit-2) + "]", want: FormatJSONL},
+		{name: "array element over the limit", data: "[" + typedObjectOfSize(t, limit) + "]", tooBig: true},
+		{name: "yaml document over the limit", data: typedYAMLOfSize(limit * 2), tooBig: true},
+		{name: "mongoexport document over the limit", data: `{"_id":1,"s":"` + strings.Repeat("m", limit) + `"}`, tooBig: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, err := detectStream(strings.NewReader(tt.data), "", limit)
+			if tt.tooBig {
+				require.ErrorIs(t, err, errValueTooLarge)
+				require.ErrorContains(t, err, "first record is over 2000 bytes")
+				require.ErrorContains(t, err, "?format=")
+				require.ErrorContains(t, err, "--from-format")
+				require.Equal(t, FormatUnknown, got)
+				return
+			}
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
 	}
-	t.Run("a buffer ending exactly one byte past the window is truncated", func(t *testing.T) {
-		// No trailing bytes: the buffer is exactly 513 long, the only length at which
-		// truncating at 512 and truncating at 513 differ.
-		got, err := detectBytes([]byte(typedObjectOfSize(t, 513)))
-		require.NoError(t, err)
-		require.Equal(t, FormatMongoexport, got)
-	})
-	t.Run("a buffer ending exactly on the window is decodable", func(t *testing.T) {
-		got, err := detectBytes([]byte(typedObjectOfSize(t, 512)))
+	t.Run("a small input never reads past its end", func(t *testing.T) {
+		got, _, err := detectStream(strings.NewReader(`{"key":"a","value":1}`), "", limit)
 		require.NoError(t, err)
 		require.Equal(t, FormatJSONL, got)
 	})
-	t.Run("a short buffer is sniffed whole", func(t *testing.T) {
-		got, err := detectBytes([]byte(`{"key":"a","value":1}` + "\n"))
-		require.NoError(t, err)
-		require.Equal(t, FormatJSONL, got)
-	})
-	t.Run("an empty buffer is an error", func(t *testing.T) {
-		_, err := detectBytes(nil)
-		require.ErrorContains(t, err, "dump is empty")
+	t.Run("a head longer than the limit is bounded", func(t *testing.T) {
+		_, _, err := detectStream(strings.NewReader(typedObjectOfSize(t, 600)), "", 100)
+		require.ErrorIs(t, err, errValueTooLarge)
 	})
 }
 
-// detectBytes sniffs the format of data through the peek that OpenPipe uses.
-func detectBytes(data []byte) (Format, error) {
-	return detectPeek(bufio.NewReader(bytes.NewReader(data)))
+// TestDetectStreamHeadError checks that a read failure in the head is wrapped
+// with context and keeps its cause.
+func TestDetectStreamHeadError(t *testing.T) {
+	boom := errors.New("boom")
+	_, _, err := detectStream(iotest.ErrReader(boom), "", query.MaxRecordBytes)
+	require.ErrorIs(t, err, boom)
+	require.ErrorContains(t, err, "read dump head")
+}
+
+// TestOpenPipeLargeFirstRecord checks the whole stdin path. The store reads
+// every record of a dump whose first record is far over the head.
+func TestOpenPipeLargeFirstRecord(t *testing.T) {
+	st, err := OpenPipe(strings.NewReader(bigJSONLines(20000)), FormatUnknown, numfmt.DecimalAuto)
+	require.NoError(t, err)
+	require.Equal(t, FormatJSONL, st.format)
+	recs := collect(t, st)
+	require.Len(t, recs, 3)
+	require.Contains(t, recs, "b")
+	require.Contains(t, recs, "c")
 }
 
 // TestValidFrame pins the BSON frame bounds at both edges: the empty document is

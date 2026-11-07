@@ -917,3 +917,12 @@ The ids of the first two entries come from the diff-scoped run before the fix. T
 ## drivers/neo4j/props.go, kindOf default return (accepted 2026-11-07, Neo4j property PR)
 
 - 5f6223308f3d drivers/neo4j/props.go:119 statement/return. `return kindOther` of kindOf becomes `return 0`. kindOther is the zero value of scalarKind (the first iota constant), so the return is identical.
+
+## drivers/file/detect.go, FormatUnknown returns (accepted 2026-11-06, first-record detection)
+
+FormatUnknown is the first constant of the Format iota block, so its value is 0. A mutant that turns `return FormatUnknown, ...` into `return 0, ...` returns the same value. The tests pin the error of each path.
+
+- da2b1727dffd drivers/file/detect.go:173 statement/return. The head read fails, and detectStream returns FormatUnknown with the wrapped read error.
+- d91989de6e35 drivers/file/detect.go:178 statement/return. The classification fails, and detectStream returns FormatUnknown with that error.
+- e57b071c150b drivers/file/detect.go:241 statement/return. The first YAML record does not end in the limit, and the sniff returns FormatUnknown with the size error.
+- 5b9ef268eaef drivers/file/detect.go:264 statement/return. The first JSON record does not end in the limit, and the sniff returns FormatUnknown with the size error.

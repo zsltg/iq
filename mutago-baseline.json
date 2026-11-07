@@ -2652,6 +2652,30 @@
    "file": "drivers/neo4j/props.go",
    "mutator": "statement/return",
    "line": 117
+   },
+   {
+   "id": "da2b1727dffd9441e7de61c741457e61",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 173
+  },
+  {
+   "id": "d91989de6e352e35f7c6a4f6e7ff1d8b",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 178
+  },
+  {
+   "id": "e57b071c150bdc77de91f1aa1d97a2ee",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 241
+  },
+  {
+   "id": "5b9ef268eaef4564ecaf48fa1c456705",
+   "file": "drivers/file/detect.go",
+   "mutator": "statement/return",
+   "line": 264
   }
  ]
 }
