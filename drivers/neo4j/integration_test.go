@@ -688,3 +688,32 @@ func TestPutReplacesNodePropertiesIntegration(t *testing.T) {
 	require.Equal(t, "z", node["a"])
 	require.NotContains(t, node, "b", "an upsert must drop properties the new value lacks")
 }
+
+// TestIntegrationWriteRefusesUnstorableProperties checks that the refusal for a map
+// or a mixed list property happens before the write, so no node is stored.
+func TestIntegrationWriteRefusesUnstorableProperties(t *testing.T) {
+	ctx := integrationOrSkip(t)
+	admin := openStore(t, ctx, "", "")
+	exec(t, ctx, admin, "CREATE CONSTRAINT itNested_id IF NOT EXISTS FOR (a:ItNested) REQUIRE a.id IS UNIQUE")
+	exec(t, ctx, admin, "MATCH (a:ItNested) DETACH DELETE a")
+	st := openStore(t, ctx, "ItNested", "id")
+
+	tests := []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{name: "map", value: map[string]any{"a": 1}, want: "is a map"},
+		{name: "mixed list", value: []any{"a", 1}, want: "more than one type"},
+		{name: "nested list", value: []any{[]any{1}}, want: "map or a list"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := st.Put(ctx, []query.Record{{Key: "1", Value: map[string]any{"id": "1", "p": tt.value}}}, query.Upsert)
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+	c, err := st.EstimateCount(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), c)
+}

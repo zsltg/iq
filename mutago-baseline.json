@@ -2646,6 +2646,12 @@
    "file": "drivers/mongo/native.go",
    "mutator": "expression/error-guard",
    "line": 92
+  },
+  {
+   "id": "5f6223308f3d32a185afe497476acdc1",
+   "file": "drivers/neo4j/props.go",
+   "mutator": "statement/return",
+   "line": 117
   }
  ]
 }
