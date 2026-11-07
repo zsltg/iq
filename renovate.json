@@ -108,6 +108,12 @@
       "minimumReleaseAge": null
     },
     {
+      "description": "Renovate checks the age of an image digest update against the date of its tag. But it does not put that date on the update. Then the stability-days check of the PR finds no date and stays pending, which never ends. So a digest update of a test image does not need a date. A digest whose tag has a date still waits for the minimum release age.",
+      "matchManagers": ["docker-compose"],
+      "matchUpdateTypes": ["digest"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
+    },
+    {
       "description": "MongoDB 8.3 and 9.0 do not start on Linux kernel 6.19 or newer (SERVER-121912), and the CI runners run such a kernel. Keep the test image on 8.2. Remove this rule when a MongoDB release starts on these kernels.",
       "matchManagers": ["docker-compose"],
       "matchPackageNames": ["mongo"],
