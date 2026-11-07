@@ -4,6 +4,30 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.42.0 - 2026-11-07
+### Bug Fixes
+- store a big integer as an exact number in MongoDB and DynamoDB (#230) (2994353)
+- **couchdb:** refuse a value with an _attachments member (#243) (d8bd986)
+- **couchdb:** refuse a value with _deleted that would delete the document (#229) (d7a2261)
+- **deps:** bump brotli and klauspost/compress for two advisories (#238) (c148849)
+- **deps:** update minor and patch updates (#235) (1e88b85)
+- **deps:** update gojq to v0.12.20 and read its list of patterns (#240) (d33dc8b)
+- **deps:** update module github.com/quality-gates/mutago/v2 to v2.10.40 (#236) (2a32641)
+- **deps:** update test stack (#234) (5b03525)
+- **file:** read relaxed Extended JSON in a mongoexport dump (#242) (9a864c4)
+- **file:** detect a dump format from its first complete record (#246) (f7266d2)
+- **hbase:** warn when a declared row-key type cannot decode a key (#244) (854cc33)
+- **hbase:** warn when a row key is shown as base64 and cannot be addressed (#232) (d6d1c17)
+- **neo4j:** replace node properties on upsert and refuse null properties (#231) (97cb63a)
+- **neo4j:** refuse a map or a mixed list as a property value (#245) (9d740b0)
+- **redis:** refuse an empty aggregate and a null that a write would lose (#228) (bc1de76)
+
+### Features
+- add --native to read and copy HBase rows as raw bytes (#239) (48fcd99)
+- add --native to read and copy MongoDB documents in Extended JSON (#237) (1b6f99e)
+- add --native to read and copy DynamoDB items in DynamoDB JSON (#233) (5c5a08c)
+
+
 ## v0.41.0 - 2026-10-31
 ### Bug Fixes
 - stream piped stdin in one pass (#220) (77069f9)
