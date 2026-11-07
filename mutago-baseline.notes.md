@@ -913,3 +913,7 @@ The ids of the first two entries come from the diff-scoped run before the fix. T
 - a818a47fa4b4 drivers/mongo/native.go:106 conditional/bool-literal. The escapeHTML argument of `bson.MarshalExtJSON` changes from false to true. Then the encoder writes `<`, `>` and `&` as `\u003c`, `\u003e` and `\u0026`. The JSON decoder that follows turns them back into the same characters, so the record value is identical.
 - ecd35ad9fa8e drivers/mongo/native.go:41 expression/context-nil. `cur.Close(ctx)` in the deferred cleanup becomes `cur.Close(nil)`. The driver replaces a nil context with context.Background. The close result is discarded, and the scan returns the same records and the same error.
 - dd8667b3bbd8 drivers/mongo/native.go:113 expression/error-guard. The guard of `dec.Decode(&val)` is removed. The decoder reads the text that `bson.MarshalExtJSON` wrote for one document, which is always one valid JSON object. So the error branch cannot run.
+
+## drivers/neo4j/props.go, kindOf default return (accepted 2026-11-07, Neo4j property PR)
+
+- 5f6223308f3d drivers/neo4j/props.go:119 statement/return. `return kindOther` of kindOf becomes `return 0`. kindOther is the zero value of scalarKind (the first iota constant), so the return is identical.

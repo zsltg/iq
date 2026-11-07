@@ -2,6 +2,7 @@ package neo4j
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"slices"
@@ -29,8 +30,8 @@ func recordProps(rec query.Record, key string) (map[string]any, any, error) {
 		if neo4jenvelope.IsReserved(k) {
 			continue
 		}
-		if err := checkProp(rec.Key, k, v); err != nil {
-			return nil, nil, err
+		if err := checkProp(v); err != nil {
+			return nil, nil, fmt.Errorf("neo4j: key %q: property %q %w", rec.Key, k, err)
 		}
 		props[k] = v
 	}
@@ -42,33 +43,34 @@ func recordProps(rec query.Record, key string) (map[string]any, any, error) {
 	return props, keyVal, nil
 }
 
-// checkProp refuses a property that Neo4j cannot store exactly. Neo4j drops a null
-// property on write, so it would read back as missing. A property holds a scalar or
-// a list of scalars of one type, so a map is refused, and checkList refuses a bad list.
-func checkProp(recKey, name string, v any) error {
+// checkProp refuses a property value that Neo4j cannot store exactly. Neo4j drops a
+// null property on write, so it would read back as missing. A property holds a scalar
+// or a list of scalars of one type, so a map is refused, and checkList refuses a bad
+// list. The error text follows the property name, which the caller adds.
+func checkProp(v any) error {
 	if v == nil {
-		return fmt.Errorf("neo4j: key %q: property %q is null, and Neo4j cannot store a null property", recKey, name)
+		return errors.New("is null, and Neo4j cannot store a null property")
 	}
 	if _, isMap := v.(map[string]any); isMap {
-		return fmt.Errorf("neo4j: key %q: property %q is a map, and Neo4j cannot store a map as a property", recKey, name)
+		return errors.New("is a map, and Neo4j cannot store a map as a property")
 	}
 	// A value that is not a list gives a nil list, which holds no bad element.
 	list, _ := v.([]any)
-	return checkList(recKey, name, list)
+	return checkList(list)
 }
 
 // checkList refuses a list that Neo4j cannot store as a property: a list with a null,
 // a map or a list inside, or a list of more than one scalar type. An empty list is
 // stored and read back as an empty list, so it is kept.
-func checkList(recKey, name string, list []any) error {
+func checkList(list []any) error {
 	if slices.ContainsFunc(list, func(e any) bool { return e == nil }) {
-		return fmt.Errorf("neo4j: key %q: property %q holds a null, and Neo4j cannot store a null in a list", recKey, name)
+		return errors.New("holds a null, and Neo4j cannot store a null in a list")
 	}
 	if slices.ContainsFunc(list, isContainer) {
-		return fmt.Errorf("neo4j: key %q: property %q holds a map or a list, and Neo4j cannot store a nested value in a list", recKey, name)
+		return errors.New("holds a map or a list, and Neo4j cannot store a nested value in a list")
 	}
 	if !oneScalarKind(list) {
-		return fmt.Errorf("neo4j: key %q: property %q holds more than one type, and Neo4j stores a list of one type only", recKey, name)
+		return errors.New("holds more than one type, and Neo4j stores a list of one type only")
 	}
 	return nil
 }
