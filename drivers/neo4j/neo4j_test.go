@@ -285,6 +285,7 @@ func TestRecordProps(t *testing.T) {
 		want    map[string]any
 		wantKey any
 		wantErr string
+		wantIs  error
 	}{
 		{
 			name:    "strips reserved keys and keeps the value's key property",
@@ -368,76 +369,91 @@ func TestRecordProps(t *testing.T) {
 			name:    "a null property is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": nil}},
 			wantErr: `neo4j: key "k": property "p" is null, and Neo4j cannot store a null property`,
+			wantIs:  errNullProp,
 		},
 		{
 			name:    "a null key property is refused",
 			rec:     query.Record{Key: "42", Value: map[string]any{"id": nil}},
 			wantErr: `property "id" is null`,
+			wantIs:  errNullProp,
 		},
 		{
 			name:    "a null inside a list is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{"a", nil}}},
 			wantErr: `neo4j: key "k": property "p" holds a null, and Neo4j cannot store a null in a list`,
+			wantIs:  errNullInList,
 		},
 		{
 			name:    "a list that is only a null is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{nil}}},
 			wantErr: `property "p" holds a null`,
+			wantIs:  errNullInList,
 		},
 		{
 			name:    "a map property is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": map[string]any{"a": 1}}},
 			wantErr: `neo4j: key "k": property "p" is a map, and Neo4j cannot store a map as a property`,
+			wantIs:  errMapProp,
 		},
 		{
 			name:    "an empty map property is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": map[string]any{}}},
 			wantErr: `property "p" is a map`,
+			wantIs:  errMapProp,
 		},
 		{
 			name:    "a list that holds a map is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{map[string]any{"a": 1}}}},
 			wantErr: `neo4j: key "k": property "p" holds a map or a list, and Neo4j cannot store a nested value in a list`,
+			wantIs:  errNestedInList,
 		},
 		{
 			name:    "a list that holds a list is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{[]any{"a"}}}},
 			wantErr: `property "p" holds a map or a list`,
+			wantIs:  errNestedInList,
 		},
 		{
 			name:    "a list of a string and an integer is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{"a", 1}}},
 			wantErr: `neo4j: key "k": property "p" holds more than one type, and Neo4j stores a list of one type only`,
+			wantIs:  errMixedList,
 		},
 		{
 			name:    "a list of an integer and a float is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{1, 2.5}}},
 			wantErr: `property "p" holds more than one type`,
+			wantIs:  errMixedList,
 		},
 		{
 			name:    "a list of a bool and a string is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{true, "a"}}},
 			wantErr: `property "p" holds more than one type`,
+			wantIs:  errMixedList,
 		},
 		{
 			name:    "a list of a big integer and a float is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{big.NewInt(9), 2.5}}},
 			wantErr: `property "p" holds more than one type`,
+			wantIs:  errMixedList,
 		},
 		{
 			name:    "a list of an integer and a float json number is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{json.Number("1"), json.Number("2.5")}}},
 			wantErr: `property "p" holds more than one type`,
+			wantIs:  errMixedList,
 		},
 		{
 			name:    "a list of an integer and an exponent json number is refused",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{json.Number("1"), json.Number("2e3")}}},
 			wantErr: `property "p" holds more than one type`,
+			wantIs:  errMixedList,
 		},
 		{
 			name:    "a null wins over a map in the same list",
 			rec:     query.Record{Key: "k", Value: map[string]any{"p": []any{nil, map[string]any{}}}},
 			wantErr: `property "p" holds a null`,
+			wantIs:  errNullInList,
 		},
 		{
 			name:    "a map in the reserved envelope key is dropped, not refused",
@@ -474,6 +490,9 @@ func TestRecordProps(t *testing.T) {
 			props, keyVal, err := recordProps(tt.rec, "id")
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
+				if tt.wantIs != nil {
+					require.ErrorIs(t, err, tt.wantIs)
+				}
 				return
 			}
 			require.NoError(t, err)

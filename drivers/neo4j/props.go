@@ -43,16 +43,26 @@ func recordProps(rec query.Record, key string) (map[string]any, any, error) {
 	return props, keyVal, nil
 }
 
+// The reasons that checkProp and checkList give for a property that Neo4j cannot
+// store exactly. recordProps puts the key and the property name in front of each.
+var (
+	errNullProp     = errors.New("is null, and Neo4j cannot store a null property")
+	errMapProp      = errors.New("is a map, and Neo4j cannot store a map as a property")
+	errNullInList   = errors.New("holds a null, and Neo4j cannot store a null in a list")
+	errNestedInList = errors.New("holds a map or a list, and Neo4j cannot store a nested value in a list")
+	errMixedList    = errors.New("holds more than one type, and Neo4j stores a list of one type only")
+)
+
 // checkProp refuses a property value that Neo4j cannot store exactly. Neo4j drops a
 // null property on write, so it would read back as missing. A property holds a scalar
 // or a list of scalars of one type, so a map is refused, and checkList refuses a bad
 // list. The error text follows the property name, which the caller adds.
 func checkProp(v any) error {
 	if v == nil {
-		return errors.New("is null, and Neo4j cannot store a null property")
+		return errNullProp
 	}
 	if _, isMap := v.(map[string]any); isMap {
-		return errors.New("is a map, and Neo4j cannot store a map as a property")
+		return errMapProp
 	}
 	// A value that is not a list gives a nil list, which holds no bad element.
 	list, _ := v.([]any)
@@ -64,13 +74,13 @@ func checkProp(v any) error {
 // stored and read back as an empty list, so it is kept.
 func checkList(list []any) error {
 	if slices.ContainsFunc(list, func(e any) bool { return e == nil }) {
-		return errors.New("holds a null, and Neo4j cannot store a null in a list")
+		return errNullInList
 	}
 	if slices.ContainsFunc(list, isContainer) {
-		return errors.New("holds a map or a list, and Neo4j cannot store a nested value in a list")
+		return errNestedInList
 	}
 	if !oneScalarKind(list) {
-		return errors.New("holds more than one type, and Neo4j stores a list of one type only")
+		return errMixedList
 	}
 	return nil
 }
