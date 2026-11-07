@@ -16,6 +16,13 @@
   "vulnerabilityAlerts": {
     "addLabels": ["security"]
   },
+  "hostRules": [
+    {
+      "matchHost": "docker.io",
+      "username": "zsltg",
+      "password": "{{ secrets.DOCKERHUB_TOKEN }}"
+    }
+  ],
   "rangeStrategy": "bump",
   "rebaseWhen": "behind-base-branch",
   "postUpdateOptions": ["gomodTidy"],
