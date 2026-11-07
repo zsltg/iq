@@ -924,5 +924,5 @@ FormatUnknown is the first constant of the Format iota block, so its value is 0.
 
 - da2b1727dffd drivers/file/detect.go:173 statement/return. The head read fails, and detectStream returns FormatUnknown with the wrapped read error.
 - d91989de6e35 drivers/file/detect.go:178 statement/return. The classification fails, and detectStream returns FormatUnknown with that error.
-- e57b071c150b drivers/file/detect.go:241 statement/return. The first JSON record does not end in the limit, and the sniff returns FormatUnknown with the size error.
-- 5b9ef268eaef drivers/file/detect.go:264 statement/return. The first YAML record does not end in the limit, and the sniff returns FormatUnknown with the size error.
+- e57b071c150b drivers/file/detect.go:241 statement/return. The first YAML record does not end in the limit, and the sniff returns FormatUnknown with the size error.
+- 5b9ef268eaef drivers/file/detect.go:264 statement/return. The first JSON record does not end in the limit, and the sniff returns FormatUnknown with the size error.
