@@ -1,0 +1,18 @@
+{
+  "package": "./e2e",
+  "slug": "e2e",
+  "status": "passed",
+  "fingerprint": "455bb93b25106afb32002dab75d2fc586a3d64504ac6990d7cc056dbaf8bbf40",
+  "commit": "6fdfba84feb06ddf4e0f1789507ec326fc7a99f2",
+  "scannedAt": "2026-11-09T23:54:03Z",
+  "secondsPerMutant": null,
+  "summary": {
+    "totalMutantsCount": 0,
+    "killedCount": 0,
+    "notCoveredCount": 0,
+    "escapedCount": 0,
+    "errorCount": 0,
+    "skippedCount": 0,
+    "score": 0
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "package": "./drivers/couchbase",
+  "slug": "drivers-couchbase",
+  "status": "failed",
+  "fingerprint": "919190a051ff823c122da2ca6add51989fd3f375e466de64d3404fe6a10b4e35",
+  "commit": "6fdfba84feb06ddf4e0f1789507ec326fc7a99f2",
+  "scannedAt": "2026-11-09T23:54:03Z",
+  "secondsPerMutant": 82
+}
