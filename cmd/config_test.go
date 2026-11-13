@@ -1,11 +1,11 @@
 package cmd
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -419,8 +419,18 @@ func TestApplyStoredOptionsUsesTheActiveSource(t *testing.T) {
 	require.Equal(t, "jsonl", cfg.format)
 }
 
-// TestApplyStoredOptionsKeepsTheCause pins that a rejected stored value stays
-// reachable through errors.Is, so a caller can still match the parse failure.
+// flagSetError returns the error that the flag key gives for value. pflag
+// returns a new error value with no sentinel, so a test compares the text.
+func flagSetError(t *testing.T, key, value string) error {
+	t.Helper()
+	probe, _ := newRootCmd()
+	err := probe.Flag(key).Value.Set(value)
+	require.Error(t, err)
+	return err
+}
+
+// TestApplyStoredOptionsKeepsTheCause pins that the error of a rejected stored
+// value wraps the error of the flag, so a caller can still read the parse failure.
 func TestApplyStoredOptionsKeepsTheCause(t *testing.T) {
 	configEnv(t)
 	cf := &iqconfig.Config{
@@ -431,14 +441,17 @@ func TestApplyStoredOptionsKeepsTheCause(t *testing.T) {
 
 	root, cfg := newRootCmd()
 	err := applyStoredOptions(root, cfg)
-	require.ErrorIs(t, err, strconv.ErrSyntax)
+	require.EqualError(t, err, `stored option "compact": invalid value "maybe": `+flagSetError(t, "compact", "maybe").Error())
+	cause := errors.Unwrap(err)
+	require.EqualError(t, cause, flagSetError(t, "compact", "maybe").Error())
 }
 
 // TestCanonicalOptionValueKeepsTheCause pins the same wrap for `config set`.
 func TestCanonicalOptionValueKeepsTheCause(t *testing.T) {
 	_, err := canonicalOptionValue("compact", "maybe")
-	require.ErrorIs(t, err, strconv.ErrSyntax)
-	require.ErrorContains(t, err, `invalid value for "compact"`)
+	require.EqualError(t, err, `invalid value "maybe" for "compact": `+flagSetError(t, "compact", "maybe").Error())
+	cause := errors.Unwrap(err)
+	require.EqualError(t, cause, flagSetError(t, "compact", "maybe").Error())
 }
 
 // TestValidateLogFormat checks the log.format rule one value at a time.

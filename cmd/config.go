@@ -76,7 +76,8 @@ func applyStoredOptions(cmd *cobra.Command, cfg *config) error {
 			continue
 		}
 		if err := f.Value.Set(val); err != nil {
-			return fmt.Errorf("stored option %q: %w", key, err)
+			// The flag error does not name the value, so the message names it.
+			return fmt.Errorf("stored option %q: invalid value %q: %w", key, val, err)
 		}
 	}
 	return nil
@@ -429,7 +430,7 @@ func canonicalOptionValue(key, value string) (string, error) {
 		return "", unknownOptionErr(key)
 	}
 	if err := f.Value.Set(value); err != nil {
-		return "", fmt.Errorf("invalid value for %q: %w", key, err)
+		return "", fmt.Errorf("invalid value %q for %q: %w", value, key, err)
 	}
 	canonical := f.Value.String()
 	if err := validateOptionSemantics(key, canonical); err != nil {
