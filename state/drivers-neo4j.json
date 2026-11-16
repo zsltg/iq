@@ -1,0 +1,9 @@
+{
+  "package": "./drivers/neo4j",
+  "slug": "drivers-neo4j",
+  "status": "failed",
+  "fingerprint": "73b47afbea0a68883a19c314127efda2d1a373fabe175235d6af7181cedf925e",
+  "commit": "48e0f9e26f75e3f103fb18fad9217bb7f23cacfd",
+  "scannedAt": "2026-11-16T23:23:42Z",
+  "secondsPerMutant": 1
+}

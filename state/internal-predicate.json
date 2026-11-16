@@ -1,0 +1,18 @@
+{
+  "package": "./internal/predicate",
+  "slug": "internal-predicate",
+  "status": "passed",
+  "fingerprint": "1bb950490b0fdb8a1b29fe6808b34506a7f9d78878cbb5ed3bd589697f5d08ca",
+  "commit": "48e0f9e26f75e3f103fb18fad9217bb7f23cacfd",
+  "scannedAt": "2026-11-16T23:23:42Z",
+  "secondsPerMutant": 0.5,
+  "summary": {
+    "totalMutantsCount": 69,
+    "killedCount": 69,
+    "notCoveredCount": 0,
+    "escapedCount": 0,
+    "errorCount": 0,
+    "skippedCount": 0,
+    "score": 1.0
+  }
+}

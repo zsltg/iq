@@ -1,0 +1,18 @@
+{
+  "package": "./drivers/cassandra",
+  "slug": "drivers-cassandra",
+  "status": "passed",
+  "fingerprint": "96201cf55963221b766cf4eda01251aff8dc33b304e21eae0aa68c5daf9e5824",
+  "commit": "48e0f9e26f75e3f103fb18fad9217bb7f23cacfd",
+  "scannedAt": "2026-11-16T23:23:42Z",
+  "secondsPerMutant": 5.1,
+  "summary": {
+    "totalMutantsCount": 1107,
+    "killedCount": 1032,
+    "notCoveredCount": 49,
+    "escapedCount": 21,
+    "errorCount": 0,
+    "skippedCount": 5,
+    "score": 0.98005698005698
+  }
+}
