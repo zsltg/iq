@@ -46,7 +46,7 @@ services:
       retries: 5
 
   cassandra:
-    image: cassandra:5.0.9@sha256:3ea9333712c5692f3fe91d6c4dcc262df9e36338c4fdd1bc00a5e53f1137a1a0
+    image: cassandra:5.0.9@sha256:acd754f07c73f3a166bb477354b56ce9a05690c3e5e2aaacc1aab2afddba6436
     container_name: iq-cassandra
     ports:
       - "9042:9042"
@@ -107,7 +107,7 @@ services:
       retries: 15
 
   couchbase:
-    image: couchbase:community-8.0.2@sha256:d48ff44d5cf721919f8031bc7fa29c55230d507e2e6b181da006a272792c541a
+    image: couchbase:community-8.0.2@sha256:e2292d1a6a382f2190acf906e6c72640f349e12f6e830c126bb334b912fd7eb8
     container_name: iq-couchbase
     ports:
       # 8091-8096 are the cluster/management + service REST ports; 11210 is the KV
@@ -129,7 +129,7 @@ services:
       start_period: 20s
 
   neo4j:
-    image: neo4j:5.26.32@sha256:42ef3ebfd671ebd01fdebb6dcbe80cf7b45eef2aa3d346ef4132f7ef31e67d2f
+    image: neo4j:5.26.33@sha256:577eb43120e8688e62e753e962c47d30044ecaa95147ee5386c29f226b878008
     container_name: iq-neo4j
     ports:
       - "7687:7687"
