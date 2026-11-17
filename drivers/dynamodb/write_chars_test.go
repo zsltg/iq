@@ -456,6 +456,7 @@ func TestOpenOptionsReachTheClient(t *testing.T) {
 		t.Cleanup(cancel)
 		_, err := Open(ctx, "dynamodb://us-east-1/?endpoint="+srv.URL, "", nil, numfmt.DecimalAuto)
 		require.ErrorContains(t, err, "connect dynamodb")
-		require.Len(t, headers(), 3)
+		// The SDK default for DynamoDB is 4 attempts (aws-sdk-go-v2 v1.48.0, retry behavior 2.1).
+		require.Len(t, headers(), 4)
 	})
 }
