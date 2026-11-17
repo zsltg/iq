@@ -12,7 +12,9 @@
   "timezone": "Europe/Budapest",
   "labels": ["deps"],
   "minimumReleaseAge": "3 days",
-  "dependencyDashboardOSVVulnerabilitySummary": "all",
+  "dependencyDashboard": {
+    "osvVulnerabilitySummary": "all"
+  },
   "vulnerabilityAlerts": {
     "addLabels": ["security"]
   },
