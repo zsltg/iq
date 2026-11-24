@@ -1,0 +1,9 @@
+{
+  "package": "./drivers/couchdb",
+  "slug": "drivers-couchdb",
+  "status": "failed",
+  "fingerprint": "f7f6ec1b6e53158871659bea5c3bdb81d6c4180f95f38b12e7a128b9f5a38050",
+  "commit": "338e899de9670174f8dccd0a80603e3c2387df11",
+  "scannedAt": "2026-11-24T02:07:15Z",
+  "secondsPerMutant": 1.4
+}

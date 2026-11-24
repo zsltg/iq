@@ -1,0 +1,9 @@
+{
+  "package": "./drivers/hbase",
+  "slug": "drivers-hbase",
+  "status": "failed",
+  "fingerprint": "583a7889938b8529b10d4f2692220879bbbdc007b25a20ef6dd77a7ea1ddfe1d",
+  "commit": "338e899de9670174f8dccd0a80603e3c2387df11",
+  "scannedAt": "2026-11-24T02:07:15Z",
+  "secondsPerMutant": 8.9
+}

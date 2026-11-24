@@ -1,0 +1,18 @@
+{
+  "package": ".",
+  "slug": "root",
+  "status": "passed",
+  "fingerprint": "826f8d7ebc8f340ca56427fde164662999535d0da835ea2c291a763cd7ce8fb8",
+  "commit": "338e899de9670174f8dccd0a80603e3c2387df11",
+  "scannedAt": "2026-11-24T02:07:15Z",
+  "secondsPerMutant": 212,
+  "summary": {
+    "totalMutantsCount": 1,
+    "killedCount": 0,
+    "notCoveredCount": 1,
+    "escapedCount": 0,
+    "errorCount": 0,
+    "skippedCount": 0,
+    "score": 0
+  }
+}

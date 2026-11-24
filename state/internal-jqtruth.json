@@ -1,0 +1,18 @@
+{
+  "package": "./internal/jqtruth",
+  "slug": "internal-jqtruth",
+  "status": "passed",
+  "fingerprint": "1339f54a4a349fe41223e3b51c9c742bfd93838162ca6f2a1ebce3157cf9cb77",
+  "commit": "338e899de9670174f8dccd0a80603e3c2387df11",
+  "scannedAt": "2026-11-24T02:07:15Z",
+  "secondsPerMutant": 1.3,
+  "summary": {
+    "totalMutantsCount": 16,
+    "killedCount": 0,
+    "notCoveredCount": 16,
+    "escapedCount": 0,
+    "errorCount": 0,
+    "skippedCount": 0,
+    "score": 0
+  }
+}
