@@ -26,7 +26,7 @@ jobs:
     steps:
       # The list comes from the audit logs of the v0.37.0, v0.37.1 and v0.38.0 release runs.
       - name: Harden the runner (block egress)
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           disable-telemetry: true
@@ -58,7 +58,7 @@ jobs:
         run: |
           . scripts/tool-versions.env
           echo "goreleaser=$GORELEASER_VERSION" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: false # a release build must not read a cache that another run wrote
