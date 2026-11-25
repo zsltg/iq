@@ -107,7 +107,7 @@ services:
       retries: 15
 
   couchbase:
-    image: couchbase:community-8.0.2@sha256:e2292d1a6a382f2190acf906e6c72640f349e12f6e830c126bb334b912fd7eb8
+    image: couchbase:community-8.0.2@sha256:f5c848e7b2f21b9904b7dc20348c2027b58a5f32542701f6c4145c0e4e9e4a93
     container_name: iq-couchbase
     ports:
       # 8091-8096 are the cluster/management + service REST ports; 11210 is the KV
@@ -147,7 +147,7 @@ services:
       start_period: 30s
 
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.6@sha256:79b4f1de4c15e6eca824723086a51e5934406d614d410cc11be77748cafac537
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.7@sha256:8aa3b18f6a26880f4c2fa1ffb37a48213e201b0b6a1a47412c66b1f5d533de91
     container_name: iq-elasticsearch
     ports:
       - "9200:9200"
@@ -170,7 +170,7 @@ services:
       start_period: 60s
 
   opensearch:
-    image: opensearchproject/opensearch:3.9.0@sha256:3b55f6b6249cfdb92b52ee59adc8a266203ba9ef9f5d82544fad6f1af2f3609e
+    image: opensearchproject/opensearch:3.10.0@sha256:02d6d6e40c820ae08233b60540aa5d3d9364d64e2dc724e38d6c8c794879b2a0
     container_name: iq-opensearch
     ports:
       - "9201:9200"
