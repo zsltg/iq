@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and its commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.42.1 - 2026-11-25
+### Bug Fixes
+- **deps:** update module golang.org/x/tools to v0.53.0 (#264) (7f0f3c6)
+- **deps:** update test stack (#263) (72f8a20)
+- **deps:** update minor and patch updates (#262) (cb86fd7)
+- **deps:** update module github.com/quality-gates/mutago/v2 to v2.10.44 (#261) (b8c38a6)
+- **deps:** update module golang.org/x/term to v0.48.0 (#258) (338e899)
+- **deps:** update minor and patch updates (#257) (6230e59)
+- **deps:** update module github.com/quality-gates/mutago/v2 to v2.10.42 (#256) (88a963f)
+- **deps:** update test stack (#255) (783231b)
+- **deps:** update dependency zensical to v0.1.0 (#251) (48e0f9e)
+- **deps:** update testcontainers to v0.45.0 (#253) (c866842)
+- **deps:** update minor and patch updates (#252) (85281ea)
+- **deps:** update test stack (#250) (40c29c0)
+
+
 ## v0.42.0 - 2026-11-07
 ### Bug Fixes
 - store a big integer as an exact number in MongoDB and DynamoDB (#230) (2994353)
