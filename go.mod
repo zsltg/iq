@@ -96,7 +96,10 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
+	// Pinned to the fix commit for advisory GO-2026-6278 (weak random mask key).
+	// No tagged release has the fix yet. Remove this pin when a tagged release
+	// with the fix exists; Renovate does not update indirect modules here.
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/itchyny/timefmt-go v0.1.9 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
