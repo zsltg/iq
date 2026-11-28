@@ -42,7 +42,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.16.3
 	github.com/wI2L/jsondiff v0.7.1
 	github.com/zalando/go-keyring v0.2.8
-	github.com/zsltg/rdb v1.3.3-0.20261128125205-c772b28bc00b
+	github.com/zsltg/rdb v1.3.3-0.20261128153214-a76b64189b36
 	go.mongodb.org/mongo-driver/v2 v2.10.1
 	golang.org/x/term v0.48.0
 	google.golang.org/protobuf v1.36.12

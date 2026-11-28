@@ -88,12 +88,17 @@ func newRDBDecoder(ctx context.Context, r io.Reader, maxElements int) *core.Deco
 }
 
 // rdbParseError converts the error of the parser. A key over the limit gets a
-// message that names the key, the type and the way out. The message never holds a
-// value. Any other error keeps the parse prefix.
+// message that names the key, the type and the way out. A hash template of Redis
+// 8.10 is not a key, so its message names the template instead. The message never
+// holds a value. Any other error keeps the parse prefix.
 func rdbParseError(err error) error {
 	var tooMany *parser.TooManyElementsError
 	if !errors.As(err, &tooMany) {
 		return fmt.Errorf("parse rdb: %w", err)
+	}
+	if tooMany.Type == core.HashTemplateType {
+		return fmt.Errorf("read a hash template: %w: it has %d fields and the limit is %d, so read the dump with --unbounded",
+			ErrKeyTooLarge, tooMany.Count, tooMany.Limit)
 	}
 	count := fmt.Sprintf("%d elements", tooMany.Count)
 	if !tooMany.Exact {
