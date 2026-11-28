@@ -194,27 +194,34 @@ await "Philosophy"
 hold 4
 
 # 4. The same command again, recalled from history with the up arrow and explained
-#    rather than retyped. --explain prints the plan without connecting: the pretty
-#    filter with each stage annotated, the projection now among them as a stage of its
-#    own, the mongo calls the filter becomes, and the filter stages, which are the
-#    point of the whole screen. The conjunct is compiled to a Mongo filter and
-#    evaluated on the server, so the server filter section shows it, and the jq
-#    section has no conjunct left to run alone.
+#    rather than retyped. --explain prints the plan without connecting, and -v
+#    (--verbose) adds two things to it. First, iq logs the source it resolved, on
+#    stderr, above the plan. Second, each stage of the pretty filter gets a dimmed
+#    note that says what the stage does, and the first stage also names its route
+#    (a streaming scan). The projection is a stage of its own. Then come the mongo
+#    calls the filter becomes, and the filter stages, which are the point of the whole
+#    screen. iq compiles the conjunct to a Mongo filter that the server evaluates, so
+#    the server filter section shows it, and the jq section has no conjunct left to
+#    run alone.
 #
-#    The plan is 24 lines. With the recalled command line above it and the next prompt
-#    under it, that is 26 rows, the whole terminal, so it prints straight to the
-#    screen and needs no pager. stdout is the terminal, so iq colors it without -C.
-#    There is no spare row: if the plan grows by one line, the command line scrolls off
-#    the top, and no assertion below can see that.
+#    The plan is 29 lines, and the log line is 99 characters, so it wraps to 2 rows.
+#    With the recalled command line above them and the next prompt under them, that
+#    is 33 rows, the whole terminal (DEMO_ROWS in demo.mk). So the plan prints
+#    straight to the screen and needs no pager. stdout is the terminal, so iq colors
+#    it without -C. There is no spare row: if the plan grows by one line, the command
+#    line scrolls off the top, and no assertion below can see that.
 forget
-recall { --explain}
-# The plan, asserted in order. `calls:` is the mongo section's header, the one token
-# of the plan that cannot also be read off the recalled command line. `find):` then
-# matches the end of the `server filter (mongo find):` header, which the ops line
-# `find(<filter>)` cannot answer, and `object` the last arm of the $type list in the
-# fragment, which is only in the server filter section. `again)` closes the header of
-# the jq section, the last line of the plan, and `2004h` is the prompt under it, for
-# the reason `await` gives above.
+recall { --explain -v}
+# The log line and the plan, asserted in order. `resolved` is in the log line that -v
+# adds, and `streaming` is in the route note of the first stage, which only -v
+# prints. Neither can be read off the recalled command line. `calls:` is the mongo
+# section's header. `find):` then matches the end of the `server filter (mongo
+# find):` header, which the ops line `find(<filter>)` cannot answer, and `object` the
+# last arm of the $type list in the fragment, which is only in the server filter
+# section. `again)` closes the header of the jq section, the last line of the plan,
+# and `2004h` is the prompt under it, for the reason `await` gives above.
+await "resolved"
+await "streaming"
 await "calls:"
 await "find):"
 await "object"

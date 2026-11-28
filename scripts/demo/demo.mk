@@ -26,12 +26,12 @@ DEMO_ROOT       ?= /tmp/iq-demo
 # The recorded terminal's geometry, one source of truth: it sizes asciinema's pty,
 # expect's spawn, and (via the cast header) termsvg's canvas. Both numbers come from
 # the screens. 80 columns is the widest typed command line (`$ iq '.[] | select(.year
-# > 2015) | {title, price}' --explain`, 60 characters) and the widest output line, the
-# plan's `find(<filter>)` line at 78, so nothing on screen wraps. 26 rows is the gron
-# screen, 18 lines of output with its typed line above and the next prompt below, plus
-# six rows of the screen before it. It is also the plan screen exactly, 24 lines of
-# plan with the recalled command line above and the prompt below, so fewer rows push
-# that command line off the top. See basic.exp's step 4.
+# > 2015) | {title, price}' --explain -v`, 63 characters) and the widest plan line,
+# the `find(<filter>)` line at 78, so no line of the plan wraps. 33 rows is the plan
+# screen exactly: the recalled command line, the 99-character log line that -v adds
+# (it wraps to 2 rows), 29 lines of plan, and the prompt below. Fewer rows push the
+# command line off the top. See basic.exp's step 4. The gron screen, 18 lines of
+# output with its typed line above and the next prompt below, fits with rows to spare.
 #
 # The render is vector, so no pixel width caps these numbers: the README and the docs
 # embed the SVG at 100% of their column and the browser scales the text, crisp at any
@@ -39,7 +39,7 @@ DEMO_ROOT       ?= /tmp/iq-demo
 # fewer columns is bigger type, at the price of wrapping the explain screen, whose
 # widest line is 78 characters.
 DEMO_COLS       ?= 80
-DEMO_ROWS       ?= 26
+DEMO_ROWS       ?= 33
 
 # One of termsvg's built-in themes. dracula, so the plan's route markers and the JSON
 # colorizer sit on a dark, saturated background rather than a black one.

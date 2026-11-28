@@ -74,11 +74,13 @@ collection in the local MongoDB:
 3. `iq '.[] | select(.year > 2015) | {title, price}'`, a streaming scan with a
    range predicate and a projection.
 4. the same command again, recalled from history with the up arrow rather than
-   retyped, with `--explain` appended to it: the annotated jq stages with the
-   projection among them, the mongo calls they become, and the filter stage
-   sections with the compiled server filter. This is the screen the whole
-   recording exists for. The plan is 24 lines, so with the command line above it
-   and the prompt below it, it fills the 26-row terminal exactly, with no pager.
+   retyped, with `--explain -v` appended to it. `-v` adds the log line of the
+   resolved source and a note on each jq stage. The plan shows the annotated jq
+   stages with the projection among them, the mongo calls they become, and the
+   filter stage sections with the compiled server filter. This is the screen the
+   whole recording exists for. The plan is 29 lines and the log line wraps to 2
+   rows. With the command line above them and the prompt below them, they fill
+   the 33-row terminal exactly, with no pager.
 5. `iq '.[] | select(.author | test("Martin"))' -g`, a regex predicate pushed
    down the same way, printed as gron: one assignment per leaf, greppable,
    reversible with `ungron`.
@@ -98,8 +100,8 @@ So the demo checks its own story, in two places:
   `scripts/seed-mongo.sh` fails here, with the actual collection printed beside
   the expectation.
 - `basic.exp` asserts every screen before moving on: `added` then `books` from
-  `add`, `Kleppmann`, `Philosophy`, `calls:`, `find):`, `object` and `again)` down
-  the plan, then the prompt under it, `Robert` then `2008`. Every one of them is a
+  `add`, `Kleppmann`, `Philosophy`, `resolved` in the log line, `streaming`,
+  `calls:`, `find):`, `object` and `again)` down the plan, then the prompt under it, `Robert` then `2008`. Every one of them is a
   token the screen it names actually paints, read off a real recording rather than
   guessed at, and a token that never comes aborts the run instead of being waited
   out.
@@ -181,8 +183,8 @@ wrong:
   first answer and the wrong one: ~35 full-canvas frames that the render cannot diff
   away, and a reader chasing a moving screen. A `less -R` pager was the second
   answer, and it cost a pipe, `-C` to keep the colors across it, and an alternate
-  screen. The plan is now 24 lines, so it prints straight to the terminal with its
-  colors. There is no spare row: if the plan grows by one line, the command line
+  screen. The terminal now has a row for each line of the plan screen, so the plan
+  prints straight to the terminal with its colors. There is no spare row: if the plan grows by one line, the command line
   scrolls off the top, and no assertion sees that. Check the top row of the plan
   frame after a change to the plan.
 - **Pause with `hold`, not `sleep`.** A bare `sleep` leaves output sitting unread
@@ -232,12 +234,12 @@ about it:
 python3 -c 'import json,sys
 d="".join(json.loads(l)[2] for l in open(sys.argv[1]) if l.startswith("[") and json.loads(l)[1]=="o")
 [print(f"{d.count(t):4d}  {t!r}") for t in sys.argv[2:]]' \
-  /tmp/iq-demo/demo.cast added books Kleppmann Philosophy calls: 'find):' object 'again)' Robert 2008
+  /tmp/iq-demo/demo.cast added books Kleppmann Philosophy resolved streaming calls: 'find):' object 'again)' Robert 2008
 ```
 
 ## Geometry, and where the numbers come from
 
-`DEMO_COLS`/`DEMO_ROWS` (80x26) size asciinema's pty (as `--window-size 80x26`),
+`DEMO_COLS`/`DEMO_ROWS` (80x33) size asciinema's pty (as `--window-size 80x33`),
 expect's spawn, and, via the cast header, termsvg's canvas. One source of truth on
 purpose: rendering a cast at a size it was not recorded at paints a torn screen
 over stale content.
@@ -247,12 +249,13 @@ screen shrinks the type on every screen and renders a tall thin band nobody can 
 at README width.
 
 - **80 columns** clears the widest typed command line, the recalled `$ iq '.[] |
-  select(.year > 2015) | {title, price}' --explain` at 60 characters, and the widest
-  output line, the plan's `find(<filter>)` line at 78. Nothing on screen wraps.
-- **26 rows** is the gron screen, 18 lines of output with its typed line above and
-  the next prompt below, plus six rows of the screen before it. It is also the plan
-  screen exactly: 24 lines of plan with the recalled command line above and the
-  prompt below. Fewer rows push that command line off the top.
+  select(.year > 2015) | {title, price}' --explain -v` at 63 characters, and the
+  widest plan line, the `find(<filter>)` line at 78. No line of the plan wraps.
+- **33 rows** is the plan screen exactly: the recalled command line, the
+  99-character log line that `-v` adds (it wraps to 2 rows), 29 lines of plan,
+  and the prompt below. Fewer rows push that command line off the top. The gron
+  screen, 18 lines of output with its typed line above and the next prompt
+  below, fits with rows to spare.
 
 The render is vector, so no pixel width caps these numbers: the README and the
 docs embed the SVG with `width="100%"` and the browser scales the text to the
