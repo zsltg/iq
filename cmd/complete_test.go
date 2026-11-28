@@ -802,7 +802,7 @@ func TestCompletionDumpFormatsExactSet(t *testing.T) {
 		"yaml\tiq typed YAML",
 		"mongoexport\tmongoexport Extended JSON",
 		"bson\tmongodump BSON",
-		"rdb\tRedis RDB snapshot",
+		"rdb\tRedis or Valkey RDB snapshot",
 		"dynamodb-json\tDynamoDB S3 export / scan JSON",
 		"cassandra-csv\tcqlsh COPY TO CSV",
 		"neo4j-json\tNeo4j APOC JSON export",

@@ -42,7 +42,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.16.3
 	github.com/wI2L/jsondiff v0.7.1
 	github.com/zalando/go-keyring v0.2.8
-	github.com/zsltg/rdb v1.3.3-0.20261030110236-07e717ec3a3d
+	github.com/zsltg/rdb v1.3.3-0.20261128153214-a76b64189b36
 	go.mongodb.org/mongo-driver/v2 v2.10.1
 	golang.org/x/term v0.48.0
 	google.golang.org/protobuf v1.36.12
@@ -175,11 +175,14 @@ require (
 // a fatal out-of-memory error on a length that an RDB file declares. The fork also removes
 // a print to stdout for module types that have no handler. That print corrupts the data
 // output of iq and the JSON-RPC stream of iq mcp. The fork adds Decoder.WithMaxElements,
-// which refuses a key with too many elements before it allocates them. Upstream needs the
-// first two fixes and does not have the limit. When upstream releases them and the limit,
-// change the imports back to github.com/hdt3213/rdb, require its fixed version, and
-// remove the require of github.com/zsltg/rdb. See HDT3213/rdb issue 75 and
-// pull request 76.
+// which refuses a key with too many elements before it allocates them. The fork also reads
+// RDB versions 13 to 15 (Redis 8.6 to 8.10), and it returns an UnsupportedTypeError for a
+// type that it does not read. Upstream needs the first two fixes and has neither the limit
+// nor RDB 13 to 15. The require points to a commit of the branch feat/rdb-v13-v15-valkey of
+// the fork, not to a tag. Before a release, replace it with a tagged release of the fork or
+// with the fixed upstream module. When upstream releases all of these changes, change the
+// imports back to github.com/hdt3213/rdb, require its fixed version, and remove the require
+// of github.com/zsltg/rdb. See HDT3213/rdb issue 75 and pull request 76.
 
 // v0.38.2 has a replace directive in go.mod, so go install refuses that version.
 retract v0.38.2

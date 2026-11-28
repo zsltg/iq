@@ -125,15 +125,26 @@ func SupportedFormats() []FormatInfo {
 		{FormatYAML, true, "iq typed YAML"},
 		{FormatMongoexport, true, "mongoexport Extended JSON"},
 		{FormatBSON, true, "mongodump BSON"},
-		{FormatRDB, true, "Redis RDB snapshot"},
+		{FormatRDB, true, "Redis or Valkey RDB snapshot"},
 		{FormatDynamoDBJSON, false, "DynamoDB S3 export / scan JSON"},
 		{FormatCassandraCSV, false, "cqlsh COPY TO CSV"},
 		{FormatNeo4jJSON, false, "Neo4j APOC JSON export"},
 	}
 }
 
-// rdbMagic is the five-byte signature every RDB file opens with.
-var rdbMagic = []byte("REDIS")
+// rdbMagics are the signatures that an RDB file opens with. Redis writes REDIS.
+// Valkey 9 and later write VALKEY for its own RDB versions (80 and up).
+var rdbMagics = [][]byte{[]byte("REDIS"), []byte("VALKEY")}
+
+// hasRDBMagic reports whether head opens with an RDB signature.
+func hasRDBMagic(head []byte) bool {
+	for _, m := range rdbMagics {
+		if bytes.HasPrefix(head, m) {
+			return true
+		}
+	}
+	return false
+}
 
 // detectFormat sniffs a dump file's format from its content and, for YAML, its
 // extension. Detection is reliable for the binary formats (RDB has a magic
@@ -219,7 +230,7 @@ func (s *sniffer) classify(name string) (Format, error) {
 	if len(head) == 0 {
 		return FormatUnknown, errors.New("dump is empty")
 	}
-	if bytes.HasPrefix(head, rdbMagic) {
+	if hasRDBMagic(head) {
 		return FormatRDB, nil
 	}
 	lname := strings.ToLower(name)

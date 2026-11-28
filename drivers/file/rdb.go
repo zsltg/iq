@@ -16,13 +16,18 @@ import (
 	"github.com/zsltg/iq/internal/query"
 )
 
-// rdbSource streams a Redis RDB snapshot as typed records. Each object converts to
+// rdbSource streams a Redis or Valkey RDB snapshot as typed records. The decoder reads
+// Redis RDB versions 1 to 15 (Redis 8.10) and Valkey RDB version 80 (Valkey 9). A hash
+// that a Redis 8.10 hash template encodes is a plain hash here. Each object converts to
 // the Type/Value shape that the typed read of the live Redis adapter produces (see
 // drivers/redis: string→string, hash→object, list/set→array, zset→[{member,score}],
 // stream→[{id,fields}]). So for these types an RDB restore round-trips losslessly,
 // and a jq query over a dump matches a query over the live server. The reader skips
 // RDB metadata (aux, resizedb, functions), which carries no keyspace value. It also
-// skips opaque module types, so a module value does not round-trip.
+// skips opaque module types, so a module value does not round-trip. A native type that
+// the decoder does not read, such as the array type of Redis 8.8 and later, stops the
+// read with an error that names the key, the type id and the RDB version. The decoder
+// cannot skip such a key, because it does not know the length of the value.
 // A key with more than query.MaxValueElements elements is refused, unless the context is
 // unbounded (see rdbSourceLimit).
 func rdbSource(r io.Reader, size int) query.RecordSource {
@@ -83,12 +88,17 @@ func newRDBDecoder(ctx context.Context, r io.Reader, maxElements int) *core.Deco
 }
 
 // rdbParseError converts the error of the parser. A key over the limit gets a
-// message that names the key, the type and the way out. The message never holds a
-// value. Any other error keeps the parse prefix.
+// message that names the key, the type and the way out. A hash template of Redis
+// 8.10 is not a key, so its message names the template instead. The message never
+// holds a value. Any other error keeps the parse prefix.
 func rdbParseError(err error) error {
 	var tooMany *parser.TooManyElementsError
 	if !errors.As(err, &tooMany) {
 		return fmt.Errorf("parse rdb: %w", err)
+	}
+	if tooMany.Type == core.HashTemplateType {
+		return fmt.Errorf("read a hash template: %w: it has %d fields and the limit is %d, so read the dump with --unbounded",
+			ErrKeyTooLarge, tooMany.Count, tooMany.Limit)
 	}
 	count := fmt.Sprintf("%d elements", tooMany.Count)
 	if !tooMany.Exact {

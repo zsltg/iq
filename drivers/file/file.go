@@ -3,10 +3,10 @@
 // read-only. It implements the read and typed-scan ports and no writer, so a
 // file:// endpoint is never a copy destination. Content detects the format. A
 // ?format= URI query can force it. The formats are iq's own typed JSONL,
-// mongoexport Extended JSON, mongodump BSON, and Redis RDB. The Store holds only
-// the path and reopens it per operation. Scans stream, and no more than one page
-// of values is in memory. Whole-dataset queries obey the --unbounded contract of
-// the core.
+// mongoexport Extended JSON, mongodump BSON, and Redis or Valkey RDB. The Store
+// holds only the path and reopens it per operation. Scans stream, and no more
+// than one page of values is in memory. Whole-dataset queries obey the
+// --unbounded contract of the core.
 package file
 
 import (

@@ -175,3 +175,41 @@ func TestUnboundedReadDoesNotWarmTheCache(t *testing.T) {
 	err = st.TypedScan(context.Background(), func([]query.Record) error { return nil })
 	require.ErrorIs(t, err, ErrKeyTooLarge)
 }
+
+// TestRDBSourceLimitNamesTheHashTemplate reads a Redis 8.10 dump whose hash template
+// has more fields than the limit. A template is not a key, so the message names the
+// template, and the unbounded opt-in still reads the dump.
+func TestRDBSourceLimitNamesTheHashTemplate(t *testing.T) {
+	// The RDB 15 file holds hash template 3 with the fields a and b, and the hash
+	// "h" that uses it.
+	data := []byte("REDIS0015\xf2\x03\x02\x01a\x01b\xfe\x00\x20\x01h\x03\x01\x31\x01\x32\xff")
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		wantErr string
+	}{
+		{
+			name: "bounded",
+			ctx:  context.Background(),
+			wantErr: "read a hash template: too many elements: it has 2 fields and the limit is 1, " +
+				"so read the dump with --unbounded",
+		},
+		{name: "unbounded", ctx: query.WithUnbounded(context.Background())},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []query.Record
+			err := rdbSourceLimit(bytes.NewReader(data), 1, 1)(tt.ctx, func(batch []query.Record) error {
+				got = append(got, batch...)
+				return nil
+			})
+			if tt.wantErr != "" {
+				require.ErrorIs(t, err, ErrKeyTooLarge)
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, []query.Record{{Key: "h", Type: "hash", Value: map[string]any{"a": "1", "b": "2"}}}, got)
+		})
+	}
+}
