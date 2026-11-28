@@ -1333,7 +1333,7 @@ drive letter).
 | --- | --- | --- |
 | Typed JSONL | `iq --src <s> --typed -o <file>` | iq's own dump. It holds the normalized values. With `--native` (DynamoDB, MongoDB and HBase only), each record also has a `form` field and keeps the native types |
 | Typed YAML | `iq --src <s> --typed -y -o <file>` | the same records as YAML documents, auto-detected by a `.yaml`/`.yml` name, else `?format=yaml` |
-| Redis RDB | `redis-cli --rdb`, `SAVE` | values match a live scan, RDB ≤ v12 (Redis ≤ 7.2) |
+| Redis or Valkey RDB | `redis-cli --rdb`, `valkey-cli --rdb`, `SAVE` | values match a live scan. Redis RDB version 15 or lower (Redis 8.10 or lower) and Valkey RDB version 80 (Valkey 9, header `VALKEY080`). A hash with a hash template (Redis 8.10) reads as a plain hash. A key of the array type (Redis 8.8 and later) stops the read with an error that names the key, the type id and the RDB version |
 | Mongo BSON | `mongodump` | single `.bson` file |
 | Mongo Extended JSON | `mongoexport` | one document per line, or a `--jsonArray` array. Relaxed (the default) and canonical Extended JSON both read |
 | DynamoDB JSON | S3 `export-table-to-point-in-time`, `aws dynamodb scan` | needs `?format=dynamodb-json` and a `?keys=pk[:S][,sk[:N]]` key schema (a dump carries items but not the table's key schema). Export files are gzipped NDJSON |
@@ -1348,10 +1348,10 @@ materialization is the core's, gated by `--unbounded`, exactly as for a live bac
 **Restore fidelity** is the record round-trip. Values and native types reconstruct, but these do
 not carry:
 
-- TTLs
+- TTLs, also the TTLs of hash fields
 - Exact encodings
-- Stream consumer groups
-- RDB module types
+- Stream consumer groups, and the IDMP and NACK data of a Redis 8.6 or later stream
+- RDB module types, for example a RedisJSON or valkey-json key
 - Mongo indexes.
 
 **Neo4j record ids.** A dump's `_id` and a relationship's `_start`/`_end`, is APOC's numeric

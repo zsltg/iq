@@ -524,7 +524,7 @@ iq --src snap --insert cache
 | `yaml`                  | iq typed YAML                  |
 | `mongoexport`           | mongoexport Extended JSON      |
 | `bson`                  | mongodump BSON                 |
-| `rdb`                   | Redis RDB snapshot             |
+| `rdb`                   | Redis or Valkey RDB snapshot   |
 | `?format=dynamodb-json` | DynamoDB S3 export / scan JSON |
 | `?format=cassandra-csv` | cqlsh COPY TO CSV              |
 | `?format=neo4j-json`    | Neo4j APOC JSON export         |
